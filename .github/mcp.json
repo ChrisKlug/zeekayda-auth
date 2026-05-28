@@ -1,0 +1,34 @@
+{
+  "mcpServers": {
+    "aspire": {
+      "tools": [
+        "*"
+      ],
+      "type": "local",
+      "command": "aspire",
+      "args": [
+        "mcp",
+        "start"
+      ],
+      "env": {
+        "DOTNET_ROOT": "${DOTNET_ROOT}"
+      }
+    },
+    "Context7": {
+      "tools": [
+        "*"
+      ],
+      "type": "http",
+      "url": "https://mcp.context7.com/mcp",
+      "headers": {}
+    },
+    "microsoft-learn": {
+      "tools": [
+        "*"
+      ],
+      "type": "http",
+      "url": "https://learn.microsoft.com/api/mcp",
+      "headers": {}
+    }
+  }
+}
