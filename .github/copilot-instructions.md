@@ -116,8 +116,6 @@ It is of utmost importance that you do not make decisions that stem from ambiguo
 
 > **This applies to all agents. Never fabricate, invent, or guess factual information.**
 >
-> Do not make up spec references, RFC section or clause numbers, quoted requirements text, API method signatures, class or interface names, configuration keys or options, library behaviour, or any other factual claim.
->
 > If you are uncertain, stop and ask the user rather than inferring something and presenting it as established fact. Ask before deciding, and ask before asserting.
 
 ## Agents selection
