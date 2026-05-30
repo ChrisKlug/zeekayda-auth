@@ -17,7 +17,8 @@ Please take a few minutes to read this guide before you start. It helps us revie
 7. [Commit Messages](#commit-messages)
 8. [Developer Certificate of Origin (DCO)](#developer-certificate-of-origin-dco)
 9. [Code Style](#code-style)
-10. [Security Vulnerabilities](#security-vulnerabilities)
+10. [CI](#ci)
+11. [Security Vulnerabilities](#security-vulnerabilities)
 
 ---
 
@@ -163,6 +164,33 @@ By signing off you are agreeing to the [Developer Certificate of Origin v1.1](ht
 - **No `TODO` comments in merged code** — open an issue instead
 
 If you are unsure about a style decision, check how the surrounding code is written and follow the same pattern. When in doubt, ask in the issue before writing the code.
+
+---
+
+## CI
+
+Every pull request and every push to `main` runs two GitHub Actions jobs defined in `.github/workflows/ci.yml`:
+
+| Job | What it checks |
+|---|---|
+| `build-and-test` | Restores, builds (warnings-as-errors), and runs the full test suite with code coverage. Runs on `ubuntu-latest`, `windows-latest`, and `macos-latest`. |
+| `format-check` | Runs `dotnet format --verify-no-changes` to ensure all code matches the `.editorconfig` rules. |
+
+**All jobs must be green before a PR can be merged.**
+
+To check formatting locally before pushing:
+
+```bash
+dotnet format --verify-no-changes
+```
+
+To fix formatting issues automatically:
+
+```bash
+dotnet format
+```
+
+Coverage reports are uploaded as build artifacts and can be downloaded from the Actions run summary.
 
 ---
 
