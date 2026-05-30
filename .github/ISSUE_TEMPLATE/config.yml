@@ -1,0 +1,13 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 🔒 Security Vulnerability
+    url: https://github.com/ChrisKlug/zeekayda-auth/security/advisories/new
+    about: >
+      Do NOT open a public issue for security vulnerabilities.
+      Use GitHub's private security advisory process instead.
+      Your report will only be visible to maintainers until a fix is released.
+  - name: 💬 Question or Discussion
+    url: https://github.com/ChrisKlug/zeekayda-auth/discussions
+    about: >
+      For general questions, usage help, or open-ended discussion, use GitHub Discussions
+      rather than the issue tracker.

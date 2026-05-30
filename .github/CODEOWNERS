@@ -1,0 +1,14 @@
+# CODEOWNERS — https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+#
+# The @ChrisKlug account is the sole maintainer for now.
+# This file will be updated as additional maintainers are onboarded.
+#
+# Format: <pattern> <owner> [<owner> ...]
+# Patterns follow .gitignore rules.
+
+# Default: all files require maintainer review
+* @ChrisKlug
+
+# Security-sensitive paths — always require explicit maintainer review
+SECURITY.md @ChrisKlug
+.github/SECURITY.md @ChrisKlug
