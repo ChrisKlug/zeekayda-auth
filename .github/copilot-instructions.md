@@ -110,6 +110,8 @@ Every feature or change follows this lifecycle. Agents are responsible for their
 
 It is of utmost importance that you do not make decisions that stem from ambigious information. If there are any questions that arrise, it is always better to ask, than to build something that is not what is needed. There is always a human in the loop. Ask them!
 
+**Never commit or push code without explicit approval from the user.** Always let the user know that changes are ready for review and wait for their confirmation before running `git commit` or `git push`.
+
 ## Agents selection
 
 The solution contains several custom agents. Make sure you have a look at those before doing any work, to see if one of them might be better suited for the task.
