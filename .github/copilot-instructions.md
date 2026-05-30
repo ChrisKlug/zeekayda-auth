@@ -118,6 +118,8 @@ It is of utmost importance that you do not make decisions that stem from ambiguo
 >
 > If you are uncertain, stop and ask the user rather than inferring something and presenting it as established fact. Ask before deciding, and ask before asserting.
 
+**Never commit or push code without explicit approval from the user.** Always let the user know that changes are ready for review and wait for their confirmation before running `git commit` or `git push`.
+
 ## Agents selection
 
 The solution contains several custom agents. Make sure you have a look at those before doing any work, to see if one of them might be better suited for the task.
