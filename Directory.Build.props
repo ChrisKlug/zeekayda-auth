@@ -1,0 +1,31 @@
+<Project>
+
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <!-- NuGet packaging and documentation — only applied to src/ projects -->
+  <PropertyGroup Condition="$(MSBuildProjectFullPath.Contains('/src/'))">
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <IsPackable>true</IsPackable>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/ChrisKlug/zeekayda-auth</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/ChrisKlug/zeekayda-auth</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <Authors>ZeeKayDa Contributors</Authors>
+    <Copyright>Copyright © 2025 ZeeKayDa Contributors</Copyright>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <ItemGroup Condition="$(MSBuildProjectFullPath.Contains('/src/'))">
+    <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
+  <!-- Test and samples projects should not produce NuGet packages -->
+  <PropertyGroup Condition="!$(MSBuildProjectFullPath.Contains('/src/'))">
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+</Project>

@@ -1,0 +1,10 @@
+namespace ZeeKayDa.Auth.Tests;
+
+public class PlaceholderTests
+{
+    [Fact]
+    public void Placeholder_ReturnsTrue()
+    {
+        Assert.True(true);
+    }
+}

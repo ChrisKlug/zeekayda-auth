@@ -1,0 +1,39 @@
+# .NET build output
+bin/
+obj/
+artifacts/
+
+# NuGet packages
+*.nupkg
+*.snupkg
+
+# User-specific and IDE files
+*.user
+*.suo
+.vs/
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.localhistory/
+.vshistory/
+
+# Test results and coverage
+TestResults/
+coverage*.json
+coverage*.xml
+coverage*.info
+*.coverage
+*.coveragexml
+
+# Logs and temp files
+*.log
+*.binlog
+
+# macOS
+.DS_Store
+
+# dotenv
+.env
