@@ -1,0 +1,98 @@
+name: Bug Report
+description: Report a reproducible defect in ZeeKayDa.Auth
+labels: ["type:bug", "status:needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for taking the time to report a bug!
+
+        > ⚠️ **Security vulnerability?**
+        > Do **not** use this form. Please follow the [private disclosure process](../../SECURITY.md) instead.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: A clear, concise description of what the bug is.
+      placeholder: "When I call X with Y, Z happens instead of W."
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: Minimal steps that reliably reproduce the issue. The shorter, the better.
+      placeholder: |
+        1. Configure the server with ...
+        2. Send a request to ...
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behaviour
+      description: What should happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behaviour
+      description: What actually happens? Include any error messages or unexpected responses.
+    validations:
+      required: true
+
+  - type: input
+    id: dotnet_version
+    attributes:
+      label: .NET Version
+      description: Output of `dotnet --version`
+      placeholder: "8.0.xxx"
+    validations:
+      required: true
+
+  - type: input
+    id: package_version
+    attributes:
+      label: ZeeKayDa.Auth Package Version
+      description: Version of the NuGet package(s) you are using
+      placeholder: "0.1.0"
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating System
+      description: OS and version where you observed the bug
+      placeholder: "macOS 14.4 / Ubuntu 22.04 / Windows 11"
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Log Output
+      description: Paste any relevant logs, stack traces, or HTTP traces. **Redact any secrets, tokens, or personally identifiable information before posting.**
+      render: text
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Any other context, screenshots, or links that might help.
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-submission Checklist
+      options:
+        - label: I have searched existing issues and this is not a duplicate
+          required: true
+        - label: This is not a security vulnerability (if it is, I will use the private advisory process)
+          required: true

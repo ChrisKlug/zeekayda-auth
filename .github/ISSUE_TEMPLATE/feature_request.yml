@@ -1,0 +1,64 @@
+name: Feature Request
+description: Propose a new feature or behaviour change for ZeeKayDa.Auth
+labels: ["type:feature", "status:needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for taking the time to suggest a feature!
+
+        Before submitting, please check that:
+        - There is no existing open issue covering the same idea
+        - You have read [CONTRIBUTING.md](../../CONTRIBUTING.md) and understand the issue-first policy
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: |
+        What problem are you trying to solve? Describe the *problem*, not the solution.
+        A good problem statement makes it easier to find the best solution.
+      placeholder: "As a developer building X, I cannot do Y because Z..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: Describe the solution you have in mind. How should it behave? What API or configuration would it expose?
+    validations:
+      required: true
+
+  - type: input
+    id: spec_reference
+    attributes:
+      label: Spec Reference (optional)
+      description: |
+        If this feature relates to an OAuth 2.0, OpenID Connect, or other specification, cite the relevant section.
+        Examples: "RFC 7636 §4.3", "OIDC Core 1.0 §3.1.2.1"
+      placeholder: "RFC XXXX §Y.Z"
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: |
+        What other approaches did you consider? Why is your proposed solution better?
+        This helps maintainers understand the design space.
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Any other context, links, prior art, or screenshots that might help.
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-submission Checklist
+      options:
+        - label: I have searched existing issues and this is not a duplicate
+          required: true
+        - label: I have read CONTRIBUTING.md and understand that a maintainer must confirm scope before implementation begins
+          required: true
