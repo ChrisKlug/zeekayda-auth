@@ -24,6 +24,9 @@ rationale, see [Why discovery matters](../explanation/why-discovery.md).
 - Root issuer: `/.well-known/openid-configuration`
 - Path-bearing issuer: `{issuer-path}/.well-known/openid-configuration`
 
+The route is constrained to the configured issuer host. A request for the same path on a different
+host is not handled by ZeeKayDa.Auth.
+
 Examples:
 
 - Issuer: `https://id.example.com`  
@@ -69,7 +72,7 @@ app.Run();
 | Header | Value |
 |---|---|
 | `Content-Type` | `application/json` |
-| `Cache-Control` | `public, max-age=86400` |
+| `Cache-Control` | `public, max-age=3600, must-revalidate` by default; `no-store` when `DiscoveryDocumentCacheMaxAgeSeconds` is `0` |
 | `Access-Control-Allow-Origin` | `*` |
 
 ## Metadata fields
@@ -130,6 +133,20 @@ auth.AddInMemoryScopes(
 
 Only scopes with `IsDiscoverable = true` are included in `scopes_supported`.
 
+## Pre-alpha advertised endpoints
+
+ZeeKayDa.Auth is pre-alpha. Discovery currently publishes default `authorization_endpoint`,
+`token_endpoint`, and `jwks_uri` values so clients can observe the intended metadata shape, but the
+protocol implementations are not complete yet.
+
+Until those surfaces are implemented:
+
+| Endpoint | Methods | Status |
+|---|---|---|
+| `{issuer}/connect/authorize` | `GET`, `POST` | `501 Not Implemented` |
+| `{issuer}/connect/token` | `POST` | `501 Not Implemented` |
+| `{issuer}/connect/jwks` | `GET` | `501 Not Implemented` |
+
 ## Endpoint URI derivation
 
 When endpoint overrides are not set, ZeeKayDa.Auth derives published endpoint URLs from the
@@ -176,10 +193,12 @@ Startup fails when:
 - `Issuer` is missing or empty
 - `Issuer` is not an absolute URI
 - `Issuer` uses HTTP and `AllowInsecureIssuer` is not enabled
+- `Issuer` uses HTTP with a non-loopback host
 - `Issuer` contains a query string or fragment
+- `Issuer` contains user information
 - `ResponseTypesSupported` or `IdTokenSigningAlgValuesSupported` is null or empty
 - any supported metadata collection is null
 - a custom scope repository is configured with blank or duplicate scope names
 
-> Warning: `AllowInsecureIssuer = true` is for local development and testing only. Do not use an
-> HTTP issuer in production.
+> Warning: `AllowInsecureIssuer = true` is for local loopback development and testing only. It does
+> not permit HTTP issuers on non-loopback hosts.

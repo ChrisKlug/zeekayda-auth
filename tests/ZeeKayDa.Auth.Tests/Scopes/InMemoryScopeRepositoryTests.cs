@@ -31,7 +31,7 @@ public sealed class InMemoryScopeRepositoryTests
     }
 
     [Fact]
-    public void GetScopes_ReturnsConfiguredScopesAndClaims()
+    public async Task GetScopes_ReturnsConfiguredScopesAndClaims()
     {
         var repository = new InMemoryScopeRepository(
         [
@@ -49,7 +49,7 @@ public sealed class InMemoryScopeRepositoryTests
             },
         ]);
 
-        var scopes = repository.GetScopes();
+        var scopes = await repository.GetScopesAsync(TestContext.Current.CancellationToken);
 
         scopes.Select(scope => scope.Name).Should().Equal(ScopeNames.OpenId, ScopeNames.Profile);
         scopes.Single(scope => scope.Name == ScopeNames.Profile).IdTokenClaims.Should().Equal("name", "family_name");
@@ -57,7 +57,7 @@ public sealed class InMemoryScopeRepositoryTests
     }
 
     [Fact]
-    public void GetScopes_PreservesDiscoverabilityFlag()
+    public async Task GetScopes_PreservesDiscoverabilityFlag()
     {
         var repository = new InMemoryScopeRepository(
         [
@@ -68,7 +68,9 @@ public sealed class InMemoryScopeRepositoryTests
             },
         ]);
 
-        repository.GetScopes().Single().IsDiscoverable.Should().BeFalse();
+        var scopes = await repository.GetScopesAsync(TestContext.Current.CancellationToken);
+
+        scopes.Single().IsDiscoverable.Should().BeFalse();
     }
 
     [Fact]

@@ -15,7 +15,7 @@ public sealed class AuthorizationServerOptions
     public string? Issuer { get; set; }
 
     /// <summary>
-    /// Gets or sets a value indicating whether an HTTP (non-HTTPS) issuer URI is permitted.
+    /// Gets or sets a value indicating whether an HTTP (non-HTTPS) loopback issuer URI is permitted.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -25,7 +25,9 @@ public sealed class AuthorizationServerOptions
     /// </para>
     /// <para>
     /// When <see langword="false"/> (the default), an HTTP issuer causes a startup failure via
-    /// the fail-fast validator registered by <c>AddZeeKayDaAuth()</c>.
+    /// the fail-fast validator registered by <c>AddZeeKayDaAuth()</c>. When
+    /// <see langword="true"/>, only loopback HTTP issuers such as <c>http://localhost:5000</c>
+    /// are accepted.
     /// </para>
     /// </remarks>
     public bool AllowInsecureIssuer { get; set; }

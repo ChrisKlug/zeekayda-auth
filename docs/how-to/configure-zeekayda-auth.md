@@ -76,7 +76,7 @@ Common startup failures and their causes:
 
 | Failure | Cause |
 |---|---|
-| `Issuer` validation error | `Issuer` is not set, not an absolute URI, uses HTTP without `AllowInsecureIssuer`, or contains a query string or fragment |
+| `Issuer` validation error | `Issuer` is not set, not an absolute URI, uses HTTP without `AllowInsecureIssuer`, uses HTTP on a non-loopback host, or contains query, fragment, or user information |
 | `ResponseTypesSupported` validation error | The collection was set to `null` or emptied |
 | `IdTokenSigningAlgValuesSupported` validation error | The collection was set to `null` or emptied |
 | Other collection validation errors | Any of the remaining `ICollection` properties was set to `null` |
@@ -86,7 +86,7 @@ The full validation rule set is in the
 
 ## 4. Use an HTTP issuer for local development
 
-If you are developing locally without TLS, enable `AllowInsecureIssuer` to allow an HTTP issuer.
+If you are developing locally without TLS, enable `AllowInsecureIssuer` to allow an HTTP loopback issuer.
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -108,9 +108,9 @@ app.Run();
 When `AllowInsecureIssuer = true`, ZeeKayDa.Auth emits a warning via `ILogger` on every startup as
 a reminder that this setting is active.
 
-> Warning: Never set `AllowInsecureIssuer = true` in a production environment. HTTP issuers allow
-> token responses to be intercepted and identity documents to be forged. This flag exists solely
-> for local development and automated test environments.
+> Warning: Never set `AllowInsecureIssuer = true` in a production environment. It only permits HTTP
+> loopback issuers for local development and tests. HTTP issuers allow token responses to be
+> intercepted and identity documents to be forged.
 
 ## 5. Use the builder for optional features
 

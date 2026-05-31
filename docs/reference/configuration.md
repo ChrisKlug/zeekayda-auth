@@ -47,7 +47,7 @@ a `ZeeKayDaAuthBuilder` for registering optional features.
 The issuer identifier for this authorization server. Published verbatim as the `issuer` field in
 the OpenID Connect discovery document.
 
-The value must be an absolute HTTPS URI with no query string and no fragment. The
+The value must be an absolute HTTPS URI with no query string, fragment, or user information. The
 `/.well-known/openid-configuration` discovery endpoint is derived from this value.
 
 ```csharp
@@ -70,8 +70,8 @@ Issuer syntax requirements are defined by
 | Default | `false` |
 | Required | No |
 
-When `true`, relaxes the HTTPS requirement on `Issuer` to allow HTTP. Intended for local
-development and automated testing only.
+When `true`, relaxes the HTTPS requirement on `Issuer` to allow HTTP loopback issuers only.
+Intended for local development and automated testing only.
 
 > Warning: Never set `AllowInsecureIssuer = true` in production. An HTTP issuer allows token
 > responses to be intercepted and identity documents to be forged. When this flag is enabled,
@@ -97,7 +97,8 @@ Override for the `authorization_endpoint` value published in the discovery docum
 ZeeKayDa.Auth derives the URL from `Issuer` as `{issuer}/connect/authorize`.
 
 Set this when the URL your clients should use differs from the issuer-derived default — for example,
-when a reverse proxy rewrites paths.
+when a reverse proxy rewrites paths. The value must be an absolute HTTPS URI without user
+information or fragment. Query strings are permitted by RFC 6749 Section 3.1.
 
 ```csharp
 options.AuthorizationEndpoint = "https://login.example.com/tenant-a/connect/authorize";
@@ -116,6 +117,8 @@ options.AuthorizationEndpoint = "https://login.example.com/tenant-a/connect/auth
 Override for the `token_endpoint` value published in the discovery document. When `null`,
 ZeeKayDa.Auth derives the URL from `Issuer` as `{issuer}/connect/token`.
 
+The value must be an absolute HTTPS URI without user information or fragment.
+
 ```csharp
 options.TokenEndpoint = "https://login.example.com/tenant-a/connect/token";
 ```
@@ -132,6 +135,8 @@ options.TokenEndpoint = "https://login.example.com/tenant-a/connect/token";
 
 Override for the `jwks_uri` value published in the discovery document. When `null`, ZeeKayDa.Auth
 derives the URL from `Issuer` as `{issuer}/connect/jwks`.
+
+The value must be an absolute HTTPS URI without user information, query, or fragment.
 
 ```csharp
 options.JwksUri = "https://login.example.com/tenant-a/connect/jwks";
@@ -242,6 +247,31 @@ The signing algorithms supported for ID tokens. Published as
 `id_token_signing_alg_values_supported` is a required field in the discovery document per
 [OpenID Connect Discovery 1.0 §3](https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderMetadata).
 
+---
+
+### `DiscoveryDocumentCacheMaxAgeSeconds`
+
+| Attribute | Value |
+|---|---|
+| Type | `int` |
+| Default | `3600` |
+| Required | No |
+
+The `max-age` value, in seconds, for the discovery endpoint's `Cache-Control` header. The default
+response is:
+
+```text
+Cache-Control: public, max-age=3600, must-revalidate
+```
+
+Set the value to `0` to disable public caching:
+
+```text
+Cache-Control: no-store
+```
+
+Negative values fail startup validation.
+
 ## Startup validation
 
 `AuthorizationServerOptionsValidator` validates `AuthorizationServerOptions` at host startup via
@@ -254,11 +284,19 @@ The signing algorithms supported for ID tokens. Published as
 | `Issuer` must not have a query string | `Issuer` contains a `?` component |
 | `Issuer` must not have a fragment | `Issuer` contains a `#` component |
 | `Issuer` must use HTTPS | `Issuer` uses HTTP and `AllowInsecureIssuer` is `false` |
+| HTTP issuer must be loopback | `Issuer` uses HTTP with a non-loopback host |
+| `Issuer` must not have user information | `Issuer` contains `user:password@host` userinfo |
+| Endpoint overrides must be absolute HTTPS URIs | an override is relative, uses an unsupported scheme, or uses HTTP without `AllowInsecureIssuer` |
+| HTTP endpoint overrides must be loopback | an override uses HTTP with a non-loopback host |
+| Endpoint overrides must not have user information | an override contains `user:password@host` userinfo |
+| Endpoint fragments are rejected | `AuthorizationEndpoint`, `TokenEndpoint`, or `JwksUri` contains `#` |
+| `JwksUri` must not have a query string | `JwksUri` contains `?` |
 | `ResponseTypesSupported` is required | `ResponseTypesSupported` is `null` or empty |
 | `ResponseModesSupported` is required | `ResponseModesSupported` is `null` |
 | `GrantTypesSupported` is required | `GrantTypesSupported` is `null` |
 | `TokenEndpointAuthMethodsSupported` is required | `TokenEndpointAuthMethodsSupported` is `null` |
 | `IdTokenSigningAlgValuesSupported` is required | `IdTokenSigningAlgValuesSupported` is `null` or empty |
+| Cache max-age must not be negative | `DiscoveryDocumentCacheMaxAgeSeconds` is less than `0` |
 
 Validation errors are reported as `OptionsValidationException` and prevent the host from starting.
 They are visible in the startup output and host logs.

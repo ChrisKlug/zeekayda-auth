@@ -65,6 +65,8 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         // times, because TryAddEnumerable checks the implementation type for uniqueness.
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IZeeKayDaEndpoint, DiscoveryEndpoint>());
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IZeeKayDaEndpoint, PreAlphaProtocolEndpoint>());
 
         // Emits a startup warning when AllowInsecureIssuer is enabled.
         services.AddHostedService<InsecureIssuerWarningService>();

@@ -11,6 +11,11 @@
 
 ## What is ZeeKayDa.Auth?
 
+> ⚠️ **Pre-alpha:** ZeeKayDa.Auth is not a production-ready identity provider yet. The current
+> implementation exposes early discovery/configuration building blocks. Advertised authorization,
+> token, and JWKS endpoints currently return `501 Not Implemented` until those protocol surfaces are
+> implemented.
+
 ZeeKayDa.Auth is an open-source framework for building OpenID Connect identity providers on top of ASP.NET Core. It targets developers who need full control over their authentication infrastructure without adopting a large, opinionated platform. The library is designed to be composable: you can adopt only the pieces you need and replace or extend everything else.
 
 The project follows the relevant IETF and OpenID Foundation specifications closely, treating spec compliance as a first-class concern throughout design and implementation.
@@ -34,9 +39,27 @@ The project follows the relevant IETF and OpenID Foundation specifications close
 
 ## Getting Started
 
-> ⚠️ **The library is in early development and is not yet published to NuGet.** The Getting Started guide will be added when the first alpha package is available.
+Register ZeeKayDa.Auth services and map the currently available endpoints:
 
-Watch this space — or check the [roadmap](https://github.com/ChrisKlug/zeekayda-auth/projects) for progress.
+```csharp
+using ZeeKayDa.Auth.AspNetCore.Extensions;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddZeeKayDaAuth(options =>
+{
+    options.Issuer = "https://id.example.com";
+});
+
+var app = builder.Build();
+
+app.UseRouting();
+app.MapZeeKayDaAuth();
+
+app.Run();
+```
+
+See the [documentation site](docs/) for configuration details and current limitations.
 
 ---
 

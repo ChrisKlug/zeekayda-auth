@@ -194,8 +194,8 @@ enforces the following rules at startup:
   and [RFC 8414 §2](https://datatracker.ietf.org/doc/html/rfc8414#section-2)).
 - `Issuer` **must use HTTPS**. An HTTP issuer causes a startup failure unless
   `AuthorizationServerOptions.AllowInsecureIssuer = true` is explicitly set. The OIDC spec
-  requires the issuer to be an HTTPS URL in production; accepting HTTP silently would enable
-  accidental insecure deployments. The explicit opt-in flag makes the risk visible and intentional.
+  requires the issuer to be an HTTPS URL in production; the explicit opt-in permits only loopback
+  HTTP issuers for local development and tests.
 
 `ValidateOnStart()` is called in the `AddZeeKayDaAuth()` extension method (in
 `ZeeKayDa.Auth.AspNetCore`), because it is the host layer that understands startup lifecycle. The
@@ -222,8 +222,9 @@ requires runtime reconfiguration, this decision must be revisited and a new ADR 
 
 ### 8. Cache-Control set in the endpoint handler
 
-The discovery endpoint sets `Cache-Control: public, max-age=86400` (24 hours) directly in the
-endpoint handler, not via middleware, output caching policy, or a response filter.
+The discovery endpoint sets `Cache-Control: public, max-age=3600, must-revalidate` (one hour) by
+default directly in the endpoint handler, not via middleware, output caching policy, or a response
+filter.
 
 This keeps the caching behaviour co-located with the endpoint that owns it, makes it trivially
 testable (inspect the response headers in a unit test with no middleware pipeline), and avoids
@@ -308,10 +309,10 @@ review; (c) it adds indirection with no meaningful benefit over a direct
 - Using `IOptions<T>` (singleton) rather than `IOptionsSnapshot<T>` means live configuration
   reload of the issuer is not supported. This is an explicit, intentional constraint (see §7
   above). Any future change here requires a new ADR.
-- The `AllowInsecureIssuer` escape hatch for HTTP issuers, while necessary for local development
-  and integration testing, cannot be mechanically prevented from appearing in production
-  configuration. Documentation must clearly mark it as a development-only flag. The explicit,
-  verbose name is the primary safeguard.
+- The `AllowInsecureIssuer` escape hatch for HTTP loopback issuers, while necessary for local
+  development and integration testing, cannot by itself prove the hosting environment is safe.
+  Documentation must clearly mark it as a development-only flag. The explicit, verbose name and
+  loopback restriction are the primary safeguards.
 - `TryAddEnumerable` ensures that calling `AddZeeKayDaAuth()` twice does not double-register
   endpoints. This is the desired behaviour, but contributors must use `TryAddEnumerable` (not
   `AddSingleton`) consistently for every `IZeeKayDaEndpoint` registration.

@@ -67,5 +67,10 @@ public sealed class InMemoryScopeRepository : IScopeRepository
     }
 
     /// <inheritdoc />
-    public IReadOnlyCollection<ScopeDefinition> GetScopes() => _scopes;
+    public ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        return ValueTask.FromResult(_scopes);
+    }
 }

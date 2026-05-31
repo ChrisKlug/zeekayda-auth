@@ -29,7 +29,7 @@ internal sealed class InsecureIssuerWarningService : IHostedService
         {
             _logger.LogWarning(
                 "AllowInsecureIssuer is enabled for issuer '{Issuer}'. " +
-                "This is a DEVELOPMENT-ONLY setting and must NEVER be used in production. " +
+                "This is a LOOPBACK DEVELOPMENT-ONLY setting and must NEVER be used in production. " +
                 "Remove AllowInsecureIssuer = true before deploying to any non-development environment.",
                 _options.Value.Issuer);
         }

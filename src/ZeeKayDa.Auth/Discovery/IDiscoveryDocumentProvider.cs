@@ -10,9 +10,10 @@ public interface IDiscoveryDocumentProvider
     /// Returns the current <see cref="OpenIdConfigurationDocument"/> built from the live
     /// authorization server options.
     /// </summary>
+    /// <param name="cancellationToken">A token that can be used to cancel the operation.</param>
     /// <returns>
     /// A populated <see cref="OpenIdConfigurationDocument"/> ready for serialisation and
     /// publication at the discovery endpoint.
     /// </returns>
-    OpenIdConfigurationDocument GetDocument();
+    ValueTask<OpenIdConfigurationDocument> GetDocumentAsync(CancellationToken cancellationToken = default);
 }
