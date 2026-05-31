@@ -5,10 +5,12 @@ on:
     branches: [main]
     paths-ignore:
       - 'docs/**'
+      - '.github/**'
   push:
     branches: [main]
     paths-ignore:
       - 'docs/**'
+      - '.github/**'
 
 permissions:
   contents: read
