@@ -327,6 +327,34 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Theory]
+    [InlineData(nameof(AuthorizationServerOptions.AuthorizationEndpoint), "https://auth.example.com/connect/authorize#fragment")]
+    [InlineData(nameof(AuthorizationServerOptions.TokenEndpoint), "https://auth.example.com/connect/token#fragment")]
+    public void Validate_EndpointWithFragment_Fails(string propertyName, string value)
+    {
+        var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
+        SetEndpointProperty(options, propertyName, value);
+
+        var result = Validate(options);
+
+        result.Failed.Should().BeTrue();
+    }
+
+    [Theory]
+    // RFC 6749 §3.1 explicitly permits query components on the authorization endpoint.
+    // RFC 6749 §3.2 does not prohibit them on the token endpoint.
+    [InlineData(nameof(AuthorizationServerOptions.AuthorizationEndpoint), "https://auth.example.com/connect/authorize?foo=bar")]
+    [InlineData(nameof(AuthorizationServerOptions.TokenEndpoint), "https://auth.example.com/connect/token?foo=bar")]
+    public void Validate_EndpointWithQuery_Succeeds(string propertyName, string value)
+    {
+        var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
+        SetEndpointProperty(options, propertyName, value);
+
+        var result = Validate(options);
+
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Theory]
     [InlineData("https://auth.example.com/connect/jwks?foo=bar")]
     [InlineData("https://auth.example.com/connect/jwks#fragment")]
     public void Validate_JwksUriWithQueryOrFragment_Fails(string value)

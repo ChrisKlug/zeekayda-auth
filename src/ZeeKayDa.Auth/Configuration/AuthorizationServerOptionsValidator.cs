@@ -118,7 +118,7 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
         }
 
         // Validate endpoint URI overrides — RFC 8414 §2 requires all metadata URLs to use HTTPS.
-        static ValidateOptionsResult? ValidateEndpointUri(string propertyName, string? value, bool allowInsecure, bool rejectQueryAndFragment = false)
+        static ValidateOptionsResult? ValidateEndpointUri(string propertyName, string? value, bool allowInsecure, bool rejectQuery = false, bool rejectFragment = false)
         {
             if (value is null) return null;
 
@@ -134,26 +134,27 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
                     $"AuthorizationServerOptions.{propertyName} '{value}' must use HTTPS. " +
                     "Set AllowInsecureIssuer = true to permit HTTP for local development only.");
 
-            if (rejectQueryAndFragment)
-            {
-                if (uri.Query.Length > 0)
-                    return ValidateOptionsResult.Fail(
-                        $"AuthorizationServerOptions.{propertyName} '{value}' must not contain a query component ('?').");
-                if (uri.Fragment.Length > 0)
-                    return ValidateOptionsResult.Fail(
-                        $"AuthorizationServerOptions.{propertyName} '{value}' must not contain a fragment component ('#').");
-            }
+            if (rejectQuery && uri.Query.Length > 0)
+                return ValidateOptionsResult.Fail(
+                    $"AuthorizationServerOptions.{propertyName} '{value}' must not contain a query component ('?').");
+
+            if (rejectFragment && uri.Fragment.Length > 0)
+                return ValidateOptionsResult.Fail(
+                    $"AuthorizationServerOptions.{propertyName} '{value}' must not contain a fragment component ('#').");
 
             return null;
         }
 
-        if (ValidateEndpointUri(nameof(options.AuthorizationEndpoint), options.AuthorizationEndpoint, options.AllowInsecureIssuer) is { } aeError)
+        // RFC 6749 §3.1 and §3.2: authorization and token endpoint URIs MUST NOT include a fragment.
+        // Query components are explicitly permitted on the authorization endpoint (RFC 6749 §3.1)
+        // and are not prohibited on the token endpoint.
+        if (ValidateEndpointUri(nameof(options.AuthorizationEndpoint), options.AuthorizationEndpoint, options.AllowInsecureIssuer, rejectFragment: true) is { } aeError)
             return aeError;
 
-        if (ValidateEndpointUri(nameof(options.TokenEndpoint), options.TokenEndpoint, options.AllowInsecureIssuer) is { } teError)
+        if (ValidateEndpointUri(nameof(options.TokenEndpoint), options.TokenEndpoint, options.AllowInsecureIssuer, rejectFragment: true) is { } teError)
             return teError;
 
-        if (ValidateEndpointUri(nameof(options.JwksUri), options.JwksUri, options.AllowInsecureIssuer, rejectQueryAndFragment: true) is { } jwksError)
+        if (ValidateEndpointUri(nameof(options.JwksUri), options.JwksUri, options.AllowInsecureIssuer, rejectQuery: true, rejectFragment: true) is { } jwksError)
             return jwksError;
 
         return ValidateOptionsResult.Success;
