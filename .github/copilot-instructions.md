@@ -106,6 +106,16 @@ Every feature or change follows this lifecycle. Agents are responsible for their
 - PR titles follow Conventional Commits format: `feat:`, `fix:`, `docs:`, `test:`, `chore:`, `security:`
 - PRs touching public API must include or reference documentation changes
 
+### Blocker resolution on merge
+
+Whenever you are notified that a PR has been merged, you must automatically:
+
+1. Search all open draft PRs for a `## Blockers` section that references the merged PR number (e.g. `blocked by #N`).
+2. For each matching PR, remove that blocker entry from the PR body.
+3. If the PR has no remaining blockers after removal, mark it as ready for review (`gh pr ready`).
+
+Do this without being asked — it is part of the standard merge flow.
+
 ## User interaction
 
 ### Ask before deciding
