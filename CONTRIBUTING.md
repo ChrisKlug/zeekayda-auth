@@ -175,6 +175,7 @@ Every pull request and every push to `main` runs two GitHub Actions jobs defined
 | Job | What it checks |
 |---|---|
 | `build-and-test` | Restores, builds (warnings-as-errors), and runs the full test suite with code coverage on `ubuntu-latest`. |
+| `coverage-regression` | Runs PR and base-branch coverage, writes a coverage delta summary, and fails if line coverage decreases. |
 | `format-check` | Runs `dotnet format --verify-no-changes` to ensure all code matches the `.editorconfig` rules. |
 | `codeql` | Runs GitHub CodeQL static analysis (`security-and-quality` query suite). Findings must be fixed or explicitly justified before a PR can be merged. See [SECURITY.md](SECURITY.md). |
 

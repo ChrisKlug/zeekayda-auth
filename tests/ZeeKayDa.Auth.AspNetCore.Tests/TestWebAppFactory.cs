@@ -72,7 +72,7 @@ internal sealed class TestWebAppFactory : WebApplicationFactory<TestWebAppFactor
         builder.Configure(app =>
         {
             app.UseRouting();
-            app.MapZeeKayDaAuth();
+            app.UseEndpoints(endpoints => endpoints.MapZeeKayDaAuth());
         });
     }
 }

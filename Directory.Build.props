@@ -17,7 +17,7 @@
     <RepositoryType>git</RepositoryType>
     <Authors>ZeeKayDa Contributors</Authors>
     <Copyright>Copyright © 2025 ZeeKayDa Contributors</Copyright>
-    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageReadmeFile>PACKAGE_README.md</PackageReadmeFile>
     <PackageTags>openid-connect;oauth2;identity;authentication;oidc;auth;aspnetcore;dotnet</PackageTags>
     <PackageIcon>icon.png</PackageIcon>
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
@@ -25,7 +25,7 @@
   </PropertyGroup>
 
   <ItemGroup Condition="$(MSBuildProjectFullPath.Contains('/src/'))">
-    <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="/" />
+    <None Include="$(MSBuildThisFileDirectory)PACKAGE_README.md" Pack="true" PackagePath="/" />
     <None Include="$(MSBuildThisFileDirectory)assets/icon.png" Pack="true" PackagePath="/" />
     <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="All" />
   </ItemGroup>

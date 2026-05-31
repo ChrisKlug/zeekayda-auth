@@ -1,7 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
-using Xunit.Sdk;
+using Microsoft.AspNetCore.Mvc.Testing;
 using ZeeKayDa.Auth.AspNetCore.Extensions;
 using ZeeKayDa.Auth.Scopes;
 
@@ -17,7 +17,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     public DiscoveryEndpointTests()
     {
         _factory = new TestWebAppFactory();
-        _client = _factory.CreateClient();
+        _client = CreateClient(_factory);
     }
 
     public void Dispose()
@@ -25,6 +25,14 @@ public sealed class DiscoveryEndpointTests : IDisposable
         _client.Dispose();
         _factory.Dispose();
     }
+
+    private static HttpClient CreateClient(
+        TestWebAppFactory factory,
+        string baseAddress = "https://test.example.com")
+        => factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            BaseAddress = new Uri(baseAddress),
+        });
 
     // ── Status code ───────────────────────────────────────────────────────────────────────────────
 
@@ -157,7 +165,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
                     AccessTokenClaims = ["name"],
                 },
             ]));
-        using var client = factory.CreateClient();
+        using var client = CreateClient(factory);
 
         var doc = await client.GetFromJsonAsync<JsonDocument>(
             DiscoveryPath,
@@ -182,7 +190,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
                     AccessTokenClaims = ["scope"],
                 },
             ]));
-        using var client = factory.CreateClient();
+        using var client = CreateClient(factory);
 
         var doc = await client.GetFromJsonAsync<JsonDocument>(
             DiscoveryPath,
@@ -224,7 +232,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     public async Task GetDiscoveryDocument_PathBearingIssuer_RegistersAtIssuerPrefixedPath()
     {
         using var factory = new TestWebAppFactory(opts => opts.Issuer = "https://test.example.com/tenant1");
-        using var client = factory.CreateClient();
+        using var client = CreateClient(factory);
 
         var response = await client.GetAsync(
             "/tenant1/.well-known/openid-configuration",
@@ -242,7 +250,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     public async Task GetDiscoveryDocument_PathBearingIssuer_RootPathReturns404()
     {
         using var factory = new TestWebAppFactory(opts => opts.Issuer = "https://test.example.com/tenant1");
-        using var client = factory.CreateClient();
+        using var client = CreateClient(factory);
 
         // When the issuer has a path, the root discovery path is not registered.
         var response = await client.GetAsync(
@@ -289,7 +297,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
             opts.Issuer = "https://test.example.com";
             opts.DiscoveryDocumentCacheMaxAgeSeconds = 300;
         });
-        var client = factory.CreateClient();
+        using var client = CreateClient(factory);
 
         var response = await client.GetAsync(DiscoveryPath, TestContext.Current.CancellationToken);
 
@@ -304,11 +312,59 @@ public sealed class DiscoveryEndpointTests : IDisposable
             opts.Issuer = "https://test.example.com";
             opts.DiscoveryDocumentCacheMaxAgeSeconds = 0;
         });
-        var client = factory.CreateClient();
+        using var client = CreateClient(factory);
 
         var response = await client.GetAsync(DiscoveryPath, TestContext.Current.CancellationToken);
 
         response.Headers.CacheControl!.ToString().Should().Be("no-store");
+    }
+
+    // ── Host binding ──────────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetDiscoveryDocument_WrongHostReturns404()
+    {
+        using var client = CreateClient(_factory, "https://other.example.com");
+
+        var response = await client.GetAsync(DiscoveryPath, TestContext.Current.CancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    // ── Pre-alpha protocol endpoints ──────────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("GET", "/connect/authorize")]
+    [InlineData("POST", "/connect/authorize")]
+    [InlineData("POST", "/connect/token")]
+    [InlineData("GET", "/connect/jwks")]
+    public async Task AdvertisedPreAlphaProtocolEndpoints_Return501(string method, string path)
+    {
+        using var request = new HttpRequestMessage(new HttpMethod(method), path);
+
+        var response = await _client.SendAsync(request, TestContext.Current.CancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+    }
+
+    [Theory]
+    [InlineData("GET", "/custom/authorize?prompt=login")]
+    [InlineData("POST", "/custom/token?tenant=1")]
+    [InlineData("GET", "/keys")]
+    public async Task AdvertisedPreAlphaProtocolEndpoints_ExplicitOverrides_Return501AtPublishedUris(string method, string path)
+    {
+        using var factory = new TestWebAppFactory(opts =>
+        {
+            opts.AuthorizationEndpoint = "https://login.example.com/custom/authorize?prompt=login";
+            opts.TokenEndpoint = "https://login.example.com/custom/token?tenant=1";
+            opts.JwksUri = "https://login.example.com/keys";
+        });
+        using var client = CreateClient(factory, "https://login.example.com");
+        using var request = new HttpRequestMessage(new HttpMethod(method), path);
+
+        var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
     }
 
     // ── Enum field serialization ──────────────────────────────────────────────────────────────────

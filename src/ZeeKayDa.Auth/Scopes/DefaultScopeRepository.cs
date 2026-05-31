@@ -8,5 +8,10 @@ internal sealed class DefaultScopeRepository : IScopeRepository
         new ScopeDefinition { Name = ScopeNames.Profile },
     ];
 
-    public IReadOnlyCollection<ScopeDefinition> GetScopes() => DefaultScopes;
+    public ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        return ValueTask.FromResult(DefaultScopes);
+    }
 }

@@ -12,6 +12,10 @@ ZeeKayDa.Auth is an open-source **OpenID Connect identity provider framework for
 you the building blocks to run a spec-compliant, production-grade authorization server inside any
 ASP.NET Core application — without tying you to a particular storage engine, UI, or hosting model.
 
+> **Pre-alpha:** the current implementation exposes discovery/configuration building blocks only.
+> Advertised authorization, token, and JWKS endpoints return `501 Not Implemented` until those
+> protocol surfaces are implemented.
+
 The name comes from the phonetic spelling of *ZKDA* — Zero Knowledge Driven Auth.
 
 ---

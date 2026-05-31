@@ -98,6 +98,18 @@ public sealed class AuthorizationServerOptionsValidatorTests
         result.FailureMessage.Should().Contain("fragment");
     }
 
+    [Fact]
+    public void Validate_IssuerWithUserInfo_Fails()
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://user:pass@auth.example.com",
+        });
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("user information");
+    }
+
     // ── HTTPS requirement ─────────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -123,6 +135,19 @@ public sealed class AuthorizationServerOptionsValidatorTests
         });
 
         result.Succeeded.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Validate_HttpIssuerWithFlagForNonLoopback_Fails()
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "http://auth.example.com",
+            AllowInsecureIssuer = true,
+        });
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("loopback");
     }
 
     [Theory]
@@ -324,6 +349,40 @@ public sealed class AuthorizationServerOptionsValidatorTests
         var result = Validate(options);
 
         result.Succeeded.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(nameof(AuthorizationServerOptions.AuthorizationEndpoint), "https://user:pass@auth.example.com/connect/authorize")]
+    [InlineData(nameof(AuthorizationServerOptions.TokenEndpoint), "https://user:pass@auth.example.com/connect/token")]
+    [InlineData(nameof(AuthorizationServerOptions.JwksUri), "https://user:pass@auth.example.com/connect/jwks")]
+    public void Validate_EndpointOverrideWithUserInfo_Fails(string propertyName, string value)
+    {
+        var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
+        SetEndpointProperty(options, propertyName, value);
+
+        var result = Validate(options);
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("user information");
+    }
+
+    [Theory]
+    [InlineData(nameof(AuthorizationServerOptions.AuthorizationEndpoint), "http://auth.example.com/connect/authorize")]
+    [InlineData(nameof(AuthorizationServerOptions.TokenEndpoint), "http://auth.example.com/connect/token")]
+    [InlineData(nameof(AuthorizationServerOptions.JwksUri), "http://auth.example.com/connect/jwks")]
+    public void Validate_EndpointOverrideHttpWithFlagForNonLoopback_Fails(string propertyName, string value)
+    {
+        var options = new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            AllowInsecureIssuer = true,
+        };
+        SetEndpointProperty(options, propertyName, value);
+
+        var result = Validate(options);
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("loopback");
     }
 
     [Theory]

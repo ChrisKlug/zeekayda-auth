@@ -27,29 +27,20 @@ internal sealed class DiscoveryEndpoint : IZeeKayDaEndpoint
     /// <inheritdoc/>
     public void Map(IEndpointRouteBuilder endpoints)
     {
-        var issuer = _options.Value.Issuer;
-
-        if (string.IsNullOrWhiteSpace(issuer))
-        {
-            // Fail fast with a clear message; ValidateOnStart will also surface this, but Map()
-            // is called during route registration which can happen before hosted services start.
-            throw new InvalidOperationException(
-                "AuthorizationServerOptions.Issuer must be configured before calling " +
-                "MapZeeKayDaAuth(). Ensure AddZeeKayDaAuth() is called with a valid issuer.");
-        }
-
         // Derive the registration path from the issuer's path component so that a path-bearing
         // issuer (e.g. https://auth.example.com/tenant1) registers at
         // /tenant1/.well-known/openid-configuration rather than at the root, as required by
         // OIDC Discovery 1.0 §4.1 and RFC 9207 §4.
-        var issuerUri = new Uri(issuer);
-        var issuerPath = issuerUri.AbsolutePath.TrimEnd('/');
-        var routePath = issuerPath + WellKnownSuffix;
+        var issuerUri = EndpointRouteHelper.GetIssuerUri(_options);
+        var routePath = EndpointRouteHelper.GetIssuerPathPrefixedRoute(issuerUri, WellKnownSuffix);
 
-        endpoints.MapGet(routePath, Handle);
+        endpoints.MapGet(routePath, Handle).RequireIssuerHost(issuerUri);
     }
 
-    private static IResult Handle(IDiscoveryDocumentProvider provider, HttpContext context, IOptions<AuthorizationServerOptions> options)
+    private static async ValueTask<IResult> Handle(
+        IDiscoveryDocumentProvider provider,
+        HttpContext context,
+        IOptions<AuthorizationServerOptions> options)
     {
         // Cache-Control set directly in the handler per ADR §8 so that the behaviour is
         // co-located with the endpoint and trivially verifiable in tests without a pipeline.
@@ -61,6 +52,7 @@ internal sealed class DiscoveryEndpoint : IZeeKayDaEndpoint
         // Wildcard CORS origin so browser-based OIDC clients can fetch the discovery document.
         context.Response.Headers.AccessControlAllowOrigin = "*";
 
-        return Results.Json(provider.GetDocument());
+        var document = await provider.GetDocumentAsync(context.RequestAborted).ConfigureAwait(false);
+        return Results.Json(document);
     }
 }

@@ -81,21 +81,22 @@ A bad issuer breaks discovery in subtle ways. For example:
 That is why ZeeKayDa.Auth validates discovery-related configuration at startup. Missing issuers,
 insecure HTTP issuers, null metadata collections, and blank scope names fail early.
 
-> Warning: `AllowInsecureIssuer` is a development-only escape hatch. It should never be enabled in
-> production.
+> Warning: `AllowInsecureIssuer` is a local loopback development-only escape hatch. It should never
+> be enabled in production.
 
 ## Caching and CORS are deliberate
 
 Discovery metadata is public by design. ZeeKayDa.Auth returns:
 
-- `Cache-Control: public, max-age=86400`
+- `Cache-Control: public, max-age=3600, must-revalidate`
 - `Access-Control-Allow-Origin: *`
 
-The cache header reduces unnecessary repeat requests. The CORS header allows browser-based clients
-and tools to fetch discovery metadata without extra server-specific configuration.
+The cache header reduces unnecessary repeat requests while keeping the stale metadata window short
+for key or endpoint changes. The CORS header allows browser-based clients and tools to fetch
+discovery metadata without extra server-specific configuration.
 
 ## Simple registration matters too
 
 Discovery only helps if it is easy to expose. ZeeKayDa.Auth uses `AddZeeKayDaAuth(...)` for
-configuration and `app.MapZeeKayDaAuth()` for endpoint registration so callers do not need to wire
-`UseEndpoints(...)` themselves.
+configuration and `app.MapZeeKayDaAuth()` for endpoint registration in minimal-hosting apps. Older
+`Startup`-style apps can call `endpoints.MapZeeKayDaAuth()` inside `UseEndpoints(...)`.

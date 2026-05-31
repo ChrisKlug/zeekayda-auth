@@ -6,7 +6,7 @@ namespace ZeeKayDa.Auth.Tests.Discovery;
 
 public sealed class DiscoveryDocumentProviderTests
 {
-    private static OpenIdConfigurationDocument GetDocument(
+    private static async Task<OpenIdConfigurationDocument> GetDocumentAsync(
         AuthorizationServerOptions options,
         IScopeRepository? scopeRepository = null)
     {
@@ -14,17 +14,17 @@ public sealed class DiscoveryDocumentProviderTests
         var provider = new DiscoveryDocumentProvider(
             optionsWrapper,
             scopeRepository ?? new DefaultScopeRepository());
-        return provider.GetDocument();
+        return await provider.GetDocumentAsync(TestContext.Current.CancellationToken);
     }
 
     // ── Issuer passthrough (RFC 9207 §4) ─────────────────────────────────────────────────────────
 
     [Fact]
-    public void GetDocument_ReturnsIssuerExactlyAsConfigured()
+    public async Task GetDocument_ReturnsIssuerExactlyAsConfigured()
     {
         const string issuer = "https://auth.example.com";
 
-        var doc = GetDocument(new AuthorizationServerOptions { Issuer = issuer });
+        var doc = await GetDocumentAsync(new AuthorizationServerOptions { Issuer = issuer });
 
         doc.Issuer.Should().Be(issuer);
     }
@@ -32,9 +32,9 @@ public sealed class DiscoveryDocumentProviderTests
     // ── URI derivation — root issuer (no path) ────────────────────────────────────────────────────
 
     [Fact]
-    public void GetDocument_RootIssuer_DerivesAuthorizationEndpoint()
+    public async Task GetDocument_RootIssuer_DerivesAuthorizationEndpoint()
     {
-        var doc = GetDocument(new AuthorizationServerOptions
+        var doc = await GetDocumentAsync(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
         });
@@ -43,9 +43,9 @@ public sealed class DiscoveryDocumentProviderTests
     }
 
     [Fact]
-    public void GetDocument_RootIssuer_DerivesTokenEndpoint()
+    public async Task GetDocument_RootIssuer_DerivesTokenEndpoint()
     {
-        var doc = GetDocument(new AuthorizationServerOptions
+        var doc = await GetDocumentAsync(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
         });
@@ -54,9 +54,9 @@ public sealed class DiscoveryDocumentProviderTests
     }
 
     [Fact]
-    public void GetDocument_RootIssuer_DerivesJwksUri()
+    public async Task GetDocument_RootIssuer_DerivesJwksUri()
     {
-        var doc = GetDocument(new AuthorizationServerOptions
+        var doc = await GetDocumentAsync(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
         });
@@ -67,9 +67,9 @@ public sealed class DiscoveryDocumentProviderTests
     // ── URI derivation — path-bearing issuer ─────────────────────────────────────────────────────
 
     [Fact]
-    public void GetDocument_PathBearingIssuer_DerivesAuthorizationEndpointUnderIssuerPath()
+    public async Task GetDocument_PathBearingIssuer_DerivesAuthorizationEndpointUnderIssuerPath()
     {
-        var doc = GetDocument(new AuthorizationServerOptions
+        var doc = await GetDocumentAsync(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com/tenant1",
         });
@@ -78,9 +78,9 @@ public sealed class DiscoveryDocumentProviderTests
     }
 
     [Fact]
-    public void GetDocument_PathBearingIssuer_DerivesTokenEndpointUnderIssuerPath()
+    public async Task GetDocument_PathBearingIssuer_DerivesTokenEndpointUnderIssuerPath()
     {
-        var doc = GetDocument(new AuthorizationServerOptions
+        var doc = await GetDocumentAsync(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com/tenant1",
         });
@@ -89,9 +89,9 @@ public sealed class DiscoveryDocumentProviderTests
     }
 
     [Fact]
-    public void GetDocument_PathBearingIssuer_DerivesJwksUriUnderIssuerPath()
+    public async Task GetDocument_PathBearingIssuer_DerivesJwksUriUnderIssuerPath()
     {
-        var doc = GetDocument(new AuthorizationServerOptions
+        var doc = await GetDocumentAsync(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com/tenant1",
         });
@@ -102,11 +102,11 @@ public sealed class DiscoveryDocumentProviderTests
     // ── Explicit URI overrides ────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void GetDocument_ExplicitAuthorizationEndpoint_UsesOverrideNotDerivedValue()
+    public async Task GetDocument_ExplicitAuthorizationEndpoint_UsesOverrideNotDerivedValue()
     {
         const string explicitUri = "https://other.example.com/custom/authorize";
 
-        var doc = GetDocument(new AuthorizationServerOptions
+        var doc = await GetDocumentAsync(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             AuthorizationEndpoint = explicitUri,
@@ -116,11 +116,11 @@ public sealed class DiscoveryDocumentProviderTests
     }
 
     [Fact]
-    public void GetDocument_ExplicitTokenEndpoint_UsesOverrideNotDerivedValue()
+    public async Task GetDocument_ExplicitTokenEndpoint_UsesOverrideNotDerivedValue()
     {
         const string explicitUri = "https://other.example.com/custom/token";
 
-        var doc = GetDocument(new AuthorizationServerOptions
+        var doc = await GetDocumentAsync(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             TokenEndpoint = explicitUri,
@@ -130,11 +130,11 @@ public sealed class DiscoveryDocumentProviderTests
     }
 
     [Fact]
-    public void GetDocument_ExplicitJwksUri_UsesOverrideNotDerivedValue()
+    public async Task GetDocument_ExplicitJwksUri_UsesOverrideNotDerivedValue()
     {
         const string explicitUri = "https://other.example.com/custom/jwks";
 
-        var doc = GetDocument(new AuthorizationServerOptions
+        var doc = await GetDocumentAsync(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             JwksUri = explicitUri,
@@ -146,9 +146,9 @@ public sealed class DiscoveryDocumentProviderTests
     // ── Collection fields ─────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void GetDocument_DefaultOptions_IncludesDefaultCollectionValues()
+    public async Task GetDocument_DefaultOptions_IncludesDefaultCollectionValues()
     {
-        var doc = GetDocument(new AuthorizationServerOptions
+        var doc = await GetDocumentAsync(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
         });
@@ -163,7 +163,7 @@ public sealed class DiscoveryDocumentProviderTests
     }
 
     [Fact]
-    public void GetDocument_CustomCollections_UsesConfiguredValues()
+    public async Task GetDocument_CustomCollections_UsesConfiguredValues()
     {
         var scopeRepository = new InMemoryScopeRepository(
         [
@@ -171,7 +171,7 @@ public sealed class DiscoveryDocumentProviderTests
             new ScopeDefinition { Name = ScopeNames.Profile },
         ]);
 
-        var doc = GetDocument(new AuthorizationServerOptions
+        var doc = await GetDocumentAsync(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             ResponseTypesSupported = [ResponseType.Code, ResponseType.CodeIdToken],
@@ -192,7 +192,7 @@ public sealed class DiscoveryDocumentProviderTests
     }
 
     [Fact]
-    public void GetDocument_ScopeRepository_UsesRepositoryScopesForDiscovery()
+    public async Task GetDocument_ScopeRepository_UsesRepositoryScopesForDiscovery()
     {
         var repository = new InMemoryScopeRepository(
         [
@@ -210,7 +210,7 @@ public sealed class DiscoveryDocumentProviderTests
             },
         ]);
 
-        var doc = GetDocument(
+        var doc = await GetDocumentAsync(
             new AuthorizationServerOptions
             {
                 Issuer = "https://auth.example.com",
@@ -221,7 +221,7 @@ public sealed class DiscoveryDocumentProviderTests
     }
 
     [Fact]
-    public void GetDocument_ScopeRepository_ExcludesNonDiscoverableScopes()
+    public async Task GetDocument_ScopeRepository_ExcludesNonDiscoverableScopes()
     {
         var repository = new InMemoryScopeRepository(
         [
@@ -234,7 +234,7 @@ public sealed class DiscoveryDocumentProviderTests
             },
         ]);
 
-        var doc = GetDocument(
+        var doc = await GetDocumentAsync(
             new AuthorizationServerOptions
             {
                 Issuer = "https://auth.example.com",

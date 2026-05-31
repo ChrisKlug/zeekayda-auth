@@ -37,7 +37,7 @@ internal sealed class DiscoveryDocumentProvider : IDiscoveryDocumentProvider
     }
 
     /// <inheritdoc/>
-    public OpenIdConfigurationDocument GetDocument()
+    public async ValueTask<OpenIdConfigurationDocument> GetDocumentAsync(CancellationToken cancellationToken = default)
     {
         var options = _options.Value;
 
@@ -51,6 +51,8 @@ internal sealed class DiscoveryDocumentProvider : IDiscoveryDocumentProvider
             ? issuerUri
             : new Uri(issuerUri.AbsoluteUri + "/");
 
+        var scopes = await _scopeRepository.GetScopesAsync(cancellationToken).ConfigureAwait(false);
+
         return new OpenIdConfigurationDocument
         {
             Issuer = options.Issuer!,
@@ -61,7 +63,7 @@ internal sealed class DiscoveryDocumentProvider : IDiscoveryDocumentProvider
             JwksUri = options.JwksUri
                 ?? new Uri(baseUri, ConnectJwks).AbsoluteUri,
             ResponseTypesSupported = [.. options.ResponseTypesSupported],
-            ScopesSupported = [.. _scopeRepository.GetScopes()
+            ScopesSupported = [.. scopes
                 .Where(scope => scope.IsDiscoverable)
                 .Select(scope => scope.Name)],
             ResponseModesSupported = [.. options.ResponseModesSupported],

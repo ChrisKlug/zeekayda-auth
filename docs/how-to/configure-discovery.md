@@ -210,7 +210,7 @@ Check for these basics:
 The response is returned as JSON with:
 
 - `Content-Type: application/json`
-- `Cache-Control: public, max-age=86400`
+- `Cache-Control: public, max-age=3600, must-revalidate` by default
 - `Access-Control-Allow-Origin: *`
 
 ## 6. Fix startup failures early
@@ -220,10 +220,12 @@ ZeeKayDa.Auth validates discovery-related options at startup. Common failures in
 - missing `Issuer`
 - non-absolute issuer values
 - HTTP issuers without `AllowInsecureIssuer = true`
+- HTTP issuers on non-loopback hosts
 - issuer values with a query string or fragment
+- issuer values with user information
 - null metadata collections
 - empty required metadata collections
 - blank scope names
 
-> Warning: Only enable `AllowInsecureIssuer` for local development or tests. Production issuers
-> should always use HTTPS.
+> Warning: Only enable `AllowInsecureIssuer` for local loopback development or tests. Production
+> issuers should always use HTTPS.
