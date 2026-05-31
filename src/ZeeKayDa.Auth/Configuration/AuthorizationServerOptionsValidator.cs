@@ -43,15 +43,30 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
                 $"AuthorizationServerOptions.Issuer '{options.Issuer}' must not contain a fragment component ('#').");
         }
 
-        // The OIDC specification requires the issuer to be an HTTPS URI in production.
-        // An explicit opt-in flag permits HTTP issuers for local development and testing only.
-        if (!string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
-            && !options.AllowInsecureIssuer)
+        // OIDC Discovery 1.0 §4.3 and RFC 8414 §3.3 require the published issuer to be
+        // byte-identical to the URL used to derive the discovery address. A trailing slash
+        // on a path-bearing issuer creates an asymmetry because the route is registered
+        // without the slash but the document preserves it verbatim.
+        if (uri.AbsolutePath.EndsWith('/') && uri.AbsolutePath.Length > 1)
         {
             return ValidateOptionsResult.Fail(
-                $"AuthorizationServerOptions.Issuer '{options.Issuer}' must use HTTPS. " +
-                "Set AllowInsecureIssuer = true only for local development and testing — " +
-                "never in production.");
+                $"AuthorizationServerOptions.Issuer '{options.Issuer}' must not have a trailing slash. " +
+                "Use 'https://auth.example.com/tenant1' rather than 'https://auth.example.com/tenant1/'. " +
+                "OIDC Discovery 1.0 §4.3 requires the published issuer to be identical to the URL " +
+                "used to derive the discovery address.");
+        }
+
+        // The OIDC specification requires the issuer to be an HTTPS URI in production.
+        // AllowInsecureIssuer permits only http (not arbitrary schemes) for local development.
+        var isHttps = string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase);
+        var isHttp = string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase);
+
+        if (!isHttps && !(isHttp && options.AllowInsecureIssuer))
+        {
+            return ValidateOptionsResult.Fail(
+                $"AuthorizationServerOptions.Issuer '{options.Issuer}' uses an unsupported scheme '{uri.Scheme}'. " +
+                "Only 'https' is permitted in production. " +
+                "Set AllowInsecureIssuer = true to permit 'http' for local development and testing only.");
         }
 
         if (options.ResponseTypesSupported is null)
@@ -95,6 +110,51 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
             return ValidateOptionsResult.Fail(
                 "AuthorizationServerOptions.IdTokenSigningAlgValuesSupported must contain at least one value.");
         }
+
+        if (options.DiscoveryDocumentCacheMaxAgeSeconds < 0)
+        {
+            return ValidateOptionsResult.Fail(
+                "AuthorizationServerOptions.DiscoveryDocumentCacheMaxAgeSeconds must not be negative.");
+        }
+
+        // Validate endpoint URI overrides — RFC 8414 §2 requires all metadata URLs to use HTTPS.
+        static ValidateOptionsResult? ValidateEndpointUri(string propertyName, string? value, bool allowInsecure, bool rejectQueryAndFragment = false)
+        {
+            if (value is null) return null;
+
+            if (!Uri.TryCreate(value, UriKind.Absolute, out var uri))
+                return ValidateOptionsResult.Fail(
+                    $"AuthorizationServerOptions.{propertyName} '{value}' is not a valid absolute URI.");
+
+            var isHttps = string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase);
+            var isHttp = string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase);
+
+            if (!isHttps && !(isHttp && allowInsecure))
+                return ValidateOptionsResult.Fail(
+                    $"AuthorizationServerOptions.{propertyName} '{value}' must use HTTPS. " +
+                    "Set AllowInsecureIssuer = true to permit HTTP for local development only.");
+
+            if (rejectQueryAndFragment)
+            {
+                if (uri.Query.Length > 0)
+                    return ValidateOptionsResult.Fail(
+                        $"AuthorizationServerOptions.{propertyName} '{value}' must not contain a query component ('?').");
+                if (uri.Fragment.Length > 0)
+                    return ValidateOptionsResult.Fail(
+                        $"AuthorizationServerOptions.{propertyName} '{value}' must not contain a fragment component ('#').");
+            }
+
+            return null;
+        }
+
+        if (ValidateEndpointUri(nameof(options.AuthorizationEndpoint), options.AuthorizationEndpoint, options.AllowInsecureIssuer) is { } aeError)
+            return aeError;
+
+        if (ValidateEndpointUri(nameof(options.TokenEndpoint), options.TokenEndpoint, options.AllowInsecureIssuer) is { } teError)
+            return teError;
+
+        if (ValidateEndpointUri(nameof(options.JwksUri), options.JwksUri, options.AllowInsecureIssuer, rejectQueryAndFragment: true) is { } jwksError)
+            return jwksError;
 
         return ValidateOptionsResult.Success;
     }

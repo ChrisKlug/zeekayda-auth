@@ -49,13 +49,13 @@ public sealed class DiscoveryEndpointTests : IDisposable
     // ── Cache-Control ─────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task GetDiscoveryDocument_ReturnsCacheControlPublicMaxAge86400()
+    public async Task GetDiscoveryDocument_ReturnsCacheControlPublicMaxAge3600()
     {
         var response = await _client.GetAsync(DiscoveryPath, TestContext.Current.CancellationToken);
 
         response.Headers.CacheControl.Should().NotBeNull();
         response.Headers.CacheControl!.Public.Should().BeTrue();
-        response.Headers.CacheControl!.MaxAge.Should().Be(TimeSpan.FromSeconds(86400));
+        response.Headers.CacheControl!.MaxAge.Should().Be(TimeSpan.FromSeconds(3600));
     }
 
     // ── CORS ──────────────────────────────────────────────────────────────────────────────────────
@@ -263,5 +263,88 @@ public sealed class DiscoveryEndpointTests : IDisposable
         var act = () => factory.CreateClient();
 
         act.Should().Throw<Exception>();
+    }
+
+    [Fact]
+    public void Startup_HttpIssuerWithoutFlag_ThrowsViaValidateOnStart()
+    {
+        // http://auth.example.com is non-null (passes the Map() guard) but invalid.
+        // ValidateOnStart must surface the failure before the host accepts requests.
+        var act = () => new TestWebAppFactory(opts =>
+        {
+            opts.Issuer = "http://auth.example.com";
+            opts.AllowInsecureIssuer = false;
+        }).CreateClient();
+
+        act.Should().Throw<Exception>().WithMessage("*HTTPS*");
+    }
+
+    // ── Configurable Cache-Control ────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetDiscoveryDocument_CustomCacheMaxAge_IsReflectedInHeader()
+    {
+        using var factory = new TestWebAppFactory(opts =>
+        {
+            opts.Issuer = "https://test.example.com";
+            opts.DiscoveryDocumentCacheMaxAgeSeconds = 300;
+        });
+        var client = factory.CreateClient();
+
+        var response = await client.GetAsync(DiscoveryPath, TestContext.Current.CancellationToken);
+
+        response.Headers.CacheControl!.ToString().Should().Contain("max-age=300");
+    }
+
+    [Fact]
+    public async Task GetDiscoveryDocument_ZeroCacheMaxAge_ReturnsNoStore()
+    {
+        using var factory = new TestWebAppFactory(opts =>
+        {
+            opts.Issuer = "https://test.example.com";
+            opts.DiscoveryDocumentCacheMaxAgeSeconds = 0;
+        });
+        var client = factory.CreateClient();
+
+        var response = await client.GetAsync(DiscoveryPath, TestContext.Current.CancellationToken);
+
+        response.Headers.CacheControl!.ToString().Should().Be("no-store");
+    }
+
+    // ── Enum field serialization ──────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetDiscoveryDocument_RequiredEnumFields_AreSerializedAsExpectedStrings()
+    {
+        var response = await _client.GetAsync(DiscoveryPath, TestContext.Current.CancellationToken);
+        var doc = await response.Content.ReadFromJsonAsync<JsonDocument>(TestContext.Current.CancellationToken);
+
+        doc!.RootElement.GetProperty("response_types_supported").EnumerateArray()
+            .Select(e => e.GetString()).Should().Equal("code");
+
+        doc.RootElement.GetProperty("id_token_signing_alg_values_supported").EnumerateArray()
+            .Select(e => e.GetString()).Should().Equal("RS256");
+
+        doc.RootElement.GetProperty("subject_types_supported").EnumerateArray()
+            .Select(e => e.GetString()).Should().Equal("public");
+    }
+
+    // ── Derived endpoint URIs ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetDiscoveryDocument_DerivedEndpoints_MatchExpectedUris()
+    {
+        var response = await _client.GetAsync(DiscoveryPath, TestContext.Current.CancellationToken);
+        var doc = await response.Content.ReadFromJsonAsync<JsonDocument>(TestContext.Current.CancellationToken);
+
+        // The test host issuer is "https://test.example.com"
+        doc!.RootElement.GetProperty("authorization_endpoint").GetString()
+            .Should().Be("https://test.example.com/connect/authorize");
+
+        doc.RootElement.GetProperty("token_endpoint").GetString()
+            .Should().Be("https://test.example.com/connect/token");
+
+        doc.RootElement.GetProperty("jwks_uri").GetString()
+            .Should().Be("https://test.example.com/connect/jwks");
     }
 }

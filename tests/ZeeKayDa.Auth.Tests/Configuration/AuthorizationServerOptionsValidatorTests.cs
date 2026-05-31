@@ -110,7 +110,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
         });
 
         result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("HTTPS");
+        result.FailureMessage.Should().Contain("scheme");
     }
 
     [Fact]
@@ -123,6 +123,46 @@ public sealed class AuthorizationServerOptionsValidatorTests
         });
 
         result.Succeeded.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("https://auth.example.com/tenant1/")]
+    [InlineData("https://auth.example.com/a/b/c/")]
+    [InlineData("http://localhost:5000/tenant1/", true)]
+    public void Validate_IssuerWithTrailingSlashOnPath_Fails(string issuer, bool allowInsecure = false)
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = issuer,
+            AllowInsecureIssuer = allowInsecure,
+        });
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("trailing slash");
+    }
+
+    [Fact]
+    public void Validate_HttpsRootIssuerNoPath_Succeeds()
+    {
+        // https://auth.example.com has AbsolutePath "/" — must not be treated as trailing slash
+        var result = Validate(new AuthorizationServerOptions { Issuer = "https://auth.example.com" });
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("ftp://localhost")]
+    [InlineData("file:///tmp/auth")]
+    [InlineData("custom://localhost")]
+    public void Validate_NonHttpOrHttpsSchemeWithFlag_Fails(string issuer)
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = issuer,
+            AllowInsecureIssuer = true,
+        });
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("scheme");
     }
 
     [Fact]
@@ -238,5 +278,86 @@ public sealed class AuthorizationServerOptionsValidatorTests
         });
 
         result.Succeeded.Should().BeTrue();
+    }
+
+    // ── Endpoint URI overrides ────────────────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData(nameof(AuthorizationServerOptions.AuthorizationEndpoint), "not-a-uri")]
+    [InlineData(nameof(AuthorizationServerOptions.TokenEndpoint), "not-a-uri")]
+    [InlineData(nameof(AuthorizationServerOptions.JwksUri), "not-a-uri")]
+    public void Validate_EndpointOverrideNotAbsoluteUri_Fails(string propertyName, string value)
+    {
+        var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
+        SetEndpointProperty(options, propertyName, value);
+
+        var result = Validate(options);
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain(propertyName);
+    }
+
+    [Theory]
+    [InlineData(nameof(AuthorizationServerOptions.AuthorizationEndpoint), "http://auth.example.com/connect/authorize")]
+    [InlineData(nameof(AuthorizationServerOptions.TokenEndpoint), "http://auth.example.com/connect/token")]
+    [InlineData(nameof(AuthorizationServerOptions.JwksUri), "http://auth.example.com/connect/jwks")]
+    public void Validate_EndpointOverrideHttpWithoutFlag_Fails(string propertyName, string value)
+    {
+        var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
+        SetEndpointProperty(options, propertyName, value);
+
+        var result = Validate(options);
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("HTTPS");
+    }
+
+    [Theory]
+    [InlineData(nameof(AuthorizationServerOptions.AuthorizationEndpoint), "https://auth.example.com/connect/authorize")]
+    [InlineData(nameof(AuthorizationServerOptions.TokenEndpoint), "https://auth.example.com/connect/token")]
+    [InlineData(nameof(AuthorizationServerOptions.JwksUri), "https://auth.example.com/connect/jwks")]
+    public void Validate_EndpointOverrideHttps_Succeeds(string propertyName, string value)
+    {
+        var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
+        SetEndpointProperty(options, propertyName, value);
+
+        var result = Validate(options);
+
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("https://auth.example.com/connect/jwks?foo=bar")]
+    [InlineData("https://auth.example.com/connect/jwks#fragment")]
+    public void Validate_JwksUriWithQueryOrFragment_Fails(string value)
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            JwksUri = value,
+        });
+
+        result.Failed.Should().BeTrue();
+    }
+
+    // ── Cache-Control max-age ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Validate_NegativeCacheMaxAge_Fails()
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            DiscoveryDocumentCacheMaxAgeSeconds = -1,
+        });
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain(nameof(AuthorizationServerOptions.DiscoveryDocumentCacheMaxAgeSeconds));
+    }
+
+    private static void SetEndpointProperty(AuthorizationServerOptions options, string propertyName, string value)
+    {
+        var prop = typeof(AuthorizationServerOptions).GetProperty(propertyName)!;
+        prop.SetValue(options, value);
     }
 }

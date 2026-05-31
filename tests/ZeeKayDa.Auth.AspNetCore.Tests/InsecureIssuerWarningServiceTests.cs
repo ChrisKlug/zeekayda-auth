@@ -1,0 +1,71 @@
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using ZeeKayDa.Auth;
+using ZeeKayDa.Auth.AspNetCore;
+
+namespace ZeeKayDa.Auth.AspNetCore.Tests;
+
+public sealed class InsecureIssuerWarningServiceTests
+{
+    [Fact]
+    public async Task StartAsync_AllowInsecureIssuerTrue_LogsWarning()
+    {
+        var logger = new CapturingLogger<InsecureIssuerWarningService>();
+        var sut = new InsecureIssuerWarningService(
+            Options.Create(new AuthorizationServerOptions
+            {
+                Issuer = "http://localhost:5000",
+                AllowInsecureIssuer = true,
+            }),
+            logger);
+
+        await sut.StartAsync(CancellationToken.None);
+
+        logger.Entries.Should().ContainSingle()
+            .Which.Level.Should().Be(LogLevel.Warning);
+    }
+
+    [Fact]
+    public async Task StartAsync_AllowInsecureIssuerFalse_DoesNotLogWarning()
+    {
+        var sut = new InsecureIssuerWarningService(
+            Options.Create(new AuthorizationServerOptions { Issuer = "https://auth.example.com" }),
+            NullLogger<InsecureIssuerWarningService>.Instance);
+
+        // Should complete without any exception; nothing to assert on the null logger.
+        await sut.Awaiting(s => s.StartAsync(CancellationToken.None)).Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task StopAsync_DoesNotThrow()
+    {
+        var sut = new InsecureIssuerWarningService(
+            Options.Create(new AuthorizationServerOptions { Issuer = "https://auth.example.com" }),
+            NullLogger<InsecureIssuerWarningService>.Instance);
+
+        await sut.Awaiting(s => s.StopAsync(CancellationToken.None)).Should().NotThrowAsync();
+    }
+
+    /// <summary>
+    /// Minimal logger that captures log entries for assertion in tests.
+    /// </summary>
+    private sealed class CapturingLogger<T> : ILogger<T>
+    {
+        public List<(LogLevel Level, string Message)> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            Entries.Add((logLevel, formatter(state, exception)));
+        }
+    }
+}

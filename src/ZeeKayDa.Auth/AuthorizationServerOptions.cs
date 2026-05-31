@@ -80,4 +80,16 @@ public sealed class AuthorizationServerOptions
     /// Defaults to <c>[<see cref="SigningAlgorithm.RS256"/>]</c>.
     /// </summary>
     public ICollection<SigningAlgorithm> IdTokenSigningAlgValuesSupported { get; set; } = [SigningAlgorithm.RS256];
+
+    /// <summary>
+    /// Gets or sets the <c>max-age</c> value (in seconds) for the <c>Cache-Control</c> header
+    /// served on the OpenID Connect discovery document. Defaults to <c>3600</c> (one hour).
+    /// Set to <c>0</c> to disable public caching entirely (<c>Cache-Control: no-store</c>).
+    /// </summary>
+    /// <remarks>
+    /// A shorter TTL reduces the window during which relying parties may serve a stale discovery
+    /// document — important for emergency key rotation scenarios. A value of zero is appropriate
+    /// for development environments where the document changes frequently.
+    /// </remarks>
+    public int DiscoveryDocumentCacheMaxAgeSeconds { get; set; } = 3600;
 }
