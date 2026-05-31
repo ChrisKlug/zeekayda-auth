@@ -209,10 +209,12 @@ This section is for maintainers.
    git tag v1.0.0
    git push origin v1.0.0
    ```
-4. The `publish-release.yml` workflow fires automatically, validates the tag against `Directory.Build.props`, builds, packs (with `.snupkg` symbols), and pushes to [NuGet.org](https://www.nuget.org/).
+4. The `publish-release.yml` workflow fires automatically, validates the tag against `Directory.Build.props`, builds, packs (with `.snupkg` symbols), and pushes to [NuGet.org](https://www.nuget.org/) using [Trusted Publishing](https://learn.microsoft.com/en-us/nuget/nuget-org/trusted-publishing) — no API key secret required.
 5. Create a matching GitHub Release from the tag and add release notes.
 
 > If the tag version does not match `<VersionPrefix>` in `Directory.Build.props`, the workflow will fail with a clear error message. Fix the mismatch and re-push the tag.
+
+> **Prerequisites:** The Trusted Publishing policy and `NUGET_USERNAME` secret must be configured once before the first release — see the maintainer setup notes in the repository wiki.
 
 ### Preview builds
 
