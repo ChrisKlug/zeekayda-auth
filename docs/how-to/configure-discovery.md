@@ -1,0 +1,229 @@
+---
+title: "Configure discovery"
+description: "How to configure the OpenID Connect discovery document in ZeeKayDa.Auth."
+parent: "How-to"
+nav_order: 1
+---
+
+*Added in Unreleased.*
+
+This guide shows how to publish a correct OpenID Connect discovery document with ZeeKayDa.Auth.
+
+For the full endpoint contract, see [Discovery endpoint reference](../reference/discovery-endpoint.md).
+For the reasoning behind these rules, see [Why discovery matters](../explanation/why-discovery.md).
+
+## 1. Register ZeeKayDa.Auth and set the issuer
+
+Configure `AuthorizationServerOptions` with `AddZeeKayDaAuth(...)`, then map the endpoints with
+`app.MapZeeKayDaAuth()`.
+
+```csharp
+using ZeeKayDa.Auth;
+using ZeeKayDa.Auth.AspNetCore.Extensions;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddZeeKayDaAuth(options =>
+{
+    options.Issuer = "https://id.example.com";
+    options.ResponseTypesSupported = [ResponseType.Code];
+    options.ResponseModesSupported = [ResponseMode.Query];
+    options.GrantTypesSupported = [GrantType.AuthorizationCode];
+    options.TokenEndpointAuthMethodsSupported = [TokenEndpointAuthMethod.ClientSecretBasic];
+    options.IdTokenSigningAlgValuesSupported = [SigningAlgorithm.RS256];
+});
+
+var app = builder.Build();
+
+app.UseRouting();
+app.MapZeeKayDaAuth();
+
+app.Run();
+```
+
+The discovery document will be available at:
+
+```text
+https://id.example.com/.well-known/openid-configuration
+```
+
+## 2. Use a path-bearing issuer when you need tenant or product prefixes
+
+If your issuer includes a path segment, ZeeKayDa.Auth publishes discovery under that same path
+prefix.
+
+```csharp
+using ZeeKayDa.Auth;
+using ZeeKayDa.Auth.AspNetCore.Extensions;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddZeeKayDaAuth(options =>
+{
+    options.Issuer = "https://id.example.com/tenant-a";
+    options.ResponseTypesSupported = [ResponseType.Code];
+    options.IdTokenSigningAlgValuesSupported = [SigningAlgorithm.RS256];
+});
+
+var app = builder.Build();
+
+app.UseRouting();
+app.MapZeeKayDaAuth();
+
+app.Run();
+```
+
+The discovery document will be available at:
+
+```text
+https://id.example.com/tenant-a/.well-known/openid-configuration
+```
+
+This matches
+[OpenID Connect Discovery 1.0 Section 4.1](https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderConfigurationRequest)
+and [RFC 9207 Section 4](https://www.rfc-editor.org/rfc/rfc9207.html#section-4).
+
+## 3. Advertise the metadata your clients need
+
+ZeeKayDa.Auth always publishes the required core fields. You can also configure the recommended
+metadata fields from `AuthorizationServerOptions`.
+
+| Option | Published field | Default |
+|---|---|---|
+| built-in scope repository | `scopes_supported` | `["openid", "profile"]` |
+| `ResponseModesSupported` | `response_modes_supported` | `["query"]` |
+| `GrantTypesSupported` | `grant_types_supported` | `["authorization_code"]` |
+| `TokenEndpointAuthMethodsSupported` | `token_endpoint_auth_methods_supported` | `["client_secret_basic"]` |
+
+`scopes_supported` is described by
+[OIDC Discovery 1.0 Section 3](https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderMetadata)
+and [RFC 8414 Section 2](https://www.rfc-editor.org/rfc/rfc8414.html#section-2).
+`grant_types_supported` and `token_endpoint_auth_methods_supported` are authorization server
+metadata fields from [RFC 8414 Section 2](https://www.rfc-editor.org/rfc/rfc8414.html#section-2).
+
+By default, `scopes_supported` is sourced from the built-in scope repository, which publishes
+`openid` and `profile`. If you want to replace those defaults or attach token-claim metadata to
+scopes, register the in-memory scope repository instead:
+
+```csharp
+using ZeeKayDa.Auth.Scopes;
+
+var builder = WebApplication.CreateBuilder(args);
+
+var auth = builder.Services.AddZeeKayDaAuth(options =>
+{
+    options.Issuer = "https://id.example.com";
+});
+
+auth.AddInMemoryScopes(
+[
+    new ScopeDefinition
+    {
+        Name = ScopeNames.OpenId,
+        IdTokenClaims = ["sub"],
+        AccessTokenClaims = ["scope"],
+    },
+    new ScopeDefinition
+    {
+        Name = ScopeNames.Profile,
+        IdTokenClaims = ["name", "family_name"],
+        AccessTokenClaims = ["name"],
+    },
+    new ScopeDefinition
+    {
+        Name = "api.read",
+        AccessTokenClaims = ["scope"],
+    },
+    new ScopeDefinition
+    {
+        Name = "internal.admin",
+        IsDiscoverable = false,
+        AccessTokenClaims = ["scope"],
+    },
+]);
+
+var app = builder.Build();
+
+app.UseRouting();
+app.MapZeeKayDaAuth();
+```
+
+Discovery still publishes only the scope names, and only for scopes where `IsDiscoverable` is
+`true`. `IdTokenClaims` and `AccessTokenClaims` are repository metadata for future authorization
+server behavior and are not emitted as custom discovery fields.
+
+## 4. Override published endpoint URLs when needed
+
+By default, ZeeKayDa.Auth derives these values from `Issuer`:
+
+- `authorization_endpoint`
+- `token_endpoint`
+- `jwks_uri`
+
+Override them if your externally visible URLs differ from the issuer-derived defaults.
+
+```csharp
+using ZeeKayDa.Auth;
+using ZeeKayDa.Auth.AspNetCore.Extensions;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddZeeKayDaAuth(options =>
+{
+    options.Issuer = "https://id.example.com/tenant-a";
+    options.AuthorizationEndpoint = "https://login.example.com/tenant-a/connect/authorize";
+    options.TokenEndpoint = "https://login.example.com/tenant-a/connect/token";
+    options.JwksUri = "https://login.example.com/tenant-a/connect/jwks";
+});
+
+var app = builder.Build();
+
+app.UseRouting();
+app.MapZeeKayDaAuth();
+
+app.Run();
+```
+
+## 5. Verify the discovery document
+
+Fetch the document after startup.
+
+Root issuer:
+
+```bash
+curl https://id.example.com/.well-known/openid-configuration
+```
+
+Path-bearing issuer:
+
+```bash
+curl https://id.example.com/tenant-a/.well-known/openid-configuration
+```
+
+Check for these basics:
+
+- `issuer` matches your configured issuer exactly
+- endpoint URLs point to the public URLs clients should use
+- response types and signing algorithms reflect your server
+- the recommended metadata values match the capabilities you intend to advertise
+
+The response is returned as JSON with:
+
+- `Content-Type: application/json`
+- `Cache-Control: public, max-age=86400`
+- `Access-Control-Allow-Origin: *`
+
+## 6. Fix startup failures early
+
+ZeeKayDa.Auth validates discovery-related options at startup. Common failures include:
+
+- missing `Issuer`
+- non-absolute issuer values
+- HTTP issuers without `AllowInsecureIssuer = true`
+- issuer values with a query string or fragment
+- null metadata collections
+- empty required metadata collections
+- blank scope names
+
+> Warning: Only enable `AllowInsecureIssuer` for local development or tests. Production issuers
+> should always use HTTPS.
