@@ -1,0 +1,56 @@
+name: Publish Preview
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish-preview:
+    name: Publish Preview to GitHub Packages
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+
+      - name: Cache NuGet packages
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ hashFiles('**/Directory.Packages.props') }}
+          restore-keys: |
+            nuget-
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        with:
+          global-json-file: global.json
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Determine version
+        id: version
+        run: |
+          BASE=$(grep -oP '(?<=<VersionPrefix>)[^<]+' Directory.Build.props || grep -oP '(?<=<Version>)[^<]+' Directory.Build.props)
+          echo "package_version=${BASE}-preview.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
+      - name: Build
+        run: dotnet build --configuration Release --no-restore
+
+      - name: Pack
+        env:
+          PACKAGE_VERSION: ${{ steps.version.outputs.package_version }}
+        run: dotnet pack --configuration Release --no-build -p:PackageVersion="$PACKAGE_VERSION" --include-symbols -p:SymbolPackageFormat=snupkg --output ./nupkgs
+
+      - name: Push to GitHub Packages
+        run: dotnet nuget push ./nupkgs/*.nupkg --source https://nuget.pkg.github.com/ChrisKlug/index.json --api-key ${{ secrets.GITHUB_TOKEN }} --skip-duplicate
+
+      - name: Push symbols to GitHub Packages
+        run: dotnet nuget push ./nupkgs/*.snupkg --source https://nuget.pkg.github.com/ChrisKlug/index.json --api-key ${{ secrets.GITHUB_TOKEN }} --skip-duplicate
