@@ -1,0 +1,70 @@
+name: Publish Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish-release:
+    name: Publish Release to NuGet.org
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+
+      - name: Cache NuGet packages
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ hashFiles('**/Directory.Packages.props') }}
+          restore-keys: |
+            nuget-
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        with:
+          global-json-file: global.json
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Validate tag version matches Directory.Build.props
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PROPS_VERSION=$(grep -oP '(?<=<VersionPrefix>)[^<]+' Directory.Build.props || grep -oP '(?<=<Version>)[^<]+' Directory.Build.props)
+          if [ "$TAG_VERSION" != "$PROPS_VERSION" ]; then
+            echo "::error::Tag version '$TAG_VERSION' does not match Directory.Build.props version '$PROPS_VERSION'. Update <VersionPrefix> in Directory.Build.props before tagging."
+            exit 1
+          fi
+          echo "Version validated: $TAG_VERSION"
+
+      - name: Build
+        run: dotnet build --configuration Release --no-restore
+
+      - name: Pack with symbols
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          dotnet pack --configuration Release --no-build \
+            -p:PackageVersion="$TAG_VERSION" \
+            --include-symbols -p:SymbolPackageFormat=snupkg \
+            --output ./nupkgs
+
+      - name: NuGet login (OIDC → temporary API key)
+        uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1.2.0
+        id: nuget-login
+        with:
+          user: ${{ secrets.NUGET_USERNAME }}
+
+      - name: Push to NuGet.org
+        run: dotnet nuget push ./nupkgs/*.nupkg --api-key ${{ steps.nuget-login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+
+      - name: Push symbols to NuGet.org
+        run: dotnet nuget push ./nupkgs/*.snupkg --api-key ${{ steps.nuget-login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate

@@ -8,6 +8,7 @@
 
   <!-- NuGet packaging and documentation — only applied to src/ projects -->
   <PropertyGroup Condition="$(MSBuildProjectFullPath.Contains('/src/'))">
+    <VersionPrefix>0.1.0</VersionPrefix>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <IsPackable>true</IsPackable>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
@@ -17,10 +18,16 @@
     <Authors>ZeeKayDa Contributors</Authors>
     <Copyright>Copyright © 2025 ZeeKayDa Contributors</Copyright>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageTags>openid-connect;oauth2;identity;authentication;oidc;auth;aspnetcore;dotnet</PackageTags>
+    <PackageIcon>icon.png</PackageIcon>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
   </PropertyGroup>
 
   <ItemGroup Condition="$(MSBuildProjectFullPath.Contains('/src/'))">
     <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="/" />
+    <None Include="$(MSBuildThisFileDirectory)assets/icon.png" Pack="true" PackagePath="/" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="All" />
   </ItemGroup>
 
   <!-- Test and samples projects should not produce NuGet packages -->

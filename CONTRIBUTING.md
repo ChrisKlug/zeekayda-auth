@@ -18,7 +18,8 @@ Please take a few minutes to read this guide before you start. It helps us revie
 8. [Developer Certificate of Origin (DCO)](#developer-certificate-of-origin-dco)
 9. [Code Style](#code-style)
 10. [CI](#ci)
-11. [Security Vulnerabilities](#security-vulnerabilities)
+11. [Release Process](#release-process)
+12. [Security Vulnerabilities](#security-vulnerabilities)
 
 ---
 
@@ -192,6 +193,58 @@ dotnet format
 ```
 
 Coverage reports are uploaded as build artifacts and can be downloaded from the Actions run summary.
+
+---
+
+## Release Process
+
+This section is for maintainers.
+
+### Cutting a stable release
+
+1. Ensure `<VersionPrefix>` in `Directory.Build.props` reflects the intended release version (e.g. `1.0.0`).
+2. Update `CHANGELOG.md` — move all entries under `[Unreleased]` to a new versioned section (e.g. `[1.0.0] - 2026-05-31`), then commit and merge to `main`.
+3. Create and push a version tag that **exactly matches** the `<VersionPrefix>` value, prefixed with `v`:
+   ```bash
+   git tag v1.0.0
+   git push origin v1.0.0
+   ```
+4. The `publish-release.yml` workflow fires automatically, validates the tag against `Directory.Build.props`, builds, packs (with `.snupkg` symbols), and pushes to [NuGet.org](https://www.nuget.org/) using [Trusted Publishing](https://learn.microsoft.com/en-us/nuget/nuget-org/trusted-publishing) — no API key secret required.
+5. Create a matching GitHub Release from the tag and add release notes.
+
+> If the tag version does not match `<VersionPrefix>` in `Directory.Build.props`, the workflow will fail with a clear error message. Fix the mismatch and re-push the tag.
+
+> **Prerequisites:** The Trusted Publishing policy and `NUGET_USERNAME` secret must be configured once before the first release — see the maintainer setup notes in the repository wiki.
+
+### Preview builds
+
+Every push to `main` automatically publishes a preview package to the [GitHub Packages NuGet feed](https://github.com/ChrisKlug/zeekayda-auth/pkgs/nuget). Preview packages follow the versioning scheme:
+
+```
+<VersionPrefix>-preview.<run_number>
+```
+
+For example: `0.1.0-preview.42`. Preview packages include `.snupkg` symbol packages so you can step into ZeeKayDa.Auth source in a debugger.
+
+### Consuming preview packages
+
+To install a preview build, add the GitHub Packages NuGet source. Authentication requires a GitHub Personal Access Token (PAT) with at least `read:packages` scope.
+
+```bash
+dotnet nuget add source https://nuget.pkg.github.com/ChrisKlug/index.json \
+  --name ZeeKayDa-preview \
+  --username <your-github-username> \
+  --password <your-PAT> \
+  --store-password-in-clear-text
+```
+
+> The `--store-password-in-clear-text` flag is required on Linux and macOS where no system credential store is available.
+
+Then install the package as usual, specifying the preview version explicitly if needed:
+
+```bash
+dotnet add package ZeeKayDa.Auth --version 0.1.0-preview.42
+```
 
 ---
 

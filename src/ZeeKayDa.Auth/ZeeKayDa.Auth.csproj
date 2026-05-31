@@ -2,6 +2,8 @@
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <PackageId>ZeeKayDa.Auth</PackageId>
+    <Description>Core OpenID Connect / OAuth 2.0 identity provider framework for .NET</Description>
   </PropertyGroup>
 
   <ItemGroup>
