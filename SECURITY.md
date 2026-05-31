@@ -28,6 +28,10 @@ To help us triage and reproduce the issue quickly, please include:
 
 If we cannot meet the 90-day target, we will notify you and agree on an extended timeline before public disclosure.
 
+## Automated Security Scanning
+
+This project runs [GitHub CodeQL](https://codeql.github.com/) static analysis on every pull request, every push to `main`, and on a weekly schedule. The `security-and-quality` query suite is used. All CodeQL findings are treated as bugs — they must be fixed or explicitly justified before a PR is merged. Results are visible in the [Security → Code Scanning](https://github.com/ChrisKlug/zeekayda-auth/security/code-scanning) tab.
+
 ## Scope
 
 This policy covers the `ZeeKayDa.Auth` and `ZeeKayDa.Auth.AspNetCore` NuGet packages. Issues in third-party dependencies should be reported upstream.

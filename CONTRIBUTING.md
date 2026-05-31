@@ -175,6 +175,7 @@ Every pull request and every push to `main` runs two GitHub Actions jobs defined
 |---|---|
 | `build-and-test` | Restores, builds (warnings-as-errors), and runs the full test suite with code coverage on `ubuntu-latest`. |
 | `format-check` | Runs `dotnet format --verify-no-changes` to ensure all code matches the `.editorconfig` rules. |
+| `codeql` | Runs GitHub CodeQL static analysis (`security-and-quality` query suite). Findings must be fixed or explicitly justified before a PR can be merged. See [SECURITY.md](SECURITY.md). |
 
 **All jobs must be green before a PR can be merged.**
 
