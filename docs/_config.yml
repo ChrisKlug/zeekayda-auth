@@ -1,7 +1,7 @@
 title: ZeeKayDa.Auth
 description: "OpenID Connect identity provider framework for .NET"
-url: "https://chrisklug.github.io"
-baseurl: "/zeekayda-auth"
+url: "https://zeekayda.com"
+baseurl: ""
 
 # Theme — remote only; no Gemfile or local Ruby toolchain required.
 remote_theme: just-the-docs/just-the-docs
