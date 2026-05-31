@@ -3,8 +3,14 @@ name: CI
 on:
   pull_request:
     branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '.github/**'
   push:
     branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '.github/**'
 
 permissions:
   contents: read

@@ -3,8 +3,14 @@ name: CodeQL
 on:
   pull_request:
     branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '.github/**'
   push:
     branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '.github/**'
   schedule:
     - cron: '0 3 * * 1' # Every Monday at 03:00 UTC
 
