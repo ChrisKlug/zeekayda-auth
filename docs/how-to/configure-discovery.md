@@ -2,7 +2,7 @@
 title: "Configure discovery"
 description: "How to configure the OpenID Connect discovery document in ZeeKayDa.Auth."
 parent: "How-to Guides"
-nav_order: 1
+nav_order: 2
 ---
 
 *Added in Unreleased.*

@@ -2,7 +2,7 @@
 title: "Discovery endpoint"
 description: "Reference for the OpenID Connect discovery endpoint exposed by ZeeKayDa.Auth."
 parent: "Reference"
-nav_order: 1
+nav_order: 2
 ---
 
 *Added in Unreleased.*
