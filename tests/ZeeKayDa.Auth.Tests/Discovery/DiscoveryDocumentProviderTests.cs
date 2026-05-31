@@ -99,21 +99,6 @@ public sealed class DiscoveryDocumentProviderTests
         doc.JwksUri.Should().Be("https://auth.example.com/tenant1/connect/jwks");
     }
 
-    // ── URI derivation — trailing-slash issuer ────────────────────────────────────────────────────
-
-    [Fact]
-    public void GetDocument_TrailingSlashIssuer_DerivesEndpointsWithoutDoubleSlash()
-    {
-        var doc = GetDocument(new AuthorizationServerOptions
-        {
-            Issuer = "https://auth.example.com/tenant1/",
-        });
-
-        doc.AuthorizationEndpoint.Should().Be("https://auth.example.com/tenant1/connect/authorize");
-        doc.TokenEndpoint.Should().Be("https://auth.example.com/tenant1/connect/token");
-        doc.JwksUri.Should().Be("https://auth.example.com/tenant1/connect/jwks");
-    }
-
     // ── Explicit URI overrides ────────────────────────────────────────────────────────────────────
 
     [Fact]

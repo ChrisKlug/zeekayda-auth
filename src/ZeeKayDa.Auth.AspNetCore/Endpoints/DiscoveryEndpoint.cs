@@ -49,11 +49,14 @@ internal sealed class DiscoveryEndpoint : IZeeKayDaEndpoint
         endpoints.MapGet(routePath, Handle);
     }
 
-    private static IResult Handle(IDiscoveryDocumentProvider provider, HttpContext context)
+    private static IResult Handle(IDiscoveryDocumentProvider provider, HttpContext context, IOptions<AuthorizationServerOptions> options)
     {
         // Cache-Control set directly in the handler per ADR §8 so that the behaviour is
         // co-located with the endpoint and trivially verifiable in tests without a pipeline.
-        context.Response.Headers.CacheControl = "public, max-age=86400";
+        var maxAge = options.Value.DiscoveryDocumentCacheMaxAgeSeconds;
+        context.Response.Headers.CacheControl = maxAge > 0
+            ? $"public, max-age={maxAge}, must-revalidate"
+            : "no-store";
 
         // Wildcard CORS origin so browser-based OIDC clients can fetch the discovery document.
         context.Response.Headers.AccessControlAllowOrigin = "*";

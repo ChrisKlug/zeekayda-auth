@@ -5,6 +5,32 @@ namespace ZeeKayDa.Auth.Tests.Scopes;
 public sealed class InMemoryScopeRepositoryTests
 {
     [Fact]
+    public void Constructor_NullScopes_ThrowsArgumentNullException()
+    {
+        var act = () => new InMemoryScopeRepository(null!);
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("scopes");
+    }
+
+    [Fact]
+    public void Constructor_NullScopeElement_Throws()
+    {
+        var act = () => new InMemoryScopeRepository([null!]);
+
+        act.Should().Throw<ArgumentNullException>();
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Constructor_BlankScopeName_ThrowsArgumentException(string name)
+    {
+        var act = () => new InMemoryScopeRepository([new ScopeDefinition { Name = name }]);
+
+        act.Should().Throw<ArgumentException>().WithMessage("*whitespace*");
+    }
+
+    [Fact]
     public void GetScopes_ReturnsConfiguredScopesAndClaims()
     {
         var repository = new InMemoryScopeRepository(
