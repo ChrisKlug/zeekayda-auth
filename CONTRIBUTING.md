@@ -25,7 +25,7 @@ Please take a few minutes to read this guide before you start. It helps us revie
 
 ## Code of Conduct
 
-This project follows the [Contributor Covenant v2.1](CODE_OF_CONDUCT.md). By participating, you agree to uphold this code. Please report unacceptable behaviour to [chris@59north.com](mailto:chris@59north.com).
+This project follows the [Contributor Covenant v2.1](CODE_OF_CONDUCT.md). By participating, you agree to uphold this code. Please report unacceptable behaviour to [chris@zeekayda.com](mailto:chris@zeekayda.com).
 
 ---
 
