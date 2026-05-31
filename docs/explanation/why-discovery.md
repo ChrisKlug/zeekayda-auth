@@ -2,7 +2,7 @@
 title: "Why discovery matters"
 description: "Why ZeeKayDa.Auth exposes OpenID Connect discovery metadata the way it does."
 parent: "Explanation"
-nav_order: 1
+nav_order: 2
 ---
 
 *Added in Unreleased.*
