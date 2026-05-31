@@ -16,7 +16,7 @@ setup, see [Configure discovery](configure-discovery.md).
 
 ## Before you start
 
-- Target framework: .NET 9 or later
+- Target framework: .NET 10 or later
 - NuGet packages: `ZeeKayDa.Auth` and `ZeeKayDa.Auth.AspNetCore`
 
 ## 1. Add the minimum viable configuration
