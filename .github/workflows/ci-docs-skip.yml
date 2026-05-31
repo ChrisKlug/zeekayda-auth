@@ -1,0 +1,38 @@
+name: CI (docs skip)
+
+# This workflow exists solely to satisfy the "Build and Test" and "Format Check"
+# required status checks when a PR or push contains only docs/** changes.
+#
+# GitHub treats a skipped workflow (via paths-ignore) as a missing required check,
+# which blocks merging. The companion ci.yml uses paths-ignore to skip the real
+# build and test jobs for docs-only changes. This workflow mirrors those job names
+# and runs only on docs-only changes, immediately passing — keeping branch
+# protection happy without wasting CI minutes on a .NET build for a docs change.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'docs/**'
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    name: Build and Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Docs-only change — skipping .NET build and tests
+        run: echo "Docs-only change detected. Build and test skipped."
+
+  format-check:
+    name: Format Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Docs-only change — skipping format check
+        run: echo "Docs-only change detected. Format check skipped."
