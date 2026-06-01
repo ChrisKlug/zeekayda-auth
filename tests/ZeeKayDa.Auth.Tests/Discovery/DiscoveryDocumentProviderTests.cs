@@ -243,4 +243,47 @@ public sealed class DiscoveryDocumentProviderTests
 
         doc.ScopesSupported.Should().Equal(StandardScopes.OpenId.Name);
     }
+
+    [Fact]
+    public async Task GetDocument_CancelledToken_ThrowsOperationCanceledException()
+    {
+        var options = Options.Create(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+        });
+        var provider = new DiscoveryDocumentProvider(options, new DefaultScopeRepository());
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        var act = async () => await provider.GetDocumentAsync(cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task GetDocument_PropagatesCancellationTokenToScopeRepository()
+    {
+        var options = Options.Create(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+        });
+        var repository = new CapturingScopeRepository();
+        var provider = new DiscoveryDocumentProvider(options, repository);
+        using var cts = new CancellationTokenSource();
+
+        await provider.GetDocumentAsync(cts.Token);
+
+        repository.CapturedToken.Should().Be(cts.Token);
+    }
+
+    private sealed class CapturingScopeRepository : IScopeRepository
+    {
+        public CancellationToken CapturedToken { get; private set; }
+
+        public ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default)
+        {
+            CapturedToken = cancellationToken;
+            return ValueTask.FromResult<IReadOnlyCollection<ScopeDefinition>>([StandardScopes.OpenId]);
+        }
+    }
 }

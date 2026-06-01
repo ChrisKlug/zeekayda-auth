@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using ZeeKayDa.Auth.AspNetCore.Extensions;
+using ZeeKayDa.Auth.Discovery;
 using ZeeKayDa.Auth.Scopes;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests.Endpoints;
@@ -419,9 +420,49 @@ public sealed class DiscoveryEndpointTests : IDisposable
             .Should().Be("https://test.example.com/connect/jwks");
     }
 
+    [Fact]
+    public async Task GetDiscoveryDocument_PropagatesRequestAbortedCancellationToken()
+    {
+        var provider = new CapturingDiscoveryDocumentProvider();
+        using var factory = new TestWebAppFactory(
+            configureBuilder: builder => builder.Services.Replace(
+                ServiceDescriptor.Singleton<IDiscoveryDocumentProvider>(provider)));
+        using var client = CreateClient(factory);
+
+        var response = await client.GetAsync(DiscoveryPath, TestContext.Current.CancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        provider.CapturedToken.Should().NotBe(default);
+        provider.CapturedToken.CanBeCanceled.Should().BeTrue();
+    }
+
     private sealed class CustomScopeRepositoryWithoutOpenId : IScopeRepository
     {
         public ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default)
             => ValueTask.FromResult<IReadOnlyCollection<ScopeDefinition>>([StandardScopes.Profile]);
+    }
+
+    private sealed class CapturingDiscoveryDocumentProvider : IDiscoveryDocumentProvider
+    {
+        public CancellationToken CapturedToken { get; private set; }
+
+        public ValueTask<OpenIdConfigurationDocument> GetDocumentAsync(CancellationToken cancellationToken = default)
+        {
+            CapturedToken = cancellationToken;
+
+            return ValueTask.FromResult(new OpenIdConfigurationDocument
+            {
+                Issuer = "https://test.example.com",
+                AuthorizationEndpoint = "https://test.example.com/connect/authorize",
+                TokenEndpoint = "https://test.example.com/connect/token",
+                JwksUri = "https://test.example.com/connect/jwks",
+                ResponseTypesSupported = [ResponseType.Code],
+                ScopesSupported = [StandardScopes.OpenId.Name],
+                ResponseModesSupported = [ResponseMode.Query],
+                GrantTypesSupported = [GrantType.AuthorizationCode],
+                TokenEndpointAuthMethodsSupported = [TokenEndpointAuthMethod.ClientSecretBasic],
+                IdTokenSigningAlgValuesSupported = [SigningAlgorithm.RS256],
+            });
+        }
     }
 }

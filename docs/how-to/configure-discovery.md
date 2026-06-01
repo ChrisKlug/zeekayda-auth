@@ -141,6 +141,31 @@ app.MapZeeKayDaAuth();
 If you register a custom `IScopeRepository`, include `openid` in the configured scopes so startup
 validation succeeds.
 
+Custom scope repositories are asynchronous and must honour `CancellationToken`:
+
+```csharp
+using ZeeKayDa.Auth.Scopes;
+
+public sealed class CustomScopeRepository : IScopeRepository
+{
+    public async ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        await Task.Yield();
+
+        return
+        [
+            new ScopeDefinition { Name = "openid" },
+            new ScopeDefinition { Name = "profile" },
+            new ScopeDefinition { Name = "api.read" }
+        ];
+    }
+}
+```
+
+> Warning: Avoid sync-over-async in custom repositories. Do not call `.Result` or
+> `.GetAwaiter().GetResult()` on async operations.
+
 Discovery still publishes only the scope names, and only for scopes where `IsDiscoverable` is
 `true`. `IdTokenClaims` and `AccessTokenClaims` are repository metadata for future authorization
 server behavior and are not emitted as custom discovery fields.
@@ -176,6 +201,54 @@ app.MapZeeKayDaAuth();
 
 app.Run();
 ```
+
+If you register a custom `IDiscoveryDocumentProvider`, use the async method signature and pass the
+request cancellation token through to downstream async calls:
+
+```csharp
+using Microsoft.Extensions.Options;
+using ZeeKayDa.Auth;
+using ZeeKayDa.Auth.Discovery;
+using ZeeKayDa.Auth.Scopes;
+
+public sealed class CustomDiscoveryDocumentProvider : IDiscoveryDocumentProvider
+{
+    private readonly IOptions<AuthorizationServerOptions> _options;
+    private readonly IScopeRepository _scopeRepository;
+
+    public CustomDiscoveryDocumentProvider(
+        IOptions<AuthorizationServerOptions> options,
+        IScopeRepository scopeRepository)
+    {
+        _options = options;
+        _scopeRepository = scopeRepository;
+    }
+
+    public async ValueTask<OpenIdConfigurationDocument> GetDocumentAsync(CancellationToken cancellationToken = default)
+    {
+        var options = _options.Value;
+        var scopes = await _scopeRepository.GetScopesAsync(cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        return new OpenIdConfigurationDocument
+        {
+            Issuer = options.Issuer!,
+            AuthorizationEndpoint = options.AuthorizationEndpoint ?? $"{options.Issuer}/connect/authorize",
+            TokenEndpoint = options.TokenEndpoint ?? $"{options.Issuer}/connect/token",
+            JwksUri = options.JwksUri ?? $"{options.Issuer}/connect/jwks",
+            ResponseTypesSupported = [.. options.ResponseTypesSupported],
+            ScopesSupported = scopes.Where(s => s.IsDiscoverable).Select(s => s.Name).ToList(),
+            ResponseModesSupported = [.. options.ResponseModesSupported],
+            GrantTypesSupported = [.. options.GrantTypesSupported],
+            TokenEndpointAuthMethodsSupported = [.. options.TokenEndpointAuthMethodsSupported],
+            IdTokenSigningAlgValuesSupported = [.. options.IdTokenSigningAlgValuesSupported],
+        };
+    }
+}
+```
+
+> Warning: Avoid sync-over-async in custom discovery providers. Do not block on async calls with
+> `.Result` or `.GetAwaiter().GetResult()`.
 
 ## 5. Verify the discovery document
 

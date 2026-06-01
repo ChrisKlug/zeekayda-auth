@@ -74,6 +74,18 @@ public sealed class InMemoryScopeRepositoryTests
     }
 
     [Fact]
+    public async Task GetScopes_CancelledToken_ThrowsOperationCanceledException()
+    {
+        var repository = new InMemoryScopeRepository([new ScopeDefinition { Name = StandardScopes.OpenId.Name }]);
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        var act = async () => await repository.GetScopesAsync(cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
     public void Constructor_DuplicateScopeNames_Throws()
     {
         var act = () => new InMemoryScopeRepository(

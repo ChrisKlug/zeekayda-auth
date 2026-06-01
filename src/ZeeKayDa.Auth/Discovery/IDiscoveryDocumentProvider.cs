@@ -7,13 +7,16 @@ namespace ZeeKayDa.Auth.Discovery;
 public interface IDiscoveryDocumentProvider
 {
     /// <summary>
-    /// Returns the current <see cref="OpenIdConfigurationDocument"/> built from the live
-    /// authorization server options.
+    /// Asynchronously returns the current <see cref="OpenIdConfigurationDocument"/> built from the
+    /// live authorization server options.
     /// </summary>
-    /// <param name="cancellationToken">A token that can be used to cancel the operation.</param>
+    /// <param name="cancellationToken">
+    /// A token used to cancel the operation. Implementations must honour this token.
+    /// </param>
     /// <returns>
-    /// A populated <see cref="OpenIdConfigurationDocument"/> ready for serialisation and
-    /// publication at the discovery endpoint.
+    /// A <see cref="ValueTask{TResult}"/> that yields a populated
+    /// <see cref="OpenIdConfigurationDocument"/> ready for serialisation and publication at the
+    /// discovery endpoint.
     /// </returns>
     ValueTask<OpenIdConfigurationDocument> GetDocumentAsync(CancellationToken cancellationToken = default);
 }
