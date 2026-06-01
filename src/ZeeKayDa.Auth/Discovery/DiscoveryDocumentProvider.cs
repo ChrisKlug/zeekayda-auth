@@ -44,24 +44,17 @@ internal sealed class DiscoveryDocumentProvider : IDiscoveryDocumentProvider
         // The issuer is validated at startup; by the time this method is called it is safe to use.
         var issuerUri = new Uri(options.Issuer!);
 
-        // Ensure a trailing slash so that relative URI combination appends segments rather than
-        // replacing the final path segment (Uri combination semantics require a trailing slash on
-        // the base to treat it as a directory).
-        var baseUri = issuerUri.AbsolutePath.EndsWith('/')
-            ? issuerUri
-            : new Uri(issuerUri.AbsoluteUri + "/");
-
         var scopes = await _scopeRepository.GetScopesAsync(cancellationToken).ConfigureAwait(false);
 
         return new OpenIdConfigurationDocument
         {
             Issuer = options.Issuer!,
             AuthorizationEndpoint = options.AuthorizationEndpoint
-                ?? new Uri(baseUri, ConnectAuthorize).AbsoluteUri,
+                ?? IssuerUriHelper.Combine(issuerUri, ConnectAuthorize).AbsoluteUri,
             TokenEndpoint = options.TokenEndpoint
-                ?? new Uri(baseUri, ConnectToken).AbsoluteUri,
+                ?? IssuerUriHelper.Combine(issuerUri, ConnectToken).AbsoluteUri,
             JwksUri = options.JwksUri
-                ?? new Uri(baseUri, ConnectJwks).AbsoluteUri,
+                ?? IssuerUriHelper.Combine(issuerUri, ConnectJwks).AbsoluteUri,
             ResponseTypesSupported = [.. options.ResponseTypesSupported],
             ScopesSupported = [.. scopes
                 .Where(scope => scope.IsDiscoverable)

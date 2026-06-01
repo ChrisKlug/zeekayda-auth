@@ -37,14 +37,13 @@ internal sealed class DiscoveryEndpoint : IZeeKayDaEndpoint
         endpoints.MapGet(routePath, Handle).RequireIssuerHost(issuerUri);
     }
 
-    private static async ValueTask<IResult> Handle(
+    private async ValueTask<IResult> Handle(
         IDiscoveryDocumentProvider provider,
-        HttpContext context,
-        IOptions<AuthorizationServerOptions> options)
+        HttpContext context)
     {
         // Cache-Control set directly in the handler per ADR §8 so that the behaviour is
         // co-located with the endpoint and trivially verifiable in tests without a pipeline.
-        var maxAge = options.Value.DiscoveryDocumentCacheMaxAgeSeconds;
+        var maxAge = _options.Value.DiscoveryDocumentCacheMaxAgeSeconds;
         context.Response.Headers.CacheControl = maxAge > 0
             ? $"public, max-age={maxAge}, must-revalidate"
             : "no-store";
