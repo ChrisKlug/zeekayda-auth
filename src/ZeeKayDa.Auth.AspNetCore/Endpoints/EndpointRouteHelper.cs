@@ -32,15 +32,8 @@ internal static class EndpointRouteHelper
             return new Uri(endpointOverride);
         }
 
-        var baseUri = issuerUri.AbsolutePath.EndsWith('/')
-            ? issuerUri
-            : new Uri(issuerUri.AbsoluteUri + "/");
-
-        return new Uri(baseUri, relativePath);
+        return IssuerUriHelper.Combine(issuerUri, relativePath);
     }
-
-    public static string GetRoutePath(Uri endpointUri)
-        => endpointUri.AbsolutePath;
 
     public static RouteHandlerBuilder RequireIssuerHost(this RouteHandlerBuilder builder, Uri endpointUri)
         => builder.RequireHost(endpointUri.Authority);

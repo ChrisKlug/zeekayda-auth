@@ -66,7 +66,11 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IZeeKayDaEndpoint, DiscoveryEndpoint>());
         services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IZeeKayDaEndpoint, PreAlphaProtocolEndpoint>());
+            ServiceDescriptor.Singleton<IZeeKayDaEndpoint, PreAlphaAuthorizationEndpoint>());
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IZeeKayDaEndpoint, PreAlphaTokenEndpoint>());
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IZeeKayDaEndpoint, PreAlphaJwksEndpoint>());
 
         // Emits a startup warning when AllowInsecureIssuer is enabled.
         services.AddHostedService<InsecureIssuerWarningService>();
