@@ -141,7 +141,7 @@ app.MapZeeKayDaAuth();
 If you register a custom `IScopeRepository`, include `openid` in the configured scopes so startup
 validation succeeds.
 
-Custom scope repositories are asynchronous and must honour `CancellationToken`:
+Custom scope repositories are asynchronous and must honor `CancellationToken`:
 
 ```csharp
 using ZeeKayDa.Auth.Scopes;

@@ -9,7 +9,7 @@ public interface IScopeRepository
     /// Asynchronously returns the scopes known to the authorization server.
     /// </summary>
     /// <param name="cancellationToken">
-    /// A token used to cancel the operation. Implementations must honour this token.
+    /// A token used to cancel the operation. Implementations must honor this token.
     /// </param>
     /// <returns>
     /// A <see cref="ValueTask{TResult}"/> that yields the configured scope definitions.

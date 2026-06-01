@@ -11,7 +11,7 @@ public interface IDiscoveryDocumentProvider
     /// live authorization server options.
     /// </summary>
     /// <param name="cancellationToken">
-    /// A token used to cancel the operation. Implementations must honour this token.
+    /// A token used to cancel the operation. Implementations must honor this token.
     /// </param>
     /// <returns>
     /// A <see cref="ValueTask{TResult}"/> that yields a populated
