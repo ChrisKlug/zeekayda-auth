@@ -138,9 +138,8 @@ app.UseRouting();
 app.MapZeeKayDaAuth();
 ```
 
-If you register a custom `IScopeRepository`, you can also use `AddDefaultScopes()` to append the
-standard scopes. `AddDefaultScopes()` is idempotent, so calling it multiple times does not duplicate
-scope entries.
+If you register a custom `IScopeRepository`, include `openid` in the configured scopes so startup
+validation succeeds.
 
 Discovery still publishes only the scope names, and only for scopes where `IsDiscoverable` is
 `true`. `IdTokenClaims` and `AccessTokenClaims` are repository metadata for future authorization
