@@ -90,6 +90,18 @@ moving it into a `Jwks` group later would be a second breaking change for no ben
 forward-looking argument does not apply to keeping any other URI on the root, because every other
 endpoint already has spec-defined per-endpoint metadata.
 
+**Endpoint-affinity as a permitted secondary criterion.** The prefix rule is the *primary*
+criterion. The `Authorization` row above also includes `require_request_uri_registration` and the
+`request_*` family even though those keys do not share the literal `authorization_endpoint_*`
+prefix. They are grouped under `Authorization` because the spec defines them as modifiers of the
+authorization-endpoint behaviour. This is a permitted secondary criterion: a property may join a
+group whose name is the endpoint it spec-modifies, even when the property's own discovery key does
+not share that endpoint's prefix. The criterion is still mechanical (the spec text itself must
+identify the property as an authorization/token/etc. endpoint modifier — not a judgement call by
+the implementer), and a separate `Request` group would be silly. Cosmetic groupings invented
+without either a spec prefix *or* a spec-defined endpoint-modifier relationship remain
+prohibited.
+
 ### 2. Per-endpoint properties migration table (initial cut)
 
 Concrete moves required by this ADR for the surface that exists today:
@@ -109,6 +121,14 @@ Concrete moves required by this ADR for the surface that exists today:
 | `TokenEndpointAuthMethodsSupported` | `Token.AuthMethodsSupported` |
 
 Future endpoints, artifacts, or response-shape fields add their own groups under the same rule.
+
+**Known future groups (recorded so they are not forgotten).** The §1 rule predicts a `Claims`
+group the moment a second `claims_*` discovery field lands. `claims_supported` is on the root in
+the table above because it is the only `claims_*` field exposed today, but the spec also defines
+`claims_parameter_supported`, `claims_locales_supported`, and `claim_types_supported`. The first
+PR that introduces any second `claims_*` field must form the `Claims` group at that point and
+move `claims_supported` into it — the same forward-looking-but-not-pre-empted reasoning applied
+to `Jwks` above. Recording this here so the implementer of that PR is not surprised.
 
 ### 3. Group classes: `sealed`, get-only, default-initialised
 
