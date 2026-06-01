@@ -320,7 +320,7 @@ The current validator enforces that `TokenEndpointAuthMethodsSupported` is not n
 permit it to be empty**. An empty supported-methods set, or a set whose only entry is `none`,
 allows unauthenticated token-endpoint calls and is the kind of insecure-default footgun this
 framework exists to prevent
-([OAuth 2.0 Security BCP §2.6](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-security-topics)).
+([OAuth 2.0 Security BCP §2.6](https://www.rfc-editor.org/rfc/rfc9700#section-2.6)).
 
 After this ADR's reshape, the analogous field is `options.Token.AuthMethodsSupported`. The
 **rule** we want is: empty (or `none`-only) must require explicit, named opt-in — never the
