@@ -99,14 +99,18 @@ public sealed class InMemoryScopeRepositoryTests
     }
 
     [Fact]
-    public void Constructor_WhitespaceAccessTokenClaimName_Throws()
+    public async Task GetScopesAsync_AlreadyCancelledToken_Throws()
     {
-        var act = () => new InMemoryScopeRepository(
+        var repository = new InMemoryScopeRepository(
         [
-            new ScopeDefinition { Name = StandardScopes.Profile.Name, AccessTokenClaims = ["scope", " "] },
+            new ScopeDefinition { Name = StandardScopes.OpenId.Name },
         ]);
 
-        act.Should().Throw<ArgumentException>()
-            .WithMessage("*whitespace access token claim name*");
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        var act = async () => await repository.GetScopesAsync(cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
     }
 }
