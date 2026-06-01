@@ -215,9 +215,32 @@ The client authentication methods supported at the token endpoint. Published as
 | Enum value | JSON serialization |
 |---|---|
 | `TokenEndpointAuthMethod.ClientSecretBasic` | `"client_secret_basic"` |
+| `TokenEndpointAuthMethod.ClientSecretPost` | `"client_secret_post"` |
+| `TokenEndpointAuthMethod.ClientSecretJwt` | `"client_secret_jwt"` |
+| `TokenEndpointAuthMethod.PrivateKeyJwt` | `"private_key_jwt"` |
+| `TokenEndpointAuthMethod.None` | `"none"` |
 
 `token_endpoint_auth_methods_supported` is defined by
 [RFC 8414 §2](https://www.rfc-editor.org/rfc/rfc8414#section-2).
+
+#### `TokenEndpointAuthMethod.None` — public client restriction
+
+`TokenEndpointAuthMethod.None` is the authentication method for public clients (single-page
+applications, mobile apps) that cannot keep a secret. Because there is no client credential to
+verify at the token endpoint, the only protection against token theft on the code exchange is PKCE.
+
+Per [RFC 9700 §2.4](https://www.rfc-editor.org/rfc/rfc9700#section-2.4) and OAuth 2.1 §4.1.1,
+public clients **MUST** present a valid PKCE `code_verifier` at the token endpoint. Token endpoint
+enforcement of PKCE for `None` clients is **mandatory**.
+
+**Startup validation rule:** If `TokenEndpointAuthMethodsSupported` contains only
+`TokenEndpointAuthMethod.None` and `GrantTypesSupported` does not contain
+`GrantType.AuthorizationCode`, the host will fail to start. The authorization code flow is the
+only PKCE-capable grant; without it, `None` clients have no secure path to obtain tokens.
+
+This rule does **not** apply when `None` is listed alongside another authentication method — for
+example, `[None, ClientSecretBasic]` is valid regardless of which grant types are enabled, because
+the server also supports confidential clients.
 
 ---
 
@@ -295,6 +318,7 @@ Negative values fail startup validation.
 | `ResponseModesSupported` is required | `ResponseModesSupported` is `null` |
 | `GrantTypesSupported` is required | `GrantTypesSupported` is `null` |
 | `TokenEndpointAuthMethodsSupported` is required | `TokenEndpointAuthMethodsSupported` is `null` |
+| `TokenEndpointAuthMethod.None` requires `GrantType.AuthorizationCode` | `TokenEndpointAuthMethodsSupported` is `[None]` and `GrantTypesSupported` does not contain `AuthorizationCode` |
 | `IdTokenSigningAlgValuesSupported` is required | `IdTokenSigningAlgValuesSupported` is `null` or empty |
 | Cache max-age must not be negative | `DiscoveryDocumentCacheMaxAgeSeconds` is less than `0` |
 

@@ -29,6 +29,18 @@ public enum TokenEndpointAuthMethod
     PrivateKeyJwt,
 
     /// <summary>No client authentication (<c>none</c>).</summary>
+    /// <remarks>
+    /// Clients using this authentication method are public clients (e.g., single-page applications,
+    /// mobile apps) that cannot keep a secret. Because there is no client credential to verify at the
+    /// token endpoint, the only binding between the authorization request and the token exchange is the
+    /// PKCE <c>code_verifier</c>. Clients using <c>none</c> <b>MUST</b> present a valid PKCE
+    /// <c>code_verifier</c> at the token endpoint.
+    /// <para>
+    /// Per <see href="https://www.rfc-editor.org/rfc/rfc9700#section-2.4">RFC 9700 §2.4</see> and
+    /// OAuth 2.1 §4.1.1, public clients MUST use PKCE. The PKCE specification is defined in
+    /// <see href="https://www.rfc-editor.org/rfc/rfc7636">RFC 7636</see>.
+    /// </para>
+    /// </remarks>
     [JsonStringEnumMemberName("none")]
     None,
 }

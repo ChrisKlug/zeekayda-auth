@@ -112,6 +112,21 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
                 "AuthorizationServerOptions.TokenEndpointAuthMethodsSupported must not be null.");
         }
 
+        // RFC 9700 §2.4 and OAuth 2.1 §4.1.1: public clients (None) MUST use PKCE on the
+        // authorization code flow. Configuring None as the only token endpoint authentication
+        // method without the authorization code grant is a misconfiguration — there is no
+        // PKCE-capable grant for public clients to use.
+        if (options.TokenEndpointAuthMethodsSupported is { Count: 1 } &&
+            options.TokenEndpointAuthMethodsSupported.Contains(TokenEndpointAuthMethod.None) &&
+            !options.GrantTypesSupported.Contains(GrantType.AuthorizationCode))
+        {
+            return ValidateOptionsResult.Fail(
+                "TokenEndpointAuthMethod.None requires GrantType.AuthorizationCode to be enabled. " +
+                "Public clients using None authentication MUST use PKCE on the authorization code " +
+                "flow (RFC 9700 §2.4, OAuth 2.1 §4.1.1). Either add GrantType.AuthorizationCode to " +
+                "GrantTypesSupported, or add a non-None authentication method.");
+        }
+
         if (options.IdTokenSigningAlgValuesSupported is null)
         {
             return ValidateOptionsResult.Fail(

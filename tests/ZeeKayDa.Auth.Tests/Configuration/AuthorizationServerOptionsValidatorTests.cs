@@ -442,6 +442,49 @@ public sealed class AuthorizationServerOptionsValidatorTests
         result.FailureMessage.Should().Contain(nameof(AuthorizationServerOptions.DiscoveryDocumentCacheMaxAgeSeconds));
     }
 
+    // ── TokenEndpointAuthMethod.None + authorization code grant ──────────────────────────────────
+
+    [Fact]
+    public void Validate_NoneOnlyAuthMethodWithoutAuthorizationCodeGrant_Fails()
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            TokenEndpointAuthMethodsSupported = [TokenEndpointAuthMethod.None],
+            GrantTypesSupported = [GrantType.ClientCredentials],
+        });
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("None");
+        result.FailureMessage.Should().Contain("AuthorizationCode");
+    }
+
+    [Fact]
+    public void Validate_NoneAuthMethodWithAuthorizationCodeGrant_Succeeds()
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            TokenEndpointAuthMethodsSupported = [TokenEndpointAuthMethod.None],
+            GrantTypesSupported = [GrantType.AuthorizationCode],
+        });
+
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Validate_NoneAlongsideOtherAuthMethodWithoutAuthorizationCodeGrant_Succeeds()
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            TokenEndpointAuthMethodsSupported = [TokenEndpointAuthMethod.None, TokenEndpointAuthMethod.ClientSecretBasic],
+            GrantTypesSupported = [GrantType.ClientCredentials],
+        });
+
+        result.Succeeded.Should().BeTrue();
+    }
+
     private static void SetEndpointProperty(AuthorizationServerOptions options, string propertyName, string value)
     {
         var prop = typeof(AuthorizationServerOptions).GetProperty(propertyName)!;
