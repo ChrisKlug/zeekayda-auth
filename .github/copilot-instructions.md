@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-ZeeKayDa.Auth is an open-source OpenID Connect identity provider framework for .NET. It is designed to be easy to use while being production-grade, spec-compliant, and security-first. The name "ZeeKayDa" is derived from the phonetic spelling of "ZKDA" (Zero Knowledge Driven Auth).
+ZeeKayDa.Auth is an open-source OpenID Connect identity provider framework for .NET. It is designed to be easy to use while being production-grade, spec-compliant, and security-first.
 
 ## Governing Specifications
 
