@@ -170,12 +170,13 @@ If you are unsure about a style decision, check how the surrounding code is writ
 
 ## CI
 
-Every pull request and every push to `main` runs two GitHub Actions jobs defined in `.github/workflows/ci.yml`:
+Every pull request and every push to `main` runs the following GitHub Actions jobs defined in `.github/workflows/ci.yml`:
 
 | Job | What it checks |
 |---|---|
 | `build-and-test` | Restores, builds (warnings-as-errors), and runs the full test suite with code coverage on `ubuntu-latest`. |
 | `coverage-regression` | Runs PR and base-branch coverage, writes a coverage delta summary, and fails if line coverage decreases. |
+| `coverage-regression-script-tests` | Runs the fixture-driven smoke tests for `.github/scripts/check_coverage_regression.cs`. |
 | `format-check` | Runs `dotnet format --verify-no-changes` to ensure all code matches the `.editorconfig` rules. |
 | `codeql` | Runs GitHub CodeQL static analysis (`security-and-quality` query suite). Findings must be fixed or explicitly justified before a PR can be merged. See [SECURITY.md](SECURITY.md). |
 
@@ -194,6 +195,61 @@ dotnet format
 ```
 
 Coverage reports are uploaded as build artifacts and can be downloaded from the Actions run summary.
+
+### Coverage regression check
+
+The `coverage-regression` job protects critical paths from silent coverage drops. It does **not** compare the PR against a committed baseline file; instead, on every PR it measures coverage for both the PR head and the PR base branch (live) and fails if line coverage drops.
+
+**How the check works:**
+
+1. The job runs the full test suite twice — once on the PR branch, once on a clean checkout of the base branch (`github.base_ref`) in a worktree at `../coverage-base`.
+2. Both runs collect `coverage.cobertura.xml` via the existing `XPlat Code Coverage` collector.
+3. [`.github/scripts/check_coverage_regression.cs`](.github/scripts/check_coverage_regression.cs) — a standalone [file-based C# program](https://learn.microsoft.com/dotnet/core/tutorials/file-based-programs) — sums `lines-covered` / `lines-valid` across every Cobertura file in each results tree, computes the line-coverage percentage for each side, and compares the delta against `COVERAGE_ALLOWED_REGRESSION_PERCENT` (default `0` — no regression allowed).
+4. A markdown summary is written to `$GITHUB_STEP_SUMMARY` showing the base value, PR value, and delta for both line and branch coverage.
+5. The job fails with an actionable `::error::` annotation if the line-coverage delta is more negative than the allowed regression.
+
+**Reproducing locally:**
+
+```bash
+# 1. Run tests with coverage on your branch
+dotnet test --configuration Release --collect:"XPlat Code Coverage" --results-directory ./TestResults/pr
+
+# 2. Run the same on a clean checkout of main
+git worktree add ../coverage-base origin/main
+( cd ../coverage-base && dotnet test --configuration Release --collect:"XPlat Code Coverage" --results-directory ./TestResults/base )
+
+# 3. Run the regression check
+dotnet run .github/scripts/check_coverage_regression.cs -- ./TestResults/pr ../coverage-base/TestResults/base
+
+# 4. Tear down the worktree when finished
+git worktree remove ../coverage-base
+```
+
+**Reading a failure:**
+
+The CI log emits a single error line of the form:
+
+```
+::error::Line coverage regressed by 1.42 percentage points (allowed: 0.00).
+```
+
+To diagnose which files lost coverage:
+
+1. Download both `coverage` artifacts from the Actions run (PR run and the latest `main` run).
+2. Generate an HTML report with `dotnet tool install -g dotnet-reportgenerator-globaltool` then `reportgenerator -reports:**/coverage.cobertura.xml -targetdir:./coverage-html`.
+3. Compare the two reports file by file — the regressed lines will be the new uncovered ones in the PR.
+
+The fix is almost always to add a test that exercises the new or changed code path.
+
+**Maintainer process for tolerating a regression:**
+
+There is **no committed baseline file**. To intentionally accept a coverage decrease in a specific PR, set `COVERAGE_ALLOWED_REGRESSION_PERCENT` for that PR run — either by editing `.github/workflows/ci.yml`'s `env:` block for the duration of the PR and reverting before merge, or by negotiating a permanent floor change in a separate PR with justification in the description (e.g. "deleting a fully-covered subsystem mechanically reduces the percentage").
+
+The `coverage-regression-script-tests` job runs [`.github/scripts/tests/check_coverage_regression.tests.sh`](.github/scripts/tests/check_coverage_regression.tests.sh) — a fixture-driven smoke test covering the script's no-change, improvement, regression, within-tolerance, and missing-input cases. Run it locally with:
+
+```bash
+bash .github/scripts/tests/check_coverage_regression.tests.sh
+```
 
 ---
 
