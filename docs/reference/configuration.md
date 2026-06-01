@@ -229,7 +229,7 @@ The client authentication methods supported at the token endpoint. Published as
 applications, mobile apps) that cannot keep a secret. Because there is no client credential to
 verify at the token endpoint, the only protection against token theft on the code exchange is PKCE.
 
-Per [RFC 9700 §2.4](https://www.rfc-editor.org/rfc/rfc9700#section-2.4) and OAuth 2.1 §4.1.1,
+Per [RFC 9700 §2.4](https://www.rfc-editor.org/rfc/rfc9700#section-2.4) and [OAuth 2.1 §4.1.1](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/),
 public clients **MUST** present a valid PKCE `code_verifier` at the token endpoint. Token endpoint
 enforcement of PKCE for `None` clients is **mandatory**.
 
