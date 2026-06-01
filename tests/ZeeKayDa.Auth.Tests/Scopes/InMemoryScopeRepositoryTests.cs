@@ -99,6 +99,18 @@ public sealed class InMemoryScopeRepositoryTests
     }
 
     [Fact]
+    public void Constructor_WhitespaceAccessTokenClaimName_Throws()
+    {
+        var act = () => new InMemoryScopeRepository(
+        [
+            new ScopeDefinition { Name = StandardScopes.Profile.Name, AccessTokenClaims = ["scope", " "] },
+        ]);
+
+        act.Should().Throw<ArgumentException>()
+            .WithMessage("*whitespace access token claim name*");
+    }
+
+    [Fact]
     public async Task GetScopesAsync_AlreadyCancelledToken_Throws()
     {
         var repository = new InMemoryScopeRepository(
