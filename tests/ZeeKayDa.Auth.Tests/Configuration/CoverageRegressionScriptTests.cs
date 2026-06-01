@@ -10,8 +10,8 @@ public sealed class CoverageRegressionScriptTests : IDisposable
     [Fact]
     public void CheckCoverageRegression_FailsWhenLineOrBranchCoverageRegresses()
     {
-        var baseResultsDirectory = Path.Combine(tempDirectory, "base-results");
-        var prResultsDirectory = Path.Combine(tempDirectory, "pr-results");
+        var baseResultsDirectory = Path.Join(tempDirectory, "base-results");
+        var prResultsDirectory = Path.Join(tempDirectory, "pr-results");
         var baselineFile = Path.Join(tempDirectory, "coverage-baseline.json");
 
         WriteCoverageReport(baseResultsDirectory, "src/Example.cs", linesCovered: 8, linesValid: 10, branchesCovered: 4, branchesValid: 5);
@@ -31,9 +31,9 @@ public sealed class CoverageRegressionScriptTests : IDisposable
     [Fact]
     public void CheckCoverageRegression_PassesWhenCoverageImproves()
     {
-        var baseResultsDirectory = Path.Combine(tempDirectory, "base-results");
-        var prResultsDirectory = Path.Combine(tempDirectory, "pr-results");
-        var baselineFile = Path.Combine(tempDirectory, "coverage-baseline.json");
+        var baseResultsDirectory = Path.Join(tempDirectory, "base-results");
+        var prResultsDirectory = Path.Join(tempDirectory, "pr-results");
+        var baselineFile = Path.Join(tempDirectory, "coverage-baseline.json");
 
         WriteCoverageReport(baseResultsDirectory, "src/Example.cs", linesCovered: 7, linesValid: 10, branchesCovered: 3, branchesValid: 5);
         WriteCoverageReport(prResultsDirectory, "src/Example.cs", linesCovered: 9, linesValid: 10, branchesCovered: 5, branchesValid: 5);
