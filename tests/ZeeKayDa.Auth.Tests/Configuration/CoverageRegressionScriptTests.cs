@@ -5,14 +5,14 @@ namespace ZeeKayDa.Auth.Tests.Configuration;
 
 public sealed class CoverageRegressionScriptTests : IDisposable
 {
-    private readonly string tempDirectory = Path.Combine(Path.GetTempPath(), "zeekayda-auth-coverage-script-tests", Guid.NewGuid().ToString("N"));
+    private readonly string tempDirectory = Path.Join(Path.GetTempPath(), "zeekayda-auth-coverage-script-tests", Guid.NewGuid().ToString("N"));
 
     [Fact]
     public void CheckCoverageRegression_FailsWhenLineOrBranchCoverageRegresses()
     {
         var baseResultsDirectory = Path.Combine(tempDirectory, "base-results");
         var prResultsDirectory = Path.Combine(tempDirectory, "pr-results");
-        var baselineFile = Path.Combine(tempDirectory, "coverage-baseline.json");
+        var baselineFile = Path.Join(tempDirectory, "coverage-baseline.json");
 
         WriteCoverageReport(baseResultsDirectory, "src/Example.cs", linesCovered: 8, linesValid: 10, branchesCovered: 4, branchesValid: 5);
         WriteCoverageReport(prResultsDirectory, "src/Example.cs", linesCovered: 7, linesValid: 10, branchesCovered: 3, branchesValid: 5);
@@ -156,7 +156,7 @@ public sealed class CoverageRegressionScriptTests : IDisposable
                                 new XAttribute("branch-rate", branchesValid == 0 ? 0 : branchesCovered / (double)branchesValid),
                                 new XElement("lines", lines)))))));
 
-        document.Save(Path.Combine(resultsDirectory, "coverage.cobertura.xml"));
+        document.Save(Path.Join(resultsDirectory, "coverage.cobertura.xml"));
     }
 
     private sealed record ScriptResult(int ExitCode, string StandardOutput, string StandardError)
