@@ -90,7 +90,7 @@ public sealed class CoverageRegressionScriptTests : IDisposable
 
         while (current is not null)
         {
-            if (File.Exists(Path.Combine(current.FullName, "ZeeKayDa.Auth.slnx")))
+            if (File.Exists(Path.Join(current.FullName, "ZeeKayDa.Auth.slnx")))
             {
                 return current.FullName;
             }
