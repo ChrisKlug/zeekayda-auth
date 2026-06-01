@@ -1,0 +1,102 @@
+{
+  "linePercent": 89.00709219858156,
+  "branchPercent": 82.8125,
+  "files": {
+    "AuthorizationServerOptions.cs": {
+      "linePercent": 100,
+      "branchPercent": null
+    },
+    "Configuration/AuthorizationServerOptionsValidator.cs": {
+      "linePercent": 100,
+      "branchPercent": 100
+    },
+    "Discovery/DiscoveryDocumentProvider.cs": {
+      "linePercent": 100,
+      "branchPercent": 100
+    },
+    "Discovery/OpenIdConfigurationDocument.cs": {
+      "linePercent": 100,
+      "branchPercent": null
+    },
+    "Scopes/DefaultScopeRepository.cs": {
+      "linePercent": 100,
+      "branchPercent": null
+    },
+    "Scopes/InMemoryScopeRepository.cs": {
+      "linePercent": 100,
+      "branchPercent": 100
+    },
+    "Scopes/ScopeDefinition.cs": {
+      "linePercent": 100,
+      "branchPercent": null
+    },
+    "Scopes/StandardScopes.cs": {
+      "linePercent": 100,
+      "branchPercent": null
+    },
+    "ZeeKayDa.Auth.AspNetCore/Endpoints/DiscoveryEndpoint.cs": {
+      "linePercent": 100,
+      "branchPercent": 100
+    },
+    "ZeeKayDa.Auth.AspNetCore/Endpoints/EndpointRouteHelper.cs": {
+      "linePercent": 80,
+      "branchPercent": 83.33333333333334
+    },
+    "ZeeKayDa.Auth.AspNetCore/Endpoints/PreAlphaProtocolEndpoint.cs": {
+      "linePercent": 100,
+      "branchPercent": null
+    },
+    "ZeeKayDa.Auth.AspNetCore/Extensions/ZeeKayDaAuthBuilderScopeExtensions.cs": {
+      "linePercent": 100,
+      "branchPercent": null
+    },
+    "ZeeKayDa.Auth.AspNetCore/Extensions/ZeeKayDaAuthEndpointRouteBuilderExtensions.cs": {
+      "linePercent": 100,
+      "branchPercent": 100
+    },
+    "ZeeKayDa.Auth.AspNetCore/Extensions/ZeeKayDaAuthServiceCollectionExtensions.cs": {
+      "linePercent": 100,
+      "branchPercent": null
+    },
+    "ZeeKayDa.Auth.AspNetCore/InsecureIssuerWarningService.cs": {
+      "linePercent": 100,
+      "branchPercent": 100
+    },
+    "ZeeKayDa.Auth.AspNetCore/ZeeKayDaAuthBuilder.cs": {
+      "linePercent": 100,
+      "branchPercent": null
+    },
+    "ZeeKayDa.Auth/AuthorizationServerOptions.cs": {
+      "linePercent": 100,
+      "branchPercent": null
+    },
+    "ZeeKayDa.Auth/Configuration/AuthorizationServerOptionsValidator.cs": {
+      "linePercent": 48.421052631578945,
+      "branchPercent": 61.111111111111114
+    },
+    "ZeeKayDa.Auth/Discovery/DiscoveryDocumentProvider.cs": {
+      "linePercent": 100,
+      "branchPercent": 100
+    },
+    "ZeeKayDa.Auth/Discovery/OpenIdConfigurationDocument.cs": {
+      "linePercent": 100,
+      "branchPercent": null
+    },
+    "ZeeKayDa.Auth/Scopes/DefaultScopeRepository.cs": {
+      "linePercent": 100,
+      "branchPercent": null
+    },
+    "ZeeKayDa.Auth/Scopes/InMemoryScopeRepository.cs": {
+      "linePercent": 67.74193548387096,
+      "branchPercent": 60
+    },
+    "ZeeKayDa.Auth/Scopes/ScopeDefinition.cs": {
+      "linePercent": 100,
+      "branchPercent": null
+    },
+    "ZeeKayDa.Auth/Scopes/StandardScopes.cs": {
+      "linePercent": 100,
+      "branchPercent": null
+    }
+  }
+}
