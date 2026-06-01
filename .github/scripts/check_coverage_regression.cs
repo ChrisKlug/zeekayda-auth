@@ -23,27 +23,90 @@ static int Run(string[] args)
 
     WriteStepSummary(pr, baseline);
 
-    if (pr.Lines.Percent is null || baseline.Lines.Percent is null)
+    var allowedRegression = ReadAllowedRegression();
+    var failures = new List<string>();
+
+    CheckRegression("Line", baseline.Lines.Percent, pr.Lines.Percent, allowedRegression, failures);
+    CheckRegression("Branch", baseline.Branches.Percent, pr.Branches.Percent, allowedRegression, failures);
+
+    Console.WriteLine($"Base line coverage: {FormatPercent(baseline.Lines.Percent)}");
+    Console.WriteLine($"PR line coverage: {FormatPercent(pr.Lines.Percent)}");
+    Console.WriteLine($"Base branch coverage: {FormatPercent(baseline.Branches.Percent)}");
+    Console.WriteLine($"PR branch coverage: {FormatPercent(pr.Branches.Percent)}");
+
+    WriteRegressedFiles(pr, baseline, allowedRegression);
+
+    if (failures.Count > 0)
     {
-        return Fail("Line coverage could not be computed.");
+        return Fail($"Coverage regression detected: {string.Join("; ", failures)}");
     }
 
-    var allowedRegression = ReadAllowedRegression();
-    var delta = pr.Lines.Percent.Value - baseline.Lines.Percent.Value;
+    Console.WriteLine("Coverage regression check passed.");
+    return 0;
+}
 
-    Console.WriteLine($"Base line coverage: {baseline.Lines.Percent.Value:F2}%");
-    Console.WriteLine($"PR line coverage: {pr.Lines.Percent.Value:F2}%");
-    Console.WriteLine($"Coverage delta: {delta:+0.00;-0.00;0.00} percentage points");
+static void CheckRegression(string metric, double? baseline, double? current, double allowedRegression, List<string> failures)
+{
+    if (baseline is null || current is null)
+    {
+        failures.Add($"{metric} coverage could not be computed.");
+        return;
+    }
+
+    var delta = current.Value - baseline.Value;
+
+    Console.WriteLine(
+        $"{metric} coverage delta: {delta:+0.00;-0.00;0.00} percentage points " +
+        $"(baseline: {baseline.Value:F2}%, current: {current.Value:F2}%, allowed: {allowedRegression:F2} pp)");
 
     if (delta < -allowedRegression)
     {
-        return Fail(
-            "Line coverage regressed by " +
-            $"{Math.Abs(delta):F2} percentage points " +
-            $"(allowed: {allowedRegression:F2}).");
+        failures.Add(
+            $"{metric.ToLowerInvariant()} coverage {baseline.Value:F2}% -> {current.Value:F2}% " +
+            $"(delta {delta:+0.00;-0.00;0.00} pp, allowed -{allowedRegression:F2} pp)");
+    }
+}
+
+static void WriteRegressedFiles(CoverageSummary pr, CoverageSummary baseline, double allowedRegression)
+{
+    var regressedFiles = baseline.Files
+        .Select(kvp =>
+        {
+            if (!pr.Files.TryGetValue(kvp.Key, out var current))
+            {
+                return null;
+            }
+
+            var lineDelta = TryDelta(current.Lines.Percent, kvp.Value.Lines.Percent);
+            var branchDelta = TryDelta(current.Branches.Percent, kvp.Value.Branches.Percent);
+
+            if ((lineDelta ?? 0) >= -allowedRegression && (branchDelta ?? 0) >= -allowedRegression)
+            {
+                return null;
+            }
+
+            return new FileRegression(kvp.Key, kvp.Value.Lines.Percent, current.Lines.Percent, lineDelta, kvp.Value.Branches.Percent, current.Branches.Percent, branchDelta);
+        })
+        .Where(static item => item is not null)
+        .Cast<FileRegression>()
+        .OrderBy(item => Math.Min(item.LineDelta ?? 0, item.BranchDelta ?? 0))
+        .Take(10)
+        .ToArray();
+
+    if (regressedFiles.Length == 0)
+    {
+        return;
     }
 
-    return 0;
+    Console.WriteLine("Files with coverage regressions (top 10):");
+
+    foreach (var file in regressedFiles)
+    {
+        Console.WriteLine(
+            $"  - {file.Path}: " +
+            $"line {FormatPercent(file.BaselineLine)} -> {FormatPercent(file.CurrentLine)} ({FormatDelta(file.LineDelta)}), " +
+            $"branch {FormatPercent(file.BaselineBranch)} -> {FormatPercent(file.CurrentBranch)} ({FormatDelta(file.BranchDelta)})");
+    }
 }
 
 static CoverageSummary ReadSummary(string resultsDirectory)
@@ -63,6 +126,7 @@ static CoverageSummary ReadSummary(string resultsDirectory)
     var linesValid = 0;
     var branchesCovered = 0;
     var branchesValid = 0;
+    var fileTotals = new Dictionary<string, MutableCoverage>(StringComparer.Ordinal);
 
     foreach (var coverageFile in coverageFiles)
     {
@@ -73,11 +137,56 @@ static CoverageSummary ReadSummary(string resultsDirectory)
         linesValid += ReadIntAttribute(root, "lines-valid", coverageFile);
         branchesCovered += ReadIntAttribute(root, "branches-covered", coverageFile);
         branchesValid += ReadIntAttribute(root, "branches-valid", coverageFile);
+
+        foreach (var classElement in root.Descendants("class"))
+        {
+            var filePath = classElement.Attribute("filename")?.Value;
+
+            if (string.IsNullOrWhiteSpace(filePath))
+            {
+                continue;
+            }
+
+            var normalizedPath = NormalizePath(filePath);
+
+            if (!fileTotals.TryGetValue(normalizedPath, out var totals))
+            {
+                totals = new MutableCoverage();
+                fileTotals[normalizedPath] = totals;
+            }
+
+            foreach (var lineElement in classElement.Descendants("line"))
+            {
+                totals.LinesValid += 1;
+
+                if (ReadIntAttribute(lineElement, "hits", coverageFile) > 0)
+                {
+                    totals.LinesCovered += 1;
+                }
+
+                if (!string.Equals(lineElement.Attribute("branch")?.Value, "true", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                var (covered, valid) = ReadBranchCoverage(lineElement, coverageFile);
+                totals.BranchesCovered += covered;
+                totals.BranchesValid += valid;
+            }
+        }
     }
+
+    var files = fileTotals.ToDictionary(
+        static kvp => kvp.Key,
+        static kvp => new CoverageFileSummary(
+            new CoverageMetric(kvp.Value.LinesCovered, kvp.Value.LinesValid),
+            new CoverageMetric(kvp.Value.BranchesCovered, kvp.Value.BranchesValid)),
+        StringComparer.Ordinal);
 
     return new CoverageSummary(
         Lines: new CoverageMetric(linesCovered, linesValid),
-        Branches: new CoverageMetric(branchesCovered, branchesValid));
+        Branches: new CoverageMetric(branchesCovered, branchesValid),
+        Files: files);
 }
 
 static int ReadIntAttribute(XElement root, string name, string coverageFile)
@@ -92,6 +201,38 @@ static int ReadIntAttribute(XElement root, string name, string coverageFile)
 
     return int.Parse(value, CultureInfo.InvariantCulture);
 }
+
+static (int Covered, int Valid) ReadBranchCoverage(XElement lineElement, string coverageFile)
+{
+    var coverage = lineElement.Attribute("condition-coverage")?.Value;
+
+    if (string.IsNullOrWhiteSpace(coverage))
+    {
+        return (0, 0);
+    }
+
+    var start = coverage.LastIndexOf('(');
+    var end = coverage.LastIndexOf(')');
+
+    if (start < 0 || end <= start + 1)
+    {
+        throw new InvalidOperationException($"{coverageFile} has invalid condition-coverage value '{coverage}'.");
+    }
+
+    var counts = coverage.Substring(start + 1, end - start - 1).Split('/');
+
+    if (counts.Length != 2)
+    {
+        throw new InvalidOperationException($"{coverageFile} has invalid condition-coverage value '{coverage}'.");
+    }
+
+    return (
+        Covered: int.Parse(counts[0], CultureInfo.InvariantCulture),
+        Valid: int.Parse(counts[1], CultureInfo.InvariantCulture));
+}
+
+static string NormalizePath(string path)
+    => path.Replace('\\', '/');
 
 static double ReadAllowedRegression()
 {
@@ -114,7 +255,7 @@ static void WriteStepSummary(CoverageSummary pr, CoverageSummary baseline)
     using var summary = File.AppendText(summaryPath);
     summary.WriteLine("### Coverage regression check");
     summary.WriteLine();
-    summary.WriteLine("| Metric | Base | PR | Delta |");
+    summary.WriteLine("| Metric | Baseline | PR | Delta |");
     summary.WriteLine("|---|---:|---:|---:|");
     WriteSummaryRow(summary, "Line", baseline.Lines.Percent, pr.Lines.Percent);
     WriteSummaryRow(summary, "Branch", baseline.Branches.Percent, pr.Branches.Percent);
@@ -122,16 +263,21 @@ static void WriteStepSummary(CoverageSummary pr, CoverageSummary baseline)
 
 static void WriteSummaryRow(TextWriter writer, string metric, double? baseline, double? pr)
 {
-    writer.WriteLine($"| {metric} | {FormatPercent(baseline)} | {FormatPercent(pr)} | {FormatDelta(pr, baseline)} |");
+    writer.WriteLine($"| {metric} | {FormatPercent(baseline)} | {FormatPercent(pr)} | {FormatDelta(TryDelta(pr, baseline))} |");
 }
+
+static double? TryDelta(double? current, double? baseline)
+    => current is null || baseline is null
+        ? null
+        : current.Value - baseline.Value;
 
 static string FormatPercent(double? value)
     => value is null ? "n/a" : value.Value.ToString("F2", CultureInfo.InvariantCulture) + "%";
 
-static string FormatDelta(double? pr, double? baseline)
-    => pr is null || baseline is null
+static string FormatDelta(double? value)
+    => value is null
         ? "n/a"
-        : (pr.Value - baseline.Value).ToString("+0.00;-0.00;0.00", CultureInfo.InvariantCulture) + " pp";
+        : value.Value.ToString("+0.00;-0.00;0.00", CultureInfo.InvariantCulture) + " pp";
 
 static int Fail(string message)
 {
@@ -140,9 +286,31 @@ static int Fail(string message)
     return 1;
 }
 
-internal sealed record CoverageSummary(CoverageMetric Lines, CoverageMetric Branches);
+internal sealed record CoverageSummary(CoverageMetric Lines, CoverageMetric Branches, IReadOnlyDictionary<string, CoverageFileSummary> Files);
+
+internal sealed record CoverageFileSummary(CoverageMetric Lines, CoverageMetric Branches);
 
 internal sealed record CoverageMetric(int Covered, int Valid)
 {
     public double? Percent => Valid == 0 ? null : Covered / (double)Valid * 100;
+}
+
+internal sealed record FileRegression(
+    string Path,
+    double? BaselineLine,
+    double? CurrentLine,
+    double? LineDelta,
+    double? BaselineBranch,
+    double? CurrentBranch,
+    double? BranchDelta);
+
+internal sealed class MutableCoverage
+{
+    public int LinesCovered { get; set; }
+
+    public int LinesValid { get; set; }
+
+    public int BranchesCovered { get; set; }
+
+    public int BranchesValid { get; set; }
 }
