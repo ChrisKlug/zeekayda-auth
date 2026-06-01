@@ -175,7 +175,8 @@ Every pull request and every push to `main` runs the following GitHub Actions jo
 | Job | What it checks |
 |---|---|
 | `build-and-test` | Restores, builds (warnings-as-errors), and runs the full test suite with code coverage on `ubuntu-latest`. |
-| `coverage-regression` | Compares PR line + branch coverage against the committed `.github/ci-coverage-baseline.json` baseline file and fails on overall or tracked file-level regressions. |
+| `coverage-regression` | Runs PR and base-branch coverage, writes a coverage delta summary, and fails if line coverage decreases. |
+| `coverage-regression-script-tests` | Runs the fixture-driven smoke tests for `.github/scripts/check_coverage_regression.cs`. |
 | `format-check` | Runs `dotnet format --verify-no-changes` to ensure all code matches the `.editorconfig` rules. |
 | `codeql` | Runs GitHub CodeQL static analysis (`security-and-quality` query suite). Findings must be fixed or explicitly justified before a PR can be merged. See [SECURITY.md](SECURITY.md). |
 
@@ -197,49 +198,58 @@ Coverage reports are uploaded as build artifacts and can be downloaded from the 
 
 ### Coverage regression check
 
-The `coverage-regression` job uses a committed baseline file at:
+The `coverage-regression` job protects critical paths from silent coverage drops. It does **not** compare the PR against a committed baseline file; instead, on every PR it measures coverage for both the PR head and the PR base branch (live) and fails if line coverage drops.
 
-```text
-.github/ci-coverage-baseline.json
-```
+**How the check works:**
 
-This JSON file is the source of truth for the gate. It stores overall line/branch percentages plus optional tracked per-file metrics:
+1. The job runs the full test suite twice — once on the PR branch, once on a clean checkout of the base branch (`github.base_ref`) in a worktree at `../coverage-base`.
+2. Both runs collect `coverage.cobertura.xml` via the existing `XPlat Code Coverage` collector.
+3. [`.github/scripts/check_coverage_regression.cs`](.github/scripts/check_coverage_regression.cs) — a standalone [file-based C# program](https://learn.microsoft.com/dotnet/core/tutorials/file-based-programs) — sums `lines-covered` / `lines-valid` across every Cobertura file in each results tree, computes the line-coverage percentage for each side, and compares the delta against `COVERAGE_ALLOWED_REGRESSION_PERCENT` (default `0` — no regression allowed).
+4. A markdown summary is written to `$GITHUB_STEP_SUMMARY` showing the base value, PR value, and delta for both line and branch coverage.
+5. The job fails with an actionable `::error::` annotation if the line-coverage delta is more negative than the allowed regression.
 
-```json
-{
-  "linePercent": 89.01,
-  "branchPercent": 82.81,
-  "files": {
-    "path/to/file.cs": {
-      "linePercent": 100.0,
-      "branchPercent": 100.0
-    }
-  }
-}
-```
-
-To reproduce the check locally:
+**Reproducing locally:**
 
 ```bash
-dotnet restore
-dotnet build --no-restore --configuration Release
-dotnet test --no-build --configuration Release --collect:"XPlat Code Coverage" --results-directory ./TestResults/pr
-dotnet run .github/scripts/check_coverage_regression.cs -- ./TestResults/pr .github/ci-coverage-baseline.json
+# 1. Run tests with coverage on your branch
+dotnet test --configuration Release --collect:"XPlat Code Coverage" --results-directory ./TestResults/pr
+
+# 2. Run the same on a clean checkout of main
+git worktree add ../coverage-base origin/main
+( cd ../coverage-base && dotnet test --configuration Release --collect:"XPlat Code Coverage" --results-directory ./TestResults/base )
+
+# 3. Run the regression check
+dotnet run .github/scripts/check_coverage_regression.cs -- ./TestResults/pr ../coverage-base/TestResults/base
+
+# 4. Tear down the worktree when finished
+git worktree remove ../coverage-base
 ```
 
-Failure output includes:
-- Overall metric deltas such as `Line coverage delta: ...` and `Branch coverage delta: ...`.
-- A failing summary error like `Coverage regression detected: line coverage ...; branch coverage ...` when total line and/or branch drops exceed the allowed threshold.
-- A `Files with coverage regressions (top 10):` list showing per-file line and branch deltas for tracked files in the baseline.
+**Reading a failure:**
 
-If maintainers intentionally need to update (including lowering) the baseline, regenerate and write a new baseline, then commit it with explicit PR justification:
+The CI log emits a single error line of the form:
+
+```
+::error::Line coverage regressed by 1.42 percentage points (allowed: 0.00).
+```
+
+To diagnose which files lost coverage:
+
+1. Download both `coverage` artifacts from the Actions run (PR run and the latest `main` run).
+2. Generate an HTML report with `dotnet tool install -g dotnet-reportgenerator-globaltool` then `reportgenerator -reports:**/coverage.cobertura.xml -targetdir:./coverage-html`.
+3. Compare the two reports file by file — the regressed lines will be the new uncovered ones in the PR.
+
+The fix is almost always to add a test that exercises the new or changed code path.
+
+**Maintainer process for tolerating a regression:**
+
+There is **no committed baseline file**. To intentionally accept a coverage decrease in a specific PR, set `COVERAGE_ALLOWED_REGRESSION_PERCENT` for that PR run — either by editing `.github/workflows/ci.yml`'s `env:` block for the duration of the PR and reverting before merge, or by negotiating a permanent floor change in a separate PR with justification in the description (e.g. "deleting a fully-covered subsystem mechanically reduces the percentage").
+
+The `coverage-regression-script-tests` job runs [`.github/scripts/tests/check_coverage_regression.tests.sh`](.github/scripts/tests/check_coverage_regression.tests.sh) — a fixture-driven smoke test covering the script's no-change, improvement, regression, within-tolerance, and missing-input cases. Run it locally with:
 
 ```bash
-dotnet test --configuration Release --collect:"XPlat Code Coverage" --results-directory ./TestResults/baseline
-dotnet run .github/scripts/check_coverage_regression.cs -- --write-baseline ./TestResults/baseline .github/ci-coverage-baseline.json
+bash .github/scripts/tests/check_coverage_regression.tests.sh
 ```
-
-In the PR description, explain why the change is acceptable and any planned follow-up to recover coverage.
 
 ---
 
