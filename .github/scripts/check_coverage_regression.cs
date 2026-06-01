@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Text.Json;
 using System.Xml.Linq;
 
 try
@@ -13,35 +12,26 @@ catch (Exception ex)
 
 static int Run(string[] args)
 {
-    if (args.Length == 3 && args[0] == "--write-baseline")
-    {
-        var summary = ReadSummary(args[1]);
-        WriteBaseline(summary, args[2]);
-        Console.WriteLine($"Wrote coverage baseline to {args[2]}");
-        return 0;
-    }
-
     if (args.Length != 2)
     {
-        Console.Error.WriteLine("Usage: check_coverage_regression.cs <pr-results-dir> <baseline-file>");
-        Console.Error.WriteLine("   or: check_coverage_regression.cs --write-baseline <results-dir> <baseline-file>");
+        Console.Error.WriteLine("Usage: check_coverage_regression.cs <pr-results-dir> <base-results-dir>");
         return 2;
     }
 
     var pr = ReadSummary(args[0]);
-    var baseline = ReadBaseline(args[1]);
+    var baseline = ReadSummary(args[1]);
 
     WriteStepSummary(pr, baseline);
 
     var allowedRegression = ReadAllowedRegression();
     var failures = new List<string>();
 
-    CheckRegression("Line", baseline.LinePercent, pr.Lines.Percent, allowedRegression, failures);
-    CheckRegression("Branch", baseline.BranchPercent, pr.Branches.Percent, allowedRegression, failures);
+    CheckRegression("Line", baseline.Lines.Percent, pr.Lines.Percent, allowedRegression, failures);
+    CheckRegression("Branch", baseline.Branches.Percent, pr.Branches.Percent, allowedRegression, failures);
 
-    Console.WriteLine($"Base line coverage: {FormatPercent(baseline.LinePercent)}");
+    Console.WriteLine($"Base line coverage: {FormatPercent(baseline.Lines.Percent)}");
     Console.WriteLine($"PR line coverage: {FormatPercent(pr.Lines.Percent)}");
-    Console.WriteLine($"Base branch coverage: {FormatPercent(baseline.BranchPercent)}");
+    Console.WriteLine($"Base branch coverage: {FormatPercent(baseline.Branches.Percent)}");
     Console.WriteLine($"PR branch coverage: {FormatPercent(pr.Branches.Percent)}");
 
     WriteRegressedFiles(pr, baseline, allowedRegression);
@@ -77,7 +67,7 @@ static void CheckRegression(string metric, double? baseline, double? current, do
     }
 }
 
-static void WriteRegressedFiles(CoverageSummary pr, CoverageBaseline baseline, double allowedRegression)
+static void WriteRegressedFiles(CoverageSummary pr, CoverageSummary baseline, double allowedRegression)
 {
     var regressedFiles = baseline.Files
         .Select(kvp =>
@@ -87,15 +77,15 @@ static void WriteRegressedFiles(CoverageSummary pr, CoverageBaseline baseline, d
                 return null;
             }
 
-            var lineDelta = TryDelta(current.Lines.Percent, kvp.Value.LinePercent);
-            var branchDelta = TryDelta(current.Branches.Percent, kvp.Value.BranchPercent);
+            var lineDelta = TryDelta(current.Lines.Percent, kvp.Value.Lines.Percent);
+            var branchDelta = TryDelta(current.Branches.Percent, kvp.Value.Branches.Percent);
 
             if ((lineDelta ?? 0) >= -allowedRegression && (branchDelta ?? 0) >= -allowedRegression)
             {
                 return null;
             }
 
-            return new FileRegression(kvp.Key, kvp.Value.LinePercent, current.Lines.Percent, lineDelta, kvp.Value.BranchPercent, current.Branches.Percent, branchDelta);
+            return new FileRegression(kvp.Key, kvp.Value.Lines.Percent, current.Lines.Percent, lineDelta, kvp.Value.Branches.Percent, current.Branches.Percent, branchDelta);
         })
         .Where(static item => item is not null)
         .Cast<FileRegression>()
@@ -253,91 +243,7 @@ static double ReadAllowedRegression()
         : double.Parse(value, CultureInfo.InvariantCulture);
 }
 
-static CoverageBaseline ReadBaseline(string baselinePath)
-{
-    if (!File.Exists(baselinePath))
-    {
-        throw new InvalidOperationException($"Coverage baseline file not found: {baselinePath}");
-    }
-
-    using var document = JsonDocument.Parse(File.ReadAllText(baselinePath));
-    var root = document.RootElement;
-
-    if (root.ValueKind != JsonValueKind.Object)
-    {
-        throw new InvalidOperationException($"Coverage baseline file '{baselinePath}' is invalid.");
-    }
-
-    var files = new Dictionary<string, CoverageBaselineMetric>(StringComparer.Ordinal);
-
-    if (root.TryGetProperty("files", out var filesElement) && filesElement.ValueKind == JsonValueKind.Object)
-    {
-        foreach (var fileProperty in filesElement.EnumerateObject())
-        {
-            if (fileProperty.Value.ValueKind != JsonValueKind.Object)
-            {
-                continue;
-            }
-
-            files[NormalizePath(fileProperty.Name)] = new CoverageBaselineMetric(
-                LinePercent: ReadNullableDouble(fileProperty.Value, "linePercent"),
-                BranchPercent: ReadNullableDouble(fileProperty.Value, "branchPercent"));
-        }
-    }
-
-    return new CoverageBaseline(
-        LinePercent: ReadNullableDouble(root, "linePercent"),
-        BranchPercent: ReadNullableDouble(root, "branchPercent"),
-        Files: files);
-}
-
-static void WriteBaseline(CoverageSummary summary, string baselinePath)
-{
-    using var stream = File.Create(baselinePath);
-    using var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true });
-
-    writer.WriteStartObject();
-    WriteNullableNumber(writer, "linePercent", summary.Lines.Percent);
-    WriteNullableNumber(writer, "branchPercent", summary.Branches.Percent);
-    writer.WritePropertyName("files");
-    writer.WriteStartObject();
-
-    foreach (var file in summary.Files.OrderBy(static kvp => kvp.Key, StringComparer.Ordinal))
-    {
-        writer.WritePropertyName(file.Key);
-        writer.WriteStartObject();
-        WriteNullableNumber(writer, "linePercent", file.Value.Lines.Percent);
-        WriteNullableNumber(writer, "branchPercent", file.Value.Branches.Percent);
-        writer.WriteEndObject();
-    }
-
-    writer.WriteEndObject();
-    writer.WriteEndObject();
-    writer.Flush();
-}
-
-static double? ReadNullableDouble(JsonElement element, string propertyName)
-{
-    if (!element.TryGetProperty(propertyName, out var property) || property.ValueKind == JsonValueKind.Null)
-    {
-        return null;
-    }
-
-    return property.GetDouble();
-}
-
-static void WriteNullableNumber(Utf8JsonWriter writer, string name, double? value)
-{
-    if (value is null)
-    {
-        writer.WriteNull(name);
-        return;
-    }
-
-    writer.WriteNumber(name, value.Value);
-}
-
-static void WriteStepSummary(CoverageSummary pr, CoverageBaseline baseline)
+static void WriteStepSummary(CoverageSummary pr, CoverageSummary baseline)
 {
     var summaryPath = Environment.GetEnvironmentVariable("GITHUB_STEP_SUMMARY");
 
@@ -351,8 +257,8 @@ static void WriteStepSummary(CoverageSummary pr, CoverageBaseline baseline)
     summary.WriteLine();
     summary.WriteLine("| Metric | Baseline | PR | Delta |");
     summary.WriteLine("|---|---:|---:|---:|");
-    WriteSummaryRow(summary, "Line", baseline.LinePercent, pr.Lines.Percent);
-    WriteSummaryRow(summary, "Branch", baseline.BranchPercent, pr.Branches.Percent);
+    WriteSummaryRow(summary, "Line", baseline.Lines.Percent, pr.Lines.Percent);
+    WriteSummaryRow(summary, "Branch", baseline.Branches.Percent, pr.Branches.Percent);
 }
 
 static void WriteSummaryRow(TextWriter writer, string metric, double? baseline, double? pr)
@@ -388,10 +294,6 @@ internal sealed record CoverageMetric(int Covered, int Valid)
 {
     public double? Percent => Valid == 0 ? null : Covered / (double)Valid * 100;
 }
-
-internal sealed record CoverageBaseline(double? LinePercent, double? BranchPercent, IReadOnlyDictionary<string, CoverageBaselineMetric> Files);
-
-internal sealed record CoverageBaselineMetric(double? LinePercent, double? BranchPercent);
 
 internal sealed record FileRegression(
     string Path,
