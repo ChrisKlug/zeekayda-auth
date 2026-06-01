@@ -16,8 +16,6 @@ ASP.NET Core application — without tying you to a particular storage engine, U
 > Advertised authorization, token, and JWKS endpoints return `501 Not Implemented` until those
 > protocol surfaces are implemented.
 
-The name comes from the phonetic spelling of *ZKDA* — Zero Knowledge Driven Auth.
-
 ---
 
 ## Get started
