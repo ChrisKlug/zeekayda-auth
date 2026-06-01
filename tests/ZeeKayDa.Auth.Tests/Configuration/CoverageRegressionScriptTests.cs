@@ -12,15 +12,11 @@ public sealed class CoverageRegressionScriptTests : IDisposable
     {
         var baseResultsDirectory = Path.Join(tempDirectory, "base-results");
         var prResultsDirectory = Path.Join(tempDirectory, "pr-results");
-        var baselineFile = Path.Join(tempDirectory, "coverage-baseline.json");
 
         WriteCoverageReport(baseResultsDirectory, "src/Example.cs", linesCovered: 8, linesValid: 10, branchesCovered: 4, branchesValid: 5);
         WriteCoverageReport(prResultsDirectory, "src/Example.cs", linesCovered: 7, linesValid: 10, branchesCovered: 3, branchesValid: 5);
 
-        var writeBaseline = RunScript("--write-baseline", baseResultsDirectory, baselineFile);
-        writeBaseline.ExitCode.Should().Be(0, writeBaseline.GetDebugOutput);
-
-        var result = RunScript(prResultsDirectory, baselineFile);
+        var result = RunScript(prResultsDirectory, baseResultsDirectory);
 
         result.ExitCode.Should().Be(1, result.GetDebugOutput);
         result.GetDebugOutput.Should().Contain("line coverage 80.00% -> 70.00%");
@@ -33,15 +29,11 @@ public sealed class CoverageRegressionScriptTests : IDisposable
     {
         var baseResultsDirectory = Path.Join(tempDirectory, "base-results");
         var prResultsDirectory = Path.Join(tempDirectory, "pr-results");
-        var baselineFile = Path.Join(tempDirectory, "coverage-baseline.json");
 
         WriteCoverageReport(baseResultsDirectory, "src/Example.cs", linesCovered: 7, linesValid: 10, branchesCovered: 3, branchesValid: 5);
         WriteCoverageReport(prResultsDirectory, "src/Example.cs", linesCovered: 9, linesValid: 10, branchesCovered: 5, branchesValid: 5);
 
-        var writeBaseline = RunScript("--write-baseline", baseResultsDirectory, baselineFile);
-        writeBaseline.ExitCode.Should().Be(0, writeBaseline.GetDebugOutput);
-
-        var result = RunScript(prResultsDirectory, baselineFile);
+        var result = RunScript(prResultsDirectory, baseResultsDirectory);
 
         result.ExitCode.Should().Be(0, result.GetDebugOutput);
         result.GetDebugOutput.Should().Contain("Coverage regression check passed.");
