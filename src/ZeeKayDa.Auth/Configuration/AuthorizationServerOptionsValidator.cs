@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth;
+using ZeeKayDa.Auth.Scopes;
 
 namespace ZeeKayDa.Auth.Configuration;
 
@@ -14,6 +15,13 @@ namespace ZeeKayDa.Auth.Configuration;
 /// </remarks>
 internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<AuthorizationServerOptions>
 {
+    private readonly IScopeRepository _scopeRepository;
+
+    public AuthorizationServerOptionsValidator(IScopeRepository scopeRepository)
+    {
+        _scopeRepository = scopeRepository;
+    }
+
     /// <inheritdoc/>
     public ValidateOptionsResult Validate(string? name, AuthorizationServerOptions options)
     {
@@ -178,6 +186,15 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
 
         if (ValidateEndpointUri(nameof(options.JwksUri), options.JwksUri, options.AllowInsecureIssuer, rejectQuery: true, rejectFragment: true) is { } jwksError)
             return jwksError;
+
+        // IValidateOptions<T> is synchronous; block here so ValidateOnStart can fail fast.
+        var scopes = _scopeRepository.GetScopesAsync().GetAwaiter().GetResult();
+        if (!scopes.Any(scope => string.Equals(scope.Name, StandardScopes.OpenId.Name, StringComparison.Ordinal)))
+        {
+            return ValidateOptionsResult.Fail(
+                $"IScopeRepository must include the '{StandardScopes.OpenId.Name}' scope. " +
+                $"Every OpenID Connect authorization request is required to include '{StandardScopes.OpenId.Name}'.");
+        }
 
         return ValidateOptionsResult.Success;
     }

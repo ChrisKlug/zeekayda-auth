@@ -2,6 +2,8 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using ZeeKayDa.Auth.AspNetCore.Extensions;
 using ZeeKayDa.Auth.Scopes;
 
@@ -131,7 +133,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
 
         doc!.RootElement.GetProperty("scopes_supported").EnumerateArray()
             .Select(element => element.GetString())
-            .Should().Equal(ScopeNames.OpenId, ScopeNames.Profile);
+            .Should().Equal(StandardScopes.OpenId.Name, StandardScopes.Profile.Name);
 
         doc.RootElement.GetProperty("response_modes_supported").EnumerateArray()
             .Select(element => element.GetString())
@@ -154,13 +156,13 @@ public sealed class DiscoveryEndpointTests : IDisposable
             [
                 new ScopeDefinition
                 {
-                    Name = ScopeNames.OpenId,
+                    Name = StandardScopes.OpenId.Name,
                     IdTokenClaims = ["sub"],
                     AccessTokenClaims = ["scope"],
                 },
                 new ScopeDefinition
                 {
-                    Name = ScopeNames.Profile,
+                    Name = StandardScopes.Profile.Name,
                     IdTokenClaims = ["name"],
                     AccessTokenClaims = ["name"],
                 },
@@ -173,7 +175,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
 
         doc!.RootElement.GetProperty("scopes_supported").EnumerateArray()
             .Select(element => element.GetString())
-            .Should().Equal(ScopeNames.OpenId, ScopeNames.Profile);
+            .Should().Equal(StandardScopes.OpenId.Name, StandardScopes.Profile.Name);
     }
 
     [Fact]
@@ -182,7 +184,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
         using var factory = new TestWebAppFactory(
             configureBuilder: builder => builder.AddInMemoryScopes(
             [
-                new ScopeDefinition { Name = ScopeNames.OpenId },
+                new ScopeDefinition { Name = StandardScopes.OpenId.Name },
                 new ScopeDefinition
                 {
                     Name = "internal.admin",
@@ -198,7 +200,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
 
         doc!.RootElement.GetProperty("scopes_supported").EnumerateArray()
             .Select(element => element.GetString())
-            .Should().Equal(ScopeNames.OpenId);
+            .Should().Equal(StandardScopes.OpenId.Name);
     }
 
     // ── Unrelated paths ───────────────────────────────────────────────────────────────────────────
@@ -285,6 +287,19 @@ public sealed class DiscoveryEndpointTests : IDisposable
         }).CreateClient();
 
         act.Should().Throw<Exception>().WithMessage("*HTTPS*");
+    }
+
+    [Fact]
+    public void Startup_CustomScopeRepositoryWithoutOpenId_ThrowsViaValidateOnStart()
+    {
+        var act = () => new TestWebAppFactory(
+            configureBuilder: builder =>
+            {
+                builder.Services.Replace(
+                    ServiceDescriptor.Singleton<IScopeRepository, CustomScopeRepositoryWithoutOpenId>());
+            }).CreateClient();
+
+        act.Should().Throw<Exception>().WithMessage($"*{StandardScopes.OpenId.Name}*");
     }
 
     // ── Configurable Cache-Control ────────────────────────────────────────────────────────────────
@@ -402,5 +417,11 @@ public sealed class DiscoveryEndpointTests : IDisposable
 
         doc.RootElement.GetProperty("jwks_uri").GetString()
             .Should().Be("https://test.example.com/connect/jwks");
+    }
+
+    private sealed class CustomScopeRepositoryWithoutOpenId : IScopeRepository
+    {
+        public ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default)
+            => ValueTask.FromResult<IReadOnlyCollection<ScopeDefinition>>([StandardScopes.Profile]);
     }
 }

@@ -154,7 +154,7 @@ public sealed class DiscoveryDocumentProviderTests
         });
 
         doc.ResponseTypesSupported.Should().ContainSingle().Which.Should().Be(ResponseType.Code);
-        doc.ScopesSupported.Should().Equal(ScopeNames.OpenId, ScopeNames.Profile);
+        doc.ScopesSupported.Should().Equal(StandardScopes.OpenId.Name, StandardScopes.Profile.Name);
         doc.ResponseModesSupported.Should().ContainSingle().Which.Should().Be(ResponseMode.Query);
         doc.GrantTypesSupported.Should().ContainSingle().Which.Should().Be(GrantType.AuthorizationCode);
         doc.TokenEndpointAuthMethodsSupported.Should().ContainSingle().Which.Should().Be(TokenEndpointAuthMethod.ClientSecretBasic);
@@ -167,8 +167,8 @@ public sealed class DiscoveryDocumentProviderTests
     {
         var scopeRepository = new InMemoryScopeRepository(
         [
-            new ScopeDefinition { Name = ScopeNames.OpenId },
-            new ScopeDefinition { Name = ScopeNames.Profile },
+            new ScopeDefinition { Name = StandardScopes.OpenId.Name },
+            new ScopeDefinition { Name = StandardScopes.Profile.Name },
         ]);
 
         var doc = await GetDocumentAsync(new AuthorizationServerOptions
@@ -182,7 +182,7 @@ public sealed class DiscoveryDocumentProviderTests
         }, scopeRepository);
 
         doc.ResponseTypesSupported.Should().Equal(ResponseType.Code, ResponseType.CodeIdToken);
-        doc.ScopesSupported.Should().Equal(ScopeNames.OpenId, ScopeNames.Profile);
+        doc.ScopesSupported.Should().Equal(StandardScopes.OpenId.Name, StandardScopes.Profile.Name);
         doc.ResponseModesSupported.Should().Equal(ResponseMode.Query, ResponseMode.FormPost);
         doc.GrantTypesSupported.Should().Equal(GrantType.AuthorizationCode, GrantType.RefreshToken);
         doc.TokenEndpointAuthMethodsSupported.Should().Equal(
@@ -198,13 +198,13 @@ public sealed class DiscoveryDocumentProviderTests
         [
             new ScopeDefinition
             {
-                Name = ScopeNames.OpenId,
+                Name = StandardScopes.OpenId.Name,
                 IdTokenClaims = ["sub"],
                 AccessTokenClaims = ["scope"],
             },
             new ScopeDefinition
             {
-                Name = ScopeNames.Profile,
+                Name = StandardScopes.Profile.Name,
                 IdTokenClaims = ["name", "family_name"],
                 AccessTokenClaims = ["name"],
             },
@@ -217,7 +217,7 @@ public sealed class DiscoveryDocumentProviderTests
             },
             repository);
 
-        doc.ScopesSupported.Should().Equal(ScopeNames.OpenId, ScopeNames.Profile);
+        doc.ScopesSupported.Should().Equal(StandardScopes.OpenId.Name, StandardScopes.Profile.Name);
     }
 
     [Fact]
@@ -225,7 +225,7 @@ public sealed class DiscoveryDocumentProviderTests
     {
         var repository = new InMemoryScopeRepository(
         [
-            new ScopeDefinition { Name = ScopeNames.OpenId },
+            new ScopeDefinition { Name = StandardScopes.OpenId.Name },
             new ScopeDefinition
             {
                 Name = "internal.admin",
@@ -241,6 +241,6 @@ public sealed class DiscoveryDocumentProviderTests
             },
             repository);
 
-        doc.ScopesSupported.Should().Equal(ScopeNames.OpenId);
+        doc.ScopesSupported.Should().Equal(StandardScopes.OpenId.Name);
     }
 }

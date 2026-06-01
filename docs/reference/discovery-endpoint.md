@@ -112,13 +112,13 @@ auth.AddInMemoryScopes(
 [
     new ScopeDefinition
     {
-        Name = ScopeNames.OpenId,
+        Name = StandardScopes.OpenId.Name,
         IdTokenClaims = ["sub"],
         AccessTokenClaims = ["scope"],
     },
     new ScopeDefinition
     {
-        Name = ScopeNames.Profile,
+        Name = StandardScopes.Profile.Name,
         IdTokenClaims = ["name", "family_name"],
         AccessTokenClaims = ["name"],
     },
