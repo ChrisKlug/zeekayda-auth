@@ -335,7 +335,7 @@ attention; it does not pre-empt the recommendation.
 
 - [OpenID Connect Discovery 1.0 §3 — Provider Metadata](https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderMetadata)
 - [RFC 8414 §2 — Authorization Server Metadata](https://datatracker.ietf.org/doc/html/rfc8414#section-2)
-- [OAuth 2.0 Security Best Current Practice §2.6 — Client Authentication](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-security-topics)
+- [OAuth 2.0 Security Best Current Practice (RFC 9700) §2.6 — Client Authentication](https://www.rfc-editor.org/rfc/rfc9700#section-2.6)
 - [ADR 0001 — Endpoint Architecture Pattern](./0001-endpoint-architecture-pattern.md)
 - Issue [#51](https://github.com/ChrisKlug/zeekayda-auth/issues/51) — the originating design discussion
 - Issue [#43](https://github.com/ChrisKlug/zeekayda-auth/issues/43) — closed: `IZeeKayDaEndpoint` remains internal
