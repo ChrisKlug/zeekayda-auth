@@ -296,13 +296,15 @@ Negative values fail startup validation.
 | `GrantTypesSupported` is required | `GrantTypesSupported` is `null` |
 | `TokenEndpointAuthMethodsSupported` is required | `TokenEndpointAuthMethodsSupported` is `null` |
 | `IdTokenSigningAlgValuesSupported` is required | `IdTokenSigningAlgValuesSupported` is `null` or empty |
+| `IScopeRepository` must include `openid` | the configured scope repository does not include a scope named `openid` |
 | Cache max-age must not be negative | `DiscoveryDocumentCacheMaxAgeSeconds` is less than `0` |
 
 Validation errors are reported as `OptionsValidationException` and prevent the host from starting.
 They are visible in the startup output and host logs.
 
-> Note: Startup validation only checks `AuthorizationServerOptions`. Other configuration objects
-> (for example, scope registrations) have their own validation rules.
+> Note: Startup validation checks `AuthorizationServerOptions` and verifies that
+> `IScopeRepository` includes `openid`. Scope repositories still enforce their own validation rules
+> (for example, blank or duplicate scope names).
 
 ## Related pages
 

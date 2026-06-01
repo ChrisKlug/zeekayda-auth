@@ -102,8 +102,9 @@ and [RFC 8414 Section 2](https://www.rfc-editor.org/rfc/rfc8414.html#section-2).
 metadata fields from [RFC 8414 Section 2](https://www.rfc-editor.org/rfc/rfc8414.html#section-2).
 
 By default, `scopes_supported` is sourced from the built-in scope repository, which publishes
-`openid` and `profile`. If you want to replace those defaults or attach token-claim metadata to
-scopes, register the in-memory scope repository instead:
+`openid` and `profile`. If you want to publish the full standard OIDC scope set or attach
+token-claim metadata to scopes, register the in-memory scope repository and start with
+`StandardScopes`:
 
 ```csharp
 using ZeeKayDa.Auth.Scopes;
@@ -117,18 +118,7 @@ var auth = builder.Services.AddZeeKayDaAuth(options =>
 
 auth.AddInMemoryScopes(
 [
-    new ScopeDefinition
-    {
-        Name = ScopeNames.OpenId,
-        IdTokenClaims = ["sub"],
-        AccessTokenClaims = ["scope"],
-    },
-    new ScopeDefinition
-    {
-        Name = ScopeNames.Profile,
-        IdTokenClaims = ["name", "family_name"],
-        AccessTokenClaims = ["name"],
-    },
+    .. StandardScopes.All,
     new ScopeDefinition
     {
         Name = "api.read",
@@ -147,6 +137,10 @@ var app = builder.Build();
 app.UseRouting();
 app.MapZeeKayDaAuth();
 ```
+
+If you register a custom `IScopeRepository`, you can also use `AddDefaultScopes()` to append the
+standard scopes. `AddDefaultScopes()` is idempotent, so calling it multiple times does not duplicate
+scope entries.
 
 Discovery still publishes only the scope names, and only for scopes where `IsDiscoverable` is
 `true`. `IdTokenClaims` and `AccessTokenClaims` are repository metadata for future authorization
@@ -225,6 +219,7 @@ ZeeKayDa.Auth validates discovery-related options at startup. Common failures in
 - issuer values with user information
 - null metadata collections
 - empty required metadata collections
+- scope repositories that do not include `openid`
 - blank scope names
 
 > Warning: Only enable `AllowInsecureIssuer` for local loopback development or tests. Production

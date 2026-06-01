@@ -1,13 +1,18 @@
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Configuration;
 using ZeeKayDa.Auth.Discovery;
+using ZeeKayDa.Auth.Scopes;
 
 namespace ZeeKayDa.Auth.Tests.Configuration;
 
 public sealed class AuthorizationServerOptionsValidatorTests
 {
-    private static ValidateOptionsResult Validate(AuthorizationServerOptions options)
-        => new AuthorizationServerOptionsValidator().Validate(null, options);
+    private static ValidateOptionsResult Validate(
+        AuthorizationServerOptions options,
+        IScopeRepository? scopeRepository = null)
+        => new AuthorizationServerOptionsValidator(
+            scopeRepository ?? new InMemoryScopeRepository([StandardScopes.OpenId]))
+        .Validate(null, options);
 
     // ── Issuer presence ──────────────────────────────────────────────────────────────────────────
 
@@ -305,6 +310,60 @@ public sealed class AuthorizationServerOptionsValidatorTests
         result.Succeeded.Should().BeTrue();
     }
 
+    [Fact]
+    public void Validate_OpenIdScopePresent_Succeeds()
+    {
+        var result = Validate(
+            new AuthorizationServerOptions
+            {
+                Issuer = "https://auth.example.com",
+            },
+            new InMemoryScopeRepository([StandardScopes.OpenId]));
+
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Validate_DefaultScopeRepositoryWithOpenId_Succeeds()
+    {
+        var result = Validate(
+            new AuthorizationServerOptions
+            {
+                Issuer = "https://auth.example.com",
+            },
+            new DefaultScopeRepository());
+
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Validate_OpenIdScopeMissing_Fails()
+    {
+        var result = Validate(
+            new AuthorizationServerOptions
+            {
+                Issuer = "https://auth.example.com",
+            },
+            new InMemoryScopeRepository([StandardScopes.Profile]));
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain(StandardScopes.OpenId.Name);
+    }
+
+    [Fact]
+    public void Validate_CustomRepositoryWithoutOpenId_Fails()
+    {
+        var result = Validate(
+            new AuthorizationServerOptions
+            {
+                Issuer = "https://auth.example.com",
+            },
+            new CustomScopeRepositoryWithoutOpenId());
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain(StandardScopes.OpenId.Name);
+    }
+
     // ── Endpoint URI overrides ────────────────────────────────────────────────────────────────────
 
     [Theory]
@@ -446,5 +505,11 @@ public sealed class AuthorizationServerOptionsValidatorTests
     {
         var prop = typeof(AuthorizationServerOptions).GetProperty(propertyName)!;
         prop.SetValue(options, value);
+    }
+
+    private sealed class CustomScopeRepositoryWithoutOpenId : IScopeRepository
+    {
+        public ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default)
+            => ValueTask.FromResult<IReadOnlyCollection<ScopeDefinition>>([StandardScopes.Profile]);
     }
 }

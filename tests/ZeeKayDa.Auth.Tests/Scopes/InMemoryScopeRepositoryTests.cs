@@ -37,13 +37,13 @@ public sealed class InMemoryScopeRepositoryTests
         [
             new ScopeDefinition
             {
-                Name = ScopeNames.OpenId,
+                Name = StandardScopes.OpenId.Name,
                 IdTokenClaims = ["sub"],
                 AccessTokenClaims = ["scope"],
             },
             new ScopeDefinition
             {
-                Name = ScopeNames.Profile,
+                Name = StandardScopes.Profile.Name,
                 IdTokenClaims = ["name", "family_name"],
                 AccessTokenClaims = ["name"],
             },
@@ -51,9 +51,9 @@ public sealed class InMemoryScopeRepositoryTests
 
         var scopes = await repository.GetScopesAsync(TestContext.Current.CancellationToken);
 
-        scopes.Select(scope => scope.Name).Should().Equal(ScopeNames.OpenId, ScopeNames.Profile);
-        scopes.Single(scope => scope.Name == ScopeNames.Profile).IdTokenClaims.Should().Equal("name", "family_name");
-        scopes.Single(scope => scope.Name == ScopeNames.Profile).AccessTokenClaims.Should().Equal("name");
+        scopes.Select(scope => scope.Name).Should().Equal(StandardScopes.OpenId.Name, StandardScopes.Profile.Name);
+        scopes.Single(scope => scope.Name == StandardScopes.Profile.Name).IdTokenClaims.Should().Equal("name", "family_name");
+        scopes.Single(scope => scope.Name == StandardScopes.Profile.Name).AccessTokenClaims.Should().Equal("name");
     }
 
     [Fact]
@@ -78,8 +78,8 @@ public sealed class InMemoryScopeRepositoryTests
     {
         var act = () => new InMemoryScopeRepository(
         [
-            new ScopeDefinition { Name = ScopeNames.OpenId },
-            new ScopeDefinition { Name = ScopeNames.OpenId },
+            new ScopeDefinition { Name = StandardScopes.OpenId.Name },
+            new ScopeDefinition { Name = StandardScopes.OpenId.Name },
         ]);
 
         act.Should().Throw<ArgumentException>()
@@ -91,7 +91,7 @@ public sealed class InMemoryScopeRepositoryTests
     {
         var act = () => new InMemoryScopeRepository(
         [
-            new ScopeDefinition { Name = ScopeNames.Profile, IdTokenClaims = ["name", " "] },
+            new ScopeDefinition { Name = StandardScopes.Profile.Name, IdTokenClaims = ["name", " "] },
         ]);
 
         act.Should().Throw<ArgumentException>()
@@ -103,7 +103,7 @@ public sealed class InMemoryScopeRepositoryTests
     {
         var act = () => new InMemoryScopeRepository(
         [
-            new ScopeDefinition { Name = ScopeNames.Profile, AccessTokenClaims = ["scope", " "] },
+            new ScopeDefinition { Name = StandardScopes.Profile.Name, AccessTokenClaims = ["scope", " "] },
         ]);
 
         act.Should().Throw<ArgumentException>()
