@@ -146,8 +146,6 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
             return ValidateOptionsResult.Fail(TokenEndpointAuthMethodsRequiredMessage);
         }
 
-        // TODO(ADR-0002): Keep this rule bound to the grouped TokenEndpoint.AuthMethodsSupported
-        // shape and do not regress to legacy flat TokenEndpointAuthMethodsSupported references.
         // ADR 0002 §4: If client_credentials grant is supported, must have at least one non-None auth method
         if (options.GrantTypesSupported.Contains(GrantType.ClientCredentials) &&
             options.TokenEndpoint.AuthMethodsSupported.All(m => m == TokenEndpointAuthMethod.None))

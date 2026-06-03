@@ -236,9 +236,41 @@ GrantTypesSupported includes 'client_credentials', which requires confidential c
 | Enum value | JSON serialization |
 |---|---|
 | `TokenEndpointAuthMethod.ClientSecretBasic` | `"client_secret_basic"` |
+| `TokenEndpointAuthMethod.ClientSecretPost` | `"client_secret_post"` |
+| `TokenEndpointAuthMethod.ClientSecretJwt` | `"client_secret_jwt"` |
+| `TokenEndpointAuthMethod.PrivateKeyJwt` | `"private_key_jwt"` |
+| `TokenEndpointAuthMethod.None` | `"none"` |
 
 `token_endpoint_auth_methods_supported` is defined by
 [RFC 8414 §2](https://www.rfc-editor.org/rfc/rfc8414#section-2).
+
+#### `TokenEndpointAuthMethod.None` and PKCE
+
+`TokenEndpointAuthMethod.None` represents **public clients** — clients with no client secret. Public clients cannot securely transmit credentials at the token endpoint.
+
+> ⚠️ **Warning:** Public clients MUST use PKCE (Proof Key for Public OAuth 2.0 Clients) as the sole protection mechanism for the authorization code. This is mandated by [RFC 9700 §2.1.1](https://www.rfc-editor.org/rfc/rfc9700#section-2.1.1) (OAuth 2.0 Security Best Current Practice).
+
+**PKCE is defined for the authorization code grant** per [RFC 7636](https://www.rfc-editor.org/rfc/rfc7636). Therefore:
+
+- Public clients using the authorization code flow with `TokenEndpointAuthMethod.None` **must** use PKCE and present a valid `code_verifier` at the token endpoint.
+- `TokenEndpointAuthMethod.None` may be advertised alongside confidential-client methods such as `ClientSecretBasic`; this supports deployments that serve both public clients and confidential clients.
+- Startup validation does **not** reject `None` just because `GrantTypesSupported` omits `GrantType.AuthorizationCode`. ADR 0002 rejects only the `client_credentials` + `none`-only combination above.
+- When the token endpoint is implemented, it must enforce each registered client's `token_endpoint_auth_method` at request time (tracked by issue #64). Without per-client enforcement, a confidential client could downgrade to public-client behavior by omitting credentials.
+
+Attempting to support `ClientCredentials` with only public-client authentication will fail at host startup with the ADR 0002 error message shown above.
+
+```csharp
+// ✓ Valid: public clients with authorization code grant + PKCE
+options.TokenEndpoint.AuthMethodsSupported = new[] { TokenEndpointAuthMethod.None };
+options.GrantTypesSupported = new[] { GrantType.AuthorizationCode };
+
+// ✗ Invalid: client_credentials with only public-client authentication
+// This will fail startup validation
+options.TokenEndpoint.AuthMethodsSupported = new[] { TokenEndpointAuthMethod.None };
+options.GrantTypesSupported = new[] { GrantType.ClientCredentials };
+```
+
+Authorization-code clients that use `TokenEndpointAuthMethod.None` must perform the token exchange with a PKCE challenge and verifier. Consult your OAuth client library's documentation for PKCE implementation details.
 
 ---
 

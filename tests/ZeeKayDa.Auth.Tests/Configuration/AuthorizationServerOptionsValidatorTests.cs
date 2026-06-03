@@ -7,7 +7,7 @@ namespace ZeeKayDa.Auth.Tests.Configuration;
 
 public sealed class AuthorizationServerOptionsValidatorTests
 {
-    private const string ClientCredentialsRequiresNonNoneTokenAuthMethodErrorMessage =
+    private const string ClientCredentialsRequiresNonNoneTokenAuthMethodMessage =
         "GrantTypesSupported includes 'client_credentials', which requires confidential clients. " +
         "TokenEndpoint.AuthMethodsSupported must contain at least one method other than 'none'. " +
         "See RFC 6749 §4.4 and OAuth 2.0 Security BCP §2.6 (RFC 9700).";
@@ -304,7 +304,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
         });
 
         result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Be(ClientCredentialsRequiresNonNoneTokenAuthMethodErrorMessage);
+        result.FailureMessage.Should().Be(ClientCredentialsRequiresNonNoneTokenAuthMethodMessage);
     }
 
     [Fact]
@@ -318,7 +318,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
         });
 
         result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Be(ClientCredentialsRequiresNonNoneTokenAuthMethodErrorMessage);
+        result.FailureMessage.Should().Be(ClientCredentialsRequiresNonNoneTokenAuthMethodMessage);
     }
 
     [Fact]
@@ -342,6 +342,45 @@ public sealed class AuthorizationServerOptionsValidatorTests
             Issuer = "https://auth.example.com",
             GrantTypesSupported = [GrantType.ClientCredentials],
             TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethod.None, TokenEndpointAuthMethod.ClientSecretBasic] },
+        });
+
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Validate_NoneAuthMethodWithoutAuthorizationCodeGrant_Succeeds()
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            GrantTypesSupported = [GrantType.RefreshToken],
+            TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethod.None] },
+        });
+
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Validate_NoneAuthMethodWithAuthorizationCodeGrant_Succeeds()
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            GrantTypesSupported = [GrantType.AuthorizationCode],
+            TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethod.None] },
+        });
+
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Validate_NoneAuthMethodWithMultipleGrantsIncludingAuthorizationCode_Succeeds()
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            GrantTypesSupported = [GrantType.AuthorizationCode, GrantType.RefreshToken],
+            TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethod.None] },
         });
 
         result.Succeeded.Should().BeTrue();
