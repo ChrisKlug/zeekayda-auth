@@ -6,7 +6,8 @@ namespace ZeeKayDa.Auth;
 /// <remarks>
 /// Server-wide settings are exposed directly on this class. Per-endpoint settings are grouped
 /// into nested sealed option classes (<see cref="Discovery"/>, <see cref="AuthorizationEndpoint"/>,
-/// <see cref="TokenEndpoint"/>, <see cref="JwksEndpoint"/>, <see cref="IdToken"/>, <see cref="Response"/>)
+/// <see cref="TokenEndpoint"/>, <see cref="JwksEndpoint"/>, <see cref="IdToken"/>, <see cref="Response"/>,
+/// <see cref="SecurityHeaders"/>)
 /// which are initialized to default instances. Group properties are get-only and cannot be nulled;
 /// consumers may mutate the members of each group but not replace the group itself.
 /// </remarks>
@@ -77,4 +78,10 @@ public sealed class AuthorizationServerOptions
     /// Gets the response configuration options.
     /// </summary>
     public ResponseOptions Response { get; } = new();
+
+    /// <summary>
+    /// Gets the security headers configuration options. These settings are applied to all
+    /// ZeeKayDa.Auth protocol endpoint responses via the internal route group.
+    /// </summary>
+    public SecurityHeadersOptions SecurityHeaders { get; } = new();
 }

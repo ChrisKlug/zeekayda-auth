@@ -173,6 +173,78 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
                 "AuthorizationServerOptions.DiscoveryDocument.CacheMaxAgeSeconds must not be negative.");
         }
 
+        // Validate DiscoveryDocument.CorsOrigins — each entry must be a strict absolute origin
+        // (scheme://host[:port]) with no path (other than "/"), query, fragment, userinfo, wildcards,
+        // or CRLF. Invalid entries fail startup.
+        var corsErrors = new List<string>();
+        foreach (var origin in options.DiscoveryDocument.CorsOrigins)
+        {
+            if (string.IsNullOrEmpty(origin))
+            {
+                corsErrors.Add("An empty string is not a valid CORS origin.");
+                continue;
+            }
+            if (origin.IndexOfAny(['\r', '\n']) >= 0)
+            {
+                corsErrors.Add($"CORS origin '{origin}' must not contain CR or LF characters.");
+                continue;
+            }
+            if (string.Equals(origin, "null", StringComparison.Ordinal))
+            {
+                corsErrors.Add("'null' is not a valid CORS origin.");
+                continue;
+            }
+            if (origin.Contains('*'))
+            {
+                corsErrors.Add($"CORS origin '{origin}' must not contain wildcard characters.");
+                continue;
+            }
+            if (!Uri.TryCreate(origin, UriKind.Absolute, out var originUri))
+            {
+                corsErrors.Add($"CORS origin '{origin}' is not a valid absolute URI.");
+                continue;
+            }
+            if (originUri.UserInfo.Length > 0)
+            {
+                corsErrors.Add($"CORS origin '{origin}' must not contain user information.");
+                continue;
+            }
+            if (originUri.Query.Length > 0)
+            {
+                corsErrors.Add($"CORS origin '{origin}' must not contain a query component.");
+                continue;
+            }
+            if (originUri.Fragment.Length > 0)
+            {
+                corsErrors.Add($"CORS origin '{origin}' must not contain a fragment component.");
+                continue;
+            }
+            // An origin is scheme + host + port only; path must be empty or just "/".
+            if (originUri.AbsolutePath.Length > 1)
+            {
+                corsErrors.Add($"CORS origin '{origin}' must not contain a path component. Use 'scheme://host[:port]' only.");
+                continue;
+            }
+        }
+        if (corsErrors.Count > 0)
+        {
+            return ValidateOptionsResult.Fail(
+                "AuthorizationServerOptions.DiscoveryDocument.CorsOrigins contains invalid entries: " +
+                string.Join(" ", corsErrors));
+        }
+
+        // Canonicalize and deduplicate CorsOrigins in-place: lowercase, authority-only form.
+        if (options.DiscoveryDocument.CorsOrigins.Count > 0)
+        {
+            var canonical = options.DiscoveryDocument.CorsOrigins
+                .Select(o => new Uri(o).GetLeftPart(UriPartial.Authority).ToLowerInvariant())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            options.DiscoveryDocument.CorsOrigins.Clear();
+            foreach (var c in canonical)
+                options.DiscoveryDocument.CorsOrigins.Add(c);
+        }
+
         // Validate AuthorizationEndpoint group
         if (options.AuthorizationEndpoint.CodeChallengeMethodsSupported is { Count: 0 })
         {
