@@ -17,7 +17,7 @@ public sealed class TokenEndpointOptions
     /// </summary>
     /// <remarks>
     /// Maps to the <c>token_endpoint_auth_methods_supported</c> discovery metadata field.
-    /// Must not be empty and must contain at least one non-<see cref="TokenEndpointAuthMethod.None"/>
+    /// Must not be null or empty and must contain at least one non-<see cref="TokenEndpointAuthMethod.None"/>
     /// method if <see cref="AuthorizationServerOptions.GrantTypesSupported"/> includes
     /// <see cref="GrantType.ClientCredentials"/>.
     /// </remarks>
