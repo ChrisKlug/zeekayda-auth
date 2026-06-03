@@ -310,7 +310,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
         using var factory = new TestWebAppFactory(opts =>
         {
             opts.Issuer = "https://test.example.com";
-            opts.DiscoveryDocumentCacheMaxAgeSeconds = 300;
+            opts.Discovery.CacheMaxAgeSeconds = 300;
         });
         using var client = CreateClient(factory);
 
@@ -325,7 +325,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
         using var factory = new TestWebAppFactory(opts =>
         {
             opts.Issuer = "https://test.example.com";
-            opts.DiscoveryDocumentCacheMaxAgeSeconds = 0;
+            opts.Discovery.CacheMaxAgeSeconds = 0;
         });
         using var client = CreateClient(factory);
 
@@ -370,9 +370,9 @@ public sealed class DiscoveryEndpointTests : IDisposable
     {
         using var factory = new TestWebAppFactory(opts =>
         {
-            opts.AuthorizationEndpoint = "https://login.example.com/custom/authorize?prompt=login";
-            opts.TokenEndpoint = "https://login.example.com/custom/token?tenant=1";
-            opts.JwksUri = "https://login.example.com/keys";
+            opts.Authorization.Uri = "https://login.example.com/custom/authorize?prompt=login";
+            opts.Token.Uri = "https://login.example.com/custom/token?tenant=1";
+            opts.Jwks.Uri = "https://login.example.com/keys";
         });
         using var client = CreateClient(factory, "https://login.example.com");
         using var request = new HttpRequestMessage(new HttpMethod(method), path);

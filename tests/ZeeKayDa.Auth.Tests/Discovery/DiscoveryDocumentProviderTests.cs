@@ -109,7 +109,7 @@ public sealed class DiscoveryDocumentProviderTests
         var doc = await GetDocumentAsync(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
-            AuthorizationEndpoint = explicitUri,
+            Authorization = { Uri = explicitUri },
         });
 
         doc.AuthorizationEndpoint.Should().Be(explicitUri);
@@ -123,7 +123,7 @@ public sealed class DiscoveryDocumentProviderTests
         var doc = await GetDocumentAsync(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
-            TokenEndpoint = explicitUri,
+            Token = { Uri = explicitUri },
         });
 
         doc.TokenEndpoint.Should().Be(explicitUri);
@@ -137,7 +137,7 @@ public sealed class DiscoveryDocumentProviderTests
         var doc = await GetDocumentAsync(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
-            JwksUri = explicitUri,
+            Jwks = { Uri = explicitUri },
         });
 
         doc.JwksUri.Should().Be(explicitUri);
@@ -174,11 +174,14 @@ public sealed class DiscoveryDocumentProviderTests
         var doc = await GetDocumentAsync(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
-            ResponseTypesSupported = [ResponseType.Code, ResponseType.CodeIdToken],
-            ResponseModesSupported = [ResponseMode.Query, ResponseMode.FormPost],
+            Response =
+            {
+                TypesSupported = [ResponseType.Code, ResponseType.CodeIdToken],
+                ModesSupported = [ResponseMode.Query, ResponseMode.FormPost],
+            },
             GrantTypesSupported = [GrantType.AuthorizationCode, GrantType.RefreshToken],
-            TokenEndpointAuthMethodsSupported = [TokenEndpointAuthMethod.ClientSecretBasic, TokenEndpointAuthMethod.PrivateKeyJwt],
-            IdTokenSigningAlgValuesSupported = [SigningAlgorithm.RS256, SigningAlgorithm.PS256],
+            Token = { AuthMethodsSupported = [TokenEndpointAuthMethod.ClientSecretBasic, TokenEndpointAuthMethod.PrivateKeyJwt] },
+            IdToken = { SigningAlgValuesSupported = [SigningAlgorithm.RS256, SigningAlgorithm.PS256] },
         }, scopeRepository);
 
         doc.ResponseTypesSupported.Should().Equal(ResponseType.Code, ResponseType.CodeIdToken);

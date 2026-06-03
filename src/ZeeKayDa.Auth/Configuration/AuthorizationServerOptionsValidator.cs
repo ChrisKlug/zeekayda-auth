@@ -90,52 +90,76 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
                 "AllowInsecureIssuer only permits HTTP loopback issuers for local development and testing.");
         }
 
-        if (options.ResponseTypesSupported is null)
+        // Validate Response group
+        if (options.Response.TypesSupported is null)
         {
             return ValidateOptionsResult.Fail(
-                "AuthorizationServerOptions.ResponseTypesSupported must not be null.");
+                "AuthorizationServerOptions.Response.TypesSupported must not be null.");
         }
 
-        if (options.ResponseTypesSupported.Count == 0)
+        if (options.Response.TypesSupported.Count == 0)
         {
             return ValidateOptionsResult.Fail(
-                "AuthorizationServerOptions.ResponseTypesSupported must contain at least one value.");
+                "AuthorizationServerOptions.Response.TypesSupported must contain at least one value.");
         }
 
-        if (options.ResponseModesSupported is null)
+        if (options.Response.ModesSupported is null)
         {
             return ValidateOptionsResult.Fail(
-                "AuthorizationServerOptions.ResponseModesSupported must not be null.");
+                "AuthorizationServerOptions.Response.ModesSupported must not be null.");
         }
 
+        // Validate root-level GrantTypesSupported
         if (options.GrantTypesSupported is null)
         {
             return ValidateOptionsResult.Fail(
                 "AuthorizationServerOptions.GrantTypesSupported must not be null.");
         }
 
-        if (options.TokenEndpointAuthMethodsSupported is null)
+        // Validate Token group
+        if (options.Token.AuthMethodsSupported is null)
         {
             return ValidateOptionsResult.Fail(
-                "AuthorizationServerOptions.TokenEndpointAuthMethodsSupported must not be null.");
+                "AuthorizationServerOptions.Token.AuthMethodsSupported must not be null.");
         }
 
-        if (options.IdTokenSigningAlgValuesSupported is null)
+        // ADR 0002 §4: Token.AuthMethodsSupported must not be empty
+        if (options.Token.AuthMethodsSupported.Count == 0)
         {
             return ValidateOptionsResult.Fail(
-                "AuthorizationServerOptions.IdTokenSigningAlgValuesSupported must not be null.");
+                "AuthorizationServerOptions.Token.AuthMethodsSupported must not be empty. " +
+                "Specify at least one client authentication method (e.g., TokenEndpointAuthMethod.ClientSecretBasic). " +
+                "See OAuth 2.0 Security BCP §2.6 (RFC 9700).");
         }
 
-        if (options.IdTokenSigningAlgValuesSupported.Count == 0)
+        // ADR 0002 §4: If client_credentials grant is supported, must have at least one non-None auth method
+        if (options.GrantTypesSupported.Contains(GrantType.ClientCredentials) &&
+            options.Token.AuthMethodsSupported.All(m => m == TokenEndpointAuthMethod.None))
         {
             return ValidateOptionsResult.Fail(
-                "AuthorizationServerOptions.IdTokenSigningAlgValuesSupported must contain at least one value.");
+                "GrantTypesSupported includes 'client_credentials', which requires confidential clients. " +
+                "Token.AuthMethodsSupported must contain at least one method other than 'none'. " +
+                "See RFC 6749 §4.4 and OAuth 2.0 Security BCP §2.6 (RFC 9700).");
         }
 
-        if (options.DiscoveryDocumentCacheMaxAgeSeconds < 0)
+        // Validate IdToken group
+        if (options.IdToken.SigningAlgValuesSupported is null)
         {
             return ValidateOptionsResult.Fail(
-                "AuthorizationServerOptions.DiscoveryDocumentCacheMaxAgeSeconds must not be negative.");
+                "AuthorizationServerOptions.IdToken.SigningAlgValuesSupported must not be null.");
+        }
+
+        if (options.IdToken.SigningAlgValuesSupported.Count == 0)
+        {
+            return ValidateOptionsResult.Fail(
+                "AuthorizationServerOptions.IdToken.SigningAlgValuesSupported must contain at least one value.");
+        }
+
+        // Validate Discovery group
+        if (options.Discovery.CacheMaxAgeSeconds < 0)
+        {
+            return ValidateOptionsResult.Fail(
+                "AuthorizationServerOptions.Discovery.CacheMaxAgeSeconds must not be negative.");
         }
 
         // Validate endpoint URI overrides — RFC 8414 §2 requires all metadata URLs to use HTTPS.
@@ -178,13 +202,13 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
         // RFC 6749 §3.1 and §3.2: authorization and token endpoint URIs MUST NOT include a fragment.
         // Query components are explicitly permitted on the authorization endpoint (RFC 6749 §3.1)
         // and are not prohibited on the token endpoint.
-        if (ValidateEndpointUri(nameof(options.AuthorizationEndpoint), options.AuthorizationEndpoint, options.AllowInsecureIssuer, rejectFragment: true) is { } aeError)
+        if (ValidateEndpointUri(nameof(options.Authorization.Uri), options.Authorization.Uri, options.AllowInsecureIssuer, rejectFragment: true) is { } aeError)
             return aeError;
 
-        if (ValidateEndpointUri(nameof(options.TokenEndpoint), options.TokenEndpoint, options.AllowInsecureIssuer, rejectFragment: true) is { } teError)
+        if (ValidateEndpointUri(nameof(options.Token.Uri), options.Token.Uri, options.AllowInsecureIssuer, rejectFragment: true) is { } teError)
             return teError;
 
-        if (ValidateEndpointUri(nameof(options.JwksUri), options.JwksUri, options.AllowInsecureIssuer, rejectQuery: true, rejectFragment: true) is { } jwksError)
+        if (ValidateEndpointUri(nameof(options.Jwks.Uri), options.Jwks.Uri, options.AllowInsecureIssuer, rejectQuery: true, rejectFragment: true) is { } jwksError)
             return jwksError;
 
         // IValidateOptions<T> is synchronous; block here so ValidateOnStart can fail fast.

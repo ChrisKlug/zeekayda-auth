@@ -24,7 +24,7 @@ internal sealed class PreAlphaJwksEndpoint : IZeeKayDaEndpoint
         var issuerUri = EndpointRouteHelper.GetIssuerUri(_options);
         var endpointUri = EndpointRouteHelper.GetPublishedEndpointUri(
             issuerUri,
-            _options.Value.JwksUri,
+            _options.Value.Jwks.Uri,
             "connect/jwks");
 
         endpoints.MapGet(

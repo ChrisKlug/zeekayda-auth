@@ -24,7 +24,7 @@ internal sealed class PreAlphaAuthorizationEndpoint : IZeeKayDaEndpoint
         var issuerUri = EndpointRouteHelper.GetIssuerUri(_options);
         var endpointUri = EndpointRouteHelper.GetPublishedEndpointUri(
             issuerUri,
-            _options.Value.AuthorizationEndpoint,
+            _options.Value.Authorization.Uri,
             "connect/authorize");
 
         endpoints.MapMethods(

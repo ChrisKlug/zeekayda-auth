@@ -24,7 +24,7 @@ internal sealed class PreAlphaTokenEndpoint : IZeeKayDaEndpoint
         var issuerUri = EndpointRouteHelper.GetIssuerUri(_options);
         var endpointUri = EndpointRouteHelper.GetPublishedEndpointUri(
             issuerUri,
-            _options.Value.TokenEndpoint,
+            _options.Value.Token.Uri,
             "connect/token");
 
         endpoints.MapPost(

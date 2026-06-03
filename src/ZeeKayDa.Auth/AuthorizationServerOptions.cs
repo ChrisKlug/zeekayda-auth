@@ -3,6 +3,13 @@ namespace ZeeKayDa.Auth;
 /// <summary>
 /// Configuration options for the ZeeKayDa authorization server.
 /// </summary>
+/// <remarks>
+/// Server-wide settings are exposed directly on this class. Per-endpoint settings are grouped
+/// into nested sealed option classes (<see cref="Discovery"/>, <see cref="Authorization"/>,
+/// <see cref="Token"/>, <see cref="Jwks"/>, <see cref="IdToken"/>, <see cref="Response"/>)
+/// which are initialized to default instances. Group properties are get-only and cannot be nulled;
+/// consumers may mutate the members of each group but not replace the group itself.
+/// </remarks>
 public sealed class AuthorizationServerOptions
 {
     /// <summary>
@@ -33,65 +40,41 @@ public sealed class AuthorizationServerOptions
     public bool AllowInsecureIssuer { get; set; }
 
     /// <summary>
-    /// Gets or sets an explicit override for the <c>authorization_endpoint</c> URI published in
-    /// the discovery document. When <see langword="null"/>, the value is derived from
-    /// <see cref="Issuer"/>.
-    /// </summary>
-    public string? AuthorizationEndpoint { get; set; }
-
-    /// <summary>
-    /// Gets or sets an explicit override for the <c>token_endpoint</c> URI published in the
-    /// discovery document. When <see langword="null"/>, the value is derived from
-    /// <see cref="Issuer"/>.
-    /// </summary>
-    public string? TokenEndpoint { get; set; }
-
-    /// <summary>
-    /// Gets or sets an explicit override for the <c>jwks_uri</c> URI published in the discovery
-    /// document. When <see langword="null"/>, the value is derived from <see cref="Issuer"/>.
-    /// </summary>
-    public string? JwksUri { get; set; }
-
-    /// <summary>
-    /// Gets or sets the response types supported by this authorization server.
-    /// Defaults to <c>[<see cref="ResponseType.Code"/>]</c>.
-    /// </summary>
-    public ICollection<ResponseType> ResponseTypesSupported { get; set; } = [ResponseType.Code];
-
-    /// <summary>
-    /// Gets or sets the response modes supported by this authorization server.
-    /// Defaults to <c>[<see cref="ResponseMode.Query"/>]</c>.
-    /// </summary>
-    public ICollection<ResponseMode> ResponseModesSupported { get; set; } = [ResponseMode.Query];
-
-    /// <summary>
     /// Gets or sets the grant types supported by this authorization server.
     /// Defaults to <c>[<see cref="GrantType.AuthorizationCode"/>]</c>.
     /// </summary>
+    /// <remarks>
+    /// This is a server-wide setting with no per-endpoint variant in the OIDC Discovery specification.
+    /// </remarks>
     public ICollection<GrantType> GrantTypesSupported { get; set; } = [GrantType.AuthorizationCode];
 
     /// <summary>
-    /// Gets or sets the token endpoint client authentication methods supported by this authorization
-    /// server. Defaults to <c>[<see cref="TokenEndpointAuthMethod.ClientSecretBasic"/>]</c>.
+    /// Gets the discovery document configuration options.
     /// </summary>
-    public ICollection<TokenEndpointAuthMethod> TokenEndpointAuthMethodsSupported { get; set; } =
-        [TokenEndpointAuthMethod.ClientSecretBasic];
+    public DiscoveryOptions Discovery { get; } = new();
 
     /// <summary>
-    /// Gets or sets the ID token signing algorithms supported by this authorization server.
-    /// Defaults to <c>[<see cref="SigningAlgorithm.RS256"/>]</c>.
+    /// Gets the authorization endpoint configuration options.
     /// </summary>
-    public ICollection<SigningAlgorithm> IdTokenSigningAlgValuesSupported { get; set; } = [SigningAlgorithm.RS256];
+    public AuthorizationOptions Authorization { get; } = new();
 
     /// <summary>
-    /// Gets or sets the <c>max-age</c> value (in seconds) for the <c>Cache-Control</c> header
-    /// served on the OpenID Connect discovery document. Defaults to <c>3600</c> (one hour).
-    /// Set to <c>0</c> to disable public caching entirely (<c>Cache-Control: no-store</c>).
+    /// Gets the token endpoint configuration options.
     /// </summary>
-    /// <remarks>
-    /// A shorter TTL reduces the window during which relying parties may serve a stale discovery
-    /// document — important for emergency key rotation scenarios. A value of zero is appropriate
-    /// for development environments where the document changes frequently.
-    /// </remarks>
-    public int DiscoveryDocumentCacheMaxAgeSeconds { get; set; } = 3600;
+    public TokenOptions Token { get; } = new();
+
+    /// <summary>
+    /// Gets the JSON Web Key Set endpoint configuration options.
+    /// </summary>
+    public JwksOptions Jwks { get; } = new();
+
+    /// <summary>
+    /// Gets the ID token configuration options.
+    /// </summary>
+    public IdTokenOptions IdToken { get; } = new();
+
+    /// <summary>
+    /// Gets the response configuration options.
+    /// </summary>
+    public ResponseOptions Response { get; } = new();
 }
