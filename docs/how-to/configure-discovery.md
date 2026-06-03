@@ -26,11 +26,11 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddZeeKayDaAuth(options =>
 {
     options.Issuer = "https://id.example.com";
-    options.ResponseTypesSupported = [ResponseType.Code];
-    options.ResponseModesSupported = [ResponseMode.Query];
+    options.Response.TypesSupported = [ResponseType.Code];
+    options.Response.ModesSupported = [ResponseMode.Query];
     options.GrantTypesSupported = [GrantType.AuthorizationCode];
-    options.TokenEndpointAuthMethodsSupported = [TokenEndpointAuthMethod.ClientSecretBasic];
-    options.IdTokenSigningAlgValuesSupported = [SigningAlgorithm.RS256];
+    options.TokenEndpoint.AuthMethodsSupported = [TokenEndpointAuthMethod.ClientSecretBasic];
+    options.IdToken.SigningAlgValuesSupported = [SigningAlgorithm.RS256];
 });
 
 var app = builder.Build();
@@ -61,8 +61,8 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddZeeKayDaAuth(options =>
 {
     options.Issuer = "https://id.example.com/tenant-a";
-    options.ResponseTypesSupported = [ResponseType.Code];
-    options.IdTokenSigningAlgValuesSupported = [SigningAlgorithm.RS256];
+    options.Response.TypesSupported = [ResponseType.Code];
+    options.IdToken.SigningAlgValuesSupported = [SigningAlgorithm.RS256];
 });
 
 var app = builder.Build();
@@ -91,9 +91,9 @@ metadata fields from `AuthorizationServerOptions`.
 | Option | Published field | Default |
 |---|---|---|
 | built-in scope repository | `scopes_supported` | `["openid", "profile"]` |
-| `ResponseModesSupported` | `response_modes_supported` | `["query"]` |
+| `Response.ModesSupported` | `response_modes_supported` | `["query"]` |
 | `GrantTypesSupported` | `grant_types_supported` | `["authorization_code"]` |
-| `TokenEndpointAuthMethodsSupported` | `token_endpoint_auth_methods_supported` | `["client_secret_basic"]` |
+| `TokenEndpoint.AuthMethodsSupported` | `token_endpoint_auth_methods_supported` | `["client_secret_basic"]` |
 
 `scopes_supported` is described by
 [OIDC Discovery 1.0 Section 3](https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderMetadata)
@@ -164,9 +164,9 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddZeeKayDaAuth(options =>
 {
     options.Issuer = "https://id.example.com/tenant-a";
-    options.AuthorizationEndpoint = "https://login.example.com/tenant-a/connect/authorize";
-    options.TokenEndpoint = "https://login.example.com/tenant-a/connect/token";
-    options.JwksUri = "https://login.example.com/tenant-a/connect/jwks";
+    options.AuthorizationEndpoint.Uri = "https://login.example.com/tenant-a/connect/authorize";
+    options.TokenEndpoint.Uri = "https://login.example.com/tenant-a/connect/token";
+    options.JwksEndpoint.Uri = "https://login.example.com/tenant-a/connect/jwks";
 });
 
 var app = builder.Build();

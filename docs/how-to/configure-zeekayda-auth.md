@@ -57,11 +57,11 @@ With only `Issuer` configured, ZeeKayDa.Auth registers the following defaults:
 
 | Option | Default value |
 |---|---|
-| `ResponseTypesSupported` | `["code"]` |
-| `ResponseModesSupported` | `["query"]` |
+| `Response.TypesSupported` | `["code"]` |
+| `Response.ModesSupported` | `["query"]` |
 | `GrantTypesSupported` | `["authorization_code"]` |
-| `TokenEndpointAuthMethodsSupported` | `["client_secret_basic"]` |
-| `IdTokenSigningAlgValuesSupported` | `["RS256"]` |
+| `TokenEndpoint.AuthMethodsSupported` | `["client_secret_basic"]` |
+| `IdToken.SigningAlgValuesSupported` | `["RS256"]` |
 
 These defaults are a safe starting point for a standard authorization code flow with a
 confidential client.
@@ -77,8 +77,8 @@ Common startup failures and their causes:
 | Failure | Cause |
 |---|---|
 | `Issuer` validation error | `Issuer` is not set, not an absolute URI, uses HTTP without `AllowInsecureIssuer`, uses HTTP on a non-loopback host, or contains query, fragment, or user information |
-| `ResponseTypesSupported` validation error | The collection was set to `null` or emptied |
-| `IdTokenSigningAlgValuesSupported` validation error | The collection was set to `null` or emptied |
+| `Response.TypesSupported` validation error | The collection was set to `null` or emptied |
+| `IdToken.SigningAlgValuesSupported` validation error | The collection was set to `null` or emptied |
 | Other collection validation errors | Any of the remaining `ICollection` properties was set to `null` |
 
 The full validation rule set is in the

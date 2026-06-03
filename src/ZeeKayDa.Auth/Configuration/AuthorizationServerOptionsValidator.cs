@@ -117,19 +117,20 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
         }
 
         // Validate Token group
+        const string tokenAuthMethodsRequiredMessage =
+            "AuthorizationServerOptions.TokenEndpoint.AuthMethodsSupported must not be null or empty. " +
+            "Specify at least one client authentication method (e.g., TokenEndpointAuthMethod.ClientSecretBasic). " +
+            "See OAuth 2.0 Security BCP §2.6 (RFC 9700).";
+
         if (options.TokenEndpoint.AuthMethodsSupported is null)
         {
-            return ValidateOptionsResult.Fail(
-                "AuthorizationServerOptions.TokenEndpoint.AuthMethodsSupported must not be null.");
+            return ValidateOptionsResult.Fail(tokenAuthMethodsRequiredMessage);
         }
 
-        // ADR 0002 §4: TokenEndpoint.AuthMethodsSupported must not be empty
+        // ADR 0002 §4: TokenEndpoint.AuthMethodsSupported must not be null or empty
         if (options.TokenEndpoint.AuthMethodsSupported.Count == 0)
         {
-            return ValidateOptionsResult.Fail(
-                "AuthorizationServerOptions.TokenEndpoint.AuthMethodsSupported must not be empty. " +
-                "Specify at least one client authentication method (e.g., TokenEndpointAuthMethod.ClientSecretBasic). " +
-                "See OAuth 2.0 Security BCP §2.6 (RFC 9700).");
+            return ValidateOptionsResult.Fail(tokenAuthMethodsRequiredMessage);
         }
 
         // ADR 0002 §4: If client_credentials grant is supported, must have at least one non-None auth method

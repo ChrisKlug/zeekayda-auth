@@ -258,6 +258,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
 
         result.Failed.Should().BeTrue();
         result.FailureMessage.Should().Contain("TokenEndpoint.AuthMethodsSupported");
+        result.FailureMessage.Should().Contain("null or empty");
     }
 
     [Fact]
@@ -271,7 +272,20 @@ public sealed class AuthorizationServerOptionsValidatorTests
 
         result.Failed.Should().BeTrue();
         result.FailureMessage.Should().Contain("TokenEndpoint.AuthMethodsSupported");
-        result.FailureMessage.Should().Contain("must not be empty");
+        result.FailureMessage.Should().Contain("null or empty");
+    }
+
+    [Fact]
+    public void Validate_NoneOnlyAuthMethodWithoutClientCredentials_Succeeds()
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            GrantTypesSupported = [GrantType.AuthorizationCode],
+            TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethod.None] },
+        });
+
+        result.Succeeded.Should().BeTrue();
     }
 
     [Fact]
