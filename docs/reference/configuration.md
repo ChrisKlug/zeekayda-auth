@@ -226,9 +226,38 @@ This value must not be null or empty. If `GrantTypesSupported` includes
 | Enum value | JSON serialization |
 |---|---|
 | `TokenEndpointAuthMethod.ClientSecretBasic` | `"client_secret_basic"` |
+| `TokenEndpointAuthMethod.ClientSecretPost` | `"client_secret_post"` |
+| `TokenEndpointAuthMethod.ClientSecretJwt` | `"client_secret_jwt"` |
+| `TokenEndpointAuthMethod.PrivateKeyJwt` | `"private_key_jwt"` |
+| `TokenEndpointAuthMethod.None` | `"none"` |
 
 `token_endpoint_auth_methods_supported` is defined by
 [RFC 8414 §2](https://www.rfc-editor.org/rfc/rfc8414#section-2).
+
+#### `TokenEndpointAuthMethod.None` and PKCE
+
+`TokenEndpointAuthMethod.None` represents **public clients** — clients with no client secret. Public clients cannot securely transmit credentials at the token endpoint.
+
+> ⚠️ **Warning:** Public clients MUST use PKCE (Proof Key for Public OAuth 2.0 Clients) as the sole protection mechanism for the authorization code. This is mandated by [RFC 9700 §2.1.1](https://www.rfc-editor.org/rfc/rfc9700#section-2.1.1) (OAuth 2.0 Security Best Current Practice).
+
+**PKCE is defined only for the authorization code grant** per [RFC 7636](https://www.rfc-editor.org/rfc/rfc7636). Therefore:
+
+- If `TokenEndpoint.AuthMethodsSupported` includes `TokenEndpointAuthMethod.None`, then `GrantTypesSupported` **must** include `GrantType.AuthorizationCode`.
+
+The startup validator enforces this constraint. Attempting to support only other grant types (like `ClientCredentials`) with public clients will fail at host startup with a clear error message.
+
+```csharp
+// ✓ Valid: public clients with authorization code grant + PKCE
+options.TokenEndpoint.AuthMethodsSupported = new[] { TokenEndpointAuthMethod.None };
+options.GrantTypesSupported = new[] { GrantType.AuthorizationCode };
+
+// ✗ Invalid: public clients without authorization code grant
+// This will fail startup validation
+options.TokenEndpoint.AuthMethodsSupported = new[] { TokenEndpointAuthMethod.None };
+options.GrantTypesSupported = new[] { GrantType.ClientCredentials };
+```
+
+Clients that use `TokenEndpointAuthMethod.None` must perform the token exchange via the authorization code flow with PKCE challenge and verifier. Consult your OAuth client library's documentation for PKCE implementation details.
 
 ---
 
@@ -306,6 +335,7 @@ Negative values fail startup validation.
 | `Response.ModesSupported` is required | `Response.ModesSupported` is `null` |
 | `GrantTypesSupported` is required | `GrantTypesSupported` is `null` |
 | `TokenEndpoint.AuthMethodsSupported` is required | `TokenEndpoint.AuthMethodsSupported` is `null` or empty |
+| Public clients require `authorization_code` grant | `TokenEndpoint.AuthMethodsSupported` includes `None` and `GrantTypesSupported` does not include `AuthorizationCode` |
 | `client_credentials` requires non-`none` token auth method | `GrantTypesSupported` includes `ClientCredentials` and every `TokenEndpoint.AuthMethodsSupported` value is `None` |
 | `IdToken.SigningAlgValuesSupported` is required | `IdToken.SigningAlgValuesSupported` is `null` or empty |
 | `IScopeRepository` must include `openid` | the configured scope repository does not include a scope named `openid` |

@@ -330,6 +330,51 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
+    public void Validate_NoneAuthMethodWithoutAuthorizationCodeGrant_Fails()
+    {
+        // RFC 9700 §2.1.1 requires public clients use PKCE, which is only defined for
+        // the authorization code grant. None auth method without AuthorizationCode is invalid.
+        // Note: The ClientCredentials-only case is intentionally excluded here (Issue #27).
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            GrantTypesSupported = [GrantType.RefreshToken],
+            TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethod.None] },
+        });
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("none");
+        result.FailureMessage.Should().Contain("AuthorizationCode");
+        result.FailureMessage.Should().Contain("RFC 7636");
+    }
+
+    [Fact]
+    public void Validate_NoneAuthMethodWithAuthorizationCodeGrant_Succeeds()
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            GrantTypesSupported = [GrantType.AuthorizationCode],
+            TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethod.None] },
+        });
+
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Validate_NoneAuthMethodWithMultipleGrantsIncludingAuthorizationCode_Succeeds()
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            GrantTypesSupported = [GrantType.AuthorizationCode, GrantType.RefreshToken],
+            TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethod.None] },
+        });
+
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Fact]
     public void Validate_NullIdTokenSigningAlgValuesSupported_Fails()
     {
         var result = Validate(new AuthorizationServerOptions

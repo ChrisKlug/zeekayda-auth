@@ -29,6 +29,20 @@ public enum TokenEndpointAuthMethod
     PrivateKeyJwt,
 
     /// <summary>No client authentication (<c>none</c>).</summary>
+    /// <remarks>
+    /// <para>
+    /// Represents a public client with no client secret. Public clients cannot securely present
+    /// credentials at the token endpoint and must use PKCE (RFC 7636) as the sole protection
+    /// mechanism for the authorization code. PKCE is defined only for the authorization code grant,
+    /// so <see cref="TokenEndpointAuthMethod.None"/> must be paired with <see cref="GrantType.AuthorizationCode"/>
+    /// in <see cref="AuthorizationServerOptions.GrantTypesSupported"/>.
+    /// </para>
+    /// <para>
+    /// See RFC 9700 §2.1.1 (OAuth 2.0 Security Best Current Practice) for the mandatory requirement
+    /// that public clients use PKCE, and RFC 7636 (Proof Key for Public OAuth 2.0 Clients) for the
+    /// PKCE specification.
+    /// </para>
+    /// </remarks>
     [JsonStringEnumMemberName("none")]
     None,
 }

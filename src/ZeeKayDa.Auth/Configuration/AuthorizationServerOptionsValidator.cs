@@ -133,6 +133,27 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
             return ValidateOptionsResult.Fail(tokenAuthMethodsRequiredMessage);
         }
 
+        // RFC 7636 (PKCE) is defined only for the authorization code grant and is mandatory for
+        // public clients (RFC 9700 §2.1.1). If None (public client auth) is supported, clients
+        // must be able to use the authorization code grant to perform PKCE-protected token exchange.
+        // Per ADR 0002 §4, TokenEndpoint.AuthMethodsSupported enforces this constraint per client at
+        // request time. None may legitimately appear alongside other methods to support public clients
+        // using PKCE (RFC 7636).
+        // TODO: None + ClientCredentials validation pending Issue #27.
+        // Note: This rule intentionally skips validation when ClientCredentials is the sole grant,
+        // as Issue #27 will add dedicated cross-validation for the None + ClientCredentials combination.
+        if (options.TokenEndpoint.AuthMethodsSupported.Contains(TokenEndpointAuthMethod.None) &&
+            !options.GrantTypesSupported.Contains(GrantType.AuthorizationCode) &&
+            !options.GrantTypesSupported.SequenceEqual([GrantType.ClientCredentials]))
+        {
+            return ValidateOptionsResult.Fail(
+                "If TokenEndpoint.AuthMethodsSupported includes 'none' (public clients), " +
+                "GrantTypesSupported must include GrantType.AuthorizationCode. " +
+                "RFC 7636 (Proof Key for Public OAuth 2.0 Clients) is mandatory for public clients " +
+                "and is only defined for the authorization code grant. " +
+                "See RFC 9700 §2.1.1 (OAuth 2.0 Security Best Current Practice).");
+        }
+
         // ADR 0002 §4: If client_credentials grant is supported, must have at least one non-None auth method
         if (options.GrantTypesSupported.Contains(GrantType.ClientCredentials) &&
             options.TokenEndpoint.AuthMethodsSupported.All(m => m == TokenEndpointAuthMethod.None))
