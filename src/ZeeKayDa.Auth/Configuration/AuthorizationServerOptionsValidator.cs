@@ -173,6 +173,16 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
                 "AuthorizationServerOptions.DiscoveryDocument.CacheMaxAgeSeconds must not be negative.");
         }
 
+        // Validate AuthorizationEndpoint group
+        if (options.AuthorizationEndpoint.CodeChallengeMethodsSupported is { Count: 0 })
+        {
+            return ValidateOptionsResult.Fail(
+                "AuthorizationServerOptions.AuthorizationEndpoint.CodeChallengeMethodsSupported " +
+                "must not be an empty collection. Either set it to null to omit the field from the " +
+                "discovery document, or provide at least one value (e.g. CodeChallengeMethod.S256). " +
+                "See RFC 7636 §4.3 and RFC 8414 §2.");
+        }
+
         // Validate endpoint URI overrides — RFC 8414 §2 requires all metadata URLs to use HTTPS.
         static ValidateOptionsResult? ValidateEndpointUri(string propertyName, string? value, bool allowInsecure, bool rejectQuery = false, bool rejectFragment = false)
         {

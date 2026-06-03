@@ -109,6 +109,45 @@ options.AuthorizationEndpoint.Uri = "https://login.example.com/tenant-a/connect/
 
 ---
 
+### `AuthorizationEndpoint.CodeChallengeMethodsSupported`
+
+| Attribute | Value |
+|---|---|
+| Type | `ICollection<CodeChallengeMethod>?` |
+| Default | `null` |
+| Required | No |
+
+The PKCE code challenge methods advertised in the discovery document. When `null` (the default),
+the `code_challenge_methods_supported` field is omitted entirely from the discovery document.
+
+> ⚠️ **Do not set this property until PKCE challenge verification is enforced at the token
+> endpoint.** Advertising methods the server cannot verify gives clients a false assurance —
+> a PKCE-aware client will include a `code_verifier` at the token endpoint, and if the server
+> silently ignores it, an authorization-code interception attack can succeed undetected.
+
+Once PKCE enforcement is implemented, set this property to advertise `S256` support:
+
+```csharp
+options.AuthorizationEndpoint.CodeChallengeMethodsSupported = [CodeChallengeMethod.S256];
+```
+
+| Enum value | JSON serialization |
+|---|---|
+| `CodeChallengeMethod.S256` | `"S256"` |
+
+The `plain` challenge method is intentionally absent from `CodeChallengeMethod`. RFC 9700 §2.1.1
+explicitly prohibits its use: advertising `plain` would negate PKCE's security benefit because the
+challenge is identical to the verifier and provides no protection against interception.
+
+Startup validation rejects a non-null empty collection (e.g. `= []`), which would publish
+`"code_challenge_methods_supported": []` — advertising PKCE support with no usable method.
+
+Maps to `code_challenge_methods_supported` as defined in
+[RFC 7636 §4.3](https://www.rfc-editor.org/rfc/rfc7636#section-4.3) and
+[RFC 8414 §2](https://www.rfc-editor.org/rfc/rfc8414#section-2).
+
+---
+
 ### `TokenEndpoint`
 
 | Attribute | Value |
@@ -352,6 +391,7 @@ Negative values fail startup validation.
 | `IdToken.SigningAlgValuesSupported` is required | `IdToken.SigningAlgValuesSupported` is `null` or empty |
 | `IScopeRepository` must include `openid` | the configured scope repository does not include a scope named `openid` |
 | Cache max-age must not be negative | `DiscoveryDocument.CacheMaxAgeSeconds` is less than `0` |
+| `AuthorizationEndpoint.CodeChallengeMethodsSupported` must not be empty | `AuthorizationEndpoint.CodeChallengeMethodsSupported` is a non-null empty collection |
 
 For the exact failure text of the `client_credentials` + `none`-only token auth combination, see
 [`TokenEndpoint.AuthMethodsSupported`](#tokenendpointauthmethodssupported) above.

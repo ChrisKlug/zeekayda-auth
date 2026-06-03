@@ -412,6 +412,45 @@ public sealed class AuthorizationServerOptionsValidatorTests
         result.FailureMessage.Should().Contain("IdToken.SigningAlgValuesSupported");
     }
 
+    // ── AuthorizationEndpoint.CodeChallengeMethodsSupported ───────────────────────────────────────
+
+    [Fact]
+    public void Validate_NullCodeChallengeMethodsSupported_Succeeds()
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            AuthorizationEndpoint = { CodeChallengeMethodsSupported = null },
+        });
+
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Validate_CodeChallengeMethodsSupportedWithS256_Succeeds()
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            AuthorizationEndpoint = { CodeChallengeMethodsSupported = [CodeChallengeMethod.S256] },
+        });
+
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Validate_EmptyCodeChallengeMethodsSupported_Fails()
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            AuthorizationEndpoint = { CodeChallengeMethodsSupported = [] },
+        });
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("AuthorizationEndpoint.CodeChallengeMethodsSupported");
+    }
+
     // ── Happy paths ───────────────────────────────────────────────────────────────────────────────
 
     [Fact]
