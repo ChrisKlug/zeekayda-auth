@@ -7,6 +7,11 @@ namespace ZeeKayDa.Auth.Tests.Configuration;
 
 public sealed class AuthorizationServerOptionsValidatorTests
 {
+    private const string ClientCredentialsRequiresNonNoneTokenAuthMethodErrorMessage =
+        "GrantTypesSupported includes 'client_credentials', which requires confidential clients. " +
+        "TokenEndpoint.AuthMethodsSupported must contain at least one method other than 'none'. " +
+        "See RFC 6749 §4.4 and OAuth 2.0 Security BCP §2.6 (RFC 9700).";
+
     private static ValidateOptionsResult Validate(
         AuthorizationServerOptions options,
         IScopeRepository? scopeRepository = null)
@@ -299,8 +304,21 @@ public sealed class AuthorizationServerOptionsValidatorTests
         });
 
         result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("client_credentials");
-        result.FailureMessage.Should().Contain("other than");
+        result.FailureMessage.Should().Be(ClientCredentialsRequiresNonNoneTokenAuthMethodErrorMessage);
+    }
+
+    [Fact]
+    public void Validate_ClientCredentialsMixedWithAuthorizationCodeAndOnlyNoneAuthMethod_Fails()
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            GrantTypesSupported = [GrantType.AuthorizationCode, GrantType.ClientCredentials],
+            TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethod.None] },
+        });
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Be(ClientCredentialsRequiresNonNoneTokenAuthMethodErrorMessage);
     }
 
     [Fact]

@@ -223,6 +223,16 @@ This value must not be null or empty. If `GrantTypesSupported` includes
 `GrantType.ClientCredentials`, it must contain at least one method other than
 `TokenEndpointAuthMethod.None`.
 
+This cross-group validator rule is defined in
+[ADR 0002 §4 Rule 2](../decisions/0002-options-shape-grouped-nested.md#required-validator-rules-for-tokenendpointauthmethodssupported)
+and is grounded in [RFC 6749 §4.4](https://www.rfc-editor.org/rfc/rfc6749#section-4.4) and
+[RFC 9700 §2.6](https://www.rfc-editor.org/rfc/rfc9700#section-2.6). If violated, startup validation
+emits:
+
+```text
+GrantTypesSupported includes 'client_credentials', which requires confidential clients. TokenEndpoint.AuthMethodsSupported must contain at least one method other than 'none'. See RFC 6749 §4.4 and OAuth 2.0 Security BCP §2.6 (RFC 9700).
+```
+
 | Enum value | JSON serialization |
 |---|---|
 | `TokenEndpointAuthMethod.ClientSecretBasic` | `"client_secret_basic"` |
@@ -340,6 +350,9 @@ Negative values fail startup validation.
 | `IdToken.SigningAlgValuesSupported` is required | `IdToken.SigningAlgValuesSupported` is `null` or empty |
 | `IScopeRepository` must include `openid` | the configured scope repository does not include a scope named `openid` |
 | Cache max-age must not be negative | `DiscoveryDocument.CacheMaxAgeSeconds` is less than `0` |
+
+For the exact failure text of the `client_credentials` + `none`-only token auth combination, see
+[`TokenEndpoint.AuthMethodsSupported`](#tokenendpointauthmethodssupported) above.
 
 Validation errors are reported as `OptionsValidationException` and prevent the host from starting.
 They are visible in the startup output and host logs.
