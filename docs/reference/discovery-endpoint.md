@@ -72,7 +72,7 @@ app.Run();
 | Header | Value |
 |---|---|
 | `Content-Type` | `application/json` |
-| `Cache-Control` | `public, max-age=3600, must-revalidate` by default; `no-store` when `DiscoveryDocumentCacheMaxAgeSeconds` is `0` |
+| `Cache-Control` | `public, max-age=3600, must-revalidate` by default; `no-store` when `DiscoveryDocument.CacheMaxAgeSeconds` is `0` |
 | `Access-Control-Allow-Origin` | `*` |
 
 ## Metadata fields
@@ -83,16 +83,16 @@ come from `AuthorizationServerOptions`.
 | JSON field | Source | Default / notes |
 |---|---|---|
 | `issuer` | `Issuer` | Published verbatim as configured. |
-| `authorization_endpoint` | `AuthorizationEndpoint` or derived from `Issuer` | Default is `{issuer}/connect/authorize`. |
-| `token_endpoint` | `TokenEndpoint` or derived from `Issuer` | Default is `{issuer}/connect/token`. |
-| `jwks_uri` | `JwksUri` or derived from `Issuer` | Default is `{issuer}/connect/jwks`. |
-| `response_types_supported` | `ResponseTypesSupported` | Defaults to `["code"]`. Required by OIDC Discovery 1.0 Section 3. |
+| `authorization_endpoint` | `AuthorizationEndpoint.Uri` or derived from `Issuer` | Default is `{issuer}/connect/authorize`. |
+| `token_endpoint` | `TokenEndpoint.Uri` or derived from `Issuer` | Default is `{issuer}/connect/token`. |
+| `jwks_uri` | `JwksEndpoint.Uri` or derived from `Issuer` | Default is `{issuer}/connect/jwks`. |
+| `response_types_supported` | `Response.TypesSupported` | Defaults to `["code"]`. Required by OIDC Discovery 1.0 Section 3. |
 | `scopes_supported` | `IScopeRepository` | By default, published from the built-in repository containing `openid` and `profile`. |
-| `response_modes_supported` | `ResponseModesSupported` | Defaults to `["query"]`. |
+| `response_modes_supported` | `Response.ModesSupported` | Defaults to `["query"]`. |
 | `grant_types_supported` | `GrantTypesSupported` | Defaults to `["authorization_code"]`. |
-| `token_endpoint_auth_methods_supported` | `TokenEndpointAuthMethodsSupported` | Defaults to `["client_secret_basic"]`. |
+| `token_endpoint_auth_methods_supported` | `TokenEndpoint.AuthMethodsSupported` | Defaults to `["client_secret_basic"]`. |
 | `subject_types_supported` | Fixed value | Always `["public"]`. Pairwise subject identifiers are not currently supported. |
-| `id_token_signing_alg_values_supported` | `IdTokenSigningAlgValuesSupported` | Defaults to `["RS256"]`. Required by OIDC Discovery 1.0 Section 3. |
+| `id_token_signing_alg_values_supported` | `IdToken.SigningAlgValuesSupported` | Defaults to `["RS256"]`. Required by OIDC Discovery 1.0 Section 3. |
 
 The recommended metadata fields are described by
 [OpenID Connect Discovery 1.0 Section 3](https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderMetadata)
@@ -196,7 +196,7 @@ Startup fails when:
 - `Issuer` uses HTTP with a non-loopback host
 - `Issuer` contains a query string or fragment
 - `Issuer` contains user information
-- `ResponseTypesSupported` or `IdTokenSigningAlgValuesSupported` is null or empty
+- `Response.TypesSupported` or `IdToken.SigningAlgValuesSupported` is null or empty
 - any supported metadata collection is null
 - a custom scope repository is configured with blank or duplicate scope names
 

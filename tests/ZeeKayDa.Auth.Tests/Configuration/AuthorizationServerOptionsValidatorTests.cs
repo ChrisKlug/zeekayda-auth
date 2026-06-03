@@ -275,6 +275,19 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
+    public void Validate_NoneOnlyAuthMethodWithoutClientCredentials_Succeeds()
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            GrantTypesSupported = [GrantType.AuthorizationCode],
+            TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethod.None] },
+        });
+
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Fact]
     public void Validate_ClientCredentialsWithOnlyNoneAuthMethod_Fails()
     {
         var result = Validate(new AuthorizationServerOptions

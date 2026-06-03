@@ -89,19 +89,22 @@ options.AllowInsecureIssuer = true;
 
 | Attribute | Value |
 |---|---|
-| Type | `string?` |
-| Default | `null` (derived from `Issuer`) |
+| Type | `AuthorizationEndpointOptions` |
+| Default | `new AuthorizationEndpointOptions()` |
 | Required | No |
 
-Override for the `authorization_endpoint` value published in the discovery document. When `null`,
-ZeeKayDa.Auth derives the URL from `Issuer` as `{issuer}/connect/authorize`.
+Group for authorization endpoint settings.
+
+`AuthorizationEndpoint.Uri` overrides the `authorization_endpoint` value published in the discovery
+document. When `null`, ZeeKayDa.Auth derives the URL from `Issuer` as
+`{issuer}/connect/authorize`.
 
 Set this when the URL your clients should use differs from the issuer-derived default — for example,
 when a reverse proxy rewrites paths. The value must be an absolute HTTPS URI without user
 information or fragment. Query strings are permitted by RFC 6749 Section 3.1.
 
 ```csharp
-options.AuthorizationEndpoint = "https://login.example.com/tenant-a/connect/authorize";
+options.AuthorizationEndpoint.Uri = "https://login.example.com/tenant-a/connect/authorize";
 ```
 
 ---
@@ -110,41 +113,45 @@ options.AuthorizationEndpoint = "https://login.example.com/tenant-a/connect/auth
 
 | Attribute | Value |
 |---|---|
-| Type | `string?` |
-| Default | `null` (derived from `Issuer`) |
+| Type | `TokenEndpointOptions` |
+| Default | `new TokenEndpointOptions()` |
 | Required | No |
 
-Override for the `token_endpoint` value published in the discovery document. When `null`,
-ZeeKayDa.Auth derives the URL from `Issuer` as `{issuer}/connect/token`.
+Group for token endpoint settings.
+
+`TokenEndpoint.Uri` overrides the `token_endpoint` value published in the discovery document. When
+`null`, ZeeKayDa.Auth derives the URL from `Issuer` as `{issuer}/connect/token`.
 
 The value must be an absolute HTTPS URI without user information or fragment.
 
 ```csharp
-options.TokenEndpoint = "https://login.example.com/tenant-a/connect/token";
+options.TokenEndpoint.Uri = "https://login.example.com/tenant-a/connect/token";
 ```
 
 ---
 
-### `JwksUri`
+### `JwksEndpoint`
 
 | Attribute | Value |
 |---|---|
-| Type | `string?` |
-| Default | `null` (derived from `Issuer`) |
+| Type | `JwksEndpointOptions` |
+| Default | `new JwksEndpointOptions()` |
 | Required | No |
 
-Override for the `jwks_uri` value published in the discovery document. When `null`, ZeeKayDa.Auth
-derives the URL from `Issuer` as `{issuer}/connect/jwks`.
+Group for JSON Web Key Set endpoint settings.
+
+`JwksEndpoint.Uri` overrides the `jwks_uri` value published in the discovery document. When `null`,
+ZeeKayDa.Auth derives the URL from `Issuer` as `{issuer}/connect/jwks`.
 
 The value must be an absolute HTTPS URI without user information, query, or fragment.
 
 ```csharp
-options.JwksUri = "https://login.example.com/tenant-a/connect/jwks";
+options.JwksEndpoint.Uri = "https://login.example.com/tenant-a/connect/jwks";
 ```
 
 ---
 
-### `ResponseTypesSupported`
+### `Response.TypesSupported`
 
 | Attribute | Value |
 |---|---|
@@ -153,7 +160,7 @@ options.JwksUri = "https://login.example.com/tenant-a/connect/jwks";
 | Required | Yes (must not be null or empty) |
 
 The response types this server supports. Published as `response_types_supported` in the discovery
-document.
+document. This value lives in the `Response` options group.
 
 | Enum value | JSON serialization |
 |---|---|
@@ -164,7 +171,7 @@ document.
 
 ---
 
-### `ResponseModesSupported`
+### `Response.ModesSupported`
 
 | Attribute | Value |
 |---|---|
@@ -173,7 +180,7 @@ document.
 | Required | Yes (must not be null) |
 
 The response modes this server supports. Published as `response_modes_supported` in the discovery
-document.
+document. This value lives in the `Response` options group.
 
 | Enum value | JSON serialization |
 |---|---|
@@ -201,7 +208,7 @@ document.
 
 ---
 
-### `TokenEndpointAuthMethodsSupported`
+### `TokenEndpoint.AuthMethodsSupported`
 
 | Attribute | Value |
 |---|---|
@@ -212,6 +219,10 @@ document.
 The client authentication methods supported at the token endpoint. Published as
 `token_endpoint_auth_methods_supported` in the discovery document.
 
+This value must not be null or empty. If `GrantTypesSupported` includes
+`GrantType.ClientCredentials`, it must contain at least one method other than
+`TokenEndpointAuthMethod.None`.
+
 | Enum value | JSON serialization |
 |---|---|
 | `TokenEndpointAuthMethod.ClientSecretBasic` | `"client_secret_basic"` |
@@ -221,7 +232,7 @@ The client authentication methods supported at the token endpoint. Published as
 
 ---
 
-### `IdTokenSigningAlgValuesSupported`
+### `IdToken.SigningAlgValuesSupported`
 
 | Attribute | Value |
 |---|---|
@@ -249,7 +260,7 @@ The signing algorithms supported for ID tokens. Published as
 
 ---
 
-### `DiscoveryDocumentCacheMaxAgeSeconds`
+### `DiscoveryDocument.CacheMaxAgeSeconds`
 
 | Attribute | Value |
 |---|---|
@@ -289,15 +300,16 @@ Negative values fail startup validation.
 | Endpoint overrides must be absolute HTTPS URIs | an override is relative, uses an unsupported scheme, or uses HTTP without `AllowInsecureIssuer` |
 | HTTP endpoint overrides must be loopback | an override uses HTTP with a non-loopback host |
 | Endpoint overrides must not have user information | an override contains `user:password@host` userinfo |
-| Endpoint fragments are rejected | `AuthorizationEndpoint`, `TokenEndpoint`, or `JwksUri` contains `#` |
-| `JwksUri` must not have a query string | `JwksUri` contains `?` |
-| `ResponseTypesSupported` is required | `ResponseTypesSupported` is `null` or empty |
-| `ResponseModesSupported` is required | `ResponseModesSupported` is `null` |
+| Endpoint fragments are rejected | `AuthorizationEndpoint.Uri`, `TokenEndpoint.Uri`, or `JwksEndpoint.Uri` contains `#` |
+| `JwksEndpoint.Uri` must not have a query string | `JwksEndpoint.Uri` contains `?` |
+| `Response.TypesSupported` is required | `Response.TypesSupported` is `null` or empty |
+| `Response.ModesSupported` is required | `Response.ModesSupported` is `null` |
 | `GrantTypesSupported` is required | `GrantTypesSupported` is `null` |
-| `TokenEndpointAuthMethodsSupported` is required | `TokenEndpointAuthMethodsSupported` is `null` |
-| `IdTokenSigningAlgValuesSupported` is required | `IdTokenSigningAlgValuesSupported` is `null` or empty |
+| `TokenEndpoint.AuthMethodsSupported` is required | `TokenEndpoint.AuthMethodsSupported` is `null` or empty |
+| `client_credentials` requires non-`none` token auth method | `GrantTypesSupported` includes `ClientCredentials` and every `TokenEndpoint.AuthMethodsSupported` value is `None` |
+| `IdToken.SigningAlgValuesSupported` is required | `IdToken.SigningAlgValuesSupported` is `null` or empty |
 | `IScopeRepository` must include `openid` | the configured scope repository does not include a scope named `openid` |
-| Cache max-age must not be negative | `DiscoveryDocumentCacheMaxAgeSeconds` is less than `0` |
+| Cache max-age must not be negative | `DiscoveryDocument.CacheMaxAgeSeconds` is less than `0` |
 
 Validation errors are reported as `OptionsValidationException` and prevent the host from starting.
 They are visible in the startup output and host logs.
