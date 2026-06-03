@@ -178,7 +178,7 @@ Add one property:
 
 ```csharp
 /// <summary>
-/// Gets or sets the PKCE code challenge methods supported by this authorisation server.
+/// Gets or sets the PKCE code challenge methods supported by this authorization server.
 /// When <see langword="null"/> (the default), the <c>code_challenge_methods_supported</c>
 /// field is omitted from the discovery document.
 /// </summary>
@@ -203,7 +203,7 @@ Add one property to the wire-format record:
 
 ```csharp
 /// <summary>
-/// Gets the PKCE code challenge methods supported by this authorisation server.
+/// Gets the PKCE code challenge methods supported by this authorization server.
 /// Absent from the document when <see langword="null"/>.
 /// </summary>
 [JsonPropertyName("code_challenge_methods_supported")]

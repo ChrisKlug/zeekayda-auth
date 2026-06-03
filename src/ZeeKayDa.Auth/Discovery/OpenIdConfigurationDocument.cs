@@ -59,4 +59,12 @@ public sealed record OpenIdConfigurationDocument
     /// </summary>
     [JsonPropertyName("id_token_signing_alg_values_supported")]
     public required IReadOnlyCollection<SigningAlgorithm> IdTokenSigningAlgValuesSupported { get; init; }
+
+    /// <summary>
+    /// Gets the PKCE code challenge methods supported by this authorization server.
+    /// Absent from the document when <see langword="null"/>.
+    /// </summary>
+    [JsonPropertyName("code_challenge_methods_supported")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyCollection<CodeChallengeMethod>? CodeChallengeMethodsSupported { get; init; }
 }
