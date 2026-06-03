@@ -5,8 +5,8 @@ namespace ZeeKayDa.Auth;
 /// </summary>
 /// <remarks>
 /// Server-wide settings are exposed directly on this class. Per-endpoint settings are grouped
-/// into nested sealed option classes (<see cref="Discovery"/>, <see cref="Authorization"/>,
-/// <see cref="Token"/>, <see cref="Jwks"/>, <see cref="IdToken"/>, <see cref="Response"/>)
+/// into nested sealed option classes (<see cref="Discovery"/>, <see cref="AuthorizationEndpoint"/>,
+/// <see cref="TokenEndpoint"/>, <see cref="JwksEndpoint"/>, <see cref="IdToken"/>, <see cref="Response"/>)
 /// which are initialized to default instances. Group properties are get-only and cannot be nulled;
 /// consumers may mutate the members of each group but not replace the group itself.
 /// </remarks>
@@ -56,17 +56,17 @@ public sealed class AuthorizationServerOptions
     /// <summary>
     /// Gets the authorization endpoint configuration options.
     /// </summary>
-    public AuthorizationOptions Authorization { get; } = new();
+    public AuthorizationEndpointOptions AuthorizationEndpoint { get; } = new();
 
     /// <summary>
     /// Gets the token endpoint configuration options.
     /// </summary>
-    public TokenOptions Token { get; } = new();
+    public TokenEndpointOptions TokenEndpoint { get; } = new();
 
     /// <summary>
     /// Gets the JSON Web Key Set endpoint configuration options.
     /// </summary>
-    public JwksOptions Jwks { get; } = new();
+    public JwksEndpointOptions JwksEndpoint { get; } = new();
 
     /// <summary>
     /// Gets the ID token configuration options.

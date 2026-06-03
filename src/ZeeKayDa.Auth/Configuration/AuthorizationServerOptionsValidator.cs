@@ -117,28 +117,28 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
         }
 
         // Validate Token group
-        if (options.Token.AuthMethodsSupported is null)
+        if (options.TokenEndpoint.AuthMethodsSupported is null)
         {
             return ValidateOptionsResult.Fail(
-                "AuthorizationServerOptions.Token.AuthMethodsSupported must not be null.");
+                "AuthorizationServerOptions.TokenEndpoint.AuthMethodsSupported must not be null.");
         }
 
-        // ADR 0002 §4: Token.AuthMethodsSupported must not be empty
-        if (options.Token.AuthMethodsSupported.Count == 0)
+        // ADR 0002 §4: TokenEndpoint.AuthMethodsSupported must not be empty
+        if (options.TokenEndpoint.AuthMethodsSupported.Count == 0)
         {
             return ValidateOptionsResult.Fail(
-                "AuthorizationServerOptions.Token.AuthMethodsSupported must not be empty. " +
+                "AuthorizationServerOptions.TokenEndpoint.AuthMethodsSupported must not be empty. " +
                 "Specify at least one client authentication method (e.g., TokenEndpointAuthMethod.ClientSecretBasic). " +
                 "See OAuth 2.0 Security BCP §2.6 (RFC 9700).");
         }
 
         // ADR 0002 §4: If client_credentials grant is supported, must have at least one non-None auth method
         if (options.GrantTypesSupported.Contains(GrantType.ClientCredentials) &&
-            options.Token.AuthMethodsSupported.All(m => m == TokenEndpointAuthMethod.None))
+            options.TokenEndpoint.AuthMethodsSupported.All(m => m == TokenEndpointAuthMethod.None))
         {
             return ValidateOptionsResult.Fail(
                 "GrantTypesSupported includes 'client_credentials', which requires confidential clients. " +
-                "Token.AuthMethodsSupported must contain at least one method other than 'none'. " +
+                "TokenEndpoint.AuthMethodsSupported must contain at least one method other than 'none'. " +
                 "See RFC 6749 §4.4 and OAuth 2.0 Security BCP §2.6 (RFC 9700).");
         }
 
@@ -202,13 +202,13 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
         // RFC 6749 §3.1 and §3.2: authorization and token endpoint URIs MUST NOT include a fragment.
         // Query components are explicitly permitted on the authorization endpoint (RFC 6749 §3.1)
         // and are not prohibited on the token endpoint.
-        if (ValidateEndpointUri(nameof(options.Authorization.Uri), options.Authorization.Uri, options.AllowInsecureIssuer, rejectFragment: true) is { } aeError)
+        if (ValidateEndpointUri(nameof(options.AuthorizationEndpoint.Uri), options.AuthorizationEndpoint.Uri, options.AllowInsecureIssuer, rejectFragment: true) is { } aeError)
             return aeError;
 
-        if (ValidateEndpointUri(nameof(options.Token.Uri), options.Token.Uri, options.AllowInsecureIssuer, rejectFragment: true) is { } teError)
+        if (ValidateEndpointUri(nameof(options.TokenEndpoint.Uri), options.TokenEndpoint.Uri, options.AllowInsecureIssuer, rejectFragment: true) is { } teError)
             return teError;
 
-        if (ValidateEndpointUri(nameof(options.Jwks.Uri), options.Jwks.Uri, options.AllowInsecureIssuer, rejectQuery: true, rejectFragment: true) is { } jwksError)
+        if (ValidateEndpointUri(nameof(options.JwksEndpoint.Uri), options.JwksEndpoint.Uri, options.AllowInsecureIssuer, rejectQuery: true, rejectFragment: true) is { } jwksError)
             return jwksError;
 
         // IValidateOptions<T> is synchronous; block here so ValidateOnStart can fail fast.

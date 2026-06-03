@@ -253,11 +253,11 @@ public sealed class AuthorizationServerOptionsValidatorTests
         var result = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
-            Token = { AuthMethodsSupported = null! },
+            TokenEndpoint = { AuthMethodsSupported = null! },
         });
 
         result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("Token.AuthMethodsSupported");
+        result.FailureMessage.Should().Contain("TokenEndpoint.AuthMethodsSupported");
     }
 
     [Fact]
@@ -266,11 +266,11 @@ public sealed class AuthorizationServerOptionsValidatorTests
         var result = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
-            Token = { AuthMethodsSupported = [] },
+            TokenEndpoint = { AuthMethodsSupported = [] },
         });
 
         result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("Token.AuthMethodsSupported");
+        result.FailureMessage.Should().Contain("TokenEndpoint.AuthMethodsSupported");
         result.FailureMessage.Should().Contain("must not be empty");
     }
 
@@ -281,7 +281,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
         {
             Issuer = "https://auth.example.com",
             GrantTypesSupported = [GrantType.ClientCredentials],
-            Token = { AuthMethodsSupported = [TokenEndpointAuthMethod.None] },
+            TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethod.None] },
         });
 
         result.Failed.Should().BeTrue();
@@ -296,7 +296,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
         {
             Issuer = "https://auth.example.com",
             GrantTypesSupported = [GrantType.ClientCredentials],
-            Token = { AuthMethodsSupported = [TokenEndpointAuthMethod.ClientSecretBasic] },
+            TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethod.ClientSecretBasic] },
         });
 
         result.Succeeded.Should().BeTrue();
@@ -309,7 +309,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
         {
             Issuer = "https://auth.example.com",
             GrantTypesSupported = [GrantType.ClientCredentials],
-            Token = { AuthMethodsSupported = [TokenEndpointAuthMethod.None, TokenEndpointAuthMethod.ClientSecretBasic] },
+            TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethod.None, TokenEndpointAuthMethod.ClientSecretBasic] },
         });
 
         result.Succeeded.Should().BeTrue();
@@ -422,9 +422,9 @@ public sealed class AuthorizationServerOptionsValidatorTests
     // ── Endpoint URI overrides ────────────────────────────────────────────────────────────────────
 
     [Theory]
-    [InlineData("Authorization.Uri", "not-a-uri")]
-    [InlineData("Token.Uri", "not-a-uri")]
-    [InlineData("Jwks.Uri", "not-a-uri")]
+    [InlineData("AuthorizationEndpoint.Uri", "not-a-uri")]
+    [InlineData("TokenEndpoint.Uri", "not-a-uri")]
+    [InlineData("JwksEndpoint.Uri", "not-a-uri")]
     public void Validate_EndpointOverrideNotAbsoluteUri_Fails(string propertyPath, string value)
     {
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
@@ -437,9 +437,9 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Theory]
-    [InlineData("Authorization.Uri", "http://auth.example.com/connect/authorize")]
-    [InlineData("Token.Uri", "http://auth.example.com/connect/token")]
-    [InlineData("Jwks.Uri", "http://auth.example.com/connect/jwks")]
+    [InlineData("AuthorizationEndpoint.Uri", "http://auth.example.com/connect/authorize")]
+    [InlineData("TokenEndpoint.Uri", "http://auth.example.com/connect/token")]
+    [InlineData("JwksEndpoint.Uri", "http://auth.example.com/connect/jwks")]
     public void Validate_EndpointOverrideHttpWithoutFlag_Fails(string propertyPath, string value)
     {
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
@@ -452,9 +452,9 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Theory]
-    [InlineData("Authorization.Uri", "https://auth.example.com/connect/authorize")]
-    [InlineData("Token.Uri", "https://auth.example.com/connect/token")]
-    [InlineData("Jwks.Uri", "https://auth.example.com/connect/jwks")]
+    [InlineData("AuthorizationEndpoint.Uri", "https://auth.example.com/connect/authorize")]
+    [InlineData("TokenEndpoint.Uri", "https://auth.example.com/connect/token")]
+    [InlineData("JwksEndpoint.Uri", "https://auth.example.com/connect/jwks")]
     public void Validate_EndpointOverrideHttps_Succeeds(string propertyPath, string value)
     {
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
@@ -466,9 +466,9 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Theory]
-    [InlineData("Authorization.Uri", "https://user:pass@auth.example.com/connect/authorize")]
-    [InlineData("Token.Uri", "https://user:pass@auth.example.com/connect/token")]
-    [InlineData("Jwks.Uri", "https://user:pass@auth.example.com/connect/jwks")]
+    [InlineData("AuthorizationEndpoint.Uri", "https://user:pass@auth.example.com/connect/authorize")]
+    [InlineData("TokenEndpoint.Uri", "https://user:pass@auth.example.com/connect/token")]
+    [InlineData("JwksEndpoint.Uri", "https://user:pass@auth.example.com/connect/jwks")]
     public void Validate_EndpointOverrideWithUserInfo_Fails(string propertyPath, string value)
     {
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
@@ -481,9 +481,9 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Theory]
-    [InlineData("Authorization.Uri", "http://auth.example.com/connect/authorize")]
-    [InlineData("Token.Uri", "http://auth.example.com/connect/token")]
-    [InlineData("Jwks.Uri", "http://auth.example.com/connect/jwks")]
+    [InlineData("AuthorizationEndpoint.Uri", "http://auth.example.com/connect/authorize")]
+    [InlineData("TokenEndpoint.Uri", "http://auth.example.com/connect/token")]
+    [InlineData("JwksEndpoint.Uri", "http://auth.example.com/connect/jwks")]
     public void Validate_EndpointOverrideHttpWithFlagForNonLoopback_Fails(string propertyPath, string value)
     {
         var options = new AuthorizationServerOptions
@@ -500,8 +500,8 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Theory]
-    [InlineData("Authorization.Uri", "https://auth.example.com/connect/authorize#fragment")]
-    [InlineData("Token.Uri", "https://auth.example.com/connect/token#fragment")]
+    [InlineData("AuthorizationEndpoint.Uri", "https://auth.example.com/connect/authorize#fragment")]
+    [InlineData("TokenEndpoint.Uri", "https://auth.example.com/connect/token#fragment")]
     public void Validate_EndpointWithFragment_Fails(string propertyPath, string value)
     {
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
@@ -515,8 +515,8 @@ public sealed class AuthorizationServerOptionsValidatorTests
     [Theory]
     // RFC 6749 §3.1 explicitly permits query components on the authorization endpoint.
     // RFC 6749 §3.2 does not prohibit them on the token endpoint.
-    [InlineData("Authorization.Uri", "https://auth.example.com/connect/authorize?foo=bar")]
-    [InlineData("Token.Uri", "https://auth.example.com/connect/token?foo=bar")]
+    [InlineData("AuthorizationEndpoint.Uri", "https://auth.example.com/connect/authorize?foo=bar")]
+    [InlineData("TokenEndpoint.Uri", "https://auth.example.com/connect/token?foo=bar")]
     public void Validate_EndpointWithQuery_Succeeds(string propertyPath, string value)
     {
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
@@ -535,7 +535,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
         var result = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
-            Jwks = { Uri = value },
+            JwksEndpoint = { Uri = value },
         });
 
         result.Failed.Should().BeTrue();

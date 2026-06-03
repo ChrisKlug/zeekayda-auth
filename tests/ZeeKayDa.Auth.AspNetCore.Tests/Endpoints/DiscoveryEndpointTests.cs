@@ -370,9 +370,9 @@ public sealed class DiscoveryEndpointTests : IDisposable
     {
         using var factory = new TestWebAppFactory(opts =>
         {
-            opts.Authorization.Uri = "https://login.example.com/custom/authorize?prompt=login";
-            opts.Token.Uri = "https://login.example.com/custom/token?tenant=1";
-            opts.Jwks.Uri = "https://login.example.com/keys";
+            opts.AuthorizationEndpoint.Uri = "https://login.example.com/custom/authorize?prompt=login";
+            opts.TokenEndpoint.Uri = "https://login.example.com/custom/token?tenant=1";
+            opts.JwksEndpoint.Uri = "https://login.example.com/keys";
         });
         using var client = CreateClient(factory, "https://login.example.com");
         using var request = new HttpRequestMessage(new HttpMethod(method), path);

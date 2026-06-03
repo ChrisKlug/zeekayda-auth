@@ -3,7 +3,7 @@ namespace ZeeKayDa.Auth;
 /// <summary>
 /// Token endpoint configuration options.
 /// </summary>
-public sealed class TokenOptions
+public sealed class TokenEndpointOptions
 {
     /// <summary>
     /// Gets or sets an explicit override for the <c>token_endpoint</c> URI published in the

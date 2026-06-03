@@ -18,13 +18,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   |---|---|---|
   | `Issuer` | `Issuer` | Unchanged (server-wide) |
   | `AllowInsecureIssuer` | `AllowInsecureIssuer` | Unchanged (server-wide) |
-  | `AuthorizationEndpoint` | `Authorization.Uri` | Moved into group |
-  | `TokenEndpoint` | `Token.Uri` | Moved into group |
-  | `JwksUri` | `Jwks.Uri` | Moved into group |
+  | `AuthorizationEndpoint` | `AuthorizationEndpoint.Uri` | Moved into group |
+  | `TokenEndpoint` | `TokenEndpoint.Uri` | Moved into group |
+  | `JwksUri` | `JwksEndpoint.Uri` | Moved into group |
   | `ResponseTypesSupported` | `Response.TypesSupported` | Moved into new group |
   | `ResponseModesSupported` | `Response.ModesSupported` | Moved into new group |
   | `GrantTypesSupported` | `GrantTypesSupported` | Unchanged (server-wide) |
-  | `TokenEndpointAuthMethodsSupported` | `Token.AuthMethodsSupported` | Moved into group |
+  | `TokenEndpointAuthMethodsSupported` | `TokenEndpoint.AuthMethodsSupported` | Moved into group |
   | `IdTokenSigningAlgValuesSupported` | `IdToken.SigningAlgValuesSupported` | Moved into new group |
   | `DiscoveryDocumentCacheMaxAgeSeconds` | `DiscoveryDocument.CacheMaxAgeSeconds` | Moved into new group |
 

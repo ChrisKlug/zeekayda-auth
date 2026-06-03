@@ -109,7 +109,7 @@ public sealed class DiscoveryDocumentProviderTests
         var doc = await GetDocumentAsync(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
-            Authorization = { Uri = explicitUri },
+            AuthorizationEndpoint = { Uri = explicitUri },
         });
 
         doc.AuthorizationEndpoint.Should().Be(explicitUri);
@@ -123,7 +123,7 @@ public sealed class DiscoveryDocumentProviderTests
         var doc = await GetDocumentAsync(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
-            Token = { Uri = explicitUri },
+            TokenEndpoint = { Uri = explicitUri },
         });
 
         doc.TokenEndpoint.Should().Be(explicitUri);
@@ -137,7 +137,7 @@ public sealed class DiscoveryDocumentProviderTests
         var doc = await GetDocumentAsync(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
-            Jwks = { Uri = explicitUri },
+            JwksEndpoint = { Uri = explicitUri },
         });
 
         doc.JwksUri.Should().Be(explicitUri);
@@ -180,7 +180,7 @@ public sealed class DiscoveryDocumentProviderTests
                 ModesSupported = [ResponseMode.Query, ResponseMode.FormPost],
             },
             GrantTypesSupported = [GrantType.AuthorizationCode, GrantType.RefreshToken],
-            Token = { AuthMethodsSupported = [TokenEndpointAuthMethod.ClientSecretBasic, TokenEndpointAuthMethod.PrivateKeyJwt] },
+            TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethod.ClientSecretBasic, TokenEndpointAuthMethod.PrivateKeyJwt] },
             IdToken = { SigningAlgValuesSupported = [SigningAlgorithm.RS256, SigningAlgorithm.PS256] },
         }, scopeRepository);
 

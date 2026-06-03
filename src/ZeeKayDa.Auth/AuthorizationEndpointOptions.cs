@@ -3,7 +3,7 @@ namespace ZeeKayDa.Auth;
 /// <summary>
 /// Authorization endpoint configuration options.
 /// </summary>
-public sealed class AuthorizationOptions
+public sealed class AuthorizationEndpointOptions
 {
     /// <summary>
     /// Gets or sets an explicit override for the <c>authorization_endpoint</c> URI published in

@@ -15,7 +15,7 @@ namespace ZeeKayDa.Auth.Discovery;
 /// <see cref="Uri"/> combination semantics — never string concatenation — so that path-bearing
 /// issuers (e.g. <c>https://auth.example.com/tenant1</c>) are handled correctly. Any individual
 /// URI can be overridden by setting the corresponding property on the respective option group
-/// (<see cref="AuthorizationOptions.Uri"/>, <see cref="TokenOptions.Uri"/>, <see cref="JwksOptions.Uri"/>).
+/// (<see cref="AuthorizationEndpointOptions.Uri"/>, <see cref="TokenEndpointOptions.Uri"/>, <see cref="JwksEndpointOptions.Uri"/>).
 /// Scope names published in <c>scopes_supported</c> are sourced from the configured
 /// <see cref="Scopes.IScopeRepository"/>.
 /// </remarks>
@@ -50,11 +50,11 @@ internal sealed class DiscoveryDocumentProvider : IDiscoveryDocumentProvider
         return new OpenIdConfigurationDocument
         {
             Issuer = options.Issuer!,
-            AuthorizationEndpoint = options.Authorization.Uri
+            AuthorizationEndpoint = options.AuthorizationEndpoint.Uri
                 ?? IssuerUriHelper.Combine(issuerUri, ConnectAuthorize).AbsoluteUri,
-            TokenEndpoint = options.Token.Uri
+            TokenEndpoint = options.TokenEndpoint.Uri
                 ?? IssuerUriHelper.Combine(issuerUri, ConnectToken).AbsoluteUri,
-            JwksUri = options.Jwks.Uri
+            JwksUri = options.JwksEndpoint.Uri
                 ?? IssuerUriHelper.Combine(issuerUri, ConnectJwks).AbsoluteUri,
             ResponseTypesSupported = [.. options.Response.TypesSupported],
             ScopesSupported = [.. scopes
@@ -62,7 +62,7 @@ internal sealed class DiscoveryDocumentProvider : IDiscoveryDocumentProvider
                 .Select(scope => scope.Name)],
             ResponseModesSupported = [.. options.Response.ModesSupported],
             GrantTypesSupported = [.. options.GrantTypesSupported],
-            TokenEndpointAuthMethodsSupported = [.. options.Token.AuthMethodsSupported],
+            TokenEndpointAuthMethodsSupported = [.. options.TokenEndpoint.AuthMethodsSupported],
             IdTokenSigningAlgValuesSupported = [.. options.IdToken.SigningAlgValuesSupported],
         };
     }
