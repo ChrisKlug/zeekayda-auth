@@ -449,9 +449,12 @@ browser-based relying parties reading the discovery document). Set to `same-orig
 only when all relying parties are co-hosted on the same origin or site as the authorization server.
 
 > Note: If your application already applies a security-headers middleware that sets
-> `Cross-Origin-Resource-Policy`, the header will be duplicated unless you disable it here with
-> `SecurityHeaders.CrossOriginResourcePolicy`. For example, with ASP.NET Core's
-> `UseSecurityHeaders()` (NWebSec or similar), configure one side only.
+> `Cross-Origin-Resource-Policy`, the header will be duplicated in ZeeKayDa.Auth responses.
+> Since `CrossOriginResourcePolicy` is an enum (not a boolean), there is no way to suppress the
+> header entirely. To avoid duplication, configure only one side: either exclude ZeeKayDa.Auth
+> routes from your middleware's header policy, or rely solely on ZeeKayDa.Auth's built-in header.
+> For example, with ASP.NET Core's `UseSecurityHeaders()` (NWebSec or similar), scope the
+> middleware to non-ZeeKayDa routes only.
 
 | Enum value | Header value |
 |---|---|

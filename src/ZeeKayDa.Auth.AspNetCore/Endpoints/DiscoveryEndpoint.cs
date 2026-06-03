@@ -72,10 +72,10 @@ internal sealed class DiscoveryEndpoint : IZeeKayDaEndpoint
 
             var requestOrigin = context.Request.Headers.Origin.ToString();
             if (!string.IsNullOrEmpty(requestOrigin) &&
-                _allowedOrigins.TryGetValue(requestOrigin, out var canonicalOrigin))
+                _allowedOrigins.TryGetValue(requestOrigin, out var allowedOrigin))
             {
-                // Emit the stored canonical entry, NEVER the raw incoming header value.
-                context.Response.Headers.AccessControlAllowOrigin = canonicalOrigin;
+                // Emit the matching allowlist entry, NEVER the raw incoming header value.
+                context.Response.Headers.AccessControlAllowOrigin = allowedOrigin;
             }
             // If absent or not in the allowlist → do not emit Access-Control-Allow-Origin.
         }
