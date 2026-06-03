@@ -153,23 +153,6 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
             return ValidateOptionsResult.Fail(ClientCredentialsRequiresNonNoneTokenAuthMethodMessage);
         }
 
-        // RFC 7636 (PKCE) is defined only for the authorization code grant and is mandatory for
-        // public clients (RFC 9700 §2.1.1). If None (public client auth) is supported, clients
-        // must be able to use the authorization code grant to perform PKCE-protected token exchange.
-        // Per ADR 0002 §4, TokenEndpoint.AuthMethodsSupported enforces this constraint per client at
-        // request time. None may legitimately appear alongside other methods to support public clients
-        // using PKCE (RFC 7636).
-        if (options.TokenEndpoint.AuthMethodsSupported.Contains(TokenEndpointAuthMethod.None) &&
-            !options.GrantTypesSupported.Contains(GrantType.AuthorizationCode))
-        {
-            return ValidateOptionsResult.Fail(
-                "If TokenEndpoint.AuthMethodsSupported includes 'none' (public clients), " +
-                "GrantTypesSupported must include GrantType.AuthorizationCode. " +
-                "RFC 7636 (Proof Key for Public OAuth 2.0 Clients) is mandatory for public clients " +
-                "and is only defined for the authorization code grant. " +
-                "See RFC 9700 §2.1.1 (OAuth 2.0 Security Best Current Practice).");
-        }
-
         // Validate IdToken group
         if (options.IdToken.SigningAlgValuesSupported is null)
         {

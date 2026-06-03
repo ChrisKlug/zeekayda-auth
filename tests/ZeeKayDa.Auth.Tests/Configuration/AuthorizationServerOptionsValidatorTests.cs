@@ -7,6 +7,11 @@ namespace ZeeKayDa.Auth.Tests.Configuration;
 
 public sealed class AuthorizationServerOptionsValidatorTests
 {
+    private const string ClientCredentialsRequiresNonNoneTokenAuthMethodMessage =
+        "GrantTypesSupported includes 'client_credentials', which requires confidential clients. " +
+        "TokenEndpoint.AuthMethodsSupported must contain at least one method other than 'none'. " +
+        "See RFC 6749 §4.4 and OAuth 2.0 Security BCP §2.6 (RFC 9700).";
+
     private static ValidateOptionsResult Validate(
         AuthorizationServerOptions options,
         IScopeRepository? scopeRepository = null)
@@ -299,8 +304,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
         });
 
         result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("client_credentials");
-        result.FailureMessage.Should().Contain("method other than 'none'");
+        result.FailureMessage.Should().Be(ClientCredentialsRequiresNonNoneTokenAuthMethodMessage);
     }
 
     [Fact]
@@ -314,8 +318,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
         });
 
         result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("client_credentials");
-        result.FailureMessage.Should().Contain("method other than 'none'");
+        result.FailureMessage.Should().Be(ClientCredentialsRequiresNonNoneTokenAuthMethodMessage);
     }
 
     [Fact]
@@ -332,7 +335,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_NoneWithOtherAuthMethodsButNoAuthorizationCode_Fails()
+    public void Validate_ClientCredentialsWithNoneAndOtherAuthMethods_Succeeds()
     {
         var result = Validate(new AuthorizationServerOptions
         {
@@ -341,16 +344,12 @@ public sealed class AuthorizationServerOptionsValidatorTests
             TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethod.None, TokenEndpointAuthMethod.ClientSecretBasic] },
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("GrantType.AuthorizationCode");
-        result.FailureMessage.Should().Contain("RFC 7636");
+        result.Succeeded.Should().BeTrue();
     }
 
     [Fact]
-    public void Validate_NoneAuthMethodWithoutAuthorizationCodeGrant_Fails()
+    public void Validate_NoneAuthMethodWithoutAuthorizationCodeGrant_Succeeds()
     {
-        // RFC 9700 §2.1.1 requires public clients use PKCE, which is only defined for
-        // the authorization code grant. None auth method without AuthorizationCode is invalid.
         var result = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
@@ -358,10 +357,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
             TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethod.None] },
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("none");
-        result.FailureMessage.Should().Contain("AuthorizationCode");
-        result.FailureMessage.Should().Contain("RFC 7636");
+        result.Succeeded.Should().BeTrue();
     }
 
     [Fact]

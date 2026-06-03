@@ -31,11 +31,11 @@ public enum TokenEndpointAuthMethod
     /// <summary>No client authentication (<c>none</c>).</summary>
     /// <remarks>
     /// <para>
-    /// Represents a public client with no client secret. Public clients cannot securely present
-    /// credentials at the token endpoint and must use PKCE (RFC 7636) as the sole protection
-    /// mechanism for the authorization code. PKCE is defined only for the authorization code grant,
-    /// so <see cref="TokenEndpointAuthMethod.None"/> must be paired with <see cref="GrantType.AuthorizationCode"/>
-    /// in <see cref="AuthorizationServerOptions.GrantTypesSupported"/>.
+    /// Represents a public client with no client secret. Authorization-code public clients using
+    /// this method must use PKCE (RFC 7636) and present a valid <c>code_verifier</c> at the token
+    /// endpoint. See <see cref="AuthorizationServerOptions.GrantTypesSupported"/> and
+    /// <see cref="TokenEndpointOptions.AuthMethodsSupported"/> for the server-side configuration
+    /// settings that advertise supported grants and token endpoint authentication methods.
     /// </para>
     /// <para>
     /// See RFC 9700 §2.1.1 (OAuth 2.0 Security Best Current Practice) for the mandatory requirement

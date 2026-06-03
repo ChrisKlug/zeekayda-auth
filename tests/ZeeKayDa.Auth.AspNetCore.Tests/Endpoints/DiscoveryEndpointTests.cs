@@ -303,7 +303,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     }
 
     [Fact]
-    public void Startup_NoneAuthMethodWithoutAuthorizationCodeGrant_ThrowsViaValidateOnStart()
+    public void Startup_NoneAuthMethodWithoutAuthorizationCodeGrant_Succeeds()
     {
         var act = () => new TestWebAppFactory(opts =>
         {
@@ -311,7 +311,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
             opts.GrantTypesSupported = [GrantType.RefreshToken];
         }).CreateClient();
 
-        act.Should().Throw<Exception>().WithMessage("*RFC 7636*");
+        act.Should().NotThrow();
     }
 
     [Fact]
