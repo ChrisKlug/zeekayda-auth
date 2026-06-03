@@ -26,7 +26,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   | `GrantTypesSupported` | `GrantTypesSupported` | Unchanged (server-wide) |
   | `TokenEndpointAuthMethodsSupported` | `Token.AuthMethodsSupported` | Moved into group |
   | `IdTokenSigningAlgValuesSupported` | `IdToken.SigningAlgValuesSupported` | Moved into new group |
-  | `DiscoveryDocumentCacheMaxAgeSeconds` | `Discovery.CacheMaxAgeSeconds` | Moved into new group |
+  | `DiscoveryDocumentCacheMaxAgeSeconds` | `DiscoveryDocument.CacheMaxAgeSeconds` | Moved into new group |
 
   **Example migration:**
 

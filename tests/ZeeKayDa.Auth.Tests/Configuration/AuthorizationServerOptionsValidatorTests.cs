@@ -549,11 +549,11 @@ public sealed class AuthorizationServerOptionsValidatorTests
         var result = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
-            Discovery = { CacheMaxAgeSeconds = -1 },
+            DiscoveryDocument = { CacheMaxAgeSeconds = -1 },
         });
 
         result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("Discovery.CacheMaxAgeSeconds");
+        result.FailureMessage.Should().Contain("DiscoveryDocument.CacheMaxAgeSeconds");
     }
 
     private static void SetGroupProperty(AuthorizationServerOptions options, string propertyPath, string value)
