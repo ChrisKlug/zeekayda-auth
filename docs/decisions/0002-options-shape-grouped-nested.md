@@ -57,15 +57,15 @@ else stays on the root.
 
 | Discovery key prefix | Group |
 |---|---|
-| `authorization_endpoint`, `request_parameter_supported`, `request_uri_parameter_supported`, `require_request_uri_registration`, `request_object_signing_alg_values_supported`, … | `AuthorizationEndpoint` |
-| `token_endpoint`, `token_endpoint_auth_methods_supported`, `token_endpoint_auth_signing_alg_values_supported`, … | `TokenEndpoint` |
-| `jwks_uri` (plus future JWKS-endpoint policy such as response cache-control) | `JwksEndpoint` |
-| `userinfo_endpoint`, `userinfo_signing_alg_values_supported`, `userinfo_encryption_alg_values_supported`, … | `UserInfoEndpoint` |
-| `revocation_endpoint`, `revocation_endpoint_auth_methods_supported`, … | `RevocationEndpoint` |
-| `introspection_endpoint`, `introspection_endpoint_auth_methods_supported`, … | `IntrospectionEndpoint` |
-| `registration_endpoint` | `RegistrationEndpoint` |
-| `end_session_endpoint` (OIDC Session Management / RP-Initiated Logout) | `EndSessionEndpoint` |
-| `device_authorization_endpoint` (RFC 8628) | `DeviceAuthorizationEndpoint` |
+| `authorization_endpoint`, `request_parameter_supported`, `request_uri_parameter_supported`, `require_request_uri_registration`, `request_object_signing_alg_values_supported`, … | `Authorization` |
+| `token_endpoint`, `token_endpoint_auth_methods_supported`, `token_endpoint_auth_signing_alg_values_supported`, … | `Token` |
+| `jwks_uri` (plus future JWKS-endpoint policy such as response cache-control) | `Jwks` |
+| `userinfo_endpoint`, `userinfo_signing_alg_values_supported`, `userinfo_encryption_alg_values_supported`, … | `UserInfo` |
+| `revocation_endpoint`, `revocation_endpoint_auth_methods_supported`, … | `Revocation` |
+| `introspection_endpoint`, `introspection_endpoint_auth_methods_supported`, … | `Introspection` |
+| `registration_endpoint` | `Registration` |
+| `end_session_endpoint` (OIDC Session Management / RP-Initiated Logout) | `EndSession` |
+| `device_authorization_endpoint` (RFC 8628) | `DeviceAuthorization` |
 | `id_token_signing_alg_values_supported`, `id_token_encryption_alg_values_supported`, `id_token_encryption_enc_values_supported` | `IdToken` |
 | `response_types_supported`, `response_modes_supported` | `Response` |
 | `issuer`, `scopes_supported`, `grant_types_supported`, `subject_types_supported`, `claims_supported`, … (no shared spec prefix) | root |
@@ -82,14 +82,11 @@ about whether two properties are "conceptually related," only whether the spec p
 the same word. Cosmetic groupings invented without a spec prefix (e.g. lumping unrelated
 server-wide flags into a "General" bag) are still prohibited.
 
-`jwks_uri` is grouped under `JwksEndpoint` even though the spec defines no other `jwks_*_supported`
-metadata fields today, and unlike other endpoint groups the spec prefix is `jwks_uri` rather than
-`jwks_endpoint_*`. This is the one group whose `Endpoint` suffix is not directly derived from the
-mechanical prefix rule; the justification is endpoint-affinity and forward-compatibility. The JWKS
-endpoint will almost certainly grow endpoint-policy configuration that has no discovery analogue —
-most obviously a response `Cache-Control` `max-age` value (as `DiscoveryDocument` already has via
-`DiscoveryDocument.CacheMaxAgeSeconds`). Placing `Uri` on the root and then moving it into a
-`JwksEndpoint` group later would be a second breaking change for no benefit. The same
+`jwks_uri` is grouped under `Jwks` even though the spec defines no other `jwks_*_supported`
+metadata fields today. The reason is forward-looking: the JWKS endpoint will almost certainly grow
+endpoint-policy configuration that has no discovery analogue — most obviously a response
+`Cache-Control` `max-age` value (as `Discovery` already has). Placing `Uri` on the root and then
+moving it into a `Jwks` group later would be a second breaking change for no benefit. The same
 forward-looking argument does not apply to keeping any other URI on the root, because every other
 endpoint already has spec-defined per-endpoint metadata.
 
@@ -105,13 +102,6 @@ the implementer), and a separate `Request` group would be silly. Cosmetic groupi
 without either a spec prefix *or* a spec-defined endpoint-modifier relationship remain
 prohibited.
 
-**Naming rule for endpoint groups.** When the spec prefix identifies an HTTP endpoint, the C#
-property name includes `Endpoint` as a suffix (e.g. `token_endpoint_*` → `TokenEndpoint`), even
-though the class name already ends in `Options`. This preserves a clear semantic signal at the
-call site: any property ending in `Endpoint` configures a network-accessible HTTP resource;
-properties without the suffix (`IdToken`, `Response`, `DiscoveryDocument`) configure protocol
-artifacts or cross-endpoint concepts.
-
 ### 2. Per-endpoint properties migration table (initial cut)
 
 Concrete moves required by this ADR for the surface that exists today:
@@ -120,15 +110,15 @@ Concrete moves required by this ADR for the surface that exists today:
 |---|---|
 | `Issuer` | `Issuer` (unchanged) |
 | `AllowInsecureIssuer` | `AllowInsecureIssuer` (unchanged — server-wide; gates all endpoint URI schemes) |
-| `JwksUri` | `JwksEndpoint.Uri` |
+| `JwksUri` | `Jwks.Uri` |
 | `ResponseTypesSupported` | `Response.TypesSupported` |
 | `ResponseModesSupported` | `Response.ModesSupported` |
 | `GrantTypesSupported` | `GrantTypesSupported` (unchanged — no shared spec prefix) |
 | `IdTokenSigningAlgValuesSupported` | `IdToken.SigningAlgValuesSupported` |
-| `DiscoveryDocumentCacheMaxAgeSeconds` | `DiscoveryDocument.CacheMaxAgeSeconds` (per-endpoint policy) |
-| `AuthorizationEndpoint` | `AuthorizationEndpoint.Uri` |
-| `TokenEndpoint` | `TokenEndpoint.Uri` |
-| `TokenEndpointAuthMethodsSupported` | `TokenEndpoint.AuthMethodsSupported` |
+| `DiscoveryDocumentCacheMaxAgeSeconds` | `Discovery.CacheMaxAgeSeconds` (per-endpoint policy) |
+| `AuthorizationEndpoint` | `Authorization.Uri` |
+| `TokenEndpoint` | `Token.Uri` |
+| `TokenEndpointAuthMethodsSupported` | `Token.AuthMethodsSupported` |
 
 Future endpoints, artifacts, or response-shape fields add their own groups under the same rule.
 
@@ -138,7 +128,7 @@ the table above because it is the only `claims_*` field exposed today, but the s
 `claims_parameter_supported`, `claims_locales_supported`, and `claim_types_supported`. The first
 PR that introduces any second `claims_*` field must form the `Claims` group at that point and
 move `claims_supported` into it — the same forward-looking-but-not-pre-empted reasoning applied
-to `JwksEndpoint` above. Recording this here so the implementer of that PR is not surprised.
+to `Jwks` above. Recording this here so the implementer of that PR is not surprised.
 
 ### 3. Group classes: `sealed`, get-only, default-initialised
 
@@ -154,22 +144,22 @@ public sealed class AuthorizationServerOptions
     public ICollection<GrantType> GrantTypesSupported { get; set; } = [GrantType.AuthorizationCode];
     // … other root-level collections that have no shared spec prefix …
 
-    public DiscoveryOptions               DiscoveryDocument     { get; } = new();
-    public AuthorizationEndpointOptions   AuthorizationEndpoint { get; } = new();
-    public TokenEndpointOptions           TokenEndpoint         { get; } = new();
-    public JwksEndpointOptions            JwksEndpoint          { get; } = new();
-    public IdTokenOptions                 IdToken               { get; } = new();
-    public ResponseOptions                Response              { get; } = new();
+    public DiscoveryOptions     Discovery     { get; } = new();
+    public AuthorizationOptions Authorization { get; } = new();
+    public TokenOptions         Token         { get; } = new();
+    public JwksOptions          Jwks          { get; } = new();
+    public IdTokenOptions       IdToken       { get; } = new();
+    public ResponseOptions      Response      { get; } = new();
 }
 
-public sealed class TokenEndpointOptions
+public sealed class TokenOptions
 {
     public string? Uri { get; set; }
     public ICollection<TokenEndpointAuthMethod> AuthMethodsSupported { get; set; } =
         [TokenEndpointAuthMethod.ClientSecretBasic];
 }
 
-public sealed class JwksEndpointOptions
+public sealed class JwksOptions
 {
     public string? Uri { get; set; }
 }
@@ -204,14 +194,14 @@ The validator remains a single `IValidateOptions<AuthorizationServerOptions>` (t
 groups:
 
 ```csharp
-if (options.TokenEndpoint.AuthMethodsSupported is null) …
-if (options.AuthorizationEndpoint.Uri is { } ae && /* … */) …
+if (options.Token.AuthMethodsSupported is null) …
+if (options.Authorization.Uri is { } ae && /* … */) …
 ```
 
 We deliberately do **not** introduce per-group `IValidateOptions<TokenOptions>` etc. The reasons:
 
 - Many real validation rules are **cross-group** (e.g. "if `client_credentials` is in
-  `GrantTypesSupported`, then `TokenEndpoint.AuthMethodsSupported` must contain at least one non-`none`
+  `GrantTypesSupported`, then `Token.AuthMethodsSupported` must contain at least one non-`none`
   method"). Cross-group rules have no natural home in a per-group validator and would force
   duplication or arbitrary placement.
 - A single root validator gives one fail-fast surface — one place to read, one place to extend, one
@@ -219,20 +209,20 @@ We deliberately do **not** introduce per-group `IValidateOptions<TokenOptions>` 
 - Group validation can still be factored internally into private helper methods per group for
   readability; that is an implementation detail, not part of the contract.
 
-#### Required validator rules for `TokenEndpoint.AuthMethodsSupported`
+#### Required validator rules for `Token.AuthMethodsSupported`
 
 Two hard errors must be enforced at startup:
 
-**Rule 1 — Null or empty collection is always an error:**
+**Rule 1 — Empty collection is always an error:**
 ```
-TokenEndpoint.AuthMethodsSupported must not be null or empty. Specify at least one client authentication method
+Token.AuthMethodsSupported must not be empty. Specify at least one client authentication method
 (e.g. TokenEndpointAuthMethod.ClientSecretBasic). See OAuth 2.0 Security BCP §2.6 (RFC 9700).
 ```
 
 **Rule 2 — `client_credentials` grant requires at least one non-`none` method (cross-group):**
 ```
 GrantTypesSupported includes 'client_credentials', which requires confidential clients.
-TokenEndpoint.AuthMethodsSupported must contain at least one method other than 'none'.
+Token.AuthMethodsSupported must contain at least one method other than 'none'.
 See RFC 6749 §4.4 and OAuth 2.0 Security BCP §2.6 (RFC 9700).
 ```
 
@@ -241,7 +231,7 @@ public clients (mobile apps, browser-based applications using PKCE). This is saf
 token endpoint enforces `token_endpoint_auth_method` **per client** at request time — see
 § Security Note below and issue #64.
 
-When `RevocationEndpoint` and `IntrospectionEndpoint` options are introduced, the same two rules must be
+When `RevocationOptions` and `IntrospectionOptions` are introduced, the same two rules must be
 applied to their `AuthMethodsSupported` collections.
 
 ### 5. `ZeeKayDaAuthBuilder` role unchanged
@@ -336,7 +326,7 @@ recorded here only so the option is not silently relitigated.
   where a new property lives.
 - **Scales.** The model accommodates the full OIDC + RFC family without the root class exceeding
   a screenful.
-- **IntelliSense becomes useful again.** `options.TokenEndpoint.` narrows the surface; `options.` shows
+- **IntelliSense becomes useful again.** `options.Token.` narrows the surface; `options.` shows
   only server-wide settings and a short list of groups.
 - **Discovery emission becomes near-mechanical.** `IDiscoveryDocumentProvider` can map group by
   group, with the spec's prefix convention as the lookup table. Adding a new endpoint becomes:
@@ -346,15 +336,14 @@ recorded here only so the option is not silently relitigated.
   compose under `IOptionsSnapshot<T>` / `IOptionsMonitor<T>`, and remain a single
   `IValidateOptions<AuthorizationServerOptions>` target. Named options keep working unchanged
   (a future multi-tenant scenario can use named `AuthorizationServerOptions` instances).
-  **Note:** Key paths reflect the current grouped names — e.g. `ZeeKayDaAuth:TokenEndpoint:AuthMethodsSupported`, not the pre-rename `ZeeKayDaAuth:Token:AuthMethodsSupported`.
 - **Get-only group properties cannot be nulled.** Defaults and the validator's reachable surface
   are preserved no matter what the consumer's options lambda does.
 
 ### Negative / Trade-offs
 
 - **Pre-1.0 breaking change.** Every consumer (today: samples and tests inside this repo only)
-  updates property paths: `options.TokenEndpoint` → `options.TokenEndpoint.Uri`,
-  `options.TokenEndpointAuthMethodsSupported` → `options.TokenEndpoint.AuthMethodsSupported`, etc. The
+  updates property paths: `options.TokenEndpoint` → `options.Token.Uri`,
+  `options.TokenEndpointAuthMethodsSupported` → `options.Token.AuthMethodsSupported`, etc. The
   migration table in §2 is the canonical reference. Doing this now is cheap; doing it after 1.0
   would be a major-version break.
 - **Slight cognitive cost: "which group does this live on?"** A consumer who knows OIDC will
@@ -364,25 +353,19 @@ recorded here only so the option is not silently relitigated.
 - **Single root validator does more work.** Cross-group rules belong somewhere, and they belong
   here. The class grows; it stays auditable because it stays the *only* validator.
 - **`IConfiguration` collection binding replaces, does not merge.** When any entry for a
-  collection (e.g. `ZeeKayDaAuth:TokenEndpoint:AuthMethodsSupported`) is present in `appsettings.json`,
+  collection (e.g. `ZeeKayDaAuth:Token:AuthMethodsSupported`) is present in `appsettings.json`,
   the `IConfiguration` binder replaces the entire default collection with the configured values.
   An operator who specifies only one method in config silently loses any other defaults. The
   fail-fast validator catches an empty result, but operators should be aware that collection
   settings must be specified in full. Documentation should call this out explicitly.
-- **`IConfiguration` key paths change on upgrade.** Operators who previously configured
-  `ZeeKayDaAuth:Token:*` or `ZeeKayDaAuth:Authorization:*` keys in `appsettings.json` must rename
-  those keys to `ZeeKayDaAuth:TokenEndpoint:*` and `ZeeKayDaAuth:AuthorizationEndpoint:*`
-  respectively. If they do not, the keys are silently ignored and the framework falls back to
-  defaults — which may be less restrictive than what the operator intended. The migration guide
-  and upgrade notes must call this out explicitly.
 - **`none` in `AuthMethodsSupported` is safe only with per-client enforcement.** Advertising
   `none` alongside other methods does not itself create a downgrade path, but only because the
   token endpoint is required to enforce the `token_endpoint_auth_method` registered per client
   (see issue #64). If that per-client enforcement were absent, a confidential client could
   authenticate as a public client by simply omitting credentials. This dependency is a
   **hard prerequisite** for the token endpoint implementation — it is not optional.
-- **Same pattern required for future `RevocationEndpoint` and `IntrospectionEndpoint` groups.** When
-  those options are implemented, their `AuthMethodsSupported`
+- **Same pattern required for future Revocation and Introspection groups.** When
+  `RevocationOptions` and `IntrospectionOptions` are implemented, their `AuthMethodsSupported`
   collections carry the same risks and must apply the same validator rules (§4) and the same
   per-client enforcement requirement.
 
@@ -390,7 +373,7 @@ recorded here only so the option is not silently relitigated.
 
 ## Security Note
 
-**`TokenEndpoint.AuthMethodsSupported` — validator rules and per-client enforcement dependency.**
+**`Token.AuthMethodsSupported` — validator rules and per-client enforcement dependency.**
 
 The validator enforces two hard errors at startup (see §4 for exact messages):
 
