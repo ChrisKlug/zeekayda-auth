@@ -176,7 +176,7 @@ public sealed class DiscoveryDocumentProviderTests
             Issuer = "https://auth.example.com",
             Response =
             {
-                TypesSupported = [ResponseType.Code, ResponseType.CodeIdToken],
+                TypesSupported = [ResponseType.Code],
                 ModesSupported = [ResponseMode.Query, ResponseMode.FormPost],
             },
             GrantTypesSupported = [GrantType.AuthorizationCode, GrantType.RefreshToken],
@@ -184,7 +184,7 @@ public sealed class DiscoveryDocumentProviderTests
             IdToken = { SigningAlgValuesSupported = [SigningAlgorithm.RS256, SigningAlgorithm.PS256] },
         }, scopeRepository);
 
-        doc.ResponseTypesSupported.Should().Equal(ResponseType.Code, ResponseType.CodeIdToken);
+        doc.ResponseTypesSupported.Should().Equal(ResponseType.Code);
         doc.ScopesSupported.Should().Equal(StandardScopes.OpenId.Name, StandardScopes.Profile.Name);
         doc.ResponseModesSupported.Should().Equal(ResponseMode.Query, ResponseMode.FormPost);
         doc.GrantTypesSupported.Should().Equal(GrantType.AuthorizationCode, GrantType.RefreshToken);
