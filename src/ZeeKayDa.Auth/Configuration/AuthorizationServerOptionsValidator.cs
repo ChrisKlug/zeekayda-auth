@@ -15,6 +15,24 @@ namespace ZeeKayDa.Auth.Configuration;
 /// </remarks>
 internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<AuthorizationServerOptions>
 {
+    private const string TokenEndpointAuthMethodsRequiredMessage =
+        "AuthorizationServerOptions.TokenEndpoint.AuthMethodsSupported must not be null or empty. " +
+        "Specify at least one client authentication method (e.g., TokenEndpointAuthMethod.ClientSecretBasic). " +
+        "See OAuth 2.0 Security BCP §2.6 (RFC 9700).";
+
+    /// <summary>
+    /// Startup validation error for the ADR 0002 §4 Rule 2 cross-group constraint that forbids
+    /// advertising the <c>client_credentials</c> grant with only <c>none</c> token endpoint auth.
+    /// </summary>
+    /// <remarks>
+    /// RFC 6749 §4.4 requires client authentication for the client credentials grant and RFC 9700
+    /// §2.6 requires strong token endpoint client authentication.
+    /// </remarks>
+    private const string ClientCredentialsRequiresNonNoneTokenAuthMethodMessage =
+        "GrantTypesSupported includes 'client_credentials', which requires confidential clients. " +
+        "TokenEndpoint.AuthMethodsSupported must contain at least one method other than 'none'. " +
+        "See RFC 6749 §4.4 and OAuth 2.0 Security BCP §2.6 (RFC 9700).";
+
     private readonly IScopeRepository _scopeRepository;
 
     public AuthorizationServerOptionsValidator(IScopeRepository scopeRepository)
@@ -117,30 +135,22 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
         }
 
         // Validate Token group
-        const string tokenAuthMethodsRequiredMessage =
-            "AuthorizationServerOptions.TokenEndpoint.AuthMethodsSupported must not be null or empty. " +
-            "Specify at least one client authentication method (e.g., TokenEndpointAuthMethod.ClientSecretBasic). " +
-            "See OAuth 2.0 Security BCP §2.6 (RFC 9700).";
-
         if (options.TokenEndpoint.AuthMethodsSupported is null)
         {
-            return ValidateOptionsResult.Fail(tokenAuthMethodsRequiredMessage);
+            return ValidateOptionsResult.Fail(TokenEndpointAuthMethodsRequiredMessage);
         }
 
         // ADR 0002 §4: TokenEndpoint.AuthMethodsSupported must not be null or empty
         if (options.TokenEndpoint.AuthMethodsSupported.Count == 0)
         {
-            return ValidateOptionsResult.Fail(tokenAuthMethodsRequiredMessage);
+            return ValidateOptionsResult.Fail(TokenEndpointAuthMethodsRequiredMessage);
         }
 
         // ADR 0002 §4: If client_credentials grant is supported, must have at least one non-None auth method
         if (options.GrantTypesSupported.Contains(GrantType.ClientCredentials) &&
             options.TokenEndpoint.AuthMethodsSupported.All(m => m == TokenEndpointAuthMethod.None))
         {
-            return ValidateOptionsResult.Fail(
-                "GrantTypesSupported includes 'client_credentials', which requires confidential clients. " +
-                "TokenEndpoint.AuthMethodsSupported must contain at least one method other than 'none'. " +
-                "See RFC 6749 §4.4 and OAuth 2.0 Security BCP §2.6 (RFC 9700).");
+            return ValidateOptionsResult.Fail(ClientCredentialsRequiresNonNoneTokenAuthMethodMessage);
         }
 
         // Validate IdToken group
@@ -161,6 +171,16 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
         {
             return ValidateOptionsResult.Fail(
                 "AuthorizationServerOptions.DiscoveryDocument.CacheMaxAgeSeconds must not be negative.");
+        }
+
+        // Validate AuthorizationEndpoint group
+        if (options.AuthorizationEndpoint.CodeChallengeMethodsSupported is { Count: 0 })
+        {
+            return ValidateOptionsResult.Fail(
+                "AuthorizationServerOptions.AuthorizationEndpoint.CodeChallengeMethodsSupported " +
+                "must not be an empty collection. Either set it to null to omit the field from the " +
+                "discovery document, or provide at least one value (e.g. CodeChallengeMethod.S256). " +
+                "See RFC 7636 §4.3 and RFC 8414 §2.");
         }
 
         // Validate endpoint URI overrides — RFC 8414 §2 requires all metadata URLs to use HTTPS.

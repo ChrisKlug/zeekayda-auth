@@ -64,6 +64,9 @@ internal sealed class DiscoveryDocumentProvider : IDiscoveryDocumentProvider
             GrantTypesSupported = [.. options.GrantTypesSupported],
             TokenEndpointAuthMethodsSupported = [.. options.TokenEndpoint.AuthMethodsSupported],
             IdTokenSigningAlgValuesSupported = [.. options.IdToken.SigningAlgValuesSupported],
+            CodeChallengeMethodsSupported = options.AuthorizationEndpoint.CodeChallengeMethodsSupported is { } methods
+                ? [.. methods]
+                : null,
         };
     }
 }

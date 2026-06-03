@@ -4,6 +4,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.AspNetCore.Extensions;
 using ZeeKayDa.Auth.Scopes;
 
@@ -302,6 +303,41 @@ public sealed class DiscoveryEndpointTests : IDisposable
         act.Should().Throw<Exception>().WithMessage($"*{StandardScopes.OpenId.Name}*");
     }
 
+    [Fact]
+    public void Startup_NoneAuthMethodWithoutAuthorizationCodeGrant_Succeeds()
+    {
+        var act = () => new TestWebAppFactory(opts =>
+        {
+            opts.TokenEndpoint.AuthMethodsSupported = [TokenEndpointAuthMethod.None];
+            opts.GrantTypesSupported = [GrantType.RefreshToken];
+        }).CreateClient();
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void Startup_NoneAuthMethodWithAuthorizationCodeGrant_Succeeds()
+    {
+        var act = () => new TestWebAppFactory(opts =>
+        {
+            opts.TokenEndpoint.AuthMethodsSupported = [TokenEndpointAuthMethod.None];
+            opts.GrantTypesSupported = [GrantType.AuthorizationCode];
+        }).CreateClient();
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void Startup_EmptyCodeChallengeMethodsSupported_ThrowsViaValidateOnStart()
+    {
+        var act = () => new TestWebAppFactory(opts =>
+        {
+            opts.AuthorizationEndpoint.CodeChallengeMethodsSupported = [];
+        }).CreateClient();
+
+        act.Should().Throw<Exception>().WithMessage("*CodeChallengeMethodsSupported*");
+    }
+
     // ── Configurable Cache-Control ────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -423,5 +459,39 @@ public sealed class DiscoveryEndpointTests : IDisposable
     {
         public ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default)
             => ValueTask.FromResult<IReadOnlyCollection<ScopeDefinition>>([StandardScopes.Profile]);
+    }
+
+    // ── CodeChallengeMethodsSupported ─────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetDiscoveryDocument_NullCodeChallengeMethodsSupported_OmitsField()
+    {
+        // Default options have CodeChallengeMethodsSupported = null.
+        var doc = await _client.GetFromJsonAsync<JsonDocument>(
+            DiscoveryPath,
+            TestContext.Current.CancellationToken);
+
+        doc!.RootElement.TryGetProperty("code_challenge_methods_supported", out _)
+            .Should().BeFalse(because: "the field must be absent when CodeChallengeMethodsSupported is null");
+    }
+
+    [Fact]
+    public async Task GetDiscoveryDocument_CodeChallengeMethodsSupportedWithS256_PublishesField()
+    {
+        using var factory = new TestWebAppFactory(opts =>
+        {
+            opts.AuthorizationEndpoint.CodeChallengeMethodsSupported = [CodeChallengeMethod.S256];
+        });
+        using var client = CreateClient(factory);
+
+        var doc = await client.GetFromJsonAsync<JsonDocument>(
+            DiscoveryPath,
+            TestContext.Current.CancellationToken);
+
+        doc!.RootElement.TryGetProperty("code_challenge_methods_supported", out var prop)
+            .Should().BeTrue(because: "the field must be present when CodeChallengeMethodsSupported is non-null");
+        prop.EnumerateArray()
+            .Select(e => e.GetString())
+            .Should().Equal("S256");
     }
 }

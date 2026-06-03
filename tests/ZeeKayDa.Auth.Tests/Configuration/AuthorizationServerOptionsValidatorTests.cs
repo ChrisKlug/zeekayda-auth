@@ -7,6 +7,11 @@ namespace ZeeKayDa.Auth.Tests.Configuration;
 
 public sealed class AuthorizationServerOptionsValidatorTests
 {
+    private const string ClientCredentialsRequiresNonNoneTokenAuthMethodMessage =
+        "GrantTypesSupported includes 'client_credentials', which requires confidential clients. " +
+        "TokenEndpoint.AuthMethodsSupported must contain at least one method other than 'none'. " +
+        "See RFC 6749 §4.4 and OAuth 2.0 Security BCP §2.6 (RFC 9700).";
+
     private static ValidateOptionsResult Validate(
         AuthorizationServerOptions options,
         IScopeRepository? scopeRepository = null)
@@ -299,8 +304,21 @@ public sealed class AuthorizationServerOptionsValidatorTests
         });
 
         result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("client_credentials");
-        result.FailureMessage.Should().Contain("other than");
+        result.FailureMessage.Should().Be(ClientCredentialsRequiresNonNoneTokenAuthMethodMessage);
+    }
+
+    [Fact]
+    public void Validate_ClientCredentialsMixedWithAuthorizationCodeAndOnlyNoneAuthMethod_Fails()
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            GrantTypesSupported = [GrantType.AuthorizationCode, GrantType.ClientCredentials],
+            TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethod.None] },
+        });
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Be(ClientCredentialsRequiresNonNoneTokenAuthMethodMessage);
     }
 
     [Fact]
@@ -330,6 +348,45 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
+    public void Validate_NoneAuthMethodWithoutAuthorizationCodeGrant_Succeeds()
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            GrantTypesSupported = [GrantType.RefreshToken],
+            TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethod.None] },
+        });
+
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Validate_NoneAuthMethodWithAuthorizationCodeGrant_Succeeds()
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            GrantTypesSupported = [GrantType.AuthorizationCode],
+            TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethod.None] },
+        });
+
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Validate_NoneAuthMethodWithMultipleGrantsIncludingAuthorizationCode_Succeeds()
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            GrantTypesSupported = [GrantType.AuthorizationCode, GrantType.RefreshToken],
+            TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethod.None] },
+        });
+
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Fact]
     public void Validate_NullIdTokenSigningAlgValuesSupported_Fails()
     {
         var result = Validate(new AuthorizationServerOptions
@@ -353,6 +410,45 @@ public sealed class AuthorizationServerOptionsValidatorTests
 
         result.Failed.Should().BeTrue();
         result.FailureMessage.Should().Contain("IdToken.SigningAlgValuesSupported");
+    }
+
+    // ── AuthorizationEndpoint.CodeChallengeMethodsSupported ───────────────────────────────────────
+
+    [Fact]
+    public void Validate_NullCodeChallengeMethodsSupported_Succeeds()
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            AuthorizationEndpoint = { CodeChallengeMethodsSupported = null },
+        });
+
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Validate_CodeChallengeMethodsSupportedWithS256_Succeeds()
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            AuthorizationEndpoint = { CodeChallengeMethodsSupported = [CodeChallengeMethod.S256] },
+        });
+
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Validate_EmptyCodeChallengeMethodsSupported_Fails()
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            AuthorizationEndpoint = { CodeChallengeMethodsSupported = [] },
+        });
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("AuthorizationEndpoint.CodeChallengeMethodsSupported");
     }
 
     // ── Happy paths ───────────────────────────────────────────────────────────────────────────────

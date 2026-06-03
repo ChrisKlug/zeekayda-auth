@@ -93,6 +93,7 @@ come from `AuthorizationServerOptions`.
 | `token_endpoint_auth_methods_supported` | `TokenEndpoint.AuthMethodsSupported` | Defaults to `["client_secret_basic"]`. |
 | `subject_types_supported` | Fixed value | Always `["public"]`. Pairwise subject identifiers are not currently supported. |
 | `id_token_signing_alg_values_supported` | `IdToken.SigningAlgValuesSupported` | Defaults to `["RS256"]`. Required by OIDC Discovery 1.0 Section 3. |
+| `code_challenge_methods_supported` | `AuthorizationEndpoint.CodeChallengeMethodsSupported` | Omitted when `null` (the default). Set to `[CodeChallengeMethod.S256]` to advertise PKCE support once token-endpoint enforcement is in place. |
 
 The recommended metadata fields are described by
 [OpenID Connect Discovery 1.0 Section 3](https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderMetadata)
@@ -199,6 +200,7 @@ Startup fails when:
 - `Response.TypesSupported` or `IdToken.SigningAlgValuesSupported` is null or empty
 - any supported metadata collection is null
 - a custom scope repository is configured with blank or duplicate scope names
+- `AuthorizationEndpoint.CodeChallengeMethodsSupported` is set to a non-null empty collection
 
 > Warning: `AllowInsecureIssuer = true` is for local loopback development and testing only. It does
 > not permit HTTP issuers on non-loopback hosts.

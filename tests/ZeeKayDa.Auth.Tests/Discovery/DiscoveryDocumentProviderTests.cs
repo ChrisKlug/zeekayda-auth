@@ -313,4 +313,31 @@ public sealed class DiscoveryDocumentProviderTests
             return ValueTask.FromResult<IReadOnlyCollection<ScopeDefinition>>([]);
         }
     }
+
+    // ── CodeChallengeMethodsSupported ─────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetDocument_NullCodeChallengeMethodsSupported_OmitsField()
+    {
+        var doc = await GetDocumentAsync(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            AuthorizationEndpoint = { CodeChallengeMethodsSupported = null },
+        });
+
+        doc.CodeChallengeMethodsSupported.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetDocument_CodeChallengeMethodsSupportedWithS256_PublishesField()
+    {
+        var doc = await GetDocumentAsync(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            AuthorizationEndpoint = { CodeChallengeMethodsSupported = [CodeChallengeMethod.S256] },
+        });
+
+        doc.CodeChallengeMethodsSupported.Should().ContainSingle()
+            .Which.Should().Be(CodeChallengeMethod.S256);
+    }
 }

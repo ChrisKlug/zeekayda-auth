@@ -109,6 +109,45 @@ options.AuthorizationEndpoint.Uri = "https://login.example.com/tenant-a/connect/
 
 ---
 
+### `AuthorizationEndpoint.CodeChallengeMethodsSupported`
+
+| Attribute | Value |
+|---|---|
+| Type | `ICollection<CodeChallengeMethod>?` |
+| Default | `null` |
+| Required | No |
+
+The PKCE code challenge methods advertised in the discovery document. When `null` (the default),
+the `code_challenge_methods_supported` field is omitted entirely from the discovery document.
+
+> ⚠️ **Do not set this property until PKCE challenge verification is enforced at the token
+> endpoint.** Advertising methods the server cannot verify gives clients a false assurance —
+> a PKCE-aware client will include a `code_verifier` at the token endpoint, and if the server
+> silently ignores it, an authorization-code interception attack can succeed undetected.
+
+Once PKCE enforcement is implemented, set this property to advertise `S256` support:
+
+```csharp
+options.AuthorizationEndpoint.CodeChallengeMethodsSupported = [CodeChallengeMethod.S256];
+```
+
+| Enum value | JSON serialization |
+|---|---|
+| `CodeChallengeMethod.S256` | `"S256"` |
+
+The `plain` challenge method is intentionally absent from `CodeChallengeMethod`. RFC 9700 §2.1.1
+explicitly prohibits its use: advertising `plain` would negate PKCE's security benefit because the
+challenge is identical to the verifier and provides no protection against interception.
+
+Startup validation rejects a non-null empty collection (e.g. `= []`), which would publish
+`"code_challenge_methods_supported": []` — advertising PKCE support with no usable method.
+
+Maps to `code_challenge_methods_supported` as defined in
+[RFC 7636 §4.3](https://www.rfc-editor.org/rfc/rfc7636#section-4.3) and
+[RFC 8414 §2](https://www.rfc-editor.org/rfc/rfc8414#section-2).
+
+---
+
 ### `TokenEndpoint`
 
 | Attribute | Value |
@@ -226,12 +265,54 @@ This value must not be null or empty. If `GrantTypesSupported` includes
 `GrantType.ClientCredentials`, it must contain at least one method other than
 `TokenEndpointAuthMethod.None`.
 
+This cross-group validator rule is defined in
+[ADR 0002 §4 Rule 2](../decisions/0002-options-shape-grouped-nested.md#required-validator-rules-for-tokenendpointauthmethodssupported)
+and is grounded in [RFC 6749 §4.4](https://www.rfc-editor.org/rfc/rfc6749#section-4.4) and
+[RFC 9700 §2.6](https://www.rfc-editor.org/rfc/rfc9700#section-2.6). If violated, startup validation
+emits:
+
+```text
+GrantTypesSupported includes 'client_credentials', which requires confidential clients. TokenEndpoint.AuthMethodsSupported must contain at least one method other than 'none'. See RFC 6749 §4.4 and OAuth 2.0 Security BCP §2.6 (RFC 9700).
+```
+
 | Enum value | JSON serialization |
 |---|---|
 | `TokenEndpointAuthMethod.ClientSecretBasic` | `"client_secret_basic"` |
+| `TokenEndpointAuthMethod.ClientSecretPost` | `"client_secret_post"` |
+| `TokenEndpointAuthMethod.ClientSecretJwt` | `"client_secret_jwt"` |
+| `TokenEndpointAuthMethod.PrivateKeyJwt` | `"private_key_jwt"` |
+| `TokenEndpointAuthMethod.None` | `"none"` |
 
 `token_endpoint_auth_methods_supported` is defined by
 [RFC 8414 §2](https://www.rfc-editor.org/rfc/rfc8414#section-2).
+
+#### `TokenEndpointAuthMethod.None` and PKCE
+
+`TokenEndpointAuthMethod.None` represents **public clients** — clients with no client secret. Public clients cannot securely transmit credentials at the token endpoint.
+
+> ⚠️ **Warning:** Public clients MUST use PKCE (Proof Key for Public OAuth 2.0 Clients) as the sole protection mechanism for the authorization code. This is mandated by [RFC 9700 §2.1.1](https://www.rfc-editor.org/rfc/rfc9700#section-2.1.1) (OAuth 2.0 Security Best Current Practice).
+
+**PKCE is defined for the authorization code grant** per [RFC 7636](https://www.rfc-editor.org/rfc/rfc7636). Therefore:
+
+- Public clients using the authorization code flow with `TokenEndpointAuthMethod.None` **must** use PKCE and present a valid `code_verifier` at the token endpoint.
+- `TokenEndpointAuthMethod.None` may be advertised alongside confidential-client methods such as `ClientSecretBasic`; this supports deployments that serve both public clients and confidential clients.
+- Startup validation does **not** reject `None` just because `GrantTypesSupported` omits `GrantType.AuthorizationCode`. ADR 0002 rejects only the `client_credentials` + `none`-only combination above.
+- When the token endpoint is implemented, it must enforce each registered client's `token_endpoint_auth_method` at request time (tracked by issue #64). Without per-client enforcement, a confidential client could downgrade to public-client behavior by omitting credentials.
+
+Attempting to support `ClientCredentials` with only public-client authentication will fail at host startup with the ADR 0002 error message shown above.
+
+```csharp
+// ✓ Valid: public clients with authorization code grant + PKCE
+options.TokenEndpoint.AuthMethodsSupported = new[] { TokenEndpointAuthMethod.None };
+options.GrantTypesSupported = new[] { GrantType.AuthorizationCode };
+
+// ✗ Invalid: client_credentials with only public-client authentication
+// This will fail startup validation
+options.TokenEndpoint.AuthMethodsSupported = new[] { TokenEndpointAuthMethod.None };
+options.GrantTypesSupported = new[] { GrantType.ClientCredentials };
+```
+
+Authorization-code clients that use `TokenEndpointAuthMethod.None` must perform the token exchange with a PKCE challenge and verifier. Consult your OAuth client library's documentation for PKCE implementation details.
 
 ---
 
@@ -313,6 +394,10 @@ Negative values fail startup validation.
 | `IdToken.SigningAlgValuesSupported` is required | `IdToken.SigningAlgValuesSupported` is `null` or empty |
 | `IScopeRepository` must include `openid` | the configured scope repository does not include a scope named `openid` |
 | Cache max-age must not be negative | `DiscoveryDocument.CacheMaxAgeSeconds` is less than `0` |
+| `AuthorizationEndpoint.CodeChallengeMethodsSupported` must not be empty | `AuthorizationEndpoint.CodeChallengeMethodsSupported` is a non-null empty collection |
+
+For the exact failure text of the `client_credentials` + `none`-only token auth combination, see
+[`TokenEndpoint.AuthMethodsSupported`](#tokenendpointauthmethodssupported) above.
 
 Validation errors are reported as `OptionsValidationException` and prevent the host from starting.
 They are visible in the startup output and host logs.
