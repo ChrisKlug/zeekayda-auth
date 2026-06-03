@@ -302,6 +302,30 @@ public sealed class DiscoveryEndpointTests : IDisposable
         act.Should().Throw<Exception>().WithMessage($"*{StandardScopes.OpenId.Name}*");
     }
 
+    [Fact]
+    public void Startup_NoneAuthMethodWithoutAuthorizationCodeGrant_ThrowsViaValidateOnStart()
+    {
+        var act = () => new TestWebAppFactory(opts =>
+        {
+            opts.TokenEndpoint.AuthMethodsSupported = [TokenEndpointAuthMethod.None];
+            opts.GrantTypesSupported = [GrantType.RefreshToken];
+        }).CreateClient();
+
+        act.Should().Throw<Exception>().WithMessage("*RFC 7636*");
+    }
+
+    [Fact]
+    public void Startup_NoneAuthMethodWithAuthorizationCodeGrant_Succeeds()
+    {
+        var act = () => new TestWebAppFactory(opts =>
+        {
+            opts.TokenEndpoint.AuthMethodsSupported = [TokenEndpointAuthMethod.None];
+            opts.GrantTypesSupported = [GrantType.AuthorizationCode];
+        }).CreateClient();
+
+        act.Should().NotThrow();
+    }
+
     // ── Configurable Cache-Control ────────────────────────────────────────────────────────────────
 
     [Fact]
