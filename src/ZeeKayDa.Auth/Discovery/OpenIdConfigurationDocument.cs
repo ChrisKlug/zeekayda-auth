@@ -9,9 +9,7 @@ namespace ZeeKayDa.Auth.Discovery;
 /// <remarks>
 /// This record is the stable wire-format contract for the discovery endpoint. It is intentionally
 /// separate from <see cref="AuthorizationServerOptions"/> so that the configuration model and the
-/// published JSON can evolve independently. All nullable fields use
-/// <see cref="JsonIgnoreCondition.WhenWritingNull"/> so that unsupported optional fields are
-/// omitted from the serialised document rather than emitted as <c>null</c>.
+/// published JSON can evolve independently.
 /// </remarks>
 public sealed record OpenIdConfigurationDocument
 {
