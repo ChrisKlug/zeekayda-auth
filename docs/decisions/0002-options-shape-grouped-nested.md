@@ -1,6 +1,6 @@
 # ADR 0002 — Options Shape: Grouped Nested Per-Endpoint Options on `AuthorizationServerOptions`
 
-**Status:** Proposed  
+**Status:** Accepted  
 **Date:** 2026-06-07
 
 ---
@@ -209,6 +209,31 @@ We deliberately do **not** introduce per-group `IValidateOptions<TokenOptions>` 
 - Group validation can still be factored internally into private helper methods per group for
   readability; that is an implementation detail, not part of the contract.
 
+#### Required validator rules for `Token.AuthMethodsSupported`
+
+Two hard errors must be enforced at startup:
+
+**Rule 1 — Empty collection is always an error:**
+```
+Token.AuthMethodsSupported must not be empty. Specify at least one client authentication method
+(e.g. TokenEndpointAuthMethod.ClientSecretBasic). See OAuth 2.0 Security BCP §2.6 (RFC 9700).
+```
+
+**Rule 2 — `client_credentials` grant requires at least one non-`none` method (cross-group):**
+```
+GrantTypesSupported includes 'client_credentials', which requires confidential clients.
+Token.AuthMethodsSupported must contain at least one method other than 'none'.
+See RFC 6749 §4.4 and OAuth 2.0 Security BCP §2.6 (RFC 9700).
+```
+
+Note: `none` may legitimately appear alongside other methods in `AuthMethodsSupported` to support
+public clients (mobile apps, browser-based applications using PKCE). This is safe provided the
+token endpoint enforces `token_endpoint_auth_method` **per client** at request time — see
+§ Security Note below and issue #64.
+
+When `RevocationOptions` and `IntrospectionOptions` are introduced, the same two rules must be
+applied to their `AuthMethodsSupported` collections.
+
 ### 5. `ZeeKayDaAuthBuilder` role unchanged
 
 `ZeeKayDaAuthBuilder` (returned by `AddZeeKayDaAuth`) continues to be the **service-registration**
@@ -327,27 +352,50 @@ recorded here only so the option is not silently relitigated.
   The cost is real but small, and is the price of the discoverability gains above.
 - **Single root validator does more work.** Cross-group rules belong somewhere, and they belong
   here. The class grows; it stays auditable because it stays the *only* validator.
-- **No per-group `IOptions<TokenOptions>` injection.** A consumer service cannot ask DI for
-  `IOptions<TokenOptions>` directly; it asks for `IOptions<AuthorizationServerOptions>` and reads
-  `.Token`. This is intentional — `TokenOptions` has no standalone meaning outside its parent —
-  but it is a minor ergonomic asymmetry worth noting.
+- **`IConfiguration` collection binding replaces, does not merge.** When any entry for a
+  collection (e.g. `ZeeKayDaAuth:Token:AuthMethodsSupported`) is present in `appsettings.json`,
+  the `IConfiguration` binder replaces the entire default collection with the configured values.
+  An operator who specifies only one method in config silently loses any other defaults. The
+  fail-fast validator catches an empty result, but operators should be aware that collection
+  settings must be specified in full. Documentation should call this out explicitly.
+- **`none` in `AuthMethodsSupported` is safe only with per-client enforcement.** Advertising
+  `none` alongside other methods does not itself create a downgrade path, but only because the
+  token endpoint is required to enforce the `token_endpoint_auth_method` registered per client
+  (see issue #64). If that per-client enforcement were absent, a confidential client could
+  authenticate as a public client by simply omitting credentials. This dependency is a
+  **hard prerequisite** for the token endpoint implementation — it is not optional.
+- **Same pattern required for future Revocation and Introspection groups.** When
+  `RevocationOptions` and `IntrospectionOptions` are implemented, their `AuthMethodsSupported`
+  collections carry the same risks and must apply the same validator rules (§4) and the same
+  per-client enforcement requirement.
 
 ---
 
 ## Security Note
 
-The current validator enforces that `TokenEndpointAuthMethodsSupported` is not null but **does
-permit it to be empty**. An empty supported-methods set, or a set whose only entry is `none`,
-allows unauthenticated token-endpoint calls and is the kind of insecure-default footgun this
-framework exists to prevent
-([OAuth 2.0 Security BCP §2.6](https://www.rfc-editor.org/rfc/rfc9700#section-2.6)).
+**`Token.AuthMethodsSupported` — validator rules and per-client enforcement dependency.**
 
-After this ADR's reshape, the analogous field is `options.Token.AuthMethodsSupported`. The
-**rule** we want is: empty (or `none`-only) must require explicit, named opt-in — never the
-default. The **exact wording** of the opt-in (flag name, placement: `TokenOptions` vs root vs
-`AllowInsecure*` family, validator message, whether it is one flag or two) is deliberately left
-to the security agent's review of this ADR. This ADR records the constraint and flags it for
-attention; it does not pre-empt the recommendation.
+The validator enforces two hard errors at startup (see §4 for exact messages):
+
+1. **Empty collection** — unconditionally rejected. There is no valid deployment where zero
+   authentication methods are supported.
+2. **`client_credentials` grant + `none`-only methods** — rejected. The client credentials grant
+   requires a confidential client; a server that advertises only `none` cannot securely support it.
+
+`none` may appear alongside other methods to support public clients (mobile apps, browser-based
+applications). This is a spec-blessed pattern ([RFC 6749 §2.1](https://www.rfc-editor.org/rfc/rfc6749#section-2.1),
+[OpenID Connect Core §9](https://openid.net/specs/openid-connect-core-1_0.html#ClientAuthentication))
+and is **not** treated as an error on its own.
+
+However, advertising `none` alongside confidential-client methods is only safe if the token
+endpoint enforces the `token_endpoint_auth_method` **per registered client** at request time. A
+server that only checks "is this method in `AuthMethodsSupported`?" would allow a confidential
+client to authenticate as a public client by omitting its credentials — an auth method downgrade
+attack. Per-client enforcement is therefore a **hard prerequisite** for the token endpoint
+implementation and is tracked in issue [#64](https://github.com/ChrisKlug/zeekayda-auth/issues/64).
+
+No opt-in flag is introduced for `none`. The correct mitigation is implementation correctness, not
+a flag that papers over an absent control.
 
 ---
 
@@ -357,6 +405,7 @@ attention; it does not pre-empt the recommendation.
 - [RFC 8414 §2 — Authorization Server Metadata](https://datatracker.ietf.org/doc/html/rfc8414#section-2)
 - [OAuth 2.0 Security Best Current Practice (RFC 9700) §2.6 — Client Authentication](https://www.rfc-editor.org/rfc/rfc9700#section-2.6)
 - [ADR 0001 — Endpoint Architecture Pattern](./0001-endpoint-architecture-pattern.md)
+- Issue [#64](https://github.com/ChrisKlug/zeekayda-auth/issues/64) — per-client `token_endpoint_auth_method` enforcement (hard prerequisite for token endpoint)
 - Issue [#51](https://github.com/ChrisKlug/zeekayda-auth/issues/51) — the originating design discussion
 - Issue [#43](https://github.com/ChrisKlug/zeekayda-auth/issues/43) — closed: `IZeeKayDaEndpoint` remains internal
 - Prior art:
