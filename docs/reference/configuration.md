@@ -205,6 +205,9 @@ document. This value lives in the `Response` options group.
 |---|---|
 | `ResponseType.Code` | `"code"` |
 
+Hybrid and implicit response types are not supported by ZeeKayDa.Auth. The library intentionally
+publishes code flow only, aligned with OAuth 2.1 §3.3 and RFC 9700 §2.1.2.
+
 `response_types_supported` is a required field in the discovery document per
 [OpenID Connect Discovery 1.0 §3](https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderMetadata).
 

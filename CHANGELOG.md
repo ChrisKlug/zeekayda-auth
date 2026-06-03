@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- **BREAKING: Remove hybrid response type `code id_token` from `ResponseType`** (#29)
+
+  ZeeKayDa.Auth now exposes authorization code flow only. `ResponseType.CodeIdToken` has been
+  removed from the public enum, related discovery test coverage has been updated, and the
+  configuration docs now state that hybrid and implicit response types are unsupported.
+
 - **BREAKING: Refactor `AuthorizationServerOptions` into grouped nested options** (#51)
   
   `AuthorizationServerOptions` is reshaped from a flat class into grouped nested options aligned with the OIDC Discovery 1.0 specification structure. Grouping mirrors the spec's naming conventions (e.g., `token_endpoint_*` fields group under `TokenEndpoint`, `id_token_*` fields group under `IdToken`). Get-only group properties prevent nulling and preserve framework invariants.
