@@ -286,7 +286,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
 
         result.Failed.Should().BeTrue();
         result.FailureMessage.Should().Contain("client_credentials");
-        result.FailureMessage.Should().Contain("non-");
+        result.FailureMessage.Should().Contain("other than");
     }
 
     [Fact]
