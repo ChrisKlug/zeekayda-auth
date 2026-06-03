@@ -627,6 +627,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     [InlineData("*", "wildcard")]
     [InlineData("https://*.example.com", "wildcard")]
     [InlineData("null", "null literal")]
+    [InlineData("https://example.com\r\n", "CRLF")]
     public void Startup_InvalidCorsOrigin_ThrowsViaValidateOnStart(string invalidOrigin, string reason)
     {
         var act = () => new TestWebAppFactory(opts =>

@@ -177,6 +177,7 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
         // (scheme://host[:port]) with no path (other than "/"), query, fragment, userinfo, wildcards,
         // or CRLF. Invalid entries fail startup.
         var corsErrors = new List<string>();
+        var validOriginUris = new List<Uri>(options.DiscoveryDocument.CorsOrigins.Count);
         foreach (var origin in options.DiscoveryDocument.CorsOrigins)
         {
             if (string.IsNullOrEmpty(origin))
@@ -225,6 +226,7 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
                 corsErrors.Add($"CORS origin '{origin}' must not contain a path component. Use 'scheme://host[:port]' only.");
                 continue;
             }
+            validOriginUris.Add(originUri);
         }
         if (corsErrors.Count > 0)
         {
@@ -234,10 +236,10 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
         }
 
         // Canonicalize and deduplicate CorsOrigins in-place: lowercase, authority-only form.
-        if (options.DiscoveryDocument.CorsOrigins.Count > 0)
+        if (validOriginUris.Count > 0)
         {
-            var canonical = options.DiscoveryDocument.CorsOrigins
-                .Select(o => new Uri(o).GetLeftPart(UriPartial.Authority).ToLowerInvariant())
+            var canonical = validOriginUris
+                .Select(u => u.GetLeftPart(UriPartial.Authority).ToLowerInvariant())
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
             options.DiscoveryDocument.CorsOrigins.Clear();
