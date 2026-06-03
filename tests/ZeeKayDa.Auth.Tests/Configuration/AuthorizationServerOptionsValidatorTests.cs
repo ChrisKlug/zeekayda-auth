@@ -421,7 +421,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
 
     // ── Endpoint URI overrides ────────────────────────────────────────────────────────────────────
 
-     [Theory]
+    [Theory]
     [InlineData("Authorization.Uri", "not-a-uri")]
     [InlineData("Token.Uri", "not-a-uri")]
     [InlineData("Jwks.Uri", "not-a-uri")]

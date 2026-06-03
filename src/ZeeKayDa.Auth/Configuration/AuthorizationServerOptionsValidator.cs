@@ -156,10 +156,10 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
         }
 
         // Validate Discovery group
-        if (options.Discovery.CacheMaxAgeSeconds < 0)
+        if (options.DiscoveryDocument.CacheMaxAgeSeconds < 0)
         {
             return ValidateOptionsResult.Fail(
-                "AuthorizationServerOptions.Discovery.CacheMaxAgeSeconds must not be negative.");
+                "AuthorizationServerOptions.DiscoveryDocument.CacheMaxAgeSeconds must not be negative.");
         }
 
         // Validate endpoint URI overrides — RFC 8414 §2 requires all metadata URLs to use HTTPS.

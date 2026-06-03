@@ -43,7 +43,7 @@ internal sealed class DiscoveryEndpoint : IZeeKayDaEndpoint
     {
         // Cache-Control set directly in the handler per ADR §8 so that the behaviour is
         // co-located with the endpoint and trivially verifiable in tests without a pipeline.
-        var maxAge = _options.Value.Discovery.CacheMaxAgeSeconds;
+        var maxAge = _options.Value.DiscoveryDocument.CacheMaxAgeSeconds;
         context.Response.Headers.CacheControl = maxAge > 0
             ? $"public, max-age={maxAge}, must-revalidate"
             : "no-store";

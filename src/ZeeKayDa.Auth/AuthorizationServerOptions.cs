@@ -51,7 +51,7 @@ public sealed class AuthorizationServerOptions
     /// <summary>
     /// Gets the discovery document configuration options.
     /// </summary>
-    public DiscoveryOptions Discovery { get; } = new();
+    public DiscoveryOptions DiscoveryDocument { get; } = new();
 
     /// <summary>
     /// Gets the authorization endpoint configuration options.
