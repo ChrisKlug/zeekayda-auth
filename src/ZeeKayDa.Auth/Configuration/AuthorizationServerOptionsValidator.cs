@@ -235,7 +235,7 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
             // CORS origins must use HTTPS in production. AllowInsecureIssuer permits HTTP only
             // for loopback addresses (local development). This mirrors the issuer scheme rules.
             var isHttpsOrigin = string.Equals(originUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase);
-            var isHttpOrigin  = string.Equals(originUri.Scheme, Uri.UriSchemeHttp,  StringComparison.OrdinalIgnoreCase);
+            var isHttpOrigin = string.Equals(originUri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase);
 
             if (!isHttpsOrigin && !(isHttpOrigin && options.AllowInsecureIssuer))
             {
