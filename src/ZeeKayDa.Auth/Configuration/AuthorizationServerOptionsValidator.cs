@@ -108,14 +108,9 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
                 "AllowInsecureIssuer only permits HTTP loopback issuers for local development and testing.");
         }
 
-        var issuerScheme = GetScheme(options.Issuer!);
-        var issuerAuthority = GetAuthority(options.Issuer!);
-        var issuerHost = GetHost(issuerAuthority);
         var canonicalIssuer = BuildCanonicalIssuer(uri);
-        var hasExplicitDefaultPort = HasExplicitDefaultPort(issuerAuthority, uri);
-        if (!string.Equals(issuerScheme, uri.Scheme, StringComparison.Ordinal) ||
-            !string.Equals(issuerHost, issuerHost.ToLowerInvariant(), StringComparison.Ordinal) ||
-            hasExplicitDefaultPort)
+        var normalizedInputIssuer = NormalizeRootIssuer(options.Issuer!, uri);
+        if (!string.Equals(normalizedInputIssuer, canonicalIssuer, StringComparison.Ordinal))
         {
             return ValidateOptionsResult.Fail(
                 $"AuthorizationServerOptions.Issuer '{options.Issuer}' is not canonical. Use '{canonicalIssuer}'.");
@@ -403,8 +398,12 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
     }
 
     private static bool HasSameAuthority(Uri endpointUri, Uri issuerUri)
-        => string.Equals(endpointUri.Host, issuerUri.Host, StringComparison.OrdinalIgnoreCase)
-           && endpointUri.Port == issuerUri.Port;
+        => Uri.Compare(
+            endpointUri,
+            issuerUri,
+            UriComponents.SchemeAndServer,
+            UriFormat.SafeUnescaped,
+            StringComparison.OrdinalIgnoreCase) == 0;
 
     private static string BuildCanonicalIssuer(Uri issuerUri)
     {
@@ -427,68 +426,8 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
             : canonical;
     }
 
-    private static string GetScheme(string issuer)
-    {
-        var separatorIndex = issuer.IndexOf("://", StringComparison.Ordinal);
-        return separatorIndex > 0
-            ? issuer[..separatorIndex]
-            : string.Empty;
-    }
-
-    private static string GetAuthority(string issuer)
-    {
-        var separatorIndex = issuer.IndexOf("://", StringComparison.Ordinal);
-        if (separatorIndex < 0) return string.Empty;
-
-        var authorityStart = separatorIndex + 3;
-        var authorityEnd = issuer.IndexOf('/', authorityStart);
-        if (authorityEnd < 0)
-        {
-            authorityEnd = issuer.Length;
-        }
-
-        return issuer[authorityStart..authorityEnd];
-    }
-
-    private static string GetHost(string authority)
-    {
-        if (authority.Length == 0) return string.Empty;
-
-        if (authority[0] == '[')
-        {
-            var bracketEnd = authority.IndexOf(']');
-            return bracketEnd > 1
-                ? authority[1..bracketEnd]
-                : string.Empty;
-        }
-
-        var colonIndex = authority.IndexOf(':');
-        return colonIndex >= 0
-            ? authority[..colonIndex]
-            : authority;
-    }
-
-    private static bool HasExplicitDefaultPort(string authority, Uri issuerUri)
-    {
-        if (!HasExplicitPort(authority))
-        {
-            return false;
-        }
-
-        return (string.Equals(issuerUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) && issuerUri.Port == 443)
-               || (string.Equals(issuerUri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) && issuerUri.Port == 80);
-    }
-
-    private static bool HasExplicitPort(string authority)
-    {
-        if (authority.Length == 0) return false;
-
-        if (authority[0] == '[')
-        {
-            var bracketEnd = authority.IndexOf(']');
-            return bracketEnd >= 0 && bracketEnd + 1 < authority.Length && authority[bracketEnd + 1] == ':';
-        }
-
-        return authority.Contains(':');
-    }
+    private static string NormalizeRootIssuer(string issuer, Uri parsedIssuer)
+        => parsedIssuer.AbsolutePath == "/" && issuer.EndsWith("/", StringComparison.Ordinal)
+            ? issuer[..^1]
+            : issuer;
 }
