@@ -128,7 +128,7 @@ come from `AuthorizationServerOptions`.
 | `token_endpoint` | `TokenEndpoint.Uri` or derived from `Issuer` | Default is `{issuer}/connect/token`. |
 | `jwks_uri` | `JwksEndpoint.Uri` or derived from `Issuer` | Default is `{issuer}/connect/jwks`. |
 | `response_types_supported` | `Response.TypesSupported` | Defaults to `["code"]`. Required by OIDC Discovery 1.0 Section 3. |
-| `scopes_supported` | `IScopeRepository` | By default, published from the built-in repository containing `openid` and `profile`. |
+| `scopes_supported` | `IScopeRepository` | By default, published from the built-in `InMemoryScopeRepository` seeded with `StandardScopes.All` (`openid`, `profile`, `email`, `phone`, `address`). |
 | `response_modes_supported` | `Response.ModesSupported` | Defaults to `["query"]`. |
 | `grant_types_supported` | `GrantTypesSupported` | Defaults to `["authorization_code"]`. |
 | `token_endpoint_auth_methods_supported` | `TokenEndpoint.AuthMethodsSupported` | Defaults to `["client_secret_basic"]`. |

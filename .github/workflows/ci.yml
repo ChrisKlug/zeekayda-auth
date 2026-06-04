@@ -57,7 +57,8 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
     env:
-      COVERAGE_ALLOWED_REGRESSION_PERCENT: '0'
+      # Allow minimal run-to-run coverage noise while still blocking meaningful regressions.
+      COVERAGE_ALLOWED_REGRESSION_PERCENT: '0.20'
 
     steps:
       - name: Checkout

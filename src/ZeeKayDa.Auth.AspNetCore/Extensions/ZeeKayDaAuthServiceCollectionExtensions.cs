@@ -58,7 +58,7 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
                 IValidateOptions<AuthorizationServerOptions>,
                 AuthorizationServerOptionsValidator>());
 
-        services.TryAddSingleton<IScopeRepository, DefaultScopeRepository>();
+        services.TryAddSingleton<IScopeRepository>(new InMemoryScopeRepository(StandardScopes.All));
         services.TryAddSingleton<IDiscoveryDocumentProvider, DiscoveryDocumentProvider>();
 
         // Each endpoint is registered exactly once even if AddZeeKayDaAuth() is called multiple

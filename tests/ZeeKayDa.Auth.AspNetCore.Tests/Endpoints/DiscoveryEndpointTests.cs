@@ -135,7 +135,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
 
         doc!.RootElement.GetProperty("scopes_supported").EnumerateArray()
             .Select(element => element.GetString())
-            .Should().Equal(StandardScopes.OpenId.Name, StandardScopes.Profile.Name);
+            .Should().Equal(StandardScopes.All.Select(scope => scope.Name));
 
         doc.RootElement.GetProperty("response_modes_supported").EnumerateArray()
             .Select(element => element.GetString())
@@ -348,6 +348,28 @@ public sealed class DiscoveryEndpointTests : IDisposable
         }).CreateClient();
 
         act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void Startup_OutOfRangeGrantType_ThrowsViaValidateOnStart()
+    {
+        var act = () => new TestWebAppFactory(opts =>
+        {
+            opts.GrantTypesSupported = [(GrantType)9999];
+        }).CreateClient();
+
+        act.Should().Throw<Exception>().WithMessage("*GrantTypesSupported*");
+    }
+
+    [Fact]
+    public void Startup_OutOfRangeTokenEndpointAuthMethod_ThrowsViaValidateOnStart()
+    {
+        var act = () => new TestWebAppFactory(opts =>
+        {
+            opts.TokenEndpoint.AuthMethodsSupported = [(TokenEndpointAuthMethod)9999];
+        }).CreateClient();
+
+        act.Should().Throw<Exception>().WithMessage("*TokenEndpoint.AuthMethodsSupported*");
     }
 
     [Fact]

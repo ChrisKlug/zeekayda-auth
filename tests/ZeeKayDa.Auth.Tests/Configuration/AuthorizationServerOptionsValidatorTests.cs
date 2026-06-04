@@ -306,6 +306,20 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
+    public void Validate_OutOfRangeGrantTypesSupported_Fails()
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            GrantTypesSupported = [(GrantType)9999],
+        });
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("GrantTypesSupported");
+        result.FailureMessage.Should().Contain(nameof(GrantType));
+    }
+
+    [Fact]
     public void Validate_NullTokenAuthMethodsSupported_Fails()
     {
         var result = Validate(new AuthorizationServerOptions
@@ -331,6 +345,20 @@ public sealed class AuthorizationServerOptionsValidatorTests
         result.Failed.Should().BeTrue();
         result.FailureMessage.Should().Contain("TokenEndpoint.AuthMethodsSupported");
         result.FailureMessage.Should().Contain("null or empty");
+    }
+
+    [Fact]
+    public void Validate_OutOfRangeTokenAuthMethodsSupported_Fails()
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            TokenEndpoint = { AuthMethodsSupported = [(TokenEndpointAuthMethod)9999] },
+        });
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("TokenEndpoint.AuthMethodsSupported");
+        result.FailureMessage.Should().Contain(nameof(TokenEndpointAuthMethod));
     }
 
     [Fact]
@@ -542,14 +570,14 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_DefaultScopeRepositoryWithOpenId_Succeeds()
+    public void Validate_DefaultInMemoryScopesWithOpenId_Succeeds()
     {
         var result = Validate(
             new AuthorizationServerOptions
             {
                 Issuer = "https://auth.example.com",
             },
-            new DefaultScopeRepository());
+            new InMemoryScopeRepository(StandardScopes.All));
 
         result.Succeeded.Should().BeTrue();
     }

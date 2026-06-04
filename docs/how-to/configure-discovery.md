@@ -90,7 +90,7 @@ metadata fields from `AuthorizationServerOptions`.
 
 | Option | Published field | Default |
 |---|---|---|
-| built-in scope repository | `scopes_supported` | `["openid", "profile"]` |
+| built-in `InMemoryScopeRepository` | `scopes_supported` | `["openid", "profile", "email", "phone", "address"]` |
 | `Response.ModesSupported` | `response_modes_supported` | `["query"]` |
 | `GrantTypesSupported` | `grant_types_supported` | `["authorization_code"]` |
 | `TokenEndpoint.AuthMethodsSupported` | `token_endpoint_auth_methods_supported` | `["client_secret_basic"]` |
@@ -101,10 +101,10 @@ and [RFC 8414 Section 2](https://www.rfc-editor.org/rfc/rfc8414.html#section-2).
 `grant_types_supported` and `token_endpoint_auth_methods_supported` are authorization server
 metadata fields from [RFC 8414 Section 2](https://www.rfc-editor.org/rfc/rfc8414.html#section-2).
 
-By default, `scopes_supported` is sourced from the built-in scope repository, which publishes
-`openid` and `profile`. If you want to publish the full standard OIDC scope set or attach
-token-claim metadata to scopes, register the in-memory scope repository and start with
-`StandardScopes`:
+By default, `scopes_supported` is sourced from the built-in
+`InMemoryScopeRepository(StandardScopes.All)`. If you want to customize that set or attach
+token-claim metadata to scopes, register your own in-memory scope repository and start with
+`StandardScopes.All`:
 
 ```csharp
 using ZeeKayDa.Auth.Scopes;

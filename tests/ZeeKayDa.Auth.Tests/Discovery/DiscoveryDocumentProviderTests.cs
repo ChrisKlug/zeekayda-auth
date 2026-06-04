@@ -13,7 +13,7 @@ public sealed class DiscoveryDocumentProviderTests
         var optionsWrapper = Microsoft.Extensions.Options.Options.Create(options);
         var provider = new DiscoveryDocumentProvider(
             optionsWrapper,
-            scopeRepository ?? new DefaultScopeRepository());
+            scopeRepository ?? new InMemoryScopeRepository(StandardScopes.All));
         return await provider.GetDocumentAsync(TestContext.Current.CancellationToken);
     }
 
@@ -154,7 +154,7 @@ public sealed class DiscoveryDocumentProviderTests
         });
 
         doc.ResponseTypesSupported.Should().ContainSingle().Which.Should().Be(ResponseType.Code);
-        doc.ScopesSupported.Should().Equal(StandardScopes.OpenId.Name, StandardScopes.Profile.Name);
+        doc.ScopesSupported.Should().Equal(StandardScopes.All.Select(scope => scope.Name));
         doc.ResponseModesSupported.Should().ContainSingle().Which.Should().Be(ResponseMode.Query);
         doc.GrantTypesSupported.Should().ContainSingle().Which.Should().Be(GrantType.AuthorizationCode);
         doc.TokenEndpointAuthMethodsSupported.Should().ContainSingle().Which.Should().Be(TokenEndpointAuthMethod.ClientSecretBasic);
@@ -250,11 +250,11 @@ public sealed class DiscoveryDocumentProviderTests
     // ── Cancellation contract ────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task GetDocumentAsync_AlreadyCancelledToken_ThrowsViaDefaultScopeRepository()
+    public async Task GetDocumentAsync_AlreadyCancelledToken_ThrowsViaInMemoryScopeRepository()
     {
         var options = Microsoft.Extensions.Options.Options.Create(
             new AuthorizationServerOptions { Issuer = "https://auth.example.com" });
-        var provider = new DiscoveryDocumentProvider(options, new DefaultScopeRepository());
+        var provider = new DiscoveryDocumentProvider(options, new InMemoryScopeRepository(StandardScopes.All));
 
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();

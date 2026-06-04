@@ -1,3 +1,4 @@
+using System.Linq;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.Scopes;
@@ -142,6 +143,17 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
                 "AuthorizationServerOptions.GrantTypesSupported must not be null.");
         }
 
+        var invalidGrantType = options.GrantTypesSupported
+            .Where(grantType => !Enum.IsDefined(grantType))
+            .FirstOrDefault();
+
+        if (!Enum.IsDefined(invalidGrantType))
+        {
+            return ValidateOptionsResult.Fail(
+                $"AuthorizationServerOptions.GrantTypesSupported contains invalid value '{(int)invalidGrantType}'. " +
+                $"Expected a valid {nameof(GrantType)} enum member.");
+        }
+
         // Validate Token group
         if (options.TokenEndpoint.AuthMethodsSupported is null)
         {
@@ -152,6 +164,13 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
         if (options.TokenEndpoint.AuthMethodsSupported.Count == 0)
         {
             return ValidateOptionsResult.Fail(TokenEndpointAuthMethodsRequiredMessage);
+        }
+
+        foreach (var authMethod in options.TokenEndpoint.AuthMethodsSupported.Where(authMethod => !Enum.IsDefined(authMethod)))
+        {
+            return ValidateOptionsResult.Fail(
+                $"AuthorizationServerOptions.TokenEndpoint.AuthMethodsSupported contains invalid value '{(int)authMethod}'. " +
+                $"Expected a valid {nameof(TokenEndpointAuthMethod)} enum member.");
         }
 
         // ADR 0002 §4: If client_credentials grant is supported, must have at least one non-None auth method
