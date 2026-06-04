@@ -8,6 +8,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- **Harden discovery/protocol endpoint responses with configurable CORS + defensive headers** (#73)
+
+  Discovery responses now support an optional immutable CORS allowlist via
+  `DiscoveryDocument.CorsOrigins` (wildcard when empty; strict allowlist matching when configured).
+  Startup validation canonicalizes and deduplicates origins, rejects invalid entries, and enforces
+  HTTPS by default (HTTP loopback only when `AllowInsecureIssuer = true`).
+
+  ZeeKayDa.Auth protocol endpoints now emit defensive headers via `SecurityHeaders` options:
+  `X-Content-Type-Options`, `Referrer-Policy`, and `Cross-Origin-Resource-Policy`, plus
+  `X-ZeeKayDa-Insecure-Issuer: true` when insecure issuer mode is enabled for local development.
+
 - **BREAKING: Remove hybrid response type `code id_token` from `ResponseType`** (#29)
 
   ZeeKayDa.Auth now exposes authorization code flow only. `ResponseType.CodeIdToken` has been

@@ -73,7 +73,47 @@ app.Run();
 |---|---|
 | `Content-Type` | `application/json` |
 | `Cache-Control` | `public, max-age=3600, must-revalidate` by default; `no-store` when `DiscoveryDocument.CacheMaxAgeSeconds` is `0` |
-| `Access-Control-Allow-Origin` | `*` |
+| `Access-Control-Allow-Origin` | `*` when `DiscoveryDocument.CorsOrigins` is empty; the matched allowlist entry when non-empty |
+| `Vary` | `Origin` (only when `DiscoveryDocument.CorsOrigins` is non-empty), appended to any existing `Vary` value |
+| `X-Content-Type-Options` | `nosniff` (default; disable with `SecurityHeaders.ContentTypeOptionsNoSniff = false`) |
+| `Referrer-Policy` | `no-referrer` (default; configurable via `SecurityHeaders.ReferrerPolicy`) |
+| `Cross-Origin-Resource-Policy` | `cross-origin` (default; configurable via `SecurityHeaders.CrossOriginResourcePolicy`) |
+| `X-ZeeKayDa-Insecure-Issuer` | `true` (only when `AllowInsecureIssuer = true`) |
+
+## CORS configuration
+
+By default ZeeKayDa.Auth returns `Access-Control-Allow-Origin: *`, which allows any browser-based
+client to fetch the discovery document. This is intentional: the discovery document is public
+information with no credentials and no user-specific data.
+
+To restrict CORS to a known set of origins, populate `DiscoveryDocument.CorsOrigins`:
+
+```csharp
+options.DiscoveryDocument.CorsOrigins.Add("https://app.example.com");
+options.DiscoveryDocument.CorsOrigins.Add("https://admin.example.com");
+```
+
+When the list is non-empty:
+
+- `Access-Control-Allow-Origin` is set to the matching allowlist entry (lowercased, authority-only
+  canonical form).
+- `Vary: Origin` is appended additively so that shared caches never serve the wrong
+  `Access-Control-Allow-Origin` to a different origin.
+- Requests with an absent or non-matching `Origin` header receive no `Access-Control-Allow-Origin`
+  header.
+
+Allowlist entries are validated at startup. Each entry must be an absolute origin
+(`scheme://host[:port]`) with no path, query, fragment, user information, wildcards, or the
+literal string `null`. Entries are canonicalized, deduplicated, and frozen into an immutable
+startup snapshot used by endpoint lookups. Invalid entries cause the host to fail fast at startup.
+
+`https://` origins are accepted by default. `http://` origins are rejected unless
+`AllowInsecureIssuer = true`; when enabled, HTTP origins must still use loopback hosts.
+
+> Note: ZeeKayDa.Auth does not register an HTTP `OPTIONS` route. The discovery endpoint is
+> a [simple CORS request](https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS#simple_requests)
+> (`GET` with no custom request headers), so browsers do not send a preflight `OPTIONS` request
+> before fetching the discovery document.
 
 ## Metadata fields
 

@@ -367,6 +367,105 @@ Cache-Control: no-store
 
 Negative values fail startup validation.
 
+---
+
+### `DiscoveryDocument.CorsOrigins`
+
+| Attribute | Value |
+|---|---|
+| Type | `IList<string>` |
+| Default | `[]` (empty) |
+| Required | No |
+
+The list of origins permitted to fetch the discovery document from a browser via CORS. When empty
+(the default), the endpoint returns `Access-Control-Allow-Origin: *`. When non-empty, only requests
+whose `Origin` header matches an allowlist entry receive an `Access-Control-Allow-Origin` response
+header.
+
+Each entry must be an absolute origin in the form `scheme://host[:port]` with no path, query,
+fragment, user information, wildcards, or the literal string `null`. Entries are canonicalized
+(lowercased), deduplicated, and frozen into an immutable startup snapshot. Invalid entries cause
+the host to fail fast.
+
+`https://` origins are always accepted. `http://` origins are rejected unless
+`AllowInsecureIssuer = true`; when enabled, HTTP origins must still target loopback hosts only.
+
+```csharp
+options.DiscoveryDocument.CorsOrigins.Add("https://app.example.com");
+options.DiscoveryDocument.CorsOrigins.Add("https://admin.example.com");
+```
+
+See [Discovery endpoint — CORS configuration](discovery-endpoint.md#cors-configuration) for the
+full CORS behaviour and an OPTIONS preflight note.
+
+---
+
+### `SecurityHeaders.ContentTypeOptionsNoSniff`
+
+| Attribute | Value |
+|---|---|
+| Type | `bool` |
+| Default | `true` |
+| Required | No |
+
+When `true` (the default), every ZeeKayDa.Auth protocol endpoint response includes
+`X-Content-Type-Options: nosniff`. Set to `false` to suppress this header if your application
+already sets it globally via a security-headers middleware.
+
+---
+
+### `SecurityHeaders.ReferrerPolicy`
+
+| Attribute | Value |
+|---|---|
+| Type | `ReferrerPolicy` |
+| Default | `ReferrerPolicy.NoReferrer` |
+| Required | No |
+
+Controls the `Referrer-Policy` response header emitted by all ZeeKayDa.Auth protocol endpoints.
+The default `no-referrer` suppresses the `Referer` request header entirely, which is appropriate
+for OAuth/OIDC endpoints that should not leak token URLs to third-party origins.
+
+| Enum value | Header value |
+|---|---|
+| `ReferrerPolicy.NoReferrer` | `no-referrer` |
+| `ReferrerPolicy.NoReferrerWhenDowngrade` | `no-referrer-when-downgrade` |
+| `ReferrerPolicy.Origin` | `origin` |
+| `ReferrerPolicy.OriginWhenCrossOrigin` | `origin-when-cross-origin` |
+| `ReferrerPolicy.SameOrigin` | `same-origin` |
+| `ReferrerPolicy.StrictOrigin` | `strict-origin` |
+| `ReferrerPolicy.StrictOriginWhenCrossOrigin` | `strict-origin-when-cross-origin` |
+| `ReferrerPolicy.UnsafeUrl` | `unsafe-url` |
+
+---
+
+### `SecurityHeaders.CrossOriginResourcePolicy`
+
+| Attribute | Value |
+|---|---|
+| Type | `CrossOriginResourcePolicy` |
+| Default | `CrossOriginResourcePolicy.CrossOrigin` |
+| Required | No |
+
+Controls the `Cross-Origin-Resource-Policy` response header emitted by all ZeeKayDa.Auth protocol
+endpoints. The default `cross-origin` permits cross-origin subresource fetches (required for
+browser-based relying parties reading the discovery document). Set to `same-origin` or `same-site`
+only when all relying parties are co-hosted on the same origin or site as the authorization server.
+
+> Note: If your application already applies a security-headers middleware that sets
+> `Cross-Origin-Resource-Policy`, the header will be duplicated in ZeeKayDa.Auth responses.
+> Since `CrossOriginResourcePolicy` is an enum (not a boolean), there is no way to suppress the
+> header entirely. To avoid duplication, configure only one side: either exclude ZeeKayDa.Auth
+> routes from your middleware's header policy, or rely solely on ZeeKayDa.Auth's built-in header.
+> For example, with ASP.NET Core's `UseSecurityHeaders()` (NWebSec or similar), scope the
+> middleware to non-ZeeKayDa routes only.
+
+| Enum value | Header value |
+|---|---|
+| `CrossOriginResourcePolicy.SameSite` | `same-site` |
+| `CrossOriginResourcePolicy.SameOrigin` | `same-origin` |
+| `CrossOriginResourcePolicy.CrossOrigin` | `cross-origin` |
+
 ## Startup validation
 
 `AuthorizationServerOptionsValidator` validates `AuthorizationServerOptions` at host startup via
@@ -395,6 +494,10 @@ Negative values fail startup validation.
 | `IScopeRepository` must include `openid` | the configured scope repository does not include a scope named `openid` |
 | Cache max-age must not be negative | `DiscoveryDocument.CacheMaxAgeSeconds` is less than `0` |
 | `AuthorizationEndpoint.CodeChallengeMethodsSupported` must not be empty | `AuthorizationEndpoint.CodeChallengeMethodsSupported` is a non-null empty collection |
+| CORS origins must use HTTPS by default | a `DiscoveryDocument.CorsOrigins` entry uses HTTP while `AllowInsecureIssuer` is `false` |
+| HTTP CORS origins must be loopback when allowed | a `DiscoveryDocument.CorsOrigins` entry uses HTTP with a non-loopback host |
+| `SecurityHeaders.ReferrerPolicy` must be a defined enum value | `SecurityHeaders.ReferrerPolicy` is set via an out-of-range cast |
+| `SecurityHeaders.CrossOriginResourcePolicy` must be a defined enum value | `SecurityHeaders.CrossOriginResourcePolicy` is set via an out-of-range cast |
 
 For the exact failure text of the `client_credentials` + `none`-only token auth combination, see
 [`TokenEndpoint.AuthMethodsSupported`](#tokenendpointauthmethodssupported) above.

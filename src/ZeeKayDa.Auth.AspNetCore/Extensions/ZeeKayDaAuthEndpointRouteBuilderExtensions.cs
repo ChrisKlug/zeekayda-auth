@@ -1,5 +1,9 @@
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
+using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.AspNetCore.Endpoints;
 
 namespace ZeeKayDa.Auth.AspNetCore.Extensions;
@@ -30,9 +34,34 @@ public static class ZeeKayDaAuthEndpointRouteBuilderExtensions
     {
         ArgumentNullException.ThrowIfNull(endpoints);
 
+        // All ZeeKayDa.Auth endpoints are grouped so that the security-headers filter applies
+        // only to protocol endpoints and not to the host application's own routes.
+        var group = endpoints.MapGroup("");
+
+        group.AddEndpointFilter(async (context, next) =>
+        {
+            var opts = context.HttpContext.RequestServices
+                .GetRequiredService<IOptions<AuthorizationServerOptions>>().Value;
+            var securityHeaders = opts.SecurityHeaders;
+
+            if (securityHeaders.ContentTypeOptionsNoSniff)
+                context.HttpContext.Response.Headers["X-Content-Type-Options"] = "nosniff";
+
+            context.HttpContext.Response.Headers["Referrer-Policy"] =
+                SecurityHeaderValues.ToHeaderValue(securityHeaders.ReferrerPolicy);
+
+            context.HttpContext.Response.Headers["Cross-Origin-Resource-Policy"] =
+                SecurityHeaderValues.ToHeaderValue(securityHeaders.CrossOriginResourcePolicy);
+
+            if (opts.AllowInsecureIssuer)
+                context.HttpContext.Response.Headers["X-ZeeKayDa-Insecure-Issuer"] = "true";
+
+            return await next(context);
+        });
+
         foreach (var endpoint in endpoints.ServiceProvider.GetServices<IZeeKayDaEndpoint>())
         {
-            endpoint.Map(endpoints);
+            endpoint.Map(group);
         }
 
         return endpoints;

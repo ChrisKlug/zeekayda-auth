@@ -4,6 +4,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.AspNetCore.Extensions;
 using ZeeKayDa.Auth.Scopes;
@@ -30,7 +31,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     }
 
     private static HttpClient CreateClient(
-        TestWebAppFactory factory,
+        WebApplicationFactory<TestWebAppFactory> factory,
         string baseAddress = "https://test.example.com")
         => factory.CreateClient(new WebApplicationFactoryClientOptions
         {
@@ -493,5 +494,312 @@ public sealed class DiscoveryEndpointTests : IDisposable
         prop.EnumerateArray()
             .Select(e => e.GetString())
             .Should().Equal("S256");
+    }
+
+    // ── CORS – wildcard (no allowlist) ────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetDiscoveryDocument_EmptyAllowList_ReturnsWildcardCors()
+    {
+        var response = await _client.GetAsync(DiscoveryPath, TestContext.Current.CancellationToken);
+
+        response.Headers.TryGetValues("Access-Control-Allow-Origin", out var values).Should().BeTrue();
+        values.Should().ContainSingle().Which.Should().Be("*");
+    }
+
+    [Fact]
+    public async Task GetDiscoveryDocument_EmptyAllowList_NoVaryOriginHeader()
+    {
+        var response = await _client.GetAsync(DiscoveryPath, TestContext.Current.CancellationToken);
+
+        // No Vary: Origin in wildcard mode — caches can serve one copy to all origins.
+        var varyValues = response.Headers.Vary.SelectMany(v => v.Split(',').Select(s => s.Trim()));
+        varyValues.Should().NotContain("Origin", because: "wildcard CORS does not require Vary: Origin");
+    }
+
+    // ── CORS – explicit allowlist ─────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetDiscoveryDocument_ExplicitAllowList_MatchingOrigin_ReturnsSpecificOrigin()
+    {
+        using var factory = new TestWebAppFactory(opts =>
+            opts.DiscoveryDocument.CorsOrigins.Add("https://app.example.com"));
+        using var client = CreateClient(factory);
+        client.DefaultRequestHeaders.Add("Origin", "https://app.example.com");
+
+        var response = await client.GetAsync(DiscoveryPath, TestContext.Current.CancellationToken);
+
+        response.Headers.TryGetValues("Access-Control-Allow-Origin", out var values).Should().BeTrue();
+        values.Should().ContainSingle().Which.Should().Be("https://app.example.com");
+    }
+
+    [Fact]
+    public async Task GetDiscoveryDocument_ExplicitAllowList_MatchingOrigin_ReturnsVaryOrigin()
+    {
+        using var factory = new TestWebAppFactory(opts =>
+            opts.DiscoveryDocument.CorsOrigins.Add("https://app.example.com"));
+        using var client = CreateClient(factory);
+        client.DefaultRequestHeaders.Add("Origin", "https://app.example.com");
+
+        var response = await client.GetAsync(DiscoveryPath, TestContext.Current.CancellationToken);
+
+        var varyValues = response.Headers.Vary.SelectMany(v => v.Split(',').Select(s => s.Trim()));
+        varyValues.Should().Contain("Origin");
+    }
+
+    [Fact]
+    public async Task GetDiscoveryDocument_ExplicitAllowList_NonMatchingOrigin_NoACAO()
+    {
+        using var factory = new TestWebAppFactory(opts =>
+            opts.DiscoveryDocument.CorsOrigins.Add("https://app.example.com"));
+        using var client = CreateClient(factory);
+        client.DefaultRequestHeaders.Add("Origin", "https://evil.example.com");
+
+        var response = await client.GetAsync(DiscoveryPath, TestContext.Current.CancellationToken);
+
+        response.Headers.TryGetValues("Access-Control-Allow-Origin", out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task GetDiscoveryDocument_ExplicitAllowList_NonMatchingOrigin_ReturnsVaryOrigin()
+    {
+        using var factory = new TestWebAppFactory(opts =>
+            opts.DiscoveryDocument.CorsOrigins.Add("https://app.example.com"));
+        using var client = CreateClient(factory);
+        client.DefaultRequestHeaders.Add("Origin", "https://evil.example.com");
+
+        var response = await client.GetAsync(DiscoveryPath, TestContext.Current.CancellationToken);
+
+        var varyValues = response.Headers.Vary.SelectMany(v => v.Split(',').Select(s => s.Trim()));
+        varyValues.Should().Contain("Origin");
+    }
+
+    [Fact]
+    public async Task GetDiscoveryDocument_ExplicitAllowList_NoOriginHeader_NoACAO()
+    {
+        using var factory = new TestWebAppFactory(opts =>
+            opts.DiscoveryDocument.CorsOrigins.Add("https://app.example.com"));
+        using var client = CreateClient(factory);
+
+        var response = await client.GetAsync(DiscoveryPath, TestContext.Current.CancellationToken);
+
+        response.Headers.TryGetValues("Access-Control-Allow-Origin", out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task GetDiscoveryDocument_ExplicitAllowList_NoOriginHeader_ReturnsVaryOrigin()
+    {
+        using var factory = new TestWebAppFactory(opts =>
+            opts.DiscoveryDocument.CorsOrigins.Add("https://app.example.com"));
+        using var client = CreateClient(factory);
+
+        var response = await client.GetAsync(DiscoveryPath, TestContext.Current.CancellationToken);
+
+        var varyValues = response.Headers.Vary.SelectMany(v => v.Split(',').Select(s => s.Trim()));
+        varyValues.Should().Contain("Origin");
+    }
+
+    [Fact]
+    public async Task GetDiscoveryDocument_ExplicitAllowList_EmittedValueIsFromAllowList_NotFromRequestHeader()
+    {
+        // The allowlist stores lowercase canonical entries.
+        // The request sends mixed-case. The response must echo the canonical stored value.
+        using var factory = new TestWebAppFactory(opts =>
+            opts.DiscoveryDocument.CorsOrigins.Add("https://app.example.com"));
+        using var client = CreateClient(factory);
+        // Send mixed-case — matches case-insensitively but the response must use the stored form.
+        client.DefaultRequestHeaders.Add("Origin", "HTTPS://APP.EXAMPLE.COM");
+
+        var response = await client.GetAsync(DiscoveryPath, TestContext.Current.CancellationToken);
+
+        response.Headers.TryGetValues("Access-Control-Allow-Origin", out var values).Should().BeTrue();
+        // Must be the stored canonical entry, not the raw request header.
+        values.Should().ContainSingle().Which.Should().Be("https://app.example.com");
+    }
+
+    // ── CORS startup validation ───────────────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("", "empty")]
+    [InlineData("https://example.com/path", "path")]
+    [InlineData("https://example.com?q=1", "query")]
+    [InlineData("https://example.com#frag", "fragment")]
+    [InlineData("https://user@example.com", "userinfo")]
+    [InlineData("*", "wildcard")]
+    [InlineData("https://*.example.com", "wildcard")]
+    [InlineData("null", "null literal")]
+    [InlineData("https://example.com\r\n", "CRLF")]
+    [InlineData("http://app.example.com", "http scheme without AllowInsecureIssuer")]
+    public void Startup_InvalidCorsOrigin_ThrowsViaValidateOnStart(string invalidOrigin, string reason)
+    {
+        var act = () => new TestWebAppFactory(opts =>
+            opts.DiscoveryDocument.CorsOrigins.Add(invalidOrigin)).CreateClient();
+
+        act.Should().Throw<Exception>(because: $"'{invalidOrigin}' is invalid ({reason})");
+    }
+
+    [Fact]
+    public void Startup_InvalidReferrerPolicy_ThrowsViaValidateOnStart()
+    {
+        var act = () => new TestWebAppFactory(opts =>
+            opts.SecurityHeaders.ReferrerPolicy = (ZeeKayDa.Auth.ReferrerPolicy)9999).CreateClient();
+
+        act.Should().Throw<Exception>().WithMessage("*ReferrerPolicy*");
+    }
+
+    [Fact]
+    public void Startup_InvalidCrossOriginResourcePolicy_ThrowsViaValidateOnStart()
+    {
+        var act = () => new TestWebAppFactory(opts =>
+            opts.SecurityHeaders.CrossOriginResourcePolicy = (ZeeKayDa.Auth.CrossOriginResourcePolicy)9999).CreateClient();
+
+        act.Should().Throw<Exception>().WithMessage("*CrossOriginResourcePolicy*");
+    }
+
+    [Fact]
+    public void Startup_CorsOriginAllowList_BecomesReadOnly()
+    {
+        using var factory = new TestWebAppFactory(opts =>
+            opts.DiscoveryDocument.CorsOrigins.Add("https://app.example.com"));
+        using var client = CreateClient(factory);
+        using var scope = factory.Services.CreateScope();
+        var options = scope.ServiceProvider.GetRequiredService<IOptions<AuthorizationServerOptions>>().Value;
+
+        options.DiscoveryDocument.CorsOrigins.IsReadOnly.Should().BeTrue();
+        var act = () => options.DiscoveryDocument.CorsOrigins.Add("https://admin.example.com");
+        act.Should().Throw<NotSupportedException>();
+    }
+
+    // ── Defensive security headers ────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetDiscoveryDocument_ReturnsXContentTypeOptionsNoSniff()
+    {
+        var response = await _client.GetAsync(DiscoveryPath, TestContext.Current.CancellationToken);
+
+        response.Headers.TryGetValues("X-Content-Type-Options", out var values).Should().BeTrue();
+        values.Should().ContainSingle().Which.Should().Be("nosniff");
+    }
+
+    [Fact]
+    public async Task GetDiscoveryDocument_ContentTypeOptionsDisabled_NoXContentTypeOptionsHeader()
+    {
+        using var factory = new TestWebAppFactory(opts =>
+            opts.SecurityHeaders.ContentTypeOptionsNoSniff = false);
+        using var client = CreateClient(factory);
+
+        var response = await client.GetAsync(DiscoveryPath, TestContext.Current.CancellationToken);
+
+        response.Headers.TryGetValues("X-Content-Type-Options", out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task GetDiscoveryDocument_ReturnsReferrerPolicyNoReferrer()
+    {
+        var response = await _client.GetAsync(DiscoveryPath, TestContext.Current.CancellationToken);
+
+        response.Headers.TryGetValues("Referrer-Policy", out var values).Should().BeTrue();
+        values.Should().ContainSingle().Which.Should().Be("no-referrer");
+    }
+
+    [Fact]
+    public async Task GetDiscoveryDocument_CustomReferrerPolicy_IsReflectedInHeader()
+    {
+        using var factory = new TestWebAppFactory(opts =>
+            opts.SecurityHeaders.ReferrerPolicy = ZeeKayDa.Auth.ReferrerPolicy.StrictOriginWhenCrossOrigin);
+        using var client = CreateClient(factory);
+
+        var response = await client.GetAsync(DiscoveryPath, TestContext.Current.CancellationToken);
+
+        response.Headers.TryGetValues("Referrer-Policy", out var values).Should().BeTrue();
+        values.Should().ContainSingle().Which.Should().Be("strict-origin-when-cross-origin");
+    }
+
+    [Fact]
+    public async Task GetDiscoveryDocument_ReturnsCrossOriginResourcePolicyCrossOrigin()
+    {
+        var response = await _client.GetAsync(DiscoveryPath, TestContext.Current.CancellationToken);
+
+        response.Headers.TryGetValues("Cross-Origin-Resource-Policy", out var values).Should().BeTrue();
+        values.Should().ContainSingle().Which.Should().Be("cross-origin");
+    }
+
+    [Fact]
+    public async Task GetDiscoveryDocument_CustomCrossOriginResourcePolicy_IsReflectedInHeader()
+    {
+        using var factory = new TestWebAppFactory(opts =>
+            opts.SecurityHeaders.CrossOriginResourcePolicy = ZeeKayDa.Auth.CrossOriginResourcePolicy.SameOrigin);
+        using var client = CreateClient(factory);
+
+        var response = await client.GetAsync(DiscoveryPath, TestContext.Current.CancellationToken);
+
+        response.Headers.TryGetValues("Cross-Origin-Resource-Policy", out var values).Should().BeTrue();
+        values.Should().ContainSingle().Which.Should().Be("same-origin");
+    }
+
+    // ── Route-group isolation ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task NonZeeKayDaRoute_DoesNotReceiveZeeKayDaSecurityHeaders()
+    {
+        // TestWebAppFactoryWithPing adds a /ping route outside the ZeeKayDa group.
+        using var factory = new TestWebAppFactoryWithPing();
+        using var client = CreateClient(factory);
+
+        var response = await client.GetAsync("/ping", TestContext.Current.CancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.TryGetValues("X-Content-Type-Options", out _).Should().BeFalse(
+            because: "ZeeKayDa security headers must not leak to application routes");
+        response.Headers.TryGetValues("Referrer-Policy", out _).Should().BeFalse();
+        response.Headers.TryGetValues("Cross-Origin-Resource-Policy", out _).Should().BeFalse();
+    }
+
+    // ── Insecure-issuer header ────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetDiscoveryDocument_AllowInsecureIssuer_True_ReturnsInsecureIssuerHeader()
+    {
+        using var factory = new TestWebAppFactory(opts =>
+        {
+            opts.Issuer = "http://localhost:5000";
+            opts.AllowInsecureIssuer = true;
+        });
+        using var client = CreateClient(factory, "http://localhost:5000");
+
+        var response = await client.GetAsync(DiscoveryPath, TestContext.Current.CancellationToken);
+
+        response.Headers.TryGetValues("X-ZeeKayDa-Insecure-Issuer", out var values).Should().BeTrue();
+        values.Should().ContainSingle().Which.Should().Be("true");
+    }
+
+    [Fact]
+    public async Task GetDiscoveryDocument_AllowInsecureIssuer_False_NoInsecureIssuerHeader()
+    {
+        var response = await _client.GetAsync(DiscoveryPath, TestContext.Current.CancellationToken);
+
+        response.Headers.TryGetValues("X-ZeeKayDa-Insecure-Issuer", out _).Should().BeFalse();
+    }
+
+    // ── Vary pipeline safety ──────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetDiscoveryDocument_ExplicitAllowList_VaryAppendsToExistingVary()
+    {
+        // Even if upstream middleware adds Vary: Accept-Encoding, our Vary: Origin must be
+        // appended, not replace it.
+        using var factory = new TestWebAppFactoryWithVaryMiddleware(
+            varyToAdd: "Accept-Encoding",
+            configureOptions: opts => opts.DiscoveryDocument.CorsOrigins.Add("https://app.example.com"));
+        using var client = CreateClient(factory);
+        client.DefaultRequestHeaders.Add("Origin", "https://app.example.com");
+
+        var response = await client.GetAsync(DiscoveryPath, TestContext.Current.CancellationToken);
+
+        var varyValues = response.Headers.Vary
+            .SelectMany(v => v.Split(',').Select(s => s.Trim()))
+            .ToList();
+        varyValues.Should().Contain("Accept-Encoding");
+        varyValues.Should().Contain("Origin");
     }
 }

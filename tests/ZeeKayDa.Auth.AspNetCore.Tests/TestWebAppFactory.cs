@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
@@ -71,6 +72,87 @@ internal sealed class TestWebAppFactory : WebApplicationFactory<TestWebAppFactor
 
         builder.Configure(app =>
         {
+            app.UseRouting();
+            app.UseEndpoints(endpoints => endpoints.MapZeeKayDaAuth());
+        });
+    }
+}
+
+/// <summary>
+/// A <see cref="WebApplicationFactory{TEntryPoint}"/> that adds a <c>/ping</c> route outside
+/// the ZeeKayDa.Auth endpoint group, for testing route-group isolation.
+/// </summary>
+internal sealed class TestWebAppFactoryWithPing : WebApplicationFactory<TestWebAppFactory>
+{
+    protected override IHostBuilder CreateHostBuilder()
+        => Host.CreateDefaultBuilder()
+               .ConfigureWebHostDefaults(webBuilder => webBuilder.UseTestServer());
+
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    {
+        builder.UseContentRoot(AppContext.BaseDirectory);
+
+        builder.ConfigureServices(services =>
+        {
+            services.AddRouting();
+            services.AddZeeKayDaAuth(options => options.Issuer = "https://test.example.com");
+        });
+
+        builder.Configure(app =>
+        {
+            app.UseRouting();
+            app.UseEndpoints(endpoints =>
+            {
+                endpoints.MapGet("/ping", () => Results.Ok("pong"));
+                endpoints.MapZeeKayDaAuth();
+            });
+        });
+    }
+}
+
+/// <summary>
+/// A <see cref="WebApplicationFactory{TEntryPoint}"/> that injects an upstream middleware adding a
+/// <c>Vary</c> response header, for testing additive Vary behaviour.
+/// </summary>
+internal sealed class TestWebAppFactoryWithVaryMiddleware : WebApplicationFactory<TestWebAppFactory>
+{
+    private readonly string _varyToAdd;
+    private readonly Action<AuthorizationServerOptions>? _configureOptions;
+
+    public TestWebAppFactoryWithVaryMiddleware(
+        string varyToAdd,
+        Action<AuthorizationServerOptions>? configureOptions = null)
+    {
+        _varyToAdd = varyToAdd;
+        _configureOptions = configureOptions;
+    }
+
+    protected override IHostBuilder CreateHostBuilder()
+        => Host.CreateDefaultBuilder()
+               .ConfigureWebHostDefaults(webBuilder => webBuilder.UseTestServer());
+
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    {
+        builder.UseContentRoot(AppContext.BaseDirectory);
+
+        builder.ConfigureServices(services =>
+        {
+            services.AddRouting();
+            services.AddZeeKayDaAuth(options =>
+            {
+                options.Issuer = "https://test.example.com";
+                _configureOptions?.Invoke(options);
+            });
+        });
+
+        var varyToAdd = _varyToAdd;
+        builder.Configure(app =>
+        {
+            app.Use(async (ctx, next) =>
+            {
+                ctx.Response.Headers.Append("Vary", varyToAdd);
+                await next();
+            });
             app.UseRouting();
             app.UseEndpoints(endpoints => endpoints.MapZeeKayDaAuth());
         });
