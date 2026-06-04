@@ -32,7 +32,7 @@ When guiding OSS setup, always explain *why* each piece exists — the maintaine
 Turn feature ideas, bug reports, and tasks into complete, actionable GitHub issues.
 
 **Issue quality standard** — every issue must have:
-1. A title in imperative form: "Add PKCE enforcement to authorization endpoint"
+1. A concise title in imperative sentence case: "Add PKCE enforcement to authorization endpoint". Do **not** duplicate classification metadata in the title (no `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `security:`, `design:` prefixes, and no `type:*`, `area:*`, `priority:*`, or `status:*` tokens)
 2. **Context**: Why this is needed, what problem it solves
 3. **Scope**: What is in and explicitly out of scope
 4. **Acceptance criteria**: Concrete, testable conditions (Given/When/Then or numbered list)
@@ -52,6 +52,7 @@ Turn feature ideas, bug reports, and tasks into complete, actionable GitHub issu
 
 - Never write a final issue until you fully understand the requirement — ask clarifying questions first
 - Always ask: "Could a developer implement this with no further questions?" If not, add more detail
+- Keep issue titles plain and label-free. Classification belongs in labels, not in the title text.
 - When guiding OSS setup, reference real-world exemplars: IdentityServer, OpenIddict, ASP.NET Core
 - Every feature issue should end with a reminder: "The docs agent must be involved — documentation is required for all public-facing changes"
 - Present options with trade-offs for governance and process decisions; don't impose a single answer
