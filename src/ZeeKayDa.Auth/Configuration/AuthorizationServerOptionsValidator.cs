@@ -226,6 +226,29 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
                 corsErrors.Add($"CORS origin '{origin}' must not contain a path component. Use 'scheme://host[:port]' only.");
                 continue;
             }
+
+            // CORS origins must use HTTPS in production. AllowInsecureIssuer permits HTTP only
+            // for loopback addresses (local development). This mirrors the issuer scheme rules.
+            var isHttpsOrigin = string.Equals(originUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase);
+            var isHttpOrigin  = string.Equals(originUri.Scheme, Uri.UriSchemeHttp,  StringComparison.OrdinalIgnoreCase);
+
+            if (!isHttpsOrigin && !(isHttpOrigin && options.AllowInsecureIssuer))
+            {
+                corsErrors.Add(
+                    $"CORS origin '{origin}' uses scheme '{originUri.Scheme}'. " +
+                    "Only 'https' is permitted in production. Set AllowInsecureIssuer = true to " +
+                    "permit HTTP CORS origins for local development and testing only.");
+                continue;
+            }
+
+            if (isHttpOrigin && options.AllowInsecureIssuer && !originUri.IsLoopback)
+            {
+                corsErrors.Add(
+                    $"CORS origin '{origin}' uses HTTP for a non-loopback host. " +
+                    "AllowInsecureIssuer only permits HTTP loopback CORS origins for local development and testing.");
+                continue;
+            }
+
             validOriginUris.Add(originUri);
         }
         if (corsErrors.Count > 0)
@@ -245,6 +268,22 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
             options.DiscoveryDocument.CorsOrigins.Clear();
             foreach (var c in canonical)
                 options.DiscoveryDocument.CorsOrigins.Add(c);
+        }
+
+        // Validate SecurityHeaders enum values at startup so an out-of-range cast produces a startup
+        // failure consistent with all other misconfiguration, rather than a 500 at request time.
+        if (!Enum.IsDefined(options.SecurityHeaders.ReferrerPolicy))
+        {
+            return ValidateOptionsResult.Fail(
+                $"AuthorizationServerOptions.SecurityHeaders.ReferrerPolicy value " +
+                $"'{(int)options.SecurityHeaders.ReferrerPolicy}' is not a valid {nameof(ReferrerPolicy)} enum member.");
+        }
+
+        if (!Enum.IsDefined(options.SecurityHeaders.CrossOriginResourcePolicy))
+        {
+            return ValidateOptionsResult.Fail(
+                $"AuthorizationServerOptions.SecurityHeaders.CrossOriginResourcePolicy value " +
+                $"'{(int)options.SecurityHeaders.CrossOriginResourcePolicy}' is not a valid {nameof(CrossOriginResourcePolicy)} enum member.");
         }
 
         // Validate AuthorizationEndpoint group

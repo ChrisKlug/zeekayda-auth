@@ -666,6 +666,132 @@ public sealed class AuthorizationServerOptionsValidatorTests
         result.FailureMessage.Should().Contain("DiscoveryDocument.CacheMaxAgeSeconds");
     }
 
+    // ── CorsOrigins — scheme validation ──────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Validate_CorsOrigin_Https_Succeeds()
+    {
+        var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
+        options.DiscoveryDocument.CorsOrigins.Add("https://app.example.com");
+
+        var result = Validate(options);
+
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Validate_CorsOrigin_HttpScheme_WithoutFlag_Fails()
+    {
+        var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
+        options.DiscoveryDocument.CorsOrigins.Add("http://app.example.com");
+
+        var result = Validate(options);
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("http://app.example.com");
+    }
+
+    [Fact]
+    public void Validate_CorsOrigin_FtpScheme_Fails()
+    {
+        var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
+        options.DiscoveryDocument.CorsOrigins.Add("ftp://files.example.com");
+
+        var result = Validate(options);
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("ftp://files.example.com");
+    }
+
+    [Fact]
+    public void Validate_CorsOrigin_HttpLoopback_WithFlag_Succeeds()
+    {
+        var options = new AuthorizationServerOptions
+        {
+            Issuer = "http://localhost",
+            AllowInsecureIssuer = true,
+        };
+        options.DiscoveryDocument.CorsOrigins.Add("http://localhost:3000");
+
+        var result = Validate(options);
+
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Validate_CorsOrigin_HttpNonLoopback_WithFlag_Fails()
+    {
+        var options = new AuthorizationServerOptions
+        {
+            Issuer = "http://localhost",
+            AllowInsecureIssuer = true,
+        };
+        options.DiscoveryDocument.CorsOrigins.Add("http://app.example.com");
+
+        var result = Validate(options);
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("loopback");
+    }
+
+    [Fact]
+    public void Validate_CorsOrigins_Canonicalized_AfterValidation()
+    {
+        var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
+        options.DiscoveryDocument.CorsOrigins.Add("HTTPS://APP.EXAMPLE.COM");
+
+        var result = Validate(options);
+
+        result.Succeeded.Should().BeTrue();
+        options.DiscoveryDocument.CorsOrigins.Should().ContainSingle()
+            .Which.Should().Be("https://app.example.com");
+    }
+
+    [Fact]
+    public void Validate_CorsOrigins_Deduplicated_AfterValidation()
+    {
+        var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
+        options.DiscoveryDocument.CorsOrigins.Add("https://app.example.com");
+        options.DiscoveryDocument.CorsOrigins.Add("HTTPS://APP.EXAMPLE.COM");
+
+        var result = Validate(options);
+
+        result.Succeeded.Should().BeTrue();
+        options.DiscoveryDocument.CorsOrigins.Should().ContainSingle();
+    }
+
+    // ── SecurityHeaders — enum validation ────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Validate_ReferrerPolicy_OutOfRange_Fails()
+    {
+        var options = new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            SecurityHeaders = { ReferrerPolicy = (ReferrerPolicy)9999 },
+        };
+
+        var result = Validate(options);
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("ReferrerPolicy");
+    }
+
+    [Fact]
+    public void Validate_CrossOriginResourcePolicy_OutOfRange_Fails()
+    {
+        var options = new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            SecurityHeaders = { CrossOriginResourcePolicy = (CrossOriginResourcePolicy)9999 },
+        };
+
+        var result = Validate(options);
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("CrossOriginResourcePolicy");
+    }
+
     private static void SetGroupProperty(AuthorizationServerOptions options, string propertyPath, string value)
     {
         var parts = propertyPath.Split('.');
