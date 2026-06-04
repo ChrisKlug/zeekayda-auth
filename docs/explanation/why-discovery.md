@@ -62,9 +62,11 @@ helps clients decide what they can safely ask the server to do.
 
 ZeeKayDa.Auth makes these values configurable from `AuthorizationServerOptions` so the published
 document matches the deployment. For scopes, the framework now reads `scopes_supported` from a
-scope repository abstraction. The default repository publishes the standard `openid` and `profile`
-scopes, and an in-memory repository can be registered when you want to replace those defaults or
-associate separate ID token and access token claim metadata with a scope definition.
+scope repository abstraction. The default repository is an
+`InMemoryScopeRepository(StandardScopes.All)`, so the standard `openid`, `profile`, `email`,
+`phone`, and `address` scopes are published unless you replace that repository. You can register
+your own repository when you want to change those defaults or associate separate ID token and
+access token claim metadata with a scope definition.
 
 Not every scope has to be advertised publicly. A scope can be present in the repository for
 internal or client-specific use and be excluded from discovery by setting `IsDiscoverable` to
