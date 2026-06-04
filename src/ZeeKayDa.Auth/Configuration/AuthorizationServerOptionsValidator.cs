@@ -180,7 +180,12 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
         var validOriginUris = new List<Uri>(options.DiscoveryDocument.CorsOrigins.Count);
         foreach (var origin in options.DiscoveryDocument.CorsOrigins)
         {
-            if (string.IsNullOrEmpty(origin))
+            if (origin is null)
+            {
+                corsErrors.Add("A null value is not a valid CORS origin.");
+                continue;
+            }
+            if (origin.Length == 0)
             {
                 corsErrors.Add("An empty string is not a valid CORS origin.");
                 continue;

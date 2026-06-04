@@ -58,8 +58,7 @@ internal sealed class DiscoveryEndpoint : IZeeKayDaEndpoint
             : "no-store";
 
         // CORS: wildcard when no allowlist is configured; otherwise strict origin matching.
-        var corsOrigins = _options.Value.DiscoveryDocument.CorsOrigins;
-        if (corsOrigins.Count == 0)
+        if (_allowedOrigins.Count == 0)
         {
             // No allowlist → allow any origin (wildcard mode).
             context.Response.Headers.AccessControlAllowOrigin = "*";
