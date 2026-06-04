@@ -661,7 +661,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     {
         using var factory = new TestWebAppFactory(opts =>
             opts.DiscoveryDocument.CorsOrigins.Add("https://app.example.com"));
-        using var _ = CreateClient(factory);
+        using var client = CreateClient(factory);
         using var scope = factory.Services.CreateScope();
         var options = scope.ServiceProvider.GetRequiredService<IOptions<AuthorizationServerOptions>>().Value;
 
