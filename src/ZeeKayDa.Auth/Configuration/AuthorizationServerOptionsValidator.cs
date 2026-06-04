@@ -142,6 +142,16 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
                 "AuthorizationServerOptions.GrantTypesSupported must not be null.");
         }
 
+        foreach (var grantType in options.GrantTypesSupported)
+        {
+            if (!Enum.IsDefined(grantType))
+            {
+                return ValidateOptionsResult.Fail(
+                    $"AuthorizationServerOptions.GrantTypesSupported contains invalid value '{(int)grantType}'. " +
+                    $"Expected a valid {nameof(GrantType)} enum member.");
+            }
+        }
+
         // Validate Token group
         if (options.TokenEndpoint.AuthMethodsSupported is null)
         {
@@ -152,6 +162,16 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
         if (options.TokenEndpoint.AuthMethodsSupported.Count == 0)
         {
             return ValidateOptionsResult.Fail(TokenEndpointAuthMethodsRequiredMessage);
+        }
+
+        foreach (var authMethod in options.TokenEndpoint.AuthMethodsSupported)
+        {
+            if (!Enum.IsDefined(authMethod))
+            {
+                return ValidateOptionsResult.Fail(
+                    $"AuthorizationServerOptions.TokenEndpoint.AuthMethodsSupported contains invalid value '{(int)authMethod}'. " +
+                    $"Expected a valid {nameof(TokenEndpointAuthMethod)} enum member.");
+            }
         }
 
         // ADR 0002 §4: If client_credentials grant is supported, must have at least one non-None auth method

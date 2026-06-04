@@ -351,6 +351,28 @@ public sealed class DiscoveryEndpointTests : IDisposable
     }
 
     [Fact]
+    public void Startup_OutOfRangeGrantType_ThrowsViaValidateOnStart()
+    {
+        var act = () => new TestWebAppFactory(opts =>
+        {
+            opts.GrantTypesSupported = [(GrantType)9999];
+        }).CreateClient();
+
+        act.Should().Throw<Exception>().WithMessage("*GrantTypesSupported*");
+    }
+
+    [Fact]
+    public void Startup_OutOfRangeTokenEndpointAuthMethod_ThrowsViaValidateOnStart()
+    {
+        var act = () => new TestWebAppFactory(opts =>
+        {
+            opts.TokenEndpoint.AuthMethodsSupported = [(TokenEndpointAuthMethod)9999];
+        }).CreateClient();
+
+        act.Should().Throw<Exception>().WithMessage("*TokenEndpoint.AuthMethodsSupported*");
+    }
+
+    [Fact]
     public void Startup_EmptyCodeChallengeMethodsSupported_ThrowsViaValidateOnStart()
     {
         var act = () => new TestWebAppFactory(opts =>
