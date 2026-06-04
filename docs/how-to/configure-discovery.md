@@ -153,7 +153,8 @@ By default, ZeeKayDa.Auth derives these values from `Issuer`:
 - `token_endpoint`
 - `jwks_uri`
 
-Override them if your externally visible URLs differ from the issuer-derived defaults.
+Override them if your externally visible URLs differ from the issuer-derived defaults on the same
+authority.
 
 ```csharp
 using ZeeKayDa.Auth;
@@ -164,9 +165,9 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddZeeKayDaAuth(options =>
 {
     options.Issuer = "https://id.example.com/tenant-a";
-    options.AuthorizationEndpoint.Uri = "https://login.example.com/tenant-a/connect/authorize";
-    options.TokenEndpoint.Uri = "https://login.example.com/tenant-a/connect/token";
-    options.JwksEndpoint.Uri = "https://login.example.com/tenant-a/connect/jwks";
+    options.AuthorizationEndpoint.Uri = "https://id.example.com/tenant-a/custom/authorize";
+    options.TokenEndpoint.Uri = "https://id.example.com/tenant-a/custom/token";
+    options.JwksEndpoint.Uri = "https://id.example.com/tenant-a/custom/jwks";
 });
 
 var app = builder.Build();
@@ -214,8 +215,10 @@ ZeeKayDa.Auth validates discovery-related options at startup. Common failures in
 - non-absolute issuer values
 - HTTP issuers without `AllowInsecureIssuer = true`
 - HTTP issuers on non-loopback hosts
+- non-canonical issuers (uppercase scheme/host or explicit default port)
 - issuer values with a query string or fragment
 - issuer values with user information
+- endpoint overrides with a different authority than `Issuer`
 - null metadata collections
 - empty required metadata collections
 - scope repositories that do not include `openid`

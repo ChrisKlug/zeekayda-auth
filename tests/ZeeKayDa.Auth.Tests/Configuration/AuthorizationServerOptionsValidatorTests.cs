@@ -184,6 +184,59 @@ public sealed class AuthorizationServerOptionsValidatorTests
         result.Succeeded.Should().BeTrue();
     }
 
+    [Fact]
+    public void Validate_IssuerWithUppercaseHost_FailsWithCanonicalSuggestion()
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://AUTH.example.com",
+        });
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("is not canonical");
+        result.FailureMessage.Should().Contain("https://auth.example.com");
+    }
+
+    [Fact]
+    public void Validate_IssuerWithUppercaseScheme_FailsWithCanonicalSuggestion()
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "HTTPS://auth.example.com",
+        });
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("is not canonical");
+        result.FailureMessage.Should().Contain("https://auth.example.com");
+    }
+
+    [Fact]
+    public void Validate_IssuerWithExplicitDefaultHttpsPort_FailsWithCanonicalSuggestion()
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com:443",
+        });
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("is not canonical");
+        result.FailureMessage.Should().Contain("https://auth.example.com");
+    }
+
+    [Fact]
+    public void Validate_IssuerWithExplicitDefaultHttpPortForLoopback_FailsWithCanonicalSuggestion()
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "http://localhost:80",
+            AllowInsecureIssuer = true,
+        });
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("is not canonical");
+        result.FailureMessage.Should().Contain("http://localhost");
+    }
+
     [Theory]
     [InlineData("ftp://localhost")]
     [InlineData("file:///tmp/auth")]
@@ -573,6 +626,64 @@ public sealed class AuthorizationServerOptionsValidatorTests
         var result = Validate(options);
 
         result.Succeeded.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("AuthorizationEndpoint.Uri", "https://evil.example.com/connect/authorize")]
+    [InlineData("TokenEndpoint.Uri", "https://evil.example.com/connect/token")]
+    [InlineData("JwksEndpoint.Uri", "https://evil.example.com/connect/jwks")]
+    public void Validate_EndpointOverrideDifferentAuthority_Fails(string propertyPath, string value)
+    {
+        var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
+        SetGroupProperty(options, propertyPath, value);
+
+        var result = Validate(options);
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("same authority");
+    }
+
+    [Theory]
+    [InlineData("AuthorizationEndpoint.Uri", "https://auth.example.com:443/connect/authorize")]
+    [InlineData("TokenEndpoint.Uri", "https://auth.example.com:443/connect/token")]
+    [InlineData("JwksEndpoint.Uri", "https://auth.example.com:443/connect/jwks")]
+    public void Validate_EndpointOverrideSameHostWithDefaultPort_Succeeds(string propertyPath, string value)
+    {
+        var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
+        SetGroupProperty(options, propertyPath, value);
+
+        var result = Validate(options);
+
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("AuthorizationEndpoint.Uri", "https://AUTH.example.com/connect/authorize")]
+    [InlineData("TokenEndpoint.Uri", "https://AUTH.example.com/connect/token")]
+    [InlineData("JwksEndpoint.Uri", "https://AUTH.example.com/connect/jwks")]
+    public void Validate_EndpointOverrideSameAuthorityCaseInsensitiveHost_Succeeds(string propertyPath, string value)
+    {
+        var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
+        SetGroupProperty(options, propertyPath, value);
+
+        var result = Validate(options);
+
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("AuthorizationEndpoint.Uri", "https://auth.example.com:8443/connect/authorize")]
+    [InlineData("TokenEndpoint.Uri", "https://auth.example.com:8443/connect/token")]
+    [InlineData("JwksEndpoint.Uri", "https://auth.example.com:8443/connect/jwks")]
+    public void Validate_EndpointOverrideDifferentPort_Fails(string propertyPath, string value)
+    {
+        var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
+        SetGroupProperty(options, propertyPath, value);
+
+        var result = Validate(options);
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("same authority");
     }
 
     [Theory]

@@ -25,7 +25,7 @@ rationale, see [Why discovery matters](../explanation/why-discovery.md).
 - Path-bearing issuer: `{issuer-path}/.well-known/openid-configuration`
 
 The route is constrained to the configured issuer host. A request for the same path on a different
-host is not handled by ZeeKayDa.Auth.
+host is not handled by ZeeKayDa.Auth. Requests over HTTP are rejected for non-loopback hosts.
 
 Examples:
 
@@ -66,6 +66,7 @@ app.Run();
 ### Status code
 
 - `200 OK` when discovery is configured correctly
+- `421 Misdirected Request` when the request is HTTP on a non-loopback host
 
 ### Response headers
 
@@ -235,8 +236,10 @@ Startup fails when:
 - `Issuer` is not an absolute URI
 - `Issuer` uses HTTP and `AllowInsecureIssuer` is not enabled
 - `Issuer` uses HTTP with a non-loopback host
+- `Issuer` is non-canonical (uppercase scheme/host or explicit default port)
 - `Issuer` contains a query string or fragment
 - `Issuer` contains user information
+- an endpoint override authority differs from `Issuer`
 - `Response.TypesSupported` or `IdToken.SigningAlgValuesSupported` is null or empty
 - any supported metadata collection is null
 - a custom scope repository is configured with blank or duplicate scope names

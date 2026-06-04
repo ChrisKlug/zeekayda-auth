@@ -76,7 +76,7 @@ Common startup failures and their causes:
 
 | Failure | Cause |
 |---|---|
-| `Issuer` validation error | `Issuer` is not set, not an absolute URI, uses HTTP without `AllowInsecureIssuer`, uses HTTP on a non-loopback host, or contains query, fragment, or user information |
+| `Issuer` validation error | `Issuer` is not set, not an absolute URI, is not canonical (uppercase scheme/host or explicit default port), uses HTTP without `AllowInsecureIssuer`, uses HTTP on a non-loopback host, or contains query, fragment, or user information |
 | `Response.TypesSupported` validation error | The collection was set to `null` or emptied |
 | `IdToken.SigningAlgValuesSupported` validation error | The collection was set to `null` or emptied |
 | Other collection validation errors | Any of the remaining `ICollection` properties was set to `null` |
@@ -110,7 +110,8 @@ a reminder that this setting is active.
 
 > Warning: Never set `AllowInsecureIssuer = true` in a production environment. It only permits HTTP
 > loopback issuers for local development and tests. HTTP issuers allow token responses to be
-> intercepted and identity documents to be forged.
+> intercepted and identity documents to be forged. ZeeKayDa.Auth also rejects non-HTTPS
+> non-loopback protocol requests with `421 Misdirected Request`.
 
 ## 5. Use the builder for optional features
 

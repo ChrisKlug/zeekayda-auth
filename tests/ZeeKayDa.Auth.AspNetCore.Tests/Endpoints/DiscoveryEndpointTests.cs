@@ -271,17 +271,16 @@ public sealed class DiscoveryEndpointTests : IDisposable
     {
         using var factory = new TestWebAppFactory(opts => opts.Issuer = null);
 
-        // Issuer = null fails in Map() (route registration) before ValidateOnStart can run.
+        // MapZeeKayDaAuth now forces options validation first, so null issuer failures match
+        // ValidateOnStart (OptionsValidationException message text).
         var act = () => factory.CreateClient();
 
-        act.Should().Throw<Exception>();
+        act.Should().Throw<Exception>().WithMessage("*AuthorizationServerOptions.Issuer must be set to a non-empty value.*");
     }
 
     [Fact]
     public void Startup_HttpIssuerWithoutFlag_ThrowsViaValidateOnStart()
     {
-        // http://auth.example.com is non-null (passes the Map() guard) but invalid.
-        // ValidateOnStart must surface the failure before the host accepts requests.
         var act = () => new TestWebAppFactory(opts =>
         {
             opts.Issuer = "http://auth.example.com";
@@ -289,6 +288,29 @@ public sealed class DiscoveryEndpointTests : IDisposable
         }).CreateClient();
 
         act.Should().Throw<Exception>().WithMessage("*HTTPS*");
+    }
+
+    [Fact]
+    public void Startup_MalformedIssuer_ThrowsValidatorMessage()
+    {
+        var act = () => new TestWebAppFactory(opts =>
+        {
+            opts.Issuer = "not-a-valid-uri";
+        }).CreateClient();
+
+        act.Should().Throw<Exception>().WithMessage("*not a valid absolute URI*");
+    }
+
+    [Fact]
+    public void Startup_EndpointOverrideDifferentAuthority_ThrowsViaValidateOnStart()
+    {
+        var act = () => new TestWebAppFactory(opts =>
+        {
+            opts.Issuer = "https://test.example.com";
+            opts.TokenEndpoint.Uri = "https://login.example.com/custom/token";
+        }).CreateClient();
+
+        act.Should().Throw<Exception>().WithMessage("*same authority*");
     }
 
     [Fact]
@@ -407,6 +429,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     {
         using var factory = new TestWebAppFactory(opts =>
         {
+            opts.Issuer = "https://login.example.com";
             opts.AuthorizationEndpoint.Uri = "https://login.example.com/custom/authorize?prompt=login";
             opts.TokenEndpoint.Uri = "https://login.example.com/custom/token?tenant=1";
             opts.JwksEndpoint.Uri = "https://login.example.com/keys";
@@ -417,6 +440,46 @@ public sealed class DiscoveryEndpointTests : IDisposable
         var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+    }
+
+    [Theory]
+    [InlineData("GET", DiscoveryPath)]
+    [InlineData("GET", "/connect/authorize")]
+    [InlineData("POST", "/connect/authorize")]
+    [InlineData("POST", "/connect/token")]
+    [InlineData("GET", "/connect/jwks")]
+    public async Task HttpRequests_NonLoopback_AreRejectedWith421(string method, string path)
+    {
+        using var client = CreateClient(_factory, "http://test.example.com");
+        using var request = new HttpRequestMessage(new HttpMethod(method), path);
+
+        var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.MisdirectedRequest);
+    }
+
+    [Theory]
+    [InlineData("GET", DiscoveryPath, HttpStatusCode.OK)]
+    [InlineData("GET", "/connect/authorize", HttpStatusCode.NotImplemented)]
+    [InlineData("POST", "/connect/authorize", HttpStatusCode.NotImplemented)]
+    [InlineData("POST", "/connect/token", HttpStatusCode.NotImplemented)]
+    [InlineData("GET", "/connect/jwks", HttpStatusCode.NotImplemented)]
+    public async Task HttpRequests_LoopbackWithAllowInsecureIssuer_AreAllowed(
+        string method,
+        string path,
+        HttpStatusCode expectedStatusCode)
+    {
+        using var factory = new TestWebAppFactory(opts =>
+        {
+            opts.Issuer = "http://localhost:5000";
+            opts.AllowInsecureIssuer = true;
+        });
+        using var client = CreateClient(factory, "http://localhost:5000");
+        using var request = new HttpRequestMessage(new HttpMethod(method), path);
+
+        var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
+
+        response.StatusCode.Should().Be(expectedStatusCode);
     }
 
     // ── Enum field serialization ──────────────────────────────────────────────────────────────────

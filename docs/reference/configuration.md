@@ -76,6 +76,10 @@ Intended for local development and automated testing only.
 > Warning: Never set `AllowInsecureIssuer = true` in production. An HTTP issuer allows token
 > responses to be intercepted and identity documents to be forged. When this flag is enabled,
 > `InsecureIssuerWarningService` emits a warning via `ILogger` at every startup.
+>
+> Request-time enforcement also applies: ZeeKayDa.Auth protocol endpoints reject non-HTTPS
+> non-loopback requests with `421 Misdirected Request`. `AllowInsecureIssuer` only permits HTTP on
+> loopback hosts.
 
 ```csharp
 // Local development only
@@ -100,11 +104,12 @@ document. When `null`, ZeeKayDa.Auth derives the URL from `Issuer` as
 `{issuer}/connect/authorize`.
 
 Set this when the URL your clients should use differs from the issuer-derived default — for example,
-when a reverse proxy rewrites paths. The value must be an absolute HTTPS URI without user
-information or fragment. Query strings are permitted by RFC 6749 Section 3.1.
+when a reverse proxy rewrites paths under the same authority. The value must be an absolute HTTPS
+URI without user information or fragment. Query strings are permitted by RFC 6749 Section 3.1. The
+override must use the same authority as `Issuer`.
 
 ```csharp
-options.AuthorizationEndpoint.Uri = "https://login.example.com/tenant-a/connect/authorize";
+options.AuthorizationEndpoint.Uri = "https://id.example.com/tenant-a/custom/authorize";
 ```
 
 ---
@@ -162,9 +167,10 @@ Group for token endpoint settings.
 `null`, ZeeKayDa.Auth derives the URL from `Issuer` as `{issuer}/connect/token`.
 
 The value must be an absolute HTTPS URI without user information or fragment.
+The override must use the same authority as `Issuer`.
 
 ```csharp
-options.TokenEndpoint.Uri = "https://login.example.com/tenant-a/connect/token";
+options.TokenEndpoint.Uri = "https://id.example.com/tenant-a/custom/token";
 ```
 
 ---
@@ -183,9 +189,10 @@ Group for JSON Web Key Set endpoint settings.
 ZeeKayDa.Auth derives the URL from `Issuer` as `{issuer}/connect/jwks`.
 
 The value must be an absolute HTTPS URI without user information, query, or fragment.
+The override must use the same authority as `Issuer`.
 
 ```csharp
-options.JwksEndpoint.Uri = "https://login.example.com/tenant-a/connect/jwks";
+options.JwksEndpoint.Uri = "https://id.example.com/tenant-a/custom/jwks";
 ```
 
 ---
@@ -480,8 +487,10 @@ only when all relying parties are co-hosted on the same origin or site as the au
 | `Issuer` must use HTTPS | `Issuer` uses HTTP and `AllowInsecureIssuer` is `false` |
 | HTTP issuer must be loopback | `Issuer` uses HTTP with a non-loopback host |
 | `Issuer` must not have user information | `Issuer` contains `user:password@host` userinfo |
+| `Issuer` must be canonical | `Issuer` uses uppercase scheme or host, or explicitly specifies a default port (`:443` for HTTPS, `:80` for HTTP loopback) |
 | Endpoint overrides must be absolute HTTPS URIs | an override is relative, uses an unsupported scheme, or uses HTTP without `AllowInsecureIssuer` |
 | HTTP endpoint overrides must be loopback | an override uses HTTP with a non-loopback host |
+| Endpoint overrides must share issuer authority | an override host/port differs from `Issuer` |
 | Endpoint overrides must not have user information | an override contains `user:password@host` userinfo |
 | Endpoint fragments are rejected | `AuthorizationEndpoint.Uri`, `TokenEndpoint.Uri`, or `JwksEndpoint.Uri` contains `#` |
 | `JwksEndpoint.Uri` must not have a query string | `JwksEndpoint.Uri` contains `?` |
