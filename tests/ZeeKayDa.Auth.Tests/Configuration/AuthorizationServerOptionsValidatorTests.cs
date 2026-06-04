@@ -760,6 +760,28 @@ public sealed class AuthorizationServerOptionsValidatorTests
         options.DiscoveryDocument.CorsOrigins.Should().ContainSingle();
     }
 
+    [Theory]
+    [InlineData(null, "A null value is not a valid CORS origin.")]
+    [InlineData("", "An empty string is not a valid CORS origin.")]
+    [InlineData("https://app.example.com\r\nx:y", "must not contain CR or LF characters")]
+    [InlineData("null", "'null' is not a valid CORS origin.")]
+    [InlineData("https://*.example.com", "must not contain wildcard characters")]
+    [InlineData("not-a-uri", "is not a valid absolute URI")]
+    [InlineData("https://user@app.example.com", "must not contain user information")]
+    [InlineData("https://app.example.com?x=1", "must not contain a query component")]
+    [InlineData("https://app.example.com#frag", "must not contain a fragment component")]
+    [InlineData("https://app.example.com/path", "must not contain a path component")]
+    public void Validate_CorsOrigins_InvalidValues_FailWithSpecificReason(string? origin, string expectedMessageFragment)
+    {
+        var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
+        options.DiscoveryDocument.CorsOrigins.Add(origin!);
+
+        var result = Validate(options);
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain(expectedMessageFragment);
+    }
+
     // ── SecurityHeaders — enum validation ────────────────────────────────────────────────────────
 
     [Fact]
