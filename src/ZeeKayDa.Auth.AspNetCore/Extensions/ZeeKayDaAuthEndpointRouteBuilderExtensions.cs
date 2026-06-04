@@ -1,3 +1,4 @@
+using System.Net;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -34,9 +35,33 @@ public static class ZeeKayDaAuthEndpointRouteBuilderExtensions
     {
         ArgumentNullException.ThrowIfNull(endpoints);
 
+        // Force eager options evaluation so Map-time failures match ValidateOnStart
+        // (OptionsValidationException with the validator's exact messages).
+        _ = endpoints.ServiceProvider
+            .GetRequiredService<IOptions<AuthorizationServerOptions>>()
+            .Value;
+
         // All ZeeKayDa.Auth endpoints are grouped so that the security-headers filter applies
         // only to protocol endpoints and not to the host application's own routes.
         var group = endpoints.MapGroup("");
+
+        group.AddEndpointFilter(async (context, next) =>
+        {
+            var opts = context.HttpContext.RequestServices
+                .GetRequiredService<IOptions<AuthorizationServerOptions>>().Value;
+
+            if (context.HttpContext.Request.IsHttps ||
+                (opts.AllowInsecureIssuer && IsLoopbackHost(context.HttpContext.Request.Host.Host)))
+            {
+                return await next(context);
+            }
+
+            return Results.Problem(
+                statusCode: StatusCodes.Status421MisdirectedRequest,
+                title: "HTTPS required",
+                detail: "ZeeKayDa.Auth endpoints require HTTPS for non-loopback requests. " +
+                        "Configure TLS, or use AllowInsecureIssuer only for loopback development.");
+        });
 
         group.AddEndpointFilter(async (context, next) =>
         {
@@ -65,5 +90,21 @@ public static class ZeeKayDaAuthEndpointRouteBuilderExtensions
         }
 
         return endpoints;
+    }
+
+    private static bool IsLoopbackHost(string host)
+    {
+        if (string.IsNullOrWhiteSpace(host))
+        {
+            return false;
+        }
+
+        if (string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return IPAddress.TryParse(host, out var ipAddress)
+               && IPAddress.IsLoopback(ipAddress);
     }
 }

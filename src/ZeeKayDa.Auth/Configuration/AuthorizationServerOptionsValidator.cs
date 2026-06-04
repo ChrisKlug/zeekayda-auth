@@ -108,6 +108,19 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
                 "AllowInsecureIssuer only permits HTTP loopback issuers for local development and testing.");
         }
 
+        var issuerScheme = GetScheme(options.Issuer!);
+        var issuerAuthority = GetAuthority(options.Issuer!);
+        var issuerHost = GetHost(issuerAuthority);
+        var canonicalIssuer = BuildCanonicalIssuer(uri);
+        var hasExplicitDefaultPort = HasExplicitDefaultPort(issuerAuthority, uri);
+        if (!string.Equals(issuerScheme, uri.Scheme, StringComparison.Ordinal) ||
+            !string.Equals(issuerHost, issuerHost.ToLowerInvariant(), StringComparison.Ordinal) ||
+            hasExplicitDefaultPort)
+        {
+            return ValidateOptionsResult.Fail(
+                $"AuthorizationServerOptions.Issuer '{options.Issuer}' is not canonical. Use '{canonicalIssuer}'.");
+        }
+
         // Validate Response group
         if (options.Response.TypesSupported is null)
         {
@@ -298,7 +311,14 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
         }
 
         // Validate endpoint URI overrides — RFC 8414 §2 requires all metadata URLs to use HTTPS.
-        static ValidateOptionsResult? ValidateEndpointUri(string propertyName, string? value, bool allowInsecure, bool rejectQuery = false, bool rejectFragment = false)
+        static ValidateOptionsResult? ValidateEndpointUri(
+            string propertyName,
+            string? value,
+            bool allowInsecure,
+            Uri issuerUri,
+            string issuerValue,
+            bool rejectQuery = false,
+            bool rejectFragment = false)
         {
             if (value is null) return null;
 
@@ -323,6 +343,11 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
                     $"AuthorizationServerOptions.{propertyName} '{value}' uses HTTP for a non-loopback host. " +
                     "AllowInsecureIssuer only permits HTTP loopback endpoints for local development and testing.");
 
+            if (!HasSameAuthority(uri, issuerUri))
+                return ValidateOptionsResult.Fail(
+                    $"AuthorizationServerOptions.{propertyName} '{value}' must use the same authority as " +
+                    $"AuthorizationServerOptions.Issuer '{issuerValue}'.");
+
             if (rejectQuery && uri.Query.Length > 0)
                 return ValidateOptionsResult.Fail(
                     $"AuthorizationServerOptions.{propertyName} '{value}' must not contain a query component ('?').");
@@ -337,13 +362,32 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
         // RFC 6749 §3.1 and §3.2: authorization and token endpoint URIs MUST NOT include a fragment.
         // Query components are explicitly permitted on the authorization endpoint (RFC 6749 §3.1)
         // and are not prohibited on the token endpoint.
-        if (ValidateEndpointUri(nameof(options.AuthorizationEndpoint.Uri), options.AuthorizationEndpoint.Uri, options.AllowInsecureIssuer, rejectFragment: true) is { } aeError)
+        if (ValidateEndpointUri(
+                nameof(options.AuthorizationEndpoint.Uri),
+                options.AuthorizationEndpoint.Uri,
+                options.AllowInsecureIssuer,
+                uri,
+                options.Issuer!,
+                rejectFragment: true) is { } aeError)
             return aeError;
 
-        if (ValidateEndpointUri(nameof(options.TokenEndpoint.Uri), options.TokenEndpoint.Uri, options.AllowInsecureIssuer, rejectFragment: true) is { } teError)
+        if (ValidateEndpointUri(
+                nameof(options.TokenEndpoint.Uri),
+                options.TokenEndpoint.Uri,
+                options.AllowInsecureIssuer,
+                uri,
+                options.Issuer!,
+                rejectFragment: true) is { } teError)
             return teError;
 
-        if (ValidateEndpointUri(nameof(options.JwksEndpoint.Uri), options.JwksEndpoint.Uri, options.AllowInsecureIssuer, rejectQuery: true, rejectFragment: true) is { } jwksError)
+        if (ValidateEndpointUri(
+                nameof(options.JwksEndpoint.Uri),
+                options.JwksEndpoint.Uri,
+                options.AllowInsecureIssuer,
+                uri,
+                options.Issuer!,
+                rejectQuery: true,
+                rejectFragment: true) is { } jwksError)
             return jwksError;
 
         // IValidateOptions<T> is synchronous; block here so ValidateOnStart can fail fast.
@@ -356,5 +400,95 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
         }
 
         return ValidateOptionsResult.Success;
+    }
+
+    private static bool HasSameAuthority(Uri endpointUri, Uri issuerUri)
+        => string.Equals(endpointUri.Host, issuerUri.Host, StringComparison.OrdinalIgnoreCase)
+           && endpointUri.Port == issuerUri.Port;
+
+    private static string BuildCanonicalIssuer(Uri issuerUri)
+    {
+        var scheme = issuerUri.Scheme.ToLowerInvariant();
+        var host = issuerUri.Host.ToLowerInvariant();
+        var isDefaultPort =
+            (string.Equals(scheme, Uri.UriSchemeHttps, StringComparison.Ordinal) && issuerUri.Port == 443) ||
+            (string.Equals(scheme, Uri.UriSchemeHttp, StringComparison.Ordinal) && issuerUri.Port == 80);
+
+        var builder = new UriBuilder(issuerUri)
+        {
+            Scheme = scheme,
+            Host = host,
+            Port = isDefaultPort ? -1 : issuerUri.Port,
+        };
+
+        var canonical = builder.Uri.AbsoluteUri;
+        return issuerUri.AbsolutePath == "/" && canonical.EndsWith("/", StringComparison.Ordinal)
+            ? canonical[..^1]
+            : canonical;
+    }
+
+    private static string GetScheme(string issuer)
+    {
+        var separatorIndex = issuer.IndexOf("://", StringComparison.Ordinal);
+        return separatorIndex > 0
+            ? issuer[..separatorIndex]
+            : string.Empty;
+    }
+
+    private static string GetAuthority(string issuer)
+    {
+        var separatorIndex = issuer.IndexOf("://", StringComparison.Ordinal);
+        if (separatorIndex < 0) return string.Empty;
+
+        var authorityStart = separatorIndex + 3;
+        var authorityEnd = issuer.IndexOf('/', authorityStart);
+        if (authorityEnd < 0)
+        {
+            authorityEnd = issuer.Length;
+        }
+
+        return issuer[authorityStart..authorityEnd];
+    }
+
+    private static string GetHost(string authority)
+    {
+        if (authority.Length == 0) return string.Empty;
+
+        if (authority[0] == '[')
+        {
+            var bracketEnd = authority.IndexOf(']');
+            return bracketEnd > 1
+                ? authority[1..bracketEnd]
+                : string.Empty;
+        }
+
+        var colonIndex = authority.IndexOf(':');
+        return colonIndex >= 0
+            ? authority[..colonIndex]
+            : authority;
+    }
+
+    private static bool HasExplicitDefaultPort(string authority, Uri issuerUri)
+    {
+        if (!HasExplicitPort(authority))
+        {
+            return false;
+        }
+
+        return (string.Equals(issuerUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) && issuerUri.Port == 443)
+               || (string.Equals(issuerUri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) && issuerUri.Port == 80);
+    }
+
+    private static bool HasExplicitPort(string authority)
+    {
+        if (authority.Length == 0) return false;
+
+        if (authority[0] == '[')
+        {
+            var bracketEnd = authority.IndexOf(']');
+            return bracketEnd >= 0 && bracketEnd + 1 < authority.Length && authority[bracketEnd + 1] == ':';
+        }
+
+        return authority.Contains(':');
     }
 }
