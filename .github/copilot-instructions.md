@@ -102,6 +102,7 @@ Every feature or change follows this lifecycle. Agents are responsible for their
 
 - Every change starts with an issue
 - Issues use the project's label taxonomy (area:*, type:*, priority:*)
+- Issue titles are imperative sentence case and must not duplicate label metadata (`feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `security:`, `design:`, or `type:*`/`area:*`/`priority:*`/`status:*` in the title)
 - PRs reference their issue (`Closes #N`)
 - PR titles follow Conventional Commits format: `feat:`, `fix:`, `docs:`, `test:`, `chore:`, `security:`
 - PRs touching public API must include or reference documentation changes
