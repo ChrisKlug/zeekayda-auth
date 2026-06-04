@@ -41,6 +41,16 @@ This applies to everything except trivial typo fixes. Opening an issue first:
 
 If you want to work on an existing issue, leave a comment to say so. A maintainer will assign it to you.
 
+### Issue Title Format
+
+Issue titles must be written in imperative sentence case and describe the work directly.
+
+- ✅ `Add PKCE enforcement to authorization endpoint`
+- ❌ `feat: add PKCE enforcement to authorization endpoint`
+- ❌ `type:feature area:core Add PKCE enforcement to authorization endpoint`
+
+Classification belongs in labels (`type:*`, `area:*`, `priority:*`, `status:*`), not in the title.
+
 ---
 
 ## Reporting Bugs
