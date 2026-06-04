@@ -54,16 +54,17 @@ static void CheckRegression(string metric, double? baseline, double? current, do
     }
 
     var delta = current.Value - baseline.Value;
+    var allowedRegressionText = allowedRegression.ToString("F2", CultureInfo.InvariantCulture) + " pp";
 
     Console.WriteLine(
-        $"{metric} coverage delta: {delta:+0.00;-0.00;0.00} percentage points " +
-        $"(baseline: {baseline.Value:F2}%, current: {current.Value:F2}%, allowed: {allowedRegression:F2} pp)");
+        $"{metric} coverage delta: {FormatDelta(delta)} percentage points " +
+        $"(baseline: {FormatPercent(baseline)}, current: {FormatPercent(current)}, allowed: {allowedRegressionText})");
 
     if (delta < -allowedRegression)
     {
         failures.Add(
-            $"{metric.ToLowerInvariant()} coverage {baseline.Value:F2}% -> {current.Value:F2}% " +
-            $"(delta {delta:+0.00;-0.00;0.00} pp, allowed -{allowedRegression:F2} pp)");
+            $"{metric.ToLowerInvariant()} coverage {FormatPercent(baseline)} -> {FormatPercent(current)} " +
+            $"(delta {FormatDelta(delta)}, allowed -{allowedRegressionText})");
     }
 }
 

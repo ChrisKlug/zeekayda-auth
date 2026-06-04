@@ -542,14 +542,14 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_DefaultScopeRepositoryWithOpenId_Succeeds()
+    public void Validate_DefaultInMemoryScopesWithOpenId_Succeeds()
     {
         var result = Validate(
             new AuthorizationServerOptions
             {
                 Issuer = "https://auth.example.com",
             },
-            new DefaultScopeRepository());
+            new InMemoryScopeRepository(StandardScopes.All));
 
         result.Succeeded.Should().BeTrue();
     }

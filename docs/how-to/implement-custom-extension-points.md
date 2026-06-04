@@ -121,7 +121,7 @@ The framework passes `HttpContext.RequestAborted` to your implementation. You sh
 - **Call `cancellationToken.ThrowIfCancellationRequested()`** at the start of synchronous in-memory implementations so a cancelled request doesn't waste work building a response that will be discarded.
 - **Never silently swallow `OperationCanceledException`**. Let it propagate — the framework treats it as a client disconnect and stops the request pipeline cleanly.
 
-The in-tree `InMemoryScopeRepository` and `DefaultScopeRepository` demonstrate the minimum pattern for synchronous in-memory implementations:
+The in-tree `InMemoryScopeRepository` demonstrates the minimum pattern for synchronous in-memory implementations:
 
 ```csharp
 public ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default)

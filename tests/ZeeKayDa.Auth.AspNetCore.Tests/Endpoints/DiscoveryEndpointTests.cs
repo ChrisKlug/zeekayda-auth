@@ -135,7 +135,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
 
         doc!.RootElement.GetProperty("scopes_supported").EnumerateArray()
             .Select(element => element.GetString())
-            .Should().Equal(StandardScopes.OpenId.Name, StandardScopes.Profile.Name);
+            .Should().Equal(StandardScopes.All.Select(scope => scope.Name));
 
         doc.RootElement.GetProperty("response_modes_supported").EnumerateArray()
             .Select(element => element.GetString())
