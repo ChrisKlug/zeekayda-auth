@@ -107,6 +107,15 @@ Every feature or change follows this lifecycle. Agents are responsible for their
 - PR titles follow Conventional Commits format: `feat:`, `fix:`, `docs:`, `test:`, `chore:`, `security:`
 - PRs touching public API must include or reference documentation changes
 
+### Branch sync hygiene
+
+Before starting new implementation work (or creating a new branch), first sync from the latest default branch:
+
+1. `git checkout main`
+2. `git pull --ff-only`
+
+New branches must be created from this up-to-date `main` unless the user explicitly requests a stacked/alternate base branch.
+
 ### Blocker resolution on merge
 
 Whenever you are notified that a PR has been merged, you must automatically:
