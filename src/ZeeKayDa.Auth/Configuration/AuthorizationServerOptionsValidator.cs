@@ -263,17 +263,13 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
                 string.Join(" ", corsErrors));
         }
 
-        // Canonicalize and deduplicate CorsOrigins in-place: lowercase, authority-only form.
-        if (validOriginUris.Count > 0)
-        {
-            var canonical = validOriginUris
-                .Select(u => u.GetLeftPart(UriPartial.Authority).ToLowerInvariant())
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList();
-            options.DiscoveryDocument.CorsOrigins.Clear();
-            foreach (var c in canonical)
-                options.DiscoveryDocument.CorsOrigins.Add(c);
-        }
+        // Canonicalize and deduplicate CorsOrigins, then freeze into an immutable snapshot so the
+        // endpoint's cached startup view cannot diverge from later runtime mutations.
+        options.DiscoveryDocument.CorsOrigins = validOriginUris
+            .Select(u => u.GetLeftPart(UriPartial.Authority).ToLowerInvariant())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList()
+            .AsReadOnly();
 
         // Validate SecurityHeaders enum values at startup so an out-of-range cast produces a startup
         // failure consistent with all other misconfiguration, rather than a 500 at request time.

@@ -26,7 +26,11 @@ public sealed class DiscoveryOptions
     /// <remarks>
     /// Each entry must be an absolute origin in the form <c>scheme://host[:port]</c> with no path,
     /// query, fragment, userinfo, wildcards, or <c>null</c> literal. Entries are validated at
-    /// startup, canonicalized (lowercased), and deduplicated. Invalid entries fail startup.
+    /// startup, canonicalized (lowercased), deduplicated, then replaced with an immutable snapshot.
+    /// Invalid entries fail startup.
+    ///
+    /// HTTP origins are rejected by default. Set <see cref="AuthorizationServerOptions.AllowInsecureIssuer"/>
+    /// to <see langword="true"/> to permit HTTP loopback origins for local development only.
     /// </remarks>
-    public IList<string> CorsOrigins { get; } = [];
+    public IList<string> CorsOrigins { get; internal set; } = [];
 }

@@ -760,6 +760,20 @@ public sealed class AuthorizationServerOptionsValidatorTests
         options.DiscoveryDocument.CorsOrigins.Should().ContainSingle();
     }
 
+    [Fact]
+    public void Validate_CorsOrigins_BecomeReadOnly_AfterValidation()
+    {
+        var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
+        options.DiscoveryDocument.CorsOrigins.Add("https://app.example.com");
+
+        var result = Validate(options);
+
+        result.Succeeded.Should().BeTrue();
+        options.DiscoveryDocument.CorsOrigins.IsReadOnly.Should().BeTrue();
+        var act = () => options.DiscoveryDocument.CorsOrigins.Add("https://admin.example.com");
+        act.Should().Throw<NotSupportedException>();
+    }
+
     [Theory]
     [InlineData(null, "A null value is not a valid CORS origin.")]
     [InlineData("", "An empty string is not a valid CORS origin.")]

@@ -4,6 +4,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.AspNetCore.Extensions;
 using ZeeKayDa.Auth.Scopes;
@@ -628,12 +629,45 @@ public sealed class DiscoveryEndpointTests : IDisposable
     [InlineData("https://*.example.com", "wildcard")]
     [InlineData("null", "null literal")]
     [InlineData("https://example.com\r\n", "CRLF")]
+    [InlineData("http://app.example.com", "http scheme without AllowInsecureIssuer")]
     public void Startup_InvalidCorsOrigin_ThrowsViaValidateOnStart(string invalidOrigin, string reason)
     {
         var act = () => new TestWebAppFactory(opts =>
             opts.DiscoveryDocument.CorsOrigins.Add(invalidOrigin)).CreateClient();
 
         act.Should().Throw<Exception>(because: $"'{invalidOrigin}' is invalid ({reason})");
+    }
+
+    [Fact]
+    public void Startup_InvalidReferrerPolicy_ThrowsViaValidateOnStart()
+    {
+        var act = () => new TestWebAppFactory(opts =>
+            opts.SecurityHeaders.ReferrerPolicy = (ZeeKayDa.Auth.ReferrerPolicy)9999).CreateClient();
+
+        act.Should().Throw<Exception>().WithMessage("*ReferrerPolicy*");
+    }
+
+    [Fact]
+    public void Startup_InvalidCrossOriginResourcePolicy_ThrowsViaValidateOnStart()
+    {
+        var act = () => new TestWebAppFactory(opts =>
+            opts.SecurityHeaders.CrossOriginResourcePolicy = (ZeeKayDa.Auth.CrossOriginResourcePolicy)9999).CreateClient();
+
+        act.Should().Throw<Exception>().WithMessage("*CrossOriginResourcePolicy*");
+    }
+
+    [Fact]
+    public void Startup_CorsOriginAllowList_BecomesReadOnly()
+    {
+        using var factory = new TestWebAppFactory(opts =>
+            opts.DiscoveryDocument.CorsOrigins.Add("https://app.example.com"));
+        using var _ = CreateClient(factory);
+        using var scope = factory.Services.CreateScope();
+        var options = scope.ServiceProvider.GetRequiredService<IOptions<AuthorizationServerOptions>>().Value;
+
+        options.DiscoveryDocument.CorsOrigins.IsReadOnly.Should().BeTrue();
+        var act = () => options.DiscoveryDocument.CorsOrigins.Add("https://admin.example.com");
+        act.Should().Throw<NotSupportedException>();
     }
 
     // ── Defensive security headers ────────────────────────────────────────────────────────────────

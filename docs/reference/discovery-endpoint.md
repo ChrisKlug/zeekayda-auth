@@ -104,7 +104,11 @@ When the list is non-empty:
 
 Allowlist entries are validated at startup. Each entry must be an absolute origin
 (`scheme://host[:port]`) with no path, query, fragment, user information, wildcards, or the
-literal string `null`. Invalid entries cause the host to fail fast at startup.
+literal string `null`. Entries are canonicalized, deduplicated, and frozen into an immutable
+startup snapshot used by endpoint lookups. Invalid entries cause the host to fail fast at startup.
+
+`https://` origins are accepted by default. `http://` origins are rejected unless
+`AllowInsecureIssuer = true`; when enabled, HTTP origins must still use loopback hosts.
 
 > Note: ZeeKayDa.Auth does not register an HTTP `OPTIONS` route. The discovery endpoint is
 > a [simple CORS request](https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS#simple_requests)

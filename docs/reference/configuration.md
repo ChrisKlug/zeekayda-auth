@@ -384,7 +384,11 @@ header.
 
 Each entry must be an absolute origin in the form `scheme://host[:port]` with no path, query,
 fragment, user information, wildcards, or the literal string `null`. Entries are canonicalized
-(lowercased) and deduplicated at startup. Invalid entries cause the host to fail fast.
+(lowercased), deduplicated, and frozen into an immutable startup snapshot. Invalid entries cause
+the host to fail fast.
+
+`https://` origins are always accepted. `http://` origins are rejected unless
+`AllowInsecureIssuer = true`; when enabled, HTTP origins must still target loopback hosts only.
 
 ```csharp
 options.DiscoveryDocument.CorsOrigins.Add("https://app.example.com");
@@ -490,6 +494,10 @@ only when all relying parties are co-hosted on the same origin or site as the au
 | `IScopeRepository` must include `openid` | the configured scope repository does not include a scope named `openid` |
 | Cache max-age must not be negative | `DiscoveryDocument.CacheMaxAgeSeconds` is less than `0` |
 | `AuthorizationEndpoint.CodeChallengeMethodsSupported` must not be empty | `AuthorizationEndpoint.CodeChallengeMethodsSupported` is a non-null empty collection |
+| CORS origins must use HTTPS by default | a `DiscoveryDocument.CorsOrigins` entry uses HTTP while `AllowInsecureIssuer` is `false` |
+| HTTP CORS origins must be loopback when allowed | a `DiscoveryDocument.CorsOrigins` entry uses HTTP with a non-loopback host |
+| `SecurityHeaders.ReferrerPolicy` must be a defined enum value | `SecurityHeaders.ReferrerPolicy` is set via an out-of-range cast |
+| `SecurityHeaders.CrossOriginResourcePolicy` must be a defined enum value | `SecurityHeaders.CrossOriginResourcePolicy` is set via an out-of-range cast |
 
 For the exact failure text of the `client_credentials` + `none`-only token auth combination, see
 [`TokenEndpoint.AuthMethodsSupported`](#tokenendpointauthmethodssupported) above.
