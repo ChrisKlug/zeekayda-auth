@@ -240,6 +240,17 @@ informational and additive only. If an interrupt is needed:
 `ctx.Scheme` identifies the authentication method used (`"local"`, `"facebook"`, `"bankid"`,
 etc.), enabling scheme-specific branching within a single handler.
 
+**Principal mutation contract.** `ctx.Principal` is a clone that the host may freely mutate
+(add, remove, or replace claims). ZeeKayDa uses the mutated principal when promoting to the
+SSO session. The host's original `ClaimsPrincipal` reference (e.g. the external principal
+from the provider callback) is **not** mutated.
+
+**Reserved claims — ignored or stripped before token issuance.** The framework owns a set of
+protocol-controlled claims (full list in Security Considerations §"Protocol claim reservation").
+Any reserved claim added or modified by the host inside `OnSigningIn` is dropped before the
+principal is used for token issuance or session promotion. The framework owns these claims;
+the host cannot override them.
+
 ```csharp
 // Configured on AddZeeKayDaAuth options (fires for all methods):
 o.OnSigningIn = async ctx =>
@@ -247,6 +258,7 @@ o.OnSigningIn = async ctx =>
     // ctx.Principal, ctx.Scheme, ctx.InteractionContext
     ctx.Principal.AddClaim("tenant", await ResolveTenantAsync(ctx.Principal));
     // No interrupt capability — flow always proceeds after this event.
+    // Protocol claims (sub, iss, aud, exp, nonce, …) are ignored if set here.
 };
 ```
 
@@ -266,9 +278,10 @@ authentication scheme** registered internally as `"zkd.pending"` via
 `AddCookie("zkd.pending", ...)`. This scheme is registered by ZeeKayDa at startup; the developer
 never sees or configures it directly.
 
-Using ASP.NET Core's `AddCookie` provides the full security property set for free: Data Protection
-encryption and signing, `HttpOnly`, `Secure`, `SameSite=Lax`, and configurable TTL — no custom
-cookie-writing code is needed inside ZeeKayDa.
+Using ASP.NET Core's `AddCookie` provides the underlying mechanics (Data Protection encryption
+and signing, `HttpOnly`, `Secure`, `SameSite`, configurable TTL). ZeeKayDa explicitly overrides
+the `AddCookie` defaults for this scheme — see Security Considerations §"Internal cookie
+policy" for the pinned values. No custom cookie-writing code is needed inside ZeeKayDa.
 
 Key properties of this scheme:
 
@@ -295,7 +308,9 @@ Key properties of this scheme:
 **Implementation sketch (ZeeKayDa internals — not host app code):**
 
 ```csharp
-// Storing pending principal (inside ZeeKayDa, after OnProviderSignIn redirect)
+// Storing pending principal (inside ZeeKayDa, after OnProviderSignIn redirect).
+// The original externalPrincipal is NOT mutated — a new ClaimsIdentity is constructed
+// from a cloned claim sequence with the binding claim appended.
 var pendingIdentity = new ClaimsIdentity(
     externalPrincipal.Claims.Append(new Claim("zkd:interaction_id", interactionId)),
     "zkd.pending");
@@ -446,6 +461,12 @@ all in `ZeeKayDa.Auth.AspNetCore`.
 > conventions, and any `Data` properties — is deferred to the exception design ADR (tracked in
 > a separate issue).
 
+> **`PendingPrincipal.Principal` is a clone.** The host application may mutate the returned
+> principal freely (add or remove claims). ZeeKayDa makes no further use of the original
+> external principal after issuing the clone; the mutated principal is what gets passed back
+> via `SignInAsync`. Reserved protocol claims are stripped before token issuance regardless
+> of what the host adds — see Security Considerations §"Protocol claim reservation".
+
 ```csharp
 // Single interface for all developer-controlled authentication completion.
 // Registered by WithLocalAuth; scoped to the current HTTP request via IHttpContextAccessor.
@@ -510,7 +531,13 @@ public interface IConsentInteraction
     Task<ConsentRequest> GetRequestAsync();
 
     /// <summary>Records granted scopes and completes the authorization flow.</summary>
-    /// <remarks>Terminal — writes the redirect response.</remarks>
+    /// <remarks>
+    /// Granted scopes are intersected with both (a) the originally requested scopes for this
+    /// interaction context and (b) the client's pre-registered allowed scope set. Scopes
+    /// passed that are not in this intersection are silently dropped — a host bug that
+    /// passes <c>grantedScopes = requestedScopes</c> blindly cannot grant scopes the client
+    /// is not registered for. Terminal — writes the redirect response.
+    /// </remarks>
     Task GrantAsync(IEnumerable<string> grantedScopes);
 
     /// <summary>
@@ -626,12 +653,16 @@ context.** Redirecting to an unvalidated URI — even one supplied in a timed-ou
 open redirect vulnerability (RFC 6749 §3.1.2.3). If the interaction context is gone and the
 `redirect_uri` cannot be recovered, the error page is the only safe response.
 
-The following table defines the response strategy for each timeout scenario:
+The following table defines the response strategy for each timeout scenario. The `error`
+value is `interaction_required` for standard interactive flows; for `prompt=none` flows the
+error becomes `login_required` (or `consent_required` / `account_selection_required`
+depending on which interaction was needed) — see Security Considerations §"Prompt parameter
+handling" for the full mapping.
 
 | Scenario | What expired | Response |
 |---|---|---|
-| Pending principal expired (user too slow on collect-info page) | `"zkd.pending"` cookie | Redirect to client: `error=login_required&zkd_error=timeout&state=...` |
-| Interaction context expired (entire authorize session timed out) | interaction context | Redirect to client: `error=login_required&zkd_error=timeout&state=...` — only if `redirect_uri` is still recoverable from the context store |
+| Pending principal expired (user too slow on collect-info page) | `"zkd.pending"` cookie | Redirect to client: `error=interaction_required&zkd_error=timeout&state=...` |
+| Interaction context expired (entire authorize session timed out) | interaction context | Redirect to client: `error=interaction_required&zkd_error=timeout&state=...` — only if `redirect_uri` is still recoverable from the context store |
 | Both expired | both | Error page — no validated `redirect_uri` available; redirecting would be an open redirect vulnerability |
 
 **Design rules:**
@@ -670,16 +701,21 @@ have not opted in receive only the standard `error` and `error_description` para
 
 | `error` | `zkd_error` | Meaning |
 |---|---|---|
-| `login_required` | `timeout` | Auth session or pending principal expired |
+| `interaction_required` / `login_required` | `timeout` | Auth session or pending principal expired (error code depends on whether `prompt=none` was set) |
 | `login_required` | `session_not_found` | Interaction context missing (e.g. browser cookie cleared) |
 | `access_denied` | `consent_denied` | User explicitly denied consent |
 | `access_denied` | `provider_denied` | External provider returned a denial |
 | `server_error` | `internal` | Unhandled internal failure |
 
+> **`provider_denied` may reveal that a provider-selection step occurred** — i.e. that the
+> AS routed the user through external provider selection. This is internal flow state. The
+> code is only included for clients that have opted in via `EnableZkdErrorCodes`; it is never
+> sent to non-opted-in clients, and the standard `error` value is unaffected.
+
 **Example response (opt-in client):**
 
 ```
-redirect_uri?error=login_required
+redirect_uri?error=interaction_required
             &error_description=Authentication+session+expired
             &zkd_error=timeout
             &state=...
@@ -815,38 +851,352 @@ route template and are resolved by the router, not from request input.
 
 ## Security Considerations
 
-### CSRF / state parameter (RFC 6749 §10.12)
+### Two-phase parameter validation and error routing (RFC 6749 §3.1.2.4, §4.1.2.1; OIDC Core §3.1.2.6)
 
-ZeeKayDa validates the `state` parameter on every authorization response. Relying parties are
-expected to round-trip `state` as a CSRF token. ZeeKayDa's authorization request validation
-enforces that `state` is present; dropping it is a discoverable misconfiguration.
+The authorization endpoint validates the request in two distinct phases. Phase ordering is
+load-bearing security: errors in phase 1 **must not** be returned by redirecting to a
+caller-supplied URI, because that URI has not yet been authenticated.
 
-### Open redirect prevention (RFC 6749 §3.1.2.3)
+**Phase 1 — pre-redirect validation.** Errors render locally on `ErrorPath`.
 
-The `redirect_uri` in every authorization request is validated against the pre-registered set
-for the client. No redirect is issued to an unregistered URI, regardless of what the request
-presents. This is enforced in the authorization request validator before any interaction step
-begins.
+- `client_id` is present and resolves to a registered client.
+- `redirect_uri` is present (or, for a client with exactly one registered redirect URI, may
+  be omitted; see "Redirect URI matching" below).
+- `redirect_uri` exact-matches one of the client's pre-registered redirect URIs.
+- Request is over HTTPS (per the issuer HTTPS requirement, ADR 0001 / ADR 0004).
+- Request body / query is well-formed.
 
-### PKCE mandatory (RFC 7636; RFC 9700 §2.1.1; OAuth 2.1 §4.1.1)
+**Phase 2 — post-redirect validation.** Errors redirect to the validated `redirect_uri` with
+`error=...&error_description=...&state=...` (and `iss=...`; see "Issuer identification").
 
-PKCE is mandatory for all client types. The authorization request validator rejects any request
-that does not include `code_challenge` and `code_challenge_method=S256`. The `plain` method is
-not implemented (see ADR 0003). The token endpoint validates `code_verifier` against the stored
-`code_challenge` before issuing any token.
+- `response_type` is in the supported set (see "Response type & mode whitelist").
+- `scope` is well-formed; `openid` present if an OIDC flow is requested.
+- `code_challenge` and `code_challenge_method=S256` present (PKCE).
+- `nonce` present for OIDC flows.
+- `prompt` values are valid.
+- `request` and `request_uri` parameters absent (see "Request object and PAR posture").
+- Any other request-shape error after `redirect_uri` has been authenticated.
+
+Implementations must not collapse these phases into a single linear validator. A
+single-pipeline validator that reports any error via the redirect is an open-redirect /
+error-exfiltration vulnerability.
+
+### Redirect URI matching (RFC 6749 §3.1.2; RFC 9700 §2.1; RFC 8252 §7.3)
+
+`redirect_uri` is matched by **exact byte-for-byte string comparison** against the client's
+pre-registered redirect URI set. The framework does not perform:
+
+- Prefix or `StartsWith` matching.
+- Scheme / host / port normalisation or canonicalisation.
+- Wildcard, glob, or regex matching.
+- Path canonicalisation (`./`, `../`, repeated slashes).
+- Default-port coercion (`https://example.com` ≠ `https://example.com:443`).
+
+Additional rules:
+
+- `http://` redirect URIs are accepted **only** for loopback (`127.0.0.1` and `[::1]`). At
+  match time the port number on loopback URIs is treated as variable (RFC 8252 §7.3) — the
+  scheme, host, and path must match exactly, but the port from the request may differ from
+  the registered port.
+- Redirect URIs containing a fragment component are rejected at client registration time
+  (RFC 6749 §3.1.2).
+- If the client has more than one registered redirect URI, `redirect_uri` is **required** on
+  the request. The framework does not silently pick one when the request omits the parameter.
+- If the client has exactly one registered redirect URI, omission of `redirect_uri` from the
+  request is permitted; the registered value is used.
+
+### Issuer identification in authorization response (RFC 9207)
+
+Every authorization response — success or error — includes the `iss` parameter, set to the
+configured issuer URL. This mitigates the mix-up attack class described in RFC 9700 §4.4
+(an honest RP being tricked into sending an authorization code to the wrong AS). RFC 9207 is
+a backwards-compatible additive parameter; relying parties that do not recognise it are
+unaffected.
+
+`iss` is emitted unconditionally — it is not a per-client opt-in. The cost is one query
+parameter on the redirect; the security benefit is non-conditional.
+
+### Nonce handling (OIDC Core §3.1.2.1, §3.1.3.7)
+
+For any flow that requests `openid` scope and will result in an ID token being issued from
+the resulting authorization code, `nonce` is **required** on the authorization request.
+Requests without `nonce` are rejected in phase 2 with `error=invalid_request`.
+
+`nonce` is stored in the interaction context, then bound to the issued authorization code,
+and is included verbatim as the `nonce` claim in the issued ID token (token endpoint
+concern). The framework does not normalise, transform, or replay-protect the value at the AS;
+replay protection of `nonce` is the relying party's responsibility (OIDC Core §15.5.2).
+
+### Prompt parameter handling (`prompt`, `max_age`, `id_token_hint`) — OIDC Core §3.1.2.1, §3.1.2.6
+
+Prompt semantics drive the interaction sequencer. They are particularly security-sensitive
+because relying parties use `prompt=none` for silent-refresh iframes — getting these wrong
+either breaks silent auth or causes the framework to render interactive UI inside an iframe
+(clickjacking surface).
+
+| Value | Sequencer behaviour |
+|---|---|
+| `none` | **Non-interactive path.** Never redirect to `LoginPath`, `ConsentPath`, or `SelectProviderPath`. Succeed only if (a) a valid SSO session exists and (b) the requested scopes are covered by a prior stored consent grant for this client. Otherwise return one of `login_required`, `consent_required`, `account_selection_required`, or `interaction_required` to the relying party — `iss` and `state` included. |
+| `login` | Force re-authentication. An existing SSO session is **not** sufficient; the user must complete the login interaction again. |
+| `consent` | Force the consent interaction even if a stored grant exists for the requested scopes. |
+| `select_account` | Force the provider/account selection interaction. |
+| (omitted) | Default interactive path: skip login if an SSO session exists; skip consent if a stored grant covers the requested scopes; otherwise prompt as needed. |
+
+Multiple `prompt` values may appear space-separated. `prompt=none` combined with any other
+value is rejected with `error=invalid_request` (OIDC Core §3.1.2.1).
+
+`max_age` is honoured against the SSO session's `auth_time`. If the session is older than
+`max_age` seconds, re-authentication is required. If `prompt=none` is also set and
+re-authentication is needed, the response is `login_required`.
+
+`id_token_hint`, when present, must reference the same subject as the current SSO session.
+If it does not, the response is `login_required` (or `account_selection_required` if multiple
+sessions are supported in a future extension). The hint is not used to silently switch
+sessions.
+
+### Cookie scope interaction with `prompt=none`
+
+`prompt=none` is loaded in a cross-origin iframe by the relying party. The browser's
+`SameSite` cookie policy decides which ZeeKayDa cookies are sent on that subresource request.
+
+- `zkd.session` (SSO session) must be readable on the `prompt=none` request, otherwise silent
+  auth always returns `login_required` even when the user is signed in. This implies
+  `SameSite=None; Secure` for `zkd.session` if silent auth is a supported feature.
+- `zkd.interaction` (interaction context) is not needed by the `prompt=none` request path —
+  silent auth either completes or errors without entering the interactive sequencer, so
+  `SameSite=Lax` remains correct.
+- `zkd.pending` is never used by `prompt=none` (no interactive collection step occurs).
+
+See "Internal cookie policy" for the pinned values.
+
+### Request object and PAR posture (RFC 9101, RFC 9126)
+
+JAR (RFC 9101 — JWT-secured authorization requests via the `request` parameter) and PAR
+(RFC 9126 — Pushed Authorization Requests via `request_uri`) are **not implemented in v1**.
+
+- Requests presenting a `request` parameter are rejected with `error=request_not_supported`.
+- Requests presenting a `request_uri` parameter are rejected with
+  `error=request_uri_not_supported`.
+
+Accepting `request_uri` without an implementation of PAR is a server-side request forgery
+vector (RFC 6819 §4.1.5; RFC 9700 §4.10) — the AS would fetch attacker-controlled URLs.
+Accepting `request` without an implementation of JAR is a JWT-validation hole. Both are
+rejected up front; PAR support is tracked as a follow-up ADR.
+
+### Rate limiting
+
+`/connect/authorize` and `/connect/callback/{scheme}` are handled by
+`IAuthenticationRequestHandler` and therefore execute **before** routing — endpoint-metadata
+rate limiting (`RequireRateLimiting()`) does not apply to them. Hosts must apply rate
+limiting via globally-scoped middleware ordered ahead of `UseAuthentication()`, or accept
+the rate-limit handling that ZeeKayDa applies internally.
+
+A dedicated ADR for cross-endpoint rate limiting on protocol endpoints is tracked in
+[issue #44](https://github.com/ChrisKlug/zeekayda-auth/issues/44). The decisions made there
+will apply to this endpoint.
+
+### Authorization code requirements (forward reference)
+
+The authorization code issued at the end of a successful flow is covered by a separate ADR
+(token endpoint / code issuance). The invariants that ADR must preserve, called out here so
+they do not drift:
+
+- Single-use (RFC 6749 §4.1.2 / RFC 9700 §2.1.1) — second presentation revokes the entire
+  family.
+- Short lifetime (RFC 9700 recommends short; ≤ 60 seconds suggested).
+- Cryptographically bound to: `client_id`, validated `redirect_uri`, `code_challenge`,
+  user `sub`, SSO session ID, and interaction context ID.
+- Generated from `RandomNumberGenerator` with ≥ 128 bits of entropy; presented values are
+  compared with `CryptographicOperations.FixedTimeEquals`.
+
+The store that persists codes (and later refresh tokens) is a separate concern. It must be
+shared across instances and durable enough to enforce single-use across the brief window
+between issuance and redemption; see the authorization-code/refresh-token store ADR
+(prerequisite for both the authorize endpoint and the token endpoint).
+
+### Response type and response mode whitelist
+
+Supported `response_type` values: `code` (Authorization Code flow).
+
+Rejected response types (with `error=unsupported_response_type`):
+- `token` — implicit flow, removed in OAuth 2.1.
+- `id_token` — implicit flow, removed in OAuth 2.1.
+- `id_token token` — implicit flow, removed in OAuth 2.1.
+- `code id_token` / `code token` / `code id_token token` — hybrid flow; not in v1 scope.
+
+Supported `response_mode` values for `response_type=code`: `query` (default). `form_post`
+and `fragment` are rejected unless explicitly enabled in a future ADR — each carries its own
+threat shape (CSRF / clickjacking for `form_post`, code-in-fragment leakage for `fragment`).
+
+### CSRF / state parameter round-trip (RFC 6749 §10.12)
+
+CSRF protection on the authorization response is a **relying-party responsibility**: the RP
+generates `state`, binds it to the user agent (typically via a cookie or session), and
+verifies the value on the response. ZeeKayDa's obligation is to round-trip `state`
+unmodified:
+
+- `state` is preserved byte-for-byte from request to response on success.
+- `state` is included on every error response that is delivered via redirect to
+  `redirect_uri`.
+- The framework also enforces presence of `state` on incoming requests — a missing `state`
+  is rejected with `error=invalid_request`. This is a quality-of-implementation defence
+  that catches RP misconfiguration; it does **not** by itself protect against CSRF if the
+  RP fails to bind `state` to the user agent.
+
+The framework does **not** validate or interpret the `state` value's contents — it is opaque
+data owned by the relying party.
+
+### Protocol claim reservation
+
+The following claims are framework-owned. They are stripped from any `ClaimsPrincipal`
+supplied to `OnSigningIn` or to `SignInAsync` before the principal is used for token
+issuance, userinfo, or session promotion:
+
+`iss`, `sub`, `aud`, `exp`, `iat`, `nbf`, `auth_time`, `nonce`, `acr`, `amr`, `azp`,
+`at_hash`, `c_hash`, `sid`, `jti`.
+
+Additionally, all claims in the `zkd:` namespace (e.g. `zkd:interaction_id`) are stripped
+before token issuance — these are internal framework state and must never leak to relying
+parties via tokens, userinfo, or logs.
+
+A host that attempts to set any of these claims has its values silently dropped. The
+framework does not throw, to keep the model permissive of host enrichment code that doesn't
+need to be aware of the protocol claim list — but the values are not used.
+
+The full mapping of *which* claims appear in tokens (id_token, access token, userinfo) and
+how they are sourced from the principal is the subject of a separate ADR (claim selection /
+token contents — prerequisite for implementation, tracked as a high-priority issue).
+
+### `amr` value trust and scheme-inferred defaults
+
+`SignInAsync(principal, string amr)` accepts an arbitrary string for the authentication
+methods reference claim. ZeeKayDa takes the host's word for this value — the host is the
+authority on what authentication actually happened.
+
+To reduce the risk of a host mis-declaring `amr`, the framework provides scheme-inferred
+defaults:
+
+- External OIDC handlers — `amr` defaults to the value(s) returned by the upstream provider's
+  ID token, if present.
+- External OAuth2 handlers — defaults to a scheme-derived value (e.g. `"facebook"` ⇒ no
+  inferred `amr`; explicit hint required for tokens that need it).
+- Local auth — no default; host passes the appropriate value (`"pwd"`, `"mfa"`, etc.).
+
+The host can override the default by passing an explicit `amr` value to `SignInAsync`. A
+strongly-typed `Amr` helper exposing the common values from RFC 8176 is provided to reduce
+typo risk.
+
+### SSO session fixation
+
+The SSO session cookie (`zkd.session`) value is regenerated on every principal promotion
+via `SignInAsync`. This is the natural behaviour of `HttpContext.SignInAsync` (which issues
+a new authentication ticket) and is asserted here so the property is not silently lost in a
+future refactor. A pre-set `zkd.session` cookie cannot be elevated by tricking a victim into
+signing in.
+
+### Clickjacking on host interaction pages
+
+`LoginPath`, `ConsentPath`, and `SelectProviderPath` are host-owned pages but are
+clickjacking targets — especially consent, where UI redress could silently grant scopes.
+Host applications **must** set frame-busting headers on these endpoints:
+
+- `Content-Security-Policy: frame-ancestors 'none'` (preferred), or
+- `X-Frame-Options: DENY`
+
+The framework documentation will state this requirement prominently. The framework itself
+emits these headers on responses originating from its own redirect targets where possible
+(e.g. on the `ErrorPath` redirect response).
+
+### Logging hygiene
+
+The following values must not appear in framework log messages at any level — not under a
+debug flag, not under a verbose flag, not under any framework-controlled configuration:
+
+- Raw `state`, `nonce`, `code_challenge`, `id_token_hint`.
+- Authorization codes, access tokens, refresh tokens, ID tokens.
+- Full callback request URI (it contains `code`).
+- Pending or interaction cookie values (raw or decrypted).
+- Claim values containing PII, except where explicitly required at debug level with an
+  explicit allow-list of claim types.
+
+**No debug toggle is provided to relax these rules.** A configuration flag that enables
+logging of secrets is a footgun — it has a strong tendency to get left enabled in production
+(or flipped via supply-chain / insider attack to harvest tokens). RFC 9700 §4.16 specifically
+identifies log retention of codes and tokens as a leakage vector. The rule is absolute.
+
+This is particularly important because `IAuthenticationRequestHandler` runs *before* the
+ASP.NET Core request-logging middleware, so the request URI on `/connect/callback/{scheme}`
+(which contains the authorization code on the return leg of external sign-in) does not pass
+through the framework's normal log sanitisation path. ZeeKayDa must redact the URI before
+emitting any log statement that references it.
+
+**Recommended logging pattern (correlation IDs, not secrets).** Framework log statements
+correlate by *identifier*, not by secret value: `"Issued authorization code {CodeId} for
+client {ClientId}, interaction {InteractionId}"` where `CodeId` is a non-secret correlation
+ID (e.g. a separate identifier, or a fixed-length truncated hash). Operators can correlate
+across logs and across instances without ever seeing the secret. The same pattern applies
+to spans / metrics emitted via OpenTelemetry (see follow-up ADR).
+
+### Diagnostic event hooks
+
+For diagnostics that genuinely need access to the raw values (reproducing a token-exchange
+failure, tracing a specific RP's interaction with the AS, validating a fix), the framework
+exposes a set of strongly-typed diagnostic events that fire at key points in the protocol
+flow. The events are **opt-in via code** — the host wires a delegate to consume them — not
+via configuration, which removes the "left enabled in production" failure mode.
+
+Indicative event set (final shape settled in implementation):
+
+- `OnAuthorizationRequestValidated` — fires after phase 2 validation succeeds, with the
+  validated interaction context (excluding secret-bearing fields).
+- `OnAuthorizationCodeIssued` — fires immediately before the redirect to the relying party,
+  with the issued code, `client_id`, `redirect_uri`, and interaction context ID. The host
+  can choose to log the code if its operational policy permits (e.g. development
+  environments only).
+- `OnInteractionContextCreated` / `OnInteractionContextConsumed` / `OnInteractionContextExpired`
+- `OnPendingPrincipalCreated` / `OnPendingPrincipalConsumed` / `OnPendingPrincipalExpired`
+- `OnAuthorizationErrorResponse` — fires before a redirect-to-RP error response is written,
+  with `error`, `error_description`, `state`, `redirect_uri`, and the underlying failure
+  reason.
+
+The diagnostic events are also the appropriate extension point for non-logging use cases —
+custom audit pipelines, replay-attack investigation, metrics emission outside OpenTelemetry,
+and integration with external SIEM systems. The framework itself never subscribes to these
+events; if no host code wires them, they have zero cost.
+
+**Trust boundary:** these events expose secret values. Hosts that wire them take on the same
+responsibility the framework otherwise owns — not logging secrets in production, not
+forwarding them to untrusted sinks. The framework documents this prominently in the event
+delegate's API surface.
+
+### Internal cookie policy
+
+ZeeKayDa registers four internal cookie schemes via `AddCookie`. The default `AddCookie`
+options are **not** appropriate as-is for security-sensitive cookies — in particular
+`CookieSecurePolicy.SameAsRequest` (the default) allows the cookie to be sent over plain
+HTTP. The framework explicitly overrides the defaults as follows:
+
+| Scheme | `SecurePolicy` | `SameSite` | `HttpOnly` | `SlidingExpiration` | TTL | Notes |
+|---|---|---|---|---|---|---|
+| `zkd.session` | `Always` | `None`* | `true` | configurable | configurable | `SameSite=None` required if `prompt=none` silent auth is supported; otherwise `Lax`. Must be `Secure`. |
+| `zkd.interaction` | `Always` | `Lax` | `true` | `false` | 30 min default | Hard TTL; consumed at flow completion. |
+| `zkd.external` | `Always` | `Lax` | `true` | `false` | seconds | Transport only; consumed at `/connect/callback/{scheme}`. |
+| `zkd.pending` | `Always` | `Strict` | `true` | `false` | 15 min default | Only consumed by same-site POSTs from host's collect-more-info page — Strict is correct and tightens the cross-site cookie-attach surface. Must be shorter than `zkd.interaction` TTL. |
+
+All four are encrypted and signed by ASP.NET Core Data Protection. In multi-instance
+deployments the Data Protection key ring must be shared across instances.
+
+The scheme names `zkd.session`, `zkd.interaction`, `zkd.external`, and `zkd.pending` are
+**reserved**. If the host application attempts to register a cookie scheme with any of these
+names, `AddZeeKayDaAuth` detects the collision and throws at startup. This prevents a host
+from shadowing the framework's cookies (intentionally or accidentally).
 
 ### Pending principal cookie security (`"zkd.pending"` scheme)
 
 The pending principal is stored using the internally registered `"zkd.pending"` ASP.NET Core
-cookie authentication scheme. All security properties come from `AddCookie` options:
+cookie authentication scheme, configured per "Internal cookie policy" above. The additional
+properties layered on top are:
 
-- `HttpOnly` — inaccessible to JavaScript.
-- `Secure` — sent only over HTTPS (consistent with the issuer HTTPS requirement from ADR 0001).
-- `SameSite=Lax` — mitigates cross-site request forgery on the callback endpoint.
-- Encrypted and signed using ASP.NET Core Data Protection — the cookie content is not readable
-  or forgeable by the browser.
-- `SlidingExpiration = false` — hard TTL; the window does not reset on page reload or cookie
-  re-read, preventing an adversary from keeping the pending principal alive indefinitely.
 - Bound to the current interaction context via the `zkd:interaction_id` claim — a pending
   principal from one authorization flow cannot be used to complete a different flow.
 - Single-use — `SignOutAsync("zkd.pending")` is called by `SignInAsync` immediately after the
@@ -854,12 +1204,29 @@ cookie authentication scheme. All security properties come from `AddCookie` opti
 
 ### Interaction context cookie security
 
-The interaction context cookie follows the same HttpOnly / Secure / SameSite=Lax / Data
-Protection treatment as the pending principal cookie. Its TTL is configurable and defaults to
-a value appropriate for an interactive sign-in session (suggested default: 30 minutes — longer
-than the 15-minute pending principal default so that the invariant "pending TTL < interaction
-TTL" holds with both defaults). It is separate from the SSO session cookie, which has a longer
-lifetime.
+See "Internal cookie policy" above for the pinned cookie options. Its TTL defaults to a value
+appropriate for an interactive sign-in session (30 minutes — longer than the 15-minute
+pending principal default so that the invariant "pending TTL < interaction TTL" holds with
+both defaults). It is separate from the SSO session cookie, which has a longer lifetime.
+
+### External callback binding (`zkd.external` residual risk)
+
+§6 notes that `zkd.external` carries no `zkd:interaction_id` binding claim — the external
+handler signs into this scheme before ZeeKayDa has had a chance to add any binding. The
+binding at `/connect/callback/{scheme}` is supplied by two cooperating mechanisms:
+
+1. The `zkd.interaction` cookie **must** be present on the callback request. The handler
+   reads the interaction context from this cookie and treats the external sign-in as a
+   continuation of that context. If `zkd.interaction` is missing, the callback is rejected.
+2. The ASP.NET Core external authentication handler's own correlation cookie
+   (`.AspNetCore.Correlation.<scheme>.<token>`, set on `ChallengeAsync` and consumed on
+   callback) binds the OAuth `state` round-trip with the originating browser. ZeeKayDa
+   inherits this defence by using the standard external handlers.
+
+The window during which `zkd.external` is unbound is bounded by the latency of the external
+provider's token exchange, not a fixed time bound; the framework consumes
+`zkd.external` synchronously inside `/connect/callback/{scheme}` and signs out of the scheme
+before any subsequent processing.
 
 ### Per-scheme callback path and scheme name trust
 
@@ -868,12 +1235,21 @@ Core router. ZeeKayDa validates this value against the set of registered schemes
 an unknown scheme name results in a 404 (not a dispatch to an unregistered handler). The scheme
 name is never read from a user-supplied query parameter.
 
+### PKCE mandatory (RFC 7636; RFC 9700 §2.1.1; OAuth 2.1 §4.1.1)
+
+PKCE is mandatory for all client types. The authorization request validator rejects any request
+that does not include `code_challenge` and `code_challenge_method=S256`. The `plain` method is
+not implemented (see ADR 0003). The token endpoint validates `code_verifier` against the stored
+`code_challenge` before issuing any token.
+
 ### Implicit flow / ROPC removed
 
-The implicit flow (`response_type=token`) and the Resource Owner Password Credentials grant are
-not implemented and will not be implemented. They are removed in OAuth 2.1 and deprecated by
+The implicit flow — all of `response_type=token`, `response_type=id_token`, and
+`response_type=id_token token` — and the Resource Owner Password Credentials grant are not
+implemented and will not be implemented. They are removed in OAuth 2.1 and deprecated by
 RFC 9700. Any request presenting these response types or grant types is rejected with
-`unsupported_response_type` or `unsupported_grant_type` respectively.
+`unsupported_response_type` or `unsupported_grant_type` respectively (see also "Response type
+and response mode whitelist" above).
 
 ---
 
@@ -930,6 +1306,35 @@ The flag is a per-client property on the client registration model. Its exact lo
 client registration API depends on the client model design, which is tracked in a separate
 high-priority issue and ADR (prerequisite for authorize endpoint implementation).
 
+### F — Client registration model ADR (prerequisite)
+
+The authorize endpoint implementation cannot begin until the client registration model is
+defined. ADR 0005 references several client-registration concerns it does not itself resolve:
+
+- Pre-registered redirect URI set (Security Considerations §"Redirect URI matching").
+- Pre-registered allowed scope set (§7 `GrantAsync` intersection rule).
+- Allowed response_type / response_mode per client.
+- Allowed `prompt` values per client.
+- `EnableZkdErrorCodes` opt-in flag (Open Question E).
+- Per-client client_secret / public-client distinction.
+- Per-client `require-PAR` and other future policy flags.
+
+Tracked as a separate ADR (follow-up issue).
+
+### G — Claim selection / token contents ADR (prerequisite)
+
+ADR 0005 strips reserved protocol claims and `zkd:` claims before token issuance, but it does
+not define *which* of the host's claims appear in the id_token, access token, or userinfo
+response. That mapping depends on requested scopes, client registration policy, and custom
+claim providers and is the subject of a separate ADR (follow-up issue). ADR 0005's
+responsibility ends at producing a `ClaimsPrincipal` that the claim-selection layer can read.
+
+### H — PAR (RFC 9126) and JAR (RFC 9101) support
+
+PAR and JAR are explicitly out of scope for v1 (Security Considerations §"Request object and
+PAR posture"). Adding PAR is a security improvement and is tracked as a low-priority follow-up
+ADR. Until that work lands, `request` and `request_uri` parameters are rejected.
+
 ---
 
 ## Spec References
@@ -937,16 +1342,29 @@ high-priority issue and ADR (prerequisite for authorize endpoint implementation)
 | Reference | Relevance |
 |---|---|
 | [RFC 6749 §3.1](https://datatracker.ietf.org/doc/html/rfc6749#section-3.1) | Authorization endpoint definition |
+| [RFC 6749 §3.1.2](https://datatracker.ietf.org/doc/html/rfc6749#section-3.1.2) | Redirect URI registration rules (no fragments) |
+| [RFC 6749 §3.1.2.3](https://datatracker.ietf.org/doc/html/rfc6749#section-3.1.2.3) | Redirect URI validation |
+| [RFC 6749 §3.1.2.4](https://datatracker.ietf.org/doc/html/rfc6749#section-3.1.2.4) | Invalid endpoint behaviour — must not redirect to unvalidated URI |
 | [RFC 6749 §4.1.1](https://datatracker.ietf.org/doc/html/rfc6749#section-4.1.1) | Authorization code request parameters |
 | [RFC 6749 §4.1.2](https://datatracker.ietf.org/doc/html/rfc6749#section-4.1.2) | Authorization code response |
-| [RFC 6749 §3.1.2.3](https://datatracker.ietf.org/doc/html/rfc6749#section-3.1.2.3) | Redirect URI validation |
-| [RFC 6749 §10.12](https://datatracker.ietf.org/doc/html/rfc6749#section-10.12) | CSRF protection via `state` |
-| [RFC 7636 §4.3](https://datatracker.ietf.org/doc/html/rfc7636#section-4.3) | PKCE authorization request parameters |
-| [RFC 7636 §4.4.1](https://datatracker.ietf.org/doc/html/rfc7636#section-4.4.1) | PKCE code verifier validation at token endpoint |
-| [OIDC Core §3.1.2.1](https://openid.net/specs/openid-connect-core-1_0.html#AuthRequest) | OIDC authorization request |
-| [OIDC Core §3.1.2.6](https://openid.net/specs/openid-connect-core-1_0.html#AuthResponse) | OIDC authorization response |
-| [RFC 9700 §2.1.1](https://datatracker.ietf.org/doc/html/rfc9700#section-2.1.1) | PKCE mandatory; `plain` prohibited |
-| [OAuth 2.1 §4.1.1 (draft)](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/) | PKCE mandatory for all clients; implicit and ROPC flows removed |
 | [RFC 6749 §4.1.2.1](https://datatracker.ietf.org/doc/html/rfc6749#section-4.1.2.1) | Authorization code error response — defined `error` values |
 | [RFC 6749 §8.5](https://datatracker.ietf.org/doc/html/rfc6749#section-8.5) | Defining additional error codes; response parameter extensibility |
-| [RFC 9700 (general)](https://datatracker.ietf.org/doc/html/rfc9700) | OAuth 2.0 security best practices; information-disclosure caution in error responses |
+| [RFC 6749 §10.12](https://datatracker.ietf.org/doc/html/rfc6749#section-10.12) | CSRF protection via `state` — relying-party responsibility |
+| [RFC 6819](https://datatracker.ietf.org/doc/html/rfc6819) | OAuth 2.0 threat model — including §4.1.5 SSRF via `request_uri` |
+| [RFC 7636 §4.3](https://datatracker.ietf.org/doc/html/rfc7636#section-4.3) | PKCE authorization request parameters |
+| [RFC 7636 §4.4.1](https://datatracker.ietf.org/doc/html/rfc7636#section-4.4.1) | PKCE code verifier validation at token endpoint |
+| [RFC 8176](https://datatracker.ietf.org/doc/html/rfc8176) | Authentication Method Reference (`amr`) values |
+| [RFC 8252 §7.3](https://datatracker.ietf.org/doc/html/rfc8252#section-7.3) | Loopback redirect URIs — variable port for native apps |
+| [RFC 9101](https://datatracker.ietf.org/doc/html/rfc9101) | JWT-secured authorization request (JAR) — rejected in v1 |
+| [RFC 9126](https://datatracker.ietf.org/doc/html/rfc9126) | Pushed Authorization Requests (PAR) — rejected in v1, tracked follow-up |
+| [RFC 9207](https://datatracker.ietf.org/doc/html/rfc9207) | Authorization Server issuer identification — mix-up attack mitigation |
+| [RFC 9700](https://datatracker.ietf.org/doc/html/rfc9700) | OAuth 2.0 Security Best Current Practice |
+| [RFC 9700 §2.1.1](https://datatracker.ietf.org/doc/html/rfc9700#section-2.1.1) | PKCE mandatory; `plain` prohibited |
+| [RFC 9700 §2.1](https://datatracker.ietf.org/doc/html/rfc9700#section-2.1) | Redirect URI exact match |
+| [RFC 9700 §4.4](https://datatracker.ietf.org/doc/html/rfc9700#section-4.4) | Mix-up attack mitigation (recommends RFC 9207) |
+| [RFC 9700 §4.10](https://datatracker.ietf.org/doc/html/rfc9700#section-4.10) | `request_uri` / PAR SSRF caution |
+| [OIDC Core §3.1.2.1](https://openid.net/specs/openid-connect-core-1_0.html#AuthRequest) | OIDC authorization request — `nonce`, `prompt`, `max_age`, `id_token_hint` |
+| [OIDC Core §3.1.2.6](https://openid.net/specs/openid-connect-core-1_0.html#AuthResponse) | OIDC authorization response — `interaction_required`, `login_required`, etc. |
+| [OIDC Core §3.1.3.7](https://openid.net/specs/openid-connect-core-1_0.html#IDTokenValidation) | `nonce` binding into ID token |
+| [OIDC Core §15.5.2](https://openid.net/specs/openid-connect-core-1_0.html#NonceNotes) | `nonce` replay protection (relying-party responsibility) |
+| [OAuth 2.1 §4.1.1 (draft)](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/) | PKCE mandatory for all clients; implicit and ROPC flows removed |
