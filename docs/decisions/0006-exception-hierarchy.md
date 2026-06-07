@@ -37,7 +37,7 @@ Three approaches were considered:
    a blanket handler and immediately identify the source in stack traces.
 
 2. **Semantic BCL subtypes** — framework exceptions derive from `InvalidOperationException`,
-   `InvalidOperationException`, etc. Familiar to .NET developers; plays well with existing catch
+   `ArgumentException`, etc. Familiar to .NET developers; plays well with existing catch
    blocks that target BCL types.
 
 3. **Both** — a `ZeeKayDaException` base, with subtypes that also extend a BCL semantic type
@@ -70,9 +70,6 @@ namespace ZeeKayDa.Auth;
 /// </remarks>
 public abstract class ZeeKayDaException : Exception
 {
-    /// <summary>Initialises a new instance with a default message.</summary>
-    protected ZeeKayDaException() { }
-
     /// <summary>Initialises a new instance with the specified <paramref name="message"/>.</summary>
     protected ZeeKayDaException(string message) : base(message) { }
 
@@ -92,10 +89,16 @@ other BCL semantic type. The reasoning is in the Rejected Alternatives section.
 not suggest that `new ZeeKayDaException(...)` is valid. `protected` enforces that only subtypes
 can use them.
 
+The conventional parameterless constructor is deliberately omitted from the base and from every
+subtype. A framework exception without a message conveys nothing useful to the consumer; every
+throw site must provide an actionable message. Omitting the parameterless ctor enforces this at
+compile time.
+
 `[Serializable]` and the `protected ZeeKayDaException(SerializationInfo, StreamingContext)`
-deserialization constructor are **not included**. .NET's binary serialization infrastructure for
-exceptions (`ISerializable`) is marked `[Obsolete]` as of .NET 8 and is not supported in .NET
-Core runtime contexts. On .NET 10+ there is no reason to implement it.
+deserialization constructor are **not included**. The legacy
+`SerializationInfo`/`StreamingContext` exception constructor pattern is marked obsolete in .NET 8
+(diagnostic `SYSLIB0051`) and binary formatter serialization is unsupported in modern .NET. On
+.NET 10+ there is no reason to implement it.
 
 ### 2. `ZeeKayDaConfigurationException` for misconfiguration and startup errors
 
@@ -123,9 +126,6 @@ namespace ZeeKayDa.Auth;
 /// </remarks>
 public class ZeeKayDaConfigurationException : ZeeKayDaException
 {
-    /// <summary>Initialises a new instance with a default message.</summary>
-    public ZeeKayDaConfigurationException() { }
-
     /// <summary>Initialises a new instance with the specified <paramref name="message"/>.</summary>
     public ZeeKayDaConfigurationException(string message) : base(message) { }
 
@@ -180,9 +180,6 @@ namespace ZeeKayDa.Auth;
 /// </remarks>
 public class ZeeKayDaInteractionException : ZeeKayDaException
 {
-    /// <summary>Initialises a new instance with a default message.</summary>
-    public ZeeKayDaInteractionException() { }
-
     /// <summary>Initialises a new instance with the specified <paramref name="message"/>.</summary>
     public ZeeKayDaInteractionException(string message) : base(message) { }
 
@@ -318,9 +315,6 @@ namespace ZeeKayDa.Auth;
 /// </remarks>
 public abstract class ZeeKayDaException : Exception
 {
-    /// <summary>Initialises a new instance with a default message.</summary>
-    protected ZeeKayDaException() { }
-
     /// <summary>Initialises a new instance with the specified <paramref name="message"/>.</summary>
     protected ZeeKayDaException(string message) : base(message) { }
 
@@ -359,9 +353,6 @@ namespace ZeeKayDa.Auth;
 /// </remarks>
 public class ZeeKayDaConfigurationException : ZeeKayDaException
 {
-    /// <summary>Initialises a new instance with a default message.</summary>
-    public ZeeKayDaConfigurationException() { }
-
     /// <summary>Initialises a new instance with the specified <paramref name="message"/>.</summary>
     public ZeeKayDaConfigurationException(string message) : base(message) { }
 
@@ -398,9 +389,6 @@ namespace ZeeKayDa.Auth;
 /// </remarks>
 public class ZeeKayDaInteractionException : ZeeKayDaException
 {
-    /// <summary>Initialises a new instance with a default message.</summary>
-    public ZeeKayDaInteractionException() { }
-
     /// <summary>Initialises a new instance with the specified <paramref name="message"/>.</summary>
     public ZeeKayDaInteractionException(string message) : base(message) { }
 
