@@ -10,13 +10,14 @@ public sealed class EndpointRouteHelperTests
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
-    public void GetIssuerUri_NullOrWhitespaceIssuer_ThrowsInvalidOperationException(string? issuer)
+    public void GetIssuerUri_NullOrWhitespaceIssuer_ThrowsZeeKayDaConfigurationException(string? issuer)
     {
         var options = Options.Create(new AuthorizationServerOptions { Issuer = issuer });
 
         var act = () => EndpointRouteHelper.GetIssuerUri(options);
 
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*Issuer must be configured*");
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .WithMessage("*Issuer must be configured*")
+            .Which.Should().BeAssignableTo<ZeeKayDaException>();
     }
 }
