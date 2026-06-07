@@ -143,3 +143,11 @@ It is of utmost importance that you do not make decisions that stem from ambiguo
 ## Agents selection
 
 The solution contains several custom agents. Make sure you have a look at those before doing any work, to see if one of them might be better suited for the task.
+
+## Standing reminders
+
+### Extensibility docs (#111)
+
+Issue #111 tracks a dedicated **Extensibility** section in the docs covering how to implement custom stores, repositories, and other extension points.
+
+**When a new public interface is added or a new extension point is stabilised**, check whether it needs a how-to page under the Extensibility section and, if so, either create a child issue on #111 or add the task to the current PR. The overview page in the Extensibility section must also be kept up to date.
