@@ -1,7 +1,15 @@
 # ADR 0001 — Endpoint Architecture Pattern
 
-**Status:** Accepted  
+**Status:** Accepted (amended 2026-06-07)  
 **Date:** 2026-05-31
+
+---
+
+## Amendments
+
+| Date | Section | Summary | Reference |
+|---|---|---|---|
+| 2026-06-07 | §3 Layering | Replaced the ad-hoc "may reference `Microsoft.Extensions.Options`" carve-out with a namespace-level dependency allowlist: the entire `Microsoft.Extensions.*` namespace is permitted; `Microsoft.AspNetCore.*` is prohibited except for an explicitly enumerated whitelist (currently only `Microsoft.AspNetCore.DataProtection.Abstractions`). Retroactively covers the `IDistributedCache` dependency introduced by ADR 0005 §6b and accommodates the `IDataProtectionProvider` / `IMemoryCache` dependencies introduced by ADR 0008. | [#106](https://github.com/ChrisKlug/zeekayda-auth/issues/106) |
 
 ---
 
@@ -112,12 +120,36 @@ what the method does and aligns with existing ASP.NET Core ecosystem patterns.
 | `AddZeeKayDaAuth()` extension | `ZeeKayDa.Auth.AspNetCore` |
 | `MapZeeKayDaAuth()` extension | `ZeeKayDa.Auth.AspNetCore` |
 
-`ZeeKayDa.Auth` has **zero knowledge of ASP.NET Core**. It may reference
-`Microsoft.Extensions.Options` (for `IOptions<T>`, `IValidateOptions<T>`) because that abstraction
-is part of the generic host and is not specific to the web stack. It must not reference
-`Microsoft.AspNetCore.*`, `HttpContext`, `IApplicationBuilder`, or `IEndpointRouteBuilder`. This
-makes the core library independently testable and usable by any host (e.g., a future gRPC or MAUI
-host).
+`ZeeKayDa.Auth` has **zero knowledge of ASP.NET Core**. Because the boundary between "generic host
+/ runtime extensions" and "ASP.NET Core" is drawn by Microsoft along namespace lines — but with one
+well-known historical exception — the rule is encoded as a namespace-level allowlist rather than a
+case-by-case judgement call:
+
+- **Permitted (namespace-level):** any package under `Microsoft.Extensions.*`. This namespace is
+  the generic-host / runtime-extensions surface; nothing in it carries a transitive dependency on
+  ASP.NET Core, and it is usable from console, worker-service, gRPC, MAUI, and test hosts. No
+  per-package ADR is required to take a dependency on a `Microsoft.Extensions.*` package.
+  Representative examples already used or anticipated: `Microsoft.Extensions.Options`,
+  `Microsoft.Extensions.Options.DataAnnotations`,
+  `Microsoft.Extensions.DependencyInjection.Abstractions`,
+  `Microsoft.Extensions.Logging.Abstractions`,
+  `Microsoft.Extensions.Caching.Abstractions` (`IDistributedCache`, per ADR 0005 §6b),
+  `Microsoft.Extensions.Caching.Memory` (`IMemoryCache`, per ADR 0008).
+- **Permitted (individually whitelisted):** specific `Microsoft.AspNetCore.*` packages that are
+  factually host-agnostic despite their naming. The current whitelist is:
+  - `Microsoft.AspNetCore.DataProtection.Abstractions` — provides `IDataProtectionProvider` /
+    `IDataProtector` (per ADR 0008). This is a historical wart: Data Protection predates the
+    `Microsoft.Extensions.*` reorganisation and was never renamed, but the abstractions package
+    contains no HTTP, hosting, routing, or middleware types and has no transitive ASP.NET Core
+    dependency.
+
+  Any future addition to this whitelist **requires an explicit ADR** justifying why the package is
+  host-agnostic in fact, regardless of its namespace.
+- **Prohibited:** everything else under `Microsoft.AspNetCore.*` — including but not limited to
+  `Microsoft.AspNetCore.Hosting`, `Microsoft.AspNetCore.Http`, `Microsoft.AspNetCore.Routing`,
+  `Microsoft.AspNetCore.Mvc`, and the types `HttpContext`, `IApplicationBuilder`, and
+  `IEndpointRouteBuilder`. The core library must remain independently testable and usable by any
+  host (e.g., a future gRPC or MAUI host).
 
 `ZeeKayDa.Auth.AspNetCore` depends on `ZeeKayDa.Auth`. The reverse dependency is permanently
 forbidden.
