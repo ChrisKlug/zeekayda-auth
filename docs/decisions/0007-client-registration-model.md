@@ -40,10 +40,11 @@ are at play:
    client registration model: the client's permitted scopes must be stored somewhere
    authoritative, and the client repository is that place.
 
-6. **Layering.** `ZeeKayDa.Auth` (core) has zero knowledge of ASP.NET Core. All abstractions
-   owned by the client registration subsystem must live in the core package if they are needed by
-   the framework's internal pipeline. Only DI wiring extensions belong in
-   `ZeeKayDa.Auth.AspNetCore`.
+6. **Layering.** `ZeeKayDa.Auth` (core) has zero knowledge of ASP.NET Core. Client registration
+   data (`IClientRegistration`, `IClientRepository`, `IClientSecretHasher`) lives in core. Token
+   endpoint client authentication is request-aware and therefore belongs to the
+   `ZeeKayDa.Auth.AspNetCore` integration layer unless/until a framework-neutral request
+   abstraction is introduced.
 
 7. **OAuth 2.1 alignment.** The framework targets OAuth 2.1 forward-compatibility (see
    [draft-ietf-oauth-v2-1](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/)). Key
@@ -53,6 +54,30 @@ are at play:
 ---
 
 ## Decision
+
+### Decision summary
+
+- Client registration is represented by `IClientRegistration` in `ZeeKayDa.Auth`; framework code
+  consumes the interface, not the default record.
+- `ClientRegistration` is a sealed record for in-memory/simple deployments; validation is performed
+  by repositories and startup validators, not by record constructors.
+- `IClientRepository` is the async lookup abstraction; no EF dependency or dynamic registration is
+  required for v1.
+- Client secrets are stored as pure data (`IClientSecret`) and created/verified by
+  `IClientSecretHasher`; hashers are not token-endpoint authentication-method handlers.
+- Token endpoint client authentication is handled in `ZeeKayDa.Auth.AspNetCore` by
+  `IClientAuthenticator`; v1 built-ins are `none`, `client_secret_basic`, and
+  `client_secret_post`.
+- `AllowedTokenEndpointAuthMethods` remains `IReadOnlySet<string>`; ZeeKayDa-handled values are
+  exposed as constants on `TokenEndpointAuthMethods`.
+- Startup validation fails if any configured token endpoint auth method has no registered
+  `IClientAuthenticator` advertising it.
+- Redirect and post-logout redirect URIs use exact ordinal string matching, with only the RFC 8252
+  loopback-port exception.
+- PKCE is mandatory for all clients; implicit and ROPC flows are not supported.
+- Effective ID-token signing algorithms are
+  `client.AllowedSigningAlgorithms ?? IdTokenOptions.SigningAlgValuesSupported`; issuance fails if
+  no configured signing credential satisfies the effective set.
 
 ### 1. `IClientRegistration` — interface, not record or abstract class
 
@@ -72,15 +97,18 @@ public interface IClientRegistration
 
     /// <summary>
     /// The stored client secret credential, or <see langword="null"/> for public clients.
-    /// This is pure data (no behaviour) — verification and creation are delegated to
-    /// <see cref="IClientSecretHasher"/> implementations resolved from DI. See §3.
+    /// This is pure data (no behaviour) — creation and stored-secret verification are delegated
+    /// to <see cref="IClientSecretHasher"/> implementations resolved from DI. Token endpoint
+    /// request authentication is handled separately by <c>IClientAuthenticator</c> in
+    /// <c>ZeeKayDa.Auth.AspNetCore</c>. See §3 and §3a.
     /// </summary>
     /// <remarks>
-    /// The framework NEVER stores or compares plaintext secrets directly. The token-endpoint
-    /// pipeline asks the framework-internal <c>CompositeClientSecretHasher</c> to verify a
-    /// presented plaintext against this property's value; the composite dispatches to the
-    /// registered <see cref="IClientSecretHasher"/> whose <see cref="IClientSecretHasher.CanHandle"/>
-    /// returns <see langword="true"/> for the concrete type.
+    /// The framework NEVER stores or compares plaintext secrets directly. The built-in
+    /// <c>ClientSecretAuthenticator</c> asks the framework-internal
+    /// <c>CompositeClientSecretHasher</c> to verify a presented plaintext against this property's
+    /// value; the composite dispatches to the registered <see cref="IClientSecretHasher"/> whose
+    /// <see cref="IClientSecretHasher.CanHandle"/> returns <see langword="true"/> for the concrete
+    /// type.
     /// </remarks>
     IClientSecret? ClientSecret { get; }
 
@@ -89,7 +117,7 @@ public interface IClientRegistration
     /// <see cref="ClientSecret"/> is <see langword="null"/> and
     /// <see cref="AllowedTokenEndpointAuthMethods"/> is exactly
     /// <c>{ TokenEndpointAuthMethods.None }</c>; this consistency rule is enforced at registration
-    /// time (§6) with <see cref="ZeeKayDaConfigurationException"/> on violation.
+    /// time (§6).
     /// </summary>
     /// <remarks>
     /// <para>
@@ -187,10 +215,10 @@ public interface IClientRegistration
     /// of <see cref="string"/>; all others (grant types, response types, response modes,
     /// prompt values) are enums. The reason — a third party can introduce a new auth method
     /// (e.g. <c>tls_client_auth</c>) end-to-end by supplying a custom
-    /// <see cref="IClientSecretHasher"/> (paired with a custom <see cref="IClientSecret"/>
-    /// sub-interface) without any framework code change — is documented in §1a. Reference
-    /// the constants on <see cref="TokenEndpointAuthMethods"/> for the framework-recognised
-    /// values to avoid magic strings.
+    /// <c>IClientAuthenticator</c> in the ASP.NET Core integration layer without any core
+    /// registration-model change — is documented in §1a and §3a. Reference the constants on
+    /// <see cref="TokenEndpointAuthMethods"/> for the ZeeKayDa-handled values to avoid magic
+    /// strings.
     /// </para>
     /// <para>
     /// Distinct from the closed <see cref="TokenEndpointAuthMethod"/> enum, which serves
@@ -222,7 +250,8 @@ public interface IClientRegistration
     /// <c>IdTokenOptions.SigningAlgValuesSupported</c>" (the framework-wide default —
     /// typically <c>{<see cref="SigningAlgorithm.RS256"/>}</c>). A non-null value MUST be a
     /// non-empty subset of the globally configured set; this is verified at registration time
-    /// (shape check) and at host startup (cross-options subset check). See §6 and §8.
+    /// (shape check), best-effort at host startup (cross-options subset check), and
+    /// authoritatively at ID-token issuance. See §6 and §8.
     /// </summary>
     /// <remarks>
     /// A default interface member returning <see langword="null"/> is appropriate here
@@ -257,8 +286,8 @@ interface. This guarantees that customisations flow through the same framework b
 the built-in record.
 
 **`IsPublic` as a declared (non-DIM) member.** Earlier drafts modelled this as a default
-interface method derived from `SecretVerifier is null`. The current design replaces the
-verifier-on-registration with a pure-data `IClientSecret?` property (see §3) and promotes
+interface method derived from the presence of a client secret. The current design uses a pure-data
+`IClientSecret?` property (see §3) and promotes
 `IsPublic` to a declared member that the consumer's entity must specify explicitly — for the
 same reason `PostLogoutRedirectUris` is declared rather than DIM-defaulted: a silent default
 ("any implementor that forgets the property is public") would convert a configuration omission
@@ -303,11 +332,11 @@ single question: **can a new value be supported without changes to ZeeKayDa fram
 
 - For `token_endpoint_auth_method`, a new value (e.g. `tls_client_auth`,
   `self_signed_tls_client_auth`) genuinely can be introduced without framework changes — a
-  custom `IClientSecretHasher` (paired with a custom `IClientSecret` sub-interface) is a
-  public extension point that lets a third party implement the verification logic end-to-end.
-  Here the open-set argument applies, and `IReadOnlySet<string>` is the right choice. The
-  framework ships a `TokenEndpointAuthMethods` constants class (below) so consumers
-  reference the known values without magic strings.
+  custom `IClientAuthenticator` in `ZeeKayDa.Auth.AspNetCore` is a public extension point that
+  has access to the token request and declares the exact method strings it supports. Here the
+  open-set argument applies, and `IReadOnlySet<string>` is the right choice. The framework ships a
+  `TokenEndpointAuthMethods` constants class (below) so consumers reference ZeeKayDa-handled
+  values without magic strings.
 
 Future per-client vocabularies must be evaluated against the same rule: **enum** if
 framework changes are required to honour a new value, **`string` + a constants class** only
@@ -316,10 +345,10 @@ if a public extension point can carry the new value end-to-end without touching 
 An earlier draft of this section argued for strings across all protocol vocabularies on
 "open set" grounds, citing extension grant types (`urn:ietf:params:oauth:grant-type:…`),
 JARM (`form_post.jwt`), and MTLS auth methods. That was a misapplication of the open-set
-argument: of those three, only the MTLS case is genuinely open under the
-`IClientSecretHasher` / `IClientSecret` extension model. Extension grant types and JARM
-both require framework-side implementation, so a `string` shape only erased compile-time
-safety without buying any real extensibility. The corrected distinction is captured above.
+argument: of those three, only the MTLS case is genuinely open under the request-aware
+`IClientAuthenticator` extension model. Extension grant types and JARM both require
+framework-side implementation, so a `string` shape only erased compile-time safety without buying
+any real extensibility. The corrected distinction is captured above.
 
 **`PromptValue` enum (new — to be created in `src/ZeeKayDa.Auth/PromptValue.cs`).** No
 existing enum models the OIDC Core 1.0 §3.1.2.1 `prompt` vocabulary. Specify a new enum,
@@ -339,18 +368,17 @@ shape and the members.
 
 **`TokenEndpointAuthMethods` constants class (new — to be created in
 `src/ZeeKayDa.Auth/TokenEndpointAuthMethods.cs`).** To eliminate magic strings from consumer
-code, the framework ships a public constants class containing the values it recognises:
+code, the framework ships a public constants class containing the values ZeeKayDa handles in v1:
 
 ```csharp
 namespace ZeeKayDa.Auth;
 
 /// <summary>
-/// Constants for the framework-supported values of
+/// Constants for the ZeeKayDa-handled values of
 /// <see cref="IClientRegistration.AllowedTokenEndpointAuthMethods"/>. Consumers should
 /// reference these constants instead of magic strings. Third parties may introduce
-/// additional methods via a custom <see cref="IClientSecretHasher"/> (paired with a
-/// custom <see cref="IClientSecret"/> sub-interface); those are represented by their
-/// literal protocol string and are not listed here.
+/// additional methods via a custom IClientAuthenticator in ZeeKayDa.Auth.AspNetCore; those are
+/// represented by their literal protocol string and are not listed here.
 /// </summary>
 public static class TokenEndpointAuthMethods
 {
@@ -378,20 +406,21 @@ method not in the client's configured set with `invalid_client`. Two registratio
 safeguards apply:
 
 1. **Per-value advisory warning.** When an `AllowedTokenEndpointAuthMethods` value matches
-   none of the framework-recognised constants on `TokenEndpointAuthMethods`,
+   none of the ZeeKayDa-handled constants on `TokenEndpointAuthMethods`,
    `InMemoryClientRepository` emits an `ILogger.LogWarning` for that value. This is
-   informational, not a configuration error, because a custom `IClientSecretHasher` may
+   informational, not a configuration error, because a custom `IClientAuthenticator` may
    legitimately introduce a new method.
-2. **Whole-set startup rejection (unchanged from prior pass).** If the framework recognises
-   **none** of the configured methods for a client — i.e. no framework-known constant and
-   no custom hasher covers any of them — the client MUST be rejected at startup with
-   `ZeeKayDaConfigurationException`. There must be no silent fall-through to "no
-   authentication".
+2. **Auth-method coverage startup rejection.** During ASP.NET Core startup validation, every
+   configured `AllowedTokenEndpointAuthMethods` value MUST be present in at least one registered
+   `IClientAuthenticator.AuthenticationMethods` set. Missing coverage fails configuration via
+   `IValidateOptions<T>.Validate(...)` returning `ValidateOptionsResult.Fail(...)`; if reached
+   lazily, framework misconfiguration is surfaced as `ZeeKayDaConfigurationException`. There must
+   be no silent fall-through to "no authentication".
 
 For the four enum-typed vocabularies, `InMemoryClientRepository.ValidateClient` additionally
 applies an `Enum.IsDefined`-based belt-and-suspenders check at registration time, rejecting
 any value not defined on the enum (catches `(GrantType)999`-style casts that bypass the
-type system) with `ZeeKayDaConfigurationException`.
+type system) with `ArgumentException`.
 
 ### 2. `ClientRegistration` — the default concrete implementation
 
@@ -554,7 +583,9 @@ namespace ZeeKayDa.Auth;
 /// (algorithm name, iterations, salt, hash, plus any algorithm-specific extras) and expose them
 /// via the appropriate sub-interface.
 /// </remarks>
-public interface IClientSecret;
+public interface IClientSecret
+{
+}
 
 /// <summary>
 /// A PBKDF2-hashed client secret. Stores iteration count, salt, and hash. The framework's default
@@ -600,8 +631,9 @@ namespace ZeeKayDa.Auth;
 ///
 /// Implementations MUST:
 /// <list type="bullet">
+///   <item>Reject null, empty, and whitespace-only plaintext in <see cref="Create"/>.</item>
 ///   <item>Use a fixed-time comparison (<see cref="System.Security.Cryptography.CryptographicOperations.FixedTimeEquals"/>) inside <see cref="Verify"/>.</item>
-///   <item>NOT throw from any method. Internal errors MUST be caught and surfaced as <c>Verify == false</c> (or as a <see cref="ZeeKayDaConfigurationException"/> at construction time for invalid configuration only).</item>
+///   <item>NOT throw from <see cref="Verify"/>. Internal verification errors MUST be caught and surfaced as <c>Verify == false</c>. Public constructor/API argument problems use the <see cref="ArgumentException"/> family; options validation uses <c>ValidateOptionsResult.Fail(...)</c>.</item>
 ///   <item>NOT log, expose in exception messages, or include in telemetry the presented secret value or any derivative.</item>
 ///   <item>Be safe to call concurrently — hashers are resolved as singletons.</item>
 /// </list>
@@ -640,7 +672,14 @@ public abstract class ClientSecretHasher<TSecret> : IClientSecretHasher
     public bool Verify(IClientSecret stored, ReadOnlySpan<char> presented) =>
         stored is TSecret typed && VerifyCore(typed, presented);
 
-    public IClientSecret Create(string plaintext) => CreateCore(plaintext);
+    public IClientSecret Create(string plaintext)
+    {
+        if (string.IsNullOrWhiteSpace(plaintext))
+            throw new ArgumentException(
+                "Client secret plaintext must not be null, empty, or whitespace.",
+                nameof(plaintext));
+        return CreateCore(plaintext);
+    }
 
     protected abstract bool VerifyCore(TSecret stored, ReadOnlySpan<char> presented);
     protected abstract TSecret CreateCore(string plaintext);
@@ -664,7 +703,8 @@ public sealed class Pbkdf2ClientSecretHasher : ClientSecretHasher<IPbkdf2ClientS
     public Pbkdf2ClientSecretHasher(int iterations)
     {
         if (iterations < MinimumIterations)
-            throw new ZeeKayDaConfigurationException(
+            throw new ArgumentOutOfRangeException(
+                nameof(iterations),
                 $"PBKDF2 iterations must be >= {MinimumIterations}; got {iterations}.");
         _iterations = iterations;
     }
@@ -702,7 +742,7 @@ Concrete parameter table:
 |---|---|
 | Algorithm | PBKDF2-HMAC-SHA256 |
 | Iteration count (default) | **600,000** (current OWASP guidance for PBKDF2-SHA256) |
-| Iteration count (minimum) | **100,000** — values below this throw `ZeeKayDaConfigurationException` at construction |
+| Iteration count (minimum) | **100,000** — values below this are rejected as a public constructor argument problem |
 | Salt length | **16 bytes** (`RandomNumberGenerator.GetBytes(16)` on `Create`) |
 | Hash length | **32 bytes** (HMAC-SHA256 output, no truncation) |
 
@@ -729,8 +769,8 @@ internal sealed class CompositeClientSecretHasher : IClientSecretHasher
                 "No IClientSecretHasher registered. Call AddSecretsHasher<T>() at minimum.");
 
         _default = ResolveDefault(_hashers, options.Value);
-        _dummySecret = _default.Create("__zkd_unknown_client_padding__");
-        _dummyPresented = "__zkd_unknown_client_padding__";
+        _dummyPresented = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
+        _dummySecret = _default.Create(_dummyPresented);
     }
 
     public bool CanHandle(IClientSecret secret) =>
@@ -758,6 +798,15 @@ internal sealed class CompositeClientSecretHasher : IClientSecretHasher
 
     public IClientSecret Create(string plaintext) => _default.Create(plaintext);
 
+    internal bool VerifyUnknownClientForTimingOnly(ReadOnlySpan<char> presented)
+    {
+        // The presented value is intentionally ignored. Unknown-client padding must be impossible
+        // to misuse as authentication: it always performs default-hasher work and always returns
+        // failure semantics.
+        _ = _default.Verify(_dummySecret, _dummyPresented);
+        return false;
+    }
+
     private void PadTiming()
     {
         // Fixed-time dummy verify against the default hasher to dominate the response time
@@ -771,9 +820,10 @@ internal sealed class CompositeClientSecretHasher : IClientSecretHasher
 }
 ```
 
-`Verify` is also called by the framework's "unknown client" path (see §3b) — when
-`IClientRepository.FindByClientIdAsync` returns `null`, the token endpoint still calls
-`CompositeClientSecretHasher.Verify(_dummySecret, presentedSecret)` to keep timing uniform.
+The unknown-client path does **not** call `Verify` with a dummy secret. Instead, the token endpoint
+calls the internal `VerifyUnknownClientForTimingOnly(presentedSecret)` helper (see §3b). That helper
+always returns failure semantics after performing default-hasher work, making the timing-padding API
+impossible to misuse as a successful authentication check.
 
 **Why `CompositeClientSecretHasher` is registered as the concrete type, NOT as
 `IClientSecretHasher`.** If the composite were registered as `IClientSecretHasher`, the
@@ -790,8 +840,8 @@ public sealed class ClientSecretHasherOptions
 {
     /// <summary>
     /// Hasher types that have been registered with <c>isDefault: true</c>. Validated at startup:
-    /// 0 explicit defaults + 1 hasher → that hasher is the default; 0 + 2+ → throws; 1 → that
-    /// type is the default; 2+ → throws.
+    /// 0 explicit defaults + 1 hasher → that hasher is the default; 0 + 2+ → options-validation
+    /// failure; 1 → that type is the default; 2+ → options-validation failure.
     /// </summary>
     internal List<Type> ExplicitDefaults { get; } = new();
 }
@@ -840,15 +890,18 @@ the agreed table:
 |---|---|---|
 | 1 | 0 or 1 | That hasher is the default |
 | 2+ | 1 | The flagged type is the default |
-| 2+ | 0 | **`ZeeKayDaConfigurationException`** at startup with a message naming the registered hashers and explaining `AddSecretsHasher<T>(isDefault: true)` |
-| 2+ | 2+ | **`ZeeKayDaConfigurationException`** at startup naming the conflicting types |
-| 0 | (any) | **`ZeeKayDaConfigurationException`** at startup |
+| 2+ | 0 | `ValidateOptionsResult.Fail(...)` at startup with a message naming the registered hashers and explaining `AddSecretsHasher<T>(isDefault: true)` |
+| 2+ | 2+ | `ValidateOptionsResult.Fail(...)` at startup naming the conflicting types |
+| 0 | (any) | `ValidateOptionsResult.Fail(...)` at startup |
 
 The validator enumerates `IClientSecretHasher` registrations from the `IServiceProvider`
 (matching the same pattern §6 below uses for the missing-`IClientRepository` startup check).
-All four exception types are `ZeeKayDaConfigurationException` per ADR 0006 §1.
+Per ADR 0006, options validation reports configuration problems with
+`ValidateOptionsResult.Fail(...)`; the host surfaces the failure at startup. If the composite is
+constructed lazily without options validation having run, the same misconfiguration is a framework
+configuration error and is surfaced as `ZeeKayDaConfigurationException`.
 
-Required exception messages — exact wording fixed by this ADR:
+Required validation messages — exact wording fixed by this ADR:
 
 - **0 hashers registered**:
   `"No IClientSecretHasher has been registered. Call AddSecretsHasher<T>() at least once, or rely on the framework's default Pbkdf2ClientSecretHasher (registered automatically by AddZeeKayDaAuth)."`
@@ -878,7 +931,7 @@ A worked EF entity sketch is shown in §7.
 
 The `IsPublic` property (declared on `IClientRegistration`) is the authoritative indicator of
 client confidentiality. `ClientSecret` and `AllowedTokenEndpointAuthMethods` must agree with
-it; the §6 consistency check fails startup with `ZeeKayDaConfigurationException` on
+it; the §6 consistency check fails startup with `ArgumentException` for in-memory registrations on
 violation.
 
 | `IsPublic` | `ClientSecret` | `AllowedTokenEndpointAuthMethods` | Meaning |
@@ -889,15 +942,18 @@ violation.
 **Binding rules on the framework** — forward constraints for the future
 token-endpoint and authorization-endpoint ADRs:
 
-1. Token endpoint client authentication MUST delegate to
-   `CompositeClientSecretHasher.Verify(client.ClientSecret!, presented)` for confidential
-   clients. The framework MUST NOT compare strings itself.
+1. Token endpoint client authentication MUST delegate to `CompositeClientAuthenticator`, which in
+   turn dispatches to a registered `IClientAuthenticator`. For the built-in shared-secret methods,
+   `ClientSecretAuthenticator` delegates stored-secret verification to
+   `CompositeClientSecretHasher.Verify(client.ClientSecret!, presented)`. The framework MUST NOT
+   compare secret strings itself.
 2. `IsPublic == true` (equivalently, `ClientSecret is null`) means "public client" — any
    presented `client_secret` MUST cause the request to be rejected with `invalid_client`.
 3. To keep timing uniform between "unknown client" and "wrong secret", the framework MUST
-   call `CompositeClientSecretHasher.Verify(_dummySecret, presented)` on the unknown-client
-   path. The composite's internal dummy is constructed from the resolved default hasher at
-   startup (see §3.4); its work factor matches the default's success path.
+   call `CompositeClientSecretHasher.VerifyUnknownClientForTimingOnly(presented)` on the
+   unknown-client path. The helper always returns failure semantics and uses a random dummy
+   plaintext/secret pair constructed from the resolved default hasher at startup (see §3.4); its
+   work factor matches the default's success path.
 4. `InMemoryClientRepository` validates `client.ClientSecret` against the empty string at
    construction time (using the resolved composite hasher) — defence-in-depth against a
    custom hasher that accepts empty input through a comparison bug. See §6.
@@ -918,6 +974,84 @@ a single return type from `IClientRepository`, no discriminated unions; (b) the 
 single boolean; the type-system overhead of two separate types is not justified by the
 complexity it would encode.
 
+### 3a. Token endpoint client authentication extension point
+
+`IClientSecretHasher` is **not** the extension point for `token_endpoint_auth_method`. It only
+creates and verifies stored shared-secret values. Token endpoint authentication is request-aware
+(headers, form fields, client certificates, and future sender-constrained mechanisms), so the
+extension point lives in `ZeeKayDa.Auth.AspNetCore`:
+
+```csharp
+namespace ZeeKayDa.Auth.AspNetCore.ClientAuthentication;
+
+public interface IClientAuthenticator
+{
+    IReadOnlySet<string> AuthenticationMethods { get; }
+
+    ValueTask<ClientAuthenticationResult> AuthenticateAsync(
+        ClientAuthenticationContext context,
+        CancellationToken cancellationToken);
+}
+
+public sealed class ClientAuthenticationContext
+{
+    public required HttpContext HttpContext { get; init; }
+    public required IClientRegistration? Client { get; init; }
+    public required string ClientId { get; init; }
+    public required string? RequestedAuthMethod { get; init; }
+    public required IFormCollection Form { get; init; }
+    public required IHeaderDictionary Headers { get; init; }
+}
+
+public sealed record ClientAuthenticationResult
+{
+    public required bool Succeeded { get; init; }
+    public string Error { get; init; } = "invalid_client";
+
+    public static ClientAuthenticationResult Success() => new() { Succeeded = true };
+    public static ClientAuthenticationResult InvalidClient() => new() { Succeeded = false };
+}
+```
+
+This does not violate the layering rule: core owns client registration data and stored-secret
+hashing; the ASP.NET Core integration owns token endpoint request parsing and client
+authentication. If a future non-ASP.NET host is added, it can define an equivalent adapter without
+adding `HttpContext` references to `ZeeKayDa.Auth`.
+
+`AuthenticationMethods` is an exact, ordinal string set and is the primary support declaration. A
+`CanHandle(context)`-only design is rejected because startup validation must prove coverage of
+configured method strings without constructing synthetic HTTP requests. `AuthenticateAsync` may
+still reject a request because the request shape is invalid or the client is not allowed to use the
+method, but support is declared by `AuthenticationMethods`.
+
+Built-in v1 authenticators:
+
+- `PublicClientAuthenticator` handles `TokenEndpointAuthMethods.None`. It succeeds only for a known
+  public client whose configured method is `none` and whose token request does not present a client
+  secret. Any presented secret for a public client fails with `invalid_client`.
+- `ClientSecretAuthenticator` handles `TokenEndpointAuthMethods.ClientSecretBasic` and
+  `TokenEndpointAuthMethods.ClientSecretPost`. It parses the appropriate request location and uses
+  `CompositeClientSecretHasher` internally to verify the presented plaintext against
+  `client.ClientSecret`. `client_secret_post` is supported for compatibility but should be enabled
+  only when needed because request bodies are more likely to be logged by intermediaries and
+  application diagnostics than Authorization headers.
+- `CompositeClientAuthenticator` is framework-internal and dispatches to registered
+  `IClientAuthenticator` implementations by exact ordinal membership in `AuthenticationMethods`.
+  It performs the allowed-method check against `client.AllowedTokenEndpointAuthMethods` before
+  delegating.
+
+`AddZeeKayDaAuth` registers `PublicClientAuthenticator` and `ClientSecretAuthenticator` by default
+with `TryAddEnumerable`, plus the internal `CompositeClientAuthenticator` and auth-method coverage
+startup validator. Consumers add custom methods by registering additional `IClientAuthenticator`
+implementations; they do not replace the built-ins unless they intentionally override DI.
+
+ASP.NET Core startup validation MUST enumerate configured clients where possible and verify that
+every configured `AllowedTokenEndpointAuthMethods` value is present in at least one registered
+authenticator's `AuthenticationMethods`. Missing coverage is reported with
+`ValidateOptionsResult.Fail(...)`. This check is best-effort for custom async repositories that
+cannot be enumerated at startup; those repositories and their tests must enforce the same rule.
+Request-time validation remains authoritative for all repositories.
+
 ### 3b. Client enumeration mitigation — forward constraints
 
 The following constraints are binding on the future authorization-endpoint and token-endpoint
@@ -926,9 +1060,10 @@ ADRs to prevent an attacker from probing the AS to enumerate valid `client_id`s:
 - **Token endpoint:** `invalid_client` is returned uniformly for both "unknown `client_id`" and
   "wrong `client_secret`". The `error_description` MUST NOT include the `client_id` or any
   string derived from it. Per §3.8 rule 3, the framework calls
-  `CompositeClientSecretHasher.Verify(_dummySecret, presented)` whenever the `client_id`
-  lookup returns `null` so that the wall-clock time is indistinguishable from a real
-  wrong-secret failure.
+  `CompositeClientSecretHasher.VerifyUnknownClientForTimingOnly(presented)` whenever the
+  `client_id` lookup returns `null` so that the wall-clock time is indistinguishable from a real
+  wrong-secret failure. This API always returns failure semantics and cannot be reused as an
+  authentication check.
 - **Authorization endpoint:** an unknown `client_id` MUST fail *before* any redirect is
   performed, rendering a generic error page that does NOT echo the supplied `client_id` into the
   HTML body (mitigating both enumeration via timing and reflective XSS via unencoded echoing).
@@ -944,9 +1079,10 @@ path** so the observable wall-clock time on every `invalid_client` outcome is do
 default hasher's work factor. This is implemented inside `CompositeClientSecretHasher.Verify`:
 on every `false` outcome (whether from the matched-hasher path or the no-hasher-recognises-this-
 secret fall-through), the composite invokes `CompositeClientSecretHasher.PadTiming()`, which
-calls `_default.Verify(_dummySecret, _dummyPresented)` against a precomputed dummy secret with
-a fixed dummy presented-plaintext (both constructed at composite startup from the resolved
-default hasher; see §3.4). The principle is unchanged from the prior pass — every
+calls `_default.Verify(_dummySecret, _dummyPresented)` against a precomputed dummy secret. The
+dummy presented plaintext is generated randomly at composite startup, then hashed by the resolved
+default hasher; it is never a public hard-coded string (see §3.4). The principle is unchanged —
+every
 `invalid_client` failure path performs work comparable to the default hasher's success path —
 so a third-party fast custom hasher cannot reopen the enumeration oracle.
 
@@ -965,6 +1101,11 @@ The `redirect_uri` in an authorization request must be an exact string match of 
 client's registered `RedirectUris`. No normalization (e.g., adding a trailing slash), no prefix
 matching, no wildcard patterns. This is the single most effective control against open-redirect
 abuse via redirect URI manipulation.
+
+The implementation MUST enumerate the registered strings and compare each candidate with
+`StringComparer.Ordinal` (or `StringComparison.Ordinal`). It MUST NOT rely on the runtime comparer
+of the supplied `IReadOnlySet<string>` because custom repositories may expose sets with an
+inappropriate comparer.
 
 **Exception — RFC 8252 §7.3 loopback port.** When a registered redirect URI is HTTP on a loopback
 host (per the loopback test below), the request-time match compares scheme, host, path, query,
@@ -1033,11 +1174,13 @@ string. `Uri.Host` strips the brackets from bracketed IPv6 literals so `IPAddres
 parses cleanly. The earlier draft's string comparison against `"[::1]"` was a bug — `Uri.Host`
 never contains brackets — and is replaced by this single helper everywhere.
 
-**`localhost` vs IP literal.** `localhost` is allowed for ergonomics, but at registration time
-the framework emits an `ILogger.LogWarning` recommending the IP literal per RFC 8252 §8.3
-(DNS rebinding considerations). The check uses `string.Equals("localhost", host, OrdinalIgnoreCase)`
-— a whole-string equality, never substring — so `localhost.attacker.com` is correctly rejected
-because it falls through to the standard non-loopback HTTPS-only rule.
+**`localhost` vs IP literal.** `localhost` is allowed for development ergonomics, but production
+native-app guidance strongly prefers loopback IP literals (`127.0.0.1` / `[::1]`) per RFC 8252
+§8.3 (DNS rebinding considerations). At registration time the framework emits an
+`ILogger.LogWarning` recommending the IP literal. The check uses
+`string.Equals("localhost", host, OrdinalIgnoreCase)` — a whole-string equality, never substring —
+so `localhost.attacker.com` is correctly rejected because it falls through to the standard
+non-loopback HTTPS-only rule.
 
 Enforced at registration time in `InMemoryClientRepository`:
 
@@ -1124,7 +1267,7 @@ private static void ValidateRedirectUri(string raw, string clientId, ILogger log
 | Validation point | Covers | Fails with |
 |---|---|---|
 | `InMemoryClientRepository` constructor | Clients registered via `AddInMemoryClients` | `ArgumentException` (startup) |
-| Startup options validation (see §6) | A missing/unconfigured `IClientRepository` | `ZeeKayDaConfigurationException` (startup) |
+| Startup options validation (see §6) | A missing/unconfigured `IClientRepository` | `ValidateOptionsResult.Fail(...)` surfaced by host startup |
 | Request-time pipeline | All clients (including custom repository results) | OAuth `invalid_request` error response |
 
 The registration-time check catches configuration mistakes immediately (the server won't start with
@@ -1338,8 +1481,7 @@ public sealed class InMemoryClientRepository : IClientRepository
         // Consistency: IsPublic ⇔ ClientSecret is null ⇔ AllowedTokenEndpointAuthMethods == { None }.
         // All three must agree. Mismatch would allow a confidential client to authenticate as
         // 'none', or a public client to be required to present a secret it cannot hold. Reject
-        // at startup with ZeeKayDaConfigurationException (see ADR 0006 §1) — this is a
-        // configuration bug, not a value-object validation error.
+        // as an ArgumentException because these registrations are constructor/API inputs.
         var authMethods = client.AllowedTokenEndpointAuthMethods;
         var authMethodsIsExactlyNone =
             authMethods.Count == 1 && authMethods.Contains(TokenEndpointAuthMethods.None);
@@ -1347,11 +1489,11 @@ public sealed class InMemoryClientRepository : IClientRepository
         if (client.IsPublic)
         {
             if (client.ClientSecret is not null)
-                throw new ZeeKayDaConfigurationException(
+                throw new ArgumentException(
                     $"Client '{client.ClientId}': IsPublic = true but ClientSecret is non-null. " +
                     "Public clients must not carry a stored credential.");
             if (!authMethodsIsExactlyNone)
-                throw new ZeeKayDaConfigurationException(
+                throw new ArgumentException(
                     $"Client '{client.ClientId}': IsPublic = true but " +
                     "AllowedTokenEndpointAuthMethods is not exactly " +
                     "{ TokenEndpointAuthMethods.None }. Public clients cannot authenticate " +
@@ -1360,11 +1502,11 @@ public sealed class InMemoryClientRepository : IClientRepository
         else
         {
             if (client.ClientSecret is null)
-                throw new ZeeKayDaConfigurationException(
+                throw new ArgumentException(
                     $"Client '{client.ClientId}': IsPublic = false but ClientSecret is null. " +
                     "Confidential clients must carry a stored credential.");
             if (authMethods.Contains(TokenEndpointAuthMethods.None))
-                throw new ZeeKayDaConfigurationException(
+                throw new ArgumentException(
                     $"Client '{client.ClientId}': IsPublic = false but " +
                     "AllowedTokenEndpointAuthMethods contains " +
                     "TokenEndpointAuthMethods.None. A confidential client must not be " +
@@ -1385,10 +1527,9 @@ public sealed class InMemoryClientRepository : IClientRepository
         }
 
         // Per-value advisory warning for unrecognised token-endpoint auth methods. A custom
-        // IClientSecretHasher (paired with a custom IClientSecret sub-interface) may
-        // legitimately introduce a new method (e.g. tls_client_auth), so this is informational
-        // rather than a configuration error. The whole-set rejection (no framework-known method
-        // AND no custom hasher covers any of them) is enforced separately at startup — see §1a.
+        // IClientAuthenticator may legitimately introduce a new method (e.g. tls_client_auth), so
+        // this is informational rather than a configuration error. Auth-method coverage across
+        // registered authenticators is enforced by ASP.NET Core startup validation — see §1a/§3a.
         foreach (var method in authMethods)
         {
             if (method is not TokenEndpointAuthMethods.ClientSecretBasic
@@ -1397,11 +1538,10 @@ public sealed class InMemoryClientRepository : IClientRepository
             {
                 logger.LogWarning(
                     "Client '{ClientId}': AllowedTokenEndpointAuthMethods contains " +
-                    "'{Method}', which is not a framework-recognised constant on " +
+                    "'{Method}', which is not a ZeeKayDa-handled constant on " +
                     "TokenEndpointAuthMethods. This is permitted (a custom " +
-                    "IClientSecretHasher paired with a custom IClientSecret sub-interface " +
-                    "may implement it) but will fail authentication unless such a hasher " +
-                    "covers it.",
+                    "IClientAuthenticator may implement it) but will fail authentication " +
+                    "unless such an authenticator advertises it.",
                     client.ClientId, method);
             }
         }
@@ -1420,7 +1560,7 @@ public sealed class InMemoryClientRepository : IClientRepository
             foreach (var value in values)
             {
                 if (!Enum.IsDefined(value))
-                    throw new ZeeKayDaConfigurationException(
+                    throw new ArgumentException(
                         $"Client '{clientId}': {propertyName} contains undefined " +
                         $"{typeof(TEnum).Name} value '{value}'. This indicates an " +
                         "out-of-range cast (e.g. (GrantType)999).");
@@ -1450,7 +1590,7 @@ public sealed class InMemoryClientRepository : IClientRepository
         // is not available to ValidateClient when InMemoryClientRepository is constructed
         // via DI before options have been bound for all consumers.
         if (client.AllowedSigningAlgorithms is { Count: 0 })
-            throw new ZeeKayDaConfigurationException(
+            throw new ArgumentException(
                 $"Client '{client.ClientId}': AllowedSigningAlgorithms is non-null but empty. " +
                 "Either omit the property (null = inherit IdTokenOptions.SigningAlgValuesSupported) " +
                 "or provide at least one algorithm.");
@@ -1508,17 +1648,25 @@ custom `IClientRepository` would not run that code path at all). It runs instead
 ADR 0001 §6 uses for issuer validation and §6 above uses for the missing-`IClientRepository`
 check. The validator resolves the registered `IClientRepository` (synchronously enumerating all
 clients for the in-memory case; custom async repositories are exempt from the cross-check and
-must perform their own subset validation) and the bound `IdTokenOptions`, then throws
-`ZeeKayDaConfigurationException` naming the offending `client_id` and the offending algorithm if
+must perform their own subset validation) and the bound `IdTokenOptions`, then returns
+`ValidateOptionsResult.Fail(...)` naming the offending `client_id` and the offending algorithm if
 any client's `AllowedSigningAlgorithms` contains a value not in
 `IdTokenOptions.SigningAlgValuesSupported`.
+
+At issuance time the binding rule is authoritative for **all** repositories, including custom
+async repositories: the effective allowed algorithms are
+`client.AllowedSigningAlgorithms ?? IdTokenOptions.SigningAlgValuesSupported`. The ID-token signer
+MUST choose an `alg` from that effective set. If no configured signing credential/algorithm
+satisfies the effective set, token issuance MUST fail rather than silently falling back to a
+different algorithm. Startup validation is only a best-effort early-failure mechanism; it is not the
+security boundary.
 
 Summary of the split:
 
 | Check | Layer | Exception |
 |---|---|---|
-| `AllowedSigningAlgorithms` non-empty when non-null (shape) | `InMemoryClientRepository.ValidateClient` (registration time) | `ZeeKayDaConfigurationException` |
-| `AllowedSigningAlgorithms ⊆ IdTokenOptions.SigningAlgValuesSupported` (cross-options) | `IValidateOptions<…>` at host startup | `ZeeKayDaConfigurationException` |
+| `AllowedSigningAlgorithms` non-empty when non-null (shape) | `InMemoryClientRepository.ValidateClient` (registration time) | `ArgumentException` |
+| `AllowedSigningAlgorithms ⊆ IdTokenOptions.SigningAlgValuesSupported` (cross-options) | `IValidateOptions<…>` at host startup | `ValidateOptionsResult.Fail(...)` |
 
 **Package ownership:**
 
@@ -1532,15 +1680,19 @@ Summary of the split:
 | `IClientRepository` interface | `ZeeKayDa.Auth` |
 | `InMemoryClientRepository` | `ZeeKayDa.Auth` |
 | `ClientRegistration.CreateConfidential` / `CreatePublic` factory methods | `ZeeKayDa.Auth` |
+| `IClientAuthenticator`, `ClientAuthenticationContext`, `ClientAuthenticationResult` | `ZeeKayDa.Auth.AspNetCore` |
+| `PublicClientAuthenticator`, `ClientSecretAuthenticator` | `ZeeKayDa.Auth.AspNetCore` |
+| `CompositeClientAuthenticator` (internal dispatcher) | `ZeeKayDa.Auth.AspNetCore` |
+| Auth-method coverage startup validator (`AllowedTokenEndpointAuthMethods` covered by registered authenticators) | `ZeeKayDa.Auth.AspNetCore` |
 | `AddInMemoryClients`, `AddSecretsHasher<T>(bool isDefault = false)` DI builder extensions | `ZeeKayDa.Auth.AspNetCore` |
 
 **Fail-fast on missing repository.** `AddZeeKayDaAuth` does NOT register a default
 `IClientRepository`. Per the fail-fast principle from ADR 0001 §6, the absence of a configured
 repository is a fatal misconfiguration. This ADR adopts the same mechanism that ADR 0001 §6 uses
 for issuer validation — an `IValidateOptions<ZeeKayDaAuthOptions>` registered with
-`OptionsBuilder.ValidateOnStart()` that inspects the service collection and throws a
-`ZeeKayDaConfigurationException` (see ADR 0006 §1) at host startup if no `IClientRepository` has
-been registered. The exception message names the missing service and points at
+`OptionsBuilder.ValidateOnStart()` that inspects the service collection and returns
+`ValidateOptionsResult.Fail(...)` if no `IClientRepository` has been registered. The host surfaces
+the failure at startup. The message names the missing service and points at
 `AddInMemoryClients` and the `IClientRepository` documentation.
 
 ### 7. DI wiring — `AddInMemoryClients` builder extension
@@ -1617,12 +1769,18 @@ public sealed record ClientRegistration : IClientRegistration
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Pass the framework's resolved <see cref="IClientSecretHasher"/> (typically the default
-    /// <see cref="Pbkdf2ClientSecretHasher"/>) — for sample/bootstrap code, instantiate one
-    /// directly; for production code that already has a DI container, resolve from DI.
+    /// Pass a specific <see cref="IClientSecretHasher"/> instance selected intentionally. Do not
+    /// assume resolving <see cref="IClientSecretHasher"/> from DI returns the create-time default
+    /// when multiple hashers are registered; the framework's default selection is internal to
+    /// <c>CompositeClientSecretHasher</c>. For sample/bootstrap code, instantiate the chosen
+    /// hasher directly. For DI-created registrations, prefer assigning an already-created
+    /// <see cref="IClientSecret"/> via the record initializer until/unless a dedicated public
+    /// client-secret factory is introduced.
     /// </para>
     /// <para>
-    /// <paramref name="postLogoutRedirectUris"/> is required (no default). Pass an empty
+    /// <paramref name="clientSecret"/> MUST be non-null, non-empty, and not whitespace-only;
+    /// the factory delegates to <see cref="IClientSecretHasher.Create"/>, which enforces the
+    /// same rule. <paramref name="postLogoutRedirectUris"/> is required (no default). Pass an empty
     /// collection if the client has no end-session redirect URIs — see
     /// <see cref="IClientRegistration.PostLogoutRedirectUris"/>.
     /// </para>
@@ -1680,9 +1838,9 @@ secret store) skip the factory and assign `ClientSecret` directly via the record
 **Typical wiring (simple case):**
 
 ```csharp
-// Hasher used to produce IClientSecret values from plaintext at startup. For sample /
-// bootstrap code, instantiate directly; production code that already has a DI scope can
-// resolve IClientSecretHasher from DI instead.
+// Hasher intentionally selected to produce IClientSecret values from plaintext at startup.
+// Do not assume GetRequiredService<IClientSecretHasher>() returns the default when multiple
+// hashers are registered.
 var hasher = new Pbkdf2ClientSecretHasher();
 
 builder.Services
@@ -1776,22 +1934,26 @@ from `ClientSecretHasher<T>`, and (d) an `AddSecretsHasher<T>()` registration.
 
 ### 8. Registration-time validation summary
 
-`InMemoryClientRepository` enforces the following rules at construction time. Any violation
-throws `ArgumentException` before the application starts accepting requests:
+`InMemoryClientRepository` enforces the following rules at construction time. Public
+constructor/API argument problems throw the `ArgumentException` family before the application starts
+accepting requests. Options/startup validation problems are reported with
+`ValidateOptionsResult.Fail(...)`; lazy framework misconfiguration not caught earlier is surfaced as
+`ZeeKayDaConfigurationException` per ADR 0006.
 
 | Rule | Spec / source |
 |---|---|
 | `ClientId` non-null, non-empty, non-whitespace | — |
 | `ClientId` length ≤ 200 characters | S-H1 |
 | `ClientId` matches `[A-Za-z0-9_\-.]+` | S-H1 |
-| Consistency: `IsPublic == true` ⇔ `ClientSecret is null` ⇔ `AllowedTokenEndpointAuthMethods` exactly `{ TokenEndpointAuthMethods.None }`; `IsPublic == false` ⇔ `ClientSecret` non-null ⇔ `AllowedTokenEndpointAuthMethods` MUST NOT contain `None`. Violation throws `ZeeKayDaConfigurationException`. | A-N3 / S-N5 |
+| Consistency: `IsPublic == true` ⇔ `ClientSecret is null` ⇔ `AllowedTokenEndpointAuthMethods` exactly `{ TokenEndpointAuthMethods.None }`; `IsPublic == false` ⇔ `ClientSecret` non-null ⇔ `AllowedTokenEndpointAuthMethods` MUST NOT contain `None`. | A-N3 / S-N5 |
 | Confidential clients: the resolved `CompositeClientSecretHasher` MUST return `false` when verifying the empty string against `client.ClientSecret` (defence-in-depth against a custom hasher that accepts empty input). | S-S3 / S-H5 |
+| `IClientSecretHasher.Create`, `ClientSecretHasher<T>.Create`, and `ClientRegistration.CreateConfidential` reject null, empty, and whitespace-only plaintext secrets. | §3.2 / §7 |
 | `Pbkdf2ClientSecretHasher.VerifyCore` rejects an empty presented `ReadOnlySpan<char>` explicitly (per-hasher empty-string defence; framework hashers MUST do the same). | §3.3 |
-| `AllowedTokenEndpointAuthMethods` per-value advisory `LogWarning` when a value matches no framework-recognised constant on `TokenEndpointAuthMethods` (informational — a custom `IClientSecretHasher` paired with a custom `IClientSecret` sub-interface may legitimately introduce a new method) | §1a |
-| `AllowedGrantTypes` / `AllowedResponseTypes` / `AllowedResponseModes` / `AllowedPromptValues` — every element passes `Enum.IsDefined` (catches `(GrantType)999`-style casts). Violation throws `ZeeKayDaConfigurationException`. Note: well-typed C# callers cannot produce an "unknown value" through the type system, so this is belt-and-suspenders, not the primary defence. | §1a |
-| `Pbkdf2ClientSecretHasher` constructor enforces `iterations >= 100_000`; below-minimum throws `ZeeKayDaConfigurationException`. `Pbkdf2ClientSecret` records carrying values below the minimum, salts shorter than 16 bytes, or hashes of any length other than 32 bytes are rejected by `VerifyCore` returning `false`. | §3.3 / S-N3 |
-| At least one entry in `AllowedTokenEndpointAuthMethods` is recognised — by either a framework constant or a registered custom `IClientSecretHasher` (whole-set startup rejection). Violation throws `ZeeKayDaConfigurationException`. | §1a |
-| Hasher resolution: 0 hashers, or 2+ hashers with 0 explicit defaults, or 2+ explicit defaults all throw `ZeeKayDaConfigurationException` at startup with the exact wording specified in §3.6. | §3.5 / §3.6 |
+| `AllowedTokenEndpointAuthMethods` per-value advisory `LogWarning` when a value matches no ZeeKayDa-handled constant on `TokenEndpointAuthMethods` (informational — a custom `IClientAuthenticator` may legitimately introduce a new method) | §1a |
+| Every configured `AllowedTokenEndpointAuthMethods` value is covered by at least one registered `IClientAuthenticator.AuthenticationMethods` value; missing coverage is an ASP.NET Core startup validation failure. | §1a / §3a |
+| `AllowedGrantTypes` / `AllowedResponseTypes` / `AllowedResponseModes` / `AllowedPromptValues` — every element passes `Enum.IsDefined` (catches `(GrantType)999`-style casts). Note: well-typed C# callers cannot produce an "unknown value" through the type system, so this is belt-and-suspenders, not the primary defence. | §1a |
+| `Pbkdf2ClientSecretHasher` constructor enforces `iterations >= 100_000`; below-minimum is a public constructor argument problem. `Pbkdf2ClientSecret` records carrying values below the minimum, salts shorter than 16 bytes, or hashes of any length other than 32 bytes are rejected by `VerifyCore` returning `false`. | §3.3 / S-N3 |
+| Hasher resolution: 0 hashers, or 2+ hashers with 0 explicit defaults, or 2+ explicit defaults fail options validation at startup with the exact wording specified in §3.6. | §3.5 / §3.6 |
 | At least one redirect URI present | RFC 6749 §3.1.2 |
 | At most 32 redirect URIs per client | S-H2 |
 | Redirect URI is a valid absolute URI | RFC 6749 §3.1.2 |
@@ -1800,8 +1962,9 @@ throws `ArgumentException` before the application starts accepting requests:
 | Redirect URI MUST NOT contain a `.` or `..` path segment (ambiguous canonicalisation) | S-N2 |
 | Redirect URI scheme is one of: `https`; `http` (loopback only); a private-use scheme containing `.` and not in the forbidden list | RFC 8252 §7.1, §7.3 / RFC 9700 §2.1 / S-R2 |
 | `PostLogoutRedirectUris` declared (non-null); same per-entry rule set as `RedirectUris` (§4 Rules 2–5); 32-entry cap; empty set permitted | §4 (rule set), OIDC RP-Initiated Logout 1.0 §2 |
-| `AllowedSigningAlgorithms` non-null ⇒ non-empty (shape) — throws `ZeeKayDaConfigurationException` | OIDC Core §3.1.3.7 |
-| `AllowedSigningAlgorithms ⊆ IdTokenOptions.SigningAlgValuesSupported` — cross-options check at host startup via `IValidateOptions<…>`, throws `ZeeKayDaConfigurationException` | OIDC Core §3.1.3.7 |
+| `AllowedSigningAlgorithms` non-null ⇒ non-empty (shape) | OIDC Core §3.1.3.7 |
+| `AllowedSigningAlgorithms ⊆ IdTokenOptions.SigningAlgValuesSupported` — best-effort cross-options check at host startup via `IValidateOptions<…>` | OIDC Core §3.1.3.7 |
+| ID-token issuance uses `client.AllowedSigningAlgorithms ?? IdTokenOptions.SigningAlgValuesSupported`; the signer MUST choose an `alg` from that effective set or fail issuance if no configured credential satisfies it. Applies to custom repositories too. | OIDC Core §3.1.3.7 |
 | `localhost` host emits an advisory `LogWarning` recommending the IP literal | RFC 8252 §8.3 / S-S2 |
 | `AllowedScopes` contains no empty/whitespace entries | S-H5 |
 | No duplicate `client_id` within the repository | — |
@@ -1813,10 +1976,12 @@ token-endpoint ADRs, not implemented here) additionally enforces:
 - PKCE presence for all clients (OAuth 2.1 §7.6).
 - Grant type and response type membership against the client's allowed sets.
 - Response mode membership against the client's allowed set (`ResponseMode.Fragment` is never accepted regardless of the client's set).
-- Token-endpoint auth method membership against `AllowedTokenEndpointAuthMethods`.
+- Token-endpoint auth method membership against `AllowedTokenEndpointAuthMethods`; dispatch via
+  `CompositeClientAuthenticator` to a registered `IClientAuthenticator`.
 - Scope intersection per §5.
-- Client authentication via `CompositeClientSecretHasher.Verify(client.ClientSecret!, presented)`,
-  with a dummy-verify call on the unknown-client path (§3.8 rule 3, §3b) AND an additional
+- Built-in shared-secret client authentication via
+  `ClientSecretAuthenticator` → `CompositeClientSecretHasher.Verify(client.ClientSecret!, presented)`,
+  with `VerifyUnknownClientForTimingOnly` on the unknown-client path (§3.8 rule 3, §3b) AND an additional
   `PadTiming()` call on the known-client failure path so every `invalid_client` outcome's
   wall-clock time is dominated by the resolved default hasher's work factor — see the §3b
   "Timing padding for fast hashers" constraint.
@@ -1865,18 +2030,36 @@ extensibility. The corrected distinction — enum when framework changes are req
 + constants only when a public extension point carries the new value end-to-end — is
 captured in §1a. The four enum-typed vocabularies use `GrantType`, `ResponseType`,
 `ResponseMode`, and the new `PromptValue`. `AllowedTokenEndpointAuthMethods` remains
-`IReadOnlySet<string>` because `IClientSecretHasher` (paired with `IClientSecret`
-sub-interfaces) is a public extension point that genuinely supports new methods (e.g.
-`tls_client_auth`) without core changes; magic strings are avoided by the
-`TokenEndpointAuthMethods` constants class.
+`IReadOnlySet<string>` because `IClientAuthenticator` is a public, request-aware extension point
+that genuinely supports new methods (e.g. `tls_client_auth`) without core registration-model
+changes; magic strings for ZeeKayDa-handled methods are avoided by the `TokenEndpointAuthMethods`
+constants class.
 
 ### Closed enums (`GrantType`, `ResponseType`, …) used for *all* per-client fields including auth methods
 
 **Rejected.** Symmetric to the above: unifying `AllowedTokenEndpointAuthMethods` onto the
 existing `TokenEndpointAuthMethod` enum, or onto any other closed enum, would foreclose the
-custom-`IClientSecretHasher` extension path. The two `TokenEndpointAuthMethod*` types
+custom-`IClientAuthenticator` extension path. The two `TokenEndpointAuthMethod*` types
 (the enum for discovery metadata, the constants class for per-client config) are kept
 separate by design — see §1a.
+
+### `IClientSecretHasher` as the `token_endpoint_auth_method` extension point
+
+**Rejected.** A prior pass treated custom `IClientSecretHasher` implementations as if they could
+introduce methods such as `tls_client_auth`. That was wrong: hashers know how to create and verify
+stored shared-secret data, but they do not have request context (headers, form fields, client
+certificates) and they do not declare which `token_endpoint_auth_method` strings they support.
+The request-aware extension point is `IClientAuthenticator` in `ZeeKayDa.Auth.AspNetCore`; hashers
+remain a lower-level shared-secret storage primitive used by the built-in
+`ClientSecretAuthenticator`.
+
+### `CanHandle(context)` as the only client-authenticator support declaration
+
+**Rejected.** A context-only predicate would force startup validation to manufacture synthetic
+HTTP requests just to discover which method strings are supported. `IClientAuthenticator` therefore
+declares `AuthenticationMethods : IReadOnlySet<string>` as the primary support declaration.
+`AuthenticateAsync` still validates the actual request, but coverage validation is string-based and
+does not depend on fake request objects.
 
 ### `string? ClientSecret` directly on `IClientRegistration`
 
@@ -2013,6 +2196,9 @@ inheritance constraint and is the idiomatic .NET choice for a capability contrac
   `AddSecretsHasher<T>()`. The composite-hasher dispatch keeps the verification path
   switch-free in framework and consumer code; the only "switch" is the type pattern in
   `ClientSecretHasher<T>.CanHandle`, contained inside one base class.
+- New token endpoint authentication methods can be added via `IClientAuthenticator` in
+  `ZeeKayDa.Auth.AspNetCore` without changing the core client registration model. Startup
+  validation ensures every configured method string is covered by a registered authenticator.
 - The composite-hasher timing-padding requirement (`PadTiming()` on every failure path)
   makes the wall-clock time of "unknown client", "wrong secret", and
   "no-hasher-recognises-this-secret" all comparable to the resolved default hasher's
@@ -2046,9 +2232,9 @@ inheritance constraint and is the idiomatic .NET choice for a capability contrac
   belt-and-suspenders check defends against deliberate `(GrantType)999`-style out-of-range
   casts. `AllowedTokenEndpointAuthMethods` remains `IReadOnlySet<string>` — the one
   genuinely open case — so a third party can introduce a new auth method (e.g.
-  `tls_client_auth`) end-to-end via a custom `IClientSecretHasher` without any framework
-  code change; the `TokenEndpointAuthMethods` constants class eliminates magic strings for
-  the framework-recognised values. See §1a.
+  `tls_client_auth`) end-to-end via a custom `IClientAuthenticator` without any core
+  registration-model change; the `TokenEndpointAuthMethods` constants class eliminates magic
+  strings for the ZeeKayDa-handled values. See §1a/§3a.
 
 ### Negative / Trade-offs
 
@@ -2068,9 +2254,15 @@ inheritance constraint and is the idiomatic .NET choice for a capability contrac
   `AddSecretsHasher<T>()` registration. Mitigated by `ClientSecretHasher<T>` reducing the
   hasher to two `*Core` overrides; the boilerplate is small and bounded.
 - Multiple registered hashers with no explicit default fail at startup with
-  `ZeeKayDaConfigurationException`. Strict — but the alternative is silent ambiguity about
+  an options-validation failure. Strict — but the alternative is silent ambiguity about
   which algorithm new secrets are created with, which is the kind of "invisible coin flip"
   this project's security posture explicitly avoids.
+- Custom token endpoint authentication methods require an ASP.NET Core `IClientAuthenticator`
+  rather than only a core hasher. This adds one more extension point, but it preserves layering
+  and gives method implementations the request context needed for MTLS/private-key/future methods.
+- Keeping this as one ADR makes the accepted design self-contained, but it is implementation-heavy:
+  developers must pay attention to the split between core registration data, secret hashing, and
+  ASP.NET Core client authentication.
 - `CompositeClientSecretHasher` is registered as the concrete type, NOT as
   `IClientSecretHasher`, to avoid self-injection through `IEnumerable<IClientSecretHasher>`
   and the resulting infinite recursion. Documented as a hard rule on the type's XML doc;
@@ -2082,11 +2274,10 @@ inheritance constraint and is the idiomatic .NET choice for a capability contrac
   `PromptValue.SelectAccount`, …). This is a source-breaking change, accepted because the
   ADR is still **Draft** and no consumer code has been written against the v1 interface yet.
   Once the ADR moves to Accepted the property shapes are frozen.
-- The shift from `IClientSecretVerifier? SecretVerifier` (prior pass) to
-  `IClientSecret? ClientSecret` plus `IClientSecretHasher` services is a source-breaking
-  change relative to the prior pass of this ADR. Acceptable because the ADR is still
-  **Draft** and the prior pass had not yet shipped. Once the ADR moves to Accepted the
-  shape is frozen.
+- The shift from the prior verifier-on-registration design to `IClientSecret? ClientSecret` plus
+  `IClientSecretHasher` services is a source-breaking change relative to an earlier draft.
+  Acceptable because the ADR is still **Draft** and the prior pass had not yet shipped. Once the
+  ADR moves to Accepted the shape is frozen.
 - Promoting `IsPublic` from a default-interface-method derived from `ClientSecret is null`
   to a declared `required` property forces every existing prototype implementation to add
   the property explicitly. Same justification as the binary-breaking note for
@@ -2136,11 +2327,21 @@ follow-up PR:
   framework emits an advisory warning on `localhost`.
 - **D5.** Update `SECURITY.md` (or add a new `docs/security/redirect-uri-validation.md`)
   capturing the scheme allowlist, the loopback-port exception, the userinfo prohibition, the
-  edge-case matrix from §4, and the threat model that motivates each rule.
+  exact ordinal matching requirement (enumerate registered strings; do not trust an
+  `IReadOnlySet` comparer), the edge-case matrix from §4, and the threat model that motivates
+  each rule.
 - **D6.** A `AllowedResponseModes` doc note explaining that `fragment` is intentionally
   unsupported and pointing at the Rejected Alternatives entry above.
 - **D7.** A PKCE-mandatory FAQ entry citing RFC 9700 §2.1.1 and OAuth 2.1 §7.6, explaining why
   there is no per-client `RequirePkce` opt-out.
+- **D8.** A client-authentication extensibility note distinguishing `IClientAuthenticator`
+  (token endpoint request authentication) from `IClientSecretHasher` (stored shared-secret
+  creation/verification), warning that `client_secret_post` should be enabled only for
+  compatibility, and documenting auth-method coverage validation.
+- **D9.** A signing-algorithm enforcement note for custom repositories: startup subset validation is
+  best-effort, but issuance MUST use
+  `client.AllowedSigningAlgorithms ?? IdTokenOptions.SigningAlgValuesSupported` and fail if no
+  configured credential satisfies the effective set.
 
 ---
 
@@ -2170,247 +2371,35 @@ follow-up PR:
 
 ## Revision history
 
-- **2026-06-07 (this revision)** — incorporates architect review findings **A-R1 through A-S8**
-  and security review findings **S-R1 through S-H6**. Material changes:
-  - Replaced `string? ClientSecret` with `IClientSecretVerifier? SecretVerifier`
-    (`PlaintextClientSecretVerifier`, `Pbkdf2ClientSecretVerifier`).
-  - Renamed `IClientStore` → `IClientRepository` and `InMemoryClientStore` →
-    `InMemoryClientRepository` to match existing project convention.
-  - Resolved the §5 scope-intersection contradiction: silent drop, then `invalid_scope` if the
-    effective set is empty.
-  - Replaced the buggy `[::1]` host-string IPv6 check with `IPAddress.IsLoopback`.
-  - Added a scheme allowlist (HTTPS / loopback HTTP / private-use with `.` minus a forbidden
-    list) and the RFC 8252 §7.3 loopback-port exception at request time.
-  - Removed `fragment` from default response modes and from supported response modes; added a
-    Rejected Alternatives entry.
-  - Added `AllowedTokenEndpointAuthMethods`, charset/length limits on `ClientId`, a 32-URI
-    cap, and the userinfo-component prohibition.
-  - Added §1a (why string sets, not enums), §3b (client enumeration mitigation), §9 (RFC 7591
-    forward-compatibility via decorator).
-  - Added the locked-down URI edge-case matrix in §4.
-  - Specified the fail-fast mechanism (`OptionsBuilder.ValidateOnStart()` →
-    `ZeeKayDaConfigurationException` per ADR 0006 §1).
-  - Listed deferred-to-v2 fields (`ClientName`, `LogoUri`, `PolicyUri`, `TosUri`,
-    `PostLogoutRedirectUris`, `RequirePushedAuthorizationRequests`).
-  - Added the "Documentation requirements" subsection (D1–D7).
-- **2026-06-07 (second tightening pass, same date)** — incorporates the architect re-review
-  findings **A-N1 through A-N5** and the security re-review findings **S-N1 through S-N6**
-  plus the precision nits. Material changes:
-  - **A-N1 / A-N2** — removed the contradictory "may be introduced in a future version" note
-    about a singular DI helper; reframed `AddInMemoryClient` as **static factory methods on
-    `ClientRegistration`**: `CreateConfidential(...)` and `CreatePublic(...)`. Updated the §7
-    sample to use them. `AddInMemoryClients` (plural) remains the only DI extension.
-  - **A-N3 / S-N5** — added `SecretVerifier` ↔ `AllowedTokenEndpointAuthMethods` consistency
-    check at registration time (`ZeeKayDaConfigurationException` on mismatch); reflected in
-    §6 `ValidateClient` and §8.
-  - **A-N4 / S-N3** — fully specified `Pbkdf2ClientSecretVerifier` parameters
-    (PBKDF2-HMAC-SHA256, 600k default / 100k minimum iterations, ≥16-byte salt, 32-byte hash)
-    and introduced the explicit `(int iterations, byte[] salt, byte[] hash)` constructor for
-    loading pre-hashed credentials; documented `Create(string)` as the salt-generating
-    convenience factory.
-  - **A-N5** / §1a precision nit — reframed §1a request-time mapping as a binding forward
-    constraint; added the rule that `AllowedTokenEndpointAuthMethods` with no framework-known
-    methods must reject the client at startup (no silent fall-through to "no authentication").
-  - **S-N1** — added the "Timing padding for fast verifiers" binding forward constraint in §3b
-    (dummy PBKDF2 verifier must also pad the known-client failure path for non-PBKDF2
-    verifiers). Reframed `PlaintextClientSecretVerifier` guidance to managed-secret-store
-    deployments and added a registration-time `LogWarning` when any client uses it.
-  - **S-N2** — added the `.`/`..` path-segment check to `ValidateRedirectUri` and updated the
-    §4 edge-case matrix row to reference the implementation.
-  - **S-N4** — tightened `IClientSecretVerifier` XML doc with four binding rules: MUST NOT
-    throw; MUST NOT log/expose the secret; MUST be thread-safe; SHOULD redact `ToString()`.
-  - **S-N6** — added an explicit rate-limiting note to §3b stating that throttling is the
-    operator's responsibility and a future ADR will expose hooks.
-  - **§4 Rule 3 precision nit** — clarified that the `.`-in-scheme check is a *structural
-    proxy* for RFC 8252 §7.1 reverse-DNS ownership; operators remain responsible for not
-    picking someone else's reverse-DNS scheme.
-  - **§6 `IClientRepository` precision nit** — added "MUST NOT throw for malformed
-    `client_id` input — return `null`" alongside the existing unknown-`client_id` rule.
-- **2026-06-07 (third pass — v1-promotion of two deferred-to-v2 properties, same date)** —
-  promotes `PostLogoutRedirectUris` and `AllowedSigningAlgorithms` from the deferred-to-v2 list
-  to first-class v1 members on `IClientRegistration`. Material changes:
-  - Removed both entries from the §1 deferred-to-v2 list.
-  - Added `PostLogoutRedirectUris` as a **non-DIM declared** `IReadOnlySet<string>` on
-    `IClientRegistration` and as a `required` init-only property on `ClientRegistration`
-    (matching `RedirectUris`' explicit-empty treatment). Documented the binary-breaking
-    nature in Consequences/Negative; acceptable because the ADR is still Draft.
-  - Added `AllowedSigningAlgorithms` as a DIM returning `null` (= inherit
-    `IdTokenOptions.SigningAlgValuesSupported`) on `IClientRegistration` and as a nullable
-    init-only property on `ClientRegistration`. Non-breaking addition for future
-    `IClientRegistration` implementations.
-  - §4: same scheme allowlist / no-fragment / no-userinfo / no-`.`/`..` rules now apply to
-    `PostLogoutRedirectUris`. §6: factored out `ValidateRedirectUriSet` helper used by both
-    `RedirectUris` (≥1 required) and `PostLogoutRedirectUris` (empty permitted); both honour
-    the 32-entry cap.
-  - §6: split `AllowedSigningAlgorithms` validation across two layers — shape check
-    (non-empty when non-null) runs in `InMemoryClientRepository.ValidateClient`; cross-options
-    subset check against `IdTokenOptions.SigningAlgValuesSupported` runs in
-    `IValidateOptions<…>` at host startup. Both throw `ZeeKayDaConfigurationException`.
-  - §7: `CreateConfidential` and `CreatePublic` now take `postLogoutRedirectUris` as a
-    required parameter (no default), positioned next to `redirectUris`. Sample wiring
-    populates `PostLogoutRedirectUris` for every client (HTTPS for confidential/SPA,
-    reverse-DNS private-use for the native-app example). `AllowedSigningAlgorithms` is
-    intentionally **not** added to the factories; an advanced-narrowing example using the
-    record initializer is shown as a commented sample.
-  - §8: added rows for `PostLogoutRedirectUris` validation, `AllowedSigningAlgorithms`
-    shape check, and the cross-options subset check.
-  - Spec References: replaced the `OIDC RP-Initiated Logout 1.0 (whole doc) — deferred to v2`
-    row with a §2 citation for `post_logout_redirect_uri`. Added OIDC Core 1.0 §3.1.3.7 (ID
-    Token validation `alg` matching) and RFC 7515 §4.1.1 (JWS `alg` header).
-  - Consequences: positive entry noting v1 now ships RP-Initiated Logout client config and
-    per-client ID-token signing-algorithm narrowing; negative entries on the binary-breaking
-    non-DIM choice for `PostLogoutRedirectUris` and the extra factory parameter.
-- **2026-06-07 (fourth pass — enums vs strings correction, same date)** — corrects the §1a
-  rationale. The "open set / extensibility" argument only holds when a new value can be
-  added without ZeeKayDa framework code changes; that is genuinely true only for
-  `AllowedTokenEndpointAuthMethods` (covered by the custom `IClientSecretVerifier` extension
-  point). For `grant_type`, `response_type`, `response_mode`, and `prompt`, a new value
-  cannot work without framework-side implementation, so strings only erased compile-time
-  safety. Material changes:
-  - §1: switched `AllowedGrantTypes`, `AllowedResponseTypes`, `AllowedResponseModes`, and
-    `AllowedPromptValues` to `IReadOnlySet<GrantType>` / `IReadOnlySet<ResponseType>` /
-    `IReadOnlySet<ResponseMode>` / `IReadOnlySet<PromptValue>` on both `IClientRegistration`
-    and `ClientRegistration`. `AllowedTokenEndpointAuthMethods` remains
-    `IReadOnlySet<string>` — the one genuinely open extension point.
-  - §1a: rewrote rationale around the "can a new value be supported without framework
-    changes?" test. Removed the previous extension-grant-type and `form_post.jwt` (JARM)
-    examples, which were misapplications of the open-set argument (both require framework
-    support). Replaced with the `tls_client_auth` example for the genuinely-open case.
-  - Specified a new `PromptValue` enum (members `None`, `Login`, `Consent`, `SelectAccount`,
-    per OIDC Core 1.0 §3.1.2.1) to be created in `src/ZeeKayDa.Auth/PromptValue.cs`,
-    modelled on the existing `ResponseMode.cs` pattern. The `.cs` file is created by the
-    developer during implementation; the ADR fixes the shape.
-  - Specified a new `TokenEndpointAuthMethods` public static constants class
-    (`ClientSecretBasic`, `ClientSecretPost`, `None`) to be created in
-    `src/ZeeKayDa.Auth/TokenEndpointAuthMethods.cs`, so consumers reference constants
-    instead of magic strings. Explicit one-line note distinguishing this constants class
-    from the closed `TokenEndpointAuthMethod` *enum* (discovery-metadata advertisement) so
-    a future reader does not unify them.
-  - §2: updated default initializers to use enum-typed `HashSet<TEnum>` and
-    `{ TokenEndpointAuthMethods.ClientSecretBasic }` for the auth-method default.
-  - §6 `ValidateClient`: reworked the `SecretVerifier ⇔ AllowedTokenEndpointAuthMethods`
-    consistency check to reference `TokenEndpointAuthMethods.None` instead of the `"none"`
-    literal. Removed string-specific empty/whitespace checks for the four enum-typed
-    fields. Added a per-value `LogWarning` for unrecognised auth methods (informational —
-    a custom verifier may legitimately introduce them). Added an `Enum.IsDefined`-based
-    belt-and-suspenders check that rejects undefined enum values (catches
-    `(GrantType)999`-style casts) with `ZeeKayDaConfigurationException`.
-  - §7: `CreateConfidential` / `CreatePublic` parameter types updated to
-    `IEnumerable<GrantType>?`, `IEnumerable<ResponseType>?`, `IEnumerable<ResponseMode>?`,
-    `IEnumerable<PromptValue>?`. Sample wiring updated to use
-    `GrantType.AuthorizationCode`, `GrantType.RefreshToken`, etc. instead of string
-    literals.
-  - §8: updated consistency-check row to reference `TokenEndpointAuthMethods.None`. Added
-    rows for the per-value auth-method advisory warning and the `Enum.IsDefined` check.
-    Updated request-time bullet for `ResponseMode.Fragment` and the refresh-token check
-    to reference `GrantType.RefreshToken`.
-  - Rejected Alternatives: replaced the old "Closed enums on per-client fields" entry with
-    a new "Strings for all per-client protocol vocabularies" entry explaining the
-    misapplication of the open-set argument, plus a complementary entry rejecting the
-    inverse (unifying `AllowedTokenEndpointAuthMethods` onto a closed enum) because doing
-    so would foreclose the custom-`IClientSecretVerifier` extension path.
-  - Consequences: moved the (formerly Negative) trade-off bullet on enum typing to
-    Positive; added a Negative migration bullet noting that string-literal callers must
-    move to enum members (source-breaking, acceptable while the ADR is Draft).
-  - Spec References: added OIDC Core 1.0 §3.1.2.1 (prompt parameter values).
-- **2026-06-07 (fifth pass — secret hashing model rewrite, same date):** Replaced the
-  `IClientSecretVerifier` / `PlaintextClientSecretVerifier` / `Pbkdf2ClientSecretVerifier`
-  design (verifier-on-registration) with a pure-data `IClientSecret` marker hierarchy
-  (`IClientSecret`, `IPbkdf2ClientSecret`, `Pbkdf2ClientSecret` record) plus a separate
-  `IClientSecretHasher` service contract (with a `ClientSecretHasher<TSecret>` generic
-  base for ergonomics), dispatched through a framework-internal `CompositeClientSecretHasher`.
-  Added `AddSecretsHasher<T>(isDefault)` builder extension with explicit startup-validation
-  rules for resolving the default hasher when multiple are registered (resolution table and
-  exact exception wording in §3.6). Renamed `IClientRegistration.IsPublicClient` → `IsPublic`
-  (declared, no longer a DIM); same rationale as `PostLogoutRedirectUris`. Material changes:
-  - §1: replaced `IClientSecretVerifier? SecretVerifier` with `IClientSecret? ClientSecret`;
-    promoted `IsPublic` from DIM to declared property. Updated XML docs referencing the
-    extension point (`IClientSecretVerifier` → `IClientSecretHasher`).
-  - §1a / `TokenEndpointAuthMethods` XML doc: updated all references from
-    `IClientSecretVerifier` to `IClientSecretHasher` (paired with `IClientSecret`
-    sub-interfaces) as the public extension point.
-  - §2: replaced `SecretVerifier` init property and `IsPublicClient` derived getter with
-    `IClientSecret? ClientSecret` init property and `required bool IsPublic` init property.
-    Updated default-initializer XML doc to reference `ClientSecret is null` instead of
-    `SecretVerifier` is `null`.
-  - §3: complete rewrite around the data-vs-behaviour split. New subsections §3.1
-    (`IClientSecret` hierarchy), §3.2 (`IClientSecretHasher` + generic base), §3.3
-    (`Pbkdf2ClientSecretHasher` with PBKDF2-HMAC-SHA256, 600k default / 100k min iterations,
-    16-byte salt, 32-byte hash, explicit empty-input rejection), §3.4
-    (`CompositeClientSecretHasher` — internal, concrete-type-registered, dispatch via
-    `CanHandle` first-match-wins, `PadTiming()` on every failure path), §3.5
-    (`AddSecretsHasher<T>(isDefault)` extension + framework auto-registration of the default
-    `Pbkdf2ClientSecretHasher`), §3.6 (startup resolution rules with the exact exception
-    wording), §3.7 (ORM friendliness), §3.8 (public-vs-confidential distinction now driven
-    by `IsPublic` + `ClientSecret` consistency, no separate types).
-  - §3b: rewrote the "Timing padding for fast hashers" paragraph to reference
-    `CompositeClientSecretHasher.PadTiming()` and the precomputed dummy
-    secret/presented-plaintext built at composite startup (replacing the deleted
-    `PlaintextClientSecretVerifier`/`Pbkdf2ClientSecretVerifier` distinction).
-  - §6 `ValidateClient`: simplified — the `IsPublic` ⇔ `ClientSecret is null` ⇔
-    `AllowedTokenEndpointAuthMethods == { None }` consistency check is now purely local.
-    `InMemoryClientRepository` constructor now takes `CompositeClientSecretHasher` to power
-    the per-client empty-string defence-in-depth check; per-hasher empty-string rejection
-    is enforced inside each framework hasher (e.g.
-    `Pbkdf2ClientSecretHasher.VerifyCore` returns `false` for empty presented input).
-    Removed the `PlaintextClientSecretVerifier` advisory warning (the type no longer exists).
-    Updated per-value auth-method advisory `LogWarning` text to reference
-    `IClientSecretHasher`.
-  - §7: rewrote DI sample — `var hasher = new Pbkdf2ClientSecretHasher();` shown at the top;
-    `CreateConfidential` factory now takes `hasher: IClientSecretHasher` as its first
-    parameter and calls `hasher.Create(plaintext)` internally; `CreatePublic` unchanged in
-    parameters. Added "production: pre-hashed credential" example using the record
-    initializer with a direct `Pbkdf2ClientSecret(...)` (no hasher needed at registration
-    time). Added an EF entity sketch (`ClientEntity : IClientRegistration` with flat
-    `Pbkdf2Iterations`/`Pbkdf2Salt`/`Pbkdf2Hash` columns and a `[NotMapped]` projection)
-    framed as one of multiple paths (bcrypt / argon2id follow the same pattern). Updated
-    `AddInMemoryClients` factory to inject `CompositeClientSecretHasher` into
-    `InMemoryClientRepository`.
-  - §8: removed verifier-related rows; added rows for the `IsPublic` ⇔ `ClientSecret` ⇔
-    `AllowedTokenEndpointAuthMethods` consistency check, the per-hasher empty-string defence
-    (composite-level and `Pbkdf2ClientSecretHasher`-level), the whole-set
-    `AllowedTokenEndpointAuthMethods` recognition rule, and the hasher-resolution startup
-    validation (with pointer to the §3.6 resolution table). Updated request-time bullet to
-    reference `CompositeClientSecretHasher.Verify` and `PadTiming()`.
-  - Rejected Alternatives: kept the original `string? ClientSecret` entry (now framed as
-    the *earliest* draft) and added two new entries — "Embedding `IClientSecretVerifier`
-    (or any service) on `IClientRegistration`" (rejected because it conflated data and
-    behaviour, was ORM-hostile, and forced entities to carry behavioural services) and
-    "A single `string Algorithm` discriminator on `IClientSecret` with switch-based
-    dispatch" (rejected in favour of the marker hierarchy because algorithm parameter
-    shapes differ and switch-based dispatch is an abstraction leak). Updated
-    "Separate types for public and confidential clients" prose to refer to `IsPublic`
-    rather than the now-deleted derived `IsPublicClient`. Updated "Strings for all
-    per-client protocol vocabularies" and "Closed enums" entries to reference
-    `IClientSecretHasher` instead of `IClientSecretVerifier`.
-  - Consequences (Positive): replaced verifier-centric bullets with the new bullets on
-    data-vs-behaviour split (registration data is pure data, ORM-friendly), pluggable
-    hasher extensibility, switch-free verification path, and the
-    `CompositeClientSecretHasher.PadTiming()` defence. Kept all redirect-URI / scope /
-    repository / signing-algorithms bullets unchanged.
-  - Consequences (Negative): removed the now-obsolete `PlaintextClientSecretVerifier`
-    bullet and the `IClientSecretVerifier`-indirection bullet. Added bullets on the cost
-    of implementing a new hasher (four small types, mitigated by `ClientSecretHasher<T>`),
-    the strict startup-validation behaviour for ambiguous hasher resolution, the
-    concrete-type registration requirement for `CompositeClientSecretHasher` (with the
-    self-injection explanation), and the source-breaking nature of the
-    `SecretVerifier` → `ClientSecret`/`IClientSecretHasher` shift (acceptable while
-    Draft). Added a bullet on the `CreateConfidential(hasher: …)` parameter and why a
-    hidden default was rejected. Added a bullet on the `IsPublic` DIM → declared
-    promotion, mirroring the `PostLogoutRedirectUris` justification.
-  - Package ownership table: replaced `IClientSecretVerifier` /
-    `PlaintextClientSecretVerifier` / `Pbkdf2ClientSecretVerifier` rows with rows for
-    `IClientSecret` / `IPbkdf2ClientSecret` / `Pbkdf2ClientSecret`,
-    `IClientSecretHasher` / `ClientSecretHasher<TSecret>` / `Pbkdf2ClientSecretHasher`,
-    and `CompositeClientSecretHasher` / `ClientSecretHasherOptions` /
-    `ClientSecretHasherOptionsValidator`. Added `AddSecretsHasher<T>` to the
-    `ZeeKayDa.Auth.AspNetCore` extensions row.
-  - D2 documentation requirement rewritten around ORM mapping of `IPbkdf2ClientSecret`
-    (EF Core / NHibernate / Dapper) plus a "how to implement a new hasher" guide. D3
-    generalised from `PlaintextClientSecretVerifier` to "any sample using a plaintext
-    secret literal". D1, D4, D5, D6, D7 unchanged.
-  - Spec References: unchanged — the security primitives used (PBKDF2,
-    `CryptographicOperations.FixedTimeEquals`, `RandomNumberGenerator`) are .NET BCL,
-    not protocol specs, and the protocol-level surface introduced by this revision is
-    purely internal.
-
+- **Initial review pass (2026-06-07).**
+  - Established `IClientRepository`, redirect URI validation, scope intersection, PKCE-mandatory
+    behaviour, and static-registration-only v1 scope.
+  - Added client-id limits, auth-method configuration, client enumeration mitigation, RFC 7591
+    forward-compatibility, and documentation requirements.
+- **Second tightening pass (2026-06-07).**
+  - Added factory methods on `ClientRegistration`, PBKDF2 parameters, timing-padding constraints,
+    URI edge-case hardening, and rate-limiting guidance.
+  - Clarified repository lookup behaviour (`null`, not throw) and reverse-DNS/private-use scheme
+    guidance.
+- **V1 property promotion pass (2026-06-07).**
+  - Promoted `PostLogoutRedirectUris` and `AllowedSigningAlgorithms` into the v1 model.
+  - Split signing-algorithm validation between registration shape checks, best-effort startup
+    checks, and issuance-time enforcement.
+- **Protocol vocabulary pass (2026-06-07).**
+  - Moved grant type, response type, response mode, and prompt to enums; kept
+    `AllowedTokenEndpointAuthMethods` string-based.
+  - Added `PromptValue` and `TokenEndpointAuthMethods` constants for ZeeKayDa-handled method
+    strings.
+- **Secret model pass (2026-06-07).**
+  - Replaced verifier-on-registration with pure-data `IClientSecret` plus `IClientSecretHasher`
+    and internal `CompositeClientSecretHasher`.
+  - Added hasher DI/default resolution rules, ORM mapping guidance, and empty-secret rejection.
+- **Architect/security review acceptance pass (2026-06-07).**
+  - Added `IClientAuthenticator` as the request-aware token endpoint auth-method extension point in
+    `ZeeKayDa.Auth.AspNetCore`; v1 built-ins are `none`, `client_secret_basic`, and
+    `client_secret_post`.
+  - Replaced public dummy-secret verification prose with
+    `VerifyUnknownClientForTimingOnly`, random startup dummy plaintext, and always-failure
+    semantics.
+  - Aligned exception guidance with ADR 0006, tightened redirect matching and docs/security-note
+    requirements, and reduced revision-history detail.
