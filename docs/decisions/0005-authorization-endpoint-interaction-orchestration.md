@@ -1,6 +1,6 @@
 # ADR 0005 — Authorization Endpoint Interaction Orchestration
 
-**Status:** Proposed  
+**Status:** Accepted  
 **Date:** 2026-07-01
 
 ---
