@@ -856,7 +856,7 @@ namespace ZeeKayDa.Auth;
 /// from semantic outcomes such as <c>NotFound</c> or <c>AlreadyConsumed</c>, which are
 /// returned, not thrown.
 /// </summary>
-public sealed class ZeeKayDaStoreException : ZeeKayDaException
+public class ZeeKayDaStoreException : ZeeKayDaException
 {
     public ZeeKayDaStoreException(string message)
         : base(message) { }
@@ -866,10 +866,12 @@ public sealed class ZeeKayDaStoreException : ZeeKayDaException
 }
 ```
 
-`sealed` is chosen deliberately (matches the BCL convention for transport-wrapping
-exception types). If a future need arises for retry-classification subtypes, unsealing is
-a non-breaking change. ADR 0006's base ctor signatures are preserved unchanged — the two
-ctors above chain cleanly without passing `null` to a non-nullable parameter.
+`ZeeKayDaStoreException` is **not** sealed, consistent with ADR 0006 §7. Custom store
+implementors may subclass it to carry backend-specific diagnostic context (e.g. a
+`RedisStoreException` with connection info or retry count) while still satisfying the
+store contract — callers catching `ZeeKayDaStoreException` will catch subclasses
+transparently. ADR 0006's base ctor signatures are preserved unchanged — the two ctors
+above chain cleanly without passing `null` to a non-nullable parameter.
 
 **Default implementations** wrap `IDistributedCache` / `IMemoryCache` / DP failures in
 `ZeeKayDaStoreException` with the original exception preserved as `InnerException`.
