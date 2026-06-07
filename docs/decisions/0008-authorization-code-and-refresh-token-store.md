@@ -572,8 +572,8 @@ Two defaults ship out of the box:
 | `DistributedCacheAuthorizationCodeStore` / `DistributedCacheRefreshTokenStore` | `IDistributedCache` | Dev/test against `AddDistributedMemoryCache`, and as a starting point for custom multi-instance implementations. **Not production-grade for multi-instance hosts** — the non-atomic check-then-set permits a measurable revocation-bypass window (§4d, §"Security Considerations"). Multi-instance production deployments MUST replace this with an atomic implementation; see §8. |
 
 `AddZeeKayDaAuth` registers the in-memory pair by default. Switching to the distributed
-pair is a one-line `services.AddZeeKayDaAuthDistributedCacheTokenStores()` opt-in
-(see §5). Multi-instance production deployments MUST replace these defaults with a
+pair is a one-line `.AddDistributedCacheTokenStores()` opt-in on the returned
+`ZeeKayDaAuthBuilder` (see §5). Multi-instance production deployments MUST replace these defaults with a
 custom store backed by an atomic backend (Redis+Lua, SQL with optimistic concurrency, or
 equivalent) — see §8.
 
@@ -766,24 +766,22 @@ services.TryAddSingleton<IAuthorizationCodeStore, InMemoryAuthorizationCodeStore
 services.TryAddSingleton<IRefreshTokenStore, InMemoryRefreshTokenStore>();
 ```
 
-Consumers opt in to the distributed defaults via a standalone `IServiceCollection`
-extension method (not a builder method — no `IZeeKayDaAuthBuilder` type is introduced by
-this ADR; introducing a builder as a side-effect of a store ADR would prejudge a wider
-registration shape that belongs in its own ADR):
+Consumers opt in to the distributed defaults via an extension method on the
+`ZeeKayDaAuthBuilder` returned by `AddZeeKayDaAuth`:
 
 ```csharp
-services.AddZeeKayDaAuth(...);
-services.AddZeeKayDaAuthDistributedCacheTokenStores();   // replaces both registrations
+services.AddZeeKayDaAuth(...)
+        .AddDistributedCacheTokenStores();   // replaces both default store registrations
 ```
 
-The XML doc on `AddZeeKayDaAuthDistributedCacheTokenStores` MUST lead with the limitation
+The XML doc on `AddDistributedCacheTokenStores` MUST lead with the limitation
 verbatim, first sentence:
 
 > Registers a non-atomic `IDistributedCache`-backed default suitable for dev/test only.
 > Multi-instance production deployments MUST replace these stores with an atomic
 > implementation; see ADR 0008 §8.
 
-`AddZeeKayDaAuthDistributedCacheTokenStores()` performs an `IDistributedCache`-registration
+`AddDistributedCacheTokenStores()` performs an `IDistributedCache`-registration
 check via the options-validation pattern established in ADR 0001 §6: at startup, the
 framework verifies that `IDistributedCache` is resolvable and **fails fast with
 `ZeeKayDaConfigurationException`** (per ADR 0006) if it is not. The framework does **not**
@@ -819,14 +817,14 @@ Each value introduced by this ADR is placed accordingly:
 | Per-handle semaphore eviction window (in-memory store) | `InMemoryTokenStoreOptions.SemaphoreEvictionWindow` | `5 min` after entry expiry | Implementation detail; non-security. |
 
 `DistributedCacheTokenStoreOptions` and `InMemoryTokenStoreOptions` are bound by their
-respective registration helpers (`AddZeeKayDaAuthDistributedCacheTokenStores(Action<...>)` /
+respective registration helpers (`AddDistributedCacheTokenStores(Action<...>)` on `ZeeKayDaAuthBuilder` /
 `AddZeeKayDaAuth(...)` accepting an optional configurator). They are NOT properties on
 `AuthorizationServerOptions` — placing them there would force every consumer (including those
 who swap in a custom store) to look at irrelevant knobs, violating the ADR 0002 grouping rule.
 
 The tombstone retention default ("`RefreshTokenLifetime` resolved at bind time") is wired
 as a `PostConfigureOptions<DistributedCacheTokenStoreOptions>` registered by
-`AddZeeKayDaAuthDistributedCacheTokenStores`: the post-configure step reads
+`AddDistributedCacheTokenStores`: the post-configure step reads
 `IOptions<AuthorizationServerOptions>.Value.TokenEndpoint.RefreshTokenLifetime` and
 copies it into `AuthorizationCodeTombstoneRetention` if the operator has not set the
 value explicitly. The implementation should model the option as `TimeSpan?` and use
@@ -879,7 +877,7 @@ ctors above chain cleanly without passing `null` to a non-nullable parameter.
 **Custom implementations** SHOULD do the same. The XML doc on each store interface method
 states this expectation; we do not (and cannot) enforce it through the type system.
 
-**Configuration faults at startup** (e.g. `AddZeeKayDaAuthDistributedCacheTokenStores`
+**Configuration faults at startup** (e.g. `AddDistributedCacheTokenStores`
 called without `IDistributedCache` registered) surface as `ZeeKayDaConfigurationException`
 (per ADR 0006), not as `InvalidOperationException`.
 
@@ -1014,7 +1012,7 @@ in-process store. The framework must document it clearly:
 > For single-instance production where occasional deployment-triggered re-authentication
 > is acceptable, that is fine. For continuous availability, replace
 > `IRefreshTokenStore` with an implementation backed by a persistent store. The shipped
-> `AddZeeKayDaAuthDistributedCacheTokenStores()` opt-in is suitable for dev/test
+> `.AddDistributedCacheTokenStores()` opt-in is suitable for dev/test
 > against `AddDistributedMemoryCache`; for multi-instance production see §8.
 
 This guidance must appear in the XML documentation on `IRefreshTokenStore`, in the package
