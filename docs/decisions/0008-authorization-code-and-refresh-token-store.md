@@ -1102,9 +1102,11 @@ creates a confused-deputy risk: a token minted for tenant A could be presented a
 accepted at tenant B's token endpoint. The framework deliberately does **not** carry a
 `TenantId` on entries today because the framework is not tenant-aware; when
 ZeeKayDa.Auth itself becomes tenant-aware (a future ADR), this entry will be revisited.
-Today, isolation is achievable via a keyed `IDistributedCache` registration per tenant
-or via a custom store that namespaces by tenant id and validates the tenant binding on
-every consume.
+Today, the only workable isolation path is a **custom store** that namespaces cache keys
+by tenant id and validates the tenant binding on every consume. A keyed `IDistributedCache`
+registration per tenant is not viable with the shipped defaults: the default store
+implementations resolve a plain (unkeyed) `IDistributedCache` from DI and have no
+mechanism to select a tenant-specific instance at request time.
 
 ### 12. Out of scope — deferred to follow-up ADRs
 
