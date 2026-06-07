@@ -65,30 +65,42 @@ docs/
 Every feature or change follows this lifecycle. Agents are responsible for their phase — do not skip phases.
 
 ```
-1. IDEA  ──►  maintainer   Flesh out the idea. Write the GitHub issue with full
-                            acceptance criteria, spec references, and a docs requirement.
+1. IDEA      ──►  maintainer   Flesh out the idea. Write an *ADR issue*: problem statement,
+                                spec references, open design questions, and sign-off criteria.
+                                ⚠ No implementation acceptance criteria — those belong in a
+                                  separate implementation issue created after the ADR settles.
 
-2. DESIGN ──► architect    Design the solution. Write or update ADRs.
-          ──► security     Threat model the design. Sign off before any code is written.
-              (both must be satisfied before implementation begins)
+2. DESIGN    ──►  architect    Design the solution. Write the ADR doc. Open an ADR PR.
+             ──►  security     Threat model the design. Sign off on the ADR PR before any
+                                code is written.
+                  [ADR PR reviewed and merged — ADR is now accepted]
+                                        ↓
+3. (post-ADR) ──► maintainer   Create one or more *implementation issues* grounded in the
+                                accepted ADR. Acceptance criteria are stable and precise
+                                because the design is now settled.
 
-3. BUILD  ──► developer    Implement against the issue's acceptance criteria.
-          ──► docs         Write or update documentation alongside the code.
-                            ⚠ Docs must be complete before a PR is opened.
+4. BUILD     ──►  developer    Implement against the implementation issue's acceptance criteria.
+             ──►  docs         Write or update documentation alongside the code.
+                                ⚠ Docs must be complete before a PR is opened.
 
-4. VERIFY ──► tester       Confirm acceptance criteria are met. Write missing tests.
-                            Security-negative test cases are mandatory.
+5. VERIFY    ──►  tester       Confirm acceptance criteria are met. Write missing tests.
+                                Security-negative test cases are mandatory.
 
-5. PR     ──► security     Review the PR for security concerns.
-          ──► docs         Confirm documentation is complete and accurate.
-                            ⚠ A PR cannot be merged without docs sign-off.
+6. PR        ──►  security     Review the PR for security concerns.
+             ──►  docs         Confirm documentation is complete and accurate.
+                                ⚠ A PR cannot be merged without docs sign-off.
 ```
 
 **Key rules:**
-- No implementation starts without architect + security design sign-off
+- The maintainer writes an *ADR issue* first — implementation issues are only created after the ADR PR merges
+- ADR issues contain design questions, spec references, and sign-off criteria **only** — never implementation acceptance criteria
+- Implementation issues reference the accepted ADR and carry the precise acceptance criteria developers and testers work from
+- No implementation starts without an accepted ADR and architect + security design sign-off
 - Docs are written alongside code — the PR is not opened until docs are ready
 - The tester verifies acceptance criteria — not the developer
 - Security reviews every PR that touches tokens, cryptography, or endpoints
+
+**Why two issues?** ADRs evolve during review. Writing implementation acceptance criteria before the design is settled produces stale, misleading guidance. The two-phase model ensures implementation issues are always grounded in settled decisions. An ADR issue closes when its ADR PR merges; an implementation issue closes when its implementation PR merges.
 
 
 

@@ -16,6 +16,20 @@ Closes #<!-- issue number -->
 - [ ] Refactor (no behaviour change)
 - [ ] Documentation only
 - [ ] CI / tooling / chore
+- [ ] Architecture Decision Record (ADR) — design document, no production code changes
+
+---
+
+## ADR PRs
+
+<!-- Complete this section only if "Architecture Decision Record" is checked above. -->
+
+- [ ] ADR doc is in `docs/decisions/` and follows the established format (context → decision → consequences)
+- [ ] Rejected alternatives are documented and explained
+- [ ] Security agent has signed off on the design (required before merge)
+- [ ] The maintainer has been notified to create implementation issue(s) after this PR merges
+
+<!-- Skip the Code Changes and Testing Notes sections below for ADR-only PRs. -->
 
 ---
 

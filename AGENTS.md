@@ -16,15 +16,20 @@ This repository uses a team of specialised Copilot agents. Use `/agent` in Copil
 ## Feature Development Workflow
 
 ```
-IDEA     →  maintainer  →  flesh out + write GitHub issue
-DESIGN   →  architect   →  design the solution + ADR
-         →  security    →  threat model (must sign off before code is written)
-BUILD    →  developer   →  implement
-         →  docs        →  write docs alongside code (must be complete before PR is opened)
-VERIFY   →  tester      →  verify acceptance criteria + security test cases
-PR       →  security    →  final PR review
-         →  docs        →  confirm docs are complete (gate on merge)
+IDEA       →  maintainer  →  flesh out + write ADR issue (design only, no implementation criteria)
+DESIGN     →  architect   →  design the solution + write the ADR doc
+           →  security    →  threat model (must sign off before code is written)
+           [ADR PR reviewed and merged → ADR accepted]
+                                ↓
+(post-ADR) →  maintainer  →  create implementation issue(s) grounded in the settled ADR
+BUILD      →  developer   →  implement against precise, ADR-grounded acceptance criteria
+           →  docs        →  write docs alongside code (must be complete before PR is opened)
+VERIFY     →  tester      →  verify acceptance criteria + security test cases
+PR         →  security    →  final PR review
+           →  docs        →  confirm docs are complete (gate on merge)
 ```
+
+**Why two issues?** ADRs often change direction during review. Writing implementation acceptance criteria before the design is settled produces stale, misleading guidance. ADR issues close when the ADR PR merges; implementation issues close when the implementation PR merges.
 
 ## Starting a New Feature
 
@@ -32,7 +37,7 @@ Tell the maintainer agent what you want to build:
 
 > "Use the maintainer agent — I want to add support for X"
 
-The maintainer will ask clarifying questions, align the idea against the relevant specs, and produce a GitHub issue. From there, follow the workflow above.
+The maintainer will ask clarifying questions, align the idea against the relevant specs, and produce an **ADR issue**. Once the architect writes the ADR, it is reviewed and merged. Only then does the maintainer create the **implementation issue** with precise acceptance criteria. From there, follow the workflow above.
 
 ## Security Issues
 

@@ -41,6 +41,17 @@ This applies to everything except trivial typo fixes. Opening an issue first:
 
 If you want to work on an existing issue, leave a comment to say so. A maintainer will assign it to you.
 
+### ADR-First Development
+
+Non-trivial features — anything that introduces new API surface, changes protocol behaviour, or requires an architectural decision — follow a **two-phase issue model**:
+
+1. **ADR issue** — Created first. Contains the problem statement, spec references, open design questions, and sign-off criteria. *No implementation acceptance criteria.* Closed when the ADR PR merges.
+2. **Implementation issue** — Created by the maintainer *after* the ADR PR is reviewed and merged. Carries the precise, testable acceptance criteria grounded in the settled design. Closed when the implementation PR merges.
+
+This separation exists because ADRs change during review. Writing implementation acceptance criteria before the design is settled produces stale, misleading requirements. The two-phase model ensures developers always work from stable, agreed-upon decisions.
+
+> 💡 If you are an external contributor with a feature idea, open a **Feature Request** — the maintainers will determine whether an ADR is needed and create the appropriate issues.
+
 ### Issue Title Format
 
 Issue titles must be written in imperative sentence case and describe the work directly.
@@ -74,6 +85,8 @@ Use the **Feature Request** issue template. Please include:
 - The problem you are trying to solve (not just the solution you have in mind)
 - Any relevant spec references (RFC number, OpenID Connect section, etc.)
 - Whether you are willing to implement it yourself
+
+> ℹ️ Features that require significant design work will trigger the ADR process. The maintainer will create an ADR issue from your feature request, and implementation work begins only after the ADR is accepted. This protects your effort from being based on a design that changes during review.
 
 ---
 
