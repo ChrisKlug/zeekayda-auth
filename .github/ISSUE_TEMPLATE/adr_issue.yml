@@ -1,0 +1,107 @@
+name: ADR / Design Issue
+description: Frame a design problem and open an Architecture Decision Record. Use this before any implementation work begins.
+labels: ["type:design", "status:needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## ADR Issue
+
+        Use this template to open a **design issue** — the first step for any non-trivial feature.
+
+        An ADR issue frames the *problem* and the *open questions* the architect must resolve.
+        **Do not include implementation acceptance criteria here** — those belong in a separate
+        implementation issue created after the ADR PR is merged.
+
+        > The lifecycle is: ADR issue → architect writes ADR → ADR PR reviewed + merged → maintainer creates implementation issue(s).
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: |
+        What gap or requirement is being addressed? Describe the problem, not the solution.
+        Why does this need an explicit design decision rather than a straightforward implementation?
+      placeholder: |
+        We need to support X. Currently there is no model for Y, which means Z cannot be
+        implemented safely / correctly / extensibly.
+    validations:
+      required: true
+
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Known Constraints & Requirements
+      description: |
+        What constraints must the design respect? Include spec requirements, backward-compatibility
+        concerns, security constraints, and performance considerations.
+      placeholder: |
+        - Must comply with RFC XXXX §Y.Z
+        - Must not break existing public API surface
+        - Storage must remain pluggable (no Entity Framework dependency)
+    validations:
+      required: true
+
+  - type: textarea
+    id: spec_references
+    attributes:
+      label: Spec References
+      description: |
+        List the specific spec sections the design must satisfy.
+        Examples: "RFC 7636 §4.3", "OIDC Core 1.0 §3.1.2.1", "OAuth 2.1 draft §4.1.1"
+      placeholder: |
+        - RFC XXXX §Y.Z — describes the required behaviour
+        - OIDC Core 1.0 §N.N.N — defines the relevant claim
+
+  - type: textarea
+    id: open_questions
+    attributes:
+      label: Open Design Questions
+      description: |
+        What specific decisions must the ADR resolve? Be explicit — these become the architect's agenda.
+        Each question should be answerable with a concrete decision + rationale.
+      placeholder: |
+        1. Should X be modelled as an interface, an abstract class, or a delegate?
+        2. Where should the Y responsibility live — in the core library or the ASP.NET Core integration?
+        3. How should Z be validated — eagerly at registration time or lazily at request time?
+    validations:
+      required: true
+
+  - type: textarea
+    id: sign_off_criteria
+    attributes:
+      label: Sign-off Criteria
+      description: |
+        What must the ADR answer before this issue can be closed?
+        This issue closes when its ADR PR is merged — not when code ships.
+      placeholder: |
+        This issue is closed when the ADR PR is merged and it has:
+        - [ ] Answered all open design questions above
+        - [ ] Documented rejected alternatives
+        - [ ] Security agent sign-off
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: security_flag
+    attributes:
+      label: Security Involvement Required
+      description: Check if the design touches any security-sensitive area. The security agent must sign off on the ADR PR before it merges.
+      options:
+        - label: "This design involves token handling, cryptographic operations, OAuth/OIDC endpoints, client authentication, or session management — the security agent must review the ADR"
+
+  - type: textarea
+    id: related
+    attributes:
+      label: Related Issues / Context
+      description: Links to related issues, prior art, reference implementations, or background discussion.
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-submission Checklist
+      options:
+        - label: I have searched existing issues and this is not a duplicate
+          required: true
+        - label: This issue does NOT contain implementation acceptance criteria (those come after the ADR is accepted)
+          required: true

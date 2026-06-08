@@ -1,0 +1,124 @@
+name: Implementation Issue
+description: Implementation work grounded in an accepted ADR. Only create this after the ADR PR has been merged.
+labels: ["type:feature", "status:needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Implementation Issue
+
+        Use this template **only after the relevant ADR PR has been merged**.
+
+        An implementation issue translates a settled design into a precise work order.
+        Acceptance criteria here must be grounded in the accepted ADR — not speculative.
+
+        > ⚠️ If the ADR has not been merged yet, stop. Open an **ADR / Design Issue** first.
+
+  - type: input
+    id: adr_link
+    attributes:
+      label: Accepted ADR
+      description: Link to the merged ADR document in `docs/decisions/` that grounds this issue.
+      placeholder: "docs/decisions/NNNN-feature-name.md"
+    validations:
+      required: true
+
+  - type: input
+    id: adr_issue
+    attributes:
+      label: ADR Issue
+      description: The design issue this implementation work follows from.
+      placeholder: "#NNN"
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: |
+        Why is this implementation needed? What problem does it solve for consumers of the library?
+        Keep this brief — the detail lives in the ADR.
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: |
+        What is explicitly IN scope for this issue?
+        What is explicitly OUT of scope (to be addressed in a separate issue or not at all)?
+      placeholder: |
+        **In scope:**
+        - Implement `IFoo` interface as specified in the ADR
+        - Add `FooOptions` configuration class
+        - Unit tests for all public methods
+
+        **Out of scope:**
+        - ASP.NET Core integration (tracked in #NNN)
+        - Documentation beyond XML doc comments (tracked in #NNN)
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance_criteria
+    attributes:
+      label: Acceptance Criteria
+      description: |
+        Concrete, testable conditions derived from the accepted ADR.
+        Use Given/When/Then or a numbered list. Each criterion must be independently verifiable.
+      placeholder: |
+        1. Given a valid X, when Y is called, then Z is returned.
+        2. Given an invalid X, when Y is called, then an `ArgumentException` is thrown with message "...".
+        3. The `IFoo` interface matches the shape specified in ADR-NNNN exactly.
+    validations:
+      required: true
+
+  - type: textarea
+    id: spec_alignment
+    attributes:
+      label: Spec Alignment
+      description: |
+        Cite the exact spec sections this implementation must satisfy.
+        If the implementation diverges from the spec in any way, flag it here explicitly.
+      placeholder: |
+        - RFC XXXX §Y.Z — requires that X must be validated before Y
+        - OIDC Core 1.0 §N.N.N — defines the format of claim Z
+
+  - type: textarea
+    id: security
+    attributes:
+      label: Security Considerations
+      description: |
+        Any security implications specific to this implementation.
+        The security agent must be tagged for review if this touches tokens, cryptography,
+        endpoints, or client authentication.
+      placeholder: |
+        - [ ] Secrets must not appear in logs or error messages
+        - [ ] Input X must be validated before use in cryptographic operations
+
+  - type: checkboxes
+    id: docs_required
+    attributes:
+      label: Documentation Required
+      options:
+        - label: "This implementation adds or changes public API, configuration, or behaviour — the docs agent must be involved and `area:docs` label applied"
+
+  - type: textarea
+    id: references
+    attributes:
+      label: References
+      description: Links to the ADR, related issues, spec sections, or prior art.
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-submission Checklist
+      options:
+        - label: The ADR PR referenced above has been merged
+          required: true
+        - label: All acceptance criteria are derived from the accepted ADR — not written speculatively
+          required: true
+        - label: I have searched existing issues and this is not a duplicate
+          required: true
