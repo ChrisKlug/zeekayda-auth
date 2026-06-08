@@ -76,7 +76,7 @@ public interface IClientRegistration
 - The discovery document's `token_endpoint_auth_methods_supported` is exactly `TokenEndpointOptions.AuthMethodsSupported` after startup validation. This is the operator's global server allowlist. Registered authenticators are capability providers, not automatic advertisement.
 - Startup validation ensures every configured server method has at least one registered `IClientAuthenticator`, and every in-memory client's `AllowedTokenEndpointAuthMethods` is a subset of `TokenEndpointOptions.AuthMethodsSupported`.
 - Custom methods are enabled by doing both: register an `IClientAuthenticator` whose `AuthenticationMethods` contains the method string, and add that same string to `TokenEndpointOptions.AuthMethodsSupported`.
-- The `TokenEndpointAuthMethod` enum is retired from the server-authoritative path. (It may survive as a discovery-document deserialization helper for *client* code reading another provider's metadata; that decision belongs to a future client-side ADR.)
+- The `TokenEndpointAuthMethod` enum is removed. Strings carry the vocabulary end-to-end across registration, dispatch, and discovery; the `TokenEndpointAuthMethods` constants class covers framework-handled values, and extension authors add their own string constants alongside their `IClientAuthenticator`.
 
 Implementation of this amendment (changing `TokenEndpointOptions`, `DiscoveryDocumentProvider`, `OpenIdConfigurationDocument`, validators, and tests) is tracked in a follow-up implementation issue and is **not** part of this ADR's PR. ADR 0002 and ADR 0003 carry an amendment note pointing back to this section.
 
@@ -321,9 +321,9 @@ public interface IClientRepository
 
 Contract: return `null` (never throw) for unknown or malformed `client_id` — throwing changes timing and undermines enumeration defence. Lookup MUST be parametrised at the storage layer (no string concatenation into queries).
 
-`InMemoryClientRepository` validates all registrations at construction time; failures throw `ArgumentException` before the host starts accepting requests.
+`InMemoryClientRepository` validates all registrations at construction time by delegating to `IClientRegistrationValidator` (§6.1); failures throw `ZeeKayDaConfigurationException` before the host starts accepting requests.
 
-**No default `IClientRepository` is registered** by `AddZeeKayDaAuth`; its absence is caught by `IValidateOptions<ZeeKayDaAuthOptions>` with `ValidateOnStart()`.
+**No default `IClientRepository` is registered** by `AddZeeKayDaAuth`; its absence is caught by `IValidateOptions<ZeeKayDaAuthOptions>` with `ValidateOnStart()`. A default `IClientRegistrationValidator` (§6.1) **is** registered unconditionally so every repository implementation can resolve and call it.
 
 **Consistency rule at registration time:**
 
@@ -367,6 +367,36 @@ builder.AddInMemoryClients(clients => {
 
 **Why a callback, not `IEnumerable<IClientRegistration>`:** scope definitions are simple value objects; client registrations are complex — they carry credentials, URI sets, grant-type sets, and signing algorithm constraints. A callback is more discoverable, naturally additive, and gives the in-memory builder access to DI-resolved hashing at repository construction without leaking service resolution into user configuration. `AddInMemoryScopes` keeps its `IEnumerable<ScopeDefinition>` shape — different types have different needs, consistency is not a goal here.
 
+### 6.1 `IClientRegistrationValidator` — shared rule enforcement
+
+To avoid duplicating the §5 redirect URI rules and the §6 consistency/shape checks across every `IClientRepository` implementation, the framework exposes the rules as a public service:
+
+```csharp
+namespace ZeeKayDa.Auth.Clients;
+
+public interface IClientRegistrationValidator
+{
+    /// Throws ZeeKayDaConfigurationException whose AggregatedFailures
+    /// enumerates every rule violation. MUST aggregate, not fail-fast,
+    /// so operators see every problem in one pass.
+    void Validate(IClientRegistration client);
+}
+```
+
+The framework registers a default `ClientRegistrationValidator` implementation that enforces every rule listed in §5 and §6 — the redirect URI matrix, the `IsPublic` consistency table, `ClientId` charset/length, the empty-secret probe on every `IClientSecret`, the two-active-shared-secret cap, `AllowedSigningAlgorithms` shape and subset against `IdTokenOptions.SigningAlgValuesSupported`, `AllowedScopes` and `AllowedTokenEndpointAuthMethods` hygiene, the subset check against `TokenEndpointOptions.AuthMethodsSupported`, and `Enum.IsDefined` on every enum-typed set.
+
+The validator depends on `IOptions<TokenEndpointOptions>`, `IOptions<IdTokenOptions>`, and the framework-internal `CompositeClientSecretHasher` (concrete type) for the empty-secret probe. It is registered as a singleton.
+
+**Who calls it:**
+
+- `InMemoryClientRepository` invokes it on every pending registration during its construction; any failure throws before the host starts accepting requests.
+- Custom `IClientRepository` implementations MUST resolve `IClientRegistrationValidator` from DI and call it before persisting a new or updated client. For read-mostly stores populated outside of the host (e.g. migrated from another IdP, or a read-replica), implementations MUST call it at some deterministic point before serving a registration — typically when loading into an internal cache — and MUST NOT return a registration that fails validation.
+- The future dynamic client registration handler (RFC 7591, §10) MUST call it before persisting any `/register` request.
+
+**Why a service, not an `Initialize` method on the repository:** the "validate everything once at startup" pattern is a property of the in-memory storage lifecycle, not a feature of the abstraction. Database-backed and dynamic-registration repositories validate at write time — startup full-table validation is either infeasible (millions of rows) or misleading (clients added later via admin/DCR APIs would skip it). Extracting the rules into `IClientRegistrationValidator` lets every repository call the same rule set at the moment that fits its lifecycle, without forcing a ceremonial `InitializeAsync` that would be a no-op for most real implementations.
+
+**Defence in depth:** the §4 dispatch rules and §7 enumeration mitigations remain unconditional at request time. A validator gap in a custom repository surfaces as runtime `invalid_client` / `invalid_request` rejections — incorrect operator-visible behaviour, never an exploit window.
+
 ### 7. Client enumeration mitigation
 
 - **Token endpoint:** `invalid_client` for both unknown `client_id` and wrong credential. `error_description` MUST NOT include the `client_id`.
@@ -398,7 +428,7 @@ effective_scopes = (requested_scopes ∩ client.AllowedScopes) ∩ user_granted_
 |---|---|
 | `IClientRegistration`, `ClientRegistration`, `IClientCredential`, `IClientSecret`, `IPbkdf2ClientSecret`, `Pbkdf2ClientSecret` | `ZeeKayDa.Auth` |
 | `IClientSecretHasher`, `ClientSecretHasher<T>`, `Pbkdf2ClientSecretHasher`, `CompositeClientSecretHasher` (internal) | `ZeeKayDa.Auth` |
-| `IClientRepository`, `InMemoryClientRepository` | `ZeeKayDa.Auth` |
+| `IClientRepository`, `InMemoryClientRepository`, `IClientRegistrationValidator`, `ClientRegistrationValidator` | `ZeeKayDa.Auth` |
 | `TokenEndpointAuthMethods`, `PromptValue`, `GrantType`, `ResponseType`, `ResponseMode` | `ZeeKayDa.Auth` |
 | `IClientAuthenticator`, `ClientAuthenticationContext`, `ClientAuthenticationResult`, `ClientAuthenticationOutcome` | `ZeeKayDa.Auth.AspNetCore` |
 | `PublicClientAuthenticator`, `ClientSecretAuthenticator`, `CompositeClientAuthenticator` (internal) | `ZeeKayDa.Auth.AspNetCore` |
@@ -416,7 +446,7 @@ Dynamic registration is out of scope for v1, but the v1 abstractions are deliber
 
 The following docs deliverables fall out of this ADR and must be tracked in the docs follow-up PR (one issue per item, or a single tracking issue with checkboxes):
 
-- **D1.** Custom `IClientRepository` implementer's contract — parametrised lookup (no SQL concatenation), `null`-not-throw rule for unknown clients, the registration validation rules the implementer owns, and an example skeleton.
+- **D1.** Custom `IClientRepository` implementer's contract — parametrised lookup (no SQL concatenation), `null`-not-throw rule for unknown clients, the obligation to resolve `IClientRegistrationValidator` from DI and invoke it before persisting a new or updated client (or before serving a read-mostly registration; see §6.1), the rule-by-rule reference into §5/§6 for implementers that need to validate against a constrained schema, and an example skeleton.
 - **D2.** Storing client credentials across ORMs — worked examples for EF Core (`IPbkdf2ClientSecret` via flat `Pbkdf2Iterations` / `Pbkdf2Salt` / `Pbkdf2Hash` columns projected through `[NotMapped]`), NHibernate (component mapping), and Dapper (query projection). Includes a guide to implementing a new hasher: define the sub-interface, define the record, subclass `ClientSecretHasher<TSecret>`, register with `AddSecretsHasher<T>()` (with `isDefault: true` if it should be the create-time default). Recommends against storing plaintext secrets at rest.
 - **D3.** Every sample-code block that uses a plaintext secret literal (e.g. `clientSecret: "s3cr3t"` in a `CreateConfidential` call) must carry a prominent warning that the literal is illustrative only and unsuitable for production.
 - **D4.** A note on `localhost` vs `127.0.0.1` citing RFC 8252 §8.3 and explaining why the framework emits an advisory warning on `localhost`.
@@ -496,3 +526,4 @@ The following docs deliverables fall out of this ADR and must be tracked in the 
 - **2026-06-08 (compact revision)** — Replace `IClientSecret? ClientSecret` with `IReadOnlyList<IClientCredential> Credentials`; `IClientSecret` gains `IClientCredential` base; `IClientAuthenticator` chain-of-responsibility dispatch formalised with three-result `ClientAuthenticationOutcome` enum; fix `PadTiming()` to fire only for non-default hashers; add `zkd_error` enumeration non-disclosure constraint; fix `AllowedPromptValues` default to empty set; add ordinal comparison rule for `AllowedTokenEndpointAuthMethods`; add `IJwksCredential` to v2 deferred list; add null-guard requirement on `ClientSecretAuthenticator`; document startup PBKDF2 cost; reclassify `TokenEndpointAuthMethod` as an open extension point and amend ADR 0002 / ADR 0003 accordingly; compact from ~2400 lines to ~500 lines.
 - **2026-06-08 (architect/security review fixes)** — Change discovery to advertise only configured `TokenEndpoint.AuthMethodsSupported`; require exact requested-method dispatch; reject multiple client auth mechanisms; add server/client/authenticator subset validation; define fixed two-credential timing budget for shared-secret failures; specify ordinal client ID semantics, auth-method string hygiene, log/metric non-disclosure, and the `IInMemoryClientRegistrationBuilder` API.
 - **2026-06-08 (accepted)** — Architect and security sign-off received (APPROVE-WITH-NITS); status flipped to Accepted. Non-blocking nits tracked as follow-ups against the D1–D10 docs deliverables and forthcoming implementation/token-endpoint issues.
+- **2026-06-08 (validator extraction + enum removal)** — Add §6.1 introducing `IClientRegistrationValidator` so every repository implementation calls the same rule set at the moment that fits its lifecycle (in-memory at startup; custom DB/DCR at write time, or first read for read-mostly stores). Removes the implicit "in-memory is the only validated path" duplication risk. Strictly additive; runtime fail-closed defences in §4 and §7 unchanged. Update §6, §9, and D1 accordingly. Also remove the `TokenEndpointAuthMethod` enum outright (previously "may survive as a client-side deserialization helper") — strings carry the vocabulary end-to-end; tighten the ADR 0002 / ADR 0003 amendment notes to say "removed" rather than "reclassified".
