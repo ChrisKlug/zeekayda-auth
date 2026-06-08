@@ -242,18 +242,30 @@ public static ZeeKayDaAuthBuilder AddSecretsHasher<THasher>(
 | 2+ | 2+ | Startup failure |
 | 0 | any | Startup failure |
 
-### 4. `IClientAuthenticator` — chain-of-responsibility dispatch
+### 4. `IClientAuthenticator` — self-describing dispatch
 
 ```csharp
 namespace ZeeKayDa.Auth.AspNetCore.ClientAuthentication;
 
 public interface IClientAuthenticator
 {
-    /// Method strings this authenticator handles (ordinal comparison).
+    /// Method strings this authenticator can produce (used for startup coverage
+    /// validation against TokenEndpoint.AuthMethodsSupported). Ordinal comparison.
     IReadOnlySet<string> AuthenticationMethods { get; }
 
+    /// TryParse-style detection. Returns true if this request carries authentication
+    /// material this authenticator handles, and writes the matched method name to
+    /// `method` — one of the values in `AuthenticationMethods`. Returns false and
+    /// `method = null` otherwise. MUST be a cheap shape check (no crypto, no DB).
+    bool CanHandle(ClientAuthenticationContext context, out string? method);
+
+    /// Invoked only after the composite has confirmed exactly this authenticator
+    /// detected and the matched method is on both allowlists. `method` is the same
+    /// string CanHandle returned — passed back so authenticators handling multiple
+    /// methods (e.g. ClientSecretAuthenticator handles client_secret_basic AND
+    /// client_secret_post) know which branch they're in without re-deriving.
     ValueTask<ClientAuthenticationResult> AuthenticateAsync(
-        ClientAuthenticationContext context, CancellationToken cancellationToken);
+        ClientAuthenticationContext context, string method, CancellationToken cancellationToken);
 }
 
 public sealed class ClientAuthenticationContext
@@ -261,32 +273,30 @@ public sealed class ClientAuthenticationContext
     public required HttpContext HttpContext { get; init; }
     public required IClientRegistration? Client { get; init; }
     public required string ClientId { get; init; }
-    public required string? RequestedAuthMethod { get; init; }
     public required IFormCollection Form { get; init; }
     public required IHeaderDictionary Headers { get; init; }
 }
 
 public sealed record ClientAuthenticationResult
 {
-    public required ClientAuthenticationOutcome Outcome { get; init; }
+    public required bool Authenticated { get; init; }
     public string Error { get; init; } = "invalid_client";
 
     public static ClientAuthenticationResult Valid();
     public static ClientAuthenticationResult NotValid();
-    public static ClientAuthenticationResult NoResult();
 }
-
-public enum ClientAuthenticationOutcome { Valid, NotValid, NoResult }
 ```
 
-**Dispatch rules (`CompositeClientAuthenticator`):**
+**Dispatch rules (`CompositeClientAuthenticator`).** The composite has **zero method-specific knowledge**; it never inspects the request itself. Detection is delegated entirely to authenticators.
 
-- The composite first derives a single requested auth method from HTTP request shape (e.g. `Authorization: Basic` header -> `client_secret_basic`; `client_secret` form field -> `client_secret_post`; no client auth material -> `none`).
-- Requests containing more than one client authentication mechanism are rejected with `invalid_client` (RFC 6749 §2.3).
-- The requested method must be present in both `TokenEndpointOptions.AuthMethodsSupported` (global server allowlist) and `client.AllowedTokenEndpointAuthMethods` (per-client allowlist), using `StringComparer.Ordinal`. Failure at either layer returns `invalid_client`.
-- Only authenticators whose `AuthenticationMethods` contains the exact requested method are invoked. Set intersection is not sufficient because one authenticator may handle multiple methods with different assurance or operator policy.
-- `Valid` → stop, authenticated. `NotValid` → stop, return `invalid_client`. `NoResult` → not my request, try next.
-- Chain exhausted with all `NoResult` → unauthenticated, return `invalid_client`.
+1. Call `CanHandle(context, out method)` on every registered `IClientAuthenticator`.
+2. Collect every `(authenticator, method)` pair where `CanHandle` returned `true`.
+3. `count > 1` → multiple client authentication mechanisms presented → `invalid_client` (RFC 6749 §2.3).
+4. `count == 0` → `invalid_client`. This branch only fires if no `PublicClientAuthenticator` is registered, because `PublicClientAuthenticator.CanHandle` returns `true` with `method = "none"` whenever no client-auth material is present.
+5. `count == 1` → the matched `method` MUST be present in both `TokenEndpoint.AuthMethodsSupported` (global server allowlist) and `client.AllowedTokenEndpointAuthMethods` (per-client allowlist), using `StringComparer.Ordinal`. Failure at either layer returns `invalid_client` without invoking `AuthenticateAsync`. The per-client method list is not a secret; failing fast here is acceptable and avoids unnecessary crypto.
+6. Call `authenticator.AuthenticateAsync(context, method, ct)`. `Authenticated == true` → request is authenticated. `Authenticated == false` → `invalid_client` with the §3.4 / §7 timing padding applied.
+
+**How to extend:** ship an `IClientAuthenticator` whose `CanHandle` returns `true` (with the appropriate method string) when the request carries the new mechanism's material — for example, a `TlsClientAuthAuthenticator` returning `true` with `method = "tls_client_auth"` when `HttpContext.Connection.ClientCertificate is not null`. Register it, and add `"tls_client_auth"` to `TokenEndpoint.AuthMethodsSupported`. **No composite or framework change is required.**
 
 **Rotation:** when an authenticator owns a request, it MUST try ALL `client.Credentials.OfType<TCredential>()` before returning `NotValid`.
 
@@ -294,10 +304,10 @@ public enum ClientAuthenticationOutcome { Valid, NotValid, NoResult }
 
 **v1 built-in authenticators:**
 
-- `PublicClientAuthenticator` — handles `none`; fails if a secret is presented for a public client.
-- `ClientSecretAuthenticator` — handles `client_secret_basic` and `client_secret_post`; delegates stored-secret verification to `CompositeClientSecretHasher`. (`client_secret_post` supported for compatibility; should be enabled only when needed as request bodies are more likely to appear in logs.)
+- `PublicClientAuthenticator` — `CanHandle` returns `true` with `method = "none"` when no client-auth material is present in the request; fails if a secret is somehow presented for a public client.
+- `ClientSecretAuthenticator` — `CanHandle` returns `true` with `method = "client_secret_basic"` when an `Authorization: Basic` header is present, or `"client_secret_post"` when a `client_secret` form field is present (and rejects requests that present both, before the composite's multi-mechanism check, as belt-and-braces); delegates stored-secret verification to `CompositeClientSecretHasher`. (`client_secret_post` supported for compatibility; should be enabled only when needed as request bodies are more likely to appear in logs.)
 
-**Startup validation:** every `TokenEndpointOptions.AuthMethodsSupported` value MUST be present in at least one registered `IClientAuthenticator.AuthenticationMethods`, and every in-memory client's `AllowedTokenEndpointAuthMethods` value MUST be a subset of `TokenEndpointOptions.AuthMethodsSupported`. Missing coverage or unsupported client methods are `ValidateOptionsResult.Fail(...)` at startup. Custom repositories own equivalent validation.
+**Startup validation:** every `TokenEndpoint.AuthMethodsSupported` value MUST be present in at least one registered `IClientAuthenticator.AuthenticationMethods`, and every in-memory client's `AllowedTokenEndpointAuthMethods` value MUST be a subset of `TokenEndpoint.AuthMethodsSupported`. Missing coverage or unsupported client methods are `ValidateOptionsResult.Fail(...)` at startup. Custom repositories own equivalent validation.
 
 **Layering:** because `IClientAuthenticator` lives in `ZeeKayDa.Auth.AspNetCore` (§9) but `TokenEndpointOptions` lives in `ZeeKayDa.Auth` (Core), the coverage validator necessarily lives in AspNetCore and cannot be a Core `IValidateOptions<TokenEndpointOptions>` implementation. Implementation issues shipping this validator MUST place it in the AspNetCore package.
 
@@ -477,7 +487,9 @@ The following docs deliverables fall out of this ADR and must be tracked in the 
 - **`IReadOnlyDictionary<string, IClientRegistration>`** — forces in-memory materialisation of all clients; no async I/O; leaks enumeration. `IClientRepository` with `FindByClientIdAsync` is async-native and encapsulated.
 - **Strings for all per-client vocabularies** — erases compile-time safety for `GrantType`/`ResponseType`/`ResponseMode`/`PromptValue` without buying extensibility (new values require framework changes). `AllowedTokenEndpointAuthMethods` stays `string` because `IClientAuthenticator` is a genuine open extension point.
 - **`IClientSecretHasher` as `token_endpoint_auth_method` extension point** — hashers have no request context and cannot declare method strings for startup validation. `IClientAuthenticator` is the request-aware extension point.
-- **`CanHandle(context)` as the only authenticator support declaration** — would require synthetic HTTP requests for startup coverage validation. `AuthenticationMethods` is the static declaration.
+- **`CanHandle(context)` as the *only* support declaration** — would require synthetic HTTP requests for startup coverage validation. The §4 design pairs `AuthenticationMethods` (static, for coverage) with `CanHandle` (dynamic, for dispatch): one static declaration for what the authenticator *can* produce, one runtime call for what *this* request actually carries. Each handles the question it's well-suited for.
+- **Composite-side request-shape sniffing (rejected during review)** — an earlier §4 draft had `CompositeClientAuthenticator` hard-code "`Authorization: Basic` → `client_secret_basic`, `client_secret` form field → `client_secret_post`, otherwise → `none`". That moved detection responsibility to the composite, defeating the extension point: a new method like `tls_client_auth` would have required modifying the composite to inspect `HttpContext.Connection.ClientCertificate`. The current design delegates detection to authenticators via `CanHandle`, leaving the composite with zero method-specific knowledge.
+- **Three-valued `Valid` / `NotValid` / `NoResult` outcome (rejected during review)** — `NoResult` modelled "not my request, try next" for a chain-of-responsibility dispatch. With `CanHandle` filtering the candidate set before any `AuthenticateAsync` call, the chain-of-responsibility shape disappears: at most one authenticator runs per request, and the result is a binary `Authenticated` flag.
 - **`string? ClientSecret` on `IClientRegistration`** — ambiguous plaintext vs hash; pushes fixed-time comparison to every custom implementation; sample-code trap. Replaced by the `IClientCredential`/`IClientSecretHasher` split.
 - **Service reference (`IClientSecretVerifier`) on `IClientRegistration`** — conflates data and behaviour; hostile to ORM mapping; forces every entity to carry a service reference.
 - **Single `string Algorithm` discriminator on `IClientSecret`** — forces nullable fields for algorithm-specific parameters; central switch-based dispatch; modifications required for each new algorithm. Type-hierarchy (`secret is TSecret`) avoids the switch entirely.
@@ -543,3 +555,4 @@ The following docs deliverables fall out of this ADR and must be tracked in the 
 - **2026-06-08 (accepted)** — Architect and security sign-off received (APPROVE-WITH-NITS); status flipped to Accepted. Non-blocking nits tracked as follow-ups against the D1–D10 docs deliverables and forthcoming implementation/token-endpoint issues.
 - **2026-06-08 (validator extraction + enum removal)** — Add §6.1 introducing `IClientRegistrationValidator` so every repository implementation calls the same rule set at the moment that fits its lifecycle (in-memory at startup; custom DB/DCR at write time, or first read for read-mostly stores). Removes the implicit "in-memory is the only validated path" duplication risk. Strictly additive; runtime fail-closed defences in §4 and §7 unchanged. Update §6, §9, and D1 accordingly. Also remove the `TokenEndpointAuthMethod` enum outright (previously "may survive as a client-side deserialization helper") — strings carry the vocabulary end-to-end; tighten the ADR 0002 / ADR 0003 amendment notes to say "removed" rather than "reclassified".
 - **2026-06-08 (review nits)** — Apply post-acceptance nits from architect/security review: raise PBKDF2 minimum to 600,000 to match OWASP (§3.3); add `IReadOnlySet<string>` comparer-trust invariant (§1); add `Pbkdf2ClientSecret` buffer-ownership note (§3.1); add accepted public-client timing residual (§3.4); require non-empty `AllowedTokenEndpointAuthMethods` for confidential clients and warn on advertised-but-unused `"none"` (§6); add coverage-validator layering note (§4); add `code_verifier` to log-never list and fragment-rejection binding constraint (§7); expand D5 with percent-encoding, IPv6, `localhost`-substring, and incoming-fragment coverage; add D11 for `EnableZkdErrorCodes` operator guidance (§11); pin OAuth 2.1 draft consultation date (§11 spec table).
+- **2026-06-08 (authenticator self-dispatch)** — Replace composite-side request sniffing with `IClientAuthenticator.CanHandle(context, out string? method)` so authenticators detect their own requests. Composite no longer hard-codes method strings, making `tls_client_auth` and other extensions drop-in. Collapse `ClientAuthenticationOutcome` from three-valued (`Valid`/`NotValid`/`NoResult`) to two-valued (`Authenticated` bool) — `NoResult`'s "try next" role is now handled by `CanHandle` filtering before any `AuthenticateAsync` call. Allowlist check moves to before `AuthenticateAsync` to avoid unnecessary crypto; the per-client method list is not a secret, so fail-fast is acceptable. Update Rejected Alternatives accordingly.
