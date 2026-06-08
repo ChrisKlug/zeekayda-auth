@@ -303,7 +303,7 @@ public enum ClientAuthenticationOutcome { Valid, NotValid, NoResult }
 
 ### 5. Redirect URI validation
 
-Rules enforced at registration time (`InMemoryClientRepository`) and request time (belt-and-suspenders for custom repositories):
+Rules enforced at registration time (by `IClientRegistrationValidator`, §6.1) and request time (belt-and-suspenders for custom repositories):
 
 1. **Exact ordinal string match** — enumerate registered strings with `StringComparer.Ordinal`; do not trust the `IReadOnlySet` instance's own comparer.
 2. **RFC 8252 §7.3 loopback-port exception** — port component ignored for loopback hosts at match time only.
@@ -451,7 +451,7 @@ effective_scopes = (requested_scopes ∩ client.AllowedScopes) ∩ user_granted_
 Dynamic registration is out of scope for v1, but the v1 abstractions are deliberately shaped so a future `ZeeKayDa.Auth.DynamicClients` package can layer on without breaking changes:
 
 - A future `DynamicClientRepository` will be a **decorator** that wraps an internal mutable `IWritableClientRepository` (handling persistence) and exposes the RFC 7591 `/register` endpoint. The read-only `IClientRepository` surface in this ADR is the read side of that future split.
-- Policy is kept separate from storage: a separate `IDynamicClientRegistrationPolicy` interface will gate which metadata fields a self-registering client may set, what scopes/grant types it may request, and any rate limiting. Keeping policy out of the repository keeps the policy decisions testable in isolation and ensures the static-registration guarantees this ADR establishes (validation, consistency rules, redirect URI rules) are not eroded by the dynamic-registration code path — the dynamic path runs the same `InMemoryClientRepository`-style validation before persisting.
+- Policy is kept separate from storage: a separate `IDynamicClientRegistrationPolicy` interface will gate which metadata fields a self-registering client may set, what scopes/grant types it may request, and any rate limiting. Keeping policy out of the repository keeps the policy decisions testable in isolation and ensures the static-registration guarantees this ADR establishes (validation, consistency rules, redirect URI rules) are not eroded by the dynamic-registration code path — the dynamic path runs the same `IClientRegistrationValidator` (§6.1) before persisting.
 - No changes to `IClientRegistration`, `IClientCredential`, or the hasher contracts are anticipated; dynamic registration adds a new write surface, not a new data shape.
 
 ### 11. Documentation requirements
