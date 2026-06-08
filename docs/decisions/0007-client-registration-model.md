@@ -329,7 +329,21 @@ Contract: return `null` (never throw) for unknown or malformed `client_id` — t
 
 **ID-token signing at issuance:** effective set = `client.AllowedSigningAlgorithms ?? IdTokenOptions.SigningAlgValuesSupported`. Issuance MUST fail if no configured signing credential satisfies the effective set. Startup validation is best-effort early warning; issuance time is the security boundary.
 
-**DI wiring:** `AddInMemoryClients(IEnumerable<IClientRegistration>)` uses `Replace` semantics (last-call-wins, mirrors `AddInMemoryScopes`). `AddSecretsHasher<T>(bool isDefault = false)` is the second builder extension.
+**DI wiring:**
+
+```csharp
+// Builder callback — additive, not Replace.
+builder.AddInMemoryClients(clients => {
+    clients.Add(ClientRegistration.CreateConfidential(...));
+    clients.Add(ClientRegistration.CreatePublic(...));
+});
+```
+
+`AddInMemoryClients(Action<IInMemoryClientRegistrationBuilder>)` accepts a callback that populates an `IInMemoryClientRegistrationBuilder`. Each `Add(IClientRegistration)` call is additive; multiple `AddInMemoryClients(...)` calls accumulate — no silent Replace. The accumulated list is snapshot-frozen when the `IClientRepository` singleton is constructed.
+
+`AddSecretsHasher<T>(bool isDefault = false)` is the second builder extension.
+
+**Why a callback, not `IEnumerable<IClientRegistration>`:** scope definitions are simple value objects; client registrations are complex — they carry credentials, URI sets, grant-type sets, and signing algorithm constraints. A callback is more discoverable, naturally additive, and allows factory helpers (`CreateConfidential`, `CreatePublic`) to be called inline without constructing a list up-front. `AddInMemoryScopes` keeps its `IEnumerable<ScopeDefinition>` shape — different types have different needs, consistency is not a goal here.
 
 ### 7. Client enumeration mitigation
 
@@ -365,7 +379,7 @@ effective_scopes = (requested_scopes ∩ client.AllowedScopes) ∩ user_granted_
 | `TokenEndpointAuthMethods`, `PromptValue`, `GrantType`, `ResponseType`, `ResponseMode` | `ZeeKayDa.Auth` |
 | `IClientAuthenticator`, `ClientAuthenticationContext`, `ClientAuthenticationResult`, `ClientAuthenticationOutcome` | `ZeeKayDa.Auth.AspNetCore` |
 | `PublicClientAuthenticator`, `ClientSecretAuthenticator`, `CompositeClientAuthenticator` (internal) | `ZeeKayDa.Auth.AspNetCore` |
-| `AddInMemoryClients`, `AddSecretsHasher<T>` | `ZeeKayDa.Auth.AspNetCore` |
+| `AddInMemoryClients` (`IInMemoryClientRegistrationBuilder`), `AddSecretsHasher<T>` | `ZeeKayDa.Auth.AspNetCore` |
 
 ### 10. Forward compatibility with RFC 7591 dynamic client registration
 
@@ -427,7 +441,7 @@ The following docs deliverables fall out of this ADR and must be tracked in the 
 ### Negative / Trade-offs
 
 - Custom repositories bypass registration-time validation; they own the equivalent validation responsibility.
-- `AddInMemoryClients` Replace semantics: a second call silently replaces the first (intentional for tests; can be surprising in production).
+- `AddInMemoryClients` is additive — multiple calls accumulate registrations. The list is snapshot-frozen at DI construction time; order of registration does not matter beyond duplicate `client_id` detection (which throws).
 - Multiple-hasher deployments require explicit `isDefault: true`; ambiguity is a startup failure, not a silent coin flip.
 - `CompositeClientSecretHasher` registered as a concrete type to avoid self-injection recursion; consumers must not expose it as `IClientSecretHasher`.
 - `CompositeClientSecretHasher` pre-computes a PBKDF2 dummy secret at startup (~600 ms one-time cost; intentional).
