@@ -1,6 +1,6 @@
 # ADR 0007 — Client Registration Model
 
-**Status:** Draft  
+**Status:** Accepted  
 **Date:** 2026-06-07
 
 ---
@@ -495,3 +495,4 @@ The following docs deliverables fall out of this ADR and must be tracked in the 
 - **2026-06-07** — Initial draft through architect/security review acceptance pass. Established `IClientRepository`, redirect URI validation, scope intersection, PKCE-mandatory behaviour, `IClientSecret`/`IClientSecretHasher` split, `IClientAuthenticator`, timing constraints, `VerifyUnknownClientForTimingOnly`, `PromptValue`/`TokenEndpointAuthMethods` constants.
 - **2026-06-08 (compact revision)** — Replace `IClientSecret? ClientSecret` with `IReadOnlyList<IClientCredential> Credentials`; `IClientSecret` gains `IClientCredential` base; `IClientAuthenticator` chain-of-responsibility dispatch formalised with three-result `ClientAuthenticationOutcome` enum; fix `PadTiming()` to fire only for non-default hashers; add `zkd_error` enumeration non-disclosure constraint; fix `AllowedPromptValues` default to empty set; add ordinal comparison rule for `AllowedTokenEndpointAuthMethods`; add `IJwksCredential` to v2 deferred list; add null-guard requirement on `ClientSecretAuthenticator`; document startup PBKDF2 cost; reclassify `TokenEndpointAuthMethod` as an open extension point and amend ADR 0002 / ADR 0003 accordingly; compact from ~2400 lines to ~500 lines.
 - **2026-06-08 (architect/security review fixes)** — Change discovery to advertise only configured `TokenEndpoint.AuthMethodsSupported`; require exact requested-method dispatch; reject multiple client auth mechanisms; add server/client/authenticator subset validation; define fixed two-credential timing budget for shared-secret failures; specify ordinal client ID semantics, auth-method string hygiene, log/metric non-disclosure, and the `IInMemoryClientRegistrationBuilder` API.
+- **2026-06-08 (accepted)** — Architect and security sign-off received (APPROVE-WITH-NITS); status flipped to Accepted. Non-blocking nits tracked as follow-ups against the D1–D10 docs deliverables and forthcoming implementation/token-endpoint issues.
