@@ -70,10 +70,12 @@ public interface IClientRegistration
 - **`IReadOnlySet<string>`** when a public extension point carries a new value end-to-end without core changes: `AllowedTokenEndpointAuthMethods` (any `IClientAuthenticator` can introduce a new method such as `tls_client_auth`). Membership checks MUST use `StringComparer.Ordinal`.
 - `TokenEndpointAuthMethods` constants class (`ClientSecretBasic`, `ClientSecretPost`, `None`) eliminates magic strings for ZeeKayDa-handled values.
 
-**Amendment to ADR 0002 and ADR 0003 — `TokenEndpointAuthMethod` reclassified as an open extension point.** The earlier draft kept the existing `TokenEndpointAuthMethod` *enum* (used by discovery via `TokenEndpointOptions.AuthMethodsSupported`) separate from `AllowedTokenEndpointAuthMethods`. That is inconsistent: a host registering a custom `IClientAuthenticator` for, say, `tls_client_auth` can configure clients with `AllowedTokenEndpointAuthMethods = { "tls_client_auth" }` and the token endpoint will accept it, but the discovery document (driven by the enum) silently omits the method — a misleading `token_endpoint_auth_methods_supported` value (OIDC Discovery §3 requires the field to list methods the server actually supports). The unified design is:
+**Amendment to ADR 0002 and ADR 0003 — `TokenEndpointAuthMethod` reclassified as an open extension point.** The earlier draft kept the existing `TokenEndpointAuthMethod` *enum* (used by discovery via `TokenEndpointOptions.AuthMethodsSupported`) separate from `AllowedTokenEndpointAuthMethods`. That is inconsistent: a host registering a custom `IClientAuthenticator` for, say, `tls_client_auth` can configure clients with `AllowedTokenEndpointAuthMethods = { "tls_client_auth" }`, but the discovery document (driven by the enum) cannot advertise it — a misleading `token_endpoint_auth_methods_supported` value (OIDC Discovery §3 requires the field to list methods the server actually supports). The unified design is:
 
 - `TokenEndpointOptions.AuthMethodsSupported` becomes `ICollection<string>` (ordinal), defaulting to `[TokenEndpointAuthMethods.ClientSecretBasic]`.
-- The discovery document's `token_endpoint_auth_methods_supported` is the **union** of `AuthMethodsSupported` and every `IClientAuthenticator.AuthenticationMethods` value registered in DI; the §4 startup coverage validator already proves every method that appears has an authenticator behind it.
+- The discovery document's `token_endpoint_auth_methods_supported` is exactly `TokenEndpointOptions.AuthMethodsSupported` after startup validation. This is the operator's global server allowlist. Registered authenticators are capability providers, not automatic advertisement.
+- Startup validation ensures every configured server method has at least one registered `IClientAuthenticator`, and every in-memory client's `AllowedTokenEndpointAuthMethods` is a subset of `TokenEndpointOptions.AuthMethodsSupported`.
+- Custom methods are enabled by doing both: register an `IClientAuthenticator` whose `AuthenticationMethods` contains the method string, and add that same string to `TokenEndpointOptions.AuthMethodsSupported`.
 - The `TokenEndpointAuthMethod` enum is retired from the server-authoritative path. (It may survive as a discovery-document deserialization helper for *client* code reading another provider's metadata; that decision belongs to a future client-side ADR.)
 
 Implementation of this amendment (changing `TokenEndpointOptions`, `DiscoveryDocumentProvider`, `OpenIdConfigurationDocument`, validators, and tests) is tracked in a follow-up implementation issue and is **not** part of this ADR's PR. ADR 0002 and ADR 0003 carry an amendment note pointing back to this section.
@@ -143,7 +145,7 @@ public sealed record Pbkdf2ClientSecret(int Iterations, byte[] Salt, byte[] Hash
 
 The C# type identity is the algorithm — no `string Algorithm` discriminator. A consumer adding bcrypt defines `IBCryptClientSecret : IClientSecret` with a paired `ClientSecretHasher<IBCryptClientSecret>`.
 
-**Credential rotation:** multiple `IClientSecret` entries in `Credentials` are valid simultaneously during a rollover window. Authenticators MUST try ALL `client.Credentials.OfType<TCredential>()` before returning `NotValid`.
+**Credential rotation:** at most two active `IClientSecret` entries are valid simultaneously during a rollover window. Authenticators MUST try ALL `client.Credentials.OfType<TCredential>()` before returning `NotValid`; a failed first credential MUST NOT stop the search. Registration validation rejects more than two active shared-secret credentials for a client.
 
 **Deferred to v2:** `IJwksCredential : IClientCredential` (for `private_key_jwt`; carries `JwksUri` or inline JWKS). This will be the first non-secret `IClientCredential` subtype.
 
@@ -192,6 +194,7 @@ internal sealed class CompositeClientSecretHasher
     public bool Verify(IClientSecret stored, ReadOnlySpan<char> presented);
     public IClientSecret Create(string plaintext);
     internal bool VerifyUnknownClientForTimingOnly(ReadOnlySpan<char> presented);
+    internal void PadFailureToCredentialBudget(int attemptedCredentials);
 }
 ```
 
@@ -202,7 +205,16 @@ if (!result && !ReferenceEquals(h, _default))
     PadTiming();
 ```
 
-Rationale: in standard deployments (single PBKDF2 hasher = the default), both the unknown-client path and the known-client-wrong-secret path already pay 1× PBKDF2. `PadTiming()` only adds work when a faster custom hasher matched — preventing that hasher from reopening a timing oracle. Rate limiting is the primary enumeration defence; `VerifyUnknownClientForTimingOnly` equalises the unknown-client path regardless.
+Rationale: in standard deployments (single PBKDF2 hasher = the default), a single failed stored-secret verification and one dummy verification have equivalent work. `PadTiming()` only adds work when a faster custom hasher matched — preventing that hasher from reopening a timing oracle.
+
+**Fixed failure budget for rotation:** token endpoint shared-secret failure paths pad to `MaxActiveSharedSecretsPerClient = 2` verification-equivalent operations:
+
+- Unknown client: run `VerifyUnknownClientForTimingOnly` twice.
+- Known client with one active secret and wrong credential: run one real verification, then one dummy default verification.
+- Known client with two active secrets and wrong credential: run two real verifications.
+- Fast custom hasher failures still call `PadTiming()` per failed custom verification before the remaining credential-budget padding is applied.
+
+This intentionally makes ordinary failure paths cost up to 2× PBKDF2 so a client in a rotation window is not distinguishable from an unknown client by timing. Rate limiting remains the primary enumeration defence; timing uniformity is necessary but not sufficient.
 
 `CompositeClientSecretHasher` is registered as the **concrete type**, not as `IClientSecretHasher`, to prevent self-injection through `IEnumerable<IClientSecretHasher>` (which would cause infinite recursion on first `Verify`).
 
@@ -263,8 +275,10 @@ public enum ClientAuthenticationOutcome { Valid, NotValid, NoResult }
 
 **Dispatch rules (`CompositeClientAuthenticator`):**
 
-- Only authenticators whose `AuthenticationMethods` intersects `client.AllowedTokenEndpointAuthMethods` are invoked (dispatch filter AND security constraint). All membership checks use `StringComparer.Ordinal`.
-- Ownership is determined from HTTP request shape (e.g. `Authorization: Basic` header → `client_secret_basic`).
+- The composite first derives a single requested auth method from HTTP request shape (e.g. `Authorization: Basic` header -> `client_secret_basic`; `client_secret` form field -> `client_secret_post`; no client auth material -> `none`).
+- Requests containing more than one client authentication mechanism are rejected with `invalid_client` (RFC 6749 §2.3).
+- The requested method must be present in both `TokenEndpointOptions.AuthMethodsSupported` (global server allowlist) and `client.AllowedTokenEndpointAuthMethods` (per-client allowlist), using `StringComparer.Ordinal`. Failure at either layer returns `invalid_client`.
+- Only authenticators whose `AuthenticationMethods` contains the exact requested method are invoked. Set intersection is not sufficient because one authenticator may handle multiple methods with different assurance or operator policy.
 - `Valid` → stop, authenticated. `NotValid` → stop, return `invalid_client`. `NoResult` → not my request, try next.
 - Chain exhausted with all `NoResult` → unauthenticated, return `invalid_client`.
 
@@ -277,7 +291,7 @@ public enum ClientAuthenticationOutcome { Valid, NotValid, NoResult }
 - `PublicClientAuthenticator` — handles `none`; fails if a secret is presented for a public client.
 - `ClientSecretAuthenticator` — handles `client_secret_basic` and `client_secret_post`; delegates stored-secret verification to `CompositeClientSecretHasher`. (`client_secret_post` supported for compatibility; should be enabled only when needed as request bodies are more likely to appear in logs.)
 
-**Startup validation:** every `AllowedTokenEndpointAuthMethods` value across all clients MUST be present in at least one registered `IClientAuthenticator.AuthenticationMethods`. Missing coverage is a `ValidateOptionsResult.Fail(...)` at startup.
+**Startup validation:** every `TokenEndpointOptions.AuthMethodsSupported` value MUST be present in at least one registered `IClientAuthenticator.AuthenticationMethods`, and every in-memory client's `AllowedTokenEndpointAuthMethods` value MUST be a subset of `TokenEndpointOptions.AuthMethodsSupported`. Missing coverage or unsupported client methods are `ValidateOptionsResult.Fail(...)` at startup. Custom repositories own equivalent validation.
 
 ### 5. Redirect URI validation
 
@@ -320,44 +334,53 @@ Contract: return `null` (never throw) for unknown or malformed `client_id` — t
 
 **Additional registration-time checks:**
 
-- `ClientId` matches `[A-Za-z0-9_\-.]+`, max 200 chars.
+- `ClientId` matches `[A-Za-z0-9_\-.]+`, max 200 chars. Duplicate detection and in-memory dictionary lookup use `StringComparer.Ordinal`.
 - Confidential clients: `CompositeClientSecretHasher.Verify(credential, ReadOnlySpan<char>.Empty)` MUST return `false` for every `IClientSecret` in `Credentials` (defence-in-depth against a broken hasher that accepts empty input).
+- Confidential clients may have at most two active `IClientSecret` credentials (fixed failure-budget invariant for rotation timing).
 - `AllowedSigningAlgorithms` non-null ⇒ non-empty (shape check); subset check against `IdTokenOptions.SigningAlgValuesSupported` runs via `IValidateOptions<…>` at host startup (best-effort for in-memory clients; custom repositories must enforce their own subset validation).
 - `AllowedScopes` contains no empty/whitespace entries.
+- `AllowedTokenEndpointAuthMethods` values are non-null, non-empty, have no leading/trailing whitespace, contain no control characters, are ordinal-distinct, and are a subset of `TokenEndpointOptions.AuthMethodsSupported`.
 - `Enum.IsDefined` for all enum-typed sets (guards against `(GrantType)999`-style casts).
-- No duplicate `client_id` within the repository.
+- No duplicate `client_id` within the repository (ordinal).
 
 **ID-token signing at issuance:** effective set = `client.AllowedSigningAlgorithms ?? IdTokenOptions.SigningAlgValuesSupported`. Issuance MUST fail if no configured signing credential satisfies the effective set. Startup validation is best-effort early warning; issuance time is the security boundary.
 
 **DI wiring:**
 
 ```csharp
-// Builder callback — additive, not Replace.
 builder.AddInMemoryClients(clients => {
-    clients.Add(ClientRegistration.CreateConfidential(...));
-    clients.Add(ClientRegistration.CreatePublic(...));
+    clients.AddConfidential(clientId: "...", clientSecret: "...", redirectUris: ..., allowedScopes: ...);
+    clients.AddPublic(clientId: "...", redirectUris: ..., allowedScopes: ...);
+    clients.Add(preHashedRegistration);
 });
 ```
 
-`AddInMemoryClients(Action<IInMemoryClientRegistrationBuilder>)` accepts a callback that populates an `IInMemoryClientRegistrationBuilder`. Each `Add(IClientRegistration)` call is additive; multiple `AddInMemoryClients(...)` calls accumulate — no silent Replace. The accumulated list is snapshot-frozen when the `IClientRepository` singleton is constructed.
+`AddInMemoryClients(Action<IInMemoryClientRegistrationBuilder>)` accepts a callback that populates an `IInMemoryClientRegistrationBuilder`. Each call is additive; multiple `AddInMemoryClients(...)` calls accumulate — no silent Replace. The callback executes during service registration and records pending registrations. The accumulated list is snapshot-frozen when the `IClientRepository` singleton is constructed.
+
+`IInMemoryClientRegistrationBuilder` exposes:
+
+- `AddPublic(...)` — creates a public `ClientRegistration`.
+- `AddConfidential(..., string clientSecret, ...)` — records the plaintext secret temporarily; the repository hashes it with the configured default `CompositeClientSecretHasher.Create(...)` during repository construction, then stores only `IClientSecret` credentials.
+- `Add(IClientRegistration registration)` — accepts a pre-built/pre-hashed registration for advanced scenarios and tests.
 
 `AddSecretsHasher<T>(bool isDefault = false)` is the second builder extension.
 
-**Why a callback, not `IEnumerable<IClientRegistration>`:** scope definitions are simple value objects; client registrations are complex — they carry credentials, URI sets, grant-type sets, and signing algorithm constraints. A callback is more discoverable, naturally additive, and allows factory helpers (`CreateConfidential`, `CreatePublic`) to be called inline without constructing a list up-front. `AddInMemoryScopes` keeps its `IEnumerable<ScopeDefinition>` shape — different types have different needs, consistency is not a goal here.
+**Why a callback, not `IEnumerable<IClientRegistration>`:** scope definitions are simple value objects; client registrations are complex — they carry credentials, URI sets, grant-type sets, and signing algorithm constraints. A callback is more discoverable, naturally additive, and gives the in-memory builder access to DI-resolved hashing at repository construction without leaking service resolution into user configuration. `AddInMemoryScopes` keeps its `IEnumerable<ScopeDefinition>` shape — different types have different needs, consistency is not a goal here.
 
 ### 7. Client enumeration mitigation
 
 - **Token endpoint:** `invalid_client` for both unknown `client_id` and wrong credential. `error_description` MUST NOT include the `client_id`.
 - **`zkd_error` non-disclosure constraint (binding):** when `EnableZkdErrorCodes` is `true`, the `zkd_error` value for `invalid_client` MUST NOT distinguish "unknown client_id" from "wrong credential". Any token-endpoint ADR or implementation that adds `zkd_error` codes MUST respect this constraint.
-- **Timing:** `CompositeClientSecretHasher.VerifyUnknownClientForTimingOnly(presented)` pads the unknown-client path (always returns failure semantics after performing default-hasher work). `PadTiming()` pads the known-client failure path only when a non-default hasher matched (§3.4).
+- **Timing:** shared-secret failure paths pad to the fixed two-credential budget in §3.4. `CompositeClientSecretHasher.VerifyUnknownClientForTimingOnly(presented)` pads the unknown-client path; `PadTiming()` pads non-default-hasher failures before remaining credential-budget padding is applied.
 - **Authorization endpoint:** unknown `client_id` fails before any redirect; the generic error page MUST NOT echo the `client_id` unencoded.
+- **Logs and metrics:** externally observable logs, metrics, diagnostics, and `zkd_error` values MUST NOT distinguish unknown client from wrong credential. Logs MUST never include presented client secrets, raw `Authorization` headers, or raw token endpoint request bodies containing `client_secret`.
 - **Rate limiting** is the operator's responsibility; timing uniformity is necessary but not sufficient to defeat a sustained enumeration attempt.
 
 **Binding forward constraints on the token endpoint (for the future token-endpoint ADR):**
 
 1. Token endpoint client authentication MUST delegate to `CompositeClientAuthenticator`, which dispatches to a registered `IClientAuthenticator`. For shared-secret methods, `ClientSecretAuthenticator` MUST delegate stored-secret verification to `CompositeClientSecretHasher.Verify(...)`. **The framework MUST NOT compare secret strings itself** — all comparisons go through a hasher so fixed-time equality is centrally guaranteed.
 2. `IsPublic == true` (equivalently `Credentials.Count == 0`) means "public client" — any presented `client_secret` MUST cause rejection with `invalid_client`.
-3. The unknown-client path MUST call `CompositeClientSecretHasher.VerifyUnknownClientForTimingOnly(presented)` so its work factor matches the default hasher's success path.
+3. The unknown-client path MUST call `CompositeClientSecretHasher.VerifyUnknownClientForTimingOnly(presented)` enough times to match the fixed two-credential failure budget.
 
 ### 8. Scope intersection
 
@@ -402,7 +425,7 @@ The following docs deliverables fall out of this ADR and must be tracked in the 
 - **D7.** A PKCE-mandatory FAQ entry citing RFC 9700 §2.1.1 and OAuth 2.1 §7.6, explaining why there is no per-client `RequirePkce` opt-out.
 - **D8.** A client-authentication extensibility note distinguishing `IClientAuthenticator` (token endpoint request authentication) from `IClientSecretHasher` (stored shared-secret creation/verification), warning that `client_secret_post` should be enabled only for compatibility, and documenting auth-method coverage validation.
 - **D9.** A signing-algorithm enforcement note for custom repositories: startup subset validation is best-effort, but issuance MUST use `client.AllowedSigningAlgorithms ?? IdTokenOptions.SigningAlgValuesSupported` and fail if no configured credential satisfies the effective set.
-- **D10.** Credential rotation guide: when and how to register a second `IClientSecret` during a rollover window, the requirement that authenticators try all matching credentials, and the recommendation to remove the old credential once in-flight tokens have expired.
+- **D10.** Credential rotation guide: when and how to register a second `IClientSecret` during a rollover window, the maximum of two active shared-secret credentials, the requirement that authenticators try all matching credentials, and the recommendation to remove the old credential once in-flight tokens have expired.
 
 ---
 
@@ -431,10 +454,10 @@ The following docs deliverables fall out of this ADR and must be tracked in the 
 - Fail-closed redirect URI scheme allowlist: future browser URI schemes cannot accidentally become valid redirect targets without an explicit framework change.
 - ORM-friendly credential model: flat columns, `[NotMapped]` projection to `IClientSecret`; no polymorphic owned-type acrobatics.
 - New hashing algorithms drop in without framework changes: sub-interface + record + `ClientSecretHasher<T>` + `AddSecretsHasher<T>()`.
-- `IClientAuthenticator` open extension point: new auth methods (e.g. `tls_client_auth`) via custom implementation without core changes; startup validation guarantees coverage.
-- `Credentials` list enables credential rotation (two active secrets during rollover) without a protocol change.
+- `IClientAuthenticator` open extension point: new auth methods (e.g. `tls_client_auth`) via custom implementation plus explicit `TokenEndpoint.AuthMethodsSupported` configuration; startup validation guarantees coverage without over-advertising disabled methods.
+- `Credentials` list enables credential rotation (maximum two active secrets during rollover) without a protocol change.
 - `AllowedPromptValues` empty-default is forward-compatible when new `PromptValue` members are added.
-- Timing oracle correctly scoped: `PadTiming()` fires only for non-default hashers; standard single-PBKDF2 deployments pay exactly 1× PBKDF2 on every failure path.
+- Timing oracle correctly scoped: `PadTiming()` fires only for non-default hashers, and shared-secret failure paths pad to a fixed two-credential budget so a rotation window does not reveal known clients.
 - PKCE unconditionally enforced — no escape hatch to a weaker configuration.
 - `zkd_error` non-disclosure constraint prevents client enumeration via extended error codes.
 
@@ -445,6 +468,7 @@ The following docs deliverables fall out of this ADR and must be tracked in the 
 - Multiple-hasher deployments require explicit `isDefault: true`; ambiguity is a startup failure, not a silent coin flip.
 - `CompositeClientSecretHasher` registered as a concrete type to avoid self-injection recursion; consumers must not expose it as `IClientSecretHasher`.
 - `CompositeClientSecretHasher` pre-computes a PBKDF2 dummy secret at startup (~600 ms one-time cost; intentional).
+- Shared-secret authentication failures intentionally cost up to 2× the default hasher to avoid timing differences during credential rotation.
 - Dynamic client registration deferred; `ZeeKayDa.Auth.DynamicClients` decorator pattern is the planned forward path.
 - Migrating from a `string?`-based or verifier-on-registration prototype requires replacing `ClientSecret` with `Credentials` and adopting the hasher split. Acceptable because the ADR is still **Draft** and no consumer code has been written against the v1 interface.
 
@@ -469,4 +493,5 @@ The following docs deliverables fall out of this ADR and must be tracked in the 
 ## Revision history
 
 - **2026-06-07** — Initial draft through architect/security review acceptance pass. Established `IClientRepository`, redirect URI validation, scope intersection, PKCE-mandatory behaviour, `IClientSecret`/`IClientSecretHasher` split, `IClientAuthenticator`, timing constraints, `VerifyUnknownClientForTimingOnly`, `PromptValue`/`TokenEndpointAuthMethods` constants.
-- **2026-06-08 (compact revision)** — Replace `IClientSecret? ClientSecret` with `IReadOnlyList<IClientCredential> Credentials`; `IClientSecret` gains `IClientCredential` base; `IClientAuthenticator` chain-of-responsibility dispatch formalised with three-result `ClientAuthenticationOutcome` enum; fix `PadTiming()` to fire only for non-default hashers; add `zkd_error` enumeration non-disclosure constraint; fix `AllowedPromptValues` default to empty set; add ordinal comparison rule for `AllowedTokenEndpointAuthMethods`; add `IJwksCredential` to v2 deferred list; add null-guard requirement on `ClientSecretAuthenticator`; document startup PBKDF2 cost; reclassify `TokenEndpointAuthMethod` as an open extension point and amend ADR 0002 / ADR 0003 accordingly; compact from ~2400 lines to ~470 lines.
+- **2026-06-08 (compact revision)** — Replace `IClientSecret? ClientSecret` with `IReadOnlyList<IClientCredential> Credentials`; `IClientSecret` gains `IClientCredential` base; `IClientAuthenticator` chain-of-responsibility dispatch formalised with three-result `ClientAuthenticationOutcome` enum; fix `PadTiming()` to fire only for non-default hashers; add `zkd_error` enumeration non-disclosure constraint; fix `AllowedPromptValues` default to empty set; add ordinal comparison rule for `AllowedTokenEndpointAuthMethods`; add `IJwksCredential` to v2 deferred list; add null-guard requirement on `ClientSecretAuthenticator`; document startup PBKDF2 cost; reclassify `TokenEndpointAuthMethod` as an open extension point and amend ADR 0002 / ADR 0003 accordingly; compact from ~2400 lines to ~500 lines.
+- **2026-06-08 (architect/security review fixes)** — Change discovery to advertise only configured `TokenEndpoint.AuthMethodsSupported`; require exact requested-method dispatch; reject multiple client auth mechanisms; add server/client/authenticator subset validation; define fixed two-credential timing budget for shared-secret failures; specify ordinal client ID semantics, auth-method string hygiene, log/metric non-disclosure, and the `IInMemoryClientRegistrationBuilder` API.

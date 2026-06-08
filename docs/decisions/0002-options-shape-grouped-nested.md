@@ -3,7 +3,7 @@
 **Status:** Accepted  
 **Date:** 2026-06-07
 
-> **Amended by ADR 0007 §1a (2026-06-08):** `TokenEndpoint.AuthMethodsSupported` is reclassified from `ICollection<TokenEndpointAuthMethod>` (enum) to `ICollection<string>` (ordinal), and the discovery document advertises the union of `AuthMethodsSupported` and every `IClientAuthenticator.AuthenticationMethods` registered in DI. The validator rules below remain in spirit (non-empty, at least one non-`"none"` method, etc.) but their type-system expression changes. The discussion below is preserved as historical record.
+> **Amended by ADR 0007 §1a (2026-06-08):** `TokenEndpoint.AuthMethodsSupported` is reclassified from `ICollection<TokenEndpointAuthMethod>` (enum) to `ICollection<string>` (ordinal). The discovery document advertises this configured server allowlist exactly; registered `IClientAuthenticator` methods are validated as capability coverage, not automatically advertised. The validator rules below remain in spirit (non-empty, at least one non-`"none"` method, coverage by an authenticator, etc.) but their type-system expression changes. The discussion below is preserved as historical record.
 
 ---
 
