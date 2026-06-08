@@ -64,6 +64,8 @@ public interface IClientRegistration
 
 **Deferred to v2** (added as DIM-defaulted properties to preserve binary compatibility): display metadata (`ClientName`, `LogoUri`, etc.), PAR (`RequirePushedAuthorizationRequests`), token lifetime overrides.
 
+**String set comparison invariant.** All `IReadOnlySet<string>` members on `IClientRegistration` (`RedirectUris`, `PostLogoutRedirectUris`, `AllowedScopes`, `AllowedTokenEndpointAuthMethods`) MUST be enumerated with explicit `StringComparer.Ordinal` semantics by every consumer in this ADR (§4, §5, §6, §8). The set's own comparer is NOT trusted — a custom `IClientRepository` may return an entity-implemented `IClientRegistration` whose set was constructed with `OrdinalIgnoreCase` or another non-ordinal comparer. Consumers do not opt in; ordinal comparison is the contract.
+
 ### 1a. Enum vs string for per-client vocabularies
 
 - **Enum** when a new value requires framework-side implementation: `GrantType`, `ResponseType`, `ResponseMode`, `PromptValue`.
@@ -149,6 +151,8 @@ The C# type identity is the algorithm — no `string Algorithm` discriminator. A
 
 **Deferred to v2:** `IJwksCredential : IClientCredential` (for `private_key_jwt`; carries `JwksUri` or inline JWKS). This will be the first non-secret `IClientCredential` subtype.
 
+**Buffer ownership.** `Pbkdf2ClientSecret.Salt` and `Pbkdf2ClientSecret.Hash` expose their underlying `byte[]` arrays directly — intentional for ORM-mapper friendliness (§10, D2). The framework treats both as read-only after construction and does NOT defensively copy. Consumers building registrations from external sources own the buffer lifetime. Salts and PBKDF2 output hashes are not secret values, so this is a documented contract rather than a security concern.
+
 #### 3.2 `IClientSecretHasher`
 
 ```csharp
@@ -178,7 +182,7 @@ Implementations MUST: use `CryptographicOperations.FixedTimeEquals`; never throw
 |---|---|
 | Algorithm | PBKDF2-HMAC-SHA256 |
 | Default iterations | 600,000 (current OWASP guidance) |
-| Minimum iterations | 100,000 (constructor-enforced) |
+| Minimum iterations | 600,000 (constructor-enforced; matches current OWASP PBKDF2-HMAC-SHA256 guidance — equal to the default so operators can only configure stronger, never weaker) |
 | Salt | 16 bytes (`RandomNumberGenerator.GetBytes`) |
 | Hash | 32 bytes |
 
@@ -215,6 +219,8 @@ Rationale: in standard deployments (single PBKDF2 hasher = the default), a singl
 - Fast custom hasher failures still call `PadTiming()` per failed custom verification before the remaining credential-budget padding is applied.
 
 This intentionally makes ordinary failure paths cost up to 2× PBKDF2 so a client in a rotation window is not distinguishable from an unknown client by timing. Rate limiting remains the primary enumeration defence; timing uniformity is necessary but not sufficient.
+
+**Accepted residual: public-client distinguishability.** The `none` authentication path is intrinsically faster than any shared-secret verification and cannot be padded to the same budget without an unconditional dummy PBKDF2 on every token endpoint hit (rejected: imposes a flat 600 ms cost on the most common production case). An attacker can therefore distinguish a public-client `client_id` from a confidential `client_id` by timing the response. This is accepted; the protocol-level distinction is unavoidable and rate limiting is the only effective defence (RFC 9700 §2.1).
 
 `CompositeClientSecretHasher` is registered as the **concrete type**, not as `IClientSecretHasher`, to prevent self-injection through `IEnumerable<IClientSecretHasher>` (which would cause infinite recursion on first `Verify`).
 
@@ -293,6 +299,8 @@ public enum ClientAuthenticationOutcome { Valid, NotValid, NoResult }
 
 **Startup validation:** every `TokenEndpointOptions.AuthMethodsSupported` value MUST be present in at least one registered `IClientAuthenticator.AuthenticationMethods`, and every in-memory client's `AllowedTokenEndpointAuthMethods` value MUST be a subset of `TokenEndpointOptions.AuthMethodsSupported`. Missing coverage or unsupported client methods are `ValidateOptionsResult.Fail(...)` at startup. Custom repositories own equivalent validation.
 
+**Layering:** because `IClientAuthenticator` lives in `ZeeKayDa.Auth.AspNetCore` (§9) but `TokenEndpointOptions` lives in `ZeeKayDa.Auth` (Core), the coverage validator necessarily lives in AspNetCore and cannot be a Core `IValidateOptions<TokenEndpointOptions>` implementation. Implementation issues shipping this validator MUST place it in the AspNetCore package.
+
 ### 5. Redirect URI validation
 
 Rules enforced at registration time (`InMemoryClientRepository`) and request time (belt-and-suspenders for custom repositories):
@@ -330,7 +338,9 @@ Contract: return `null` (never throw) for unknown or malformed `client_id` — t
 | `IsPublic` | `Credentials.Count` | `AllowedTokenEndpointAuthMethods` |
 |---|---|---|
 | `true` | `0` | exactly `{ "none" }` |
-| `false` | `> 0` | MUST NOT contain `"none"` |
+| `false` | `> 0` | non-empty AND MUST NOT contain `"none"` |
+
+A confidential client with an empty `AllowedTokenEndpointAuthMethods` can never authenticate at the token endpoint, so it is rejected at registration as misconfiguration.
 
 **Additional registration-time checks:**
 
@@ -342,6 +352,7 @@ Contract: return `null` (never throw) for unknown or malformed `client_id` — t
 - `AllowedTokenEndpointAuthMethods` values are non-null, non-empty, have no leading/trailing whitespace, contain no control characters, are ordinal-distinct, and are a subset of `TokenEndpointOptions.AuthMethodsSupported`.
 - `Enum.IsDefined` for all enum-typed sets (guards against `(GrantType)999`-style casts).
 - No duplicate `client_id` within the repository (ordinal).
+- `TokenEndpointOptions.AuthMethodsSupported` SHOULD NOT contain `"none"` unless at least one registered client is public (`IsPublic == true`). Advertised but unused, `none` is a misconfiguration smell rather than an exploit. The framework logs a startup warning rather than failing.
 
 **ID-token signing at issuance:** effective set = `client.AllowedSigningAlgorithms ?? IdTokenOptions.SigningAlgValuesSupported`. Issuance MUST fail if no configured signing credential satisfies the effective set. Startup validation is best-effort early warning; issuance time is the security boundary.
 
@@ -403,7 +414,7 @@ The validator depends on `IOptions<TokenEndpointOptions>`, `IOptions<IdTokenOpti
 - **`zkd_error` non-disclosure constraint (binding):** when `EnableZkdErrorCodes` is `true`, the `zkd_error` value for `invalid_client` MUST NOT distinguish "unknown client_id" from "wrong credential". Any token-endpoint ADR or implementation that adds `zkd_error` codes MUST respect this constraint.
 - **Timing:** shared-secret failure paths pad to the fixed two-credential budget in §3.4. `CompositeClientSecretHasher.VerifyUnknownClientForTimingOnly(presented)` pads the unknown-client path; `PadTiming()` pads non-default-hasher failures before remaining credential-budget padding is applied.
 - **Authorization endpoint:** unknown `client_id` fails before any redirect; the generic error page MUST NOT echo the `client_id` unencoded.
-- **Logs and metrics:** externally observable logs, metrics, diagnostics, and `zkd_error` values MUST NOT distinguish unknown client from wrong credential. Logs MUST never include presented client secrets, raw `Authorization` headers, or raw token endpoint request bodies containing `client_secret`.
+- **Logs and metrics:** externally observable logs, metrics, diagnostics, and `zkd_error` values MUST NOT distinguish unknown client from wrong credential. Logs MUST never include presented client secrets, raw `Authorization` headers, raw token endpoint request bodies containing `client_secret`, or `code_verifier` values (RFC 7636 §7.5 — single-use, but logging within the verifier's validity window enables interception-attack completion).
 - **Rate limiting** is the operator's responsibility; timing uniformity is necessary but not sufficient to defeat a sustained enumeration attempt.
 
 **Binding forward constraints on the token endpoint (for the future token-endpoint ADR):**
@@ -411,6 +422,7 @@ The validator depends on `IOptions<TokenEndpointOptions>`, `IOptions<IdTokenOpti
 1. Token endpoint client authentication MUST delegate to `CompositeClientAuthenticator`, which dispatches to a registered `IClientAuthenticator`. For shared-secret methods, `ClientSecretAuthenticator` MUST delegate stored-secret verification to `CompositeClientSecretHasher.Verify(...)`. **The framework MUST NOT compare secret strings itself** — all comparisons go through a hasher so fixed-time equality is centrally guaranteed.
 2. `IsPublic == true` (equivalently `Credentials.Count == 0`) means "public client" — any presented `client_secret` MUST cause rejection with `invalid_client`.
 3. The unknown-client path MUST call `CompositeClientSecretHasher.VerifyUnknownClientForTimingOnly(presented)` enough times to match the fixed two-credential failure budget.
+4. The authorize endpoint MUST reject any incoming request whose `redirect_uri` parameter contains a URI fragment (RFC 6749 §3.1.2) before performing the exact-ordinal match against `RedirectUris`. The registration-time "no fragment" rule (§5) makes this defence-in-depth — even a future loosening of the match rule cannot accidentally re-enable a fragment-bearing redirect.
 
 ### 8. Scope intersection
 
@@ -450,12 +462,13 @@ The following docs deliverables fall out of this ADR and must be tracked in the 
 - **D2.** Storing client credentials across ORMs — worked examples for EF Core (`IPbkdf2ClientSecret` via flat `Pbkdf2Iterations` / `Pbkdf2Salt` / `Pbkdf2Hash` columns projected through `[NotMapped]`), NHibernate (component mapping), and Dapper (query projection). Includes a guide to implementing a new hasher: define the sub-interface, define the record, subclass `ClientSecretHasher<TSecret>`, register with `AddSecretsHasher<T>()` (with `isDefault: true` if it should be the create-time default). Recommends against storing plaintext secrets at rest.
 - **D3.** Every sample-code block that uses a plaintext secret literal (e.g. `clientSecret: "s3cr3t"` in a `CreateConfidential` call) must carry a prominent warning that the literal is illustrative only and unsuitable for production.
 - **D4.** A note on `localhost` vs `127.0.0.1` citing RFC 8252 §8.3 and explaining why the framework emits an advisory warning on `localhost`.
-- **D5.** `SECURITY.md` (or `docs/security/redirect-uri-validation.md`) capturing the scheme allowlist, loopback-port exception, userinfo prohibition, exact-ordinal matching requirement (enumerate registered strings; do not trust the `IReadOnlySet` comparer), the edge-case matrix from §5, and the threat model that motivates each rule.
+- **D5.** `SECURITY.md` (or `docs/security/redirect-uri-validation.md`) capturing the scheme allowlist, loopback-port exception, userinfo prohibition, exact-ordinal matching requirement (enumerate registered strings; do not trust the `IReadOnlySet` comparer), the edge-case matrix from §5, and the threat model that motivates each rule. The matrix MUST cover: percent-encoding (`https://app/cb%20x` ≠ `https://app/cb x` — no normalisation is performed; the registered string must match the exact wire form the client will send), IPv6 loopback (`[::1]` accepted; `[::1%eth0]` zone identifier rejected), `localhost` substring traps (`localhost.attacker.com` correctly fails), and incoming-request fragment rejection at the authorize endpoint (binding constraint §7 #4).
 - **D6.** An `AllowedResponseModes` doc note explaining that `fragment` is intentionally unsupported, pointing at the Rejected Alternatives entry.
 - **D7.** A PKCE-mandatory FAQ entry citing RFC 9700 §2.1.1 and OAuth 2.1 §7.6, explaining why there is no per-client `RequirePkce` opt-out.
 - **D8.** A client-authentication extensibility note distinguishing `IClientAuthenticator` (token endpoint request authentication) from `IClientSecretHasher` (stored shared-secret creation/verification), warning that `client_secret_post` should be enabled only for compatibility, and documenting auth-method coverage validation.
 - **D9.** A signing-algorithm enforcement note for custom repositories: startup subset validation is best-effort, but issuance MUST use `client.AllowedSigningAlgorithms ?? IdTokenOptions.SigningAlgValuesSupported` and fail if no configured credential satisfies the effective set.
 - **D10.** Credential rotation guide: when and how to register a second `IClientSecret` during a rollover window, the maximum of two active shared-secret credentials, the requirement that authenticators try all matching credentials, and the recommendation to remove the old credential once in-flight tokens have expired.
+- **D11.** `EnableZkdErrorCodes` operator guidance — even with the §7 non-disclosure binding, richer diagnostics give attackers more signal in aggregate. Document that operators should treat the flag as confidential-clients-only or trusted-tenant-only by default; reserve `zkd_error` codes for confidential clients with a legitimate diagnostic need.
 
 ---
 
@@ -518,6 +531,8 @@ The following docs deliverables fall out of this ADR and must be tracked in the 
 | OIDC Core 1.0 | §3.1.2.1, §3.1.3.7 | `prompt` parameter values, ID token `alg` matching |
 | OAuth 2.1 draft | §7, §7.6 | Implicit/ROPC flows removed, PKCE mandatory |
 
+> Spec section numbers consulted against the IETF drafts published as of 2026-06-08. The OAuth 2.1 draft is unstable; section numbers may shift between revisions and should be resolved against the revision current at that date when ground-truthing this ADR.
+
 ---
 
 ## Revision history
@@ -527,3 +542,4 @@ The following docs deliverables fall out of this ADR and must be tracked in the 
 - **2026-06-08 (architect/security review fixes)** — Change discovery to advertise only configured `TokenEndpoint.AuthMethodsSupported`; require exact requested-method dispatch; reject multiple client auth mechanisms; add server/client/authenticator subset validation; define fixed two-credential timing budget for shared-secret failures; specify ordinal client ID semantics, auth-method string hygiene, log/metric non-disclosure, and the `IInMemoryClientRegistrationBuilder` API.
 - **2026-06-08 (accepted)** — Architect and security sign-off received (APPROVE-WITH-NITS); status flipped to Accepted. Non-blocking nits tracked as follow-ups against the D1–D10 docs deliverables and forthcoming implementation/token-endpoint issues.
 - **2026-06-08 (validator extraction + enum removal)** — Add §6.1 introducing `IClientRegistrationValidator` so every repository implementation calls the same rule set at the moment that fits its lifecycle (in-memory at startup; custom DB/DCR at write time, or first read for read-mostly stores). Removes the implicit "in-memory is the only validated path" duplication risk. Strictly additive; runtime fail-closed defences in §4 and §7 unchanged. Update §6, §9, and D1 accordingly. Also remove the `TokenEndpointAuthMethod` enum outright (previously "may survive as a client-side deserialization helper") — strings carry the vocabulary end-to-end; tighten the ADR 0002 / ADR 0003 amendment notes to say "removed" rather than "reclassified".
+- **2026-06-08 (review nits)** — Apply post-acceptance nits from architect/security review: raise PBKDF2 minimum to 600,000 to match OWASP (§3.3); add `IReadOnlySet<string>` comparer-trust invariant (§1); add `Pbkdf2ClientSecret` buffer-ownership note (§3.1); add accepted public-client timing residual (§3.4); require non-empty `AllowedTokenEndpointAuthMethods` for confidential clients and warn on advertised-but-unused `"none"` (§6); add coverage-validator layering note (§4); add `code_verifier` to log-never list and fragment-rejection binding constraint (§7); expand D5 with percent-encoding, IPv6, `localhost`-substring, and incoming-fragment coverage; add D11 for `EnableZkdErrorCodes` operator guidance (§11); pin OAuth 2.1 draft consultation date (§11 spec table).
