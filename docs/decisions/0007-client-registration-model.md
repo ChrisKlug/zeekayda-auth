@@ -120,7 +120,7 @@ public sealed record ClientRegistration : IClientRegistration
 }
 ```
 
-Validation lives in `InMemoryClientRepository`, not the record constructor (keeps the record a pure value object; tests can construct invalid instances to exercise validators).
+Validation lives in `IClientRegistrationValidator` (§6.1), not the record constructor — keeps the record a pure value object so tests can construct invalid instances to exercise the validator. `InMemoryClientRepository` invokes the validator on every registration during construction; custom repositories invoke it at write time (or first read for read-mostly stores).
 
 ### 3. Credential model
 
