@@ -3,6 +3,8 @@
 **Status:** Accepted  
 **Date:** 2026-06-14
 
+> **Amended by ADR 0007 §1a (2026-06-08):** `TokenEndpointAuthMethod` is no longer used as the example of the "use enums for closed protocol vocabularies" pattern — it has been reclassified as an open extension point so that custom `IClientAuthenticator` implementations can advertise their methods via discovery. The enum/string trade-off this ADR describes still applies to `CodeChallengeMethod`, `SigningAlgorithm`, `ResponseType`, `ResponseMode`, `GrantType`, and `PromptValue`. The discussion below is preserved as historical record.
+
 ---
 
 ## Context
