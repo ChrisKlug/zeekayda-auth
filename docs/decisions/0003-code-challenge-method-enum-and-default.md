@@ -3,6 +3,8 @@
 **Status:** Accepted  
 **Date:** 2026-06-14
 
+> **Amended by ADR 0007 §1a (2026-06-08):** the `TokenEndpointAuthMethod` enum is removed and is therefore no longer used as the example of the "use enums for closed protocol vocabularies" pattern — that vocabulary has been reclassified as an open extension point. Custom token endpoint auth methods are advertised by explicitly adding their string value to `TokenEndpoint.AuthMethodsSupported` and registering a covering `IClientAuthenticator`. The enum/string trade-off this ADR describes still applies to `CodeChallengeMethod`, `SigningAlgorithm`, `ResponseType`, `ResponseMode`, `GrantType`, and `PromptValue`. The discussion below is preserved as historical record.
+
 ---
 
 ## Context
