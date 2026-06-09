@@ -269,16 +269,24 @@ document.
 
 | Attribute | Value |
 |---|---|
-| Type | `ICollection<TokenEndpointAuthMethod>` |
-| Default | `[TokenEndpointAuthMethod.ClientSecretBasic]` |
-| Required | Yes (must not be null) |
+| Type | `ICollection<string>` |
+| Default | `["client_secret_basic"]` (see `TokenEndpointAuthMethods.ClientSecretBasic`) |
+| Required | Yes (must not be null or empty) |
 
 The client authentication methods supported at the token endpoint. Published as
 `token_endpoint_auth_methods_supported` in the discovery document.
 
-This value must not be null or empty. If `GrantTypesSupported` includes
-`GrantType.ClientCredentials`, it must contain at least one method other than
-`TokenEndpointAuthMethod.None`.
+Well-known method string constants are available on `TokenEndpointAuthMethods`. Custom authentication
+methods (e.g. `"tls_client_auth"` from RFC 8705) may also be included as plain strings alongside
+those constants.
+
+> ⚠️ **Note:** Every method listed in `AuthMethodsSupported` (except `"none"`) must be present in
+> exactly one registered `IClientAuthenticator`'s `AuthenticationMethods`. Advertising a method with
+> no covering authenticator — or with more than one — will be caught by startup validation.
+
+Each entry must be a non-empty, non-whitespace string with no leading or trailing whitespace and no
+control characters. If `GrantTypesSupported` includes `GrantType.ClientCredentials`, the collection
+must contain at least one method other than `TokenEndpointAuthMethods.None` (`"none"`).
 
 This cross-group validator rule is defined in
 [ADR 0002 §4 Rule 2](../decisions/0002-options-shape-grouped-nested.md#required-validator-rules-for-tokenendpointauthmethodssupported)
@@ -290,44 +298,47 @@ emits:
 GrantTypesSupported includes 'client_credentials', which requires confidential clients. TokenEndpoint.AuthMethodsSupported must contain at least one method other than 'none'. See RFC 6749 §4.4 and OAuth 2.0 Security BCP §2.6 (RFC 9700).
 ```
 
-| Enum value | JSON serialization |
+| `TokenEndpointAuthMethods` constant | String value |
 |---|---|
-| `TokenEndpointAuthMethod.ClientSecretBasic` | `"client_secret_basic"` |
-| `TokenEndpointAuthMethod.ClientSecretPost` | `"client_secret_post"` |
-| `TokenEndpointAuthMethod.ClientSecretJwt` | `"client_secret_jwt"` |
-| `TokenEndpointAuthMethod.PrivateKeyJwt` | `"private_key_jwt"` |
-| `TokenEndpointAuthMethod.None` | `"none"` |
+| `ClientSecretBasic` | `"client_secret_basic"` |
+| `ClientSecretPost` | `"client_secret_post"` |
+| `None` | `"none"` |
+
+Custom methods not listed above (e.g. `"tls_client_auth"`, `"private_key_jwt"`) are expressed as
+plain strings alongside these constants.
 
 `token_endpoint_auth_methods_supported` is defined by
 [RFC 8414 §2](https://www.rfc-editor.org/rfc/rfc8414#section-2).
 
-#### `TokenEndpointAuthMethod.None` and PKCE
+#### `"none"` and PKCE
 
-`TokenEndpointAuthMethod.None` represents **public clients** — clients with no client secret. Public clients cannot securely transmit credentials at the token endpoint.
+`TokenEndpointAuthMethods.None` (`"none"`) represents **public clients** — clients with no client
+secret. Public clients cannot securely transmit credentials at the token endpoint.
 
 > ⚠️ **Warning:** Public clients MUST use PKCE (Proof Key for Public OAuth 2.0 Clients) as the sole protection mechanism for the authorization code. This is mandated by [RFC 9700 §2.1.1](https://www.rfc-editor.org/rfc/rfc9700#section-2.1.1) (OAuth 2.0 Security Best Current Practice).
 
 **PKCE is defined for the authorization code grant** per [RFC 7636](https://www.rfc-editor.org/rfc/rfc7636). Therefore:
 
-- Public clients using the authorization code flow with `TokenEndpointAuthMethod.None` **must** use PKCE and present a valid `code_verifier` at the token endpoint.
-- `TokenEndpointAuthMethod.None` may be advertised alongside confidential-client methods such as `ClientSecretBasic`; this supports deployments that serve both public clients and confidential clients.
-- Startup validation does **not** reject `None` just because `GrantTypesSupported` omits `GrantType.AuthorizationCode`. ADR 0002 rejects only the `client_credentials` + `none`-only combination above.
+- Public clients using the authorization code flow with `"none"` **must** use PKCE and present a valid `code_verifier` at the token endpoint.
+- `"none"` may be advertised alongside confidential-client methods such as `"client_secret_basic"`; this supports deployments that serve both public clients and confidential clients.
+- Startup validation does **not** reject `"none"` just because `GrantTypesSupported` omits `GrantType.AuthorizationCode`. ADR 0002 rejects only the `client_credentials` + `none`-only combination above.
 - When the token endpoint is implemented, it must enforce each registered client's `token_endpoint_auth_method` at request time (tracked by issue #64). Without per-client enforcement, a confidential client could downgrade to public-client behavior by omitting credentials.
 
 Attempting to support `ClientCredentials` with only public-client authentication will fail at host startup with the ADR 0002 error message shown above.
 
 ```csharp
 // ✓ Valid: public clients with authorization code grant + PKCE
-options.TokenEndpoint.AuthMethodsSupported = new[] { TokenEndpointAuthMethod.None };
-options.GrantTypesSupported = new[] { GrantType.AuthorizationCode };
+options.TokenEndpoint.AuthMethodsSupported = [TokenEndpointAuthMethods.None];
+options.GrantTypesSupported = [GrantType.AuthorizationCode];
 
 // ✗ Invalid: client_credentials with only public-client authentication
 // This will fail startup validation
-options.TokenEndpoint.AuthMethodsSupported = new[] { TokenEndpointAuthMethod.None };
-options.GrantTypesSupported = new[] { GrantType.ClientCredentials };
+options.TokenEndpoint.AuthMethodsSupported = [TokenEndpointAuthMethods.None];
+options.GrantTypesSupported = [GrantType.ClientCredentials];
 ```
 
-Authorization-code clients that use `TokenEndpointAuthMethod.None` must perform the token exchange with a PKCE challenge and verifier. Consult your OAuth client library's documentation for PKCE implementation details.
+Authorization-code clients that use `"none"` must perform the token exchange with a PKCE challenge
+and verifier. Consult your OAuth client library's documentation for PKCE implementation details.
 
 ---
 

@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Options;
-using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.Scopes;
 
 namespace ZeeKayDa.Auth.Discovery;
@@ -62,7 +61,8 @@ internal sealed class DiscoveryDocumentProvider : IDiscoveryDocumentProvider
                 .Select(scope => scope.Name)],
             ResponseModesSupported = [.. options.Response.ModesSupported],
             GrantTypesSupported = [.. options.GrantTypesSupported],
-            TokenEndpointAuthMethodsSupported = [.. options.TokenEndpoint.AuthMethodsSupported],
+            TokenEndpointAuthMethodsSupported = [.. options.TokenEndpoint.AuthMethodsSupported
+                .Distinct(StringComparer.Ordinal)],
             IdTokenSigningAlgValuesSupported = [.. options.IdToken.SigningAlgValuesSupported],
             CodeChallengeMethodsSupported = options.AuthorizationEndpoint.CodeChallengeMethodsSupported is { } methods
                 ? [.. methods]

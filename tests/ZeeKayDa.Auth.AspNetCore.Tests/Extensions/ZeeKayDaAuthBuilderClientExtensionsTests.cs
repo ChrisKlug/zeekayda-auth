@@ -121,7 +121,7 @@ public sealed class ZeeKayDaAuthBuilderClientExtensionsTests
         services.AddZeeKayDaAuth(o =>
             {
                 o.Issuer = "https://test.example.com";
-                o.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethod.None);
+                o.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
             })
             .AddSecretsHasher<TestHasher>()
             .AddInMemoryClients(clients =>
@@ -158,7 +158,7 @@ public sealed class ZeeKayDaAuthBuilderClientExtensionsTests
         services.AddZeeKayDaAuth(o =>
             {
                 o.Issuer = "https://test.example.com";
-                o.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethod.None);
+                o.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
             })
             .AddSecretsHasher<TestHasher>()
             .AddInMemoryClients(clients =>
@@ -224,7 +224,7 @@ public sealed class ZeeKayDaAuthBuilderClientExtensionsTests
         services.AddZeeKayDaAuth(o =>
             {
                 o.Issuer = "https://test.example.com";
-                o.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethod.None);
+                o.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
             })
             .AddSecretsHasher<TestHasher>()
             .AddInMemoryClients(clients => clients.Add(preBuilt));
@@ -330,7 +330,7 @@ public sealed class ZeeKayDaAuthBuilderClientExtensionsTests
                 services.AddZeeKayDaAuth(o =>
                     {
                         o.Issuer = "https://test.example.com";
-                        o.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethod.None);
+                        o.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
                     })
                     .AddSecretsHasher<TestHasher>()
                     // Register the same client_id twice — duplicate detection in the repository

@@ -88,7 +88,7 @@ public sealed class ClientRegistrationValidatorTests
         var opts = new AuthorizationServerOptions { Issuer = "https://test.example.com" };
         // Include "none" so public clients (AllowedTokenEndpointAuthMethods={"none"}) pass
         // the subset check. Confidential clients use "client_secret_basic" which is already default.
-        opts.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethod.None);
+        opts.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
         return opts;
     }
 
@@ -760,7 +760,7 @@ public sealed class ClientRegistrationValidatorTests
         var opts = new AuthorizationServerOptions { Issuer = "https://test.example.com" };
         opts.IdToken.SigningAlgValuesSupported = [SigningAlgorithm.RS256, SigningAlgorithm.ES256];
         // Include None so public clients (AllowedTokenEndpointAuthMethods={"none"}) pass subset check.
-        opts.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethod.None);
+        opts.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
         var validator = MakeValidator(serverOptions: opts);
 
         var client = MakeValidPublicClient() with
@@ -778,7 +778,7 @@ public sealed class ClientRegistrationValidatorTests
     {
         var opts = new AuthorizationServerOptions { Issuer = "https://test.example.com" };
         opts.IdToken.SigningAlgValuesSupported = [SigningAlgorithm.RS256];
-        opts.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethod.None);
+        opts.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
         var validator = MakeValidator(serverOptions: opts);
 
         var client = MakeValidPublicClient() with
@@ -1122,7 +1122,7 @@ public sealed class ClientRegistrationValidatorTests
         // registering client_secret_post fails the subset check.
         var serverOptions = new AuthorizationServerOptions { Issuer = "https://test.example.com" };
         serverOptions.TokenEndpoint.AuthMethodsSupported =
-            [TokenEndpointAuthMethod.ClientSecretBasic, TokenEndpointAuthMethod.None];
+            [TokenEndpointAuthMethods.ClientSecretBasic, TokenEndpointAuthMethods.None];
         var validator = MakeValidator(serverOptions: serverOptions);
         var client = new ClientRegistration
         {
@@ -1148,7 +1148,7 @@ public sealed class ClientRegistrationValidatorTests
     {
         // Server has only client_secret_basic (no none) — public client's {"none"} fails subset.
         var opts = new AuthorizationServerOptions { Issuer = "https://test.example.com" };
-        // Deliberately do NOT add TokenEndpointAuthMethod.None
+        // Deliberately do NOT add TokenEndpointAuthMethods.None
         var validator = MakeValidator(serverOptions: opts);
         var client = ClientRegistration.CreatePublic(
             "client",

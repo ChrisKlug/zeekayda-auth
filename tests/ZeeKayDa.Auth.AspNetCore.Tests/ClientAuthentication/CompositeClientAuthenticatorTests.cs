@@ -116,7 +116,7 @@ public sealed class CompositeClientAuthenticatorTests
         CreateComposite(
             IClientRegistration? client,
             bool verifyResult = false,
-            TokenEndpointAuthMethod[]? allowedMethods = null)
+            string[]? allowedMethods = null)
     {
         var hasher = new FakeHasher(verifyResult);
         return CreateCompositeWithHasher(client, hasher, allowedMethods);
@@ -128,7 +128,7 @@ public sealed class CompositeClientAuthenticatorTests
         CreateCompositeWithHasher(
             IClientRegistration? client,
             FakeHasher hasher,
-            TokenEndpointAuthMethod[]? allowedMethods = null)
+            string[]? allowedMethods = null)
     {
         var compositeHasher = new CompositeClientSecretHasher(
             [hasher],
@@ -137,7 +137,7 @@ public sealed class CompositeClientAuthenticatorTests
         var authenticator = new ClientSecretAuthenticator(compositeHasher);
 
         var serverOptions = CreateServerOptions(
-            allowedMethods ?? [TokenEndpointAuthMethod.ClientSecretBasic]);
+            allowedMethods ?? [TokenEndpointAuthMethods.ClientSecretBasic]);
 
         var composite = new CompositeClientAuthenticator(
             [authenticator],
@@ -150,13 +150,13 @@ public sealed class CompositeClientAuthenticatorTests
     }
 
     private static IOptions<AuthorizationServerOptions> CreateServerOptions(
-        params TokenEndpointAuthMethod[] allowedMethods)
+        params string[] allowedMethods)
     {
         var options = new AuthorizationServerOptions();
         options.TokenEndpoint.AuthMethodsSupported =
             allowedMethods.Length > 0
-                ? new List<TokenEndpointAuthMethod>(allowedMethods)
-                : [TokenEndpointAuthMethod.ClientSecretBasic];
+                ? [..allowedMethods]
+                : [TokenEndpointAuthMethods.ClientSecretBasic];
         return Options.Create(options);
     }
 
@@ -271,7 +271,7 @@ public sealed class CompositeClientAuthenticatorTests
                 new AlwaysHandlesAuthenticator("method_b"),
             ],
             new FakeClientRepository(client),
-            CreateServerOptions(TokenEndpointAuthMethod.ClientSecretBasic),
+            CreateServerOptions(TokenEndpointAuthMethods.ClientSecretBasic),
             compositeHasher,
             NullLogger<CompositeClientAuthenticator>.Instance);
 
@@ -295,7 +295,7 @@ public sealed class CompositeClientAuthenticatorTests
         var (composite, _) = CreateCompositeWithHasher(
             publicClient,
             new FakeHasher(),
-            allowedMethods: [TokenEndpointAuthMethod.ClientSecretBasic, TokenEndpointAuthMethod.None]);
+            allowedMethods: [TokenEndpointAuthMethods.ClientSecretBasic, TokenEndpointAuthMethods.None]);
 
         var httpContext = new DefaultHttpContext(); // no auth material
         httpContext.Request.Form = new FormCollection(new Dictionary<string, StringValues>
@@ -317,7 +317,7 @@ public sealed class CompositeClientAuthenticatorTests
         var (composite, _) = CreateCompositeWithHasher(
             confidentialClient,
             hasher,
-            allowedMethods: [TokenEndpointAuthMethod.ClientSecretBasic, TokenEndpointAuthMethod.None]);
+            allowedMethods: [TokenEndpointAuthMethods.ClientSecretBasic, TokenEndpointAuthMethods.None]);
 
         var httpContext = new DefaultHttpContext(); // no auth material
         httpContext.Request.Form = new FormCollection(new Dictionary<string, StringValues>
@@ -342,7 +342,7 @@ public sealed class CompositeClientAuthenticatorTests
         var (composite, _) = CreateCompositeWithHasher(
             publicClient,
             new FakeHasher(true),
-            allowedMethods: [TokenEndpointAuthMethod.ClientSecretBasic, TokenEndpointAuthMethod.None]);
+            allowedMethods: [TokenEndpointAuthMethods.ClientSecretBasic, TokenEndpointAuthMethods.None]);
 
         // Public client presents a Basic auth header — method is detected but per-client
         // AllowedTokenEndpointAuthMethods = { "none" } does not contain "client_secret_basic".
@@ -415,7 +415,7 @@ public sealed class CompositeClientAuthenticatorTests
         var (composite, _) = CreateCompositeWithHasher(
             publicClient,
             new FakeHasher(true),
-            allowedMethods: [TokenEndpointAuthMethod.ClientSecretBasic, TokenEndpointAuthMethod.None]);
+            allowedMethods: [TokenEndpointAuthMethods.ClientSecretBasic, TokenEndpointAuthMethods.None]);
 
         var httpContext = new DefaultHttpContext();
         httpContext.Request.Headers.Authorization =
@@ -443,7 +443,7 @@ public sealed class CompositeClientAuthenticatorTests
         var (composite, _) = CreateCompositeWithHasher(
             client,
             new FakeHasher(true),
-            allowedMethods: [TokenEndpointAuthMethod.ClientSecretBasic]);
+            allowedMethods: [TokenEndpointAuthMethods.ClientSecretBasic]);
 
         var httpContext = new DefaultHttpContext();
         httpContext.Request.Headers.Authorization =
@@ -474,7 +474,7 @@ public sealed class CompositeClientAuthenticatorTests
         var (composite, _) = CreateCompositeWithHasher(
             client,
             hasher,
-            allowedMethods: [TokenEndpointAuthMethod.ClientSecretBasic, TokenEndpointAuthMethod.ClientSecretPost]);
+            allowedMethods: [TokenEndpointAuthMethods.ClientSecretBasic, TokenEndpointAuthMethods.ClientSecretPost]);
 
         var httpContext = CreateHttpContextWithBasicAuth("client-1:any-secret", "client-1");
 
@@ -605,7 +605,7 @@ public sealed class CompositeClientAuthenticatorTests
         var (composite, _) = CreateCompositeWithHasher(
             client,
             new FakeHasher(true),
-            allowedMethods: [TokenEndpointAuthMethod.ClientSecretPost]);
+            allowedMethods: [TokenEndpointAuthMethods.ClientSecretPost]);
 
         var httpContext = new DefaultHttpContext();
         httpContext.Request.Form = new FormCollection(new Dictionary<string, StringValues>
@@ -629,7 +629,7 @@ public sealed class CompositeClientAuthenticatorTests
         var (composite, hasher) = CreateCompositeWithHasher(
             client,
             new FakeHasher(false),
-            allowedMethods: [TokenEndpointAuthMethod.ClientSecretPost]);
+            allowedMethods: [TokenEndpointAuthMethods.ClientSecretPost]);
 
         var httpContext = new DefaultHttpContext();
         httpContext.Request.Form = new FormCollection(new Dictionary<string, StringValues>
@@ -657,7 +657,7 @@ public sealed class CompositeClientAuthenticatorTests
         var (composite, hasher) = CreateCompositeWithHasher(
             client,
             new FakeHasher(false),
-            allowedMethods: [TokenEndpointAuthMethod.ClientSecretPost]);
+            allowedMethods: [TokenEndpointAuthMethods.ClientSecretPost]);
 
         var httpContext = new DefaultHttpContext();
         httpContext.Request.Form = new FormCollection(new Dictionary<string, StringValues>
@@ -731,7 +731,7 @@ public sealed class CompositeClientAuthenticatorTests
         var composite = new CompositeClientAuthenticator(
             [new ThrowingCanHandleAuthenticator()],
             new FakeClientRepository(CreatePublicClient()),
-            CreateServerOptions(TokenEndpointAuthMethod.ClientSecretBasic),
+            CreateServerOptions(TokenEndpointAuthMethods.ClientSecretBasic),
             compositeHasher,
             NullLogger<CompositeClientAuthenticator>.Instance);
 
@@ -764,7 +764,7 @@ public sealed class CompositeClientAuthenticatorTests
         var composite = new CompositeClientAuthenticator(
             [new ThrowingCanHandleAuthenticator()],
             new FakeClientRepository(CreatePublicClient()),
-            CreateServerOptions(TokenEndpointAuthMethod.ClientSecretBasic),
+            CreateServerOptions(TokenEndpointAuthMethods.ClientSecretBasic),
             compositeHasher,
             logger);
 

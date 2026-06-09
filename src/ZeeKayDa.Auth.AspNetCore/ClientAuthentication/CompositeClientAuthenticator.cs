@@ -210,20 +210,7 @@ internal sealed class CompositeClientAuthenticator
     private void PadNoneRejection() => _secretHasher.PadToCredentialBudget();
 
     private bool IsMethodAllowedByServer(string method)
-    {
-        // NOTE: TokenEndpointOptions.AuthMethodsSupported is currently ICollection<TokenEndpointAuthMethod>
-        // (enum). This conversion layer will be removed once the follow-up issue changes it to
-        // ICollection<string> (ADR 0007 §1a amendment).
-        return _serverOptions.Value.TokenEndpoint.AuthMethodsSupported.Any(
-            serverMethod => string.Equals(ToMethodString(serverMethod), method, StringComparison.Ordinal));
-    }
-
-    private static string ToMethodString(TokenEndpointAuthMethod method) => method switch
-    {
-        TokenEndpointAuthMethod.ClientSecretBasic => TokenEndpointAuthMethods.ClientSecretBasic,
-        TokenEndpointAuthMethod.ClientSecretPost => TokenEndpointAuthMethods.ClientSecretPost,
-        TokenEndpointAuthMethod.None => TokenEndpointAuthMethods.None,
-        _ => throw new ArgumentOutOfRangeException(nameof(method), method, null),
-    };
+        => _serverOptions.Value.TokenEndpoint.AuthMethodsSupported
+            .Contains(method, StringComparer.Ordinal);
 
 }

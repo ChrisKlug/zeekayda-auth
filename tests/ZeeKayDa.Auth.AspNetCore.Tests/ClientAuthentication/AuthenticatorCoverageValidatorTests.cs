@@ -36,10 +36,10 @@ public sealed class AuthenticatorCoverageValidatorTests
         return new AuthenticatorCoverageValidator(services.BuildServiceProvider());
     }
 
-    private static AuthorizationServerOptions CreateOptions(params TokenEndpointAuthMethod[] methods)
+    private static AuthorizationServerOptions CreateOptions(params string[] methods)
     {
         var options = new AuthorizationServerOptions();
-        options.TokenEndpoint.AuthMethodsSupported = new List<TokenEndpointAuthMethod>(methods);
+        options.TokenEndpoint.AuthMethodsSupported = [..methods];
         return options;
     }
 
@@ -52,7 +52,7 @@ public sealed class AuthenticatorCoverageValidatorTests
             new FakeAuthenticator(TokenEndpointAuthMethods.ClientSecretBasic));
 
         var result = validator.Validate(null,
-            CreateOptions(TokenEndpointAuthMethod.ClientSecretBasic));
+            CreateOptions(TokenEndpointAuthMethods.ClientSecretBasic));
 
         result.Succeeded.Should().BeTrue();
     }
@@ -65,7 +65,7 @@ public sealed class AuthenticatorCoverageValidatorTests
             new FakeAuthenticator(TokenEndpointAuthMethods.ClientSecretBasic));
 
         var result = validator.Validate(null,
-            CreateOptions(TokenEndpointAuthMethod.ClientSecretBasic, TokenEndpointAuthMethod.None));
+            CreateOptions(TokenEndpointAuthMethods.ClientSecretBasic, TokenEndpointAuthMethods.None));
 
         result.Succeeded.Should().BeTrue();
     }
@@ -79,8 +79,8 @@ public sealed class AuthenticatorCoverageValidatorTests
 
         var result = validator.Validate(null,
             CreateOptions(
-                TokenEndpointAuthMethod.ClientSecretBasic,
-                TokenEndpointAuthMethod.ClientSecretPost));
+                TokenEndpointAuthMethods.ClientSecretBasic,
+                TokenEndpointAuthMethods.ClientSecretPost));
 
         result.Succeeded.Should().BeTrue();
     }
@@ -100,7 +100,7 @@ public sealed class AuthenticatorCoverageValidatorTests
             new FakeAuthenticator(methodWithWhitespace));
 
         var result = validator.Validate(null,
-            CreateOptions(TokenEndpointAuthMethod.ClientSecretBasic));
+            CreateOptions(TokenEndpointAuthMethods.ClientSecretBasic));
 
         result.Succeeded.Should().BeFalse();
         result.FailureMessage.Should().ContainEquivalentOf("whitespace");
@@ -121,7 +121,7 @@ public sealed class AuthenticatorCoverageValidatorTests
             new FakeAuthenticator(methodWithWrongCasing));
 
         var result = validator.Validate(null,
-            CreateOptions(TokenEndpointAuthMethod.ClientSecretBasic));
+            CreateOptions(TokenEndpointAuthMethods.ClientSecretBasic));
 
         result.Succeeded.Should().BeFalse();
         result.FailureMessage.Should().MatchRegex("(?i)canonical|casing");
@@ -136,7 +136,7 @@ public sealed class AuthenticatorCoverageValidatorTests
             new FakeAuthenticator(TokenEndpointAuthMethods.None));
 
         var result = validator.Validate(null,
-            CreateOptions(TokenEndpointAuthMethod.None));
+            CreateOptions(TokenEndpointAuthMethods.None));
 
         result.Succeeded.Should().BeFalse();
         result.FailureMessage.Should().Contain(TokenEndpointAuthMethods.None);
@@ -152,7 +152,7 @@ public sealed class AuthenticatorCoverageValidatorTests
             new FakeAuthenticator(TokenEndpointAuthMethods.ClientSecretBasic));
 
         var result = validator.Validate(null,
-            CreateOptions(TokenEndpointAuthMethod.ClientSecretBasic));
+            CreateOptions(TokenEndpointAuthMethods.ClientSecretBasic));
 
         result.Succeeded.Should().BeFalse();
         result.FailureMessage.Should().Contain(TokenEndpointAuthMethods.ClientSecretBasic);
@@ -169,8 +169,8 @@ public sealed class AuthenticatorCoverageValidatorTests
         // Server also advertises ClientSecretPost but nothing handles it.
         var result = validator.Validate(null,
             CreateOptions(
-                TokenEndpointAuthMethod.ClientSecretBasic,
-                TokenEndpointAuthMethod.ClientSecretPost));
+                TokenEndpointAuthMethods.ClientSecretBasic,
+                TokenEndpointAuthMethods.ClientSecretPost));
 
         result.Succeeded.Should().BeFalse();
         result.FailureMessage.Should().Contain(TokenEndpointAuthMethods.ClientSecretPost);
@@ -182,7 +182,7 @@ public sealed class AuthenticatorCoverageValidatorTests
         var validator = CreateValidator();
 
         var result = validator.Validate(null,
-            CreateOptions(TokenEndpointAuthMethod.ClientSecretBasic));
+            CreateOptions(TokenEndpointAuthMethods.ClientSecretBasic));
 
         result.Succeeded.Should().BeFalse();
     }

@@ -331,7 +331,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     {
         var act = () => new TestWebAppFactory(opts =>
         {
-            opts.TokenEndpoint.AuthMethodsSupported = [TokenEndpointAuthMethod.None];
+            opts.TokenEndpoint.AuthMethodsSupported = [TokenEndpointAuthMethods.None];
             opts.GrantTypesSupported = [GrantType.RefreshToken];
         }).CreateClient();
 
@@ -343,7 +343,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     {
         var act = () => new TestWebAppFactory(opts =>
         {
-            opts.TokenEndpoint.AuthMethodsSupported = [TokenEndpointAuthMethod.None];
+            opts.TokenEndpoint.AuthMethodsSupported = [TokenEndpointAuthMethods.None];
             opts.GrantTypesSupported = [GrantType.AuthorizationCode];
         }).CreateClient();
 
@@ -362,11 +362,11 @@ public sealed class DiscoveryEndpointTests : IDisposable
     }
 
     [Fact]
-    public void Startup_throws_via_ValidateOnStart_for_out_of_range_TokenEndpointAuthMethod()
+    public void Startup_throws_via_ValidateOnStart_for_whitespace_TokenEndpointAuthMethod()
     {
         var act = () => new TestWebAppFactory(opts =>
         {
-            opts.TokenEndpoint.AuthMethodsSupported = [(TokenEndpointAuthMethod)9999];
+            opts.TokenEndpoint.AuthMethodsSupported = ["   "];
         }).CreateClient();
 
         act.Should().Throw<Exception>().WithMessage("*TokenEndpoint.AuthMethodsSupported*");

@@ -64,7 +64,7 @@ internal sealed class TestWebAppFactory : WebApplicationFactory<TestWebAppFactor
                 options.Issuer = "https://test.example.com";
 
                 // Advertise "none" so the public test client passes the subset validation.
-                options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethod.None);
+                options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
 
                 // Allow per-test overrides (e.g. path-bearing issuer, AllowInsecureIssuer, etc.)
                 _configureOptions?.Invoke(options);
@@ -129,7 +129,7 @@ internal sealed class TestWebAppFactoryWithRemoteIp : WebApplicationFactory<Test
                 options.Issuer = "http://localhost:5000";
                 options.AllowInsecureIssuer = true;
                 // Advertise "none" so the public test client passes the subset validation.
-                options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethod.None);
+                options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
                 _configureOptions?.Invoke(options);
             }).AddPbkdf2SecretsHasher()
               .AddInMemoryClients(clients =>
@@ -172,7 +172,7 @@ internal sealed class TestWebAppFactoryWithPing : WebApplicationFactory<TestWebA
             services.AddZeeKayDaAuth(options =>
             {
                 options.Issuer = "https://test.example.com";
-                options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethod.None);
+                options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
             }).AddPbkdf2SecretsHasher()
               .AddInMemoryClients(clients =>
                 clients.AddPublic("test-client",
@@ -224,7 +224,7 @@ internal sealed class TestWebAppFactoryWithVaryMiddleware : WebApplicationFactor
             services.AddZeeKayDaAuth(options =>
             {
                 options.Issuer = "https://test.example.com";
-                options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethod.None);
+                options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
                 _configureOptions?.Invoke(options);
             }).AddPbkdf2SecretsHasher()
               .AddInMemoryClients(clients =>

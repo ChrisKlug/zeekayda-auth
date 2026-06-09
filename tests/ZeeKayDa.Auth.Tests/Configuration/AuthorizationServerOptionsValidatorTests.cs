@@ -1,6 +1,5 @@
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Configuration;
-using ZeeKayDa.Auth.Discovery;
 using ZeeKayDa.Auth.Scopes;
 
 namespace ZeeKayDa.Auth.Tests.Configuration;
@@ -366,17 +365,67 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_fails_when_TokenEndpointAuthMethodsSupported_contains_out_of_range_value()
+    public void Validate_fails_when_TokenEndpointAuthMethodsSupported_contains_empty_string()
     {
         var result = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
-            TokenEndpoint = { AuthMethodsSupported = [(TokenEndpointAuthMethod)9999] },
+            TokenEndpoint = { AuthMethodsSupported = [""] },
         });
 
         result.Failed.Should().BeTrue();
         result.FailureMessage.Should().Contain("TokenEndpoint.AuthMethodsSupported");
-        result.FailureMessage.Should().Contain(nameof(TokenEndpointAuthMethod));
+    }
+
+    [Fact]
+    public void Validate_fails_when_TokenEndpointAuthMethodsSupported_contains_whitespace_only_string()
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            TokenEndpoint = { AuthMethodsSupported = ["   "] },
+        });
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("TokenEndpoint.AuthMethodsSupported");
+    }
+
+    [Fact]
+    public void Validate_fails_when_TokenEndpointAuthMethodsSupported_contains_leading_whitespace()
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            TokenEndpoint = { AuthMethodsSupported = [" client_secret_basic"] },
+        });
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("TokenEndpoint.AuthMethodsSupported");
+    }
+
+    [Fact]
+    public void Validate_fails_when_TokenEndpointAuthMethodsSupported_contains_control_character()
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            TokenEndpoint = { AuthMethodsSupported = ["client\x00secret"] },
+        });
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("TokenEndpoint.AuthMethodsSupported");
+    }
+
+    [Fact]
+    public void Validate_succeeds_when_TokenEndpointAuthMethodsSupported_contains_custom_method_string()
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            TokenEndpoint = { AuthMethodsSupported = ["tls_client_auth"] },
+        });
+
+        result.Succeeded.Should().BeTrue();
     }
 
     [Fact]
@@ -386,7 +435,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
         {
             Issuer = "https://auth.example.com",
             GrantTypesSupported = [GrantType.AuthorizationCode],
-            TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethod.None] },
+            TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethods.None] },
         });
 
         result.Succeeded.Should().BeTrue();
@@ -399,7 +448,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
         {
             Issuer = "https://auth.example.com",
             GrantTypesSupported = [GrantType.ClientCredentials],
-            TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethod.None] },
+            TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethods.None] },
         });
 
         result.Failed.Should().BeTrue();
@@ -413,7 +462,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
         {
             Issuer = "https://auth.example.com",
             GrantTypesSupported = [GrantType.AuthorizationCode, GrantType.ClientCredentials],
-            TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethod.None] },
+            TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethods.None] },
         });
 
         result.Failed.Should().BeTrue();
@@ -427,7 +476,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
         {
             Issuer = "https://auth.example.com",
             GrantTypesSupported = [GrantType.ClientCredentials],
-            TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethod.ClientSecretBasic] },
+            TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethods.ClientSecretBasic] },
         });
 
         result.Succeeded.Should().BeTrue();
@@ -440,7 +489,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
         {
             Issuer = "https://auth.example.com",
             GrantTypesSupported = [GrantType.ClientCredentials],
-            TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethod.None, TokenEndpointAuthMethod.ClientSecretBasic] },
+            TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethods.None, TokenEndpointAuthMethods.ClientSecretBasic] },
         });
 
         result.Succeeded.Should().BeTrue();
@@ -453,7 +502,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
         {
             Issuer = "https://auth.example.com",
             GrantTypesSupported = [GrantType.RefreshToken],
-            TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethod.None] },
+            TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethods.None] },
         });
 
         result.Succeeded.Should().BeTrue();
@@ -466,7 +515,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
         {
             Issuer = "https://auth.example.com",
             GrantTypesSupported = [GrantType.AuthorizationCode],
-            TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethod.None] },
+            TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethods.None] },
         });
 
         result.Succeeded.Should().BeTrue();
@@ -479,7 +528,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
         {
             Issuer = "https://auth.example.com",
             GrantTypesSupported = [GrantType.AuthorizationCode, GrantType.RefreshToken],
-            TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethod.None] },
+            TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethods.None] },
         });
 
         result.Succeeded.Should().BeTrue();

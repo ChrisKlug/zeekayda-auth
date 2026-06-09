@@ -57,7 +57,7 @@ public sealed class InMemoryClientRepositoryTests
     {
         var opts = new AuthorizationServerOptions { Issuer = "https://test.example.com" };
         // Include "none" so public clients pass the subset validation check.
-        opts.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethod.None);
+        opts.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
         return opts;
     }
 
