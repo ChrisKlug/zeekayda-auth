@@ -114,7 +114,32 @@ Every feature or change follows this lifecycle. Agents are responsible for their
 
 **Why two issues for ADR-path work?** ADRs evolve during review. Writing implementation acceptance criteria before the design is settled produces stale, misleading guidance. The two-phase model ensures implementation issues are always grounded in settled decisions. An ADR issue closes when its ADR PR merges; an implementation issue closes when its implementation PR merges.
 
+### Issue taxonomy (three-tier model)
 
+Issues follow a three-tier hierarchy:
+
+```
+type:epic    →  One per feature area. Permanent coordination point. Accumulates notes and
+                links to design and task sub-issues. Never closed until the whole feature
+                area is done. Progress shown by sub-issue rollup.
+                Title prefix: "Epic: "
+
+type:design  →  ADR / architecture planning issue. Must be a sub-issue of a type:epic.
+                Produces an ADR doc + merged PR. Closes when its ADR PR merges.
+
+type:task    →  Concrete implementation work (code, tests, docs, nits, chores).
+                Must be a sub-issue of a type:epic. These are what developers pick up.
+```
+
+**Sub-issue ordering** reflects execution sequence — design issues precede tasks, foundational tasks precede dependent ones.
+
+**`status:idea`** marks epics, design issues, and tasks representing future ideas not yet ready to design or implement. These stay safe in the repo but are excluded from the active-work view:
+
+```
+Active work query: is:open -label:status:idea
+```
+
+**`status:needs-triage` is retired.** Unscoped future ideas use `status:idea`; active work uses `status:ready` or `status:blocked`.
 
 **Documentation is not optional.** Every public-facing feature, configuration option, endpoint, or behaviour change must ship with Markdown documentation.
 
@@ -130,6 +155,9 @@ Every feature or change follows this lifecycle. Agents are responsible for their
 - PRs reference their issue (`Closes #N`)
 - PR titles follow Conventional Commits format: `feat:`, `fix:`, `docs:`, `test:`, `chore:`, `security:`
 - PRs touching public API must include or reference documentation changes
+- Epic issues use an `Epic:` title prefix; every `type:design` and `type:task` issue must be a sub-issue of a `type:epic`
+- `status:needs-triage` is retired — use `status:idea` for unscoped future work
+- Active work query: `is:open -label:status:idea`
 
 ### Branch sync hygiene
 

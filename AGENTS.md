@@ -15,13 +15,18 @@ This repository uses a team of specialised Copilot agents. Use `/agent` in Copil
 
 ## Feature Development Workflow
 
+Issues follow a three-tier hierarchy: **epics** (`type:epic`) → **design issues** (`type:design`) → **task issues** (`type:task`). Every design and task issue must be a sub-issue of its parent epic. Sub-issues are ordered to reflect execution sequence.
+
 ```
-IDEA       →  maintainer  →  flesh out + write ADR issue (design only, no implementation criteria)
+IDEA       →  maintainer  →  identify or create the parent epic (type:epic)
+                              then write a design issue (type:design) as a sub-issue of the epic
+                              (or a task issue directly if no ADR is needed)
 DESIGN     →  architect   →  design the solution + write the ADR doc
            →  security    →  threat model (must sign off before code is written)
            [ADR PR reviewed and merged → ADR accepted]
                                 ↓
-(post-ADR) →  maintainer  →  create implementation issue(s) grounded in the settled ADR
+(post-ADR) →  maintainer  →  create task issue(s) (type:task) grounded in the settled ADR,
+                              as sub-issues of the parent epic
 BUILD      →  developer   →  implement against precise, ADR-grounded acceptance criteria
            →  docs        →  write docs alongside code (must be complete before PR is opened)
 VERIFY     →  tester      →  verify acceptance criteria + security test cases
@@ -29,7 +34,9 @@ PR         →  security    →  final PR review
            →  docs        →  confirm docs are complete (gate on merge)
 ```
 
-**Why two issues?** ADRs often change direction during review. Writing implementation acceptance criteria before the design is settled produces stale, misleading guidance. ADR issues close when the ADR PR merges; implementation issues close when the implementation PR merges.
+**Why the three-tier model?** ADRs often change direction during review. Writing implementation acceptance criteria before the design is settled produces stale, misleading guidance. Epics keep the full lifecycle of a feature area visible in one place; design issues close when their ADR PR merges; task issues close when their implementation PR merges.
+
+**`status:idea`** marks epics, design issues, and tasks for future ideas not yet ready for design or implementation. Active work query: `is:open -label:status:idea`.
 
 ## Starting a New Feature
 
@@ -37,7 +44,7 @@ Tell the maintainer agent what you want to build:
 
 > "Use the maintainer agent — I want to add support for X"
 
-The maintainer will ask clarifying questions, align the idea against the relevant specs, and produce an **ADR issue**. Once the architect writes the ADR, it is reviewed and merged. Only then does the maintainer create the **implementation issue** with precise acceptance criteria. From there, follow the workflow above.
+The maintainer will ask clarifying questions, align the idea against the relevant specs, identify or create the parent epic, and produce a **design issue**. Once the architect writes the ADR, it is reviewed and merged. Only then does the maintainer create the **task issue(s)** with precise acceptance criteria. From there, follow the workflow above.
 
 ## Security Issues
 
