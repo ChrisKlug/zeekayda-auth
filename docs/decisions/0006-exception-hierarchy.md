@@ -145,52 +145,31 @@ public class ZeeKayDaConfigurationException : ZeeKayDaException
 {
     /// <summary>
     /// The structured validation failures that contributed to this exception.
-    /// Non-empty when thrown by a validator that aggregates rule violations; empty when thrown
-    /// by a single-failure code path that uses the string-message constructor.
+    /// Always contains at least one entry.
     /// </summary>
     public IReadOnlyList<ZeeKayDaConfigurationFailure> AggregatedFailures { get; }
 
-    /// <summary>Initialises a new instance with the specified <paramref name="message"/>.</summary>
-    public ZeeKayDaConfigurationException(string message) : base(message)
-    {
-        AggregatedFailures = [];
-    }
-
     /// <summary>
-    /// Initialises a new instance with the specified <paramref name="message"/> and
-    /// <paramref name="innerException"/>.
-    /// </summary>
-    public ZeeKayDaConfigurationException(string message, Exception innerException)
-        : base(message, innerException)
-    {
-        AggregatedFailures = [];
-    }
-
-    /// <summary>
-    /// Initialises a new instance that aggregates multiple validation failures.
-    /// Use this constructor when all rule violations must be reported together rather than
-    /// failing on the first one encountered.
+    /// Initialises a new instance from one or more structured <paramref name="failures"/>.
     /// </summary>
     /// <param name="failures">
-    /// The structured failures. Must be non-null and non-empty; each entry carries a stable
+    /// The structured failures. Must be non-empty; each entry carries a stable
     /// <see cref="ZeeKayDaConfigurationFailure.Code"/> and a human-readable message.
     /// </param>
-    public ZeeKayDaConfigurationException(IReadOnlyList<ZeeKayDaConfigurationFailure> failures)
-        : base(failures.Count == 1
-            ? failures[0].Message
-            : $"{failures.Count} configuration errors — see AggregatedFailures for details.")
+    public ZeeKayDaConfigurationException(params ZeeKayDaConfigurationFailure[] failures)
+        : base("One or more configuration errors occurred — see AggregatedFailures for details.")
     {
-        AggregatedFailures = failures;
+        AggregatedFailures = [..failures];
     }
 }
 ```
 
-`AggregatedFailures` is non-empty when thrown by a validator that aggregates rule violations
-(e.g. `IClientRegistrationValidator`); it is empty for single-failure throws that use the
-string-message constructors. Callers check `AggregatedFailures.Count > 0` to determine whether
-structured failure data is available. Each `ZeeKayDaConfigurationFailure.Code` is a stable,
-semver-governed string — test assertions and programmatic handlers should switch on
-`Code`, not on `Message`.
+The `params` constructor accepts one or multiple failures with the same call syntax.
+`AggregatedFailures` is always non-empty — the `[..failures]` spread creates a defensive copy
+so the stored list cannot be mutated by the caller. `Message` is a fixed string that always
+directs diagnostics to `AggregatedFailures`; it never exposes individual failure text directly.
+Each `ZeeKayDaConfigurationFailure.Code` is a stable, semver-governed string — test assertions
+and programmatic handlers should switch on `Code`, not on `Message`.
 
 **Use this exception for:**
 - Framework state that is missing because `AddZeeKayDaAuth()` was never called (or was called
@@ -426,42 +405,21 @@ public class ZeeKayDaConfigurationException : ZeeKayDaException
 {
     /// <summary>
     /// The structured validation failures that contributed to this exception.
-    /// Non-empty when thrown by a validator that aggregates rule violations; empty when thrown
-    /// by a single-failure code path that uses the string-message constructor.
+    /// Always contains at least one entry.
     /// </summary>
     public IReadOnlyList<ZeeKayDaConfigurationFailure> AggregatedFailures { get; }
 
-    /// <summary>Initialises a new instance with the specified <paramref name="message"/>.</summary>
-    public ZeeKayDaConfigurationException(string message) : base(message)
-    {
-        AggregatedFailures = [];
-    }
-
     /// <summary>
-    /// Initialises a new instance with the specified <paramref name="message"/> and
-    /// <paramref name="innerException"/>.
-    /// </summary>
-    public ZeeKayDaConfigurationException(string message, Exception innerException)
-        : base(message, innerException)
-    {
-        AggregatedFailures = [];
-    }
-
-    /// <summary>
-    /// Initialises a new instance that aggregates multiple validation failures.
-    /// Use this constructor when all rule violations must be reported together rather than
-    /// failing on the first one encountered.
+    /// Initialises a new instance from one or more structured <paramref name="failures"/>.
     /// </summary>
     /// <param name="failures">
-    /// The structured failures. Must be non-null and non-empty; each entry carries a stable
+    /// The structured failures. Must be non-empty; each entry carries a stable
     /// <see cref="ZeeKayDaConfigurationFailure.Code"/> and a human-readable message.
     /// </param>
-    public ZeeKayDaConfigurationException(IReadOnlyList<ZeeKayDaConfigurationFailure> failures)
-        : base(failures.Count == 1
-            ? failures[0].Message
-            : $"{failures.Count} configuration errors — see AggregatedFailures for details.")
+    public ZeeKayDaConfigurationException(params ZeeKayDaConfigurationFailure[] failures)
+        : base("One or more configuration errors occurred — see AggregatedFailures for details.")
     {
-        AggregatedFailures = failures;
+        AggregatedFailures = [..failures];
     }
 }
 ```
@@ -515,8 +473,10 @@ public static Uri GetIssuerUri(IOptions<AuthorizationServerOptions> options)
     if (string.IsNullOrWhiteSpace(issuer))
     {
         throw new ZeeKayDaConfigurationException(
-            "AuthorizationServerOptions.Issuer must be configured before calling " +
-            "MapZeeKayDaAuth(). Ensure AddZeeKayDaAuth() is called with a valid issuer.");
+            new ZeeKayDaConfigurationFailure(
+                "configuration.issuer.missing",
+                "AuthorizationServerOptions.Issuer must be configured before calling " +
+                "MapZeeKayDaAuth(). Ensure AddZeeKayDaAuth() is called with a valid issuer."));
     }
 
     return new Uri(issuer);
@@ -645,10 +605,9 @@ exists or should be added.
 ## Amendments
 
 - **2026-06-10 — Add `AggregatedFailures` and `ZeeKayDaConfigurationFailure`** — Introduced
-  `ZeeKayDaConfigurationFailure(string Code, string Message)` as a new sealed record and added
-  `AggregatedFailures` (`IReadOnlyList<ZeeKayDaConfigurationFailure>`) plus a matching
-  constructor to `ZeeKayDaConfigurationException`. Required by ADR 0007 §6.1, which specifies
-  that `IClientRegistrationValidator.Validate` throws `ZeeKayDaConfigurationException` whose
-  `AggregatedFailures` enumerates every rule violation. Structured failures with a stable
-  `Code` allow programmatic handling and test assertions without string parsing. Single-failure
-  string-message constructors leave `AggregatedFailures` empty. Resolves #120.
+  `ZeeKayDaConfigurationFailure(string Code, string Message)` as a new sealed record and
+  replaced all string-based constructors on `ZeeKayDaConfigurationException` with a single
+  `params ZeeKayDaConfigurationFailure[]` constructor. `AggregatedFailures` is always non-empty;
+  the constructor stores a defensive copy. `Message` is a fixed string that always directs to
+  `AggregatedFailures`. Required by ADR 0007 §6.1; structured `Code` values allow programmatic
+  handling and test assertions without string parsing. Resolves #120.
