@@ -144,12 +144,6 @@ namespace ZeeKayDa.Auth;
 public class ZeeKayDaConfigurationException : ZeeKayDaException
 {
     /// <summary>
-    /// The structured validation failures that contributed to this exception.
-    /// Always contains at least one entry.
-    /// </summary>
-    public IReadOnlyList<ZeeKayDaConfigurationFailure> AggregatedFailures { get; }
-
-    /// <summary>
     /// Initialises a new instance from one or more structured <paramref name="failures"/>.
     /// </summary>
     /// <param name="failures">
@@ -157,19 +151,25 @@ public class ZeeKayDaConfigurationException : ZeeKayDaException
     /// <see cref="ZeeKayDaConfigurationFailure.Code"/> and a human-readable message.
     /// </param>
     public ZeeKayDaConfigurationException(params ZeeKayDaConfigurationFailure[] failures)
-        : base("One or more configuration errors occurred — see AggregatedFailures for details.")
+        : base($"{failures.Length} configuration errors — see AggregatedFailures for details.")
     {
         AggregatedFailures = [..failures];
     }
+
+    /// <summary>
+    /// The structured validation failures that contributed to this exception.
+    /// Always contains at least one entry.
+    /// </summary>
+    public IReadOnlyList<ZeeKayDaConfigurationFailure> AggregatedFailures { get; }
 }
 ```
 
 The `params` constructor accepts one or multiple failures with the same call syntax.
 `AggregatedFailures` is always non-empty — the `[..failures]` spread creates a defensive copy
-so the stored list cannot be mutated by the caller. `Message` is a fixed string that always
-directs diagnostics to `AggregatedFailures`; it never exposes individual failure text directly.
-Each `ZeeKayDaConfigurationFailure.Code` is a stable, semver-governed string — test assertions
-and programmatic handlers should switch on `Code`, not on `Message`.
+so the stored list cannot be mutated by the caller. `Message` always contains the failure count
+and directs diagnostics to `AggregatedFailures`; it never exposes individual failure text
+directly. Each `ZeeKayDaConfigurationFailure.Code` is a stable, semver-governed string —
+test assertions and programmatic handlers should switch on `Code`, not on `Message`.
 
 **Use this exception for:**
 - Framework state that is missing because `AddZeeKayDaAuth()` was never called (or was called
@@ -404,12 +404,6 @@ namespace ZeeKayDa.Auth;
 public class ZeeKayDaConfigurationException : ZeeKayDaException
 {
     /// <summary>
-    /// The structured validation failures that contributed to this exception.
-    /// Always contains at least one entry.
-    /// </summary>
-    public IReadOnlyList<ZeeKayDaConfigurationFailure> AggregatedFailures { get; }
-
-    /// <summary>
     /// Initialises a new instance from one or more structured <paramref name="failures"/>.
     /// </summary>
     /// <param name="failures">
@@ -417,10 +411,16 @@ public class ZeeKayDaConfigurationException : ZeeKayDaException
     /// <see cref="ZeeKayDaConfigurationFailure.Code"/> and a human-readable message.
     /// </param>
     public ZeeKayDaConfigurationException(params ZeeKayDaConfigurationFailure[] failures)
-        : base("One or more configuration errors occurred — see AggregatedFailures for details.")
+        : base($"{failures.Length} configuration errors — see AggregatedFailures for details.")
     {
         AggregatedFailures = [..failures];
     }
+
+    /// <summary>
+    /// The structured validation failures that contributed to this exception.
+    /// Always contains at least one entry.
+    /// </summary>
+    public IReadOnlyList<ZeeKayDaConfigurationFailure> AggregatedFailures { get; }
 }
 ```
 
