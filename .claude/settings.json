@@ -1,0 +1,31 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .github/hooks/scripts/check-format.sh"
+          }
+        ]
+      }
+    ]
+  },
+  "mcpServers": {
+    "aspire": {
+      "command": "aspire",
+      "args": ["mcp", "start"],
+      "env": {
+        "DOTNET_ROOT": "${DOTNET_ROOT}"
+      }
+    },
+    "context7": {
+      "type": "http",
+      "url": "https://mcp.context7.com/mcp"
+    },
+    "microsoft-learn": {
+      "type": "http",
+      "url": "https://learn.microsoft.com/api/mcp"
+    }
+  }
+}

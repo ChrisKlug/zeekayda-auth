@@ -124,6 +124,16 @@ dotnet_naming_style.camel_case_with_underscore_prefix.capitalization        = ca
 dotnet_naming_style.ends_with_async.required_suffix                         = Async
 dotnet_naming_style.ends_with_async.capitalization                           = pascal_case
 
+#### C# Member Ordering Convention ####
+# Not enforceable by .editorconfig — documented here for tooling and contributors.
+# Order within a class:
+#   1. Fields, constants, and statics (all access modifiers)
+#   2. Constructors
+#   3. Public methods
+#   4. Private methods
+#   5. Public properties
+#   6. Private properties
+
 #### C# Coding Conventions ####
 
 [*.cs]
