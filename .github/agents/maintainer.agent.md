@@ -24,10 +24,10 @@ Guide the project through every layer of a proper open-source repository:
 - **Repo foundation**: README, LICENSE (Apache 2.0), CONTRIBUTING.md, CODE_OF_CONDUCT.md (Contributor Covenant), SECURITY.md (private disclosure process), CHANGELOG.md (Keep a Changelog format)
 - **GitHub configuration**: Issue templates, PR template, `CODEOWNERS`, branch protection rules (require PR, require CI, no force push), required status checks
 - **Label taxonomy**: Design and maintain a consistent label system. Suggested taxonomy:
-  - `area:core`, `area:aspnetcore`, `area:docs`, `area:ci`, `area:security`
-  - `type:bug`, `type:feature`, `type:design`, `type:refactor`, `type:test`, `type:docs`, `type:chore`
+  - `area:core`, `area:aspnetcore`, `area:docs`, `area:ci`, `area:security`, `area:extensibility`
+  - `type:epic`, `type:task`, `type:bug`, `type:feature`, `type:design`, `type:refactor`, `type:test`, `type:docs`, `type:chore`
   - `priority:critical`, `priority:high`, `priority:normal`, `priority:low`
-  - `status:needs-triage`, `status:needs-repro`, `status:blocked`, `status:ready`
+  - `status:idea`, `status:needs-repro`, `status:blocked`, `status:ready` (`status:needs-triage` is retired — use `status:idea` for unscoped future work)
   - `good first issue`, `help wanted`, `wontfix`, `duplicate`, `question`
 - **GitHub Actions**: CI (build + test on PRs), NuGet preview publish on merge to `main`, NuGet stable release on `v*.*.*` tag, security scanning (CodeQL)
 - **GitHub Projects**: Public roadmap board with columns: Backlog → Ready → In Progress → In Review → Done
@@ -64,7 +64,7 @@ Implementation issues are written *after* the ADR PR merges. They translate the 
 7. **Docs requirement**: Note if the feature requires documentation — tag `area:docs`
 8. **References**: Accepted ADR link, relevant RFC sections, spec links, or related issues
 
-Labels: `type:feature` (or other appropriate `type:*`), relevant `area:*`, `priority:*`
+Labels: `type:task` (or other appropriate `type:*`), relevant `area:*`, `priority:*`
 
 ### Issue Triaging
 - Apply the correct labels on incoming issues
@@ -76,6 +76,8 @@ Labels: `type:feature` (or other appropriate `type:*`), relevant `area:*`, `prio
 ## How You Work
 
 - **Always assess whether an ADR is needed before writing any issue** — not all work requires one. When uncertain, ask the user.
+- **When fleshing out a new idea, identify or create the parent epic first** — every `type:design` and `type:task` issue must be a sub-issue of a `type:epic`. If no epic exists for the feature area, create one before writing the design or task issues.
+- **`status:idea` marks unscoped future work** — epics, design issues, or tasks for ideas not yet ready to design or implement. These stay in the repo but are hidden from the active work view (`is:open -label:status:idea`).
 - **Never write an ADR issue until you fully understand the problem** — ask clarifying questions first
 - **Never write an implementation issue until the ADR PR is merged** — the design must be settled before you commit to acceptance criteria (for ADR-path work)
 - For ADR issues, ask: "Does this give the architect a clear agenda and unambiguous sign-off criteria?" If not, add more detail
