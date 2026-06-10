@@ -102,6 +102,23 @@ deserialization constructor are **not included**. The legacy
 
 ### 2. `ZeeKayDaConfigurationException` for misconfiguration and startup errors
 
+A companion value type carries one structured failure:
+
+```csharp
+namespace ZeeKayDa.Auth;
+
+/// <summary>
+/// A single configuration rule violation within a <see cref="ZeeKayDaConfigurationException"/>.
+/// </summary>
+/// <param name="Code">
+/// A stable, versioned string identifier for this violation type (e.g.
+/// <c>"client.redirect_uri.duplicate"</c>). Codes are part of the public API contract and
+/// must not change without a semver-major bump.
+/// </param>
+/// <param name="Message">A human-readable description of the violation.</param>
+public sealed record ZeeKayDaConfigurationFailure(string Code, string Message);
+```
+
 ```csharp
 namespace ZeeKayDa.Auth;
 
@@ -126,17 +143,54 @@ namespace ZeeKayDa.Auth;
 /// </remarks>
 public class ZeeKayDaConfigurationException : ZeeKayDaException
 {
+    /// <summary>
+    /// The structured validation failures that contributed to this exception.
+    /// Non-empty when thrown by a validator that aggregates rule violations; empty when thrown
+    /// by a single-failure code path that uses the string-message constructor.
+    /// </summary>
+    public IReadOnlyList<ZeeKayDaConfigurationFailure> AggregatedFailures { get; }
+
     /// <summary>Initialises a new instance with the specified <paramref name="message"/>.</summary>
-    public ZeeKayDaConfigurationException(string message) : base(message) { }
+    public ZeeKayDaConfigurationException(string message) : base(message)
+    {
+        AggregatedFailures = [];
+    }
 
     /// <summary>
     /// Initialises a new instance with the specified <paramref name="message"/> and
     /// <paramref name="innerException"/>.
     /// </summary>
     public ZeeKayDaConfigurationException(string message, Exception innerException)
-        : base(message, innerException) { }
+        : base(message, innerException)
+    {
+        AggregatedFailures = [];
+    }
+
+    /// <summary>
+    /// Initialises a new instance that aggregates multiple validation failures.
+    /// Use this constructor when all rule violations must be reported together rather than
+    /// failing on the first one encountered.
+    /// </summary>
+    /// <param name="failures">
+    /// The structured failures. Must be non-null and non-empty; each entry carries a stable
+    /// <see cref="ZeeKayDaConfigurationFailure.Code"/> and a human-readable message.
+    /// </param>
+    public ZeeKayDaConfigurationException(IReadOnlyList<ZeeKayDaConfigurationFailure> failures)
+        : base(failures.Count == 1
+            ? failures[0].Message
+            : $"{failures.Count} configuration errors — see AggregatedFailures for details.")
+    {
+        AggregatedFailures = failures;
+    }
 }
 ```
+
+`AggregatedFailures` is non-empty when thrown by a validator that aggregates rule violations
+(e.g. `IClientRegistrationValidator`); it is empty for single-failure throws that use the
+string-message constructors. Callers check `AggregatedFailures.Count > 0` to determine whether
+structured failure data is available. Each `ZeeKayDaConfigurationFailure.Code` is a stable,
+semver-governed string — test assertions and programmatic handlers should switch on
+`Code`, not on `Message`.
 
 **Use this exception for:**
 - Framework state that is missing because `AddZeeKayDaAuth()` was never called (or was called
@@ -327,6 +381,23 @@ public abstract class ZeeKayDaException : Exception
 }
 ```
 
+### New file: `src/ZeeKayDa.Auth/ZeeKayDaConfigurationFailure.cs`
+
+```csharp
+namespace ZeeKayDa.Auth;
+
+/// <summary>
+/// A single configuration rule violation within a <see cref="ZeeKayDaConfigurationException"/>.
+/// </summary>
+/// <param name="Code">
+/// A stable, versioned string identifier for this violation type (e.g.
+/// <c>"client.redirect_uri.duplicate"</c>). Codes are part of the public API contract and
+/// must not change without a semver-major bump.
+/// </param>
+/// <param name="Message">A human-readable description of the violation.</param>
+public sealed record ZeeKayDaConfigurationFailure(string Code, string Message);
+```
+
 ### New file: `src/ZeeKayDa.Auth/ZeeKayDaConfigurationException.cs`
 
 ```csharp
@@ -353,15 +424,45 @@ namespace ZeeKayDa.Auth;
 /// </remarks>
 public class ZeeKayDaConfigurationException : ZeeKayDaException
 {
+    /// <summary>
+    /// The structured validation failures that contributed to this exception.
+    /// Non-empty when thrown by a validator that aggregates rule violations; empty when thrown
+    /// by a single-failure code path that uses the string-message constructor.
+    /// </summary>
+    public IReadOnlyList<ZeeKayDaConfigurationFailure> AggregatedFailures { get; }
+
     /// <summary>Initialises a new instance with the specified <paramref name="message"/>.</summary>
-    public ZeeKayDaConfigurationException(string message) : base(message) { }
+    public ZeeKayDaConfigurationException(string message) : base(message)
+    {
+        AggregatedFailures = [];
+    }
 
     /// <summary>
     /// Initialises a new instance with the specified <paramref name="message"/> and
     /// <paramref name="innerException"/>.
     /// </summary>
     public ZeeKayDaConfigurationException(string message, Exception innerException)
-        : base(message, innerException) { }
+        : base(message, innerException)
+    {
+        AggregatedFailures = [];
+    }
+
+    /// <summary>
+    /// Initialises a new instance that aggregates multiple validation failures.
+    /// Use this constructor when all rule violations must be reported together rather than
+    /// failing on the first one encountered.
+    /// </summary>
+    /// <param name="failures">
+    /// The structured failures. Must be non-null and non-empty; each entry carries a stable
+    /// <see cref="ZeeKayDaConfigurationFailure.Code"/> and a human-readable message.
+    /// </param>
+    public ZeeKayDaConfigurationException(IReadOnlyList<ZeeKayDaConfigurationFailure> failures)
+        : base(failures.Count == 1
+            ? failures[0].Message
+            : $"{failures.Count} configuration errors — see AggregatedFailures for details.")
+    {
+        AggregatedFailures = failures;
+    }
 }
 ```
 
@@ -538,3 +639,16 @@ exists or should be added.
   without submitting a PR. This is by design — the hierarchy is a public, semver-governed
   API contract — but it means consumer-side subclassing is the only escape hatch until the
   framework ships a more specific type.
+
+---
+
+## Amendments
+
+- **2026-06-10 — Add `AggregatedFailures` and `ZeeKayDaConfigurationFailure`** — Introduced
+  `ZeeKayDaConfigurationFailure(string Code, string Message)` as a new sealed record and added
+  `AggregatedFailures` (`IReadOnlyList<ZeeKayDaConfigurationFailure>`) plus a matching
+  constructor to `ZeeKayDaConfigurationException`. Required by ADR 0007 §6.1, which specifies
+  that `IClientRegistrationValidator.Validate` throws `ZeeKayDaConfigurationException` whose
+  `AggregatedFailures` enumerates every rule violation. Structured failures with a stable
+  `Code` allow programmatic handling and test assertions without string parsing. Single-failure
+  string-message constructors leave `AggregatedFailures` empty. Resolves #120.
