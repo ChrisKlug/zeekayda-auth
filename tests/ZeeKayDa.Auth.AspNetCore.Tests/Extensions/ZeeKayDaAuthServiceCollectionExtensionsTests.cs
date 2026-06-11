@@ -1,12 +1,25 @@
 using Microsoft.Extensions.DependencyInjection;
 using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.AspNetCore.Extensions;
+using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Scopes;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests.Extensions;
 
 public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
 {
+    [Fact]
+    public void AddZeeKayDaAuth_AlwaysRegistersCompositeClientSecretHasher()
+    {
+        // Verify the descriptor is always present so users get a clear "missing hasher"
+        // error on first use rather than a generic "service not registered" DI failure.
+        var services = new ServiceCollection();
+
+        services.AddZeeKayDaAuth(options => options.Issuer = "https://auth.example.com");
+
+        services.Should().Contain(sd => sd.ServiceType == typeof(CompositeClientSecretHasher));
+    }
+
     [Fact]
     public void AddZeeKayDaAuth_NullServices_ThrowsArgumentNullException()
     {
