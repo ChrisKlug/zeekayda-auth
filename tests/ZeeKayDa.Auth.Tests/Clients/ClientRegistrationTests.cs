@@ -94,14 +94,7 @@ public sealed class ClientRegistrationTests
     [Fact]
     public void IClientRegistration_AllowedPromptValues_DimDefaultIsEmpty()
     {
-        IClientRegistration client = new ClientRegistration
-        {
-            ClientId = "test",
-            Credentials = [],
-            IsPublic = true,
-            RedirectUris = new HashSet<string>(),
-            PostLogoutRedirectUris = new HashSet<string>(),
-        };
+        IClientRegistration client = new MinimalPublicClient();
 
         client.AllowedPromptValues.Should().BeEmpty();
     }
@@ -109,14 +102,7 @@ public sealed class ClientRegistrationTests
     [Fact]
     public void IClientRegistration_AllowedSigningAlgorithms_DimDefaultIsNull()
     {
-        IClientRegistration client = new ClientRegistration
-        {
-            ClientId = "test",
-            Credentials = [],
-            IsPublic = true,
-            RedirectUris = new HashSet<string>(),
-            PostLogoutRedirectUris = new HashSet<string>(),
-        };
+        IClientRegistration client = new MinimalPublicClient();
 
         client.AllowedSigningAlgorithms.Should().BeNull();
     }
