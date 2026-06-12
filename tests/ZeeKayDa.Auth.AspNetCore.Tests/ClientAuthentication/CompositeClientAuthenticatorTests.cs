@@ -512,4 +512,100 @@ public sealed class CompositeClientAuthenticatorTests
         result.Authenticated.Should().BeTrue(
             "percent-encoded Basic credentials must be URL-decoded per RFC 6749 §2.3.1");
     }
+
+    // ── client_secret_post ────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task AuthenticateAsync_returns_Authenticated_true_for_valid_client_secret_post()
+    {
+        var secret = new FakeSecret();
+        var client = CreateConfidentialClient(
+            secret: secret,
+            allowedMethod: TokenEndpointAuthMethods.ClientSecretPost);
+        var (composite, _) = CreateCompositeWithHasher(
+            client,
+            new FakeHasher(true),
+            allowedMethods: [TokenEndpointAuthMethod.ClientSecretPost]);
+
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Form = new FormCollection(new Dictionary<string, StringValues>
+        {
+            ["client_id"] = "client-1",
+            ["client_secret"] = "correct-secret",
+        });
+
+        var result = await composite.AuthenticateAsync("client-1", httpContext, TestContext.Current.CancellationToken);
+
+        result.Authenticated.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task AuthenticateAsync_returns_Authenticated_false_and_pads_timing_for_wrong_client_secret_post_credential()
+    {
+        var secret = new FakeSecret();
+        var client = CreateConfidentialClient(
+            secret: secret,
+            allowedMethod: TokenEndpointAuthMethods.ClientSecretPost);
+        var (composite, hasher) = CreateCompositeWithHasher(
+            client,
+            new FakeHasher(false),
+            allowedMethods: [TokenEndpointAuthMethod.ClientSecretPost]);
+
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Form = new FormCollection(new Dictionary<string, StringValues>
+        {
+            ["client_id"] = "client-1",
+            ["client_secret"] = "wrong-secret",
+        });
+
+        var result = await composite.AuthenticateAsync("client-1", httpContext, TestContext.Current.CancellationToken);
+
+        result.Authenticated.Should().BeFalse();
+        hasher.CallCount.Should().BeGreaterThan(1,
+            "PadFailureToCredentialBudget must fire after a wrong client_secret_post credential");
+    }
+
+    // ── Malformed Basic credentials ───────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task AuthenticateAsync_returns_Authenticated_false_when_Basic_header_contains_invalid_base64()
+    {
+        var secret = new FakeSecret();
+        var client = CreateConfidentialClient(secret: secret);
+        var (composite, _) = CreateComposite(client, verifyResult: true);
+
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers.Authorization = "Basic not-valid-base64!!!";
+        httpContext.Request.Form = new FormCollection(new Dictionary<string, StringValues>
+        {
+            ["client_id"] = "client-1",
+        });
+
+        var result = await composite.AuthenticateAsync("client-1", httpContext, TestContext.Current.CancellationToken);
+
+        result.Authenticated.Should().BeFalse(
+            "a Basic header with invalid base64 must be rejected");
+    }
+
+    [Fact]
+    public async Task AuthenticateAsync_returns_Authenticated_false_when_Basic_header_contains_no_colon_separator()
+    {
+        var secret = new FakeSecret();
+        var client = CreateConfidentialClient(secret: secret);
+        var (composite, _) = CreateComposite(client, verifyResult: true);
+
+        var httpContext = new DefaultHttpContext();
+        // Valid base64 but decodes to a string with no colon — no username:password separator.
+        httpContext.Request.Headers.Authorization =
+            "Basic " + Convert.ToBase64String(Encoding.UTF8.GetBytes("nocredentialseparator"));
+        httpContext.Request.Form = new FormCollection(new Dictionary<string, StringValues>
+        {
+            ["client_id"] = "client-1",
+        });
+
+        var result = await composite.AuthenticateAsync("client-1", httpContext, TestContext.Current.CancellationToken);
+
+        result.Authenticated.Should().BeFalse(
+            "a Basic header with no colon separator must be rejected");
+    }
 }
