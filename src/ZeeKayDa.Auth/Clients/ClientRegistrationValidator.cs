@@ -202,11 +202,10 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
         if (queryOrFragment >= 0)
             pathPart = pathPart[..queryOrFragment];
 
-        foreach (var segment in pathPart.Split('/'))
+        foreach (var decoded in pathPart.Split('/').Select(Uri.UnescapeDataString))
         {
             // Percent-decode once (case-insensitively handles both %2E and %2e, and mixed forms
             // like ".%2e" or "%2e.") so encoded traversal segments are caught.
-            var decoded = Uri.UnescapeDataString(segment);
             if (decoded is "." or "..")
                 return true;
         }
@@ -410,16 +409,15 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
         // credential whose type no registered hasher CanHandle would silently pass validation and
         // only fail at runtime as invalid_client. Reject it here so the misconfiguration is caught
         // at registration time instead.
-        foreach (var secret in client.Credentials.OfType<IClientSecret>())
+        foreach (var secret in client.Credentials
+                     .OfType<IClientSecret>()
+                     .Where(secret => !_hasher.CanHandleAny(secret)))
         {
-            if (!_hasher.CanHandleAny(secret))
-            {
-                failures.Add(new ZeeKayDaConfigurationFailure(
-                    "client.credentials.no_hasher",
-                    $"Client '{client.ClientId}' has a credential of type '{secret.GetType().Name}' " +
-                    "for which no registered IClientSecretHasher.CanHandle returns true. " +
-                    "The credential can never be verified."));
-            }
+            failures.Add(new ZeeKayDaConfigurationFailure(
+                "client.credentials.no_hasher",
+                $"Client '{client.ClientId}' has a credential of type '{secret.GetType().Name}' " +
+                "for which no registered IClientSecretHasher.CanHandle returns true. " +
+                "The credential can never be verified."));
         }
     }
 
@@ -459,15 +457,12 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
 
         var serverAlgorithms = _options.Value.IdToken.SigningAlgValuesSupported;
 
-        foreach (var algorithm in algorithms)
+        foreach (var algorithm in algorithms.Where(algorithm => !serverAlgorithms.Contains(algorithm)))
         {
-            if (!serverAlgorithms.Contains(algorithm))
-            {
-                failures.Add(new ZeeKayDaConfigurationFailure(
-                    "client.signing_algorithms.not_subset",
-                    $"Client '{client.ClientId}' has AllowedSigningAlgorithms entry '{algorithm}' that is not " +
-                    $"in the server's IdToken.SigningAlgValuesSupported: [{string.Join(", ", serverAlgorithms)}]."));
-            }
+            failures.Add(new ZeeKayDaConfigurationFailure(
+                "client.signing_algorithms.not_subset",
+                $"Client '{client.ClientId}' has AllowedSigningAlgorithms entry '{algorithm}' that is not " +
+                $"in the server's IdToken.SigningAlgValuesSupported: [{string.Join(", ", serverAlgorithms)}]."));
         }
     }
 
@@ -475,15 +470,12 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
         IClientRegistration client,
         List<ZeeKayDaConfigurationFailure> failures)
     {
-        foreach (var scope in client.AllowedScopes)
+        foreach (var scope in client.AllowedScopes.Where(string.IsNullOrWhiteSpace))
         {
-            if (string.IsNullOrWhiteSpace(scope))
-            {
-                failures.Add(new ZeeKayDaConfigurationFailure(
-                    "client.allowed_scopes.blank_entry",
-                    $"Client '{client.ClientId}' has a null, empty, or whitespace-only entry in AllowedScopes. " +
-                    "Scope entries must be non-empty non-whitespace strings."));
-            }
+            failures.Add(new ZeeKayDaConfigurationFailure(
+                "client.allowed_scopes.blank_entry",
+                $"Client '{client.ClientId}' has a null, empty, or whitespace-only entry in AllowedScopes. " +
+                "Scope entries must be non-empty non-whitespace strings."));
         }
     }
 
@@ -491,44 +483,32 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
         IClientRegistration client,
         List<ZeeKayDaConfigurationFailure> failures)
     {
-        foreach (var grantType in client.AllowedGrantTypes)
+        foreach (var grantType in client.AllowedGrantTypes.Where(grantType => !Enum.IsDefined(grantType)))
         {
-            if (!Enum.IsDefined(grantType))
-            {
-                failures.Add(new ZeeKayDaConfigurationFailure(
-                    "client.grant_types.undefined_value",
-                    $"Client '{client.ClientId}' has an undefined value '{(int)grantType}' in AllowedGrantTypes."));
-            }
+            failures.Add(new ZeeKayDaConfigurationFailure(
+                "client.grant_types.undefined_value",
+                $"Client '{client.ClientId}' has an undefined value '{(int)grantType}' in AllowedGrantTypes."));
         }
 
-        foreach (var responseType in client.AllowedResponseTypes)
+        foreach (var responseType in client.AllowedResponseTypes.Where(responseType => !Enum.IsDefined(responseType)))
         {
-            if (!Enum.IsDefined(responseType))
-            {
-                failures.Add(new ZeeKayDaConfigurationFailure(
-                    "client.response_types.undefined_value",
-                    $"Client '{client.ClientId}' has an undefined value '{(int)responseType}' in AllowedResponseTypes."));
-            }
+            failures.Add(new ZeeKayDaConfigurationFailure(
+                "client.response_types.undefined_value",
+                $"Client '{client.ClientId}' has an undefined value '{(int)responseType}' in AllowedResponseTypes."));
         }
 
-        foreach (var responseMode in client.AllowedResponseModes)
+        foreach (var responseMode in client.AllowedResponseModes.Where(responseMode => !Enum.IsDefined(responseMode)))
         {
-            if (!Enum.IsDefined(responseMode))
-            {
-                failures.Add(new ZeeKayDaConfigurationFailure(
-                    "client.response_modes.undefined_value",
-                    $"Client '{client.ClientId}' has an undefined value '{(int)responseMode}' in AllowedResponseModes."));
-            }
+            failures.Add(new ZeeKayDaConfigurationFailure(
+                "client.response_modes.undefined_value",
+                $"Client '{client.ClientId}' has an undefined value '{(int)responseMode}' in AllowedResponseModes."));
         }
 
-        foreach (var promptValue in client.AllowedPromptValues)
+        foreach (var promptValue in client.AllowedPromptValues.Where(promptValue => !Enum.IsDefined(promptValue)))
         {
-            if (!Enum.IsDefined(promptValue))
-            {
-                failures.Add(new ZeeKayDaConfigurationFailure(
-                    "client.prompt_values.undefined_value",
-                    $"Client '{client.ClientId}' has an undefined value '{(int)promptValue}' in AllowedPromptValues."));
-            }
+            failures.Add(new ZeeKayDaConfigurationFailure(
+                "client.prompt_values.undefined_value",
+                $"Client '{client.ClientId}' has an undefined value '{(int)promptValue}' in AllowedPromptValues."));
         }
     }
 

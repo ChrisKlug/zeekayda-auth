@@ -1,3 +1,4 @@
+using System.Linq;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -85,15 +86,12 @@ internal sealed class InMemoryClientRepository : IClientRepository
 
         // Check for duplicate client_id (ordinal)
         var seen = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var reg in allRegistrations)
+        foreach (var reg in allRegistrations.Where(reg => !seen.Add(reg.ClientId)))
         {
-            if (!seen.Add(reg.ClientId))
-            {
-                allFailures.Add(new ZeeKayDaConfigurationFailure(
-                    "client.client_id.duplicate",
-                    $"A client with ClientId '{reg.ClientId}' has been registered more than once. " +
-                    "Each client must have a unique ClientId (ordinal comparison)."));
-            }
+            allFailures.Add(new ZeeKayDaConfigurationFailure(
+                "client.client_id.duplicate",
+                $"A client with ClientId '{reg.ClientId}' has been registered more than once. " +
+                "Each client must have a unique ClientId (ordinal comparison)."));
         }
 
         // Validate each registration, accumulating failures
