@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Clients;
@@ -10,6 +11,27 @@ public sealed class InMemoryClientRepositoryTests
     // ── Fake infrastructure ───────────────────────────────────────────────────────────────────────
 
     private sealed class FakeSecret : IClientSecret { }
+
+    private sealed class CapturingLogger : ILogger<InMemoryClientRepository>
+    {
+        private readonly List<string> _warnings = new();
+
+        public IReadOnlyList<string> Warnings => _warnings;
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            if (logLevel == LogLevel.Warning)
+                _warnings.Add(formatter(state, exception));
+        }
+    }
 
     private sealed class FakeHasher : IClientSecretHasher
     {
@@ -48,7 +70,8 @@ public sealed class InMemoryClientRepositoryTests
 
     private static InMemoryClientRepository MakeRepository(
         InMemoryClientRegistrationOptions opts,
-        AuthorizationServerOptions? serverOptions = null)
+        AuthorizationServerOptions? serverOptions = null,
+        ILogger<InMemoryClientRepository>? logger = null)
     {
         var so = serverOptions ?? DefaultServerOptions();
         return new InMemoryClientRepository(
@@ -56,7 +79,7 @@ public sealed class InMemoryClientRepositoryTests
             MakeHasher(),
             MakeValidator(so),
             Options.Create(so),
-            NullLogger<InMemoryClientRepository>.Instance);
+            logger ?? NullLogger<InMemoryClientRepository>.Instance);
     }
 
     private static ClientRegistration ValidPublicClient(string clientId = "test-client") =>
@@ -279,6 +302,8 @@ public sealed class InMemoryClientRepositoryTests
                 .Contain(f => f.Code == "client.credentials.empty_plaintext_secret");
     }
 
+    // ── Empty plaintext secret is aggregated, not thrown bare — part 2 ───────────────────────────
+
     [Fact]
     public void Constructor_EmptySecretAndOtherInvalidClient_AggregatesBothInOneException()
     {
@@ -308,5 +333,38 @@ public sealed class InMemoryClientRepositoryTests
             .Which.AggregatedFailures;
         failures.Should().Contain(f => f.Code == "client.credentials.empty_plaintext_secret");
         failures.Should().Contain(f => f.Code == "client.redirect_uri.fragment");
+    }
+
+    // ── None-advertised server-wide warning ───────────────────────────────────────────────────────
+
+    [Fact]
+    public void Constructor_NoneAdvertisedWithNoPublicClients_LogsWarning()
+    {
+        // Server advertises "none" but only confidential clients are registered → warning
+        var logger = new CapturingLogger();
+        var opts = new InMemoryClientRegistrationOptions();
+        opts.Pending.Add(new PendingConfidentialClientSpec(
+            "confidential-only",
+            "super-secret",
+            ["https://app.example.com/cb"],
+            [],
+            ["openid"]));
+
+        MakeRepository(opts, logger: logger);
+
+        logger.Warnings.Should().ContainSingle(w => w.Contains("none"));
+    }
+
+    [Fact]
+    public void Constructor_NoneAdvertisedWithPublicClientPresent_DoesNotLogWarning()
+    {
+        // Server advertises "none" and at least one public client is registered → no warning
+        var logger = new CapturingLogger();
+        var opts = new InMemoryClientRegistrationOptions();
+        opts.PreBuilt.Add(ValidPublicClient("public-client"));
+
+        MakeRepository(opts, logger: logger);
+
+        logger.Warnings.Should().NotContain(w => w.Contains("none"));
     }
 }

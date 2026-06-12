@@ -89,6 +89,25 @@ public sealed class ZeeKayDaAuthBuilderClientExtensionsTests
             .WithMessage("*IClientRepository*");
     }
 
+    [Fact]
+    public void AddInMemoryClients_AfterFactoryRegisteredRepository_ThrowsWithUnknownInMessage()
+    {
+        // When IClientRepository is registered via a factory delegate, ImplementationType is null.
+        // The error message must fall back to "unknown" rather than null-referencing.
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddOptions();
+        var builder = new ZeeKayDaAuthBuilder(services);
+
+        services.AddSingleton<IClientRepository>(_ => new CustomClientRepository());
+
+        var act = () => builder.AddInMemoryClients(clients =>
+            clients.AddPublic("client", ["https://app.example.com/cb"], [], ["openid"]));
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*unknown*");
+    }
+
     // ── Multiple calls are additive ───────────────────────────────────────────────────────────────
 
     [Fact]

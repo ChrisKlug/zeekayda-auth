@@ -185,6 +185,24 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
+    public void Validate_HttpsRootIssuerWithTrailingSlash_Succeeds()
+    {
+        // NormalizeRootIssuer strips the trailing "/" on a root issuer before the canonical
+        // comparison, so "https://auth.example.com/" is treated as equivalent to the canonical form.
+        var result = Validate(new AuthorizationServerOptions { Issuer = "https://auth.example.com/" });
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Validate_IssuerWithNonDefaultHttpsPort_Succeeds()
+    {
+        // Port 8443 ≠ 443, so isDefaultPort = false and the port is preserved in the canonical
+        // form, making the input identical to the canonical — no "not canonical" failure.
+        var result = Validate(new AuthorizationServerOptions { Issuer = "https://auth.example.com:8443" });
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Fact]
     public void Validate_IssuerWithUppercaseHost_FailsWithCanonicalSuggestion()
     {
         var result = Validate(new AuthorizationServerOptions

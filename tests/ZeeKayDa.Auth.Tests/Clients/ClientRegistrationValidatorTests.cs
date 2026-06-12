@@ -970,4 +970,222 @@ public sealed class ClientRegistrationValidatorTests
 
         act.Should().Throw<ArgumentNullException>();
     }
+
+    // ── Redirect URI — unparseable string ────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Validate_InvalidUriStringInRedirectUris_FailsWithInvalidCode()
+    {
+        var validator = MakeValidator();
+        var client = MakeValidPublicClient() with
+        {
+            RedirectUris = new HashSet<string>(["not a uri"], StringComparer.Ordinal)
+        };
+
+        var act = () => validator.Validate(client);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.redirect_uri.invalid");
+    }
+
+    // ── Redirect URI — IPv6 loopback with brackets ────────────────────────────────────────────────
+
+    [Fact]
+    public void Validate_HttpIpv6LoopbackBracketForm_Passes()
+    {
+        var validator = MakeValidator();
+        var client = MakeValidPublicClient() with
+        {
+            RedirectUris = new HashSet<string>(["http://[::1]/callback"], StringComparer.Ordinal)
+        };
+
+        var act = () => validator.Validate(client);
+
+        act.Should().NotThrow();
+    }
+
+    // ── ClientId — null ───────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Validate_NullClientId_FailsWithClientIdInvalidCode()
+    {
+        var validator = MakeValidator();
+        var client = MakeValidPublicClient() with { ClientId = null! };
+
+        var act = () => validator.Validate(client);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.client_id.invalid");
+    }
+
+    // ── AllowedTokenEndpointAuthMethods — invalid entries ────────────────────────────────────────
+
+    [Fact]
+    public void Validate_AuthMethodWithLeadingWhitespace_FailsWithInvalidEntryCode()
+    {
+        var validator = MakeValidator();
+        var client = new ClientRegistration
+        {
+            ClientId = "client",
+            Credentials = [new FakeSecret()],
+            IsPublic = false,
+            RedirectUris = new HashSet<string>(["https://app.example.com/cb"], StringComparer.Ordinal),
+            PostLogoutRedirectUris = new HashSet<string>(StringComparer.Ordinal),
+            AllowedTokenEndpointAuthMethods = new HashSet<string>(
+                [" client_secret_basic"], StringComparer.Ordinal)
+        };
+
+        var act = () => validator.Validate(client);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().Contain(
+                f => f.Code == "client.token_endpoint_auth_methods.invalid_entry");
+    }
+
+    [Fact]
+    public void Validate_AuthMethodWithControlCharacter_FailsWithInvalidEntryCode()
+    {
+        var validator = MakeValidator();
+        var client = new ClientRegistration
+        {
+            ClientId = "client",
+            Credentials = [new FakeSecret()],
+            IsPublic = false,
+            RedirectUris = new HashSet<string>(["https://app.example.com/cb"], StringComparer.Ordinal),
+            PostLogoutRedirectUris = new HashSet<string>(StringComparer.Ordinal),
+            AllowedTokenEndpointAuthMethods = new HashSet<string>(
+                ["client\x01secret"], StringComparer.Ordinal)
+        };
+
+        var act = () => validator.Validate(client);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().Contain(
+                f => f.Code == "client.token_endpoint_auth_methods.invalid_entry");
+    }
+
+    // ── AllowedTokenEndpointAuthMethods — duplicate ───────────────────────────────────────────────
+
+    [Fact]
+    public void Validate_DuplicateAuthMethod_FailsWithDuplicateCode()
+    {
+        // IReadOnlySet<string> deduplicates, so we use a custom stub that allows duplicate entries.
+        var validator = MakeValidator();
+        var client = new ClientRegistration
+        {
+            ClientId = "client",
+            Credentials = [new FakeSecret()],
+            IsPublic = false,
+            RedirectUris = new HashSet<string>(["https://app.example.com/cb"], StringComparer.Ordinal),
+            PostLogoutRedirectUris = new HashSet<string>(StringComparer.Ordinal),
+            AllowedTokenEndpointAuthMethods = new DuplicatingSet(
+                TokenEndpointAuthMethods.ClientSecretBasic,
+                TokenEndpointAuthMethods.ClientSecretBasic)
+        };
+
+        var act = () => validator.Validate(client);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().Contain(
+                f => f.Code == "client.token_endpoint_auth_methods.duplicate");
+    }
+
+    // ── AllowedTokenEndpointAuthMethods — ToWireFormat arms ──────────────────────────────────────
+
+    [Fact]
+    public void Validate_ClientSecretJwtNotInServerSubset_FailureMessageContainsWireString()
+    {
+        var validator = MakeValidator(); // default server: client_secret_basic + none
+        var client = new ClientRegistration
+        {
+            ClientId = "client",
+            Credentials = [new FakeSecret()],
+            IsPublic = false,
+            RedirectUris = new HashSet<string>(["https://app.example.com/cb"], StringComparer.Ordinal),
+            PostLogoutRedirectUris = new HashSet<string>(StringComparer.Ordinal),
+            AllowedTokenEndpointAuthMethods = new HashSet<string>(
+                ["client_secret_jwt"], StringComparer.Ordinal)
+        };
+
+        var act = () => validator.Validate(client);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().Contain(f =>
+                f.Code == "client.token_endpoint_auth_methods.not_subset" &&
+                f.Message.Contains("client_secret_jwt"));
+    }
+
+    [Fact]
+    public void Validate_ClientSecretPostNotInServerSubset_FailureMessageContainsWireString()
+    {
+        var validator = MakeValidator(); // default server: client_secret_basic + none
+        var client = new ClientRegistration
+        {
+            ClientId = "client",
+            Credentials = [new FakeSecret()],
+            IsPublic = false,
+            RedirectUris = new HashSet<string>(["https://app.example.com/cb"], StringComparer.Ordinal),
+            PostLogoutRedirectUris = new HashSet<string>(StringComparer.Ordinal),
+            AllowedTokenEndpointAuthMethods = new HashSet<string>(
+                ["client_secret_post"], StringComparer.Ordinal)
+        };
+
+        var act = () => validator.Validate(client);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().Contain(f =>
+                f.Code == "client.token_endpoint_auth_methods.not_subset" &&
+                f.Message.Contains("client_secret_post"));
+    }
+
+    [Fact]
+    public void Validate_NoneNotInServerSubset_PublicClient_FailureMessageContainsWireString()
+    {
+        // Server has only client_secret_basic (no none) — public client's {"none"} fails subset.
+        var opts = new AuthorizationServerOptions { Issuer = "https://test.example.com" };
+        // Deliberately do NOT add TokenEndpointAuthMethod.None
+        var validator = MakeValidator(serverOptions: opts);
+        var client = ClientRegistration.CreatePublic(
+            "client",
+            ["https://app.example.com/cb"],
+            [],
+            ["openid"]);
+
+        var act = () => validator.Validate(client);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().Contain(f =>
+                f.Code == "client.token_endpoint_auth_methods.not_subset" &&
+                f.Message.Contains("none"));
+    }
+
+    // ── DuplicatingSet helper ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// A minimal <see cref="IReadOnlySet{T}"/> that enumerates duplicate entries, used to exercise
+    /// the duplicate-detection branch in <c>ValidateAllowedTokenEndpointAuthMethods</c>. A real
+    /// <see cref="HashSet{T}"/> would silently deduplicate and never trigger the check.
+    /// </summary>
+    private sealed class DuplicatingSet : IReadOnlySet<string>
+    {
+        private readonly List<string> _items;
+
+        public DuplicatingSet(params string[] items) => _items = [.. items];
+
+        public int Count => _items.Count;
+
+        public bool Contains(string item) => _items.Contains(item, StringComparer.Ordinal);
+
+        public IEnumerator<string> GetEnumerator() => _items.GetEnumerator();
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator()
+            => _items.GetEnumerator();
+
+        public bool IsProperSubsetOf(IEnumerable<string> other) => throw new NotSupportedException();
+        public bool IsProperSupersetOf(IEnumerable<string> other) => throw new NotSupportedException();
+        public bool IsSubsetOf(IEnumerable<string> other) => throw new NotSupportedException();
+        public bool IsSupersetOf(IEnumerable<string> other) => throw new NotSupportedException();
+        public bool Overlaps(IEnumerable<string> other) => throw new NotSupportedException();
+        public bool SetEquals(IEnumerable<string> other) => throw new NotSupportedException();
+    }
 }
