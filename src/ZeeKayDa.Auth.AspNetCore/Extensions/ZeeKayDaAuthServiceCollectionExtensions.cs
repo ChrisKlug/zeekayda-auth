@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth;
+using ZeeKayDa.Auth.AspNetCore.ClientAuthentication;
 using ZeeKayDa.Auth.AspNetCore.Endpoints;
 using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Configuration;
@@ -94,6 +95,21 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         // Resolves IClientRepository at startup so construction-time validation (duplicate
         // detection, per-client validation, secret hashing) fails fast rather than at first request.
         services.AddHostedService<ClientRepositoryStartupActivator>();
+
+        // Register the built-in client secret authenticator and composite dispatcher. Both are
+        // registered as singletons. The composite is registered as its concrete type (not as
+        // IClientAuthenticator) so it is excluded from the IEnumerable<IClientAuthenticator>
+        // injection and cannot dispatch recursively.
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IClientAuthenticator, ClientSecretAuthenticator>());
+        services.TryAddSingleton<CompositeClientAuthenticator>();
+
+        // Startup validation: every method in AuthMethodsSupported must be covered by exactly
+        // one registered IClientAuthenticator; none may overlap or declare "none".
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<
+                IValidateOptions<AuthorizationServerOptions>,
+                AuthenticatorCoverageValidator>());
 
         return new ZeeKayDaAuthBuilder(services);
     }
