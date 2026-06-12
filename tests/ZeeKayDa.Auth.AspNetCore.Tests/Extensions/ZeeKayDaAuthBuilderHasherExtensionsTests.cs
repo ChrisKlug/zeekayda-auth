@@ -99,7 +99,8 @@ public sealed class ZeeKayDaAuthBuilderHasherExtensionsTests
     [Fact]
     public void AddPbkdf2SecretsHasher_NullBuilder_ThrowsArgumentNullException()
     {
-        var act = () => ((ZeeKayDaAuthBuilder)null!).AddPbkdf2SecretsHasher();
+        ZeeKayDaAuthBuilder builder = null!;
+        var act = () => builder.AddPbkdf2SecretsHasher();
 
         act.Should().Throw<ArgumentNullException>().WithParameterName("builder");
     }
