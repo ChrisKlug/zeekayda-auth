@@ -112,7 +112,7 @@ public sealed class ClientRegistrationValidatorTests
     // ── Valid clients pass ────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Validate_ValidPublicClient_DoesNotThrow()
+    public void Validate_does_not_throw_for_valid_public_client()
     {
         var validator = MakeValidator();
         var client = MakeValidPublicClient();
@@ -123,7 +123,7 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
-    public void Validate_ValidConfidentialClient_DoesNotThrow()
+    public void Validate_does_not_throw_for_valid_confidential_client()
     {
         var validator = MakeValidator();
         var client = MakeValidConfidentialClient();
@@ -136,7 +136,7 @@ public sealed class ClientRegistrationValidatorTests
     // ── Redirect URI rules ────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Validate_HttpsRedirectUri_Passes()
+    public void Validate_passes_for_HTTPS_redirect_uri()
     {
         var validator = MakeValidator();
         var client = MakeValidPublicClient() with
@@ -150,7 +150,7 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
-    public void Validate_HttpLoopbackRedirectUri_Passes()
+    public void Validate_passes_for_HTTP_loopback_redirect_uri()
     {
         var validator = MakeValidator();
         var client = MakeValidPublicClient() with
@@ -164,7 +164,7 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
-    public void Validate_HttpIpv6LoopbackRedirectUri_Passes()
+    public void Validate_passes_for_HTTP_IPv6_loopback_redirect_uri()
     {
         var validator = MakeValidator();
         var client = MakeValidPublicClient() with
@@ -178,7 +178,7 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
-    public void Validate_PrivateUseSchemeWithDot_Passes()
+    public void Validate_passes_for_private_use_scheme_with_dot()
     {
         var validator = MakeValidator();
         var client = MakeValidPublicClient() with
@@ -192,7 +192,7 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
-    public void Validate_UriWithFragment_FailsWithFragmentCode()
+    public void Validate_fails_with_fragment_code_if_redirect_uri_has_fragment()
     {
         var validator = MakeValidator();
         var client = MakeValidPublicClient() with
@@ -207,7 +207,7 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
-    public void Validate_UriWithUserInfo_FailsWithUserInfoCode()
+    public void Validate_fails_with_user_info_code_if_redirect_uri_has_user_info()
     {
         var validator = MakeValidator();
         var client = MakeValidPublicClient() with
@@ -222,7 +222,7 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
-    public void Validate_JavascriptScheme_FailsWithSchemeNotAllowedCode()
+    public void Validate_fails_with_scheme_not_allowed_code_if_redirect_uri_uses_javascript_scheme()
     {
         var validator = MakeValidator();
         var client = MakeValidPublicClient() with
@@ -237,7 +237,7 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
-    public void Validate_HttpNonLoopback_FailsWithSchemeHttpNonLoopbackCode()
+    public void Validate_fails_with_scheme_http_non_loopback_code_if_redirect_uri_uses_HTTP_on_non_loopback()
     {
         var validator = MakeValidator();
         var client = MakeValidPublicClient() with
@@ -252,7 +252,7 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
-    public void Validate_LocalhostRedirectUri_EmitsLogWarning()
+    public void Validate_emits_log_warning_for_localhost_redirect_uri()
     {
         var logger = new CapturingLogger();
         var validator = MakeValidator(logger: logger);
@@ -267,7 +267,7 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
-    public void Validate_LocalhostUriWithFragment_FailsWithFragmentCodeAndSuppressesLocalhostWarning()
+    public void Validate_fails_with_fragment_code_and_suppresses_localhost_warning_for_localhost_uri_with_fragment()
     {
         // The localhost advisory warning is noise when the URI is already being rejected for another
         // reason. A localhost URI carrying a fragment must produce the fragment failure but NOT the
@@ -287,7 +287,7 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
-    public void Validate_LocalhostAttackerSubdomain_FailsWithSchemeHttpNonLoopbackCode()
+    public void Validate_fails_with_scheme_http_non_loopback_code_for_localhost_attacker_subdomain()
     {
         var validator = MakeValidator();
         var client = MakeValidPublicClient() with
@@ -302,7 +302,7 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
-    public void Validate_HttpIpv6WithZoneId_FailsWithIpv6ZoneIdCode()
+    public void Validate_fails_with_IPv6_zone_id_code_for_HTTP_IPv6_with_zone_id()
     {
         var validator = MakeValidator();
         var client = MakeValidPublicClient() with
@@ -318,7 +318,7 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
-    public void Validate_HttpsIpv6WithZoneId_FailsWithIpv6ZoneIdCode()
+    public void Validate_fails_with_IPv6_zone_id_code_for_HTTPS_IPv6_with_zone_id()
     {
         // The zone-ID check must be scheme-neutral: an https:// URI with a zone ID would otherwise
         // pass IsSchemeAllowed (it is https) and slip through.
@@ -335,7 +335,7 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
-    public void Validate_HttpsLocalhostRedirectUri_PassesButEmitsLogWarning()
+    public void Validate_passes_but_emits_log_warning_for_HTTPS_localhost_redirect_uri()
     {
         // The localhost advisory warning (RFC 8252 §8.3) must be scheme-neutral: it fires for any
         // passing URI whose host is 'localhost', including https://localhost.
@@ -353,7 +353,7 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
-    public void Validate_PercentEncodedUri_DoesNotNormalize()
+    public void Validate_does_not_normalize_percent_encoded_URI()
     {
         // Percent-encoded URIs are valid as-is — no normalisation applied
         var validator = MakeValidator();
@@ -368,7 +368,7 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
-    public void Validate_PathTraversal_FailsWithPathTraversalCode()
+    public void Validate_fails_with_path_traversal_code_if_redirect_uri_has_path_traversal()
     {
         var validator = MakeValidator();
         var client = MakeValidPublicClient() with
@@ -383,7 +383,7 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
-    public void Validate_PathTraversalWithQuerySuffix_FailsWithPathTraversalCode()
+    public void Validate_fails_with_path_traversal_code_for_path_traversal_with_query_suffix()
     {
         // The query suffix must be stripped before splitting; otherwise the final segment is
         // "..?x=1", which would not match ".." and would slip past the check.
@@ -400,7 +400,7 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
-    public void Validate_PathTraversalWithMixedPercentEncoding_FailsWithPathTraversalCode()
+    public void Validate_fails_with_path_traversal_code_for_path_traversal_with_mixed_percent_encoding()
     {
         // ".%2e" decodes to ".." but neither literal nor whole-segment %2e%2e matching catches it;
         // per-segment percent-decoding does.
@@ -417,7 +417,7 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
-    public void Validate_PrivateUseSingleSlashPathTraversal_FailsWithPathTraversalCode()
+    public void Validate_fails_with_path_traversal_code_for_private_use_single_slash_path_traversal()
     {
         // RFC 8252 §7.1 private-use scheme in its canonical single-slash form (scheme:/path) has no
         // "://" authority, so traversal scanning must handle the ":/" form too.
@@ -434,7 +434,7 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
-    public void Validate_QueryWithBracketedPercentEncoding_DoesNotFalseFlagZoneId()
+    public void Validate_does_not_false_flag_zone_id_for_query_with_bracketed_percent_encoding()
     {
         // A percent-encoded '%' inside brackets in the query (e.g. "?a=[b%25c]") must not be parsed
         // as an IPv6 zone ID: authority parsing must stop at the '?'.
@@ -450,7 +450,7 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
-    public void Validate_MoreThan32RedirectUris_FailsWithCountExceededCode()
+    public void Validate_fails_with_count_exceeded_code_if_more_than_32_redirect_uris()
     {
         var validator = MakeValidator();
         var uris = Enumerable.Range(1, 33)
@@ -465,7 +465,7 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
-    public void Validate_PostLogoutRedirectUriWithFragment_FailsWithFragmentCode()
+    public void Validate_fails_with_fragment_code_if_post_logout_redirect_uri_has_fragment()
     {
         var validator = MakeValidator();
         var client = MakeValidPublicClient() with
@@ -481,7 +481,7 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
-    public void Validate_MoreThan32PostLogoutRedirectUris_FailsWithCountExceededCode()
+    public void Validate_fails_with_count_exceeded_code_if_more_than_32_post_logout_redirect_uris()
     {
         var validator = MakeValidator();
         var uris = Enumerable.Range(1, 33)
@@ -498,7 +498,7 @@ public sealed class ClientRegistrationValidatorTests
     // ── IsPublic trinity ──────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Validate_PublicClientWithNoCredentialsAndNoneMethod_Passes()
+    public void Validate_passes_for_public_client_with_no_credentials_and_none_auth_method()
     {
         var validator = MakeValidator();
         var client = ClientRegistration.CreatePublic(
@@ -513,7 +513,7 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
-    public void Validate_ConfidentialClientWithSecretAndClientSecretBasic_Passes()
+    public void Validate_passes_for_confidential_client_with_secret_and_ClientSecretBasic_auth_method()
     {
         var validator = MakeValidator();
         var client = ClientRegistration.CreateConfidential(
@@ -529,7 +529,7 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
-    public void Validate_IsPublicTrueWithCredential_FailsWithTrinityViolationCode()
+    public void Validate_fails_with_trinity_violation_code_if_IsPublic_is_true_but_has_credential()
     {
         var validator = MakeValidator();
         var client = new ClientRegistration
@@ -550,7 +550,7 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
-    public void Validate_IsPublicFalseWithNoCredentialsAndClientSecretBasic_FailsWithTrinityViolationCode()
+    public void Validate_fails_with_trinity_violation_code_if_IsPublic_is_false_with_no_credentials_and_ClientSecretBasic()
     {
         var validator = MakeValidator();
         var client = new ClientRegistration
@@ -571,7 +571,7 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
-    public void Validate_IsPublicTrueWithNoCredentialsAndClientSecretBasic_FailsWithTrinityViolationCode()
+    public void Validate_fails_with_trinity_violation_code_if_IsPublic_is_true_with_no_credentials_and_ClientSecretBasic()
     {
         var validator = MakeValidator();
         var client = new ClientRegistration
@@ -592,7 +592,7 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
-    public void Validate_IsPublicFalseWithNoCredentialsAndEmptyAuthMethods_FailsWithEmptyAndTrinityCode()
+    public void Validate_fails_with_empty_and_trinity_codes_if_IsPublic_is_false_with_no_credentials_and_empty_auth_methods()
     {
         var validator = MakeValidator();
         var client = new ClientRegistration
@@ -613,7 +613,7 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
-    public void Validate_ConfidentialClientWithNoneInAuthMethods_FailsWithNoneOnConfidentialCode()
+    public void Validate_fails_with_none_on_confidential_code_for_confidential_client_with_none_auth_method()
     {
         // A confidential client with {"none","client_secret_basic"} passes the trinity check
         // (it has credentials and is not "none-only") but advertising 'none' means it could be
@@ -641,7 +641,7 @@ public sealed class ClientRegistrationValidatorTests
     // ── Two-credential cap ────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Validate_TwoSecrets_Passes()
+    public void Validate_passes_for_client_with_two_secrets()
     {
         var validator = MakeValidator();
 
@@ -664,7 +664,7 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
-    public void Validate_ThreeSecrets_FailsWithTooManySecretsCode()
+    public void Validate_fails_with_too_many_secrets_code_for_client_with_three_secrets()
     {
         var validator = MakeValidator();
         var client = new ClientRegistration
@@ -687,7 +687,7 @@ public sealed class ClientRegistrationValidatorTests
     // ── Empty-secret probe ────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Validate_CredentialAcceptsEmptySecret_FailsWithEmptySecretAcceptedCode()
+    public void Validate_fails_with_empty_secret_accepted_code_if_credential_accepts_empty_secret()
     {
         // A hasher that accepts any presented value including empty
         var emptyAcceptingHasher = new FakeHasher(verifyResult: true);
@@ -702,7 +702,7 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
-    public void Validate_CredentialWithNoMatchingHasher_FailsWithNoHasherCode()
+    public void Validate_fails_with_no_hasher_code_if_credential_has_no_matching_hasher()
     {
         // The validator's composite only has a FakeHasher (handles FakeSecret). A credential of type
         // AnySecret is handled by no registered hasher, so it can never be verified — it must be
@@ -729,7 +729,7 @@ public sealed class ClientRegistrationValidatorTests
     // ── AllowedSigningAlgorithms ──────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Validate_AllowedSigningAlgorithmsNull_Passes()
+    public void Validate_passes_if_AllowedSigningAlgorithms_is_null()
     {
         var validator = MakeValidator();
         var client = MakeValidPublicClient() with { AllowedSigningAlgorithms = null };
@@ -740,7 +740,7 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
-    public void Validate_AllowedSigningAlgorithmsEmptyWhenSet_FailsWithEmptyWhenSetCode()
+    public void Validate_fails_with_empty_when_set_code_if_AllowedSigningAlgorithms_is_empty()
     {
         var validator = MakeValidator();
         var client = MakeValidPublicClient() with
@@ -755,7 +755,7 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
-    public void Validate_AllowedSigningAlgorithmsSubsetOfServer_Passes()
+    public void Validate_passes_if_AllowedSigningAlgorithms_is_subset_of_server_algorithms()
     {
         var opts = new AuthorizationServerOptions { Issuer = "https://test.example.com" };
         opts.IdToken.SigningAlgValuesSupported = [SigningAlgorithm.RS256, SigningAlgorithm.ES256];
@@ -774,7 +774,7 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
-    public void Validate_AllowedSigningAlgorithmsNotSubset_FailsWithNotSubsetCode()
+    public void Validate_fails_with_not_subset_code_if_AllowedSigningAlgorithms_is_not_subset_of_server_algorithms()
     {
         var opts = new AuthorizationServerOptions { Issuer = "https://test.example.com" };
         opts.IdToken.SigningAlgValuesSupported = [SigningAlgorithm.RS256];
@@ -795,7 +795,7 @@ public sealed class ClientRegistrationValidatorTests
     // ── AllowedScopes ─────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Validate_AllowedScopesBlankEntry_FailsWithBlankEntryCode()
+    public void Validate_fails_with_blank_entry_code_if_AllowedScopes_contains_blank_entry()
     {
         var validator = MakeValidator();
         var client = MakeValidPublicClient() with
@@ -810,7 +810,7 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
-    public void Validate_AllowedScopesWhitespaceEntry_FailsWithBlankEntryCode()
+    public void Validate_fails_with_blank_entry_code_if_AllowedScopes_contains_whitespace_entry()
     {
         var validator = MakeValidator();
         var client = MakeValidPublicClient() with
@@ -827,7 +827,7 @@ public sealed class ClientRegistrationValidatorTests
     // ── AllowedTokenEndpointAuthMethods ──────────────────────────────────────────────────────────
 
     [Fact]
-    public void Validate_AuthMethodNotInServerSubset_FailsWithNotSubsetCode()
+    public void Validate_fails_with_not_subset_code_if_auth_method_is_not_in_server_subset()
     {
         // Default server supports only ClientSecretBasic
         var validator = MakeValidator();
@@ -851,7 +851,7 @@ public sealed class ClientRegistrationValidatorTests
     // ── Enum.IsDefined checks ─────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Validate_UndefinedGrantType_FailsWithGrantTypeUndefinedValueCode()
+    public void Validate_fails_with_grant_type_undefined_value_code_for_undefined_GrantType()
     {
         var validator = MakeValidator();
         var client = MakeValidPublicClient() with
@@ -866,7 +866,7 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
-    public void Validate_UndefinedResponseType_FailsWithResponseTypeUndefinedValueCode()
+    public void Validate_fails_with_response_type_undefined_value_code_for_undefined_ResponseType()
     {
         var validator = MakeValidator();
         var client = MakeValidPublicClient() with
@@ -881,7 +881,7 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
-    public void Validate_UndefinedResponseMode_FailsWithResponseModeUndefinedValueCode()
+    public void Validate_fails_with_response_mode_undefined_value_code_for_undefined_ResponseMode()
     {
         var validator = MakeValidator();
         var client = MakeValidPublicClient() with
@@ -896,7 +896,7 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
-    public void Validate_UndefinedPromptValue_FailsWithPromptValueUndefinedValueCode()
+    public void Validate_fails_with_prompt_value_undefined_value_code_for_undefined_PromptValue()
     {
         var validator = MakeValidator();
         var client = MakeValidPublicClient() with
@@ -913,7 +913,7 @@ public sealed class ClientRegistrationValidatorTests
     // ── ClientId format ───────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Validate_ClientIdWithInvalidCharacters_FailsWithClientIdInvalidCode()
+    public void Validate_fails_with_client_id_invalid_code_if_ClientId_contains_invalid_characters()
     {
         var validator = MakeValidator();
         var client = MakeValidPublicClient() with { ClientId = "my client!" };
@@ -925,7 +925,7 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
-    public void Validate_ClientIdTooLong_FailsWithClientIdInvalidCode()
+    public void Validate_fails_with_client_id_invalid_code_if_ClientId_is_too_long()
     {
         var validator = MakeValidator();
         var client = MakeValidPublicClient() with { ClientId = new string('a', 201) };
@@ -939,7 +939,7 @@ public sealed class ClientRegistrationValidatorTests
     // ── Aggregate failures ────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Validate_MultipleViolations_AggregatesAllFailures()
+    public void Validate_aggregates_all_failures_for_multiple_violations()
     {
         var validator = MakeValidator();
         var client = new ClientRegistration
@@ -962,7 +962,7 @@ public sealed class ClientRegistrationValidatorTests
     // ── Argument validation ───────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Validate_NullClient_ThrowsArgumentNullException()
+    public void Validate_throws_ArgumentNullException_if_client_is_null()
     {
         var validator = MakeValidator();
 
@@ -974,7 +974,7 @@ public sealed class ClientRegistrationValidatorTests
     // ── Redirect URI — unparseable string ────────────────────────────────────────────────────────
 
     [Fact]
-    public void Validate_InvalidUriStringInRedirectUris_FailsWithInvalidCode()
+    public void Validate_fails_with_invalid_code_if_redirect_uri_string_is_not_a_valid_URI()
     {
         var validator = MakeValidator();
         var client = MakeValidPublicClient() with
@@ -991,7 +991,7 @@ public sealed class ClientRegistrationValidatorTests
     // ── Redirect URI — IPv6 loopback with brackets ────────────────────────────────────────────────
 
     [Fact]
-    public void Validate_HttpIpv6LoopbackBracketForm_Passes()
+    public void Validate_passes_for_HTTP_IPv6_loopback_in_bracket_form()
     {
         var validator = MakeValidator();
         var client = MakeValidPublicClient() with
@@ -1007,7 +1007,7 @@ public sealed class ClientRegistrationValidatorTests
     // ── ClientId — null ───────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Validate_NullClientId_FailsWithClientIdInvalidCode()
+    public void Validate_fails_with_client_id_invalid_code_if_ClientId_is_null()
     {
         var validator = MakeValidator();
         var client = MakeValidPublicClient() with { ClientId = null! };
@@ -1021,7 +1021,7 @@ public sealed class ClientRegistrationValidatorTests
     // ── AllowedTokenEndpointAuthMethods — invalid entries ────────────────────────────────────────
 
     [Fact]
-    public void Validate_AuthMethodWithLeadingWhitespace_FailsWithInvalidEntryCode()
+    public void Validate_fails_with_invalid_entry_code_if_auth_method_has_leading_whitespace()
     {
         var validator = MakeValidator();
         var client = new ClientRegistration
@@ -1043,7 +1043,7 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
-    public void Validate_AuthMethodWithControlCharacter_FailsWithInvalidEntryCode()
+    public void Validate_fails_with_invalid_entry_code_if_auth_method_has_control_character()
     {
         var validator = MakeValidator();
         var client = new ClientRegistration
@@ -1067,7 +1067,7 @@ public sealed class ClientRegistrationValidatorTests
     // ── AllowedTokenEndpointAuthMethods — duplicate ───────────────────────────────────────────────
 
     [Fact]
-    public void Validate_DuplicateAuthMethod_FailsWithDuplicateCode()
+    public void Validate_fails_with_duplicate_code_for_duplicate_auth_method()
     {
         // IReadOnlySet<string> deduplicates, so we use a custom stub that allows duplicate entries.
         var validator = MakeValidator();
@@ -1093,7 +1093,7 @@ public sealed class ClientRegistrationValidatorTests
     // ── AllowedTokenEndpointAuthMethods — ToWireFormat arms ──────────────────────────────────────
 
     [Fact]
-    public void Validate_ClientSecretJwtNotInServerSubset_FailureMessageContainsWireString()
+    public void Validate_failure_message_contains_wire_string_if_ClientSecretJwt_is_not_in_server_subset()
     {
         var validator = MakeValidator(); // default server: client_secret_basic + none
         var client = new ClientRegistration
@@ -1116,7 +1116,7 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
-    public void Validate_ClientSecretPostNotInServerSubset_FailureMessageContainsWireString()
+    public void Validate_failure_message_contains_wire_string_if_ClientSecretPost_is_not_in_server_subset()
     {
         var validator = MakeValidator(); // default server: client_secret_basic + none
         var client = new ClientRegistration
@@ -1139,7 +1139,7 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
-    public void Validate_NoneNotInServerSubset_PublicClient_FailureMessageContainsWireString()
+    public void Validate_failure_message_contains_wire_string_for_public_client_if_None_is_not_in_server_subset()
     {
         // Server has only client_secret_basic (no none) — public client's {"none"} fails subset.
         var opts = new AuthorizationServerOptions { Issuer = "https://test.example.com" };

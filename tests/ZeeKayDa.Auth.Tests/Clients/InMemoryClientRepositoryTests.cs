@@ -92,7 +92,7 @@ public sealed class InMemoryClientRepositoryTests
     // ── FindByClientIdAsync ───────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task FindByClientIdAsync_KnownClient_ReturnsRegistration()
+    public async Task FindByClientIdAsync_returns_registration_for_known_client()
     {
         var client = ValidPublicClient("my-app");
         var opts = new InMemoryClientRegistrationOptions();
@@ -106,7 +106,7 @@ public sealed class InMemoryClientRepositoryTests
     }
 
     [Fact]
-    public async Task FindByClientIdAsync_UnknownClientId_ReturnsNull()
+    public async Task FindByClientIdAsync_returns_null_for_unknown_client_id()
     {
         var opts = new InMemoryClientRegistrationOptions();
         opts.PreBuilt.Add(ValidPublicClient("known-client"));
@@ -118,7 +118,7 @@ public sealed class InMemoryClientRepositoryTests
     }
 
     [Fact]
-    public async Task FindByClientIdAsync_UnknownClientId_DoesNotThrow()
+    public async Task FindByClientIdAsync_does_not_throw_for_unknown_client_id()
     {
         var opts = new InMemoryClientRegistrationOptions();
         opts.PreBuilt.Add(ValidPublicClient("known-client"));
@@ -130,7 +130,7 @@ public sealed class InMemoryClientRepositoryTests
     }
 
     [Fact]
-    public async Task FindByClientIdAsync_NullClientId_ReturnsNullWithoutThrowing()
+    public async Task FindByClientIdAsync_returns_null_without_throwing_for_null_client_id()
     {
         // Dictionary<string, T>.TryGetValue throws on a null key. The IClientRepository contract
         // requires returning null for an unknown or malformed client_id — never throwing.
@@ -146,7 +146,7 @@ public sealed class InMemoryClientRepositoryTests
     }
 
     [Fact]
-    public async Task FindByClientIdAsync_DifferentCase_ReturnsNull()
+    public async Task FindByClientIdAsync_returns_null_when_client_id_has_different_case()
     {
         // Ordinal lookup: "MyClient" != "myclient"
         var opts = new InMemoryClientRegistrationOptions();
@@ -159,7 +159,7 @@ public sealed class InMemoryClientRepositoryTests
     }
 
     [Fact]
-    public async Task FindByClientIdAsync_ExactCase_ReturnsClient()
+    public async Task FindByClientIdAsync_returns_client_for_exact_case_client_id()
     {
         var opts = new InMemoryClientRegistrationOptions();
         opts.PreBuilt.Add(ValidPublicClient("MyClient"));
@@ -173,7 +173,7 @@ public sealed class InMemoryClientRepositoryTests
     // ── Duplicate detection ───────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Constructor_DuplicateClientId_ThrowsZeeKayDaConfigurationException()
+    public void Constructor_throws_ZeeKayDaConfigurationException_for_duplicate_client_id()
     {
         var opts = new InMemoryClientRegistrationOptions();
         opts.PreBuilt.Add(ValidPublicClient("duplicate-id"));
@@ -188,7 +188,7 @@ public sealed class InMemoryClientRepositoryTests
     // ── Validation on construction ────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Constructor_InvalidClient_ThrowsZeeKayDaConfigurationException()
+    public void Constructor_throws_ZeeKayDaConfigurationException_for_invalid_client()
     {
         var opts = new InMemoryClientRegistrationOptions();
         // A client with a fragment in its redirect URI
@@ -212,7 +212,7 @@ public sealed class InMemoryClientRepositoryTests
     // ── Multiple clients ──────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task Constructor_MultipleClients_AllAreAccessible()
+    public async Task Constructor_makes_all_clients_accessible_when_multiple_clients_are_registered()
     {
         var ct = TestContext.Current.CancellationToken;
         var opts = new InMemoryClientRegistrationOptions();
@@ -229,7 +229,7 @@ public sealed class InMemoryClientRepositoryTests
     // ── Confidential client via Pending spec ──────────────────────────────────────────────────────
 
     [Fact]
-    public async Task Constructor_PendingConfidentialSpec_HashedAndAccessible()
+    public async Task Constructor_hashes_and_makes_accessible_pending_confidential_client()
     {
         var opts = new InMemoryClientRegistrationOptions();
         opts.Pending.Add(new PendingConfidentialClientSpec(
@@ -250,7 +250,7 @@ public sealed class InMemoryClientRepositoryTests
     // ── Aggregates failures from multiple invalid clients ─────────────────────────────────────────
 
     [Fact]
-    public void Constructor_MultipleInvalidClients_AggregatesAllFailures()
+    public void Constructor_aggregates_all_failures_for_multiple_invalid_clients()
     {
         var opts = new InMemoryClientRegistrationOptions();
         opts.PreBuilt.Add(new ClientRegistration
@@ -283,7 +283,7 @@ public sealed class InMemoryClientRepositoryTests
     // ── Empty plaintext secret is aggregated, not thrown bare ─────────────────────────────────────
 
     [Fact]
-    public void Constructor_PendingSpecWithEmptySecret_ThrowsAggregatedConfigurationException()
+    public void Constructor_throws_aggregated_ZeeKayDaConfigurationException_for_pending_spec_with_empty_secret()
     {
         // hasher.Create throws ArgumentException on a blank secret. The repository must convert that
         // into a structured failure rather than letting the bare ArgumentException abort construction.
@@ -305,7 +305,7 @@ public sealed class InMemoryClientRepositoryTests
     // ── Empty plaintext secret is aggregated, not thrown bare — part 2 ───────────────────────────
 
     [Fact]
-    public void Constructor_EmptySecretAndOtherInvalidClient_AggregatesBothInOneException()
+    public void Constructor_aggregates_both_failures_in_one_exception_for_empty_secret_and_other_invalid_client()
     {
         // The empty-secret spec must not short-circuit construction: a second, separately invalid
         // client's problems must still be reported in the same exception.
@@ -338,7 +338,7 @@ public sealed class InMemoryClientRepositoryTests
     // ── None-advertised server-wide warning ───────────────────────────────────────────────────────
 
     [Fact]
-    public void Constructor_NoneAdvertisedWithNoPublicClients_LogsWarning()
+    public void Constructor_logs_warning_when_none_is_advertised_but_no_public_clients_are_registered()
     {
         // Server advertises "none" but only confidential clients are registered → warning
         var logger = new CapturingLogger();
@@ -356,7 +356,7 @@ public sealed class InMemoryClientRepositoryTests
     }
 
     [Fact]
-    public void Constructor_NoneAdvertisedWithPublicClientPresent_DoesNotLogWarning()
+    public void Constructor_does_not_log_warning_when_none_is_advertised_and_public_client_is_present()
     {
         // Server advertises "none" and at least one public client is registered → no warning
         var logger = new CapturingLogger();

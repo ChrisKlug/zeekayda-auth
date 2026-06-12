@@ -7,19 +7,19 @@ public sealed class ZeeKayDaExceptionHierarchyTests
     // ── Type hierarchy ────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void ZeeKayDaConfigurationException_IsAssignableToZeeKayDaException()
+    public void ZeeKayDaConfigurationException_is_assignable_to_ZeeKayDaException()
     {
         typeof(ZeeKayDaConfigurationException).Should().BeAssignableTo<ZeeKayDaException>();
     }
 
     [Fact]
-    public void ZeeKayDaInteractionException_IsAssignableToZeeKayDaException()
+    public void ZeeKayDaInteractionException_is_assignable_to_ZeeKayDaException()
     {
         typeof(ZeeKayDaInteractionException).Should().BeAssignableTo<ZeeKayDaException>();
     }
 
     [Fact]
-    public void ZeeKayDaException_IsAbstract()
+    public void ZeeKayDaException_is_abstract()
     {
         typeof(ZeeKayDaException).IsAbstract.Should().BeTrue();
     }
@@ -27,7 +27,7 @@ public sealed class ZeeKayDaExceptionHierarchyTests
     // ── ZeeKayDaConfigurationException ───────────────────────────────────────────────────────────
 
     [Fact]
-    public void ZeeKayDaConfigurationException_CanBeCaughtAsZeeKayDaException()
+    public void ZeeKayDaConfigurationException_can_be_caught_as_ZeeKayDaException()
     {
         Action act = () => throw new ZeeKayDaConfigurationException(
             new ZeeKayDaConfigurationFailure("test.code", "test message"));
@@ -36,7 +36,7 @@ public sealed class ZeeKayDaExceptionHierarchyTests
     }
 
     [Fact]
-    public void ZeeKayDaConfigurationException_MessageContainsFailureCount()
+    public void ZeeKayDaConfigurationException_Message_contains_failure_count()
     {
         var ex = new ZeeKayDaConfigurationException(
             new ZeeKayDaConfigurationFailure("test.code", "test message"));
@@ -45,7 +45,7 @@ public sealed class ZeeKayDaExceptionHierarchyTests
     }
 
     [Fact]
-    public void ZeeKayDaConfigurationException_MultipleFailures_MessageContainsCount()
+    public void ZeeKayDaConfigurationException_Message_contains_count_for_multiple_failures()
     {
         var ex = new ZeeKayDaConfigurationException(
             new ZeeKayDaConfigurationFailure("code.a", "message a"),
@@ -56,7 +56,7 @@ public sealed class ZeeKayDaExceptionHierarchyTests
     }
 
     [Fact]
-    public void ZeeKayDaConfigurationException_ZeroFailures_Throws()
+    public void ZeeKayDaConfigurationException_throws_when_constructed_with_zero_failures()
     {
         Action act = () => throw new ZeeKayDaConfigurationException();
 
@@ -65,7 +65,7 @@ public sealed class ZeeKayDaExceptionHierarchyTests
     }
 
     [Fact]
-    public void ZeeKayDaConfigurationException_AggregatedFailures_ContainsAllPassedFailures()
+    public void ZeeKayDaConfigurationException_AggregatedFailures_contains_all_passed_failures()
     {
         var f1 = new ZeeKayDaConfigurationFailure("code.a", "message a");
         var f2 = new ZeeKayDaConfigurationFailure("code.b", "message b");
@@ -78,7 +78,7 @@ public sealed class ZeeKayDaExceptionHierarchyTests
     }
 
     [Fact]
-    public void ZeeKayDaConfigurationException_AggregatedFailures_IsDefensiveCopy()
+    public void ZeeKayDaConfigurationException_AggregatedFailures_is_a_defensive_copy()
     {
         var failures = new[] { new ZeeKayDaConfigurationFailure("code.a", "message a") };
 
@@ -92,7 +92,7 @@ public sealed class ZeeKayDaExceptionHierarchyTests
     // ── ZeeKayDaInteractionException ─────────────────────────────────────────────────────────────
 
     [Fact]
-    public void ZeeKayDaInteractionException_CanBeCaughtAsZeeKayDaException()
+    public void ZeeKayDaInteractionException_can_be_caught_as_ZeeKayDaException()
     {
         Action act = () => throw new ZeeKayDaInteractionException("test");
 
@@ -100,7 +100,7 @@ public sealed class ZeeKayDaExceptionHierarchyTests
     }
 
     [Fact]
-    public void ZeeKayDaInteractionException_PreservesMessage()
+    public void ZeeKayDaInteractionException_preserves_Message()
     {
         const string message = "Interaction API called in wrong state.";
 
@@ -110,7 +110,7 @@ public sealed class ZeeKayDaExceptionHierarchyTests
     }
 
     [Fact]
-    public void ZeeKayDaInteractionException_PreservesInnerException()
+    public void ZeeKayDaInteractionException_preserves_InnerException()
     {
         var inner = new InvalidOperationException("inner");
 

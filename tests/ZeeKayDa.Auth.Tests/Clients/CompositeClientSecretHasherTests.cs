@@ -81,7 +81,7 @@ public sealed class CompositeClientSecretHasherTests
     // ── Dispatch ─────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Verify_MatchingHasher_ReturnsHasherResult()
+    public void Verify_returns_hasher_result_when_matching_hasher_is_found()
     {
         var (composite, _) = CreateSingleHasherComposite(defaultVerifyResult: true);
 
@@ -91,7 +91,7 @@ public sealed class CompositeClientSecretHasherTests
     }
 
     [Fact]
-    public void Verify_NoMatchingHasher_ReturnsFalse()
+    public void Verify_returns_false_when_no_matching_hasher_is_found()
     {
         var (composite, _) = CreateSingleHasherComposite();
 
@@ -102,7 +102,7 @@ public sealed class CompositeClientSecretHasherTests
     }
 
     [Fact]
-    public void Verify_DispatchesToCorrectHasher()
+    public void Verify_dispatches_to_correct_hasher()
     {
         // Use altVerifyResult: true so PadTiming does not fire, keeping the assertion clean.
         var (composite, defaultHasher, altHasher) = CreateMultiHasherComposite(altVerifyResult: true);
@@ -116,7 +116,7 @@ public sealed class CompositeClientSecretHasherTests
     // ── PadTiming behaviour ───────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Verify_NonDefaultHasherFailure_PadsTiming()
+    public void Verify_pads_timing_when_non_default_hasher_fails()
     {
         // ADR 0007 §3.4: PadTiming fires on failure when matched hasher is not the default.
         var (composite, defaultHasher, _) = CreateMultiHasherComposite(
@@ -129,7 +129,7 @@ public sealed class CompositeClientSecretHasherTests
     }
 
     [Fact]
-    public void Verify_NonDefaultHasherSuccess_DoesNotPadTiming()
+    public void Verify_does_not_pad_timing_when_non_default_hasher_succeeds()
     {
         // PadTiming only fires on failure.
         var (composite, defaultHasher, _) = CreateMultiHasherComposite(
@@ -142,7 +142,7 @@ public sealed class CompositeClientSecretHasherTests
     }
 
     [Fact]
-    public void Verify_DefaultHasherFailure_DoesNotPadTiming()
+    public void Verify_does_not_pad_timing_when_default_hasher_fails()
     {
         // PadTiming only fires for non-default hashers.
         var (composite, defaultHasher, _) = CreateMultiHasherComposite(
@@ -159,7 +159,7 @@ public sealed class CompositeClientSecretHasherTests
     // ── VerifyUnknownClientForTimingOnly ──────────────────────────────────────────────────────────
 
     [Fact]
-    public void VerifyUnknownClientForTimingOnly_ReturnsFalse()
+    public void VerifyUnknownClientForTimingOnly_returns_false()
     {
         // ADR 0007 §3.4: runs _default.Verify(_dummySecret, presented).
         // _dummySecret was created by _default.Create(DummyPresented) with FakeHasher,
@@ -172,7 +172,7 @@ public sealed class CompositeClientSecretHasherTests
     }
 
     [Fact]
-    public void VerifyUnknownClientForTimingOnly_InvokesDefaultHasher()
+    public void VerifyUnknownClientForTimingOnly_invokes_default_hasher()
     {
         var (composite, defaultHasher) = CreateSingleHasherComposite();
 
@@ -184,7 +184,7 @@ public sealed class CompositeClientSecretHasherTests
     // ── PadFailureToCredentialBudget ──────────────────────────────────────────────────────────────
 
     [Fact]
-    public void PadFailureToCredentialBudget_ZeroAttempted_PadsToMax()
+    public void PadFailureToCredentialBudget_pads_to_max_when_zero_credentials_attempted()
     {
         var (composite, defaultHasher) = CreateSingleHasherComposite();
 
@@ -195,7 +195,7 @@ public sealed class CompositeClientSecretHasherTests
     }
 
     [Fact]
-    public void PadFailureToCredentialBudget_OneAttempted_PadsOneMore()
+    public void PadFailureToCredentialBudget_pads_one_more_when_one_credential_attempted()
     {
         var (composite, defaultHasher) = CreateSingleHasherComposite();
 
@@ -205,7 +205,7 @@ public sealed class CompositeClientSecretHasherTests
     }
 
     [Fact]
-    public void PadFailureToCredentialBudget_AtMax_PadsNothing()
+    public void PadFailureToCredentialBudget_pads_nothing_when_already_at_max()
     {
         var (composite, defaultHasher) = CreateSingleHasherComposite();
 
@@ -217,7 +217,7 @@ public sealed class CompositeClientSecretHasherTests
     // ── Create ───────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Create_UsesDefaultHasher()
+    public void Create_uses_default_hasher()
     {
         var (composite, _) = CreateSingleHasherComposite();
 
@@ -229,7 +229,7 @@ public sealed class CompositeClientSecretHasherTests
     // ── Single-hasher auto-default ────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void SingleHasher_AutoDefault_ConstructsWithoutError()
+    public void SingleHasher_constructs_without_error_when_auto_default_applies()
     {
         // When exactly one hasher is registered it is the default regardless of isDefault flag.
         var act = () => CreateSingleHasherComposite();
@@ -240,7 +240,7 @@ public sealed class CompositeClientSecretHasherTests
     // ── ResolveDefault — guard throws ────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Constructor_NoHashers_ThrowsInvalidOperationException()
+    public void Constructor_throws_InvalidOperationException_when_no_hashers_are_provided()
     {
         var regOptions = new ClientSecretHasherRegistrationOptions();
 
@@ -253,7 +253,7 @@ public sealed class CompositeClientSecretHasherTests
     }
 
     [Fact]
-    public void Constructor_MultipleHashers_NoneMarkedDefault_ThrowsInvalidOperationException()
+    public void Constructor_throws_InvalidOperationException_when_multiple_hashers_and_none_marked_default()
     {
         var hasherA = new FakeHasher<DefaultSecret>();
         var hasherB = new FakeHasher<AltSecret>();
@@ -271,7 +271,7 @@ public sealed class CompositeClientSecretHasherTests
     }
 
     [Fact]
-    public void Constructor_DefaultTypeNotInHasherList_ThrowsInvalidOperationException()
+    public void Constructor_throws_InvalidOperationException_when_default_type_is_not_in_hasher_list()
     {
         // Two hashers in the list, but the registration marks a *third* type (AbsentHasher) as
         // the default. The type lookup in ResolveDefault finds no match → must throw.

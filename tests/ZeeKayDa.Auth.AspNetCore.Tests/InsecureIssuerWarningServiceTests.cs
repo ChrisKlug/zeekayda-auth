@@ -9,7 +9,7 @@ namespace ZeeKayDa.Auth.AspNetCore.Tests;
 public sealed class InsecureIssuerWarningServiceTests
 {
     [Fact]
-    public async Task StartAsync_AllowInsecureIssuerTrue_LogsWarning()
+    public async Task StartAsync_logs_warning_when_AllowInsecureIssuer_is_true()
     {
         var logger = new CapturingLogger<InsecureIssuerWarningService>();
         var sut = new InsecureIssuerWarningService(
@@ -27,7 +27,7 @@ public sealed class InsecureIssuerWarningServiceTests
     }
 
     [Fact]
-    public async Task StartAsync_AllowInsecureIssuerFalse_DoesNotLogWarning()
+    public async Task StartAsync_does_not_log_warning_when_AllowInsecureIssuer_is_false()
     {
         var sut = new InsecureIssuerWarningService(
             Options.Create(new AuthorizationServerOptions { Issuer = "https://auth.example.com" }),
@@ -38,7 +38,7 @@ public sealed class InsecureIssuerWarningServiceTests
     }
 
     [Fact]
-    public async Task StopAsync_DoesNotThrow()
+    public async Task StopAsync_does_not_throw()
     {
         var sut = new InsecureIssuerWarningService(
             Options.Create(new AuthorizationServerOptions { Issuer = "https://auth.example.com" }),

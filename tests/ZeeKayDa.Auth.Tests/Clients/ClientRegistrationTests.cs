@@ -22,7 +22,7 @@ public sealed class ClientRegistrationTests
     }
 
     [Fact]
-    public void CreateConfidential_SetsIsPublicFalseAndNonEmptyCredentials()
+    public void CreateConfidential_sets_IsPublic_to_false_and_provides_non_empty_Credentials()
     {
         var client = ClientRegistration.CreateConfidential(
             clientId: "my-client",
@@ -36,7 +36,7 @@ public sealed class ClientRegistrationTests
     }
 
     [Fact]
-    public void CreatePublic_SetsIsPublicTrueAndEmptyCredentials()
+    public void CreatePublic_sets_IsPublic_to_true_and_Credentials_to_empty()
     {
         var client = ClientRegistration.CreatePublic(
             clientId: "spa-client",
@@ -49,7 +49,7 @@ public sealed class ClientRegistrationTests
     }
 
     [Fact]
-    public void CreatePublic_SetsAllowedTokenEndpointAuthMethodsToNone()
+    public void CreatePublic_sets_AllowedTokenEndpointAuthMethods_to_none()
     {
         var client = ClientRegistration.CreatePublic(
             clientId: "spa-client",
@@ -62,7 +62,7 @@ public sealed class ClientRegistrationTests
     }
 
     [Fact]
-    public void AllowedPromptValues_DefaultIsEmpty()
+    public void AllowedPromptValues_defaults_to_empty()
     {
         var client = new ClientRegistration
         {
@@ -77,7 +77,7 @@ public sealed class ClientRegistrationTests
     }
 
     [Fact]
-    public void AllowedSigningAlgorithms_DefaultIsNull()
+    public void AllowedSigningAlgorithms_defaults_to_null()
     {
         var client = new ClientRegistration
         {
@@ -92,7 +92,7 @@ public sealed class ClientRegistrationTests
     }
 
     [Fact]
-    public void IClientRegistration_AllowedPromptValues_DimDefaultIsEmpty()
+    public void IClientRegistration_AllowedPromptValues_dim_default_is_empty()
     {
         IClientRegistration client = new MinimalPublicClient();
 
@@ -100,7 +100,7 @@ public sealed class ClientRegistrationTests
     }
 
     [Fact]
-    public void IClientRegistration_AllowedSigningAlgorithms_DimDefaultIsNull()
+    public void IClientRegistration_AllowedSigningAlgorithms_dim_default_is_null()
     {
         IClientRegistration client = new MinimalPublicClient();
 
@@ -110,7 +110,7 @@ public sealed class ClientRegistrationTests
     // Gap 1 — default property values
 
     [Fact]
-    public void DefaultProperties_AllowedGrantTypes_IsAuthorizationCode()
+    public void DefaultProperties_AllowedGrantTypes_defaults_to_AuthorizationCode()
     {
         var client = new ClientRegistration
         {
@@ -125,7 +125,7 @@ public sealed class ClientRegistrationTests
     }
 
     [Fact]
-    public void DefaultProperties_AllowedResponseTypes_IsCode()
+    public void DefaultProperties_AllowedResponseTypes_defaults_to_Code()
     {
         var client = new ClientRegistration
         {
@@ -140,7 +140,7 @@ public sealed class ClientRegistrationTests
     }
 
     [Fact]
-    public void DefaultProperties_AllowedResponseModes_IsQueryAndFormPost()
+    public void DefaultProperties_AllowedResponseModes_defaults_to_Query_and_FormPost()
     {
         var client = new ClientRegistration
         {
@@ -155,7 +155,7 @@ public sealed class ClientRegistrationTests
     }
 
     [Fact]
-    public void DefaultProperties_AllowedTokenEndpointAuthMethods_IsClientSecretBasic()
+    public void DefaultProperties_AllowedTokenEndpointAuthMethods_defaults_to_ClientSecretBasic()
     {
         var client = new ClientRegistration
         {
@@ -171,7 +171,7 @@ public sealed class ClientRegistrationTests
     }
 
     [Fact]
-    public void DefaultProperties_AllowedScopes_IsEmpty()
+    public void DefaultProperties_AllowedScopes_defaults_to_empty()
     {
         var client = new ClientRegistration
         {
@@ -186,7 +186,7 @@ public sealed class ClientRegistrationTests
     }
 
     [Fact]
-    public void DefaultProperties_EnableZkdErrorCodes_IsFalse()
+    public void DefaultProperties_EnableZkdErrorCodes_defaults_to_false()
     {
         var client = new ClientRegistration
         {
@@ -203,7 +203,7 @@ public sealed class ClientRegistrationTests
     // Gap 2 — CreatePublic stores arguments
 
     [Fact]
-    public void CreatePublic_StoresAllowedScopes()
+    public void CreatePublic_stores_AllowedScopes()
     {
         var client = ClientRegistration.CreatePublic(
             clientId: "spa-client",
@@ -215,7 +215,7 @@ public sealed class ClientRegistrationTests
     }
 
     [Fact]
-    public void CreatePublic_StoresRedirectUris()
+    public void CreatePublic_stores_RedirectUris()
     {
         var client = ClientRegistration.CreatePublic(
             clientId: "spa-client",
@@ -227,7 +227,7 @@ public sealed class ClientRegistrationTests
     }
 
     [Fact]
-    public void CreatePublic_StoresPostLogoutRedirectUris()
+    public void CreatePublic_stores_PostLogoutRedirectUris()
     {
         var client = ClientRegistration.CreatePublic(
             clientId: "spa-client",
@@ -241,7 +241,7 @@ public sealed class ClientRegistrationTests
     // Gap 3 — CreateConfidential stores the exact credential instance
 
     [Fact]
-    public void CreateConfidential_StoresExactCredentialInstance()
+    public void CreateConfidential_stores_exact_credential_instance()
     {
         var credential = new FakeCredential();
 
@@ -259,7 +259,7 @@ public sealed class ClientRegistrationTests
     // Gap 4 — CreateConfidential leaves AllowedTokenEndpointAuthMethods as client_secret_basic
 
     [Fact]
-    public void CreateConfidential_AllowedTokenEndpointAuthMethods_IsClientSecretBasic()
+    public void CreateConfidential_sets_AllowedTokenEndpointAuthMethods_to_ClientSecretBasic()
     {
         var client = ClientRegistration.CreateConfidential(
             clientId: "my-client",
@@ -275,7 +275,7 @@ public sealed class ClientRegistrationTests
     // Gap 5 — CreateConfidential stores arguments
 
     [Fact]
-    public void CreateConfidential_StoresAllowedScopes()
+    public void CreateConfidential_stores_AllowedScopes()
     {
         var client = ClientRegistration.CreateConfidential(
             clientId: "my-client",
@@ -288,7 +288,7 @@ public sealed class ClientRegistrationTests
     }
 
     [Fact]
-    public void CreateConfidential_StoresRedirectUris()
+    public void CreateConfidential_stores_RedirectUris()
     {
         var client = ClientRegistration.CreateConfidential(
             clientId: "my-client",
@@ -301,7 +301,7 @@ public sealed class ClientRegistrationTests
     }
 
     [Fact]
-    public void CreateConfidential_StoresPostLogoutRedirectUris()
+    public void CreateConfidential_stores_PostLogoutRedirectUris()
     {
         var client = ClientRegistration.CreateConfidential(
             clientId: "my-client",
@@ -316,7 +316,7 @@ public sealed class ClientRegistrationTests
     // Gap 6 (security) — string sets use ordinal comparison
 
     [Fact]
-    public void CreatePublic_RedirectUris_DoesNotMatchDifferentCase()
+    public void CreatePublic_RedirectUris_does_not_match_different_case()
     {
         var client = ClientRegistration.CreatePublic(
             clientId: "spa-client",
@@ -328,7 +328,7 @@ public sealed class ClientRegistrationTests
     }
 
     [Fact]
-    public void CreatePublic_AllowedScopes_DoesNotMatchDifferentCase()
+    public void CreatePublic_AllowedScopes_does_not_match_different_case()
     {
         var client = ClientRegistration.CreatePublic(
             clientId: "spa-client",
@@ -342,7 +342,7 @@ public sealed class ClientRegistrationTests
     // Gap 7 — PromptValue enum membership
 
     [Fact]
-    public void PromptValue_ContainsExactlyExpectedMembers()
+    public void PromptValue_contains_exactly_expected_members()
     {
         var values = Enum.GetValues<PromptValue>();
 
@@ -358,19 +358,19 @@ public sealed class ClientRegistrationTests
     // Gap 8 — TokenEndpointAuthMethods wire-format string values
 
     [Fact]
-    public void TokenEndpointAuthMethods_ClientSecretBasic_HasCorrectWireValue()
+    public void TokenEndpointAuthMethods_ClientSecretBasic_has_correct_wire_value()
     {
         TokenEndpointAuthMethods.ClientSecretBasic.Should().Be("client_secret_basic");
     }
 
     [Fact]
-    public void TokenEndpointAuthMethods_ClientSecretPost_HasCorrectWireValue()
+    public void TokenEndpointAuthMethods_ClientSecretPost_has_correct_wire_value()
     {
         TokenEndpointAuthMethods.ClientSecretPost.Should().Be("client_secret_post");
     }
 
     [Fact]
-    public void TokenEndpointAuthMethods_None_HasCorrectWireValue()
+    public void TokenEndpointAuthMethods_None_has_correct_wire_value()
     {
         TokenEndpointAuthMethods.None.Should().Be("none");
     }
@@ -378,7 +378,7 @@ public sealed class ClientRegistrationTests
     // Gap 9 — Pbkdf2ClientSecret stores constructor arguments
 
     [Fact]
-    public void Pbkdf2ClientSecret_StoresIterationsSaltAndHash()
+    public void Pbkdf2ClientSecret_stores_Iterations_Salt_and_Hash()
     {
         var salt = new byte[] { 1, 2, 3 };
         var hash = new byte[] { 4, 5, 6 };
@@ -391,7 +391,7 @@ public sealed class ClientRegistrationTests
     }
 
     [Fact]
-    public void Pbkdf2ClientSecret_IsAssignableToIPbkdf2ClientSecret()
+    public void Pbkdf2ClientSecret_is_assignable_to_IPbkdf2ClientSecret()
     {
         var secret = new Pbkdf2ClientSecret(600_000, new byte[] { 1 }, new byte[] { 2 });
 
@@ -401,7 +401,7 @@ public sealed class ClientRegistrationTests
     // Gap 10 — interface hierarchy
 
     [Fact]
-    public void Pbkdf2ClientSecret_IsIClientSecretAndIClientCredential()
+    public void Pbkdf2ClientSecret_is_assignable_to_IClientSecret_and_IClientCredential()
     {
         var secret = new Pbkdf2ClientSecret(600_000, new byte[] { 1 }, new byte[] { 2 });
 
@@ -412,7 +412,7 @@ public sealed class ClientRegistrationTests
     // Gap 11 — IsPublic is a non-DIM declared property with no silent default
 
     [Fact]
-    public void IClientRegistration_IsPublic_ReturnsImplementedValue()
+    public void IClientRegistration_IsPublic_returns_implemented_value()
     {
         IClientRegistration client = new MinimalPublicClient();
 

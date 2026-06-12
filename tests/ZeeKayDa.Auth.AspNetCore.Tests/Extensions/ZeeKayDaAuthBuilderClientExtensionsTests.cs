@@ -18,7 +18,7 @@ public sealed class ZeeKayDaAuthBuilderClientExtensionsTests
     // ── Argument validation ───────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void AddInMemoryClients_NullBuilder_ThrowsArgumentNullException()
+    public void AddInMemoryClients_throws_ArgumentNullException_if_builder_is_null()
     {
         ZeeKayDaAuthBuilder builder = null!;
 
@@ -28,7 +28,7 @@ public sealed class ZeeKayDaAuthBuilderClientExtensionsTests
     }
 
     [Fact]
-    public void AddInMemoryClients_NullConfigure_ThrowsArgumentNullException()
+    public void AddInMemoryClients_throws_ArgumentNullException_if_configure_is_null()
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -43,7 +43,7 @@ public sealed class ZeeKayDaAuthBuilderClientExtensionsTests
     // ── IClientRepository registration ───────────────────────────────────────────────────────────
 
     [Fact]
-    public void AddInMemoryClients_RegistersIClientRepository()
+    public void AddInMemoryClients_registers_IClientRepository()
     {
         var services = new ServiceCollection();
 
@@ -58,7 +58,7 @@ public sealed class ZeeKayDaAuthBuilderClientExtensionsTests
     }
 
     [Fact]
-    public void AddInMemoryClients_ReturnsBuilderForChaining()
+    public void AddInMemoryClients_returns_builder_for_chaining()
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -71,7 +71,7 @@ public sealed class ZeeKayDaAuthBuilderClientExtensionsTests
     }
 
     [Fact]
-    public void AddInMemoryClients_AfterCustomRepositoryRegistered_Throws()
+    public void AddInMemoryClients_throws_if_IClientRepository_is_already_registered()
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -90,7 +90,7 @@ public sealed class ZeeKayDaAuthBuilderClientExtensionsTests
     }
 
     [Fact]
-    public void AddInMemoryClients_AfterFactoryRegisteredRepository_ThrowsWithUnknownInMessage()
+    public void AddInMemoryClients_throws_with_unknown_in_message_if_IClientRepository_registered_via_factory()
     {
         // When IClientRepository is registered via a factory delegate, ImplementationType is null.
         // The error message must fall back to "unknown" rather than null-referencing.
@@ -111,7 +111,7 @@ public sealed class ZeeKayDaAuthBuilderClientExtensionsTests
     // ── Multiple calls are additive ───────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task AddInMemoryClients_MultipleCalls_AccumulatesClients()
+    public async Task AddInMemoryClients_accumulates_clients_when_called_multiple_times()
     {
         var ct = TestContext.Current.CancellationToken;
         var services = new ServiceCollection();
@@ -148,7 +148,7 @@ public sealed class ZeeKayDaAuthBuilderClientExtensionsTests
     // ── AddPublic, AddConfidential, Add ───────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task AddPublic_ClientIsResolvedAsPublic()
+    public async Task AddPublic_resolves_client_as_public()
     {
         var ct = TestContext.Current.CancellationToken;
         var services = new ServiceCollection();
@@ -178,7 +178,7 @@ public sealed class ZeeKayDaAuthBuilderClientExtensionsTests
     }
 
     [Fact]
-    public async Task AddConfidential_ClientIsResolvedAsConfidential()
+    public async Task AddConfidential_resolves_client_as_confidential()
     {
         var ct = TestContext.Current.CancellationToken;
         var services = new ServiceCollection();
@@ -208,7 +208,7 @@ public sealed class ZeeKayDaAuthBuilderClientExtensionsTests
     }
 
     [Fact]
-    public async Task Add_PreBuiltRegistration_IsResolvable()
+    public async Task Add_resolves_pre_built_registration()
     {
         var ct = TestContext.Current.CancellationToken;
         var services = new ServiceCollection();
@@ -241,7 +241,7 @@ public sealed class ZeeKayDaAuthBuilderClientExtensionsTests
     // ── Missing IClientRepository fails ValidateOnStart ───────────────────────────────────────────
 
     [Fact]
-    public async Task MissingClientRepository_HostStart_Fails()
+    public async Task MissingClientRepository_causes_host_start_to_fail()
     {
         using var factory = new ClientRepositoryMissingFactory();
 
@@ -256,7 +256,7 @@ public sealed class ZeeKayDaAuthBuilderClientExtensionsTests
     }
 
     [Fact]
-    public async Task MisconfiguredClientSet_HostStart_Fails()
+    public async Task MisconfiguredClientSet_causes_host_start_to_fail()
     {
         // A duplicate client_id is detected in InMemoryClientRepository's constructor. Because the
         // repository is a singleton, ClientRepositoryStartupActivator forces it to be resolved at

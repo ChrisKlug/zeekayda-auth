@@ -5,7 +5,7 @@ namespace ZeeKayDa.Auth.Tests.Scopes;
 public sealed class InMemoryScopeRepositoryTests
 {
     [Fact]
-    public void Constructor_NullScopes_ThrowsArgumentNullException()
+    public void Constructor_throws_ArgumentNullException_when_scopes_is_null()
     {
         var act = () => new InMemoryScopeRepository(null!);
 
@@ -13,7 +13,7 @@ public sealed class InMemoryScopeRepositoryTests
     }
 
     [Fact]
-    public void Constructor_NullScopeElement_Throws()
+    public void Constructor_throws_when_scopes_collection_contains_null_element()
     {
         var act = () => new InMemoryScopeRepository([null!]);
 
@@ -23,7 +23,7 @@ public sealed class InMemoryScopeRepositoryTests
     [Theory]
     [InlineData("")]
     [InlineData("   ")]
-    public void Constructor_BlankScopeName_ThrowsArgumentException(string name)
+    public void Constructor_throws_ArgumentException_when_scope_name_is_blank(string name)
     {
         var act = () => new InMemoryScopeRepository([new ScopeDefinition { Name = name }]);
 
@@ -31,7 +31,7 @@ public sealed class InMemoryScopeRepositoryTests
     }
 
     [Fact]
-    public async Task GetScopes_ReturnsConfiguredScopesAndClaims()
+    public async Task GetScopes_returns_configured_scopes_and_claims()
     {
         var repository = new InMemoryScopeRepository(
         [
@@ -57,7 +57,7 @@ public sealed class InMemoryScopeRepositoryTests
     }
 
     [Fact]
-    public async Task GetScopes_PreservesDiscoverabilityFlag()
+    public async Task GetScopes_preserves_IsDiscoverable_flag()
     {
         var repository = new InMemoryScopeRepository(
         [
@@ -74,7 +74,7 @@ public sealed class InMemoryScopeRepositoryTests
     }
 
     [Fact]
-    public void Constructor_DuplicateScopeNames_Throws()
+    public void Constructor_throws_when_scope_names_are_duplicated()
     {
         var act = () => new InMemoryScopeRepository(
         [
@@ -87,7 +87,7 @@ public sealed class InMemoryScopeRepositoryTests
     }
 
     [Fact]
-    public void Constructor_WhitespaceIdTokenClaimName_Throws()
+    public void Constructor_throws_when_IdTokenClaim_name_is_whitespace()
     {
         var act = () => new InMemoryScopeRepository(
         [
@@ -99,7 +99,7 @@ public sealed class InMemoryScopeRepositoryTests
     }
 
     [Fact]
-    public void Constructor_WhitespaceAccessTokenClaimName_Throws()
+    public void Constructor_throws_when_AccessTokenClaim_name_is_whitespace()
     {
         var act = () => new InMemoryScopeRepository(
         [
@@ -111,7 +111,7 @@ public sealed class InMemoryScopeRepositoryTests
     }
 
     [Fact]
-    public async Task GetScopesAsync_AlreadyCancelledToken_Throws()
+    public async Task GetScopesAsync_throws_when_token_is_already_cancelled()
     {
         var repository = new InMemoryScopeRepository(
         [

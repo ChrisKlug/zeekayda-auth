@@ -22,7 +22,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     // ── Issuer presence ──────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Validate_NullIssuer_Fails()
+    public void Validate_fails_when_Issuer_is_null()
     {
         var result = Validate(new AuthorizationServerOptions { Issuer = null });
 
@@ -31,7 +31,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_EmptyIssuer_Fails()
+    public void Validate_fails_when_Issuer_is_empty()
     {
         var result = Validate(new AuthorizationServerOptions { Issuer = "" });
 
@@ -40,7 +40,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_WhitespaceIssuer_Fails()
+    public void Validate_fails_when_Issuer_is_whitespace()
     {
         var result = Validate(new AuthorizationServerOptions { Issuer = "   " });
 
@@ -51,7 +51,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     // ── URI validity ─────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Validate_RelativeUri_Fails()
+    public void Validate_fails_for_relative_URI_Issuer()
     {
         // A path-only string has no scheme — Uri.TryCreate returns false for UriKind.Absolute.
         var result = Validate(new AuthorizationServerOptions { Issuer = "relative/path" });
@@ -61,7 +61,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_PlainString_Fails()
+    public void Validate_fails_for_plain_string_Issuer()
     {
         var result = Validate(new AuthorizationServerOptions { Issuer = "not-a-uri-at-all" });
 
@@ -71,7 +71,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     // ── Query component ───────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Validate_IssuerWithQueryString_Fails()
+    public void Validate_fails_when_Issuer_has_query_string()
     {
         var result = Validate(new AuthorizationServerOptions
         {
@@ -83,7 +83,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_IssuerWithPathAndQueryString_Fails()
+    public void Validate_fails_when_Issuer_has_path_and_query_string()
     {
         var result = Validate(new AuthorizationServerOptions
         {
@@ -97,7 +97,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     // ── Fragment component ────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Validate_IssuerWithFragment_Fails()
+    public void Validate_fails_when_Issuer_has_fragment()
     {
         var result = Validate(new AuthorizationServerOptions
         {
@@ -109,7 +109,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_IssuerWithUserInfo_Fails()
+    public void Validate_fails_when_Issuer_has_user_info()
     {
         var result = Validate(new AuthorizationServerOptions
         {
@@ -123,7 +123,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     // ── HTTPS requirement ─────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Validate_HttpIssuerWithoutFlag_Fails()
+    public void Validate_fails_for_HTTP_Issuer_without_AllowInsecureIssuer_flag()
     {
         var result = Validate(new AuthorizationServerOptions
         {
@@ -136,7 +136,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_HttpIssuerWithFlag_Succeeds()
+    public void Validate_succeeds_for_HTTP_Issuer_with_AllowInsecureIssuer_flag()
     {
         var result = Validate(new AuthorizationServerOptions
         {
@@ -148,7 +148,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_HttpIssuerWithFlagForNonLoopback_Fails()
+    public void Validate_fails_for_HTTP_non_loopback_Issuer_with_AllowInsecureIssuer_flag()
     {
         var result = Validate(new AuthorizationServerOptions
         {
@@ -164,7 +164,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     [InlineData("https://auth.example.com/tenant1/")]
     [InlineData("https://auth.example.com/a/b/c/")]
     [InlineData("http://localhost:5000/tenant1/", true)]
-    public void Validate_IssuerWithTrailingSlashOnPath_Fails(string issuer, bool allowInsecure = false)
+    public void Validate_fails_when_Issuer_has_trailing_slash_on_path(string issuer, bool allowInsecure = false)
     {
         var result = Validate(new AuthorizationServerOptions
         {
@@ -177,7 +177,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_HttpsRootIssuerNoPath_Succeeds()
+    public void Validate_succeeds_for_HTTPS_root_Issuer_with_no_path()
     {
         // https://auth.example.com has AbsolutePath "/" — must not be treated as trailing slash
         var result = Validate(new AuthorizationServerOptions { Issuer = "https://auth.example.com" });
@@ -185,7 +185,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_HttpsRootIssuerWithTrailingSlash_Succeeds()
+    public void Validate_succeeds_for_HTTPS_root_Issuer_with_trailing_slash()
     {
         // NormalizeRootIssuer strips the trailing "/" on a root issuer before the canonical
         // comparison, so "https://auth.example.com/" is treated as equivalent to the canonical form.
@@ -194,7 +194,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_IssuerWithNonDefaultHttpsPort_Succeeds()
+    public void Validate_succeeds_for_Issuer_with_non_default_HTTPS_port()
     {
         // Port 8443 ≠ 443, so isDefaultPort = false and the port is preserved in the canonical
         // form, making the input identical to the canonical — no "not canonical" failure.
@@ -203,7 +203,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_IssuerWithUppercaseHost_FailsWithCanonicalSuggestion()
+    public void Validate_fails_with_canonical_suggestion_when_Issuer_host_is_uppercase()
     {
         var result = Validate(new AuthorizationServerOptions
         {
@@ -216,7 +216,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_IssuerWithUppercaseScheme_FailsWithCanonicalSuggestion()
+    public void Validate_fails_with_canonical_suggestion_when_Issuer_scheme_is_uppercase()
     {
         var result = Validate(new AuthorizationServerOptions
         {
@@ -229,7 +229,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_IssuerWithExplicitDefaultHttpsPort_FailsWithCanonicalSuggestion()
+    public void Validate_fails_with_canonical_suggestion_when_Issuer_has_explicit_default_HTTPS_port()
     {
         var result = Validate(new AuthorizationServerOptions
         {
@@ -242,7 +242,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_IssuerWithExplicitDefaultHttpPortForLoopback_FailsWithCanonicalSuggestion()
+    public void Validate_fails_with_canonical_suggestion_when_Issuer_has_explicit_default_HTTP_port_for_loopback()
     {
         var result = Validate(new AuthorizationServerOptions
         {
@@ -259,7 +259,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     [InlineData("ftp://localhost")]
     [InlineData("file:///tmp/auth")]
     [InlineData("custom://localhost")]
-    public void Validate_NonHttpOrHttpsSchemeWithFlag_Fails(string issuer)
+    public void Validate_fails_for_non_HTTP_or_HTTPS_scheme_Issuer_even_with_AllowInsecureIssuer_flag(string issuer)
     {
         var result = Validate(new AuthorizationServerOptions
         {
@@ -272,7 +272,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_NullResponseTypesSupported_Fails()
+    public void Validate_fails_when_ResponseTypesSupported_is_null()
     {
         var result = Validate(new AuthorizationServerOptions
         {
@@ -285,7 +285,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_EmptyResponseTypesSupported_Fails()
+    public void Validate_fails_when_ResponseTypesSupported_is_empty()
     {
         var result = Validate(new AuthorizationServerOptions
         {
@@ -298,7 +298,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_NullResponseModesSupported_Fails()
+    public void Validate_fails_when_ResponseModesSupported_is_null()
     {
         var result = Validate(new AuthorizationServerOptions
         {
@@ -311,7 +311,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_NullGrantTypesSupported_Fails()
+    public void Validate_fails_when_GrantTypesSupported_is_null()
     {
         var result = Validate(new AuthorizationServerOptions
         {
@@ -324,7 +324,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_OutOfRangeGrantTypesSupported_Fails()
+    public void Validate_fails_when_GrantTypesSupported_contains_out_of_range_value()
     {
         var result = Validate(new AuthorizationServerOptions
         {
@@ -338,7 +338,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_NullTokenAuthMethodsSupported_Fails()
+    public void Validate_fails_when_TokenEndpointAuthMethodsSupported_is_null()
     {
         var result = Validate(new AuthorizationServerOptions
         {
@@ -352,7 +352,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_EmptyTokenAuthMethodsSupported_Fails()
+    public void Validate_fails_when_TokenEndpointAuthMethodsSupported_is_empty()
     {
         var result = Validate(new AuthorizationServerOptions
         {
@@ -366,7 +366,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_OutOfRangeTokenAuthMethodsSupported_Fails()
+    public void Validate_fails_when_TokenEndpointAuthMethodsSupported_contains_out_of_range_value()
     {
         var result = Validate(new AuthorizationServerOptions
         {
@@ -380,7 +380,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_NoneOnlyAuthMethodWithoutClientCredentials_Succeeds()
+    public void Validate_succeeds_when_None_is_only_auth_method_and_no_client_credentials_grant()
     {
         var result = Validate(new AuthorizationServerOptions
         {
@@ -393,7 +393,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_ClientCredentialsWithOnlyNoneAuthMethod_Fails()
+    public void Validate_fails_when_ClientCredentials_grant_and_only_None_auth_method()
     {
         var result = Validate(new AuthorizationServerOptions
         {
@@ -407,7 +407,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_ClientCredentialsMixedWithAuthorizationCodeAndOnlyNoneAuthMethod_Fails()
+    public void Validate_fails_when_ClientCredentials_and_AuthorizationCode_grants_and_only_None_auth_method()
     {
         var result = Validate(new AuthorizationServerOptions
         {
@@ -421,7 +421,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_ClientCredentialsWithNonAuthMethod_Succeeds()
+    public void Validate_succeeds_when_ClientCredentials_grant_and_non_None_auth_method()
     {
         var result = Validate(new AuthorizationServerOptions
         {
@@ -434,7 +434,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_ClientCredentialsWithNoneAndOtherAuthMethods_Succeeds()
+    public void Validate_succeeds_when_ClientCredentials_grant_and_None_plus_other_auth_methods()
     {
         var result = Validate(new AuthorizationServerOptions
         {
@@ -447,7 +447,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_NoneAuthMethodWithoutAuthorizationCodeGrant_Succeeds()
+    public void Validate_succeeds_when_None_auth_method_and_no_AuthorizationCode_grant()
     {
         var result = Validate(new AuthorizationServerOptions
         {
@@ -460,7 +460,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_NoneAuthMethodWithAuthorizationCodeGrant_Succeeds()
+    public void Validate_succeeds_when_None_auth_method_and_AuthorizationCode_grant()
     {
         var result = Validate(new AuthorizationServerOptions
         {
@@ -473,7 +473,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_NoneAuthMethodWithMultipleGrantsIncludingAuthorizationCode_Succeeds()
+    public void Validate_succeeds_when_None_auth_method_and_multiple_grants_including_AuthorizationCode()
     {
         var result = Validate(new AuthorizationServerOptions
         {
@@ -486,7 +486,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_NullIdTokenSigningAlgValuesSupported_Fails()
+    public void Validate_fails_when_IdTokenSigningAlgValuesSupported_is_null()
     {
         var result = Validate(new AuthorizationServerOptions
         {
@@ -499,7 +499,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_EmptyIdTokenSigningAlgValuesSupported_Fails()
+    public void Validate_fails_when_IdTokenSigningAlgValuesSupported_is_empty()
     {
         var result = Validate(new AuthorizationServerOptions
         {
@@ -514,7 +514,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     // ── AuthorizationEndpoint.CodeChallengeMethodsSupported ───────────────────────────────────────
 
     [Fact]
-    public void Validate_NullCodeChallengeMethodsSupported_Succeeds()
+    public void Validate_succeeds_when_CodeChallengeMethodsSupported_is_null()
     {
         var result = Validate(new AuthorizationServerOptions
         {
@@ -526,7 +526,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_CodeChallengeMethodsSupportedWithS256_Succeeds()
+    public void Validate_succeeds_when_CodeChallengeMethodsSupported_contains_S256()
     {
         var result = Validate(new AuthorizationServerOptions
         {
@@ -538,7 +538,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_EmptyCodeChallengeMethodsSupported_Fails()
+    public void Validate_fails_when_CodeChallengeMethodsSupported_is_empty()
     {
         var result = Validate(new AuthorizationServerOptions
         {
@@ -553,7 +553,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     // ── Happy paths ───────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Validate_ValidHttpsIssuer_Succeeds()
+    public void Validate_succeeds_for_valid_HTTPS_Issuer()
     {
         var result = Validate(new AuthorizationServerOptions
         {
@@ -564,7 +564,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_ValidHttpsIssuerWithPath_Succeeds()
+    public void Validate_succeeds_for_valid_HTTPS_Issuer_with_path()
     {
         var result = Validate(new AuthorizationServerOptions
         {
@@ -575,7 +575,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_OpenIdScopePresent_Succeeds()
+    public void Validate_succeeds_when_openid_scope_is_present()
     {
         var result = Validate(
             new AuthorizationServerOptions
@@ -588,7 +588,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_DefaultInMemoryScopesWithOpenId_Succeeds()
+    public void Validate_succeeds_with_default_InMemory_scopes_when_openid_scope_is_present()
     {
         var result = Validate(
             new AuthorizationServerOptions
@@ -601,7 +601,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_OpenIdScopeMissing_Fails()
+    public void Validate_fails_when_openid_scope_is_missing()
     {
         var result = Validate(
             new AuthorizationServerOptions
@@ -615,7 +615,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_CustomRepositoryWithoutOpenId_Fails()
+    public void Validate_fails_for_custom_scope_repository_without_openid_scope()
     {
         var result = Validate(
             new AuthorizationServerOptions
@@ -634,7 +634,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     [InlineData("AuthorizationEndpoint.Uri", "not-a-uri")]
     [InlineData("TokenEndpoint.Uri", "not-a-uri")]
     [InlineData("JwksEndpoint.Uri", "not-a-uri")]
-    public void Validate_EndpointOverrideNotAbsoluteUri_Fails(string propertyPath, string value)
+    public void Validate_fails_when_endpoint_override_is_not_an_absolute_URI(string propertyPath, string value)
     {
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
         SetGroupProperty(options, propertyPath, value);
@@ -649,7 +649,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     [InlineData("AuthorizationEndpoint.Uri", "http://auth.example.com/connect/authorize")]
     [InlineData("TokenEndpoint.Uri", "http://auth.example.com/connect/token")]
     [InlineData("JwksEndpoint.Uri", "http://auth.example.com/connect/jwks")]
-    public void Validate_EndpointOverrideHttpWithoutFlag_Fails(string propertyPath, string value)
+    public void Validate_fails_for_HTTP_endpoint_override_without_AllowInsecureIssuer_flag(string propertyPath, string value)
     {
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
         SetGroupProperty(options, propertyPath, value);
@@ -664,7 +664,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     [InlineData("AuthorizationEndpoint.Uri", "https://auth.example.com/connect/authorize")]
     [InlineData("TokenEndpoint.Uri", "https://auth.example.com/connect/token")]
     [InlineData("JwksEndpoint.Uri", "https://auth.example.com/connect/jwks")]
-    public void Validate_EndpointOverrideHttps_Succeeds(string propertyPath, string value)
+    public void Validate_succeeds_for_HTTPS_endpoint_override(string propertyPath, string value)
     {
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
         SetGroupProperty(options, propertyPath, value);
@@ -678,7 +678,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     [InlineData("AuthorizationEndpoint.Uri", "https://evil.example.com/connect/authorize")]
     [InlineData("TokenEndpoint.Uri", "https://evil.example.com/connect/token")]
     [InlineData("JwksEndpoint.Uri", "https://evil.example.com/connect/jwks")]
-    public void Validate_EndpointOverrideDifferentAuthority_Fails(string propertyPath, string value)
+    public void Validate_fails_when_endpoint_override_has_different_authority(string propertyPath, string value)
     {
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
         SetGroupProperty(options, propertyPath, value);
@@ -693,7 +693,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     [InlineData("AuthorizationEndpoint.Uri", "https://auth.example.com:443/connect/authorize")]
     [InlineData("TokenEndpoint.Uri", "https://auth.example.com:443/connect/token")]
     [InlineData("JwksEndpoint.Uri", "https://auth.example.com:443/connect/jwks")]
-    public void Validate_EndpointOverrideSameHostWithDefaultPort_Succeeds(string propertyPath, string value)
+    public void Validate_succeeds_when_endpoint_override_has_same_host_with_default_port(string propertyPath, string value)
     {
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
         SetGroupProperty(options, propertyPath, value);
@@ -707,7 +707,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     [InlineData("AuthorizationEndpoint.Uri", "https://AUTH.example.com/connect/authorize")]
     [InlineData("TokenEndpoint.Uri", "https://AUTH.example.com/connect/token")]
     [InlineData("JwksEndpoint.Uri", "https://AUTH.example.com/connect/jwks")]
-    public void Validate_EndpointOverrideSameAuthorityCaseInsensitiveHost_Succeeds(string propertyPath, string value)
+    public void Validate_succeeds_when_endpoint_override_has_same_authority_with_case_insensitive_host(string propertyPath, string value)
     {
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
         SetGroupProperty(options, propertyPath, value);
@@ -721,7 +721,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     [InlineData("AuthorizationEndpoint.Uri", "https://auth.example.com:8443/connect/authorize")]
     [InlineData("TokenEndpoint.Uri", "https://auth.example.com:8443/connect/token")]
     [InlineData("JwksEndpoint.Uri", "https://auth.example.com:8443/connect/jwks")]
-    public void Validate_EndpointOverrideDifferentPort_Fails(string propertyPath, string value)
+    public void Validate_fails_when_endpoint_override_has_different_port(string propertyPath, string value)
     {
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
         SetGroupProperty(options, propertyPath, value);
@@ -736,7 +736,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     [InlineData("AuthorizationEndpoint.Uri", "https://user:pass@auth.example.com/connect/authorize")]
     [InlineData("TokenEndpoint.Uri", "https://user:pass@auth.example.com/connect/token")]
     [InlineData("JwksEndpoint.Uri", "https://user:pass@auth.example.com/connect/jwks")]
-    public void Validate_EndpointOverrideWithUserInfo_Fails(string propertyPath, string value)
+    public void Validate_fails_when_endpoint_override_has_user_info(string propertyPath, string value)
     {
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
         SetGroupProperty(options, propertyPath, value);
@@ -751,7 +751,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     [InlineData("AuthorizationEndpoint.Uri", "http://auth.example.com/connect/authorize")]
     [InlineData("TokenEndpoint.Uri", "http://auth.example.com/connect/token")]
     [InlineData("JwksEndpoint.Uri", "http://auth.example.com/connect/jwks")]
-    public void Validate_EndpointOverrideHttpWithFlagForNonLoopback_Fails(string propertyPath, string value)
+    public void Validate_fails_for_HTTP_non_loopback_endpoint_override_with_AllowInsecureIssuer_flag(string propertyPath, string value)
     {
         var options = new AuthorizationServerOptions
         {
@@ -769,7 +769,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     [Theory]
     [InlineData("AuthorizationEndpoint.Uri", "https://auth.example.com/connect/authorize#fragment")]
     [InlineData("TokenEndpoint.Uri", "https://auth.example.com/connect/token#fragment")]
-    public void Validate_EndpointWithFragment_Fails(string propertyPath, string value)
+    public void Validate_fails_when_endpoint_override_has_fragment(string propertyPath, string value)
     {
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
         SetGroupProperty(options, propertyPath, value);
@@ -784,7 +784,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     // RFC 6749 §3.2 does not prohibit them on the token endpoint.
     [InlineData("AuthorizationEndpoint.Uri", "https://auth.example.com/connect/authorize?foo=bar")]
     [InlineData("TokenEndpoint.Uri", "https://auth.example.com/connect/token?foo=bar")]
-    public void Validate_EndpointWithQuery_Succeeds(string propertyPath, string value)
+    public void Validate_succeeds_when_endpoint_override_has_query(string propertyPath, string value)
     {
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
         SetGroupProperty(options, propertyPath, value);
@@ -797,7 +797,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     [Theory]
     [InlineData("https://auth.example.com/connect/jwks?foo=bar")]
     [InlineData("https://auth.example.com/connect/jwks#fragment")]
-    public void Validate_JwksUriWithQueryOrFragment_Fails(string value)
+    public void Validate_fails_when_JWKS_URI_override_has_query_or_fragment(string value)
     {
         var result = Validate(new AuthorizationServerOptions
         {
@@ -811,7 +811,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     // ── Cache-Control max-age ─────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Validate_NegativeCacheMaxAge_Fails()
+    public void Validate_fails_for_negative_cache_max_age()
     {
         var result = Validate(new AuthorizationServerOptions
         {
@@ -826,7 +826,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     // ── CorsOrigins — scheme validation ──────────────────────────────────────────────────────────
 
     [Fact]
-    public void Validate_CorsOrigin_Https_Succeeds()
+    public void Validate_succeeds_for_HTTPS_CORS_origin()
     {
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
         options.DiscoveryDocument.CorsOrigins.Add("https://app.example.com");
@@ -837,7 +837,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_CorsOrigin_HttpScheme_WithoutFlag_Fails()
+    public void Validate_fails_for_HTTP_CORS_origin_without_AllowInsecureIssuer_flag()
     {
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
         options.DiscoveryDocument.CorsOrigins.Add("http://app.example.com");
@@ -849,7 +849,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_CorsOrigin_FtpScheme_Fails()
+    public void Validate_fails_for_FTP_CORS_origin()
     {
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
         options.DiscoveryDocument.CorsOrigins.Add("ftp://files.example.com");
@@ -861,7 +861,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_CorsOrigin_HttpLoopback_WithFlag_Succeeds()
+    public void Validate_succeeds_for_HTTP_loopback_CORS_origin_with_AllowInsecureIssuer_flag()
     {
         var options = new AuthorizationServerOptions
         {
@@ -876,7 +876,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_CorsOrigin_HttpNonLoopback_WithFlag_Fails()
+    public void Validate_fails_for_HTTP_non_loopback_CORS_origin_with_AllowInsecureIssuer_flag()
     {
         var options = new AuthorizationServerOptions
         {
@@ -892,7 +892,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_CorsOrigins_Canonicalized_AfterValidation()
+    public void Validate_canonicalizes_CORS_origins_after_validation()
     {
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
         options.DiscoveryDocument.CorsOrigins.Add("HTTPS://APP.EXAMPLE.COM");
@@ -905,7 +905,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_CorsOrigins_Deduplicated_AfterValidation()
+    public void Validate_deduplicates_CORS_origins_after_validation()
     {
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
         options.DiscoveryDocument.CorsOrigins.Add("https://app.example.com");
@@ -918,7 +918,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_CorsOrigins_BecomeReadOnly_AfterValidation()
+    public void Validate_makes_CORS_origins_read_only_after_validation()
     {
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
         options.DiscoveryDocument.CorsOrigins.Add("https://app.example.com");
@@ -942,7 +942,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     [InlineData("https://app.example.com?x=1", "must not contain a query component")]
     [InlineData("https://app.example.com#frag", "must not contain a fragment component")]
     [InlineData("https://app.example.com/path", "must not contain a path component")]
-    public void Validate_CorsOrigins_InvalidValues_FailWithSpecificReason(string? origin, string expectedMessageFragment)
+    public void Validate_fails_with_specific_reason_for_invalid_CORS_origins(string? origin, string expectedMessageFragment)
     {
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
         options.DiscoveryDocument.CorsOrigins.Add(origin!);
@@ -956,7 +956,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     // ── SecurityHeaders — enum validation ────────────────────────────────────────────────────────
 
     [Fact]
-    public void Validate_ReferrerPolicy_OutOfRange_Fails()
+    public void Validate_fails_when_ReferrerPolicy_is_out_of_range()
     {
         var options = new AuthorizationServerOptions
         {
@@ -971,7 +971,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_CrossOriginResourcePolicy_OutOfRange_Fails()
+    public void Validate_fails_when_CrossOriginResourcePolicy_is_out_of_range()
     {
         var options = new AuthorizationServerOptions
         {

@@ -9,7 +9,7 @@ namespace ZeeKayDa.Auth.AspNetCore.Tests.Extensions;
 public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
 {
     [Fact]
-    public void AddZeeKayDaAuth_AlwaysRegistersCompositeClientSecretHasher()
+    public void AddZeeKayDaAuth_always_registers_CompositeClientSecretHasher()
     {
         // Verify the descriptor is always present so users get a clear "missing hasher"
         // error on first use rather than a generic "service not registered" DI failure.
@@ -21,7 +21,7 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public void AddZeeKayDaAuth_NullServices_ThrowsArgumentNullException()
+    public void AddZeeKayDaAuth_throws_ArgumentNullException_if_services_is_null()
     {
         var act = () => ((IServiceCollection)null!).AddZeeKayDaAuth(_ => { });
 
@@ -29,7 +29,7 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public void AddZeeKayDaAuth_NullConfigure_ThrowsArgumentNullException()
+    public void AddZeeKayDaAuth_throws_ArgumentNullException_if_configure_is_null()
     {
         var act = () => new ServiceCollection().AddZeeKayDaAuth(null!);
 
@@ -37,7 +37,7 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public async Task AddZeeKayDaAuth_NoScopeRepositoryConfigured_RegistersInMemoryRepositorySeededWithStandardScopes()
+    public async Task AddZeeKayDaAuth_registers_InMemoryScopeRepository_seeded_with_StandardScopes_when_no_scope_repository_is_configured()
     {
         var services = new ServiceCollection();
         services.AddZeeKayDaAuth(options => options.Issuer = "https://auth.example.com");
@@ -51,7 +51,7 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public async Task AddZeeKayDaAuth_PreRegisteredScopeRepository_IsNotOverridden()
+    public async Task AddZeeKayDaAuth_does_not_override_pre_registered_IScopeRepository()
     {
         var services = new ServiceCollection();
         var preRegisteredRepository = new InMemoryScopeRepository([StandardScopes.OpenId]);

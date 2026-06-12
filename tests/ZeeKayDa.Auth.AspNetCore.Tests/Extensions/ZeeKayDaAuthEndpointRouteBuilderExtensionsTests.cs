@@ -14,7 +14,7 @@ public sealed class ZeeKayDaAuthEndpointRouteBuilderExtensionsTests
     [InlineData("::1", true)]
     [InlineData("192.0.2.10", false)]
     [InlineData("auth.example.com", false)]
-    public void IsLoopbackHost_ReturnsExpectedValue(string host, bool expected)
+    public void IsLoopbackHost_returns_expected_value(string host, bool expected)
     {
         var method = typeof(ZeeKayDaAuthEndpointRouteBuilderExtensions).GetMethod(
             "IsLoopbackHost",

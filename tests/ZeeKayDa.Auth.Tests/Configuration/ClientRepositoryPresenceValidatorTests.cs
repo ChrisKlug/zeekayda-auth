@@ -18,7 +18,7 @@ public sealed class ClientRepositoryPresenceValidatorTests
     }
 
     [Fact]
-    public void Validate_WhenIsServiceIsNull_ReturnsSuccess()
+    public void Validate_returns_success_when_IServiceProviderIsService_is_null()
     {
         var validator = new ClientRepositoryPresenceValidator(null);
 
@@ -28,7 +28,7 @@ public sealed class ClientRepositoryPresenceValidatorTests
     }
 
     [Fact]
-    public void Validate_WhenIClientRepositoryNotRegistered_ReturnsFail()
+    public void Validate_returns_failure_when_IClientRepository_is_not_registered()
     {
         var validator = new ClientRepositoryPresenceValidator(new FakeIsService(false));
 
@@ -39,7 +39,7 @@ public sealed class ClientRepositoryPresenceValidatorTests
     }
 
     [Fact]
-    public void Validate_WhenIClientRepositoryIsRegistered_ReturnsSuccess()
+    public void Validate_returns_success_when_IClientRepository_is_registered()
     {
         var validator = new ClientRepositoryPresenceValidator(new FakeIsService(true));
 

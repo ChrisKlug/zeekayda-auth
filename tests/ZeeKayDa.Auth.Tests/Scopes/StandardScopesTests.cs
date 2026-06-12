@@ -5,7 +5,7 @@ namespace ZeeKayDa.Auth.Tests.Scopes;
 public sealed class StandardScopesTests
 {
     [Fact]
-    public void OpenId_IsConfiguredAsExpected()
+    public void OpenId_is_configured_as_expected()
     {
         StandardScopes.OpenId.Name.Should().Be("openid");
         StandardScopes.OpenId.IsDiscoverable.Should().BeTrue();
@@ -13,7 +13,7 @@ public sealed class StandardScopesTests
     }
 
     [Fact]
-    public void Profile_IsConfiguredAsExpected()
+    public void Profile_is_configured_as_expected()
     {
         StandardScopes.Profile.Name.Should().Be("profile");
         StandardScopes.Profile.IsDiscoverable.Should().BeTrue();
@@ -35,7 +35,7 @@ public sealed class StandardScopesTests
     }
 
     [Fact]
-    public void Email_IsConfiguredAsExpected()
+    public void Email_is_configured_as_expected()
     {
         StandardScopes.Email.Name.Should().Be("email");
         StandardScopes.Email.IsDiscoverable.Should().BeTrue();
@@ -43,7 +43,7 @@ public sealed class StandardScopesTests
     }
 
     [Fact]
-    public void Phone_IsConfiguredAsExpected()
+    public void Phone_is_configured_as_expected()
     {
         StandardScopes.Phone.Name.Should().Be("phone");
         StandardScopes.Phone.IsDiscoverable.Should().BeTrue();
@@ -51,7 +51,7 @@ public sealed class StandardScopesTests
     }
 
     [Fact]
-    public void Address_IsConfiguredAsExpected()
+    public void Address_is_configured_as_expected()
     {
         StandardScopes.Address.Name.Should().Be("address");
         StandardScopes.Address.IsDiscoverable.Should().BeTrue();
@@ -59,7 +59,7 @@ public sealed class StandardScopesTests
     }
 
     [Fact]
-    public void Definitions_AreImmutableAndStable()
+    public void Definitions_are_immutable_and_stable()
     {
         StandardScopes.OpenId.Should().BeSameAs(StandardScopes.OpenId);
         StandardScopes.Profile.Should().BeSameAs(StandardScopes.Profile);
