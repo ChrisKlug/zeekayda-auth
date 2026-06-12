@@ -247,7 +247,29 @@ public sealed class Pbkdf2ClientSecretHasherTests
         hasher.Verify(stored, "test-secret").Should().BeTrue();
     }
 
+    // ── ClientSecretHasher<T> exception swallowing ────────────────────────────────────────────────
+
+    [Fact]
+    public void Verify_VerifyCoreThrows_ReturnsFalse()
+    {
+        // A custom IPbkdf2ClientSecret whose Salt getter throws causes VerifyCore to propagate
+        // an exception; the base-class catch block must swallow it and return false.
+        var hasher = CreateHasher();
+
+        var act = () => hasher.Verify(new ThrowingPbkdf2Secret(), "anything".AsSpan());
+
+        act.Should().NotThrow();
+        act().Should().BeFalse();
+    }
+
     // ── Nested helpers ───────────────────────────────────────────────────────────────────────────
 
     private sealed class FakeSecret : IClientSecret { }
+
+    private sealed class ThrowingPbkdf2Secret : IPbkdf2ClientSecret
+    {
+        public int Iterations => Pbkdf2ClientSecretHasher.MinIterations;
+        public byte[] Salt => throw new InvalidOperationException("Simulated storage failure");
+        public byte[] Hash => new byte[32];
+    }
 }

@@ -236,4 +236,33 @@ public sealed class CompositeClientSecretHasherTests
 
         act.Should().NotThrow();
     }
+
+    // ── ResolveDefault — default type not in hasher list ─────────────────────────────────────────
+
+    [Fact]
+    public void Constructor_DefaultTypeNotInHasherList_ThrowsInvalidOperationException()
+    {
+        // Two hashers in the list, but the registration marks a *third* type (AbsentHasher) as
+        // the default. The type lookup in ResolveDefault finds no match → must throw.
+        var hasherA = new FakeHasher<DefaultSecret>();
+        var hasherB = new FakeHasher<AltSecret>();
+
+        var regOptions = new ClientSecretHasherRegistrationOptions();
+        regOptions.Registrations.Add(new(typeof(FakeHasher<DefaultSecret>), IsDefault: false));
+        regOptions.Registrations.Add(new(typeof(AbsentHasher), IsDefault: true));
+
+        var act = () => new CompositeClientSecretHasher(
+            [hasherA, hasherB],
+            Options.Create(regOptions));
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*AbsentHasher*");
+    }
+
+    private sealed class AbsentHasher : IClientSecretHasher
+    {
+        public bool CanHandle(IClientSecret secret) => false;
+        public bool Verify(IClientSecret stored, ReadOnlySpan<char> presented) => false;
+        public IClientSecret Create(string plaintext) => new DefaultSecret();
+    }
 }
