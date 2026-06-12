@@ -37,3 +37,4 @@ coverage*.info
 
 # dotenv
 .env
+.claude/worktrees/
