@@ -362,7 +362,7 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
         IClientRegistration client,
         List<ZeeKayDaConfigurationFailure> failures)
     {
-        foreach (var scope in client.AllowedScopes.Where(string.IsNullOrWhiteSpace))
+        foreach (var _ in client.AllowedScopes.Where(string.IsNullOrWhiteSpace))
         {
             failures.Add(new ZeeKayDaConfigurationFailure(
                 "client.allowed_scopes.blank_entry",
