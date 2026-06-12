@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Net;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
@@ -394,16 +395,15 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
         IClientRegistration client,
         List<ZeeKayDaConfigurationFailure> failures)
     {
-        foreach (var secret in client.Credentials.OfType<IClientSecret>())
+        foreach (var secret in client.Credentials
+                     .OfType<IClientSecret>()
+                     .Where(secret => _hasher.Verify(secret, ReadOnlySpan<char>.Empty)))
         {
-            if (_hasher.Verify(secret, ReadOnlySpan<char>.Empty))
-            {
-                failures.Add(new ZeeKayDaConfigurationFailure(
-                    "client.credentials.empty_secret_accepted",
-                    $"A credential for client '{client.ClientId}' accepts an empty presented secret. " +
-                    "Credentials must not accept empty secrets — this would allow unauthenticated access " +
-                    "to the client. Review the stored credential and the associated hasher."));
-            }
+            failures.Add(new ZeeKayDaConfigurationFailure(
+                "client.credentials.empty_secret_accepted",
+                $"A credential for client '{client.ClientId}' accepts an empty presented secret. " +
+                "Credentials must not accept empty secrets — this would allow unauthenticated access " +
+                "to the client. Review the stored credential and the associated hasher."));
         }
 
         // The empty-secret probe above only catches hashers that accept empty passwords. A
