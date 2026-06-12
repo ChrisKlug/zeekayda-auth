@@ -15,8 +15,10 @@ internal static class EndpointRouteHelper
         if (string.IsNullOrWhiteSpace(issuer))
         {
             throw new ZeeKayDaConfigurationException(
-                "AuthorizationServerOptions.Issuer must be configured before calling " +
-                "MapZeeKayDaAuth(). Ensure AddZeeKayDaAuth() is called with a valid issuer.");
+                new ZeeKayDaConfigurationFailure(
+                    "configuration.issuer.missing",
+                    "AuthorizationServerOptions.Issuer must be configured before calling " +
+                    "MapZeeKayDaAuth(). Ensure AddZeeKayDaAuth() is called with a valid issuer."));
         }
 
         return new Uri(issuer);

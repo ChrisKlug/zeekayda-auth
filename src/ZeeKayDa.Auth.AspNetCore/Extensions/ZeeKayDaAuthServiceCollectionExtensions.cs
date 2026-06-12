@@ -78,8 +78,22 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         // "service not registered" DI failure.
         services.TryAddSingleton<CompositeClientSecretHasher>();
 
+        // Register the client registration validator so custom repositories can resolve it.
+        services.TryAddSingleton<IClientRegistrationValidator, ClientRegistrationValidator>();
+
+        // Startup validation: fails if no IClientRepository has been registered. Runs as part of
+        // the existing AuthorizationServerOptions ValidateOnStart() hook.
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<
+                IValidateOptions<AuthorizationServerOptions>,
+                ClientRepositoryPresenceValidator>());
+
         // Emits a startup warning when AllowInsecureIssuer is enabled.
         services.AddHostedService<InsecureIssuerWarningService>();
+
+        // Resolves IClientRepository at startup so construction-time validation (duplicate
+        // detection, per-client validation, secret hashing) fails fast rather than at first request.
+        services.AddHostedService<ClientRepositoryStartupActivator>();
 
         return new ZeeKayDaAuthBuilder(services);
     }

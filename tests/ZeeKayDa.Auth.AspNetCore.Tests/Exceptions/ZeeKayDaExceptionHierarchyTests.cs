@@ -10,22 +10,34 @@ namespace ZeeKayDa.Auth.AspNetCore.Tests.Exceptions;
 public sealed class ZeeKayDaExceptionHierarchyTests
 {
     [Fact]
-    public void ZeeKayDaConfigurationException_SingleArgCtor_SetsMessage()
+    public void ZeeKayDaConfigurationException_SingleFailureCtor_SetsMessage()
     {
-        var ex = new ZeeKayDaConfigurationException("msg");
+        var ex = new ZeeKayDaConfigurationException(
+            new ZeeKayDaConfigurationFailure("test.code", "msg"));
 
-        ex.Message.Should().Be("msg");
+        ex.Message.Should().Be("1 configuration error(s):\n  [test.code] msg");
     }
 
     [Fact]
-    public void ZeeKayDaConfigurationException_TwoArgCtor_SetsMessageAndInnerException()
+    public void ZeeKayDaConfigurationException_SingleFailureCtor_SetsAggregatedFailures()
     {
-        var inner = new Exception("inner");
+        var failure = new ZeeKayDaConfigurationFailure("test.code", "msg");
 
-        var ex = new ZeeKayDaConfigurationException("outer", inner);
+        var ex = new ZeeKayDaConfigurationException(failure);
 
-        ex.Message.Should().Be("outer");
-        ex.InnerException.Should().BeSameAs(inner);
+        ex.AggregatedFailures.Should().ContainSingle()
+            .Which.Should().Be(failure);
+    }
+
+    [Fact]
+    public void ZeeKayDaConfigurationException_MultipleFailures_SetsMessage()
+    {
+        var ex = new ZeeKayDaConfigurationException(
+            new ZeeKayDaConfigurationFailure("code.a", "msg a"),
+            new ZeeKayDaConfigurationFailure("code.b", "msg b"));
+
+        ex.Message.Should().Be(
+            "2 configuration error(s):\n  [code.a] msg a\n  [code.b] msg b");
     }
 
     [Fact]
@@ -50,7 +62,9 @@ public sealed class ZeeKayDaExceptionHierarchyTests
     [Fact]
     public void ZeeKayDaConfigurationException_IsAssignableToZeeKayDaException()
     {
-        new ZeeKayDaConfigurationException("test").Should().BeAssignableTo<ZeeKayDaException>();
+        new ZeeKayDaConfigurationException(
+            new ZeeKayDaConfigurationFailure("test.code", "test")).Should()
+            .BeAssignableTo<ZeeKayDaException>();
     }
 
     [Fact]
