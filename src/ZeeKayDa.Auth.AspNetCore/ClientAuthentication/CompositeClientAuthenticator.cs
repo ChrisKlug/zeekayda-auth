@@ -1,5 +1,7 @@
+using System.Linq;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
+using System.Linq;
 using ZeeKayDa.Auth.Clients;
 
 namespace ZeeKayDa.Auth.AspNetCore.ClientAuthentication;
@@ -60,12 +62,15 @@ internal sealed class CompositeClientAuthenticator
             ClientId = clientId,
         };
 
-        var matches = new List<(IClientAuthenticator Authenticator, string Method)>();
-        foreach (var authenticator in _authenticators)
-        {
-            if (authenticator.CanHandle(canHandleContext, out var method))
-                matches.Add((authenticator, method!));
-        }
+        var matches = _authenticators
+            .Select(authenticator =>
+            {
+                var canHandle = authenticator.CanHandle(canHandleContext, out var method);
+                return new { authenticator, canHandle, method };
+            })
+            .Where(x => x.canHandle)
+            .Select(x => (Authenticator: x.authenticator, Method: x.method!))
+            .ToList();
 
         // ADR 0007 §4 step 3: multiple mechanisms → invalid_client (RFC 6749 §2.3).
         if (matches.Count > 1)
@@ -179,13 +184,8 @@ internal sealed class CompositeClientAuthenticator
         // NOTE: TokenEndpointOptions.AuthMethodsSupported is currently ICollection<TokenEndpointAuthMethod>
         // (enum). This conversion layer will be removed once the follow-up issue changes it to
         // ICollection<string> (ADR 0007 §1a amendment).
-        foreach (var serverMethod in _serverOptions.Value.TokenEndpoint.AuthMethodsSupported)
-        {
-            if (string.Equals(ToMethodString(serverMethod), method, StringComparison.Ordinal))
-                return true;
-        }
-
-        return false;
+        return _serverOptions.Value.TokenEndpoint.AuthMethodsSupported.Any(
+            serverMethod => string.Equals(ToMethodString(serverMethod), method, StringComparison.Ordinal));
     }
 
     private static string ToMethodString(TokenEndpointAuthMethod method) => method switch
