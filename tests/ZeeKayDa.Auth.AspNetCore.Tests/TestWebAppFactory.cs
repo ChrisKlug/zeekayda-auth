@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using ZeeKayDa.Auth;
+using ZeeKayDa.Auth.AspNetCore.Clients;
 using ZeeKayDa.Auth.AspNetCore.Extensions;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests;
@@ -63,9 +64,25 @@ internal sealed class TestWebAppFactory : WebApplicationFactory<TestWebAppFactor
                 // Default issuer used by most tests.
                 options.Issuer = "https://test.example.com";
 
+                // Advertise "none" so the public test client passes the subset validation.
+                options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethod.None);
+
                 // Allow per-test overrides (e.g. path-bearing issuer, AllowInsecureIssuer, etc.)
                 _configureOptions?.Invoke(options);
             });
+
+            // Register a secrets hasher so the client repository can be constructed at startup
+            // (ClientRepositoryStartupActivator resolves it eagerly).
+            authBuilder.AddPbkdf2SecretsHasher();
+
+            // Register a minimal in-memory client repository so the startup validator passes.
+            // Individual tests that override _configureBuilder may call AddInMemoryClients
+            // themselves; the TryAdd pattern ensures it is only registered once.
+            authBuilder.AddInMemoryClients(clients =>
+                clients.AddPublic("test-client",
+                    ["https://test.example.com/callback"],
+                    [],
+                    ["openid"]));
 
             _configureBuilder?.Invoke(authBuilder);
         });
@@ -95,7 +112,16 @@ internal sealed class TestWebAppFactoryWithPing : WebApplicationFactory<TestWebA
         builder.ConfigureServices(services =>
         {
             services.AddRouting();
-            services.AddZeeKayDaAuth(options => options.Issuer = "https://test.example.com");
+            services.AddZeeKayDaAuth(options =>
+            {
+                options.Issuer = "https://test.example.com";
+                options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethod.None);
+            }).AddPbkdf2SecretsHasher()
+              .AddInMemoryClients(clients =>
+                clients.AddPublic("test-client",
+                    ["https://test.example.com/callback"],
+                    [],
+                    ["openid"]));
         });
 
         builder.Configure(app =>
@@ -141,8 +167,14 @@ internal sealed class TestWebAppFactoryWithVaryMiddleware : WebApplicationFactor
             services.AddZeeKayDaAuth(options =>
             {
                 options.Issuer = "https://test.example.com";
+                options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethod.None);
                 _configureOptions?.Invoke(options);
-            });
+            }).AddPbkdf2SecretsHasher()
+              .AddInMemoryClients(clients =>
+                clients.AddPublic("test-client",
+                    ["https://test.example.com/callback"],
+                    [],
+                    ["openid"]));
         });
 
         var varyToAdd = _varyToAdd;

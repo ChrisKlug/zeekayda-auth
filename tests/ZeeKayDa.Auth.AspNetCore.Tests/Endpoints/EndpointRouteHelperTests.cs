@@ -17,7 +17,21 @@ public sealed class EndpointRouteHelperTests
         var act = () => EndpointRouteHelper.GetIssuerUri(options);
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
-            .WithMessage("*Issuer must be configured*")
-            .Which.Should().BeAssignableTo<ZeeKayDaException>();
+            .Which.AggregatedFailures.Should().ContainSingle()
+            .Which.Code.Should().Be("configuration.issuer.missing");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void GetIssuerUri_NullOrWhitespaceIssuer_FailureMessageMentionsIssuer(string? issuer)
+    {
+        var options = Options.Create(new AuthorizationServerOptions { Issuer = issuer });
+
+        var act = () => EndpointRouteHelper.GetIssuerUri(options);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures[0].Message.Should().Contain("Issuer must be configured");
     }
 }

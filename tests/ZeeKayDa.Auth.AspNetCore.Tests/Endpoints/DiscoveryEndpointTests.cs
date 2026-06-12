@@ -145,9 +145,10 @@ public sealed class DiscoveryEndpointTests : IDisposable
             .Select(element => element.GetString())
             .Should().Equal("authorization_code");
 
+        // Test factory registers both ClientSecretBasic and None to support the public test client.
         doc.RootElement.GetProperty("token_endpoint_auth_methods_supported").EnumerateArray()
             .Select(element => element.GetString())
-            .Should().Equal("client_secret_basic");
+            .Should().BeEquivalentTo(new[] { "client_secret_basic", "none" });
     }
 
     [Fact]

@@ -1,3 +1,5 @@
+using System.Text;
+
 namespace ZeeKayDa.Auth;
 
 /// <summary>
@@ -21,13 +23,45 @@ namespace ZeeKayDa.Auth;
 /// </remarks>
 public class ZeeKayDaConfigurationException : ZeeKayDaException
 {
-    /// <summary>Initialises a new instance with the specified <paramref name="message"/>.</summary>
-    public ZeeKayDaConfigurationException(string message) : base(message) { }
+    /// <summary>
+    /// Initialises a new instance from one or more structured <paramref name="failures"/>.
+    /// </summary>
+    /// <param name="failures">
+    /// The structured failures. Must be non-empty; each entry carries a stable
+    /// <see cref="ZeeKayDaConfigurationFailure.Code"/> and a human-readable message.
+    /// </param>
+    public ZeeKayDaConfigurationException(params ZeeKayDaConfigurationFailure[] failures)
+        : base(ComposeMessage(failures))
+    {
+        AggregatedFailures = [.. failures];
+    }
 
     /// <summary>
-    /// Initialises a new instance with the specified <paramref name="message"/> and
-    /// <paramref name="innerException"/>.
+    /// The structured validation failures that contributed to this exception.
+    /// Always contains at least one entry.
     /// </summary>
-    public ZeeKayDaConfigurationException(string message, Exception innerException)
-        : base(message, innerException) { }
+    public IReadOnlyList<ZeeKayDaConfigurationFailure> AggregatedFailures { get; }
+
+    /// <summary>
+    /// Composes a human-readable message that lists every failure's code and description, so that
+    /// <see cref="Exception.ToString"/> (what console and most log sinks print at a startup crash)
+    /// is actionable on its own without inspecting <see cref="AggregatedFailures"/>.
+    /// </summary>
+    private static string ComposeMessage(ZeeKayDaConfigurationFailure[] failures)
+    {
+        ArgumentNullException.ThrowIfNull(failures);
+
+        if (failures.Length == 0)
+            throw new ArgumentException("At least one failure is required.", nameof(failures));
+
+        var builder = new StringBuilder();
+        builder.Append(failures.Length).Append(" configuration error(s):");
+
+        foreach (var failure in failures)
+        {
+            builder.Append("\n  [").Append(failure.Code).Append("] ").Append(failure.Message);
+        }
+
+        return builder.ToString();
+    }
 }

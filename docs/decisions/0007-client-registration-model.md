@@ -319,7 +319,7 @@ Rules enforced at registration time (by `IClientRegistrationValidator`, §6.1) a
 3. **No fragment** — `Uri.Fragment` non-empty → rejected (RFC 6749 §3.1.2).
 4. **No userinfo** — `Uri.UserInfo` non-empty → rejected.
 5. **No `.`/`..` path segments** — ambiguous canonicalisation.
-6. **Scheme allowlist** — `https` (any host); `http` (loopback only); a private-use scheme that contains `.` and is not in the forbidden list (`javascript`, `data`, `file`, `vbscript`, `about`, `blob`, `ws`, `wss`, `ftp`, `mailto`, `tel`). All other schemes rejected.
+6. **Scheme allowlist (pure allowlist — no blocklist)** — `https` (any host); `http` (loopback only); any private-use scheme that contains a `.` (RFC 8252 §7.1 reverse-domain convention). All other schemes rejected. The implementation is a pure allowlist and deliberately omits any `ForbiddenSchemes` blocklist: schemes such as `javascript`, `data`, `file`, `vbscript`, `about`, `blob`, `ws`, `wss`, `ftp`, `mailto`, and `tel` contain no dot and are therefore already rejected by the allowlist. The dot requirement makes a separate blocklist vacuous, so none is maintained.
 7. **`localhost`** emits `LogWarning` recommending the IP literal (RFC 8252 §8.3). Loopback test uses whole-string match, never substring (`localhost.attacker.com` correctly fails).
 8. At most **32 redirect URIs** per client.
 9. All rules apply equally to `PostLogoutRedirectUris` (may be empty).
@@ -340,7 +340,7 @@ Contract: return `null` (never throw) for unknown or malformed `client_id` — t
 
 `InMemoryClientRepository` validates all registrations at construction time by delegating to `IClientRegistrationValidator` (§6.1); failures throw `ZeeKayDaConfigurationException` before the host starts accepting requests.
 
-**No default `IClientRepository` is registered** by `AddZeeKayDaAuth`; its absence is caught by `IValidateOptions<ZeeKayDaAuthOptions>` with `ValidateOnStart()`. A default `IClientRegistrationValidator` (§6.1) **is** registered unconditionally so every repository implementation can resolve and call it.
+**No default `IClientRepository` is registered** by `AddZeeKayDaAuth`; its absence is caught by `ClientRepositoryPresenceValidator : IValidateOptions<AuthorizationServerOptions>` with `ValidateOnStart()`. A default `IClientRegistrationValidator` (§6.1) **is** registered unconditionally so every repository implementation can resolve and call it.
 
 **Consistency rule at registration time:**
 

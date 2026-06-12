@@ -87,6 +87,18 @@ internal sealed class CompositeClientSecretHasher
     public IClientSecret Create(string plaintext) => _default.Create(plaintext);
 
     /// <summary>
+    /// Returns <see langword="true"/> if any registered <see cref="IClientSecretHasher"/> reports
+    /// it can handle the given credential. Used by registration validation to reject credentials
+    /// that no hasher can ever verify (they would otherwise fail silently at runtime as
+    /// <c>invalid_client</c>).
+    /// </summary>
+    internal bool CanHandleAny(IClientSecret secret)
+    {
+        ArgumentNullException.ThrowIfNull(secret);
+        return _hashers.Any(h => h.CanHandle(secret));
+    }
+
+    /// <summary>
     /// Runs one default-hasher verification against the pre-computed dummy secret.
     /// Called by the token endpoint for unknown-client paths to pad timing to match
     /// a known-client wrong-credential failure.
