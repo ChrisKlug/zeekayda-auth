@@ -1,4 +1,4 @@
-# ZeeKayDa.Auth — Copilot Instructions
+# ZeeKayDa.Auth — Agent Instructions
 
 ## Project Overview
 
