@@ -267,14 +267,16 @@ public interface IClientAuthenticator
 
 ### Step 1: Define the authentication method string
 
-Use the registered string for your method (e.g. `"private_key_jwt"`). Declare it as a constant to
-avoid typos:
+Use the registered string for your method (e.g. `"private_key_jwt"`). Declare it as a constant so
+`AuthenticationMethods` and `CanHandle` always return the same value:
 
 ```csharp
 public sealed class PrivateKeyJwtAuthenticator : IClientAuthenticator
 {
+    private const string Method = "private_key_jwt";
+
     private static readonly IReadOnlySet<string> _methods =
-        new HashSet<string>(StringComparer.Ordinal) { "private_key_jwt" };
+        new HashSet<string>(StringComparer.Ordinal) { Method };
 
     public IReadOnlySet<string> AuthenticationMethods => _methods;
 ```
@@ -291,7 +293,7 @@ repository lookup. It MUST be a cheap shape check — no crypto, no database acc
         if (context.Form.ContainsKey("client_assertion") &&
             context.Form["client_assertion_type"] == "urn:ietf:params:oauth:client-assertion-type:jwt-bearer")
         {
-            method = "private_key_jwt";
+            method = Method;
             return true;
         }
 
