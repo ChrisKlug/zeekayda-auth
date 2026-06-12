@@ -148,9 +148,101 @@ private IReadOnlyCollection<ScopeDefinition> LoadFromHttpClientSync()
 
 If your data source has only a synchronous API, the right answer is to put a real cache (`IMemoryCache`, `HybridCache`, `IDistributedCache`) in front of it and refresh the cache from a background `IHostedService` — then your `GetScopesAsync` returns a synchronous `ValueTask.FromResult(_cached)` and you have not introduced sync-over-async on the hot path.
 
+## 4. Implement a custom client secret hasher
+
+ZeeKayDa.Auth ships with a PBKDF2-HMAC-SHA256 hasher (`Pbkdf2ClientSecretHasher`) that covers the
+vast majority of deployments. If you need a different hashing algorithm — for example during a
+migration from an existing bcrypt or Argon2 credential store — you can plug in a custom hasher by
+following the four-step pattern below.
+
+### Step 1: Define a sub-interface of `IClientSecret`
+
+The C# type of the credential identifies which hasher handles it — no string discriminator is
+needed. Define a public interface that carries the fields your algorithm needs:
+
+```csharp
+using ZeeKayDa.Auth.Clients;
+
+public interface IBcryptClientSecret : IClientSecret
+{
+    string Hash { get; }
+}
+```
+
+### Step 2: Define a sealed record implementing the interface
+
+```csharp
+public sealed record BcryptClientSecret(string Hash) : IBcryptClientSecret;
+```
+
+### Step 3: Subclass `ClientSecretHasher<TSecret>`
+
+`ClientSecretHasher<TSecret>` handles all cross-cutting concerns (type dispatch, exception
+swallowing, null/whitespace rejection). You only need to implement `VerifyCore` and `CreateCore`:
+
+```csharp
+using System.Security.Cryptography;
+using ZeeKayDa.Auth.Clients;
+// using BCrypt.Net; // replace with your chosen hashing library
+
+public sealed class BcryptClientSecretHasher : ClientSecretHasher<IBcryptClientSecret>
+{
+    protected override bool VerifyCore(IBcryptClientSecret stored, ReadOnlySpan<char> presented)
+    {
+        if (presented.IsEmpty)
+            return false;
+
+        // Use your library's built-in constant-time verify function.
+        // If the library accepts a string, allocate here with presented.ToString().
+        return BCrypt.Net.BCrypt.Verify(presented.ToString(), stored.Hash);
+    }
+
+    protected override IBcryptClientSecret CreateCore(string plaintext)
+    {
+        string hash = BCrypt.Net.BCrypt.HashPassword(plaintext, workFactor: 12);
+        return new BcryptClientSecret(hash);
+    }
+}
+```
+
+### Step 4: Register with `AddSecretsHasher<T>()`
+
+Register your hasher on the builder returned by `AddZeeKayDaAuth`. When only one hasher is
+registered it is automatically the default:
+
+```csharp
+auth.AddSecretsHasher<BcryptClientSecretHasher>();
+```
+
+For **credential rotation** — for example to migrate from bcrypt to PBKDF2 — register both hashers
+and mark the new one as default. The composite verifier will try the correct hasher for each stored
+credential, and `isDefault: true` controls which hasher creates new secrets:
+
+```csharp
+auth.AddSecretsHasher<Pbkdf2ClientSecretHasher>(isDefault: true);  // creates new secrets
+auth.AddSecretsHasher<BcryptClientSecretHasher>(isDefault: false);  // verifies old secrets
+```
+
+Startup validation fails if multiple hashers are registered but zero or more than one has
+`isDefault: true`.
+
+### Security contract for `VerifyCore` implementors
+
+| Requirement | Reason |
+|---|---|
+| Use timing-safe comparison | Prevents timing oracles from revealing whether a client exists |
+| Never throw — return `false` on error | `ClientSecretHasher<T>` swallows exceptions, but throwing leaks timing |
+| Never log `presented` | Logging a plaintext secret violates confidentiality |
+| Be singleton-safe | Hashers are registered as singletons and called concurrently |
+
+> Warning: A hasher that does not use constant-time comparison undermines the timing protections
+> built into `CompositeClientSecretHasher`. Use `CryptographicOperations.FixedTimeEquals` for
+> raw byte comparisons, or your library's built-in constant-time verify function.
+
 ## See also
 
 - [Configure ZeeKayDa.Auth](configure-zeekayda-auth.md) — register the framework and the minimum required options.
 - [Configure discovery](configure-discovery.md) — customise the discovery document with the built-in options.
 - [`AuthorizationServerOptions` reference](../reference/configuration.md) — full property list and validation rules.
+- [Client secrets reference](../reference/client-secrets.md) — `Pbkdf2ClientSecretHasherOptions` property reference.
 - [Cancellation in managed threads](https://learn.microsoft.com/dotnet/standard/threading/cancellation-in-managed-threads) — Microsoft's reference for the cancellation pattern this framework follows.

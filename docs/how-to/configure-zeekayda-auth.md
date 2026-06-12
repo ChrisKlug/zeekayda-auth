@@ -137,9 +137,55 @@ app.MapZeeKayDaAuth();
 app.Run();
 ```
 
+## 6. Register client secret hashers
+
+Client secrets are hashed before storage using a pluggable `IClientSecretHasher`. Use
+`AddPbkdf2SecretsHasher()` to register the built-in PBKDF2-HMAC-SHA256 hasher in one call:
+
+```csharp
+using ZeeKayDa.Auth.AspNetCore.Extensions;
+
+var auth = builder.Services.AddZeeKayDaAuth(options =>
+{
+    options.Issuer = "https://id.example.com";
+});
+
+auth.AddPbkdf2SecretsHasher();
+```
+
+### Configure the iteration count
+
+Pass an optional configure delegate to override the default iteration count of 600,000:
+
+```csharp
+auth.AddPbkdf2SecretsHasher(options => options.Iterations = 1_200_000);
+```
+
+### Multiple hashers (credential rotation)
+
+When migrating from one algorithm to another, register both hashers and mark the new one as
+default. The composite verifier dispatches each credential to the correct hasher; `isDefault: true`
+controls which hasher creates new secrets:
+
+```csharp
+auth.AddSecretsHasher<Pbkdf2ClientSecretHasher>(isDefault: true);   // creates new secrets
+auth.AddSecretsHasher<BcryptClientSecretHasher>(isDefault: false);   // verifies old secrets
+```
+
+Startup validation fails at host startup if:
+
+- No hashers are registered
+- Multiple hashers are registered but zero or more than one has `isDefault: true`
+
+For the full `Pbkdf2ClientSecretHasherOptions` property reference, see
+[Client secrets reference](../reference/client-secrets.md). To implement a custom hasher, see
+[Implement a custom extension point](implement-custom-extension-points.md).
+
 ## Next steps
 
 - [Configure discovery](configure-discovery.md) — customise the OpenID Connect discovery document,
   override endpoint URLs, and manage published scopes
 - [AuthorizationServerOptions reference](../reference/configuration.md) — complete property
   reference with types, defaults, and validation rules
+- [Client secrets reference](../reference/client-secrets.md) — `Pbkdf2ClientSecretHasherOptions`
+  property reference
