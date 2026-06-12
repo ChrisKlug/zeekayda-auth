@@ -239,6 +239,119 @@ Startup validation fails if multiple hashers are registered but zero or more tha
 > built into `CompositeClientSecretHasher`. Use `CryptographicOperations.FixedTimeEquals` for
 > raw byte comparisons, or your library's built-in constant-time verify function.
 
+## 5. Implement a custom client authenticator
+
+`IClientAuthenticator` lets you plug a new token endpoint authentication method into the
+framework's dispatch pipeline. The built-in `ClientSecretAuthenticator` handles
+`client_secret_basic` and `client_secret_post`; everything else requires a custom implementation.
+
+> **Note:** `none` is a special case — it is handled automatically by the composite dispatcher
+> as a fallback for public clients and does not require an `IClientAuthenticator` implementation.
+> To support public clients, add `TokenEndpointAuthMethod.None` to `AuthMethodsSupported` and
+> register a client with `IsPublic = true`.
+
+The interface has three members:
+
+```csharp
+public interface IClientAuthenticator
+{
+    IReadOnlySet<string> AuthenticationMethods { get; }
+
+    bool CanHandle(TokenRequestContext context, out string? method);
+
+    ValueTask<ClientAuthenticationResult> AuthenticateAsync(
+        ClientAuthenticationContext context,
+        CancellationToken cancellationToken);
+}
+```
+
+### Step 1: Define the authentication method string
+
+Use the registered string for your method (e.g. `"private_key_jwt"`). Declare it as a constant to
+avoid typos:
+
+```csharp
+public sealed class PrivateKeyJwtAuthenticator : IClientAuthenticator
+{
+    private static readonly IReadOnlySet<string> _methods =
+        new HashSet<string>(StringComparer.Ordinal) { "private_key_jwt" };
+
+    public IReadOnlySet<string> AuthenticationMethods => _methods;
+```
+
+### Step 2: Implement `CanHandle` — keep it cheap
+
+`CanHandle` is called for every token request, on every registered authenticator, before any
+repository lookup. It MUST be a cheap shape check — no crypto, no database access.
+
+```csharp
+    public bool CanHandle(TokenRequestContext context, out string? method)
+    {
+        // Shape check only: does the request carry the expected credential material?
+        if (context.Form.ContainsKey("client_assertion") &&
+            context.Form["client_assertion_type"] == "urn:ietf:params:oauth:client-assertion-type:jwt-bearer")
+        {
+            method = "private_key_jwt";
+            return true;
+        }
+
+        method = null;
+        return false;
+    }
+```
+
+A slow `CanHandle` adds latency proportional to the number of registered authenticators on every
+token request — not just for your method, but for every client. Parse a header or check a form key;
+do not call a database or validate a signature here.
+
+### Step 3: Implement `AuthenticateAsync`
+
+`AuthenticateAsync` is only invoked after `CanHandle` returned `true` and all composite allowlist
+checks have passed. The client is guaranteed to exist in the repository.
+
+```csharp
+    public ValueTask<ClientAuthenticationResult> AuthenticateAsync(
+        ClientAuthenticationContext context,
+        CancellationToken cancellationToken)
+    {
+        var assertion = context.Form["client_assertion"].ToString();
+
+        // Validate the JWT assertion against the client's registered public key.
+        var valid = ValidateAssertion(assertion, context.Client, context.ClientId);
+
+        return ValueTask.FromResult(
+            valid ? ClientAuthenticationResult.Valid() : ClientAuthenticationResult.NotValid());
+    }
+```
+
+### Step 4: Register the authenticator
+
+Register on the `ZeeKayDaAuthBuilder` returned by `AddZeeKayDaAuth` and add the method to
+`AuthMethodsSupported`. Startup validation fails if either is missing:
+
+```csharp
+builder.Services.AddZeeKayDaAuth(options =>
+{
+    options.Issuer = "https://id.example.com";
+    options.TokenEndpoint.AuthMethodsSupported =
+    [
+        TokenEndpointAuthMethod.ClientSecretBasic,
+        // custom methods added to the server's supported list
+    ];
+})
+.AddClientAuthenticator<PrivateKeyJwtAuthenticator>();
+```
+
+### Security contract for `IClientAuthenticator` implementors
+
+| Requirement | Reason |
+|---|---|
+| `CanHandle` MUST be a cheap shape check — no crypto, no DB | Called on every token request for every authenticator; a slow check multiplies latency across all clients |
+| `AuthenticateAsync` MUST use timing-safe comparison | Prevents timing oracles from revealing credential validity |
+| Never compare secrets as plain strings | Always delegate to `IClientSecretHasher.Verify` or an equivalent constant-time function |
+| Be singleton-safe | Authenticators are registered as singletons and called concurrently |
+| Return `ClientAuthenticationResult.NotValid()` on failure — never throw | Throwing from `AuthenticateAsync` produces a 500 rather than a 401 |
+
 ## See also
 
 - [Configure ZeeKayDa.Auth](configure-zeekayda-auth.md) — register the framework and the minimum required options.

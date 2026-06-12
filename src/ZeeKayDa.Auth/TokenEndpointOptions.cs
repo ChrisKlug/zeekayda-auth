@@ -13,7 +13,7 @@ public sealed class TokenEndpointOptions
 
     /// <summary>
     /// Gets or sets the client authentication methods supported by the token endpoint.
-    /// Defaults to <c>[<see cref="TokenEndpointAuthMethod.ClientSecretBasic"/>]</c>.
+    /// Defaults to <c>[<see cref="TokenEndpointAuthMethod.ClientSecretBasic"/>, <see cref="TokenEndpointAuthMethod.ClientSecretPost"/>]</c>.
     /// </summary>
     /// <remarks>
     /// Maps to the <c>token_endpoint_auth_methods_supported</c> discovery metadata field.
@@ -22,5 +22,5 @@ public sealed class TokenEndpointOptions
     /// <see cref="GrantType.ClientCredentials"/>.
     /// </remarks>
     public ICollection<TokenEndpointAuthMethod> AuthMethodsSupported { get; set; } =
-        [TokenEndpointAuthMethod.ClientSecretBasic];
+        [TokenEndpointAuthMethod.ClientSecretBasic, TokenEndpointAuthMethod.ClientSecretPost];
 }

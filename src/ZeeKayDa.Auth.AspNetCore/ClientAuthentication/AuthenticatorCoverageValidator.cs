@@ -34,6 +34,26 @@ internal sealed class AuthenticatorCoverageValidator : IValidateOptions<Authoriz
 
         var errors = new List<string>();
 
+        // Build the set of server-supported method strings once so both loops can use it.
+        var serverMethods = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var enumMethod in options.TokenEndpoint.AuthMethodsSupported)
+        {
+            string methodString;
+            try
+            {
+                methodString = ToMethodString(enumMethod);
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                errors.Add(
+                    $"TokenEndpoint.AuthMethodsSupported contains '{enumMethod}', which has no " +
+                    "supported string mapping. Remove it or add a corresponding IClientAuthenticator.");
+                continue;
+            }
+
+            serverMethods.Add(methodString);
+        }
+
         // Map method string → authenticator type name. Used to detect overlaps and uncovered methods.
         var declared = new Dictionary<string, string>(StringComparer.Ordinal);
 
@@ -64,22 +84,9 @@ internal sealed class AuthenticatorCoverageValidator : IValidateOptions<Authoriz
             }
         }
 
-        foreach (var enumMethod in options.TokenEndpoint.AuthMethodsSupported)
+        // Every server-advertised method (except none) must have a covering authenticator.
+        foreach (var methodString in serverMethods)
         {
-            string methodString;
-            try
-            {
-                methodString = ToMethodString(enumMethod);
-            }
-            catch (ArgumentOutOfRangeException)
-            {
-                errors.Add(
-                    $"TokenEndpoint.AuthMethodsSupported contains '{enumMethod}', which has no " +
-                    "supported string mapping. Remove it or add a corresponding IClientAuthenticator.");
-                continue;
-            }
-
-            // none is always covered by the composite fallback — no authenticator needed.
             if (string.Equals(methodString, TokenEndpointAuthMethods.None, StringComparison.Ordinal))
                 continue;
 

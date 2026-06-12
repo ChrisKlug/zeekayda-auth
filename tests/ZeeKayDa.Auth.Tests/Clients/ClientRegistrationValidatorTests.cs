@@ -1118,7 +1118,12 @@ public sealed class ClientRegistrationValidatorTests
     [Fact]
     public void Validate_failure_message_contains_wire_string_if_ClientSecretPost_is_not_in_server_subset()
     {
-        var validator = MakeValidator(); // default server: client_secret_basic + none
+        // Explicitly configure a server that only supports client_secret_basic so that a client
+        // registering client_secret_post fails the subset check.
+        var serverOptions = new AuthorizationServerOptions { Issuer = "https://test.example.com" };
+        serverOptions.TokenEndpoint.AuthMethodsSupported =
+            [TokenEndpointAuthMethod.ClientSecretBasic, TokenEndpointAuthMethod.None];
+        var validator = MakeValidator(serverOptions: serverOptions);
         var client = new ClientRegistration
         {
             ClientId = "client",
