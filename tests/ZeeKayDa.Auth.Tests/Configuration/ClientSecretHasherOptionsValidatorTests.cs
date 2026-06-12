@@ -20,7 +20,7 @@ public sealed class ClientSecretHasherOptionsValidatorTests
     // ── Single hasher ─────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Validate_OneHasher_NotMarkedDefault_Succeeds()
+    public void Validate_succeeds_when_one_hasher_is_registered_and_not_marked_default()
     {
         var result = Validate(BuildOptions((typeof(HasherA), false)));
 
@@ -28,7 +28,7 @@ public sealed class ClientSecretHasherOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_OneHasher_MarkedDefault_Succeeds()
+    public void Validate_succeeds_when_one_hasher_is_registered_and_marked_default()
     {
         var result = Validate(BuildOptions((typeof(HasherA), true)));
 
@@ -38,7 +38,7 @@ public sealed class ClientSecretHasherOptionsValidatorTests
     // ── Multiple hashers ──────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Validate_MultipleHashers_ExactlyOneDefault_Succeeds()
+    public void Validate_succeeds_when_multiple_hashers_and_exactly_one_is_default()
     {
         var result = Validate(BuildOptions(
             (typeof(HasherA), true),
@@ -48,7 +48,7 @@ public sealed class ClientSecretHasherOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_MultipleHashers_NoDefault_Fails()
+    public void Validate_fails_when_multiple_hashers_and_none_is_default()
     {
         var result = Validate(BuildOptions(
             (typeof(HasherA), false),
@@ -59,7 +59,7 @@ public sealed class ClientSecretHasherOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_MultipleHashers_TwoDefaults_Fails()
+    public void Validate_fails_when_multiple_hashers_and_two_are_default()
     {
         var result = Validate(BuildOptions(
             (typeof(HasherA), true),
@@ -70,7 +70,7 @@ public sealed class ClientSecretHasherOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_ThreeHashers_TwoDefaults_Fails()
+    public void Validate_fails_when_three_hashers_and_two_are_default()
     {
         var result = Validate(BuildOptions(
             (typeof(HasherA), true),

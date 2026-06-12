@@ -196,6 +196,29 @@ If you are unsure about a style decision, check how the surrounding code is writ
 
 ---
 
+## Test Naming Convention
+
+All test methods follow the `Method_verb_object_condition` pattern. The name should read like a plain-English sentence that answers *"what does this method do, and under what condition?"*
+
+**Rules:**
+- Connector words (`if`, `when`, `and`, `for`, `with`) are **lowercase**
+- Type names and proper nouns stay **PascalCase**
+- Underscores are used only as word-group separators — never inside a word
+
+**Examples:**
+
+```csharp
+public Task GetIssuerUri_throws_ZeeKayDaConfigurationException_if_Issuer_is_null_or_whitespace()
+
+public Task GetDiscoveryDocument_publishes_repository_scopes_when_using_InMemoryScopeRepository()
+
+public Task Validate_returns_success_when_token_is_valid()
+
+public Task AddClient_throws_if_ClientId_is_already_registered
+```
+
+---
+
 ## CI
 
 Every pull request and every push to `main` runs the following GitHub Actions jobs defined in `.github/workflows/ci.yml`:

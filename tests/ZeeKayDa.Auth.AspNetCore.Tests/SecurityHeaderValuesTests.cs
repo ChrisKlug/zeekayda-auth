@@ -15,11 +15,11 @@ public sealed class SecurityHeaderValuesTests
     [InlineData(ReferrerPolicy.StrictOrigin, "strict-origin")]
     [InlineData(ReferrerPolicy.StrictOriginWhenCrossOrigin, "strict-origin-when-cross-origin")]
     [InlineData(ReferrerPolicy.UnsafeUrl, "unsafe-url")]
-    public void ToHeaderValue_ReferrerPolicy_ReturnsExpectedString(ReferrerPolicy policy, string expected)
+    public void ToHeaderValue_returns_expected_string_for_ReferrerPolicy(ReferrerPolicy policy, string expected)
         => SecurityHeaderValues.ToHeaderValue(policy).Should().Be(expected);
 
     [Fact]
-    public void ToHeaderValue_InvalidReferrerPolicy_ThrowsArgumentOutOfRangeException()
+    public void ToHeaderValue_throws_ArgumentOutOfRangeException_for_invalid_ReferrerPolicy()
     {
         var act = () => SecurityHeaderValues.ToHeaderValue((ReferrerPolicy)9999);
 
@@ -32,12 +32,12 @@ public sealed class SecurityHeaderValuesTests
     [InlineData(CrossOriginResourcePolicy.SameSite, "same-site")]
     [InlineData(CrossOriginResourcePolicy.SameOrigin, "same-origin")]
     [InlineData(CrossOriginResourcePolicy.CrossOrigin, "cross-origin")]
-    public void ToHeaderValue_CrossOriginResourcePolicy_ReturnsExpectedString(
+    public void ToHeaderValue_returns_expected_string_for_CrossOriginResourcePolicy(
         CrossOriginResourcePolicy policy, string expected)
         => SecurityHeaderValues.ToHeaderValue(policy).Should().Be(expected);
 
     [Fact]
-    public void ToHeaderValue_InvalidCrossOriginResourcePolicy_ThrowsArgumentOutOfRangeException()
+    public void ToHeaderValue_throws_ArgumentOutOfRangeException_for_invalid_CrossOriginResourcePolicy()
     {
         var act = () => SecurityHeaderValues.ToHeaderValue((CrossOriginResourcePolicy)9999);
 

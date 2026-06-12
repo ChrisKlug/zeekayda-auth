@@ -10,7 +10,7 @@ public sealed class EndpointRouteHelperTests
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
-    public void GetIssuerUri_NullOrWhitespaceIssuer_ThrowsZeeKayDaConfigurationException(string? issuer)
+    public void GetIssuerUri_throws_ZeeKayDaConfigurationException_if_Issuer_is_null_or_whitespace(string? issuer)
     {
         var options = Options.Create(new AuthorizationServerOptions { Issuer = issuer });
 
@@ -25,7 +25,7 @@ public sealed class EndpointRouteHelperTests
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
-    public void GetIssuerUri_NullOrWhitespaceIssuer_FailureMessageMentionsIssuer(string? issuer)
+    public void GetIssuerUri_throws_with_message_mentioning_Issuer_if_Issuer_is_null_or_whitespace(string? issuer)
     {
         var options = Options.Create(new AuthorizationServerOptions { Issuer = issuer });
 

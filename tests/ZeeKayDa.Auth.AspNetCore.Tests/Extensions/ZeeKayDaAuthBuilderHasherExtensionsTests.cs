@@ -11,7 +11,7 @@ public sealed class ZeeKayDaAuthBuilderHasherExtensionsTests
     // ── Argument validation ───────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void AddSecretsHasher_NullBuilder_ThrowsArgumentNullException()
+    public void AddSecretsHasher_throws_ArgumentNullException_if_builder_is_null()
     {
         var act = () => ((ZeeKayDaAuthBuilder)null!).AddSecretsHasher<FakeHasher>();
 
@@ -21,7 +21,7 @@ public sealed class ZeeKayDaAuthBuilderHasherExtensionsTests
     // ── Registration ─────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void AddSecretsHasher_RegistersHasherAsIClientSecretHasher()
+    public void AddSecretsHasher_registers_hasher_as_IClientSecretHasher()
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -36,7 +36,7 @@ public sealed class ZeeKayDaAuthBuilderHasherExtensionsTests
     }
 
     [Fact]
-    public void AddSecretsHasher_MultipleCalls_RegisterMultipleHashers()
+    public void AddSecretsHasher_registers_multiple_hashers_when_called_multiple_times()
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -52,7 +52,7 @@ public sealed class ZeeKayDaAuthBuilderHasherExtensionsTests
     }
 
     [Fact]
-    public void AddSecretsHasher_RecordsRegistrationInOptions()
+    public void AddSecretsHasher_records_registration_in_options()
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -68,7 +68,7 @@ public sealed class ZeeKayDaAuthBuilderHasherExtensionsTests
     }
 
     [Fact]
-    public void AddSecretsHasher_ReturnsBuilder_ForChaining()
+    public void AddSecretsHasher_returns_builder_for_chaining()
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -81,7 +81,7 @@ public sealed class ZeeKayDaAuthBuilderHasherExtensionsTests
     }
 
     [Fact]
-    public void AddSecretsHasher_SameTypeTwice_ThrowsInvalidOperationException()
+    public void AddSecretsHasher_throws_InvalidOperationException_if_same_type_registered_twice()
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -97,7 +97,7 @@ public sealed class ZeeKayDaAuthBuilderHasherExtensionsTests
     // ── AddPbkdf2SecretsHasher ───────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void AddPbkdf2SecretsHasher_NullBuilder_ThrowsArgumentNullException()
+    public void AddPbkdf2SecretsHasher_throws_ArgumentNullException_if_builder_is_null()
     {
         ZeeKayDaAuthBuilder builder = null!;
         var act = () => builder.AddPbkdf2SecretsHasher();
@@ -106,7 +106,7 @@ public sealed class ZeeKayDaAuthBuilderHasherExtensionsTests
     }
 
     [Fact]
-    public void AddPbkdf2SecretsHasher_RegistersPbkdf2HasherAsIClientSecretHasher()
+    public void AddPbkdf2SecretsHasher_registers_Pbkdf2ClientSecretHasher_as_IClientSecretHasher()
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -121,7 +121,7 @@ public sealed class ZeeKayDaAuthBuilderHasherExtensionsTests
     }
 
     [Fact]
-    public void AddPbkdf2SecretsHasher_WithoutConfigure_UsesDefaultIterations()
+    public void AddPbkdf2SecretsHasher_uses_default_iterations_when_configure_is_not_provided()
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -136,7 +136,7 @@ public sealed class ZeeKayDaAuthBuilderHasherExtensionsTests
     }
 
     [Fact]
-    public void AddPbkdf2SecretsHasher_WithConfigure_AppliesConfiguration()
+    public void AddPbkdf2SecretsHasher_applies_configuration_when_configure_is_provided()
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -151,7 +151,7 @@ public sealed class ZeeKayDaAuthBuilderHasherExtensionsTests
     }
 
     [Fact]
-    public void AddPbkdf2SecretsHasher_ReturnsBuilder_ForChaining()
+    public void AddPbkdf2SecretsHasher_returns_builder_for_chaining()
     {
         var services = new ServiceCollection();
         services.AddLogging();

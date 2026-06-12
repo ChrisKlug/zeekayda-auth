@@ -37,7 +37,7 @@ public sealed class Pbkdf2ClientSecretHasherTests
     // ── Happy path ───────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Create_ValidSecret_ProducesVerifiableHash()
+    public void Create_produces_verifiable_hash_for_valid_secret()
     {
         var hasher = CreateHasher();
 
@@ -48,7 +48,7 @@ public sealed class Pbkdf2ClientSecretHasherTests
     }
 
     [Fact]
-    public void Create_ProducesIpbkdf2ClientSecretWithConfiguredIterations()
+    public void Create_produces_IPbkdf2ClientSecret_with_configured_iterations()
     {
         var hasher = CreateHasher();
 
@@ -60,7 +60,7 @@ public sealed class Pbkdf2ClientSecretHasherTests
     }
 
     [Fact]
-    public void Create_TwoCalls_ProduceDifferentSalts()
+    public void Create_produces_different_salts_on_successive_calls()
     {
         var hasher = CreateHasher();
 
@@ -73,7 +73,7 @@ public sealed class Pbkdf2ClientSecretHasherTests
     // ── Verify ───────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Verify_WrongSecret_ReturnsFalse()
+    public void Verify_returns_false_for_wrong_secret()
     {
         var hasher = CreateHasher();
         var stored = hasher.Create("correct-secret");
@@ -84,7 +84,7 @@ public sealed class Pbkdf2ClientSecretHasherTests
     }
 
     [Fact]
-    public void Verify_EmptyPresented_ReturnsFalse()
+    public void Verify_returns_false_for_empty_presented_secret()
     {
         var hasher = CreateHasher();
         var stored = hasher.Create("some-secret");
@@ -95,7 +95,7 @@ public sealed class Pbkdf2ClientSecretHasherTests
     }
 
     [Fact]
-    public void Verify_UnknownSecretType_ReturnsFalse()
+    public void Verify_returns_false_for_unknown_secret_type()
     {
         var hasher = CreateHasher();
 
@@ -106,7 +106,7 @@ public sealed class Pbkdf2ClientSecretHasherTests
     }
 
     [Fact]
-    public void Verify_NeverThrows()
+    public void Verify_never_throws()
     {
         var hasher = CreateHasher();
 
@@ -120,7 +120,7 @@ public sealed class Pbkdf2ClientSecretHasherTests
     }
 
     [Fact]
-    public void Verify_StoredIterationsAboveMax_ReturnsFalse()
+    public void Verify_returns_false_when_stored_iterations_are_above_max()
     {
         var hasher = CreateHasher();
         var tamperedSecret = new Pbkdf2ClientSecret(
@@ -134,7 +134,7 @@ public sealed class Pbkdf2ClientSecretHasherTests
     }
 
     [Fact]
-    public void Verify_StoredIterationsAboveMax_LogsWarning()
+    public void Verify_logs_warning_when_stored_iterations_are_above_max()
     {
         var logger = new CapturingLogger<Pbkdf2ClientSecretHasher>();
         var hasher = new Pbkdf2ClientSecretHasher(
@@ -153,7 +153,7 @@ public sealed class Pbkdf2ClientSecretHasherTests
     // ── CanHandle ────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void CanHandle_Pbkdf2ClientSecret_ReturnsTrue()
+    public void CanHandle_returns_true_for_Pbkdf2ClientSecret()
     {
         var hasher = CreateHasher();
         var stored = hasher.Create("a-secret");
@@ -162,7 +162,7 @@ public sealed class Pbkdf2ClientSecretHasherTests
     }
 
     [Fact]
-    public void CanHandle_OtherSecretType_ReturnsFalse()
+    public void CanHandle_returns_false_for_other_secret_type()
     {
         var hasher = CreateHasher();
 
@@ -172,7 +172,7 @@ public sealed class Pbkdf2ClientSecretHasherTests
     // ── Create argument validation ────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Create_NullPlaintext_ThrowsArgumentException()
+    public void Create_throws_ArgumentException_for_null_plaintext()
     {
         var hasher = CreateHasher();
 
@@ -182,7 +182,7 @@ public sealed class Pbkdf2ClientSecretHasherTests
     }
 
     [Fact]
-    public void Create_EmptyPlaintext_ThrowsArgumentException()
+    public void Create_throws_ArgumentException_for_empty_plaintext()
     {
         var hasher = CreateHasher();
 
@@ -192,7 +192,7 @@ public sealed class Pbkdf2ClientSecretHasherTests
     }
 
     [Fact]
-    public void Create_WhitespacePlaintext_ThrowsArgumentException()
+    public void Create_throws_ArgumentException_for_whitespace_plaintext()
     {
         var hasher = CreateHasher();
 
@@ -204,7 +204,7 @@ public sealed class Pbkdf2ClientSecretHasherTests
     // ── Constructor iteration validation ─────────────────────────────────────────────────────────
 
     [Fact]
-    public void Constructor_IterationsBelowMinimum_Throws()
+    public void Constructor_throws_when_iterations_are_below_minimum()
     {
         var options = Options.Create(
             new Pbkdf2ClientSecretHasherOptions { Iterations = Pbkdf2ClientSecretHasher.MinIterations - 1 });
@@ -215,7 +215,7 @@ public sealed class Pbkdf2ClientSecretHasherTests
     }
 
     [Fact]
-    public void Constructor_IterationsAtMinimum_Succeeds()
+    public void Constructor_succeeds_when_iterations_are_at_minimum()
     {
         var act = () => CreateHasher(Pbkdf2ClientSecretHasher.MinIterations);
 
@@ -223,7 +223,7 @@ public sealed class Pbkdf2ClientSecretHasherTests
     }
 
     [Fact]
-    public void Constructor_IterationsAboveCap_DoesNotThrowButLogsWarning()
+    public void Constructor_does_not_throw_but_logs_warning_when_iterations_are_above_cap()
     {
         var logger = new CapturingLogger<Pbkdf2ClientSecretHasher>();
         var options = Options.Create(
@@ -236,7 +236,7 @@ public sealed class Pbkdf2ClientSecretHasherTests
     }
 
     [Fact]
-    public void Constructor_IterationsAboveCap_StillCreatesAndVerifiesSuccessfully()
+    public void Constructor_still_creates_and_verifies_successfully_when_iterations_are_above_cap()
     {
         var logger = new CapturingLogger<Pbkdf2ClientSecretHasher>();
         var options = Options.Create(
@@ -250,7 +250,7 @@ public sealed class Pbkdf2ClientSecretHasherTests
     // ── ClientSecretHasher<T> exception swallowing ────────────────────────────────────────────────
 
     [Fact]
-    public void Verify_VerifyCoreThrows_ReturnsFalse()
+    public void Verify_returns_false_when_VerifyCore_throws()
     {
         // A custom IPbkdf2ClientSecret whose Salt getter throws causes VerifyCore to propagate
         // an exception; the base-class catch block must swallow it and return false.

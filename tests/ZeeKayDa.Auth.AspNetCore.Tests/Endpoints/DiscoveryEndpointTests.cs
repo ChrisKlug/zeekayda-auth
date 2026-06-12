@@ -41,7 +41,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     // ── Status code ───────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task GetDiscoveryDocument_Returns200()
+    public async Task GetDiscoveryDocument_returns_200()
     {
         var response = await _client.GetAsync(DiscoveryPath, TestContext.Current.CancellationToken);
 
@@ -51,7 +51,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     // ── Content-Type ──────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task GetDiscoveryDocument_ReturnsApplicationJsonContentType()
+    public async Task GetDiscoveryDocument_returns_application_json_content_type()
     {
         var response = await _client.GetAsync(DiscoveryPath, TestContext.Current.CancellationToken);
 
@@ -61,7 +61,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     // ── Cache-Control ─────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task GetDiscoveryDocument_ReturnsCacheControlPublicMaxAge3600()
+    public async Task GetDiscoveryDocument_returns_Cache_Control_public_max_age_3600()
     {
         var response = await _client.GetAsync(DiscoveryPath, TestContext.Current.CancellationToken);
 
@@ -73,7 +73,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     // ── CORS ──────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task GetDiscoveryDocument_ReturnsAccessControlAllowOriginWildcard()
+    public async Task GetDiscoveryDocument_returns_Access_Control_Allow_Origin_wildcard()
     {
         var response = await _client.GetAsync(DiscoveryPath, TestContext.Current.CancellationToken);
 
@@ -84,7 +84,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     // ── Response body ─────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task GetDiscoveryDocument_ReturnsValidJson()
+    public async Task GetDiscoveryDocument_returns_valid_JSON()
     {
         var response = await _client.GetAsync(DiscoveryPath, TestContext.Current.CancellationToken);
         var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
@@ -94,7 +94,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     }
 
     [Fact]
-    public async Task GetDiscoveryDocument_IssuerMatchesConfiguredIssuer()
+    public async Task GetDiscoveryDocument_Issuer_matches_configured_Issuer()
     {
         var doc = await _client.GetFromJsonAsync<JsonDocument>(
             DiscoveryPath,
@@ -116,7 +116,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     [InlineData("token_endpoint_auth_methods_supported")]
     [InlineData("subject_types_supported")]
     [InlineData("id_token_signing_alg_values_supported")]
-    public async Task GetDiscoveryDocument_ContainsExpectedOidcDiscoveryField(string fieldName)
+    public async Task GetDiscoveryDocument_contains_expected_OIDC_discovery_field(string fieldName)
     {
         var doc = await _client.GetFromJsonAsync<JsonDocument>(
             DiscoveryPath,
@@ -127,7 +127,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     }
 
     [Fact]
-    public async Task GetDiscoveryDocument_DefaultMetadataCollections_AreSerializedAsExpectedStrings()
+    public async Task GetDiscoveryDocument_serializes_default_metadata_collections_as_expected_strings()
     {
         var doc = await _client.GetFromJsonAsync<JsonDocument>(
             DiscoveryPath,
@@ -152,7 +152,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     }
 
     [Fact]
-    public async Task GetDiscoveryDocument_InMemoryScopeRepository_PublishesRepositoryScopes()
+    public async Task GetDiscoveryDocument_publishes_repository_scopes_when_using_InMemoryScopeRepository()
     {
         using var factory = new TestWebAppFactory(
             configureBuilder: builder => builder.AddInMemoryScopes(
@@ -182,7 +182,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     }
 
     [Fact]
-    public async Task GetDiscoveryDocument_InMemoryScopeRepository_ExcludesNonDiscoverableScopes()
+    public async Task GetDiscoveryDocument_excludes_non_discoverable_scopes_when_using_InMemoryScopeRepository()
     {
         using var factory = new TestWebAppFactory(
             configureBuilder: builder => builder.AddInMemoryScopes(
@@ -209,7 +209,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     // ── Unrelated paths ───────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task GetUnrelatedPath_IsNotIntercepted()
+    public async Task GetUnrelatedPath_is_not_intercepted()
     {
         // The framework must not swallow requests to paths it does not own.
         // A 404 response confirms routing passed through without being intercepted.
@@ -221,7 +221,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     // ── Method not allowed ────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task PostDiscoveryDocument_Returns405()
+    public async Task PostDiscoveryDocument_returns_405()
     {
         var response = await _client.PostAsync(
             DiscoveryPath,
@@ -234,7 +234,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     // ── Path-bearing issuer ───────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task GetDiscoveryDocument_PathBearingIssuer_RegistersAtIssuerPrefixedPath()
+    public async Task GetDiscoveryDocument_registers_at_Issuer_prefixed_path_for_path_bearing_Issuer()
     {
         using var factory = new TestWebAppFactory(opts => opts.Issuer = "https://test.example.com/tenant1");
         using var client = CreateClient(factory);
@@ -252,7 +252,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     }
 
     [Fact]
-    public async Task GetDiscoveryDocument_PathBearingIssuer_RootPathReturns404()
+    public async Task GetDiscoveryDocument_returns_404_for_root_path_when_Issuer_has_path()
     {
         using var factory = new TestWebAppFactory(opts => opts.Issuer = "https://test.example.com/tenant1");
         using var client = CreateClient(factory);
@@ -268,7 +268,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     // ── Startup validation ────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Startup_WithoutIssuer_Throws()
+    public void Startup_throws_when_Issuer_is_not_configured()
     {
         using var factory = new TestWebAppFactory(opts => opts.Issuer = null);
 
@@ -280,7 +280,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     }
 
     [Fact]
-    public void Startup_HttpIssuerWithoutFlag_ThrowsViaValidateOnStart()
+    public void Startup_throws_via_ValidateOnStart_for_HTTP_Issuer_without_AllowInsecureIssuer_flag()
     {
         var act = () => new TestWebAppFactory(opts =>
         {
@@ -292,7 +292,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     }
 
     [Fact]
-    public void Startup_MalformedIssuer_ThrowsValidatorMessage()
+    public void Startup_throws_validator_message_for_malformed_Issuer()
     {
         var act = () => new TestWebAppFactory(opts =>
         {
@@ -303,7 +303,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     }
 
     [Fact]
-    public void Startup_EndpointOverrideDifferentAuthority_ThrowsViaValidateOnStart()
+    public void Startup_throws_via_ValidateOnStart_when_endpoint_override_has_different_authority()
     {
         var act = () => new TestWebAppFactory(opts =>
         {
@@ -315,7 +315,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     }
 
     [Fact]
-    public void Startup_CustomScopeRepositoryWithoutOpenId_ThrowsViaValidateOnStart()
+    public void Startup_throws_via_ValidateOnStart_for_custom_scope_repository_without_openid_scope()
     {
         var act = () => new TestWebAppFactory(
             configureBuilder: builder =>
@@ -328,7 +328,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     }
 
     [Fact]
-    public void Startup_NoneAuthMethodWithoutAuthorizationCodeGrant_Succeeds()
+    public void Startup_succeeds_when_None_auth_method_and_no_AuthorizationCode_grant()
     {
         var act = () => new TestWebAppFactory(opts =>
         {
@@ -340,7 +340,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     }
 
     [Fact]
-    public void Startup_NoneAuthMethodWithAuthorizationCodeGrant_Succeeds()
+    public void Startup_succeeds_when_None_auth_method_and_AuthorizationCode_grant()
     {
         var act = () => new TestWebAppFactory(opts =>
         {
@@ -352,7 +352,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     }
 
     [Fact]
-    public void Startup_OutOfRangeGrantType_ThrowsViaValidateOnStart()
+    public void Startup_throws_via_ValidateOnStart_for_out_of_range_GrantType()
     {
         var act = () => new TestWebAppFactory(opts =>
         {
@@ -363,7 +363,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     }
 
     [Fact]
-    public void Startup_OutOfRangeTokenEndpointAuthMethod_ThrowsViaValidateOnStart()
+    public void Startup_throws_via_ValidateOnStart_for_out_of_range_TokenEndpointAuthMethod()
     {
         var act = () => new TestWebAppFactory(opts =>
         {
@@ -374,7 +374,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     }
 
     [Fact]
-    public void Startup_EmptyCodeChallengeMethodsSupported_ThrowsViaValidateOnStart()
+    public void Startup_throws_via_ValidateOnStart_when_CodeChallengeMethodsSupported_is_empty()
     {
         var act = () => new TestWebAppFactory(opts =>
         {
@@ -387,7 +387,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     // ── Configurable Cache-Control ────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task GetDiscoveryDocument_CustomCacheMaxAge_IsReflectedInHeader()
+    public async Task GetDiscoveryDocument_reflects_custom_cache_max_age_in_header()
     {
         using var factory = new TestWebAppFactory(opts =>
         {
@@ -402,7 +402,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     }
 
     [Fact]
-    public async Task GetDiscoveryDocument_ZeroCacheMaxAge_ReturnsNoStore()
+    public async Task GetDiscoveryDocument_returns_no_store_for_zero_cache_max_age()
     {
         using var factory = new TestWebAppFactory(opts =>
         {
@@ -419,7 +419,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     // ── Host binding ──────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task GetDiscoveryDocument_WrongHostReturns404()
+    public async Task GetDiscoveryDocument_returns_404_for_wrong_host()
     {
         using var client = CreateClient(_factory, "https://other.example.com");
 
@@ -435,7 +435,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     [InlineData("POST", "/connect/authorize")]
     [InlineData("POST", "/connect/token")]
     [InlineData("GET", "/connect/jwks")]
-    public async Task AdvertisedPreAlphaProtocolEndpoints_Return501(string method, string path)
+    public async Task AdvertisedPreAlphaProtocolEndpoints_return_501(string method, string path)
     {
         using var request = new HttpRequestMessage(new HttpMethod(method), path);
 
@@ -448,7 +448,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     [InlineData("GET", "/custom/authorize?prompt=login")]
     [InlineData("POST", "/custom/token?tenant=1")]
     [InlineData("GET", "/keys")]
-    public async Task AdvertisedPreAlphaProtocolEndpoints_ExplicitOverrides_Return501AtPublishedUris(string method, string path)
+    public async Task AdvertisedPreAlphaProtocolEndpoints_return_501_at_published_URIs_when_explicit_overrides_are_configured(string method, string path)
     {
         using var factory = new TestWebAppFactory(opts =>
         {
@@ -471,7 +471,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     [InlineData("POST", "/connect/authorize")]
     [InlineData("POST", "/connect/token")]
     [InlineData("GET", "/connect/jwks")]
-    public async Task HttpRequests_NonLoopback_AreRejectedWith421(string method, string path)
+    public async Task HttpRequests_are_rejected_with_421_for_non_loopback_requests(string method, string path)
     {
         using var client = CreateClient(_factory, "http://test.example.com");
         using var request = new HttpRequestMessage(new HttpMethod(method), path);
@@ -487,7 +487,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     [InlineData("POST", "/connect/authorize", HttpStatusCode.NotImplemented)]
     [InlineData("POST", "/connect/token", HttpStatusCode.NotImplemented)]
     [InlineData("GET", "/connect/jwks", HttpStatusCode.NotImplemented)]
-    public async Task HttpRequests_LoopbackWithAllowInsecureIssuer_AreAllowed(
+    public async Task HttpRequests_are_allowed_for_loopback_with_AllowInsecureIssuer_flag(
         string method,
         string path,
         HttpStatusCode expectedStatusCode)
@@ -508,7 +508,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     // ── Enum field serialization ──────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task GetDiscoveryDocument_RequiredEnumFields_AreSerializedAsExpectedStrings()
+    public async Task GetDiscoveryDocument_serializes_required_enum_fields_as_expected_strings()
     {
         var response = await _client.GetAsync(DiscoveryPath, TestContext.Current.CancellationToken);
         var doc = await response.Content.ReadFromJsonAsync<JsonDocument>(TestContext.Current.CancellationToken);
@@ -526,7 +526,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     // ── Derived endpoint URIs ─────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task GetDiscoveryDocument_DerivedEndpoints_MatchExpectedUris()
+    public async Task GetDiscoveryDocument_derived_endpoints_match_expected_URIs()
     {
         var response = await _client.GetAsync(DiscoveryPath, TestContext.Current.CancellationToken);
         var doc = await response.Content.ReadFromJsonAsync<JsonDocument>(TestContext.Current.CancellationToken);
@@ -551,7 +551,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     // ── CodeChallengeMethodsSupported ─────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task GetDiscoveryDocument_NullCodeChallengeMethodsSupported_OmitsField()
+    public async Task GetDiscoveryDocument_omits_CodeChallengeMethodsSupported_field_when_null()
     {
         // Default options have CodeChallengeMethodsSupported = null.
         var doc = await _client.GetFromJsonAsync<JsonDocument>(
@@ -563,7 +563,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     }
 
     [Fact]
-    public async Task GetDiscoveryDocument_CodeChallengeMethodsSupportedWithS256_PublishesField()
+    public async Task GetDiscoveryDocument_publishes_CodeChallengeMethodsSupported_field_when_S256_is_configured()
     {
         using var factory = new TestWebAppFactory(opts =>
         {
@@ -585,7 +585,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     // ── CORS – wildcard (no allowlist) ────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task GetDiscoveryDocument_EmptyAllowList_ReturnsWildcardCors()
+    public async Task GetDiscoveryDocument_returns_wildcard_CORS_for_empty_allow_list()
     {
         var response = await _client.GetAsync(DiscoveryPath, TestContext.Current.CancellationToken);
 
@@ -594,7 +594,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     }
 
     [Fact]
-    public async Task GetDiscoveryDocument_EmptyAllowList_NoVaryOriginHeader()
+    public async Task GetDiscoveryDocument_has_no_Vary_Origin_header_for_empty_allow_list()
     {
         var response = await _client.GetAsync(DiscoveryPath, TestContext.Current.CancellationToken);
 
@@ -606,7 +606,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     // ── CORS – explicit allowlist ─────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task GetDiscoveryDocument_ExplicitAllowList_MatchingOrigin_ReturnsSpecificOrigin()
+    public async Task GetDiscoveryDocument_returns_specific_origin_for_matching_origin_in_explicit_allow_list()
     {
         using var factory = new TestWebAppFactory(opts =>
             opts.DiscoveryDocument.CorsOrigins.Add("https://app.example.com"));
@@ -620,7 +620,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     }
 
     [Fact]
-    public async Task GetDiscoveryDocument_ExplicitAllowList_MatchingOrigin_ReturnsVaryOrigin()
+    public async Task GetDiscoveryDocument_returns_Vary_Origin_header_for_matching_origin_in_explicit_allow_list()
     {
         using var factory = new TestWebAppFactory(opts =>
             opts.DiscoveryDocument.CorsOrigins.Add("https://app.example.com"));
@@ -634,7 +634,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     }
 
     [Fact]
-    public async Task GetDiscoveryDocument_ExplicitAllowList_NonMatchingOrigin_NoACAO()
+    public async Task GetDiscoveryDocument_has_no_ACAO_header_for_non_matching_origin_in_explicit_allow_list()
     {
         using var factory = new TestWebAppFactory(opts =>
             opts.DiscoveryDocument.CorsOrigins.Add("https://app.example.com"));
@@ -647,7 +647,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     }
 
     [Fact]
-    public async Task GetDiscoveryDocument_ExplicitAllowList_NonMatchingOrigin_ReturnsVaryOrigin()
+    public async Task GetDiscoveryDocument_returns_Vary_Origin_header_for_non_matching_origin_in_explicit_allow_list()
     {
         using var factory = new TestWebAppFactory(opts =>
             opts.DiscoveryDocument.CorsOrigins.Add("https://app.example.com"));
@@ -661,7 +661,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     }
 
     [Fact]
-    public async Task GetDiscoveryDocument_ExplicitAllowList_NoOriginHeader_NoACAO()
+    public async Task GetDiscoveryDocument_has_no_ACAO_header_when_no_Origin_header_in_explicit_allow_list()
     {
         using var factory = new TestWebAppFactory(opts =>
             opts.DiscoveryDocument.CorsOrigins.Add("https://app.example.com"));
@@ -673,7 +673,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     }
 
     [Fact]
-    public async Task GetDiscoveryDocument_ExplicitAllowList_NoOriginHeader_ReturnsVaryOrigin()
+    public async Task GetDiscoveryDocument_returns_Vary_Origin_header_when_no_Origin_header_in_explicit_allow_list()
     {
         using var factory = new TestWebAppFactory(opts =>
             opts.DiscoveryDocument.CorsOrigins.Add("https://app.example.com"));
@@ -686,7 +686,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     }
 
     [Fact]
-    public async Task GetDiscoveryDocument_ExplicitAllowList_EmittedValueIsFromAllowList_NotFromRequestHeader()
+    public async Task GetDiscoveryDocument_emitted_ACAO_value_is_from_allow_list_not_from_request_header()
     {
         // The allowlist stores lowercase canonical entries.
         // The request sends mixed-case. The response must echo the canonical stored value.
@@ -716,7 +716,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     [InlineData("null", "null literal")]
     [InlineData("https://example.com\r\n", "CRLF")]
     [InlineData("http://app.example.com", "http scheme without AllowInsecureIssuer")]
-    public void Startup_InvalidCorsOrigin_ThrowsViaValidateOnStart(string invalidOrigin, string reason)
+    public void Startup_throws_via_ValidateOnStart_for_invalid_CORS_origin(string invalidOrigin, string reason)
     {
         var act = () => new TestWebAppFactory(opts =>
             opts.DiscoveryDocument.CorsOrigins.Add(invalidOrigin)).CreateClient();
@@ -725,7 +725,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     }
 
     [Fact]
-    public void Startup_InvalidReferrerPolicy_ThrowsViaValidateOnStart()
+    public void Startup_throws_via_ValidateOnStart_for_invalid_ReferrerPolicy()
     {
         var act = () => new TestWebAppFactory(opts =>
             opts.SecurityHeaders.ReferrerPolicy = (ZeeKayDa.Auth.ReferrerPolicy)9999).CreateClient();
@@ -734,7 +734,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     }
 
     [Fact]
-    public void Startup_InvalidCrossOriginResourcePolicy_ThrowsViaValidateOnStart()
+    public void Startup_throws_via_ValidateOnStart_for_invalid_CrossOriginResourcePolicy()
     {
         var act = () => new TestWebAppFactory(opts =>
             opts.SecurityHeaders.CrossOriginResourcePolicy = (ZeeKayDa.Auth.CrossOriginResourcePolicy)9999).CreateClient();
@@ -743,7 +743,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     }
 
     [Fact]
-    public void Startup_CorsOriginAllowList_BecomesReadOnly()
+    public void Startup_makes_CorsOriginAllowList_read_only()
     {
         using var factory = new TestWebAppFactory(opts =>
             opts.DiscoveryDocument.CorsOrigins.Add("https://app.example.com"));
@@ -759,7 +759,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     // ── Defensive security headers ────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task GetDiscoveryDocument_ReturnsXContentTypeOptionsNoSniff()
+    public async Task GetDiscoveryDocument_returns_X_Content_Type_Options_nosniff_header()
     {
         var response = await _client.GetAsync(DiscoveryPath, TestContext.Current.CancellationToken);
 
@@ -768,7 +768,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     }
 
     [Fact]
-    public async Task GetDiscoveryDocument_ContentTypeOptionsDisabled_NoXContentTypeOptionsHeader()
+    public async Task GetDiscoveryDocument_has_no_X_Content_Type_Options_header_when_content_type_options_disabled()
     {
         using var factory = new TestWebAppFactory(opts =>
             opts.SecurityHeaders.ContentTypeOptionsNoSniff = false);
@@ -780,7 +780,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     }
 
     [Fact]
-    public async Task GetDiscoveryDocument_ReturnsReferrerPolicyNoReferrer()
+    public async Task GetDiscoveryDocument_returns_Referrer_Policy_no_referrer_header()
     {
         var response = await _client.GetAsync(DiscoveryPath, TestContext.Current.CancellationToken);
 
@@ -789,7 +789,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     }
 
     [Fact]
-    public async Task GetDiscoveryDocument_CustomReferrerPolicy_IsReflectedInHeader()
+    public async Task GetDiscoveryDocument_reflects_custom_ReferrerPolicy_in_header()
     {
         using var factory = new TestWebAppFactory(opts =>
             opts.SecurityHeaders.ReferrerPolicy = ZeeKayDa.Auth.ReferrerPolicy.StrictOriginWhenCrossOrigin);
@@ -802,7 +802,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     }
 
     [Fact]
-    public async Task GetDiscoveryDocument_ReturnsCrossOriginResourcePolicyCrossOrigin()
+    public async Task GetDiscoveryDocument_returns_Cross_Origin_Resource_Policy_cross_origin_header()
     {
         var response = await _client.GetAsync(DiscoveryPath, TestContext.Current.CancellationToken);
 
@@ -811,7 +811,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     }
 
     [Fact]
-    public async Task GetDiscoveryDocument_CustomCrossOriginResourcePolicy_IsReflectedInHeader()
+    public async Task GetDiscoveryDocument_reflects_custom_CrossOriginResourcePolicy_in_header()
     {
         using var factory = new TestWebAppFactory(opts =>
             opts.SecurityHeaders.CrossOriginResourcePolicy = ZeeKayDa.Auth.CrossOriginResourcePolicy.SameOrigin);
@@ -826,7 +826,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     // ── Route-group isolation ─────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task NonZeeKayDaRoute_DoesNotReceiveZeeKayDaSecurityHeaders()
+    public async Task NonZeeKayDaRoute_does_not_receive_ZeeKayDa_security_headers()
     {
         // TestWebAppFactoryWithPing adds a /ping route outside the ZeeKayDa group.
         using var factory = new TestWebAppFactoryWithPing();
@@ -844,7 +844,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     // ── Insecure-issuer header ────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task GetDiscoveryDocument_AllowInsecureIssuer_True_ReturnsInsecureIssuerHeader()
+    public async Task GetDiscoveryDocument_returns_insecure_issuer_header_when_AllowInsecureIssuer_is_true()
     {
         using var factory = new TestWebAppFactory(opts =>
         {
@@ -860,7 +860,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     }
 
     [Fact]
-    public async Task GetDiscoveryDocument_AllowInsecureIssuer_False_NoInsecureIssuerHeader()
+    public async Task GetDiscoveryDocument_has_no_insecure_issuer_header_when_AllowInsecureIssuer_is_false()
     {
         var response = await _client.GetAsync(DiscoveryPath, TestContext.Current.CancellationToken);
 
@@ -870,7 +870,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     // ── Vary pipeline safety ──────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task GetDiscoveryDocument_ExplicitAllowList_VaryAppendsToExistingVary()
+    public async Task GetDiscoveryDocument_appends_to_existing_Vary_header_for_explicit_allow_list()
     {
         // Even if upstream middleware adds Vary: Accept-Encoding, our Vary: Origin must be
         // appended, not replace it.

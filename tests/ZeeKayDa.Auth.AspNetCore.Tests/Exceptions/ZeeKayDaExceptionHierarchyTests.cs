@@ -10,7 +10,7 @@ namespace ZeeKayDa.Auth.AspNetCore.Tests.Exceptions;
 public sealed class ZeeKayDaExceptionHierarchyTests
 {
     [Fact]
-    public void ZeeKayDaConfigurationException_SingleFailureCtor_SetsMessage()
+    public void ZeeKayDaConfigurationException_sets_Message_when_constructed_with_single_failure()
     {
         var ex = new ZeeKayDaConfigurationException(
             new ZeeKayDaConfigurationFailure("test.code", "msg"));
@@ -19,7 +19,7 @@ public sealed class ZeeKayDaExceptionHierarchyTests
     }
 
     [Fact]
-    public void ZeeKayDaConfigurationException_SingleFailureCtor_SetsAggregatedFailures()
+    public void ZeeKayDaConfigurationException_sets_AggregatedFailures_when_constructed_with_single_failure()
     {
         var failure = new ZeeKayDaConfigurationFailure("test.code", "msg");
 
@@ -30,7 +30,7 @@ public sealed class ZeeKayDaExceptionHierarchyTests
     }
 
     [Fact]
-    public void ZeeKayDaConfigurationException_MultipleFailures_SetsMessage()
+    public void ZeeKayDaConfigurationException_sets_Message_when_constructed_with_multiple_failures()
     {
         var ex = new ZeeKayDaConfigurationException(
             new ZeeKayDaConfigurationFailure("code.a", "msg a"),
@@ -41,7 +41,7 @@ public sealed class ZeeKayDaExceptionHierarchyTests
     }
 
     [Fact]
-    public void ZeeKayDaInteractionException_SingleArgCtor_SetsMessage()
+    public void ZeeKayDaInteractionException_sets_Message_when_constructed_with_single_argument()
     {
         var ex = new ZeeKayDaInteractionException("msg");
 
@@ -49,7 +49,7 @@ public sealed class ZeeKayDaExceptionHierarchyTests
     }
 
     [Fact]
-    public void ZeeKayDaInteractionException_TwoArgCtor_SetsMessageAndInnerException()
+    public void ZeeKayDaInteractionException_sets_Message_and_InnerException_when_constructed_with_two_arguments()
     {
         var inner = new Exception("inner");
 
@@ -60,7 +60,7 @@ public sealed class ZeeKayDaExceptionHierarchyTests
     }
 
     [Fact]
-    public void ZeeKayDaConfigurationException_IsAssignableToZeeKayDaException()
+    public void ZeeKayDaConfigurationException_is_assignable_to_ZeeKayDaException()
     {
         new ZeeKayDaConfigurationException(
             new ZeeKayDaConfigurationFailure("test.code", "test")).Should()
@@ -68,7 +68,7 @@ public sealed class ZeeKayDaExceptionHierarchyTests
     }
 
     [Fact]
-    public void ZeeKayDaInteractionException_IsAssignableToZeeKayDaException()
+    public void ZeeKayDaInteractionException_is_assignable_to_ZeeKayDaException()
     {
         new ZeeKayDaInteractionException("test").Should().BeAssignableTo<ZeeKayDaException>();
     }

@@ -8,7 +8,7 @@ public sealed class CoverageRegressionScriptTests : IDisposable
     private readonly string tempDirectory = Path.Join(Path.GetTempPath(), "zeekayda-auth-coverage-script-tests", Guid.NewGuid().ToString("N"));
 
     [Fact]
-    public void CheckCoverageRegression_FailsWhenLineOrBranchCoverageRegresses()
+    public void CheckCoverageRegression_fails_when_line_or_branch_coverage_regresses()
     {
         var baseResultsDirectory = Path.Join(tempDirectory, "base-results");
         var prResultsDirectory = Path.Join(tempDirectory, "pr-results");
@@ -25,7 +25,7 @@ public sealed class CoverageRegressionScriptTests : IDisposable
     }
 
     [Fact]
-    public void CheckCoverageRegression_PassesWhenCoverageImproves()
+    public void CheckCoverageRegression_passes_when_coverage_improves()
     {
         var baseResultsDirectory = Path.Join(tempDirectory, "base-results");
         var prResultsDirectory = Path.Join(tempDirectory, "pr-results");
