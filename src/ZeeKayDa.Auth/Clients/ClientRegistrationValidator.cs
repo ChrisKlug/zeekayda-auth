@@ -286,7 +286,7 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
         IClientRegistration client,
         List<ZeeKayDaConfigurationFailure> failures)
     {
-        foreach (var secret in client.Credentials
+        foreach (var _ in client.Credentials
                      .OfType<IClientSecret>()
                      .Where(secret => _hasher.Verify(secret, ReadOnlySpan<char>.Empty)))
         {
