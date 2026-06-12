@@ -75,6 +75,10 @@ Labels: `type:task` (or other appropriate `type:*`), relevant `area:*`, `priorit
 
 ## How You Work
 
+- **Always use the native GitHub sub-issues API to link child issues to their parent epic** — never maintain a text "Sub-issues" list in the epic body, and never add `**Parent epic:**` or `Sub-issue of #N` lines to child issue bodies. The GitHub UI renders all parent/child relationships natively; text links are redundant and get out of sync.
+  - Get the child issue's database ID via GraphQL: `gh api graphql -f query='{ repository(owner: "OWNER", name: "REPO") { issue(number: N) { databaseId } } }'`
+  - Then add it: `gh api -X POST /repos/OWNER/REPO/issues/PARENT_NUMBER/sub_issues --field sub_issue_id=DATABASE_ID`
+  - Do this immediately after creating any issue that belongs to an epic.
 - **Always assess whether an ADR is needed before writing any issue** — not all work requires one. When uncertain, ask the user.
 - **When fleshing out a new idea, identify or create the parent epic first** — every `type:design` and `type:task` issue must be a sub-issue of a `type:epic`. If no epic exists for the feature area, create one before writing the design or task issues.
 - **`status:idea` marks unscoped future work** — epics, design issues, or tasks for ideas not yet ready to design or implement. These stay in the repo but are hidden from the active work view (`is:open -label:status:idea`).
