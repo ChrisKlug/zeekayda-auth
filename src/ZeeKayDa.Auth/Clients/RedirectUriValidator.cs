@@ -43,17 +43,12 @@ internal static class RedirectUriValidator
         if (queryOrFragment >= 0)
             pathPart = pathPart[..queryOrFragment];
 
-        foreach (var decoded in pathPart
+        // Percent-decode once (case-insensitively handles both %2E and %2e, and mixed forms
+        // like ".%2e" or "%2e.") so encoded traversal segments are caught.
+        return pathPart
             .Split('/')
             .Select(Uri.UnescapeDataString)
-            .Where(decoded => decoded is "." or ".."))
-        {
-            // Percent-decode once (case-insensitively handles both %2E and %2e, and mixed forms
-            // like ".%2e" or "%2e.") so encoded traversal segments are caught.
-            return true;
-        }
-
-        return false;
+            .Any(decoded => decoded is "." or "..");
     }
 
     internal static bool IsSchemeAllowed(Uri uri)
