@@ -145,5 +145,4 @@ public sealed class AuthenticatorCoverageValidatorTests
 
         result.Succeeded.Should().BeFalse();
     }
-
 }

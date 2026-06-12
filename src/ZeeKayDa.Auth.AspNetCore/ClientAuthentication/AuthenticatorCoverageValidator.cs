@@ -54,6 +54,7 @@ internal sealed class AuthenticatorCoverageValidator : IValidateOptions<Authoriz
             serverMethods.Add(methodString);
         }
 
+
         // Map method string → authenticator type name. Used to detect overlaps and uncovered methods.
         var declared = new Dictionary<string, string>(StringComparer.Ordinal);
 
