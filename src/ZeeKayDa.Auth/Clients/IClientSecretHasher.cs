@@ -36,4 +36,20 @@ public interface IClientSecretHasher
     /// Rejects null, empty, or whitespace-only input.
     /// </summary>
     IClientSecret Create(string plaintext);
+
+    /// <summary>
+    /// Returns any registration-time failures for the given stored credential.
+    /// Called during startup validation to enforce per-hasher constraints on stored credentials
+    /// (for example, a minimum iteration-count or work-factor floor).
+    /// Returns an empty sequence when the credential is acceptable.
+    /// </summary>
+    /// <remarks>
+    /// The default implementation returns no failures. Override to express startup constraints
+    /// specific to your credential type. The framework calls this only for credentials whose
+    /// hasher returns <see langword="true"/> from <see cref="CanHandle"/>, so
+    /// <paramref name="credential"/> is always a type this hasher owns.
+    /// The <paramref name="clientId"/> parameter is for diagnostic message formatting only.
+    /// </remarks>
+    IEnumerable<ZeeKayDaConfigurationFailure> GetRegistrationFailures(
+        IClientSecret credential, string clientId) => [];
 }

@@ -247,6 +247,71 @@ public sealed class Pbkdf2ClientSecretHasherTests
         hasher.Verify(stored, "test-secret").Should().BeTrue();
     }
 
+    // ── GetRegistrationFailures ──────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void GetRegistrationFailures_returns_failure_when_iterations_below_minimum()
+    {
+        var hasher = CreateHasher();
+        var secret = new Pbkdf2ClientSecret(Pbkdf2ClientSecretHasher.MinIterations - 1, new byte[16], new byte[32]);
+
+        var failures = hasher.GetRegistrationFailures(secret, "my-client").ToList();
+
+        failures.Should().ContainSingle(f =>
+            f.Code == "client.credentials.pbkdf2_iterations_below_minimum" &&
+            f.Message.Contains("my-client") &&
+            f.Message.Contains($"{Pbkdf2ClientSecretHasher.MinIterations - 1:N0}") &&
+            f.Message.Contains($"{Pbkdf2ClientSecretHasher.MinIterations:N0}"));
+    }
+
+    [Fact]
+    public void GetRegistrationFailures_returns_empty_when_iterations_equal_minimum()
+    {
+        var hasher = CreateHasher();
+        var secret = new Pbkdf2ClientSecret(Pbkdf2ClientSecretHasher.MinIterations, new byte[16], new byte[32]);
+
+        var failures = hasher.GetRegistrationFailures(secret, "my-client");
+
+        failures.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void GetRegistrationFailures_returns_empty_when_iterations_above_minimum()
+    {
+        var hasher = CreateHasher();
+        var secret = new Pbkdf2ClientSecret(Pbkdf2ClientSecretHasher.MinIterations + 100_000, new byte[16], new byte[32]);
+
+        var failures = hasher.GetRegistrationFailures(secret, "my-client");
+
+        failures.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void GetRegistrationFailures_returns_failure_when_iterations_above_maximum()
+    {
+        var hasher = CreateHasher();
+        var secret = new Pbkdf2ClientSecret(Pbkdf2ClientSecretHasher.MaxIterations + 1, new byte[16], new byte[32]);
+
+        var failures = hasher.GetRegistrationFailures(secret, "my-client").ToList();
+
+        failures.Should().ContainSingle(f =>
+            f.Code == "client.credentials.pbkdf2_iterations_above_maximum" &&
+            f.Message.Contains("my-client") &&
+            f.Message.Contains($"{Pbkdf2ClientSecretHasher.MaxIterations + 1:N0}") &&
+            f.Message.Contains($"{Pbkdf2ClientSecretHasher.MaxIterations:N0}"));
+    }
+
+    [Fact]
+    public void GetRegistrationFailures_returns_empty_when_iterations_equal_maximum()
+    {
+        var hasher = CreateHasher();
+        var secret = new Pbkdf2ClientSecret(Pbkdf2ClientSecretHasher.MaxIterations, new byte[16], new byte[32]);
+
+        var failures = hasher.GetRegistrationFailures(secret, "my-client");
+
+        failures.Should().BeEmpty();
+    }
+
     // ── ClientSecretHasher<T> exception swallowing ────────────────────────────────────────────────
 
     [Fact]
