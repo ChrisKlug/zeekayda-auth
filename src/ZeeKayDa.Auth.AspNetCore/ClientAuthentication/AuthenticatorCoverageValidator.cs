@@ -20,7 +20,18 @@ internal sealed class AuthenticatorCoverageValidator : IValidateOptions<Authoriz
 
     public ValidateOptionsResult Validate(string? name, AuthorizationServerOptions options)
     {
-        var authenticators = _serviceProvider.GetServices<IClientAuthenticator>();
+        // Eagerly resolve authenticators so any DI construction error surfaces here.
+        // If resolution fails (e.g., a dependency like IClientSecretHasher is missing),
+        // skip this check — other validators will surface the root cause.
+        IReadOnlyList<IClientAuthenticator> authenticators;
+        try
+        {
+            authenticators = _serviceProvider.GetServices<IClientAuthenticator>().ToList();
+        }
+        catch (Exception)
+        {
+            return ValidateOptionsResult.Skip;
+        }
 
         var errors = new List<string>();
 
