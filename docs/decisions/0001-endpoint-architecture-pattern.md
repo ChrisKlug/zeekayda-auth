@@ -1,6 +1,6 @@
 # ADR 0001 — Endpoint Architecture Pattern
 
-**Status:** Accepted (amended 2026-06-07)  
+**Status:** Accepted (amended 2026-06-07, 2026-06-13)  
 **Date:** 2026-05-31
 
 ---
@@ -10,6 +10,7 @@
 | Date | Section | Summary | Reference |
 |---|---|---|---|
 | 2026-06-07 | §3 Layering | Replaced the ad-hoc "may reference `Microsoft.Extensions.Options`" carve-out with a namespace-level dependency allowlist: the entire `Microsoft.Extensions.*` namespace is permitted; `Microsoft.AspNetCore.*` is prohibited except for an explicitly enumerated whitelist (currently only `Microsoft.AspNetCore.DataProtection.Abstractions`). Retroactively covers the `IDistributedCache` dependency introduced by ADR 0005 §6b and accommodates the `IDataProtectionProvider` / `IMemoryCache` dependencies introduced by ADR 0008. | [#106](https://github.com/ChrisKlug/zeekayda-auth/issues/106) |
+| 2026-06-13 | §2 Public registration API | ADR 0001 §2 is authoritative and aligns with the final ADR 0005 §A resolution. `MapZeeKayDaAuth()` is required and is part of the permanent public API surface. The apparent contradiction with ADR 0005 is fully resolved: ADR 0005 §2 governs only `/connect/authorize` and the per-scheme callbacks, which are handler-based via `IAuthenticationRequestHandler`; ADR 0001 §2 governs the routed protocol endpoints (discovery, JWKS, token), which are registered via `IZeeKayDaEndpoint` and mapped by `MapZeeKayDaAuth()`. There is no planned migration away from `MapZeeKayDaAuth()`. | [#156](https://github.com/ChrisKlug/zeekayda-auth/issues/156) |
 
 ---
 

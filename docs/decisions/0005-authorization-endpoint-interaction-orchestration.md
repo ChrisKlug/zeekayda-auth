@@ -1,7 +1,15 @@
 # ADR 0005 — Authorization Endpoint Interaction Orchestration
 
-**Status:** Accepted  
+**Status:** Accepted (amended 2026-06-13)  
 **Date:** 2026-07-01
+
+---
+
+## Amendments
+
+| Date | Section | Summary | Reference |
+|---|---|---|---|
+| 2026-06-13 | §2 and Open Question §A | Open Question §A was re-opened and the decision reversed following further architectural review. `MapZeeKayDaAuth()` is **retained and required**: discovery, JWKS, and the token endpoint remain routed protocol endpoints registered via `IZeeKayDaEndpoint` / `MapZeeKayDaAuth()`. Only `/connect/authorize` and `/connect/callback/{scheme}` are handler-based via `IAuthenticationRequestHandler`. §2 body and §8 pipeline sketch updated accordingly. | [#156](https://github.com/ChrisKlug/zeekayda-auth/issues/156) |
 
 ---
 
@@ -82,10 +90,10 @@ services.AddAuthentication()
             ZeeKayDaAuthDefaults.AuthenticationScheme, _ => { });
 ```
 
-`MapZeeKayDaAuth()` is not required when `IAuthenticationRequestHandler` handles all protocol
-endpoints. Protocol-adjacent endpoints (JWKS, discovery) are registered via an endpoint data
-source contributed directly inside `AddZeeKayDaAuth()`. `MapZeeKayDaAuth()` will be introduced
-only if a concrete need arises later (see resolved Open Question §A).
+`IAuthenticationRequestHandler` handles only `/connect/authorize` and the per-scheme callback
+paths `/connect/callback/{scheme}`. Discovery, JWKS, and the token endpoint remain routed
+protocol endpoints registered via the `IZeeKayDaEndpoint` mechanism (ADR 0001 §1) and mapped
+by `MapZeeKayDaAuth()`. `MapZeeKayDaAuth()` is therefore required (see resolved Open Question §A).
 
 A future optional UI package (`ZeeKayDa.Auth.AspNetCore.UI`) is explicitly out of scope for
 this ADR. Its delivery mechanism — whether a custom endpoint data source, embedded Razor Pages,
@@ -560,8 +568,10 @@ ASP.NET Core — consumers familiar with those patterns will find the model unsu
 app.UseAuthentication(); // ZeeKayDa intercepts /connect/authorize and /connect/callback/{scheme}
 app.UseAuthorization();
 
-// Note: app.MapZeeKayDaAuth() is NOT required. Protocol endpoints (discovery, JWKS) are
-// registered via endpoint data sources inside AddZeeKayDaAuth(). See resolved Open Question §A.
+// Required: registers routed protocol endpoints (discovery, JWKS, token) via IZeeKayDaEndpoint.
+// /connect/authorize and /connect/callback/{scheme} are handled by IAuthenticationRequestHandler
+// above and are not registered here. See resolved Open Question §A.
+app.MapZeeKayDaAuth();
 
 // Host application interaction endpoints — completely host-owned
 app.MapPost("/auth/login", LoginPost);
@@ -1260,10 +1270,12 @@ implementation.
 
 ### A — ~~Is `MapZeeKayDaAuth()` required when `IAuthenticationRequestHandler` is used?~~ ✅ Resolved
 
-**Decision:** `MapZeeKayDaAuth()` is **not needed**. Protocol endpoints (JWKS, discovery) and
-UI package endpoints are registered via endpoint data sources contributed inside
-`AddZeeKayDaAuth()`. `MapZeeKayDaAuth()` will be introduced only if a concrete, future need
-arises — it is not part of the current public API surface.
+**Decision:** `MapZeeKayDaAuth()` is **retained and required**. Discovery, JWKS, and the token
+endpoint are routed protocol endpoints registered via the `IZeeKayDaEndpoint` mechanism
+(ADR 0001 §1) and mapped by `MapZeeKayDaAuth()`. Only `/connect/authorize` and the per-scheme
+callbacks `/connect/callback/{scheme}` are handler-based, intercepted before routing by
+`IAuthenticationRequestHandler` (see §2 and §3). `MapZeeKayDaAuth()` is therefore a required
+part of the public API surface.
 
 ### B — ~~Does `WithLocalAuth` need to exist as a distinct builder method?~~ ✅ Resolved
 
