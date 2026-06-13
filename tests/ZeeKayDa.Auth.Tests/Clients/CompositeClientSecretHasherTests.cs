@@ -294,7 +294,7 @@ public sealed class CompositeClientSecretHasherTests
     // ── ResolveDefault — guard throws ────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Constructor_throws_InvalidOperationException_when_no_hashers_are_provided()
+    public void Constructor_throws_ZeeKayDaConfigurationException_when_no_hashers_are_provided()
     {
         var regOptions = new ClientSecretHasherRegistrationOptions();
 
@@ -302,12 +302,13 @@ public sealed class CompositeClientSecretHasherTests
             [],
             Options.Create(regOptions));
 
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*AddSecretsHasher*");
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle()
+            .Which.Code.Should().Be("configuration.hashers.none_registered");
     }
 
     [Fact]
-    public void Constructor_throws_InvalidOperationException_when_multiple_hashers_and_none_marked_default()
+    public void Constructor_throws_ZeeKayDaConfigurationException_when_multiple_hashers_and_none_marked_default()
     {
         var hasherA = new FakeHasher<DefaultSecret>();
         var hasherB = new FakeHasher<AltSecret>();
@@ -320,12 +321,13 @@ public sealed class CompositeClientSecretHasherTests
             [hasherA, hasherB],
             Options.Create(regOptions));
 
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*isDefault: true*");
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle()
+            .Which.Code.Should().Be("configuration.hashers.no_default");
     }
 
     [Fact]
-    public void Constructor_throws_InvalidOperationException_when_default_type_is_not_in_hasher_list()
+    public void Constructor_throws_ZeeKayDaConfigurationException_when_default_type_is_not_in_hasher_list()
     {
         // Two hashers in the list, but the registration marks a *third* type (AbsentHasher) as
         // the default. The type lookup in ResolveDefault finds no match → must throw.
@@ -340,8 +342,9 @@ public sealed class CompositeClientSecretHasherTests
             [hasherA, hasherB],
             Options.Create(regOptions));
 
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*AbsentHasher*");
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle()
+            .Which.Code.Should().Be("configuration.hashers.default_type_not_found");
     }
 
     private sealed class AbsentHasher : IClientSecretHasher
