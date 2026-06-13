@@ -54,6 +54,13 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
             .Configure(configure)
             .ValidateOnStart();
 
+        // Post-configurer runs before validation: canonicalizes and freezes CorsOrigins so the
+        // validator is a pure read-only check.
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<
+                IPostConfigureOptions<AuthorizationServerOptions>,
+                AuthorizationServerOptionsPostConfigurer>());
+
         // Validator lives in ZeeKayDa.Auth (core) so it can be tested without a web host.
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<
@@ -91,6 +98,11 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
 
         // Emits a startup warning when AllowInsecureIssuer is enabled.
         services.AddHostedService<InsecureIssuerWarningService>();
+
+        // Validates that IScopeRepository exposes the 'openid' scope. Done in a hosted service
+        // so the check is awaitable — IValidateOptions<T>.Validate is synchronous and blocking
+        // on async I/O risks deadlocks in certain hosting configurations.
+        services.AddHostedService<ScopePresenceStartupValidator>();
 
         // Resolves IClientRepository at startup so construction-time validation (duplicate
         // detection, per-client validation, secret hashing) fails fast rather than at first request.

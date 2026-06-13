@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Options;
-using ZeeKayDa.Auth.Scopes;
 
 namespace ZeeKayDa.Auth.Configuration;
 
@@ -10,7 +9,9 @@ namespace ZeeKayDa.Auth.Configuration;
 /// <remarks>
 /// This validator is registered via <c>AddZeeKayDaAuth()</c> and activated by
 /// <c>ValidateOnStart()</c> so that misconfigured servers fail loudly at startup rather than
-/// silently at the first request.
+/// silently at the first request. It is a pure read-only check: CORS-origin canonicalization is
+/// handled by <see cref="AuthorizationServerOptionsPostConfigurer"/> (which runs before this
+/// validator), and async checks (e.g. scope presence) are handled by hosted services.
 /// </remarks>
 internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<AuthorizationServerOptions>
 {
@@ -31,13 +32,6 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
         "GrantTypesSupported includes 'client_credentials', which requires confidential clients. " +
         "TokenEndpoint.AuthMethodsSupported must contain at least one method other than 'none'. " +
         "See RFC 6749 §4.4 and OAuth 2.0 Security BCP §2.6 (RFC 9700).";
-
-    private readonly IScopeRepository _scopeRepository;
-
-    public AuthorizationServerOptionsValidator(IScopeRepository scopeRepository)
-    {
-        _scopeRepository = scopeRepository;
-    }
 
     /// <inheritdoc/>
     public ValidateOptionsResult Validate(string? name, AuthorizationServerOptions options)
@@ -217,7 +211,6 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
         // (scheme://host[:port]) with no path (other than "/"), query, fragment, userinfo, wildcards,
         // or CRLF. Invalid entries fail startup.
         var corsErrors = new List<string>();
-        var validOriginUris = new List<Uri>(options.DiscoveryDocument.CorsOrigins.Count);
         foreach (var origin in options.DiscoveryDocument.CorsOrigins)
         {
             if (origin is null)
@@ -293,8 +286,6 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
                     "AllowInsecureIssuer only permits HTTP loopback CORS origins for local development and testing.");
                 continue;
             }
-
-            validOriginUris.Add(originUri);
         }
         if (corsErrors.Count > 0)
         {
@@ -302,14 +293,6 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
                 "AuthorizationServerOptions.DiscoveryDocument.CorsOrigins contains invalid entries: " +
                 string.Join(" ", corsErrors));
         }
-
-        // Canonicalize and deduplicate CorsOrigins, then freeze into an immutable snapshot so the
-        // endpoint's cached startup view cannot diverge from later runtime mutations.
-        options.DiscoveryDocument.CorsOrigins = validOriginUris
-            .Select(u => u.GetLeftPart(UriPartial.Authority).ToLowerInvariant())
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList()
-            .AsReadOnly();
 
         // Validate SecurityHeaders enum values at startup so an out-of-range cast produces a startup
         // failure consistent with all other misconfiguration, rather than a 500 at request time.
@@ -416,15 +399,6 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
                 rejectQuery: true,
                 rejectFragment: true) is { } jwksError)
             return jwksError;
-
-        // IValidateOptions<T> is synchronous; block here so ValidateOnStart can fail fast.
-        var scopes = _scopeRepository.GetScopesAsync().GetAwaiter().GetResult();
-        if (!scopes.Any(scope => string.Equals(scope.Name, StandardScopes.OpenId.Name, StringComparison.Ordinal)))
-        {
-            return ValidateOptionsResult.Fail(
-                $"IScopeRepository must include the '{StandardScopes.OpenId.Name}' scope. " +
-                $"Every OpenID Connect authorization request is required to include '{StandardScopes.OpenId.Name}'.");
-        }
 
         return ValidateOptionsResult.Success;
     }
