@@ -52,6 +52,15 @@ internal sealed class CompositeClientAuthenticator
         ArgumentNullException.ThrowIfNull(clientId);
         ArgumentNullException.ThrowIfNull(httpContext);
 
+        // Read the form body once, asynchronously, before any authenticator is invoked.
+        // HttpRequest.Form is synchronous and throws on non-form content types — both are
+        // attacker-controllable. Non-form requests get an empty collection so CanHandle
+        // implementations can safely check for form fields without special-casing.
+        var form = httpContext.Request.HasFormContentType
+            ? await httpContext.Request.ReadFormAsync(cancellationToken)
+            : FormCollection.Empty;
+        var headers = httpContext.Request.Headers;
+
         // ADR 0007 §4 step 1: CanHandle is a shape check — build a context without the client
         // so the repository is not consulted for requests that will be rejected early.
         // Authenticators MUST NOT access context.Client inside CanHandle.
@@ -59,6 +68,8 @@ internal sealed class CompositeClientAuthenticator
         {
             HttpContext = httpContext,
             ClientId = clientId,
+            Form = form,
+            Headers = headers,
         };
 
         var matches = _authenticators
@@ -123,6 +134,8 @@ internal sealed class CompositeClientAuthenticator
             HttpContext = httpContext,
             ClientId = clientId,
             Client = client,
+            Form = form,
+            Headers = headers,
         };
         return await matchedAuthenticator.AuthenticateAsync(context, cancellationToken);
     }
