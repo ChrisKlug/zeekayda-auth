@@ -53,6 +53,32 @@ internal sealed class AuthenticatorCoverageValidator : IValidateOptions<Authoriz
             var typeName = authenticator.GetType().Name;
             foreach (var method in authenticator.AuthenticationMethods)
             {
+                // Reject leading/trailing whitespace before any other check: " none" or
+                // "client_secret_basic " would pass the ordinal equality checks below but fail
+                // silently at runtime because the runtime comparisons are also ordinal.
+                if (method != method.Trim())
+                {
+                    errors.Add(
+                        $"{typeName} declares auth method '{method}' which has leading or trailing " +
+                        "whitespace. Method strings must match exactly — use the constants in " +
+                        $"{nameof(TokenEndpointAuthMethods)}.");
+                    continue;
+                }
+
+                // Reject non-canonical casing for well-known methods. A custom authenticator that
+                // declares "Client_Secret_Basic" instead of "client_secret_basic" passes the ordinal
+                // overlap check, but its CanHandle will still fire for the same requests as the
+                // built-in authenticator, producing matches.Count > 1 and a silent invalid_client.
+                if (_canonicalMethodNames.TryGetValue(method, out var canonical) &&
+                    !string.Equals(method, canonical, StringComparison.Ordinal))
+                {
+                    errors.Add(
+                        $"{typeName} declares auth method '{method}' which differs from the canonical " +
+                        $"form '{canonical}' in casing. Use the exact constant from " +
+                        $"{nameof(TokenEndpointAuthMethods)} to avoid silent runtime mismatches.");
+                    continue;
+                }
+
                 if (string.Equals(method, TokenEndpointAuthMethods.None, StringComparison.Ordinal))
                 {
                     errors.Add(
@@ -92,6 +118,26 @@ internal sealed class AuthenticatorCoverageValidator : IValidateOptions<Authoriz
         return errors.Count > 0
             ? ValidateOptionsResult.Fail(errors)
             : ValidateOptionsResult.Success;
+    }
+
+    // Case-insensitive map from every known method string to its canonical (lowercase) form.
+    // Built once from ToMethodString so it stays in sync automatically as new enum values are added.
+    private static readonly IReadOnlyDictionary<string, string> _canonicalMethodNames =
+        BuildCanonicalMethodNames();
+
+    private static IReadOnlyDictionary<string, string> BuildCanonicalMethodNames()
+    {
+        var dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (TokenEndpointAuthMethod method in Enum.GetValues<TokenEndpointAuthMethod>())
+        {
+            try
+            {
+                var s = ToMethodString(method);
+                dict[s] = s;
+            }
+            catch (ArgumentOutOfRangeException) { }
+        }
+        return dict;
     }
 
     // NOTE: duplicates CompositeClientAuthenticator.ToMethodString intentionally — both bridge
