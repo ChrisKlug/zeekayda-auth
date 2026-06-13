@@ -1,3 +1,4 @@
+using System.Net;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -5,8 +6,6 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using ZeeKayDa.Auth;
-using ZeeKayDa.Auth.AspNetCore.Clients;
 using ZeeKayDa.Auth.AspNetCore.Extensions;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests;
@@ -89,6 +88,64 @@ internal sealed class TestWebAppFactory : WebApplicationFactory<TestWebAppFactor
 
         builder.Configure(app =>
         {
+            app.UseRouting();
+            app.UseEndpoints(endpoints => endpoints.MapZeeKayDaAuth());
+        });
+    }
+}
+
+/// <summary>
+/// A <see cref="WebApplicationFactory{TEntryPoint}"/> that sets a fixed
+/// <see cref="HttpContext.Connection.RemoteIpAddress"/> on every request, for testing the
+/// HTTPS loopback guard.
+/// </summary>
+internal sealed class TestWebAppFactoryWithRemoteIp : WebApplicationFactory<TestWebAppFactory>
+{
+    private readonly IPAddress? _remoteIpAddress;
+    private readonly Action<AuthorizationServerOptions>? _configureOptions;
+
+    public TestWebAppFactoryWithRemoteIp(
+        IPAddress? remoteIpAddress,
+        Action<AuthorizationServerOptions>? configureOptions = null)
+    {
+        _remoteIpAddress = remoteIpAddress;
+        _configureOptions = configureOptions;
+    }
+
+    protected override IHostBuilder CreateHostBuilder()
+        => Host.CreateDefaultBuilder()
+               .ConfigureWebHostDefaults(webBuilder => webBuilder.UseTestServer());
+
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    {
+        builder.UseContentRoot(AppContext.BaseDirectory);
+        var remoteIpAddress = _remoteIpAddress;
+
+        builder.ConfigureServices(services =>
+        {
+            services.AddRouting();
+            services.AddZeeKayDaAuth(options =>
+            {
+                options.Issuer = "http://localhost:5000";
+                options.AllowInsecureIssuer = true;
+                // Advertise "none" so the public test client passes the subset validation.
+                options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethod.None);
+                _configureOptions?.Invoke(options);
+            }).AddPbkdf2SecretsHasher()
+              .AddInMemoryClients(clients =>
+                clients.AddPublic("test-client",
+                    ["https://test.example.com/callback"],
+                    [],
+                    ["openid"]));
+        });
+
+        builder.Configure(app =>
+        {
+            app.Use(async (ctx, next) =>
+            {
+                ctx.Connection.RemoteIpAddress = remoteIpAddress;
+                await next();
+            });
             app.UseRouting();
             app.UseEndpoints(endpoints => endpoints.MapZeeKayDaAuth());
         });

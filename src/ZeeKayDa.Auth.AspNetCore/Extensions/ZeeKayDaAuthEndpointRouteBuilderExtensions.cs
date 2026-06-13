@@ -4,7 +4,6 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
-using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.AspNetCore.Endpoints;
 
 namespace ZeeKayDa.Auth.AspNetCore.Extensions;
@@ -51,7 +50,7 @@ public static class ZeeKayDaAuthEndpointRouteBuilderExtensions
                 .GetRequiredService<IOptions<AuthorizationServerOptions>>().Value;
 
             if (context.HttpContext.Request.IsHttps ||
-                (opts.AllowInsecureIssuer && IsLoopbackHost(context.HttpContext.Request.Host.Host)))
+                (opts.AllowInsecureIssuer && IsLoopbackConnection(context.HttpContext.Connection.RemoteIpAddress)))
             {
                 return await next(context);
             }
@@ -92,19 +91,6 @@ public static class ZeeKayDaAuthEndpointRouteBuilderExtensions
         return endpoints;
     }
 
-    private static bool IsLoopbackHost(string host)
-    {
-        if (string.IsNullOrWhiteSpace(host))
-        {
-            return false;
-        }
-
-        if (string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        return IPAddress.TryParse(host, out var ipAddress)
-               && IPAddress.IsLoopback(ipAddress);
-    }
+    private static bool IsLoopbackConnection(IPAddress? remoteIpAddress)
+        => remoteIpAddress is not null && IPAddress.IsLoopback(remoteIpAddress);
 }

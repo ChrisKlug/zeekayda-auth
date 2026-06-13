@@ -5,7 +5,6 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
-using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.AspNetCore.Extensions;
 using ZeeKayDa.Auth.Scopes;
 
@@ -492,11 +491,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
         string path,
         HttpStatusCode expectedStatusCode)
     {
-        using var factory = new TestWebAppFactory(opts =>
-        {
-            opts.Issuer = "http://localhost:5000";
-            opts.AllowInsecureIssuer = true;
-        });
+        using var factory = new TestWebAppFactoryWithRemoteIp(IPAddress.Loopback);
         using var client = CreateClient(factory, "http://localhost:5000");
         using var request = new HttpRequestMessage(new HttpMethod(method), path);
 
@@ -846,11 +841,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     [Fact]
     public async Task GetDiscoveryDocument_returns_insecure_issuer_header_when_AllowInsecureIssuer_is_true()
     {
-        using var factory = new TestWebAppFactory(opts =>
-        {
-            opts.Issuer = "http://localhost:5000";
-            opts.AllowInsecureIssuer = true;
-        });
+        using var factory = new TestWebAppFactoryWithRemoteIp(IPAddress.Loopback);
         using var client = CreateClient(factory, "http://localhost:5000");
 
         var response = await client.GetAsync(DiscoveryPath, TestContext.Current.CancellationToken);

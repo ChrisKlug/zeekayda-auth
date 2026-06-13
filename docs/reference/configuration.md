@@ -78,8 +78,16 @@ Intended for local development and automated testing only.
 > `InsecureIssuerWarningService` emits a warning via `ILogger` at every startup.
 >
 > Request-time enforcement also applies: ZeeKayDa.Auth protocol endpoints reject non-HTTPS
-> non-loopback requests with `421 Misdirected Request`. `AllowInsecureIssuer` only permits HTTP on
-> loopback hosts.
+> non-loopback requests with `421 Misdirected Request`. Loopback is determined from the TCP-level
+> `HttpContext.Connection.RemoteIpAddress`, not from the `Host` header.
+>
+> **Reverse-proxy caution:** If the application runs behind a reverse proxy with
+> `UseForwardedHeaders()` configured to trust an unbounded set of proxies, `RemoteIpAddress` can
+> be overwritten from a client-controlled `X-Forwarded-For` value. An attacker could then forge
+> `X-Forwarded-For: 127.0.0.1` to appear loopback. Always scope `KnownProxies` or `KnownNetworks`
+> to the actual proxy addresses and ensure `UseForwardedHeaders()` runs before
+> `app.UseEndpoints()`; never combine `AllowInsecureIssuer = true` with a wildcard trusted-proxy
+> configuration.
 
 ```csharp
 // Local development only
