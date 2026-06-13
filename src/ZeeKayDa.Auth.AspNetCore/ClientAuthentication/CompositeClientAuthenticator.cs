@@ -61,6 +61,11 @@ internal sealed class CompositeClientAuthenticator
             : FormCollection.Empty;
         var headers = httpContext.Request.Headers;
 
+        // RFC 7235 §4.2: a request MUST NOT carry more than one Authorization header field.
+        // Reject before CanHandle so no authenticator ever sees an ambiguous header set.
+        if (headers.Authorization.Count > 1)
+            return ClientAuthenticationResult.NotValid();
+
         // ADR 0007 §4 step 1: CanHandle is a shape check — build a context without the client
         // so the repository is not consulted for requests that will be rejected early.
         // Authenticators MUST NOT access context.Client inside CanHandle.
@@ -86,13 +91,7 @@ internal sealed class CompositeClientAuthenticator
         if (matches.Count > 1)
             return ClientAuthenticationResult.NotValid();
 
-        // Detect simultaneous presentation of conflicting mechanisms before hitting the
-        // repository. ClientSecretAuthenticator.CanHandle returns false in this case (belt-
-        // and-braces), which would otherwise let the request fall to the none fallback.
-        if (matches.Count == 0 && HasConflictingMechanisms(canHandleContext))
-            return ClientAuthenticationResult.NotValid();
-
-        // Repository lookup deferred past the early-reject checks above so ambiguous or
+        // Repository lookup deferred past the early-reject check above so ambiguous or
         // conflicting requests never incur unnecessary I/O.
         var client = await _clientRepository.FindByClientIdAsync(clientId, cancellationToken);
 
@@ -202,16 +201,4 @@ internal sealed class CompositeClientAuthenticator
         _ => throw new ArgumentOutOfRangeException(nameof(method), method, null),
     };
 
-    private static bool HasConflictingMechanisms(TokenRequestContext context)
-    {
-        // Multiple Authorization headers are themselves ambiguous — reject.
-        if (context.Headers.Authorization.Count > 1)
-            return true;
-
-        var hasBasic = context.Headers.Authorization.Count == 1 &&
-                       context.Headers.Authorization[0] is { } value &&
-                       value.StartsWith("Basic ", StringComparison.OrdinalIgnoreCase);
-        var hasPost = context.Form.ContainsKey("client_secret");
-        return hasBasic && hasPost;
-    }
 }

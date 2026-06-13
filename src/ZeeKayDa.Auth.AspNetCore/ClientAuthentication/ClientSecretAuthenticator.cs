@@ -37,10 +37,11 @@ internal sealed class ClientSecretAuthenticator : IClientAuthenticator
     /// <inheritdoc/>
     /// <remarks>
     /// Returns <see langword="true"/> with <c>client_secret_basic</c> when an
-    /// <c>Authorization: Basic</c> header is present; <c>client_secret_post</c> when a
-    /// <c>client_secret</c> form field is present. Returns <see langword="false"/> when both
-    /// are present (belt-and-braces check before the composite's multi-mechanism detection)
-    /// or when neither is present.
+    /// <c>Authorization: Basic</c> header is present — including the case where a
+    /// simultaneous <c>client_secret</c> form field is present, which
+    /// <see cref="AuthenticateAsync"/> rejects. Returns <see langword="true"/> with
+    /// <c>client_secret_post</c> when only a <c>client_secret</c> form field is present.
+    /// Returns <see langword="false"/> when neither is present.
     /// </remarks>
     public bool CanHandle(TokenRequestContext context, out string? method)
     {
@@ -48,13 +49,6 @@ internal sealed class ClientSecretAuthenticator : IClientAuthenticator
 
         var hasBasic = HasBasicAuthHeader(context.Headers);
         var hasPost = context.Form.ContainsKey("client_secret");
-
-        if (hasBasic && hasPost)
-        {
-            // Both mechanisms presented — reject before the composite's count > 1 check fires.
-            method = null;
-            return false;
-        }
 
         if (hasBasic)
         {
@@ -79,8 +73,18 @@ internal sealed class ClientSecretAuthenticator : IClientAuthenticator
     {
         ArgumentNullException.ThrowIfNull(context);
 
+        var hasBasic = HasBasicAuthHeader(context.Headers);
+        var hasPost = context.Form.ContainsKey("client_secret");
+
+        // RFC 6749 §2.3: a client MUST NOT use more than one authentication method per request.
+        if (hasBasic && hasPost)
+        {
+            _hasher.PadFailureToCredentialBudget(0);
+            return ValueTask.FromResult(ClientAuthenticationResult.NotValid());
+        }
+
         string presented;
-        if (HasBasicAuthHeader(context.Headers))
+        if (hasBasic)
         {
             // RFC 6749 §2.3.1: the Basic-auth username is the authoritative client_id.
             if (!TryParseBasicCredentials(context.Headers, out var username, out var password) ||

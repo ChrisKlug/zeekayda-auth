@@ -377,11 +377,11 @@ public sealed class CompositeClientAuthenticatorTests
     // ── Security: conflicting mechanisms → invalid_client, not none fallback ──────────────────────
 
     [Fact]
-    public async Task AuthenticateAsync_returns_Authenticated_false_when_both_secret_mechanisms_are_presented()
+    public async Task AuthenticateAsync_returns_Authenticated_false_when_both_secret_mechanisms_are_presented_by_public_client()
     {
         // A public client presents both Basic auth AND client_secret in the body.
-        // Before the HasConflictingMechanisms check: both cancel out in CanHandle → zero matches
-        // → falls to none path → Valid() for a properly registered public client. This is wrong.
+        // CanHandle returns (true, client_secret_basic) so the request doesn't fall to the 'none'
+        // fallback; the per-client method check then rejects it (public client only allows "none").
         var publicClient = CreatePublicClient();
         var (composite, _) = CreateCompositeWithHasher(
             publicClient,
@@ -398,6 +398,34 @@ public sealed class CompositeClientAuthenticatorTests
         });
 
         var result = await composite.AuthenticateAsync("public-client", httpContext, TestContext.Current.CancellationToken);
+
+        result.Authenticated.Should().BeFalse(
+            "simultaneous presentation of both secret mechanisms must be rejected per RFC 6749 §2.3");
+    }
+
+    [Fact]
+    public async Task AuthenticateAsync_returns_Authenticated_false_when_both_secret_mechanisms_are_presented_by_confidential_client()
+    {
+        // A confidential client presents both Basic auth AND client_secret in the body.
+        // ClientSecretAuthenticator.AuthenticateAsync detects the conflict and rejects
+        // even though the credentials themselves would be valid (FakeHasher returns true).
+        var secret = new FakeSecret();
+        var client = CreateConfidentialClient(secret: secret);
+        var (composite, _) = CreateCompositeWithHasher(
+            client,
+            new FakeHasher(true),
+            allowedMethods: [TokenEndpointAuthMethod.ClientSecretBasic]);
+
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers.Authorization =
+            "Basic " + Convert.ToBase64String(Encoding.UTF8.GetBytes("client-1:some-secret"));
+        httpContext.Request.Form = new FormCollection(new Dictionary<string, StringValues>
+        {
+            ["client_id"] = "client-1",
+            ["client_secret"] = "another-secret",
+        });
+
+        var result = await composite.AuthenticateAsync("client-1", httpContext, TestContext.Current.CancellationToken);
 
         result.Authenticated.Should().BeFalse(
             "simultaneous presentation of both secret mechanisms must be rejected per RFC 6749 §2.3");
