@@ -1,14 +1,13 @@
-using Microsoft.Extensions.DependencyInjection;
 using ZeeKayDa.Auth.Clients;
 
 namespace ZeeKayDa.Auth.AspNetCore.Clients;
 
 internal sealed class InMemoryClientRegistrationBuilder : IInMemoryClientRegistrationBuilder
 {
-    private readonly IServiceCollection _services;
+    private readonly InMemoryClientRegistrationOptions _options;
 
-    public InMemoryClientRegistrationBuilder(IServiceCollection services)
-        => _services = services;
+    public InMemoryClientRegistrationBuilder(InMemoryClientRegistrationOptions options)
+        => _options = options;
 
     /// <inheritdoc/>
     public IInMemoryClientRegistrationBuilder AddPublic(
@@ -18,7 +17,7 @@ internal sealed class InMemoryClientRegistrationBuilder : IInMemoryClientRegistr
         IEnumerable<string> allowedScopes)
     {
         var reg = ClientRegistration.CreatePublic(clientId, redirectUris, postLogoutRedirectUris, allowedScopes);
-        _services.Configure<InMemoryClientRegistrationOptions>(o => o.PreBuilt.Add(reg));
+        _options.PreBuilt.Add(reg);
         return this;
     }
 
@@ -36,14 +35,14 @@ internal sealed class InMemoryClientRegistrationBuilder : IInMemoryClientRegistr
             redirectUris.ToList(),
             postLogoutRedirectUris.ToList(),
             allowedScopes.ToList());
-        _services.Configure<InMemoryClientRegistrationOptions>(o => o.Pending.Add(spec));
+        _options.Pending.Add(spec);
         return this;
     }
 
     /// <inheritdoc/>
     public IInMemoryClientRegistrationBuilder Add(IClientRegistration registration)
     {
-        _services.Configure<InMemoryClientRegistrationOptions>(o => o.PreBuilt.Add(registration));
+        _options.PreBuilt.Add(registration);
         return this;
     }
 }

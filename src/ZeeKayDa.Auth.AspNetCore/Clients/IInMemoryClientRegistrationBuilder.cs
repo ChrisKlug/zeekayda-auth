@@ -24,9 +24,10 @@ public interface IInMemoryClientRegistrationBuilder
     /// Registers a confidential client with a plaintext secret.
     /// </summary>
     /// <remarks>
-    /// <strong>Warning:</strong> The plaintext secret is stored temporarily during service
-    /// registration and hashed at repository construction using the configured
-    /// <c>CompositeClientSecretHasher</c>. Never store or log plaintext secrets in production.
+    /// <strong>Warning:</strong> The plaintext secret is held transiently in the options object
+    /// until the repository is constructed at host startup, at which point it is hashed by the
+    /// configured <c>CompositeClientSecretHasher</c> and the options list is cleared so the
+    /// plaintext becomes GC-eligible. Never store or log plaintext secrets in production.
     /// The <paramref name="clientSecret"/> parameter is for bootstrap registration only;
     /// for production usage load secrets from a secure store.
     /// </remarks>

@@ -247,6 +247,30 @@ public sealed class InMemoryClientRepositoryTests
         found.Credentials.Should().ContainSingle(c => c is IClientSecret);
     }
 
+    [Fact]
+    public async Task Constructor_stored_credential_is_not_equal_to_original_plaintext()
+    {
+        // After hashing, the stored credential must be the opaque FakeSecret produced by FakeHasher,
+        // not a string equal to (or wrapping) the original plaintext. This verifies that the
+        // repository does not short-circuit the hasher and stash the plaintext directly.
+        var ct = TestContext.Current.CancellationToken;
+        const string plaintext = "super-secret";
+        var opts = new InMemoryClientRegistrationOptions();
+        opts.Pending.Add(new PendingConfidentialClientSpec(
+            "confidential-client",
+            plaintext,
+            ["https://app.example.com/cb"],
+            [],
+            ["openid"]));
+
+        var repo = MakeRepository(opts);
+
+        var found = await repo.FindByClientIdAsync("confidential-client", ct);
+        found.Should().NotBeNull();
+        var credential = found!.Credentials.Single();
+        credential.Should().BeOfType<FakeSecret>();
+    }
+
     // ── Aggregates failures from multiple invalid clients ─────────────────────────────────────────
 
     [Fact]

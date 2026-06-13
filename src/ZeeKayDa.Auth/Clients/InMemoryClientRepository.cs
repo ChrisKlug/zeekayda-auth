@@ -1,4 +1,3 @@
-using System.Linq;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -72,9 +71,10 @@ internal sealed class InMemoryClientRepository : IClientRepository
             allRegistrations.Add(reg);
         }
 
-        // All pending specs have been processed (hashed or converted to a failure). Drop the
-        // plaintext secrets now so they are not retained in the singleton options for the process
-        // lifetime.
+        // All pending specs have been processed (hashed or converted to a failure). Clear the list
+        // so the PendingConfidentialClientSpec objects — and the plaintext secrets they contain —
+        // become GC-eligible. Because the options object is a plain singleton (no capturing closure
+        // holds a reference to the specs), clearing is sufficient to release them.
         opts.Pending.Clear();
 
         // Add pre-built registrations
