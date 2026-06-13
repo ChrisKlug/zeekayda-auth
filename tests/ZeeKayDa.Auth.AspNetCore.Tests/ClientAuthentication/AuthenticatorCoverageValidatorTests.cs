@@ -39,7 +39,7 @@ public sealed class AuthenticatorCoverageValidatorTests
     private static AuthorizationServerOptions CreateOptions(params string[] methods)
     {
         var options = new AuthorizationServerOptions();
-        options.TokenEndpoint.AuthMethodsSupported = [..methods];
+        options.TokenEndpoint.AuthMethodsSupported = [.. methods];
         return options;
     }
 

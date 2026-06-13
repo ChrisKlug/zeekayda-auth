@@ -155,7 +155,7 @@ public sealed class CompositeClientAuthenticatorTests
         var options = new AuthorizationServerOptions();
         options.TokenEndpoint.AuthMethodsSupported =
             allowedMethods.Length > 0
-                ? [..allowedMethods]
+                ? [.. allowedMethods]
                 : [TokenEndpointAuthMethods.ClientSecretBasic];
         return Options.Create(options);
     }
