@@ -155,23 +155,30 @@ internal sealed class CompositeClientSecretHasher
         IReadOnlyList<IClientSecretHasher> hashers,
         ClientSecretHasherRegistrationOptions options)
     {
+        // Error codes below are stable API — do not rename without a semver-major bump.
         if (hashers.Count == 0)
-            throw new InvalidOperationException(
-                "No IClientSecretHasher implementations are registered. " +
-                "Call AddSecretsHasher<T>() on the ZeeKayDaAuthBuilder.");
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "configuration.hashers.none_registered",
+                    "No IClientSecretHasher implementations are registered. " +
+                    "Call AddSecretsHasher<T>() on the ZeeKayDaAuthBuilder."));
 
         if (hashers.Count == 1)
             return hashers[0];
 
         var defaultReg = options.Registrations.FirstOrDefault(r => r.IsDefault);
         if (defaultReg is null)
-            throw new InvalidOperationException(
-                "Multiple IClientSecretHasher implementations are registered but none is marked as " +
-                "default. Call AddSecretsHasher<T>(isDefault: true) for exactly one hasher.");
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "configuration.hashers.no_default",
+                    "Multiple IClientSecretHasher implementations are registered but none is marked as " +
+                    "default. Call AddSecretsHasher<T>(isDefault: true) for exactly one hasher."));
 
         return hashers.FirstOrDefault(h => h.GetType() == defaultReg.HasherType)
-            ?? throw new InvalidOperationException(
-                $"The default hasher type '{defaultReg.HasherType.FullName}' was not found in the " +
-                "registered hasher list. This indicates a DI configuration inconsistency.");
+            ?? throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "configuration.hashers.default_type_not_found",
+                    $"The default hasher type '{defaultReg.HasherType.FullName}' was not found in the " +
+                    "registered hasher list. This indicates a DI configuration inconsistency."));
     }
 }
