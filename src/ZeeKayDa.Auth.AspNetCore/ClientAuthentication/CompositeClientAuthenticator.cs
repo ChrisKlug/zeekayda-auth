@@ -199,6 +199,11 @@ internal sealed class CompositeClientAuthenticator
             return ClientAuthenticationResult.NotValid();
         }
 
+        // Failure branches are padded to equalise timing across all rejection reasons, preventing
+        // an attacker from distinguishing "client_id not found" from "client exists but is not public".
+        // The success branch intentionally skips padding: success vs. failure is already visible in
+        // the HTTP response, client_id is not a secret in OAuth, and padding would add PBKDF2 cost
+        // to every legitimate public-client authentication with no meaningful security gain.
         return ClientAuthenticationResult.Valid();
     }
 
