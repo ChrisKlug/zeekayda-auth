@@ -1,5 +1,7 @@
 using System.Text;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 using ZeeKayDa.Auth.AspNetCore.ClientAuthentication;
@@ -81,6 +83,31 @@ public sealed class CompositeClientAuthenticatorTests
             => ValueTask.FromResult(ClientAuthenticationResult.Valid());
     }
 
+    private sealed class ThrowingCanHandleAuthenticator : IClientAuthenticator
+    {
+        public IReadOnlySet<string> AuthenticationMethods =>
+            new HashSet<string>(StringComparer.Ordinal) { "throwing_method" };
+
+        public bool CanHandle(TokenRequestContext context, out string? method)
+            => throw new InvalidOperationException("Simulated authenticator bug");
+
+        public ValueTask<ClientAuthenticationResult> AuthenticateAsync(
+            ClientAuthenticationContext context, CancellationToken ct)
+            => throw new NotSupportedException("Should not be reached");
+    }
+
+    private sealed class CapturingLogger<T> : ILogger<T>
+    {
+        public List<(LogLevel Level, string Message, Exception? Exception)> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state,
+            Exception? exception, Func<TState, Exception?, string> formatter)
+            => Entries.Add((logLevel, formatter(state, exception), exception));
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────────────────────────
 
     private static (
@@ -116,7 +143,8 @@ public sealed class CompositeClientAuthenticatorTests
             [authenticator],
             new FakeClientRepository(client),
             serverOptions,
-            compositeHasher);
+            compositeHasher,
+            NullLogger<CompositeClientAuthenticator>.Instance);
 
         return (composite, hasher);
     }
@@ -244,7 +272,8 @@ public sealed class CompositeClientAuthenticatorTests
             ],
             new FakeClientRepository(client),
             CreateServerOptions(TokenEndpointAuthMethod.ClientSecretBasic),
-            compositeHasher);
+            compositeHasher,
+            NullLogger<CompositeClientAuthenticator>.Instance);
 
         var httpContext = new DefaultHttpContext();
         httpContext.Request.Form = new FormCollection(new Dictionary<string, StringValues>
@@ -658,5 +687,69 @@ public sealed class CompositeClientAuthenticatorTests
 
         result.Authenticated.Should().BeFalse(
             "a Basic header with no colon separator must be rejected");
+    }
+
+    // ── Security: throwing CanHandle is isolated ──────────────────────────────────────────────────
+
+    [Fact]
+    public async Task AuthenticateAsync_does_not_throw_when_CanHandle_throws()
+    {
+        var compositeHasher = new CompositeClientSecretHasher(
+            [new FakeHasher()],
+            Options.Create(new ClientSecretHasherRegistrationOptions()));
+
+        // ThrowingCanHandleAuthenticator is the only authenticator — after its CanHandle throws
+        // and is suppressed, matches is empty → none fallback → rejected (none not in allowlist).
+        var composite = new CompositeClientAuthenticator(
+            [new ThrowingCanHandleAuthenticator()],
+            new FakeClientRepository(CreatePublicClient()),
+            CreateServerOptions(TokenEndpointAuthMethod.ClientSecretBasic),
+            compositeHasher,
+            NullLogger<CompositeClientAuthenticator>.Instance);
+
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Form = new FormCollection(new Dictionary<string, StringValues>
+        {
+            ["client_id"] = "public-client",
+        });
+
+        Func<Task> act = () =>
+            composite.AuthenticateAsync("public-client", httpContext, TestContext.Current.CancellationToken).AsTask();
+
+        await act.Should().NotThrowAsync(
+            "a throwing CanHandle must be caught and treated as non-matching, not propagated");
+
+        var result = await composite.AuthenticateAsync("public-client", httpContext, TestContext.Current.CancellationToken);
+        result.Authenticated.Should().BeFalse(
+            "no authenticator matched so the none fallback fires, and none is not in the server allowlist");
+    }
+
+    [Fact]
+    public async Task AuthenticateAsync_logs_error_when_CanHandle_throws()
+    {
+        var compositeHasher = new CompositeClientSecretHasher(
+            [new FakeHasher()],
+            Options.Create(new ClientSecretHasherRegistrationOptions()));
+
+        var logger = new CapturingLogger<CompositeClientAuthenticator>();
+
+        var composite = new CompositeClientAuthenticator(
+            [new ThrowingCanHandleAuthenticator()],
+            new FakeClientRepository(CreatePublicClient()),
+            CreateServerOptions(TokenEndpointAuthMethod.ClientSecretBasic),
+            compositeHasher,
+            logger);
+
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Form = new FormCollection(new Dictionary<string, StringValues>
+        {
+            ["client_id"] = "public-client",
+        });
+
+        await composite.AuthenticateAsync("public-client", httpContext, TestContext.Current.CancellationToken);
+
+        logger.Entries.Should().ContainSingle()
+            .Which.Level.Should().Be(LogLevel.Error);
+        logger.Entries[0].Exception.Should().BeOfType<InvalidOperationException>();
     }
 }

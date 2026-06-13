@@ -1,5 +1,6 @@
 using System.Linq;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Clients;
 
@@ -19,22 +20,26 @@ internal sealed class CompositeClientAuthenticator
     private readonly IClientRepository _clientRepository;
     private readonly IOptions<AuthorizationServerOptions> _serverOptions;
     private readonly CompositeClientSecretHasher _secretHasher;
+    private readonly ILogger<CompositeClientAuthenticator> _logger;
 
     public CompositeClientAuthenticator(
         IEnumerable<IClientAuthenticator> authenticators,
         IClientRepository clientRepository,
         IOptions<AuthorizationServerOptions> serverOptions,
-        CompositeClientSecretHasher secretHasher)
+        CompositeClientSecretHasher secretHasher,
+        ILogger<CompositeClientAuthenticator> logger)
     {
         ArgumentNullException.ThrowIfNull(authenticators);
         ArgumentNullException.ThrowIfNull(clientRepository);
         ArgumentNullException.ThrowIfNull(serverOptions);
         ArgumentNullException.ThrowIfNull(secretHasher);
+        ArgumentNullException.ThrowIfNull(logger);
 
         _authenticators = authenticators.ToList().AsReadOnly();
         _clientRepository = clientRepository;
         _serverOptions = serverOptions;
         _secretHasher = secretHasher;
+        _logger = logger;
     }
 
     /// <summary>
@@ -80,7 +85,7 @@ internal sealed class CompositeClientAuthenticator
         var matches = _authenticators
             .Select(authenticator =>
             {
-                var canHandle = authenticator.CanHandle(canHandleContext, out var method);
+                var canHandle = TryCanHandle(authenticator, canHandleContext, out var method);
                 return new { authenticator, canHandle, method };
             })
             .Where(x => x.canHandle)
@@ -137,6 +142,22 @@ internal sealed class CompositeClientAuthenticator
             Headers = headers,
         };
         return await matchedAuthenticator.AuthenticateAsync(context, cancellationToken);
+    }
+
+    private bool TryCanHandle(IClientAuthenticator authenticator, TokenRequestContext context, out string? method)
+    {
+        try
+        {
+            return authenticator.CanHandle(context, out method);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Authenticator {AuthenticatorType} threw from CanHandle; treating as non-matching.",
+                authenticator.GetType().FullName);
+            method = null;
+            return false;
+        }
     }
 
     private ClientAuthenticationResult AuthenticateNone(IClientRegistration? client)
