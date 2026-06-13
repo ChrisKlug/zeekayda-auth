@@ -13,17 +13,22 @@ public sealed class TokenEndpointOptions
 
     /// <summary>
     /// Gets or sets the client authentication methods supported by the token endpoint.
-    /// Defaults to <c>[<see cref="TokenEndpointAuthMethod.ClientSecretBasic"/>]</c>.
+    /// Defaults to <c>["client_secret_basic"]</c> (see <see cref="TokenEndpointAuthMethods.ClientSecretBasic"/>).
     /// </summary>
     /// <remarks>
-    /// Maps to the <c>token_endpoint_auth_methods_supported</c> discovery metadata field.
-    /// Must not be null or empty and must contain at least one non-<see cref="TokenEndpointAuthMethod.None"/>
-    /// method if <see cref="AuthorizationServerOptions.GrantTypesSupported"/> includes
-    /// <see cref="GrantType.ClientCredentials"/>.
     /// <para>
-    /// <see cref="TokenEndpointAuthMethod.ClientSecretPost"/> is opt-in and must be added explicitly.
+    /// Maps to the <c>token_endpoint_auth_methods_supported</c> discovery metadata field.
+    /// Must not be null or empty and must contain at least one non-<c>"none"</c> method
+    /// (see <see cref="TokenEndpointAuthMethods.None"/>) if
+    /// <see cref="AuthorizationServerOptions.GrantTypesSupported"/> includes
+    /// <see cref="GrantType.ClientCredentials"/>.
+    /// </para>
+    /// <para>
+    /// Well-known values are available as constants on <see cref="TokenEndpointAuthMethods"/>.
+    /// Custom authentication methods (e.g. <c>tls_client_auth</c>) can be expressed as plain
+    /// strings alongside those constants.
     /// </para>
     /// </remarks>
-    public ICollection<TokenEndpointAuthMethod> AuthMethodsSupported { get; set; } =
-        [TokenEndpointAuthMethod.ClientSecretBasic];
+    public ICollection<string> AuthMethodsSupported { get; set; } =
+        [TokenEndpointAuthMethods.ClientSecretBasic];
 }

@@ -114,14 +114,14 @@ internal sealed class InMemoryClientRepository : IClientRepository
 
         // AC #27: warn if "none" is advertised server-wide but no public client is registered
         var serverAdvertisesNone = serverOptions.Value.TokenEndpoint.AuthMethodsSupported
-            .Any(m => m == TokenEndpointAuthMethod.None);
+            .Any(m => string.Equals(m, TokenEndpointAuthMethods.None, StringComparison.Ordinal));
 
         if (serverAdvertisesNone && !_clients.Values.Any(c => c.IsPublic))
         {
             logger.LogWarning(
                 "The server advertises 'none' as a supported token endpoint authentication method " +
                 "but no public clients (IsPublic=true) are registered. Consider removing " +
-                "TokenEndpointAuthMethod.None from AuthMethodsSupported if no public clients are expected.");
+                "TokenEndpointAuthMethods.None from AuthMethodsSupported if no public clients are expected.");
         }
     }
 

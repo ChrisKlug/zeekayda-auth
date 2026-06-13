@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Discovery;
 using ZeeKayDa.Auth.Scopes;
 
@@ -157,8 +156,7 @@ public sealed class DiscoveryDocumentProviderTests
         doc.ScopesSupported.Should().Equal(StandardScopes.All.Select(scope => scope.Name));
         doc.ResponseModesSupported.Should().ContainSingle().Which.Should().Be(ResponseMode.Query);
         doc.GrantTypesSupported.Should().ContainSingle().Which.Should().Be(GrantType.AuthorizationCode);
-        doc.TokenEndpointAuthMethodsSupported.Should().ContainSingle()
-            .Which.Should().Be(TokenEndpointAuthMethod.ClientSecretBasic);
+        doc.TokenEndpointAuthMethodsSupported.Should().ContainSingle().Which.Should().Be(TokenEndpointAuthMethods.ClientSecretBasic);
         doc.SubjectTypesSupported.Should().ContainSingle().Which.Should().Be("public");
         doc.IdTokenSigningAlgValuesSupported.Should().ContainSingle().Which.Should().Be(SigningAlgorithm.RS256);
     }
@@ -181,7 +179,7 @@ public sealed class DiscoveryDocumentProviderTests
                 ModesSupported = [ResponseMode.Query, ResponseMode.FormPost],
             },
             GrantTypesSupported = [GrantType.AuthorizationCode, GrantType.RefreshToken],
-            TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethod.ClientSecretBasic, TokenEndpointAuthMethod.PrivateKeyJwt] },
+            TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethods.ClientSecretBasic, "tls_client_auth"] },
             IdToken = { SigningAlgValuesSupported = [SigningAlgorithm.RS256, SigningAlgorithm.PS256] },
         }, scopeRepository);
 
@@ -190,8 +188,8 @@ public sealed class DiscoveryDocumentProviderTests
         doc.ResponseModesSupported.Should().Equal(ResponseMode.Query, ResponseMode.FormPost);
         doc.GrantTypesSupported.Should().Equal(GrantType.AuthorizationCode, GrantType.RefreshToken);
         doc.TokenEndpointAuthMethodsSupported.Should().Equal(
-            TokenEndpointAuthMethod.ClientSecretBasic,
-            TokenEndpointAuthMethod.PrivateKeyJwt);
+            TokenEndpointAuthMethods.ClientSecretBasic,
+            "tls_client_auth");
         doc.IdTokenSigningAlgValuesSupported.Should().Equal(SigningAlgorithm.RS256, SigningAlgorithm.PS256);
     }
 

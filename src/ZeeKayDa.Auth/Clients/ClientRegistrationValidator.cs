@@ -231,7 +231,7 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
         var seen = new HashSet<string>(StringComparer.Ordinal);
 
         var serverMethods = new HashSet<string>(
-            _options.Value.TokenEndpoint.AuthMethodsSupported.Select(ToWireFormat),
+            _options.Value.TokenEndpoint.AuthMethodsSupported,
             StringComparer.Ordinal);
 
         // A confidential client must never advertise 'none' as a valid auth method: doing so would
@@ -412,13 +412,4 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
         }
     }
 
-    private static string ToWireFormat(TokenEndpointAuthMethod m) => m switch
-    {
-        TokenEndpointAuthMethod.ClientSecretBasic => TokenEndpointAuthMethods.ClientSecretBasic,
-        TokenEndpointAuthMethod.ClientSecretPost => TokenEndpointAuthMethods.ClientSecretPost,
-        TokenEndpointAuthMethod.ClientSecretJwt => "client_secret_jwt",
-        TokenEndpointAuthMethod.PrivateKeyJwt => "private_key_jwt",
-        TokenEndpointAuthMethod.None => TokenEndpointAuthMethods.None,
-        _ => m.ToString()
-    };
 }

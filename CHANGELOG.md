@@ -8,6 +8,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- **BREAKING: `TokenEndpoint.AuthMethodsSupported` is now `ICollection<string>`** (#115)
+
+  `TokenEndpointOptions.AuthMethodsSupported` changes from `ICollection<TokenEndpointAuthMethod>` to
+  `ICollection<string>`, and `OpenIdConfigurationDocument.TokenEndpointAuthMethodsSupported` changes
+  from `IReadOnlyCollection<TokenEndpointAuthMethod>` to `IReadOnlyCollection<string>`.
+
+  Use the `TokenEndpointAuthMethods` string constants (`ClientSecretBasic`, `ClientSecretPost`,
+  `None`) in place of the enum values. Custom authentication methods (e.g. `"tls_client_auth"`) can
+  now be included as plain strings alongside these constants.
+
+  The `TokenEndpointAuthMethod` enum is removed entirely.
+
+  Startup validation now enforces that every entry is a non-empty, non-whitespace string with no
+  leading/trailing whitespace and no control characters.
+
 - **Harden discovery/protocol endpoint responses with configurable CORS + defensive headers** (#73)
 
   Discovery responses now support an optional immutable CORS allowlist via

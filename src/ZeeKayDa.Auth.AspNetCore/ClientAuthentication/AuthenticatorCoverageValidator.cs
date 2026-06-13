@@ -36,24 +36,9 @@ internal sealed class AuthenticatorCoverageValidator : IValidateOptions<Authoriz
         var errors = new List<string>();
 
         // Build the set of server-supported method strings once so both loops can use it.
-        var serverMethods = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var enumMethod in options.TokenEndpoint.AuthMethodsSupported)
-        {
-            string methodString;
-            try
-            {
-                methodString = ToMethodString(enumMethod);
-            }
-            catch (ArgumentOutOfRangeException)
-            {
-                errors.Add(
-                    $"TokenEndpoint.AuthMethodsSupported contains '{enumMethod}', which has no " +
-                    "supported string mapping. Remove it or add a corresponding IClientAuthenticator.");
-                continue;
-            }
-
-            serverMethods.Add(methodString);
-        }
+        var serverMethods = new HashSet<string>(
+            options.TokenEndpoint.AuthMethodsSupported,
+            StringComparer.Ordinal);
 
 
         // Map method string → authenticator type name. Used to detect overlaps and uncovered methods.
@@ -131,34 +116,14 @@ internal sealed class AuthenticatorCoverageValidator : IValidateOptions<Authoriz
             : ValidateOptionsResult.Success;
     }
 
-    // Case-insensitive map from every known method string to its canonical (lowercase) form.
-    // Built once from ToMethodString so it stays in sync automatically as new enum values are added.
+    // Case-insensitive map of framework-handled method strings to their canonical form.
+    // Guards against a custom authenticator declaring "Client_Secret_Basic" instead of
+    // "client_secret_basic" — passes ordinal overlap checks but causes runtime mismatches.
     private static readonly IReadOnlyDictionary<string, string> _canonicalMethodNames =
-        BuildCanonicalMethodNames();
-
-    private static IReadOnlyDictionary<string, string> BuildCanonicalMethodNames()
-    {
-        var dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (TokenEndpointAuthMethod method in Enum.GetValues<TokenEndpointAuthMethod>())
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
-            try
-            {
-                var s = ToMethodString(method);
-                dict[s] = s;
-            }
-            catch (ArgumentOutOfRangeException) { }
-        }
-        return dict;
-    }
-
-    // NOTE: duplicates CompositeClientAuthenticator.ToMethodString intentionally — both bridge
-    // the same enum→string gap and both go away when AuthMethodsSupported becomes ICollection<string>
-    // (ADR 0007 §1a amendment follow-up).
-    private static string ToMethodString(TokenEndpointAuthMethod method) => method switch
-    {
-        TokenEndpointAuthMethod.ClientSecretBasic => TokenEndpointAuthMethods.ClientSecretBasic,
-        TokenEndpointAuthMethod.ClientSecretPost => TokenEndpointAuthMethods.ClientSecretPost,
-        TokenEndpointAuthMethod.None => TokenEndpointAuthMethods.None,
-        _ => throw new ArgumentOutOfRangeException(nameof(method), method, null),
-    };
+            [TokenEndpointAuthMethods.ClientSecretBasic] = TokenEndpointAuthMethods.ClientSecretBasic,
+            [TokenEndpointAuthMethods.ClientSecretPost] = TokenEndpointAuthMethods.ClientSecretPost,
+            [TokenEndpointAuthMethods.None] = TokenEndpointAuthMethods.None,
+        };
 }

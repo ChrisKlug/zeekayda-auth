@@ -1,6 +1,4 @@
-using System.Linq;
 using Microsoft.Extensions.Options;
-using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.Scopes;
 
 namespace ZeeKayDa.Auth.Configuration;
@@ -18,7 +16,7 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
 {
     private const string TokenEndpointAuthMethodsRequiredMessage =
         "AuthorizationServerOptions.TokenEndpoint.AuthMethodsSupported must not be null or empty. " +
-        "Specify at least one client authentication method (e.g., TokenEndpointAuthMethod.ClientSecretBasic). " +
+        "Specify at least one client authentication method (e.g., TokenEndpointAuthMethods.ClientSecretBasic). " +
         "See OAuth 2.0 Security BCP §2.6 (RFC 9700).";
 
     /// <summary>
@@ -166,16 +164,31 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
             return ValidateOptionsResult.Fail(TokenEndpointAuthMethodsRequiredMessage);
         }
 
-        foreach (var authMethod in options.TokenEndpoint.AuthMethodsSupported.Where(authMethod => !Enum.IsDefined(authMethod)))
+        foreach (var authMethod in options.TokenEndpoint.AuthMethodsSupported)
         {
-            return ValidateOptionsResult.Fail(
-                $"AuthorizationServerOptions.TokenEndpoint.AuthMethodsSupported contains invalid value '{(int)authMethod}'. " +
-                $"Expected a valid {nameof(TokenEndpointAuthMethod)} enum member.");
+            if (string.IsNullOrWhiteSpace(authMethod))
+            {
+                return ValidateOptionsResult.Fail(
+                    "AuthorizationServerOptions.TokenEndpoint.AuthMethodsSupported contains an invalid entry: " +
+                    "each entry must be a non-empty, non-whitespace string.");
+            }
+            if (authMethod != authMethod.Trim())
+            {
+                return ValidateOptionsResult.Fail(
+                    "AuthorizationServerOptions.TokenEndpoint.AuthMethodsSupported contains an invalid entry: " +
+                    $"'{authMethod}' has leading or trailing whitespace.");
+            }
+            if (authMethod.Any(char.IsControl))
+            {
+                return ValidateOptionsResult.Fail(
+                    "AuthorizationServerOptions.TokenEndpoint.AuthMethodsSupported contains an invalid entry: " +
+                    $"'{authMethod}' contains one or more control characters.");
+            }
         }
 
         // ADR 0002 §4: If client_credentials grant is supported, must have at least one non-None auth method
         if (options.GrantTypesSupported.Contains(GrantType.ClientCredentials) &&
-            options.TokenEndpoint.AuthMethodsSupported.All(m => m == TokenEndpointAuthMethod.None))
+            options.TokenEndpoint.AuthMethodsSupported.All(m => string.Equals(m, TokenEndpointAuthMethods.None, StringComparison.Ordinal)))
         {
             return ValidateOptionsResult.Fail(ClientCredentialsRequiresNonNoneTokenAuthMethodMessage);
         }

@@ -47,7 +47,7 @@ public sealed record OpenIdConfigurationDocument
 
     /// <summary>Gets the token endpoint authentication methods supported by this authorization server.</summary>
     [JsonPropertyName("token_endpoint_auth_methods_supported")]
-    public required IReadOnlyCollection<TokenEndpointAuthMethod> TokenEndpointAuthMethodsSupported { get; init; }
+    public required IReadOnlyCollection<string> TokenEndpointAuthMethodsSupported { get; init; }
 
     /// <summary>Gets the subject identifier types supported by this authorization server.</summary>
     /// <remarks>Always <c>["public"]</c>. Pairwise subject identifiers are not supported.</remarks>
