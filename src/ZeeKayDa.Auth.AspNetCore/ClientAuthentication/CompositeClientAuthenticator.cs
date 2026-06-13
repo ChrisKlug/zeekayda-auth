@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using ZeeKayDa.Auth.AspNetCore.Logging;
 using ZeeKayDa.Auth.Clients;
 
 namespace ZeeKayDa.Auth.AspNetCore.ClientAuthentication;
@@ -38,7 +39,7 @@ internal sealed class CompositeClientAuthenticator
         _clientRepository = clientRepository;
         _serverOptions = serverOptions;
         _secretHasher = secretHasher;
-        _logger = logger;
+        _logger = new SecretSanitizingLogger<CompositeClientAuthenticator>(logger);
     }
 
     /// <summary>
