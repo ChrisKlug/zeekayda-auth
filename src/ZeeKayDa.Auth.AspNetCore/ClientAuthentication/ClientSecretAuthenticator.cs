@@ -82,13 +82,25 @@ internal sealed class ClientSecretAuthenticator : IClientAuthenticator
         string presented;
         if (HasBasicAuthHeader(context.Headers))
         {
-            // RFC 6749 §2.3.1: the Basic auth username must equal the client_id.
+            // RFC 6749 §2.3.1: the Basic-auth username is the authoritative client_id.
             if (!TryParseBasicCredentials(context.Headers, out var username, out var password) ||
                 !string.Equals(username, context.ClientId, StringComparison.Ordinal))
             {
                 _hasher.PadFailureToCredentialBudget(0);
                 return ValueTask.FromResult(ClientAuthenticationResult.NotValid());
             }
+
+            // If the form body also carries a client_id it must agree with the Basic-auth
+            // username — two conflicting client_id values in one request is a protocol error
+            // regardless of which one the caller used to look up the client.
+            var formClientId = context.Form["client_id"].ToString();
+            if (formClientId.Length > 0 &&
+                !string.Equals(formClientId, username, StringComparison.Ordinal))
+            {
+                _hasher.PadFailureToCredentialBudget(0);
+                return ValueTask.FromResult(ClientAuthenticationResult.NotValid());
+            }
+
             presented = password;
         }
         else

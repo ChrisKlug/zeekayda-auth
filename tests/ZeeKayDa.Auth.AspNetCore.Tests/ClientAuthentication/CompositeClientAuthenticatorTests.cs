@@ -2,7 +2,6 @@ using System.Text;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
-using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.AspNetCore.ClientAuthentication;
 using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Configuration;
@@ -453,6 +452,30 @@ public sealed class CompositeClientAuthenticatorTests
 
         result.Authenticated.Should().BeFalse(
             "RFC 6749 §2.3.1: the Basic auth username must equal the client_id");
+    }
+
+    [Fact]
+    public async Task AuthenticateAsync_returns_Authenticated_false_when_form_client_id_disagrees_with_Basic_username()
+    {
+        var secret = new FakeSecret();
+        var client = CreateConfidentialClient("client-1", secret: secret);
+        // Hasher always accepts — success would mean the consistency check was bypassed.
+        var (composite, _) = CreateComposite(client, verifyResult: true);
+
+        // Basic header username is "client-1" (matches what composite received), but the form
+        // carries a different client_id. RFC 6749 §2.3.1: conflicting client_id values must be rejected.
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers.Authorization =
+            "Basic " + Convert.ToBase64String(Encoding.UTF8.GetBytes("client-1:correct-secret"));
+        httpContext.Request.Form = new FormCollection(new Dictionary<string, StringValues>
+        {
+            ["client_id"] = "other-client",
+        });
+
+        var result = await composite.AuthenticateAsync("client-1", httpContext, TestContext.Current.CancellationToken);
+
+        result.Authenticated.Should().BeFalse(
+            "RFC 6749 §2.3.1: a form client_id that disagrees with the Basic-auth username must be rejected");
     }
 
     // ── Security: multiple Authorization headers ──────────────────────────────────────────────────
