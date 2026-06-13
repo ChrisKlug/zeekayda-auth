@@ -154,7 +154,7 @@ internal sealed class ClientSecretAuthenticator : IClientAuthenticator
         username = string.Empty;
         password = string.Empty;
         var authHeader = headers.Authorization[0]!;
-        var base64Part = authHeader["Basic ".Length..];
+        var base64Part = authHeader["Basic ".Length..].Trim();
         try
         {
             var decoded = Encoding.UTF8.GetString(Convert.FromBase64String(base64Part));
