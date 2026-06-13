@@ -45,6 +45,10 @@ samples/
 docs/
 ```
 
+## Code navigation
+
+Prefer LSP over grep/bash for all symbol-level lookups: go-to-definition, find-references, hover types, and rename previews. LSP results are precise and scope-aware; grep is a fallback for searching comments, string literals, or other content LSP cannot answer.
+
 ## Conventions
 
 - All public API changes require a GitHub issue first
