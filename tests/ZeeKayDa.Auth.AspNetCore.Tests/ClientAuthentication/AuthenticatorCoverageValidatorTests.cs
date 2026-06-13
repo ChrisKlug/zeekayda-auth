@@ -186,4 +186,21 @@ public sealed class AuthenticatorCoverageValidatorTests
 
         result.Succeeded.Should().BeFalse();
     }
+
+    // ── Authenticator does not over-advertise ─────────────────────────────────────────────────────
+
+    [Fact]
+    public void Validate_succeeds_when_authenticator_declares_method_not_in_server_AuthMethodsSupported()
+    {
+        // An authenticator may declare methods the server does not advertise — coverage validation
+        // only checks that every advertised server method has exactly one authenticator; it does
+        // not require that every authenticator method is in AuthMethodsSupported.
+        var validator = CreateValidator(
+            new FakeAuthenticator(TokenEndpointAuthMethods.ClientSecretBasic, TokenEndpointAuthMethods.ClientSecretPost));
+
+        var result = validator.Validate(null,
+            CreateOptions(TokenEndpointAuthMethods.ClientSecretBasic));
+
+        result.Succeeded.Should().BeTrue();
+    }
 }
