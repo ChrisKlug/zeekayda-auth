@@ -1,6 +1,5 @@
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Configuration;
-using ZeeKayDa.Auth.Scopes;
 
 namespace ZeeKayDa.Auth.Tests.Configuration;
 
@@ -11,12 +10,8 @@ public sealed class AuthorizationServerOptionsValidatorTests
         "TokenEndpoint.AuthMethodsSupported must contain at least one method other than 'none'. " +
         "See RFC 6749 §4.4 and OAuth 2.0 Security BCP §2.6 (RFC 9700).";
 
-    private static ValidateOptionsResult Validate(
-        AuthorizationServerOptions options,
-        IScopeRepository? scopeRepository = null)
-        => new AuthorizationServerOptionsValidator(
-            scopeRepository ?? new InMemoryScopeRepository([StandardScopes.OpenId]))
-        .Validate(null, options);
+    private static ValidateOptionsResult Validate(AuthorizationServerOptions options)
+        => new AuthorizationServerOptionsValidator().Validate(null, options);
 
     // ── Issuer presence ──────────────────────────────────────────────────────────────────────────
 
@@ -623,60 +618,6 @@ public sealed class AuthorizationServerOptionsValidatorTests
         result.Succeeded.Should().BeTrue();
     }
 
-    [Fact]
-    public void Validate_succeeds_when_openid_scope_is_present()
-    {
-        var result = Validate(
-            new AuthorizationServerOptions
-            {
-                Issuer = "https://auth.example.com",
-            },
-            new InMemoryScopeRepository([StandardScopes.OpenId]));
-
-        result.Succeeded.Should().BeTrue();
-    }
-
-    [Fact]
-    public void Validate_succeeds_with_default_InMemory_scopes_when_openid_scope_is_present()
-    {
-        var result = Validate(
-            new AuthorizationServerOptions
-            {
-                Issuer = "https://auth.example.com",
-            },
-            new InMemoryScopeRepository(StandardScopes.All));
-
-        result.Succeeded.Should().BeTrue();
-    }
-
-    [Fact]
-    public void Validate_fails_when_openid_scope_is_missing()
-    {
-        var result = Validate(
-            new AuthorizationServerOptions
-            {
-                Issuer = "https://auth.example.com",
-            },
-            new InMemoryScopeRepository([StandardScopes.Profile]));
-
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain(StandardScopes.OpenId.Name);
-    }
-
-    [Fact]
-    public void Validate_fails_for_custom_scope_repository_without_openid_scope()
-    {
-        var result = Validate(
-            new AuthorizationServerOptions
-            {
-                Issuer = "https://auth.example.com",
-            },
-            new CustomScopeRepositoryWithoutOpenId());
-
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain(StandardScopes.OpenId.Name);
-    }
-
     // ── Endpoint URI overrides ────────────────────────────────────────────────────────────────────
 
     [Theory]
@@ -940,46 +881,6 @@ public sealed class AuthorizationServerOptionsValidatorTests
         result.FailureMessage.Should().Contain("loopback");
     }
 
-    [Fact]
-    public void Validate_canonicalizes_CORS_origins_after_validation()
-    {
-        var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
-        options.DiscoveryDocument.CorsOrigins.Add("HTTPS://APP.EXAMPLE.COM");
-
-        var result = Validate(options);
-
-        result.Succeeded.Should().BeTrue();
-        options.DiscoveryDocument.CorsOrigins.Should().ContainSingle()
-            .Which.Should().Be("https://app.example.com");
-    }
-
-    [Fact]
-    public void Validate_deduplicates_CORS_origins_after_validation()
-    {
-        var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
-        options.DiscoveryDocument.CorsOrigins.Add("https://app.example.com");
-        options.DiscoveryDocument.CorsOrigins.Add("HTTPS://APP.EXAMPLE.COM");
-
-        var result = Validate(options);
-
-        result.Succeeded.Should().BeTrue();
-        options.DiscoveryDocument.CorsOrigins.Should().ContainSingle();
-    }
-
-    [Fact]
-    public void Validate_makes_CORS_origins_read_only_after_validation()
-    {
-        var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
-        options.DiscoveryDocument.CorsOrigins.Add("https://app.example.com");
-
-        var result = Validate(options);
-
-        result.Succeeded.Should().BeTrue();
-        options.DiscoveryDocument.CorsOrigins.IsReadOnly.Should().BeTrue();
-        var act = () => options.DiscoveryDocument.CorsOrigins.Add("https://admin.example.com");
-        act.Should().Throw<NotSupportedException>();
-    }
-
     [Theory]
     [InlineData(null, "A null value is not a valid CORS origin.")]
     [InlineData("", "An empty string is not a valid CORS origin.")]
@@ -1040,11 +941,5 @@ public sealed class AuthorizationServerOptionsValidatorTests
         var group = typeof(AuthorizationServerOptions).GetProperty(parts[0])!.GetValue(options)!;
         var prop = group.GetType().GetProperty(parts[1])!;
         prop.SetValue(group, value);
-    }
-
-    private sealed class CustomScopeRepositoryWithoutOpenId : IScopeRepository
-    {
-        public ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default)
-            => ValueTask.FromResult<IReadOnlyCollection<ScopeDefinition>>([StandardScopes.Profile]);
     }
 }

@@ -201,6 +201,8 @@ future serialisation/`IConfiguration` binding.
 
 ### 4. Validator stays single-rooted
 
+> **Amendment (AA-M4, AA-M5 — 2026-06-13):** Two responsibilities were extracted from the validator: (1) CORS-origin canonicalization and deduplication moved to `AuthorizationServerOptionsPostConfigurer : IPostConfigureOptions<AuthorizationServerOptions>`, which runs before validation and freezes `DiscoveryOptions.CorsOrigins` into an immutable canonical snapshot (AA-M4 — `IValidateOptions<T>.Validate` is a read-only contract; mutation during validation is unexpected and can produce subtle ordering bugs). (2) The async `IScopeRepository` presence check moved to `ScopePresenceStartupValidator : IHostedService`, whose `StartAsync` is awaitable (AA-M5 — blocking on async I/O in the synchronous `Validate` method risks deadlocks in certain hosting configurations). `AuthorizationServerOptionsValidator` is now a pure read-only check, as the `IValidateOptions<T>` contract requires.
+
 The validator remains a single `IValidateOptions<AuthorizationServerOptions>` (today:
 `AuthorizationServerOptionsValidator` in `ZeeKayDa.Auth/Configuration/`) that reaches into the
 groups:
