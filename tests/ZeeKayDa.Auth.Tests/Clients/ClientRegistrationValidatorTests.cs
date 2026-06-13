@@ -1164,6 +1164,42 @@ public sealed class ClientRegistrationValidatorTests
                 f.Message.Contains("none"));
     }
 
+    // ── Credential registration constraints ──────────────────────────────────────────────────────
+
+    /// <summary>
+    /// A hasher that handles <see cref="FakeSecret"/> and returns a predictable failure from
+    /// <see cref="IClientSecretHasher.GetRegistrationFailures"/>. Used to verify the validator
+    /// delegates to the hasher rather than implementing its own type-specific checks.
+    /// </summary>
+    private sealed class RegistrationFailingHasher : IClientSecretHasher
+    {
+        public bool CanHandle(IClientSecret secret) => secret is FakeSecret;
+        public bool Verify(IClientSecret stored, ReadOnlySpan<char> presented) => false;
+        public IClientSecret Create(string plaintext) => new FakeSecret();
+
+        public IEnumerable<ZeeKayDaConfigurationFailure> GetRegistrationFailures(
+            IClientSecret credential, string clientId)
+        {
+            yield return new ZeeKayDaConfigurationFailure(
+                "test.fake_constraint",
+                $"Client '{clientId}' failed fake constraint.");
+        }
+    }
+
+    [Fact]
+    public void Validate_aggregates_registration_failures_from_hasher_GetRegistrationFailures()
+    {
+        var validator = MakeValidator(new RegistrationFailingHasher());
+        var client = MakeValidConfidentialClient();
+
+        var act = () => validator.Validate(client);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle(f =>
+                f.Code == "test.fake_constraint" &&
+                f.Message.Contains("test-client"));
+    }
+
     // ── DuplicatingSet helper ─────────────────────────────────────────────────────────────────────
 
     /// <summary>

@@ -161,6 +161,10 @@ public interface IClientSecretHasher
     bool CanHandle(IClientSecret secret);
     bool Verify(IClientSecret stored, ReadOnlySpan<char> presented);
     IClientSecret Create(string plaintext);
+    // Default: empty sequence. Override to enforce startup-time constraints on stored
+    // credentials this hasher owns (e.g. minimum iteration count or work-factor floor).
+    IEnumerable<ZeeKayDaConfigurationFailure> GetRegistrationFailures(
+        IClientSecret credential, string clientId) => [];
 }
 
 public abstract class ClientSecretHasher<TSecret> : IClientSecretHasher
@@ -174,7 +178,7 @@ public abstract class ClientSecretHasher<TSecret> : IClientSecretHasher
 }
 ```
 
-Implementations MUST: use `CryptographicOperations.FixedTimeEquals`; never throw from `Verify` (return `false` on internal error); never log the presented secret; be singleton-safe.
+Implementations MUST: use `CryptographicOperations.FixedTimeEquals`; never throw from `Verify` (return `false` on internal error); never log the presented secret; be singleton-safe. Override `GetRegistrationFailures` to enforce startup constraints on stored credentials the hasher owns. The framework routes each credential to the hasher that `CanHandle`s it via `CompositeClientSecretHasher` (§3.4); the `clientId` parameter is for diagnostic message formatting only.
 
 #### 3.3 `Pbkdf2ClientSecretHasher` — framework default
 
@@ -182,7 +186,7 @@ Implementations MUST: use `CryptographicOperations.FixedTimeEquals`; never throw
 |---|---|
 | Algorithm | PBKDF2-HMAC-SHA256 |
 | Default iterations | 600,000 (current OWASP guidance) |
-| Minimum iterations | 600,000 (constructor-enforced; matches current OWASP PBKDF2-HMAC-SHA256 guidance — equal to the default so operators can only configure stronger, never weaker) |
+| Minimum iterations | 600,000 — constructor-enforced on the create path (operators can only configure stronger, never weaker); registration-validated on the import path via `IClientSecretHasher.GetRegistrationFailures` (startup failure code `client.credentials.pbkdf2_iterations_below_minimum`). The constructor check guards credentials the hasher mints; the registration check guards pre-hashed credentials loaded from a database or migrated from another IdP. |
 | Salt | 16 bytes (`RandomNumberGenerator.GetBytes`) |
 | Hash | 32 bytes |
 
@@ -197,10 +201,15 @@ internal sealed class CompositeClientSecretHasher
     // Intentional one-time cost (~600 ms for PBKDF2 at 600k iterations).
     public bool Verify(IClientSecret stored, ReadOnlySpan<char> presented);
     public IClientSecret Create(string plaintext);
+    internal bool CanHandleAny(IClientSecret secret);
+    internal IEnumerable<ZeeKayDaConfigurationFailure> GetRegistrationFailures(
+        IClientSecret credential, string clientId);
     internal bool VerifyUnknownClientForTimingOnly(ReadOnlySpan<char> presented);
     internal void PadFailureToCredentialBudget(int attemptedCredentials);
 }
 ```
+
+`GetRegistrationFailures` routes by `CanHandle` and returns the owning hasher's failures. Credentials that no registered hasher can handle are skipped silently — the `client.credentials.no_hasher` failure is already reported by `ClientRegistrationValidator` (§6.1) before this method is called, so double-reporting is avoided.
 
 **Timing oracle.** `PadTiming()` (runs `_default.Verify(_dummySecret, _dummyPresented)`) fires only when the matched hasher is NOT the default:
 
@@ -389,6 +398,7 @@ A confidential client with an empty `AllowedTokenEndpointAuthMethods` can never 
 
 - `ClientId` matches `[A-Za-z0-9_\-.]+`, max 200 chars. Duplicate detection and in-memory dictionary lookup use `StringComparer.Ordinal`.
 - Confidential clients: `CompositeClientSecretHasher.Verify(credential, ReadOnlySpan<char>.Empty)` MUST return `false` for every `IClientSecret` in `Credentials` (defence-in-depth against a broken hasher that accepts empty input).
+- Per-hasher credential constraints: each `IClientSecret` credential is routed to its owning hasher's `GetRegistrationFailures` via the composite and any returned failures are aggregated alongside other registration failures. Third-party hashers opt in to startup validation by overriding this method — no additional interface or DI registration is required.
 - Confidential clients may have at most two active `IClientSecret` credentials (fixed failure-budget invariant for rotation timing).
 - `AllowedSigningAlgorithms` non-null ⇒ non-empty (shape check); subset check against `IdTokenOptions.SigningAlgValuesSupported` runs via `IValidateOptions<…>` at host startup (best-effort for in-memory clients; custom repositories must enforce their own subset validation).
 - `AllowedScopes` contains no empty/whitespace entries.
@@ -437,9 +447,9 @@ public interface IClientRegistrationValidator
 }
 ```
 
-The framework registers a default `ClientRegistrationValidator` implementation that enforces every rule listed in §5 and §6 — the redirect URI matrix, the `IsPublic` consistency table, `ClientId` charset/length, the empty-secret probe on every `IClientSecret`, the two-active-shared-secret cap, `AllowedSigningAlgorithms` shape and subset against `IdTokenOptions.SigningAlgValuesSupported`, `AllowedScopes` and `AllowedTokenEndpointAuthMethods` hygiene, the subset check against `TokenEndpointOptions.AuthMethodsSupported`, and `Enum.IsDefined` on every enum-typed set.
+The framework registers a default `ClientRegistrationValidator` implementation that enforces every rule listed in §5 and §6 — the redirect URI matrix, the `IsPublic` consistency table, `ClientId` charset/length, the empty-secret probe on every `IClientSecret`, per-hasher credential constraints (via `IClientSecretHasher.GetRegistrationFailures` routed through the composite), the two-active-shared-secret cap, `AllowedSigningAlgorithms` shape and subset against `IdTokenOptions.SigningAlgValuesSupported`, `AllowedScopes` and `AllowedTokenEndpointAuthMethods` hygiene, the subset check against `TokenEndpointOptions.AuthMethodsSupported`, and `Enum.IsDefined` on every enum-typed set.
 
-The validator depends on `IOptions<TokenEndpointOptions>`, `IOptions<IdTokenOptions>`, and the framework-internal `CompositeClientSecretHasher` (concrete type) for the empty-secret probe. It is registered as a singleton.
+The validator depends on `IOptions<TokenEndpointOptions>`, `IOptions<IdTokenOptions>`, and the framework-internal `CompositeClientSecretHasher` (concrete type) for the empty-secret probe and for per-hasher credential validation via `GetRegistrationFailures`. It is registered as a singleton.
 
 **Who calls it:**
 
@@ -495,7 +505,7 @@ Dynamic registration is out of scope for v1, but the v1 abstractions are deliber
 
 - A future `DynamicClientRepository` will be a **decorator** that wraps an internal mutable `IWritableClientRepository` (handling persistence) and exposes the RFC 7591 `/register` endpoint. The read-only `IClientRepository` surface in this ADR is the read side of that future split.
 - Policy is kept separate from storage: a separate `IDynamicClientRegistrationPolicy` interface will gate which metadata fields a self-registering client may set, what scopes/grant types it may request, and any rate limiting. Keeping policy out of the repository keeps the policy decisions testable in isolation and ensures the static-registration guarantees this ADR establishes (validation, consistency rules, redirect URI rules) are not eroded by the dynamic-registration code path — the dynamic path runs the same `IClientRegistrationValidator` (§6.1) before persisting.
-- No changes to `IClientRegistration`, `IClientCredential`, or the hasher contracts are anticipated; dynamic registration adds a new write surface, not a new data shape.
+- No changes to `IClientRegistration`, `IClientCredential`, or the hasher contracts are anticipated; dynamic registration adds a new write surface, not a new data shape. *(Note, 2026-06-13: `IClientSecretHasher` was subsequently extended with `GetRegistrationFailures` — a non-breaking additive default-interface-method. This supersedes the "no hasher contract changes anticipated" prediction for that specific addition. The credential data model and core verify/create contract remain stable.)*
 
 ### 11. Documentation requirements
 
@@ -597,3 +607,4 @@ The following docs deliverables fall out of this ADR and must be tracked in the 
 - **2026-06-13 (`ClientAuthenticationResult.Error` removed)** — The `Error` property is dropped from `ClientAuthenticationResult`. RFC 6749 §5.2 mandates exactly `invalid_client` for all client authentication failures at the token endpoint; there is no spec-permitted scenario in which a different error code is appropriate, so the property carried no real information. The token endpoint hardcodes `invalid_client` in its error response and does not read from the result object. The binary `Valid()`/`NotValid()` shape is the correct, spec-faithful model; `Error` was YAGNI. Dispatch rules in §4 and the `none` fallback in §6 already describe all failure paths returning `invalid_client` unconditionally.
 - **2026-06-13 (§4 amended forward to match implementation)** — Three implementation-time divergences from the accepted §4 spec are recorded here so the ADR is the authoritative source for downstream implementers: (1) `TokenRequestContext`/`ClientAuthenticationContext` split — the draft had a single nullable-client context; the implementation introduces `TokenRequestContext` (no client, used in `CanHandle`) as a base class and `ClientAuthenticationContext : TokenRequestContext` (non-null `Client`, used in `AuthenticateAsync`), eliminating an entire null-dereference class from custom implementations; (2) `method` parameter removed from `AuthenticateAsync` — the draft passed the matched method string back into `AuthenticateAsync` so multi-method authenticators could branch without re-derivation; the implementation drops the parameter and requires re-derivation via the same cheap shape check used in `CanHandle`; (3) `Form` and `Headers` as required init properties on `TokenRequestContext` — access via `HttpRequest.Form` is synchronous and throws on non-form content types (both attacker-controllable); pre-reading at context-construction time and exposing both as `init` properties gives all authenticators a consistent immutable snapshot. The code is not reverted; the ADR is amended forward. Dispatch rules #1, #5, and #6 updated to match; §9 package table updated to include `TokenRequestContext`.
 - **2026-06-13 (§4 mTLS scope note)** — Added a scope clarification to the "How to extend" section: `IClientAuthenticator` covers token-endpoint client authentication only (establishing which client is calling). Full mTLS (`tls_client_auth` / `self_signed_tls_client_auth`, RFC 8705) also requires certificate-bound access tokens (RFC 8705 §3), which is a token-issuance concern outside this interface's scope. A successful `TlsClientAuthAuthenticator` result authenticates the client but does not automatically bind the issued token to the certificate. The note prevents the `tls_client_auth` example from implying that plugging in a custom authenticator delivers "fully pluggable mTLS" end-to-end.
+- **2026-06-13 (`GetRegistrationFailures` startup hook)** — Add `IClientSecretHasher.GetRegistrationFailures(IClientSecret credential, string clientId)` with a default empty implementation. `Pbkdf2ClientSecretHasher` overrides it to enforce the minimum iteration floor on stored (imported) credentials — the constructor already guarded the create path; this closes the import-path gap from security finding SA-M2 (issue #154). `CompositeClientSecretHasher` routes each credential to its owning hasher and aggregates failures, skipping unhandled credentials silently to avoid duplicating the `client.credentials.no_hasher` failure already emitted by the empty-secret probe. `ClientRegistrationValidator` replaces direct `IPbkdf2ClientSecret` pattern-matching with a delegating `ValidateCredentialConstraints` call through the composite, giving third-party hashers an equivalent startup-validation hook at no extra registration ceremony. §3.2, §3.3, §3.4, §6, §6.1, and §10 updated.

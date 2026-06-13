@@ -120,6 +120,28 @@ public sealed class Pbkdf2ClientSecretHasher : ClientSecretHasher<IPbkdf2ClientS
     }
 
     /// <inheritdoc/>
+    public IEnumerable<ZeeKayDaConfigurationFailure> GetRegistrationFailures(
+        IClientSecret credential, string clientId)
+    {
+        if (credential is not IPbkdf2ClientSecret pbkdf2)
+            yield break;
+
+        if (pbkdf2.Iterations < MinIterations)
+            yield return new ZeeKayDaConfigurationFailure(
+                "client.credentials.pbkdf2_iterations_below_minimum",
+                $"Client '{clientId}' has a PBKDF2 credential with {pbkdf2.Iterations:N0} iterations, " +
+                $"which is below the minimum of {MinIterations:N0}. " +
+                "Credentials with insufficient iterations do not provide adequate brute-force resistance (NIST SP 800-132).");
+
+        if (pbkdf2.Iterations > MaxIterations)
+            yield return new ZeeKayDaConfigurationFailure(
+                "client.credentials.pbkdf2_iterations_above_maximum",
+                $"Client '{clientId}' has a PBKDF2 credential with {pbkdf2.Iterations:N0} iterations, " +
+                $"which exceeds the maximum of {MaxIterations:N0}. " +
+                "VerifyCore rejects credentials above this threshold, so the credential can never authenticate.");
+    }
+
+    /// <inheritdoc/>
     protected override IPbkdf2ClientSecret CreateCore(string plaintext)
     {
         var salt = RandomNumberGenerator.GetBytes(SaltLength);

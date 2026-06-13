@@ -48,6 +48,7 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
         ValidateIsPublicTrinity(client, failures);
         ValidateAllowedTokenEndpointAuthMethods(client, failures);
         ValidateEmptySecretProbe(client, failures);
+        ValidateCredentialConstraints(client, failures);
         ValidateTwoCredentialCap(client, failures);
         ValidateAllowedSigningAlgorithms(client, failures);
         ValidateAllowedScopes(client, failures);
@@ -310,6 +311,14 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
                 "for which no registered IClientSecretHasher.CanHandle returns true. " +
                 "The credential can never be verified."));
         }
+    }
+
+    private void ValidateCredentialConstraints(
+        IClientRegistration client,
+        List<ZeeKayDaConfigurationFailure> failures)
+    {
+        foreach (var secret in client.Credentials.OfType<IClientSecret>())
+            failures.AddRange(_hasher.GetRegistrationFailures(secret, client.ClientId));
     }
 
     private static void ValidateTwoCredentialCap(
