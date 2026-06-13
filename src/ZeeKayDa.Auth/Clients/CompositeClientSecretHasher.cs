@@ -107,6 +107,23 @@ internal sealed class CompositeClientSecretHasher
         => _default.Verify(_dummySecret, presented);
 
     /// <summary>
+    /// Runs <see cref="MaxActiveSharedSecretsPerClient"/> default-hasher verifications against
+    /// the pre-computed dummy secret using the non-empty <c>DummyPresented</c> constant.
+    /// Called by paths that have no real credentials to verify (unknown client, disallowed method,
+    /// <c>none</c> fallback rejection) to pad timing to match a known-client wrong-credential failure.
+    /// </summary>
+    /// <remarks>
+    /// <strong>Must use a non-empty presented value.</strong> <see cref="Pbkdf2ClientSecretHasher"/>
+    /// short-circuits immediately when <c>presented.IsEmpty</c>, which would make this method a no-op
+    /// and expose a timing oracle.
+    /// </remarks>
+    internal void PadToCredentialBudget()
+    {
+        for (var i = 0; i < MaxActiveSharedSecretsPerClient; i++)
+            _default.Verify(_dummySecret, DummyPresented.AsSpan());
+    }
+
+    /// <summary>
     /// Pads up to <see cref="MaxActiveSharedSecretsPerClient"/> verification-equivalent
     /// operations so that a client with fewer active credentials does not reveal its credential
     /// count by timing. Pass the number of credentials actually attempted.

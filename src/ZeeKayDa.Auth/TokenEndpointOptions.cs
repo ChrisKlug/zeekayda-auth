@@ -20,6 +20,9 @@ public sealed class TokenEndpointOptions
     /// Must not be null or empty and must contain at least one non-<see cref="TokenEndpointAuthMethod.None"/>
     /// method if <see cref="AuthorizationServerOptions.GrantTypesSupported"/> includes
     /// <see cref="GrantType.ClientCredentials"/>.
+    /// <para>
+    /// <see cref="TokenEndpointAuthMethod.ClientSecretPost"/> is opt-in and must be added explicitly.
+    /// </para>
     /// </remarks>
     public ICollection<TokenEndpointAuthMethod> AuthMethodsSupported { get; set; } =
         [TokenEndpointAuthMethod.ClientSecretBasic];

@@ -1,5 +1,4 @@
 using Microsoft.Extensions.DependencyInjection;
-using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.AspNetCore.ClientAuthentication;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests.ClientAuthentication;
@@ -84,6 +83,48 @@ public sealed class AuthenticatorCoverageValidatorTests
                 TokenEndpointAuthMethod.ClientSecretPost));
 
         result.Succeeded.Should().BeTrue();
+    }
+
+    // ── Whitespace in method string ───────────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("client_secret_basic ")]   // trailing space
+    [InlineData(" client_secret_basic")]   // leading space
+    [InlineData(" client_secret_basic ")]  // both
+    [InlineData("client_secret_post ")]    // trailing space on a different known method
+    [InlineData(" none")]                  // leading space on the reserved method
+    public void Validate_fails_when_authenticator_declares_method_with_surrounding_whitespace(
+        string methodWithWhitespace)
+    {
+        var validator = CreateValidator(
+            new FakeAuthenticator(methodWithWhitespace));
+
+        var result = validator.Validate(null,
+            CreateOptions(TokenEndpointAuthMethod.ClientSecretBasic));
+
+        result.Succeeded.Should().BeFalse();
+        result.FailureMessage.Should().ContainEquivalentOf("whitespace");
+    }
+
+    // ── Non-canonical casing ──────────────────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("Client_Secret_Basic")]    // title-case
+    [InlineData("CLIENT_SECRET_BASIC")]    // upper-case
+    [InlineData("CLIENT_SECRET_POST")]     // upper-case on a different known method
+    [InlineData("Client_Secret_Post")]     // title-case on a different known method
+    [InlineData("NONE")]                   // upper-case on the reserved method
+    public void Validate_fails_when_authenticator_declares_known_method_with_wrong_casing(
+        string methodWithWrongCasing)
+    {
+        var validator = CreateValidator(
+            new FakeAuthenticator(methodWithWrongCasing));
+
+        var result = validator.Validate(null,
+            CreateOptions(TokenEndpointAuthMethod.ClientSecretBasic));
+
+        result.Succeeded.Should().BeFalse();
+        result.FailureMessage.Should().MatchRegex("(?i)canonical|casing");
     }
 
     // ── none reserved ─────────────────────────────────────────────────────────────────────────────

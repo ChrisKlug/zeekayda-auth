@@ -1,8 +1,9 @@
 using System.Text;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
-using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.AspNetCore.ClientAuthentication;
 using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Configuration;
@@ -82,6 +83,31 @@ public sealed class CompositeClientAuthenticatorTests
             => ValueTask.FromResult(ClientAuthenticationResult.Valid());
     }
 
+    private sealed class ThrowingCanHandleAuthenticator : IClientAuthenticator
+    {
+        public IReadOnlySet<string> AuthenticationMethods =>
+            new HashSet<string>(StringComparer.Ordinal) { "throwing_method" };
+
+        public bool CanHandle(TokenRequestContext context, out string? method)
+            => throw new InvalidOperationException("Simulated authenticator bug");
+
+        public ValueTask<ClientAuthenticationResult> AuthenticateAsync(
+            ClientAuthenticationContext context, CancellationToken ct)
+            => throw new NotSupportedException("Should not be reached");
+    }
+
+    private sealed class CapturingLogger<T> : ILogger<T>
+    {
+        public List<(LogLevel Level, string Message, Exception? Exception)> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state,
+            Exception? exception, Func<TState, Exception?, string> formatter)
+            => Entries.Add((logLevel, formatter(state, exception), exception));
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────────────────────────
 
     private static (
@@ -117,7 +143,8 @@ public sealed class CompositeClientAuthenticatorTests
             [authenticator],
             new FakeClientRepository(client),
             serverOptions,
-            compositeHasher);
+            compositeHasher,
+            NullLogger<CompositeClientAuthenticator>.Instance);
 
         return (composite, hasher);
     }
@@ -245,7 +272,8 @@ public sealed class CompositeClientAuthenticatorTests
             ],
             new FakeClientRepository(client),
             CreateServerOptions(TokenEndpointAuthMethod.ClientSecretBasic),
-            compositeHasher);
+            compositeHasher,
+            NullLogger<CompositeClientAuthenticator>.Instance);
 
         var httpContext = new DefaultHttpContext();
         httpContext.Request.Form = new FormCollection(new Dictionary<string, StringValues>
@@ -378,11 +406,11 @@ public sealed class CompositeClientAuthenticatorTests
     // ── Security: conflicting mechanisms → invalid_client, not none fallback ──────────────────────
 
     [Fact]
-    public async Task AuthenticateAsync_returns_Authenticated_false_when_both_secret_mechanisms_are_presented()
+    public async Task AuthenticateAsync_returns_Authenticated_false_when_both_secret_mechanisms_are_presented_by_public_client()
     {
         // A public client presents both Basic auth AND client_secret in the body.
-        // Before the HasConflictingMechanisms check: both cancel out in CanHandle → zero matches
-        // → falls to none path → Valid() for a properly registered public client. This is wrong.
+        // CanHandle returns (true, client_secret_basic) so the request doesn't fall to the 'none'
+        // fallback; the per-client method check then rejects it (public client only allows "none").
         var publicClient = CreatePublicClient();
         var (composite, _) = CreateCompositeWithHasher(
             publicClient,
@@ -399,6 +427,34 @@ public sealed class CompositeClientAuthenticatorTests
         });
 
         var result = await composite.AuthenticateAsync("public-client", httpContext, TestContext.Current.CancellationToken);
+
+        result.Authenticated.Should().BeFalse(
+            "simultaneous presentation of both secret mechanisms must be rejected per RFC 6749 §2.3");
+    }
+
+    [Fact]
+    public async Task AuthenticateAsync_returns_Authenticated_false_when_both_secret_mechanisms_are_presented_by_confidential_client()
+    {
+        // A confidential client presents both Basic auth AND client_secret in the body.
+        // ClientSecretAuthenticator.AuthenticateAsync detects the conflict and rejects
+        // even though the credentials themselves would be valid (FakeHasher returns true).
+        var secret = new FakeSecret();
+        var client = CreateConfidentialClient(secret: secret);
+        var (composite, _) = CreateCompositeWithHasher(
+            client,
+            new FakeHasher(true),
+            allowedMethods: [TokenEndpointAuthMethod.ClientSecretBasic]);
+
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers.Authorization =
+            "Basic " + Convert.ToBase64String(Encoding.UTF8.GetBytes("client-1:some-secret"));
+        httpContext.Request.Form = new FormCollection(new Dictionary<string, StringValues>
+        {
+            ["client_id"] = "client-1",
+            ["client_secret"] = "another-secret",
+        });
+
+        var result = await composite.AuthenticateAsync("client-1", httpContext, TestContext.Current.CancellationToken);
 
         result.Authenticated.Should().BeFalse(
             "simultaneous presentation of both secret mechanisms must be rejected per RFC 6749 §2.3");
@@ -453,6 +509,30 @@ public sealed class CompositeClientAuthenticatorTests
 
         result.Authenticated.Should().BeFalse(
             "RFC 6749 §2.3.1: the Basic auth username must equal the client_id");
+    }
+
+    [Fact]
+    public async Task AuthenticateAsync_returns_Authenticated_false_when_form_client_id_disagrees_with_Basic_username()
+    {
+        var secret = new FakeSecret();
+        var client = CreateConfidentialClient("client-1", secret: secret);
+        // Hasher always accepts — success would mean the consistency check was bypassed.
+        var (composite, _) = CreateComposite(client, verifyResult: true);
+
+        // Basic header username is "client-1" (matches what composite received), but the form
+        // carries a different client_id. RFC 6749 §2.3.1: conflicting client_id values must be rejected.
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers.Authorization =
+            "Basic " + Convert.ToBase64String(Encoding.UTF8.GetBytes("client-1:correct-secret"));
+        httpContext.Request.Form = new FormCollection(new Dictionary<string, StringValues>
+        {
+            ["client_id"] = "other-client",
+        });
+
+        var result = await composite.AuthenticateAsync("client-1", httpContext, TestContext.Current.CancellationToken);
+
+        result.Authenticated.Should().BeFalse(
+            "RFC 6749 §2.3.1: a form client_id that disagrees with the Basic-auth username must be rejected");
     }
 
     // ── Security: multiple Authorization headers ──────────────────────────────────────────────────
@@ -565,6 +645,34 @@ public sealed class CompositeClientAuthenticatorTests
             "PadFailureToCredentialBudget must fire after a wrong client_secret_post credential");
     }
 
+    [Fact]
+    public async Task AuthenticateAsync_returns_Authenticated_false_when_client_secret_post_value_is_empty()
+    {
+        // client_secret= (empty value): ContainsKey is true, so CanHandle returns (true, client_secret_post).
+        // AuthenticateAsync enters the post path and passes "" to the hasher — not the none fallback.
+        var secret = new FakeSecret();
+        var client = CreateConfidentialClient(
+            secret: secret,
+            allowedMethod: TokenEndpointAuthMethods.ClientSecretPost);
+        var (composite, hasher) = CreateCompositeWithHasher(
+            client,
+            new FakeHasher(false),
+            allowedMethods: [TokenEndpointAuthMethod.ClientSecretPost]);
+
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Form = new FormCollection(new Dictionary<string, StringValues>
+        {
+            ["client_id"] = "client-1",
+            ["client_secret"] = string.Empty,
+        });
+
+        var result = await composite.AuthenticateAsync("client-1", httpContext, TestContext.Current.CancellationToken);
+
+        result.Authenticated.Should().BeFalse();
+        hasher.CallCount.Should().BeGreaterThan(1,
+            "client_secret_post path is entered and PadFailureToCredentialBudget fires — not the none fallback");
+    }
+
     // ── Malformed Basic credentials ───────────────────────────────────────────────────────────────
 
     [Fact]
@@ -607,5 +715,69 @@ public sealed class CompositeClientAuthenticatorTests
 
         result.Authenticated.Should().BeFalse(
             "a Basic header with no colon separator must be rejected");
+    }
+
+    // ── Security: throwing CanHandle is isolated ──────────────────────────────────────────────────
+
+    [Fact]
+    public async Task AuthenticateAsync_does_not_throw_when_CanHandle_throws()
+    {
+        var compositeHasher = new CompositeClientSecretHasher(
+            [new FakeHasher()],
+            Options.Create(new ClientSecretHasherRegistrationOptions()));
+
+        // ThrowingCanHandleAuthenticator is the only authenticator — after its CanHandle throws
+        // and is suppressed, matches is empty → none fallback → rejected (none not in allowlist).
+        var composite = new CompositeClientAuthenticator(
+            [new ThrowingCanHandleAuthenticator()],
+            new FakeClientRepository(CreatePublicClient()),
+            CreateServerOptions(TokenEndpointAuthMethod.ClientSecretBasic),
+            compositeHasher,
+            NullLogger<CompositeClientAuthenticator>.Instance);
+
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Form = new FormCollection(new Dictionary<string, StringValues>
+        {
+            ["client_id"] = "public-client",
+        });
+
+        Func<Task> act = () =>
+            composite.AuthenticateAsync("public-client", httpContext, TestContext.Current.CancellationToken).AsTask();
+
+        await act.Should().NotThrowAsync(
+            "a throwing CanHandle must be caught and treated as non-matching, not propagated");
+
+        var result = await composite.AuthenticateAsync("public-client", httpContext, TestContext.Current.CancellationToken);
+        result.Authenticated.Should().BeFalse(
+            "no authenticator matched so the none fallback fires, and none is not in the server allowlist");
+    }
+
+    [Fact]
+    public async Task AuthenticateAsync_logs_error_when_CanHandle_throws()
+    {
+        var compositeHasher = new CompositeClientSecretHasher(
+            [new FakeHasher()],
+            Options.Create(new ClientSecretHasherRegistrationOptions()));
+
+        var logger = new CapturingLogger<CompositeClientAuthenticator>();
+
+        var composite = new CompositeClientAuthenticator(
+            [new ThrowingCanHandleAuthenticator()],
+            new FakeClientRepository(CreatePublicClient()),
+            CreateServerOptions(TokenEndpointAuthMethod.ClientSecretBasic),
+            compositeHasher,
+            logger);
+
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Form = new FormCollection(new Dictionary<string, StringValues>
+        {
+            ["client_id"] = "public-client",
+        });
+
+        await composite.AuthenticateAsync("public-client", httpContext, TestContext.Current.CancellationToken);
+
+        logger.Entries.Should().ContainSingle()
+            .Which.Level.Should().Be(LogLevel.Error);
+        logger.Entries[0].Exception.Should().BeOfType<InvalidOperationException>();
     }
 }

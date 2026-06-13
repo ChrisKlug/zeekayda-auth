@@ -257,46 +257,80 @@ public interface IClientAuthenticator
     /// material this authenticator handles, and writes the matched method name to
     /// `method` — one of the values in `AuthenticationMethods`. Returns false and
     /// `method = null` otherwise. MUST be a cheap shape check (no crypto, no DB).
-    bool CanHandle(ClientAuthenticationContext context, out string? method);
+    /// The client has not been resolved at this point; only request-shape data is available.
+    bool CanHandle(TokenRequestContext context, out string? method);
 
     /// Invoked only after the composite has confirmed exactly this authenticator
-    /// detected and the matched method is on both allowlists. `method` is the same
-    /// string CanHandle returned — passed back so authenticators handling multiple
-    /// methods (e.g. ClientSecretAuthenticator handles client_secret_basic AND
-    /// client_secret_post) know which branch they're in without re-deriving.
+    /// detected and the matched method is on both allowlists. The client in `context`
+    /// is guaranteed non-null. Authenticators that handle multiple methods (e.g.
+    /// ClientSecretAuthenticator handles client_secret_basic AND client_secret_post)
+    /// must re-derive the branch from the same cheap shape check used in CanHandle.
     ValueTask<ClientAuthenticationResult> AuthenticateAsync(
-        ClientAuthenticationContext context, string method, CancellationToken cancellationToken);
+        ClientAuthenticationContext context,
+        CancellationToken cancellationToken);
 }
 
-public sealed class ClientAuthenticationContext
+/// <summary>
+/// Holds the request-shape information available during <see cref="IClientAuthenticator.CanHandle"/>.
+/// The client has not yet been resolved from the repository at this point.
+/// </summary>
+/// <remarks>
+/// <c>Form</c> and <c>Headers</c> are required init properties rather than being derived from
+/// <c>HttpContext</c> on demand. <c>HttpRequest.Form</c> is synchronous and throws on non-form
+/// content types — both attacker-controllable. <c>Headers</c> is captured at construction time
+/// so all authenticators see a consistent snapshot. The token endpoint pre-reads the form body
+/// asynchronously before constructing this context.
+/// </remarks>
+public class TokenRequestContext
 {
     public required HttpContext HttpContext { get; init; }
-    public required IClientRegistration? Client { get; init; }
     public required string ClientId { get; init; }
     public required IFormCollection Form { get; init; }
     public required IHeaderDictionary Headers { get; init; }
 }
 
+/// <summary>
+/// Extends <see cref="TokenRequestContext"/> with the resolved client. Passed to
+/// <see cref="IClientAuthenticator.AuthenticateAsync"/> after all pre-authentication checks pass.
+/// </summary>
+/// <remarks>
+/// <c>Client</c> is non-nullable by construction: the composite only creates this context
+/// once the client has been successfully resolved from <see cref="IClientRepository"/>. This
+/// eliminates a null-dereference class from custom authenticator implementations and removes
+/// the need for a nullable-client guard in every <c>AuthenticateAsync</c> body.
+/// </remarks>
+public sealed class ClientAuthenticationContext : TokenRequestContext
+{
+    public required IClientRegistration Client { get; init; }
+}
+
 public sealed record ClientAuthenticationResult
 {
     public required bool Authenticated { get; init; }
-    public string Error { get; init; } = "invalid_client";
 
     public static ClientAuthenticationResult Valid();
     public static ClientAuthenticationResult NotValid();
 }
 ```
 
+**`TokenRequestContext` / `ClientAuthenticationContext` split.** The ADR was drafted with a single `ClientAuthenticationContext` whose `Client` property was `IClientRegistration?` (nullable) — the client might or might not be resolved depending on the call site. The implementation splits this into two types: `TokenRequestContext` (no client, used in `CanHandle`) and `ClientAuthenticationContext : TokenRequestContext` (non-null `Client`, used in `AuthenticateAsync`). This is strictly better than the nullable shape: `CanHandle` correctly receives only the data available at its call point (the client has not yet been fetched), and `AuthenticateAsync` receives a type-level guarantee that `Client` is non-null. The nullable variant would force every `AuthenticateAsync` implementation to either null-guard or suppress warnings, and leaves open the question of what "null client passed to AuthenticateAsync" means. The split closes that question by construction.
+
+**`method` parameter dropped from `AuthenticateAsync`.** The earlier draft passed the matched method string back into `AuthenticateAsync` so multi-method authenticators (e.g. `ClientSecretAuthenticator` handling both `client_secret_basic` and `client_secret_post`) could branch without re-deriving. The implementation dropped this parameter. Rationale: the method-detection logic in `CanHandle` is a cheap shape check (header presence, form-field presence) — repeating it in `AuthenticateAsync` costs nothing measurable and is safer than threading a string through the composite where it could be misrouted or stale. Keeping `AuthenticateAsync` free of the `method` string also simplifies the composite (no string storage between `CanHandle` and `AuthenticateAsync`) and eliminates a class of bugs where the passed `method` disagrees with what the request actually contains. Implementers that need the branch must re-derive from the same cheap check.
+
+**`Form` and `Headers` as required init properties.** `HttpRequest.Form` is a synchronous property that throws `InvalidOperationException` on non-form content types and blocks under `AllowSynchronousIO = false` (the ASP.NET Core default since 3.0). Both conditions are attacker-controllable. `HttpRequest.Headers` is not volatile but reading it inside each authenticator creates no consistent-snapshot guarantee across multiple authenticators in the same pipeline. The token endpoint pre-reads the form body asynchronously once, then supplies `Form` and `Headers` as init properties on `TokenRequestContext`, so every authenticator sees the same immutable snapshot and the synchronous-access hazard is eliminated at the boundary.
+
 **Dispatch rules (`CompositeClientAuthenticator`).** The composite has **zero method-specific knowledge for credential-bearing methods**; it never inspects the request to identify `client_secret_basic`, `client_secret_post`, `tls_client_auth`, etc. Detection is delegated entirely to authenticators. The one reserved special case is `none`: absence of client authentication material is a composite fallback after every credential-bearing authenticator declines.
 
-1. Call `CanHandle(context, out method)` on every registered `IClientAuthenticator`. No authenticator may declare or return `TokenEndpointAuthMethods.None` (`"none"`); `none` is reserved for the composite fallback.
+1. Construct a `TokenRequestContext` (pre-read form, captured headers). Call `CanHandle(context, out method)` on every registered `IClientAuthenticator`. No authenticator may declare or return `TokenEndpointAuthMethods.None` (`"none"`); `none` is reserved for the composite fallback.
 2. Collect every `(authenticator, method)` pair where `CanHandle` returned `true`.
 3. `count > 1` → multiple client authentication mechanisms presented → `invalid_client` (RFC 6749 §2.3).
 4. `count == 0` → fall back to `method = "none"`. The fallback succeeds only if the server allows `none`, the client exists, `client.IsPublic == true`, `client.Credentials.Count == 0`, and `client.AllowedTokenEndpointAuthMethods` is exactly `{ "none" }`, all using `StringComparer.Ordinal`. Failure at any layer returns `invalid_client`. No authenticator is invoked for `none`; it represents the absence of authentication evidence, not a pluggable authentication mechanism.
-5. `count == 1` → the returned `method` MUST be in this authenticator's own `AuthenticationMethods` (defends against a buggy `CanHandle` returning an undeclared method, which would otherwise bypass the startup coverage check). The matched `method` MUST be present in `TokenEndpoint.AuthMethodsSupported` (global server allowlist). The client MUST exist before any per-client allowlist check; an unknown client returns `invalid_client` with the §3.4 / §7 timing padding applied where applicable. The matched `method` MUST then be present in `client.AllowedTokenEndpointAuthMethods`, using `StringComparer.Ordinal`. Failure at any layer returns `invalid_client` without invoking `AuthenticateAsync`. The per-client method list is not a secret; failing fast here is acceptable and avoids unnecessary crypto.
-6. Call `authenticator.AuthenticateAsync(context, method, ct)`. `Authenticated == true` → request is authenticated. `Authenticated == false` → `invalid_client` with the §3.4 / §7 timing padding applied.
+5. `count == 1` → the returned `method` MUST be in this authenticator's own `AuthenticationMethods` (defends against a buggy `CanHandle` returning an undeclared method, which would otherwise bypass the startup coverage check). The matched `method` MUST be present in `TokenEndpoint.AuthMethodsSupported` (global server allowlist). The client MUST exist before any per-client allowlist check; an unknown client returns `invalid_client` with the §3.4 / §7 timing padding applied where applicable. The matched `method` MUST then be present in `client.AllowedTokenEndpointAuthMethods`, using `StringComparer.Ordinal`. Failure at any layer returns `invalid_client` without invoking `AuthenticateAsync`. The per-client method list is not a secret; failing fast here is acceptable and avoids unnecessary crypto. On success, the composite promotes the `TokenRequestContext` to a `ClientAuthenticationContext` by attaching the resolved, non-null `Client`.
+6. Call `authenticator.AuthenticateAsync(context, ct)`. `Authenticated == true` → request is authenticated. `Authenticated == false` → `invalid_client` with the §3.4 / §7 timing padding applied.
 
 **How to extend:** ship an `IClientAuthenticator` whose `CanHandle` returns `true` (with the appropriate method string) when the request carries the new mechanism's material — for example, a `TlsClientAuthAuthenticator` returning `true` with `method = "tls_client_auth"` when `HttpContext.Connection.ClientCertificate is not null`. Register it, and add `"tls_client_auth"` to `TokenEndpoint.AuthMethodsSupported`. **No composite or framework change is required.** Custom authenticators MUST NOT attempt to handle `none`; it is reserved to the composite fallback so custom positive-evidence mechanisms cannot collide with public-client detection.
+
+**`IClientAuthenticator` scope.** This interface covers token-endpoint client authentication only — establishing *which client* is making the request. Full mTLS (`tls_client_auth` / `self_signed_tls_client_auth`, RFC 8705) also requires certificate-bound access tokens (RFC 8705 §3), which means threading the client certificate thumbprint through to token issuance. `IClientAuthenticator` does not address cert-binding; a successful `TlsClientAuthAuthenticator` result authenticates the client but does not automatically bind the issued token to the certificate. Cert-binding is a token-issuance concern and will be addressed by the future token-endpoint ADR.
 
 **Rotation:** when an authenticator owns a request, it MUST try ALL `client.Credentials.OfType<TCredential>()` before returning `NotValid`.
 
@@ -451,7 +485,7 @@ effective_scopes = (requested_scopes ∩ client.AllowedScopes) ∩ user_granted_
 | `IClientSecretHasher`, `ClientSecretHasher<T>`, `Pbkdf2ClientSecretHasher`, `CompositeClientSecretHasher` (internal) | `ZeeKayDa.Auth` |
 | `IClientRepository`, `InMemoryClientRepository`, `IClientRegistrationValidator`, `ClientRegistrationValidator` | `ZeeKayDa.Auth` |
 | `TokenEndpointAuthMethods`, `PromptValue`, `GrantType`, `ResponseType`, `ResponseMode` | `ZeeKayDa.Auth` |
-| `IClientAuthenticator`, `ClientAuthenticationContext`, `ClientAuthenticationResult` | `ZeeKayDa.Auth.AspNetCore` |
+| `IClientAuthenticator`, `TokenRequestContext`, `ClientAuthenticationContext`, `ClientAuthenticationResult` | `ZeeKayDa.Auth.AspNetCore` |
 | `ClientSecretAuthenticator`, `CompositeClientAuthenticator` (internal) | `ZeeKayDa.Auth.AspNetCore` |
 | `AddInMemoryClients` (`IInMemoryClientRegistrationBuilder`), `AddSecretsHasher<T>` | `ZeeKayDa.Auth.AspNetCore` |
 
@@ -560,3 +594,6 @@ The following docs deliverables fall out of this ADR and must be tracked in the 
 - **2026-06-08 (`none` fallback)** — Reserve `TokenEndpointAuthMethods.None` to the composite fallback instead of modelling it as `PublicClientAuthenticator`. Credential-bearing authenticators own positive request evidence; `none` is chosen only after all of them decline. Startup validation now forbids authenticators from declaring `none`. This fixes the custom-method collision where `PublicClientAuthenticator` could incorrectly return `none` for a request containing auth material it did not know how to detect (for example `tls_client_auth`).
 - **2026-06-11 (hasher infrastructure implementation fixes)** — Post-implementation review findings applied: (1) `PadTiming()` now uses the constant `DummyPresented` span rather than the attacker-controlled `presented` span, closing a potential timing-oracle widening against custom default hashers with input-length-dependent cost (security M1, §3.4); (2) `Pbkdf2ClientSecretHasher.VerifyCore` rejects stored credentials whose `Iterations` exceeds `MaxIterations` (2,000,000) and returns `false` with a warning, preventing CPU-bound DoS from a malformed credential store (§3.3); (3) `AddSecretsHasher<T>()` throws `InvalidOperationException` at registration time if the same hasher type is registered more than once (§9); (4) accepted timing residual: raising `Iterations` should be paired with credential rotation, as the unknown-client timing baseline diverges from old stored credentials until they are re-hashed (§3.4).
 - **2026-06-11 (`CreateConfidential` signature amendment)** — Replace `(IClientSecretHasher hasher, string clientSecret, ...)` with `(IClientCredential credential, ...)` in `ClientRegistration.CreateConfidential`. Rationale: `ClientRegistration` is a pure value object; mixing a service dependency (`IClientSecretHasher`) into the factory couples data construction to hashing infrastructure. The caller hashes the secret and passes the resulting `IClientCredential` directly. `IInMemoryClientRegistrationBuilder.AddConfidential` (§6) remains the primary DI-friendly path and retains hashing responsibility at the builder layer. The `IClientSecretHasher` parameter is retained in `IClientSecretHasher` itself and in the builder; only the `ClientRegistration` factory is affected.
+- **2026-06-13 (`ClientAuthenticationResult.Error` removed)** — The `Error` property is dropped from `ClientAuthenticationResult`. RFC 6749 §5.2 mandates exactly `invalid_client` for all client authentication failures at the token endpoint; there is no spec-permitted scenario in which a different error code is appropriate, so the property carried no real information. The token endpoint hardcodes `invalid_client` in its error response and does not read from the result object. The binary `Valid()`/`NotValid()` shape is the correct, spec-faithful model; `Error` was YAGNI. Dispatch rules in §4 and the `none` fallback in §6 already describe all failure paths returning `invalid_client` unconditionally.
+- **2026-06-13 (§4 amended forward to match implementation)** — Three implementation-time divergences from the accepted §4 spec are recorded here so the ADR is the authoritative source for downstream implementers: (1) `TokenRequestContext`/`ClientAuthenticationContext` split — the draft had a single nullable-client context; the implementation introduces `TokenRequestContext` (no client, used in `CanHandle`) as a base class and `ClientAuthenticationContext : TokenRequestContext` (non-null `Client`, used in `AuthenticateAsync`), eliminating an entire null-dereference class from custom implementations; (2) `method` parameter removed from `AuthenticateAsync` — the draft passed the matched method string back into `AuthenticateAsync` so multi-method authenticators could branch without re-derivation; the implementation drops the parameter and requires re-derivation via the same cheap shape check used in `CanHandle`; (3) `Form` and `Headers` as required init properties on `TokenRequestContext` — access via `HttpRequest.Form` is synchronous and throws on non-form content types (both attacker-controllable); pre-reading at context-construction time and exposing both as `init` properties gives all authenticators a consistent immutable snapshot. The code is not reverted; the ADR is amended forward. Dispatch rules #1, #5, and #6 updated to match; §9 package table updated to include `TokenRequestContext`.
+- **2026-06-13 (§4 mTLS scope note)** — Added a scope clarification to the "How to extend" section: `IClientAuthenticator` covers token-endpoint client authentication only (establishing which client is calling). Full mTLS (`tls_client_auth` / `self_signed_tls_client_auth`, RFC 8705) also requires certificate-bound access tokens (RFC 8705 §3), which is a token-issuance concern outside this interface's scope. A successful `TlsClientAuthAuthenticator` result authenticates the client but does not automatically bind the issued token to the certificate. The note prevents the `tls_client_auth` example from implying that plugging in a custom authenticator delivers "fully pluggable mTLS" end-to-end.

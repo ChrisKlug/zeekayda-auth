@@ -1,6 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
-using ZeeKayDa.Auth.Clients;
 
 namespace ZeeKayDa.Auth.AspNetCore.ClientAuthentication;
 
@@ -21,18 +20,41 @@ internal sealed class AuthenticatorCoverageValidator : IValidateOptions<Authoriz
 
     public ValidateOptionsResult Validate(string? name, AuthorizationServerOptions options)
     {
-        IEnumerable<IClientAuthenticator> authenticators;
+        // Eagerly resolve authenticators so any DI construction error surfaces here.
+        // If resolution fails (e.g., a dependency like IClientSecretHasher is missing),
+        // skip this check — other validators will surface the root cause.
+        IReadOnlyList<IClientAuthenticator> authenticators;
         try
         {
-            authenticators = _serviceProvider.GetServices<IClientAuthenticator>();
+            authenticators = _serviceProvider.GetServices<IClientAuthenticator>().ToList();
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return ValidateOptionsResult.Fail(
-                $"Failed to resolve IClientAuthenticator registrations: {ex.Message}");
+            return ValidateOptionsResult.Skip;
         }
 
         var errors = new List<string>();
+
+        // Build the set of server-supported method strings once so both loops can use it.
+        var serverMethods = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var enumMethod in options.TokenEndpoint.AuthMethodsSupported)
+        {
+            string methodString;
+            try
+            {
+                methodString = ToMethodString(enumMethod);
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                errors.Add(
+                    $"TokenEndpoint.AuthMethodsSupported contains '{enumMethod}', which has no " +
+                    "supported string mapping. Remove it or add a corresponding IClientAuthenticator.");
+                continue;
+            }
+
+            serverMethods.Add(methodString);
+        }
+
 
         // Map method string → authenticator type name. Used to detect overlaps and uncovered methods.
         var declared = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -42,6 +64,32 @@ internal sealed class AuthenticatorCoverageValidator : IValidateOptions<Authoriz
             var typeName = authenticator.GetType().Name;
             foreach (var method in authenticator.AuthenticationMethods)
             {
+                // Reject leading/trailing whitespace before any other check: " none" or
+                // "client_secret_basic " would pass the ordinal equality checks below but fail
+                // silently at runtime because the runtime comparisons are also ordinal.
+                if (method != method.Trim())
+                {
+                    errors.Add(
+                        $"{typeName} declares auth method '{method}' which has leading or trailing " +
+                        "whitespace. Method strings must match exactly — use the constants in " +
+                        $"{nameof(TokenEndpointAuthMethods)}.");
+                    continue;
+                }
+
+                // Reject non-canonical casing for well-known methods. A custom authenticator that
+                // declares "Client_Secret_Basic" instead of "client_secret_basic" passes the ordinal
+                // overlap check, but its CanHandle will still fire for the same requests as the
+                // built-in authenticator, producing matches.Count > 1 and a silent invalid_client.
+                if (_canonicalMethodNames.TryGetValue(method, out var canonical) &&
+                    !string.Equals(method, canonical, StringComparison.Ordinal))
+                {
+                    errors.Add(
+                        $"{typeName} declares auth method '{method}' which differs from the canonical " +
+                        $"form '{canonical}' in casing. Use the exact constant from " +
+                        $"{nameof(TokenEndpointAuthMethods)} to avoid silent runtime mismatches.");
+                    continue;
+                }
+
                 if (string.Equals(method, TokenEndpointAuthMethods.None, StringComparison.Ordinal))
                 {
                     errors.Add(
@@ -64,22 +112,9 @@ internal sealed class AuthenticatorCoverageValidator : IValidateOptions<Authoriz
             }
         }
 
-        foreach (var enumMethod in options.TokenEndpoint.AuthMethodsSupported)
+        // Every server-advertised method (except none) must have a covering authenticator.
+        foreach (var methodString in serverMethods)
         {
-            string methodString;
-            try
-            {
-                methodString = ToMethodString(enumMethod);
-            }
-            catch (ArgumentOutOfRangeException)
-            {
-                errors.Add(
-                    $"TokenEndpoint.AuthMethodsSupported contains '{enumMethod}', which has no " +
-                    "supported string mapping. Remove it or add a corresponding IClientAuthenticator.");
-                continue;
-            }
-
-            // none is always covered by the composite fallback — no authenticator needed.
             if (string.Equals(methodString, TokenEndpointAuthMethods.None, StringComparison.Ordinal))
                 continue;
 
@@ -94,6 +129,26 @@ internal sealed class AuthenticatorCoverageValidator : IValidateOptions<Authoriz
         return errors.Count > 0
             ? ValidateOptionsResult.Fail(errors)
             : ValidateOptionsResult.Success;
+    }
+
+    // Case-insensitive map from every known method string to its canonical (lowercase) form.
+    // Built once from ToMethodString so it stays in sync automatically as new enum values are added.
+    private static readonly IReadOnlyDictionary<string, string> _canonicalMethodNames =
+        BuildCanonicalMethodNames();
+
+    private static IReadOnlyDictionary<string, string> BuildCanonicalMethodNames()
+    {
+        var dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (TokenEndpointAuthMethod method in Enum.GetValues<TokenEndpointAuthMethod>())
+        {
+            try
+            {
+                var s = ToMethodString(method);
+                dict[s] = s;
+            }
+            catch (ArgumentOutOfRangeException) { }
+        }
+        return dict;
     }
 
     // NOTE: duplicates CompositeClientAuthenticator.ToMethodString intentionally — both bridge
