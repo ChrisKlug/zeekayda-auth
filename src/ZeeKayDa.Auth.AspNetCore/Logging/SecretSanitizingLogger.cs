@@ -71,9 +71,8 @@ internal sealed class SecretSanitizingLogger<T>(ILogger<T> inner) : ILogger<T>
                 return string.Join(", ", pairs.Select(kv => $"{kv.Key}: {kv.Value}"));
 
             var result = template;
-            foreach (var kv in pairs)
+            foreach (var kv in pairs.Where(kv => kv.Key != "{OriginalFormat}"))
             {
-                if (kv.Key == "{OriginalFormat}") continue;
                 result = result.Replace($"{{{kv.Key}}}", kv.Value?.ToString() ?? "(null)", StringComparison.Ordinal);
             }
             return result;

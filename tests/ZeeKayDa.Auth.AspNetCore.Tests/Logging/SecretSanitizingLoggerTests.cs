@@ -30,7 +30,7 @@ public sealed class SecretSanitizingLoggerTests
         {
             var pairs = state is IEnumerable<KeyValuePair<string, object?>> enumerable
                 ? enumerable.ToList()
-                : (IReadOnlyList<KeyValuePair<string, object?>>)[];
+                : [];
             _entries.Add(new LogEntry(logLevel, formatter(state, exception), pairs, exception));
         }
     }
