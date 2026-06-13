@@ -181,6 +181,60 @@ public sealed class CompositeClientSecretHasherTests
         defaultHasher.VerifyCallCount.Should().Be(1);
     }
 
+    // ── PadToCredentialBudget ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>Hasher variant that tracks whether any Verify call received an empty span.</summary>
+    private sealed class EmptySpanTrackingHasher : IClientSecretHasher
+    {
+        private int _verifyCallCount;
+        private int _emptySpanCallCount;
+
+        public int VerifyCallCount => _verifyCallCount;
+        public int EmptySpanCallCount => _emptySpanCallCount;
+
+        public bool CanHandle(IClientSecret secret) => secret is DefaultSecret;
+
+        public bool Verify(IClientSecret stored, ReadOnlySpan<char> presented)
+        {
+            Interlocked.Increment(ref _verifyCallCount);
+            if (presented.IsEmpty)
+                Interlocked.Increment(ref _emptySpanCallCount);
+            return false;
+        }
+
+        public IClientSecret Create(string plaintext) => new DefaultSecret();
+    }
+
+    [Fact]
+    public void PadToCredentialBudget_invokes_default_hasher_max_times()
+    {
+        var trackingHasher = new EmptySpanTrackingHasher();
+        var composite = new CompositeClientSecretHasher(
+            [trackingHasher],
+            Options.Create(new ClientSecretHasherRegistrationOptions()));
+
+        composite.PadToCredentialBudget();
+
+        trackingHasher.VerifyCallCount.Should().Be(CompositeClientSecretHasher.MaxActiveSharedSecretsPerClient);
+    }
+
+    [Fact]
+    public void PadToCredentialBudget_never_passes_empty_span_to_hasher()
+    {
+        // Regression: Pbkdf2ClientSecretHasher.VerifyCore short-circuits on presented.IsEmpty,
+        // so passing string.Empty makes the timing padding a no-op.
+        var trackingHasher = new EmptySpanTrackingHasher();
+        var composite = new CompositeClientSecretHasher(
+            [trackingHasher],
+            Options.Create(new ClientSecretHasherRegistrationOptions()));
+
+        composite.PadToCredentialBudget();
+
+        trackingHasher.EmptySpanCallCount.Should().Be(0,
+            "PadToCredentialBudget must not pass an empty span — Pbkdf2ClientSecretHasher.VerifyCore " +
+            "returns immediately on IsEmpty, making the timing padding a no-op");
+    }
+
     // ── PadFailureToCredentialBudget ──────────────────────────────────────────────────────────────
 
     [Fact]

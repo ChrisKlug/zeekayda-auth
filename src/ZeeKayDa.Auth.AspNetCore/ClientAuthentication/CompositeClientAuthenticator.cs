@@ -104,8 +104,7 @@ internal sealed class CompositeClientAuthenticator
         // Unknown client → invalid_client with timing padding (ADR 0007 §3.4).
         if (client is null)
         {
-            for (var i = 0; i < CompositeClientSecretHasher.MaxActiveSharedSecretsPerClient; i++)
-                _secretHasher.VerifyUnknownClientForTimingOnly(string.Empty.AsSpan());
+            _secretHasher.PadToCredentialBudget();
             return ClientAuthenticationResult.NotValid();
         }
 
@@ -114,8 +113,7 @@ internal sealed class CompositeClientAuthenticator
         // from "client does not exist" (ADR 0007 §3.4).
         if (!client.AllowedTokenEndpointAuthMethods.Contains(matchedMethod, StringComparer.Ordinal))
         {
-            for (var i = 0; i < CompositeClientSecretHasher.MaxActiveSharedSecretsPerClient; i++)
-                _secretHasher.VerifyUnknownClientForTimingOnly(string.Empty.AsSpan());
+            _secretHasher.PadToCredentialBudget();
             return ClientAuthenticationResult.NotValid();
         }
 
@@ -172,11 +170,7 @@ internal sealed class CompositeClientAuthenticator
         return ClientAuthenticationResult.Valid();
     }
 
-    private void PadNoneRejection()
-    {
-        for (var i = 0; i < CompositeClientSecretHasher.MaxActiveSharedSecretsPerClient; i++)
-            _secretHasher.VerifyUnknownClientForTimingOnly(string.Empty.AsSpan());
-    }
+    private void PadNoneRejection() => _secretHasher.PadToCredentialBudget();
 
     private bool IsMethodAllowedByServer(string method)
     {
