@@ -645,6 +645,34 @@ public sealed class CompositeClientAuthenticatorTests
             "PadFailureToCredentialBudget must fire after a wrong client_secret_post credential");
     }
 
+    [Fact]
+    public async Task AuthenticateAsync_returns_Authenticated_false_when_client_secret_post_value_is_empty()
+    {
+        // client_secret= (empty value): ContainsKey is true, so CanHandle returns (true, client_secret_post).
+        // AuthenticateAsync enters the post path and passes "" to the hasher — not the none fallback.
+        var secret = new FakeSecret();
+        var client = CreateConfidentialClient(
+            secret: secret,
+            allowedMethod: TokenEndpointAuthMethods.ClientSecretPost);
+        var (composite, hasher) = CreateCompositeWithHasher(
+            client,
+            new FakeHasher(false),
+            allowedMethods: [TokenEndpointAuthMethod.ClientSecretPost]);
+
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Form = new FormCollection(new Dictionary<string, StringValues>
+        {
+            ["client_id"] = "client-1",
+            ["client_secret"] = string.Empty,
+        });
+
+        var result = await composite.AuthenticateAsync("client-1", httpContext, TestContext.Current.CancellationToken);
+
+        result.Authenticated.Should().BeFalse();
+        hasher.CallCount.Should().BeGreaterThan(1,
+            "client_secret_post path is entered and PadFailureToCredentialBudget fires — not the none fallback");
+    }
+
     // ── Malformed Basic credentials ───────────────────────────────────────────────────────────────
 
     [Fact]
