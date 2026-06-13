@@ -99,6 +99,20 @@ internal sealed class CompositeClientSecretHasher
     }
 
     /// <summary>
+    /// Returns any registration-time failures for the given credential from its owning hasher.
+    /// Credentials that no registered hasher can handle are skipped silently — the
+    /// <c>client.credentials.no_hasher</c> failure is already reported by
+    /// <see cref="ClientRegistrationValidator"/> before this is called.
+    /// </summary>
+    internal IEnumerable<ZeeKayDaConfigurationFailure> GetRegistrationFailures(
+        IClientSecret credential, string clientId)
+    {
+        ArgumentNullException.ThrowIfNull(credential);
+        var matched = _hashers.FirstOrDefault(h => h.CanHandle(credential));
+        return matched?.GetRegistrationFailures(credential, clientId) ?? [];
+    }
+
+    /// <summary>
     /// Runs one default-hasher verification against the pre-computed dummy secret.
     /// Called by the token endpoint for unknown-client paths to pad timing to match
     /// a known-client wrong-credential failure.
