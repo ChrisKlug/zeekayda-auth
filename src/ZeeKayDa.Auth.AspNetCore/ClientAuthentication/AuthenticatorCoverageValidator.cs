@@ -1,6 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
-using ZeeKayDa.Auth.Clients;
 
 namespace ZeeKayDa.Auth.AspNetCore.ClientAuthentication;
 
@@ -21,16 +20,7 @@ internal sealed class AuthenticatorCoverageValidator : IValidateOptions<Authoriz
 
     public ValidateOptionsResult Validate(string? name, AuthorizationServerOptions options)
     {
-        IEnumerable<IClientAuthenticator> authenticators;
-        try
-        {
-            authenticators = _serviceProvider.GetServices<IClientAuthenticator>();
-        }
-        catch (Exception ex)
-        {
-            return ValidateOptionsResult.Fail(
-                $"Failed to resolve IClientAuthenticator registrations: {ex.Message}");
-        }
+        var authenticators = _serviceProvider.GetServices<IClientAuthenticator>();
 
         var errors = new List<string>();
 
