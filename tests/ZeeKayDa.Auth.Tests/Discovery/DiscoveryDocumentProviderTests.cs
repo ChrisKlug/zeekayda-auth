@@ -157,8 +157,8 @@ public sealed class DiscoveryDocumentProviderTests
         doc.ScopesSupported.Should().Equal(StandardScopes.All.Select(scope => scope.Name));
         doc.ResponseModesSupported.Should().ContainSingle().Which.Should().Be(ResponseMode.Query);
         doc.GrantTypesSupported.Should().ContainSingle().Which.Should().Be(GrantType.AuthorizationCode);
-        doc.TokenEndpointAuthMethodsSupported.Should().BeEquivalentTo(
-            [TokenEndpointAuthMethod.ClientSecretBasic, TokenEndpointAuthMethod.ClientSecretPost]);
+        doc.TokenEndpointAuthMethodsSupported.Should().ContainSingle()
+            .Which.Should().Be(TokenEndpointAuthMethod.ClientSecretBasic);
         doc.SubjectTypesSupported.Should().ContainSingle().Which.Should().Be("public");
         doc.IdTokenSigningAlgValuesSupported.Should().ContainSingle().Which.Should().Be(SigningAlgorithm.RS256);
     }
