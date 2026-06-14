@@ -12,8 +12,8 @@ allowed-tools:
 
 # /restart-lsp — Restart the C# Language Server
 
-Kills the running C# language server process so Claude Code restarts it fresh.
-Optionally wipes the Roslyn/OmniSharp disk cache first when the index is corrupt.
+Kills the running C# language server process and wipes the Roslyn/OmniSharp disk cache so
+Claude Code restarts it fresh. Cache is cleared by default — use `--fast` to skip it.
 
 Arguments passed: `$ARGUMENTS`
 
@@ -23,8 +23,8 @@ Arguments passed: `$ARGUMENTS`
 
 Parse `$ARGUMENTS`. Supported flags:
 
-- *(no args)* — kill the language server process only; let it restart naturally
-- `--clear-cache` — wipe the Roslyn and OmniSharp caches before killing the process
+- *(no args)* — wipe caches and kill the language server (full restart)
+- `--fast` — kill the language server only, skip cache wipe
 
 ---
 
@@ -42,7 +42,7 @@ Report what you find (process name + PID). If nothing is found, tell the user
 "No C# language server process found — it may already be stopped or not yet started."
 and stop.
 
-### 2. If `--clear-cache` was passed — wipe caches
+### 2. Unless `--fast` was passed — wipe caches
 
 Wipe the following locations **only if they exist** (check first, never error on missing paths):
 
@@ -75,4 +75,4 @@ Tell the user:
 - Do not kill generic `dotnet` processes — only target the named language server binaries.
 - The user most commonly needs this after switching branches or rebasing, when Roslyn's
   in-memory index drifts from the actual source tree.
-- `--clear-cache` is the heavier option: use it when a plain restart doesn't fix the issue.
+- `--fast` skips the cache wipe for a quicker bounce when the index is known to be good.
