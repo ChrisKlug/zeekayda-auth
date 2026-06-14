@@ -431,9 +431,7 @@ public sealed class SecretSanitizingLoggerTests
             default,
             state,
             null,
-            (st, ex) => st is IEnumerable<KeyValuePair<string, object?>> kvps
-                ? string.Join(", ", kvps.Select(kvp => $"{kvp.Key}: {kvp.Value}"))
-                : string.Empty);
+            (st, ex) => string.Join(", ", st.Select(kvp => $"{kvp.Key}: {kvp.Value}")));
 
         act.Should().NotThrow();
         inner.Entries.Should().HaveCount(1);
