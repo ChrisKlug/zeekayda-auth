@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Defence-in-depth grep check: fails the build if any C# file in ZeeKayDa.Auth
-# uses sensitive parameter names as structured-log placeholders
-# ({client_secret}, {code_verifier}, {Authorization}).
+# uses a sensitive OAuth/OIDC parameter name as a structured-log placeholder.
+# The full list of matched keys is defined in PATTERN below.
 #
 # NOTE: The primary preventive control is now the Roslyn analyzer ZEEKAYDA0001, which enforces
 # ISanitizingLogger<T> injection at compile time. This script is a secondary runtime-script
@@ -18,7 +18,7 @@ SEARCH_PATHS=(
 )
 
 # Matches {client_secret}, {code_verifier}, {Authorization}, with optional :format specifier.
-PATTERN='\{(client_secret|code_verifier|Authorization)(:[^}]*)?\}'
+PATTERN='\{(client_secret|code_verifier|Authorization|access_token|refresh_token|id_token|client_assertion|assertion|device_code|subject_token|actor_token|password|code|DPoP)(:[^}]*)?\}'
 
 found=0
 
@@ -28,7 +28,7 @@ for path in "${SEARCH_PATHS[@]}"; do
         [[ "$line" == *'# log-hygiene-ok'* ]] && continue
         echo "$line"
         found=1
-    done < <(grep -rn --include="*.cs" -E "$PATTERN" "$path" 2>/dev/null || true)
+    done < <(grep -rn --include="*.cs" -E "$PATTERN" -i "$path" 2>/dev/null || true)
 done
 
 if [ "$found" -ne 0 ]; then

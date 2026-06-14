@@ -9,8 +9,21 @@ namespace ZeeKayDa.Auth.Logging;
 /// with <c>[REDACTED]</c> before they reach the underlying logger.
 /// </summary>
 /// <remarks>
-/// Sensitive keys (case-insensitive): <c>client_secret</c>, <c>code_verifier</c>,
-/// <c>Authorization</c>. Only states that implement
+/// Sensitive keys (case-insensitive):
+/// <c>client_secret</c>
+/// <c>code_verifier</c>
+/// <c>Authorization</c>
+/// <c>access_token</c>
+/// <c>refresh_token</c>
+/// <c>id_token</c>
+/// <c>client_assertion</c>
+/// <c>assertion</c>
+/// <c>device_code</c>
+/// <c>subject_token</c>
+/// <c>actor_token</c>
+/// <c>password</c>
+/// <c>code</c>
+/// <c>DPoP</c>. Only states that implement
 /// <see cref="IEnumerable{T}">IEnumerable&lt;KeyValuePair&lt;string, object?&gt;&gt;</see>
 /// are inspected; all other state types pass through unchanged.
 /// <para>
@@ -30,6 +43,17 @@ internal sealed class SecretSanitizingLogger<T>(ILogger<T> inner) : ISanitizingL
             "client_secret",
             "code_verifier",
             "Authorization",
+            "access_token",
+            "refresh_token",
+            "id_token",
+            "client_assertion",
+            "assertion",
+            "device_code",
+            "subject_token",
+            "actor_token",
+            "password",
+            "code",
+            "DPoP"
         };
 
     public IDisposable? BeginScope<TState>(TState state) where TState : notnull
