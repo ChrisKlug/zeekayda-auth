@@ -74,6 +74,26 @@ Work follows six phases. **The main agent is an orchestrator — it routes work 
              ──►  docs         Gate-check that documentation is complete before merge.
 ```
 
+## Code navigation
+
+**Always** prefer LSP over Grep/Glob/Read for code navigation:
+- `goToDefinition` / `goToImplementation` to jump to source
+- `findReferences` to see all usages across the codebase
+- `workspaceSymbol` to find where something is defined
+- `documentSymbol` to list all symbols in a file
+- `hover` for type info without reading the file
+- `incomingCalls` / `outgoingCalls` for call hierarchy
+
+Before renaming or changing a function signature, use `findReferences` to find all call sites first.
+
+Use Grep/Glob only for text/pattern searches (comments, strings, config values) where LSP doesn't help.
+
+After writing or editing code, check LSP diagnostics before moving on. Fix any type errors or missing imports immediately.
+
+**Important!** If the LSP seems to be giving you stale information, use the `/restart-lsp` skill to restart the LSP before starting to use `bash` and `grep`
+
+And just to make it clear, this is **REALLY** important! Stop using `grep` unless you have to!!!
+
 ## Agent Orchestration
 
 **The main agent routes and synthesises. It never does specialist work itself.** Executing a task directly — rather than delegating — bypasses that agent's system prompt, coding standards, and domain rules. The whole point of specialist agents is lost.
