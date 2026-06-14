@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using System.Linq;
 using ZeeKayDa.Auth.Logging;
 
 namespace ZeeKayDa.Auth.Tests.Logging;
@@ -38,7 +39,7 @@ public sealed class SecretSanitizingLoggerTests
         var ex = new Exception("secret error detail");
         var anonymousState = new { Foo = "bar" };
 
-        sut.Log(LogLevel.Information, default, anonymousState, ex, (s, _) => s.ToString()!);
+        sut.Log(LogLevel.Information, default, anonymousState, ex, (_, _) => "anonymous state");
 
         inner.Entries.Should().HaveCount(1);
         inner.Entries[0].FormattedMessage.Should().Be("[ZeeKayDa: unscrubbable log state blocked]");
@@ -57,7 +58,7 @@ public sealed class SecretSanitizingLoggerTests
             new("client_secret", "mysecret"),
         };
 
-        sut.Log(LogLevel.Information, default, state, null, (s, ex) => s.ToString()!);
+        sut.Log(LogLevel.Information, default, state, null, (s, ex) => string.Join(", ", s.Select(kvp => $"{kvp.Key}: {kvp.Value}")));
 
         inner.Entries.Should().HaveCount(1);
         inner.Entries[0].FormattedMessage.Should().Be("client_secret: [REDACTED]");
@@ -76,7 +77,7 @@ public sealed class SecretSanitizingLoggerTests
             new("{OriginalFormat}", "x={Unclosed"),
         };
 
-        var act = () => sut.Log(LogLevel.Information, default, state, null, (st, ex) => st.ToString()!);
+        var act = () => sut.Log(LogLevel.Information, default, state, null, (st, ex) => string.Join(", ", st.Select(kvp => $"{kvp.Key}: {kvp.Value}")));
 
         act.Should().NotThrow();
         inner.Entries.Should().HaveCount(1);
@@ -94,7 +95,7 @@ public sealed class SecretSanitizingLoggerTests
             new("{OriginalFormat}", "Count is {Count}"),
         };
 
-        var act = () => sut.Log(LogLevel.Information, default, state, null, (st, ex) => st.ToString()!);
+        var act = () => sut.Log(LogLevel.Information, default, state, null, (st, ex) => string.Join(", ", st.Select(kvp => $"{kvp.Key}: {kvp.Value}")));
 
         act.Should().NotThrow();
         inner.Entries.Should().HaveCount(1);

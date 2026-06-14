@@ -36,7 +36,8 @@ public sealed class ZeeKayDaAuthCoreServiceCollectionExtensionsTests
     [Fact]
     public void AddZeeKayDaAuthCore_throws_ArgumentNullException_if_services_is_null()
     {
-        var act = () => ((IServiceCollection)null!).AddZeeKayDaAuthCore();
+        IServiceCollection services = null!;
+        var act = () => services.AddZeeKayDaAuthCore();
 
         act.Should().Throw<ArgumentNullException>();
     }
