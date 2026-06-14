@@ -239,6 +239,19 @@ Startup validation fails if multiple hashers are registered but zero or more tha
 > built into `CompositeClientSecretHasher`. Use `CryptographicOperations.FixedTimeEquals` for
 > raw byte comparisons, or your library's built-in constant-time verify function.
 
+> ⚠️ **Warning: Known limitation — exception messages are not sanitized.**
+> `SecretSanitizingLogger` redacts sensitive values in structured log state, but it does **not**
+> inspect or scrub exception objects. If you throw an exception whose `Message` (or any chained
+> inner exception's `Message`) contains a raw credential value, that value will reach the log sink
+> verbatim.
+>
+> **Interim guidance:** never embed raw credential material in exception messages. Use a static
+> message or include only the credential type name, not its value.
+>
+> This is tracked in [issue #173](https://github.com/ChrisKlug/zeekayda-auth/issues/173). The
+> permanent fix — either full message redaction or complete exception suppression — will be decided
+> and implemented in a future release.
+
 ## 5. Implement a custom client authenticator
 
 `IClientAuthenticator` lets you plug a new token endpoint authentication method into the
@@ -353,6 +366,19 @@ builder.Services.AddZeeKayDaAuth(options =>
 | Never compare secrets as plain strings | Always delegate to `IClientSecretHasher.Verify` or an equivalent constant-time function |
 | Be singleton-safe | Authenticators are registered as singletons and called concurrently |
 | Return `ClientAuthenticationResult.NotValid()` on failure — never throw | Throwing from `AuthenticateAsync` produces a 500 rather than a 401 |
+
+> ⚠️ **Warning: Known limitation — exception messages are not sanitized.**
+> `SecretSanitizingLogger` redacts sensitive values in structured log state, but it does **not**
+> inspect or scrub exception objects. If you throw an exception whose `Message` (or any chained
+> inner exception's `Message`) contains a raw credential value, that value will reach the log sink
+> verbatim.
+>
+> **Interim guidance:** never embed raw credential material in exception messages. Use a static
+> message or include only the credential type name, not its value.
+>
+> This is tracked in [issue #173](https://github.com/ChrisKlug/zeekayda-auth/issues/173). The
+> permanent fix — either full message redaction or complete exception suppression — will be decided
+> and implemented in a future release.
 
 ## See also
 
