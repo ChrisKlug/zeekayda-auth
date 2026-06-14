@@ -7,6 +7,7 @@ using Microsoft.Extensions.Primitives;
 using ZeeKayDa.Auth.AspNetCore.ClientAuthentication;
 using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Configuration;
+using ZeeKayDa.Auth.Logging;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests.ClientAuthentication;
 
@@ -96,7 +97,7 @@ public sealed class CompositeClientAuthenticatorTests
             => throw new NotSupportedException("Should not be reached");
     }
 
-    private sealed class CapturingLogger<T> : ILogger<T>
+    private sealed class CapturingLogger<T> : ISanitizingLogger<T>
     {
         public List<(LogLevel Level, string Message, Exception? Exception)> Entries { get; } = [];
 
@@ -107,6 +108,9 @@ public sealed class CompositeClientAuthenticatorTests
             Exception? exception, Func<TState, Exception?, string> formatter)
             => Entries.Add((logLevel, formatter(state, exception), exception));
     }
+
+    private static ISanitizingLogger<T> NullSanitizingLogger<T>()
+        => new SecretSanitizingLogger<T>(NullLogger<T>.Instance);
 
     // ── Helpers ───────────────────────────────────────────────────────────────────────────────────
 
@@ -144,7 +148,7 @@ public sealed class CompositeClientAuthenticatorTests
             new FakeClientRepository(client),
             serverOptions,
             compositeHasher,
-            NullLogger<CompositeClientAuthenticator>.Instance);
+            NullSanitizingLogger<CompositeClientAuthenticator>());
 
         return (composite, hasher);
     }
@@ -273,7 +277,7 @@ public sealed class CompositeClientAuthenticatorTests
             new FakeClientRepository(client),
             CreateServerOptions(TokenEndpointAuthMethods.ClientSecretBasic),
             compositeHasher,
-            NullLogger<CompositeClientAuthenticator>.Instance);
+            NullSanitizingLogger<CompositeClientAuthenticator>());
 
         var httpContext = new DefaultHttpContext();
         httpContext.Request.Form = new FormCollection(new Dictionary<string, StringValues>
@@ -733,7 +737,7 @@ public sealed class CompositeClientAuthenticatorTests
             new FakeClientRepository(CreatePublicClient()),
             CreateServerOptions(TokenEndpointAuthMethods.ClientSecretBasic),
             compositeHasher,
-            NullLogger<CompositeClientAuthenticator>.Instance);
+            NullSanitizingLogger<CompositeClientAuthenticator>());
 
         var httpContext = new DefaultHttpContext();
         httpContext.Request.Form = new FormCollection(new Dictionary<string, StringValues>

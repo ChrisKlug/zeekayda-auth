@@ -1,8 +1,8 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using ZeeKayDa.Auth.AspNetCore.Logging;
 using ZeeKayDa.Auth.Clients;
+using ZeeKayDa.Auth.Logging;
 
 namespace ZeeKayDa.Auth.AspNetCore.ClientAuthentication;
 
@@ -20,14 +20,14 @@ internal sealed class CompositeClientAuthenticator
     private readonly IClientRepository _clientRepository;
     private readonly IOptions<AuthorizationServerOptions> _serverOptions;
     private readonly CompositeClientSecretHasher _secretHasher;
-    private readonly ILogger<CompositeClientAuthenticator> _logger;
+    private readonly ISanitizingLogger<CompositeClientAuthenticator> _logger;
 
     public CompositeClientAuthenticator(
         IEnumerable<IClientAuthenticator> authenticators,
         IClientRepository clientRepository,
         IOptions<AuthorizationServerOptions> serverOptions,
         CompositeClientSecretHasher secretHasher,
-        ILogger<CompositeClientAuthenticator> logger)
+        ISanitizingLogger<CompositeClientAuthenticator> logger)
     {
         ArgumentNullException.ThrowIfNull(authenticators);
         ArgumentNullException.ThrowIfNull(clientRepository);
@@ -39,7 +39,7 @@ internal sealed class CompositeClientAuthenticator
         _clientRepository = clientRepository;
         _serverOptions = serverOptions;
         _secretHasher = secretHasher;
-        _logger = new SecretSanitizingLogger<CompositeClientAuthenticator>(logger);
+        _logger = logger;
     }
 
     /// <summary>

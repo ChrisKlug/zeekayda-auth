@@ -1,7 +1,7 @@
 using System.Collections;
 using Microsoft.Extensions.Logging;
 
-namespace ZeeKayDa.Auth.AspNetCore.Logging;
+namespace ZeeKayDa.Auth.Logging;
 
 /// <summary>
 /// Wraps an <see cref="ILogger{T}"/> and replaces known-sensitive structured-log values
@@ -13,11 +13,15 @@ namespace ZeeKayDa.Auth.AspNetCore.Logging;
 /// <see cref="IEnumerable{T}">IEnumerable&lt;KeyValuePair&lt;string, object?&gt;&gt;</see>
 /// are inspected; all other state types pass through unchanged.
 /// <para>
-/// This is a defence-in-depth backstop for ADR 0007 §7. The CI log-hygiene grep
-/// (<c>.github/scripts/check_log_hygiene.sh</c>) is the primary preventive control.
+/// This is a defence-in-depth backstop for ADR 0007 §7. The Roslyn analyzer
+/// (<c>ZEEKAYDA0001</c>) is the primary preventive control: it enforces at compile time that
+/// every ZeeKayDa service injects <see cref="ISanitizingLogger{T}"/> rather than
+/// <see cref="ILogger{T}"/> directly. The CI log-hygiene grep
+/// (<c>.github/scripts/check_log_hygiene.sh</c>) and this runtime wrapper are defence-in-depth
+/// layers that remain in place regardless.
 /// </para>
 /// </remarks>
-internal sealed class SecretSanitizingLogger<T>(ILogger<T> inner) : ILogger<T>
+internal sealed class SecretSanitizingLogger<T>(ILogger<T> inner) : ISanitizingLogger<T>
 {
     internal static readonly IReadOnlySet<string> SensitiveKeys =
         new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -28,7 +32,23 @@ internal sealed class SecretSanitizingLogger<T>(ILogger<T> inner) : ILogger<T>
         };
 
     public IDisposable? BeginScope<TState>(TState state) where TState : notnull
-        => inner.BeginScope(state);
+    {
+        if (state is IEnumerable<KeyValuePair<string, object?>> pairs)
+        {
+            var list = pairs.ToList();
+            if (list.Any(kv => SensitiveKeys.Contains(kv.Key)))
+            {
+                var redacted = list
+                    .Select(kv => SensitiveKeys.Contains(kv.Key)
+                        ? new KeyValuePair<string, object?>(kv.Key, "[REDACTED]")
+                        : kv)
+                    .ToList();
+                return inner.BeginScope(redacted);
+            }
+        }
+
+        return inner.BeginScope(state);
+    }
 
     public bool IsEnabled(LogLevel logLevel)
         => inner.IsEnabled(logLevel);
@@ -54,6 +74,15 @@ internal sealed class SecretSanitizingLogger<T>(ILogger<T> inner) : ILogger<T>
                 return;
             }
         }
+        else if (state is not string)
+        {
+            // Non-string, non-IEnumerable<KVP> state (e.g. from LoggerMessage.Define<T>) cannot
+            // be inspected for sensitive key-value pairs. Substitute a safe placeholder rather
+            // than risk leaking structured parameter values to the inner logger's sinks.
+            const string blocked = "[ZeeKayDa: unscrubbable log state blocked]";
+            inner.Log(logLevel, eventId, blocked, exception, static (s, _) => s);
+            return;
+        }
 
         inner.Log(logLevel, eventId, state, exception, formatter);
     }
@@ -73,6 +102,9 @@ internal sealed class SecretSanitizingLogger<T>(ILogger<T> inner) : ILogger<T>
             var result = template;
             foreach (var kv in pairs.Where(kv => kv.Key != "{OriginalFormat}"))
             {
+                // Ordinal is safe: structured logging convention guarantees the KV pair key and
+                // the template placeholder are identical strings (same casing), so a case-sensitive
+                // replace always finds the right substring.
                 result = result.Replace($"{{{kv.Key}}}", kv.Value?.ToString() ?? "(null)", StringComparison.Ordinal);
             }
             return result;

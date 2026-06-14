@@ -14,4 +14,10 @@
     <ProjectReference Include="../ZeeKayDa.Auth/ZeeKayDa.Auth.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="../ZeeKayDa.Auth.Analyzers/ZeeKayDa.Auth.Analyzers.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
 </Project>

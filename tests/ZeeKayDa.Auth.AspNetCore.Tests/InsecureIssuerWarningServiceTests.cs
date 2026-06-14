@@ -1,8 +1,8 @@
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.AspNetCore;
+using ZeeKayDa.Auth.Logging;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests;
 
@@ -31,7 +31,7 @@ public sealed class InsecureIssuerWarningServiceTests
     {
         var sut = new InsecureIssuerWarningService(
             Options.Create(new AuthorizationServerOptions { Issuer = "https://auth.example.com" }),
-            NullLogger<InsecureIssuerWarningService>.Instance);
+            NullSanitizingLogger<InsecureIssuerWarningService>.Instance);
 
         // Should complete without any exception; nothing to assert on the null logger.
         await sut.Awaiting(s => s.StartAsync(CancellationToken.None)).Should().NotThrowAsync();
@@ -42,7 +42,7 @@ public sealed class InsecureIssuerWarningServiceTests
     {
         var sut = new InsecureIssuerWarningService(
             Options.Create(new AuthorizationServerOptions { Issuer = "https://auth.example.com" }),
-            NullLogger<InsecureIssuerWarningService>.Instance);
+            NullSanitizingLogger<InsecureIssuerWarningService>.Instance);
 
         await sut.Awaiting(s => s.StopAsync(CancellationToken.None)).Should().NotThrowAsync();
     }
@@ -50,7 +50,7 @@ public sealed class InsecureIssuerWarningServiceTests
     /// <summary>
     /// Minimal logger that captures log entries for assertion in tests.
     /// </summary>
-    private sealed class CapturingLogger<T> : ILogger<T>
+    private sealed class CapturingLogger<T> : ISanitizingLogger<T>
     {
         public List<(LogLevel Level, string Message)> Entries { get; } = [];
 

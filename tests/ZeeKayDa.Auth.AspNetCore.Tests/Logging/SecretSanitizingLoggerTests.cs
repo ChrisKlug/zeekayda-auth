@@ -1,5 +1,5 @@
 using Microsoft.Extensions.Logging;
-using ZeeKayDa.Auth.AspNetCore.Logging;
+using ZeeKayDa.Auth.Logging;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests.Logging;
 
@@ -18,7 +18,15 @@ public sealed class SecretSanitizingLoggerTests
         private readonly List<LogEntry> _entries = [];
         public IReadOnlyList<LogEntry> Entries => _entries;
 
-        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        private readonly List<object> _scopeStates = [];
+        public IReadOnlyList<object> ScopeStates => _scopeStates;
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull
+        {
+            _scopeStates.Add(state);
+            return null;
+        }
+
         public bool IsEnabled(LogLevel logLevel) => true;
 
         public void Log<TState>(
@@ -170,11 +178,55 @@ public sealed class SecretSanitizingLoggerTests
     }
 
     [Fact]
-    public void BeginScope_DelegatesToInner()
+    public void BeginScope_PassesThroughNonSensitiveStringScope()
     {
         var inner = new CapturingLogger<object>();
         var sut = new SecretSanitizingLogger<object>(inner);
 
         sut.BeginScope("test-scope").Should().BeNull();
+        inner.ScopeStates.Should().ContainSingle().Which.Should().Be("test-scope");
+    }
+
+    [Fact]
+    public void BeginScope_PassesThroughNonSensitiveKVPScope()
+    {
+        var inner = new CapturingLogger<object>();
+        var sut = new SecretSanitizingLogger<object>(inner);
+
+        var state = new List<KeyValuePair<string, object?>> { new("client_id", "app-1") };
+        sut.BeginScope(state);
+
+        inner.ScopeStates.Should().ContainSingle().Which.Should().BeSameAs(state);
+    }
+
+    [Fact]
+    public void BeginScope_RedactsSensitiveKeysInKVPScope()
+    {
+        var inner = new CapturingLogger<object>();
+        var sut = new SecretSanitizingLogger<object>(inner);
+
+        sut.BeginScope(new List<KeyValuePair<string, object?>>
+        {
+            new("client_id", "app-1"),
+            new("client_secret", "raw-secret"),
+        });
+
+        var captured = inner.ScopeStates.Should().ContainSingle().Subject
+            .Should().BeAssignableTo<IEnumerable<KeyValuePair<string, object?>>>().Subject.ToList();
+        captured.Should().Contain(kv => kv.Key == "client_id" && (string?)kv.Value == "app-1");
+        captured.Should().Contain(kv => kv.Key == "client_secret" && (string?)kv.Value == "[REDACTED]");
+    }
+
+    [Fact]
+    public void Log_BlocksNonInspectableState()
+    {
+        var inner = new CapturingLogger<object>();
+        var sut = new SecretSanitizingLogger<object>(inner);
+
+        var customState = new { SomeProp = "potentially-sensitive-value" };
+        sut.Log(LogLevel.Information, default, customState, null, (s, _) => s.SomeProp);
+
+        inner.Entries.Should().HaveCount(1);
+        inner.Entries[0].FormattedMessage.Should().Be("[ZeeKayDa: unscrubbable log state blocked]");
     }
 }

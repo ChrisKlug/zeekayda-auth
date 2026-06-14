@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using ZeeKayDa.Auth.Logging;
 
 namespace ZeeKayDa.Auth.Clients;
 
@@ -28,7 +29,7 @@ namespace ZeeKayDa.Auth.Clients;
 /// start safely while signalling that reconfiguration is needed.
 /// </para>
 /// </remarks>
-public sealed class Pbkdf2ClientSecretHasher : ClientSecretHasher<IPbkdf2ClientSecret>
+internal sealed class Pbkdf2ClientSecretHasher : ClientSecretHasher<IPbkdf2ClientSecret>
 {
     /// <summary>
     /// Minimum allowed iteration count (OWASP PBKDF2-HMAC-SHA256 minimum as of 2025).
@@ -45,7 +46,7 @@ public sealed class Pbkdf2ClientSecretHasher : ClientSecretHasher<IPbkdf2ClientS
     private const int HashLength = 32;
 
     private readonly int _iterations;
-    private readonly ILogger<Pbkdf2ClientSecretHasher> _logger;
+    private readonly ISanitizingLogger<Pbkdf2ClientSecretHasher> _logger;
 
     /// <summary>
     /// Initialises the hasher using configuration from <see cref="Pbkdf2ClientSecretHasherOptions"/>.
@@ -60,7 +61,7 @@ public sealed class Pbkdf2ClientSecretHasher : ClientSecretHasher<IPbkdf2ClientS
     /// </exception>
     public Pbkdf2ClientSecretHasher(
         IOptions<Pbkdf2ClientSecretHasherOptions> options,
-        ILogger<Pbkdf2ClientSecretHasher> logger)
+        ISanitizingLogger<Pbkdf2ClientSecretHasher> logger)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(logger);

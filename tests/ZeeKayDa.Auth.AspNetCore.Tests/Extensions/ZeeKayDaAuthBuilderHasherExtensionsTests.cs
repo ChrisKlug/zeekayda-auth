@@ -3,6 +3,7 @@ using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.AspNetCore.Extensions;
 using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Configuration;
+using ZeeKayDa.Auth.Logging;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests.Extensions;
 
@@ -111,6 +112,7 @@ public sealed class ZeeKayDaAuthBuilderHasherExtensionsTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddOptions();
+        services.AddSingleton(typeof(ISanitizingLogger<>), typeof(SecretSanitizingLogger<>));
         var builder = new ZeeKayDaAuthBuilder(services);
 
         builder.AddPbkdf2SecretsHasher();
