@@ -426,7 +426,14 @@ public sealed class SecretSanitizingLoggerTests
             new("client_secret", "s"),
         };
 
-        var act = () => sut.Log(LogLevel.Information, default, state, null, (st, ex) => st.ToString()!);
+        var act = () => sut.Log(
+            LogLevel.Information,
+            default,
+            state,
+            null,
+            (st, ex) => st is IEnumerable<KeyValuePair<string, object?>> kvps
+                ? string.Join(", ", kvps.Select(kvp => $"{kvp.Key}: {kvp.Value}"))
+                : string.Empty);
 
         act.Should().NotThrow();
         inner.Entries.Should().HaveCount(1);
