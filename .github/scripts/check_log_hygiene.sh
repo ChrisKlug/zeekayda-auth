@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
-# Fails the build if any C# file in token-endpoint or client-authentication code uses
-# sensitive parameter names as structured-log placeholders ({client_secret}, {code_verifier},
-# {Authorization}).
+# Defence-in-depth grep check: fails the build if any C# file in token-endpoint or
+# client-authentication code uses sensitive parameter names as structured-log placeholders
+# ({client_secret}, {code_verifier}, {Authorization}).
+#
+# NOTE: The primary preventive control is now the Roslyn analyzer ZEEKAYDA0001, which enforces
+# ISanitizingLogger<T> injection at compile time. This script is a secondary runtime-script
+# layer that catches anything the analyzer cannot see (e.g. generated code, IL-patched assemblies).
 #
 # Append "# log-hygiene-ok" to a line to allowlist it explicitly.
 #
@@ -10,8 +14,7 @@
 set -euo pipefail
 
 SEARCH_PATHS=(
-    "src/ZeeKayDa.Auth.AspNetCore/ClientAuthentication"
-    "src/ZeeKayDa.Auth.AspNetCore/Endpoints"
+    "src/"
 )
 
 # Matches {client_secret}, {code_verifier}, {Authorization}, with optional :format specifier.
