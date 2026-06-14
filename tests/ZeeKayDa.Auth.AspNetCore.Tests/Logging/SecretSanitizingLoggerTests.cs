@@ -46,15 +46,28 @@ public sealed class SecretSanitizingLoggerTests
     // ── Tests ────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void SensitiveKeys_ContainsExpectedKeys()
+    public void SensitiveKeys_contains_expected_keys()
     {
         SecretSanitizingLogger<object>.SensitiveKeys.Should().BeEquivalentTo(
-            ["client_secret", "code_verifier", "Authorization"],
+            ["client_secret",
+            "code_verifier",
+            "Authorization",
+            "access_token",
+            "refresh_token",
+            "id_token",
+            "client_assertion",
+            "assertion",
+            "device_code",
+            "subject_token",
+            "actor_token",
+            "password",
+            "code",
+            "DPoP"],
             o => o.WithoutStrictOrdering());
     }
 
     [Fact]
-    public void Log_RedactsClientSecretInPairs()
+    public void Log_redacts_client_secret_in_pairs()
     {
         var inner = new CapturingLogger<object>();
         var sut = new SecretSanitizingLogger<object>(inner);
@@ -66,7 +79,7 @@ public sealed class SecretSanitizingLoggerTests
     }
 
     [Fact]
-    public void Log_RedactsClientSecretInFormattedMessage()
+    public void Log_redacts_client_secret_in_formatted_message()
     {
         var inner = new CapturingLogger<object>();
         var sut = new SecretSanitizingLogger<object>(inner);
@@ -77,7 +90,7 @@ public sealed class SecretSanitizingLoggerTests
     }
 
     [Fact]
-    public void Log_RedactsCodeVerifier()
+    public void Log_redacts_code_verifier()
     {
         var inner = new CapturingLogger<object>();
         var sut = new SecretSanitizingLogger<object>(inner);
@@ -90,7 +103,7 @@ public sealed class SecretSanitizingLoggerTests
     }
 
     [Fact]
-    public void Log_RedactsAuthorizationHeader()
+    public void Log_redacts_Authorization_header()
     {
         var inner = new CapturingLogger<object>();
         var sut = new SecretSanitizingLogger<object>(inner);
@@ -103,7 +116,7 @@ public sealed class SecretSanitizingLoggerTests
     }
 
     [Fact]
-    public void Log_KeyMatchIsCaseInsensitive()
+    public void Log_key_match_is_case_insensitive()
     {
         var inner = new CapturingLogger<object>();
         var sut = new SecretSanitizingLogger<object>(inner);
@@ -114,7 +127,7 @@ public sealed class SecretSanitizingLoggerTests
     }
 
     [Fact]
-    public void Log_PassesThroughNonSensitiveValues()
+    public void Log_passes_through_non_sensitive_values()
     {
         var inner = new CapturingLogger<object>();
         var sut = new SecretSanitizingLogger<object>(inner);
@@ -127,7 +140,7 @@ public sealed class SecretSanitizingLoggerTests
     }
 
     [Fact]
-    public void Log_PreservesOriginalFormatKey()
+    public void Log_preserves_original_format_key()
     {
         var inner = new CapturingLogger<object>();
         var sut = new SecretSanitizingLogger<object>(inner);
@@ -139,7 +152,7 @@ public sealed class SecretSanitizingLoggerTests
     }
 
     [Fact]
-    public void Log_PassesThroughUnstructuredState()
+    public void Log_passes_through_unstructured_state()
     {
         var inner = new CapturingLogger<object>();
         var sut = new SecretSanitizingLogger<object>(inner);
@@ -152,7 +165,7 @@ public sealed class SecretSanitizingLoggerTests
     }
 
     [Fact]
-    public void Log_MixedMessage_OnlyRedactsSensitiveValues()
+    public void Log_mixed_message_only_redacts_sensitive_values()
     {
         var inner = new CapturingLogger<object>();
         var sut = new SecretSanitizingLogger<object>(inner);
@@ -169,7 +182,7 @@ public sealed class SecretSanitizingLoggerTests
     }
 
     [Fact]
-    public void IsEnabled_DelegatesToInner()
+    public void IsEnabled_delegates_to_inner()
     {
         var inner = new CapturingLogger<object>();
         var sut = new SecretSanitizingLogger<object>(inner);
@@ -178,7 +191,7 @@ public sealed class SecretSanitizingLoggerTests
     }
 
     [Fact]
-    public void BeginScope_PassesThroughNonSensitiveStringScope()
+    public void BeginScope_passes_through_non_sensitive_string_scope()
     {
         var inner = new CapturingLogger<object>();
         var sut = new SecretSanitizingLogger<object>(inner);
@@ -188,7 +201,7 @@ public sealed class SecretSanitizingLoggerTests
     }
 
     [Fact]
-    public void BeginScope_PassesThroughNonSensitiveKVPScope()
+    public void BeginScope_passes_through_non_sensitive_KVP_scope()
     {
         var inner = new CapturingLogger<object>();
         var sut = new SecretSanitizingLogger<object>(inner);
@@ -200,7 +213,7 @@ public sealed class SecretSanitizingLoggerTests
     }
 
     [Fact]
-    public void BeginScope_RedactsSensitiveKeysInKVPScope()
+    public void BeginScope_redacts_sensitive_keys_in_KVP_scope()
     {
         var inner = new CapturingLogger<object>();
         var sut = new SecretSanitizingLogger<object>(inner);
@@ -218,7 +231,7 @@ public sealed class SecretSanitizingLoggerTests
     }
 
     [Fact]
-    public void Log_PreservesFormatSpecifierOnNonSensitiveValue()
+    public void Log_preserves_format_specifier_on_non_sensitive_value()
     {
         var inner = new CapturingLogger<object>();
         var sut = new SecretSanitizingLogger<object>(inner);
@@ -229,7 +242,7 @@ public sealed class SecretSanitizingLoggerTests
     }
 
     [Fact]
-    public void Log_PreservesAlignmentSpecifierOnNonSensitiveValue()
+    public void Log_preserves_alignment_specifier_on_non_sensitive_value()
     {
         var inner = new CapturingLogger<object>();
         var sut = new SecretSanitizingLogger<object>(inner);
@@ -240,7 +253,7 @@ public sealed class SecretSanitizingLoggerTests
     }
 
     [Fact]
-    public void Log_HandlesEscapedBraces()
+    public void Log_handles_escaped_braces()
     {
         var inner = new CapturingLogger<object>();
         var sut = new SecretSanitizingLogger<object>(inner);
@@ -251,7 +264,7 @@ public sealed class SecretSanitizingLoggerTests
     }
 
     [Fact]
-    public void Log_HandlesDuplicatePlaceholder()
+    public void Log_handles_duplicate_placeholder()
     {
         var inner = new CapturingLogger<object>();
         var sut = new SecretSanitizingLogger<object>(inner);
@@ -262,7 +275,7 @@ public sealed class SecretSanitizingLoggerTests
     }
 
     [Fact]
-    public void Log_BlocksNonInspectableState()
+    public void Log_blocks_non_inspectable_state()
     {
         var inner = new CapturingLogger<object>();
         var sut = new SecretSanitizingLogger<object>(inner);
@@ -275,7 +288,7 @@ public sealed class SecretSanitizingLoggerTests
     }
 
     [Fact]
-    public void Log_LoggerMessageDefine_InspectsStateAndRedactsSensitiveKey()
+    public void Log_LoggerMessage_Define_inspects_state_and_redacts_sensitive_key()
     {
         var inner = new CapturingLogger<object>();
         var sut = new SecretSanitizingLogger<object>(inner);
@@ -294,7 +307,7 @@ public sealed class SecretSanitizingLoggerTests
     }
 
     [Fact]
-    public void Log_SourceGeneratedLoggerMessage_InspectsStateAndRedactsSensitiveKey()
+    public void Log_source_generated_LoggerMessage_inspects_state_and_redacts_sensitive_key()
     {
         var inner = new CapturingLogger<object>();
         var sut = new SecretSanitizingLogger<object>(inner);
