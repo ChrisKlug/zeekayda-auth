@@ -1,12 +1,12 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
-using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.AspNetCore.ClientAuthentication;
 using ZeeKayDa.Auth.AspNetCore.Endpoints;
 using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Configuration;
 using ZeeKayDa.Auth.Discovery;
+using ZeeKayDa.Auth.Extensions;
 using ZeeKayDa.Auth.Scopes;
 
 namespace ZeeKayDa.Auth.AspNetCore.Extensions;
@@ -66,6 +66,10 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
             ServiceDescriptor.Singleton<
                 IValidateOptions<AuthorizationServerOptions>,
                 AuthorizationServerOptionsValidator>());
+
+        // Register core infrastructure (SecretSanitizingLogger<T> open-generic singleton).
+        // Idempotent: TryAdd inside AddZeeKayDaAuthCore is a no-op on repeated calls.
+        services.AddZeeKayDaAuthCore();
 
         services.TryAddSingleton<IScopeRepository>(new InMemoryScopeRepository(StandardScopes.All));
         services.TryAddSingleton<IDiscoveryDocumentProvider, DiscoveryDocumentProvider>();

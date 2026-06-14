@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using ZeeKayDa.Auth.Logging;
 
 namespace ZeeKayDa.Auth.Clients;
 
@@ -19,12 +20,12 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
 
     private readonly IOptions<AuthorizationServerOptions> _options;
     private readonly CompositeClientSecretHasher _hasher;
-    private readonly ILogger<ClientRegistrationValidator> _logger;
+    private readonly ISanitizingLogger<ClientRegistrationValidator> _logger;
 
     public ClientRegistrationValidator(
         IOptions<AuthorizationServerOptions> options,
         CompositeClientSecretHasher hasher,
-        ILogger<ClientRegistrationValidator> logger)
+        ISanitizingLogger<ClientRegistrationValidator> logger)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(hasher);

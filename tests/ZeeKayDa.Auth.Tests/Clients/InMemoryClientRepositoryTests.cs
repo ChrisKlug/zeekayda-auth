@@ -1,8 +1,8 @@
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Configuration;
+using ZeeKayDa.Auth.Logging;
 
 namespace ZeeKayDa.Auth.Tests.Clients;
 
@@ -12,7 +12,7 @@ public sealed class InMemoryClientRepositoryTests
 
     private sealed class FakeSecret : IClientSecret { }
 
-    private sealed class CapturingLogger : ILogger<InMemoryClientRepository>
+    private sealed class CapturingLogger : ISanitizingLogger<InMemoryClientRepository>
     {
         private readonly List<string> _warnings = new();
 
@@ -66,12 +66,12 @@ public sealed class InMemoryClientRepositoryTests
         => new ClientRegistrationValidator(
             Options.Create(serverOptions ?? DefaultServerOptions()),
             MakeHasher(),
-            NullLogger<ClientRegistrationValidator>.Instance);
+            NullSanitizingLogger<ClientRegistrationValidator>.Instance);
 
     private static InMemoryClientRepository MakeRepository(
         InMemoryClientRegistrationOptions opts,
         AuthorizationServerOptions? serverOptions = null,
-        ILogger<InMemoryClientRepository>? logger = null)
+        ISanitizingLogger<InMemoryClientRepository>? logger = null)
     {
         var so = serverOptions ?? DefaultServerOptions();
         return new InMemoryClientRepository(
@@ -79,7 +79,7 @@ public sealed class InMemoryClientRepositoryTests
             MakeHasher(),
             MakeValidator(so),
             Options.Create(so),
-            logger ?? NullLogger<InMemoryClientRepository>.Instance);
+            logger ?? NullSanitizingLogger<InMemoryClientRepository>.Instance);
     }
 
     private static ClientRegistration ValidPublicClient(string clientId = "test-client") =>

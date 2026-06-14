@@ -2,6 +2,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth;
+using ZeeKayDa.Auth.Logging;
 
 namespace ZeeKayDa.Auth.AspNetCore;
 
@@ -12,11 +13,11 @@ namespace ZeeKayDa.Auth.AspNetCore;
 internal sealed class InsecureIssuerWarningService : IHostedService
 {
     private readonly IOptions<AuthorizationServerOptions> _options;
-    private readonly ILogger<InsecureIssuerWarningService> _logger;
+    private readonly ISanitizingLogger<InsecureIssuerWarningService> _logger;
 
     public InsecureIssuerWarningService(
         IOptions<AuthorizationServerOptions> options,
-        ILogger<InsecureIssuerWarningService> logger)
+        ISanitizingLogger<InsecureIssuerWarningService> logger)
     {
         _options = options;
         _logger = logger;

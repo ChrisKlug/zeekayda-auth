@@ -14,11 +14,13 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="FluentAssertions" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Reference the analyzer project as a regular library (not as an analyzer) so tests can
+         instantiate ILoggerDirectUseAnalyzer directly and drive it via the Roslyn API. -->
+    <ProjectReference Include="../../src/ZeeKayDa.Auth.Analyzers/ZeeKayDa.Auth.Analyzers.csproj" />
     <ProjectReference Include="../../src/ZeeKayDa.Auth/ZeeKayDa.Auth.csproj" />
   </ItemGroup>
 

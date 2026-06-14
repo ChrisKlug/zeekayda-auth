@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using ZeeKayDa.Auth.Logging;
 
 namespace ZeeKayDa.Auth.Clients;
 
@@ -27,7 +28,7 @@ internal sealed class InMemoryClientRepository : IClientRepository
         CompositeClientSecretHasher hasher,
         IClientRegistrationValidator validator,
         IOptions<AuthorizationServerOptions> serverOptions,
-        ILogger<InMemoryClientRepository> logger)
+        ISanitizingLogger<InMemoryClientRepository> logger)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(hasher);

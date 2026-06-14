@@ -1,8 +1,8 @@
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Configuration;
+using ZeeKayDa.Auth.Logging;
 
 namespace ZeeKayDa.Auth.Tests.Clients;
 
@@ -43,7 +43,7 @@ public sealed class ClientRegistrationValidatorTests
     /// <summary>
     /// A logger that records LogWarning calls for assertion.
     /// </summary>
-    private sealed class CapturingLogger : ILogger<ClientRegistrationValidator>
+    private sealed class CapturingLogger : ISanitizingLogger<ClientRegistrationValidator>
     {
         private readonly List<string> _warnings = new();
 
@@ -71,7 +71,7 @@ public sealed class ClientRegistrationValidatorTests
 
     private static ClientRegistrationValidator MakeValidator(
         IClientSecretHasher? hasher = null,
-        ILogger<ClientRegistrationValidator>? logger = null,
+        ISanitizingLogger<ClientRegistrationValidator>? logger = null,
         AuthorizationServerOptions? serverOptions = null)
     {
         var opts = serverOptions ?? BuildDefaultServerOptions();
@@ -80,7 +80,7 @@ public sealed class ClientRegistrationValidatorTests
         return new ClientRegistrationValidator(
             Options.Create(opts),
             composite,
-            logger ?? NullLogger<ClientRegistrationValidator>.Instance);
+            logger ?? NullSanitizingLogger<ClientRegistrationValidator>.Instance);
     }
 
     private static AuthorizationServerOptions BuildDefaultServerOptions()

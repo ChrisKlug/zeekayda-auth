@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Clients;
+using ZeeKayDa.Auth.Logging;
 
 namespace ZeeKayDa.Auth.Tests.Clients;
 
@@ -11,12 +11,12 @@ public sealed class Pbkdf2ClientSecretHasherTests
 
     private static Pbkdf2ClientSecretHasher CreateHasher(
         int iterations = Pbkdf2ClientSecretHasherOptions.DefaultIterations,
-        ILogger<Pbkdf2ClientSecretHasher>? logger = null)
+        ISanitizingLogger<Pbkdf2ClientSecretHasher>? logger = null)
         => new(
             Options.Create(new Pbkdf2ClientSecretHasherOptions { Iterations = iterations }),
-            logger ?? NullLogger<Pbkdf2ClientSecretHasher>.Instance);
+            logger ?? NullSanitizingLogger<Pbkdf2ClientSecretHasher>.Instance);
 
-    private sealed class CapturingLogger<T> : ILogger<T>
+    private sealed class CapturingLogger<T> : ISanitizingLogger<T>
     {
         private readonly List<(LogLevel Level, string Message)> _entries = [];
 
@@ -209,7 +209,7 @@ public sealed class Pbkdf2ClientSecretHasherTests
         var options = Options.Create(
             new Pbkdf2ClientSecretHasherOptions { Iterations = Pbkdf2ClientSecretHasher.MinIterations - 1 });
 
-        var act = () => new Pbkdf2ClientSecretHasher(options, NullLogger<Pbkdf2ClientSecretHasher>.Instance);
+        var act = () => new Pbkdf2ClientSecretHasher(options, NullSanitizingLogger<Pbkdf2ClientSecretHasher>.Instance);
 
         act.Should().Throw<ArgumentOutOfRangeException>();
     }
