@@ -273,4 +273,43 @@ public sealed class SecretSanitizingLoggerTests
         inner.Entries.Should().HaveCount(1);
         inner.Entries[0].FormattedMessage.Should().Be("[ZeeKayDa: unscrubbable log state blocked]");
     }
+
+    [Fact]
+    public void Log_LoggerMessageDefine_InspectsStateAndRedactsSensitiveKey()
+    {
+        var inner = new CapturingLogger<object>();
+        var sut = new SecretSanitizingLogger<object>(inner);
+
+        var logAction = LoggerMessage.Define<string>(
+            LogLevel.Warning,
+            new EventId(42),
+            "Auth {client_secret} received");
+
+        logAction(sut, "raw-secret", null);
+
+        inner.Entries.Should().HaveCount(1);
+        inner.Entries[0].Pairs
+            .Should().Contain(kv => kv.Key == "client_secret" && (string?)kv.Value == "[REDACTED]",
+                "LoggerMessage.Define state must be inspectable, not silently blocked");
+    }
+
+    [Fact]
+    public void Log_SourceGeneratedLoggerMessage_InspectsStateAndRedactsSensitiveKey()
+    {
+        var inner = new CapturingLogger<object>();
+        var sut = new SecretSanitizingLogger<object>(inner);
+
+        LoggerMessageFixtures.LogSensitiveAuth(sut, "raw-secret");
+
+        inner.Entries.Should().HaveCount(1);
+        inner.Entries[0].Pairs
+            .Should().Contain(kv => kv.Key == "client_secret" && (string?)kv.Value == "[REDACTED]",
+                "[LoggerMessage] source-generated state must be inspectable, not silently blocked");
+    }
+}
+
+internal static partial class LoggerMessageFixtures
+{
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Auth {client_secret} received")]
+    public static partial void LogSensitiveAuth(ILogger logger, string client_secret);
 }

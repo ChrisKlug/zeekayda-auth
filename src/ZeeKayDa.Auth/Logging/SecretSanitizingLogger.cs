@@ -77,9 +77,11 @@ internal sealed class SecretSanitizingLogger<T>(ILogger<T> inner) : ISanitizingL
         }
         else if (state is not string)
         {
-            // Non-string, non-IEnumerable<KVP> state (e.g. from LoggerMessage.Define<T>) cannot
-            // be inspected for sensitive key-value pairs. Substitute a safe placeholder rather
-            // than risk leaking structured parameter values to the inner logger's sinks.
+            // Non-string, non-IEnumerable<KVP> state cannot be inspected for sensitive key-value
+            // pairs. LoggerMessage.Define<T> and [LoggerMessage] source-generated states both
+            // implement IReadOnlyList<KVP> and are handled by the branch above; this guard exists
+            // for truly opaque custom state types passed directly to Log<TState>. Substitute a
+            // safe placeholder rather than risk leaking structured parameter values to sinks.
             const string blocked = "[ZeeKayDa: unscrubbable log state blocked]";
             inner.Log(logLevel, eventId, blocked, exception, static (s, _) => s);
             return;
