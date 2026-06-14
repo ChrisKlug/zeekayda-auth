@@ -6,29 +6,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-### Security
-
-- **Enforce log hygiene to prevent sensitive values from leaking into structured logs** (#118)
-
-  ZeeKayDa.Auth now ships two complementary defences that together prevent OAuth/OIDC sensitive
-  values (such as `client_secret`, `access_token`, `code`, and `refresh_token`) from appearing in
-  your structured log output.
-
-  **`SecretSanitizingLogger<T>`** — A drop-in logger wrapper that automatically redacts sensitive
-  parameter values before a log entry is written. Inject `ISanitizingLogger<T>` in any ZeeKayDa.Auth
-  service and the underlying `ILogger<T>` receives only sanitized messages; the raw values never
-  reach your log sink.
-
-  **Roslyn analyzer (`ILoggerDirectUseAnalyzer`)** — A build-time analyzer that raises a diagnostic
-  error if any ZeeKayDa.Auth service injects `ILogger<T>` directly, enforcing that the sanitizing
-  wrapper is used consistently across the library. The same constraint is validated at the CI level
-  by a shell grep check, so third-party forks and contributors cannot accidentally bypass it.
-
-  **Host-level guidance** — Documentation now covers log hygiene responsibilities that sit outside
-  the library boundary (e.g. exception messages, third-party middleware, and sink-level filtering)
-  so library consumers understand what `SecretSanitizingLogger<T>` covers and what they must handle
-  themselves.
-
 ### Changed
 
 - **BREAKING: `TokenEndpoint.AuthMethodsSupported` is now `ICollection<string>`** (#115)
