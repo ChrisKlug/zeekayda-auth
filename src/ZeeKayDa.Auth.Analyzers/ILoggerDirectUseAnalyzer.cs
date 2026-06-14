@@ -76,7 +76,7 @@ public sealed class ILoggerDirectUseAnalyzer : DiagnosticAnalyzer
 
         if (parts.Count == 0) return false;
         var fullNamespace = string.Join(".", parts);
-        return fullNamespace.StartsWith("ZeeKayDa", System.StringComparison.Ordinal)
+        return fullNamespace.StartsWith("ZeeKayDa.", System.StringComparison.Ordinal)
             && !fullNamespace.StartsWith("ZeeKayDa.Auth.Analyzers", System.StringComparison.Ordinal);
     }
 
