@@ -101,4 +101,45 @@ public sealed class SecretSanitizingLoggerTests
         inner.Entries.Should().HaveCount(1);
         inner.Entries[0].FormattedMessage.Should().NotBeNull();
     }
+
+    // ── Log: RedactedLogValues.ToString() fallback — non-string {OriginalFormat} ─────────────────
+
+    [Fact]
+    public void Log_formats_redacted_state_with_non_string_OriginalFormat_as_key_colon_value_list()
+    {
+        var inner = new CapturingInnerLogger<object>();
+        var sut = new SecretSanitizingLogger<object>(inner);
+        var state = new List<KeyValuePair<string, object?>>
+        {
+            new("{OriginalFormat}", 42),
+            new("safe_key", "safe_value"),
+            new("client_secret", "topsecret"),
+        };
+
+        sut.Log(LogLevel.Information, default, state, null, (s, ex) => s.ToString()!);
+
+        inner.Entries.Should().HaveCount(1);
+        inner.Entries[0].FormattedMessage.Should().Be("{OriginalFormat}: 42, safe_key: safe_value, client_secret: [REDACTED]");
+    }
+
+    // ── Log: FormatTemplate catch block — raw template returned when string.Format throws ────────
+
+    [Fact]
+    public void Log_returns_raw_template_when_string_Format_throws_in_FormatTemplate()
+    {
+        var inner = new CapturingInnerLogger<object>();
+        var sut = new SecretSanitizingLogger<object>(inner);
+        var state = new List<KeyValuePair<string, object?>>
+        {
+            new("{OriginalFormat}", "Count is {Count,-notanumber}"),
+            new("Count", 5),
+            new("client_secret", "s"),
+        };
+
+        var act = () => sut.Log(LogLevel.Information, default, state, null, (st, ex) => st.ToString()!);
+
+        act.Should().NotThrow();
+        inner.Entries.Should().HaveCount(1);
+        inner.Entries[0].FormattedMessage.Should().Be("Count is {Count,-notanumber}");
+    }
 }

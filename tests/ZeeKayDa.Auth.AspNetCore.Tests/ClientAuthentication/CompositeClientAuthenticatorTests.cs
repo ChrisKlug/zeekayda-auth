@@ -97,6 +97,35 @@ public sealed class CompositeClientAuthenticatorTests
             => throw new NotSupportedException("Should not be reached");
     }
 
+    /// <summary>
+    /// Authenticator whose <see cref="CanHandle"/> returns a method string that is NOT present in
+    /// its own <see cref="AuthenticationMethods"/> set, simulating a buggy authenticator.
+    /// </summary>
+    private sealed class MismatchedMethodAuthenticator : IClientAuthenticator
+    {
+        private readonly string _declared;
+        private readonly string _returned;
+
+        public MismatchedMethodAuthenticator(string declared, string returned)
+        {
+            _declared = declared;
+            _returned = returned;
+        }
+
+        public IReadOnlySet<string> AuthenticationMethods =>
+            new HashSet<string>(StringComparer.Ordinal) { _declared };
+
+        public bool CanHandle(TokenRequestContext context, out string? method)
+        {
+            method = _returned;
+            return true;
+        }
+
+        public ValueTask<ClientAuthenticationResult> AuthenticateAsync(
+            ClientAuthenticationContext context, CancellationToken ct)
+            => throw new NotSupportedException("Should not be reached");
+    }
+
     private sealed class CapturingLogger<T> : ISanitizingLogger<T>
     {
         public List<(LogLevel Level, string Message, Exception? Exception)> Entries { get; } = [];
@@ -783,5 +812,178 @@ public sealed class CompositeClientAuthenticatorTests
         logger.Entries.Should().ContainSingle()
             .Which.Level.Should().Be(LogLevel.Error);
         logger.Entries[0].Exception.Should().BeOfType<InvalidOperationException>();
+    }
+
+    // ── Security: CanHandle returns undeclared method → rejected ──────────────────────────────────
+
+    [Fact]
+    public async Task AuthenticateAsync_returns_Authenticated_false_when_CanHandle_returns_method_not_declared_in_AuthenticationMethods()
+    {
+        // Authenticator declares "client_secret_basic" but CanHandle returns "undeclared_method".
+        // The guard at line 112–113 detects the mismatch and rejects without invoking AuthenticateAsync.
+        var mismatchedAuthenticator = new MismatchedMethodAuthenticator(
+            declared: "client_secret_basic",
+            returned: "undeclared_method");
+
+        var compositeHasher = new CompositeClientSecretHasher(
+            [new FakeHasher()],
+            Options.Create(new ClientSecretHasherRegistrationOptions()));
+
+        var client = CreateConfidentialClient(
+            allowedMethod: "undeclared_method");
+
+        var composite = new CompositeClientAuthenticator(
+            [mismatchedAuthenticator],
+            new FakeClientRepository(client),
+            CreateServerOptions("client_secret_basic", "undeclared_method"),
+            compositeHasher,
+            NullSanitizingLogger<CompositeClientAuthenticator>());
+
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Form = new FormCollection(new Dictionary<string, StringValues>
+        {
+            ["client_id"] = "client-1",
+        });
+
+        var result = await composite.AuthenticateAsync("client-1", httpContext, TestContext.Current.CancellationToken);
+
+        result.Authenticated.Should().BeFalse();
+    }
+
+    // ── Security: matched method absent from server allowlist → rejected ───────────────────────────
+
+    [Fact]
+    public async Task AuthenticateAsync_returns_Authenticated_false_when_matched_method_is_not_in_server_allowlist()
+    {
+        // Authenticator declares and returns "custom_method"; server only allows "client_secret_basic".
+        // The guard at line 116–117 rejects because "custom_method" is not in AuthMethodsSupported.
+        var customAuthenticator = new AlwaysHandlesAuthenticator("custom_method");
+
+        var compositeHasher = new CompositeClientSecretHasher(
+            [new FakeHasher()],
+            Options.Create(new ClientSecretHasherRegistrationOptions()));
+
+        var client = new MinimalClient
+        {
+            ClientId = "client-1",
+            Credentials = [],
+            IsPublic = false,
+            AllowedTokenEndpointAuthMethods =
+                new HashSet<string>(StringComparer.Ordinal) { "custom_method" },
+        };
+
+        var composite = new CompositeClientAuthenticator(
+            [customAuthenticator],
+            new FakeClientRepository(client),
+            CreateServerOptions("client_secret_basic"),
+            compositeHasher,
+            NullSanitizingLogger<CompositeClientAuthenticator>());
+
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Form = new FormCollection(new Dictionary<string, StringValues>
+        {
+            ["client_id"] = "client-1",
+        });
+
+        var result = await composite.AuthenticateAsync("client-1", httpContext, TestContext.Current.CancellationToken);
+
+        result.Authenticated.Should().BeFalse();
+    }
+
+    // ── Security: none fallback guard — unknown client pads timing ────────────────────────────────
+
+    [Fact]
+    public async Task AuthenticateAsync_returns_Authenticated_false_and_pads_timing_for_unknown_client_on_none_fallback()
+    {
+        var hasher = new FakeHasher();
+        var compositeHasher = new CompositeClientSecretHasher(
+            [hasher],
+            Options.Create(new ClientSecretHasherRegistrationOptions()));
+
+        var composite = new CompositeClientAuthenticator(
+            [new ClientSecretAuthenticator(compositeHasher)],
+            new FakeClientRepository(null),
+            CreateServerOptions(TokenEndpointAuthMethods.None),
+            compositeHasher,
+            NullSanitizingLogger<CompositeClientAuthenticator>());
+
+        var httpContext = new DefaultHttpContext();
+
+        var result = await composite.AuthenticateAsync("unknown-client", httpContext, TestContext.Current.CancellationToken);
+
+        result.Authenticated.Should().BeFalse();
+        hasher.CallCount.Should().Be(CompositeClientSecretHasher.MaxActiveSharedSecretsPerClient);
+    }
+
+    // ── Security: none fallback guard — corrupt client with credentials pads timing ──────────────
+
+    [Fact]
+    public async Task AuthenticateAsync_returns_Authenticated_false_and_pads_timing_for_corrupt_public_client_with_credentials()
+    {
+        var hasher = new FakeHasher();
+        var compositeHasher = new CompositeClientSecretHasher(
+            [hasher],
+            Options.Create(new ClientSecretHasherRegistrationOptions()));
+
+        var corruptClient = new MinimalClient
+        {
+            ClientId = "corrupt-client",
+            Credentials = [new FakeSecret()],
+            IsPublic = true,
+            AllowedTokenEndpointAuthMethods =
+                new HashSet<string>(StringComparer.Ordinal) { TokenEndpointAuthMethods.None },
+        };
+
+        var composite = new CompositeClientAuthenticator(
+            [new ClientSecretAuthenticator(compositeHasher)],
+            new FakeClientRepository(corruptClient),
+            CreateServerOptions(TokenEndpointAuthMethods.None),
+            compositeHasher,
+            NullSanitizingLogger<CompositeClientAuthenticator>());
+
+        var httpContext = new DefaultHttpContext();
+
+        var result = await composite.AuthenticateAsync("corrupt-client", httpContext, TestContext.Current.CancellationToken);
+
+        result.Authenticated.Should().BeFalse();
+        hasher.CallCount.Should().Be(CompositeClientSecretHasher.MaxActiveSharedSecretsPerClient);
+    }
+
+    // ── Security: none fallback guard — corrupt client with extra auth methods pads timing ────────
+
+    [Fact]
+    public async Task AuthenticateAsync_returns_Authenticated_false_and_pads_timing_for_corrupt_public_client_with_extra_auth_methods()
+    {
+        var hasher = new FakeHasher();
+        var compositeHasher = new CompositeClientSecretHasher(
+            [hasher],
+            Options.Create(new ClientSecretHasherRegistrationOptions()));
+
+        var corruptClient = new MinimalClient
+        {
+            ClientId = "corrupt-client",
+            Credentials = [],
+            IsPublic = true,
+            AllowedTokenEndpointAuthMethods =
+                new HashSet<string>(StringComparer.Ordinal)
+                {
+                    TokenEndpointAuthMethods.ClientSecretBasic,
+                    TokenEndpointAuthMethods.None,
+                },
+        };
+
+        var composite = new CompositeClientAuthenticator(
+            [new ClientSecretAuthenticator(compositeHasher)],
+            new FakeClientRepository(corruptClient),
+            CreateServerOptions(TokenEndpointAuthMethods.None),
+            compositeHasher,
+            NullSanitizingLogger<CompositeClientAuthenticator>());
+
+        var httpContext = new DefaultHttpContext();
+
+        var result = await composite.AuthenticateAsync("corrupt-client", httpContext, TestContext.Current.CancellationToken);
+
+        result.Authenticated.Should().BeFalse();
+        hasher.CallCount.Should().Be(CompositeClientSecretHasher.MaxActiveSharedSecretsPerClient);
     }
 }
