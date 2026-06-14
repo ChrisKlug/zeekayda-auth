@@ -1,5 +1,5 @@
-using Microsoft.Extensions.Logging;
 using System.Linq;
+using Microsoft.Extensions.Logging;
 using ZeeKayDa.Auth.Logging;
 
 namespace ZeeKayDa.Auth.Tests.Logging;
