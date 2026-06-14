@@ -252,6 +252,15 @@ Startup validation fails if multiple hashers are registered but zero or more tha
 > permanent fix — either full message redaction or complete exception suppression — will be decided
 > and implemented in a future release.
 
+> ⚠️ **Warning: `SecretSanitizingLogger` covers ZeeKayDa.Auth's own logs only.**
+> The redaction wrapper intercepts log calls made by ZeeKayDa.Auth's internal services. It has no
+> effect on ASP.NET Core's `UseHttpLogging()`, Kestrel connection logging, W3CLogger, Application
+> Insights telemetry, or exception-handling middleware — all of which can capture the `Authorization`
+> header or a form-encoded `client_secret` entirely outside the library's scope.
+>
+> See [Configure host-level log hygiene](configure-host-log-hygiene.md) for the steps required to
+> close this gap in the host pipeline.
+
 ## 5. Implement a custom client authenticator
 
 `IClientAuthenticator` lets you plug a new token endpoint authentication method into the
@@ -380,10 +389,20 @@ builder.Services.AddZeeKayDaAuth(options =>
 > permanent fix — either full message redaction or complete exception suppression — will be decided
 > and implemented in a future release.
 
+> ⚠️ **Warning: `SecretSanitizingLogger` covers ZeeKayDa.Auth's own logs only.**
+> The redaction wrapper intercepts log calls made by ZeeKayDa.Auth's internal services. It has no
+> effect on ASP.NET Core's `UseHttpLogging()`, Kestrel connection logging, W3CLogger, Application
+> Insights telemetry, or exception-handling middleware — all of which can capture the `Authorization`
+> header or a form-encoded `client_secret` entirely outside the library's scope.
+>
+> See [Configure host-level log hygiene](configure-host-log-hygiene.md) for the steps required to
+> close this gap in the host pipeline.
+
 ## See also
 
 - [Configure ZeeKayDa.Auth](configure-zeekayda-auth.md) — register the framework and the minimum required options.
 - [Configure discovery](configure-discovery.md) — customise the discovery document with the built-in options.
+- [Configure host-level log hygiene](configure-host-log-hygiene.md) — prevent sensitive parameters from appearing in host-pipeline logs outside ZeeKayDa.Auth's redaction boundary.
 - [`AuthorizationServerOptions` reference](../reference/configuration.md) — full property list and validation rules.
 - [Client secrets reference](../reference/client-secrets.md) — `Pbkdf2ClientSecretHasherOptions` property reference.
 - [Cancellation in managed threads](https://learn.microsoft.com/dotnet/standard/threading/cancellation-in-managed-threads) — Microsoft's reference for the cancellation pattern this framework follows.
