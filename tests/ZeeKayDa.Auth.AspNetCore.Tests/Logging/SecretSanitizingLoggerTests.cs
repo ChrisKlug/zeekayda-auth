@@ -218,6 +218,50 @@ public sealed class SecretSanitizingLoggerTests
     }
 
     [Fact]
+    public void Log_PreservesFormatSpecifierOnNonSensitiveValue()
+    {
+        var inner = new CapturingLogger<object>();
+        var sut = new SecretSanitizingLogger<object>(inner);
+
+        sut.LogInformation("Processed {Count:N0} items", 1234567);
+
+        inner.Entries[0].FormattedMessage.Should().Be("Processed 1,234,567 items");
+    }
+
+    [Fact]
+    public void Log_PreservesAlignmentSpecifierOnNonSensitiveValue()
+    {
+        var inner = new CapturingLogger<object>();
+        var sut = new SecretSanitizingLogger<object>(inner);
+
+        sut.LogInformation("User: {Name,-10}!", "Alice");
+
+        inner.Entries[0].FormattedMessage.Should().Be("User: Alice     !");
+    }
+
+    [Fact]
+    public void Log_HandlesEscapedBraces()
+    {
+        var inner = new CapturingLogger<object>();
+        var sut = new SecretSanitizingLogger<object>(inner);
+
+        sut.LogInformation("Use {{client_secret}} to pass {client_secret}", "s3cr3t");
+
+        inner.Entries[0].FormattedMessage.Should().Be("Use {client_secret} to pass [REDACTED]");
+    }
+
+    [Fact]
+    public void Log_HandlesDuplicatePlaceholder()
+    {
+        var inner = new CapturingLogger<object>();
+        var sut = new SecretSanitizingLogger<object>(inner);
+
+        sut.LogInformation("Hello {Name}, goodbye {Name}", "World", "World");
+
+        inner.Entries[0].FormattedMessage.Should().Be("Hello World, goodbye World");
+    }
+
+    [Fact]
     public void Log_BlocksNonInspectableState()
     {
         var inner = new CapturingLogger<object>();

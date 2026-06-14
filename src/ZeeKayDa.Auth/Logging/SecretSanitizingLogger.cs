@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Text;
 using Microsoft.Extensions.Logging;
 
 namespace ZeeKayDa.Auth.Logging;
@@ -99,15 +100,70 @@ internal sealed class SecretSanitizingLogger<T>(ILogger<T> inner) : ISanitizingL
             if (formatEntry.Value is not string template)
                 return string.Join(", ", pairs.Select(kv => $"{kv.Key}: {kv.Value}"));
 
-            var result = template;
-            foreach (var kv in pairs.Where(kv => kv.Key != "{OriginalFormat}"))
+            return FormatTemplate(
+                template,
+                pairs
+                    .Where(kv => kv.Key != "{OriginalFormat}")
+                    .ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal));
+        }
+
+        // Converts a structured-logging named template (e.g. "Count={Count:N0}") to an indexed
+        // string.Format template ("Count={0:N0}") and delegates to string.Format so that alignment
+        // specifiers, format specifiers, escaped braces ({{/}}), and duplicate placeholders are all
+        // handled correctly by the framework rather than re-implemented here.
+        // FormattedLogValues (which does this authoritatively) is internal, so this is the best
+        // available approach without reflection.
+        private static string FormatTemplate(string template, Dictionary<string, object?> values)
+        {
+            var args = new List<object?>();
+            var keyToIndex = new Dictionary<string, int>(StringComparer.Ordinal);
+            var sb = new StringBuilder(template.Length);
+            var i = 0;
+
+            while (i < template.Length)
             {
-                // Ordinal is safe: structured logging convention guarantees the KV pair key and
-                // the template placeholder are identical strings (same casing), so a case-sensitive
-                // replace always finds the right substring.
-                result = result.Replace($"{{{kv.Key}}}", kv.Value?.ToString() ?? "(null)", StringComparison.Ordinal);
+                var c = template[i];
+                if (c == '{')
+                {
+                    if (i + 1 < template.Length && template[i + 1] == '{')
+                    {
+                        sb.Append("{{");
+                        i += 2;
+                        continue;
+                    }
+
+                    var end = template.IndexOf('}', i + 1);
+                    if (end < 0) { sb.Append(c); i++; continue; }
+
+                    var content = template[(i + 1)..end];
+                    var specifierStart = content.IndexOfAny([',', ':']);
+                    var key = specifierStart < 0 ? content : content[..specifierStart];
+                    var specifier = specifierStart < 0 ? "" : content[specifierStart..];
+
+                    if (!keyToIndex.TryGetValue(key, out var idx))
+                    {
+                        idx = args.Count;
+                        keyToIndex[key] = idx;
+                        args.Add(values.TryGetValue(key, out var v) ? v : null);
+                    }
+
+                    sb.Append('{').Append(idx).Append(specifier).Append('}');
+                    i = end + 1;
+                }
+                else if (c == '}' && i + 1 < template.Length && template[i + 1] == '}')
+                {
+                    sb.Append("}}");
+                    i += 2;
+                }
+                else
+                {
+                    sb.Append(c);
+                    i++;
+                }
             }
-            return result;
+
+            try { return string.Format(sb.ToString(), args.ToArray()); }
+            catch { return template; }
         }
     }
 }
