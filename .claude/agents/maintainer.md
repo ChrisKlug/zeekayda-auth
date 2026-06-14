@@ -73,6 +73,42 @@ Labels: `type:task` (or other appropriate `type:*`), relevant `area:*`, `priorit
 - Close stale issues with empathy — thank the reporter
 - Escalate security reports immediately to the private advisory process (never a public issue)
 
+## Issue Hierarchy (three-tier model)
+
+Issues follow a three-tier hierarchy — every `type:design` and `type:task` must be a sub-issue of a `type:epic`:
+
+```
+type:epic    →  One per feature area. Permanent coordination point. Never closed until
+                the whole feature area is done. Title prefix: "Epic: "
+
+type:design  →  ADR / architecture planning issue. Produces an ADR doc + merged PR.
+                Closes when its ADR PR merges.
+
+type:task    →  Concrete implementation work (code, tests, docs, nits, chores).
+                Closes when its implementation PR merges.
+```
+
+Sub-issue ordering reflects execution sequence — design issues precede tasks, foundational tasks precede dependent ones.
+
+**`status:idea`** marks epics, design issues, and tasks not yet ready to design or implement. Excluded from the active-work view:
+
+```
+Active work query: is:open -label:status:idea
+```
+
+**`status:needs-triage` is retired** — use `status:idea` for unscoped future work; use `status:ready` or `status:blocked` for active work.
+
+## Blocker Resolution on Merge
+
+Whenever a PR is merged, automatically:
+
+1. Note the merged PR number **and** any issue numbers it closes (e.g. `Closes #N` in the PR body).
+2. Search all open draft PRs for a `## Blockers` section referencing the merged PR number or any closed issue number.
+3. For each matching PR, remove that blocker entry from the PR body.
+4. If the PR has no remaining blockers after removal, mark it as ready for review (`gh pr ready`).
+
+Do this without being asked — it is part of the standard merge flow.
+
 ## How You Work
 
 - **Always use the native GitHub sub-issues API to link child issues to their parent epic** — never maintain a text "Sub-issues" list in the epic body, and never add `**Parent epic:**` or `Sub-issue of #N` lines to child issue bodies. The GitHub UI renders all parent/child relationships natively; text links are redundant and get out of sync.
