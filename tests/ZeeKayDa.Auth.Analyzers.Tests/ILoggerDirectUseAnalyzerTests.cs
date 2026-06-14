@@ -110,6 +110,25 @@ public sealed class ILoggerDirectUseAnalyzerTests
     }
 
     [Fact]
+    public async Task No_diagnostic_for_field_typed_as_non_generic_ILogger()
+    {
+        // IsDirectILoggerT returns false when namedType.IsGenericType is false,
+        // so a bare ILogger field (not ILogger<T>) must not trigger the diagnostic.
+        var source = """
+            using Microsoft.Extensions.Logging;
+            namespace ZeeKayDa.Auth.Services;
+            class MyService
+            {
+                private ILogger _logger = null!;
+            }
+            """;
+
+        var diagnostics = await GetDiagnosticsAsync(source);
+
+        diagnostics.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task No_diagnostic_for_ILoggerT_parameter_in_class_that_implements_ILoggerT()
     {
         // SecretSanitizingLogger itself accepts ILogger<T> as its inner wrapper target;
