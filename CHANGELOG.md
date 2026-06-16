@@ -88,4 +88,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - `TokenEndpoint.AuthMethodsSupported` must not be null or empty
   - `TokenEndpoint.AuthMethodsSupported` must contain at least one non-`None` method if `GrantTypesSupported` includes `ClientCredentials` (RFC 6749 §4.4 compliance)
 
+### Documentation
+
+- **Clarify `ZeeKayDaConfigurationException.Message` is diagnostic-only** (#159)
+
+  `Message` is not a stable API contract and must not be parsed or asserted on. The stable surface
+  for programmatic handling is `AggregatedFailures` and the `Code` field on each
+  `ZeeKayDaConfigurationFailure`. `Message` may change in any release without notice.
+
+- **Formalise `SecurityHeaders` as a framework-behavior group in ADR 0002** (#159)
+
+  ADR 0002 now formally recognises a second option-group category — **framework-behavior groups** —
+  for settings that control the framework's own runtime behavior with no discovery-document
+  analogue. `SecurityHeaders` is confirmed correct; no rename is needed. Future framework-behavior
+  groups must use a plain descriptive name with no `Endpoint` suffix.
+
 [unreleased]: https://github.com/ChrisKlug/zeekayda-auth/compare/HEAD...HEAD
