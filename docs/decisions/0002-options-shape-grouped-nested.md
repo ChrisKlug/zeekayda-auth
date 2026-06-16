@@ -437,3 +437,9 @@ a flag that papers over an absent control.
   and [Microsoft.Identity.Web](https://learn.microsoft.com/en-us/entra/msal/dotnet/microsoft-identity-web/)'s
   flat `MicrosoftIdentityOptions` — both were considered as reference points; neither was adopted
   wholesale, for the reasons in *Rejected Alternatives* above.
+
+---
+
+## Amendments
+
+- **2026-06-13 — `SecurityHeaders` is a framework-behavior group, outside the spec-prefix rule** — `SecurityHeaders` on `AuthorizationServerOptions` has no OIDC Discovery 1.0 or RFC 8414 discovery-key counterpart; it controls HTTP security headers emitted by the ZeeKayDa.Auth framework itself, not server capability metadata advertised to clients, and therefore sits outside the spec-prefix rule in §1. This ADR formally recognises a second category — **framework-behavior groups** — which collect settings that govern the framework's own runtime behavior (headers, caching policy, logging policy, etc.) with no discovery-document analogue. Framework-behavior groups are permitted outside the spec-prefix rule; their names must be plain, descriptive English and MUST NOT carry an `Endpoint` suffix, as they are not HTTP endpoints. The `SecurityHeaders` name is hereby blessed as correct for this category and no rename is warranted. Going forward, any new framework-behavior group must follow this precedent: descriptive name, no `Endpoint` suffix, not subject to the spec-prefix rule; a property that does have a discovery-key counterpart must go into a spec-prefix group and must never be placed in a framework-behavior group. Reference: architecture review finding AA-m13, 2026-06-13. Resolves #159 (partial).
