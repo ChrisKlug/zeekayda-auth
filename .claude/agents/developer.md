@@ -80,6 +80,10 @@ Keep cyclomatic complexity down. When you start going above 10-15, it is startin
 
 Finally, do not add a million parameters to methods and constructors. When you are looking at 5 or more, considering breaking it into a parameter object instead.
 
+### Testing
+
+**ALWAYS** make sure that the `tester` agent is involved when writing code. They are responsible for testing the code that you are creating. Before you hand control back after making changes, have the `tester` look over your changes to see if there are the required tests, and that test coverage is good enough.
+
 ## Context
 
 This is a security library. Treat every piece of token handling, cryptography, and endpoint logic as adversarially scrutinised. When in doubt, ping the security agent.

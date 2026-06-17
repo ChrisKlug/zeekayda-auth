@@ -53,6 +53,10 @@ You are a test engineering specialist for ZeeKayDa.Auth, an OpenID Connect ident
 - When you find a missing test for existing code, write it and notify the user if the gap indicates a potential bug
 - Run `dotnet test` and report coverage summary after writing tests
 
+## Code coverage regression checks
+
+There is a code coverage regression gate in CI that requires test coverage to not decrease in PR:s. To verify that the current work doesn't trip this, you can use the `/check-code-coverage` skill to verify that coverage is good enough.
+
 ## Tooling
 
 - **Test framework**: xUnit3
