@@ -135,11 +135,12 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
         }
         else
         {
-            foreach (var grantType in options.GrantTypesSupported.Where(g => !Enum.IsDefined(g)))
+            foreach (var grantType in options.GrantTypesSupported)
             {
-                errors.Add(
-                    $"AuthorizationServerOptions.GrantTypesSupported contains invalid value '{(int)grantType}'. " +
-                    $"Expected a valid {nameof(GrantType)} enum member.");
+                if (!Enum.IsDefined(grantType))
+                    errors.Add(
+                        $"AuthorizationServerOptions.GrantTypesSupported contains invalid value '{(int)grantType}'. " +
+                        $"Expected a valid {nameof(GrantType)} enum member.");
             }
         }
 

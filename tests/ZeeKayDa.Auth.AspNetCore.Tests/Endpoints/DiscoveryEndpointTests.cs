@@ -797,12 +797,12 @@ public sealed class DiscoveryEndpointTests : IDisposable
     }
 
     [Fact]
-    public async Task GetDiscoveryDocument_returns_Cross_Origin_Resource_Policy_cross_origin_header()
+    public async Task GetDiscoveryDocument_returns_Cross_Origin_Resource_Policy_same_origin_header()
     {
         var response = await _client.GetAsync(DiscoveryPath, TestContext.Current.CancellationToken);
 
         response.Headers.TryGetValues("Cross-Origin-Resource-Policy", out var values).Should().BeTrue();
-        values.Should().ContainSingle().Which.Should().Be("cross-origin");
+        values.Should().ContainSingle().Which.Should().Be("same-origin");
     }
 
     [Fact]

@@ -20,7 +20,12 @@ public sealed class SecurityHeadersOptions
 
     /// <summary>
     /// Gets or sets the value for the <c>Cross-Origin-Resource-Policy</c> header.
-    /// Defaults to <see cref="CrossOriginResourcePolicy.CrossOrigin"/>.
+    /// Defaults to <see cref="CrossOriginResourcePolicy.SameOrigin"/>.
     /// </summary>
-    public CrossOriginResourcePolicy CrossOriginResourcePolicy { get; set; } = CrossOriginResourcePolicy.CrossOrigin;
+    /// <remarks>
+    /// Set to <see cref="CrossOriginResourcePolicy.CrossOrigin"/> only when cross-origin read
+    /// access is explicitly required. The default of <c>same-origin</c> is the safer choice
+    /// until credentialed cross-origin endpoints are introduced.
+    /// </remarks>
+    public CrossOriginResourcePolicy CrossOriginResourcePolicy { get; set; } = CrossOriginResourcePolicy.SameOrigin;
 }

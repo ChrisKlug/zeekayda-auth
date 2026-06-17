@@ -74,7 +74,7 @@ Work follows six phases. **The main agent is an orchestrator — it routes work 
              ──►  docs         Gate-check that documentation is complete before merge.
 ```
 
-## Code navigation
+## Code navigation - IMPORTANT for ALL agents!!!
 
 **Always** prefer LSP over Grep/Glob/Read for code navigation:
 - `goToDefinition` / `goToImplementation` to jump to source

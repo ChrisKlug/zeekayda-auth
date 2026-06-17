@@ -69,10 +69,6 @@ internal sealed class TestWebAppFactory : WebApplicationFactory<TestWebAppFactor
                 _configureOptions?.Invoke(options);
             });
 
-            // Register a secrets hasher so the client repository can be constructed at startup
-            // (ClientRepositoryStartupActivator resolves it eagerly).
-            authBuilder.AddPbkdf2SecretsHasher();
-
             // Register a minimal in-memory client repository so the startup validator passes.
             // Individual tests that override _configureBuilder may call AddInMemoryClients
             // themselves; the TryAdd pattern ensures it is only registered once.
@@ -130,8 +126,7 @@ internal sealed class TestWebAppFactoryWithRemoteIp : WebApplicationFactory<Test
                 // Advertise "none" so the public test client passes the subset validation.
                 options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
                 _configureOptions?.Invoke(options);
-            }).AddPbkdf2SecretsHasher()
-              .AddInMemoryClients(clients =>
+            }).AddInMemoryClients(clients =>
                 clients.AddPublic("test-client",
                     ["https://test.example.com/callback"],
                     [],
@@ -172,8 +167,7 @@ internal sealed class TestWebAppFactoryWithPing : WebApplicationFactory<TestWebA
             {
                 options.Issuer = "https://test.example.com";
                 options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
-            }).AddPbkdf2SecretsHasher()
-              .AddInMemoryClients(clients =>
+            }).AddInMemoryClients(clients =>
                 clients.AddPublic("test-client",
                     ["https://test.example.com/callback"],
                     [],
@@ -225,8 +219,7 @@ internal sealed class TestWebAppFactoryWithVaryMiddleware : WebApplicationFactor
                 options.Issuer = "https://test.example.com";
                 options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
                 _configureOptions?.Invoke(options);
-            }).AddPbkdf2SecretsHasher()
-              .AddInMemoryClients(clients =>
+            }).AddInMemoryClients(clients =>
                 clients.AddPublic("test-client",
                     ["https://test.example.com/callback"],
                     [],

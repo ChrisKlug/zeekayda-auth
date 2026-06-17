@@ -20,6 +20,14 @@ namespace ZeeKayDa.Auth.Clients;
 /// comparisons; MUST NOT throw from <see cref="VerifyCore"/> (return <see langword="false"/>
 /// instead); MUST NOT log the presented secret; and MUST be safe for concurrent use (singleton-safe).
 /// </para>
+/// <para>
+/// <strong>Managed-string limitation.</strong> The <see cref="Create"/> method accepts a
+/// managed <see langword="string"/> whose contents the .NET garbage collector does not guarantee
+/// to erase promptly. Callers should treat the created credential as potentially resident in
+/// memory until the next GC cycle. <see cref="Verify"/> accepts a
+/// <see cref="ReadOnlySpan{T}">ReadOnlySpan&lt;char&gt;</see>, so callers who hold the presented
+/// secret in a <c>char[]</c> or similar mutable buffer can zero it out immediately after the call.
+/// </para>
 /// </remarks>
 public abstract class ClientSecretHasher<TSecret> : IClientSecretHasher
     where TSecret : IClientSecret
