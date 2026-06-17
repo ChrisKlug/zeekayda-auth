@@ -46,6 +46,12 @@ Ask the tester to write and verify tests. They are specialists in this area, and
 
 Architecture decisions are made by the architecture agent. If you are doing more than minor things, have that agent review your plan before starting implementation.
 
+## Code Navigation
+
+Prefer LSP over grep/bash for all symbol-level lookups: go-to-definition, find-references, hover types, and rename previews. LSP results are precise and scope-aware; grep is a fallback for searching comments, string literals, or other content LSP cannot answer.
+
+**Important!** If the LSP seems to be giving you stale information, use the `/restart-lsp` skill to restart the LSP before starting to use `bash` and `grep`
+
 ## Branch Sync Hygiene
 
 Before starting new implementation work (or creating a new branch), first sync from the latest default branch:
@@ -73,10 +79,6 @@ Keep classes and methods short. Do **NOT** create god classes or god methods tha
 Keep cyclomatic complexity down. When you start going above 10-15, it is starting to get complicated. Try breaking it down. Favour small, easy to use methods that explain intent, over complex multi-part if statements.
 
 Finally, do not add a million parameters to methods and constructors. When you are looking at 5 or more, considering breaking it into a parameter object instead.
-
-### Formatting
-
-Before any code is considered "done", formatting should be done. This can be done using the `/check-formatting` skill!
 
 ## Context
 
