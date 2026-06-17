@@ -40,7 +40,7 @@ public sealed class CompositeClientSecretHasherTests
             return _verifyResult;
         }
 
-        public IClientSecret Create(string plaintext) => new TSecret();
+        public IClientSecret Create(ReadOnlySpan<char> plaintext) => new TSecret();
     }
 
     // Creates a composite backed by a single (default) FakeHasher.
@@ -202,7 +202,7 @@ public sealed class CompositeClientSecretHasherTests
             return false;
         }
 
-        public IClientSecret Create(string plaintext) => new DefaultSecret();
+        public IClientSecret Create(ReadOnlySpan<char> plaintext) => new DefaultSecret();
     }
 
     [Fact]
@@ -351,6 +351,6 @@ public sealed class CompositeClientSecretHasherTests
     {
         public bool CanHandle(IClientSecret secret) => false;
         public bool Verify(IClientSecret stored, ReadOnlySpan<char> presented) => false;
-        public IClientSecret Create(string plaintext) => new DefaultSecret();
+        public IClientSecret Create(ReadOnlySpan<char> plaintext) => new DefaultSecret();
     }
 }

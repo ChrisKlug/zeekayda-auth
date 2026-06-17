@@ -201,6 +201,75 @@ public sealed class Pbkdf2ClientSecretHasherTests
         act.Should().Throw<ArgumentException>().WithParameterName("plaintext");
     }
 
+    // ── Create span overload ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Create_span_throws_ArgumentException_for_empty_span()
+    {
+        var hasher = CreateHasher();
+
+        var act = () => hasher.Create(ReadOnlySpan<char>.Empty);
+
+        act.Should().Throw<ArgumentException>().WithParameterName("plaintext");
+    }
+
+    [Fact]
+    public void Create_span_throws_ArgumentException_for_whitespace_only_span()
+    {
+        var hasher = CreateHasher();
+
+        var act = () => hasher.Create("   ".AsSpan());
+
+        act.Should().Throw<ArgumentException>().WithParameterName("plaintext");
+    }
+
+    [Fact]
+    public void Create_span_produces_verifiable_credential()
+    {
+        var hasher = CreateHasher();
+
+        var stored = hasher.Create("span-secret".AsSpan());
+        var result = hasher.Verify(stored, "span-secret".AsSpan());
+
+        result.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Create_span_credential_verifies_after_source_array_is_zeroed()
+    {
+        var hasher = CreateHasher();
+        char[] chars = "zeroable-secret".ToCharArray();
+
+        var stored = hasher.Create(chars.AsSpan());
+        Array.Clear(chars);
+        var result = hasher.Verify(stored, "zeroable-secret".AsSpan());
+
+        result.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Create_span_and_string_paths_produce_hashes_that_verify_same_secret()
+    {
+        var hasher = CreateHasher();
+
+        var storedViaSpan = hasher.Create("shared-secret".AsSpan());
+        var storedViaString = hasher.Create("shared-secret");
+
+        hasher.Verify(storedViaSpan, "shared-secret".AsSpan()).Should().BeTrue();
+        hasher.Verify(storedViaString, "shared-secret".AsSpan()).Should().BeTrue();
+    }
+
+    [Fact]
+    public void Create_span_round_trip_with_non_ascii_secrets()
+    {
+        var hasher = CreateHasher();
+
+        var stored = hasher.Create("café 🔑 秘密".AsSpan());
+
+        hasher.Verify(stored, "café 🔑 秘密".AsSpan()).Should().BeTrue();
+        hasher.Verify(stored, "cafe key secret".AsSpan()).Should().BeFalse();
+    }
+
     // ── Constructor iteration validation ─────────────────────────────────────────────────────────
 
     [Fact]

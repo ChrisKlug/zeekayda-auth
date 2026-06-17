@@ -16,24 +16,11 @@ namespace ZeeKayDa.Auth.Clients;
 /// <c>ClientSecretHasher&lt;TSecret&gt;</c>. Register it with <c>AddSecretsHasher&lt;T&gt;()</c>.
 /// </para>
 /// <para>
-/// <strong>Managed-string limitation.</strong> The plaintext passed to <see cref="Create"/>
-/// is a managed <see langword="string"/> whose contents the .NET garbage collector does not
-/// guarantee to erase promptly. Callers should treat the created credential as potentially
-/// resident in memory until the next GC cycle. <see cref="Verify"/> accepts a
-/// <see cref="System.ReadOnlySpan{T}">ReadOnlySpan&lt;char&gt;</see>, so callers who hold the
-/// presented secret in a <c>char[]</c> or similar mutable buffer can zero it out immediately
-/// after the call.
-/// <code>
-/// char[] presented = /* read from network buffer */;
-/// try
-/// {
-///     bool valid = hasher.Verify(storedSecret, presented);
-/// }
-/// finally
-/// {
-///     Array.Clear(presented); // erase before GC can observe it
-/// }
-/// </code>
+/// <see cref="Create(System.ReadOnlySpan{char})"/> is the memory-safe primary overload:
+/// callers who hold the plaintext in a mutable <c>char[]</c> can zero the buffer immediately
+/// after the call, before the GC has a chance to observe it.
+/// <see cref="Create(string)"/> is a convenience overload for callers who already have a
+/// managed string and accept that its contents may remain in memory until the next GC cycle.
 /// </para>
 /// </remarks>
 public interface IClientSecretHasher
@@ -52,10 +39,49 @@ public interface IClientSecretHasher
     bool Verify(IClientSecret stored, ReadOnlySpan<char> presented);
 
     /// <summary>
-    /// Creates a new hashed credential from a plaintext secret.
+    /// Creates a new hashed credential from a plaintext secret held in a span.
+    /// Rejects empty and whitespace-only spans (throws <see cref="ArgumentException"/>).
+    /// Spans cannot be null, so no null check is performed.
+    /// </summary>
+    /// <remarks>
+    /// This is the memory-safe primary overload. Callers who allocate the plaintext in a
+    /// mutable buffer should zero it immediately after this call:
+    /// <code>
+    /// char[] secret = /* decoded from buffer */;
+    /// IClientSecret stored;
+    /// try { stored = hasher.Create(secret.AsSpan()); }
+    /// finally { Array.Clear(secret); }
+    /// </code>
+    /// </remarks>
+    /// <param name="plaintext">The plaintext secret to hash.</param>
+    /// <exception cref="ArgumentException">
+    /// Thrown when <paramref name="plaintext"/> is empty or contains only whitespace.
+    /// </exception>
+    IClientSecret Create(ReadOnlySpan<char> plaintext);
+
+    /// <summary>
+    /// Creates a new hashed credential from a plaintext secret string.
+    /// Convenience overload for callers who already hold a managed string.
     /// Rejects null, empty, or whitespace-only input.
     /// </summary>
-    IClientSecret Create(string plaintext);
+    /// <remarks>
+    /// This overload allocates a managed <see langword="string"/> that the .NET garbage
+    /// collector does not guarantee to erase promptly. Prefer
+    /// <see cref="Create(System.ReadOnlySpan{char})"/> when the secret is held in a mutable
+    /// buffer that can be zeroed after use.
+    /// </remarks>
+    /// <param name="plaintext">The plaintext secret to hash.</param>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="plaintext"/> is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Thrown when <paramref name="plaintext"/> is empty or contains only whitespace.
+    /// </exception>
+    IClientSecret Create(string plaintext)
+    {
+        ArgumentNullException.ThrowIfNull(plaintext);
+        return Create(plaintext.AsSpan());
+    }
 
     /// <summary>
     /// Returns any registration-time failures for the given stored credential.

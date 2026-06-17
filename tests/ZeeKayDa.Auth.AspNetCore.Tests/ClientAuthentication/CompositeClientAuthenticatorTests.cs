@@ -40,7 +40,7 @@ public sealed class CompositeClientAuthenticatorTests
             Interlocked.Increment(ref _callCount);
             return _verifyResult(stored);
         }
-        public IClientSecret Create(string plaintext) => new FakeSecret();
+        public IClientSecret Create(ReadOnlySpan<char> plaintext) => new FakeSecret();
     }
 
     private sealed class FakeClientRepository : IClientRepository

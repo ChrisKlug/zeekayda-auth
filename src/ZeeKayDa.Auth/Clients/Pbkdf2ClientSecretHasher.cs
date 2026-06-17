@@ -143,6 +143,20 @@ internal sealed class Pbkdf2ClientSecretHasher : ClientSecretHasher<IPbkdf2Clien
     }
 
     /// <inheritdoc/>
+    protected override IPbkdf2ClientSecret CreateCore(ReadOnlySpan<char> plaintext)
+    {
+        var salt = RandomNumberGenerator.GetBytes(SaltLength);
+        var hash = Rfc2898DeriveBytes.Pbkdf2(
+            plaintext,
+            salt,
+            _iterations,
+            HashAlgorithmName.SHA256,
+            HashLength);
+
+        return new Pbkdf2ClientSecret(_iterations, salt, hash);
+    }
+
+    /// <inheritdoc/>
     protected override IPbkdf2ClientSecret CreateCore(string plaintext)
     {
         var salt = RandomNumberGenerator.GetBytes(SaltLength);

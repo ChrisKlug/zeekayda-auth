@@ -32,7 +32,7 @@ public sealed class ClientRegistrationValidatorTests
         public bool Verify(IClientSecret stored, ReadOnlySpan<char> presented)
             => _verifyResult;
 
-        public IClientSecret Create(string plaintext) => new FakeSecret();
+        public IClientSecret Create(ReadOnlySpan<char> plaintext) => new FakeSecret();
     }
 
     /// <summary>A hasher that handles <see cref="AnySecret"/> and always returns false.</summary>
@@ -40,7 +40,7 @@ public sealed class ClientRegistrationValidatorTests
     {
         public bool CanHandle(IClientSecret secret) => secret is AnySecret;
         public bool Verify(IClientSecret stored, ReadOnlySpan<char> presented) => false;
-        public IClientSecret Create(string plaintext) => new AnySecret();
+        public IClientSecret Create(ReadOnlySpan<char> plaintext) => new AnySecret();
     }
 
     /// <summary>
@@ -1178,7 +1178,7 @@ public sealed class ClientRegistrationValidatorTests
     {
         public bool CanHandle(IClientSecret secret) => secret is FakeSecret;
         public bool Verify(IClientSecret stored, ReadOnlySpan<char> presented) => false;
-        public IClientSecret Create(string plaintext) => new FakeSecret();
+        public IClientSecret Create(ReadOnlySpan<char> plaintext) => new FakeSecret();
 
         public IEnumerable<ZeeKayDaConfigurationFailure> GetRegistrationFailures(
             IClientSecret credential, string clientId)

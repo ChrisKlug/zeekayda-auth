@@ -211,13 +211,13 @@ public sealed class ZeeKayDaAuthBuilderHasherExtensionsTests
     {
         public bool CanHandle(IClientSecret secret) => secret is FakeSecret;
         public bool Verify(IClientSecret stored, ReadOnlySpan<char> presented) => false;
-        public IClientSecret Create(string plaintext) => new FakeSecret();
+        public IClientSecret Create(ReadOnlySpan<char> plaintext) => new FakeSecret();
     }
 
     private sealed class AnotherFakeHasher : IClientSecretHasher
     {
         public bool CanHandle(IClientSecret secret) => secret is AnotherFakeSecret;
         public bool Verify(IClientSecret stored, ReadOnlySpan<char> presented) => false;
-        public IClientSecret Create(string plaintext) => new AnotherFakeSecret();
+        public IClientSecret Create(ReadOnlySpan<char> plaintext) => new AnotherFakeSecret();
     }
 }
