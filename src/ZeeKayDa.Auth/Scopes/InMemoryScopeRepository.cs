@@ -1,3 +1,4 @@
+#pragma warning disable ZKD001 // IdTokenClaims and AccessTokenClaims are experimental; InMemoryScopeRepository is infrastructure code that must handle them.
 namespace ZeeKayDa.Auth.Scopes;
 
 /// <summary>
@@ -74,3 +75,4 @@ public sealed class InMemoryScopeRepository : IScopeRepository
         return ValueTask.FromResult(_scopes);
     }
 }
+#pragma warning restore ZKD001

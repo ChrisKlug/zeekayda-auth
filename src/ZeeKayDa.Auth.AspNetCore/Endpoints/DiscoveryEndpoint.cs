@@ -2,7 +2,6 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Options;
-using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.Discovery;
 
 namespace ZeeKayDa.Auth.AspNetCore.Endpoints;
@@ -80,6 +79,6 @@ internal sealed class DiscoveryEndpoint : IZeeKayDaEndpoint
         }
 
         var document = await provider.GetDocumentAsync(context.RequestAborted).ConfigureAwait(false);
-        return Results.Json(document);
+        return Results.Json(document, ZeeKayDaJsonSerializerContext.Default.OpenIdConfigurationDocument);
     }
 }

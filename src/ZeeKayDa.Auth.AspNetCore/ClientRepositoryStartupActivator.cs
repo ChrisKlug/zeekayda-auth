@@ -1,6 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using ZeeKayDa.Auth.Clients;
+using ZeeKayDa.Auth.Logging;
 
 namespace ZeeKayDa.Auth.AspNetCore;
 
@@ -29,11 +31,16 @@ namespace ZeeKayDa.Auth.AspNetCore;
 internal sealed class ClientRepositoryStartupActivator : IHostedService
 {
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly ISanitizingLogger<ClientRepositoryStartupActivator> _logger;
 
-    public ClientRepositoryStartupActivator(IServiceScopeFactory scopeFactory)
+    public ClientRepositoryStartupActivator(
+        IServiceScopeFactory scopeFactory,
+        ISanitizingLogger<ClientRepositoryStartupActivator> logger)
     {
         ArgumentNullException.ThrowIfNull(scopeFactory);
+        ArgumentNullException.ThrowIfNull(logger);
         _scopeFactory = scopeFactory;
+        _logger = logger;
     }
 
     /// <inheritdoc/>
@@ -44,7 +51,19 @@ internal sealed class ClientRepositoryStartupActivator : IHostedService
         // Resolving triggers construction-time validation (duplicate detection, per-client checks,
         // secret hashing). Any ZeeKayDaConfigurationException propagates and aborts startup before
         // Kestrel accepts connections.
-        _ = scope.ServiceProvider.GetRequiredService<IClientRepository>();
+        var repository = scope.ServiceProvider.GetRequiredService<IClientRepository>();
+
+        // Warn if AddInMemoryClients was called but a custom IClientRepository has shadowed it,
+        // leaving the configured in-memory clients silently unreachable.
+        var inMemoryOptions = scope.ServiceProvider.GetService<InMemoryClientRegistrationOptions>();
+        if (inMemoryOptions is not null && repository is not InMemoryClientRepository)
+        {
+            _logger.LogWarning(
+                "AddInMemoryClients was called but the resolved IClientRepository is {RepositoryType}, " +
+                "not InMemoryClientRepository. The configured in-memory clients are unreachable. " +
+                "Register a custom IClientRepository before calling AddInMemoryClients, or remove AddInMemoryClients entirely.",
+                repository.GetType().FullName);
+        }
     }
 
     /// <inheritdoc/>

@@ -36,9 +36,17 @@ public static class ZeeKayDaAuthEndpointRouteBuilderExtensions
 
         // Force eager options evaluation so Map-time failures match ValidateOnStart
         // (OptionsValidationException with the validator's exact messages).
-        _ = endpoints.ServiceProvider
+        var options = endpoints.ServiceProvider
             .GetRequiredService<IOptions<AuthorizationServerOptions>>()
             .Value;
+
+        // Precompute security header values once at map time — they are fixed for the lifetime
+        // of the application and do not need to be re-evaluated per request.
+        var securityHeaders = options.SecurityHeaders;
+        var referrerPolicyValue = SecurityHeaderValues.ToHeaderValue(securityHeaders.ReferrerPolicy);
+        var corpValue = SecurityHeaderValues.ToHeaderValue(securityHeaders.CrossOriginResourcePolicy);
+        var noSniff = securityHeaders.ContentTypeOptionsNoSniff;
+        var allowInsecureIssuer = options.AllowInsecureIssuer;
 
         // All ZeeKayDa.Auth endpoints are grouped so that the security-headers filter applies
         // only to protocol endpoints and not to the host application's own routes.
@@ -46,11 +54,8 @@ public static class ZeeKayDaAuthEndpointRouteBuilderExtensions
 
         group.AddEndpointFilter(async (context, next) =>
         {
-            var opts = context.HttpContext.RequestServices
-                .GetRequiredService<IOptions<AuthorizationServerOptions>>().Value;
-
             if (context.HttpContext.Request.IsHttps ||
-                (opts.AllowInsecureIssuer && IsLoopbackConnection(context.HttpContext.Connection.RemoteIpAddress)))
+                (allowInsecureIssuer && IsLoopbackConnection(context.HttpContext.Connection.RemoteIpAddress)))
             {
                 return await next(context);
             }
@@ -64,20 +69,13 @@ public static class ZeeKayDaAuthEndpointRouteBuilderExtensions
 
         group.AddEndpointFilter(async (context, next) =>
         {
-            var opts = context.HttpContext.RequestServices
-                .GetRequiredService<IOptions<AuthorizationServerOptions>>().Value;
-            var securityHeaders = opts.SecurityHeaders;
-
-            if (securityHeaders.ContentTypeOptionsNoSniff)
+            if (noSniff)
                 context.HttpContext.Response.Headers["X-Content-Type-Options"] = "nosniff";
 
-            context.HttpContext.Response.Headers["Referrer-Policy"] =
-                SecurityHeaderValues.ToHeaderValue(securityHeaders.ReferrerPolicy);
+            context.HttpContext.Response.Headers["Referrer-Policy"] = referrerPolicyValue;
+            context.HttpContext.Response.Headers["Cross-Origin-Resource-Policy"] = corpValue;
 
-            context.HttpContext.Response.Headers["Cross-Origin-Resource-Policy"] =
-                SecurityHeaderValues.ToHeaderValue(securityHeaders.CrossOriginResourcePolicy);
-
-            if (opts.AllowInsecureIssuer)
+            if (allowInsecureIssuer)
                 context.HttpContext.Response.Headers["X-ZeeKayDa-Insecure-Issuer"] = "true";
 
             return await next(context);

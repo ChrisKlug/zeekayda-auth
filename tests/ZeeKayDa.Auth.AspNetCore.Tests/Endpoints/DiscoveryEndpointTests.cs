@@ -1,3 +1,4 @@
+#pragma warning disable ZKD001 // Tests exercise the experimental IdTokenClaims / AccessTokenClaims API by design.
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;

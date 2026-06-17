@@ -11,5 +11,5 @@ internal static class PreAlphaNotImplementedResult
     public static IResult Result { get; } = Results.Problem(
         statusCode: StatusCodes.Status501NotImplemented,
         title: "Endpoint not implemented",
-        detail: "ZeeKayDa.Auth is pre-alpha. This protocol endpoint is advertised for discovery shape stability but is not implemented yet.");
+        detail: "This protocol endpoint is advertised for discovery shape stability but is not implemented yet.");
 }
