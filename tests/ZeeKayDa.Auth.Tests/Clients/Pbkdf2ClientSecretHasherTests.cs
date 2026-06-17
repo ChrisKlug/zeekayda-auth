@@ -1,3 +1,4 @@
+using System.Reflection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Clients;
@@ -379,6 +380,54 @@ public sealed class Pbkdf2ClientSecretHasherTests
         var failures = hasher.GetRegistrationFailures(secret, "my-client");
 
         failures.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void GetRegistrationFailures_returns_empty_for_non_Pbkdf2_credential()
+    {
+        // Covers the `yield break` branch: credential is not IPbkdf2ClientSecret.
+        var hasher = CreateHasher();
+
+        var failures = hasher.GetRegistrationFailures(new FakeSecret(), "any-client");
+
+        failures.Should().BeEmpty();
+    }
+
+    // ── CreateCore(string) — string overload exercised via reflection ────────────────────────────
+    // Pbkdf2ClientSecretHasher overrides both CreateCore(ReadOnlySpan<char>) and CreateCore(string).
+    // Since the DIM IClientSecretHasher.Create(string) now routes through the span path, the
+    // string overload can only be reached via the base-class virtual fallback — but that fallback
+    // is bypassed because Pbkdf2ClientSecretHasher also overrides CreateCore(ReadOnlySpan<char>).
+    // Reflection is the only way to exercise the protected string override directly.
+
+    [Fact]
+    public void CreateCore_string_produces_verifiable_credential()
+    {
+        // Arrange
+        var hasher = CreateHasher();
+        var createCoreString = typeof(Pbkdf2ClientSecretHasher)
+            .GetMethod("CreateCore", BindingFlags.NonPublic | BindingFlags.Instance, [typeof(string)])!;
+
+        // Act
+        var stored = (IPbkdf2ClientSecret)createCoreString.Invoke(hasher, ["string-path-secret"])!;
+
+        // Assert — the produced credential must pass round-trip verification.
+        hasher.Verify(stored, "string-path-secret".AsSpan()).Should().BeTrue();
+        hasher.Verify(stored, "wrong-secret".AsSpan()).Should().BeFalse();
+    }
+
+    [Fact]
+    public void CreateCore_string_produces_credential_with_correct_structure()
+    {
+        var hasher = CreateHasher();
+        var createCoreString = typeof(Pbkdf2ClientSecretHasher)
+            .GetMethod("CreateCore", BindingFlags.NonPublic | BindingFlags.Instance, [typeof(string)])!;
+
+        var stored = (IPbkdf2ClientSecret)createCoreString.Invoke(hasher, ["structure-test-secret"])!;
+
+        stored.Iterations.Should().Be(Pbkdf2ClientSecretHasherOptions.DefaultIterations);
+        stored.Salt.Should().HaveCount(16);
+        stored.Hash.Should().HaveCount(32);
     }
 
     // ── ClientSecretHasher<T> exception swallowing ────────────────────────────────────────────────
