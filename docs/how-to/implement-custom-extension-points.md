@@ -205,6 +205,27 @@ public sealed class BcryptClientSecretHasher : ClientSecretHasher<IBcryptClientS
 }
 ```
 
+> ⚠️ **Warning: override `CreateCore(ReadOnlySpan<char>)` to preserve the memory-safety guarantee.**
+> The primary `IClientSecretHasher.Create` overload accepts `ReadOnlySpan<char>` so callers can zero
+> their `char[]` buffer immediately after the call. If you only override `CreateCore(string)`, the
+> base-class fallback allocates `new string(plaintext)` and delegates to it — the caller zeros their
+> buffer, but a full managed string copy of the secret remains on the heap until the next GC cycle.
+>
+> Most .NET crypto primitives accept a span directly, so the override is usually a one-liner:
+>
+> ```csharp
+> protected override IBcryptClientSecret CreateCore(ReadOnlySpan<char> plaintext)
+> {
+>     // BCrypt.Net requires a string; the ToString() allocation here is intentional and bounded.
+>     string hash = BCrypt.Net.BCrypt.HashPassword(plaintext.ToString(), workFactor: 12);
+>     return new BcryptClientSecret(hash);
+> }
+> ```
+>
+> Algorithms whose .NET API accepts a span natively (e.g. `Rfc2898DeriveBytes.Pbkdf2`,
+> `SHA256.HashData`, `HMACSHA256.HashData`) can avoid the `ToString()` entirely. See
+> `Pbkdf2ClientSecretHasher` in the source for a complete example.
+
 ### Step 4: Register with `AddSecretsHasher<T>()`
 
 Register your hasher on the builder returned by `AddZeeKayDaAuth`. When only one hasher is

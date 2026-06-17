@@ -52,6 +52,12 @@ public interface IClientSecretHasher
     /// try { stored = hasher.Create(secret.AsSpan()); }
     /// finally { Array.Clear(secret); }
     /// </code>
+    /// <para>
+    /// This guarantee holds only when the registered hasher overrides
+    /// <c>CreateCore(ReadOnlySpan&lt;char&gt;)</c>. The built-in PBKDF2 hasher does.
+    /// Custom hashers that only override <c>CreateCore(string)</c> will still allocate an
+    /// intermediate managed string via the base-class fallback, defeating the zeroing benefit.
+    /// </para>
     /// </remarks>
     /// <param name="plaintext">The plaintext secret to hash.</param>
     /// <exception cref="ArgumentException">
