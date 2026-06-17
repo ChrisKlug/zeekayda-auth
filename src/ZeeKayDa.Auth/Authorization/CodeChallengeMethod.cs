@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace ZeeKayDa.Auth;
+namespace ZeeKayDa.Auth.Authorization;
 
 /// <summary>
 /// PKCE code challenge method values that can be advertised in the discovery document, as

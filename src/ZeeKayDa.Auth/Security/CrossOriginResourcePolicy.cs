@@ -1,4 +1,4 @@
-namespace ZeeKayDa.Auth;
+namespace ZeeKayDa.Auth.Security;
 
 /// <summary>
 /// Values for the <c>Cross-Origin-Resource-Policy</c> HTTP response header.

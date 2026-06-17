@@ -1,5 +1,8 @@
 using Microsoft.Extensions.Options;
+using ZeeKayDa.Auth;
+using ZeeKayDa.Auth.Authorization;
 using ZeeKayDa.Auth.Scopes;
+using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.Discovery;
 

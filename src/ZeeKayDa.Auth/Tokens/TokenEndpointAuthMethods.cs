@@ -1,4 +1,4 @@
-namespace ZeeKayDa.Auth;
+namespace ZeeKayDa.Auth.Tokens;
 
 /// <summary>
 /// String constants for the token endpoint authentication methods handled by the ZeeKayDa.Auth

@@ -1,6 +1,9 @@
 #pragma warning disable ZKD001 // Tests exercise the experimental IdTokenClaims / AccessTokenClaims API by design.
+using ZeeKayDa.Auth;
+using ZeeKayDa.Auth.Authorization;
 using ZeeKayDa.Auth.Discovery;
 using ZeeKayDa.Auth.Scopes;
+using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.Tests.Discovery;
 

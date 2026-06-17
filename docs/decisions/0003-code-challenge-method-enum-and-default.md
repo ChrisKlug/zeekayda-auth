@@ -5,6 +5,13 @@
 
 > **Amended by ADR 0007 §1a (2026-06-08):** the `TokenEndpointAuthMethod` enum is removed and is therefore no longer used as the example of the "use enums for closed protocol vocabularies" pattern — that vocabulary has been reclassified as an open extension point. Custom token endpoint auth methods are advertised by explicitly adding their string value to `TokenEndpoint.AuthMethodsSupported` and registering a covering `IClientAuthenticator`. The enum/string trade-off this ADR describes still applies to `CodeChallengeMethod`, `SigningAlgorithm`, `ResponseType`, `ResponseMode`, `GrantType`, and `PromptValue`. The discussion below is preserved as historical record.
 
+> **Amended by issue #209 (2026-06-17):** A new placement rule is added: protocol-vocabulary
+> enum types whose consumers are exclusively within a specific feature domain belong in that
+> domain's namespace, not the root `ZeeKayDa.Auth` namespace. `SigningAlgorithm` is the
+> canonical example — it was moved from `ZeeKayDa.Auth` to `ZeeKayDa.Auth.Tokens`.
+> See [issue #209](https://github.com/zeekayda/zeekayda-auth/issues/209) for the full
+> rationale.
+
 ---
 
 ## Context

@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace ZeeKayDa.Auth;
+namespace ZeeKayDa.Auth.Tokens;
 
 /// <summary>
 /// JSON Web Signature (JWS) algorithm identifiers used for signing ID tokens and other JWTs,

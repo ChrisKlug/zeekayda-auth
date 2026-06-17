@@ -1,4 +1,4 @@
-namespace ZeeKayDa.Auth;
+namespace ZeeKayDa.Auth.Discovery;
 
 /// <summary>
 /// JSON Web Key Set endpoint configuration options.

@@ -6,7 +6,11 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
+using ZeeKayDa.Auth;
+using ZeeKayDa.Auth.Authorization;
 using ZeeKayDa.Auth.Scopes;
+using ZeeKayDa.Auth.Security;
+using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests.Endpoints;
 
@@ -723,7 +727,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     public void Startup_throws_via_ValidateOnStart_for_invalid_ReferrerPolicy()
     {
         var act = () => new TestWebAppFactory(opts =>
-            opts.SecurityHeaders.ReferrerPolicy = (ZeeKayDa.Auth.ReferrerPolicy)9999).CreateClient();
+            opts.SecurityHeaders.ReferrerPolicy = (ReferrerPolicy)9999).CreateClient();
 
         act.Should().Throw<Exception>().WithMessage("*ReferrerPolicy*");
     }
@@ -732,7 +736,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     public void Startup_throws_via_ValidateOnStart_for_invalid_CrossOriginResourcePolicy()
     {
         var act = () => new TestWebAppFactory(opts =>
-            opts.SecurityHeaders.CrossOriginResourcePolicy = (ZeeKayDa.Auth.CrossOriginResourcePolicy)9999).CreateClient();
+            opts.SecurityHeaders.CrossOriginResourcePolicy = (CrossOriginResourcePolicy)9999).CreateClient();
 
         act.Should().Throw<Exception>().WithMessage("*CrossOriginResourcePolicy*");
     }
@@ -787,7 +791,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     public async Task GetDiscoveryDocument_reflects_custom_ReferrerPolicy_in_header()
     {
         using var factory = new TestWebAppFactory(opts =>
-            opts.SecurityHeaders.ReferrerPolicy = ZeeKayDa.Auth.ReferrerPolicy.StrictOriginWhenCrossOrigin);
+            opts.SecurityHeaders.ReferrerPolicy = ReferrerPolicy.StrictOriginWhenCrossOrigin);
         using var client = CreateClient(factory);
 
         var response = await client.GetAsync(DiscoveryPath, TestContext.Current.CancellationToken);
@@ -809,7 +813,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     public async Task GetDiscoveryDocument_reflects_custom_CrossOriginResourcePolicy_in_header()
     {
         using var factory = new TestWebAppFactory(opts =>
-            opts.SecurityHeaders.CrossOriginResourcePolicy = ZeeKayDa.Auth.CrossOriginResourcePolicy.SameOrigin);
+            opts.SecurityHeaders.CrossOriginResourcePolicy = CrossOriginResourcePolicy.SameOrigin);
         using var client = CreateClient(factory);
 
         var response = await client.GetAsync(DiscoveryPath, TestContext.Current.CancellationToken);

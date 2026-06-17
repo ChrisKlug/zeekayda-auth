@@ -1,4 +1,6 @@
 using Microsoft.Extensions.Options;
+using ZeeKayDa.Auth;
+using ZeeKayDa.Auth.Discovery;
 
 namespace ZeeKayDa.Auth.Configuration;
 
