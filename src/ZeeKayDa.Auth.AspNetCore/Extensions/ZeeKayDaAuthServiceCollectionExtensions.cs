@@ -128,6 +128,8 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
                 IValidateOptions<AuthorizationServerOptions>,
                 AuthenticatorCoverageValidator>());
 
-        return new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthBuilder(services);
+        builder.AddSecretsHasher<Pbkdf2ClientSecretHasher>(isDefault: true);
+        return builder;
     }
 }

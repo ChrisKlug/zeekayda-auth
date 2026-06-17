@@ -164,6 +164,44 @@ public sealed class ZeeKayDaAuthBuilderHasherExtensionsTests
         returned.Should().BeSameAs(builder);
     }
 
+    [Fact]
+    public void AddPbkdf2SecretsHasher_is_a_no_op_when_Pbkdf2ClientSecretHasher_is_already_registered()
+    {
+        // AddZeeKayDaAuth() now registers Pbkdf2ClientSecretHasher by default.
+        // A subsequent call to AddPbkdf2SecretsHasher() must return early without adding
+        // a duplicate registration or throwing.
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddZeeKayDaAuth(options => options.Issuer = "https://auth.example.com");
+
+        var builder = new ZeeKayDaAuthBuilder(services);
+
+        var act = () => builder.AddPbkdf2SecretsHasher();
+
+        act.Should().NotThrow();
+        services.Count(sd =>
+            sd.ServiceType == typeof(IClientSecretHasher) &&
+            sd.ImplementationType == typeof(Pbkdf2ClientSecretHasher)).Should().Be(1);
+    }
+
+    [Fact]
+    public void AddPbkdf2SecretsHasher_is_a_no_op_when_already_registered_even_if_configure_is_provided()
+    {
+        // When the early-return guard fires the configure delegate must NOT be applied,
+        // because the hasher is already configured from the initial registration.
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddZeeKayDaAuth(options => options.Issuer = "https://auth.example.com");
+
+        var builder = new ZeeKayDaAuthBuilder(services);
+        var returned = builder.AddPbkdf2SecretsHasher(options => options.Iterations = 1_200_000);
+
+        returned.Should().BeSameAs(builder);
+        services.Count(sd =>
+            sd.ServiceType == typeof(IClientSecretHasher) &&
+            sd.ImplementationType == typeof(Pbkdf2ClientSecretHasher)).Should().Be(1);
+    }
+
     // ── Fakes ─────────────────────────────────────────────────────────────────────────────────────
 
     private sealed class FakeSecret : IClientSecret { }

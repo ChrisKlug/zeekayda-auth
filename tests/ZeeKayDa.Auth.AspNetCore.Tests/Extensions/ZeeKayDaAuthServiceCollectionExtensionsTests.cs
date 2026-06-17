@@ -1,6 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.Clients;
+using ZeeKayDa.Auth.Configuration;
 using ZeeKayDa.Auth.Scopes;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests.Extensions;
@@ -64,5 +66,32 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
 
         resolvedRepository.Should().BeSameAs(preRegisteredRepository);
         scopes.Select(scope => scope.Name).Should().Equal(StandardScopes.OpenId.Name);
+    }
+
+    [Fact]
+    public void AddZeeKayDaAuth_registers_Pbkdf2ClientSecretHasher_as_IClientSecretHasher_by_default()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        services.AddZeeKayDaAuth(options => options.Issuer = "https://auth.example.com");
+
+        services.Should().Contain(sd =>
+            sd.ServiceType == typeof(IClientSecretHasher) &&
+            sd.ImplementationType == typeof(Pbkdf2ClientSecretHasher));
+    }
+
+    [Fact]
+    public void AddZeeKayDaAuth_records_Pbkdf2ClientSecretHasher_registration_in_options()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddZeeKayDaAuth(options => options.Issuer = "https://auth.example.com");
+        using var provider = services.BuildServiceProvider();
+
+        var opts = provider.GetRequiredService<IOptions<ClientSecretHasherRegistrationOptions>>().Value;
+
+        opts.Registrations.Should().ContainSingle(r =>
+            r.HasherType == typeof(Pbkdf2ClientSecretHasher) && r.IsDefault);
     }
 }

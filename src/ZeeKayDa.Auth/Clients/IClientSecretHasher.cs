@@ -15,6 +15,26 @@ namespace ZeeKayDa.Auth.Clients;
 /// a sealed record implementing it, and a class extending
 /// <c>ClientSecretHasher&lt;TSecret&gt;</c>. Register it with <c>AddSecretsHasher&lt;T&gt;()</c>.
 /// </para>
+/// <para>
+/// <strong>Managed-string limitation.</strong> The plaintext passed to <see cref="Create"/>
+/// is a managed <see langword="string"/> whose contents the .NET garbage collector does not
+/// guarantee to erase promptly. Callers should treat the created credential as potentially
+/// resident in memory until the next GC cycle. <see cref="Verify"/> accepts a
+/// <see cref="System.ReadOnlySpan{T}">ReadOnlySpan&lt;char&gt;</see>, so callers who hold the
+/// presented secret in a <c>char[]</c> or similar mutable buffer can zero it out immediately
+/// after the call.
+/// <code>
+/// char[] presented = /* read from network buffer */;
+/// try
+/// {
+///     bool valid = hasher.Verify(storedSecret, presented);
+/// }
+/// finally
+/// {
+///     Array.Clear(presented); // erase before GC can observe it
+/// }
+/// </code>
+/// </para>
 /// </remarks>
 public interface IClientSecretHasher
 {
