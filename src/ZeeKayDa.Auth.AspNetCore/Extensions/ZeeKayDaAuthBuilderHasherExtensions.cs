@@ -31,6 +31,11 @@ public static class ZeeKayDaAuthBuilderHasherExtensions
     {
         ArgumentNullException.ThrowIfNull(builder);
 
+        if (builder.Services.Any(sd =>
+                sd.ServiceType == typeof(IClientSecretHasher) &&
+                sd.ImplementationType == typeof(Pbkdf2ClientSecretHasher)))
+            return builder;
+
         if (configure is not null)
             builder.Services.Configure(configure);
 

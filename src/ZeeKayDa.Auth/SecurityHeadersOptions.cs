@@ -23,9 +23,15 @@ public sealed class SecurityHeadersOptions
     /// Defaults to <see cref="CrossOriginResourcePolicy.SameOrigin"/>.
     /// </summary>
     /// <remarks>
-    /// Set to <see cref="CrossOriginResourcePolicy.CrossOrigin"/> only when cross-origin read
-    /// access is explicitly required. The default of <c>same-origin</c> is the safer choice
-    /// until credentialed cross-origin endpoints are introduced.
+    /// <c>same-origin</c> is the safe default for most endpoints and should not be changed
+    /// without a clear reason.
+    /// <para>
+    /// The JWKS endpoint and the OIDC discovery document endpoint are routinely fetched
+    /// cross-origin from browsers by SPA token validation libraries such as
+    /// <c>jose</c> and <c>oidc-client-ts</c>. Deployments that serve browser clients should set
+    /// this to <see cref="CrossOriginResourcePolicy.CrossOrigin"/>, or override the header on
+    /// those specific endpoints when per-endpoint header configuration is supported.
+    /// </para>
     /// </remarks>
     public CrossOriginResourcePolicy CrossOriginResourcePolicy { get; set; } = CrossOriginResourcePolicy.SameOrigin;
 }
