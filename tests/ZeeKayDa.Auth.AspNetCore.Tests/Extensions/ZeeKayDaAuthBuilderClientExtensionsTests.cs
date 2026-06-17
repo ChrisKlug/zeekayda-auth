@@ -8,7 +8,6 @@ using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.AspNetCore;
 using ZeeKayDa.Auth.AspNetCore.Clients;
-using ZeeKayDa.Auth.AspNetCore.Extensions;
 using ZeeKayDa.Auth.Clients;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests.Extensions;

@@ -6,7 +6,6 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
-using ZeeKayDa.Auth.AspNetCore.Extensions;
 using ZeeKayDa.Auth.Scopes;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests.Endpoints;

@@ -1,10 +1,10 @@
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
+using ZeeKayDa.Auth.AspNetCore;
 using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Configuration;
 
-namespace ZeeKayDa.Auth.AspNetCore.Extensions;
+namespace Microsoft.Extensions.DependencyInjection;
 
 /// <summary>
 /// Extension methods for registering client secret hashers with <see cref="ZeeKayDaAuthBuilder"/>.

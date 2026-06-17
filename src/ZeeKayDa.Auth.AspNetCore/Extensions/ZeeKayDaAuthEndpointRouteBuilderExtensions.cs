@@ -1,12 +1,12 @@
-using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth;
+using ZeeKayDa.Auth.AspNetCore;
 using ZeeKayDa.Auth.AspNetCore.Endpoints;
 
-namespace ZeeKayDa.Auth.AspNetCore.Extensions;
+namespace Microsoft.AspNetCore.Builder;
 
 /// <summary>
 /// Extension methods for <see cref="IEndpointRouteBuilder"/> to register ZeeKayDa.Auth protocol
