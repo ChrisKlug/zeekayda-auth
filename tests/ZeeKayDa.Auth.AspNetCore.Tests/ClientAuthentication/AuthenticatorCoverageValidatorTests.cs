@@ -25,6 +25,38 @@ public sealed class AuthenticatorCoverageValidatorTests
             ValueTask.FromResult(ClientAuthenticationResult.NotValid());
     }
 
+    /// <summary>
+    /// A sentinel interface that is never registered in any DI container. Used as the unsatisfied
+    /// constructor dependency on <see cref="BrokenAuthenticator"/> to force a DI resolution failure.
+    /// </summary>
+    private interface IUnregisteredDependency { }
+
+    /// <summary>
+    /// An authenticator whose constructor has an unsatisfied DI dependency. Registering this
+    /// by type (not instance) causes <c>GetServices&lt;IClientAuthenticator&gt;()</c> to throw
+    /// during construction, which exercises the validator's catch-and-skip path.
+    /// </summary>
+    private sealed class BrokenAuthenticator : IClientAuthenticator
+    {
+        // The dependency is intentionally never registered — DI throws before the body runs.
+#pragma warning disable IDE0060 // Remove unused parameter
+        public BrokenAuthenticator(IUnregisteredDependency _) { }
+#pragma warning restore IDE0060
+
+        public IReadOnlySet<string> AuthenticationMethods =>
+            new HashSet<string>(StringComparer.Ordinal);
+
+        public bool CanHandle(TokenRequestContext context, out string? method)
+        {
+            method = null;
+            return false;
+        }
+
+        public ValueTask<ClientAuthenticationResult> AuthenticateAsync(
+            ClientAuthenticationContext context, CancellationToken ct) =>
+            ValueTask.FromResult(ClientAuthenticationResult.NotValid());
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────────────────────────
 
     private static AuthenticatorCoverageValidator CreateValidator(
@@ -202,5 +234,23 @@ public sealed class AuthenticatorCoverageValidatorTests
             CreateOptions(TokenEndpointAuthMethods.ClientSecretBasic));
 
         result.Succeeded.Should().BeTrue();
+    }
+
+    // ── DI construction failure ───────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Validate_returns_Skip_when_resolving_IClientAuthenticator_throws()
+    {
+        // If a registered IClientAuthenticator has an unsatisfied constructor dependency,
+        // GetServices<IClientAuthenticator>() throws during enumeration. The validator must
+        // catch the exception and return Skip so that the root-cause DI error surfaces instead.
+        var services = new ServiceCollection();
+        services.AddSingleton<IClientAuthenticator, BrokenAuthenticator>();
+        var validator = new AuthenticatorCoverageValidator(services.BuildServiceProvider());
+
+        var result = validator.Validate(null,
+            CreateOptions(TokenEndpointAuthMethods.ClientSecretBasic));
+
+        result.Skipped.Should().BeTrue();
     }
 }
