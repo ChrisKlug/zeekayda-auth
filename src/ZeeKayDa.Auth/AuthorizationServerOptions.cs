@@ -1,3 +1,8 @@
+using ZeeKayDa.Auth.Authorization;
+using ZeeKayDa.Auth.Discovery;
+using ZeeKayDa.Auth.Security;
+using ZeeKayDa.Auth.Tokens;
+
 namespace ZeeKayDa.Auth;
 
 /// <summary>

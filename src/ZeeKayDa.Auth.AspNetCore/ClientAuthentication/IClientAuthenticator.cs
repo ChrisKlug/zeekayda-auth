@@ -10,7 +10,7 @@ namespace ZeeKayDa.Auth.AspNetCore.ClientAuthentication;
 /// credential strings directly.
 /// </para>
 /// <para>
-/// Custom implementations MUST NOT declare or return <see cref="ZeeKayDa.Auth.TokenEndpointAuthMethods.None"/>
+/// Custom implementations MUST NOT declare or return <see cref="ZeeKayDa.Auth.Tokens.TokenEndpointAuthMethods.None"/>
 /// (<c>"none"</c>) in <see cref="AuthenticationMethods"/> or from <see cref="CanHandle"/>. The
 /// <c>none</c> method is reserved for the <see cref="CompositeClientAuthenticator"/> fallback path.
 /// </para>

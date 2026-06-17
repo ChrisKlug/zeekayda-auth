@@ -1,4 +1,4 @@
-namespace ZeeKayDa.Auth;
+namespace ZeeKayDa.Auth.Security;
 
 /// <summary>
 /// Configuration options for defensive security headers applied to all ZeeKayDa.Auth protocol

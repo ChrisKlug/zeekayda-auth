@@ -1,4 +1,4 @@
-using ZeeKayDa.Auth;
+using ZeeKayDa.Auth.Security;
 
 namespace ZeeKayDa.Auth.AspNetCore;
 

@@ -1,4 +1,4 @@
-namespace ZeeKayDa.Auth;
+namespace ZeeKayDa.Auth.Authorization;
 
 /// <summary>
 /// Authorization endpoint configuration options.

@@ -1,4 +1,4 @@
-namespace ZeeKayDa.Auth;
+namespace ZeeKayDa.Auth.Tokens;
 
 /// <summary>
 /// ID token configuration options.

@@ -1,5 +1,9 @@
 using Microsoft.Extensions.Options;
+using ZeeKayDa.Auth;
+using ZeeKayDa.Auth.Authorization;
 using ZeeKayDa.Auth.Configuration;
+using ZeeKayDa.Auth.Security;
+using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.Tests.Configuration;
 

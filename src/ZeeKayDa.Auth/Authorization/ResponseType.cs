@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace ZeeKayDa.Auth;
+namespace ZeeKayDa.Auth.Authorization;
 
 /// <summary>
 /// OAuth 2.0 / OpenID Connect response type values, as defined in

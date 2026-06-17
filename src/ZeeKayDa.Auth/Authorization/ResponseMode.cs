@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace ZeeKayDa.Auth;
+namespace ZeeKayDa.Auth.Authorization;
 
 /// <summary>
 /// OpenID Connect response mode values published in discovery metadata.

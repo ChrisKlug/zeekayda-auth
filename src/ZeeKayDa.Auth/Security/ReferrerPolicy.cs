@@ -1,4 +1,4 @@
-namespace ZeeKayDa.Auth;
+namespace ZeeKayDa.Auth.Security;
 
 /// <summary>
 /// Values for the <c>Referrer-Policy</c> HTTP response header.
