@@ -80,7 +80,8 @@ public interface IClientSecretHasher
 {
     bool CanHandle(IClientSecret secret);
     bool Verify(IClientSecret stored, ReadOnlySpan<char> presented);
-    IClientSecret Create(string plaintext);
+    IClientSecret Create(ReadOnlySpan<char> plaintext);      // primary — memory-safe
+    IClientSecret Create(string plaintext);                    // convenience — delegates to span overload
 }
 ```
 
@@ -88,13 +89,62 @@ public interface IClientSecretHasher
 |---|---|
 | `CanHandle` | Returns `true` when this hasher can verify or create credentials of the given type. |
 | `Verify` | Returns `false` on mismatch or internal error. Never throws. |
-| `Create` | Creates a new hashed credential. Throws `ArgumentException` for null, empty, or whitespace-only input. |
+| `Create(ReadOnlySpan<char>)` | Primary overload. Creates a new hashed credential from a span. Throws `ArgumentException` for empty or whitespace-only input. Spans cannot be null. |
+| `Create(string)` | Convenience overload. Delegates to the span overload after a null check. Throws `ArgumentNullException` for null input; throws `ArgumentException` for empty or whitespace-only input. |
 
 ### `ClientSecretHasher<TSecret>` abstract base class
 
 `ClientSecretHasher<TSecret>` is the recommended base for custom implementations. It handles
-type dispatch (`CanHandle`), exception swallowing (`Verify`), and null/whitespace rejection
-(`Create`). Subclasses implement only `VerifyCore` and `CreateCore`.
+type dispatch (`CanHandle`), exception swallowing (`Verify`), and input validation (`Create`).
+Subclasses implement `VerifyCore` and `CreateCore(string)`. Subclasses that can consume a span
+directly may additionally override `CreateCore(ReadOnlySpan<char>)` to avoid the default
+fallback string allocation.
+
+---
+
+## Memory-safe secret handling
+
+Managed `string` instances in .NET are immutable and GC-managed: their backing memory cannot be
+overwritten by the caller, and the runtime does not guarantee prompt erasure after the string
+becomes unreachable. A caller who converts a mutable buffer to a `string` before calling
+`Create` extends the window during which the raw secret resides in managed heap memory — possibly
+across multiple GC cycles — in a form they cannot erase.
+
+`Create(ReadOnlySpan<char>)` eliminates this: the caller retains ownership of the backing
+array and can zero it immediately after the call.
+
+```csharp
+char[] secret = /* decoded from a network buffer, QR code, etc. */;
+IClientSecret stored;
+try
+{
+    stored = hasher.Create(secret.AsSpan());
+}
+finally
+{
+    Array.Clear(secret); // erase the raw bytes before GC can observe them
+}
+```
+
+`Verify` already accepts `ReadOnlySpan<char>`, so the same pattern applies to the
+verification path:
+
+```csharp
+char[] presented = /* read from network buffer */;
+bool valid;
+try
+{
+    valid = hasher.Verify(storedSecret, presented.AsSpan());
+}
+finally
+{
+    Array.Clear(presented);
+}
+```
+
+Both paths feed the same bytes into `Rfc2898DeriveBytes.Pbkdf2`, so a credential created via
+the span overload and one created via the string overload are interchangeable: either hash
+verifies the same presented secret.
 
 ---
 
