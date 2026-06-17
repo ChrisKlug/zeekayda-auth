@@ -935,6 +935,145 @@ public sealed class AuthorizationServerOptionsValidatorTests
         result.FailureMessage.Should().Contain("CrossOriginResourcePolicy");
     }
 
+    // ── Multi-error accumulation ──────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Validate_accumulates_query_fragment_and_userinfo_errors_on_issuer_with_all_three_problems()
+    {
+        // https://user:pass@AUTH.example.com/path/?q=1#frag triggers:
+        //   query, fragment, user-info, and canonicalization (uppercase host).
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://user:pass@AUTH.example.com/path/?q=1#frag",
+        });
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("query");
+        result.FailureMessage.Should().Contain("fragment");
+        result.FailureMessage.Should().Contain("user information");
+        result.FailureMessage.Should().Contain("is not canonical");
+    }
+
+    [Fact]
+    public void Validate_accumulates_multiple_TokenEndpointAuthMethods_invalid_entries()
+    {
+        // Three distinct invalid entries: whitespace-only, padded, control character.
+        // The validator must accumulate one error per entry rather than stopping at the first.
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            TokenEndpoint = { AuthMethodsSupported = ["   ", " padded ", "ctrl\x00char"] },
+        });
+
+        result.Failed.Should().BeTrue();
+
+        // Three errors must be present in the combined failure message.
+        var message = result.FailureMessage!;
+        var count = CountOccurrences(message, "TokenEndpoint.AuthMethodsSupported");
+        count.Should().BeGreaterThanOrEqualTo(3,
+            "each of the three invalid entries must produce a separate error message");
+    }
+
+    [Fact]
+    public void Validate_accumulates_errors_across_different_groups()
+    {
+        // Bad issuer (trailing slash on path) combined with a null IdToken signing alg list.
+        // Both errors must appear in a single result, proving cross-group accumulation.
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com/tenant1/",
+            IdToken = { SigningAlgValuesSupported = null! },
+        });
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("trailing slash");
+        result.FailureMessage.Should().Contain("IdToken.SigningAlgValuesSupported");
+    }
+
+    // ── ValidateEndpointUri — user-info branch ────────────────────────────────────────────────────
+
+    [Fact]
+    public void Validate_ValidateEndpointUri_returns_error_when_AuthorizationEndpoint_has_user_info()
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            AuthorizationEndpoint = { Uri = "https://user:pass@auth.example.com/connect/authorize" },
+        });
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("user information");
+    }
+
+    // ── ValidateEndpointUri — HTTP scheme branch (no AllowInsecureIssuer) ────────────────────────
+
+    [Fact]
+    public void Validate_ValidateEndpointUri_returns_error_when_AuthorizationEndpoint_uses_HTTP_without_AllowInsecureIssuer()
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            AllowInsecureIssuer = false,
+            AuthorizationEndpoint = { Uri = "http://auth.example.com/connect/authorize" },
+        });
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("HTTPS");
+    }
+
+    // ── ValidateEndpointUri — HTTP non-loopback with AllowInsecureIssuer ─────────────────────────
+
+    [Fact]
+    public void Validate_ValidateEndpointUri_returns_error_when_AuthorizationEndpoint_uses_HTTP_non_loopback_with_AllowInsecureIssuer()
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            AllowInsecureIssuer = true,
+            AuthorizationEndpoint = { Uri = "http://auth.example.com/connect/authorize" },
+        });
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("loopback");
+    }
+
+    // ── Simultaneous authorization + token endpoint errors ───────────────────────────────────────
+
+    [Fact]
+    public void Validate_accumulates_authorization_endpoint_and_token_endpoint_errors_simultaneously()
+    {
+        // Both endpoints carry user-info so both ValidateEndpointUri calls return non-null,
+        // proving both aeError and teError are accumulated in the same result.
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            AuthorizationEndpoint = { Uri = "https://user:pass@auth.example.com/connect/authorize" },
+            TokenEndpoint =
+            {
+                Uri = "https://user:pass@auth.example.com/connect/token",
+                AuthMethodsSupported = [TokenEndpointAuthMethods.ClientSecretBasic],
+            },
+        });
+
+        result.Failed.Should().BeTrue();
+
+        // Both endpoint URI values must appear in the combined failure message.
+        result.FailureMessage.Should().Contain("https://user:pass@auth.example.com/connect/authorize");
+        result.FailureMessage.Should().Contain("https://user:pass@auth.example.com/connect/token");
+    }
+
+    private static int CountOccurrences(string source, string substring)
+    {
+        var count = 0;
+        var index = 0;
+        while ((index = source.IndexOf(substring, index, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            index += substring.Length;
+        }
+        return count;
+    }
+
     private static void SetGroupProperty(AuthorizationServerOptions options, string propertyPath, string value)
     {
         var parts = propertyPath.Split('.');
