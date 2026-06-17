@@ -1,5 +1,4 @@
 using System.Linq;
-using System.Net;
 
 namespace ZeeKayDa.Auth.Clients;
 
@@ -101,15 +100,5 @@ internal static class RedirectUriValidator
     }
 
     internal static bool IsLoopbackHost(string host)
-    {
-        if (string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase))
-            return true;
-
-        // Strip IPv6 brackets for parsing
-        var hostToParse = host.StartsWith('[') && host.EndsWith(']')
-            ? host[1..^1]
-            : host;
-
-        return IPAddress.TryParse(hostToParse, out var ip) && IPAddress.IsLoopback(ip);
-    }
+        => LoopbackHelper.IsLoopbackHost(host);
 }

@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Options;
+using ZeeKayDa.Auth;
 
 namespace ZeeKayDa.Auth.Configuration;
 
@@ -97,7 +98,7 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
                 "Set AllowInsecureIssuer = true to permit 'http' loopback issuers for local development and testing only.");
         }
 
-        if (isHttp && options.AllowInsecureIssuer && !uri.IsLoopback)
+        if (isHttp && options.AllowInsecureIssuer && !LoopbackHelper.IsLoopbackHost(uri.Host))
         {
             errors.Add(
                 $"AuthorizationServerOptions.Issuer '{options.Issuer}' uses HTTP for a non-loopback host. " +
@@ -270,7 +271,7 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
                 continue;
             }
 
-            if (isHttpOrigin && options.AllowInsecureIssuer && !originUri.IsLoopback)
+            if (isHttpOrigin && options.AllowInsecureIssuer && !LoopbackHelper.IsLoopbackHost(originUri.Host))
             {
                 errors.Add(
                     $"CORS origin '{origin}' uses HTTP for a non-loopback host. " +
@@ -332,7 +333,7 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
                     $"AuthorizationServerOptions.{propertyName} '{value}' must use HTTPS. " +
                     "Set AllowInsecureIssuer = true to permit HTTP loopback endpoints for local development only.");
 
-            if (isHttp && allowInsecure && !uri.IsLoopback)
+            if (isHttp && allowInsecure && !LoopbackHelper.IsLoopbackHost(uri.Host))
                 return ValidateOptionsResult.Fail(
                     $"AuthorizationServerOptions.{propertyName} '{value}' uses HTTP for a non-loopback host. " +
                     "AllowInsecureIssuer only permits HTTP loopback endpoints for local development and testing.");

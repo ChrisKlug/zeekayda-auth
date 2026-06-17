@@ -1,9 +1,9 @@
-using System.Net;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.AspNetCore.Endpoints;
 
 namespace ZeeKayDa.Auth.AspNetCore.Extensions;
@@ -55,7 +55,7 @@ public static class ZeeKayDaAuthEndpointRouteBuilderExtensions
         group.AddEndpointFilter(async (context, next) =>
         {
             if (context.HttpContext.Request.IsHttps ||
-                (allowInsecureIssuer && IsLoopbackConnection(context.HttpContext.Connection.RemoteIpAddress)))
+                (allowInsecureIssuer && LoopbackHelper.IsLoopbackAddress(context.HttpContext.Connection.RemoteIpAddress)))
             {
                 return await next(context);
             }
@@ -88,7 +88,4 @@ public static class ZeeKayDaAuthEndpointRouteBuilderExtensions
 
         return endpoints;
     }
-
-    private static bool IsLoopbackConnection(IPAddress? remoteIpAddress)
-        => remoteIpAddress is not null && IPAddress.IsLoopback(remoteIpAddress);
 }
