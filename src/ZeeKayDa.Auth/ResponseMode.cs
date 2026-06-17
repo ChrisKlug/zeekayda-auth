@@ -18,10 +18,6 @@ public enum ResponseMode
     [JsonStringEnumMemberName("query")]
     Query,
 
-    /// <summary>Fragment response mode (<c>fragment</c>).</summary>
-    [JsonStringEnumMemberName("fragment")]
-    Fragment,
-
     /// <summary>Form post response mode (<c>form_post</c>).</summary>
     [JsonStringEnumMemberName("form_post")]
     FormPost,

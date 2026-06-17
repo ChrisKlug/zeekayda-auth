@@ -1,3 +1,4 @@
+#pragma warning disable ZKD001 // IdTokenClaims and AccessTokenClaims are experimental; StandardScopes is the authoritative definition.
 namespace ZeeKayDa.Auth.Scopes;
 
 /// <summary>
@@ -66,3 +67,4 @@ public static class StandardScopes
     /// </summary>
     public static IReadOnlyCollection<ScopeDefinition> All { get; } = Array.AsReadOnly([OpenId, Profile, Email, Phone, Address]);
 }
+#pragma warning restore ZKD001

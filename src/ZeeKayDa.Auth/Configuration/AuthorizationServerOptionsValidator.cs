@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Options;
+using ZeeKayDa.Auth;
 
 namespace ZeeKayDa.Auth.Configuration;
 
@@ -36,35 +37,38 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
     /// <inheritdoc/>
     public ValidateOptionsResult Validate(string? name, AuthorizationServerOptions options)
     {
+        var errors = new List<string>();
+
         if (string.IsNullOrWhiteSpace(options.Issuer))
         {
-            return ValidateOptionsResult.Fail(
-                "AuthorizationServerOptions.Issuer must be set to a non-empty value.");
+            errors.Add("AuthorizationServerOptions.Issuer must be set to a non-empty value.");
+            return ValidateOptionsResult.Fail(errors);
         }
 
         if (!Uri.TryCreate(options.Issuer, UriKind.Absolute, out var uri))
         {
-            return ValidateOptionsResult.Fail(
+            errors.Add(
                 $"AuthorizationServerOptions.Issuer '{options.Issuer}' is not a valid absolute URI.");
+            return ValidateOptionsResult.Fail(errors);
         }
 
         // RFC 8414 §2 and OIDC Discovery 1.0 §4.1 prohibit query strings in the issuer.
         if (uri.Query.Length > 0)
         {
-            return ValidateOptionsResult.Fail(
+            errors.Add(
                 $"AuthorizationServerOptions.Issuer '{options.Issuer}' must not contain a query component ('?').");
         }
 
         // RFC 8414 §2 and OIDC Discovery 1.0 §4.1 prohibit fragment components in the issuer.
         if (uri.Fragment.Length > 0)
         {
-            return ValidateOptionsResult.Fail(
+            errors.Add(
                 $"AuthorizationServerOptions.Issuer '{options.Issuer}' must not contain a fragment component ('#').");
         }
 
         if (uri.UserInfo.Length > 0)
         {
-            return ValidateOptionsResult.Fail(
+            errors.Add(
                 $"AuthorizationServerOptions.Issuer '{options.Issuer}' must not contain user information.");
         }
 
@@ -74,7 +78,7 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
         // without the slash but the document preserves it verbatim.
         if (uri.AbsolutePath.EndsWith('/') && uri.AbsolutePath.Length > 1)
         {
-            return ValidateOptionsResult.Fail(
+            errors.Add(
                 $"AuthorizationServerOptions.Issuer '{options.Issuer}' must not have a trailing slash. " +
                 "Use 'https://auth.example.com/tenant1' rather than 'https://auth.example.com/tenant1/'. " +
                 "OIDC Discovery 1.0 §4.3 requires the published issuer to be identical to the URL " +
@@ -88,15 +92,15 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
 
         if (!isHttps && !(isHttp && options.AllowInsecureIssuer))
         {
-            return ValidateOptionsResult.Fail(
+            errors.Add(
                 $"AuthorizationServerOptions.Issuer '{options.Issuer}' uses an unsupported scheme '{uri.Scheme}'. " +
                 "Only 'https' is permitted in production. " +
                 "Set AllowInsecureIssuer = true to permit 'http' loopback issuers for local development and testing only.");
         }
 
-        if (isHttp && options.AllowInsecureIssuer && !uri.IsLoopback)
+        if (isHttp && options.AllowInsecureIssuer && !LoopbackHelper.IsLoopbackHost(uri.Host))
         {
-            return ValidateOptionsResult.Fail(
+            errors.Add(
                 $"AuthorizationServerOptions.Issuer '{options.Issuer}' uses HTTP for a non-loopback host. " +
                 "AllowInsecureIssuer only permits HTTP loopback issuers for local development and testing.");
         }
@@ -105,163 +109,151 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
         var normalizedInputIssuer = NormalizeRootIssuer(options.Issuer!, uri);
         if (!string.Equals(normalizedInputIssuer, canonicalIssuer, StringComparison.Ordinal))
         {
-            return ValidateOptionsResult.Fail(
+            errors.Add(
                 $"AuthorizationServerOptions.Issuer '{options.Issuer}' is not canonical. Use '{canonicalIssuer}'.");
         }
 
         // Validate Response group
         if (options.Response.TypesSupported is null)
         {
-            return ValidateOptionsResult.Fail(
-                "AuthorizationServerOptions.Response.TypesSupported must not be null.");
+            errors.Add("AuthorizationServerOptions.Response.TypesSupported must not be null.");
         }
-
-        if (options.Response.TypesSupported.Count == 0)
+        else if (options.Response.TypesSupported.Count == 0)
         {
-            return ValidateOptionsResult.Fail(
-                "AuthorizationServerOptions.Response.TypesSupported must contain at least one value.");
+            errors.Add("AuthorizationServerOptions.Response.TypesSupported must contain at least one value.");
         }
 
         if (options.Response.ModesSupported is null)
         {
-            return ValidateOptionsResult.Fail(
-                "AuthorizationServerOptions.Response.ModesSupported must not be null.");
+            errors.Add("AuthorizationServerOptions.Response.ModesSupported must not be null.");
         }
 
         // Validate root-level GrantTypesSupported
         if (options.GrantTypesSupported is null)
         {
-            return ValidateOptionsResult.Fail(
-                "AuthorizationServerOptions.GrantTypesSupported must not be null.");
+            errors.Add("AuthorizationServerOptions.GrantTypesSupported must not be null.");
         }
-
-        var invalidGrantType = options.GrantTypesSupported
-            .Where(grantType => !Enum.IsDefined(grantType))
-            .FirstOrDefault();
-
-        if (!Enum.IsDefined(invalidGrantType))
+        else
         {
-            return ValidateOptionsResult.Fail(
-                $"AuthorizationServerOptions.GrantTypesSupported contains invalid value '{(int)invalidGrantType}'. " +
-                $"Expected a valid {nameof(GrantType)} enum member.");
+            foreach (var grantType in options.GrantTypesSupported.Where(g => !Enum.IsDefined(g)))
+            {
+                errors.Add(
+                    $"AuthorizationServerOptions.GrantTypesSupported contains invalid value '{(int)grantType}'. " +
+                    $"Expected a valid {nameof(GrantType)} enum member.");
+            }
         }
 
         // Validate Token group
-        if (options.TokenEndpoint.AuthMethodsSupported is null)
+        if (options.TokenEndpoint.AuthMethodsSupported is null ||
+            options.TokenEndpoint.AuthMethodsSupported.Count == 0)
         {
-            return ValidateOptionsResult.Fail(TokenEndpointAuthMethodsRequiredMessage);
+            errors.Add(TokenEndpointAuthMethodsRequiredMessage);
         }
-
-        // ADR 0002 §4: TokenEndpoint.AuthMethodsSupported must not be null or empty
-        if (options.TokenEndpoint.AuthMethodsSupported.Count == 0)
+        else
         {
-            return ValidateOptionsResult.Fail(TokenEndpointAuthMethodsRequiredMessage);
-        }
+            foreach (var authMethod in options.TokenEndpoint.AuthMethodsSupported)
+            {
+                if (string.IsNullOrWhiteSpace(authMethod))
+                {
+                    errors.Add(
+                        "AuthorizationServerOptions.TokenEndpoint.AuthMethodsSupported contains an invalid entry: " +
+                        "each entry must be a non-empty, non-whitespace string.");
+                    continue;
+                }
+                if (authMethod != authMethod.Trim())
+                {
+                    errors.Add(
+                        "AuthorizationServerOptions.TokenEndpoint.AuthMethodsSupported contains an invalid entry: " +
+                        $"'{authMethod}' has leading or trailing whitespace.");
+                    continue;
+                }
+                if (authMethod.Any(char.IsControl))
+                {
+                    errors.Add(
+                        "AuthorizationServerOptions.TokenEndpoint.AuthMethodsSupported contains an invalid entry: " +
+                        $"'{authMethod}' contains one or more control characters.");
+                }
+            }
 
-        foreach (var authMethod in options.TokenEndpoint.AuthMethodsSupported)
-        {
-            if (string.IsNullOrWhiteSpace(authMethod))
+            // ADR 0002 §4: If client_credentials grant is supported, must have at least one non-None auth method
+            if (options.GrantTypesSupported is not null &&
+                options.GrantTypesSupported.Contains(GrantType.ClientCredentials) &&
+                options.TokenEndpoint.AuthMethodsSupported.All(m => string.Equals(m, TokenEndpointAuthMethods.None, StringComparison.Ordinal)))
             {
-                return ValidateOptionsResult.Fail(
-                    "AuthorizationServerOptions.TokenEndpoint.AuthMethodsSupported contains an invalid entry: " +
-                    "each entry must be a non-empty, non-whitespace string.");
+                errors.Add(ClientCredentialsRequiresNonNoneTokenAuthMethodMessage);
             }
-            if (authMethod != authMethod.Trim())
-            {
-                return ValidateOptionsResult.Fail(
-                    "AuthorizationServerOptions.TokenEndpoint.AuthMethodsSupported contains an invalid entry: " +
-                    $"'{authMethod}' has leading or trailing whitespace.");
-            }
-            if (authMethod.Any(char.IsControl))
-            {
-                return ValidateOptionsResult.Fail(
-                    "AuthorizationServerOptions.TokenEndpoint.AuthMethodsSupported contains an invalid entry: " +
-                    $"'{authMethod}' contains one or more control characters.");
-            }
-        }
-
-        // ADR 0002 §4: If client_credentials grant is supported, must have at least one non-None auth method
-        if (options.GrantTypesSupported.Contains(GrantType.ClientCredentials) &&
-            options.TokenEndpoint.AuthMethodsSupported.All(m => string.Equals(m, TokenEndpointAuthMethods.None, StringComparison.Ordinal)))
-        {
-            return ValidateOptionsResult.Fail(ClientCredentialsRequiresNonNoneTokenAuthMethodMessage);
         }
 
         // Validate IdToken group
         if (options.IdToken.SigningAlgValuesSupported is null)
         {
-            return ValidateOptionsResult.Fail(
-                "AuthorizationServerOptions.IdToken.SigningAlgValuesSupported must not be null.");
+            errors.Add("AuthorizationServerOptions.IdToken.SigningAlgValuesSupported must not be null.");
         }
-
-        if (options.IdToken.SigningAlgValuesSupported.Count == 0)
+        else if (options.IdToken.SigningAlgValuesSupported.Count == 0)
         {
-            return ValidateOptionsResult.Fail(
-                "AuthorizationServerOptions.IdToken.SigningAlgValuesSupported must contain at least one value.");
+            errors.Add("AuthorizationServerOptions.IdToken.SigningAlgValuesSupported must contain at least one value.");
         }
 
         // Validate Discovery group
         if (options.DiscoveryDocument.CacheMaxAgeSeconds < 0)
         {
-            return ValidateOptionsResult.Fail(
-                "AuthorizationServerOptions.DiscoveryDocument.CacheMaxAgeSeconds must not be negative.");
+            errors.Add("AuthorizationServerOptions.DiscoveryDocument.CacheMaxAgeSeconds must not be negative.");
         }
 
         // Validate DiscoveryDocument.CorsOrigins — each entry must be a strict absolute origin
         // (scheme://host[:port]) with no path (other than "/"), query, fragment, userinfo, wildcards,
         // or CRLF. Invalid entries fail startup.
-        var corsErrors = new List<string>();
         foreach (var origin in options.DiscoveryDocument.CorsOrigins)
         {
             if (origin is null)
             {
-                corsErrors.Add("A null value is not a valid CORS origin.");
+                errors.Add("A null value is not a valid CORS origin.");
                 continue;
             }
             if (origin.Length == 0)
             {
-                corsErrors.Add("An empty string is not a valid CORS origin.");
+                errors.Add("An empty string is not a valid CORS origin.");
                 continue;
             }
             if (origin.IndexOfAny(['\r', '\n']) >= 0)
             {
-                corsErrors.Add($"CORS origin '{origin}' must not contain CR or LF characters.");
+                errors.Add($"CORS origin '{origin}' must not contain CR or LF characters.");
                 continue;
             }
             if (string.Equals(origin, "null", StringComparison.Ordinal))
             {
-                corsErrors.Add("'null' is not a valid CORS origin.");
+                errors.Add("'null' is not a valid CORS origin.");
                 continue;
             }
             if (origin.Contains('*'))
             {
-                corsErrors.Add($"CORS origin '{origin}' must not contain wildcard characters.");
+                errors.Add($"CORS origin '{origin}' must not contain wildcard characters.");
                 continue;
             }
             if (!Uri.TryCreate(origin, UriKind.Absolute, out var originUri))
             {
-                corsErrors.Add($"CORS origin '{origin}' is not a valid absolute URI.");
+                errors.Add($"CORS origin '{origin}' is not a valid absolute URI.");
                 continue;
             }
             if (originUri.UserInfo.Length > 0)
             {
-                corsErrors.Add($"CORS origin '{origin}' must not contain user information.");
+                errors.Add($"CORS origin '{origin}' must not contain user information.");
                 continue;
             }
             if (originUri.Query.Length > 0)
             {
-                corsErrors.Add($"CORS origin '{origin}' must not contain a query component.");
+                errors.Add($"CORS origin '{origin}' must not contain a query component.");
                 continue;
             }
             if (originUri.Fragment.Length > 0)
             {
-                corsErrors.Add($"CORS origin '{origin}' must not contain a fragment component.");
+                errors.Add($"CORS origin '{origin}' must not contain a fragment component.");
                 continue;
             }
             // An origin is scheme + host + port only; path must be empty or just "/".
             if (originUri.AbsolutePath.Length > 1)
             {
-                corsErrors.Add($"CORS origin '{origin}' must not contain a path component. Use 'scheme://host[:port]' only.");
+                errors.Add($"CORS origin '{origin}' must not contain a path component. Use 'scheme://host[:port]' only.");
                 continue;
             }
 
@@ -272,40 +264,33 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
 
             if (!isHttpsOrigin && !(isHttpOrigin && options.AllowInsecureIssuer))
             {
-                corsErrors.Add(
+                errors.Add(
                     $"CORS origin '{origin}' uses scheme '{originUri.Scheme}'. " +
                     "Only 'https' is permitted in production. Set AllowInsecureIssuer = true to " +
                     "permit HTTP CORS origins for local development and testing only.");
                 continue;
             }
 
-            if (isHttpOrigin && options.AllowInsecureIssuer && !originUri.IsLoopback)
+            if (isHttpOrigin && options.AllowInsecureIssuer && !LoopbackHelper.IsLoopbackHost(originUri.Host))
             {
-                corsErrors.Add(
+                errors.Add(
                     $"CORS origin '{origin}' uses HTTP for a non-loopback host. " +
                     "AllowInsecureIssuer only permits HTTP loopback CORS origins for local development and testing.");
-                continue;
             }
-        }
-        if (corsErrors.Count > 0)
-        {
-            return ValidateOptionsResult.Fail(
-                "AuthorizationServerOptions.DiscoveryDocument.CorsOrigins contains invalid entries: " +
-                string.Join(" ", corsErrors));
         }
 
         // Validate SecurityHeaders enum values at startup so an out-of-range cast produces a startup
         // failure consistent with all other misconfiguration, rather than a 500 at request time.
         if (!Enum.IsDefined(options.SecurityHeaders.ReferrerPolicy))
         {
-            return ValidateOptionsResult.Fail(
+            errors.Add(
                 $"AuthorizationServerOptions.SecurityHeaders.ReferrerPolicy value " +
                 $"'{(int)options.SecurityHeaders.ReferrerPolicy}' is not a valid {nameof(ReferrerPolicy)} enum member.");
         }
 
         if (!Enum.IsDefined(options.SecurityHeaders.CrossOriginResourcePolicy))
         {
-            return ValidateOptionsResult.Fail(
+            errors.Add(
                 $"AuthorizationServerOptions.SecurityHeaders.CrossOriginResourcePolicy value " +
                 $"'{(int)options.SecurityHeaders.CrossOriginResourcePolicy}' is not a valid {nameof(CrossOriginResourcePolicy)} enum member.");
         }
@@ -313,7 +298,7 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
         // Validate AuthorizationEndpoint group
         if (options.AuthorizationEndpoint.CodeChallengeMethodsSupported is { Count: 0 })
         {
-            return ValidateOptionsResult.Fail(
+            errors.Add(
                 "AuthorizationServerOptions.AuthorizationEndpoint.CodeChallengeMethodsSupported " +
                 "must not be an empty collection. Either set it to null to omit the field from the " +
                 "discovery document, or provide at least one value (e.g. CodeChallengeMethod.S256). " +
@@ -348,7 +333,7 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
                     $"AuthorizationServerOptions.{propertyName} '{value}' must use HTTPS. " +
                     "Set AllowInsecureIssuer = true to permit HTTP loopback endpoints for local development only.");
 
-            if (isHttp && allowInsecure && !uri.IsLoopback)
+            if (isHttp && allowInsecure && !LoopbackHelper.IsLoopbackHost(uri.Host))
                 return ValidateOptionsResult.Fail(
                     $"AuthorizationServerOptions.{propertyName} '{value}' uses HTTP for a non-loopback host. " +
                     "AllowInsecureIssuer only permits HTTP loopback endpoints for local development and testing.");
@@ -379,7 +364,7 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
                 uri,
                 options.Issuer!,
                 rejectFragment: true) is { } aeError)
-            return aeError;
+            errors.Add(aeError.FailureMessage!);
 
         if (ValidateEndpointUri(
                 nameof(options.TokenEndpoint.Uri),
@@ -388,7 +373,7 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
                 uri,
                 options.Issuer!,
                 rejectFragment: true) is { } teError)
-            return teError;
+            errors.Add(teError.FailureMessage!);
 
         if (ValidateEndpointUri(
                 nameof(options.JwksEndpoint.Uri),
@@ -398,9 +383,9 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
                 options.Issuer!,
                 rejectQuery: true,
                 rejectFragment: true) is { } jwksError)
-            return jwksError;
+            errors.Add(jwksError.FailureMessage!);
 
-        return ValidateOptionsResult.Success;
+        return errors.Count > 0 ? ValidateOptionsResult.Fail(errors) : ValidateOptionsResult.Success;
     }
 
     private static bool HasSameAuthority(Uri endpointUri, Uri issuerUri)

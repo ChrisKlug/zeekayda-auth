@@ -1,3 +1,5 @@
+using System.Collections.Frozen;
+
 namespace ZeeKayDa.Auth.Clients;
 
 /// <summary>
@@ -114,7 +116,7 @@ public interface IClientRegistration
     /// which is forward-compatible when new <see cref="PromptValue"/> members are added.
     /// An explicit full-set default would be a forward-compatibility trap.
     /// </remarks>
-    IReadOnlySet<PromptValue> AllowedPromptValues => new HashSet<PromptValue>();
+    IReadOnlySet<PromptValue> AllowedPromptValues => FrozenSet<PromptValue>.Empty;
 
     /// <summary>
     /// When <see langword="true"/>, the framework may include ZeeKayDa-specific extended error

@@ -5,7 +5,7 @@ namespace ZeeKayDa.Auth;
 /// </summary>
 /// <remarks>
 /// Server-wide settings are exposed directly on this class. Per-endpoint settings are grouped
-/// into nested sealed option classes (<see cref="Discovery"/>, <see cref="AuthorizationEndpoint"/>,
+/// into nested sealed option classes (<see cref="DiscoveryDocument"/>, <see cref="AuthorizationEndpoint"/>,
 /// <see cref="TokenEndpoint"/>, <see cref="JwksEndpoint"/>, <see cref="IdToken"/>, <see cref="Response"/>,
 /// <see cref="SecurityHeaders"/>)
 /// which are initialized to default instances. Group properties are get-only and cannot be nulled;

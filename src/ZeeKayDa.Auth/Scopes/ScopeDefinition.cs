@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace ZeeKayDa.Auth.Scopes;
 
 /// <summary>
@@ -27,6 +29,7 @@ public sealed record ScopeDefinition
     /// This metadata is internal model data for now. It is not published as part of the standard
     /// discovery document, regardless of <see cref="IsDiscoverable"/>.
     /// </remarks>
+    [Experimental("ZKD001")]
     public IReadOnlyCollection<string> IdTokenClaims { get; init; } = [];
 
     /// <summary>
@@ -36,5 +39,6 @@ public sealed record ScopeDefinition
     /// This metadata is internal model data for now. It is not published as part of the standard
     /// discovery document, regardless of <see cref="IsDiscoverable"/>.
     /// </remarks>
+    [Experimental("ZKD001")]
     public IReadOnlyCollection<string> AccessTokenClaims { get; init; } = [];
 }

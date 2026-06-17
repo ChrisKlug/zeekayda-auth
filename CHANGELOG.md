@@ -6,6 +6,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Removed
+
+- **`ResponseMode.Fragment` enum member removed** (#160)
+
+  Fragment response mode was configurable but permanently unsupported. Removing it prevents silent
+  no-ops when operators configure it. Use `ResponseMode.Query` or `ResponseMode.FormPost`.
+
+### Changed
+
+- **`ScopeDefinition.IdTokenClaims` and `AccessTokenClaims` marked `[Experimental("ZKD001")]`** (#160)
+
+  These properties are public but ahead of the claims ADR that will define their semantics. Mark
+  with `[Experimental]` to signal instability. Suppress diagnostic `ZKD001` if you reference them.
+
+- **`PromptValue` enum members now serialise to correct OIDC wire values** (#160)
+
+  `JsonConverter` and `JsonStringEnumMemberName` attributes added so `PromptValue` round-trips
+  correctly over JSON: `None` → `"none"`, `Login` → `"login"`, `Consent` → `"consent"`,
+  `SelectAccount` → `"select_account"`.
+
+- **`AuthorizationServerOptionsValidator` now reports all configuration errors at once** (#160)
+
+  Previously the validator returned on the first failure. It now aggregates all errors and returns
+  them together, so a misconfigured server surfaces every problem in a single startup failure.
+
 ### Changed
 
 - **BREAKING: `TokenEndpoint.AuthMethodsSupported` is now `ICollection<string>`** (#115)

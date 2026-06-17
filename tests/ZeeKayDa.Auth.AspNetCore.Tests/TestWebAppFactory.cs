@@ -6,7 +6,6 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using ZeeKayDa.Auth.AspNetCore.Extensions;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests;
 

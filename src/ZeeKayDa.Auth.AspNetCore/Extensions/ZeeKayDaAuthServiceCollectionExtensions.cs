@@ -1,6 +1,7 @@
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
+using ZeeKayDa.Auth;
+using ZeeKayDa.Auth.AspNetCore;
 using ZeeKayDa.Auth.AspNetCore.ClientAuthentication;
 using ZeeKayDa.Auth.AspNetCore.Endpoints;
 using ZeeKayDa.Auth.Clients;
@@ -9,7 +10,7 @@ using ZeeKayDa.Auth.Discovery;
 using ZeeKayDa.Auth.Extensions;
 using ZeeKayDa.Auth.Scopes;
 
-namespace ZeeKayDa.Auth.AspNetCore.Extensions;
+namespace Microsoft.Extensions.DependencyInjection;
 
 /// <summary>
 /// Extension methods for <see cref="IServiceCollection"/> to register ZeeKayDa.Auth services.

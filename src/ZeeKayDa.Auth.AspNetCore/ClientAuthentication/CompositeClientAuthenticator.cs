@@ -109,7 +109,7 @@ internal sealed class CompositeClientAuthenticator
 
         // Returned method must be in the authenticator's own declared set (defends against a
         // buggy CanHandle that returns an undeclared method, bypassing the coverage check).
-        if (!matchedAuthenticator.AuthenticationMethods.Contains(matchedMethod, StringComparer.Ordinal))
+        if (!matchedAuthenticator.AuthenticationMethods.ContainsOrdinal(matchedMethod))
             return ClientAuthenticationResult.NotValid();
 
         // Method must be in the server's global allowlist.
@@ -126,7 +126,7 @@ internal sealed class CompositeClientAuthenticator
         // Method must be in the per-client allowlist (ordinal). Pad timing to match the
         // unknown-client path so "client exists but wrong method" is not timing-distinguishable
         // from "client does not exist" (ADR 0007 §3.4).
-        if (!client.AllowedTokenEndpointAuthMethods.Contains(matchedMethod, StringComparer.Ordinal))
+        if (!client.AllowedTokenEndpointAuthMethods.ContainsOrdinal(matchedMethod))
         {
             _secretHasher.PadToCredentialBudget();
             return ClientAuthenticationResult.NotValid();
@@ -193,8 +193,7 @@ internal sealed class CompositeClientAuthenticator
 
         // Client's AllowedTokenEndpointAuthMethods must be exactly { "none" } (ordinal).
         if (client.AllowedTokenEndpointAuthMethods.Count != 1 ||
-            !client.AllowedTokenEndpointAuthMethods.Contains(
-                TokenEndpointAuthMethods.None, StringComparer.Ordinal))
+            !client.AllowedTokenEndpointAuthMethods.ContainsOrdinal(TokenEndpointAuthMethods.None))
         {
             PadNoneRejection();
             return ClientAuthenticationResult.NotValid();

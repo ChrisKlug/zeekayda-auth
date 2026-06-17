@@ -1,10 +1,10 @@
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
+using ZeeKayDa.Auth.AspNetCore;
 using ZeeKayDa.Auth.AspNetCore.Clients;
 using ZeeKayDa.Auth.Clients;
 
-namespace ZeeKayDa.Auth.AspNetCore.Extensions;
+namespace Microsoft.Extensions.DependencyInjection;
 
 /// <summary>
 /// Extension methods for registering client repositories with <see cref="ZeeKayDaAuthBuilder"/>.
