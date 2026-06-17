@@ -11,7 +11,7 @@ namespace ZeeKayDa.Auth.Clients;
 /// </typeparam>
 /// <remarks>
 /// <para>
-/// Subclasses implement <see cref="VerifyCore"/> and <see cref="CreateCore"/>. All cross-cutting
+/// Subclasses implement <see cref="VerifyCore"/> and <see cref="CreateCore(string)"/>. All cross-cutting
 /// requirements — type guard, exception swallowing, and null/whitespace rejection — are handled
 /// in this base class.
 /// </para>
@@ -21,12 +21,10 @@ namespace ZeeKayDa.Auth.Clients;
 /// instead); MUST NOT log the presented secret; and MUST be safe for concurrent use (singleton-safe).
 /// </para>
 /// <para>
-/// <strong>Managed-string limitation.</strong> The <see cref="Create"/> method accepts a
-/// managed <see langword="string"/> whose contents the .NET garbage collector does not guarantee
-/// to erase promptly. Callers should treat the created credential as potentially resident in
-/// memory until the next GC cycle. <see cref="Verify"/> accepts a
-/// <see cref="ReadOnlySpan{T}">ReadOnlySpan&lt;char&gt;</see>, so callers who hold the presented
-/// secret in a <c>char[]</c> or similar mutable buffer can zero it out immediately after the call.
+/// The <see cref="IClientSecretHasher.Create(System.ReadOnlySpan{char})"/> span overload
+/// eliminates a forced string allocation for callers who hold secrets in mutable buffers.
+/// Subclasses that can consume a span directly should override
+/// <see cref="CreateCore(System.ReadOnlySpan{char})"/> to avoid the fallback string allocation.
 /// </para>
 /// </remarks>
 public abstract class ClientSecretHasher<TSecret> : IClientSecretHasher
@@ -52,9 +50,11 @@ public abstract class ClientSecretHasher<TSecret> : IClientSecretHasher
     }
 
     /// <inheritdoc/>
-    public IClientSecret Create(string plaintext)
+    public IClientSecret Create(ReadOnlySpan<char> plaintext)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(plaintext);
+        if (MemoryExtensions.IsWhiteSpace(plaintext))
+            throw new ArgumentException("Secret must not be empty or whitespace.", nameof(plaintext));
+
         return CreateCore(plaintext);
     }
 
@@ -70,10 +70,22 @@ public abstract class ClientSecretHasher<TSecret> : IClientSecretHasher
     protected abstract bool VerifyCore(TSecret stored, ReadOnlySpan<char> presented);
 
     /// <summary>
-    /// Creates a new hashed credential from a validated plaintext secret.
+    /// Creates a new hashed credential from a validated plaintext secret span.
     /// </summary>
     /// <remarks>
-    /// Called only after <see cref="Create"/> has verified that <paramref name="plaintext"/>
+    /// Default implementation allocates a string and delegates to <see cref="CreateCore(string)"/>.
+    /// Subclasses may override to avoid the string allocation entirely.
+    /// Called only after <see cref="IClientSecretHasher.Create(System.ReadOnlySpan{char})"/> has
+    /// verified that <paramref name="plaintext"/> is non-empty and non-whitespace.
+    /// </remarks>
+    protected virtual TSecret CreateCore(ReadOnlySpan<char> plaintext) =>
+        CreateCore(new string(plaintext));
+
+    /// <summary>
+    /// Creates a new hashed credential from a validated plaintext secret string.
+    /// </summary>
+    /// <remarks>
+    /// Called only after the caller has verified that <paramref name="plaintext"/>
     /// is non-null and non-whitespace.
     /// </remarks>
     protected abstract TSecret CreateCore(string plaintext);

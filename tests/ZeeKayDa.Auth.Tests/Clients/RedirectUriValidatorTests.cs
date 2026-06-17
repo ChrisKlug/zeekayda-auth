@@ -54,6 +54,8 @@ public sealed class RedirectUriValidatorTests
     [InlineData("https://example.com/callback/.%2e", true)]  // mixed encoding
     [InlineData("com.example.app:/callback/../other", true)]  // private-use single-slash
     [InlineData("myapp:/callback", false)] // no path after ":/"
+    [InlineData("https://example.com/callback/./other", true)]  // single-dot segment
+    [InlineData("https://example.com/callback/%2E/other", true)]  // percent-encoded single dot
     public void HasPathTraversal_returns_expected_value(string uriString, bool expected)
         => RedirectUriValidator.HasPathTraversal(uriString).Should().Be(expected);
 }

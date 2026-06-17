@@ -40,10 +40,10 @@ public sealed class InMemoryClientRepositoryTests
         public bool CanHandle(IClientSecret secret) => secret is FakeSecret;
         public bool Verify(IClientSecret stored, ReadOnlySpan<char> presented) => false;
 
-        public IClientSecret Create(string plaintext)
+        public IClientSecret Create(ReadOnlySpan<char> plaintext)
         {
-            // Mirror ClientSecretHasher<T>.Create: reject a null/empty/whitespace plaintext secret.
-            if (string.IsNullOrWhiteSpace(plaintext))
+            // Mirror ClientSecretHasher<T>.Create: reject an empty/whitespace plaintext secret.
+            if (MemoryExtensions.IsWhiteSpace(plaintext))
                 throw new ArgumentException("Plaintext secret must not be empty.", nameof(plaintext));
 
             return new FakeSecret();

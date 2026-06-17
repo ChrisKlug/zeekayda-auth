@@ -276,7 +276,7 @@ public sealed class ZeeKayDaAuthBuilderClientExtensionsTests
     {
         public bool CanHandle(IClientSecret secret) => secret is TestSecret;
         public bool Verify(IClientSecret stored, ReadOnlySpan<char> presented) => false;
-        public IClientSecret Create(string plaintext) => new TestSecret();
+        public IClientSecret Create(ReadOnlySpan<char> plaintext) => new TestSecret();
     }
 
     // ── Custom repository used by the "AddInMemoryClients after custom repo" guard test ───────────
