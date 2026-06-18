@@ -104,6 +104,10 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         // Emits a startup warning when AllowInsecureIssuer is enabled.
         services.AddHostedService<InsecureIssuerWarningService>();
 
+        // Emits a startup warning when exception message sanitization is disabled via
+        // AuthorizationServerOptions.Logging.DisableExceptionSanitizing.
+        services.AddHostedService<ExceptionSanitizingDisabledWarningService>();
+
         // Validates that IScopeRepository exposes the 'openid' scope. Done in a hosted service
         // so the check is awaitable — IValidateOptions<T>.Validate is synchronous and blocking
         // on async I/O risks deadlocks in certain hosting configurations.

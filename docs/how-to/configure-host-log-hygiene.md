@@ -198,35 +198,32 @@ builder.Services.AddSingleton<ITelemetryInitializer, OAuthTelemetrySanitizer>();
 ## Opting out of exception message sanitization in development
 
 Exception message sanitization is active by default for all environments. If you need to see
-original exception messages in your log output during local development, call
-`DisableExceptionSanitizing()` on the `ZeeKayDaAuthBuilder` returned by `AddZeeKayDaAuth`:
+original exception messages in your log output during local development, set
+`Logging.DisableExceptionSanitizing` to `true` in `appsettings.Development.json`:
 
-```csharp
-var auth = builder.Services.AddZeeKayDaAuth(options =>
+```json
+// appsettings.Development.json
 {
-    options.Issuer = "http://localhost:5000";
-    options.AllowInsecureIssuer = true;
-});
-
-auth.DisableExceptionSanitizing();
-```
-
-When `DisableExceptionSanitizing()` is active, ZeeKayDa.Auth emits a `LogLevel.Warning` at startup
-as a reminder that exception messages will not be redacted.
-
-> ⚠️ **Warning: `DisableExceptionSanitizing()` is for development environments only.**
-> Never call it in a production configuration. Exception messages can contain credential values or
-> other sensitive state that would reach your log sinks verbatim. Use
-> `appsettings.Development.json` environment separation to ensure this call never reaches
-> production:
-
-```csharp
-// Program.cs — guard with an environment check so the opt-out never reaches production
-if (builder.Environment.IsDevelopment())
-{
-    auth.DisableExceptionSanitizing();
+  "ZeeKayDaAuth": {
+    "Logging": {
+      "DisableExceptionSanitizing": true
+    }
+  }
 }
 ```
+
+Because this setting is in `appsettings.Development.json`, it is automatically scoped to the
+`Development` environment. The standard ASP.NET Core configuration layering means this file is
+loaded only when `ASPNETCORE_ENVIRONMENT` or `DOTNET_ENVIRONMENT` is set to `Development` —
+it is never applied in production or staging environments.
+
+When `DisableExceptionSanitizing` is `true`, ZeeKayDa.Auth emits a `LogLevel.Warning` at startup
+as a reminder that exception messages will not be redacted.
+
+> ⚠️ **Warning: `DisableExceptionSanitizing` is for development environments only.**
+> Never set it to `true` in `appsettings.json` or `appsettings.Production.json`. Exception
+> messages can contain credential values or other sensitive state that would reach your log sinks
+> verbatim. Always set this flag only in `appsettings.Development.json`.
 
 ## Compile-time enforcement inside ZeeKayDa.Auth
 

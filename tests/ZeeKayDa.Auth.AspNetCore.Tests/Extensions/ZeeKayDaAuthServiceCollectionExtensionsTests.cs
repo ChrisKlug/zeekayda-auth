@@ -1,6 +1,9 @@
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth;
+using ZeeKayDa.Auth.AspNetCore;
 using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Configuration;
 using ZeeKayDa.Auth.Scopes;
@@ -93,5 +96,42 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
 
         opts.Registrations.Should().ContainSingle(r =>
             r.HasherType == typeof(Pbkdf2ClientSecretHasher) && r.IsDefault);
+    }
+
+    [Fact]
+    public void AddZeeKayDaAuth_always_registers_ExceptionSanitizingDisabledWarningService_as_IHostedService()
+    {
+        // The warning service reads the flag at startup and emits a warning only when the flag
+        // is set. It is always registered (unconditionally) so no additional method call is needed.
+        var services = new ServiceCollection();
+
+        services.AddZeeKayDaAuth(options => options.Issuer = "https://auth.example.com");
+
+        services.Should().Contain(sd =>
+            sd.ServiceType == typeof(IHostedService) &&
+            sd.ImplementationType == typeof(ExceptionSanitizingDisabledWarningService));
+    }
+
+    [Fact]
+    public void AddZeeKayDaAuth_binds_DisableExceptionSanitizing_from_configuration()
+    {
+        // Verify the documented appsettings.Development.json path actually works — i.e., that
+        // the JSON key "ZeeKayDaAuth:Logging:DisableExceptionSanitizing" binds to the correct
+        // property on AuthorizationServerOptions.
+        var json = """{"ZeeKayDaAuth":{"Logging":{"DisableExceptionSanitizing":true}}}""";
+        var configuration = new ConfigurationBuilder()
+            .AddJsonStream(new System.IO.MemoryStream(System.Text.Encoding.UTF8.GetBytes(json)))
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddSingleton<IConfiguration>(configuration);
+        services
+            .AddOptions<AuthorizationServerOptions>()
+            .Bind(configuration.GetSection("ZeeKayDaAuth"));
+
+        using var provider = services.BuildServiceProvider();
+        var opts = provider.GetRequiredService<IOptions<AuthorizationServerOptions>>().Value;
+
+        opts.Logging.DisableExceptionSanitizing.Should().BeTrue();
     }
 }

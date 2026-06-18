@@ -29,9 +29,10 @@ public static class ZeeKayDaAuthCoreServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        // Options for SecretSanitizingLogger<T>. AddOptions() is idempotent so repeated calls
-        // are safe. The concrete options instance is mutable via Configure() in DisableExceptionSanitizing().
-        services.AddOptions<SecretSanitizingLoggerOptions>();
+        // AddOptions<T>() is idempotent. Registering here ensures that
+        // SecretSanitizingLogger<T> can resolve IOptions<AuthorizationServerOptions> even when
+        // AddZeeKayDaAuthCore() is called standalone without AddZeeKayDaAuth().
+        services.AddOptions<AuthorizationServerOptions>();
 
         // Open-generic registration: every ZeeKayDa service that injects ISanitizingLogger<T>
         // automatically receives SecretSanitizingLogger<T>. TryAdd is idempotent across

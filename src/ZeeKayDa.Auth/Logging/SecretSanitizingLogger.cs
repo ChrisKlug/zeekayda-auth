@@ -43,8 +43,9 @@ namespace ZeeKayDa.Auth.Logging;
 /// </para>
 /// <para>
 /// Exception messages are wrapped in a <see cref="RedactedExceptionWrapper"/> by default so that
-/// credential material embedded in exception messages cannot reach log sinks. Call
-/// <c>DisableExceptionSanitizing()</c> on the builder to opt out.
+/// credential material embedded in exception messages cannot reach log sinks. Set
+/// <see cref="AuthorizationServerOptions.Logging"/>.<see cref="LoggingOptions.DisableExceptionSanitizing"/>
+/// to <see langword="true"/> to opt out (development environments only).
 /// </para>
 /// <para>
 /// This is a defence-in-depth backstop for ADR 0007 §7. The Roslyn analyzer
@@ -57,7 +58,7 @@ namespace ZeeKayDa.Auth.Logging;
 /// </remarks>
 internal sealed class SecretSanitizingLogger<T>(
     ILogger<T> inner,
-    IOptions<SecretSanitizingLoggerOptions> options) : ISanitizingLogger<T>
+    IOptions<AuthorizationServerOptions> options) : ISanitizingLogger<T>
 {
     internal static readonly IReadOnlySet<string> SensitiveKeys =
         new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -107,6 +108,11 @@ internal sealed class SecretSanitizingLogger<T>(
         Exception? exception,
         Func<TState, Exception?, string> formatter)
     {
+        // Guard before allocating: if the inner logger would discard this entry anyway, skip all
+        // redaction work including the RedactedExceptionWrapper allocation.
+        if (!inner.IsEnabled(logLevel))
+            return;
+
         var wrappedException = WrapException(exception);
 
         if (state is IEnumerable<KeyValuePair<string, object?>> pairs)
@@ -140,7 +146,7 @@ internal sealed class SecretSanitizingLogger<T>(
 
     private Exception? WrapException(Exception? exception)
     {
-        if (exception is null || options.Value.ExceptionSanitizingDisabled)
+        if (exception is null || options.Value.Logging.DisableExceptionSanitizing)
             return exception;
 
         return new RedactedExceptionWrapper(exception);

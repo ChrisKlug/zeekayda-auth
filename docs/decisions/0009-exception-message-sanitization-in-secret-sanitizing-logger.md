@@ -42,6 +42,12 @@ non-null exception, discarding all exception information from the log entry.
 
 The project owner chose a variant of Option A.
 
+**Terminology.** Throughout this ADR, *sanitizing* refers to replacing sensitive structured-log
+key values with `[REDACTED]` — the key-value redaction already performed by
+`SecretSanitizingLogger<T>`. *Redacting* (as applied to exception messages) refers to suppressing
+the exception `Message` text entirely, replacing it with a fixed placeholder. These are distinct
+operations with different threat models; they must not be treated as synonyms.
+
 ---
 
 ## Decision
@@ -61,6 +67,11 @@ wrapper:
 - Exposes the original exception's fully-qualified type name as the string property
   `OriginalExceptionType`, accessible to structured log sinks that interrogate exception object
   properties (Serilog, Seq, Application Insights structured exception enrichers, and similar).
+
+When a `ZeeKayDaException` subtype is wrapped, the structured data defined in ADR 0006
+(`AggregatedFailures.Code` etc.) remains accessible on the original exception; only `Message` is
+suppressed from log sinks by this wrapper. See ADR 0006 for the full exception hierarchy and the
+structured data each subtype carries.
 
 The wrapper is applied **unconditionally** to every non-null exception. It is not conditional on
 whether the structured log state contains a sensitive key, whether the exception type is a
@@ -144,13 +155,14 @@ following paths:
   custom `IExceptionFilter` writing to a secure database, an exception-tracking service) operates
   outside the structured log pipeline and is unaffected by this wrapper. The same coverage
   limitation applies: only exceptions that propagate to that middleware layer are captured.
-- **`DisableExceptionSanitizing()` in development.** The opt-out mechanism described in §5 is
-  intended for local development environments where credential exposure in logs is acceptable in
-  exchange for full diagnostic detail. **This is the recommended path for reproducing and
-  diagnosing an exception message from ZeeKayDa.Auth's internal logging** — if a production
-  incident requires the original exception message, reproduce the failure in a non-production
-  environment with `DisableExceptionSanitizing()` active rather than relying on APM to have
-  captured it in production.
+- **`AuthorizationServerOptions.Logging.DisableExceptionSanitizing` in development.** The opt-out
+  mechanism described in §5 is intended for local development environments where credential
+  exposure in logs is acceptable in exchange for full diagnostic detail. Set it to `true` in
+  `appsettings.Development.json`. **This is the recommended path for reproducing and diagnosing
+  an exception message from ZeeKayDa.Auth's internal logging** — if a production incident
+  requires the original exception message, reproduce the failure in a non-production environment
+  with `DisableExceptionSanitizing: true` active rather than relying on APM to have captured it
+  in production.
 - **`OriginalExceptionType` on the wrapper.** The fully-qualified type name of the original
   exception is preserved and emitted by structured sinks that enumerate exception properties.
   Operators can filter and alert on exception types (e.g.
@@ -161,54 +173,59 @@ The `SecretSanitizingLogger` XML documentation and the `configure-host-log-hygie
 guide must disclose the exception message redaction behaviour and point operators to these recovery
 paths. The redaction must not be a surprise in production.
 
-### 5. Opt-out: `DisableExceptionSanitizing()` on `ZeeKayDaAuthBuilder`
+### 5. Opt-out: `AuthorizationServerOptions.Logging.DisableExceptionSanitizing`
 
-A new extension method is added to `ZeeKayDaAuthBuilder`:
+The opt-out is a `bool` property on a `LoggingOptions` group exposed as a get-only property on
+`AuthorizationServerOptions`:
 
 ```csharp
-public static ZeeKayDaAuthBuilder DisableExceptionSanitizing(this ZeeKayDaAuthBuilder builder);
+// appsettings.Development.json
+{
+  "ZeeKayDaAuth": {
+    "Logging": {
+      "DisableExceptionSanitizing": true
+    }
+  }
+}
 ```
 
-When called, the method sets a flag on an internal options type that `SecretSanitizingLogger<T>`
-reads at log time. When the flag is set, `Log<TState>` passes the original `Exception?` argument
+When `true`, `SecretSanitizingLogger<T>.Log<TState>` passes the original `Exception?` argument
 to the inner logger unchanged — the `RedactedExceptionWrapper` is bypassed entirely.
 
-The method name `Disable*` is deliberate. It must read as a conscious escalation of risk in code
-review, not a neutral configuration toggle. The XML documentation must state the security
-implication in the first sentence.
+The placement of this opt-out as a framework-behavior group on `AuthorizationServerOptions`
+follows the convention established in ADR 0002 §5 and the 2026-06-13 framework-behavior-groups
+amendment. Configuration data (what the server is configured with) belongs on
+`AuthorizationServerOptions`; DI service registrations (what the server is composed of) belong on
+`ZeeKayDaAuthBuilder`. Placing a runtime-configuration flag on the builder — as the initial
+implementation did — violated this boundary.
 
-`DisableExceptionSanitizing()` lives in `ZeeKayDa.Auth.AspNetCore`, in the
-`Microsoft.Extensions.DependencyInjection` namespace, consistent with all other
-`ZeeKayDaAuthBuilder` extension methods. The internal options type that carries the flag lives in
-`ZeeKayDa.Auth` core so that `SecretSanitizingLogger<T>` can read it without taking a dependency
-on `ZeeKayDa.Auth.AspNetCore`.
-
-The options type is `internal`. The only supported path to set the flag is
-`DisableExceptionSanitizing()`.
+`LoggingOptions` is a `public sealed` class so that it is bindable from `IConfiguration`. The
+property name `DisableExceptionSanitizing` is deliberately explicit: it must read as a conscious
+escalation of risk in configuration review, not a neutral toggle.
 
 ### 6. Startup warning when exception sanitization is disabled
 
-When `DisableExceptionSanitizing()` has been called, an `IHostedService` is registered by that
-same extension method. The service emits a single `LogLevel.Warning` on application startup,
-using `ISanitizingLogger<ExceptionSanitizingDisabledWarningService>` as the log category. The
-warning message:
+`ExceptionSanitizingDisabledWarningService` is always registered by `AddZeeKayDaAuth()` as an
+`IHostedService`. In `StartAsync`, it reads `AuthorizationServerOptions.Logging.DisableExceptionSanitizing`
+and emits a single `LogLevel.Warning` if the flag is set, using
+`ISanitizingLogger<ExceptionSanitizingDisabledWarningService>` as the log category. The warning
+message:
 
-> Exception message sanitization is disabled. Exception messages logged by ZeeKayDa.Auth services
-> may contain credential material and will reach log sinks unredacted.
+> Exception message sanitization is disabled via AuthorizationServerOptions.Logging.DisableExceptionSanitizing.
+> Exception messages logged by ZeeKayDa.Auth services may contain credential material and will reach
+> log sinks unredacted.
 
 This follows the exact pattern established by `InsecureIssuerWarningService`, which emits an
 equivalent startup warning when `AllowInsecureIssuer` is set: an `internal sealed class`
-implementing `IHostedService`, checking the condition in `StartAsync`, emitting the warning if the
-flag is active.
+implementing `IHostedService`, checking the condition in `StartAsync`, emitting the warning at
+`LogLevel.Warning` if the flag is active.
 
-**Escalation to `LogLevel.Error` in production environments is deferred.** Injecting
-`IHostEnvironment` into the warning service and escalating the log level to `Error` when
-`IHostEnvironment.IsProduction()` returns `true` is a useful operator safeguard. It is not
-included in the initial design because it introduces a dependency on `IHostEnvironment` that the
-`InsecureIssuerWarningService` precedent did not establish for this service type. The
-implementation team may add it without requiring an ADR amendment — it is a non-breaking,
-security-positive extension within the scope of this design. If it is not added in the initial
-implementation, it must be tracked as a follow-up on issue #173.
+`LogLevel.Warning` is used unconditionally regardless of environment. Escalating to `LogLevel.Error`
+in production was considered but rejected: `DisableExceptionSanitizing` set to `true` in a
+production `appsettings.json` is a configuration error, not a runtime failure, and should be
+prevented by environment-scoped configuration files rather than severity escalation in the service
+itself. `LogLevel.Warning` is consistent with `InsecureIssuerWarningService` and avoids triggering
+on-call paging for a deliberate opt-out.
 
 ### 7. Interaction with `LoggerMessage.Define<T>` and `[LoggerMessage]` source-generated callers
 
@@ -259,7 +276,14 @@ this ADR.
 ### New file: `src/ZeeKayDa.Auth/Logging/RedactedExceptionWrapper.cs`
 
 An `internal sealed` class in the `ZeeKayDa.Auth.Logging` namespace that inherits from
-`Exception`. Inheritance is required so that structured log sinks which pattern-match on
+`Exception`. Being `internal sealed` is a deliberate design choice: sinks receive the wrapper as
+`Exception` and can only observe the sanitized `Message`, the original `StackTrace`, and
+`OriginalExceptionType`. The `OriginalExceptionType` property exists specifically to support the
+`SecretSanitizingLogger` formatter rendering the original type name in the sanitized log line,
+so that operators retain type-based filtering and alerting capability without the message text.
+Consumers of the library cannot reference or pattern-match on `RedactedExceptionWrapper` by name.
+
+Inheritance from `Exception` is required so that structured log sinks which pattern-match on
 `Exception` continue to handle the wrapper correctly (serialising the stack trace, recording an
 inner exception chain). Key members:
 
@@ -276,99 +300,45 @@ Implementers should add a depth limit (e.g. 50 inner exception levels) to protec
 pathologically deep exception chains. Beyond the limit, the innermost exception may be truncated
 with a note in its wrapper message.
 
-### New file: `src/ZeeKayDa.Auth/Logging/SecretSanitizingLoggerOptions.cs`
+### New file: `src/ZeeKayDa.Auth/Logging/LoggingOptions.cs`
+
+A `public sealed` class in the `ZeeKayDa.Auth.Logging` namespace exposed as a get-only
+framework-behavior group on `AuthorizationServerOptions`:
 
 ```csharp
-namespace ZeeKayDa.Auth.Logging;
-
-internal sealed class SecretSanitizingLoggerOptions
+public sealed class LoggingOptions
 {
-    public bool ExceptionSanitizingDisabled { get; set; }
+    public bool DisableExceptionSanitizing { get; set; }
 }
+```
+
+### Modified: `src/ZeeKayDa.Auth/AuthorizationServerOptions.cs`
+
+`AuthorizationServerOptions` gains a `Logging` framework-behavior group:
+
+```csharp
+public LoggingOptions Logging { get; } = new();
 ```
 
 ### Modified: `src/ZeeKayDa.Auth/Extensions/ZeeKayDaAuthCoreServiceCollectionExtensions.cs`
 
-In `AddZeeKayDaAuthCore()`, add `services.AddOptions<SecretSanitizingLoggerOptions>();` adjacent to
-the `ISanitizingLogger<>` open-generic registration.
+In `AddZeeKayDaAuthCore()`, add `services.AddOptions<AuthorizationServerOptions>();` to ensure that
+`SecretSanitizingLogger<T>` can resolve `IOptions<AuthorizationServerOptions>` even when
+`AddZeeKayDaAuthCore()` is called standalone without `AddZeeKayDaAuth()`. `AddOptions<T>()` is
+idempotent.
 
 ### Modified: `src/ZeeKayDa.Auth/Logging/SecretSanitizingLogger.cs`
 
-`SecretSanitizingLogger<T>` gains a constructor parameter
-`IOptions<SecretSanitizingLoggerOptions> options`. In `Log<TState>`, before all three existing
-branches, compute the safe exception:
+`SecretSanitizingLogger<T>` takes `IOptions<AuthorizationServerOptions>` instead of
+`IOptions<SecretSanitizingLoggerOptions>`. In `Log<TState>`, an `IsEnabled` guard is added at the
+top to avoid allocating `RedactedExceptionWrapper` when the inner logger would discard the entry
+anyway. The `WrapException` method reads `options.Value.Logging.DisableExceptionSanitizing`.
 
-```csharp
-var safeException = exception is not null && !_options.Value.ExceptionSanitizingDisabled
-    ? new RedactedExceptionWrapper(exception)
-    : exception;
-```
+### Modified: `src/ZeeKayDa.Auth.AspNetCore/ExceptionSanitizingDisabledWarningService.cs`
 
-All three `inner.Log(...)` call sites within `Log<TState>` are updated to pass `safeException`
-in place of `exception`.
-
-### New file: `src/ZeeKayDa.Auth.AspNetCore/Extensions/ZeeKayDaAuthBuilderLoggingExtensions.cs`
-
-```csharp
-namespace Microsoft.Extensions.DependencyInjection;
-
-public static class ZeeKayDaAuthBuilderLoggingExtensions
-{
-    /// <summary>
-    /// Disables exception message sanitization in <c>SecretSanitizingLogger</c>.
-    /// </summary>
-    /// <remarks>
-    /// When disabled, exception messages are forwarded to log sinks verbatim and may contain
-    /// credential material. Use only in development environments. A startup warning is emitted
-    /// whenever this option is active. See ADR 0009.
-    /// </remarks>
-    public static ZeeKayDaAuthBuilder DisableExceptionSanitizing(
-        this ZeeKayDaAuthBuilder builder)
-    {
-        ArgumentNullException.ThrowIfNull(builder);
-
-        builder.Services.Configure<SecretSanitizingLoggerOptions>(
-            o => o.ExceptionSanitizingDisabled = true);
-        builder.Services.AddHostedService<ExceptionSanitizingDisabledWarningService>();
-
-        return builder;
-    }
-}
-```
-
-### New file: `src/ZeeKayDa.Auth.AspNetCore/ExceptionSanitizingDisabledWarningService.cs`
-
-Follows the `InsecureIssuerWarningService` pattern exactly:
-
-```csharp
-internal sealed class ExceptionSanitizingDisabledWarningService : IHostedService
-{
-    private readonly IOptions<SecretSanitizingLoggerOptions> _options;
-    private readonly ISanitizingLogger<ExceptionSanitizingDisabledWarningService> _logger;
-
-    public ExceptionSanitizingDisabledWarningService(
-        IOptions<SecretSanitizingLoggerOptions> options,
-        ISanitizingLogger<ExceptionSanitizingDisabledWarningService> logger)
-    {
-        _options = options;
-        _logger = logger;
-    }
-
-    public Task StartAsync(CancellationToken cancellationToken)
-    {
-        if (_options.Value.ExceptionSanitizingDisabled)
-        {
-            _logger.LogWarning(
-                "Exception message sanitization is disabled. " +
-                "Exception messages logged by ZeeKayDa.Auth services may contain " +
-                "credential material and will reach log sinks unredacted.");
-        }
-        return Task.CompletedTask;
-    }
-
-    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-}
-```
+Takes `IOptions<AuthorizationServerOptions>` instead of `IOptions<SecretSanitizingLoggerOptions>`,
+and no longer injects `IHostEnvironment`. `LogLevel.Warning` is used unconditionally. The service
+is registered unconditionally by `AddZeeKayDaAuth()` and reads the flag at `StartAsync` time.
 
 ---
 
@@ -398,14 +368,14 @@ preserves all diagnostically-useful, non-sensitive information.
 sensitive structured keys also has an exception with no sensitive message. The two inputs are
 independently chosen at the call site.
 
-### Exposing `SecretSanitizingLoggerOptions` publicly
+### Making `LoggingOptions.DisableExceptionSanitizing` internal
 
-**Rejected.** A public options type would allow consumers to set `ExceptionSanitizingDisabled = true`
-directly via `services.Configure<SecretSanitizingLoggerOptions>()` without going through
-`DisableExceptionSanitizing()`. Making the options type `internal` and the only supported path the
-named extension method ensures opt-out decisions are explicitly named in the application
-registration code and are visible in code review as a distinct, deliberate action rather than an
-anonymous options configuration.
+**Rejected.** Making the opt-out an `internal`-only mechanism was considered to prevent consumers
+from directly configuring it. However, because `AuthorizationServerOptions` is bindable from
+`IConfiguration` — its primary consumption model — the opt-out property must be `public` for
+`IConfiguration` binding to work. The risk of accidental production activation is mitigated by
+the `appsettings.Development.json` environment-scoped configuration pattern documented in §5 and
+the startup warning emitted by `ExceptionSanitizingDisabledWarningService`.
 
 ### Placing the startup warning in `IValidateOptions<AuthorizationServerOptions>`
 
@@ -432,9 +402,9 @@ is no exception surface to wrap. See §8.
 - **Diagnostic structure is preserved.** Stack traces, inner exception chains, and exception type
   names all remain in the log entry. Operators can identify exception origin and type from logs
   without requiring the message text.
-- **The opt-out is explicit and auditable.** `DisableExceptionSanitizing()` is a named method in
-  the application DI registration, visible in code review, and emits a startup warning when
-  active.
+- **The opt-out is explicit and auditable.** `AuthorizationServerOptions.Logging.DisableExceptionSanitizing`
+  is bindable from `IConfiguration`, follows the framework-behavior-groups convention (ADR 0002),
+  and emits a startup warning when active.
 - **Consistent with existing patterns.** The startup warning service follows the
   `InsecureIssuerWarningService` precedent exactly. The internal options type follows the
   `Configure<T>` pattern established elsewhere.
@@ -455,9 +425,9 @@ is no exception surface to wrap. See §8.
 - **Recursive inner exception wrapping allocates proportionally to exception chain depth.** A
   deeply nested exception will produce a corresponding number of `RedactedExceptionWrapper`
   instances. Acceptable for a logging path. A depth limit must be implemented.
-- **`DisableExceptionSanitizing()` takes effect at DI registration time and cannot be toggled at
-  runtime.** The flag is read from `IOptions<SecretSanitizingLoggerOptions>`, which is singleton-
-  bound. This is the correct constraint for a security policy switch, but it must be documented.
+- **`DisableExceptionSanitizing` takes effect at DI configuration time and cannot be toggled at
+  runtime.** The flag is read from `IOptions<AuthorizationServerOptions>`, which is singleton-bound.
+  This is the correct constraint for a security policy switch, but it must be documented.
 - **Redaction may surprise operators unaware of this design.** The placeholder string is
   unambiguous but will be unexpected to operators who have not read the framework documentation.
   The `SecretSanitizingLogger` XML remarks and the `configure-host-log-hygiene.md` guide must

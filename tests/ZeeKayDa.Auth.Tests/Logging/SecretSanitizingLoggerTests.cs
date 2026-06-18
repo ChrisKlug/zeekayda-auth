@@ -1,6 +1,7 @@
 using System.Linq;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.Logging;
 
 namespace ZeeKayDa.Auth.Tests.Logging;
@@ -11,8 +12,12 @@ public sealed class SecretSanitizingLoggerTests
 
     private static SecretSanitizingLogger<T> CreateSut<T>(
         ILogger<T> inner,
-        SecretSanitizingLoggerOptions? options = null)
-        => new(inner, Options.Create(options ?? new SecretSanitizingLoggerOptions()));
+        bool disableExceptionSanitizing = false)
+    {
+        var opts = new AuthorizationServerOptions();
+        opts.Logging.DisableExceptionSanitizing = disableExceptionSanitizing;
+        return new(inner, Options.Create(opts));
+    }
 
     private sealed class CapturingLogger<T> : ILogger<T>
     {
@@ -47,6 +52,29 @@ public sealed class SecretSanitizingLoggerTests
                 ? enumerable.ToList()
                 : [];
             _entries.Add(new LogEntry(logLevel, formatter(state, exception), pairs, exception));
+        }
+    }
+
+    /// <summary>A logger that returns <see langword="false"/> from <see cref="IsEnabled"/> for all levels.</summary>
+    private sealed class DisabledCapturingLogger<T> : ILogger<T>
+    {
+        public sealed record LogEntry(LogLevel Level, Exception? Exception);
+
+        private readonly List<LogEntry> _entries = [];
+        public IReadOnlyList<LogEntry> Entries => _entries;
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => false;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            _entries.Add(new LogEntry(logLevel, exception));
         }
     }
 
@@ -195,6 +223,21 @@ public sealed class SecretSanitizingLoggerTests
         var sut = CreateSut(inner);
 
         sut.IsEnabled(LogLevel.Debug).Should().BeTrue();
+    }
+
+    [Fact]
+    public void Log_does_not_call_inner_Log_when_inner_IsEnabled_returns_false()
+    {
+        // The IsEnabled guard at the top of Log<TState> must short-circuit all work —
+        // including RedactedExceptionWrapper allocation — when the inner logger would discard
+        // the entry anyway.
+        var inner = new DisabledCapturingLogger<object>();
+        var sut = CreateSut(inner);
+        var ex = new Exception("secret material");
+
+        sut.LogWarning(ex, "something went wrong");
+
+        inner.Entries.Should().BeEmpty("inner.IsEnabled returned false so Log should not be called");
     }
 
     [Fact]
@@ -547,7 +590,7 @@ public sealed class SecretSanitizingLoggerTests
     public void Log_passes_original_exception_through_unchanged_when_sanitizing_disabled()
     {
         var inner = new CapturingLogger<object>();
-        var sut = CreateSut(inner, new SecretSanitizingLoggerOptions { ExceptionSanitizingDisabled = true });
+        var sut = CreateSut(inner, disableExceptionSanitizing: true);
         var original = new InvalidOperationException("raw exception message");
 
         sut.LogInformation(original, "something went wrong");
@@ -559,7 +602,7 @@ public sealed class SecretSanitizingLoggerTests
     public void Log_passes_null_exception_through_as_null_when_sanitizing_disabled()
     {
         var inner = new CapturingLogger<object>();
-        var sut = CreateSut(inner, new SecretSanitizingLoggerOptions { ExceptionSanitizingDisabled = true });
+        var sut = CreateSut(inner, disableExceptionSanitizing: true);
 
         sut.LogInformation("no exception here");
 
@@ -571,7 +614,7 @@ public sealed class SecretSanitizingLoggerTests
     public void Log_original_exception_stack_trace_accessible_directly_when_sanitizing_disabled()
     {
         var inner = new CapturingLogger<object>();
-        var sut = CreateSut(inner, new SecretSanitizingLoggerOptions { ExceptionSanitizingDisabled = true });
+        var sut = CreateSut(inner, disableExceptionSanitizing: true);
         Exception original;
         try { throw new InvalidOperationException("raw exception"); }
         catch (Exception ex) { original = ex; }
@@ -755,3 +798,26 @@ internal static partial class LoggerMessageFixtures
     [LoggerMessage(Level = LogLevel.Warning, Message = "Auth {client_secret} received")]
     public static partial void LogSensitiveAuth(ILogger logger, string client_secret);
 }
+
+public sealed class LoggingOptionsTests
+{
+    [Fact]
+    public void DisableExceptionSanitizing_defaults_to_false()
+    {
+        // Security default: sanitization must be on by default so production deployments that
+        // never configure this flag are protected.
+        var opts = new LoggingOptions();
+
+        opts.DisableExceptionSanitizing.Should().BeFalse();
+    }
+
+    [Fact]
+    public void AuthorizationServerOptions_Logging_DisableExceptionSanitizing_defaults_to_false()
+    {
+        // Verify the safe default is preserved through the full options graph.
+        var opts = new AuthorizationServerOptions();
+
+        opts.Logging.DisableExceptionSanitizing.Should().BeFalse();
+    }
+}
+
