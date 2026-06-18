@@ -1,5 +1,6 @@
 using ZeeKayDa.Auth.Authorization;
 using ZeeKayDa.Auth.Discovery;
+using ZeeKayDa.Auth.Logging;
 using ZeeKayDa.Auth.Security;
 using ZeeKayDa.Auth.Tokens;
 
@@ -12,7 +13,7 @@ namespace ZeeKayDa.Auth;
 /// Server-wide settings are exposed directly on this class. Per-endpoint settings are grouped
 /// into nested sealed option classes (<see cref="DiscoveryDocument"/>, <see cref="AuthorizationEndpoint"/>,
 /// <see cref="TokenEndpoint"/>, <see cref="JwksEndpoint"/>, <see cref="IdToken"/>, <see cref="Response"/>,
-/// <see cref="SecurityHeaders"/>)
+/// <see cref="SecurityHeaders"/>, <see cref="Logging"/>)
 /// which are initialized to default instances. Group properties are get-only and cannot be nulled;
 /// consumers may mutate the members of each group but not replace the group itself.
 /// </remarks>
@@ -89,4 +90,10 @@ public sealed class AuthorizationServerOptions
     /// ZeeKayDa.Auth protocol endpoint responses via the internal route group.
     /// </summary>
     public SecurityHeadersOptions SecurityHeaders { get; } = new();
+
+    /// <summary>
+    /// Gets the logging framework-behavior options. These settings control how ZeeKayDa.Auth
+    /// emits log entries and are not advertised in the OIDC Discovery document.
+    /// </summary>
+    public LoggingOptions Logging { get; } = new();
 }

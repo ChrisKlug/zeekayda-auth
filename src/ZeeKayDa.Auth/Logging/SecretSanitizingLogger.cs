@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Text;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace ZeeKayDa.Auth.Logging;
 
@@ -41,6 +42,12 @@ namespace ZeeKayDa.Auth.Logging;
 /// are inspected; all other state types pass through unchanged.
 /// </para>
 /// <para>
+/// Exception messages are wrapped in a <see cref="RedactedExceptionWrapper"/> by default so that
+/// credential material embedded in exception messages cannot reach log sinks. Set
+/// <see cref="AuthorizationServerOptions.Logging"/>.<see cref="LoggingOptions.DisableExceptionSanitizing"/>
+/// to <see langword="true"/> to opt out (development environments only).
+/// </para>
+/// <para>
 /// This is a defence-in-depth backstop for ADR 0007 §7. The Roslyn analyzer
 /// (<c>ZEEKAYDA0001</c>) is the primary preventive control: it enforces at compile time that
 /// every ZeeKayDa service injects <see cref="ISanitizingLogger{T}"/> rather than
@@ -49,7 +56,9 @@ namespace ZeeKayDa.Auth.Logging;
 /// layers that remain in place regardless.
 /// </para>
 /// </remarks>
-internal sealed class SecretSanitizingLogger<T>(ILogger<T> inner) : ISanitizingLogger<T>
+internal sealed class SecretSanitizingLogger<T>(
+    ILogger<T> inner,
+    IOptions<AuthorizationServerOptions> options) : ISanitizingLogger<T>
 {
     internal static readonly IReadOnlySet<string> SensitiveKeys =
         new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -99,6 +108,13 @@ internal sealed class SecretSanitizingLogger<T>(ILogger<T> inner) : ISanitizingL
         Exception? exception,
         Func<TState, Exception?, string> formatter)
     {
+        // Guard before allocating: if the inner logger would discard this entry anyway, skip all
+        // redaction work including the RedactedExceptionWrapper allocation.
+        if (!inner.IsEnabled(logLevel))
+            return;
+
+        var wrappedException = WrapException(exception);
+
         if (state is IEnumerable<KeyValuePair<string, object?>> pairs)
         {
             var list = pairs.ToList();
@@ -109,7 +125,7 @@ internal sealed class SecretSanitizingLogger<T>(ILogger<T> inner) : ISanitizingL
                         ? new KeyValuePair<string, object?>(kv.Key, "[REDACTED]")
                         : kv)
                     .ToList();
-                inner.Log(logLevel, eventId, new RedactedLogValues(redacted), exception, (s, ex) => s.ToString());
+                inner.Log(logLevel, eventId, new RedactedLogValues(redacted), wrappedException, (s, ex) => s.ToString());
                 return;
             }
         }
@@ -121,11 +137,19 @@ internal sealed class SecretSanitizingLogger<T>(ILogger<T> inner) : ISanitizingL
             // for truly opaque custom state types passed directly to Log<TState>. Substitute a
             // safe placeholder rather than risk leaking structured parameter values to sinks.
             const string blocked = "[ZeeKayDa: unscrubbable log state blocked]";
-            inner.Log(logLevel, eventId, blocked, exception, static (s, _) => s);
+            inner.Log(logLevel, eventId, blocked, wrappedException, static (s, _) => s);
             return;
         }
 
-        inner.Log(logLevel, eventId, state, exception, formatter);
+        inner.Log(logLevel, eventId, state, wrappedException, formatter);
+    }
+
+    private Exception? WrapException(Exception? exception)
+    {
+        if (exception is null || options.Value.Logging.DisableExceptionSanitizing)
+            return exception;
+
+        return new RedactedExceptionWrapper(exception);
     }
 
     private sealed class RedactedLogValues(List<KeyValuePair<string, object?>> pairs)
