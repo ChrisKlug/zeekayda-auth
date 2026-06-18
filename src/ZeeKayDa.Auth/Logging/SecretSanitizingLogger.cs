@@ -9,23 +9,37 @@ namespace ZeeKayDa.Auth.Logging;
 /// with <c>[REDACTED]</c> before they reach the underlying logger.
 /// </summary>
 /// <remarks>
+/// <para>
+/// <strong>Redaction scope:</strong> this wrapper covers only log calls made through
+/// ZeeKayDa.Auth's own services. ASP.NET Core's <c>UseHttpLogging()</c>, Kestrel
+/// connection/request logging, W3CLogger, Application Insights request telemetry, and
+/// exception-handling middleware all emit log entries entirely outside this wrapper and are
+/// <strong>not</strong> protected by it. Consumers must independently configure those surfaces
+/// to avoid writing credential material to their log sinks. See the
+/// <see href="https://chrisklug.github.io/zeekayda-auth/how-to/configure-host-log-hygiene/">
+/// Configure host-level log hygiene</see> how-to guide and the
+/// <see href="https://github.com/ChrisKlug/zeekayda-auth/blob/main/SECURITY.md#security-boundaries">
+/// Security boundaries</see> section of SECURITY.md.
+/// </para>
+/// <para>
 /// Sensitive keys (case-insensitive):
-/// <c>client_secret</c>
-/// <c>code_verifier</c>
-/// <c>Authorization</c>
-/// <c>access_token</c>
-/// <c>refresh_token</c>
-/// <c>id_token</c>
-/// <c>client_assertion</c>
-/// <c>assertion</c>
-/// <c>device_code</c>
-/// <c>subject_token</c>
-/// <c>actor_token</c>
-/// <c>password</c>
-/// <c>code</c>
+/// <c>client_secret</c>,
+/// <c>code_verifier</c>,
+/// <c>Authorization</c>,
+/// <c>access_token</c>,
+/// <c>refresh_token</c>,
+/// <c>id_token</c>,
+/// <c>client_assertion</c>,
+/// <c>assertion</c>,
+/// <c>device_code</c>,
+/// <c>subject_token</c>,
+/// <c>actor_token</c>,
+/// <c>password</c>,
+/// <c>code</c>,
 /// <c>DPoP</c>. Only states that implement
 /// <see cref="IEnumerable{T}">IEnumerable&lt;KeyValuePair&lt;string, object?&gt;&gt;</see>
 /// are inspected; all other state types pass through unchanged.
+/// </para>
 /// <para>
 /// This is a defence-in-depth backstop for ADR 0007 §7. The Roslyn analyzer
 /// (<c>ZEEKAYDA0001</c>) is the primary preventive control: it enforces at compile time that
