@@ -230,6 +230,8 @@ Every pull request and every push to `main` runs the following GitHub Actions jo
 | `coverage-regression-script-tests` | Runs the fixture-driven smoke tests for `.github/scripts/check_coverage_regression.cs`. |
 | `format-check` | Runs `dotnet format --verify-no-changes` to ensure all code matches the `.editorconfig` rules. |
 | `codeql` | Runs GitHub CodeQL static analysis (`security-and-quality` query suite). Findings must be fixed or explicitly justified before a PR can be merged. See [SECURITY.md](SECURITY.md). |
+| `log-hygiene` | Runs `.github/scripts/check_log_hygiene.sh` — fails if any C# file uses a sensitive OAuth/OIDC parameter name (`client_secret`, `access_token`, etc.) as a structured-log placeholder without a valid structured suppression comment. |
+| `log-hygiene-script-tests` | Runs the fixture-driven smoke tests for `.github/scripts/check_log_hygiene.sh`. |
 
 **All jobs must be green before a PR can be merged.**
 
@@ -301,6 +303,58 @@ The `coverage-regression-script-tests` job runs [`.github/scripts/tests/check_co
 ```bash
 bash .github/scripts/tests/check_coverage_regression.tests.sh
 ```
+
+### Log hygiene check
+
+The `log-hygiene` job runs `.github/scripts/check_log_hygiene.sh` to ensure that sensitive OAuth/OIDC parameter names (such as `client_secret`, `access_token`, `code_verifier`, etc.) never appear as structured-log placeholders in production code. This is a defence-in-depth measure that complements the Roslyn analyzer ZEEKAYDA0001 (see ADR 0007).
+
+Run it locally with:
+
+```bash
+bash .github/scripts/check_log_hygiene.sh
+```
+
+**When is a suppression appropriate?**
+
+Suppressions should be rare and are only justified when:
+
+- The code is a test fixture that never reaches production and the sensitive value is synthetic.
+- The code is deliberately logging a redacted or hashed representation, not the raw secret.
+- A comment explaining the safety context would be lost if the structured placeholder were renamed.
+
+Do not suppress violations just to unblock a build. If you are unsure, ask a maintainer.
+
+**Required suppression format:**
+
+Append a structured comment to the offending line:
+
+```csharp
+// log-hygiene-ok: <non-empty reason> (#<issue-or-pr-number>)
+```
+
+Both a non-empty reason and a parenthesised issue or PR number are required. The bare form `// log-hygiene-ok` is **rejected** and will fail CI.
+
+> **Note:** The CI check validates format only — that the reason field is non-empty and that a `(#N)` reference is present. It does **not** validate whether the justification is legitimate. Human code review is the real gate: reviewers are expected to assess whether the stated reason actually warrants the suppression.
+
+**Examples:**
+
+```csharp
+// Accepted — reason and issue ref present:
+_logger.LogDebug("Verifier: {code_verifier}", verifier); // log-hygiene-ok: test fixture, value is synthetic (#179)
+
+// Rejected — bare form, no reason or ref:
+_logger.LogDebug("Verifier: {code_verifier}", verifier); // log-hygiene-ok
+
+// Rejected — reason present but no issue ref:
+_logger.LogDebug("Verifier: {code_verifier}", verifier); // log-hygiene-ok: test fixture only
+
+// Rejected — issue ref present but reason is empty:
+_logger.LogDebug("Verifier: {code_verifier}", verifier); // log-hygiene-ok: (#179)
+```
+
+**Review requirement:**
+
+The hygiene script (`.github/scripts/check_log_hygiene.sh`) and its smoke tests are listed in CODEOWNERS. Any PR that modifies either file requires approval from a security owner. This ensures that suppression format rules cannot be silently relaxed.
 
 ---
 
