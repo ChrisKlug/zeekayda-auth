@@ -7,15 +7,30 @@
 # ISanitizingLogger<T> injection at compile time. This script is a secondary runtime-script
 # layer that catches anything the analyzer cannot see (e.g. generated code, IL-patched assemblies).
 #
-# Append "# log-hygiene-ok" to a line to allowlist it explicitly.
+# To suppress a specific line, append a structured suppression comment:
 #
-# ADR 0007 §7 / Issue #118.
+#   // log-hygiene-ok: <non-empty reason> (#<issue-or-pr-number>)
+#
+# Example:
+#   _logger.LogDebug("Verifier: {code_verifier}", v); // log-hygiene-ok: test fixture, never reaches production (#179)
+#
+# The bare form "// log-hygiene-ok" is rejected. Both a non-empty reason and a
+# parenthesised issue/PR number are required. Changes to this script and any
+# suppression inventory file require security-owner approval (see CODEOWNERS).
+#
+# ADR 0007 §7 / Issue #118. Structured suppression format: Issue #179.
 
 set -euo pipefail
 
-SEARCH_PATHS=(
-    "src/"
-)
+# Allow tests to redirect the search path via an environment variable.
+# In normal CI usage the variable is unset and the default "src/" path is used.
+if [[ -n "${LOG_HYGIENE_SEARCH_PATHS:-}" ]]; then
+    IFS=':' read -ra SEARCH_PATHS <<< "${LOG_HYGIENE_SEARCH_PATHS}"
+else
+    SEARCH_PATHS=(
+        "src/"
+    )
+fi
 
 # Matches {client_secret}, {code_verifier}, {Authorization}, with optional :format specifier.
 PATTERN='\{(client_secret|code_verifier|Authorization|access_token|refresh_token|id_token|client_assertion|assertion|device_code|subject_token|actor_token|password|code|DPoP)(:[^}]*)?\}'
@@ -25,7 +40,11 @@ found=0
 for path in "${SEARCH_PATHS[@]}"; do
     [ -d "$path" ] || continue
     while IFS= read -r line; do
-        [[ "$line" == *'# log-hygiene-ok'* ]] && continue
+        # Accept only the structured suppression form:
+        #   // log-hygiene-ok: <non-empty reason> (#<digits>)
+        # The reason must contain at least one non-space character before the
+        # parenthesised reference. The bare form "// log-hygiene-ok" is rejected.
+        [[ "$line" =~ 'log-hygiene-ok: '[^[:space:]].*'(#'[0-9]+')' ]] && continue
         echo "$line"
         found=1
     done < <(grep -rn --include="*.cs" -E "$PATTERN" -i "$path" 2>/dev/null || true)
@@ -33,8 +52,13 @@ done
 
 if [ "$found" -ne 0 ]; then
     printf '\nLOG HYGIENE FAILURE (ADR 0007 §7): sensitive parameter names must not appear as\n'
-    printf 'structured-log placeholders in any ZeeKayDa.Auth code code.\n'
-    printf 'Append "# log-hygiene-ok" to a line to allowlist it explicitly.\n'
+    printf 'structured-log placeholders in any ZeeKayDa.Auth code.\n'
+    printf 'To suppress a specific line, append a structured suppression comment:\n'
+    printf '  // log-hygiene-ok: <non-empty reason> (#<issue-or-pr-number>)\n'
+    printf 'Example:\n'
+    printf '  // log-hygiene-ok: test fixture, never reaches production (#179)\n'
+    printf 'Both a non-empty reason and a parenthesised issue/PR number are required.\n'
+    printf 'The bare form "// log-hygiene-ok" is not accepted.\n'
     exit 1
 fi
 
