@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **`DisableExceptionSanitizing()` on `ZeeKayDaAuthBuilder`** (#173)
+
+  New opt-out method for development environments. When called, `SecretSanitizingLogger` passes
+  exception objects to the underlying logger unchanged rather than wrapping them. A
+  `LogLevel.Warning` is emitted at startup when this opt-out is active. Never use in production.
+  See [Configure host-level log hygiene](docs/how-to/configure-host-log-hygiene.md) for guidance
+  on keeping this out of production using `appsettings.Development.json` environment separation.
+
+### Changed
+
+- **BREAKING: `SecretSanitizingLogger` now unconditionally wraps all logged exceptions** (#173)
+
+  All exceptions passed to `SecretSanitizingLogger` are wrapped in `RedactedExceptionWrapper`,
+  replacing the exception `Message` with `[exception message redacted by SecretSanitizingLogger]`
+  before the exception reaches any log sink. This is a **breaking behaviour change** for consumers
+  who relied on exception messages appearing verbatim in their log sinks (for example, custom log
+  enrichers that read `ex.Message` after the fact). Use `DisableExceptionSanitizing()` in
+  development to restore the previous behaviour.
+
 ### Removed
 
 - **`ResponseMode.Fragment` enum member removed** (#160)

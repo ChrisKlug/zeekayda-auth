@@ -49,14 +49,14 @@ The project owner chose a variant of Option A.
 ### 1. Chosen option: unconditional message suppression with structural preservation (variant of Option A)
 
 When `SecretSanitizingLogger<T>` receives a non-null `Exception?` argument in `Log<TState>`, it
-wraps the exception in a `SanitizedExceptionWrapper` before passing it to the inner logger. The
+wraps the exception in a `RedactedExceptionWrapper` before passing it to the inner logger. The
 wrapper:
 
 - Replaces `Exception.Message` with the fixed placeholder:
   `[exception message redacted by SecretSanitizingLogger]`
 - Preserves the original `Exception.StackTrace` verbatim via a `StackTrace` property override.
 - Preserves the full inner exception chain. Each inner exception is also wrapped by
-  `SanitizedExceptionWrapper` recursively, so no exception message at any depth in the chain
+  `RedactedExceptionWrapper` recursively, so no exception message at any depth in the chain
   reaches the log sink unredacted.
 - Exposes the original exception's fully-qualified type name as the string property
   `OriginalExceptionType`, accessible to structured log sinks that interrogate exception object
@@ -66,7 +66,7 @@ The wrapper is applied **unconditionally** to every non-null exception. It is no
 whether the structured log state contains a sensitive key, whether the exception type is a
 `ZeeKayDaException` subtype, or whether the message matches any keyword pattern.
 
-`SanitizedExceptionWrapper` is an `internal sealed` class in `ZeeKayDa.Auth`. It is not part of
+`RedactedExceptionWrapper` is an `internal sealed` class in `ZeeKayDa.Auth`. It is not part of
 the public API surface.
 
 ### 2. Why unconditional and not conditional (Option B rejected)
@@ -124,7 +124,7 @@ following paths:
     or Sentry's `logging.AddSentry()` integration — it receives log entries through the
     `Microsoft.Extensions.Logging` pipeline. Every log entry passes through
     `SecretSanitizingLogger<T>` before reaching the sink. The APM tool will receive the
-    `SanitizedExceptionWrapper` with the redacted placeholder message, not the original exception.
+    `RedactedExceptionWrapper` with the redacted placeholder message, not the original exception.
     **Operators must not assume that APM captures via the ILogger sink path preserve original
     exception messages.**
 
@@ -171,7 +171,7 @@ public static ZeeKayDaAuthBuilder DisableExceptionSanitizing(this ZeeKayDaAuthBu
 
 When called, the method sets a flag on an internal options type that `SecretSanitizingLogger<T>`
 reads at log time. When the flag is set, `Log<TState>` passes the original `Exception?` argument
-to the inner logger unchanged — the `SanitizedExceptionWrapper` is bypassed entirely.
+to the inner logger unchanged — the `RedactedExceptionWrapper` is bypassed entirely.
 
 The method name `Disable*` is deliberate. It must read as a conscious escalation of risk in code
 review, not a neutral configuration toggle. The XML documentation must state the security
@@ -222,10 +222,10 @@ The exception sanitization introduced by this ADR operates on the `Exception?` p
 is entirely independent of the `TState` type and structured state. Whether the caller is a
 high-performance source-generated log method, a `LoggerMessage.Define<T>` delegate, or a direct
 `logger.LogWarning(exception, "message")` call, the exception-wrapping logic is identical: if
-`exception != null` and sanitization is enabled, replace it with a `SanitizedExceptionWrapper`.
+`exception != null` and sanitization is enabled, replace it with a `RedactedExceptionWrapper`.
 
 There is no allocation concern specific to source-generated or `LoggerMessage.Define<T>` callers
-beyond what applies to all log calls: one `SanitizedExceptionWrapper` is allocated per non-null
+beyond what applies to all log calls: one `RedactedExceptionWrapper` is allocated per non-null
 exception argument, plus one per depth level in the inner exception chain. This is appropriate for
 a logging code path where a non-null exception is a minority of calls.
 
@@ -256,15 +256,15 @@ risk surface for exception message leakage.
 The following describes exactly what must be added or modified. No other files are affected by
 this ADR.
 
-### New file: `src/ZeeKayDa.Auth/Logging/SanitizedExceptionWrapper.cs`
+### New file: `src/ZeeKayDa.Auth/Logging/RedactedExceptionWrapper.cs`
 
 An `internal sealed` class in the `ZeeKayDa.Auth.Logging` namespace that inherits from
 `Exception`. Inheritance is required so that structured log sinks which pattern-match on
 `Exception` continue to handle the wrapper correctly (serialising the stack trace, recording an
 inner exception chain). Key members:
 
-- Constructor: `SanitizedExceptionWrapper(Exception original)` — calls
-  `base("[exception message redacted by SecretSanitizingLogger]", original.InnerException is not null ? new SanitizedExceptionWrapper(original.InnerException) : null)`
+- Constructor: `RedactedExceptionWrapper(Exception original)` — calls
+  `base("[exception message redacted by SecretSanitizingLogger]", original.InnerException is not null ? new RedactedExceptionWrapper(original.InnerException) : null)`
   and stores the original for property delegation.
 - `StackTrace` property override: returns `_original.StackTrace`.
 - `OriginalExceptionType` property: `public string OriginalExceptionType => _original.GetType().FullName ?? _original.GetType().Name;`
@@ -300,7 +300,7 @@ branches, compute the safe exception:
 
 ```csharp
 var safeException = exception is not null && !_options.Value.ExceptionSanitizingDisabled
-    ? new SanitizedExceptionWrapper(exception)
+    ? new RedactedExceptionWrapper(exception)
     : exception;
 ```
 
@@ -447,13 +447,13 @@ is no exception surface to wrap. See §8.
   a real diagnostic cost. Operators who relied on exception messages appearing in log aggregators
   for post-incident diagnosis must adapt their runbooks to use APM exception captures or
   structured exception stores. The deployment documentation must make this explicit.
-- **`SanitizedExceptionWrapper` type name appears in structured sink output.** Structured log
-  sinks recording exception type names will show `SanitizedExceptionWrapper` rather than the
+- **`RedactedExceptionWrapper` type name appears in structured sink output.** Structured log
+  sinks recording exception type names will show `RedactedExceptionWrapper` rather than the
   original type name. The `OriginalExceptionType` property on the wrapper carries the original
   type name for this reason. Sinks that do not consume exception properties will show only the
   placeholder message.
 - **Recursive inner exception wrapping allocates proportionally to exception chain depth.** A
-  deeply nested exception will produce a corresponding number of `SanitizedExceptionWrapper`
+  deeply nested exception will produce a corresponding number of `RedactedExceptionWrapper`
   instances. Acceptable for a logging path. A depth limit must be implemented.
 - **`DisableExceptionSanitizing()` takes effect at DI registration time and cannot be toggled at
   runtime.** The flag is read from `IOptions<SecretSanitizingLoggerOptions>`, which is singleton-

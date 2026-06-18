@@ -137,6 +137,13 @@ app.MapZeeKayDaAuth();
 app.Run();
 ```
 
+> 💡 **Development opt-out for exception message sanitization:** `ZeeKayDaAuthBuilder` also
+> exposes `DisableExceptionSanitizing()`, which turns off the unconditional exception message
+> redaction performed by `SecretSanitizingLogger`. This is a development-only setting — never
+> enable it in production. See [Configure host-level log hygiene](configure-host-log-hygiene.md)
+> for full guidance including how to use `appsettings.Development.json` to keep this out of
+> production.
+
 ## 6. Register client secret hashers
 
 Client secrets are hashed before storage using a pluggable `IClientSecretHasher`. Use
