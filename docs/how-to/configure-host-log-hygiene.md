@@ -192,8 +192,20 @@ builder.Services.AddSingleton<ITelemetryInitializer, OAuthTelemetrySanitizer>();
 | Use a non-verbose production exception handler | Full request state (headers, form) in exception logs |
 | Sanitize telemetry SDK captured properties | Credentials appearing in APM or tracing back-ends |
 
+## Compile-time enforcement inside ZeeKayDa.Auth
+
+In addition to the runtime steps above, ZeeKayDa.Auth ships Roslyn analyzer rules that enforce
+log-hygiene requirements at build time for code inside the `ZeeKayDa.*` namespace. `ZEEKAYDA0001`
+prevents `ILogger<T>` from being injected directly (bypassing `SecretSanitizingLogger`), and
+`ZEEKAYDA0002` prevents interpolated strings containing sensitive identifiers from being passed to
+`Log*` methods (which would embed credential values before the redaction layer can act). See the
+[Analyzer rules reference](../reference/analyzer-rules.md) for the full rule definitions,
+violation examples, and suppression guidance.
+
 ## See also
 
+- [Analyzer rules reference](../reference/analyzer-rules.md) — ZEEKAYDA0001 and ZEEKAYDA0002
+  compile-time log-hygiene rules
 - [Implement a custom extension point](implement-custom-extension-points.md) — security contracts
   for custom hashers and authenticators, including the known limitation on exception message
   sanitization
