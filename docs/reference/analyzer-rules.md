@@ -68,7 +68,7 @@ public sealed class TokenEndpointHandler
 
 > ⚠️ **Warning:** `ISanitizingLogger<T>` only redacts values passed via named structured-logging
 > placeholders. Log calls that embed sensitive values through string interpolation bypass the
-> redaction layer entirely. See [ZEEKAYDA0002](#zeekayda0002--interpolated-string-in-log-call)
+> redaction layer entirely. See [ZEEKAYDA0002](#zeekayda0002--non-constant-string-in-log-call)
 > for the rule that catches this.
 
 ### Suppression
@@ -94,7 +94,7 @@ dotnet_diagnostic.ZEEKAYDA0001.severity = none
 
 ---
 
-## ZEEKAYDA0002 — Interpolated string in log call
+## ZEEKAYDA0002 — Non-constant string in log call
 
 | Attribute | Value |
 |---|---|
@@ -104,12 +104,10 @@ dotnet_diagnostic.ZEEKAYDA0001.severity = none
 
 ### What it enforces
 
-A `Log*` method call inside the `ZeeKayDa.*` namespace must not receive an interpolated string
-(`$"..."`) whose content references an identifier whose name contains a sensitive keyword.
-
-Sensitive keywords (case-insensitive substring match): `secret`, `password`, `token`, `key`,
-`code_verifier`, `client_assertion`, `device_code`, `subject_token`, `actor_token`, `dpop`,
-`authorization`.
+`Log*` message templates inside `ZeeKayDa.*` namespaces must be compile-time constant strings.
+Interpolated strings, variable references, string concatenation with non-literal operands,
+`string.Format`, and any other non-constant expression are all flagged regardless of the
+identifier names involved.
 
 ### Rationale
 
@@ -126,31 +124,28 @@ appear to work normally, and sensitive values arrive at the log sink in plaintex
 ### Violation
 
 ```csharp
-// ZEEKAYDA0002: interpolated string embeds a sensitive identifier.
+// ZEEKAYDA0002: interpolated string is not a compile-time constant.
 _logger.LogInformation($"Verifying client_secret: {clientSecret}");
 
-// Also flagged — the interpolated identifier contains "token":
-_logger.LogDebug($"Issued access_token={accessToken} for client {clientId}");
+// ZEEKAYDA0002: concatenation with a variable is not a compile-time constant.
+_logger.LogDebug("Processing request for client: " + clientId);
 
-// Also flagged — "authorization" matches as a substring:
-_logger.LogDebug($"Processing authorization code: {authorizationCode}");
+// ZEEKAYDA0002: local variable (even if it holds a literal) is not a compile-time constant.
+var msg = "Starting request";
+_logger.LogInformation(msg);
 ```
 
 ### Compliant alternative
 
-Use structured logging. Pass a message template with named placeholders, then provide the
-values as separate arguments. `SecretSanitizingLogger` inspects these arguments by placeholder
-name and replaces sensitive ones with `[REDACTED]`.
-
 ```csharp
-// Correct: structured logging — the template and value are separate.
-_logger.LogInformation("Verifying client_secret: {ClientSecret}", redactedSecret);
+// Correct: string literal is a compile-time constant.
+_logger.LogInformation("Verifying client_secret: {ClientSecret}", redacted);
 
-// Correct: pass a pre-redacted or non-sensitive value as the argument.
-_logger.LogDebug("Issued token for client {ClientId}", clientId);
+// Correct: two string literals concatenated are still a compile-time constant.
+_logger.LogInformation("part one {X} " + "part two {Y}", x, y);
 
-// Correct: if the value itself is safe to log, it can be passed as a structured argument.
-_logger.LogDebug("Processing authorization request for client {ClientId}", clientId);
+// Correct: pass dynamic values as structured-logging arguments, not in the template.
+_logger.LogDebug("Processing request for client {ClientId}", clientId);
 ```
 
 > 💡 **Tip:** If you genuinely need to include a sensitive value for a diagnostic purpose, pass
@@ -162,7 +157,7 @@ _logger.LogDebug("Processing authorization request for client {ClientId}", clien
 Suppressions require justification and team review.
 
 ```csharp
-#pragma warning disable ZEEKAYDA0002 // Interpolated string in log call
+#pragma warning disable ZEEKAYDA0002 // Non-constant string in log call
 _logger.LogDebug($"Diagnostic — raw key material: {keyMaterial}");
 #pragma warning restore ZEEKAYDA0002
 ```
@@ -171,12 +166,12 @@ _logger.LogDebug($"Diagnostic — raw key material: {keyMaterial}");
 
 ```ini
 [src/ZeeKayDa.Auth/**/*.cs]
-dotnet_diagnostic.ZEEKAYDA0002.severity = none
+dotnet_diagnostic.ZEEKAYDA0002.severity = none  // Non-constant string in log call
 ```
 
 > ⚠️ **Warning:** Suppressing this rule disables the compile-time check for the affected call
-> sites. Any suppression must be accompanied by a code comment explaining why interpolated
-> strings are safe at that specific location and confirming that no sensitive value can reach
+> sites. Any suppression must be accompanied by a code comment explaining why the non-constant
+> string is safe at that specific location and confirming that no sensitive value can reach
 > the log sink through the suppressed call.
 
 ---

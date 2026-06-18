@@ -8,41 +8,23 @@ using Microsoft.CodeAnalysis.Diagnostics;
 namespace ZeeKayDa.Auth.Analyzers;
 
 /// <summary>
-/// Catches interpolated string arguments that contain sensitive identifiers being passed to
-/// <c>Log*</c> methods inside <c>ZeeKayDa.*</c> namespaces. At runtime a plain interpolated
-/// string is fully expanded before the logger ever sees it, so the
-/// <c>SecretSanitizingLogger</c> wrapper cannot redact the value.
+/// Catches non-constant string arguments passed to <c>Log*</c> methods inside <c>ZeeKayDa.*</c>
+/// namespaces. The message template must be a compile-time constant so that
+/// <c>SecretSanitizingLogger</c> can inspect the template and its structured arguments — a
+/// non-constant string (interpolated, concatenated with a variable, or a local variable) is
+/// already fully expanded and cannot be redacted.
 /// Diagnostic ID: ZEEKAYDA0002, category: LogHygiene, severity: Error.
 /// </summary>
 [DiagnosticAnalyzer(LanguageNames.CSharp)]
 public sealed class InterpolatedStringLogAnalyzer : DiagnosticAnalyzer
 {
-    /// <summary>Diagnostic ID emitted when a sensitive interpolated string is passed to a <c>Log*</c> method.</summary>
+    /// <summary>Diagnostic ID emitted when a non-constant string is passed to a <c>Log*</c> method.</summary>
     public const string DiagnosticId = "ZEEKAYDA0002";
-
-    /// <summary>
-    /// Identifiers (matched case-insensitively as substrings) that indicate a value is sensitive
-    /// and must not appear inside an interpolated string passed to a logging method.
-    /// </summary>
-    public static readonly ImmutableHashSet<string> SensitiveKeywords =
-        ImmutableHashSet.Create(
-            StringComparer.OrdinalIgnoreCase,
-            "secret",
-            "password",
-            "token",
-            "key",
-            "code_verifier",
-            "client_assertion",
-            "device_code",
-            "subject_token",
-            "actor_token",
-            "dpop",
-            "authorization");
 
     private static readonly DiagnosticDescriptor Rule = new(
         DiagnosticId,
-        title: "Interpolated string with sensitive identifier passed to Log* method",
-        messageFormat: "Do not pass interpolated strings containing sensitive identifiers to Log* methods; use structured logging instead",
+        title: "Non-constant string passed as Log* message template",
+        messageFormat: "Log* message templates must be compile-time constant strings; use a string literal and pass values as structured-logging arguments",
         category: "LogHygiene",
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true);
@@ -64,28 +46,46 @@ public sealed class InterpolatedStringLogAnalyzer : DiagnosticAnalyzer
     {
         var invocation = (InvocationExpressionSyntax)context.Node;
 
-        if (!IsLogMethodCall(invocation)) return;
-        if (!IsInZeeKayDaNamespace(invocation)) return;
+        if (invocation.Expression is not MemberAccessExpressionSyntax memberAccess) return;
 
-        foreach (var argument in invocation.ArgumentList.Arguments.Where(
-                     argument => argument.Expression is InterpolatedStringExpressionSyntax interpolated
-                                 && ContainsSensitiveIdentifier(interpolated)))
+        var methodName = memberAccess.Name.Identifier.Text;
+        if (!methodName.StartsWith("Log", System.StringComparison.Ordinal)) return;
+
+        if (!IsInZeeKayDaNamespace(invocation)) return;
+        if (IsInLoggerImplementation(context, invocation)) return;
+
+        var receiverType = context.SemanticModel.GetTypeInfo(memberAccess.Expression).Type;
+        if (receiverType is null) return;
+
+        if (!ImplementsILogger(receiverType)) return;
+
+        // Only the message template (first string-typed argument) must be a constant.
+        // Arguments that follow are structured-logging values and are intentionally dynamic.
+        foreach (var argument in invocation.ArgumentList.Arguments)
         {
-            context.ReportDiagnostic(Diagnostic.Create(Rule, argument.GetLocation()));
+            var argType = context.SemanticModel.GetTypeInfo(argument.Expression).Type;
+            if (argType?.SpecialType != SpecialType.System_String) continue;
+
+            if (!context.SemanticModel.GetConstantValue(argument.Expression).HasValue)
+                context.ReportDiagnostic(Diagnostic.Create(Rule, argument.GetLocation()));
+
+            // Stop after the first string argument — it is the template.
+            break;
         }
     }
 
-    private static bool IsLogMethodCall(InvocationExpressionSyntax invocation)
+    private static bool ImplementsILogger(ITypeSymbol type)
     {
-        var methodName = invocation.Expression switch
-        {
-            MemberAccessExpressionSyntax memberAccess => memberAccess.Name.Identifier.Text,
-            IdentifierNameSyntax identifier => identifier.Identifier.Text,
-            _ => null
-        };
+        return IsNonGenericILogger(type)
+            || type.AllInterfaces.Any(IsNonGenericILogger);
+    }
 
-        return methodName is not null
-            && methodName.StartsWith("Log", System.StringComparison.Ordinal);
+    private static bool IsNonGenericILogger(ITypeSymbol type)
+    {
+        return type.Name == "ILogger"
+            && type.ContainingNamespace?.ToDisplayString() == "Microsoft.Extensions.Logging"
+            && type is INamedTypeSymbol named
+            && named.TypeParameters.Length == 0;
     }
 
     private static bool IsInZeeKayDaNamespace(SyntaxNode node)
@@ -100,38 +100,16 @@ public sealed class InterpolatedStringLogAnalyzer : DiagnosticAnalyzer
             && !fullNamespace.StartsWith("ZeeKayDa.Auth.Analyzers", System.StringComparison.Ordinal);
     }
 
-    private static bool ContainsSensitiveIdentifier(InterpolatedStringExpressionSyntax interpolated)
+    private static bool IsInLoggerImplementation(SyntaxNodeAnalysisContext context, SyntaxNode node)
     {
-        foreach (var content in interpolated.Contents)
-        {
-            if (content is InterpolatedStringTextSyntax literal)
-            {
-                if (ContainsSensitiveKeyword(literal.TextToken.ValueText))
-                    return true;
-            }
-            else if (content is InterpolationSyntax hole)
-            {
-                foreach (var token in hole.Expression.DescendantTokens().Where(t => t.IsKind(SyntaxKind.IdentifierToken)))
-                {
-                    if (ContainsSensitiveKeyword(token.ValueText))
-                    {
-                        return true;
-                    }
-                }
-            }
-        }
+        var typeDecl = node.Ancestors().OfType<BaseTypeDeclarationSyntax>().FirstOrDefault();
+        if (typeDecl is null) return false;
 
-        return false;
-    }
-
-    private static bool ContainsSensitiveKeyword(string text)
-    {
-        foreach (var keyword in SensitiveKeywords)
-        {
-            if (text.IndexOf(keyword, System.StringComparison.OrdinalIgnoreCase) >= 0)
-                return true;
-        }
-
-        return false;
+        var typeSymbol = context.SemanticModel.GetDeclaredSymbol(typeDecl);
+        return typeSymbol?.AllInterfaces.Any(i =>
+            i.IsGenericType &&
+            i.ContainingNamespace?.ToDisplayString() == "Microsoft.Extensions.Logging" &&
+            i.Name == "ILogger" &&
+            i.TypeArguments.Length == 1) ?? false;
     }
 }
