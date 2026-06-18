@@ -334,6 +334,8 @@ Append a structured comment to the offending line:
 
 Both a non-empty reason and a parenthesised issue or PR number are required. The bare form `// log-hygiene-ok` is **rejected** and will fail CI.
 
+> **Note:** The CI check validates format only — that the reason field is non-empty and that a `(#N)` reference is present. It does **not** validate whether the justification is legitimate. Human code review is the real gate: reviewers are expected to assess whether the stated reason actually warrants the suppression.
+
 **Examples:**
 
 ```csharp

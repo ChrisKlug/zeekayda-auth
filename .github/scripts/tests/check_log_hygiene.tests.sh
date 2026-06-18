@@ -174,13 +174,26 @@ assert_exit "bypass marker inside string literal is not a valid suppression" 1 \
     run_hygiene_check "${DIR}"
 
 # ---------------------------------------------------------------------------
-# Case 12: Marker on a code line with no leading // — not a comment at all
+# Case 12: Marker inside a /* */ block comment rather than a // line comment
 # → exit 1
 # ---------------------------------------------------------------------------
 DIR="${WORK_DIR}/case12"
 write_cs_file "${DIR}" "Service.cs" \
     'var x = token; /* log-hygiene-ok: reason (#42) */ _logger.LogInformation("{access_token}", x);'
 assert_exit "bypass marker not in a // comment is not a valid suppression" 1 \
+    run_hygiene_check "${DIR}"
+
+# ---------------------------------------------------------------------------
+# Case 13: Valid-looking suppression with trailing code after the (#N) token —
+# isolates the $ end-anchor: the marker is a real // comment and the reason +
+# issue ref are present, but extra code follows the closing parenthesis so the
+# line does not end with (#N). Without the $ anchor this would be a bypass.
+# → exit 1
+# ---------------------------------------------------------------------------
+DIR="${WORK_DIR}/case13"
+write_cs_file "${DIR}" "Service.cs" \
+    '_logger.LogInformation("{access_token}", t); // log-hygiene-ok: reason (#42) extra trailing code'
+assert_exit "suppression with trailing code after issue ref fails ($ end-anchor isolation)" 1 \
     run_hygiene_check "${DIR}"
 
 # ---------------------------------------------------------------------------
