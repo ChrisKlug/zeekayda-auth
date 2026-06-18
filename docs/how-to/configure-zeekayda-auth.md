@@ -181,6 +181,46 @@ For the full `Pbkdf2ClientSecretHasherOptions` property reference, see
 [Client secrets reference](../reference/client-secrets.md). To implement a custom hasher, see
 [Implement a custom extension point](implement-custom-extension-points.md).
 
+## 7. Enable extended error codes per client (`EnableZkdErrorCodes`)
+
+`EnableZkdErrorCodes` is a per-client flag on `ClientRegistration` (and `IClientRegistration`).
+When `true`, the server may include a `zkd_error` field in token endpoint error responses for that
+client, surfacing machine-readable diagnostic codes beyond what RFC 6749 defines.
+
+```csharp
+var customClient = ClientRegistration.CreateConfidential(/* ... */)
+    with { EnableZkdErrorCodes = true };
+```
+
+### Operator guidance
+
+Extended error codes improve diagnostics for legitimate callers, but they give an attacker more
+signal in aggregate — every additional code is a distinguisher. Follow these guidelines:
+
+- Enable `EnableZkdErrorCodes` only for **confidential clients** with a demonstrated diagnostic
+  need, such as a trusted first-party backend that requires machine-readable error routing.
+- Do **not** enable it for public clients (single-page applications, native apps) or for clients
+  operated by third parties you do not fully trust.
+- If you operate a multi-tenant deployment, treat the flag as **trusted-tenant-only** by default.
+
+### Rate limiting is load-bearing for public-client identification
+
+> ⚠️ **Rate limiting is load-bearing for public-client identification.** When `IsPublic == true`,
+> the framework intentionally accepts a response-timing distinguishability between public and
+> confidential clients. An observer can infer client type from timing differences. Rate limiting
+> on the token endpoint is not optional — it is the primary mitigation for this accepted
+> distinguishability.
+>
+> This residual is documented in ADR 0007 §3.4. Regardless of `EnableZkdErrorCodes`, operators
+> must apply rate limiting to the token endpoint. Timing uniformity alone is not sufficient to
+> defeat a sustained enumeration attempt.
+
+### `zkd_error` non-disclosure constraint
+
+Even with `EnableZkdErrorCodes = true`, the `zkd_error` value for `invalid_client` **must not**
+distinguish "unknown `client_id`" from "wrong credential". The framework enforces this constraint
+internally; no configuration is required. See ADR 0007 §7 for the binding constraint details.
+
 ## Next steps
 
 - [Configure discovery](configure-discovery.md) — customise the OpenID Connect discovery document,

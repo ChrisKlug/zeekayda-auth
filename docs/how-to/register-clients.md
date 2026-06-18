@@ -138,6 +138,40 @@ builder.AddInMemoryClients(clients =>
 
 Both clients will be present in the repository.
 
+## Hasher selection when multiple hashers are registered
+
+When more than one `IClientSecretHasher` is registered, the framework must know which one to use
+as the default — that is, which hasher creates new secrets and generates the timing-pad dummy
+credential at startup. The `isDefault` parameter on `AddSecretsHasher<T>()` controls this. The
+full selection matrix from ADR 0007 §3.5 is:
+
+| Hashers registered | Explicit defaults (`isDefault: true`) | Outcome |
+|---|---|---|
+| 1 | 0 | That hasher is the default (auto-selected) |
+| 2 or more | 0 | **Startup failure** — ambiguous, cannot select a default |
+| 2 or more | 1 | The flagged hasher is the default |
+| 2 or more | 2 or more | **Startup failure** — multiple defaults conflict |
+
+> ⚠️ **Warning:** The "2 or more hashers, 0 defaults" case is easy to miss. If you register a
+> second hasher during a credential rotation — for example to support both PBKDF2 and bcrypt —
+> without marking one as `isDefault: true`, the host will fail to start. The error is caught by
+> startup validation, not at runtime, so the failure is immediate and visible in the startup
+> output.
+
+```csharp
+// ✓ Two hashers, one explicit default — startup succeeds
+auth.AddSecretsHasher<Pbkdf2ClientSecretHasher>(isDefault: true);   // creates new secrets
+auth.AddSecretsHasher<BcryptClientSecretHasher>(isDefault: false);   // verifies old secrets
+
+// ✗ Two hashers, no explicit default — startup failure ("ambiguous default")
+auth.AddSecretsHasher<Pbkdf2ClientSecretHasher>();
+auth.AddSecretsHasher<BcryptClientSecretHasher>();
+```
+
+For the full `isDefault` rules and startup validation behaviour, see
+[Client secrets reference](../reference/client-secrets.md#isdefault-rules). To implement a
+custom hasher, see [Implement a custom extension point](implement-custom-extension-points.md).
+
 ## Startup validation
 
 All clients are validated when the `IClientRepository` singleton is first resolved. Validation
