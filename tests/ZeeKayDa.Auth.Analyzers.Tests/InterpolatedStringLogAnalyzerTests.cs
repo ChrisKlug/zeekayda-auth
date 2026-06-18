@@ -193,6 +193,126 @@ public sealed class InterpolatedStringLogAnalyzerTests
             .Which.Id.Should().Be(InterpolatedStringLogAnalyzer.DiagnosticId);
     }
 
+    [Fact]
+    public async Task Diagnostic_fires_on_string_format_message_template()
+    {
+        var source = """
+            using Microsoft.Extensions.Logging;
+            namespace ZeeKayDa.Auth.Logging
+            {
+                internal interface ISanitizingLogger<T> : ILogger<T> { }
+            }
+            namespace ZeeKayDa.Auth.Services
+            {
+                using ZeeKayDa.Auth.Logging;
+                class MyService
+                {
+                    void DoWork()
+                    {
+                        ISanitizingLogger<object> logger = null!;
+                        string someValue = "x";
+                        logger.LogInformation(string.Format("val={0}", someValue));
+                    }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnosticsAsync(source);
+
+        diagnostics.Should().ContainSingle()
+            .Which.Id.Should().Be(InterpolatedStringLogAnalyzer.DiagnosticId);
+    }
+
+    [Fact]
+    public async Task Diagnostic_still_fires_inside_class_implementing_only_ILogger()
+    {
+        // A class that implements ILogger<T> but NOT ISanitizingLogger<T> must NOT be exempt.
+        var source = """
+            using System;
+            using Microsoft.Extensions.Logging;
+            namespace ZeeKayDa.Auth.Services
+            {
+                internal sealed class EvilService : ILogger<EvilService>
+                {
+                    private readonly ILogger<EvilService> _logger;
+                    public EvilService(ILogger<EvilService> logger) { _logger = logger; }
+                    public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+                    public bool IsEnabled(LogLevel level) => false;
+                    public void Log<TState>(LogLevel level, EventId id, TState state, Exception? ex, Func<TState, Exception?, string> f) { }
+                    public void DoSomething()
+                    {
+                        string secret = "s3cr3t";
+                        _logger.LogInformation($"secret={secret}");
+                    }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnosticsAsync(source);
+
+        diagnostics.Should().ContainSingle()
+            .Which.Id.Should().Be(InterpolatedStringLogAnalyzer.DiagnosticId);
+    }
+
+    [Fact]
+    public async Task No_exemption_for_non_generic_ISanitizingLogger()
+    {
+        // A non-generic ISanitizingLogger in the same namespace must NOT grant the exemption —
+        // only the genuine generic ISanitizingLogger<T> (TypeParameters.Length == 1) is trusted.
+        var source = """
+            using Microsoft.Extensions.Logging;
+            namespace ZeeKayDa.Auth.Logging
+            {
+                internal interface ISanitizingLogger { }
+            }
+            namespace ZeeKayDa.Auth.Services
+            {
+                using ZeeKayDa.Auth.Logging;
+                internal sealed class FakeService : ISanitizingLogger
+                {
+                    void DoWork()
+                    {
+                        ILogger<object> logger = null!;
+                        string value = "x";
+                        logger.LogInformation($"val={value}");
+                    }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnosticsAsync(source);
+
+        diagnostics.Should().ContainSingle()
+            .Which.Id.Should().Be(InterpolatedStringLogAnalyzer.DiagnosticId);
+    }
+
+    [Fact]
+    public async Task No_exemption_for_type_that_implements_neither_ILogger_nor_ISanitizingLogger()
+    {
+        // Documents the exemption boundary: a plain class that implements neither ILogger<T>
+        // nor ISanitizingLogger<T> must still trigger the diagnostic when it calls Log*.
+        var source = """
+            using Microsoft.Extensions.Logging;
+            namespace ZeeKayDa.Auth.Services
+            {
+                class PlainService
+                {
+                    void DoWork()
+                    {
+                        ILogger<object> logger = null!;
+                        string value = "x";
+                        logger.LogInformation($"val={value}");
+                    }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnosticsAsync(source);
+
+        diagnostics.Should().ContainSingle()
+            .Which.Id.Should().Be(InterpolatedStringLogAnalyzer.DiagnosticId);
+    }
+
     // ── No diagnostic ─────────────────────────────────────────────────────────────────────────────
 
     [Fact]

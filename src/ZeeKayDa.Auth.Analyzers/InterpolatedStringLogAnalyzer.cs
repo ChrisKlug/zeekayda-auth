@@ -107,9 +107,8 @@ public sealed class InterpolatedStringLogAnalyzer : DiagnosticAnalyzer
 
         var typeSymbol = context.SemanticModel.GetDeclaredSymbol(typeDecl);
         return typeSymbol?.AllInterfaces.Any(i =>
-            i.IsGenericType &&
-            i.ContainingNamespace?.ToDisplayString() == "Microsoft.Extensions.Logging" &&
-            i.Name == "ILogger" &&
-            i.TypeArguments.Length == 1) ?? false;
+            i.Name == "ISanitizingLogger" &&
+            i.TypeParameters.Length == 1 &&
+            i.ContainingNamespace?.ToDisplayString() == "ZeeKayDa.Auth.Logging") ?? false;
     }
 }
