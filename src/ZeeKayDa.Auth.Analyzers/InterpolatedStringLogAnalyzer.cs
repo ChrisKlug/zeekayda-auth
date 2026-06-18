@@ -67,13 +67,11 @@ public sealed class InterpolatedStringLogAnalyzer : DiagnosticAnalyzer
         if (!IsLogMethodCall(invocation)) return;
         if (!IsInZeeKayDaNamespace(invocation)) return;
 
-        foreach (var argument in invocation.ArgumentList.Arguments)
+        foreach (var argument in invocation.ArgumentList.Arguments.Where(
+                     argument => argument.Expression is InterpolatedStringExpressionSyntax interpolated
+                                 && ContainsSensitiveIdentifier(interpolated)))
         {
-            if (argument.Expression is InterpolatedStringExpressionSyntax interpolated
-                && ContainsSensitiveIdentifier(interpolated))
-            {
-                context.ReportDiagnostic(Diagnostic.Create(Rule, argument.GetLocation()));
-            }
+            context.ReportDiagnostic(Diagnostic.Create(Rule, argument.GetLocation()));
         }
     }
 
@@ -113,10 +111,9 @@ public sealed class InterpolatedStringLogAnalyzer : DiagnosticAnalyzer
             }
             else if (content is InterpolationSyntax hole)
             {
-                foreach (var token in hole.Expression.DescendantTokens())
+                foreach (var token in hole.Expression.DescendantTokens().Where(t => t.IsKind(SyntaxKind.IdentifierToken)))
                 {
-                    if (token.IsKind(SyntaxKind.IdentifierToken)
-                        && ContainsSensitiveKeyword(token.ValueText))
+                    if (ContainsSensitiveKeyword(token.ValueText))
                     {
                         return true;
                     }
