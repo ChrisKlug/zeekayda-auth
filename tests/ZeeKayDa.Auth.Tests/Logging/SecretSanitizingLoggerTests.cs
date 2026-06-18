@@ -701,6 +701,19 @@ public sealed class RedactedExceptionWrapperTests
         wrapper.ToString().Should().NotContain("super-secret-password-1234");
     }
 
+    [Fact]
+    public void ToString_does_not_contain_inner_exception_message_when_original_has_inner_exception()
+    {
+        var inner = new ArgumentException("inner-super-secret-9876");
+        var original = new InvalidOperationException("outer-super-secret-1234", inner);
+
+        var wrapper = new RedactedExceptionWrapper(original);
+        var text = wrapper.ToString();
+
+        text.Should().NotContain("outer-super-secret-1234");
+        text.Should().NotContain("inner-super-secret-9876");
+    }
+
     // ── Depth limit prevents StackOverflowException ───────────────────────────────────────────────
 
     [Fact]

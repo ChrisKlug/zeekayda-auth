@@ -37,7 +37,9 @@ internal sealed class RedactedExceptionWrapper : Exception
     private RedactedExceptionWrapper(Exception original, int depth)
         : base(RedactedMessage, BuildInner(original, depth))
     {
-        ArgumentNullException.ThrowIfNull(original);
+        // ArgumentNullException.ThrowIfNull is intentionally absent here: BuildInner —
+        // evaluated in the base-constructor initializer above — already throws with the
+        // correct "original" parameter name before this body is reached.
         _original = original;
         OriginalExceptionType = original.GetType().FullName ?? original.GetType().Name;
     }
@@ -59,7 +61,9 @@ internal sealed class RedactedExceptionWrapper : Exception
     /// <remarks>
     /// Returns the stack trace from the original exception so that operators retain
     /// full diagnostic information even though the original is not stored as
-    /// <see cref="Exception.InnerException"/>.
+    /// <see cref="Exception.InnerException"/>. A stack trace contains only frame metadata
+    /// (method names, file names, and line numbers) — it never includes the exception
+    /// message text — so forwarding it does not create a message-leak vector.
     /// </remarks>
     public override string? StackTrace => _original.StackTrace;
 

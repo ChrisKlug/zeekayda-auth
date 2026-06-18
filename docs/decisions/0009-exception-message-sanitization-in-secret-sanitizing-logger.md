@@ -115,18 +115,42 @@ log sink by ZeeKayDa.Auth services.
 Operators who require the original exception message for post-incident diagnosis have the
 following paths:
 
-- **APM / exception tracking integrations (recommended for production).** Tools such as
-  Application Insights, Sentry, and Datadog capture exceptions at the application boundary via
-  unhandled-exception hooks or SDK middleware. These captures occur before `SecretSanitizingLogger<T>`
-  is involved in any log call. Exception messages are captured in the APM tool's exception store,
-  not in the structured log stream. Production incident response should route exception message
-  diagnosis through the APM tool.
+- **APM / exception tracking integrations — integration path matters.** Tools such as Application
+  Insights, Sentry, and Datadog can be integrated in two distinct ways, and only one of them
+  bypasses `SecretSanitizingLogger<T>`.
+
+  - **ILogger sink path (common).** When an APM tool is registered as an `ILogger` sink — for
+    example via `services.AddApplicationInsightsTelemetry()`, Serilog's Application Insights sink,
+    or Sentry's `logging.AddSentry()` integration — it receives log entries through the
+    `Microsoft.Extensions.Logging` pipeline. Every log entry passes through
+    `SecretSanitizingLogger<T>` before reaching the sink. The APM tool will receive the
+    `SanitizedExceptionWrapper` with the redacted placeholder message, not the original exception.
+    **Operators must not assume that APM captures via the ILogger sink path preserve original
+    exception messages.**
+
+  - **Out-of-band capture path (limited coverage).** Some APM tools also capture exceptions via
+    separate mechanisms that operate outside the logging pipeline: ASP.NET Core exception-handling
+    middleware, `TelemetryClient.TrackException()` called directly, Sentry's ASP.NET Core
+    middleware, or Datadog's tracer hooks. These captures occur independently of
+    `SecretSanitizingLogger<T>` and will record the original exception message. However, this path
+    only covers exceptions that propagate unhandled to the middleware layer. Exceptions that
+    ZeeKayDa.Auth catches internally and logs via `ILogger` — the normal case for authentication
+    and authorization failures — do not propagate to that layer and are not captured out-of-band.
+
+  APM tooling therefore provides only partial coverage and is not a reliable general-purpose
+  recovery path for original exception messages from ZeeKayDa.Auth's internal logging.
+
 - **Structured exception stores.** Any middleware that captures and stores exceptions directly (a
   custom `IExceptionFilter` writing to a secure database, an exception-tracking service) operates
-  outside the structured log pipeline and is unaffected by this wrapper.
+  outside the structured log pipeline and is unaffected by this wrapper. The same coverage
+  limitation applies: only exceptions that propagate to that middleware layer are captured.
 - **`DisableExceptionSanitizing()` in development.** The opt-out mechanism described in §5 is
   intended for local development environments where credential exposure in logs is acceptable in
-  exchange for full diagnostic detail.
+  exchange for full diagnostic detail. **This is the recommended path for reproducing and
+  diagnosing an exception message from ZeeKayDa.Auth's internal logging** — if a production
+  incident requires the original exception message, reproduce the failure in a non-production
+  environment with `DisableExceptionSanitizing()` active rather than relying on APM to have
+  captured it in production.
 - **`OriginalExceptionType` on the wrapper.** The fully-qualified type name of the original
   exception is preserved and emitted by structured sinks that enumerate exception properties.
   Operators can filter and alert on exception types (e.g.
