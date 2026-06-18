@@ -7,20 +7,7 @@
 #
 # The script under test must honour the LOG_HYGIENE_SEARCH_PATHS environment
 # variable as a colon-separated list of paths that overrides the hardcoded
-# SEARCH_PATHS array.  The required change to check_log_hygiene.sh is:
-#
-#   Replace:
-#     SEARCH_PATHS=(
-#         "src/"
-#     )
-#   With:
-#     if [[ -n "${LOG_HYGIENE_SEARCH_PATHS:-}" ]]; then
-#         IFS=':' read -ra SEARCH_PATHS <<< "${LOG_HYGIENE_SEARCH_PATHS}"
-#     else
-#         SEARCH_PATHS=(
-#             "src/"
-#         )
-#     fi
+# SEARCH_PATHS array.
 #
 # Invoked from CI and can be run locally:
 #   bash .github/scripts/tests/check_log_hygiene.tests.sh
@@ -173,6 +160,27 @@ assert_exit "mixed file with one bare suppression fails" 1 \
 DIR="${WORK_DIR}/case10"
 mkdir -p "${DIR}"
 assert_exit "empty directory with no cs files passes" 0 \
+    run_hygiene_check "${DIR}"
+
+# ---------------------------------------------------------------------------
+# Case 11: Bypass marker embedded inside a string literal — not a // comment
+# The sensitive pattern would be flagged by grep; the marker is inside the string
+# so it must NOT be treated as a suppression → exit 1
+# ---------------------------------------------------------------------------
+DIR="${WORK_DIR}/case11"
+write_cs_file "${DIR}" "Service.cs" \
+    '_logger.LogInformation("token={access_token} log-hygiene-ok: reason (#42)", value);'
+assert_exit "bypass marker inside string literal is not a valid suppression" 1 \
+    run_hygiene_check "${DIR}"
+
+# ---------------------------------------------------------------------------
+# Case 12: Marker on a code line with no leading // — not a comment at all
+# → exit 1
+# ---------------------------------------------------------------------------
+DIR="${WORK_DIR}/case12"
+write_cs_file "${DIR}" "Service.cs" \
+    'var x = token; /* log-hygiene-ok: reason (#42) */ _logger.LogInformation("{access_token}", x);'
+assert_exit "bypass marker not in a // comment is not a valid suppression" 1 \
     run_hygiene_check "${DIR}"
 
 # ---------------------------------------------------------------------------

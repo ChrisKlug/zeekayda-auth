@@ -44,7 +44,7 @@ for path in "${SEARCH_PATHS[@]}"; do
         #   // log-hygiene-ok: <non-empty reason> (#<digits>)
         # The reason must contain at least one non-space character before the
         # parenthesised reference. The bare form "// log-hygiene-ok" is rejected.
-        [[ "$line" =~ 'log-hygiene-ok: '[^[:space:]].*'(#'[0-9]+')' ]] && continue
+        [[ "$line" =~ //[[:space:]]*log-hygiene-ok:[[:space:]]+[^[:space:]].*\(#[0-9]+\)[[:space:]]*$ ]] && continue
         echo "$line"
         found=1
     done < <(grep -rn --include="*.cs" -E "$PATTERN" -i "$path" 2>/dev/null || true)
