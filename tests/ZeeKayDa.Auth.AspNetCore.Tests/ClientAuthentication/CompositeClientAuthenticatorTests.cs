@@ -142,7 +142,7 @@ public sealed class CompositeClientAuthenticatorTests
     }
 
     private static ISanitizingLogger<T> NullSanitizingLogger<T>()
-        => new SecretSanitizingLogger<T>(NullLogger<T>.Instance);
+        => new SecretSanitizingLogger<T>(NullLogger<T>.Instance, Microsoft.Extensions.Options.Options.Create(new ZeeKayDa.Auth.Logging.SecretSanitizingLoggerOptions()));
 
     // ── Helpers ───────────────────────────────────────────────────────────────────────────────────
 
