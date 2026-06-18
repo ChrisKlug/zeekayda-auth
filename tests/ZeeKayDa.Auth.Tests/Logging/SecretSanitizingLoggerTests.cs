@@ -326,7 +326,7 @@ public sealed class SecretSanitizingLoggerTests
         inner.Entries[0].FormattedMessage.Should().Be("[ZeeKayDa: unscrubbable log state blocked]");
         // Exception is wrapped — the original exception must not reach the sink directly.
         inner.Entries[0].Exception.Should().BeOfType<RedactedExceptionWrapper>()
-            .Which.InnerException.Should().BeSameAs(ex);
+            .Which.InnerException.Should().BeNull();
     }
 
     [Fact]
@@ -492,7 +492,7 @@ public sealed class SecretSanitizingLoggerTests
     }
 
     [Fact]
-    public void Log_wrapped_exception_InnerException_is_same_reference_as_original()
+    public void Log_wrapped_exception_InnerException_is_null_when_original_has_no_inner_exception()
     {
         var inner = new CapturingLogger<object>();
         var sut = CreateSut(inner);
@@ -500,7 +500,7 @@ public sealed class SecretSanitizingLoggerTests
 
         sut.LogInformation(original, "something went wrong");
 
-        inner.Entries[0].Exception!.InnerException.Should().BeSameAs(original);
+        inner.Entries[0].Exception!.InnerException.Should().BeNull();
     }
 
     [Fact]
@@ -604,7 +604,7 @@ public sealed class SecretSanitizingLoggerTests
 
         inner.Entries.Should().ContainSingle();
         inner.Entries[0].Exception.Should().BeOfType<RedactedExceptionWrapper>()
-            .Which.InnerException.Should().BeSameAs(original);
+            .Which.InnerException.Should().BeNull();
     }
 
     [Fact]
@@ -620,7 +620,7 @@ public sealed class SecretSanitizingLoggerTests
 
         inner.Entries.Should().ContainSingle();
         inner.Entries[0].Exception.Should().BeOfType<RedactedExceptionWrapper>()
-            .Which.InnerException.Should().BeSameAs(original);
+            .Which.InnerException.Should().BeNull();
     }
 
     [Fact]
@@ -635,7 +635,7 @@ public sealed class SecretSanitizingLoggerTests
 
         inner.Entries.Should().ContainSingle();
         inner.Entries[0].Exception.Should().BeOfType<RedactedExceptionWrapper>()
-            .Which.InnerException.Should().BeSameAs(original);
+            .Which.InnerException.Should().BeNull();
     }
 }
 
@@ -673,6 +673,67 @@ public sealed class RedactedExceptionWrapperTests
 
         wrapper.OriginalExceptionType.Should().NotBeNull();
         wrapper.OriginalExceptionType.Should().Be("System.InvalidOperationException");
+    }
+
+    // ── InnerException is wrapped, not the original ───────────────────────────────────────────────
+
+    [Fact]
+    public void InnerException_is_a_RedactedExceptionWrapper_when_original_has_inner_exception()
+    {
+        var originalInner = new ArgumentException("inner secret");
+        var original = new InvalidOperationException("outer secret", originalInner);
+
+        var wrapper = new RedactedExceptionWrapper(original);
+
+        wrapper.InnerException.Should().BeOfType<RedactedExceptionWrapper>();
+        wrapper.InnerException!.Message.Should().Be(RedactedExceptionWrapper.RedactedMessage);
+    }
+
+    // ── ToString() does not leak original message ─────────────────────────────────────────────────
+
+    [Fact]
+    public void ToString_does_not_contain_original_exception_message()
+    {
+        var original = new InvalidOperationException("super-secret-password-1234");
+
+        var wrapper = new RedactedExceptionWrapper(original);
+
+        wrapper.ToString().Should().NotContain("super-secret-password-1234");
+    }
+
+    // ── Depth limit prevents StackOverflowException ───────────────────────────────────────────────
+
+    [Fact]
+    public void Constructor_does_not_throw_when_original_chain_exceeds_max_depth()
+    {
+        var chain = new Exception("leaf");
+        for (var i = 1; i <= 60; i++)
+            chain = new Exception($"level {i}", chain);
+
+        var act = () => new RedactedExceptionWrapper(chain);
+
+        act.Should().NotThrow();
+
+        var wrapper = new RedactedExceptionWrapper(chain);
+        Exception? current = wrapper;
+        while (current?.InnerException is not null)
+            current = current.InnerException;
+
+        current!.InnerException.Should().BeNull();
+    }
+
+    // ── StackTrace is forwarded from original ─────────────────────────────────────────────────────
+
+    [Fact]
+    public void StackTrace_equals_original_exception_stack_trace()
+    {
+        Exception original;
+        try { throw new InvalidOperationException("some error"); }
+        catch (Exception ex) { original = ex; }
+
+        var wrapper = new RedactedExceptionWrapper(original);
+
+        wrapper.StackTrace.Should().Be(original.StackTrace);
     }
 }
 
