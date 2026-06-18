@@ -73,6 +73,8 @@ Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) before
 
 If you discover a security vulnerability, **please do not open a public issue**. See [SECURITY.md](SECURITY.md) for the responsible disclosure process.
 
+ZeeKayDa.Auth redacts sensitive OAuth parameters from its own internal log calls. This redaction does **not** extend to ASP.NET Core's `UseHttpLogging()`, Kestrel access logs, W3CLogger, Application Insights request telemetry, or exception-handling middleware. See [Security boundaries](SECURITY.md#security-boundaries) and [Configure host-level log hygiene](docs/how-to/configure-host-log-hygiene.md) for the steps required to protect those surfaces.
+
 ---
 
 ## License
