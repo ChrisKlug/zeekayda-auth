@@ -119,8 +119,10 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
         // the JSON key "ZeeKayDaAuth:Logging:DisableExceptionSanitizing" binds to the correct
         // property on AuthorizationServerOptions.
         var json = """{"ZeeKayDaAuth":{"Logging":{"DisableExceptionSanitizing":true}}}""";
+        var jsonBytes = System.Text.Encoding.UTF8.GetBytes(json);
+        using var jsonStream = new System.IO.MemoryStream(jsonBytes);
         var configuration = new ConfigurationBuilder()
-            .AddJsonStream(new System.IO.MemoryStream(System.Text.Encoding.UTF8.GetBytes(json)))
+            .AddJsonStream(jsonStream)
             .Build();
 
         var services = new ServiceCollection();
