@@ -78,8 +78,8 @@ Labels: `type:task` (or other appropriate `type:*`), relevant `area:*`, `priorit
 Issues follow a three-tier hierarchy — every `type:design` and `type:task` must be a sub-issue of a `type:epic`:
 
 ```
-type:epic    →  One per feature area. Permanent coordination point. Never closed until
-                the whole feature area is done. Title prefix: "Epic: "
+type:epic    →  One per feature area. Permanent coordination point. Closed when all
+                sub-issues are closed — confirm with the user before closing. Title prefix: "Epic: "
 
 type:design  →  ADR / architecture planning issue. Produces an ADR doc + merged PR.
                 Closes when its ADR PR merges.
@@ -106,6 +106,7 @@ Whenever a PR is merged, automatically:
 2. Search all open draft PRs for a `## Blockers` section referencing the merged PR number or any closed issue number.
 3. For each matching PR, remove that blocker entry from the PR body.
 4. If the PR has no remaining blockers after removal, mark it as ready for review (`gh pr ready`).
+5. For each closed issue, check whether it is a sub-issue of a `type:epic`. If so, query all sub-issues of that epic. If every sub-issue is now closed, ask the user whether to close the epic.
 
 Do this without being asked — it is part of the standard merge flow.
 
