@@ -351,7 +351,7 @@ write path but throw exceptions or cause unexpected behaviour at token-request t
 > ⚠️ **Warning: `IClientSecretFactory.Create` is CPU-intensive and must not be called on a hot
 > request path.**
 > At the default iteration count of 600,000 PBKDF2-HMAC-SHA256 rounds, a single call takes
-> approximately 300 ms on typical server hardware. Calling it from a token-endpoint handler or any
+> approximately 600 ms on typical server hardware. Calling it from a token-endpoint handler or any
 > other frequently-hit path will degrade throughput for all clients on the server.
 >
 > Reserve `IClientSecretFactory.Create` for admin operations only. The endpoint that calls it

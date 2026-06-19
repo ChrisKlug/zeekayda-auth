@@ -7,7 +7,7 @@ namespace ZeeKayDa.Auth.Clients;
 /// <remarks>
 /// <para>
 /// <strong>This method is CPU-intensive.</strong> The default PBKDF2 hasher performs
-/// 600,000 iterations per call (~300 ms on typical server hardware). Callers MUST NOT
+/// 600,000 iterations per call (~600 ms on typical server hardware). Callers MUST NOT
 /// invoke this method on a hot request path. It is intended for administrative operations
 /// such as client registration or credential rotation, which must be rate-limited and
 /// authenticated at the application layer.
