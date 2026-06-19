@@ -45,7 +45,7 @@ If you want to work on an existing issue, leave a comment to say so. A maintaine
 
 Non-trivial features follow a **three-tier issue model**:
 
-1. **Epic** (`type:epic`) — Created first when a new feature area is identified. The permanent coordination point: it accumulates notes, links to all related design and task sub-issues, and is never closed until the entire feature area is done. Title prefix: `Epic: `. Progress is tracked via GitHub's sub-issue rollup.
+1. **Epic** (`type:epic`) — Created first when a new feature area is identified. The permanent coordination point: it accumulates notes, links to all related design and task sub-issues, and is closed when all sub-issues are closed (after confirming with the user). Title prefix: `Epic: `. Progress is tracked via GitHub's sub-issue rollup.
 2. **Design issue** (`type:design`) — An ADR / architecture planning issue. Always a sub-issue of an epic. Contains the problem statement, spec references, open design questions, and sign-off criteria. *No implementation acceptance criteria.* Closed when the ADR PR merges.
 3. **Task issue** (`type:task`) — Created by the maintainer *after* the ADR PR merges (for ADR-path work) or directly (for non-ADR work). Always a sub-issue of an epic. Carries the precise, testable acceptance criteria grounded in the settled design. Closed when the implementation PR merges.
 
