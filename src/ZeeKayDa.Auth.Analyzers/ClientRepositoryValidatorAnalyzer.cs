@@ -81,10 +81,10 @@ public sealed class ClientRepositoryValidatorAnalyzer : DiagnosticAnalyzer
     {
         foreach (var symbolInfo in typeDecl.DescendantNodes()
                      .OfType<IdentifierNameSyntax>()
-                     .Select(id => context.SemanticModel.GetSymbolInfo(id)))
+                     .Select(id => context.SemanticModel.GetSymbolInfo(id))
+                     .Where(symbolInfo => IsOrReferencesValidator(symbolInfo.Symbol)))
         {
-            if (IsOrReferencesValidator(symbolInfo.Symbol))
-                return true;
+            return true;
         }
 
         return false;
