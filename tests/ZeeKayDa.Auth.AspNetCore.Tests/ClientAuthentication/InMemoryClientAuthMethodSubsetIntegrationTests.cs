@@ -1,10 +1,10 @@
+using System.Linq;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using System.Linq;
 using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.AspNetCore;
 using ZeeKayDa.Auth.Clients;
@@ -190,8 +190,8 @@ public sealed class InMemoryClientAuthMethodSubsetIntegrationTests
                             ["https://test.example.com/callback"],
                             [],
                             ["openid"])
-                        // AllowedTokenEndpointAuthMethods defaults to { "client_secret_basic" }
-                        // which matches the server's AuthMethodsSupported — no override needed.
+                    // AllowedTokenEndpointAuthMethods defaults to { "client_secret_basic" }
+                    // which matches the server's AuthMethodsSupported — no override needed.
                     ));
             });
 
