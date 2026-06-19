@@ -18,6 +18,9 @@ namespace ZeeKayDa.Auth.Clients;
 /// arguments (such as DI interceptors or AOP wrappers). The framework does not zero the
 /// string after hashing — string immutability and GC timing mean the caller owns
 /// responsibility for minimising the lifetime of the plaintext value.
+/// Callers holding the plaintext in a <c>char[]</c> who want to zero it after use should
+/// resolve <see cref="IClientSecretHasher"/> directly and call its
+/// <c>Create(ReadOnlySpan&lt;char&gt;)</c> overload instead.
 /// </para>
 /// <para>
 /// The strength of the returned credential is determined by the host's configured default

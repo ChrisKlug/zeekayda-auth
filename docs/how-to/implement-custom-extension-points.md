@@ -346,7 +346,7 @@ Custom repositories MUST call `IClientRegistrationValidator.Validate` before wri
 updated client registration to the store. The validator enforces the same startup-time rules that
 apply to in-memory clients — required fields, allowed grant types, consistent redirect URI
 configuration, and so on. Skipping validation can allow malformed registrations that pass the
-write path but cause panics or unexpected behaviour at token-request time.
+write path but throw exceptions or cause unexpected behaviour at token-request time.
 
 > ⚠️ **Warning: `IClientSecretFactory.Create` is CPU-intensive and must not be called on a hot
 > request path.**
