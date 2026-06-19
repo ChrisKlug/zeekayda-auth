@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Diagnostics;
@@ -313,6 +314,46 @@ public sealed class InterpolatedStringLogAnalyzerTests
             .Which.Id.Should().Be(InterpolatedStringLogAnalyzer.DiagnosticId);
     }
 
+    [Fact]
+    public async Task Diagnostic_fires_inside_friend_assembly_class_implementing_ISanitizingLogger()
+    {
+        // A type in a friend assembly (InternalsVisibleTo) that implements ISanitizingLogger<T>
+        // must NOT be exempt — only types defined in ZeeKayDa.Auth itself are trusted.
+        var coreSource = """
+            using Microsoft.Extensions.Logging;
+            namespace ZeeKayDa.Auth.Logging
+            {
+                internal interface ISanitizingLogger<T> : ILogger<T> { }
+            }
+            """;
+
+        var aspNetCoreSource = """
+            using Microsoft.Extensions.Logging;
+            using ZeeKayDa.Auth.Logging;
+            namespace ZeeKayDa.Auth.AspNetCore.Services
+            {
+                internal sealed class FriendService : ISanitizingLogger<FriendService>
+                {
+                    private readonly ILogger<FriendService> _inner;
+                    public FriendService(ILogger<FriendService> inner) { _inner = inner; }
+                    public System.IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+                    public bool IsEnabled(LogLevel level) => false;
+                    public void Log<TState>(LogLevel level, Microsoft.Extensions.Logging.EventId id, TState state, System.Exception? ex, System.Func<TState, System.Exception?, string> f) { }
+                    public void DoWork()
+                    {
+                        string secret = "s3cr3t";
+                        _inner.LogInformation($"secret={secret}"); // must be flagged
+                    }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnosticsFromFriendAssemblyAsync(coreSource, aspNetCoreSource);
+
+        diagnostics.Should().ContainSingle()
+            .Which.Id.Should().Be(InterpolatedStringLogAnalyzer.DiagnosticId);
+    }
+
     // ── No diagnostic ─────────────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -580,6 +621,34 @@ public sealed class InterpolatedStringLogAnalyzerTests
 
         var analyzers = ImmutableArray.Create<DiagnosticAnalyzer>(new InterpolatedStringLogAnalyzer());
         var compilationWithAnalyzers = compilation.WithAnalyzers(analyzers);
+        return await compilationWithAnalyzers.GetAnalyzerDiagnosticsAsync();
+    }
+
+    private static async Task<ImmutableArray<Diagnostic>> GetDiagnosticsFromFriendAssemblyAsync(
+        string coreSource, string friendSource)
+    {
+        var sharedReferences = new MetadataReference[]
+        {
+            MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(Microsoft.Extensions.Logging.ILogger<>).Assembly.Location),
+        };
+
+        // Compile the core assembly (ZeeKayDa.Auth) that defines ISanitizingLogger<T>
+        var coreCompilation = CSharpCompilation.Create(
+            "ZeeKayDa.Auth",
+            new[] { CSharpSyntaxTree.ParseText(coreSource) },
+            sharedReferences,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        // Compile the friend assembly referencing it
+        var friendCompilation = CSharpCompilation.Create(
+            "ZeeKayDa.Auth.AspNetCore",
+            new[] { CSharpSyntaxTree.ParseText(friendSource) },
+            sharedReferences.Append(coreCompilation.ToMetadataReference()).ToArray(),
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        var analyzers = ImmutableArray.Create<DiagnosticAnalyzer>(new InterpolatedStringLogAnalyzer());
+        var compilationWithAnalyzers = friendCompilation.WithAnalyzers(analyzers);
         return await compilationWithAnalyzers.GetAnalyzerDiagnosticsAsync();
     }
 }

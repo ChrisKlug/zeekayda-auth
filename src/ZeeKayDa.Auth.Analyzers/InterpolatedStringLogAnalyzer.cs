@@ -108,19 +108,19 @@ public sealed class InterpolatedStringLogAnalyzer : DiagnosticAnalyzer
         var typeSymbol = context.SemanticModel.GetDeclaredSymbol(typeDecl);
         if (typeSymbol is null) return false;
 
-        // Exempt only the concrete sanitizing-logger wrapper in ZeeKayDa.Auth.
-        // Matching by concrete type name + assembly (not just interface) prevents friend-assembly
-        // classes that happen to implement ISanitizingLogger<T> from self-exempting.
-        if (typeSymbol.Name == "SecretSanitizingLogger"
-            && typeSymbol.ContainingAssembly?.Name == "ZeeKayDa.Auth")
+        // Only exempt types that live in ZeeKayDa.Auth itself.
+        // Friend assemblies (InternalsVisibleTo) can implement ISanitizingLogger<T> but must
+        // not self-exempt — the exemption is reserved for the wrapper defined in this assembly.
+        if (typeSymbol.ContainingAssembly?.Name != "ZeeKayDa.Auth") return false;
+
+        // Primary: exempt the concrete sanitizing-logger wrapper by name.
+        if (typeSymbol is INamedTypeSymbol { Name: "SecretSanitizingLogger", TypeParameters.Length: 1 })
             return true;
 
-        // Fallback: also exempt any ISanitizingLogger<T> defined in ZeeKayDa.Auth itself,
-        // guarded by assembly identity so structural spoofing from other compilations is blocked.
+        // Fallback: exempt any other ISanitizingLogger<T> implementation defined in this assembly.
         return typeSymbol.AllInterfaces.Any(i =>
             i.Name == "ISanitizingLogger" &&
             i.TypeParameters.Length == 1 &&
-            i.ContainingNamespace?.ToDisplayString() == "ZeeKayDa.Auth.Logging" &&
-            i.ContainingAssembly?.Name == "ZeeKayDa.Auth");
+            i.ContainingNamespace?.ToDisplayString() == "ZeeKayDa.Auth.Logging");
     }
 }
