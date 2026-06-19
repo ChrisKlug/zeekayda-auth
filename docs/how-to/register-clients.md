@@ -20,7 +20,7 @@ var builder = services.AddZeeKayDaAuth(options =>
 {
     options.Issuer = "https://id.example.com";
     // Allow public clients (no client authentication)
-    options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethod.None);
+    options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
 });
 
 builder.AddPbkdf2SecretsHasher();   // required for confidential clients
@@ -70,7 +70,7 @@ authentication method:
 services.AddZeeKayDaAuth(options =>
 {
     options.Issuer = "https://id.example.com";
-    options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethod.None);
+    options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
 });
 ```
 

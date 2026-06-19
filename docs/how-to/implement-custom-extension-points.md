@@ -385,7 +385,7 @@ framework's dispatch pipeline. The built-in `ClientSecretAuthenticator` handles
 
 > **Note:** `none` is a special case — it is handled automatically by the composite dispatcher
 > as a fallback for public clients and does not require an `IClientAuthenticator` implementation.
-> To support public clients, add `TokenEndpointAuthMethod.None` to `AuthMethodsSupported` and
+> To support public clients, add `TokenEndpointAuthMethods.None` to `AuthMethodsSupported` and
 > register a client with `IsPublic = true`.
 
 The interface has three members:
@@ -475,7 +475,7 @@ builder.Services.AddZeeKayDaAuth(options =>
     options.Issuer = "https://id.example.com";
     options.TokenEndpoint.AuthMethodsSupported =
     [
-        TokenEndpointAuthMethod.ClientSecretBasic,
+        TokenEndpointAuthMethods.ClientSecretBasic,
         // custom methods added to the server's supported list
     ];
 })
