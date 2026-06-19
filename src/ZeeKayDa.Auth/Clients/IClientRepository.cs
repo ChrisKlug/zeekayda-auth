@@ -13,6 +13,12 @@ namespace ZeeKayDa.Auth.Clients;
 /// Custom implementations MUST resolve <see cref="IClientRegistrationValidator"/> from DI and
 /// invoke it before persisting a new or updated client registration.
 /// </para>
+/// <para>
+/// For read-only or read-mostly stores (e.g. a read replica or a migrated credential store),
+/// implementations MUST call <see cref="IClientRegistrationValidator.Validate"/> at a
+/// deterministic point before serving a registration — typically when loading into an internal
+/// cache — and MUST NOT return a registration that fails validation.
+/// </para>
 /// </remarks>
 public interface IClientRepository
 {
