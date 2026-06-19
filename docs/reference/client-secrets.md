@@ -132,8 +132,19 @@ secrets at write time — for example:
 - Future support for [RFC 7591 Dynamic Client Registration](https://www.rfc-editor.org/rfc/rfc7591)
 
 If your clients are registered at startup using the `AddInMemoryClients` builder, you do not
-need this interface. The builder handles hashing automatically when you call
-`client.AddSecret("plaintext")`.
+need this interface. The builder handles hashing automatically when you call `AddConfidential`:
+
+```csharp
+auth.AddInMemoryClients(clients =>
+{
+    clients.AddConfidential(
+        clientId:               "my-api-client",
+        clientSecret:           "s3cr3t",
+        redirectUris:           ["https://myapp.example.com/callback"],
+        postLogoutRedirectUris: ["https://myapp.example.com/signed-out"],
+        allowedScopes:          ["openid", "profile", "my-api"]);
+});
+```
 
 ### Injecting `IClientSecretFactory`
 
@@ -157,7 +168,7 @@ public sealed class MyClientRepository : IClientRepository
 
 > ⚠️ **Warning: `Create` is CPU-intensive and must not be called on a hot request path.**
 > At the default iteration count of 600,000 PBKDF2-HMAC-SHA256 rounds, a single call takes
-> approximately 300 ms on typical server hardware. Calling it from a token-endpoint handler or
+> approximately 600 ms on typical server hardware. Calling it from a token-endpoint handler or
 > any other frequently-hit path will degrade throughput for all clients on the server.
 >
 > `Create` is intended for admin operations only. The endpoint that calls it MUST be:
