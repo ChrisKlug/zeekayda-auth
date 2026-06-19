@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Options;
-using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.Authorization;
 using ZeeKayDa.Auth.Configuration;
 using ZeeKayDa.Auth.Security;
@@ -1039,6 +1038,128 @@ public sealed class AuthorizationServerOptionsValidatorTests
 
         result.Failed.Should().BeTrue();
         result.FailureMessage.Should().Contain("loopback");
+    }
+
+    // ── AuthorizationCodeLifetime defaults and validation ────────────────────────────────────────
+
+    [Fact]
+    public void AuthorizationCodeLifetime_defaults_to_60_seconds()
+    {
+        var options = new AuthorizationEndpointOptions();
+
+        options.AuthorizationCodeLifetime.Should().Be(TimeSpan.FromSeconds(60));
+    }
+
+    [Fact]
+    public void Validate_succeeds_when_AuthorizationCodeLifetime_is_minimum_valid_value()
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            AuthorizationEndpoint = { AuthorizationCodeLifetime = TimeSpan.FromSeconds(1) },
+        });
+
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Validate_succeeds_when_AuthorizationCodeLifetime_is_exactly_600_seconds()
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            AuthorizationEndpoint = { AuthorizationCodeLifetime = TimeSpan.FromSeconds(600) },
+        });
+
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Validate_fails_when_AuthorizationCodeLifetime_exceeds_600_seconds()
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            AuthorizationEndpoint = { AuthorizationCodeLifetime = TimeSpan.FromSeconds(601) },
+        });
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("600 seconds");
+        result.FailureMessage.Should().Contain("RFC 9700 §2.1.1");
+    }
+
+    [Fact]
+    public void Validate_fails_when_AuthorizationCodeLifetime_is_zero()
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            AuthorizationEndpoint = { AuthorizationCodeLifetime = TimeSpan.Zero },
+        });
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("greater than zero");
+    }
+
+    [Fact]
+    public void Validate_fails_when_AuthorizationCodeLifetime_is_negative()
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            AuthorizationEndpoint = { AuthorizationCodeLifetime = -TimeSpan.FromSeconds(1) },
+        });
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("greater than zero");
+    }
+
+    // ── RefreshTokenLifetime defaults and validation ──────────────────────────────────────────────
+
+    [Fact]
+    public void RefreshTokenLifetime_defaults_to_14_days()
+    {
+        var options = new TokenEndpointOptions();
+
+        options.RefreshTokenLifetime.Should().Be(TimeSpan.FromDays(14));
+    }
+
+    [Fact]
+    public void Validate_succeeds_when_RefreshTokenLifetime_is_positive()
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            TokenEndpoint = { RefreshTokenLifetime = TimeSpan.FromDays(1) },
+        });
+
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Validate_fails_when_RefreshTokenLifetime_is_zero()
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            TokenEndpoint = { RefreshTokenLifetime = TimeSpan.Zero },
+        });
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("greater than zero");
+    }
+
+    [Fact]
+    public void Validate_fails_when_RefreshTokenLifetime_is_negative()
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            TokenEndpoint = { RefreshTokenLifetime = -TimeSpan.FromDays(1) },
+        });
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("greater than zero");
     }
 
     // ── Simultaneous authorization + token endpoint errors ───────────────────────────────────────

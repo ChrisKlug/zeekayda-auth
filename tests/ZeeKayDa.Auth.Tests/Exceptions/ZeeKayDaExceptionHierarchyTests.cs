@@ -1,5 +1,3 @@
-using ZeeKayDa.Auth;
-
 namespace ZeeKayDa.Auth.Tests.Exceptions;
 
 public sealed class ZeeKayDaExceptionHierarchyTests
@@ -117,5 +115,74 @@ public sealed class ZeeKayDaExceptionHierarchyTests
         var ex = new ZeeKayDaInteractionException("outer", inner);
 
         ex.InnerException.Should().BeSameAs(inner);
+    }
+
+    // ── ZeeKayDaStoreException ───────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void ZeeKayDaStoreException_is_assignable_to_ZeeKayDaException()
+    {
+        typeof(ZeeKayDaStoreException).Should().BeAssignableTo<ZeeKayDaException>();
+    }
+
+    [Fact]
+    public void ZeeKayDaStoreException_can_be_instantiated_with_message()
+    {
+        var ex = new ZeeKayDaStoreException("store failure");
+
+        ex.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void ZeeKayDaStoreException_preserves_Message()
+    {
+        const string message = "Redis connection timed out.";
+
+        var ex = new ZeeKayDaStoreException(message);
+
+        ex.Message.Should().Be(message);
+    }
+
+    [Fact]
+    public void ZeeKayDaStoreException_can_be_instantiated_with_message_and_inner_exception()
+    {
+        var inner = new InvalidOperationException("inner");
+
+        var ex = new ZeeKayDaStoreException("store failure", inner);
+
+        ex.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void ZeeKayDaStoreException_preserves_InnerException()
+    {
+        var inner = new InvalidOperationException("inner");
+
+        var ex = new ZeeKayDaStoreException("store failure", inner);
+
+        ex.InnerException.Should().BeSameAs(inner);
+    }
+
+    [Fact]
+    public void ZeeKayDaStoreException_can_be_caught_as_ZeeKayDaException()
+    {
+        Action act = () => throw new ZeeKayDaStoreException("store failure");
+
+        act.Should().Throw<ZeeKayDaException>();
+    }
+
+    [Fact]
+    public void ZeeKayDaStoreException_can_be_subclassed()
+    {
+        // Verifies the class is not sealed — a subclass defined here can be instantiated.
+        var ex = new TestStoreException("subclass message");
+
+        ex.Should().BeAssignableTo<ZeeKayDaStoreException>();
+        ex.Message.Should().Be("subclass message");
+    }
+
+    private sealed class TestStoreException : ZeeKayDaStoreException
+    {
+        public TestStoreException(string message) : base(message) { }
     }
 }

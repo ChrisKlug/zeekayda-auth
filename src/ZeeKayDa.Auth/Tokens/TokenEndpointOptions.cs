@@ -31,4 +31,16 @@ public sealed class TokenEndpointOptions
     /// </remarks>
     public ICollection<string> AuthMethodsSupported { get; set; } =
         [TokenEndpointAuthMethods.ClientSecretBasic];
+
+    /// <summary>
+    /// Gets or sets the lifetime of issued refresh tokens.
+    /// Defaults to 14 days.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Must be greater than <see cref="TimeSpan.Zero"/>. Values at or below zero are rejected
+    /// at startup by <c>AuthorizationServerOptionsValidator</c>.
+    /// </para>
+    /// </remarks>
+    public TimeSpan RefreshTokenLifetime { get; set; } = TimeSpan.FromDays(14);
 }
