@@ -91,6 +91,12 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         // "service not registered" DI failure.
         services.TryAddSingleton<CompositeClientSecretHasher>();
 
+        // Register IClientSecretFactory as an alias for the already-constructed
+        // CompositeClientSecretHasher singleton so custom repository authors can inject it
+        // without knowing about the composite's internal structure.
+        services.TryAddSingleton<IClientSecretFactory>(sp =>
+            sp.GetRequiredService<CompositeClientSecretHasher>());
+
         // Register the client registration validator so custom repositories can resolve it.
         services.TryAddSingleton<IClientRegistrationValidator, ClientRegistrationValidator>();
 

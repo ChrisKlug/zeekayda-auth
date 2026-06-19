@@ -102,6 +102,82 @@ fallback string allocation.
 
 ---
 
+## `IClientSecretFactory`
+
+*Added in Unreleased.*
+
+`IClientSecretFactory` is the injectable seam for hashing new client secrets at runtime. It
+delegates to the configured default `IClientSecretHasher` — whichever hasher was marked as
+default via `AddSecretsHasher<T>(isDefault: true)` — so you never need to hard-code an
+algorithm in your repository or admin layer.
+
+```csharp
+public interface IClientSecretFactory
+{
+    IClientSecret Create(string plaintext);
+}
+```
+
+`IClientSecretFactory` is registered automatically by `AddZeeKayDaAuth` as a singleton via
+`TryAddSingleton`. You do not need to call `AddSecretsHasher` before injecting it —
+registration order does not matter as long as both calls occur before the host is built.
+
+### Who should use this interface
+
+`IClientSecretFactory` is for custom `IClientRepository` implementations that need to hash
+secrets at write time — for example:
+
+- An admin API endpoint that issues new client credentials
+- A credential rotation flow that replaces an existing secret
+- Future support for [RFC 7591 Dynamic Client Registration](https://www.rfc-editor.org/rfc/rfc7591)
+
+If your clients are registered at startup using the `AddInMemoryClients` builder, you do not
+need this interface. The builder handles hashing automatically when you call
+`client.AddSecret("plaintext")`.
+
+### Injecting `IClientSecretFactory`
+
+Inject the interface through the constructor of your custom `IClientRepository`:
+
+```csharp
+public sealed class MyClientRepository : IClientRepository
+{
+    private readonly IClientSecretFactory _secretFactory;
+
+    public MyClientRepository(IClientSecretFactory secretFactory)
+        => _secretFactory = secretFactory;
+
+    public async Task RegisterClientAsync(string clientId, string plaintextSecret)
+    {
+        IClientSecret credential = _secretFactory.Create(plaintextSecret);
+        // persist credential to your store...
+    }
+}
+```
+
+> ⚠️ **Warning: `Create` is CPU-intensive and must not be called on a hot request path.**
+> At the default iteration count of 600,000 PBKDF2-HMAC-SHA256 rounds, a single call takes
+> approximately 300 ms on typical server hardware. Calling it from a token-endpoint handler or
+> any other frequently-hit path will degrade throughput for all clients on the server.
+>
+> `Create` is intended for admin operations only. The endpoint that calls it MUST be:
+> - protected by strong authentication (not the same `client_secret` being created),
+> - rate-limited to prevent brute-force amplification, and
+> - logged and audited.
+
+### Lifetime
+
+`IClientSecretFactory` is registered with `TryAddSingleton`. The `CompositeClientSecretHasher`
+that backs it is also a singleton. Injecting `IClientSecretFactory` into a singleton
+`IClientRepository` is safe — no captive-dependency issue arises.
+
+### See also
+
+- [Implement a custom client repository](../how-to/implement-custom-extension-points.md#5-implement-a-custom-client-repository) — full example with `IClientRegistrationValidator`
+- [`IClientSecretHasher`](#iclientsecrethashert) — the per-algorithm interface that `IClientSecretFactory` delegates to
+
+---
+
 ## Memory-safe secret handling
 
 Managed `string` instances in .NET are immutable and GC-managed: their backing memory cannot be
@@ -192,5 +268,5 @@ visible in the startup output.
 ## Related pages
 
 - [Configure ZeeKayDa.Auth](../how-to/configure-zeekayda-auth.md) — register hashers alongside the core setup
-- [Implement a custom extension point](../how-to/implement-custom-extension-points.md) — how to write a custom `IClientSecretHasher`
+- [Implement a custom extension point](../how-to/implement-custom-extension-points.md) — how to write a custom `IClientSecretHasher` or `IClientRepository`
 - [AuthorizationServerOptions reference](configuration.md) — core authorization server configuration
