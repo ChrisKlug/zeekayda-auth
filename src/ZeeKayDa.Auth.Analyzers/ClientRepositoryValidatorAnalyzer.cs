@@ -54,6 +54,7 @@ public sealed class ClientRepositoryValidatorAnalyzer : DiagnosticAnalyzer
 
         if (!ImplementsIClientRepository(typeSymbol)) return;
 
+        // Assembly-name exemption: simple-name check only (no public key token), consistent with ZEEKAYDA0001/0002.
         if (typeSymbol.ContainingAssembly?.Name == "ZeeKayDa.Auth") return;
 
         if (ReferencesIClientRegistrationValidator(context, typeDecl)) return;
@@ -80,7 +81,7 @@ public sealed class ClientRepositoryValidatorAnalyzer : DiagnosticAnalyzer
     {
         foreach (var symbolInfo in typeDecl.DescendantNodes()
                      .OfType<IdentifierNameSyntax>()
-                     .Select(context.SemanticModel.GetSymbolInfo))
+                     .Select(id => context.SemanticModel.GetSymbolInfo(id)))
         {
             if (IsOrReferencesValidator(symbolInfo.Symbol))
                 return true;
@@ -89,6 +90,8 @@ public sealed class ClientRepositoryValidatorAnalyzer : DiagnosticAnalyzer
         return false;
     }
 
+    // Note: wrapper interfaces (e.g. IMyValidator : IClientRegistrationValidator) are not detected —
+    // intentional heuristic limitation, consistent with issue #230 scope.
     private static bool IsOrReferencesValidator(ISymbol? symbol)
     {
         return symbol switch

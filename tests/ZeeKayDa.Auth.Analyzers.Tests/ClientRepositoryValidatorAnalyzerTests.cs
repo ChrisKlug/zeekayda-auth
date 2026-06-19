@@ -308,6 +308,108 @@ public sealed class ClientRepositoryValidatorAnalyzerTests
         diagnostics.Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task Diagnostic_fires_for_out_of_assembly_impl_in_ZeeKayDa_Auth_prefixed_namespace()
+    {
+        // The assembly-name exemption checks the assembly name ("ZeeKayDa.Auth"), not the namespace
+        // prefix. An implementation in the ZeeKayDa.Auth.Custom namespace but compiled into a
+        // user assembly ("SomeUserAssembly") must still fire.
+        var source = """
+            using System.Threading;
+            using System.Threading.Tasks;
+            using ZeeKayDa.Auth.Clients;
+            namespace ZeeKayDa.Auth.Custom
+            {
+                public sealed class MyClientRepository : IClientRepository
+                {
+                    public ValueTask<IClientRegistration?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default)
+                        => ValueTask.FromResult<IClientRegistration?>(null);
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnosticsAsync(source);
+
+        diagnostics.Should().ContainSingle()
+            .Which.Id.Should().Be(ClientRepositoryValidatorAnalyzer.DiagnosticId);
+    }
+
+    [Fact]
+    public async Task No_diagnostic_when_IClientRepository_is_implemented_transitively_via_intermediate_interface()
+    {
+        // AllInterfaces is transitive, so a class implementing IMyCustomRepo (which extends
+        // IClientRepository) is still detected. The validator reference should suppress the diagnostic.
+        var source = """
+            using System.Threading;
+            using System.Threading.Tasks;
+            using ZeeKayDa.Auth.Clients;
+            namespace MyCompany.Auth
+            {
+                public interface IMyCustomRepo : IClientRepository { }
+
+                public sealed class MyClientRepository : IMyCustomRepo
+                {
+                    private readonly IClientRegistrationValidator _validator;
+                    public MyClientRepository(IClientRegistrationValidator validator) { _validator = validator; }
+                    public ValueTask<IClientRegistration?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default)
+                        => ValueTask.FromResult<IClientRegistration?>(null);
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnosticsAsync(source);
+
+        diagnostics.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task No_diagnostic_when_struct_implementation_references_validator()
+    {
+        var source = """
+            using System.Threading;
+            using System.Threading.Tasks;
+            using ZeeKayDa.Auth.Clients;
+            namespace MyCompany.Auth
+            {
+                public struct MyClientRepository : IClientRepository
+                {
+                    private readonly IClientRegistrationValidator _validator;
+                    public MyClientRepository(IClientRegistrationValidator validator) { _validator = validator; }
+                    public ValueTask<IClientRegistration?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default)
+                        => ValueTask.FromResult<IClientRegistration?>(null);
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnosticsAsync(source);
+
+        diagnostics.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task No_diagnostic_when_record_implementation_references_validator()
+    {
+        var source = """
+            using System.Threading;
+            using System.Threading.Tasks;
+            using ZeeKayDa.Auth.Clients;
+            namespace MyCompany.Auth
+            {
+                public sealed record MyClientRepository : IClientRepository
+                {
+                    private readonly IClientRegistrationValidator _validator;
+                    public MyClientRepository(IClientRegistrationValidator validator) { _validator = validator; }
+                    public ValueTask<IClientRegistration?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default)
+                        => ValueTask.FromResult<IClientRegistration?>(null);
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnosticsAsync(source);
+
+        diagnostics.Should().BeEmpty();
+    }
+
     // ── Infrastructure ────────────────────────────────────────────────────────────────────────────
 
     private static async Task<ImmutableArray<Diagnostic>> GetDiagnosticsAsync(
