@@ -106,9 +106,21 @@ public sealed class InterpolatedStringLogAnalyzer : DiagnosticAnalyzer
         if (typeDecl is null) return false;
 
         var typeSymbol = context.SemanticModel.GetDeclaredSymbol(typeDecl);
-        return typeSymbol?.AllInterfaces.Any(i =>
+        if (typeSymbol is null) return false;
+
+        // Exempt only the concrete sanitizing-logger wrapper in ZeeKayDa.Auth.
+        // Matching by concrete type name + assembly (not just interface) prevents friend-assembly
+        // classes that happen to implement ISanitizingLogger<T> from self-exempting.
+        if (typeSymbol.Name == "SecretSanitizingLogger"
+            && typeSymbol.ContainingAssembly?.Name == "ZeeKayDa.Auth")
+            return true;
+
+        // Fallback: also exempt any ISanitizingLogger<T> defined in ZeeKayDa.Auth itself,
+        // guarded by assembly identity so structural spoofing from other compilations is blocked.
+        return typeSymbol.AllInterfaces.Any(i =>
             i.Name == "ISanitizingLogger" &&
             i.TypeParameters.Length == 1 &&
-            i.ContainingNamespace?.ToDisplayString() == "ZeeKayDa.Auth.Logging") ?? false;
+            i.ContainingNamespace?.ToDisplayString() == "ZeeKayDa.Auth.Logging" &&
+            i.ContainingAssembly?.Name == "ZeeKayDa.Auth");
     }
 }

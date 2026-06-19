@@ -573,7 +573,7 @@ public sealed class InterpolatedStringLogAnalyzerTests
         };
 
         var compilation = CSharpCompilation.Create(
-            "TestAssembly",
+            "ZeeKayDa.Auth",
             new[] { CSharpSyntaxTree.ParseText(source) },
             references,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
