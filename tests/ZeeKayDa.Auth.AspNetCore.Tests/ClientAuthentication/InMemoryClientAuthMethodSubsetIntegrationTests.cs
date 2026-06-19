@@ -71,10 +71,11 @@ public sealed class InMemoryClientAuthMethodSubsetIntegrationTests
 
             if (ex is AggregateException aggregate)
             {
-                foreach (var found in aggregate.InnerExceptions.Select(FindInChain<T>))
+                foreach (var found in aggregate.InnerExceptions
+                             .Select(FindInChain<T>)
+                             .Where(found => found is not null))
                 {
-                    if (found is not null)
-                        return found;
+                    return found!;
                 }
                 return null;
             }
