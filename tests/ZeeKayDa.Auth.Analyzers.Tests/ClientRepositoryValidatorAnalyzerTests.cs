@@ -436,7 +436,6 @@ public sealed class ClientRepositoryValidatorAnalyzerTests
         var systemAssemblies = System.IO.Directory
             .EnumerateFiles(runtimeDir, "System.*.dll")
             .Select(p => MetadataReference.CreateFromFile(p))
-            .Cast<MetadataReference>()
             .ToList();
 
         systemAssemblies.Add(MetadataReference.CreateFromFile(typeof(object).Assembly.Location));
