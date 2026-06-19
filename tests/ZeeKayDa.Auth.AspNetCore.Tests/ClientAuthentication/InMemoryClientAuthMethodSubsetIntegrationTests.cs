@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using System.Linq;
 using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.AspNetCore;
 using ZeeKayDa.Auth.Clients;
@@ -70,9 +71,8 @@ public sealed class InMemoryClientAuthMethodSubsetIntegrationTests
 
             if (ex is AggregateException aggregate)
             {
-                foreach (var inner in aggregate.InnerExceptions)
+                foreach (var found in aggregate.InnerExceptions.Select(FindInChain<T>))
                 {
-                    var found = FindInChain<T>(inner);
                     if (found is not null)
                         return found;
                 }
