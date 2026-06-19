@@ -49,7 +49,7 @@ public sealed class ClientRepositoryValidatorAnalyzer : DiagnosticAnalyzer
     {
         var typeDecl = (BaseTypeDeclarationSyntax)context.Node;
 
-        var typeSymbol = context.SemanticModel.GetDeclaredSymbol(typeDecl) as INamedTypeSymbol;
+        var typeSymbol = context.SemanticModel.GetDeclaredSymbol(typeDecl);
         if (typeSymbol is null) return;
 
         if (!ImplementsIClientRepository(typeSymbol)) return;
@@ -78,9 +78,10 @@ public sealed class ClientRepositoryValidatorAnalyzer : DiagnosticAnalyzer
         SyntaxNodeAnalysisContext context,
         BaseTypeDeclarationSyntax typeDecl)
     {
-        foreach (var identifier in typeDecl.DescendantNodes().OfType<IdentifierNameSyntax>())
+        foreach (var symbolInfo in typeDecl.DescendantNodes()
+                     .OfType<IdentifierNameSyntax>()
+                     .Select(context.SemanticModel.GetSymbolInfo))
         {
-            var symbolInfo = context.SemanticModel.GetSymbolInfo(identifier);
             if (IsOrReferencesValidator(symbolInfo.Symbol))
                 return true;
         }
