@@ -69,6 +69,51 @@ guide for concrete, copy-paste steps to:
 - Guard exception-handling middleware against logging full request state
 - Sanitize Application Insights and other telemetry SDK captured properties
 
+## Redirect URI validation
+
+ZeeKayDa.Auth enforces exact-ordinal string matching for redirect URI comparisons, as required by
+[RFC 9700 §2.1](https://www.rfc-editor.org/rfc/rfc9700#section-2.1). Two behaviours operators
+must be aware of:
+
+### No normalisation
+
+The framework performs **no normalisation** before comparing a request's `redirect_uri` against a
+client's registered URIs. The comparison is always against the exact string that was registered.
+
+This means:
+
+- `https://app/cb` does **not** match `https://app/cb/` — trailing slash matters
+- `https://app/cb%20x` does **not** match `https://app/cb x` — percent-encoding is not decoded
+  before comparison
+- `HTTPS://app/cb` does **not** match `https://app/cb` — scheme casing matters
+
+Operators must register the exact URI the client will send on the wire. If a client sends
+`https://app/cb` in its authorization request, `https://app/cb/` must not be registered in its
+place.
+
+> ⚠️ **Warning:** Normalisation gaps are a common source of redirect URI bypass vulnerabilities.
+> Registering a URI with an unintended trailing slash, different casing, or a different
+> percent-encoding form from what the client sends can cause legitimate requests to be rejected.
+> Test the exact wire form your client sends against what is registered.
+
+### Private-use URI scheme heuristic
+
+The scheme allowlist for registered redirect URIs permits any scheme that contains a `.` character,
+as an approximation of [RFC 8252 §7.1](https://www.rfc-editor.org/rfc/rfc8252#section-7.1)'s
+reverse-DNS guidance for private-use schemes in native applications (for example,
+`com.example.myapp:/callback`).
+
+This heuristic is **approximate**: it accepts any scheme containing a `.` that is not `https` or
+`http`, regardless of whether it follows the full `tld.org.app` reverse-DNS shape. It does not
+validate that the scheme is actually owned by the registering party or that it conforms to the
+RFC 8252 §7.1 naming convention.
+
+> ⚠️ **Warning:** Because scheme validation is approximate, human review of private-use scheme
+> registrations is still expected. CI or automated registration pipelines should not treat
+> framework acceptance as a substitute for confirming that a private-use scheme is genuinely
+> controlled by the registering party. An attacker who can register a client on a shared platform
+> could claim an arbitrary dotted scheme.
+
 ## Thank You
 
 Security researchers who responsibly disclose vulnerabilities will be credited in the release notes (unless they prefer to remain anonymous).

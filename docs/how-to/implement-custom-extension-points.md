@@ -283,6 +283,14 @@ Startup validation fails if multiple hashers are registered but zero or more tha
 framework's dispatch pipeline. The built-in `ClientSecretAuthenticator` handles
 `client_secret_basic` and `client_secret_post`; everything else requires a custom implementation.
 
+> ⚠️ **`CanHandle` must be a cheap shape check.** Do not perform crypto operations, database
+> lookups, or any I/O in `CanHandle`. It is called for every registered authenticator on every
+> token-endpoint request. A slow `CanHandle` multiplies across all registered authenticators and
+> degrades every token-endpoint hit — not just requests for your authentication method.
+>
+> Parse a header, check a form key, or inspect a connection property. Do not call a database,
+> validate a signature, or make an HTTP request. See ADR 0007 §4 for the full contract.
+
 > **Note:** `none` is a special case — it is handled automatically by the composite dispatcher
 > as a fallback for public clients and does not require an `IClientAuthenticator` implementation.
 > To support public clients, add `TokenEndpointAuthMethod.None` to `AuthMethodsSupported` and
