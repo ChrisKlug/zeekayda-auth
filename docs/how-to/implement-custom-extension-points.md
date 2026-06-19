@@ -1,18 +1,21 @@
 ---
 title: "Implement a custom extension point"
-description: "How to write a custom IScopeRepository or IDiscoveryDocumentProvider that participates correctly in async cancellation."
+description: "How to write custom extension points — IScopeRepository, IDiscoveryDocumentProvider, IClientRepository, IClientSecretHasher, and IClientAuthenticator — that participate correctly in async cancellation."
 parent: "How-to Guides"
 nav_order: 3
 ---
 
 *Added in Unreleased.*
 
-ZeeKayDa.Auth exposes two extension points you can implement to plug in a custom scope catalog or a custom discovery document:
+ZeeKayDa.Auth exposes several extension points you can implement to plug in custom behaviour at the scope catalog, discovery, client storage, secret hashing, and authentication layers:
 
 - [`IScopeRepository`](../reference/configuration.md) — supplies the scopes the authorization server knows about, e.g. from a database, a remote config service, or a per-tenant store.
 - `IDiscoveryDocumentProvider` — supplies the OpenID Connect discovery document, e.g. when you need to merge metadata from another source or surface a dynamic key-rotation state.
+- `IClientRepository` — supplies client registrations at request time, e.g. from a relational database or a multi-tenant store.
+- `IClientSecretHasher` — plugs in a custom hashing algorithm (bcrypt, Argon2, etc.) or supports credential migration.
+- `IClientAuthenticator` — adds a new token-endpoint authentication method beyond `client_secret_basic` and `client_secret_post`.
 
-Both interfaces are **fully asynchronous and cancellation-aware**. This guide shows you how to implement them correctly. The signatures look like this:
+The repository and discovery interfaces are **fully asynchronous and cancellation-aware**. This guide shows you how to implement each extension point correctly. The scope and discovery signatures look like this:
 
 ```csharp
 public interface IScopeRepository
@@ -277,7 +280,96 @@ Startup validation fails if multiple hashers are registered but zero or more tha
 > See [Configure host-level log hygiene](configure-host-log-hygiene.md) for the steps required to
 > close this gap in the host pipeline.
 
-## 5. Implement a custom client authenticator
+## 5. Implement a custom client repository
+
+A custom `IClientRepository` is the right approach when your client registrations live outside
+the in-memory defaults — for example in a relational database, a multi-tenant store, or an
+external configuration service. The interface has a single read method:
+
+```csharp
+public interface IClientRepository
+{
+    ValueTask<IClientRegistration?> FindByClientIdAsync(
+        string clientId, CancellationToken cancellationToken = default);
+}
+```
+
+### Startup path vs. runtime admin path
+
+| Scenario | Recommended approach |
+|---|---|
+| Clients known at startup | `AddInMemoryClients` — the builder hashes secrets automatically |
+| Clients created at runtime (admin API, credential rotation, future [RFC 7591 DCR](https://www.rfc-editor.org/rfc/rfc7591)) | Custom `IClientRepository` + inject `IClientSecretFactory` |
+
+### Using `IClientSecretFactory` to hash secrets at write time
+
+Inject `IClientSecretFactory` into your repository to hash plaintext secrets at runtime using the
+same default hasher configured via `AddSecretsHasher<T>`. `IClientSecretFactory` is registered
+automatically by `AddZeeKayDaAuth` as a singleton — no additional registration is required.
+
+```csharp
+public sealed class DatabaseClientRepository : IClientRepository
+{
+    private readonly IDbContextFactory<ClientDbContext> _factory;
+    private readonly IClientSecretFactory _secretFactory;
+    private readonly IClientRegistrationValidator _validator;
+
+    public DatabaseClientRepository(
+        IDbContextFactory<ClientDbContext> factory,
+        IClientSecretFactory secretFactory,
+        IClientRegistrationValidator validator)
+    {
+        _factory = factory;
+        _secretFactory = secretFactory;
+        _validator = validator;
+    }
+
+    public async ValueTask<IClientRegistration?> FindByClientIdAsync(
+        string clientId, CancellationToken cancellationToken = default)
+    {
+        await using var db = await _factory.CreateDbContextAsync(cancellationToken);
+        var row = await db.Clients.FindAsync([clientId], cancellationToken);
+        return row is null ? null : MapToRegistration(row);
+    }
+
+    public async Task RegisterClientAsync(string clientId, string plaintextSecret)
+    {
+        IClientSecret credential = _secretFactory.Create(plaintextSecret);
+        // _validator.Validate(registration) before persisting...
+    }
+}
+```
+
+### Validate before persisting
+
+Custom repositories MUST call `IClientRegistrationValidator.Validate` before writing a new or
+updated client registration to the store. The validator enforces the same startup-time rules that
+apply to in-memory clients — required fields, allowed grant types, consistent redirect URI
+configuration, and so on. Skipping validation can allow malformed registrations that pass the
+write path but throw exceptions or cause unexpected behaviour at token-request time.
+
+> ⚠️ **Warning: `IClientSecretFactory.Create` is CPU-intensive and must not be called on a hot
+> request path.**
+> At the default iteration count of 600,000 PBKDF2-HMAC-SHA256 rounds, a single call takes
+> approximately 600 ms on typical server hardware. Calling it from a token-endpoint handler or any
+> other frequently-hit path will degrade throughput for all clients on the server.
+>
+> Reserve `IClientSecretFactory.Create` for admin operations only. The endpoint that calls it
+> MUST be protected by strong authentication, rate-limited to prevent brute-force amplification,
+> and logged for audit purposes.
+
+### Registration
+
+```csharp
+builder.Services.AddSingleton<IClientRepository, DatabaseClientRepository>();
+```
+
+For the full `IClientSecretFactory` API reference, including lifetime and security notes, see
+[Client secrets reference — `IClientSecretFactory`](../reference/client-secrets.md#iclientsecretfactory).
+
+---
+
+## 6. Implement a custom client authenticator
 
 `IClientAuthenticator` lets you plug a new token endpoint authentication method into the
 framework's dispatch pipeline. The built-in `ClientSecretAuthenticator` handles
@@ -423,5 +515,5 @@ builder.Services.AddZeeKayDaAuth(options =>
 - [Configure discovery](configure-discovery.md) — customise the discovery document with the built-in options.
 - [Configure host-level log hygiene](configure-host-log-hygiene.md) — prevent sensitive parameters from appearing in host-pipeline logs outside ZeeKayDa.Auth's redaction boundary.
 - [`AuthorizationServerOptions` reference](../reference/configuration.md) — full property list and validation rules.
-- [Client secrets reference](../reference/client-secrets.md) — `Pbkdf2ClientSecretHasherOptions` property reference.
+- [Client secrets reference](../reference/client-secrets.md) — `Pbkdf2ClientSecretHasherOptions` property reference and `IClientSecretFactory` API.
 - [Cancellation in managed threads](https://learn.microsoft.com/dotnet/standard/threading/cancellation-in-managed-threads) — Microsoft's reference for the cancellation pattern this framework follows.
