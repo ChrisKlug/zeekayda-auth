@@ -25,7 +25,7 @@ namespace ZeeKayDa.Auth.Clients;
 /// not a bug. The cost is paid once at host startup.
 /// </para>
 /// </remarks>
-internal sealed class CompositeClientSecretHasher
+internal sealed class CompositeClientSecretHasher : IClientSecretFactory
 {
     /// <summary>
     /// Maximum number of active shared-secret credentials a client may have simultaneously
