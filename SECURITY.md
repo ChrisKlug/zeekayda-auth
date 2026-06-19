@@ -85,16 +85,23 @@ This means:
 - `https://app/cb` does **not** match `https://app/cb/` — trailing slash matters
 - `https://app/cb%20x` does **not** match `https://app/cb x` — percent-encoding is not decoded
   before comparison
-- `HTTPS://app/cb` does **not** match `https://app/cb` — scheme casing matters
 
 Operators must register the exact URI the client will send on the wire. If a client sends
 `https://app/cb` in its authorization request, `https://app/cb/` must not be registered in its
 place.
 
 > ⚠️ **Warning:** Normalisation gaps are a common source of redirect URI bypass vulnerabilities.
-> Registering a URI with an unintended trailing slash, different casing, or a different
-> percent-encoding form from what the client sends can cause legitimate requests to be rejected.
-> Test the exact wire form your client sends against what is registered.
+> Registering a URI with an unintended trailing slash or a different percent-encoding form from
+> what the client sends can cause legitimate requests to be rejected. Test the exact wire form
+> your client sends against what is registered.
+
+### Loopback port exception
+
+For redirect URIs whose host is a loopback address (`127.0.0.1` or `[::1]`), the port component
+is ignored during comparison. This is the one intentional deviation from exact-match, required by
+[RFC 8252 §7.3](https://www.rfc-editor.org/rfc/rfc8252#section-7.3) because loopback ports are
+OS-assigned and cannot be fixed at registration time. All other URI components are still matched
+exactly.
 
 ### Private-use URI scheme heuristic
 
