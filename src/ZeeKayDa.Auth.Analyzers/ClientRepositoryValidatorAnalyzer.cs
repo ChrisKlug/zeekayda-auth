@@ -79,15 +79,10 @@ public sealed class ClientRepositoryValidatorAnalyzer : DiagnosticAnalyzer
         SyntaxNodeAnalysisContext context,
         BaseTypeDeclarationSyntax typeDecl)
     {
-        foreach (var symbolInfo in typeDecl.DescendantNodes()
-                     .OfType<IdentifierNameSyntax>()
-                     .Select(id => context.SemanticModel.GetSymbolInfo(id))
-                     .Where(symbolInfo => IsOrReferencesValidator(symbolInfo.Symbol)))
-        {
-            return true;
-        }
-
-        return false;
+        return typeDecl.DescendantNodes()
+            .OfType<IdentifierNameSyntax>()
+            .Select(id => context.SemanticModel.GetSymbolInfo(id))
+            .Any(symbolInfo => IsOrReferencesValidator(symbolInfo.Symbol));
     }
 
     // Note: wrapper interfaces (e.g. IMyValidator : IClientRegistrationValidator) are not detected —
