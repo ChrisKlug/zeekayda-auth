@@ -10,7 +10,9 @@ nav_order: 5
 ZeeKayDa.Auth includes a `SecretSanitizingLogger` wrapper that intercepts every log call made by
 the library's own services and redacts known-sensitive OAuth parameters — `client_secret`,
 `code_verifier`, `Authorization`, `access_token`, `refresh_token`, and others — before they reach
-the underlying log sink.
+the underlying log sink. In addition, all logged exceptions are unconditionally wrapped in
+`RedactedExceptionWrapper`, replacing the exception `Message` with the fixed placeholder
+`[exception message redacted by SecretSanitizingLogger]` before the exception reaches any log sink.
 
 > ⚠️ **Warning: The library's redaction boundary covers only ZeeKayDa.Auth's own internal logging.**
 > ASP.NET Core's `UseHttpLogging()`, Kestrel's connection logging, W3CLogger, Application Insights
@@ -24,6 +26,7 @@ the underlying log sink.
 | Logging surface | Covered by `SecretSanitizingLogger`? |
 |---|---|
 | ZeeKayDa.Auth internal structured logs | Yes — values for sensitive keys are replaced with `[REDACTED]` |
+| Exception messages on logged exceptions | Yes — covered unconditionally; all logged exceptions are wrapped in `RedactedExceptionWrapper` and their `Message` is replaced with a fixed placeholder |
 | ASP.NET Core `UseHttpLogging()` | No |
 | Kestrel connection/request logging | No |
 | W3CLogger | No |
@@ -192,6 +195,36 @@ builder.Services.AddSingleton<ITelemetryInitializer, OAuthTelemetrySanitizer>();
 | Use a non-verbose production exception handler | Full request state (headers, form) in exception logs |
 | Sanitize telemetry SDK captured properties | Credentials appearing in APM or tracing back-ends |
 
+## Opting out of exception message sanitization in development
+
+Exception message sanitization is active by default for all environments. If you need to see
+original exception messages in your log output during local development, set
+`Logging.DisableExceptionSanitizing` to `true` in `appsettings.Development.json`:
+
+```json
+// appsettings.Development.json
+{
+  "ZeeKayDaAuth": {
+    "Logging": {
+      "DisableExceptionSanitizing": true
+    }
+  }
+}
+```
+
+Because this setting is in `appsettings.Development.json`, it is automatically scoped to the
+`Development` environment. The standard ASP.NET Core configuration layering means this file is
+loaded only when `ASPNETCORE_ENVIRONMENT` or `DOTNET_ENVIRONMENT` is set to `Development` —
+it is never applied in production or staging environments.
+
+When `DisableExceptionSanitizing` is `true`, ZeeKayDa.Auth emits a `LogLevel.Warning` at startup
+as a reminder that exception messages will not be redacted.
+
+> ⚠️ **Warning: `DisableExceptionSanitizing` is for development environments only.**
+> Never set it to `true` in `appsettings.json` or `appsettings.Production.json`. Exception
+> messages can contain credential values or other sensitive state that would reach your log sinks
+> verbatim. Always set this flag only in `appsettings.Development.json`.
+
 ## Compile-time enforcement inside ZeeKayDa.Auth
 
 In addition to the runtime steps above, ZeeKayDa.Auth ships Roslyn analyzer rules that enforce
@@ -207,8 +240,7 @@ violation examples, and suppression guidance.
 - [Analyzer rules reference](../reference/analyzer-rules.md) — ZEEKAYDA0001 and ZEEKAYDA0002
   compile-time log-hygiene rules
 - [Implement a custom extension point](implement-custom-extension-points.md) — security contracts
-  for custom hashers and authenticators, including the known limitation on exception message
-  sanitization
+  for custom hashers and authenticators
 - [Configure ZeeKayDa.Auth](configure-zeekayda-auth.md) — register the framework and the minimum
   required options
 - [HttpLogging in ASP.NET Core](https://learn.microsoft.com/aspnet/core/fundamentals/http-logging/) — Microsoft's reference for `UseHttpLogging` and `HttpLoggingFields`

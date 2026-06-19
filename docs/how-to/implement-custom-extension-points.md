@@ -260,18 +260,13 @@ Startup validation fails if multiple hashers are registered but zero or more tha
 > built into `CompositeClientSecretHasher`. Use `CryptographicOperations.FixedTimeEquals` for
 > raw byte comparisons, or your library's built-in constant-time verify function.
 
-> ⚠️ **Warning: Known limitation — exception messages are not sanitized.**
-> `SecretSanitizingLogger` redacts sensitive values in structured log state, but it does **not**
-> inspect or scrub exception objects. If you throw an exception whose `Message` (or any chained
-> inner exception's `Message`) contains a raw credential value, that value will reach the log sink
-> verbatim.
->
-> **Interim guidance:** never embed raw credential material in exception messages. Use a static
-> message or include only the credential type name, not its value.
->
-> This is tracked in [issue #173](https://github.com/ChrisKlug/zeekayda-auth/issues/173). The
-> permanent fix — either full message redaction or complete exception suppression — will be decided
-> and implemented in a future release.
+> 💡 **Exception messages are now redacted by default.**
+> `SecretSanitizingLogger` unconditionally wraps all logged exceptions in `RedactedExceptionWrapper`,
+> replacing the exception `Message` with a fixed placeholder before it reaches any log sink. You no
+> longer need to avoid putting credential material in exception messages as a workaround — though
+> doing so remains good practice. To restore original exception messages in a development
+> environment, call `DisableExceptionSanitizing()` on the builder. See
+> [Configure host-level log hygiene](configure-host-log-hygiene.md) for details.
 
 > ⚠️ **Warning: `SecretSanitizingLogger` covers ZeeKayDa.Auth's own logs only.**
 > The redaction wrapper intercepts log calls made by ZeeKayDa.Auth's internal services. It has no
@@ -405,18 +400,13 @@ builder.Services.AddZeeKayDaAuth(options =>
 | Be singleton-safe | Authenticators are registered as singletons and called concurrently |
 | Return `ClientAuthenticationResult.NotValid()` on failure — never throw | Throwing from `AuthenticateAsync` produces a 500 rather than a 401 |
 
-> ⚠️ **Warning: Known limitation — exception messages are not sanitized.**
-> `SecretSanitizingLogger` redacts sensitive values in structured log state, but it does **not**
-> inspect or scrub exception objects. If you throw an exception whose `Message` (or any chained
-> inner exception's `Message`) contains a raw credential value, that value will reach the log sink
-> verbatim.
->
-> **Interim guidance:** never embed raw credential material in exception messages. Use a static
-> message or include only the credential type name, not its value.
->
-> This is tracked in [issue #173](https://github.com/ChrisKlug/zeekayda-auth/issues/173). The
-> permanent fix — either full message redaction or complete exception suppression — will be decided
-> and implemented in a future release.
+> 💡 **Exception messages are now redacted by default.**
+> `SecretSanitizingLogger` unconditionally wraps all logged exceptions in `RedactedExceptionWrapper`,
+> replacing the exception `Message` with a fixed placeholder before it reaches any log sink. You no
+> longer need to avoid putting credential material in exception messages as a workaround — though
+> doing so remains good practice. To restore original exception messages in a development
+> environment, call `DisableExceptionSanitizing()` on the builder. See
+> [Configure host-level log hygiene](configure-host-log-hygiene.md) for details.
 
 > ⚠️ **Warning: `SecretSanitizingLogger` covers ZeeKayDa.Auth's own logs only.**
 > The redaction wrapper intercepts log calls made by ZeeKayDa.Auth's internal services. It has no

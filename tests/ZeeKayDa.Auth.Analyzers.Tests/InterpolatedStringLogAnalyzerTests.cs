@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Diagnostics;
@@ -188,6 +189,166 @@ public sealed class InterpolatedStringLogAnalyzerTests
             """;
 
         var diagnostics = await GetDiagnosticsAsync(source);
+
+        diagnostics.Should().ContainSingle()
+            .Which.Id.Should().Be(InterpolatedStringLogAnalyzer.DiagnosticId);
+    }
+
+    [Fact]
+    public async Task Diagnostic_fires_on_string_format_message_template()
+    {
+        var source = """
+            using Microsoft.Extensions.Logging;
+            namespace ZeeKayDa.Auth.Logging
+            {
+                internal interface ISanitizingLogger<T> : ILogger<T> { }
+            }
+            namespace ZeeKayDa.Auth.Services
+            {
+                using ZeeKayDa.Auth.Logging;
+                class MyService
+                {
+                    void DoWork()
+                    {
+                        ISanitizingLogger<object> logger = null!;
+                        string someValue = "x";
+                        logger.LogInformation(string.Format("val={0}", someValue));
+                    }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnosticsAsync(source);
+
+        diagnostics.Should().ContainSingle()
+            .Which.Id.Should().Be(InterpolatedStringLogAnalyzer.DiagnosticId);
+    }
+
+    [Fact]
+    public async Task Diagnostic_still_fires_inside_class_implementing_only_ILogger()
+    {
+        // A class that implements ILogger<T> but NOT ISanitizingLogger<T> must NOT be exempt.
+        var source = """
+            using System;
+            using Microsoft.Extensions.Logging;
+            namespace ZeeKayDa.Auth.Services
+            {
+                internal sealed class EvilService : ILogger<EvilService>
+                {
+                    private readonly ILogger<EvilService> _logger;
+                    public EvilService(ILogger<EvilService> logger) { _logger = logger; }
+                    public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+                    public bool IsEnabled(LogLevel level) => false;
+                    public void Log<TState>(LogLevel level, EventId id, TState state, Exception? ex, Func<TState, Exception?, string> f) { }
+                    public void DoSomething()
+                    {
+                        string secret = "s3cr3t";
+                        _logger.LogInformation($"secret={secret}");
+                    }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnosticsAsync(source);
+
+        diagnostics.Should().ContainSingle()
+            .Which.Id.Should().Be(InterpolatedStringLogAnalyzer.DiagnosticId);
+    }
+
+    [Fact]
+    public async Task No_exemption_for_non_generic_ISanitizingLogger()
+    {
+        // A non-generic ISanitizingLogger in the same namespace must NOT grant the exemption —
+        // only the genuine generic ISanitizingLogger<T> (TypeParameters.Length == 1) is trusted.
+        var source = """
+            using Microsoft.Extensions.Logging;
+            namespace ZeeKayDa.Auth.Logging
+            {
+                internal interface ISanitizingLogger { }
+            }
+            namespace ZeeKayDa.Auth.Services
+            {
+                using ZeeKayDa.Auth.Logging;
+                internal sealed class FakeService : ISanitizingLogger
+                {
+                    void DoWork()
+                    {
+                        ILogger<object> logger = null!;
+                        string value = "x";
+                        logger.LogInformation($"val={value}");
+                    }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnosticsAsync(source);
+
+        diagnostics.Should().ContainSingle()
+            .Which.Id.Should().Be(InterpolatedStringLogAnalyzer.DiagnosticId);
+    }
+
+    [Fact]
+    public async Task No_exemption_for_type_that_implements_neither_ILogger_nor_ISanitizingLogger()
+    {
+        // Documents the exemption boundary: a plain class that implements neither ILogger<T>
+        // nor ISanitizingLogger<T> must still trigger the diagnostic when it calls Log*.
+        var source = """
+            using Microsoft.Extensions.Logging;
+            namespace ZeeKayDa.Auth.Services
+            {
+                class PlainService
+                {
+                    void DoWork()
+                    {
+                        ILogger<object> logger = null!;
+                        string value = "x";
+                        logger.LogInformation($"val={value}");
+                    }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnosticsAsync(source);
+
+        diagnostics.Should().ContainSingle()
+            .Which.Id.Should().Be(InterpolatedStringLogAnalyzer.DiagnosticId);
+    }
+
+    [Fact]
+    public async Task Diagnostic_fires_inside_friend_assembly_class_implementing_ISanitizingLogger()
+    {
+        // A type in a friend assembly (InternalsVisibleTo) that implements ISanitizingLogger<T>
+        // must NOT be exempt — only types defined in ZeeKayDa.Auth itself are trusted.
+        var coreSource = """
+            using Microsoft.Extensions.Logging;
+            namespace ZeeKayDa.Auth.Logging
+            {
+                internal interface ISanitizingLogger<T> : ILogger<T> { }
+            }
+            """;
+
+        var aspNetCoreSource = """
+            using Microsoft.Extensions.Logging;
+            using ZeeKayDa.Auth.Logging;
+            namespace ZeeKayDa.Auth.AspNetCore.Services
+            {
+                internal sealed class FriendService : ISanitizingLogger<FriendService>
+                {
+                    private readonly ILogger<FriendService> _inner;
+                    public FriendService(ILogger<FriendService> inner) { _inner = inner; }
+                    public System.IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+                    public bool IsEnabled(LogLevel level) => false;
+                    public void Log<TState>(LogLevel level, Microsoft.Extensions.Logging.EventId id, TState state, System.Exception? ex, System.Func<TState, System.Exception?, string> f) { }
+                    public void DoWork()
+                    {
+                        string secret = "s3cr3t";
+                        _inner.LogInformation($"secret={secret}"); // must be flagged
+                    }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnosticsFromFriendAssemblyAsync(coreSource, aspNetCoreSource);
 
         diagnostics.Should().ContainSingle()
             .Which.Id.Should().Be(InterpolatedStringLogAnalyzer.DiagnosticId);
@@ -453,13 +614,41 @@ public sealed class InterpolatedStringLogAnalyzerTests
         };
 
         var compilation = CSharpCompilation.Create(
-            "TestAssembly",
+            "ZeeKayDa.Auth",
             new[] { CSharpSyntaxTree.ParseText(source) },
             references,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 
         var analyzers = ImmutableArray.Create<DiagnosticAnalyzer>(new InterpolatedStringLogAnalyzer());
         var compilationWithAnalyzers = compilation.WithAnalyzers(analyzers);
+        return await compilationWithAnalyzers.GetAnalyzerDiagnosticsAsync();
+    }
+
+    private static async Task<ImmutableArray<Diagnostic>> GetDiagnosticsFromFriendAssemblyAsync(
+        string coreSource, string friendSource)
+    {
+        var sharedReferences = new MetadataReference[]
+        {
+            MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(Microsoft.Extensions.Logging.ILogger<>).Assembly.Location),
+        };
+
+        // Compile the core assembly (ZeeKayDa.Auth) that defines ISanitizingLogger<T>
+        var coreCompilation = CSharpCompilation.Create(
+            "ZeeKayDa.Auth",
+            new[] { CSharpSyntaxTree.ParseText(coreSource) },
+            sharedReferences,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        // Compile the friend assembly referencing it
+        var friendCompilation = CSharpCompilation.Create(
+            "ZeeKayDa.Auth.AspNetCore",
+            new[] { CSharpSyntaxTree.ParseText(friendSource) },
+            sharedReferences.Append(coreCompilation.ToMetadataReference()).ToArray(),
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        var analyzers = ImmutableArray.Create<DiagnosticAnalyzer>(new InterpolatedStringLogAnalyzer());
+        var compilationWithAnalyzers = friendCompilation.WithAnalyzers(analyzers);
         return await compilationWithAnalyzers.GetAnalyzerDiagnosticsAsync();
     }
 }
