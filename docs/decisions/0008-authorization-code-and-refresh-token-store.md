@@ -192,7 +192,7 @@ sensible defaults so the record remains additively-extensible without a binary b
 | `CodeChallenge` | **R** | `string` | PKCE challenge value (RFC 7636 §4.2; mandatory per OAuth 2.1 §4.1.1) |
 | `CodeChallengeMethod` | **R** | `CodeChallengeMethod` | Always `S256` in the current implementation |
 | `Sub` | **R** | `string` | Authenticated user subject identifier |
-| `Scope` | **R** | `string` | Space-separated granted scope |
+| `Scope` | **R** | `IReadOnlyList<string>` | Granted scope values |
 | `Nonce` |  | `string?` | OIDC nonce — null for pure OAuth 2 flows |
 | `AuthTime` | **R** | `DateTimeOffset` | Time of end-user authentication for this code (OIDC Core §2 `auth_time`). Bound at issuance because the SSO session value may have advanced by the time the code is exchanged; `max_age` enforcement and ID-token `auth_time` MUST reflect the authentication that produced *this* code. |
 | `Acr` |  | `string?` | Authentication Context Class Reference at issuance (OIDC Core §2). Null when no ACR was satisfied. |
@@ -416,7 +416,7 @@ binary break.
 | `PreviousTokenHandleHash` |  | `string?` | `Base64Url(SHA-256(previousHandle))` — the hash of the handle this token was rotated *from*, or `null` for the original token in the family. Forensic forward-tracing only; never used for authorization decisions. Stored as a hash, not the raw handle, because retaining the raw previous handle would defeat the §4a protection (handle-hashing in cache keys) by reintroducing the live bearer credential into stored entry values. |
 | `ClientId` | **R** | `string` | Bound at issuance |
 | `Sub` | **R** | `string` | Authenticated user subject identifier |
-| `Scope` | **R** | `string` | Space-separated scope granted to this refresh token. Rotation MUST NOT widen scope; see RFC 6749 §6 — the token endpoint enforces this before calling `StoreAsync`. |
+| `Scope` | **R** | `IReadOnlyList<string>` | Granted scope values for this refresh token. Rotation MUST NOT widen scope; see RFC 6749 §6 — the token endpoint enforces this before calling `StoreAsync`. |
 | `SsoSessionId` | **R** | `string` | The SSO session that produced this token; used by future session-linked revocation (see issue #104) |
 | `IssuedAt` | **R** | `DateTimeOffset` | UTC timestamp |
 | `ExpiresAt` | **R** | `DateTimeOffset` | UTC expiry — `IssuedAt + RefreshTokenLifetime` (see §"Options placement") |
