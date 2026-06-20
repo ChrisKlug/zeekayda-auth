@@ -48,6 +48,7 @@ public interface IRefreshTokenStore
     /// <exception cref="ZeeKayDaStoreException">
     /// Thrown when the underlying store transport fails.
     /// </exception>
+    /// <returns>A <see cref="Task"/> that completes when the operation has finished.</returns>
     Task StoreAsync(RefreshTokenEntry entry, CancellationToken cancellationToken);
 
     /// <summary>
@@ -56,8 +57,8 @@ public interface IRefreshTokenStore
     /// <param name="tokenHandle">The raw (unhashed) refresh token handle.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>
-    /// The <see cref="RefreshTokenEntry"/> if found and not yet consumed; otherwise
-    /// <see langword="null"/>.
+    /// The <see cref="RefreshTokenEntry"/> if a matching token exists, has not been consumed,
+    /// has not expired, and its family has not been revoked; otherwise <see langword="null"/>.
     /// </returns>
     /// <remarks>
     /// This method is intended for read-only lookups (e.g. introspection). To consume a
@@ -83,10 +84,19 @@ public interface IRefreshTokenStore
     /// <see cref="RefreshTokenConsumptionOutcome.AlreadyConsumed.FamilyId"/>.
     /// </returns>
     /// <remarks>
+    /// <para>
     /// The consume operation MUST be atomic. Implementations using non-transactional stores
     /// (e.g. Redis) MUST use a compare-and-swap or Lua script to ensure that two concurrent
     /// requests for the same handle produce exactly one <see cref="RefreshTokenConsumptionOutcome.Consumed"/>
     /// and one <see cref="RefreshTokenConsumptionOutcome.AlreadyConsumed"/> outcome.
+    /// </para>
+    /// <para>
+    /// On backend unavailability, implementations MUST throw <see cref="ZeeKayDaStoreException"/>;
+    /// they MUST NOT return <see cref="RefreshTokenConsumptionOutcome.NotFound"/>. Returning
+    /// <c>NotFound</c> on a transport failure silently suppresses reuse detection — the caller
+    /// cannot distinguish a genuine missing token from a store outage, so the reuse signal
+    /// would be swallowed rather than surfaced.
+    /// </para>
     /// </remarks>
     /// <exception cref="ZeeKayDaStoreException">
     /// Thrown when the underlying store transport fails.
@@ -116,5 +126,6 @@ public interface IRefreshTokenStore
     /// <exception cref="ZeeKayDaStoreException">
     /// Thrown when the underlying store transport fails.
     /// </exception>
+    /// <returns>A <see cref="Task"/> that completes when the operation has finished.</returns>
     Task RevokeFamilyAsync(string familyId, CancellationToken cancellationToken);
 }

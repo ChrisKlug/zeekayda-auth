@@ -38,8 +38,16 @@ public abstract class RefreshTokenConsumptionOutcome
     /// that presented the token. The request MUST be rejected.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// This outcome indicates a possible confused-deputy or token mix-up scenario.
-    /// The store MUST NOT consume the token when this is the outcome.
+    /// The store MUST NOT consume the token and MUST NOT trigger family revocation.
+    /// </para>
+    /// <para>
+    /// Triggering family revocation on a client mismatch would allow an attacker who
+    /// captured a token handle but not the <c>client_id</c> to force-revoke the legitimate
+    /// user's session, constituting a denial-of-service against the session. The request
+    /// MUST be rejected with <c>invalid_grant</c> only.
+    /// </para>
     /// </remarks>
     public sealed class ClientMismatch : RefreshTokenConsumptionOutcome { }
 
@@ -65,6 +73,14 @@ public abstract class RefreshTokenConsumptionOutcome
     /// <summary>
     /// The token's family has been revoked, for example due to a prior reuse detection.
     /// </summary>
+    /// <remarks>
+    /// When this outcome is returned, the family is already in a revoked state — a defensive
+    /// call to <see cref="IRefreshTokenStore.RevokeFamilyAsync"/> is safe and idempotent but
+    /// not required. Authors of exhaustive <see langword="switch"/> expressions may choose to
+    /// call <see cref="IRefreshTokenStore.RevokeFamilyAsync"/> for uniformity, relying on the
+    /// idempotency guarantee, or may skip the call knowing the revocation is already in effect.
+    /// Either approach is correct.
+    /// </remarks>
     public sealed class Revoked : RefreshTokenConsumptionOutcome
     {
         /// <summary>Gets the family identifier that was revoked.</summary>
