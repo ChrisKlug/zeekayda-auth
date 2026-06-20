@@ -659,11 +659,15 @@ wrong and has been removed. The distributed default is suitable for dev/test (wh
 is harmless) and as a starting point for custom implementations that close the race with
 backend-specific primitives. It is **not** the recommended production default.
 
-Single-instance production should use a persistent store (or `.AddDistributedCacheTokenStores()`
-against a durable backend) rather than the in-memory default — the in-memory stores are
-development and testing only (see §5). Multi-instance production should use a Redis+Lua or
-SQL-with-optimistic-concurrency implementation; the framework documents the pattern but does not
-ship a Redis dependency (see §8).
+Single-instance production may use `.AddDistributedCacheTokenStores()` against a durable backend
+rather than the in-memory default — the in-memory stores are development and testing only (see
+§5). However, the non-atomic check-then-set described above is exploitable on single-instance
+deployments too, because Kestrel serves concurrent requests across the thread pool. Using the
+distributed default against a persistent backend is therefore acceptable for single-instance
+production only if the operator explicitly accepts the documented concurrent-redemption race; if
+that risk is not acceptable, a custom atomic store is required even on a single instance. Multi-instance
+production should use a Redis+Lua or SQL-with-optimistic-concurrency implementation; the
+framework documents the pattern but does not ship a Redis dependency (see §8).
 
 **Redemption race in the distributed default — unrecoverable familyId.** The pre-commit
 `familyId` design (§2) ensures every *individual* `AlreadyRedeemed` outcome carries a
@@ -754,10 +758,12 @@ code touches `HttpContext` or `IEndpointRouteBuilder`. Keeping defaults in core 
 
 - Non-ASP.NET hosts (a future worker-service ID-server, integration tests, custom transports)
   can use the defaults without a synthetic dependency on `Microsoft.AspNetCore.App`.
-- The "secure by default" path doesn't require crossing a package boundary.
+- All in-box opt-in implementations (`.AddInMemoryStores()`, `.AddDistributedCacheTokenStores()`)
+  are available without crossing a package boundary; a consumer who opts in to either never needs
+  to pull in a separate NuGet package solely for the store registration.
 
 A separate `ZeeKayDa.Auth.DistributedCache` package was considered (architect's option b)
-and rejected: it splits the secure-by-default surface across two NuGet packages for marginal
+and rejected: it splits the in-box opt-in implementations across two NuGet packages for marginal
 benefit, increases versioning surface, and the abstractions are genuinely host-agnostic.
 
 **Registration.** `AddZeeKayDaAuth` does **not** register either store. Both
@@ -1180,7 +1186,7 @@ violation (§9); the table below reflects that.
 | Deployment scenario | `IAuthorizationCodeStore` | `IRefreshTokenStore` |
 |---|---|---|
 | Development / integration tests | `.AddInMemoryStores()` (emits startup warning) | `.AddInMemoryStores()` (emits startup warning) |
-| Single-instance production | Custom persistent store, or `.AddDistributedCacheTokenStores()` against a persistent backend | Custom persistent store |
+| Single-instance production | Custom persistent store, or `.AddDistributedCacheTokenStores()` against a persistent backend (operator must accept the concurrent-redemption race documented in §4c; otherwise a custom atomic store is required) | Custom persistent store |
 | Multi-instance production | **MUST** use a custom atomic store (Redis+Lua, SQL with optimistic concurrency) — see §8 | **MUST** use a custom atomic store (same backends) |
 
 In-memory stores are development and testing only, regardless of instance count. The previous
