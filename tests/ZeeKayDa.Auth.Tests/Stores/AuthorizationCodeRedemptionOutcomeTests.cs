@@ -11,17 +11,17 @@ public sealed class AuthorizationCodeRedemptionOutcomeTests
     private static AuthorizationCodeEntry BuildEntry() =>
         new()
         {
-            ClientId            = "client-a",
-            RedirectUri         = "https://app/callback",
-            CodeChallenge       = "challenge-abc",
+            ClientId = "client-a",
+            RedirectUri = "https://app/callback",
+            CodeChallenge = "challenge-abc",
             CodeChallengeMethod = CodeChallengeMethod.S256,
-            Sub                 = "user-1",
-            Scope               = "openid",
-            SsoSessionId        = "session-1",
-            InteractionId       = "interaction-1",
-            AuthTime            = DateTimeOffset.UtcNow,
-            IssuedAt            = DateTimeOffset.UtcNow,
-            ExpiresAt           = DateTimeOffset.UtcNow.AddMinutes(1),
+            Sub = "user-1",
+            Scope = "openid",
+            SsoSessionId = "session-1",
+            InteractionId = "interaction-1",
+            AuthTime = DateTimeOffset.UtcNow,
+            IssuedAt = DateTimeOffset.UtcNow,
+            ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(1),
         };
 
     // ── Base-class shape ──────────────────────────────────────────────────────────────────────────
@@ -227,21 +227,21 @@ public sealed class AuthorizationCodeRedemptionOutcomeTests
     {
         AuthorizationCodeRedemptionOutcome outcome = expectedTag switch
         {
-            "redeemed"        => new AuthorizationCodeRedemptionOutcome.Redeemed    { Entry    = BuildEntry()    },
+            "redeemed" => new AuthorizationCodeRedemptionOutcome.Redeemed { Entry = BuildEntry() },
             "client_mismatch" => new AuthorizationCodeRedemptionOutcome.ClientMismatch(),
-            "already_redeemed"=> new AuthorizationCodeRedemptionOutcome.AlreadyRedeemed { FamilyId = "f-1" },
-            _                 => new AuthorizationCodeRedemptionOutcome.NotFound(),
+            "already_redeemed" => new AuthorizationCodeRedemptionOutcome.AlreadyRedeemed { FamilyId = "f-1" },
+            _ => new AuthorizationCodeRedemptionOutcome.NotFound(),
         };
 
         // A switch expression over all four cases must compile without a default arm warning,
         // proving the hierarchy is closed enough for exhaustive matching.
         var actualTag = outcome switch
         {
-            AuthorizationCodeRedemptionOutcome.Redeemed        => "redeemed",
-            AuthorizationCodeRedemptionOutcome.ClientMismatch  => "client_mismatch",
+            AuthorizationCodeRedemptionOutcome.Redeemed => "redeemed",
+            AuthorizationCodeRedemptionOutcome.ClientMismatch => "client_mismatch",
             AuthorizationCodeRedemptionOutcome.AlreadyRedeemed => "already_redeemed",
-            AuthorizationCodeRedemptionOutcome.NotFound        => "not_found",
-            _                                                  => "unknown",
+            AuthorizationCodeRedemptionOutcome.NotFound => "not_found",
+            _ => "unknown",
         };
 
         actualTag.Should().Be(expectedTag);

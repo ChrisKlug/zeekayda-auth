@@ -180,9 +180,9 @@ public sealed class IAuthorizationCodeStoreTests
             new AuthorizationCodeRedemptionOutcome.Redeemed { Entry = entry });
 
         var outcome = await store.TryRedeemAsync(
-            code:             "raw-code",
-            clientId:         "client-a",
-            familyId:         "family-1",
+            code: "raw-code",
+            clientId: "client-a",
+            familyId: "family-1",
             cancellationToken: CancellationToken.None);
 
         outcome.Should().BeOfType<AuthorizationCodeRedemptionOutcome.Redeemed>()
@@ -196,9 +196,9 @@ public sealed class IAuthorizationCodeStoreTests
             new AuthorizationCodeRedemptionOutcome.ClientMismatch());
 
         var outcome = await store.TryRedeemAsync(
-            code:             "raw-code",
-            clientId:         "wrong-client",
-            familyId:         "family-1",
+            code: "raw-code",
+            clientId: "wrong-client",
+            familyId: "family-1",
             cancellationToken: CancellationToken.None);
 
         outcome.Should().BeOfType<AuthorizationCodeRedemptionOutcome.ClientMismatch>();
@@ -211,9 +211,9 @@ public sealed class IAuthorizationCodeStoreTests
             new AuthorizationCodeRedemptionOutcome.AlreadyRedeemed { FamilyId = "family-old" });
 
         var outcome = await store.TryRedeemAsync(
-            code:             "replayed-code",
-            clientId:         "client-a",
-            familyId:         "family-new",
+            code: "replayed-code",
+            clientId: "client-a",
+            familyId: "family-new",
             cancellationToken: CancellationToken.None);
 
         outcome.Should().BeOfType<AuthorizationCodeRedemptionOutcome.AlreadyRedeemed>()
@@ -227,9 +227,9 @@ public sealed class IAuthorizationCodeStoreTests
             new AuthorizationCodeRedemptionOutcome.NotFound());
 
         var outcome = await store.TryRedeemAsync(
-            code:             "unknown-code",
-            clientId:         "client-a",
-            familyId:         "family-1",
+            code: "unknown-code",
+            clientId: "client-a",
+            familyId: "family-1",
             cancellationToken: CancellationToken.None);
 
         outcome.Should().BeOfType<AuthorizationCodeRedemptionOutcome.NotFound>();
@@ -240,17 +240,17 @@ public sealed class IAuthorizationCodeStoreTests
     private static AuthorizationCodeEntry BuildEntry() =>
         new()
         {
-            ClientId            = "client-a",
-            RedirectUri         = "https://app/callback",
-            CodeChallenge       = "challenge-abc",
+            ClientId = "client-a",
+            RedirectUri = "https://app/callback",
+            CodeChallenge = "challenge-abc",
             CodeChallengeMethod = CodeChallengeMethod.S256,
-            Sub                 = "user-1",
-            Scope               = "openid",
-            SsoSessionId        = "session-1",
-            InteractionId       = "interaction-1",
-            AuthTime            = new DateTimeOffset(2026, 1, 1, 12, 0, 0, TimeSpan.Zero),
-            IssuedAt            = new DateTimeOffset(2026, 1, 1, 12, 0, 0, TimeSpan.Zero),
-            ExpiresAt           = new DateTimeOffset(2026, 1, 1, 12, 1, 0, TimeSpan.Zero),
+            Sub = "user-1",
+            Scope = "openid",
+            SsoSessionId = "session-1",
+            InteractionId = "interaction-1",
+            AuthTime = new DateTimeOffset(2026, 1, 1, 12, 0, 0, TimeSpan.Zero),
+            IssuedAt = new DateTimeOffset(2026, 1, 1, 12, 0, 0, TimeSpan.Zero),
+            ExpiresAt = new DateTimeOffset(2026, 1, 1, 12, 1, 0, TimeSpan.Zero),
         };
 
     /// <summary>

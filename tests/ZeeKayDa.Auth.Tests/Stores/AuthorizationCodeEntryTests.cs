@@ -11,17 +11,17 @@ public sealed class AuthorizationCodeEntryTests
     private static AuthorizationCodeEntry BuildMinimal() =>
         new()
         {
-            ClientId      = "client-a",
-            RedirectUri   = "https://app/callback",
+            ClientId = "client-a",
+            RedirectUri = "https://app/callback",
             CodeChallenge = "abc123_challenge",
             CodeChallengeMethod = CodeChallengeMethod.S256,
-            Sub           = "user-42",
-            Scope         = "openid profile",
-            SsoSessionId  = "session-1",
+            Sub = "user-42",
+            Scope = "openid profile",
+            SsoSessionId = "session-1",
             InteractionId = "interaction-1",
-            AuthTime      = new DateTimeOffset(2026, 1, 1, 12, 0, 0, TimeSpan.Zero),
-            IssuedAt      = new DateTimeOffset(2026, 1, 1, 12, 0, 0, TimeSpan.Zero),
-            ExpiresAt     = new DateTimeOffset(2026, 1, 1, 12, 1, 0, TimeSpan.Zero),
+            AuthTime = new DateTimeOffset(2026, 1, 1, 12, 0, 0, TimeSpan.Zero),
+            IssuedAt = new DateTimeOffset(2026, 1, 1, 12, 0, 0, TimeSpan.Zero),
+            ExpiresAt = new DateTimeOffset(2026, 1, 1, 12, 1, 0, TimeSpan.Zero),
         };
 
     // ── Type shape ────────────────────────────────────────────────────────────────────────────────
