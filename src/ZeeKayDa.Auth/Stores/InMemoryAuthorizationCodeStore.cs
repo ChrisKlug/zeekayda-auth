@@ -62,19 +62,16 @@ internal sealed class InMemoryAuthorizationCodeStore : IAuthorizationCodeStore
     /// <param name="dataProtectionProvider">
     /// Provider used to create the data protector for encrypting stored values.
     /// </param>
-    /// <param name="options">Options governing semaphore eviction.</param>
     /// <param name="serverOptions">Server options providing the refresh token lifetime.</param>
     /// <param name="timeProvider">Time provider used for all UTC timestamp reads.</param>
     public InMemoryAuthorizationCodeStore(
         IMemoryCache cache,
         IDataProtectionProvider dataProtectionProvider,
-        IOptions<InMemoryTokenStoreOptions> options,
         IOptions<AuthorizationServerOptions> serverOptions,
         TimeProvider timeProvider)
     {
         ArgumentNullException.ThrowIfNull(cache);
         ArgumentNullException.ThrowIfNull(dataProtectionProvider);
-        ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(serverOptions);
         ArgumentNullException.ThrowIfNull(timeProvider);
 

@@ -37,14 +37,12 @@ public sealed class InMemoryAuthorizationCodeStoreTests
     private static InMemoryAuthorizationCodeStore CreateStore(
         IMemoryCache? cache = null,
         IDataProtectionProvider? dp = null,
-        InMemoryTokenStoreOptions? storeOptions = null,
         AuthorizationServerOptions? serverOptions = null,
         TimeProvider? timeProvider = null)
     {
         return new InMemoryAuthorizationCodeStore(
             cache ?? new MemoryCache(new MemoryCacheOptions()),
             dp ?? new EphemeralDataProtectionProvider(),
-            new OptionsWrapper<InMemoryTokenStoreOptions>(storeOptions ?? new InMemoryTokenStoreOptions()),
             new OptionsWrapper<AuthorizationServerOptions>(serverOptions ?? new AuthorizationServerOptions()),
             timeProvider ?? TimeProvider.System);
     }
