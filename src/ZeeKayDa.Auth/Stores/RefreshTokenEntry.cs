@@ -47,12 +47,12 @@ public sealed record RefreshTokenEntry
     public required string Sub { get; init; }
 
     /// <summary>
-    /// Gets the space-separated scope string granted to this token.
+    /// Gets the list of scope values granted to this token.
     /// </summary>
     /// <remarks>
     /// Rotation MUST NOT widen the scope beyond what is recorded here.
     /// </remarks>
-    public required string Scope { get; init; }
+    public required IReadOnlyList<string> Scope { get; init; }
 
     /// <summary>Gets the SSO session identifier that produced this token.</summary>
     public required string SsoSessionId { get; init; }

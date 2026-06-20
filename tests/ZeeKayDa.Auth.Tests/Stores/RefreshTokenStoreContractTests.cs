@@ -118,13 +118,15 @@ public sealed class RefreshTokenStoreContractTests
     public void RefreshTokenEntry_two_instances_with_same_values_are_equal()
     {
         var now = DateTimeOffset.UtcNow;
+        // IReadOnlyList<string> uses reference equality; share the same instance so records compare equal.
+        IReadOnlyList<string> scope = ["openid", "profile"];
 
         var a = new RefreshTokenEntry
         {
             FamilyId = "fam-1",
             ClientId = "client-1",
             Sub = "user-1",
-            Scope = "openid profile",
+            Scope = scope,
             SsoSessionId = "sso-1",
             IssuedAt = now,
             ExpiresAt = now.AddHours(1),
@@ -135,7 +137,7 @@ public sealed class RefreshTokenStoreContractTests
             FamilyId = "fam-1",
             ClientId = "client-1",
             Sub = "user-1",
-            Scope = "openid profile",
+            Scope = scope,
             SsoSessionId = "sso-1",
             IssuedAt = now,
             ExpiresAt = now.AddHours(1),
@@ -155,7 +157,7 @@ public sealed class RefreshTokenStoreContractTests
             FamilyId = "fam-1",
             ClientId = "client-1",
             Sub = "user-1",
-            Scope = "openid",
+            Scope = ["openid"],
             SsoSessionId = "sso-1",
             IssuedAt = now,
             ExpiresAt = now.AddHours(1),
@@ -174,7 +176,7 @@ public sealed class RefreshTokenStoreContractTests
             FamilyId = "fam-1",
             ClientId = "client-1",
             Sub = "user-1",
-            Scope = "openid",
+            Scope = ["openid"],
             SsoSessionId = "sso-1",
             IssuedAt = DateTimeOffset.UtcNow,
             ExpiresAt = DateTimeOffset.UtcNow.AddHours(1),
@@ -193,7 +195,7 @@ public sealed class RefreshTokenStoreContractTests
             FamilyId = "fam-1",
             ClientId = "client-1",
             Sub = "user-1",
-            Scope = "openid",
+            Scope = ["openid"],
             SsoSessionId = "sso-1",
             IssuedAt = now,
             ExpiresAt = now.AddHours(1),
