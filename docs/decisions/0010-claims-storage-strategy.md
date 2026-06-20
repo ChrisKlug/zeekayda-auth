@@ -1,10 +1,7 @@
-# ADR 0010 — Claims Storage Strategy for Authorization Code and Refresh Token Entries
+# ADR 0010 — Claims Resolution Strategy for Token Issuance
 
-**Status:** Proposed  
+**Status:** Accepted  
 **Date:** 2026-06-20
-
-**Amends ADR 0008 §2 and §3** — adds a `Claims` property to `AuthorizationCodeEntry` and
-`RefreshTokenEntry`. See §4.
 
 ---
 
@@ -13,15 +10,15 @@
 ADR 0008 defined the store contracts for authorization codes and refresh tokens. Both entry
 records (`AuthorizationCodeEntry` and `RefreshTokenEntry`) carry `Sub` plus grant metadata —
 scope, expiry, client ID, SSO session ID — but neither carries user claims. The question of
-where claims come from when an access token is minted was not addressed, leaving the behaviour
-determined by implementation convention rather than an explicit decision.
+where claims come from when an access token or ID token is minted was not addressed, leaving
+the behaviour determined by implementation convention rather than an explicit decision.
 
 The gap matters for three reasons:
 
-1. **Breaking-change timing.** If snapshotting is the correct answer, a `Claims` property must
-   be added to both entry records before any implementing code merges. Adding it post-merge is a
-   breaking change to a freshly-shipped public API. Issues #246 and #247 (the PR pair that
-   defines the entry records and store interfaces) cannot merge until this decision is settled.
+1. **Breaking-change timing.** If claims belong on the entry records (the snapshot model),
+   a `Claims` property must be added to both records before any implementing code merges.
+   Adding it post-merge is a breaking change to a freshly-shipped public API. The store
+   contract and token endpoint work cannot merge until this decision is settled.
 
 2. **Session consistency.** The behaviour of "re-fetch on every issuance" versus "snapshot at
    grant time" has direct, user-visible consequences: one model means a role revocation is
@@ -29,289 +26,451 @@ The gap matters for three reasons:
    re-authentication. Both are valid industry choices but they must be explicit.
 
 3. **Security model.** Stale claims in a long-lived session — particularly stale authorization
-   claims like roles or group memberships — affect the blast radius of a compromised or
+   claims such as roles or group memberships — affect the blast radius of a compromised or
    mis-attributed account. The choice must be grounded in the relevant threat model
    (RFC 6819, RFC 9700).
 
 ### What the current codebase does (implicit)
 
 Neither entry record has a `Claims` property. The token issuance pipeline — which does not exist
-yet as implemented code — would implicitly need to load claims from the identity store at every
-access token mint. That is the "re-fetch" model by default-of-omission. No claim transformation
-hook exists to override this.
+yet as implemented code — would implicitly need to load claims from somewhere at every access
+token mint. No claims-loading seam exists; there is no defined extension point an operator can
+implement or replace.
 
 ### Industry reference
 
 Duende IdentityServer, Auth0, and Keycloak all re-fetch claims by default but expose a
 transformation hook (IdentityServer's `IProfileService`, Auth0's Actions pipeline, Keycloak's
-Protocol Mapper SPIs). The hook allows operators to snapshot, augment, or replace the re-fetched
-claims. Without a hook, re-fetch and snapshot behave identically from the operator's perspective
-— they have no way to intervene.
+Protocol Mapper SPIs). The hook is the load-bearing component: it is what gives operators
+control over which claims appear in tokens and where they come from. The default behaviour
+(re-fetch) is relevant only to operators who do not configure the hook. ZeeKayDa.Auth follows
+this pattern by making the hook (`IClaimsProvider`) mandatory rather than optional, which
+removes any ambiguity about where claims originate.
 
 ---
 
 ## Decision
 
-### 1. Strategy: snapshot claims at grant time, carry them on the entry records
+### 1. Strategy: re-fetch claims on every issuance via a mandatory `IClaimsProvider` abstraction
 
-**Option B is chosen.** Claims are captured at authorisation time and stored on
-`AuthorizationCodeEntry`. At auth code exchange they are written to `RefreshTokenEntry` verbatim.
-All subsequent rotation cycles replay the stored snapshot; no identity store read occurs during
-refresh exchanges.
+Claims are **not** stored on either entry record. `AuthorizationCodeEntry` and
+`RefreshTokenEntry` remain claims-free, exactly as ADR 0008 defined them. No `Claims`
+property is added to either record. This ADR therefore does **not** amend ADR 0008.
 
-The rationale follows from first principles, not industry fashion:
+All issuance paths — authorization code exchange and every refresh token rotation — obtain
+subject claims through a single mandatory interface, `IClaimsProvider`, defined in
+`ZeeKayDa.Auth`. The framework MUST NOT read the identity store directly. The token endpoint
+MUST call `IClaimsProvider` and MUST use the returned claim set for both the access token and
+the ID token for that issuance. There is no fallback, no alternative path, and no way to
+bypass `IClaimsProvider`.
 
-**The spec does not require re-fetch.** RFC 6749 and RFC 9700 define the *semantics* of access
-tokens — the claims within them are application-defined. Neither RFC requires the authorization
-server to consult the identity store at token-endpoint time. The spec's consistency requirement
-is about *grant* consistency: the token endpoint must issue tokens consistent with the original
-grant (same scope, same subject). Nothing in the spec requires that the *content* of the access
-token be re-evaluated against the live identity store at every issuance.
+The rationale follows from first principles:
 
-**Re-fetch without a hook is strictly worse than snapshotting.** Without a claim transformation
-pipeline (which does not exist yet in ZeeKayDa.Auth), re-fetch means the token endpoint silently
-reads the identity store on every access token mint — including rotation — but operators cannot
-observe or modify that read. This introduces a hidden I/O dependency on the hot path with no
-extension point. In contrast, the snapshot model makes the dependency explicit: claims are loaded
-once, at interaction time, where the host application is already calling the identity store as
-part of authentication, and they are carried deterministically forward.
+**Claims must be live by default to avoid privilege escalation windows.** The snapshot model
+defers privilege revocation until re-authentication. ADR 0008 defines `RefreshTokenEntry.ExpiresAt`
+as `IssuedAt + RefreshTokenLifetime`, where `IssuedAt` is the timestamp of each individual
+rotation — not the original grant time. The lifetime is sliding: every rotation resets the
+clock, and ADR 0008 explicitly enforces no upper bound on `RefreshTokenLifetime` by design
+(to support long-lived integrations). For an active client that rotates before the current
+token expires, the staleness window is therefore indefinite — the grant never expires as long
+as the client keeps rotating. Short access token lifetimes (15 minutes, per RFC 9700 §4.2.2)
+bound the window per issued token, but continuous rotation allows the client to keep obtaining
+fresh access tokens — each carrying the stale snapshot — with no expiry imposed by the
+framework. The default single-token lifetime (14 days) only bounds an inactive client that
+stops rotating; it does not bound an active one. Re-fetch ensures that any structural validity
+check (is the subject still active?) runs on every issuance and cannot be bypassed by rotation.
 
-**Snapshotting produces a clear, testable data flow.** The claims in any access token are
-exactly the claims on the `RefreshTokenEntry` that was consumed to produce it. No implicit
-read occurs; the token endpoint is a pure function of its inputs. This makes the issuance
-pipeline independently testable without a live identity store, consistent with the project's
-testability principle (Design Principle §4).
+**A mandatory seam makes all claims resolution observable and replaceable.** With no seam,
+the framework would need to read the identity store directly, tightly coupling the token
+endpoint to a specific store API. With `IClaimsProvider` as a mandatory interface, the host
+application owns the claims resolution logic entirely. There is no hidden I/O path. The token
+endpoint is testable by supplying a stub `IClaimsProvider` with no running identity store
+required.
 
-**The stale-claims concern is addressed by access token lifetime, not by re-fetch.** The
-canonical response to "a role was revoked but the user still has a valid access token" is to
-shorten access token lifetimes (15 minutes is the common recommendation) and accept that the
-revocation is visible on the next access token mint. This is the same answer regardless of
-whether claims are re-fetched at rotation: a 15-minute access token minted from a re-fetched
-rotation still gave the user 15 minutes of stale-role access. Re-fetch-on-rotation does not
-materially reduce the blast radius unless rotation is continuous and access tokens are very
-short-lived — an unusual operational profile. The right lever is access token lifetime, not
-claims freshness on rotation.
+**`IClaimsProvider` composes cleanly with the subject-validity check.** Refresh token
+rotation MUST re-confirm that the subject is still active: a disabled or deleted user MUST
+NOT receive new tokens. This check is structural: if `IClaimsProvider` cannot resolve a
+valid claim set for the subject, issuance MUST abort with `invalid_grant`. This is not an
+additional check on top of claims resolution — it is the same call. An `IClaimsProvider`
+implementation that validates subject existence as part of returning claims
+(the natural implementation pattern) satisfies both requirements in a single round-trip.
 
-**A future claim transformation pipeline can accommodate re-fetch semantics.** When
-`IClaimsTransformer` or equivalent is added (see §6), an operator who *wants* re-fetch
-behaviour can register a transformer that ignores the snapshot and calls the identity store.
-The snapshotting default does not foreclose that option. The inverse is not true: a re-fetch
-default with no hook cannot be overridden by an operator who wants consistent snapshots —
-they would need to implement their own store.
+**A caching decorator can restore snapshot-equivalent performance at the implementor's
+discretion.** An `IClaimsProvider` that internally caches the resolved claim set by
+`FamilyId` achieves the same performance profile as a stored snapshot — one identity store
+read per grant, not per issuance — while still passing every resolution through the
+framework's defined seam. Caching inside the provider is a legitimate availability
+optimisation; it is not a change to the framework's security posture, because the provider
+contract still runs on every issuance and the cache is managed entirely by the implementor.
 
-### 2. No divergence between the two entry records
+### 2. `IClaimsProvider` interface
 
-`AuthorizationCodeEntry` and `RefreshTokenEntry` use the same snapshot strategy. There is no
-case for divergence in v1:
-
-- A snapshot-on-auth-code / re-fetch-on-rotation hybrid would produce access tokens whose
-  contents are unpredictable relative to the original grant: the first access token (minted at
-  code exchange from the snapshot) would have different claims than subsequent ones (minted from
-  re-fetch at rotation). This inconsistency would surprise clients and is not a meaningful
-  security improvement.
-- The `RefreshTokenEntry` is the authoritative record across the grant lifetime. Carrying the
-  snapshot forward from `AuthorizationCodeEntry` to `RefreshTokenEntry` at code exchange is
-  a simple assignment; requiring the token endpoint to go back to the identity store on
-  every rotation undoes the entire benefit of the snapshot at no security gain.
-
-### 3. .NET type for the `Claims` property
-
-The `Claims` property on both records is typed as `IReadOnlyList<ClaimRecord>` where
-`ClaimRecord` is a new `readonly record struct` in `ZeeKayDa.Auth.Stores`:
+`IClaimsProvider` is defined in `ZeeKayDa.Auth`:
 
 ```csharp
-namespace ZeeKayDa.Auth.Stores;
+namespace ZeeKayDa.Auth.Claims;
 
 /// <summary>
-/// A serialisable name/value pair representing a single claim captured at grant time.
+/// Resolves the claims to include in tokens issued for a given subject and grant.
+/// Called on every token issuance, including every refresh token rotation.
 /// </summary>
 /// <remarks>
 /// <para>
+/// Implementations MUST be registered in DI. ZeeKayDa.Auth does not provide a default
+/// implementation — the framework cannot know how the host application stores or resolves
+/// user claims. A missing registration surfaces as <see cref="ZeeKayDaConfigurationException"/>
+/// at startup.
+/// </para>
+/// <para>
+/// Implementations SHOULD validate that the subject is still active and return a
+/// <see cref="ClaimsResolutionResult.SubjectInvalid"/> result if the subject has been
+/// disabled, deleted, or otherwise deactivated. The token endpoint treats a
+/// <see cref="ClaimsResolutionResult.SubjectInvalid"/> result as <c>error=invalid_grant</c>
+/// and does not issue any token. This is the mechanism through which account deactivation
+/// and SSO-session revocation compose with refresh token rotation (see issues #103 and #104).
+/// </para>
+/// <para>
+/// Resolved claims MUST NOT appear in log entries, error responses, or exception messages.
+/// See ADR 0009 for the logging hygiene requirements that apply across all issuance paths.
+/// </para>
+/// </remarks>
+public interface IClaimsProvider
+{
+    /// <summary>
+    /// Resolves the claims to be included in tokens for the given context.
+    /// Called on every token issuance, including every refresh token rotation.
+    /// </summary>
+    /// <param name="context">
+    /// Contextual information about the issuance. See <see cref="ClaimsProviderContext"/>
+    /// for the fields provided.
+    /// </param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>
+    /// A <see cref="ClaimsResolutionResult"/> describing the outcome.
+    /// </returns>
+    Task<ClaimsResolutionResult> GetClaimsAsync(
+        ClaimsProviderContext context,
+        CancellationToken cancellationToken);
+}
+```
+
+### 3. `ClaimsProviderContext`
+
+The context object passed to `IClaimsProvider.GetClaimsAsync` carries exactly three fields.
+No additional fields will be added to this type without a new ADR, because every field adds
+a framework dependency that implementors must understand.
+
+```csharp
+namespace ZeeKayDa.Auth.Claims;
+
+/// <summary>
+/// Contextual information provided to <see cref="IClaimsProvider"/> on every token issuance.
+/// </summary>
+/// <param name="Sub">
+/// The subject identifier for whom tokens are being issued. Stable across all
+/// rotations of the same grant.
+/// </param>
+/// <param name="Scopes">
+/// The granted scopes for this issuance. Rotation MUST NOT widen scope
+/// (RFC 6749 §6); the framework enforces this before calling the provider.
+/// </param>
+/// <param name="FamilyId">
+/// The refresh token family identifier, stable across all rotations of the same
+/// grant. Created once at authorization code exchange and carried forward on every
+/// <see cref="ZeeKayDa.Auth.Stores.RefreshTokenEntry"/> in the chain.
+/// </param>
+/// <remarks>
+/// <para>
+/// <see cref="FamilyId"/> is the natural cache key for any <see cref="IClaimsProvider"/>
+/// implementation that performs internal caching to reduce identity store load. A cache
+/// miss on <see cref="FamilyId"/> is structurally equivalent to the "first issuance"
+/// signal — no <c>IsRefreshRotation</c> flag or <c>GrantType</c> discriminator is
+/// required or provided. See ADR 0010 §4 for the caching guidance.
+/// </para>
+/// <para>
+/// Only the minimum information required to resolve claims is included. Additional
+/// context (e.g. client ID, request metadata) is deliberately excluded to prevent
+/// implementors from building claims logic that depends on client identity rather than
+/// subject identity, which is the relevant boundary for claims resolution.
+/// </para>
+/// </remarks>
+public sealed record ClaimsProviderContext(
+    string Sub,
+    IReadOnlyList<string> Scopes,
+    string FamilyId);
+```
+
+**Why exactly these three fields and no others:**
+
+- `Sub` is the only input that identifies the subject in the identity store. It is the
+  primary key for any subject lookup.
+- `Scopes` lets the implementor return scope-filtered claims — for example, only returning
+  `email` and `profile` claims when the `openid` scope is present, or only returning
+  `roles` claims when an `api` scope is present. Scope-filtered claims are the standard
+  pattern in IdentityServer's `IProfileService` and Auth0's Actions pipeline.
+- `FamilyId` is the stable per-grant identifier. It enables internal caching (see §4) and
+  allows an implementor who deliberately snapshots claims on first issuance to look up
+  the cached set on subsequent rotations — without any framework change. A cache miss on
+  `FamilyId` is structurally "first issuance"; a cache hit is "rotation". No
+  `IsRefreshRotation` flag is needed or provided, because the flag is redundant given
+  `FamilyId` and adds an API surface that encodes an implementation assumption.
+
+**What is deliberately excluded:**
+
+- `ClientId` — claims resolution is a subject-level concern, not a client-level concern.
+  Implementors who vary claims by client are coupling claims logic to client identity,
+  which should be handled in a claim transformation pipeline (a separate, later ADR) rather
+  than inside `IClaimsProvider`.
+- `GrantType` — the provider does not need to know whether the issuance is from an
+  authorization code exchange or a refresh rotation. The subject and scopes are sufficient
+  context; the `FamilyId` cache-miss heuristic replaces any "first issuance" flag.
+- Request-level metadata (IP address, user agent, etc.) — out of scope for claims
+  resolution. Security-relevant request context belongs in audit logging, not in claims.
+
+### 4. `ClaimsResolutionResult`
+
+`GetClaimsAsync` returns `ClaimsResolutionResult`, a closed hierarchy using the same
+private-constructor idiom as the store outcome types in ADR 0008:
+
+```csharp
+namespace ZeeKayDa.Auth.Claims;
+
+/// <summary>
+/// Describes the outcome of a <see cref="IClaimsProvider.GetClaimsAsync"/> call.
+/// </summary>
+public abstract class ClaimsResolutionResult
+{
+    private ClaimsResolutionResult() { }
+
+    /// <summary>
+    /// Claims were successfully resolved. The token endpoint will use
+    /// <see cref="Claims"/> to populate both the access token and the ID token
+    /// for this issuance.
+    /// </summary>
+    public sealed class Resolved : ClaimsResolutionResult
+    {
+        /// <summary>
+        /// The resolved claims. Must not be null; use an empty list for subjects
+        /// with no claims applicable to the requested scopes.
+        /// </summary>
+        public required IReadOnlyList<ClaimRecord> Claims { get; init; }
+    }
+
+    /// <summary>
+    /// The subject is no longer valid — disabled, deleted, or deactivated.
+    /// The token endpoint will abort issuance and return <c>error=invalid_grant</c>.
+    /// No token is issued. This outcome MUST be returned (rather than throwing) when
+    /// the subject's non-existence or deactivation is a known, expected condition.
+    /// </summary>
+    public sealed class SubjectInvalid : ClaimsResolutionResult { }
+}
+```
+
+The private constructor prevents consumers from adding subtypes. The token endpoint switches
+exhaustively over the two known outcomes. Any exception thrown by `IClaimsProvider` (as
+opposed to a typed `SubjectInvalid` return) is treated as an infrastructure failure and
+surfaces as `error=server_error` — see §5.
+
+**Why two outcomes and not one with a nullable list:**
+
+A nullable `IReadOnlyList<ClaimRecord>?` return from `GetClaimsAsync` would conflate two
+distinct situations: a subject who has no claims applicable to the requested scopes
+(legitimate, return an empty list) and a subject who is invalid (should abort issuance).
+Using `null` as a sentinel for "subject invalid" would require every implementor to know the
+convention, and any implementor who mistakenly returns `null` from a "no claims found" path
+would silently abort issuance. The typed `SubjectInvalid` case makes the contract explicit
+and the error path auditable.
+
+### 5. `ClaimRecord` type
+
+`ClaimRecord` is a `readonly record struct` in `ZeeKayDa.Auth.Claims` (not in
+`ZeeKayDa.Auth.Stores`, since this ADR does not add claims to the store entry records):
+
+```csharp
+namespace ZeeKayDa.Auth.Claims;
+
+/// <summary>
+/// A serialisable name/value pair representing a single claim returned by
+/// <see cref="IClaimsProvider"/>.
+/// </summary>
+/// <remarks>
 /// <see cref="System.Security.Claims.Claim"/> is intentionally not used here.
 /// <c>Claim</c> is not serialisable without custom converters, carries a back-reference
 /// to <c>ClaimsIdentity</c>, has mutable properties, and depends on
 /// <c>System.Security.Claims</c> semantics (issuer, original issuer, value type) that
-/// have no meaning in the store serialisation context. <c>ClaimRecord</c> is the
-/// serialisation-stable projection.
-/// </para>
-/// <para>
-/// Store implementors that need to round-trip <c>Claim</c> objects (e.g. when constructing
-/// a <c>ClaimsPrincipal</c> for access token issuance) convert between <c>ClaimRecord</c>
-/// and <c>Claim</c> at the boundary; the store itself never sees <c>Claim</c>.
-/// </para>
+/// have no meaning in the claims resolution context. <c>ClaimRecord</c> is the
+/// serialisation-stable, back-reference-free projection.
+/// Store implementors or token pipeline components that need a <c>ClaimsPrincipal</c>
+/// convert from <c>ClaimRecord</c> at the boundary; the provider itself never sees
+/// <c>Claim</c>.
 /// </remarks>
 public readonly record struct ClaimRecord(string Type, string Value);
 ```
 
-The rationale for this type over the alternatives:
+The same type rationale that the original ADR 0010 draft documented for rejecting
+`System.Security.Claims.Claim`, `IReadOnlyDictionary<string, string>`, and value tuples
+applies here unchanged and is not repeated. The namespace placement (`ZeeKayDa.Auth.Claims`
+rather than `ZeeKayDa.Auth.Stores`) reflects that `ClaimRecord` is an output of the claims
+resolution pipeline, not a storage type. If a future ADR introduces claim storage on entry
+records, `ClaimRecord` would be reused from this namespace with no breaking change.
 
-**Why not `System.Security.Claims.Claim`?**
+### 6. Mandatory registration and startup validation
 
-`Claim` is a live object with a back-reference to its parent `ClaimsIdentity`, mutable
-properties (`Properties`, `Subject`), and BCL semantics around `Issuer` and `OriginalIssuer`
-that have no meaning in a store serialisation context. It is not serialisable to JSON without
-a custom converter; the default `System.Text.Json` serialiser will either fail or drop
-properties silently. Carrying `Claim` on a store entry record would force every store
-implementor to write and maintain a custom JSON converter, adding friction and a common source
-of serialisation bugs. The project's principle of minimal friction for store implementors
-rules it out.
+`IClaimsProvider` has no default implementation. The framework cannot know how the host
+application stores or resolves user claims; providing a default that reads from an imaginary
+identity store would be misleading.
 
-**Why not `IReadOnlyDictionary<string, string>`?**
+`AddZeeKayDaAuth()` MUST verify that `IClaimsProvider` is registered in the DI container
+before the host starts. A missing registration MUST surface as
+`ZeeKayDaConfigurationException` (per ADR 0006) at startup — not as a `NullReferenceException`
+or `InvalidOperationException` at first token issuance. The startup check follows the same
+options-validation pattern used for `IDistributedCache` in ADR 0008 §5.
 
-A dictionary representation collapses multiple claims with the same type (e.g. multiple
-`"role"` values, multiple `"group"` values) into a single entry or requires a
-`IReadOnlyDictionary<string, IReadOnlyList<string>>` shape. Multi-valued claims are
-common in real applications. A flat dictionary cannot represent them correctly. The
-more-correct dictionary shape is more complex and still requires explanation and
-type-converter effort from store implementors. The list-of-pairs representation is
-simpler, round-trips cleanly, and represents multi-valued claims naturally.
+### 7. Fail-closed resolution semantics (MUST-level requirements)
 
-**Why not `IReadOnlyList<(string Type, string Value)>`?**
+The following requirements are non-negotiable. They came from security review and may not
+be relaxed by configuration, subclassing, or extension.
 
-A plain value tuple serialises poorly: `System.Text.Json` emits `{"Item1": ..., "Item2": ...}`
-for unnamed tuples, and named tuples (`(string Type, string Value)`) are only named at the
-call site — the names are erased at runtime and the serialiser sees unnamed `Item1`/`Item2`.
-A named record struct with explicit `Type` and `Value` properties serialises correctly out of
-the box, is readable in JSON output, and is unambiguous in XML doc and error messages.
+**Re-fetch is structural.** Claims MUST be resolved fresh on every issuance and every
+rotation. Entry records (`AuthorizationCodeEntry`, `RefreshTokenEntry`) MUST NOT carry a
+claims snapshot. There is no configuration flag that switches to a snapshot mode; any such
+mode is explicitly opt-in for the implementor within their own `IClaimsProvider`, not a
+framework mode (see §8).
 
-**Why `readonly record struct` rather than `record class`?**
+**Single resolution seam.** All issuance paths MUST call `IClaimsProvider`. No path reads
+the identity store directly. The access token and ID token for a given issuance MUST be
+built from the same resolved claim set returned by the single `GetClaimsAsync` call for
+that issuance.
 
-A value type avoids a heap allocation per claim. Claims lists are read-only in the store
-context and are created once at grant time. A `record struct` with only two `string` fields
-has no boxing cost when used in `IReadOnlyList<ClaimRecord>` (the list implementation
-boxes, but the struct fields themselves do not). The `readonly` modifier prevents mutation
-after creation. The `record` modifier provides value equality and a `ToString()` suitable
-for diagnostics without hand-writing `Equals`/`GetHashCode`.
+**Resolution failure is fail-closed.** If `IClaimsProvider.GetClaimsAsync` throws or
+returns an unusable result:
 
-**Nullable annotation.** The `Claims` property is **not** declared `required` on either entry
-record — it is `IReadOnlyList<ClaimRecord>?` (nullable, defaults to `null`). The rationale:
+- A `SubjectInvalid` result MUST abort issuance with `error=invalid_grant`. This is the
+  correct error code per RFC 6749 §5.2: the subject's grant is no longer valid.
+- Any exception thrown MUST be treated as an infrastructure failure and MUST abort
+  issuance with `error=server_error`. The exception MUST be wrapped and logged per
+  ADR 0009 hygiene requirements (no claims in log output). There is NO fallback to a
+  cached or previous claim set.
 
-- For pure OAuth 2.0 grants (no OIDC, no custom claims), an empty or null claims list is a
-  valid and common case. Making it `required` would force callers to pass `[]` or
-  `Array.Empty<ClaimRecord>()` even when no claims are expected, adding noise with no safety
-  benefit.
-- Null is semantically distinct from empty: null means "no claims were captured at grant
-  time" (e.g. the host application did not populate them), while an empty list means "claims
-  were explicitly evaluated and none were present". The token issuance pipeline can distinguish
-  these cases if needed.
-- Store implementors must persist and replay the value faithfully including the null/empty
-  distinction; this is documented in the XML doc on each property (see §4).
+**Subject-still-valid check on refresh.** Refresh token rotation MUST re-confirm that
+the subject is active. A disabled or deleted subject MUST result in `error=invalid_grant`.
+This is not a separate check — it is the consequence of calling `IClaimsProvider` on every
+rotation: an implementor that validates subject existence as part of resolving claims
+satisfies this requirement naturally. This composes with SSO-session revocation (see issues
+#103 and #104).
 
-### 4. Entry record amendments
+**No claims in logs or errors.** Resolved claims MUST NOT appear in log entries, error
+responses, or exception messages. `SecretSanitizingLogger` (ADR 0009) provides the
+logging-side guarantee; the token endpoint MUST NOT embed claim values in any
+`ZeeKayDaException` message or error response property.
 
-This ADR amends ADR 0008 §2 (`AuthorizationCodeEntry`) and §3 (`RefreshTokenEntry`) by adding
-the following property to each record's property table:
+### 8. Caching inside `IClaimsProvider` — availability optimisation, not a posture change
 
-| Property | Req | Type | Notes |
-|---|---|---|---|
-| `Claims` | | `IReadOnlyList<ClaimRecord>?` | Snapshot of the user claims captured at authorisation time. `null` for pure OAuth 2.0 flows where no custom claims are carried. Store implementors MUST persist and replay this value faithfully, including the null/empty distinction. The token endpoint reads this value to populate access token claims; it MUST NOT re-read the identity store at rotation time. |
+An `IClaimsProvider` implementation that caches resolved claims by `FamilyId` (the natural
+cache key, available in `ClaimsProviderContext`) reduces identity store load to one read per
+grant — the same profile as the snapshot model in terms of I/O — while still passing every
+issuance through the framework's defined seam.
 
-**`AuthorizationCodeEntry`**: The `Claims` snapshot is populated by the authorization endpoint
-at code issuance time, immediately after the host application's interaction layer completes
-authentication and consent. The host application is responsible for collecting the claims it
-wants carried in access tokens and providing them to the authorization endpoint through the
-interaction context or an equivalent seam (TBD in the interaction ADR). The framework stores
-them verbatim.
+This is a legitimate availability optimisation. It is distinct from the snapshot model in
+one critical way: the framework contract still calls `GetClaimsAsync` on every issuance,
+and the caching implementor is responsible for TTL management. Any caching implementor
+MUST use a TTL well under the access token lifetime — never a grant-lifetime or
+refresh-token-lifetime snapshot — so that a subject deactivation takes effect within the
+TTL window, not at grant expiry. A TTL of zero (no caching) is the safe default.
 
-**`RefreshTokenEntry`**: At auth code exchange (`TryRedeemAsync` returns `Redeemed`), the token
-endpoint copies `AuthorizationCodeEntry.Claims` verbatim to `RefreshTokenEntry.Claims`. All
-subsequent rotations carry the same list. The token endpoint MUST NOT modify the list
-between rotations.
+A caching decorator (`CachingClaimsProvider` or similar) that wraps a live-reading inner
+`IClaimsProvider` is explicitly deferred as a low-priority future feature. It is tracked
+as a separate issue (to be created by the maintainer). `FamilyId` in
+`ClaimsProviderContext` is already the natural cache key, so no future API change to
+`IClaimsProvider` or `ClaimsProviderContext` is required to ship it.
 
-### 5. No claim transformation pipeline in this ADR
+Any snapshot/caching mode reachable without writing custom code (i.e. a framework-provided
+mode) MUST be opt-in, MUST be documented as deferring privilege revocation, and MUST NOT be
+the default or reachable by default configuration.
 
-A claim transformation pipeline (`IClaimsTransformer` or equivalent) is **not** a blocker
-for this decision and is explicitly deferred. The rationale:
+### 9. Claim transformation pipeline — deferred
 
-The snapshot model is self-consistent without a transformer: claims are set once at grant time
-and replayed faithfully. A transformer is needed if operators want to override the snapshot —
-for example, to re-fetch claims from the identity store on every issuance (achieving Option A
-semantics as an opt-in), or to enrich claims at issuance time without changing the stored
-snapshot. Both use cases are legitimate. Neither is blocked by the current decision; they add
-functionality rather than correcting a defect.
+A claim transformation pipeline (`IClaimsTransformer` or equivalent) that sits between the
+resolved `IReadOnlyList<ClaimRecord>` and the final token payload is explicitly deferred,
+pending the access token and ID token generation ADRs (issues #205 and #206). The shape of
+a transformer is tightly coupled to how token claims are assembled (namespace mapping,
+audience filtering, claim type URI normalisation), which must be designed first.
 
-Adding a transformer now, before the access token and ID token issuance pipelines exist (those
-are open ADR questions — see issues #205 and #206), would design a hook whose contract
-depends on systems that have not been designed yet. The shape of `IClaimsTransformer` is
-tightly coupled to how access tokens are assembled (claims mapping, audience, etc.); those
-decisions must come first.
-
-The transformer is tracked as a future addition in §6 below. Its absence does not leave the
-framework in an incomplete state: the snapshot model is fully functional without one.
-
-### 6. Forward-compatibility path for claim transformation
-
-When access token generation is designed (issue #205) and ID token generation is designed
-(issue #206), a separate ADR will design the claim transformation pipeline. That ADR will
-specify:
-
-- The interface (`IClaimsTransformer` or equivalent) and its method signature
-- What the transformer receives (the `ClaimRecord` snapshot, the `ClaimsPrincipal`, the
-  request context, the scopes)
-- When the transformer is invoked (at access token mint, at ID token mint, or both)
-- How operators who want re-fetch semantics implement it (by ignoring the snapshot and
-  loading from the identity store inside the transformer)
-- How the default implementation (identity transformer — return the snapshot unchanged) is
-  registered
-
-The `ClaimRecord` type introduced in this ADR is the transfer object between the store and the
-transformer pipeline. Its design (flat `Type`/`Value` pairs, no `Claim` object) is forward
-compatible with that pipeline.
+`ClaimRecord` is the transfer object that will cross the boundary between `IClaimsProvider`
+and the (future) transformation pipeline. Its design is forward-compatible: no breaking
+change to `IClaimsProvider` or `ClaimsProviderContext` is needed when the transformer is
+added.
 
 ---
 
 ## Rejected Alternatives
 
-### Option A — Re-fetch claims on every issuance
+### Option B — Snapshot claims at grant time; store them on the entry records
 
-**Rejected.** Without a claim transformation hook, re-fetch adds a hidden I/O dependency on
-every token issuance (including rotation) with no extension point for operators. The token
-endpoint would silently read the identity store on the hot path, making it non-deterministic
-and impossible to test without a live identity store. There is no protocol requirement for
-re-fetch; the consistency requirement in the spec (RFC 6749 §6) applies to scope, not to
-arbitrary claim content.
+**Rejected.** Under the sliding refresh token lifetime defined by ADR 0008 — where
+`RefreshTokenEntry.ExpiresAt` is `IssuedAt + RefreshTokenLifetime` and `IssuedAt` is the
+timestamp of each individual rotation — a snapshot model means a role revocation, account
+suspension, or group membership change is invisible to the token endpoint for an indefinite
+period. Every rotation resets the clock, and ADR 0008 explicitly enforces no upper bound on
+`RefreshTokenLifetime` by design (to support long-lived integrations). Continuous rotation
+does not help: each rotation replays the same snapshot. The blast radius of a compromised
+account or a mis-attributed role is therefore structurally unbounded for an active client,
+not merely wide.
 
-Re-fetch *with* a hook (as Duende IdentityServer's `IProfileService` provides) is a defensible
-design. The difference from snapshotting is that it makes the live-read the default and requires
-an opt-out for consistency, rather than making consistency the default and requiring an opt-in
-for live-read. Given that ZeeKayDa.Auth's design principles favour explicit over implicit and
-testability over convenience, snapshotting is the more principled default.
+Short access token lifetimes (15 minutes per RFC 9700 §4.2.2) bound the window per issued
+token, but continuous rotation allows an active client to keep refreshing — and receiving
+stale-privileged access tokens — indefinitely, with no mechanism for the framework or the
+operator to intervene without revoking the entire refresh token family. The 14-day default
+single-token lifetime only caps the exposure of an inactive client that stops rotating; an
+active client is not bounded by it.
 
-Re-fetch can always be achieved by an operator who registers a claim transformer that ignores
-the snapshot (see §6). The reverse — achieving snapshot consistency without a framework hook
-when re-fetch is the default — requires replacing the store or the token endpoint, which is
-far more invasive. Choosing snapshot as the default preserves the easier migration path.
+The snapshot model also adds an implicit coupling between the authorization endpoint (which
+collects claims) and the token endpoint (which replays them), with no defined seam through
+which an operator can validate, transform, or replace the snapshot. The `IClaimsProvider`
+seam does not exist in the snapshot model; claims transformation would require a separate,
+additional hook with different lifecycle semantics.
 
-### `IReadOnlyDictionary<string, string>` (flat dictionary)
+Re-fetch via `IClaimsProvider` gives operators the re-validation hook for free as a
+consequence of making every issuance call the provider. The snapshot model would require an
+additional hook to achieve equivalent security coverage, with more surface area and more
+complexity.
 
-**Rejected.** Cannot represent multi-valued claims (multiple `"role"` values, multiple
-`"group"` values) without a schema change. Multi-valued claims are common in real applications.
-A flat dictionary would silently drop all but the last value for any repeated claim type, or
-require a more complex `IReadOnlyDictionary<string, IReadOnlyList<string>>` shape. The
-list-of-pairs representation is simpler and handles multi-valued claims naturally.
+**Snapshotting with a bounded TTL can still be achieved.** Operators who prefer the
+snapshot performance profile implement a caching `IClaimsProvider` with a TTL well under the
+access token lifetime (see §8). This is the implementor's decision, not a framework mode. It
+preserves the `IClaimsProvider` call on every issuance — meaning the framework's fail-closed
+semantics and subject-validity check still apply — while reducing identity store round-trips
+at the operator's discretion.
 
-### `System.Security.Claims.Claim`
+### No explicit seam — resolve claims by calling the identity store directly in the token endpoint
 
-**Rejected.** Not serialisable without a custom `System.Text.Json` converter.
-Carries `ClaimsIdentity` back-reference and mutable properties. Adding a custom converter
-requirement to the store contract would block store implementors using AOT-compiled JSON
-contexts (which this project already uses — `ZeeKayDaJsonSerializerContext` exists in the
-codebase). A custom converter cannot be added to an AOT context without code-generating it.
+**Rejected.** A hardcoded identity store call in the token endpoint couples the framework to
+a specific storage API. The framework's design principle — "framework, not black box" — rules
+out hidden I/O dependencies in protocol endpoints. Any hardcoded store call is not replaceable
+without forking the endpoint. The `IClaimsProvider` abstraction exists precisely to give the
+host application control over this dependency without requiring a fork.
 
-### `IReadOnlyList<(string Type, string Value)>` (value tuple)
+### Optional `IClaimsProvider` with a no-op default
 
-**Rejected.** Value tuples serialise as `Item1`/`Item2` under `System.Text.Json`, not as
-`Type`/`Value`. Named tuple names are compile-time only — they do not survive the type
-system. A named record struct is the correct idiom for a named, serialisable value pair.
+**Rejected.** An optional provider with a no-op default that returns an empty claim set
+would silently issue tokens with no subject claims for every deployment that does not
+register a provider. A missing provider registration is a configuration error, not a valid
+deployment state. Surfacing it at startup (as `ZeeKayDaConfigurationException`) rather than
+at runtime (as empty tokens) gives the operator a clear signal and a clear fix. The
+optional-with-default pattern is appropriate for optional capabilities; claims resolution is
+not optional for a functioning identity provider.
 
-### Divergent strategy (snapshot on auth code, re-fetch on rotation)
+### Separate interface for refresh rotation vs. first issuance
 
-**Rejected.** Produces access tokens whose contents change across the grant lifetime without
-any user interaction. The first access token (from code exchange) would contain snapshot claims;
-subsequent tokens (from rotation) would contain re-fetched claims. This inconsistency is
-observable to clients and is not a meaningful security improvement over pure snapshotting.
-The stale-claims concern that motivates re-fetch-on-rotation is better addressed by
-shortening access token lifetimes than by silently changing token contents mid-session.
+**Rejected.** A distinct `IRefreshClaimsProvider` for rotation calls (or an
+`IsRefreshRotation` flag on the context) was considered to allow implementors to use
+different resolution logic during rotation. The `FamilyId` field in `ClaimsProviderContext`
+is a structurally-equivalent signal: a cache miss on `FamilyId` is the first issuance; a
+cache hit is a rotation. Implementors who need different logic can branch on cache presence.
+Exposing a separate interface or a discriminator flag encodes an implementation assumption
+into the framework API, increases surface area, and would require explanation in every
+doc and code review. The minimal context object with `FamilyId` achieves the same
+capability without the added API surface.
 
 ---
 
@@ -319,100 +478,135 @@ shortening access token lifetimes than by silently changing token contents mid-s
 
 ### Positive
 
-- **Token issuance pipeline is deterministic and independently testable.** The token endpoint
-  does not read the identity store at rotation time. Claims in any access token are exactly
-  the `Claims` on the consumed `RefreshTokenEntry`. Tests for the token endpoint do not
-  require a live identity store.
-- **Consistent access token contents across a grant lifetime.** Clients that cache claim
-  decisions (e.g. a resource server that caches role memberships from a JWT for the lifetime
-  of the token) see stable contents across all access tokens minted from the same grant.
-- **No hidden hot-path I/O.** The identity store is read exactly once per interactive
-  authentication, not on every token issuance. The performance characteristics of the token
-  endpoint are bounded by store lookups, not by arbitrary identity store latency.
-- **Forward compatible with a claim transformation pipeline.** The `ClaimRecord` type is
-  designed as the transfer object between the store and the (future) transformer pipeline. No
-  breaking change to the entry records is needed when the transformer is added.
-- **Store implementors can serialise `ClaimRecord` out of the box.** `System.Text.Json`
-  serialises `readonly record struct` types with named properties correctly without a custom
-  converter, including in AOT contexts.
+- **Privilege revocation is timely.** Disabling a subject or revoking a role takes effect
+  at the next token issuance, bounded by the access token lifetime. There is no grant-lifetime
+  staleness window. This is the strongest revocation guarantee achievable without token
+  introspection.
+- **Subject-validity check is structural.** Refresh token rotation cannot succeed for a
+  disabled subject without the implementor explicitly returning `SubjectInvalid` from
+  `IClaimsProvider`. The check is not a separate call; it is the natural consequence of
+  requiring claims resolution on every issuance. This composes with session revocation
+  (issues #103 and #104) without additional framework surface.
+- **Single seam, no hidden I/O.** All claims resolution flows through `IClaimsProvider`.
+  The token endpoint has no hidden identity store dependency. The full issuance pipeline is
+  independently testable by supplying a stub `IClaimsProvider` with no running server required.
+- **Access token and ID token are coherent.** Both tokens for a given issuance are built
+  from the same claim set returned by a single `GetClaimsAsync` call. There is no state
+  split where different tokens for the same issuance carry different claims.
+- **No schema change to ADR 0008 entry records.** `AuthorizationCodeEntry` and
+  `RefreshTokenEntry` remain exactly as ADR 0008 defined them. No `Claims` property, no
+  serialisation change, no storage size increase.
+- **Availability optimisation is available without API change.** A caching `IClaimsProvider`
+  using `FamilyId` as a cache key achieves snapshot-equivalent performance. The API is already
+  designed for this; no future change required.
+- **Forward-compatible with claim transformation pipeline.** `ClaimRecord` and
+  `IReadOnlyList<ClaimRecord>` are the transfer types. The transformer (issues #205, #206)
+  sits downstream of `IClaimsProvider`; no breaking change to this ADR's API is needed when
+  the transformer is added.
 
 ### Negative / Trade-offs
 
-- **Claims go stale within a grant lifetime.** A role change, account suspension, or group
-  membership update is not visible in access tokens until the user re-authenticates. This is
-  the correct trade-off when access token lifetimes are short (the recommended mitigating
-  control), but operators who choose long access token lifetimes must understand the
-  implication.
-
-  *Mitigation*: the framework XML doc on `Claims` on both entry records MUST state the staleness
-  behaviour and the recommended access-token lifetime guidance. When the transformer pipeline
-  is added (§6), operators who require fresh claims on every issuance can implement an
-  `IClaimsTransformer` that loads from the identity store.
-
-- **Store implementors must persist the claims list faithfully.** A store that silently drops
-  or truncates `Claims` would cause the token endpoint to issue access tokens with incomplete
-  claims. The XML doc and the deployment guidance in ADR 0008 §8 must call this out explicitly.
-  The null/empty distinction must also be preserved.
-
-- **`ClaimRecord` is a new public type in the store contract.** Adding it now, before any
-  implementation exists, is the right time — but it adds one more type that custom store
-  implementors must understand. The type is minimal (two string properties) and the XML doc
-  explains why `Claim` was not used.
-
-- **No claim transformation pipeline today.** Operators who need re-fetch semantics must wait
-  for the transformer pipeline (§6). This is an acceptable gap: the snapshot model is fully
-  functional and consistent; re-fetch is an enrichment, not a baseline requirement.
+- **Every token issuance makes an identity store round-trip by default.** Implementors who
+  do not cache will see one identity store call per token issuance, including every refresh
+  rotation. For high-rotation workloads this may be a performance concern. The `FamilyId`
+  caching pattern (§8) is the documented mitigation; operators are responsible for evaluating
+  whether it is needed for their workload.
+- **No framework-provided default implementation.** `IClaimsProvider` has no default. Every
+  deployment must implement and register one. This is intentional (the framework cannot know
+  where the host stores user data) but it means the "getting started" experience requires
+  more initial code than a snapshot model, where a default could defer the claims question.
+- **`ZeeKayDaConfigurationException` at startup for missing registration.** Operators who
+  omit `IClaimsProvider` will see a startup failure, not a runtime failure. This is the
+  correct behaviour (fail early, fail clearly) but it may surprise operators who use other
+  frameworks with optional providers.
+- **Implementors must handle the `SubjectInvalid` case.** An `IClaimsProvider` that always
+  returns `Resolved` — perhaps because the implementor does not yet validate subject
+  existence — will issue tokens for disabled subjects. The XML documentation on
+  `IClaimsProvider` MUST clearly describe the `SubjectInvalid` contract and when it
+  MUST be returned; this is an implementation burden that does not exist in the snapshot
+  model.
 
 ---
 
 ## Security Considerations
 
-### Stale claims and authorisation decisions
+### Re-fetch is the only way to make subject deactivation effective during token rotation
 
-The most security-sensitive stale-claims scenario is a claim that grants elevated access —
-a role, group, or entitlement — that is revoked after a grant is established. Under the
-snapshot model, the revoked claim remains in the access token until the grant expires or the
-user re-authenticates.
+Under the snapshot model, a subject who is disabled or deleted between grant establishment
+and the next rotation continues to receive new access tokens for the full refresh token
+lifetime. `IClaimsProvider` closes this gap structurally: every rotation calls
+`GetClaimsAsync`, and an implementor that validates subject existence as part of resolution
+returns `SubjectInvalid` for a deactivated account. The framework treats `SubjectInvalid`
+as `invalid_grant`, terminating the rotation and invalidating the refresh token. RFC 9700 §4.13
+and the broader principle of RFC 6819 §4.4.2 support this: access grants must be revocable.
 
-The correct mitigation is access token lifetime, not claims freshness. An access token with
-a 15-minute lifetime limits the blast radius of a stale revoked-role claim to 15 minutes.
-RFC 9700 §4.2.2 recommends short-lived access tokens for exactly this reason. A snapshotting
-model with 15-minute access tokens and 14-day refresh tokens means a role revocation takes
-effect at most 15 minutes after the next rotation (or immediately on next rotation if the
-transformer re-fetches — but that is the transformer's responsibility, not the snapshot
-model's).
+### Claims MUST NOT appear in logs, errors, or exceptions (ADR 0009 requirement)
 
-Operators who require immediate revocation (e.g. for high-privilege accounts) MUST use
-token introspection (RFC 7662) or short-lived reference tokens backed by a real-time
-lookup, not rely on claim freshness in JWT access tokens. This guidance must appear
-in the framework deployment documentation.
+Claims returned by `IClaimsProvider` may contain personal data (names, email addresses,
+role identifiers). These values MUST NOT appear in log entries at any level, in OAuth 2.0
+error responses (`error_description` etc.), or in exception messages that may propagate
+through the logging pipeline. `SecretSanitizingLogger` (ADR 0009) provides structural
+protection against claims appearing in structured log state if claim types are registered
+as sensitive keys. The token endpoint MUST additionally ensure that `ClaimsResolutionResult`
+values are not embedded in any exception message construction.
 
-### Claims as bearer data
+### Resolution failure must be fail-closed with no fallback
 
-The `Claims` snapshot on `RefreshTokenEntry` persists across the lifetime of the grant
-(up to `RefreshTokenLifetime`, default 14 days). The entry is encrypted at rest by
-`IDataProtectionProvider` per ADR 0008 §4b. Any claim that constitutes personal data
-(name, email, phone number, etc.) is subject to the same data-at-rest protection
-requirements that apply to `Sub` and `Scope` on the entry. Store implementors using a
-custom backend MUST apply equivalent protection.
+If `IClaimsProvider.GetClaimsAsync` throws, the token endpoint MUST NOT fall back to a
+previous claim set, a cached claim set, or an empty claim set. Falling back would convert
+an identity store outage into a pass for any token request during the outage window — an
+attacker who can cause a controlled identity store failure gains free token issuance. The
+only safe behaviour on an unexpected exception is to abort with `error=server_error`. The
+operator's job is to ensure the identity store is available; the framework's job is to
+fail closed when it is not.
 
-The `AuthorizationCodeEntry.Claims` snapshot has a much narrower window (60-second code
-lifetime) but is subject to the same rule for completeness.
+### Caching inside `IClaimsProvider` MUST use a TTL well under the access token lifetime
 
-### Claims injection via the snapshot
+An `IClaimsProvider` that caches by `FamilyId` with a grant-lifetime TTL is equivalent to
+the snapshot model in terms of revocation latency: a disabled subject is not detected until
+cache expiry. The security requirement is that any caching TTL must be well under the
+access token lifetime — typically a fraction of it — so that a subject deactivation takes
+effect within the TTL window. The framework cannot enforce this constraint on a custom
+implementor, but the ADR and the `IClaimsProvider` XML documentation MUST state it clearly
+as a security invariant.
 
-The snapshot is written at authorisation time by the framework, using claims provided by
-the host application's interaction layer. The framework does not validate or sanitise
-claim values. A host application that includes attacker-controlled strings in claims
-(e.g. by reflecting untrusted input directly into a `"name"` claim) is responsible for
-that content. The framework's responsibility is accurate round-trip — what is stored is
-what is issued.
+A grant-lifetime or refresh-token-lifetime cache TTL defeats the entire purpose of
+the re-fetch model and MUST NOT be used. It is equivalent to the snapshot model without
+the clarity of an explicit API contract.
 
-### Volume and storage cost
+### `SubjectInvalid` is a security contract, not a convenience feature
 
-`Claims` adds to the per-entry payload. A typical OIDC token set may include 5–20 claims
-(sub, name, email, roles × N, groups × M). At 100 bytes per claim on average, 20 claims
-add ≈ 2 KB per entry. For `RefreshTokenEntry` this is persisted for up to 14 days. The
-capacity planning numbers in ADR 0008 §8 should be revisited by operators with large
-claim sets; the base estimate (a few hundred bytes per entry) no longer applies when
-`Claims` is populated.
+The framework cannot mechanically enforce that `IClaimsProvider` returns `SubjectInvalid`
+for a disabled or deleted subject — it can only define what happens when it does. An
+implementation that always returns `Resolved` will issue tokens for deactivated accounts
+without any compile-time error, startup failure, or runtime warning from the framework.
+Combined with ADR 0008's sliding refresh token lifetime (no absolute upper bound), an
+active client on such an implementation will refresh indefinitely and receive access tokens
+carrying claims the subject no longer holds, with no mechanism for the operator to stop it
+short of revoking the entire refresh token family out of band.
+
+This is the residual risk the framework cannot eliminate structurally. It MUST be addressed
+through documentation and sample code:
+
+- The XML documentation on `IClaimsProvider` MUST make the `SubjectInvalid` contract
+  impossible to miss — it is not optional subject-validation; it is how the operator's
+  account-deactivation action takes effect in the token pipeline.
+- Getting-started samples and documentation MUST demonstrate a `SubjectInvalid` return for
+  a disabled/deleted subject, not just the `Resolved` happy path.
+- The implementation PR that lands `IClaimsProvider` MUST include a test verifying that
+  `SubjectInvalid` from the provider results in `invalid_grant` from the token endpoint.
+
+### `FamilyId` logging hygiene
+
+`FamilyId` appears in `ClaimsProviderContext` and may be passed to internal caches or
+logged by implementors. It is not a bearer credential, but it is a correlator linking
+every token in a chain. The logging guidance from ADR 0008 §"familyId logging hygiene"
+applies here unchanged: if `FamilyId` must be logged, log `H(FamilyId)` truncated to
+≥ 64 bits rather than the raw value.
+
+### Single call per issuance — no split-brain claim sets
+
+The requirement that access token and ID token for a single issuance are built from the
+same `GetClaimsAsync` result eliminates the risk of split-brain: a scenario where the
+access token contains a revoked role but the ID token does not (or vice versa) because
+the identity store changed between two resolution calls. One call, one result, both tokens.
