@@ -763,9 +763,12 @@ benefit, increases versioning surface, and the abstractions are genuinely host-a
 **Registration.** `AddZeeKayDaAuth` does **not** register either store. Both
 `IAuthorizationCodeStore` and `IRefreshTokenStore` are left unregistered after the call.
 Consumers must explicitly opt in to one of the provided implementations, or register a custom
-one directly on `IServiceCollection`. `ZeeKayDaConfigurationException` is thrown at startup
-if either interface is not registered; the failure message names the missing interface and
-points to this ADR for the registration options.
+one directly on `IServiceCollection`. At startup, an `IHostedService` presence validator
+(following the `ScopePresenceStartupValidator` precedent already in the codebase) checks that
+both interfaces are registered. If either is missing it throws `ZeeKayDaConfigurationException`
+(per ADR 0006), naming the missing interface and pointing to this ADR for the registration
+options. The presence validator runs before the in-memory warning emitter (see below), so a
+half-registered configuration fails fast rather than emitting a misleading warning.
 
 Consumers opt in to the in-memory defaults via `.AddInMemoryStores()` on the
 `ZeeKayDaAuthBuilder` returned by `AddZeeKayDaAuth`:
@@ -775,6 +778,26 @@ services.AddZeeKayDaAuth(...)
         .AddInMemoryStores();   // development and testing only — emits a startup warning
 ```
 
+`.AddInMemoryStores()` registers both stores using `TryAddSingleton`. A registration
+already present in the container wins; the in-memory default is skipped silently.
+**To replace one or both stores while still using `.AddInMemoryStores()` for the other,
+register the custom implementation *before* calling `AddZeeKayDaAuth`:**
+
+```csharp
+// Register the custom store first — .AddInMemoryStores()'s TryAdd is then a no-op for it.
+services.AddSingleton<IRefreshTokenStore, MyPersistentRefreshTokenStore>();
+
+services.AddZeeKayDaAuth(...)
+        .AddInMemoryStores();   // registers IAuthorizationCodeStore in-memory;
+                                // IRefreshTokenStore is already present — TryAdd skips it.
+```
+
+Registering a custom implementation *after* `.AddInMemoryStores()` is a no-op: the
+`TryAddSingleton` inside the helper has already locked in the in-memory default and
+subsequent registrations of the same interface are silently ignored by the DI container.
+The ordering requirement is intentional — it mirrors the convention used by ASP.NET Core's
+`TryAdd`-based registration helpers and is documented in the XML doc on `AddInMemoryStores`.
+
 Consumers opt in to the distributed defaults via `.AddDistributedCacheTokenStores()`:
 
 ```csharp
@@ -782,27 +805,48 @@ services.AddZeeKayDaAuth(...)
         .AddDistributedCacheTokenStores();
 ```
 
-Consumers may also register a custom implementation directly:
+Consumers may also register custom implementations directly, without using either builder
+helper:
 
 ```csharp
-services.AddZeeKayDaAuth(...);
 services.AddSingleton<IAuthorizationCodeStore, MyAuthorizationCodeStore>();
 services.AddSingleton<IRefreshTokenStore, MyRefreshTokenStore>();
+
+services.AddZeeKayDaAuth(...);
 ```
 
-The two stores are independently replaceable. A consumer may register a custom
-`IRefreshTokenStore` (e.g. SQL-backed) and use `.AddInMemoryStores()` for the authorization
-code store only by overriding the refresh token registration after the builder call.
+**The two stores are independently replaceable.** A consumer may register a custom
+`IRefreshTokenStore` (e.g. SQL-backed) before `AddZeeKayDaAuth` and then call
+`.AddInMemoryStores()`: because `.AddInMemoryStores()` uses `TryAdd`, the custom
+`IRefreshTokenStore` already in the container is preserved.
+
+**Mixing builder helpers.** `.AddInMemoryStores()` and `.AddDistributedCacheTokenStores()`
+are convenience wrappers that register both stores at once. Mixing them — for example,
+using the distributed-cache store for authorization codes and the in-memory store for
+refresh tokens — requires direct `IServiceCollection` registration using `TryAdd` semantics
+*before* the `AddZeeKayDaAuth` call, following the same override ordering rule above:
+
+```csharp
+// Example: distributed-cache authorization codes, custom persistent refresh tokens.
+services.TryAddSingleton<IAuthorizationCodeStore, DistributedCacheAuthorizationCodeStore>();
+services.AddSingleton<IRefreshTokenStore, MyPersistentRefreshTokenStore>();
+
+services.AddZeeKayDaAuth(...);   // no builder helper called; both stores already registered.
+```
+
+There is no builder API for mixed-store configurations; callers who need them work
+directly against `IServiceCollection`.
 
 **Mandatory startup warning when `.AddInMemoryStores()` is used.** Because the in-memory
-stores lose all tokens on process restart and are unsuitable for production, the framework
-emits a warning before the first request is served (via a registered `IHostedService` or
-`IStartupFilter`). The warning MUST be at `LogLevel.Warning` and MUST include the following
-text verbatim:
+stores lose all tokens on process restart and disable single-use enforcement and reuse
+detection across multiple instances, the framework emits a warning before the first request
+is served via a registered `IHostedService`. The warning MUST be at `LogLevel.Warning` and
+MUST include the following text verbatim:
 
 > "ZeeKayDa.Auth: in-memory token stores are active. All issued tokens will be lost on
-> process restart. This configuration is intended for development and testing only and must
-> not be used in production."
+> process restart, and single-use enforcement and reuse detection are disabled across
+> multiple instances. This configuration is intended for development and testing only and
+> must not be used in production."
 
 This warning fires unconditionally whenever `.AddInMemoryStores()` is used — there is no
 suppression mechanism. In-memory stores are development and testing only, regardless of
@@ -811,7 +855,8 @@ instance count.
 The XML doc on `AddInMemoryStores` MUST lead with this limitation, first sentence:
 
 > Registers in-memory token stores for development and testing only. All tokens are lost on
-> process restart. A startup warning is emitted before the first request. Do not use in production.
+> process restart, and single-use enforcement and reuse detection are disabled across multiple
+> instances. A startup warning is emitted before the first request. Do not use in production.
 
 **`AddDistributedCacheTokenStores()` behaves as before.** It performs an
 `IDistributedCache`-registration check at startup and **fails fast with
@@ -909,9 +954,13 @@ above chain cleanly without passing `null` to a non-nullable parameter.
 **Custom implementations** SHOULD do the same. The XML doc on each store interface method
 states this expectation; we do not (and cannot) enforce it through the type system.
 
-**Configuration faults at startup** (e.g. `AddDistributedCacheTokenStores`
-called without `IDistributedCache` registered) surface as `ZeeKayDaConfigurationException`
-(per ADR 0006), not as `InvalidOperationException`.
+**Configuration faults at startup** surface as `ZeeKayDaConfigurationException` (per ADR
+0006), not as `InvalidOperationException`. Two categories exist: (1) a missing store
+registration — detected by the `IHostedService` presence validator described in §5, which
+follows the `ScopePresenceStartupValidator` precedent already in the codebase; (2) a
+missing infrastructure dependency (e.g. `AddDistributedCacheTokenStores` called without
+`IDistributedCache` registered) — detected at startup by the options-validation path
+established in ADR 0001 §6.
 
 **Fail-closed semantics — all paths:**
 
@@ -964,11 +1013,26 @@ deleted; see "Rejected alternatives".
 
 ### 8. Multi-instance and custom-store guidance
 
-The defaults shipped in this ADR cover two deployment shapes: single-instance production
-(in-memory pair) and dev/test (distributed pair against `MemoryDistributedCache`).
-Multi-instance production is **out of scope for the shipped defaults** and requires a
-custom store. This section consolidates the guidance previously scattered across §4, §5,
-§7, and §11.
+The defaults shipped in this ADR cover **dev/test only**. Both the in-memory pair (via
+`.AddInMemoryStores()`) and the distributed pair (via `.AddDistributedCacheTokenStores()`
+against `MemoryDistributedCache`) are unsuitable for production without understanding their
+constraints:
+
+- The in-memory pair loses all tokens on restart and silently disables single-use
+  enforcement and reuse detection in multi-instance deployments. It is only suitable for
+  development and testing.
+- The distributed pair is **not production-grade for any deployment shape** — single or
+  multi-instance — because the non-atomic check-then-set permits a measurable
+  revocation-bypass window (§4c, §4d). Its only supported uses are dev/test and as a
+  starting point for a custom atomic implementation.
+
+Both single-instance and multi-instance production deployments require a persistent or
+atomic store. Single-instance production where session continuity across restarts is
+required must use a custom persistent `IRefreshTokenStore` (in-memory
+`IAuthorizationCodeStore` remains acceptable — see §9 and §11). Multi-instance production
+MUST use a custom atomic store for both interfaces. Multi-instance production is **out of
+scope for the shipped defaults** and requires a custom store. This section consolidates the
+guidance previously scattered across §4, §5, §7, and §11.
 
 **Why no shipped multi-instance default?**
 
