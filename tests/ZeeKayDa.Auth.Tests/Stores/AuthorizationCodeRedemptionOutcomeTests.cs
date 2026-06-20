@@ -16,7 +16,7 @@ public sealed class AuthorizationCodeRedemptionOutcomeTests
             CodeChallenge = "challenge-abc",
             CodeChallengeMethod = CodeChallengeMethod.S256,
             Sub = "user-1",
-            Scope = "openid",
+            Scope = ["openid"],
             SsoSessionId = "session-1",
             InteractionId = "interaction-1",
             AuthTime = DateTimeOffset.UtcNow,

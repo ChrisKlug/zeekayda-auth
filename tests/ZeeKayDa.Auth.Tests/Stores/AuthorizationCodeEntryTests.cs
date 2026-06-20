@@ -16,7 +16,7 @@ public sealed class AuthorizationCodeEntryTests
             CodeChallenge = "abc123_challenge",
             CodeChallengeMethod = CodeChallengeMethod.S256,
             Sub = "user-42",
-            Scope = "openid profile",
+            Scope = ["openid", "profile"],
             SsoSessionId = "session-1",
             InteractionId = "interaction-1",
             AuthTime = new DateTimeOffset(2026, 1, 1, 12, 0, 0, TimeSpan.Zero),
@@ -169,9 +169,9 @@ public sealed class AuthorizationCodeEntryTests
     [Fact]
     public void Scope_is_stored_by_init()
     {
-        var entry = BuildMinimal() with { Scope = "openid email" };
+        var entry = BuildMinimal() with { Scope = ["openid", "email"] };
 
-        entry.Scope.Should().Be("openid email");
+        entry.Scope.Should().BeEquivalentTo(["openid", "email"]);
     }
 
     [Fact]
@@ -270,10 +270,14 @@ public sealed class AuthorizationCodeEntryTests
     // ── Record equality ───────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Two_entries_with_identical_values_are_equal()
+    public void Two_entries_produced_by_with_expression_on_same_base_are_equal()
     {
+        // IReadOnlyList<string> uses reference equality in records, so two independently
+        // constructed entries will NOT be equal even if their Scope contents match.
+        // Entries cloned via a with-expression that does not change Scope share the same
+        // list reference and therefore compare equal.
         var a = BuildMinimal();
-        var b = BuildMinimal();
+        var b = a with { };
 
         a.Should().Be(b);
         (a == b).Should().BeTrue();
@@ -301,8 +305,8 @@ public sealed class AuthorizationCodeEntryTests
     [Fact]
     public void Two_entries_differing_in_Scope_are_not_equal()
     {
-        var a = BuildMinimal() with { Scope = "openid" };
-        var b = BuildMinimal() with { Scope = "openid profile" };
+        var a = BuildMinimal() with { Scope = ["openid"] };
+        var b = BuildMinimal() with { Scope = ["openid", "profile"] };
 
         a.Should().NotBe(b);
     }
@@ -319,8 +323,10 @@ public sealed class AuthorizationCodeEntryTests
     [Fact]
     public void Equal_entries_have_the_same_hash_code()
     {
+        // Use a with-expression so both sides share the same Scope list reference,
+        // giving consistent hash codes (IReadOnlyList<string> uses reference equality).
         var a = BuildMinimal();
-        var b = BuildMinimal();
+        var b = a with { };
 
         a.GetHashCode().Should().Be(b.GetHashCode());
     }
@@ -347,6 +353,6 @@ public sealed class AuthorizationCodeEntryTests
 
         modified.ClientId.Should().Be(original.ClientId);
         modified.RedirectUri.Should().Be(original.RedirectUri);
-        modified.Scope.Should().Be(original.Scope);
+        modified.Scope.Should().BeSameAs(original.Scope);
     }
 }

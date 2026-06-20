@@ -67,13 +67,13 @@ public sealed record AuthorizationCodeEntry
     public required string Sub { get; init; }
 
     /// <summary>
-    /// The space-separated list of scopes granted to the client for this authorization.
+    /// The list of scope values granted to the client for this authorization.
     /// </summary>
     /// <remarks>
     /// The granted scope may be equal to or narrower than the requested scope. The token endpoint
     /// MUST use this value — not the original request — when issuing access and refresh tokens.
     /// </remarks>
-    public required string Scope { get; init; }
+    public required IReadOnlyList<string> Scope { get; init; }
 
     /// <summary>
     /// The OpenID Connect nonce value carried forward from the authorization request, or
