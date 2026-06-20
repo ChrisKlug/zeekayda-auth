@@ -7,6 +7,7 @@ using System.Xml.Linq;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Primitives;
 using Microsoft.Extensions.Time.Testing;
 using ZeeKayDa.Auth.Authorization;
 using ZeeKayDa.Auth.Stores;
@@ -177,9 +178,18 @@ public sealed class InMemoryAuthorizationCodeStoreTests
         await store.StoreAsync(code, BuildEntry(), CancellationToken.None);
 
         const int concurrentTasks = 100;
+        using var gate = new SemaphoreSlim(0, concurrentTasks);
+
         var tasks = Enumerable.Range(0, concurrentTasks)
-            .Select(_ => store.TryRedeemAsync(code, "client-a", "family-concurrent", CancellationToken.None).AsTask())
+            .Select(_ => Task.Run(async () =>
+            {
+                await gate.WaitAsync();
+                return await store.TryRedeemAsync(code, "client-a", "family-concurrent", CancellationToken.None);
+            }))
             .ToArray();
+
+        // Release all tasks simultaneously so they genuinely contend on the per-handle semaphore
+        gate.Release(concurrentTasks);
 
         var outcomes = await Task.WhenAll(tasks);
 
@@ -264,13 +274,11 @@ public sealed class InMemoryAuthorizationCodeStoreTests
             because: "ClientMismatch must not write a tombstone");
     }
 
-    // ── AC 6 — Tombstone TTL = max(RefreshTokenLifetime, remaining) ──────────────────────────────
+    // ── AC 6 — Tombstone TTL = RefreshTokenLifetime ──────────────────────────────────────────────
 
     [Fact]
     public async Task TryRedeemAsync_tombstone_exists_immediately_after_redemption_case_A_RefreshTokenLifetime_longer()
     {
-        // Case A: RefreshTokenLifetime (14 days) > remaining (1 year from now — but we set
-        // expiresAt far in future so the remaining is huge; we just verify tombstone is present)
         var cache = new MemoryCache(new MemoryCacheOptions());
         var serverOptions = new AuthorizationServerOptions();
         serverOptions.TokenEndpoint.RefreshTokenLifetime = TimeSpan.FromDays(14);
@@ -286,174 +294,192 @@ public sealed class InMemoryAuthorizationCodeStoreTests
     }
 
     [Fact]
-    public async Task TryRedeemAsync_tombstone_exists_immediately_after_redemption_case_B_remaining_longer()
+    public async Task TryRedeemAsync_tombstone_TTL_is_RefreshTokenLifetime_regardless_of_remaining()
     {
-        // Case B: remaining > RefreshTokenLifetime — tombstone TTL should equal remaining
+        // The tombstone TTL is always RefreshTokenLifetime, even when remaining > RefreshTokenLifetime.
         var cache = new MemoryCache(new MemoryCacheOptions());
+        var refreshTokenLifetime = TimeSpan.FromHours(1);
         var serverOptions = new AuthorizationServerOptions();
-        serverOptions.TokenEndpoint.RefreshTokenLifetime = TimeSpan.FromHours(1);
-        var store = CreateStore(cache: cache, serverOptions: serverOptions);
-        const string code = "tombstone-ttl-case-b";
+        serverOptions.TokenEndpoint.RefreshTokenLifetime = refreshTokenLifetime;
 
-        // expiresAt defaults to FarFuture (2099) so remaining >> RefreshTokenLifetime
+        var startTime = new DateTimeOffset(2090, 1, 1, 12, 0, 0, TimeSpan.Zero);
+        var tp = new FakeTimeProvider(startTime);
+        var capturingCache = new CapturingMemoryCache(cache);
+
+        var store = CreateStore(cache: capturingCache, serverOptions: serverOptions, timeProvider: tp);
+        const string code = "tombstone-ttl-fixed";
+
+        // expiresAt is FarFuture — remaining >> RefreshTokenLifetime
         await store.StoreAsync(code, BuildEntry(), CancellationToken.None);
         await store.TryRedeemAsync(code, "client-a", "family-b", CancellationToken.None);
 
         var tombstoneKey = BuildExpectedTombstoneKey(code);
-        cache.TryGetValue(tombstoneKey, out _).Should().BeTrue(
-            because: "tombstone must be present immediately after redemption (Case B: remaining > RefreshTokenLifetime)");
+        capturingCache.CapturedExpiries.Should().ContainKey(tombstoneKey,
+            because: "tombstone must have been written to cache");
+        capturingCache.CapturedExpiries[tombstoneKey].Should().Be(startTime + refreshTokenLifetime,
+            because: "tombstone TTL must be exactly RefreshTokenLifetime even when remaining > RefreshTokenLifetime");
     }
 
     [Fact]
-    public async Task TryRedeemAsync_tombstone_TTL_is_at_least_RefreshTokenLifetime()
+    public async Task TryRedeemAsync_tombstone_TTL_is_exactly_RefreshTokenLifetime()
     {
-        // Verify tombstone persists into cache with the right absolute expiry by checking
-        // it's still there well within the RefreshTokenLifetime window.
-        var cache = new MemoryCache(new MemoryCacheOptions());
+        var innerCache = new MemoryCache(new MemoryCacheOptions());
+        var capturingCache = new CapturingMemoryCache(innerCache);
+
         var refreshTokenLifetime = TimeSpan.FromDays(14);
         var serverOptions = new AuthorizationServerOptions();
         serverOptions.TokenEndpoint.RefreshTokenLifetime = refreshTokenLifetime;
-        var store = CreateStore(cache: cache, serverOptions: serverOptions);
+
+        var startTime = new DateTimeOffset(2090, 1, 1, 12, 0, 0, TimeSpan.Zero);
+        var tp = new FakeTimeProvider(startTime);
+
+        var store = CreateStore(cache: capturingCache, serverOptions: serverOptions, timeProvider: tp);
         const string code = "tombstone-min-ttl";
 
-        await store.StoreAsync(code, BuildEntry(), CancellationToken.None);
+        await store.StoreAsync(code, BuildEntry(expiresAt: startTime.AddMinutes(5)), CancellationToken.None);
         await store.TryRedeemAsync(code, "client-a", "family-max", CancellationToken.None);
 
         var tombstoneKey = BuildExpectedTombstoneKey(code);
-        cache.TryGetValue(tombstoneKey, out _).Should().BeTrue(
-            because: "tombstone TTL is max(RefreshTokenLifetime, remaining) so it must be present immediately");
+        capturingCache.CapturedExpiries.Should().ContainKey(tombstoneKey,
+            because: "tombstone must have been written to the cache");
+        capturingCache.CapturedExpiries[tombstoneKey].Should().Be(startTime + refreshTokenLifetime,
+            because: "tombstone TTL must be exactly RefreshTokenLifetime");
     }
 
-    // ── AC 7 — Semaphore cleanup ───────────────────────────────────────────────────────────────────
+    [Fact]
+    public async Task TryRedeemAsync_tombstone_TTL_is_exactly_RefreshTokenLifetime_using_capturing_cache()
+    {
+        // Arrange: use a capturing cache so we can inspect the AbsoluteExpiration set on the tombstone
+        var innerCache = new MemoryCache(new MemoryCacheOptions());
+        var capturingCache = new CapturingMemoryCache(innerCache);
+
+        var refreshTokenLifetime = TimeSpan.FromDays(14);
+        var serverOptions = new AuthorizationServerOptions();
+        serverOptions.TokenEndpoint.RefreshTokenLifetime = refreshTokenLifetime;
+
+        var startTime = new DateTimeOffset(2090, 1, 1, 12, 0, 0, TimeSpan.Zero);
+        var tp = new FakeTimeProvider(startTime);
+
+        var store = CreateStore(cache: capturingCache, serverOptions: serverOptions, timeProvider: tp);
+        const string code = "tombstone-ttl-exact";
+
+        await store.StoreAsync(code, BuildEntry(expiresAt: startTime.AddMinutes(5)), CancellationToken.None);
+        await store.TryRedeemAsync(code, "client-a", "family-1", CancellationToken.None);
+
+        var tombstoneKey = BuildExpectedTombstoneKey(code);
+        capturingCache.CapturedExpiries.Should().ContainKey(tombstoneKey,
+            because: "tombstone must have been written to the cache");
+
+        var tombstoneExpiry = capturingCache.CapturedExpiries[tombstoneKey];
+        tombstoneExpiry.Should().Be(startTime + refreshTokenLifetime,
+            because: "tombstone TTL must be exactly RefreshTokenLifetime, not max(remaining, RefreshTokenLifetime)");
+    }
+
+    // ── AC 7 — Semaphore cleanup via post-eviction callback ───────────────────────────────────────
 
     [Fact]
-    public async Task Semaphores_are_evicted_after_eviction_window_expires()
+    public async Task Semaphores_dictionary_entry_is_removed_when_cache_entry_is_explicitly_removed()
     {
-        // Use a start time that is in the future relative to real clock to ensure IMemoryCache
-        // keeps the entries; eviction window is short so we can advance past it.
-        var startTime = new DateTimeOffset(2090, 6, 1, 0, 0, 0, TimeSpan.Zero);
-        var tp = new FakeTimeProvider(startTime);
-        var evictionWindow = TimeSpan.FromSeconds(5);
-        var storeOptions = new InMemoryTokenStoreOptions { SemaphoreEvictionWindow = evictionWindow };
-        var store = CreateStore(storeOptions: storeOptions, timeProvider: tp);
+        // Verify that when the cache entry is removed (e.g. by cache eviction),
+        // the corresponding semaphore is also cleaned up.
+        var cache = new MemoryCache(new MemoryCacheOptions());
+        var store = CreateStore(cache: cache);
+        const string code = "semaphore-cleanup-code";
 
         var semaphoresField = typeof(InMemoryAuthorizationCodeStore)
             .GetField("_semaphores", BindingFlags.NonPublic | BindingFlags.Instance)!;
 
-        var expiresAt = startTime.AddHours(1); // Keep entries in cache (far future from real clock)
-        for (int i = 0; i < 5; i++)
-        {
-            var code = $"semaphore-code-{i}";
-            var entry = BuildEntry(expiresAt: expiresAt);
-            await store.StoreAsync(code, entry, CancellationToken.None);
-            await store.TryRedeemAsync(code, "client-a", $"family-{i}", CancellationToken.None);
-        }
+        await store.StoreAsync(code, BuildEntry(), CancellationToken.None);
 
-        var semaphoresBefore = semaphoresField.GetValue(store) as IDictionary<string, object>;
-        var countBeforeRaw = (semaphoresField.GetValue(store) as System.Collections.ICollection)?.Count ?? -1;
-        countBeforeRaw.Should().BeGreaterThan(0, because: "semaphores are created for each code");
+        var countAfterStore = (semaphoresField.GetValue(store) as System.Collections.ICollection)?.Count ?? -1;
+        countAfterStore.Should().Be(1, because: "one semaphore should exist after storing one code");
 
-        // Advance fake time past ExpiresAt + EvictionWindow
-        tp.Advance(expiresAt - startTime + evictionWindow + TimeSpan.FromSeconds(1));
+        // Explicitly remove the entry from cache — this schedules the post-eviction callback
+        var hashedKey = BuildExpectedEntryKey(code);
+        cache.Remove(hashedKey);
 
-        // Trigger cleanup by operating on a new code
-        var triggerCode = "trigger-cleanup-code";
-        var triggerEntry = BuildEntry(expiresAt: tp.GetUtcNow() + TimeSpan.FromHours(2));
-        await store.StoreAsync(triggerCode, triggerEntry, CancellationToken.None);
-        await store.TryRedeemAsync(triggerCode, "client-a", "family-trigger", CancellationToken.None);
+        // MemoryCache fires post-eviction callbacks on a background ThreadPool thread.
+        // Spin-wait deterministically rather than sleeping for a fixed interval.
+        var semaphoresAfterRemoval = semaphoresField.GetValue(store) as System.Collections.ICollection;
+        SpinWait.SpinUntil(() => semaphoresAfterRemoval?.Count == 0, TimeSpan.FromSeconds(2));
 
-        var countAfterRaw = (semaphoresField.GetValue(store) as System.Collections.ICollection)?.Count ?? -1;
-
-        countAfterRaw.Should().BeLessThan(countBeforeRaw,
-            because: "expired semaphores must be evicted to prevent unbounded accumulation");
+        semaphoresAfterRemoval?.Count.Should().Be(0,
+            because: "the semaphore must be removed when the cache entry expires/is evicted");
     }
 
     [Fact]
     public async Task Semaphores_dictionary_does_not_grow_unboundedly_across_many_unique_codes()
     {
-        var startTime = new DateTimeOffset(2090, 6, 1, 0, 0, 0, TimeSpan.Zero);
-        var tp = new FakeTimeProvider(startTime);
-        var evictionWindow = TimeSpan.FromSeconds(1);
-        var storeOptions = new InMemoryTokenStoreOptions { SemaphoreEvictionWindow = evictionWindow };
-        var store = CreateStore(storeOptions: storeOptions, timeProvider: tp);
-
+        var cache = new MemoryCache(new MemoryCacheOptions());
+        var store = CreateStore(cache: cache);
         var semaphoresField = typeof(InMemoryAuthorizationCodeStore)
             .GetField("_semaphores", BindingFlags.NonPublic | BindingFlags.Instance)!;
 
-        // Phase 1: store and redeem 10 codes at start time
-        var batch1Expiry = startTime.AddHours(1);
-        for (int i = 0; i < 10; i++)
+        // Store 20 codes with far-future expiry
+        for (int i = 0; i < 20; i++)
         {
-            var code = $"batch1-{i}";
-            var entry = BuildEntry(expiresAt: batch1Expiry);
+            var code = $"growing-{i}";
+            var entry = BuildEntry(expiresAt: FarFuture);
             await store.StoreAsync(code, entry, CancellationToken.None);
-            await store.TryRedeemAsync(code, "client-a", $"family-b1-{i}", CancellationToken.None);
         }
 
-        // Advance past batch 1 expiry + eviction window
-        tp.Advance(batch1Expiry - startTime + evictionWindow + TimeSpan.FromSeconds(1));
-
-        // Phase 2: store 5 more codes — each store/redeem triggers cleanup
-        var batch2Expiry = tp.GetUtcNow() + TimeSpan.FromHours(2);
-        for (int i = 0; i < 5; i++)
+        // Explicitly remove all entries to trigger post-eviction callbacks
+        for (int i = 0; i < 20; i++)
         {
-            var code = $"batch2-{i}";
-            var entry = BuildEntry(expiresAt: batch2Expiry);
-            await store.StoreAsync(code, entry, CancellationToken.None);
-            await store.TryRedeemAsync(code, "client-a", $"family-b2-{i}", CancellationToken.None);
+            var code = $"growing-{i}";
+            var hashedKey = BuildExpectedEntryKey(code);
+            cache.Remove(hashedKey);
         }
 
-        var countAfter = (semaphoresField.GetValue(store) as System.Collections.ICollection)?.Count ?? -1;
+        // MemoryCache fires post-eviction callbacks on a background ThreadPool thread.
+        // Spin-wait deterministically rather than sleeping for a fixed interval.
+        var semaphoresCollection = semaphoresField.GetValue(store) as System.Collections.ICollection;
+        SpinWait.SpinUntil(() => semaphoresCollection?.Count == 0, TimeSpan.FromSeconds(2));
 
-        // Batch 1 semaphores should have been evicted; only batch 2 (≤ 10) remain
-        countAfter.Should().BeLessThanOrEqualTo(10,
-            because: "evicted semaphores from batch 1 must be removed; the count must not grow unboundedly");
+        var countAfterCleanup = semaphoresCollection?.Count ?? -1;
+        countAfterCleanup.Should().Be(0,
+            because: "all semaphores should be removed after all cache entries are evicted");
     }
 
-    // ── AC 8 — RandomHandleGenerator cryptographic strength ──────────────────────────────────────
+    // ── AC 8 — StoreKeyGenerator cryptographic strength ──────────────────────────────────────────
 
     [Fact]
-    public void RandomHandleGenerator_generates_10000_distinct_handles()
+    public void StoreKeyGenerator_generates_10000_distinct_keys()
     {
-        var generator = new RandomHandleGenerator();
-
-        var handles = Enumerable.Range(0, 10_000)
-            .Select(_ => generator.Generate())
+        var keys = Enumerable.Range(0, 10_000)
+            .Select(_ => StoreKeyGenerator.Generate())
             .ToList();
 
-        handles.Should().OnlyHaveUniqueItems(because: "no two handles should collide in 10,000 samples");
+        keys.Should().OnlyHaveUniqueItems(because: "no two store keys should collide in 10,000 samples");
     }
 
     [Fact]
-    public void RandomHandleGenerator_handles_are_at_least_43_characters()
+    public void StoreKeyGenerator_keys_are_43_characters()
     {
-        var generator = new RandomHandleGenerator();
-
         // Base64Url(32 bytes) = ceil(32 * 4 / 3) with no padding = 43 characters
-        var handles = Enumerable.Range(0, 100).Select(_ => generator.Generate()).ToList();
+        var keys = Enumerable.Range(0, 100).Select(_ => StoreKeyGenerator.Generate()).ToList();
 
-        handles.Should().AllSatisfy(h => h.Length.Should().BeGreaterThanOrEqualTo(43,
-            because: "32 bytes Base64Url-encoded produces at least 43 characters"));
+        keys.Should().AllSatisfy(k => k.Length.Should().Be(43,
+            because: "32 bytes Base64Url-encoded without padding produces exactly 43 characters"));
     }
 
     [Fact]
-    public void RandomHandleGenerator_handles_contain_only_Base64Url_characters()
+    public void StoreKeyGenerator_keys_contain_only_Base64Url_characters()
     {
-        var generator = new RandomHandleGenerator();
         var validChars = new HashSet<char>("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_");
 
-        var handles = Enumerable.Range(0, 100).Select(_ => generator.Generate()).ToList();
+        var keys = Enumerable.Range(0, 100).Select(_ => StoreKeyGenerator.Generate()).ToList();
 
-        handles.Should().AllSatisfy(h =>
-            h.ToCharArray().Should().AllSatisfy(c =>
+        keys.Should().AllSatisfy(k =>
+            k.ToCharArray().Should().AllSatisfy(c =>
                 validChars.Contains(c).Should().BeTrue(
-                    because: $"Base64Url handles must only use URL-safe characters, but found '{c}'")));
+                    because: $"Base64Url keys must only use URL-safe characters, but found '{c}'")));
     }
 
     [Fact]
-    public void RandomHandleGenerator_is_in_ZeeKayDa_Auth_Stores_namespace()
+    public void StoreKeyGenerator_is_in_ZeeKayDa_Auth_Stores_namespace()
     {
-        typeof(RandomHandleGenerator).Namespace.Should().Be("ZeeKayDa.Auth.Stores");
+        typeof(StoreKeyGenerator).Namespace.Should().Be("ZeeKayDa.Auth.Stores");
     }
 
     // ── AC 9 — IMemoryCache failure wraps in ZeeKayDaStoreException ──────────────────────────────
@@ -485,6 +511,32 @@ public sealed class InMemoryAuthorizationCodeStoreTests
 
         exception.Message.Should().NotBeNullOrWhiteSpace(
             because: "ZeeKayDaStoreException must carry a descriptive message");
+    }
+
+    [Fact]
+    public async Task TryRedeemAsync_wraps_DataProtection_Protect_failure_in_ZeeKayDaStoreException()
+    {
+        // Arrange: use a DP provider that unprotects fine but throws on Protect
+        var workingDp = new EphemeralDataProtectionProvider();
+        var faultingDp = new ProtectFailingDataProtectionProvider(workingDp);
+
+        // Store with the working DP so the entry is valid
+        var cache = new MemoryCache(new MemoryCacheOptions());
+        var storeForWrite = CreateStore(cache: cache, dp: workingDp);
+        var storeForRedeem = CreateStore(cache: cache, dp: faultingDp);
+
+        const string code = "dp-protect-failure-code";
+        await storeForWrite.StoreAsync(code, BuildEntry(), CancellationToken.None);
+
+        // Act: redeem using the faulting DP — Protect() will throw when writing tombstone
+        var act = async () =>
+            await storeForRedeem.TryRedeemAsync(code, "client-a", "family-1", CancellationToken.None);
+
+        // Assert
+        var assertion = await act.Should().ThrowAsync<ZeeKayDaStoreException>(
+            because: "IDataProtector.Protect() failures during TryRedeemAsync must be wrapped in ZeeKayDaStoreException");
+        assertion.Which.InnerException.Should().NotBeNull(
+            because: "the original exception must be preserved as InnerException");
     }
 
     // ── AC 10 — Cross-purpose isolation ──────────────────────────────────────────────────────────
@@ -716,5 +768,84 @@ public sealed class InMemoryAuthorizationCodeStoreTests
         }
 
         public void Dispose() { }
+    }
+
+    /// <summary>
+    /// A <see cref="IMemoryCache"/> wrapper that records the <see cref="DateTimeOffset"/>
+    /// absolute expiration set on each cache entry via <c>Set&lt;TItem&gt;</c>.
+    /// </summary>
+    private sealed class CapturingMemoryCache : IMemoryCache
+    {
+        private readonly IMemoryCache _inner;
+        public Dictionary<string, DateTimeOffset?> CapturedExpiries { get; } = new();
+
+        public CapturingMemoryCache(IMemoryCache inner) => _inner = inner;
+
+        public ICacheEntry CreateEntry(object key)
+        {
+            var entry = _inner.CreateEntry(key);
+            return new CapturingCacheEntry(entry, this, key.ToString()!);
+        }
+
+        public void Remove(object key) => _inner.Remove(key);
+
+        public bool TryGetValue(object key, out object? value) => _inner.TryGetValue(key, out value);
+
+        public void Dispose() => _inner.Dispose();
+
+        internal void RecordExpiry(string key, DateTimeOffset? expiry) => CapturedExpiries[key] = expiry;
+
+        private sealed class CapturingCacheEntry : ICacheEntry
+        {
+            private readonly ICacheEntry _inner;
+            private readonly CapturingMemoryCache _cache;
+            private readonly string _key;
+
+            public CapturingCacheEntry(ICacheEntry inner, CapturingMemoryCache cache, string key)
+            {
+                _inner = inner;
+                _cache = cache;
+                _key = key;
+            }
+
+            public object Key => _inner.Key;
+            public object? Value { get => _inner.Value; set => _inner.Value = value; }
+            public DateTimeOffset? AbsoluteExpiration
+            {
+                get => _inner.AbsoluteExpiration;
+                set
+                {
+                    _inner.AbsoluteExpiration = value;
+                    _cache.RecordExpiry(_key, value);
+                }
+            }
+            public TimeSpan? AbsoluteExpirationRelativeToNow { get => _inner.AbsoluteExpirationRelativeToNow; set => _inner.AbsoluteExpirationRelativeToNow = value; }
+            public TimeSpan? SlidingExpiration { get => _inner.SlidingExpiration; set => _inner.SlidingExpiration = value; }
+            public IList<IChangeToken> ExpirationTokens => _inner.ExpirationTokens;
+            public IList<PostEvictionCallbackRegistration> PostEvictionCallbacks => _inner.PostEvictionCallbacks;
+            public CacheItemPriority Priority { get => _inner.Priority; set => _inner.Priority = value; }
+            public long? Size { get => _inner.Size; set => _inner.Size = value; }
+            public void Dispose() => _inner.Dispose();
+        }
+    }
+
+    private sealed class ProtectFailingDataProtectionProvider : IDataProtectionProvider
+    {
+        private readonly IDataProtectionProvider _inner;
+        public ProtectFailingDataProtectionProvider(IDataProtectionProvider inner) => _inner = inner;
+        public IDataProtector CreateProtector(string purpose)
+            => new ProtectFailingDataProtector(_inner.CreateProtector(purpose));
+    }
+
+    private sealed class ProtectFailingDataProtector : IDataProtector
+    {
+        private readonly IDataProtector _inner;
+        public ProtectFailingDataProtector(IDataProtector inner) => _inner = inner;
+        public IDataProtector CreateProtector(string purpose)
+            => new ProtectFailingDataProtector(_inner.CreateProtector(purpose));
+        public byte[] Protect(byte[] plaintext)
+            => throw new InvalidOperationException("Simulated DP Protect() failure.");
+        public byte[] Unprotect(byte[] protectedData)
+            => _inner.Unprotect(protectedData);
     }
 }

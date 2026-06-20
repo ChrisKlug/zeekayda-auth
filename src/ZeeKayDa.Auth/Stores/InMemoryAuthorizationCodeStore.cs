@@ -51,10 +51,9 @@ internal sealed class InMemoryAuthorizationCodeStore : IAuthorizationCodeStore
 
     private readonly IMemoryCache _cache;
     private readonly IDataProtector _protector;
-    private readonly InMemoryTokenStoreOptions _options;
     private readonly TimeSpan _refreshTokenLifetime;
     private readonly TimeProvider _timeProvider;
-    private readonly ConcurrentDictionary<string, SemaphoreState> _semaphores = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _semaphores = new(StringComparer.Ordinal);
 
     /// <summary>
     /// Initialises a new <see cref="InMemoryAuthorizationCodeStore"/>.
@@ -81,7 +80,6 @@ internal sealed class InMemoryAuthorizationCodeStore : IAuthorizationCodeStore
 
         _cache = cache;
         _protector = dataProtectionProvider.CreateProtector(DataProtectionPurpose);
-        _options = options.Value;
         _refreshTokenLifetime = serverOptions.Value.TokenEndpoint.RefreshTokenLifetime;
         _timeProvider = timeProvider;
     }
@@ -96,7 +94,6 @@ internal sealed class InMemoryAuthorizationCodeStore : IAuthorizationCodeStore
 
         var hashedKey = ComputeHashedSegment(code);
         var entryKey = BuildEntryKey(hashedKey);
-        var evictAfter = entry.ExpiresAt + _options.SemaphoreEvictionWindow;
 
         try
         {
@@ -106,6 +103,7 @@ internal sealed class InMemoryAuthorizationCodeStore : IAuthorizationCodeStore
             using var cacheEntry = _cache.CreateEntry(entryKey);
             cacheEntry.Value = protectedBytes;
             cacheEntry.AbsoluteExpiration = entry.ExpiresAt;
+            cacheEntry.RegisterPostEvictionCallback((_, _, _, _) => _semaphores.TryRemove(hashedKey, out _));
         }
         catch (Exception ex) when (ex is not ZeeKayDaStoreException)
         {
@@ -113,10 +111,7 @@ internal sealed class InMemoryAuthorizationCodeStore : IAuthorizationCodeStore
                 "Failed to store the authorization code entry in the in-memory cache.", ex);
         }
 
-        _semaphores.AddOrUpdate(
-            hashedKey,
-            addValueFactory: _ => new SemaphoreState(new SemaphoreSlim(1, 1), evictAfter),
-            updateValueFactory: (_, existing) => new SemaphoreState(existing.Semaphore, evictAfter));
+        _semaphores.GetOrAdd(hashedKey, _ => new SemaphoreSlim(1, 1));
 
         return Task.CompletedTask;
     }
@@ -136,7 +131,7 @@ internal sealed class InMemoryAuthorizationCodeStore : IAuthorizationCodeStore
         var entryKey = BuildEntryKey(hashedKey);
         var tombstoneKey = BuildTombstoneKey(hashedKey);
 
-        var semaphore = GetOrCreateSemaphore(hashedKey);
+        var semaphore = _semaphores.GetOrAdd(hashedKey, _ => new SemaphoreSlim(1, 1));
         await semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -183,43 +178,28 @@ internal sealed class InMemoryAuthorizationCodeStore : IAuthorizationCodeStore
                 return new AuthorizationCodeRedemptionOutcome.ClientMismatch();
 
             // Write tombstone atomically with entry removal
-            var remaining = entry.ExpiresAt - now;
-            var tombstoneTtl = remaining > _refreshTokenLifetime ? remaining : _refreshTokenLifetime;
-            var tombstoneExpiry = now + tombstoneTtl;
+            var tombstoneExpiry = now + _refreshTokenLifetime;
 
-            var tombstoneValue = new Tombstone(familyId, tombstoneExpiry);
-            var tombstoneJsonBytes = JsonSerializer.SerializeToUtf8Bytes(tombstoneValue, JsonOptions);
-            var protectedTombstone = _protector.Protect(tombstoneJsonBytes);
+            try
+            {
+                var tombstoneValue = new Tombstone(familyId, tombstoneExpiry);
+                var tombstoneJsonBytes = JsonSerializer.SerializeToUtf8Bytes(tombstoneValue, JsonOptions);
+                var protectedTombstone = _protector.Protect(tombstoneJsonBytes);
 
-            _cache.Set(tombstoneKey, protectedTombstone, tombstoneExpiry);
-            _cache.Remove(entryKey);
+                _cache.Set(tombstoneKey, protectedTombstone, tombstoneExpiry);
+                _cache.Remove(entryKey);
+            }
+            catch (Exception ex) when (ex is not ZeeKayDaStoreException)
+            {
+                throw new ZeeKayDaStoreException(
+                    "Failed to write tombstone or remove authorization code entry from cache.", ex);
+            }
 
             return new AuthorizationCodeRedemptionOutcome.Redeemed { Entry = entry };
         }
         finally
         {
             semaphore.Release();
-        }
-    }
-
-    private SemaphoreSlim GetOrCreateSemaphore(string hashedKey)
-    {
-        EvictExpiredSemaphores();
-
-        var now = _timeProvider.GetUtcNow();
-        var tempEvictAfter = now + _options.SemaphoreEvictionWindow;
-        var state = _semaphores.GetOrAdd(hashedKey, _ => new SemaphoreState(new SemaphoreSlim(1, 1), tempEvictAfter));
-        return state.Semaphore;
-    }
-
-    private void EvictExpiredSemaphores()
-    {
-        var now = _timeProvider.GetUtcNow();
-
-        foreach (var kvp in _semaphores)
-        {
-            if (kvp.Value.EvictAfter <= now)
-                _semaphores.TryRemove(kvp.Key, out _);
         }
     }
 
@@ -234,6 +214,4 @@ internal sealed class InMemoryAuthorizationCodeStore : IAuthorizationCodeStore
     private static string BuildTombstoneKey(string hashedSegment) => $"zkd:code:{hashedSegment}:redeemed";
 
     private sealed record Tombstone(string FamilyId, DateTimeOffset ExpiresAt);
-
-    private sealed record SemaphoreState(SemaphoreSlim Semaphore, DateTimeOffset EvictAfter);
 }

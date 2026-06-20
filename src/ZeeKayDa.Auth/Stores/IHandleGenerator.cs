@@ -11,7 +11,7 @@ namespace ZeeKayDa.Auth.Stores;
 /// least 128 bits of entropy; the default implementation uses 32 bytes (256 bits),
 /// producing Base64Url-encoded strings of at least 43 characters.
 /// </remarks>
-public interface IHandleGenerator
+internal interface IHandleGenerator
 {
     /// <summary>
     /// Generates a new cryptographically random opaque handle string.
