@@ -45,9 +45,9 @@ public interface IAuthorizationCodeStore
     /// redemption.
     /// </summary>
     /// <param name="entry">
-    /// The entry to persist. The store key is derived externally (typically
-    /// SHA-256 of the raw code handle); <paramref name="entry"/> itself does not contain the
-    /// cleartext code handle.
+    /// The entry to persist. The store is responsible for deriving its own storage key from the
+    /// code handle that will be presented to <see cref="TryRedeemAsync"/>; <paramref name="entry"/>
+    /// itself does not contain the cleartext code handle.
     /// </param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A task that completes when the entry has been durably stored.</returns>

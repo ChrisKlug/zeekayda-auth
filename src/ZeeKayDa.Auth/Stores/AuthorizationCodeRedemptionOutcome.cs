@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace ZeeKayDa.Auth.Stores;
 
 /// <summary>
@@ -8,7 +10,8 @@ namespace ZeeKayDa.Auth.Stores;
 /// <para>
 /// This is a closed discriminated union with exactly four states. The <see langword="private"/>
 /// constructor prevents external subclassing, ensuring exhaustive pattern matching is safe and
-/// complete. Callers MUST handle every case:
+/// complete. No further subtypes will be added without a major version bump. Callers MUST
+/// handle every case:
 /// </para>
 /// <list type="bullet">
 /// <item><description>
@@ -40,6 +43,7 @@ namespace ZeeKayDa.Auth.Stores;
 /// </remarks>
 public abstract class AuthorizationCodeRedemptionOutcome
 {
+    [ExcludeFromCodeCoverage]
     private AuthorizationCodeRedemptionOutcome() { }
 
     /// <summary>
@@ -62,9 +66,16 @@ public abstract class AuthorizationCodeRedemptionOutcome
     /// presenting it. The store has NOT consumed the code.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Caller MUST return <c>error=invalid_grant</c> per RFC 6749 §5.2. The code is left
     /// in place so that the legitimate client may still redeem it (the store does not
     /// invalidate the entry on a client-mismatch attempt).
+    /// </para>
+    /// <para>
+    /// Callers SHOULD emit a security-relevant log event on this outcome. It may indicate a
+    /// code-injection attempt or a confused-deputy / token mix-up attack against the
+    /// legitimate client.
+    /// </para>
     /// </remarks>
     public sealed class ClientMismatch : AuthorizationCodeRedemptionOutcome { }
 
