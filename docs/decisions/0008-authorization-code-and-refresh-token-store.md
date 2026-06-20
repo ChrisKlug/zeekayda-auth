@@ -768,41 +768,94 @@ benefit, increases versioning surface, and the abstractions are genuinely host-a
 
 **Registration.** `AddZeeKayDaAuth` does **not** register either store. Both
 `IAuthorizationCodeStore` and `IRefreshTokenStore` are left unregistered after the call.
-Consumers must explicitly opt in to one of the provided implementations, or register a custom
-one directly on `IServiceCollection`. At startup, an `IHostedService` presence validator
+Consumers must explicitly opt in to one of the provided implementations or register a custom
+one via the builder. At startup, an `IHostedService` presence validator
 (following the `ScopePresenceStartupValidator` precedent already in the codebase) checks that
 both interfaces are registered. If either is missing it throws `ZeeKayDaConfigurationException`
 (per ADR 0006), naming the missing interface and pointing to this ADR for the registration
 options. The presence validator runs before the in-memory warning emitter (see below), so a
 half-registered configuration fails fast rather than emitting a misleading warning.
 
-Consumers opt in to the in-memory defaults via `.AddInMemoryStores()` on the
-`ZeeKayDaAuthBuilder` returned by `AddZeeKayDaAuth`:
+**Builder registration API.** All store registration happens through the `ZeeKayDaAuthBuilder`
+returned by `AddZeeKayDaAuth`. The full API surface is:
+
+| Method | Registers | Notes |
+|---|---|---|
+| `.AddInMemoryStores()` | Both in-memory stores | Dev/test only — emits startup warning |
+| `.AddInMemoryAuthorizationCodeStore()` | `InMemoryAuthorizationCodeStore` as `IAuthorizationCodeStore` | Dev/test only — emits startup warning |
+| `.AddInMemoryRefreshTokenStore()` | `InMemoryRefreshTokenStore` as `IRefreshTokenStore` | Dev/test only — emits startup warning |
+| `.AddAuthorizationCodeStore<T>()` | `T` as `IAuthorizationCodeStore` (singleton) | Recommended path for custom stores; `T : class, IAuthorizationCodeStore` |
+| `.AddRefreshTokenStore<T>()` | `T` as `IRefreshTokenStore` (singleton) | Recommended path for custom stores; `T : class, IRefreshTokenStore` |
+| `.AddDistributedCacheTokenStores()` | Both distributed-cache stores | Dev/test only; see warning below |
+
+**Double-registration MUST throw.** Every builder registration method above checks, at
+registration time, whether the corresponding store interface is already registered in
+`Services`. If it is, the method MUST throw `InvalidOperationException` immediately,
+naming the conflicting interface. It MUST NOT silently skip. A silent no-op creates an
+invisible footgun — the developer adds a custom store but a previously-called
+`.AddInMemoryStores()` takes effect instead, with no error, warning, or any other signal.
+Throwing at registration time surfaces the conflict at application startup, in the
+developer's own code, where it is easy to fix:
+
+```csharp
+// double registration → throws at registration time
+services.AddZeeKayDaAuth(...)
+        .AddInMemoryStores()
+        .AddRefreshTokenStore<MyStore>(); // InvalidOperationException: IRefreshTokenStore is already registered
+```
+
+Example message: `"IRefreshTokenStore is already registered. Call AddRefreshTokenStore<T> only once, or remove the conflicting registration."` The message MUST name the conflicting interface.
+
+**Common registration patterns:**
+
+```csharp
+// dev/test: both in-memory
+services.AddZeeKayDaAuth(...).AddInMemoryStores();
+
+// mixed: in-memory auth codes, custom refresh tokens
+services.AddZeeKayDaAuth(...)
+        .AddInMemoryAuthorizationCodeStore()
+        .AddRefreshTokenStore<MyStore>();
+
+// production: custom stores via typed extension methods
+services.AddZeeKayDaAuth(...)
+        .AddAuthorizationCodeStore<MyCodeStore>()
+        .AddRefreshTokenStore<MyRefreshStore>();
+```
+
+**Granular in-memory methods.** `.AddInMemoryStores()` registers both stores in one call,
+which is convenient for development and testing. `.AddInMemoryAuthorizationCodeStore()` and
+`.AddInMemoryRefreshTokenStore()` register only one store each, allowing operators to use an
+in-memory store for one type and a custom store for the other without triggering the
+double-registration check:
+
+```csharp
+// in-memory auth codes (short-lived, acceptable for dev), custom persistent refresh tokens
+services.AddZeeKayDaAuth(...)
+        .AddInMemoryAuthorizationCodeStore()
+        .AddRefreshTokenStore<MyPersistentStore>();
+```
+
+All three in-memory registration methods emit the mandatory startup warning (see below) and
+are development and testing only.
+
+**Typed extension methods for custom stores.** `.AddAuthorizationCodeStore<T>()` and
+`.AddRefreshTokenStore<T>()` are the recommended path for registering custom implementations.
+They register the implementation as a singleton, perform the double-registration check, and
+are chain-friendly:
 
 ```csharp
 services.AddZeeKayDaAuth(...)
-        .AddInMemoryStores();   // development and testing only — emits a startup warning
+        .AddAuthorizationCodeStore<MyCodeStore>()
+        .AddRefreshTokenStore<MyRefreshStore>();
 ```
 
-`.AddInMemoryStores()` registers both stores using `TryAddSingleton`. A registration
-already present in the container wins; the in-memory default is skipped silently.
-**To replace one or both stores while still using `.AddInMemoryStores()` for the other,
-register the custom implementation *before* calling `AddZeeKayDaAuth`:**
-
-```csharp
-// Register the custom store first — .AddInMemoryStores()'s TryAdd is then a no-op for it.
-services.AddSingleton<IRefreshTokenStore, MyPersistentRefreshTokenStore>();
-
-services.AddZeeKayDaAuth(...)
-        .AddInMemoryStores();   // registers IAuthorizationCodeStore in-memory;
-                                // IRefreshTokenStore is already present — TryAdd skips it.
-```
-
-Registering a custom implementation *after* `.AddInMemoryStores()` is a no-op: the
-`TryAddSingleton` inside the helper has already locked in the in-memory default and
-subsequent registrations of the same interface are silently ignored by the DI container.
-The ordering requirement is intentional — it mirrors the convention used by ASP.NET Core's
-`TryAdd`-based registration helpers and is documented in the XML doc on `AddInMemoryStores`.
+Direct `IServiceCollection.AddSingleton` registration outside the builder is still supported
+for advanced scenarios (e.g. factories, keyed registrations, or registrations that must occur
+before `AddZeeKayDaAuth` is called), but it bypasses the double-registration check. Consumers
+who mix direct registration and builder registration MUST ensure no interface is registered
+twice; the presence validator at startup catches missing registrations but does not detect
+duplicates introduced via direct `IServiceCollection` calls.
 
 Consumers opt in to the distributed defaults via `.AddDistributedCacheTokenStores()`:
 
@@ -811,58 +864,34 @@ services.AddZeeKayDaAuth(...)
         .AddDistributedCacheTokenStores();
 ```
 
-Consumers may also register custom implementations directly, without using either builder
-helper:
+**The two stores are independently replaceable.** A consumer may call
+`.AddInMemoryAuthorizationCodeStore()` and `.AddRefreshTokenStore<T>()` on the same builder;
+each method targets a distinct interface and neither triggers the other's double-registration
+check. The granular in-memory methods exist precisely to make this natural.
 
-```csharp
-services.AddSingleton<IAuthorizationCodeStore, MyAuthorizationCodeStore>();
-services.AddSingleton<IRefreshTokenStore, MyRefreshTokenStore>();
-
-services.AddZeeKayDaAuth(...);
-```
-
-**The two stores are independently replaceable.** A consumer may register a custom
-`IRefreshTokenStore` (e.g. SQL-backed) before `AddZeeKayDaAuth` and then call
-`.AddInMemoryStores()`: because `.AddInMemoryStores()` uses `TryAdd`, the custom
-`IRefreshTokenStore` already in the container is preserved.
-
-**Mixing builder helpers.** `.AddInMemoryStores()` and `.AddDistributedCacheTokenStores()`
-are convenience wrappers that register both stores at once. Mixing them — for example,
-using the distributed-cache store for authorization codes and the in-memory store for
-refresh tokens — requires direct `IServiceCollection` registration using `TryAdd` semantics
-*before* the `AddZeeKayDaAuth` call, following the same override ordering rule above:
-
-```csharp
-// Example: distributed-cache authorization codes, custom persistent refresh tokens.
-services.TryAddSingleton<IAuthorizationCodeStore, DistributedCacheAuthorizationCodeStore>();
-services.AddSingleton<IRefreshTokenStore, MyPersistentRefreshTokenStore>();
-
-services.AddZeeKayDaAuth(...);   // no builder helper called; both stores already registered.
-```
-
-There is no builder API for mixed-store configurations; callers who need them work
-directly against `IServiceCollection`.
-
-**Mandatory startup warning when `.AddInMemoryStores()` is used.** Because the in-memory
-stores lose all tokens on process restart and disable single-use enforcement and reuse
-detection across multiple instances, the framework emits a warning before the first request
-is served via a registered `IHostedService`. The warning MUST be at `LogLevel.Warning` and
-MUST include the following text verbatim:
+**Mandatory startup warning when any in-memory registration method is used.** Because the
+in-memory stores lose all tokens on process restart and disable single-use enforcement and
+reuse detection across multiple instances, the framework emits a warning before the first
+request is served via a registered `IHostedService`. The warning MUST be at `LogLevel.Warning`
+and MUST include the following text verbatim:
 
 > "ZeeKayDa.Auth: in-memory token stores are active. All issued tokens will be lost on
 > process restart, and single-use enforcement and reuse detection are disabled across
 > multiple instances. This configuration is intended for development and testing only and
 > must not be used in production."
 
-This warning fires unconditionally whenever `.AddInMemoryStores()` is used — there is no
-suppression mechanism. In-memory stores are development and testing only, regardless of
-instance count.
+This warning fires unconditionally whenever `.AddInMemoryStores()`,
+`.AddInMemoryAuthorizationCodeStore()`, or `.AddInMemoryRefreshTokenStore()` is used —
+there is no suppression mechanism. In-memory stores are development and testing only,
+regardless of instance count.
 
-The XML doc on `AddInMemoryStores` MUST lead with this limitation, first sentence:
+The XML doc on all three in-memory registration methods MUST lead with this limitation,
+first sentence:
 
-> Registers in-memory token stores for development and testing only. All tokens are lost on
-> process restart, and single-use enforcement and reuse detection are disabled across multiple
-> instances. A startup warning is emitted before the first request. Do not use in production.
+> Registers an in-memory token store for development and testing only. All tokens are lost
+> on process restart, and single-use enforcement and reuse detection are disabled across
+> multiple instances. A startup warning is emitted before the first request. Do not use in
+> production.
 
 **`AddDistributedCacheTokenStores()` behaves as before.** It performs an
 `IDistributedCache`-registration check at startup and **fails fast with
@@ -896,13 +925,12 @@ Each value introduced by this ADR is placed accordingly:
 | Refresh token lifetime | `AuthorizationServerOptions.TokenEndpoint.RefreshTokenLifetime` | `14 days` | Behavioural property of the token endpoint. 14 days is a common industry default (Auth0, Okta, Duende) — long enough to avoid daily re-auth on inactive clients, short enough that an undetected family revocation gap is bounded. Operators with stricter policies dial it down; ones running long-lived integrations dial it up. **No upper bound is enforced by the framework by design**, to support long-lived integration scenarios where the operator accepts the security trade-off of wider token validity windows. Operators are responsible for choosing a value appropriate to their threat model. |
 | Family revocation marker TTL | `DistributedCacheTokenStoreOptions.FamilyRevocationMarkerTtl` | `RefreshTokenLifetime + 5 min grace` | Implementation detail of the default store. |
 | Clock skew tolerance | `AuthorizationServerOptions.ClockSkewTolerance` | `5 s` | Deployment property, not a store implementation detail. Applied as a grace window on `ExpiresAt` liveness checks in any store implementation that operates across multiple nodes (`entry.ExpiresAt + ClockSkewTolerance > now`). Does not affect the in-memory store (single-instance deployment invariant — one process, one clock, no inter-node skew possible) or tombstone TTL (dominated by `RefreshTokenLifetime`). Default is intentionally small; see §"Security Considerations — Clock skew tolerance". |
-| Per-handle semaphore eviction window (in-memory store) | `InMemoryTokenStoreOptions.SemaphoreEvictionWindow` | `5 min` after entry expiry | Implementation detail; non-security. |
 
-`DistributedCacheTokenStoreOptions` and `InMemoryTokenStoreOptions` are bound by their
-respective registration helpers (`AddDistributedCacheTokenStores(Action<...>)` on `ZeeKayDaAuthBuilder` /
-`AddZeeKayDaAuth(...)` accepting an optional configurator). They are NOT properties on
-`AuthorizationServerOptions` — placing them there would force every consumer (including those
-who swap in a custom store) to look at irrelevant knobs, violating the ADR 0002 grouping rule.
+`DistributedCacheTokenStoreOptions` is bound by its registration helper
+(`AddDistributedCacheTokenStores(Action<...>)` on `ZeeKayDaAuthBuilder`). It is NOT a
+property on `AuthorizationServerOptions` — placing it there would force every consumer
+(including those who swap in a custom store) to look at irrelevant knobs, violating the
+ADR 0002 grouping rule.
 
 The tombstone TTL is fixed at `RefreshTokenLifetime` and is not operator-configurable.
 The only safe direction to adjust it would be upward (longer retention), but exposing
@@ -1380,15 +1408,19 @@ wanting a SQL-backed authorization code store would find the stores inseparable.
   presenting a captured handle under a different `client_id`.
 - **The two stores are independently replaceable.** A consumer can replace only
   `IRefreshTokenStore` with a durable SQL-backed implementation without touching the
-  authorization code store. Stores are registered independently via `IServiceCollection`,
-  and the builder methods register both; overriding one after the builder call leaves the
-  other unchanged.
+  authorization code store. Granular builder methods (`.AddInMemoryAuthorizationCodeStore()`,
+  `.AddRefreshTokenStore<T>()`) target a single interface each, so mixing in-memory and
+  custom implementations in the same `AddZeeKayDaAuth(...)` chain is natural and explicit.
 - **Explicit registration prevents silent misconfiguration.** Neither store is
   auto-registered. `AddZeeKayDaAuth` fails at startup with a `ZeeKayDaConfigurationException`
   if either store is missing, naming the interface and pointing to the docs. The easy path
   (`.AddInMemoryStores()`) emits a mandatory startup warning so that development configurations
-  are never silently promoted to production. Multi-instance and durable stores are opt-in
-  via `.AddDistributedCacheTokenStores()` or a custom registration.
+  are never silently promoted to production. Custom stores are registered via typed builder
+  methods (`.AddAuthorizationCodeStore<T>()`, `.AddRefreshTokenStore<T>()`) that throw
+  `InvalidOperationException` on double registration, making conflicting registrations
+  impossible to miss at application startup.
+  Multi-instance and durable stores are opt-in via `.AddDistributedCacheTokenStores()` or
+  a custom typed registration.
 - **No new dependencies beyond the [ADR 0001 §3](0001-endpoint-architecture-pattern.md#3-layering-strict-core--aspnetcore-boundary) allowlist.** Defaults use
   `Microsoft.Extensions.Caching.Memory`, `Microsoft.Extensions.Caching.Abstractions`,
   and `Microsoft.AspNetCore.DataProtection.Abstractions` — all on the namespace-level
@@ -1431,12 +1463,14 @@ wanting a SQL-backed authorization code store would find the stores inseparable.
   replacing both defaults must implement two interfaces. The alternative (one
   `ITokenStore`) would reduce the surface at the cost of a leaky abstraction (see
   Rejected Alternatives). Accepted.
-- **Explicit registration required.** Consumers must call `.AddInMemoryStores()`,
-  `.AddDistributedCacheTokenStores()`, or register a custom store before the application
-  starts. Failing to do so produces a startup exception. This is by design — silent
-  defaults prevent the mandatory startup warning from firing — but it does add a required
-  step that was not present in the original design. The startup exception message names
-  the missing interface and points to the docs to minimise friction.
+- **Explicit registration required; double registration throws.** Consumers must call one
+  of the builder registration methods or register a custom store before the application
+  starts. Failing to do so produces a startup `ZeeKayDaConfigurationException`. Each
+  builder registration method throws `InvalidOperationException` immediately if the
+  targeted interface is already registered, preventing silent shadowing. Both constraints
+  are by design and add a required step that was not present in the original auto-register
+  design. The startup exception messages name the relevant interface and point to the docs
+  to minimise friction.
 - **`IRefreshTokenStore` will grow via default interface methods.** `RevokeAsync` and
   `RevokeBySessionAsync` will ship as DIMs that throw `NotSupportedException` by
   default (§3a). Custom stores compile cleanly across additions but operators must
@@ -1647,3 +1681,5 @@ expiry guarantee is effectively nullified. The startup validator SHOULD warn if
 - **2026-06-20 — Add `ClockSkewTolerance` to `AuthorizationServerOptions`** — A `ClockSkewTolerance` property (type `TimeSpan`, default `5 s`) is added to `AuthorizationServerOptions`. In load-balanced deployments, node clocks can drift; the `ExpiresAt` liveness check in `TryRedeemAsync` (`entry.ExpiresAt > now`) could reject a valid authorization code on a node whose clock is slightly ahead of the issuing node. The tolerance is applied as a grace window (`entry.ExpiresAt + tolerance > now`) in any store implementation that operates across multiple nodes — the in-memory store is excluded because it is a single-instance deployment invariant (one process, one clock; inter-node skew is structurally impossible) and tombstone TTL is unaffected (dominated by `RefreshTokenLifetime`). The property lives on `AuthorizationServerOptions` rather than `DistributedCacheTokenStoreOptions` because clock skew is a deployment property, not a store implementation detail: a custom SQL store or Redis store would need the same grace window and should not have to rediscover the value on a store-specific option. The default of 5 seconds is intentionally small — unlike JWT validation (5-minute convention), authorization codes are short-lived, server-to-server, and exchange against a hard `ExpiresAt`; a large tolerance weakens the expiry guarantee. The startup validator SHOULD warn if `ClockSkewTolerance >= AuthorizationCodeLifetime / 2`. §6 table and §"Security Considerations — Clock skew tolerance" added accordingly.
 
 - **2026-06-20 — Explicit opt-in store registration; no auto-registration; `.AddInMemoryStores()` with mandatory startup warning** — The previously-accepted §5 decision registered both `IAuthorizationCodeStore` and `IRefreshTokenStore` automatically via `TryAddSingleton` inside `AddZeeKayDaAuth`. That decision is overturned. `AddZeeKayDaAuth` now leaves both interfaces unregistered. Startup validation (`ZeeKayDaConfigurationException`) fails if either is absent, naming the missing interface and pointing to the docs. The builder gains two explicit opt-in methods: `.AddInMemoryStores()` (registers both in-memory implementations; development and testing only; emits a mandatory `LogLevel.Warning` before the first request via `IHostedService` or `IStartupFilter`; the exact warning text is recorded in §5) and `.AddDistributedCacheTokenStores()` (unchanged from prior decision). Custom implementations are registered directly on `IServiceCollection` and the two stores remain independently replaceable. §4, §5, §9, §11, and the Consequences section updated accordingly. **Rejected alternative — asymmetric registration (auto-register auth codes, explicit refresh tokens):** The argument that authorization codes are short-lived and therefore harmless to lose on restart was considered as a basis for auto-registering only the auth code store while requiring explicit opt-in for the refresh token store. This was rejected for two reasons: (1) In multi-instance deployments a code issued on instance A validated on instance B silently fails, the same correctness violation as losing a refresh token across instances — the "short-lived so harmless" argument breaks down at the multi-instance boundary. (2) Asymmetric registration is a discoverability trap: a developer who understands how one store is wired assumes the other follows the same pattern. Discovering that they behave differently only when the application breaks in production is a footgun that a consistent explicit-opt-in model eliminates.
+
+- **2026-06-20 — Double registration throws; typed builder methods; granular in-memory registration** — Three design requirements are added to §5. (1) Every builder registration method MUST throw `InvalidOperationException` immediately at registration time if the targeted store interface is already present in `Services`. The exception MUST name the conflicting interface. A silent `TryAdd`-style no-op creates an invisible footgun — the developer registers a custom store and then calls `.AddInMemoryStores()`; the in-memory default wins silently. Throwing at registration time surfaces the conflict where the developer can fix it. (2) Two typed extension methods are added to `ZeeKayDaAuthBuilder`: `.AddAuthorizationCodeStore<T>()` (where `T : class, IAuthorizationCodeStore`) and `.AddRefreshTokenStore<T>()` (where `T : class, IRefreshTokenStore`). These are the recommended path for registering custom store implementations; they register the type as a singleton and are subject to the double-registration check. Direct `IServiceCollection.AddSingleton` registration is still supported for advanced scenarios but bypasses the double-registration check. (3) Two granular in-memory registration methods are added: `.AddInMemoryAuthorizationCodeStore()` and `.AddInMemoryRefreshTokenStore()`. They complement the existing `.AddInMemoryStores()` (which registers both). The granular methods allow operators who want in-memory for one store and custom for the other to express that naturally within the builder chain without triggering the double-registration check. All three in-memory registration methods emit the mandatory startup warning. (4) `InMemoryTokenStoreOptions.SemaphoreEvictionWindow` is removed from the §6 options table. Per-handle semaphores are now evicted by a post-eviction callback registered on the `IMemoryCache` entry rather than by a time-based scan; the option no longer exists. §5 and §6 updated accordingly.
