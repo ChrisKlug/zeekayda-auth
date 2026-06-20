@@ -46,34 +46,45 @@ public sealed class IAuthorizationCodeStoreTests
     }
 
     [Fact]
-    public void StoreAsync_has_exactly_two_parameters()
+    public void StoreAsync_has_exactly_three_parameters()
     {
         var parameters = typeof(IAuthorizationCodeStore)
             .GetMethod("StoreAsync", BindingFlags.Public | BindingFlags.Instance)!
             .GetParameters();
 
-        parameters.Should().HaveCount(2,
-            because: "StoreAsync takes exactly (AuthorizationCodeEntry, CancellationToken)");
+        parameters.Should().HaveCount(3,
+            because: "StoreAsync takes exactly (string code, AuthorizationCodeEntry, CancellationToken)");
     }
 
     [Fact]
-    public void StoreAsync_first_parameter_is_AuthorizationCodeEntry()
+    public void StoreAsync_first_parameter_code_is_string()
     {
         var parameters = typeof(IAuthorizationCodeStore)
             .GetMethod("StoreAsync", BindingFlags.Public | BindingFlags.Instance)!
             .GetParameters();
 
-        parameters[0].ParameterType.Should().Be(typeof(AuthorizationCodeEntry));
+        parameters[0].ParameterType.Should().Be(typeof(string));
+        parameters[0].Name.Should().Be("code");
     }
 
     [Fact]
-    public void StoreAsync_second_parameter_is_CancellationToken()
+    public void StoreAsync_second_parameter_is_AuthorizationCodeEntry()
     {
         var parameters = typeof(IAuthorizationCodeStore)
             .GetMethod("StoreAsync", BindingFlags.Public | BindingFlags.Instance)!
             .GetParameters();
 
-        parameters[1].ParameterType.Should().Be(typeof(CancellationToken));
+        parameters[1].ParameterType.Should().Be(typeof(AuthorizationCodeEntry));
+    }
+
+    [Fact]
+    public void StoreAsync_third_parameter_is_CancellationToken()
+    {
+        var parameters = typeof(IAuthorizationCodeStore)
+            .GetMethod("StoreAsync", BindingFlags.Public | BindingFlags.Instance)!
+            .GetParameters();
+
+        parameters[2].ParameterType.Should().Be(typeof(CancellationToken));
     }
 
     [Fact]
@@ -167,7 +178,7 @@ public sealed class IAuthorizationCodeStoreTests
         var store = new FakeAuthorizationCodeStore(
             new AuthorizationCodeRedemptionOutcome.NotFound());
 
-        var act = async () => await store.StoreAsync(BuildEntry(), CancellationToken.None);
+        var act = async () => await store.StoreAsync("raw-code", BuildEntry(), CancellationToken.None);
 
         await act.Should().NotThrowAsync();
     }
@@ -264,7 +275,7 @@ public sealed class IAuthorizationCodeStoreTests
         public FakeAuthorizationCodeStore(AuthorizationCodeRedemptionOutcome outcome)
             => _outcome = outcome;
 
-        public Task StoreAsync(AuthorizationCodeEntry entry, CancellationToken cancellationToken)
+        public Task StoreAsync(string code, AuthorizationCodeEntry entry, CancellationToken cancellationToken)
             => Task.CompletedTask;
 
         public ValueTask<AuthorizationCodeRedemptionOutcome> TryRedeemAsync(
