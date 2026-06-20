@@ -812,8 +812,8 @@ Each value introduced by this ADR is placed accordingly:
 |---|---|---|---|
 | Authorization code lifetime | `AuthorizationServerOptions.AuthorizationEndpoint.AuthorizationCodeLifetime` | `60 s` | RFC 9700 §2.1.1 mandates "short-lived"; 60 s is the figure ADR 0005 already cited. Behavioural property of the authorization endpoint. |
 | Refresh token lifetime | `AuthorizationServerOptions.TokenEndpoint.RefreshTokenLifetime` | `14 days` | Behavioural property of the token endpoint. 14 days is a common industry default (Auth0, Okta, Duende) — long enough to avoid daily re-auth on inactive clients, short enough that an undetected family revocation gap is bounded. Operators with stricter policies dial it down; ones running long-lived integrations dial it up. **No upper bound is enforced by the framework by design**, to support long-lived integration scenarios where the operator accepts the security trade-off of wider token validity windows. Operators are responsible for choosing a value appropriate to their threat model. |
-| Tombstone retention (code) | `DistributedCacheTokenStoreOptions.AuthorizationCodeTombstoneRetention` | `RefreshTokenLifetime` (resolved at bind time) | Implementation detail of the default store. Tied to refresh-token lifetime so a delayed code replay still produces `AlreadyRedeemed` while a usable refresh token could still exist (see §"Security Considerations"). |
 | Family revocation marker TTL | `DistributedCacheTokenStoreOptions.FamilyRevocationMarkerTtl` | `RefreshTokenLifetime + 5 min grace` | Implementation detail of the default store. |
+| Clock skew tolerance | `AuthorizationServerOptions.ClockSkewTolerance` | `5 s` | Deployment property, not a store implementation detail. Applied as a grace window on `ExpiresAt` liveness checks in any store implementation that operates across multiple nodes (`entry.ExpiresAt + ClockSkewTolerance > now`). Does not affect the in-memory store (single-instance deployment invariant — one process, one clock, no inter-node skew possible) or tombstone TTL (dominated by `RefreshTokenLifetime`). Default is intentionally small; see §"Security Considerations — Clock skew tolerance". |
 | Per-handle semaphore eviction window (in-memory store) | `InMemoryTokenStoreOptions.SemaphoreEvictionWindow` | `5 min` after entry expiry | Implementation detail; non-security. |
 
 `DistributedCacheTokenStoreOptions` and `InMemoryTokenStoreOptions` are bound by their
@@ -822,16 +822,15 @@ respective registration helpers (`AddDistributedCacheTokenStores(Action<...>)` o
 `AuthorizationServerOptions` — placing them there would force every consumer (including those
 who swap in a custom store) to look at irrelevant knobs, violating the ADR 0002 grouping rule.
 
-The tombstone retention default ("`RefreshTokenLifetime` resolved at bind time") is wired
-as a `PostConfigureOptions<DistributedCacheTokenStoreOptions>` registered by
-`AddDistributedCacheTokenStores`: the post-configure step reads
-`IOptions<AuthorizationServerOptions>.Value.TokenEndpoint.RefreshTokenLifetime` and
-copies it into `AuthorizationCodeTombstoneRetention` if the operator has not set the
-value explicitly. The implementation should model the option as `TimeSpan?` and use
-`null` as the "unset" sentinel; `PostConfigureOptions` then writes the resolved
-non-null value before validation runs. Per ADR 0001 §7, `AuthorizationServerOptions`
-is singleton-bound and the value is stable after startup, so the resolved retention
-does not need to track hypothetical runtime mutations.
+The tombstone TTL is fixed at `RefreshTokenLifetime` and is not operator-configurable.
+The only safe direction to adjust it would be upward (longer retention), but exposing
+a configurable option invites operators to set it downward, silently defeating the
+RFC 9700 §2.1.1 replay-detection guarantee. Setting tombstone TTL below
+`AuthorizationCodeLifetime` would cause a delayed replay to return `NotFound` instead
+of `AlreadyRedeemed`, bypassing family revocation with no startup error to signal the
+misconfiguration. The option can be introduced in a future release if a genuine use case
+emerges; removing it now keeps the surface minimal and the security invariant
+unconditional. See amendment 2026-06-20 in §"Amendments" below.
 
 The tombstone retention defaults to `RefreshTokenLifetime` rather than the previous draft's
 60 s + 60 s grace. A 120 s window means an attacker who delays code replay beyond two minutes
@@ -1498,3 +1497,38 @@ accessible to other tenants, processes, or services, these values constitute a d
 exposure risk. The default implementations encrypt entries using `IDataProtectionProvider`
 (§4b) as a baseline. Consumers using a shared Redis cluster must also configure Redis
 ACLs or separate namespacing to prevent cross-tenant key enumeration.
+
+### Clock skew tolerance
+
+In load-balanced deployments, node clocks can drift. The `ExpiresAt` liveness check in
+`TryRedeemAsync` (`entry.ExpiresAt > now`) could reject a valid authorization code on a
+node whose clock is slightly ahead of the issuing node. `ClockSkewTolerance` (default:
+5 seconds) is applied as a grace window on this check (`entry.ExpiresAt + tolerance > now`)
+to avoid spurious `NotFound` outcomes caused by inter-node clock drift.
+
+The tolerance applies to the `ExpiresAt` liveness check in any store implementation that
+operates across multiple nodes. It does not affect the in-memory store — that store is a
+single-instance deployment invariant (one process, one clock) and inter-node skew is
+structurally impossible — and it does not affect tombstone TTL (the `RefreshTokenLifetime`
+value dominates any reasonable skew by orders of magnitude). Any other store — distributed
+cache, SQL, Cosmos DB, or a custom persistent store — running in a load-balanced deployment
+is subject to inter-node clock drift and should apply the tolerance.
+
+The default of 5 seconds is intentionally small. JWT validation conventionally tolerates
+5 minutes of clock skew; that figure is appropriate for tokens that circulate across
+unknown networks. Authorization codes are short-lived (60 seconds default), travel only
+server-to-server within a single deployment, and are exchanged against a store with a
+hard `ExpiresAt` value — a 5-minute tolerance would effectively double the usable lifetime
+and is not warranted. Operators with unusual infrastructure (slow NTP convergence, satellite
+links) may increase the value, but MUST treat a `ClockSkewTolerance` approaching
+`AuthorizationCodeLifetime` as a security misconfiguration: at that point the code's
+expiry guarantee is effectively nullified. The startup validator SHOULD warn if
+`ClockSkewTolerance >= AuthorizationCodeLifetime / 2`.
+
+---
+
+## Amendments
+
+- **2026-06-20 — Remove `AuthorizationCodeTombstoneRetention` as a configurable option** — The `AuthorizationCodeTombstoneRetention` property was listed in §6's configuration table as an operator-configurable option on `DistributedCacheTokenStoreOptions`. It is removed. Tombstone TTL is now hardcoded to `RefreshTokenLifetime` with no operator override. The only safe direction to adjust tombstone TTL is upward (longer), but exposing the knob invites operators to set it downward, silently defeating the RFC 9700 §2.1.1 replay-detection guarantee: a tombstone TTL shorter than `AuthorizationCodeLifetime` causes a delayed replay to return `NotFound` instead of `AlreadyRedeemed`, bypassing family revocation with no startup error. The `max(RefreshTokenLifetime, remaining ExpiresAt)` formula from earlier drafts simplifies to just `RefreshTokenLifetime` given the startup-validator rule AC-4d (`RefreshTokenLifetime >= AuthorizationCodeLifetime`), which guarantees that `RefreshTokenLifetime` always dominates the second term. This simplification is only correct because AC-4d is enforced at startup; if that invariant were ever relaxed, the simplification would silently become unsafe and the full `max(...)` formula would need to be reinstated. For clients that do not issue refresh tokens, `RefreshTokenLifetime` produces a tombstone that lives slightly longer than strictly necessary — harmless, and erring in the safe direction. The option can be reintroduced in a future release if a genuine use case emerges. §6 table and surrounding prose updated accordingly. Reference: issue #245 (startup-validator rule for tombstone TTL — closed as won't-implement as a result of this decision).
+
+- **2026-06-20 — Add `ClockSkewTolerance` to `AuthorizationServerOptions`** — A `ClockSkewTolerance` property (type `TimeSpan`, default `5 s`) is added to `AuthorizationServerOptions`. In load-balanced deployments, node clocks can drift; the `ExpiresAt` liveness check in `TryRedeemAsync` (`entry.ExpiresAt > now`) could reject a valid authorization code on a node whose clock is slightly ahead of the issuing node. The tolerance is applied as a grace window (`entry.ExpiresAt + tolerance > now`) in any store implementation that operates across multiple nodes — the in-memory store is excluded because it is a single-instance deployment invariant (one process, one clock; inter-node skew is structurally impossible) and tombstone TTL is unaffected (dominated by `RefreshTokenLifetime`). The property lives on `AuthorizationServerOptions` rather than `DistributedCacheTokenStoreOptions` because clock skew is a deployment property, not a store implementation detail: a custom SQL store or Redis store would need the same grace window and should not have to rediscover the value on a store-specific option. The default of 5 seconds is intentionally small — unlike JWT validation (5-minute convention), authorization codes are short-lived, server-to-server, and exchange against a hard `ExpiresAt`; a large tolerance weakens the expiry guarantee. The startup validator SHOULD warn if `ClockSkewTolerance >= AuthorizationCodeLifetime / 2`. §6 table and §"Security Considerations — Clock skew tolerance" added accordingly.
