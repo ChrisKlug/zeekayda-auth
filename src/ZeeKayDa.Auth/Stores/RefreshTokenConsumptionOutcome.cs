@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace ZeeKayDa.Auth.Stores;
 
 /// <summary>
@@ -21,6 +23,7 @@ namespace ZeeKayDa.Auth.Stores;
 /// </remarks>
 public abstract class RefreshTokenConsumptionOutcome
 {
+    [ExcludeFromCodeCoverage]
     private RefreshTokenConsumptionOutcome() { }
 
     /// <summary>
