@@ -290,7 +290,7 @@ All custom exception types follow the `ZeeKayDa*Exception` naming pattern:
 - `ZeeKayDaInteractionException` — interaction API misuse
 
 Future exception types introduced as the framework grows (e.g., `ZeeKayDaTokenException` for
-token issuance failures, `ZeeKayDaStorageException` for storage layer errors) must follow the
+token issuance failures, `ZeeKayDaStoreException` for storage layer errors) must follow the
 same prefix pattern. This keeps the framework's error types immediately identifiable in stack
 traces, IntelliSense, and log aggregators.
 
@@ -317,6 +317,7 @@ Exception classes live in the namespace of the concern they represent:
 | `ZeeKayDaException` | `ZeeKayDa.Auth` | Cross-cutting base; consumers need it regardless of feature area |
 | `ZeeKayDaConfigurationException` | `ZeeKayDa.Auth` | Cross-cutting; thrown by startup infrastructure, not a specific feature |
 | `ZeeKayDaInteractionException` | `ZeeKayDa.Auth` | Cross-cutting; the interaction surface spans multiple features |
+| `ZeeKayDaStoreException` | `ZeeKayDa.Auth` | Cross-cutting; store transport failures can occur in any store-backed feature, so the exception lives in the root alongside its siblings (ADR 0008 §7) |
 | Future subtypes (e.g. `ZeeKayDaTokenException`) | `ZeeKayDa.Auth.Tokens` | Co-located with the feature that throws them |
 
 **Rules:**

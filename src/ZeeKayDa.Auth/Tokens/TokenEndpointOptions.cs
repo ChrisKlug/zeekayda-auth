@@ -41,6 +41,13 @@ public sealed class TokenEndpointOptions
     /// Must be greater than <see cref="TimeSpan.Zero"/>. Values at or below zero are rejected
     /// at startup by <c>AuthorizationServerOptionsValidator</c>.
     /// </para>
+    /// <para>
+    /// No upper bound is enforced; operators are responsible for choosing a value appropriate
+    /// to their threat model. Long-lived integration scenarios may require values of weeks or
+    /// months; stricter deployments should dial this down to hours or days. A longer lifetime
+    /// increases the window in which an undetected family revocation gap or a compromised token
+    /// remains exploitable.
+    /// </para>
     /// </remarks>
     public TimeSpan RefreshTokenLifetime { get; set; } = TimeSpan.FromDays(14);
 }

@@ -193,6 +193,21 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
                 "AuthorizationServerOptions.TokenEndpoint.RefreshTokenLifetime must be greater than zero.");
         }
 
+        // AC-4d: RefreshTokenLifetime must be >= AuthorizationCodeLifetime so that the authorization
+        // code tombstone retention window (set to RefreshTokenLifetime by default) covers the full
+        // authorization code validity window. If RefreshTokenLifetime < AuthorizationCodeLifetime,
+        // the tombstone could expire before a delayed code replay is detected, allowing an attacker
+        // to escape the RFC 9700 §2.1.1 family-revocation mandate.
+        if (options.TokenEndpoint.RefreshTokenLifetime > TimeSpan.Zero &&
+            options.AuthorizationEndpoint.AuthorizationCodeLifetime > TimeSpan.Zero &&
+            options.TokenEndpoint.RefreshTokenLifetime < options.AuthorizationEndpoint.AuthorizationCodeLifetime)
+        {
+            errors.Add(
+                "AuthorizationServerOptions.TokenEndpoint.RefreshTokenLifetime must be greater than or equal to " +
+                "AuthorizationServerOptions.AuthorizationEndpoint.AuthorizationCodeLifetime to ensure tombstone " +
+                "retention covers the authorization code validity window.");
+        }
+
         // Validate IdToken group
         if (options.IdToken.SigningAlgValuesSupported is null)
         {
