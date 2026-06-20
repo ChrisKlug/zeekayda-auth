@@ -1,6 +1,6 @@
 # ADR 0008 — Authorization Code and Refresh Token Store
 
-**Status:** Accepted  
+**Status:** Accepted (amended 2026-06-20)  
 **Date:** 2026-06-07
 
 **Amends ADR 0005 §6b** — extends the authorization-code bound-parameter list with
@@ -568,14 +568,13 @@ Two defaults ship out of the box:
 
 | Default | Backed by | Suitable for |
 |---|---|---|
-| `InMemoryAuthorizationCodeStore` / `InMemoryRefreshTokenStore` | `IMemoryCache` + per-handle `SemaphoreSlim` | Single-instance deployments. Provides true atomicity for single-use and rotation. **Single-instance is a deployment invariant, not a recommendation** — see §9 and the XML doc on each in-memory store. Refresh tokens are lost on restart. |
+| `InMemoryAuthorizationCodeStore` / `InMemoryRefreshTokenStore` | `IMemoryCache` + per-handle `SemaphoreSlim` | Development and testing only. Provides true atomicity for single-use and rotation within the process. **Single-instance is a deployment invariant, not a recommendation** — see §9 and the XML doc on each in-memory store. Refresh tokens are lost on restart. |
 | `DistributedCacheAuthorizationCodeStore` / `DistributedCacheRefreshTokenStore` | `IDistributedCache` | Dev/test against `AddDistributedMemoryCache`, and as a starting point for custom multi-instance implementations. **Not production-grade for multi-instance hosts** — the non-atomic check-then-set permits a measurable revocation-bypass window (§4d, §"Security Considerations"). Multi-instance production deployments MUST replace this with an atomic implementation; see §8. |
 
-`AddZeeKayDaAuth` registers the in-memory pair by default. Switching to the distributed
-pair is a one-line `.AddDistributedCacheTokenStores()` opt-in on the returned
-`ZeeKayDaAuthBuilder` (see §5). Multi-instance production deployments MUST replace these defaults with a
-custom store backed by an atomic backend (Redis+Lua, SQL with optimistic concurrency, or
-equivalent) — see §8.
+Neither default is auto-registered. `AddZeeKayDaAuth` leaves both `IAuthorizationCodeStore`
+and `IRefreshTokenStore` unregistered. Consumers must choose explicitly (see §5). Multi-instance
+production deployments MUST replace these defaults with a custom store backed by an atomic
+backend (Redis+Lua, SQL with optimistic concurrency, or equivalent) — see §8.
 
 #### 4a. Key derivation: cache keys MUST be `SHA-256(handle)`, never the raw handle
 
@@ -660,9 +659,15 @@ wrong and has been removed. The distributed default is suitable for dev/test (wh
 is harmless) and as a starting point for custom implementations that close the race with
 backend-specific primitives. It is **not** the recommended production default.
 
-Single-instance production should use the in-memory default. Multi-instance production
-should use a Redis+Lua or SQL-with-optimistic-concurrency implementation; the framework
-documents the pattern but does not ship a Redis dependency (see §8).
+Single-instance production may use `.AddDistributedCacheTokenStores()` against a durable backend
+rather than the in-memory default — the in-memory stores are development and testing only (see
+§5). However, the non-atomic check-then-set described above is exploitable on single-instance
+deployments too, because Kestrel serves concurrent requests across the thread pool. Using the
+distributed default against a persistent backend is therefore acceptable for single-instance
+production only if the operator explicitly accepts the documented concurrent-redemption race; if
+that risk is not acceptable, a custom atomic store is required even on a single instance. Multi-instance
+production should use a Redis+Lua or SQL-with-optimistic-concurrency implementation; the
+framework documents the pattern but does not ship a Redis dependency (see §8).
 
 **Redemption race in the distributed default — unrecoverable familyId.** The pre-commit
 `familyId` design (§2) ensures every *individual* `AlreadyRedeemed` outcome carries a
@@ -753,42 +758,151 @@ code touches `HttpContext` or `IEndpointRouteBuilder`. Keeping defaults in core 
 
 - Non-ASP.NET hosts (a future worker-service ID-server, integration tests, custom transports)
   can use the defaults without a synthetic dependency on `Microsoft.AspNetCore.App`.
-- The "secure by default" path doesn't require crossing a package boundary.
+- All in-box opt-in implementations (`.AddInMemoryStores()`, `.AddDistributedCacheTokenStores()`)
+  are available without crossing a package boundary; a consumer who opts in to either never needs
+  to pull in a separate NuGet package solely for the store registration.
 
 A separate `ZeeKayDa.Auth.DistributedCache` package was considered (architect's option b)
-and rejected: it splits the secure-by-default surface across two NuGet packages for marginal
+and rejected: it splits the in-box opt-in implementations across two NuGet packages for marginal
 benefit, increases versioning surface, and the abstractions are genuinely host-agnostic.
 
-**Registration.** `AddZeeKayDaAuth` registers the in-memory pair via `TryAddSingleton`:
+**Registration.** `AddZeeKayDaAuth` does **not** register either store. Both
+`IAuthorizationCodeStore` and `IRefreshTokenStore` are left unregistered after the call.
+Consumers must explicitly opt in to one of the provided implementations or register a custom
+one via the builder. At startup, an `IHostedService` presence validator
+(following the `ScopePresenceStartupValidator` precedent already in the codebase) checks that
+both interfaces are registered. If either is missing it throws `ZeeKayDaConfigurationException`
+(per ADR 0006), naming the missing interface and pointing to this ADR for the registration
+options. The presence validator runs before the in-memory warning emitter (see below), so a
+half-registered configuration fails fast rather than emitting a misleading warning.
+
+**Builder registration API.** All store registration happens through the `ZeeKayDaAuthBuilder`
+returned by `AddZeeKayDaAuth`. The full API surface is:
+
+| Method | Registers | Notes |
+|---|---|---|
+| `.AddInMemoryStores()` | Both in-memory stores | Dev/test only — emits startup warning |
+| `.AddInMemoryAuthorizationCodeStore()` | `InMemoryAuthorizationCodeStore` as `IAuthorizationCodeStore` | Dev/test only — emits startup warning |
+| `.AddInMemoryRefreshTokenStore()` | `InMemoryRefreshTokenStore` as `IRefreshTokenStore` | Dev/test only — emits startup warning |
+| `.AddAuthorizationCodeStore<T>()` | `T` as `IAuthorizationCodeStore` (singleton) | Recommended path for custom stores; `T : class, IAuthorizationCodeStore` |
+| `.AddRefreshTokenStore<T>()` | `T` as `IRefreshTokenStore` (singleton) | Recommended path for custom stores; `T : class, IRefreshTokenStore` |
+| `.AddDistributedCacheTokenStores()` | Both distributed-cache stores | Dev/test only; see warning below |
+
+**Double-registration MUST throw.** Every builder registration method above checks, at
+registration time, whether the corresponding store interface is already registered in
+`Services`. If it is, the method MUST throw `InvalidOperationException` immediately,
+naming the conflicting interface. It MUST NOT silently skip. A silent no-op creates an
+invisible footgun — the developer adds a custom store but a previously-called
+`.AddInMemoryStores()` takes effect instead, with no error, warning, or any other signal.
+Throwing at registration time surfaces the conflict at application startup, in the
+developer's own code, where it is easy to fix:
 
 ```csharp
-services.TryAddSingleton<IAuthorizationCodeStore, InMemoryAuthorizationCodeStore>();
-services.TryAddSingleton<IRefreshTokenStore, InMemoryRefreshTokenStore>();
+// double registration → throws at registration time
+services.AddZeeKayDaAuth(...)
+        .AddInMemoryStores()
+        .AddRefreshTokenStore<MyStore>(); // InvalidOperationException: IRefreshTokenStore is already registered
 ```
 
-Consumers opt in to the distributed defaults via an extension method on the
-`ZeeKayDaAuthBuilder` returned by `AddZeeKayDaAuth`:
+Example message: `"IRefreshTokenStore is already registered. Call AddRefreshTokenStore<T> only once, or remove the conflicting registration."` The message MUST name the conflicting interface.
+
+**Common registration patterns:**
+
+```csharp
+// dev/test: both in-memory
+services.AddZeeKayDaAuth(...).AddInMemoryStores();
+
+// mixed: in-memory auth codes, custom refresh tokens
+services.AddZeeKayDaAuth(...)
+        .AddInMemoryAuthorizationCodeStore()
+        .AddRefreshTokenStore<MyStore>();
+
+// production: custom stores via typed extension methods
+services.AddZeeKayDaAuth(...)
+        .AddAuthorizationCodeStore<MyCodeStore>()
+        .AddRefreshTokenStore<MyRefreshStore>();
+```
+
+**Granular in-memory methods.** `.AddInMemoryStores()` registers both stores in one call,
+which is convenient for development and testing. `.AddInMemoryAuthorizationCodeStore()` and
+`.AddInMemoryRefreshTokenStore()` register only one store each, allowing operators to use an
+in-memory store for one type and a custom store for the other without triggering the
+double-registration check:
+
+```csharp
+// in-memory auth codes (short-lived, acceptable for dev), custom persistent refresh tokens
+services.AddZeeKayDaAuth(...)
+        .AddInMemoryAuthorizationCodeStore()
+        .AddRefreshTokenStore<MyPersistentStore>();
+```
+
+All three in-memory registration methods emit the mandatory startup warning (see below) and
+are development and testing only.
+
+**Typed extension methods for custom stores.** `.AddAuthorizationCodeStore<T>()` and
+`.AddRefreshTokenStore<T>()` are the recommended path for registering custom implementations.
+They register the implementation as a singleton, perform the double-registration check, and
+are chain-friendly:
 
 ```csharp
 services.AddZeeKayDaAuth(...)
-        .AddDistributedCacheTokenStores();   // replaces both default store registrations
+        .AddAuthorizationCodeStore<MyCodeStore>()
+        .AddRefreshTokenStore<MyRefreshStore>();
 ```
 
-The XML doc on `AddDistributedCacheTokenStores` MUST lead with the limitation
-verbatim, first sentence:
+Direct `IServiceCollection.AddSingleton` registration outside the builder is still supported
+for advanced scenarios (e.g. factories, keyed registrations, or registrations that must occur
+before `AddZeeKayDaAuth` is called), but it bypasses the double-registration check. Consumers
+who mix direct registration and builder registration MUST ensure no interface is registered
+twice; the presence validator at startup catches missing registrations but does not detect
+duplicates introduced via direct `IServiceCollection` calls.
+
+Consumers opt in to the distributed defaults via `.AddDistributedCacheTokenStores()`:
+
+```csharp
+services.AddZeeKayDaAuth(...)
+        .AddDistributedCacheTokenStores();
+```
+
+**The two stores are independently replaceable.** A consumer may call
+`.AddInMemoryAuthorizationCodeStore()` and `.AddRefreshTokenStore<T>()` on the same builder;
+each method targets a distinct interface and neither triggers the other's double-registration
+check. The granular in-memory methods exist precisely to make this natural.
+
+**Mandatory startup warning when any in-memory registration method is used.** Because the
+in-memory stores lose all tokens on process restart and disable single-use enforcement and
+reuse detection across multiple instances, the framework emits a warning before the first
+request is served via a registered `IHostedService`. The warning MUST be at `LogLevel.Warning`
+and MUST include the following text verbatim:
+
+> "ZeeKayDa.Auth: in-memory token stores are active. All issued tokens will be lost on
+> process restart, and single-use enforcement and reuse detection are disabled across
+> multiple instances. This configuration is intended for development and testing only and
+> must not be used in production."
+
+This warning fires unconditionally whenever `.AddInMemoryStores()`,
+`.AddInMemoryAuthorizationCodeStore()`, or `.AddInMemoryRefreshTokenStore()` is used —
+there is no suppression mechanism. In-memory stores are development and testing only,
+regardless of instance count.
+
+The XML doc on all three in-memory registration methods MUST lead with this limitation,
+first sentence:
+
+> Registers an in-memory token store for development and testing only. All tokens are lost
+> on process restart, and single-use enforcement and reuse detection are disabled across
+> multiple instances. A startup warning is emitted before the first request. Do not use in
+> production.
+
+**`AddDistributedCacheTokenStores()` behaves as before.** It performs an
+`IDistributedCache`-registration check at startup and **fails fast with
+`ZeeKayDaConfigurationException`** (per ADR 0006) if `IDistributedCache` is not registered.
+The framework does **not** silently call `AddDistributedMemoryCache` — that would mask
+configuration mistakes and produce an in-memory-in-production surprise. The XML doc on
+`AddDistributedCacheTokenStores` MUST lead with the limitation verbatim, first sentence:
 
 > Registers a non-atomic `IDistributedCache`-backed default suitable for dev/test only.
 > Multi-instance production deployments MUST replace these stores with an atomic
 > implementation; see ADR 0008 §8.
-
-`AddDistributedCacheTokenStores()` performs an `IDistributedCache`-registration
-check via the options-validation pattern established in ADR 0001 §6: at startup, the
-framework verifies that `IDistributedCache` is resolvable and **fails fast with
-`ZeeKayDaConfigurationException`** (per ADR 0006) if it is not. The framework does **not**
-silently call `AddDistributedMemoryCache` — that would mask configuration mistakes and
-produce the very "in-memory in production" surprise we are trying to prevent. The in-memory
-default (`AddZeeKayDaAuth` without the opt-in) already covers the "no infrastructure
-required" case.
 
 **Startup warning when a real distributed backend is detected.** On registration the
 helper resolves the `IDistributedCache` implementation type. If it is anything other than
@@ -798,9 +912,6 @@ running against a real distributed backend — which is precisely the configurat
 default is unsuitable for — and pointing to §8 for the production migration path.
 This is documentation, not a startup failure: rejecting the configuration would block
 the legitimate "I'm replacing this with my own store on the next line" case.
-
-The two stores remain independently replaceable: a consumer may register a custom
-`IRefreshTokenStore` (e.g. SQL-backed) and keep the in-memory `IAuthorizationCodeStore`.
 
 ### 6. Options placement
 
@@ -814,13 +925,12 @@ Each value introduced by this ADR is placed accordingly:
 | Refresh token lifetime | `AuthorizationServerOptions.TokenEndpoint.RefreshTokenLifetime` | `14 days` | Behavioural property of the token endpoint. 14 days is a common industry default (Auth0, Okta, Duende) — long enough to avoid daily re-auth on inactive clients, short enough that an undetected family revocation gap is bounded. Operators with stricter policies dial it down; ones running long-lived integrations dial it up. **No upper bound is enforced by the framework by design**, to support long-lived integration scenarios where the operator accepts the security trade-off of wider token validity windows. Operators are responsible for choosing a value appropriate to their threat model. |
 | Family revocation marker TTL | `DistributedCacheTokenStoreOptions.FamilyRevocationMarkerTtl` | `RefreshTokenLifetime + 5 min grace` | Implementation detail of the default store. |
 | Clock skew tolerance | `AuthorizationServerOptions.ClockSkewTolerance` | `5 s` | Deployment property, not a store implementation detail. Applied as a grace window on `ExpiresAt` liveness checks in any store implementation that operates across multiple nodes (`entry.ExpiresAt + ClockSkewTolerance > now`). Does not affect the in-memory store (single-instance deployment invariant — one process, one clock, no inter-node skew possible) or tombstone TTL (dominated by `RefreshTokenLifetime`). Default is intentionally small; see §"Security Considerations — Clock skew tolerance". |
-| Per-handle semaphore eviction window (in-memory store) | `InMemoryTokenStoreOptions.SemaphoreEvictionWindow` | `5 min` after entry expiry | Implementation detail; non-security. |
 
-`DistributedCacheTokenStoreOptions` and `InMemoryTokenStoreOptions` are bound by their
-respective registration helpers (`AddDistributedCacheTokenStores(Action<...>)` on `ZeeKayDaAuthBuilder` /
-`AddZeeKayDaAuth(...)` accepting an optional configurator). They are NOT properties on
-`AuthorizationServerOptions` — placing them there would force every consumer (including those
-who swap in a custom store) to look at irrelevant knobs, violating the ADR 0002 grouping rule.
+`DistributedCacheTokenStoreOptions` is bound by its registration helper
+(`AddDistributedCacheTokenStores(Action<...>)` on `ZeeKayDaAuthBuilder`). It is NOT a
+property on `AuthorizationServerOptions` — placing it there would force every consumer
+(including those who swap in a custom store) to look at irrelevant knobs, violating the
+ADR 0002 grouping rule.
 
 The tombstone TTL is fixed at `RefreshTokenLifetime` and is not operator-configurable.
 The only safe direction to adjust it would be upward (longer retention), but exposing
@@ -878,9 +988,13 @@ above chain cleanly without passing `null` to a non-nullable parameter.
 **Custom implementations** SHOULD do the same. The XML doc on each store interface method
 states this expectation; we do not (and cannot) enforce it through the type system.
 
-**Configuration faults at startup** (e.g. `AddDistributedCacheTokenStores`
-called without `IDistributedCache` registered) surface as `ZeeKayDaConfigurationException`
-(per ADR 0006), not as `InvalidOperationException`.
+**Configuration faults at startup** surface as `ZeeKayDaConfigurationException` (per ADR
+0006), not as `InvalidOperationException`. Two categories exist: (1) a missing store
+registration — detected by the `IHostedService` presence validator described in §5, which
+follows the `ScopePresenceStartupValidator` precedent already in the codebase; (2) a
+missing infrastructure dependency (e.g. `AddDistributedCacheTokenStores` called without
+`IDistributedCache` registered) — detected at startup by the options-validation path
+established in ADR 0001 §6.
 
 **Fail-closed semantics — all paths:**
 
@@ -933,11 +1047,26 @@ deleted; see "Rejected alternatives".
 
 ### 8. Multi-instance and custom-store guidance
 
-The defaults shipped in this ADR cover two deployment shapes: single-instance production
-(in-memory pair) and dev/test (distributed pair against `MemoryDistributedCache`).
-Multi-instance production is **out of scope for the shipped defaults** and requires a
-custom store. This section consolidates the guidance previously scattered across §4, §5,
-§7, and §11.
+The defaults shipped in this ADR cover **dev/test only**. Both the in-memory pair (via
+`.AddInMemoryStores()`) and the distributed pair (via `.AddDistributedCacheTokenStores()`
+against `MemoryDistributedCache`) are unsuitable for production without understanding their
+constraints:
+
+- The in-memory pair loses all tokens on restart and silently disables single-use
+  enforcement and reuse detection in multi-instance deployments. It is only suitable for
+  development and testing.
+- The distributed pair is **not production-grade for any deployment shape** — single or
+  multi-instance — because the non-atomic check-then-set permits a measurable
+  revocation-bypass window (§4c, §4d). Its only supported uses are dev/test and as a
+  starting point for a custom atomic implementation.
+
+Both single-instance and multi-instance production deployments require a persistent or
+atomic store. Single-instance production where session continuity across restarts is
+required must use a custom persistent `IRefreshTokenStore` (in-memory
+`IAuthorizationCodeStore` remains acceptable — see §9 and §11). Multi-instance production
+MUST use a custom atomic store for both interfaces. Multi-instance production is **out of
+scope for the shipped defaults** and requires a custom store. This section consolidates the
+guidance previously scattered across §4, §5, §7, and §11.
 
 **Why no shipped multi-instance default?**
 
@@ -992,26 +1121,27 @@ defaults; per ADR 0006 this is the typed channel for configuration errors.
 
 **Authorization codes (≤ 60 seconds):**
 
-Losing in-flight authorization codes on a server restart is acceptable. The code lifetime
-is short enough that no legitimate user would be mid-flow for longer than a minute, and a
-restart within a 60-second window is operationally unusual. The in-memory default is
-therefore acceptable for authorization codes in single-instance deployments, including
-production. The user experience of an occasional `invalid_grant` during a restart is
-equivalent to a session timeout.
+Losing in-flight authorization codes on a server restart is acceptable from a user-experience
+perspective. The code lifetime is short enough that no legitimate user would be mid-flow for
+longer than a minute, and a restart within a 60-second window is operationally unusual. The
+user experience of an occasional `invalid_grant` during a restart is equivalent to a session
+timeout. However, the in-memory authorization code store is still development and testing only
+(see §5); its dev/test classification is driven by the requirement to emit the startup warning
+consistently whenever `.AddInMemoryStores()` is used, not by durability risk on the code store
+specifically.
 
 **Refresh tokens (hours to days):**
 
 Losing refresh tokens on a restart forces every active user to re-authenticate. For a
 framework issuing tokens with a 14-day default lifetime, the in-memory default is
-**unsuitable for production deployments where session continuity across restarts is
-required**.
+**unsuitable for any production deployment**. This is not a defect to be fixed by the
+framework — it is an inherent property of any in-process store, and it is why the in-memory
+stores require an explicit `.AddInMemoryStores()` opt-in and emit a mandatory startup warning.
 
-This is not a defect to be fixed by the framework — it is an inherent property of any
-in-process store. The framework must document it clearly:
+The framework must document this clearly:
 
-> The default `IRefreshTokenStore` is in-process. It loses all refresh tokens on restart.
-> For single-instance production where occasional deployment-triggered re-authentication
-> is acceptable, that is fine. For continuous availability, replace
+> The `InMemoryRefreshTokenStore` is in-process. It loses all refresh tokens on restart.
+> It is intended for development and testing only. For production, replace
 > `IRefreshTokenStore` with an implementation backed by a persistent store. The shipped
 > `.AddDistributedCacheTokenStores()` opt-in is suitable for dev/test
 > against `AddDistributedMemoryCache`; for multi-instance production see §8.
@@ -1076,17 +1206,22 @@ protected at rest.
 
 ### 11. Upgrade paths
 
-The framework supports a progressive upgrade model. Consumers start with the defaults and
-replace individual stores as deployment requirements evolve. Note that "multi-instance"
-on the in-memory default is **not** an upgrade decision — it is a correctness violation
-(§9); the table below reflects that.
+The framework supports a progressive upgrade model. Consumers start with `.AddInMemoryStores()`
+during development and replace individual stores as deployment requirements evolve. Note that
+"multi-instance" on the in-memory default is **not** an upgrade decision — it is a correctness
+violation (§9); the table below reflects that.
 
 | Deployment scenario | `IAuthorizationCodeStore` | `IRefreshTokenStore` |
 |---|---|---|
-| Development / integration tests | In-memory default | In-memory default |
-| Single-instance production (re-auth on deploy acceptable) | In-memory default | In-memory default |
-| Single-instance production (continuity required) | In-memory default | Custom persistent store |
+| Development / integration tests | `.AddInMemoryStores()` (emits startup warning) | `.AddInMemoryStores()` (emits startup warning) |
+| Single-instance production | Custom persistent store, or `.AddDistributedCacheTokenStores()` against a persistent backend (operator must accept the concurrent-redemption race documented in §4c; otherwise a custom atomic store is required) | Custom persistent store |
 | Multi-instance production | **MUST** use a custom atomic store (Redis+Lua, SQL with optimistic concurrency) — see §8 | **MUST** use a custom atomic store (same backends) |
+
+In-memory stores are development and testing only, regardless of instance count. The previous
+"single-instance production (re-auth on deploy acceptable)" row has been removed — that framing
+was based on the premise that the in-memory store was an acceptable silent default. With explicit
+opt-in and a mandatory startup warning, there is no supported path where in-memory is an
+appropriate production choice.
 
 For multi-instance deployments, the recommended starting point for both stores is a
 Redis-backed implementation using a Lua script for the atomic consume-or-tombstone
@@ -1273,11 +1408,19 @@ wanting a SQL-backed authorization code store would find the stores inseparable.
   presenting a captured handle under a different `client_id`.
 - **The two stores are independently replaceable.** A consumer can replace only
   `IRefreshTokenStore` with a durable SQL-backed implementation without touching the
-  authorization code store. DI registration via `TryAddSingleton` guarantees this.
-- **Secure-by-default ships in core.** The in-memory default is registered automatically
-  by `AddZeeKayDaAuth` and provides true atomic single-use within the process — no
-  TOCTOU on single-instance hosts. Multi-instance / durable upgrades are opt-in but
-  signposted.
+  authorization code store. Granular builder methods (`.AddInMemoryAuthorizationCodeStore()`,
+  `.AddRefreshTokenStore<T>()`) target a single interface each, so mixing in-memory and
+  custom implementations in the same `AddZeeKayDaAuth(...)` chain is natural and explicit.
+- **Explicit registration prevents silent misconfiguration.** Neither store is
+  auto-registered. `AddZeeKayDaAuth` fails at startup with a `ZeeKayDaConfigurationException`
+  if either store is missing, naming the interface and pointing to the docs. The easy path
+  (`.AddInMemoryStores()`) emits a mandatory startup warning so that development configurations
+  are never silently promoted to production. Custom stores are registered via typed builder
+  methods (`.AddAuthorizationCodeStore<T>()`, `.AddRefreshTokenStore<T>()`) that throw
+  `InvalidOperationException` on double registration, making conflicting registrations
+  impossible to miss at application startup.
+  Multi-instance and durable stores are opt-in via `.AddDistributedCacheTokenStores()` or
+  a custom typed registration.
 - **No new dependencies beyond the [ADR 0001 §3](0001-endpoint-architecture-pattern.md#3-layering-strict-core--aspnetcore-boundary) allowlist.** Defaults use
   `Microsoft.Extensions.Caching.Memory`, `Microsoft.Extensions.Caching.Abstractions`,
   and `Microsoft.AspNetCore.DataProtection.Abstractions` — all on the namespace-level
@@ -1320,10 +1463,14 @@ wanting a SQL-backed authorization code store would find the stores inseparable.
   replacing both defaults must implement two interfaces. The alternative (one
   `ITokenStore`) would reduce the surface at the cost of a leaky abstraction (see
   Rejected Alternatives). Accepted.
-- **Explicit documentation burden.** The in-memory default loses refresh tokens on
-  restart and is correctness-broken in multi-instance deployments. If the deployment
-  guidance is not prominent, consumers will be surprised by user logouts on deploy or
-  by silent loss of single-use enforcement.
+- **Explicit registration required; double registration throws.** Consumers must call one
+  of the builder registration methods or register a custom store before the application
+  starts. Failing to do so produces a startup `ZeeKayDaConfigurationException`. Each
+  builder registration method throws `InvalidOperationException` immediately if the
+  targeted interface is already registered, preventing silent shadowing. Both constraints
+  are by design and add a required step that was not present in the original auto-register
+  design. The startup exception messages name the relevant interface and point to the docs
+  to minimise friction.
 - **`IRefreshTokenStore` will grow via default interface methods.** `RevokeAsync` and
   `RevokeBySessionAsync` will ship as DIMs that throw `NotSupportedException` by
   default (§3a). Custom stores compile cleanly across additions but operators must
@@ -1532,3 +1679,7 @@ expiry guarantee is effectively nullified. The startup validator SHOULD warn if
 - **2026-06-20 — Remove `AuthorizationCodeTombstoneRetention` as a configurable option** — The `AuthorizationCodeTombstoneRetention` property was listed in §6's configuration table as an operator-configurable option on `DistributedCacheTokenStoreOptions`. It is removed. Tombstone TTL is now hardcoded to `RefreshTokenLifetime` with no operator override. The only safe direction to adjust tombstone TTL is upward (longer), but exposing the knob invites operators to set it downward, silently defeating the RFC 9700 §2.1.1 replay-detection guarantee: a tombstone TTL shorter than `AuthorizationCodeLifetime` causes a delayed replay to return `NotFound` instead of `AlreadyRedeemed`, bypassing family revocation with no startup error. The `max(RefreshTokenLifetime, remaining ExpiresAt)` formula from earlier drafts simplifies to just `RefreshTokenLifetime` given the startup-validator rule AC-4d (`RefreshTokenLifetime >= AuthorizationCodeLifetime`), which guarantees that `RefreshTokenLifetime` always dominates the second term. This simplification is only correct because AC-4d is enforced at startup; if that invariant were ever relaxed, the simplification would silently become unsafe and the full `max(...)` formula would need to be reinstated. For clients that do not issue refresh tokens, `RefreshTokenLifetime` produces a tombstone that lives slightly longer than strictly necessary — harmless, and erring in the safe direction. The option can be reintroduced in a future release if a genuine use case emerges. §6 table and surrounding prose updated accordingly. Reference: issue #245 (startup-validator rule for tombstone TTL — closed as won't-implement as a result of this decision).
 
 - **2026-06-20 — Add `ClockSkewTolerance` to `AuthorizationServerOptions`** — A `ClockSkewTolerance` property (type `TimeSpan`, default `5 s`) is added to `AuthorizationServerOptions`. In load-balanced deployments, node clocks can drift; the `ExpiresAt` liveness check in `TryRedeemAsync` (`entry.ExpiresAt > now`) could reject a valid authorization code on a node whose clock is slightly ahead of the issuing node. The tolerance is applied as a grace window (`entry.ExpiresAt + tolerance > now`) in any store implementation that operates across multiple nodes — the in-memory store is excluded because it is a single-instance deployment invariant (one process, one clock; inter-node skew is structurally impossible) and tombstone TTL is unaffected (dominated by `RefreshTokenLifetime`). The property lives on `AuthorizationServerOptions` rather than `DistributedCacheTokenStoreOptions` because clock skew is a deployment property, not a store implementation detail: a custom SQL store or Redis store would need the same grace window and should not have to rediscover the value on a store-specific option. The default of 5 seconds is intentionally small — unlike JWT validation (5-minute convention), authorization codes are short-lived, server-to-server, and exchange against a hard `ExpiresAt`; a large tolerance weakens the expiry guarantee. The startup validator SHOULD warn if `ClockSkewTolerance >= AuthorizationCodeLifetime / 2`. §6 table and §"Security Considerations — Clock skew tolerance" added accordingly.
+
+- **2026-06-20 — Explicit opt-in store registration; no auto-registration; `.AddInMemoryStores()` with mandatory startup warning** — The previously-accepted §5 decision registered both `IAuthorizationCodeStore` and `IRefreshTokenStore` automatically via `TryAddSingleton` inside `AddZeeKayDaAuth`. That decision is overturned. `AddZeeKayDaAuth` now leaves both interfaces unregistered. Startup validation (`ZeeKayDaConfigurationException`) fails if either is absent, naming the missing interface and pointing to the docs. The builder gains two explicit opt-in methods: `.AddInMemoryStores()` (registers both in-memory implementations; development and testing only; emits a mandatory `LogLevel.Warning` before the first request via `IHostedService` or `IStartupFilter`; the exact warning text is recorded in §5) and `.AddDistributedCacheTokenStores()` (unchanged from prior decision). Custom implementations are registered directly on `IServiceCollection` and the two stores remain independently replaceable. §4, §5, §9, §11, and the Consequences section updated accordingly. **Rejected alternative — asymmetric registration (auto-register auth codes, explicit refresh tokens):** The argument that authorization codes are short-lived and therefore harmless to lose on restart was considered as a basis for auto-registering only the auth code store while requiring explicit opt-in for the refresh token store. This was rejected for two reasons: (1) In multi-instance deployments a code issued on instance A validated on instance B silently fails, the same correctness violation as losing a refresh token across instances — the "short-lived so harmless" argument breaks down at the multi-instance boundary. (2) Asymmetric registration is a discoverability trap: a developer who understands how one store is wired assumes the other follows the same pattern. Discovering that they behave differently only when the application breaks in production is a footgun that a consistent explicit-opt-in model eliminates.
+
+- **2026-06-20 — Double registration throws; typed builder methods; granular in-memory registration** — Three design requirements are added to §5. (1) Every builder registration method MUST throw `InvalidOperationException` immediately at registration time if the targeted store interface is already present in `Services`. The exception MUST name the conflicting interface. A silent `TryAdd`-style no-op creates an invisible footgun — the developer registers a custom store and then calls `.AddInMemoryStores()`; the in-memory default wins silently. Throwing at registration time surfaces the conflict where the developer can fix it. (2) Two typed extension methods are added to `ZeeKayDaAuthBuilder`: `.AddAuthorizationCodeStore<T>()` (where `T : class, IAuthorizationCodeStore`) and `.AddRefreshTokenStore<T>()` (where `T : class, IRefreshTokenStore`). These are the recommended path for registering custom store implementations; they register the type as a singleton and are subject to the double-registration check. Direct `IServiceCollection.AddSingleton` registration is still supported for advanced scenarios but bypasses the double-registration check. (3) Two granular in-memory registration methods are added: `.AddInMemoryAuthorizationCodeStore()` and `.AddInMemoryRefreshTokenStore()`. They complement the existing `.AddInMemoryStores()` (which registers both). The granular methods allow operators who want in-memory for one store and custom for the other to express that naturally within the builder chain without triggering the double-registration check. All three in-memory registration methods emit the mandatory startup warning. (4) `InMemoryTokenStoreOptions.SemaphoreEvictionWindow` is removed from the §6 options table. Per-handle semaphores are now evicted by a post-eviction callback registered on the `IMemoryCache` entry rather than by a time-based scan; the option no longer exists. §5 and §6 updated accordingly.
