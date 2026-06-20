@@ -29,4 +29,18 @@ public sealed class AuthorizationEndpointOptions
     /// </para>
     /// </remarks>
     public ICollection<CodeChallengeMethod>? CodeChallengeMethodsSupported { get; set; }
+
+    /// <summary>
+    /// Gets or sets the lifetime of an issued authorization code.
+    /// Defaults to 60 seconds per the short-lived code requirement of
+    /// <see href="https://www.rfc-editor.org/rfc/rfc9700#section-2.1.1">RFC 9700 §2.1.1</see>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Must be greater than <see cref="TimeSpan.Zero"/> and must not exceed 600 seconds (10 minutes).
+    /// Values outside this range are rejected at startup by <c>AuthorizationServerOptionsValidator</c>
+    /// per the short-lived code requirement of RFC 9700 §2.1.1.
+    /// </para>
+    /// </remarks>
+    public TimeSpan AuthorizationCodeLifetime { get; set; } = TimeSpan.FromSeconds(60);
 }
