@@ -1,10 +1,11 @@
 namespace ZeeKayDa.Auth;
 
 /// <summary>
-/// Thrown by <c>IAuthorizationCodeStore</c> and <c>IRefreshTokenStore</c> implementations when
-/// an underlying transport (cache, database, network) fails. Distinct from semantic outcomes such
-/// as NotFound or AlreadyConsumed, which are returned, not thrown.
-/// <!-- TODO: upgrade to <see cref="IAuthorizationCodeStore"/> and <see cref="IRefreshTokenStore"/> once those interfaces are defined -->
+/// Thrown by <c>IAuthorizationCodeStore</c> and <see cref="Stores.IRefreshTokenStore"/>
+/// implementations when an underlying transport (cache, database, network) fails. Distinct from
+/// semantic outcomes such as <see cref="Stores.RefreshTokenConsumptionOutcome.NotFound"/> or
+/// <see cref="Stores.RefreshTokenConsumptionOutcome.AlreadyConsumed"/>, which are returned,
+/// not thrown.
 /// </summary>
 /// <remarks>
 /// <para>
