@@ -38,10 +38,12 @@ namespace ZeeKayDa.Auth.Stores;
 /// </para>
 /// <para>
 /// <strong>Data Protection.</strong> Operators MUST configure Data Protection key retention
-/// to at least the configured refresh-token lifetime. Shorter retention causes entries to
-/// become unprotectable after key rotation, which surfaces as
-/// <see cref="AuthorizationCodeRedemptionOutcome.NotFound"/> at redemption time — silently
-/// logging users out.
+/// to at least the configured refresh-token lifetime. Shorter retention causes live entries
+/// to become unprotectable after key rotation, surfacing as
+/// <see cref="AuthorizationCodeRedemptionOutcome.NotFound"/> at redemption time. Tombstone
+/// decryption failures are treated as
+/// <see cref="AuthorizationCodeRedemptionOutcome.AlreadyRedeemed"/> (with an empty family
+/// ID) so replays are always rejected even when the family ID cannot be recovered.
 /// </para>
 /// </remarks>
 internal sealed class InMemoryAuthorizationCodeStore : IAuthorizationCodeStore
@@ -100,7 +102,6 @@ internal sealed class InMemoryAuthorizationCodeStore : IAuthorizationCodeStore
             using var cacheEntry = _cache.CreateEntry(entryKey);
             cacheEntry.Value = protectedBytes;
             cacheEntry.AbsoluteExpiration = entry.ExpiresAt;
-            cacheEntry.RegisterPostEvictionCallback((_, _, _, _) => _semaphores.TryRemove(hashedKey, out _));
         }
         catch (Exception ex) when (ex is not ZeeKayDaStoreException)
         {
@@ -129,6 +130,7 @@ internal sealed class InMemoryAuthorizationCodeStore : IAuthorizationCodeStore
         var tombstoneKey = BuildTombstoneKey(hashedKey);
 
         var semaphore = _semaphores.GetOrAdd(hashedKey, _ => new SemaphoreSlim(1, 1));
+        var redeemed = false;
         await semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -143,8 +145,9 @@ internal sealed class InMemoryAuthorizationCodeStore : IAuthorizationCodeStore
                 }
                 catch (CryptographicException)
                 {
-                    // DP failure on tombstone — treat as NotFound (fail-closed, cannot identify family)
-                    return new AuthorizationCodeRedemptionOutcome.NotFound();
+                    // Tombstone exists but is unreadable (DP key rotated before RefreshTokenLifetime).
+                    // Cannot recover FamilyId — family revocation is a no-op, but the replay is still rejected.
+                    return new AuthorizationCodeRedemptionOutcome.AlreadyRedeemed { FamilyId = string.Empty };
                 }
             }
 
@@ -192,11 +195,14 @@ internal sealed class InMemoryAuthorizationCodeStore : IAuthorizationCodeStore
                     "Failed to write tombstone or remove authorization code entry from cache.", ex);
             }
 
+            redeemed = true;
             return new AuthorizationCodeRedemptionOutcome.Redeemed { Entry = entry };
         }
         finally
         {
             semaphore.Release();
+            if (redeemed)
+                _semaphores.TryRemove(KeyValuePair.Create(hashedKey, semaphore));
         }
     }
 

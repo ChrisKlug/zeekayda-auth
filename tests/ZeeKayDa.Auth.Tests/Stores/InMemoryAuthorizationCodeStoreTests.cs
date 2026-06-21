@@ -373,16 +373,16 @@ public sealed class InMemoryAuthorizationCodeStoreTests
             because: "tombstone TTL must be exactly RefreshTokenLifetime, not max(remaining, RefreshTokenLifetime)");
     }
 
-    // ── AC 7 — Semaphore cleanup via post-eviction callback ───────────────────────────────────────
+    // ── AC 7 — Semaphore cleanup on successful redemption ────────────────────────────────────────
 
     [Fact]
     public async Task Semaphores_dictionary_entry_is_removed_when_cache_entry_is_explicitly_removed()
     {
-        // Verify that when the cache entry is removed (e.g. by cache eviction),
-        // the corresponding semaphore is also cleaned up.
+        // The semaphore is now cleaned up only on successful redemption, NOT on cache eviction.
+        // Verifies that after explicit cache removal (without redemption), the semaphore remains.
         var cache = new MemoryCache(new MemoryCacheOptions());
         var store = CreateStore(cache: cache);
-        const string code = "semaphore-cleanup-code";
+        const string code = "semaphore-no-cleanup-on-eviction-code";
 
         var semaphoresField = typeof(InMemoryAuthorizationCodeStore)
             .GetField("_semaphores", BindingFlags.NonPublic | BindingFlags.Instance)!;
@@ -392,28 +392,25 @@ public sealed class InMemoryAuthorizationCodeStoreTests
         var countAfterStore = (semaphoresField.GetValue(store) as System.Collections.ICollection)?.Count ?? -1;
         countAfterStore.Should().Be(1, because: "one semaphore should exist after storing one code");
 
-        // Explicitly remove the entry from cache — this schedules the post-eviction callback
+        // Explicitly remove the entry from cache — no post-eviction callback removes the semaphore
         var hashedKey = BuildExpectedEntryKey(code);
         cache.Remove(hashedKey);
 
-        // MemoryCache fires post-eviction callbacks on a background ThreadPool thread.
-        // Spin-wait deterministically rather than sleeping for a fixed interval.
+        // Semaphore must remain: cleanup happens only on successful TryRedeemAsync, not on eviction
         var semaphoresAfterRemoval = semaphoresField.GetValue(store) as System.Collections.ICollection;
-        SpinWait.SpinUntil(() => semaphoresAfterRemoval?.Count == 0, TimeSpan.FromSeconds(2));
-
-        semaphoresAfterRemoval?.Count.Should().Be(0,
-            because: "the semaphore must be removed when the cache entry expires/is evicted");
+        semaphoresAfterRemoval?.Count.Should().Be(1,
+            because: "semaphore cleanup no longer uses a post-eviction callback — " +
+                     "the semaphore must remain after cache removal");
     }
 
     [Fact]
     public async Task Semaphores_dictionary_does_not_grow_unboundedly_across_many_unique_codes()
     {
-        var cache = new MemoryCache(new MemoryCacheOptions());
-        var store = CreateStore(cache: cache);
+        var store = CreateStore();
         var semaphoresField = typeof(InMemoryAuthorizationCodeStore)
             .GetField("_semaphores", BindingFlags.NonPublic | BindingFlags.Instance)!;
 
-        // Store 20 codes with far-future expiry
+        // Store 20 codes and redeem each one successfully — cleanup happens on redemption
         for (int i = 0; i < 20; i++)
         {
             var code = $"growing-{i}";
@@ -421,22 +418,76 @@ public sealed class InMemoryAuthorizationCodeStoreTests
             await store.StoreAsync(code, entry, CancellationToken.None);
         }
 
-        // Explicitly remove all entries to trigger post-eviction callbacks
         for (int i = 0; i < 20; i++)
         {
             var code = $"growing-{i}";
-            var hashedKey = BuildExpectedEntryKey(code);
-            cache.Remove(hashedKey);
+            await store.TryRedeemAsync(code, "client-a", $"family-{i}", CancellationToken.None);
         }
 
-        // MemoryCache fires post-eviction callbacks on a background ThreadPool thread.
-        // Spin-wait deterministically rather than sleeping for a fixed interval.
         var semaphoresCollection = semaphoresField.GetValue(store) as System.Collections.ICollection;
-        SpinWait.SpinUntil(() => semaphoresCollection?.Count == 0, TimeSpan.FromSeconds(2));
+        var countAfterRedemptions = semaphoresCollection?.Count ?? -1;
+        countAfterRedemptions.Should().Be(0,
+            because: "all semaphores should be removed after all codes are successfully redeemed");
+    }
 
-        var countAfterCleanup = semaphoresCollection?.Count ?? -1;
-        countAfterCleanup.Should().Be(0,
-            because: "all semaphores should be removed after all cache entries are evicted");
+    [Fact]
+    public async Task TryRedeemAsync_semaphore_is_removed_after_successful_redemption()
+    {
+        // Verifies that the new finally-block cleanup in TryRedeemAsync removes the semaphore
+        // from _semaphores on the successful-redemption path.
+        var store = CreateStore();
+        const string code = "semaphore-cleanup-after-redeem";
+
+        var semaphoresField = typeof(InMemoryAuthorizationCodeStore)
+            .GetField("_semaphores", BindingFlags.NonPublic | BindingFlags.Instance)!;
+
+        await store.StoreAsync(code, BuildEntry(), CancellationToken.None);
+
+        var outcome = await store.TryRedeemAsync(code, "client-a", "family-1", CancellationToken.None);
+
+        outcome.Should().BeOfType<AuthorizationCodeRedemptionOutcome.Redeemed>(
+            because: "the redemption must succeed before checking semaphore cleanup");
+
+        var semaphoresAfterRedemption = semaphoresField.GetValue(store) as System.Collections.ICollection;
+        semaphoresAfterRedemption?.Count.Should().Be(0,
+            because: "the semaphore must be removed from _semaphores in the finally block " +
+                     "when TryRedeemAsync successfully redeems the code");
+    }
+
+    [Fact]
+    public async Task TryRedeemAsync_returns_AlreadyRedeemed_when_tombstone_is_unreadable()
+    {
+        // Simulates DP key rotation: two stores share the same IMemoryCache but use
+        // independent EphemeralDataProtectionProvider instances (different key rings).
+        // Store 1 writes the entry and performs the first redemption, leaving a tombstone
+        // protected under its own key ring. Store 2 then tries to redeem the same code:
+        // the tombstone key exists, but Unprotect throws CryptographicException because
+        // the ciphertext was produced by a different key ring. Must return AlreadyRedeemed.
+        var sharedCache = new MemoryCache(new MemoryCacheOptions());
+
+        var dp1 = new EphemeralDataProtectionProvider();
+        var dp2 = new EphemeralDataProtectionProvider();
+
+        var store1 = CreateStore(cache: sharedCache, dp: dp1);
+        var store2 = CreateStore(cache: sharedCache, dp: dp2);
+
+        const string code = "dp-rotation-replay-code";
+
+        await store1.StoreAsync(code, BuildEntry(), CancellationToken.None);
+
+        var firstOutcome = await store1.TryRedeemAsync(code, "client-a", "family-original", CancellationToken.None);
+        firstOutcome.Should().BeOfType<AuthorizationCodeRedemptionOutcome.Redeemed>(
+            because: "first redemption via store1 must succeed");
+
+        // Tombstone now exists in the shared cache, encrypted under dp1's key ring.
+        // Store2 uses dp2 — Unprotect must throw CryptographicException on the tombstone bytes.
+        var outcome = await store2.TryRedeemAsync(code, "client-a", "family-replay", CancellationToken.None);
+
+        outcome.Should().BeOfType<AuthorizationCodeRedemptionOutcome.AlreadyRedeemed>(
+            because: "a tombstone that cannot be unprotected must still cause AlreadyRedeemed, not NotFound");
+        outcome.As<AuthorizationCodeRedemptionOutcome.AlreadyRedeemed>().FamilyId.Should().Be(string.Empty,
+            because: "when the tombstone ciphertext is unreadable the FamilyId cannot be recovered " +
+                     "and must be reported as empty");
     }
 
     // ── AC 8 — StoreKeyGenerator cryptographic strength ──────────────────────────────────────────
