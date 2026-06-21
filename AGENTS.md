@@ -123,7 +123,7 @@ When in doubt which agent applies, read the `description` field in `.claude/agen
 
 **Missing specialist.** If no specialist seems to fit that is is needed, let the user know and ask for guidance. It might be a gap in the process!
 
-**Note for specialist subagents:** The delegation rule above applies to the main orchestrator session only. If you are a specialist agent (developer, tester, architect, etc.), execute your own domain work directly — only delegate work if you feel another agent can do it better.
+**Note for specialist subagents:** The delegation rule above applies to the main orchestrator session only. If you are a specialist agent (developer, tester, architect, etc.), execute your own domain work directly — do not spawn other specialist agents. Spawning agents that can spawn back to you creates circular chains that waste tokens and produce no useful output. Complete your work, then return your results to whoever called you.
 
 ## User Interaction
 
