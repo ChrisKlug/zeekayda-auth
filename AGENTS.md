@@ -74,6 +74,14 @@ Work follows six phases. **The main agent is an orchestrator — it routes work 
              ──►  docs         Gate-check that documentation is complete before merge.
 ```
 
+## AGENT TOOL INITIALIZATION REQUIREMENT
+If you are operating as a subagent, your initial context does NOT contain your full toolset due to deferred tool loading. You cannot execute file writes or web searches immediately.
+
+CRITICAL STEPS:
+1. Before performing any task analysis, you MUST invoke the `ToolSearch` or `Agent` mechanism to search for the tools required for this objective (e.g., search for "write_file", "view_file", "WebSearch").
+2. Do not attempt to guess tool parameters until you have explicitly queried and loaded the tool definition into your active session.
+3. If tool execution fails with a missing tool error, report the exact schema you need to the parent agent immediately instead of hallucinating a solution.
+
 ## Code navigation
 
 **Always** prefer LSP over Grep/Glob/Read for code navigation.
