@@ -9,7 +9,7 @@ namespace Microsoft.Extensions.DependencyInjection;
 public static class ZeeKayDaAuthBuilderStoreExtensions
 {
     /// <summary>
-    /// Registers a custom <see cref="IAuthorizationCodeStore"/> implementation as a singleton.
+    /// Registers <typeparamref name="T"/> as the singleton <see cref="IAuthorizationCodeStore"/> implementation. This is the recommended registration path for production use.
     /// </summary>
     /// <typeparam name="T">
     /// The concrete type that implements <see cref="IAuthorizationCodeStore"/>. Must be a
@@ -37,7 +37,7 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
     }
 
     /// <summary>
-    /// Registers a custom <see cref="IRefreshTokenStore"/> implementation as a singleton.
+    /// Registers <typeparamref name="T"/> as the singleton <see cref="IRefreshTokenStore"/> implementation. This is the recommended registration path for production use.
     /// </summary>
     /// <typeparam name="T">
     /// The concrete type that implements <see cref="IRefreshTokenStore"/>. Must be a
