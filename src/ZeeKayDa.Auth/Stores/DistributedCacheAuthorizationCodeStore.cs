@@ -217,7 +217,7 @@ internal sealed class DistributedCacheAuthorizationCodeStore : IAuthorizationCod
             AbsoluteExpirationRelativeToNow = tombstoneTtl
         };
 
-        var tombstoneValue = new Tombstone(familyId, now + tombstoneTtl);
+        var tombstoneValue = new Tombstone(familyId);
         try
         {
             var tombstoneJsonBytes = JsonSerializer.SerializeToUtf8Bytes(tombstoneValue, JsonOptions);
@@ -253,5 +253,5 @@ internal sealed class DistributedCacheAuthorizationCodeStore : IAuthorizationCod
     private static string BuildEntryKey(string hashedSegment) => $"zkd:code:{hashedSegment}";
     private static string BuildTombstoneKey(string hashedSegment) => $"zkd:code:{hashedSegment}:redeemed";
 
-    private sealed record Tombstone(string FamilyId, DateTimeOffset ExpiresAt);
+    private sealed record Tombstone(string FamilyId);
 }
