@@ -106,7 +106,7 @@ internal sealed class InMemoryRefreshTokenStore : IRefreshTokenStore
         var hashedKey = ComputeHashedSegment(tokenHandle);
         var cacheKey = BuildCacheKey(hashedKey);
 
-        var semaphore = _semaphores.GetOrAdd(hashedKey, _ => new SemaphoreSlim(1, 1));
+        _semaphores.GetOrAdd(hashedKey, _ => new SemaphoreSlim(1, 1));
 
         try
         {
