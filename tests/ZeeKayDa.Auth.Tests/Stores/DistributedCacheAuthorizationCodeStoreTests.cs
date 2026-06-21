@@ -96,7 +96,6 @@ public sealed class DistributedCacheAuthorizationCodeStoreTests
     [Fact]
     public async Task TryRedeemAsync_Redeemed_entry_matches_stored_entry()
     {
-        var store = CreateStore();
         const string code = "round-trip-code";
         var now = new DateTimeOffset(2090, 1, 1, 12, 0, 0, TimeSpan.Zero);
         var entry = BuildEntry(clientId: "client-a", issuedAt: now, expiresAt: now.AddMinutes(5));
