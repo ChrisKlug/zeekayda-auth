@@ -143,9 +143,10 @@ internal sealed class InMemoryAuthorizationCodeStore : IAuthorizationCodeStore
                     var tombstone = JsonSerializer.Deserialize<Tombstone>(tombstoneJson, JsonOptions)!;
                     return new AuthorizationCodeRedemptionOutcome.AlreadyRedeemed { FamilyId = tombstone.FamilyId };
                 }
-                catch (CryptographicException)
+                catch (Exception ex) when (ex is CryptographicException or JsonException)
                 {
-                    // Tombstone exists but is unreadable (DP key rotated before RefreshTokenLifetime).
+                    // Tombstone exists but is unreadable — either DP key was rotated before RefreshTokenLifetime
+                    // (CryptographicException) or the decrypted bytes are malformed JSON (JsonException).
                     // Cannot recover FamilyId — family revocation is a no-op, but the replay is still rejected.
                     return new AuthorizationCodeRedemptionOutcome.AlreadyRedeemed { FamilyId = string.Empty };
                 }
@@ -162,9 +163,11 @@ internal sealed class InMemoryAuthorizationCodeStore : IAuthorizationCodeStore
                 var entryJson = _protector.Unprotect(entryBytes!);
                 entry = JsonSerializer.Deserialize<AuthorizationCodeEntry>(entryJson, JsonOptions)!;
             }
-            catch (CryptographicException)
+            catch (Exception ex) when (ex is CryptographicException or JsonException)
             {
-                // DP failure on entry — treat as NotFound per ADR 0008 §4b, §7
+                // Entry exists but is unreadable — either DP key was rotated before RefreshTokenLifetime
+                // (CryptographicException) or the decrypted bytes are malformed JSON (JsonException).
+                // Treat as NotFound per ADR 0008 §4b, §7.
                 return new AuthorizationCodeRedemptionOutcome.NotFound();
             }
 

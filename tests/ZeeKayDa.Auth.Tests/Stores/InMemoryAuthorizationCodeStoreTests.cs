@@ -490,6 +490,41 @@ public sealed class InMemoryAuthorizationCodeStoreTests
                      "and must be reported as empty");
     }
 
+    [Fact]
+    public async Task TryRedeemAsync_returns_NotFound_when_entry_is_unreadable()
+    {
+        // Simulates DP key rotation where the entry itself is unreadable.
+        // Two stores share the same IMemoryCache but use independent EphemeralDataProtectionProvider
+        // instances (different key rings). Store 1 writes the entry (encrypted under dp1's key ring).
+        // Store 2 then calls TryRedeemAsync: no tombstone exists, but the entry bytes cannot be
+        // unprotected because dp2 holds a different key ring — Unprotect throws CryptographicException.
+        //
+        // NotFound (not AlreadyRedeemed) is the correct outcome here: no tombstone means this is not
+        // a detected replay. The entry simply cannot be read due to DP key rotation before
+        // RefreshTokenLifetime — it is treated the same as a missing or expired entry.
+        var sharedCache = new MemoryCache(new MemoryCacheOptions());
+
+        var dp1 = new EphemeralDataProtectionProvider();
+        var dp2 = new EphemeralDataProtectionProvider();
+
+        var store1 = CreateStore(cache: sharedCache, dp: dp1);
+        var store2 = CreateStore(cache: sharedCache, dp: dp2);
+
+        const string code = "dp-rotation-entry-unreadable-code";
+
+        // Store the entry using store1 — ciphertext is protected under dp1's key ring
+        await store1.StoreAsync(code, BuildEntry(), CancellationToken.None);
+
+        // store2 uses dp2 — the entry exists in the shared cache but Unprotect will throw
+        // CryptographicException because dp2 cannot decrypt dp1's ciphertext.
+        // No tombstone exists, so this is NOT a replay path — outcome must be NotFound.
+        var outcome = await store2.TryRedeemAsync(code, "client-a", "family-1", CancellationToken.None);
+
+        outcome.Should().BeOfType<AuthorizationCodeRedemptionOutcome.NotFound>(
+            because: "an entry that cannot be unprotected (DP key rotation) must return NotFound, " +
+                     "not AlreadyRedeemed — no tombstone exists so this is not a detected replay");
+    }
+
     // ── AC 8 — StoreKeyGenerator cryptographic strength ──────────────────────────────────────────
 
     [Fact]
