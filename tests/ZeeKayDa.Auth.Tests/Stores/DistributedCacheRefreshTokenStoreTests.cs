@@ -805,6 +805,51 @@ public sealed class DistributedCacheRefreshTokenStoreTests
             because: "TryConsumeAsync must succeed after multiple FindAsync calls");
     }
 
+    // ── Tombstone TTL ─────────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task TryConsumeAsync_consumed_tombstone_TTL_equals_RefreshTokenLifetime()
+    {
+        // Arrange: a token that is about to expire so that the remaining lifetime is very short.
+        // The tombstone must be pinned to _refreshTokenLifetime, not to the remaining lifetime,
+        // so that reuse-detection survives even when a token is consumed right at its expiry boundary.
+        var refreshTokenLifetime = TimeSpan.FromHours(8);
+        var serverOptions = new AuthorizationServerOptions();
+        serverOptions.TokenEndpoint.RefreshTokenLifetime = refreshTokenLifetime;
+
+        var startTime = new DateTimeOffset(2090, 1, 1, 12, 0, 0, TimeSpan.Zero);
+        // Entry expires in 5 seconds — remaining TTL is negligible.
+        var expiresAt = startTime.AddSeconds(5);
+
+        var tp = new FakeTimeProvider(startTime);
+        var capturingCache = new CapturingDistributedCache(CreateMemoryDistributedCache());
+        var store = CreateStore(cache: capturingCache, serverOptions: serverOptions, timeProvider: tp);
+
+        const string handle = "tombstone-ttl-check";
+        var entry = BuildEntry(issuedAt: startTime, expiresAt: expiresAt);
+
+        await store.StoreAsync(handle, entry, CancellationToken.None);
+
+        // Act: advance time so only 1 second of entry lifetime remains, then consume.
+        tp.Advance(TimeSpan.FromSeconds(4));
+        var outcome = await store.TryConsumeAsync(handle, "client-a", CancellationToken.None);
+
+        // Assert: consumed successfully, and tombstone TTL equals _refreshTokenLifetime, not ~1 s.
+        outcome.Should().BeOfType<RefreshTokenConsumptionOutcome.Consumed>(
+            because: "the token is still valid at the time of consumption");
+
+        var cacheKey = BuildExpectedCacheKey(handle);
+        capturingCache.CapturedTtls.Should().ContainKey(cacheKey,
+            because: "the tombstone must be written with an explicit TTL");
+
+        // The key is written twice: once for StoreAsync (entry) and once for TryConsumeAsync (tombstone).
+        // CapturingDistributedCache retains the last write, which is the tombstone.
+        capturingCache.CapturedTtls[cacheKey].Should().Be(refreshTokenLifetime,
+            because: "the consumed tombstone TTL must equal _refreshTokenLifetime regardless of " +
+                     "how much of the original entry's lifetime remains, so the replay-detection " +
+                     "signal is never silently lost when a token is consumed near expiry");
+    }
+
     [Fact]
     public async Task StoreAsync_value_in_cache_is_not_plain_json()
     {

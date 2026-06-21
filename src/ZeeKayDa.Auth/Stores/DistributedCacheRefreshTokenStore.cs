@@ -278,10 +278,9 @@ internal sealed class DistributedCacheRefreshTokenStore : IRefreshTokenStore
             var tombstoneJson = JsonSerializer.SerializeToUtf8Bytes(tombstone, JsonOptions);
             var protectedTombstone = _protector.Protect(tombstoneJson);
 
-            var ttl = payload.Entry.ExpiresAt - _timeProvider.GetUtcNow();
             var cacheOptions = new DistributedCacheEntryOptions
             {
-                AbsoluteExpirationRelativeToNow = ttl > TimeSpan.Zero ? ttl : TimeSpan.FromSeconds(1)
+                AbsoluteExpirationRelativeToNow = _refreshTokenLifetime
             };
 
             await _cache.SetAsync(cacheKey, protectedTombstone, cacheOptions, cancellationToken).ConfigureAwait(false);
