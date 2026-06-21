@@ -376,7 +376,7 @@ public sealed class RefreshTokenStoreContractTests
     {
         var method = typeof(IRefreshTokenStore).GetMethod(
             nameof(IRefreshTokenStore.StoreAsync),
-            new[] { typeof(RefreshTokenEntry), typeof(CancellationToken) });
+            new[] { typeof(string), typeof(RefreshTokenEntry), typeof(CancellationToken) });
 
         method.Should().NotBeNull("StoreAsync must be declared on IRefreshTokenStore");
         method!.ReturnType.Should().Be(typeof(Task),
