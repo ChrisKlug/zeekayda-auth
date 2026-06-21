@@ -89,20 +89,34 @@ public abstract class AuthorizationCodeRedemptionOutcome
     /// <c>error=invalid_grant</c> (RFC 9700 §2.1.1).
     /// </para>
     /// <para>
-    /// The family identifier is always present because the pre-commit family ID design ensures
-    /// it was written atomically into the tombstone during the original redemption. There is no
-    /// window where a tombstone could exist without a valid <see cref="FamilyId"/>.
+    /// In the normal case the tombstone is readable and <see cref="FamilyId"/> is the non-empty
+    /// identifier that was written atomically during the original redemption.
+    /// </para>
+    /// <para>
+    /// In the DP-key-rotation edge case (key ring replaced before <c>RefreshTokenLifetime</c>
+    /// elapses) the tombstone ciphertext cannot be decrypted and <see cref="FamilyId"/> will be
+    /// <see cref="string.Empty"/>. Callers MUST treat an empty <see cref="FamilyId"/> as
+    /// "reject the replay but skip revocation" — do NOT call <c>RevokeFamilyAsync</c> with an
+    /// empty or unknown family identifier.
     /// </para>
     /// </remarks>
     public sealed class AlreadyRedeemed : AuthorizationCodeRedemptionOutcome
     {
         /// <summary>
-        /// The refresh token family identifier that was committed into the tombstone during the
-        /// original redemption. Always non-null.
+        /// The refresh token family identifier committed into the tombstone during the original
+        /// redemption, or <see cref="string.Empty"/> when the tombstone ciphertext is
+        /// unrecoverable (DP key rotation before <c>RefreshTokenLifetime</c>).
         /// </summary>
         /// <remarks>
-        /// Caller MUST revoke all tokens in this family via the refresh token store before
-        /// returning an error to the client.
+        /// <para>
+        /// When non-empty: caller MUST revoke all tokens in this family via the refresh token
+        /// store before returning an error to the client.
+        /// </para>
+        /// <para>
+        /// When empty: the replay is still rejected with <c>error=invalid_grant</c>, but
+        /// family revocation must be skipped — <c>RevokeFamilyAsync</c> is a no-op on an
+        /// empty or unknown family identifier.
+        /// </para>
         /// </remarks>
         public required string FamilyId { get; init; }
     }
