@@ -50,6 +50,8 @@ Architecture decisions are made by the architecture agent. If you are doing more
 
 Prefer LSP over grep/bash for all symbol-level lookups: go-to-definition, find-references, hover types, and rename previews. LSP results are precise and scope-aware; grep is a fallback for searching comments, string literals, or other content LSP cannot answer.
 
+**Important!** LSP is a deferred tool — its schema is not pre-loaded. Before making any LSP call, you must first load it with `ToolSearch("select:LSP")`. Calling LSP without this step will fail silently with `InputValidationError`. Do it once at the start of any session that requires code navigation.
+
 **Important!** If the LSP seems to be giving you stale information, use the `/restart-lsp` skill to restart the LSP before starting to use `bash` and `grep`
 
 ## Branch Sync Hygiene

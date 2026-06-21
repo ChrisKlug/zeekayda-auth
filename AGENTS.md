@@ -76,7 +76,15 @@ Work follows six phases. **The main agent is an orchestrator — it routes work 
 
 ## Code navigation
 
-**Always** prefer LSP over Grep/Glob/Read for code navigation:
+**Always** prefer LSP over Grep/Glob/Read for code navigation.
+
+**Important!** LSP is a deferred tool — its schema is not pre-loaded. Before making any LSP call, you must load it first:
+```
+ToolSearch("select:LSP")
+```
+Calling LSP without doing this first will fail with `InputValidationError`. Do this once at the start of any session where you need code navigation.
+
+Capabilities to use:
 - `goToDefinition` / `goToImplementation` to jump to source
 - `findReferences` to see all usages across the codebase
 - `workspaceSymbol` to find where something is defined
