@@ -30,14 +30,12 @@ public sealed class DistributedCacheRefreshTokenStoreTests
         IDistributedCache? cache = null,
         IDataProtectionProvider? dp = null,
         AuthorizationServerOptions? serverOptions = null,
-        DistributedCacheTokenStoreOptions? storeOptions = null,
         TimeProvider? timeProvider = null)
     {
         return new DistributedCacheRefreshTokenStore(
             cache ?? CreateMemoryDistributedCache(),
             dp ?? new EphemeralDataProtectionProvider(),
             new OptionsWrapper<AuthorizationServerOptions>(serverOptions ?? new AuthorizationServerOptions()),
-            new OptionsWrapper<DistributedCacheTokenStoreOptions>(storeOptions ?? new DistributedCacheTokenStoreOptions()),
             timeProvider ?? TimeProvider.System);
     }
 
@@ -565,7 +563,6 @@ public sealed class DistributedCacheRefreshTokenStoreTests
             null!,
             new EphemeralDataProtectionProvider(),
             new OptionsWrapper<AuthorizationServerOptions>(new AuthorizationServerOptions()),
-            new OptionsWrapper<DistributedCacheTokenStoreOptions>(new DistributedCacheTokenStoreOptions()),
             TimeProvider.System);
 
         act.Should().Throw<ArgumentNullException>(
@@ -579,7 +576,6 @@ public sealed class DistributedCacheRefreshTokenStoreTests
             CreateMemoryDistributedCache(),
             null!,
             new OptionsWrapper<AuthorizationServerOptions>(new AuthorizationServerOptions()),
-            new OptionsWrapper<DistributedCacheTokenStoreOptions>(new DistributedCacheTokenStoreOptions()),
             TimeProvider.System);
 
         act.Should().Throw<ArgumentNullException>(
@@ -593,25 +589,10 @@ public sealed class DistributedCacheRefreshTokenStoreTests
             CreateMemoryDistributedCache(),
             new EphemeralDataProtectionProvider(),
             null!,
-            new OptionsWrapper<DistributedCacheTokenStoreOptions>(new DistributedCacheTokenStoreOptions()),
             TimeProvider.System);
 
         act.Should().Throw<ArgumentNullException>(
             because: "null serverOptions must be rejected at construction time");
-    }
-
-    [Fact]
-    public void Constructor_throws_ArgumentNullException_for_null_storeOptions()
-    {
-        var act = () => new DistributedCacheRefreshTokenStore(
-            CreateMemoryDistributedCache(),
-            new EphemeralDataProtectionProvider(),
-            new OptionsWrapper<AuthorizationServerOptions>(new AuthorizationServerOptions()),
-            null!,
-            TimeProvider.System);
-
-        act.Should().Throw<ArgumentNullException>(
-            because: "null storeOptions must be rejected at construction time");
     }
 
     [Fact]
@@ -621,7 +602,6 @@ public sealed class DistributedCacheRefreshTokenStoreTests
             CreateMemoryDistributedCache(),
             new EphemeralDataProtectionProvider(),
             new OptionsWrapper<AuthorizationServerOptions>(new AuthorizationServerOptions()),
-            new OptionsWrapper<DistributedCacheTokenStoreOptions>(new DistributedCacheTokenStoreOptions()),
             null!);
 
         act.Should().Throw<ArgumentNullException>(
@@ -917,34 +897,15 @@ public sealed class DistributedCacheRefreshTokenStoreTests
     }
 
     [Fact]
-    public async Task RevokeFamilyAsync_uses_FamilyRevocationMarkerTtl_from_storeOptions_when_set()
-    {
-        var capturingCache = new CapturingDistributedCache(CreateMemoryDistributedCache());
-        var customTtl = TimeSpan.FromDays(30);
-        var storeOptions = new DistributedCacheTokenStoreOptions { FamilyRevocationMarkerTtl = customTtl };
-        var store = CreateStore(cache: capturingCache, storeOptions: storeOptions);
-        const string familyId = "family-for-ttl-check";
-
-        await store.RevokeFamilyAsync(familyId, CancellationToken.None);
-
-        var markerKey = BuildExpectedRevocationMarkerKey(familyId);
-        capturingCache.CapturedTtls.Should().ContainKey(markerKey,
-            because: "revocation marker must be written with a TTL");
-        capturingCache.CapturedTtls[markerKey].Should().Be(customTtl,
-            because: "revocation marker TTL must use the explicit FamilyRevocationMarkerTtl when set");
-    }
-
-    [Fact]
-    public async Task RevokeFamilyAsync_uses_RefreshTokenLifetime_plus_5_minutes_when_FamilyRevocationMarkerTtl_is_null()
+    public async Task RevokeFamilyAsync_marker_TTL_equals_RefreshTokenLifetime_plus_5_minutes()
     {
         var capturingCache = new CapturingDistributedCache(CreateMemoryDistributedCache());
         var refreshTokenLifetime = TimeSpan.FromDays(30);
         var serverOptions = new AuthorizationServerOptions();
         serverOptions.TokenEndpoint.RefreshTokenLifetime = refreshTokenLifetime;
 
-        // storeOptions.FamilyRevocationMarkerTtl = null (default)
         var store = CreateStore(cache: capturingCache, serverOptions: serverOptions);
-        const string familyId = "family-for-null-ttl-fallback";
+        const string familyId = "family-for-marker-ttl-check";
 
         await store.RevokeFamilyAsync(familyId, CancellationToken.None);
 
@@ -953,7 +914,8 @@ public sealed class DistributedCacheRefreshTokenStoreTests
             because: "revocation marker must be written with a TTL");
         var expectedTtl = refreshTokenLifetime + TimeSpan.FromMinutes(5);
         capturingCache.CapturedTtls[markerKey].Should().Be(expectedTtl,
-            because: "when FamilyRevocationMarkerTtl is null, the effective TTL must be RefreshTokenLifetime + 5 minutes");
+            because: "family revocation markers are always retained for RefreshTokenLifetime + 5 minutes " +
+                     "to ensure they outlive all tokens in the family by a small grace margin");
     }
 
     [Fact]

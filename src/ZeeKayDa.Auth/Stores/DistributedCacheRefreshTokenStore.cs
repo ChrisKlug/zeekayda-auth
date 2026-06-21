@@ -47,9 +47,8 @@ namespace ZeeKayDa.Auth.Stores;
 /// key. The marker is intentionally not DP-encrypted: a Data Protection failure on a revocation
 /// marker would fail open into "not revoked", silently re-enabling a compromised token family.
 /// Plaintext markers ensure revocation takes effect regardless of DP key availability.
-/// The marker TTL defaults to <c>RefreshTokenLifetime + 5 minutes</c> to ensure it outlives
-/// all tokens in the family, controlled by
-/// <see cref="DistributedCacheTokenStoreOptions.FamilyRevocationMarkerTtl"/>.
+/// Family revocation markers are retained for <c>RefreshTokenLifetime + 5 minutes</c>,
+/// ensuring they outlive all tokens in the family by a small grace margin.
 /// </para>
 /// <para>
 /// <strong>Data Protection.</strong> Operators MUST configure Data Protection key retention to
@@ -75,7 +74,6 @@ internal sealed class DistributedCacheRefreshTokenStore : IRefreshTokenStore
     private readonly IDistributedCache _cache;
     private readonly IDataProtector _protector;
     private readonly TimeSpan _refreshTokenLifetime;
-    private readonly DistributedCacheTokenStoreOptions _storeOptions;
     private readonly TimeProvider _timeProvider;
 
     /// <summary>
@@ -86,25 +84,21 @@ internal sealed class DistributedCacheRefreshTokenStore : IRefreshTokenStore
     /// Provider used to create the data protector for encrypting stored entry and tombstone values.
     /// </param>
     /// <param name="serverOptions">Server options providing the refresh token lifetime.</param>
-    /// <param name="storeOptions">Store-specific options controlling revocation marker TTL.</param>
     /// <param name="timeProvider">Time provider used for all UTC timestamp reads.</param>
     internal DistributedCacheRefreshTokenStore(
         IDistributedCache cache,
         IDataProtectionProvider dataProtectionProvider,
         IOptions<AuthorizationServerOptions> serverOptions,
-        IOptions<DistributedCacheTokenStoreOptions> storeOptions,
         TimeProvider timeProvider)
     {
         ArgumentNullException.ThrowIfNull(cache);
         ArgumentNullException.ThrowIfNull(dataProtectionProvider);
         ArgumentNullException.ThrowIfNull(serverOptions);
-        ArgumentNullException.ThrowIfNull(storeOptions);
         ArgumentNullException.ThrowIfNull(timeProvider);
 
         _cache = cache;
         _protector = dataProtectionProvider.CreateProtector(DataProtectionPurpose);
         _refreshTokenLifetime = serverOptions.Value.TokenEndpoint.RefreshTokenLifetime;
-        _storeOptions = storeOptions.Value;
         _timeProvider = timeProvider;
     }
 
@@ -301,7 +295,7 @@ internal sealed class DistributedCacheRefreshTokenStore : IRefreshTokenStore
         cancellationToken.ThrowIfCancellationRequested();
 
         var markerKey = BuildRevocationMarkerKey(ComputeHashedSegment(familyId));
-        var markerTtl = _storeOptions.FamilyRevocationMarkerTtl ?? _refreshTokenLifetime + TimeSpan.FromMinutes(5);
+        var markerTtl = _refreshTokenLifetime + TimeSpan.FromMinutes(5);
         var markerOptions = new DistributedCacheEntryOptions
         {
             AbsoluteExpirationRelativeToNow = markerTtl

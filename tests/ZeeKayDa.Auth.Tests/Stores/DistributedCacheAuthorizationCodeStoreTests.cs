@@ -630,17 +630,6 @@ public sealed class DistributedCacheAuthorizationCodeStoreTests
             because: "stored bytes must be encrypted ciphertext, not plain JSON");
     }
 
-    // ── DistributedCacheTokenStoreOptions defaults ────────────────────────────────────────────────
-
-    [Fact]
-    public void DistributedCacheTokenStoreOptions_FamilyRevocationMarkerTtl_defaults_to_null()
-    {
-        var options = new DistributedCacheTokenStoreOptions();
-
-        options.FamilyRevocationMarkerTtl.Should().BeNull(
-            because: "default must be null so the store resolves it at runtime to RefreshTokenLifetime + 5 minutes");
-    }
-
     // ── Helpers ───────────────────────────────────────────────────────────────────────────────────
 
     /// <summary>
