@@ -1,6 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using ZeeKayDa.Auth.AspNetCore;
 using ZeeKayDa.Auth.Stores;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests.Extensions;
@@ -189,7 +188,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     [Fact]
     public void AddInMemoryAuthorizationCodeStore_throws_ArgumentNullException_when_builder_is_null()
     {
-        var act = () => null!.AddInMemoryAuthorizationCodeStore();
+        var act = () => ((ZeeKayDaAuthBuilder)null!).AddInMemoryAuthorizationCodeStore();
 
         act.Should().Throw<ArgumentNullException>().WithParameterName("builder");
     }
@@ -267,7 +266,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     [Fact]
     public void AddInMemoryRefreshTokenStore_throws_ArgumentNullException_when_builder_is_null()
     {
-        var act = () => (null!).AddInMemoryRefreshTokenStore();
+        var act = () => ((ZeeKayDaAuthBuilder)null!).AddInMemoryRefreshTokenStore();
 
         act.Should().Throw<ArgumentNullException>().WithParameterName("builder");
     }
