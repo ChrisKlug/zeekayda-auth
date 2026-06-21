@@ -189,7 +189,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     [Fact]
     public void AddInMemoryAuthorizationCodeStore_throws_ArgumentNullException_when_builder_is_null()
     {
-        var act = () => ((ZeeKayDaAuthBuilder)null!).AddInMemoryAuthorizationCodeStore();
+        var act = () => null!.AddInMemoryAuthorizationCodeStore();
 
         act.Should().Throw<ArgumentNullException>().WithParameterName("builder");
     }
@@ -267,7 +267,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     [Fact]
     public void AddInMemoryRefreshTokenStore_throws_ArgumentNullException_when_builder_is_null()
     {
-        var act = () => ((ZeeKayDaAuthBuilder)null!).AddInMemoryRefreshTokenStore();
+        var act = () => (null!).AddInMemoryRefreshTokenStore();
 
         act.Should().Throw<ArgumentNullException>().WithParameterName("builder");
     }
@@ -345,7 +345,8 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     [Fact]
     public void AddInMemoryStores_throws_ArgumentNullException_when_builder_is_null()
     {
-        var act = () => ((ZeeKayDaAuthBuilder)null!).AddInMemoryStores();
+        ZeeKayDaAuthBuilder builder = null!;
+        var act = () => builder.AddInMemoryStores();
 
         act.Should().Throw<ArgumentNullException>().WithParameterName("builder");
     }
