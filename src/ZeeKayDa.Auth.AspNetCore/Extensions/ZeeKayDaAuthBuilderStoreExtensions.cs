@@ -1,3 +1,5 @@
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using ZeeKayDa.Auth.AspNetCore;
 using ZeeKayDa.Auth.Stores;
 
@@ -60,6 +62,85 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
 
         builder.ThrowIfAlreadyRegistered(typeof(IRefreshTokenStore));
         builder.Services.AddSingleton<IRefreshTokenStore, T>();
+
+        return builder;
+    }
+
+    /// <summary>
+    /// Registers an in-memory token store for development and testing only. All tokens are
+    /// lost on process restart, and single-use enforcement and reuse detection are disabled
+    /// across multiple instances. A startup warning is emitted before the first request.
+    /// Do not use in production.
+    /// </summary>
+    /// <param name="builder">The ZeeKayDa.Auth builder.</param>
+    /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="builder"/> is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when an <see cref="IAuthorizationCodeStore"/> has already been registered.
+    /// Only one store registration per interface is allowed.
+    /// </exception>
+    public static ZeeKayDaAuthBuilder AddInMemoryAuthorizationCodeStore(this ZeeKayDaAuthBuilder builder)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+
+        builder.ThrowIfAlreadyRegistered(typeof(IAuthorizationCodeStore));
+        builder.Services.AddSingleton<IAuthorizationCodeStore, InMemoryAuthorizationCodeStore>();
+        builder.Services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IHostedService, InMemoryStoreWarningService>());
+
+        return builder;
+    }
+
+    /// <summary>
+    /// Registers an in-memory token store for development and testing only. All tokens are
+    /// lost on process restart, and single-use enforcement and reuse detection are disabled
+    /// across multiple instances. A startup warning is emitted before the first request.
+    /// Do not use in production.
+    /// </summary>
+    /// <param name="builder">The ZeeKayDa.Auth builder.</param>
+    /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="builder"/> is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when an <see cref="IRefreshTokenStore"/> has already been registered.
+    /// Only one store registration per interface is allowed.
+    /// </exception>
+    public static ZeeKayDaAuthBuilder AddInMemoryRefreshTokenStore(this ZeeKayDaAuthBuilder builder)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+
+        builder.ThrowIfAlreadyRegistered(typeof(IRefreshTokenStore));
+        builder.Services.AddSingleton<IRefreshTokenStore, InMemoryRefreshTokenStore>();
+        builder.Services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IHostedService, InMemoryStoreWarningService>());
+
+        return builder;
+    }
+
+    /// <summary>
+    /// Registers an in-memory token store for development and testing only. All tokens are
+    /// lost on process restart, and single-use enforcement and reuse detection are disabled
+    /// across multiple instances. A startup warning is emitted before the first request.
+    /// Do not use in production.
+    /// </summary>
+    /// <param name="builder">The ZeeKayDa.Auth builder.</param>
+    /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="builder"/> is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when an <see cref="IAuthorizationCodeStore"/> or <see cref="IRefreshTokenStore"/>
+    /// has already been registered. Only one store registration per interface is allowed.
+    /// </exception>
+    public static ZeeKayDaAuthBuilder AddInMemoryStores(this ZeeKayDaAuthBuilder builder)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+
+        builder.AddInMemoryAuthorizationCodeStore();
+        builder.AddInMemoryRefreshTokenStore();
 
         return builder;
     }

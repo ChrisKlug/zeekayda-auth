@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using ZeeKayDa.Auth.AspNetCore;
 using ZeeKayDa.Auth.Stores;
 
@@ -181,6 +182,260 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
         var act = () => builder.ThrowIfAlreadyRegistered(typeof(IAuthorizationCodeStore));
 
         act.Should().NotThrow("the type has not yet been registered in the empty service collection");
+    }
+
+    // ── AddInMemoryAuthorizationCodeStore: argument validation ────────────────────────────────────
+
+    [Fact]
+    public void AddInMemoryAuthorizationCodeStore_throws_ArgumentNullException_when_builder_is_null()
+    {
+        var act = () => ((ZeeKayDaAuthBuilder)null!).AddInMemoryAuthorizationCodeStore();
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("builder");
+    }
+
+    // ── AddInMemoryAuthorizationCodeStore: happy path ─────────────────────────────────────────────
+
+    [Fact]
+    public void AddInMemoryAuthorizationCodeStore_returns_builder_for_chaining()
+    {
+        var services = new ServiceCollection();
+        var builder = new ZeeKayDaAuthBuilder(services);
+
+        var returned = builder.AddInMemoryAuthorizationCodeStore();
+
+        returned.Should().BeSameAs(builder);
+    }
+
+    [Fact]
+    public void AddInMemoryAuthorizationCodeStore_registers_IAuthorizationCodeStore_as_singleton_with_InMemoryAuthorizationCodeStore_implementation()
+    {
+        var services = new ServiceCollection();
+        var builder = new ZeeKayDaAuthBuilder(services);
+
+        builder.AddInMemoryAuthorizationCodeStore();
+
+        services.Should().Contain(sd =>
+            sd.ServiceType == typeof(IAuthorizationCodeStore) &&
+            sd.ImplementationType == typeof(InMemoryAuthorizationCodeStore) &&
+            sd.Lifetime == ServiceLifetime.Singleton);
+    }
+
+    [Fact]
+    public void AddInMemoryAuthorizationCodeStore_registers_InMemoryStoreWarningService_as_IHostedService()
+    {
+        var services = new ServiceCollection();
+        var builder = new ZeeKayDaAuthBuilder(services);
+
+        builder.AddInMemoryAuthorizationCodeStore();
+
+        services.Should().Contain(sd =>
+            sd.ServiceType == typeof(IHostedService) &&
+            sd.ImplementationType == typeof(InMemoryStoreWarningService));
+    }
+
+    // ── AddInMemoryAuthorizationCodeStore: double-registration guard ──────────────────────────────
+
+    [Fact]
+    public void AddInMemoryAuthorizationCodeStore_throws_InvalidOperationException_when_IAuthorizationCodeStore_is_already_registered()
+    {
+        var services = new ServiceCollection();
+        var builder = new ZeeKayDaAuthBuilder(services);
+        builder.AddInMemoryAuthorizationCodeStore();
+
+        var act = () => builder.AddInMemoryAuthorizationCodeStore();
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*IAuthorizationCodeStore is already registered*");
+    }
+
+    [Fact]
+    public void AddInMemoryAuthorizationCodeStore_throws_InvalidOperationException_when_generic_AddAuthorizationCodeStore_was_called_first()
+    {
+        var services = new ServiceCollection();
+        var builder = new ZeeKayDaAuthBuilder(services);
+        builder.AddAuthorizationCodeStore<StubAuthorizationCodeStore>();
+
+        var act = () => builder.AddInMemoryAuthorizationCodeStore();
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*IAuthorizationCodeStore is already registered*");
+    }
+
+    // ── AddInMemoryRefreshTokenStore: argument validation ─────────────────────────────────────────
+
+    [Fact]
+    public void AddInMemoryRefreshTokenStore_throws_ArgumentNullException_when_builder_is_null()
+    {
+        var act = () => ((ZeeKayDaAuthBuilder)null!).AddInMemoryRefreshTokenStore();
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("builder");
+    }
+
+    // ── AddInMemoryRefreshTokenStore: happy path ──────────────────────────────────────────────────
+
+    [Fact]
+    public void AddInMemoryRefreshTokenStore_returns_builder_for_chaining()
+    {
+        var services = new ServiceCollection();
+        var builder = new ZeeKayDaAuthBuilder(services);
+
+        var returned = builder.AddInMemoryRefreshTokenStore();
+
+        returned.Should().BeSameAs(builder);
+    }
+
+    [Fact]
+    public void AddInMemoryRefreshTokenStore_registers_IRefreshTokenStore_as_singleton_with_InMemoryRefreshTokenStore_implementation()
+    {
+        var services = new ServiceCollection();
+        var builder = new ZeeKayDaAuthBuilder(services);
+
+        builder.AddInMemoryRefreshTokenStore();
+
+        services.Should().Contain(sd =>
+            sd.ServiceType == typeof(IRefreshTokenStore) &&
+            sd.ImplementationType == typeof(InMemoryRefreshTokenStore) &&
+            sd.Lifetime == ServiceLifetime.Singleton);
+    }
+
+    [Fact]
+    public void AddInMemoryRefreshTokenStore_registers_InMemoryStoreWarningService_as_IHostedService()
+    {
+        var services = new ServiceCollection();
+        var builder = new ZeeKayDaAuthBuilder(services);
+
+        builder.AddInMemoryRefreshTokenStore();
+
+        services.Should().Contain(sd =>
+            sd.ServiceType == typeof(IHostedService) &&
+            sd.ImplementationType == typeof(InMemoryStoreWarningService));
+    }
+
+    // ── AddInMemoryRefreshTokenStore: double-registration guard ───────────────────────────────────
+
+    [Fact]
+    public void AddInMemoryRefreshTokenStore_throws_InvalidOperationException_when_IRefreshTokenStore_is_already_registered()
+    {
+        var services = new ServiceCollection();
+        var builder = new ZeeKayDaAuthBuilder(services);
+        builder.AddInMemoryRefreshTokenStore();
+
+        var act = () => builder.AddInMemoryRefreshTokenStore();
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*IRefreshTokenStore is already registered*");
+    }
+
+    [Fact]
+    public void AddInMemoryRefreshTokenStore_throws_InvalidOperationException_when_generic_AddRefreshTokenStore_was_called_first()
+    {
+        var services = new ServiceCollection();
+        var builder = new ZeeKayDaAuthBuilder(services);
+        builder.AddRefreshTokenStore<StubRefreshTokenStore>();
+
+        var act = () => builder.AddInMemoryRefreshTokenStore();
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*IRefreshTokenStore is already registered*");
+    }
+
+    // ── AddInMemoryStores: argument validation ────────────────────────────────────────────────────
+
+    [Fact]
+    public void AddInMemoryStores_throws_ArgumentNullException_when_builder_is_null()
+    {
+        var act = () => ((ZeeKayDaAuthBuilder)null!).AddInMemoryStores();
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("builder");
+    }
+
+    // ── AddInMemoryStores: happy path ─────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void AddInMemoryStores_returns_builder_for_chaining()
+    {
+        var services = new ServiceCollection();
+        var builder = new ZeeKayDaAuthBuilder(services);
+
+        var returned = builder.AddInMemoryStores();
+
+        returned.Should().BeSameAs(builder);
+    }
+
+    [Fact]
+    public void AddInMemoryStores_registers_both_IAuthorizationCodeStore_and_IRefreshTokenStore()
+    {
+        var services = new ServiceCollection();
+        var builder = new ZeeKayDaAuthBuilder(services);
+
+        builder.AddInMemoryStores();
+
+        services.Should().Contain(sd =>
+            sd.ServiceType == typeof(IAuthorizationCodeStore) &&
+            sd.ImplementationType == typeof(InMemoryAuthorizationCodeStore));
+        services.Should().Contain(sd =>
+            sd.ServiceType == typeof(IRefreshTokenStore) &&
+            sd.ImplementationType == typeof(InMemoryRefreshTokenStore));
+    }
+
+    [Fact]
+    public void AddInMemoryStores_registers_InMemoryStoreWarningService_exactly_once()
+    {
+        var services = new ServiceCollection();
+        var builder = new ZeeKayDaAuthBuilder(services);
+
+        builder.AddInMemoryStores();
+
+        services.Count(sd =>
+            sd.ServiceType == typeof(IHostedService) &&
+            sd.ImplementationType == typeof(InMemoryStoreWarningService))
+            .Should().Be(1, "TryAddEnumerable ensures idempotent registration across both calls");
+    }
+
+    [Fact]
+    public void Calling_AddInMemoryAuthorizationCodeStore_and_AddInMemoryRefreshTokenStore_separately_registers_InMemoryStoreWarningService_exactly_once()
+    {
+        var services = new ServiceCollection();
+        var builder = new ZeeKayDaAuthBuilder(services);
+
+        builder.AddInMemoryAuthorizationCodeStore();
+        builder.AddInMemoryRefreshTokenStore();
+
+        services.Count(sd =>
+            sd.ServiceType == typeof(IHostedService) &&
+            sd.ImplementationType == typeof(InMemoryStoreWarningService))
+            .Should().Be(1, "TryAddEnumerable ensures idempotent registration when called independently");
+    }
+
+    // ── AddInMemoryStores: per-interface guard independence ───────────────────────────────────────
+
+    [Fact]
+    public void AddInMemoryStores_throws_InvalidOperationException_when_IAuthorizationCodeStore_is_already_registered_even_if_IRefreshTokenStore_is_not()
+    {
+        var services = new ServiceCollection();
+        var builder = new ZeeKayDaAuthBuilder(services);
+        builder.AddInMemoryAuthorizationCodeStore();
+
+        var act = () => builder.AddInMemoryStores();
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*IAuthorizationCodeStore is already registered*");
+    }
+
+    [Fact]
+    public void AddInMemoryStores_throws_InvalidOperationException_when_IRefreshTokenStore_is_already_registered_even_if_IAuthorizationCodeStore_is_not()
+    {
+        var services = new ServiceCollection();
+        var builder = new ZeeKayDaAuthBuilder(services);
+        builder.AddInMemoryRefreshTokenStore();
+
+        // AddInMemoryStores calls AddInMemoryAuthorizationCodeStore first, which succeeds,
+        // then AddInMemoryRefreshTokenStore, which must throw because it is already registered.
+        var act = () => builder.AddInMemoryStores();
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*IRefreshTokenStore is already registered*");
     }
 
     // ── No-op stub implementations ────────────────────────────────────────────────────────────────
