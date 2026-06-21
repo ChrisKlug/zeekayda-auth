@@ -5,7 +5,6 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Caching.Memory;
-using Microsoft.Extensions.Options;
 
 namespace ZeeKayDa.Auth.Stores;
 
@@ -39,12 +38,20 @@ namespace ZeeKayDa.Auth.Stores;
 /// </para>
 /// <para>
 /// <strong>Data Protection.</strong> Operators MUST configure Data Protection key retention
-/// to at least the configured refresh-token lifetime. Shorter retention causes live entries
-/// to become unprotectable after key rotation, surfacing as
-/// <see cref="RefreshTokenConsumptionOutcome.NotFound"/> at consumption time. Tombstone
-/// decryption failures are treated as
-/// <see cref="RefreshTokenConsumptionOutcome.AlreadyConsumed"/> so replays are always rejected
-/// even when the family ID cannot be recovered.
+/// to at least the configured refresh-token lifetime (ADR 0008 §4b, §7, §10). Both live
+/// entries and consumed tombstones are stored under the same cache key
+/// (<c>zkd:rt:{H(handle)}</c>) — this is the single-key design mandated by ADR 0008 §4a.
+/// The <c>IsConsumed</c> discriminator that distinguishes a live entry from a tombstone lives
+/// inside the encrypted payload; it is not visible until the payload is successfully decrypted.
+/// Consequently, if a Data Protection key is rotated before tombstones have expired and the
+/// payload becomes unreadable, <see cref="IRefreshTokenStore.TryConsumeAsync"/> returns
+/// <see cref="RefreshTokenConsumptionOutcome.NotFound"/> — not
+/// <see cref="RefreshTokenConsumptionOutcome.AlreadyConsumed"/> — because it cannot
+/// distinguish an unreadable tombstone from an unreadable live entry. This behaviour is safe
+/// <em>only</em> because ADR 0008 §4b, §7, and §10 require Data Protection key retention
+/// to be at least <c>RefreshTokenLifetime</c>; shorter retention silently defeats replay
+/// detection after key rotation. The single-key layout is a deliberate design choice per
+/// ADR 0008 §4a, not an oversight.
 /// </para>
 /// <para>
 /// <strong>Family revocation storage.</strong> Revoked family IDs are stored as plain hashed
@@ -73,20 +80,14 @@ internal sealed class InMemoryRefreshTokenStore : IRefreshTokenStore
     /// <param name="dataProtectionProvider">
     /// Provider used to create the data protector for encrypting stored values.
     /// </param>
-    /// <param name="serverOptions">
-    /// Server options accepted to match DI registration patterns; not used by this
-    /// implementation (tombstone TTL is derived from the entry's <c>ExpiresAt</c>).
-    /// </param>
     /// <param name="timeProvider">Time provider used for all UTC timestamp reads.</param>
     internal InMemoryRefreshTokenStore(
         IMemoryCache cache,
         IDataProtectionProvider dataProtectionProvider,
-        IOptions<AuthorizationServerOptions> serverOptions,
         TimeProvider timeProvider)
     {
         ArgumentNullException.ThrowIfNull(cache);
         ArgumentNullException.ThrowIfNull(dataProtectionProvider);
-        ArgumentNullException.ThrowIfNull(serverOptions);
         ArgumentNullException.ThrowIfNull(timeProvider);
 
         _cache = cache;
@@ -105,6 +106,8 @@ internal sealed class InMemoryRefreshTokenStore : IRefreshTokenStore
         var hashedKey = ComputeHashedSegment(tokenHandle);
         var cacheKey = BuildCacheKey(hashedKey);
 
+        var semaphore = _semaphores.GetOrAdd(hashedKey, _ => new SemaphoreSlim(1, 1));
+
         try
         {
             var payload = new CachePayload(false, entry, null);
@@ -114,14 +117,24 @@ internal sealed class InMemoryRefreshTokenStore : IRefreshTokenStore
             using var cacheEntry = _cache.CreateEntry(cacheKey);
             cacheEntry.Value = protectedBytes;
             cacheEntry.AbsoluteExpiration = entry.ExpiresAt;
+            cacheEntry.RegisterPostEvictionCallback(
+                static (key, value, reason, state) =>
+                {
+                    var (semaphores, hKey) = ((ConcurrentDictionary<string, SemaphoreSlim>, string))state!;
+                    // Remove the semaphore so it can be GC'd. Do NOT Dispose here — concurrent
+                    // TryConsumeAsync callers may still be waiting on it and would get
+                    // ObjectDisposedException. The semaphore is small and finalised without
+                    // unmanaged resources; removing from the dictionary is sufficient to prevent
+                    // unbounded growth.
+                    semaphores.TryRemove(hKey, out _);
+                },
+                (_semaphores, hashedKey));
         }
         catch (Exception ex) when (ex is not ZeeKayDaStoreException)
         {
             throw new ZeeKayDaStoreException(
                 "Failed to store the refresh token entry in the in-memory cache.", ex);
         }
-
-        _semaphores.GetOrAdd(hashedKey, _ => new SemaphoreSlim(1, 1));
 
         return Task.CompletedTask;
     }

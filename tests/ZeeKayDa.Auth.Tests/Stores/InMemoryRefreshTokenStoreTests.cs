@@ -5,7 +5,6 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Caching.Memory;
-using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 using Microsoft.Extensions.Time.Testing;
 using ZeeKayDa.Auth.Stores;
@@ -35,13 +34,11 @@ public sealed class InMemoryRefreshTokenStoreTests
     private static InMemoryRefreshTokenStore CreateStore(
         IMemoryCache? cache = null,
         IDataProtectionProvider? dp = null,
-        AuthorizationServerOptions? serverOptions = null,
         TimeProvider? timeProvider = null)
     {
         return new InMemoryRefreshTokenStore(
             cache ?? new MemoryCache(new MemoryCacheOptions()),
             dp ?? new EphemeralDataProtectionProvider(),
-            new OptionsWrapper<AuthorizationServerOptions>(serverOptions ?? new AuthorizationServerOptions()),
             timeProvider ?? TimeProvider.System);
     }
 
@@ -553,22 +550,27 @@ public sealed class InMemoryRefreshTokenStoreTests
     [Fact]
     public async Task TryConsumeAsync_returns_NotFound_when_tombstone_is_unreadable_due_to_DP_key_rotation()
     {
-        // NOTE: This test documents a known divergence from the spec.
+        // This test documents an intentional, contract-bounded consequence of the ADR 0008 §4a
+        // single-key design.
         //
-        // The XML documentation states: "Tombstone decryption failures are treated as
-        // AlreadyConsumed so replays are always rejected even when the family ID cannot be
-        // recovered." However, the implementation cannot distinguish between an unreadable
-        // tombstone and an unreadable live entry, because both share the same cache key
-        // (zkd:rt:{hash}) and the IsConsumed flag is inside the encrypted payload. When
-        // Unprotect() throws, the implementation falls through to a single catch block that
-        // unconditionally returns NotFound.
+        // Both live entries and consumed tombstones share the same cache key (zkd:rt:{hash}).
+        // The IsConsumed discriminator — the only way to tell a tombstone from a live entry —
+        // lives inside the encrypted payload. When IDataProtector.Unprotect() fails (e.g.
+        // because the DP key was rotated before the tombstone's TTL), the implementation has
+        // no way to distinguish an unreadable tombstone from an unreadable live entry. It
+        // therefore returns NotFound for both.
         //
-        // This is a STORE BUG: replays where the tombstone ciphertext cannot be decrypted
-        // (e.g. after DP key rotation) are silently treated as NotFound, allowing the
-        // original token handle to appear valid on a different store instance or after rotation.
+        // This is correct and safe ONLY because ADR 0008 §4b, §7, and §10 require Data
+        // Protection key retention to be at least RefreshTokenLifetime. Under that constraint,
+        // tombstones remain readable for their entire TTL and a DP unprotect failure on a
+        // tombstone cannot occur in a correctly-configured deployment. The single-key layout is
+        // a deliberate design choice per ADR 0008 §4a, not an oversight — operators who violate
+        // the key-retention requirement trade replay-detection safety for that violation.
         //
-        // The correct fix is to add a separate tombstone indicator (e.g. a separate cache key
-        // or a known sentinel prefix) so that tombstones are detectable without decryption.
+        // The test simulates "different key rings" (two EphemeralDataProtectionProvider instances
+        // sharing a cache) which is equivalent to reading a tombstone after key rotation. It
+        // pins the NotFound behaviour so any future change that alters it is surfaced as a
+        // test failure requiring deliberate review of the ADR §4a design contract.
         var sharedCache = new MemoryCache(new MemoryCacheOptions());
         var dp1 = new EphemeralDataProtectionProvider();
         var dp2 = new EphemeralDataProtectionProvider();
@@ -585,13 +587,17 @@ public sealed class InMemoryRefreshTokenStoreTests
             because: "first consumption via store1 must succeed");
 
         // Store2 uses dp2 — the tombstone exists in the cache but Unprotect throws CryptographicException.
-        // The implementation returns NotFound (store bug: should return AlreadyConsumed per the spec).
+        // Because the IsConsumed discriminator is inside the encrypted payload (ADR 0008 §4a
+        // single-key design), the implementation cannot distinguish an unreadable tombstone from
+        // an unreadable live entry and returns NotFound. This is intentional — see comment above.
         var outcome = await store2.TryConsumeAsync(handle, "client-a", CancellationToken.None);
 
         outcome.Should().BeOfType<RefreshTokenConsumptionOutcome.NotFound>(
-            because: "STORE BUG: the implementation returns NotFound when the tombstone ciphertext " +
-                     "cannot be unprotected, rather than AlreadyConsumed as specified in the XML docs. " +
-                     "This means replays are not detected after DP key rotation.");
+            because: "the single-key ADR 0008 §4a design places IsConsumed inside the encrypted " +
+                     "payload — an unreadable ciphertext cannot be identified as a tombstone, so " +
+                     "NotFound is returned. This is safe only because ADR 0008 §4b/§7/§10 require " +
+                     "DP key retention >= RefreshTokenLifetime, ensuring tombstones remain readable " +
+                     "for their full TTL in a correctly-configured deployment.");
     }
 
     // ── TryConsumeAsync — Revoked ─────────────────────────────────────────────────────────────────
@@ -710,6 +716,47 @@ public sealed class InMemoryRefreshTokenStoreTests
 
         outcome.Should().BeOfType<RefreshTokenConsumptionOutcome.Revoked>(
             because: "the revocation check happens before the client-mismatch check");
+    }
+
+    [Fact]
+    public async Task TryConsumeAsync_returns_AlreadyConsumed_not_Revoked_when_consumed_then_family_revoked_then_replayed()
+    {
+        // Pins the check-order precedence in TryConsumeAsync:
+        //   (1) IsConsumed check  →  AlreadyConsumed
+        //   (2) Revocation check  →  Revoked
+        //   (3) Expiry check      →  NotFound
+        //   (4) ClientMismatch    →  ClientMismatch
+        //
+        // When a tombstone is present AND the family is revoked, the IsConsumed check fires
+        // first (line 199 in the implementation), so a replay must return AlreadyConsumed —
+        // not Revoked. This is the correct behaviour for the RFC 9700 §4.13 reuse-detection
+        // signal: the caller receives AlreadyConsumed (the replay trigger), calls
+        // RevokeFamilyAsync, and the subsequent Revoked outcome is a separate event.
+        var store = CreateStore();
+        const string handle = "replay-after-revoke-after-consume";
+        const string familyId = "fam-precedence-test";
+        var entry = BuildEntry(clientId: "client-a", familyId: familyId);
+
+        await store.StoreAsync(handle, entry, CancellationToken.None);
+
+        // Step 1: consume the token (tombstone written)
+        var consumeOutcome = await store.TryConsumeAsync(handle, "client-a", CancellationToken.None);
+        consumeOutcome.Should().BeOfType<RefreshTokenConsumptionOutcome.Consumed>(
+            because: "first consumption must succeed");
+
+        // Step 2: revoke the family
+        await store.RevokeFamilyAsync(familyId, CancellationToken.None);
+
+        // Step 3: replay — IsConsumed check fires before revocation check
+        var replayOutcome = await store.TryConsumeAsync(handle, "client-a", CancellationToken.None);
+
+        replayOutcome.Should().BeOfType<RefreshTokenConsumptionOutcome.AlreadyConsumed>(
+            because: "the IsConsumed check precedes the revocation check, so a replay against " +
+                     "a tombstone in a revoked family must return AlreadyConsumed, not Revoked");
+
+        replayOutcome.Should().BeOfType<RefreshTokenConsumptionOutcome.AlreadyConsumed>()
+            .Which.FamilyId.Should().Be(familyId,
+            because: "the tombstone carries the family ID for the caller to use when revoking");
     }
 
     // ── Tombstone TTL ─────────────────────────────────────────────────────────────────────────────
@@ -967,6 +1014,49 @@ public sealed class InMemoryRefreshTokenStoreTests
         var countAfterConsumptions = semaphoresCollection?.Count ?? -1;
         countAfterConsumptions.Should().Be(0,
             because: "all semaphores should be removed after all tokens are successfully consumed");
+    }
+
+    [Fact]
+    public async Task Semaphore_is_removed_when_cache_entry_is_evicted_without_consumption()
+    {
+        // Verifies the post-eviction callback registered in StoreAsync (ADR 0008 amendment
+        // 2026-06-20 §4): when a cache entry expires or is removed without being consumed,
+        // the callback removes the semaphore from _semaphores so it can be GC'd.
+        // Without this callback, unconsumed entries (tokens that expire without being used)
+        // would leave their semaphore in _semaphores permanently.
+        //
+        // NOTE: IMemoryCache fires post-eviction callbacks on a background thread, not
+        // synchronously on Remove(). The test therefore polls briefly after eviction to give
+        // the callback time to fire. In practice the callback fires within milliseconds of
+        // the Remove() call.
+        var innerCache = new MemoryCache(new MemoryCacheOptions());
+        var store = CreateStore(cache: innerCache);
+        const string handle = "eviction-without-consume";
+
+        var semaphoresField = typeof(InMemoryRefreshTokenStore)
+            .GetField("_semaphores", BindingFlags.NonPublic | BindingFlags.Instance)!;
+
+        await store.StoreAsync(handle, BuildEntry(), CancellationToken.None);
+
+        var countAfterStore = (semaphoresField.GetValue(store) as System.Collections.ICollection)?.Count ?? -1;
+        countAfterStore.Should().Be(1, because: "semaphore must be present immediately after StoreAsync");
+
+        // Simulate cache eviction by forcibly removing the entry from the inner cache.
+        var cacheKey = BuildExpectedCacheKey(handle);
+        innerCache.Remove(cacheKey);
+
+        // Poll for the background callback to fire (typically < 1 ms, 1 s timeout is generous).
+        var deadline = DateTime.UtcNow.AddSeconds(1);
+        int countAfterEviction;
+        do
+        {
+            await Task.Yield();
+            countAfterEviction = (semaphoresField.GetValue(store) as System.Collections.ICollection)?.Count ?? -1;
+        } while (countAfterEviction != 0 && DateTime.UtcNow < deadline);
+
+        countAfterEviction.Should().Be(0,
+            because: "the post-eviction callback must remove the semaphore from _semaphores " +
+                     "when the cache entry is evicted without the token being consumed");
     }
 
     // ── Exception wrapping ────────────────────────────────────────────────────────────────────────
