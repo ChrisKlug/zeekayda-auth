@@ -41,6 +41,8 @@ public interface IRefreshTokenStore
     /// <summary>
     /// Stores a new refresh token entry.
     /// </summary>
+    /// <param name="tokenHandle">The raw (unhashed) refresh token handle. The implementation is
+    /// expected to hash this before using it as a storage key.</param>
     /// <param name="entry">The refresh token metadata to persist. The token handle itself is
     /// expected to be stored as a hashed key by the implementation — it is not a property on
     /// <see cref="RefreshTokenEntry"/>.</param>
@@ -49,7 +51,7 @@ public interface IRefreshTokenStore
     /// Thrown when the underlying store transport fails.
     /// </exception>
     /// <returns>A <see cref="Task"/> that completes when the operation has finished.</returns>
-    Task StoreAsync(RefreshTokenEntry entry, CancellationToken cancellationToken);
+    Task StoreAsync(string tokenHandle, RefreshTokenEntry entry, CancellationToken cancellationToken);
 
     /// <summary>
     /// Looks up a refresh token entry by its raw handle without consuming it.
