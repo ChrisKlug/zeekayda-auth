@@ -81,7 +81,7 @@ internal sealed class InMemoryRefreshTokenStore : IRefreshTokenStore
     /// Provider used to create the data protector for encrypting stored values.
     /// </param>
     /// <param name="timeProvider">Time provider used for all UTC timestamp reads.</param>
-    internal InMemoryRefreshTokenStore(
+    public InMemoryRefreshTokenStore(
         IMemoryCache cache,
         IDataProtectionProvider dataProtectionProvider,
         TimeProvider timeProvider)
