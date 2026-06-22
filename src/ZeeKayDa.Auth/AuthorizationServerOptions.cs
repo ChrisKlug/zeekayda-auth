@@ -47,6 +47,27 @@ public sealed class AuthorizationServerOptions
     public bool AllowInsecureIssuer { get; set; }
 
     /// <summary>
+    /// Gets or sets a value indicating whether in-memory token stores are permitted outside a
+    /// Development environment.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// In-memory stores lose all issued tokens on process restart and disable single-use
+    /// enforcement across multiple instances. When this flag is <see langword="false"/> (the
+    /// default) and the application is not running in the <c>Development</c> environment,
+    /// startup fails with a <see cref="ZeeKayDaConfigurationException"/> so that an accidental
+    /// in-memory configuration is never silently deployed to a non-development host.
+    /// </para>
+    /// <para>
+    /// Set this to <see langword="true"/> only in test hosts that intentionally run under a
+    /// non-Development environment name (e.g. integration test hosts configured as
+    /// <c>Production</c>). A <see cref="Microsoft.Extensions.Logging.LogLevel.Warning"/> is
+    /// still emitted so the override is always visible in logs.
+    /// </para>
+    /// </remarks>
+    public bool AllowInMemoryStoresOutsideDevelopment { get; set; }
+
+    /// <summary>
     /// Gets or sets the clock-skew grace window applied to token expiry checks in multi-node
     /// store implementations.
     /// </summary>
