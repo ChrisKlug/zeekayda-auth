@@ -71,7 +71,7 @@ internal sealed class InMemoryStoreWarningService : IHostedService
                     "non-Development test host."));
         }
 
-        _logger.Log(LogLevel.Warning, NonDevelopmentOverrideWarningMessage);
+        _logger.Log(LogLevel.Critical, NonDevelopmentOverrideWarningMessage);
         return Task.CompletedTask;
     }
 

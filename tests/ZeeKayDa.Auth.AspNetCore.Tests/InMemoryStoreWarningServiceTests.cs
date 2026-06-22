@@ -201,7 +201,7 @@ public sealed class InMemoryStoreWarningServiceTests
     [Theory]
     [InlineData("Production")]
     [InlineData("Staging")]
-    public async Task StartAsync_logs_Warning_outside_Development_when_flag_is_true(
+    public async Task StartAsync_logs_Critical_outside_Development_when_flag_is_true(
         string environmentName)
     {
         var logger = new CapturingLogger<InMemoryStoreWarningService>();
@@ -210,7 +210,7 @@ public sealed class InMemoryStoreWarningServiceTests
         await sut.StartAsync(CancellationToken.None);
 
         logger.Entries.Should().ContainSingle()
-            .Which.Level.Should().Be(LogLevel.Warning);
+            .Which.Level.Should().Be(LogLevel.Critical);
     }
 
     [Fact]
