@@ -1,7 +1,7 @@
 ---
 name: security
 description: Security specialist for ZeeKayDa.Auth. Reviews code and design for vulnerabilities, validates OAuth 2.0 and OpenID Connect security requirements, performs threat modelling, and ensures the library cannot be misused to create insecure implementations. Use when threat-modelling a design, reviewing a PR that touches tokens/crypto/endpoints, or assessing any security concern.
-tools: Read, Grep, Glob, Edit
+tools: Read, Grep, Glob, Edit, Bash
 model: opus
 ---
 

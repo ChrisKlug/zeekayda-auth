@@ -82,6 +82,18 @@ CRITICAL STEPS:
 2. Do not attempt to guess tool parameters until you have explicitly queried and loaded the tool definition into your active session.
 3. If tool execution fails with a missing tool error, report the exact schema you need to the parent agent immediately instead of hallucinating a solution.
 
+## Auditing and Code Review
+
+Before reviewing any code, identify the correct branch that contains the changes to be reviewed — this may be `main`, a feature branch, or a PR branch. Do not assume the currently checked-out branch is correct.
+
+**Workflow:**
+1. Identify the target branch (ask the user if unclear — e.g. "which branch / PR should I review?")
+2. Create a worktree for it: `git worktree add <path> <branch>`
+3. Do all review work inside the worktree
+4. Remove the worktree when done: `git worktree remove <path>`
+
+Reviewing a stale or unrelated branch produces false negatives — changes that are already implemented appear missing. Always confirm the right branch first.
+
 ## Code navigation
 
 **Always** prefer LSP over Grep/Glob/Read for code navigation.
