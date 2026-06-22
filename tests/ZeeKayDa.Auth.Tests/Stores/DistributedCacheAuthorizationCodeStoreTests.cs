@@ -34,10 +34,16 @@ public sealed class DistributedCacheAuthorizationCodeStoreTests
         AuthorizationServerOptions? serverOptions = null,
         TimeProvider? timeProvider = null)
     {
+        var options = serverOptions ?? new AuthorizationServerOptions
+        {
+            // Explicit default so the grace window is visible in tests.
+            ClockSkewTolerance = TimeSpan.FromSeconds(5)
+        };
+
         return new DistributedCacheAuthorizationCodeStore(
             cache ?? CreateMemoryDistributedCache(),
             dp ?? new EphemeralDataProtectionProvider(),
-            new OptionsWrapper<AuthorizationServerOptions>(serverOptions ?? new AuthorizationServerOptions()),
+            new OptionsWrapper<AuthorizationServerOptions>(options),
             timeProvider ?? TimeProvider.System);
     }
 
@@ -212,6 +218,77 @@ public sealed class DistributedCacheAuthorizationCodeStoreTests
             because: "the store must use TimeProvider.GetUtcNow() to check logical expiry");
     }
 
+    // ── AC 5a — ClockSkewTolerance boundary tests for TryRedeemAsync ─────────────────────────────
+
+    [Fact]
+    public async Task TryRedeemAsync_at_ExpiresAt_exactly_is_still_valid_within_tolerance()
+    {
+        var startTime = new DateTimeOffset(2090, 1, 1, 12, 0, 0, TimeSpan.Zero);
+        var tolerance = TimeSpan.FromSeconds(5);
+        var expiresAt = startTime.AddMinutes(1);
+
+        var serverOptions = new AuthorizationServerOptions { ClockSkewTolerance = tolerance };
+        var tp = new FakeTimeProvider(startTime);
+        var store = CreateStore(serverOptions: serverOptions, timeProvider: tp);
+        const string code = "clock-skew-at-expires";
+        var entry = BuildEntry(issuedAt: startTime, expiresAt: expiresAt);
+
+        await store.StoreAsync(code, entry, CancellationToken.None);
+
+        // Advance to exactly ExpiresAt — still within tolerance window
+        tp.Advance(expiresAt - startTime);
+        var outcome = await store.TryRedeemAsync(code, "client-a", "family-1", CancellationToken.None);
+
+        outcome.Should().BeOfType<AuthorizationCodeRedemptionOutcome.Redeemed>(
+            because: "now == ExpiresAt is still valid: the expiry check is now >= ExpiresAt + tolerance");
+    }
+
+    [Fact]
+    public async Task TryRedeemAsync_one_tick_before_ExpiresAt_plus_tolerance_is_still_valid()
+    {
+        var startTime = new DateTimeOffset(2090, 1, 1, 12, 0, 0, TimeSpan.Zero);
+        var tolerance = TimeSpan.FromSeconds(5);
+        var expiresAt = startTime.AddMinutes(1);
+
+        var serverOptions = new AuthorizationServerOptions { ClockSkewTolerance = tolerance };
+        var tp = new FakeTimeProvider(startTime);
+        var store = CreateStore(serverOptions: serverOptions, timeProvider: tp);
+        const string code = "clock-skew-one-tick-before";
+        var entry = BuildEntry(issuedAt: startTime, expiresAt: expiresAt);
+
+        await store.StoreAsync(code, entry, CancellationToken.None);
+
+        // Advance to ExpiresAt + tolerance - 1 tick — one tick inside the grace window
+        tp.Advance(expiresAt - startTime + tolerance - TimeSpan.FromTicks(1));
+        var outcome = await store.TryRedeemAsync(code, "client-a", "family-1", CancellationToken.None);
+
+        outcome.Should().BeOfType<AuthorizationCodeRedemptionOutcome.Redeemed>(
+            because: "now == ExpiresAt + tolerance - 1 tick is still within the grace window");
+    }
+
+    [Fact]
+    public async Task TryRedeemAsync_at_ExpiresAt_plus_tolerance_is_expired()
+    {
+        var startTime = new DateTimeOffset(2090, 1, 1, 12, 0, 0, TimeSpan.Zero);
+        var tolerance = TimeSpan.FromSeconds(5);
+        var expiresAt = startTime.AddMinutes(1);
+
+        var serverOptions = new AuthorizationServerOptions { ClockSkewTolerance = tolerance };
+        var tp = new FakeTimeProvider(startTime);
+        var store = CreateStore(serverOptions: serverOptions, timeProvider: tp);
+        const string code = "clock-skew-at-boundary";
+        var entry = BuildEntry(issuedAt: startTime, expiresAt: expiresAt);
+
+        await store.StoreAsync(code, entry, CancellationToken.None);
+
+        // Advance to exactly ExpiresAt + tolerance — the grace window has ended
+        tp.Advance(expiresAt - startTime + tolerance);
+        var outcome = await store.TryRedeemAsync(code, "client-a", "family-1", CancellationToken.None);
+
+        outcome.Should().BeOfType<AuthorizationCodeRedemptionOutcome.NotFound>(
+            because: "now == ExpiresAt + tolerance is expired: the check is now >= ExpiresAt + tolerance");
+    }
+
     // ── AC 6 — Tombstone decryption failure → AlreadyRedeemed { FamilyId = "" } ─────────────────
 
     [Fact]
@@ -274,8 +351,8 @@ public sealed class DistributedCacheAuthorizationCodeStoreTests
         var tp = new FakeTimeProvider(startTime);
         var store = CreateStore(timeProvider: tp);
 
-        // Entry that expired one second before now
-        var entry = BuildEntry(expiresAt: startTime.AddSeconds(-1));
+        // Entry expired well beyond the tolerance window (default 5 s); -10 s guarantees rejection.
+        var entry = BuildEntry(expiresAt: startTime.AddSeconds(-10));
 
         var act = async () =>
             await store.StoreAsync("expired-code", entry, CancellationToken.None);

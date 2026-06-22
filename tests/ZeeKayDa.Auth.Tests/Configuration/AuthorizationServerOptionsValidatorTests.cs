@@ -1053,10 +1053,13 @@ public sealed class AuthorizationServerOptionsValidatorTests
     [Fact]
     public void Validate_succeeds_when_AuthorizationCodeLifetime_is_minimum_valid_value()
     {
+        // ClockSkewTolerance must be set below half of the (very short) 1-second code lifetime
+        // to avoid triggering the cross-field clock-skew guard while testing the lifetime bound.
         var result = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             AuthorizationEndpoint = { AuthorizationCodeLifetime = TimeSpan.FromSeconds(1) },
+            ClockSkewTolerance = TimeSpan.Zero,
         });
 
         result.Succeeded.Should().BeTrue();
@@ -1234,6 +1237,69 @@ public sealed class AuthorizationServerOptionsValidatorTests
 
         result.Failed.Should().BeTrue();
         result.FailureMessage.Should().Contain("AuthorizationCodeLifetime must be greater than zero");
+    }
+
+    // ── ClockSkewTolerance — non-negative constraint ─────────────────────────────────────────────
+
+    [Fact]
+    public void Validate_fails_when_ClockSkewTolerance_is_negative()
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            ClockSkewTolerance = TimeSpan.FromSeconds(-1),
+        });
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("ClockSkewTolerance");
+        result.FailureMessage.Should().Contain("greater than or equal to zero");
+    }
+
+    [Fact]
+    public void Validate_succeeds_when_ClockSkewTolerance_is_zero()
+    {
+        // Zero is a valid strict-mode setting — no skew tolerance at all.
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            ClockSkewTolerance = TimeSpan.Zero,
+        });
+
+        result.Succeeded.Should().BeTrue();
+    }
+
+    // ── ClockSkewTolerance — cross-field: must be < AuthorizationCodeLifetime / 2 ───────────────
+
+    [Fact]
+    public void Validate_fails_when_ClockSkewTolerance_equals_half_of_AuthorizationCodeLifetime()
+    {
+        // The boundary is >=, so exactly half the code lifetime must fail.
+        var codeLifetime = TimeSpan.FromSeconds(60);
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            AuthorizationEndpoint = { AuthorizationCodeLifetime = codeLifetime },
+            ClockSkewTolerance = codeLifetime / 2,
+        });
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("ClockSkewTolerance");
+        result.FailureMessage.Should().Contain("ADR 0008");
+    }
+
+    [Fact]
+    public void Validate_succeeds_when_ClockSkewTolerance_is_one_tick_below_half_of_AuthorizationCodeLifetime()
+    {
+        // One tick below the boundary must pass.
+        var codeLifetime = TimeSpan.FromSeconds(60);
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            AuthorizationEndpoint = { AuthorizationCodeLifetime = codeLifetime },
+            ClockSkewTolerance = codeLifetime / 2 - TimeSpan.FromTicks(1),
+        });
+
+        result.Succeeded.Should().BeTrue();
     }
 
     // ── Simultaneous authorization + token endpoint errors ───────────────────────────────────────

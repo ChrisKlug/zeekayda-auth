@@ -61,6 +61,7 @@ internal sealed class DistributedCacheAuthorizationCodeStore : IAuthorizationCod
     private readonly IDataProtector _protector;
     private readonly TimeSpan _refreshTokenLifetime;
     private readonly TimeProvider _timeProvider;
+    private readonly TimeSpan _clockSkewTolerance;
 
     /// <summary>
     /// Initialises a new <see cref="DistributedCacheAuthorizationCodeStore"/>.
@@ -86,6 +87,7 @@ internal sealed class DistributedCacheAuthorizationCodeStore : IAuthorizationCod
         _protector = dataProtectionProvider.CreateProtector(DataProtectionPurpose);
         _refreshTokenLifetime = serverOptions.Value.TokenEndpoint.RefreshTokenLifetime;
         _timeProvider = timeProvider;
+        _clockSkewTolerance = serverOptions.Value.ClockSkewTolerance;
     }
 
     /// <inheritdoc/>
@@ -100,7 +102,7 @@ internal sealed class DistributedCacheAuthorizationCodeStore : IAuthorizationCod
 
         try
         {
-            var ttl = entry.ExpiresAt - _timeProvider.GetUtcNow();
+            var ttl = entry.ExpiresAt + _clockSkewTolerance - _timeProvider.GetUtcNow();
             if (ttl <= TimeSpan.Zero)
                 throw new ZeeKayDaStoreException("Cannot store an already-expired authorization code entry.");
 
@@ -200,8 +202,10 @@ internal sealed class DistributedCacheAuthorizationCodeStore : IAuthorizationCod
         }
 
         // Logical expiry check against TimeProvider (cache may not have evicted yet).
+        // ClockSkewTolerance provides a grace window for inter-node clock drift in
+        // load-balanced deployments; see AuthorizationServerOptions.ClockSkewTolerance.
         var now = _timeProvider.GetUtcNow();
-        if (now >= entry.ExpiresAt)
+        if (now >= entry.ExpiresAt + _clockSkewTolerance)
             return new AuthorizationCodeRedemptionOutcome.NotFound();
 
         // Client binding — ClientMismatch does NOT consume the code.
