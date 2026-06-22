@@ -24,10 +24,12 @@ For step-by-step registration instructions, see [Configure token stores](../how-
 |---|---|---|
 | Local development | `.AddInMemoryAuthorizationCodeStore()` | `.AddInMemoryRefreshTokenStore()` |
 | Integration tests | `.AddInMemoryAuthorizationCodeStore()` | `.AddInMemoryRefreshTokenStore()` |
-| Single-instance production, session continuity across restarts required | Custom persistent store, or `.AddDistributedCacheAuthorizationCodeStore()` against a durable backend (operator must accept TOCTOU risk; see [Distributed-cache stores](#distributed-cache-backed-stores)) | Custom persistent store |
-| Multi-instance production | Custom atomic store (Redis + Lua, SQL with optimistic concurrency) | Custom atomic store (same backends) |
+| Single-instance production with a non-evicting cache backend | `.AddDistributedCacheAuthorizationCodeStore()` — TOCTOU gap does not apply on a single instance; ensure cache is configured with `noeviction` or `volatile-ttl` with adequate memory (see [Distributed-cache stores](#distributed-cache-backed-stores)) | `.AddDistributedCacheRefreshTokenStore()` — same cache-eviction caveat applies |
+| Multi-instance production where TOCTOU risk is unacceptable, or any deployment with an evicting cache under memory pressure | Custom atomic store (Redis + Lua, SQL with optimistic concurrency) | Custom atomic store (same backends) |
 
-> ⚠️ **Warning:** Both in-memory stores are development and testing only. They lose all tokens on restart and silently disable single-use enforcement and reuse detection across multiple instances. Both distributed-cache stores are dev/test only and have a non-atomic TOCTOU window that is exploitable in any deployment, including single-instance. Multi-instance production deployments must use a custom atomic store for both interfaces.
+> ⚠️ **Warning:** Both in-memory stores are development and testing only. They lose all tokens on restart and silently disable single-use enforcement and reuse detection across multiple instances. Outside a `Development` environment the framework refuses to start with in-memory stores unless `AllowInMemoryStoresOutsideDevelopment` is set to `true`.
+
+The distributed-cache stores have two concrete limitations that determine whether they are appropriate for a given production deployment — see [Distributed-cache stores](#distributed-cache-backed-stores) for the full trade-off analysis.
 
 ---
 
@@ -187,11 +189,29 @@ builder.Services
 
 > ⚠️ **Warning:** `AddDistributedMemoryCache()` adds an in-process `MemoryDistributedCache`. Do not use `AddDistributedMemoryCache()` with the distributed-cache stores in production; it provides no persistence and no atomicity beyond what the in-memory stores already offer, with additional overhead.
 
-**Non-atomic TOCTOU window.** Unlike the in-memory stores, the distributed-cache stores cannot hold a lock across the read-check-write sequence. There is a time-of-check-to-time-of-use (TOCTOU) window between reading an entry and writing its tombstone in which two concurrent requests for the same code or token may both see the entry as valid. In the worst case, both redemptions or consumptions succeed. This window is exploitable in any deployment — including single-instance — because ASP.NET Core / Kestrel serves concurrent requests across thread-pool threads.
+**Atomicity trade-offs.** The distributed-cache stores use `IDistributedCache`, which does not provide an atomic check-and-set primitive. This creates two concrete gaps that operators must evaluate before choosing these stores for production:
 
-> ⚠️ **Warning:** The distributed-cache stores are suitable for development and testing only. Do not use them in production without explicitly accepting the documented TOCTOU risk. Multi-instance production deployments must replace them with a custom atomic store (Redis + Lua, SQL with optimistic concurrency, or equivalent).
+**1. TOCTOU on single-use code redemption.** `TryRedeemAsync` performs a read-then-write using two separate `IDistributedCache` calls. Under concurrent redemption of the same authorization code from two instances simultaneously, both can read "not yet redeemed" before either writes the tombstone, allowing double-redemption. The window spans two round-trips to the cache backend.
 
-**Real distributed backend warning.** When the registered `IDistributedCache` implementation is anything other than `MemoryDistributedCache` (for example, Redis or SQL Server), ZeeKayDa.Auth emits a `LogLevel.Warning` at startup noting that the non-atomic default is running against a real shared backend, which is the configuration these stores are unsuitable for.
+*This matters when:* you have multiple instances AND an adversary or buggy client that can race concurrent redemption requests. A single-instance deployment eliminates this risk entirely — ASP.NET Core / Kestrel does serve concurrent requests across thread-pool threads, but the thread-pool scheduling window is negligible compared to a full network round-trip to the cache.
+
+**2. Tombstone and revocation marker eviction.** `IDistributedCache` can evict entries under memory pressure before their configured TTL expires. If a tombstone (for a replayed authorization code) or a family revocation marker is evicted early, the protection it provides disappears — a replayed code appears fresh, or a revoked family token appears valid.
+
+*This matters when:* your cache backend has a memory limit and can evict data. Redis configured with `maxmemory-policy allkeys-lru` is the common case where this risk applies. A Redis instance configured with `noeviction` (or `volatile-ttl` with a memory allocation large enough to hold all active entries) eliminates this risk.
+
+**When the distributed-cache stores are appropriate for production:**
+
+- Single-instance deployments where the TOCTOU gap cannot occur, with a cache backend configured to never evict entries under memory pressure.
+- Any deployment where double-redemption or marker eviction is within the accepted threat model (for example, an internal tool with trusted clients and no adversarial replay risk).
+
+**When they are not appropriate:**
+
+- Multi-instance deployments where concurrent redemption from two instances is possible AND replay attacks are in the threat model.
+- Any deployment backed by a cache with an evicting `maxmemory-policy` and no margin to guarantee all tombstones and revocation markers are retained for their full TTL.
+
+> ⚠️ **Warning:** If both limitations above apply to your deployment, use a custom atomic store (Redis + Lua, SQL with optimistic concurrency, or equivalent) instead. The distributed-cache stores do not provide the atomicity guarantees required by [RFC 9700 §2.1.1](https://www.rfc-editor.org/rfc/rfc9700#section-2.1.1) and [RFC 9700 §4.14.2](https://www.rfc-editor.org/rfc/rfc9700#section-4.14.2) under those conditions.
+
+**Real distributed backend warning.** When the registered `IDistributedCache` implementation is anything other than `MemoryDistributedCache` (for example, Redis or SQL Server), ZeeKayDa.Auth emits a `LogLevel.Warning` at startup noting that the distributed-cache stores are running against a real shared backend. Review the two trade-offs above before accepting this warning in production.
 
 **Data Protection.** Entry and tombstone values are encrypted using `IDataProtectionProvider` (same purpose strings as the in-memory stores). Cache keys are derived as `Base64Url(SHA-256(handle))` — raw token handles are never used as cache keys, so cache read access does not expose live bearer credentials. Family revocation markers are stored without encryption (fail-safe: a DP failure on a marker would cause a revoked family to appear unrevoked).
 

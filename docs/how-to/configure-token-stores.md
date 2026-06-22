@@ -22,10 +22,10 @@ For the full API reference, see [Token stores](../reference/token-stores.md).
 |---|---|
 | Local development | `.AddInMemoryStores()` |
 | Integration tests | `.AddInMemoryStores()` |
-| Single-instance production | Custom persistent stores |
-| Multi-instance production | Custom atomic stores |
+| Single-instance production with a non-evicting cache backend | `.AddDistributedCacheTokenStores()` — see trade-offs below |
+| Multi-instance production, or any deployment with an evicting cache and a replay-attack threat model | Custom atomic stores |
 
-> ⚠️ **Warning:** The in-memory and distributed-cache stores are not production-grade. The in-memory stores lose all tokens on restart and disable reuse detection across instances. The distributed-cache stores have a non-atomic check-then-write window exploitable by concurrent requests. Use custom stores for production.
+> ⚠️ **Warning:** The in-memory stores are development and testing only — they lose all tokens on restart and disable reuse detection across instances. The distributed-cache stores have two concrete atomicity limitations; see [Option 2](#option-2--distributed-cache-stores) for a full trade-off analysis so you can decide whether they are right for your deployment.
 
 ---
 
@@ -61,14 +61,12 @@ At startup, ZeeKayDa.Auth emits a `LogLevel.Warning` to confirm the stores are a
 
 ---
 
-## Option 2 — Distributed-cache stores (dev/test with shared cache, or as a custom store starting point)
+## Option 2 — Distributed-cache stores
 
 Use `.AddDistributedCacheTokenStores()` when you need a store backed by `IDistributedCache`. You must register an `IDistributedCache` implementation first.
 
-For local development against an in-process cache:
-
 ```csharp
-builder.Services.AddDistributedMemoryCache();
+builder.Services.AddDistributedMemoryCache(); // or AddStackExchangeRedisCache(...)
 
 builder.Services
     .AddZeeKayDaAuth(options =>
@@ -78,9 +76,29 @@ builder.Services
     .AddDistributedCacheTokenStores();
 ```
 
-> ⚠️ **Warning:** `AddDistributedMemoryCache()` adds a single-process in-memory cache. This adds no durability or atomicity benefit over `.AddInMemoryStores()`. Use it only during development to exercise the `IDistributedCache` code path, not for any production scenario.
+> ⚠️ **Warning:** `AddDistributedMemoryCache()` adds a single-process in-memory cache. This adds no durability or atomicity benefit over `.AddInMemoryStores()`. Use it only during development to exercise the `IDistributedCache` code path.
 
-If you point the distributed-cache stores at a real shared backend such as Redis, ZeeKayDa.Auth emits a `LogLevel.Warning` at startup noting the non-atomic TOCTOU risk. The distributed-cache stores are not safe for production without an atomic replacement.
+### Trade-offs to evaluate before using in production
+
+The distributed-cache stores have two atomicity gaps. You need to decide whether they apply to your deployment.
+
+**TOCTOU on single-use code redemption.** `TryRedeemAsync` performs a read-then-write as two separate cache calls. On a multi-instance deployment, two instances can both read the same code as "not yet redeemed" before either writes the tombstone, causing double-redemption. This cannot happen on a single-instance deployment.
+
+**Tombstone and revocation marker eviction.** If your cache backend evicts entries under memory pressure before their TTL expires (for example, Redis with `maxmemory-policy allkeys-lru`), tombstones and family revocation markers can disappear early. A replayed authorization code would then appear fresh, or a revoked refresh token family would appear valid. Configuring Redis with `noeviction` (or `volatile-ttl` with sufficient allocated memory) eliminates this risk.
+
+**Safe configurations:**
+
+- Single-instance deployment + cache configured with `noeviction` or `volatile-ttl` with adequate memory.
+- Any deployment where double-redemption or marker eviction is within the accepted threat model.
+
+**Not safe:**
+
+- Multi-instance deployment where concurrent redemption from two instances is possible AND replay attacks are in the threat model.
+- Any deployment backed by an evicting cache (e.g. Redis `allkeys-lru`) without sufficient memory headroom to guarantee tombstones and revocation markers are never evicted.
+
+For the full reference, see [Distributed-cache stores — atomicity trade-offs](../reference/token-stores.md#distributed-cache-backed-stores).
+
+If you point the distributed-cache stores at a real shared backend such as Redis, ZeeKayDa.Auth emits a `LogLevel.Warning` at startup. Review the trade-offs above before accepting this warning in production.
 
 ---
 
