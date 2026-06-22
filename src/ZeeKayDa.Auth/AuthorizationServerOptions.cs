@@ -59,8 +59,15 @@ public sealed class AuthorizationServerOptions
     /// TTLs are unaffected.
     /// </para>
     /// <para>
+    /// Must be greater than or equal to <see cref="TimeSpan.Zero"/>. A negative value is rejected
+    /// at startup by <c>AuthorizationServerOptionsValidator</c> because it would cause expiry
+    /// checks to reject tokens before their stated expiry time.
+    /// </para>
+    /// <para>
     /// The default of 5 seconds is intentionally small. A <c>ClockSkewTolerance</c> approaching
-    /// half the authorization code lifetime effectively nullifies the code expiry guarantee.
+    /// half the authorization code lifetime effectively nullifies the code expiry guarantee. Values
+    /// equal to or exceeding half of <c>AuthorizationEndpoint.AuthorizationCodeLifetime</c> are
+    /// rejected at startup. See ADR 0008 §Security Considerations — Clock skew tolerance.
     /// </para>
     /// </remarks>
     public TimeSpan ClockSkewTolerance { get; set; } = TimeSpan.FromSeconds(5);

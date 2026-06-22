@@ -345,6 +345,30 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
                 "AuthorizationServerOptions.AuthorizationEndpoint.AuthorizationCodeLifetime must be greater than zero.");
         }
 
+        // ADR 0008: A negative ClockSkewTolerance silently rejects tokens before their stated
+        // expiry, producing false rejections with no surfaced error.
+        if (options.ClockSkewTolerance < TimeSpan.Zero)
+        {
+            errors.Add(
+                "AuthorizationServerOptions.ClockSkewTolerance must be greater than or equal to zero. " +
+                "A negative value causes expiry checks to reject tokens before their stated expiry time.");
+        }
+
+        // ADR 0008 §Security Considerations — Clock skew tolerance: a tolerance >= half the
+        // authorization code lifetime effectively extends the acceptance window past the code's
+        // intended expiry, undermining the short-lived code guarantee of RFC 9700 §2.1.1.
+        var halfCodeLifetime = options.AuthorizationEndpoint.AuthorizationCodeLifetime / 2;
+        if (options.ClockSkewTolerance >= TimeSpan.Zero &&
+            options.AuthorizationEndpoint.AuthorizationCodeLifetime > TimeSpan.Zero &&
+            options.ClockSkewTolerance >= halfCodeLifetime)
+        {
+            errors.Add(
+                $"AuthorizationServerOptions.ClockSkewTolerance ({options.ClockSkewTolerance}) is greater than or " +
+                $"equal to half of AuthorizationCodeLifetime ({halfCodeLifetime}). A tolerance this large effectively " +
+                "extends the authorization code acceptance window past its intended expiry. " +
+                "See ADR 0008 §Security Considerations — Clock skew tolerance.");
+        }
+
         // Validate endpoint URI overrides — RFC 8414 §2 requires all metadata URLs to use HTTPS.
         static ValidateOptionsResult? ValidateEndpointUri(
             string propertyName,
