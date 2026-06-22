@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using ZeeKayDa.Auth.Stores;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests;
@@ -79,13 +80,15 @@ internal sealed class TestWebAppFactory : WebApplicationFactory<TestWebAppFactor
                     [],
                     ["openid"]));
 
-            // Register in-memory stores so the TokenStorePresenceValidator passes at startup.
-            // Tests that need custom stores can register them in _configureBuilder, but since
-            // ThrowIfAlreadyRegistered would reject a second registration, we only call this
-            // when the builder delegate has not registered them yet.
-            authBuilder.AddInMemoryStores();
-
+            // Invoke the per-test builder delegate first so that any custom store registrations
+            // it makes are visible before we decide whether to fall back to in-memory stores.
             _configureBuilder?.Invoke(authBuilder);
+
+            // Register in-memory stores so the TokenStorePresenceValidator passes at startup,
+            // but only when _configureBuilder has not already registered stores. This avoids
+            // a ThrowIfAlreadyRegistered exception when the caller brings its own stores.
+            if (!authBuilder.Services.Any(d => d.ServiceType == typeof(IAuthorizationCodeStore)))
+                authBuilder.AddInMemoryStores();
         });
 
         builder.Configure(app =>

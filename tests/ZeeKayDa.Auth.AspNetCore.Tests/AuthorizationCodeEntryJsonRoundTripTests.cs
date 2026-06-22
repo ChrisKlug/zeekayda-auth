@@ -23,12 +23,12 @@ public sealed class AuthorizationCodeEntryJsonRoundTripTests
         };
 
     [Fact]
-    public void AuthorizationCodeEntry_with_null_Amr_round_trips_through_ZeeKayDaJsonSerializerContext()
+    public void AuthorizationCodeEntry_with_null_Amr_round_trips_through_StoreJsonSerializerContext()
     {
         var entry = BuildBase() with { Amr = null };
 
-        var json = JsonSerializer.Serialize(entry, ZeeKayDaJsonSerializerContext.Default.AuthorizationCodeEntry);
-        var deserialized = JsonSerializer.Deserialize(json, ZeeKayDaJsonSerializerContext.Default.AuthorizationCodeEntry)!;
+        var json = JsonSerializer.Serialize(entry, StoreJsonSerializerContext.Default.AuthorizationCodeEntry);
+        var deserialized = JsonSerializer.Deserialize(json, StoreJsonSerializerContext.Default.AuthorizationCodeEntry)!;
 
         deserialized.Amr.Should().BeNull();
         deserialized.ClientId.Should().Be(entry.ClientId);
@@ -37,23 +37,23 @@ public sealed class AuthorizationCodeEntryJsonRoundTripTests
     }
 
     [Fact]
-    public void AuthorizationCodeEntry_with_empty_Amr_round_trips_through_ZeeKayDaJsonSerializerContext()
+    public void AuthorizationCodeEntry_with_empty_Amr_round_trips_through_StoreJsonSerializerContext()
     {
         var entry = BuildBase() with { Amr = [] };
 
-        var json = JsonSerializer.Serialize(entry, ZeeKayDaJsonSerializerContext.Default.AuthorizationCodeEntry);
-        var deserialized = JsonSerializer.Deserialize(json, ZeeKayDaJsonSerializerContext.Default.AuthorizationCodeEntry)!;
+        var json = JsonSerializer.Serialize(entry, StoreJsonSerializerContext.Default.AuthorizationCodeEntry);
+        var deserialized = JsonSerializer.Deserialize(json, StoreJsonSerializerContext.Default.AuthorizationCodeEntry)!;
 
         deserialized.Amr.Should().NotBeNull().And.BeEmpty();
     }
 
     [Fact]
-    public void AuthorizationCodeEntry_with_non_empty_Amr_round_trips_through_ZeeKayDaJsonSerializerContext()
+    public void AuthorizationCodeEntry_with_non_empty_Amr_round_trips_through_StoreJsonSerializerContext()
     {
         var entry = BuildBase() with { Amr = ["pwd", "mfa"] };
 
-        var json = JsonSerializer.Serialize(entry, ZeeKayDaJsonSerializerContext.Default.AuthorizationCodeEntry);
-        var deserialized = JsonSerializer.Deserialize(json, ZeeKayDaJsonSerializerContext.Default.AuthorizationCodeEntry)!;
+        var json = JsonSerializer.Serialize(entry, StoreJsonSerializerContext.Default.AuthorizationCodeEntry);
+        var deserialized = JsonSerializer.Deserialize(json, StoreJsonSerializerContext.Default.AuthorizationCodeEntry)!;
 
         deserialized.Amr.Should().BeEquivalentTo(["pwd", "mfa"]);
     }

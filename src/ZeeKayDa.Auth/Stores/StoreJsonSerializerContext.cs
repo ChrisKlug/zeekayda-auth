@@ -3,7 +3,10 @@ using System.Text.Json.Serialization;
 
 namespace ZeeKayDa.Auth.Stores;
 
-[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
+[JsonSourceGenerationOptions(
+    PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
+    PropertyNameCaseInsensitive = true,
+    NumberHandling = JsonNumberHandling.AllowReadingFromString)]
 [JsonSerializable(typeof(AuthorizationCodeEntry))]
 [JsonSerializable(typeof(RefreshTokenEntry))]
 [JsonSerializable(typeof(AuthorizationCodeTombstone))]
