@@ -119,6 +119,11 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         // on async I/O risks deadlocks in certain hosting configurations.
         services.AddHostedService<ScopePresenceStartupValidator>();
 
+        // Startup validation: fails if no IAuthorizationCodeStore or IRefreshTokenStore has
+        // been registered. Uses IServiceProviderIsService to inspect the container without
+        // resolving the services, so it fires before any store is constructed.
+        services.AddHostedService<TokenStorePresenceValidator>();
+
         // Resolves IClientRepository at startup so construction-time validation (duplicate
         // detection, per-client validation, secret hashing) fails fast rather than at first request.
         services.AddHostedService<ClientRepositoryStartupActivator>();

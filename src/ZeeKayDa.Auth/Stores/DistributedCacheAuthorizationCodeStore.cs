@@ -55,7 +55,6 @@ namespace ZeeKayDa.Auth.Stores;
 internal sealed class DistributedCacheAuthorizationCodeStore : IAuthorizationCodeStore
 {
     private static readonly string DataProtectionPurpose = "ZeeKayDa.Auth:AuthorizationCodeStore";
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     private readonly IDistributedCache _cache;
     private readonly IDataProtector _protector;
@@ -106,7 +105,7 @@ internal sealed class DistributedCacheAuthorizationCodeStore : IAuthorizationCod
             if (ttl <= TimeSpan.Zero)
                 throw new ZeeKayDaStoreException("Cannot store an already-expired authorization code entry.");
 
-            var json = JsonSerializer.SerializeToUtf8Bytes(entry, JsonOptions);
+            var json = JsonSerializer.SerializeToUtf8Bytes(entry, StoreJsonSerializerContext.Default.AuthorizationCodeEntry);
             var protectedBytes = _protector.Protect(json);
 
             var cacheOptions = new DistributedCacheEntryOptions
@@ -158,7 +157,7 @@ internal sealed class DistributedCacheAuthorizationCodeStore : IAuthorizationCod
             try
             {
                 var tombstoneJson = _protector.Unprotect(tombstoneBytes);
-                var tombstone = JsonSerializer.Deserialize<Tombstone>(tombstoneJson, JsonOptions)!;
+                var tombstone = JsonSerializer.Deserialize(tombstoneJson, StoreJsonSerializerContext.Default.AuthorizationCodeTombstone)!;
                 return new AuthorizationCodeRedemptionOutcome.AlreadyRedeemed { FamilyId = tombstone.FamilyId };
             }
             catch (Exception ex) when (ex is CryptographicException or JsonException)
@@ -191,7 +190,7 @@ internal sealed class DistributedCacheAuthorizationCodeStore : IAuthorizationCod
         try
         {
             var entryJson = _protector.Unprotect(entryBytes);
-            entry = JsonSerializer.Deserialize<AuthorizationCodeEntry>(entryJson, JsonOptions)!;
+            entry = JsonSerializer.Deserialize(entryJson, StoreJsonSerializerContext.Default.AuthorizationCodeEntry)!;
         }
         catch (Exception ex) when (ex is CryptographicException or JsonException)
         {
@@ -221,10 +220,10 @@ internal sealed class DistributedCacheAuthorizationCodeStore : IAuthorizationCod
             AbsoluteExpirationRelativeToNow = tombstoneTtl
         };
 
-        var tombstoneValue = new Tombstone(familyId);
+        var tombstoneValue = new AuthorizationCodeTombstone(familyId);
         try
         {
-            var tombstoneJsonBytes = JsonSerializer.SerializeToUtf8Bytes(tombstoneValue, JsonOptions);
+            var tombstoneJsonBytes = JsonSerializer.SerializeToUtf8Bytes(tombstoneValue, StoreJsonSerializerContext.Default.AuthorizationCodeTombstone);
             var protectedTombstone = _protector.Protect(tombstoneJsonBytes);
             await _cache.SetAsync(tombstoneKey, protectedTombstone, tombstoneOptions, cancellationToken).ConfigureAwait(false);
         }
@@ -257,5 +256,6 @@ internal sealed class DistributedCacheAuthorizationCodeStore : IAuthorizationCod
     private static string BuildEntryKey(string hashedSegment) => $"zkd:code:{hashedSegment}";
     private static string BuildTombstoneKey(string hashedSegment) => $"zkd:code:{hashedSegment}:redeemed";
 
-    private sealed record Tombstone(string FamilyId);
 }
+
+internal sealed record AuthorizationCodeTombstone(string FamilyId);
