@@ -80,6 +80,82 @@ The two values must stay in sync.
 
 ---
 
+## Key rotation
+
+ASP.NET Core Data Protection rotates keys automatically. Understanding how that rotation
+interacts with refresh token lifetimes is important for safe key management.
+
+### How rotation works
+
+Data Protection generates a new default key automatically when the current key nears
+expiry. The lead time is configurable via `SetDefaultKeyLifetime` (default is 90 days).
+When a new default key is generated, old keys are never deleted — they stay in the ring
+and can still decrypt any payload they originally protected. Rotation is therefore
+overlapping by design: new encryptions use the new key while tokens encrypted with older
+keys continue to decrypt successfully.
+
+This means that at any point, your key ring will contain:
+
+- The current default key — used for all new encryptions.
+- One or more older keys — still present and usable for decryption.
+
+### The safe deletion window
+
+Because ASP.NET Core does not auto-delete keys, any cleanup (manual scripts, key store
+retention policies) must respect the following constraint:
+
+**An old key must not be removed from the key store until all refresh tokens it
+protected have expired.**
+
+The safe deletion window for a key is:
+
+```
+safe_to_delete_after = key_expiry_date + RefreshTokenLifetime
+```
+
+With defaults (90-day key lifetime, 14-day refresh token lifetime), a key is safe to
+delete **104 days after it was created**. Removing a key before that window closes means
+some in-flight refresh tokens can no longer be decrypted, which causes the silent
+`invalid_grant` failure described in the [failure modes](#failure-modes) section below.
+
+### Shortening the key lifetime
+
+If you call `SetDefaultKeyLifetime(TimeSpan.FromDays(30))` to rotate keys more
+frequently, you must ensure your key store retains expired keys for at least
+`RefreshTokenLifetime` beyond their expiry date. With a 30-day key lifetime and the
+default 14-day refresh token lifetime, the safe deletion window is 44 days from key
+creation.
+
+ASP.NET Core does not enforce this automatically. If your deployment uses a cleanup
+script or a store with an automatic retention policy, configure that policy to use the
+`key_expiry_date + RefreshTokenLifetime` formula, not just `key_expiry_date`.
+
+> ⚠️ **Warning:** Never delete all keys and start fresh while active refresh tokens
+> exist. This silently invalidates every in-flight session — all users holding a valid
+> refresh token are logged out with no error message and no log entry to explain why.
+
+### The migration gotcha
+
+When migrating key storage — for example, moving from a shared file system to Azure Blob
+Storage — you must copy **all** existing keys to the new store before cutover, including
+keys that have already expired but whose safe deletion window has not yet closed.
+
+If a key does not make it to the new store, any refresh token it protected will silently
+return `NotFound` the first time a request is routed after the cutover. This is the most
+dangerous operator error in key management, because the failure is invisible in logs and
+only manifests as an elevated `invalid_grant` rate in your token endpoint metrics.
+
+**Checklist before migrating key storage:**
+
+1. Export the full key ring from the old store, including expired keys.
+2. Import all exported keys to the new store.
+3. Verify the key ring in the new store contains every key from the old store.
+4. Cut over.
+5. Keep the old store readable (but not writable) for `RefreshTokenLifetime` after
+   cutover in case rollback is needed.
+
+---
+
 ## Scenario A: Azure Blob Storage and Azure Key Vault (recommended)
 
 Azure Blob Storage stores the key ring XML; Azure Key Vault wraps the key material. This is
