@@ -64,7 +64,7 @@ You are a senior .NET developer working on ZeeKayDa.Auth, an open-source OpenID 
 
 ## Architecture
 
-Architecture decisions are made by the architecture agent. If you are doing more than minor things, have that agent review your plan before starting implementation.
+Architecture decisions are made by the architecture agent. **When running as a top-level step** (invoked directly by the user), if you are doing more than minor things, have that agent review your plan before starting implementation. **When running as a subagent**, proceed directly — do not spawn the architect.
 
 ## Code Navigation
 

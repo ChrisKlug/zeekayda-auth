@@ -122,9 +122,11 @@ After writing or editing code, check LSP diagnostics before moving on. Fix any t
 
 And just to make it clear, this is **REALLY** important! Stop using `grep` unless you have to!!!
 
-## Agent Orchestration
+## Agent Orchestration — MAIN ORCHESTRATOR ONLY
 
-**The main agent routes and synthesises. It never does specialist work itself.** Executing a task directly — rather than delegating — bypasses that agent's system prompt, coding standards, and domain rules. The whole point of specialist agents is lost.
+> **STOP. If you are a specialist agent (`developer`, `tester`, `architect`, `security`, `docs`, `maintainer`), this section does NOT apply to you. Do not read or act on the routing table below. Execute your own domain work directly and return your results to whoever called you. Delegating to another specialist agent from here creates an infinite loop.**
+
+**The main Claude Code session routes and synthesises. It never does specialist work itself.** Executing a task directly — rather than delegating — bypasses that agent's system prompt, coding standards, and domain rules. The whole point of specialist agents is lost.
 
 | Task | Agent |
 |---|---|
@@ -142,8 +144,6 @@ And just to make it clear, this is **REALLY** important! Stop using `grep` unles
 When in doubt which agent applies, read the `description` field in `.claude/agents/<agent>.md` — it states exactly when to invoke that agent.
 
 **Missing specialist.** If no specialist seems to fit that is is needed, let the user know and ask for guidance. It might be a gap in the process!
-
-**Note for specialist subagents:** The delegation rule above applies to the main orchestrator session only. If you are a specialist agent (developer, tester, architect, etc.), execute your own domain work directly — do not spawn other specialist agents. Spawning agents that can spawn back to you creates circular chains that waste tokens and produce no useful output. Complete your work, then return your results to whoever called you.
 
 ## User Interaction
 
