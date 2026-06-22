@@ -102,7 +102,7 @@ internal sealed class DistributedCacheAuthorizationCodeStore : IAuthorizationCod
 
         try
         {
-            var ttl = entry.ExpiresAt - _timeProvider.GetUtcNow();
+            var ttl = entry.ExpiresAt + _clockSkewTolerance - _timeProvider.GetUtcNow();
             if (ttl <= TimeSpan.Zero)
                 throw new ZeeKayDaStoreException("Cannot store an already-expired authorization code entry.");
 

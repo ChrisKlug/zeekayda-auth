@@ -488,8 +488,8 @@ public sealed class DistributedCacheRefreshTokenStoreTests
         var tp = new FakeTimeProvider(startTime);
         var store = CreateStore(timeProvider: tp);
 
-        // Entry that expired one second before now
-        var entry = BuildEntry(expiresAt: startTime.AddSeconds(-1));
+        // Entry expired well beyond the tolerance window (default 5 s); -10 s guarantees rejection.
+        var entry = BuildEntry(expiresAt: startTime.AddSeconds(-10));
 
         var act = async () =>
             await store.StoreAsync("expired-handle", entry, CancellationToken.None);
