@@ -289,21 +289,34 @@ app.Run();
 When Data Protection keys are not correctly shared, ZeeKayDa.Auth produces two distinct
 symptoms depending on which path fails.
 
-### Store failure: `ZeeKayDaStoreException`
+### Store failure: silent `invalid_grant`
 
-If the default token stores cannot decrypt a stored entry, they treat it as `NotFound`.
+If the default token stores cannot decrypt a stored entry, the `CryptographicException`
+thrown by `IDataProtector.Unprotect` is **caught and silently discarded**. The store
+returns `NotFound` (or `AlreadyRedeemed` for an unreadable authorization code tombstone).
+No exception is thrown to the caller, and **no log entry is written**.
+
 Per [ADR 0008 §7](https://github.com/ChrisKlug/zeekayda-auth/blob/main/docs/decisions/0008-authorization-code-and-refresh-token-store.md#7-failure-modes-and-exception-contract),
-the token endpoint returns `error=invalid_grant` to the client. The `ZeeKayDaStoreException`
-wraps the underlying Data Protection `CryptographicException` and is visible in logs.
+a `NotFound` result causes the token endpoint to return `error=invalid_grant` to the
+client. `ZeeKayDaStoreException` is reserved for transport-level failures — for example,
+an `IDistributedCache` I/O error — not for decryption failures.
+
+The operator-visible symptom is users experiencing silent logout and re-authentication
+prompts, with no corresponding exception anywhere in the application logs.
 
 **What to look for:**
 
-- `ZeeKayDaStoreException` entries in your application logs, with an inner
-  `CryptographicException` or `KeyNotFoundException` from the Data Protection stack.
-- Clients receiving `error=invalid_grant` on token refresh, without any corresponding user
+- An elevated rate of `error=invalid_grant` responses at the token endpoint, **without**
+  any `ZeeKayDaStoreException` in logs to explain them.
+- Clients receiving `error=invalid_grant` on token refresh with no corresponding user
   activity that would explain the rejection.
 - The pattern typically appears immediately after a key rotation event or a deployment that
   changed the key ring configuration.
+
+> ⚠️ **Warning:** Because the failure is completely silent at the log level, a misconfigured
+> or prematurely expired key ring will not produce any application error — only a rise in
+> `invalid_grant` responses. Monitor your token endpoint error rate; do not rely on log
+> alerts alone to detect this condition.
 
 **Resolution:** Confirm that all instances share the same key ring and that keys are
 retained for at least `RefreshTokenLifetime`. If you recently rotated keys, the old keys
