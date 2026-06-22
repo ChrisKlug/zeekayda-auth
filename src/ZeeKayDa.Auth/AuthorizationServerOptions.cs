@@ -47,6 +47,25 @@ public sealed class AuthorizationServerOptions
     public bool AllowInsecureIssuer { get; set; }
 
     /// <summary>
+    /// Gets or sets the clock-skew grace window applied to token expiry checks in multi-node
+    /// store implementations.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// In load-balanced deployments, node clocks can drift. Store implementations that operate
+    /// across multiple nodes apply this value as a grace window on <c>ExpiresAt</c> liveness
+    /// checks: <c>entry.ExpiresAt + ClockSkewTolerance &gt; now</c>. The in-memory store
+    /// (single-instance; one clock; inter-node skew is structurally impossible) and tombstone
+    /// TTLs are unaffected.
+    /// </para>
+    /// <para>
+    /// The default of 5 seconds is intentionally small. A <c>ClockSkewTolerance</c> approaching
+    /// half the authorization code lifetime effectively nullifies the code expiry guarantee.
+    /// </para>
+    /// </remarks>
+    public TimeSpan ClockSkewTolerance { get; set; } = TimeSpan.FromSeconds(5);
+
+    /// <summary>
     /// Gets or sets the grant types supported by this authorization server.
     /// Defaults to <c>[<see cref="GrantType.AuthorizationCode"/>]</c>.
     /// </summary>

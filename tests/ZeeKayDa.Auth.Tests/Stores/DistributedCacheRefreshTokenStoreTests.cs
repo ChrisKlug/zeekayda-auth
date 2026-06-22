@@ -32,10 +32,16 @@ public sealed class DistributedCacheRefreshTokenStoreTests
         AuthorizationServerOptions? serverOptions = null,
         TimeProvider? timeProvider = null)
     {
+        var options = serverOptions ?? new AuthorizationServerOptions
+        {
+            // Explicit default so the grace window is visible in tests.
+            ClockSkewTolerance = TimeSpan.FromSeconds(5)
+        };
+
         return new DistributedCacheRefreshTokenStore(
             cache ?? CreateMemoryDistributedCache(),
             dp ?? new EphemeralDataProtectionProvider(),
-            new OptionsWrapper<AuthorizationServerOptions>(serverOptions ?? new AuthorizationServerOptions()),
+            new OptionsWrapper<AuthorizationServerOptions>(options),
             timeProvider ?? TimeProvider.System);
     }
 
@@ -229,6 +235,77 @@ public sealed class DistributedCacheRefreshTokenStoreTests
             because: "TryConsumeAsync must use TimeProvider.GetUtcNow() to check logical expiry");
     }
 
+    // ── AC 6a — ClockSkewTolerance boundary tests for TryConsumeAsync ────────────────────────────
+
+    [Fact]
+    public async Task TryConsumeAsync_at_ExpiresAt_exactly_is_still_valid_within_tolerance()
+    {
+        var startTime = new DateTimeOffset(2090, 1, 1, 12, 0, 0, TimeSpan.Zero);
+        var tolerance = TimeSpan.FromSeconds(5);
+        var expiresAt = startTime.AddMinutes(1);
+
+        var serverOptions = new AuthorizationServerOptions { ClockSkewTolerance = tolerance };
+        var tp = new FakeTimeProvider(startTime);
+        var store = CreateStore(serverOptions: serverOptions, timeProvider: tp);
+        const string handle = "consume-skew-at-expires";
+        var entry = BuildEntry(issuedAt: startTime, expiresAt: expiresAt);
+
+        await store.StoreAsync(handle, entry, CancellationToken.None);
+
+        // Advance to exactly ExpiresAt — still within tolerance window
+        tp.Advance(expiresAt - startTime);
+        var outcome = await store.TryConsumeAsync(handle, "client-a", CancellationToken.None);
+
+        outcome.Should().BeOfType<RefreshTokenConsumptionOutcome.Consumed>(
+            because: "now == ExpiresAt is still valid: the expiry check is now >= ExpiresAt + tolerance");
+    }
+
+    [Fact]
+    public async Task TryConsumeAsync_one_tick_before_ExpiresAt_plus_tolerance_is_still_valid()
+    {
+        var startTime = new DateTimeOffset(2090, 1, 1, 12, 0, 0, TimeSpan.Zero);
+        var tolerance = TimeSpan.FromSeconds(5);
+        var expiresAt = startTime.AddMinutes(1);
+
+        var serverOptions = new AuthorizationServerOptions { ClockSkewTolerance = tolerance };
+        var tp = new FakeTimeProvider(startTime);
+        var store = CreateStore(serverOptions: serverOptions, timeProvider: tp);
+        const string handle = "consume-skew-one-tick-before";
+        var entry = BuildEntry(issuedAt: startTime, expiresAt: expiresAt);
+
+        await store.StoreAsync(handle, entry, CancellationToken.None);
+
+        // Advance to ExpiresAt + tolerance - 1 tick — one tick inside the grace window
+        tp.Advance(expiresAt - startTime + tolerance - TimeSpan.FromTicks(1));
+        var outcome = await store.TryConsumeAsync(handle, "client-a", CancellationToken.None);
+
+        outcome.Should().BeOfType<RefreshTokenConsumptionOutcome.Consumed>(
+            because: "now == ExpiresAt + tolerance - 1 tick is still within the grace window");
+    }
+
+    [Fact]
+    public async Task TryConsumeAsync_at_ExpiresAt_plus_tolerance_is_expired()
+    {
+        var startTime = new DateTimeOffset(2090, 1, 1, 12, 0, 0, TimeSpan.Zero);
+        var tolerance = TimeSpan.FromSeconds(5);
+        var expiresAt = startTime.AddMinutes(1);
+
+        var serverOptions = new AuthorizationServerOptions { ClockSkewTolerance = tolerance };
+        var tp = new FakeTimeProvider(startTime);
+        var store = CreateStore(serverOptions: serverOptions, timeProvider: tp);
+        const string handle = "consume-skew-at-boundary";
+        var entry = BuildEntry(issuedAt: startTime, expiresAt: expiresAt);
+
+        await store.StoreAsync(handle, entry, CancellationToken.None);
+
+        // Advance to exactly ExpiresAt + tolerance — the grace window has ended
+        tp.Advance(expiresAt - startTime + tolerance);
+        var outcome = await store.TryConsumeAsync(handle, "client-a", CancellationToken.None);
+
+        outcome.Should().BeOfType<RefreshTokenConsumptionOutcome.NotFound>(
+            because: "now == ExpiresAt + tolerance is expired: the check is now >= ExpiresAt + tolerance");
+    }
+
     // ── AC 7 — FindAsync for expired entry → null ─────────────────────────────────────────────────
 
     [Fact]
@@ -249,6 +326,77 @@ public sealed class DistributedCacheRefreshTokenStoreTests
 
         result.Should().BeNull(
             because: "FindAsync must use TimeProvider.GetUtcNow() to check logical expiry");
+    }
+
+    // ── AC 7a — ClockSkewTolerance boundary tests for FindAsync ──────────────────────────────────
+
+    [Fact]
+    public async Task FindAsync_at_ExpiresAt_exactly_is_still_valid_within_tolerance()
+    {
+        var startTime = new DateTimeOffset(2090, 1, 1, 12, 0, 0, TimeSpan.Zero);
+        var tolerance = TimeSpan.FromSeconds(5);
+        var expiresAt = startTime.AddMinutes(1);
+
+        var serverOptions = new AuthorizationServerOptions { ClockSkewTolerance = tolerance };
+        var tp = new FakeTimeProvider(startTime);
+        var store = CreateStore(serverOptions: serverOptions, timeProvider: tp);
+        const string handle = "find-skew-at-expires";
+        var entry = BuildEntry(issuedAt: startTime, expiresAt: expiresAt);
+
+        await store.StoreAsync(handle, entry, CancellationToken.None);
+
+        // Advance to exactly ExpiresAt — still within tolerance window
+        tp.Advance(expiresAt - startTime);
+        var result = await store.FindAsync(handle, CancellationToken.None);
+
+        result.Should().NotBeNull(
+            because: "now == ExpiresAt is still valid: the expiry check is now >= ExpiresAt + tolerance");
+    }
+
+    [Fact]
+    public async Task FindAsync_one_tick_before_ExpiresAt_plus_tolerance_is_still_valid()
+    {
+        var startTime = new DateTimeOffset(2090, 1, 1, 12, 0, 0, TimeSpan.Zero);
+        var tolerance = TimeSpan.FromSeconds(5);
+        var expiresAt = startTime.AddMinutes(1);
+
+        var serverOptions = new AuthorizationServerOptions { ClockSkewTolerance = tolerance };
+        var tp = new FakeTimeProvider(startTime);
+        var store = CreateStore(serverOptions: serverOptions, timeProvider: tp);
+        const string handle = "find-skew-one-tick-before";
+        var entry = BuildEntry(issuedAt: startTime, expiresAt: expiresAt);
+
+        await store.StoreAsync(handle, entry, CancellationToken.None);
+
+        // Advance to ExpiresAt + tolerance - 1 tick — one tick inside the grace window
+        tp.Advance(expiresAt - startTime + tolerance - TimeSpan.FromTicks(1));
+        var result = await store.FindAsync(handle, CancellationToken.None);
+
+        result.Should().NotBeNull(
+            because: "now == ExpiresAt + tolerance - 1 tick is still within the grace window");
+    }
+
+    [Fact]
+    public async Task FindAsync_at_ExpiresAt_plus_tolerance_is_expired()
+    {
+        var startTime = new DateTimeOffset(2090, 1, 1, 12, 0, 0, TimeSpan.Zero);
+        var tolerance = TimeSpan.FromSeconds(5);
+        var expiresAt = startTime.AddMinutes(1);
+
+        var serverOptions = new AuthorizationServerOptions { ClockSkewTolerance = tolerance };
+        var tp = new FakeTimeProvider(startTime);
+        var store = CreateStore(serverOptions: serverOptions, timeProvider: tp);
+        const string handle = "find-skew-at-boundary";
+        var entry = BuildEntry(issuedAt: startTime, expiresAt: expiresAt);
+
+        await store.StoreAsync(handle, entry, CancellationToken.None);
+
+        // Advance to exactly ExpiresAt + tolerance — the grace window has ended
+        tp.Advance(expiresAt - startTime + tolerance);
+        var result = await store.FindAsync(handle, CancellationToken.None);
+
+        result.Should().BeNull(
+            because: "now == ExpiresAt + tolerance is expired: the check is now >= ExpiresAt + tolerance");
     }
 
     // ── AC 8 — RevokeFamilyAsync then FindAsync → null ───────────────────────────────────────────

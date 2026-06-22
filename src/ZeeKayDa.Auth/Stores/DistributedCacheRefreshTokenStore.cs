@@ -75,6 +75,7 @@ internal sealed class DistributedCacheRefreshTokenStore : IRefreshTokenStore
     private readonly IDataProtector _protector;
     private readonly TimeSpan _refreshTokenLifetime;
     private readonly TimeProvider _timeProvider;
+    private readonly TimeSpan _clockSkewTolerance;
 
     /// <summary>
     /// Initialises a new <see cref="DistributedCacheRefreshTokenStore"/>.
@@ -100,6 +101,7 @@ internal sealed class DistributedCacheRefreshTokenStore : IRefreshTokenStore
         _protector = dataProtectionProvider.CreateProtector(DataProtectionPurpose);
         _refreshTokenLifetime = serverOptions.Value.TokenEndpoint.RefreshTokenLifetime;
         _timeProvider = timeProvider;
+        _clockSkewTolerance = serverOptions.Value.ClockSkewTolerance;
     }
 
     /// <inheritdoc/>
@@ -174,7 +176,7 @@ internal sealed class DistributedCacheRefreshTokenStore : IRefreshTokenStore
         if (payload.IsConsumed)
             return null;
 
-        if (_timeProvider.GetUtcNow() >= payload.Entry!.ExpiresAt)
+        if (_timeProvider.GetUtcNow() >= payload.Entry!.ExpiresAt + _clockSkewTolerance)
             return null;
 
         var markerKey = BuildRevocationMarkerKey(ComputeHashedSegment(payload.Entry.FamilyId));
@@ -240,7 +242,7 @@ internal sealed class DistributedCacheRefreshTokenStore : IRefreshTokenStore
         if (payload.IsConsumed)
             return new RefreshTokenConsumptionOutcome.AlreadyConsumed { FamilyId = payload.FamilyId! };
 
-        if (_timeProvider.GetUtcNow() >= payload.Entry!.ExpiresAt)
+        if (_timeProvider.GetUtcNow() >= payload.Entry!.ExpiresAt + _clockSkewTolerance)
             return new RefreshTokenConsumptionOutcome.NotFound();
 
         var markerKey = BuildRevocationMarkerKey(ComputeHashedSegment(payload.Entry.FamilyId));
