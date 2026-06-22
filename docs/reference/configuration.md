@@ -541,4 +541,6 @@ They are visible in the startup output and host logs.
 
 - [Configure ZeeKayDa.Auth](../how-to/configure-zeekayda-auth.md) — step-by-step setup guide
 - [Configure discovery](../how-to/configure-discovery.md) — how to tune the discovery document
+- [Configure token stores](../how-to/configure-token-stores.md) — step-by-step token store setup
+- [Token stores](token-stores.md) — reference for `IAuthorizationCodeStore`, `IRefreshTokenStore`, lifetime options, and `ZeeKayDaStoreException`
 - [Discovery endpoint](discovery-endpoint.md) — full contract for the discovery endpoint
