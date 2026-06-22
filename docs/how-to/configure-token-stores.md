@@ -35,7 +35,7 @@ Call `.AddInMemoryStores()` on the builder to register both stores in one step:
 
 ```csharp
 using ZeeKayDa.Auth;
-using ZeeKayDa.Auth.AspNetCore.Extensions;
+using Microsoft.Extensions.DependencyInjection;
 
 var builder = WebApplication.CreateBuilder(args);
 
