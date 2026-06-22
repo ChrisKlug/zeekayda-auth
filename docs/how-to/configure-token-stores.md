@@ -84,7 +84,9 @@ The distributed-cache stores have two atomicity gaps. You need to decide whether
 
 **TOCTOU on single-use code redemption.** `TryRedeemAsync` performs a read-then-write as two separate cache calls. Because ASP.NET Core / Kestrel serves concurrent requests across the thread pool, two requests can both read the same code as "not yet redeemed" before either writes the tombstone, causing double-redemption. This race exists on any deployment — single or multi-instance — whenever the application handles concurrent requests. The window spans two round-trips to the cache backend and may be an acceptable risk for low-traffic internal applications where concurrent authorization code redemption is implausible, but it cannot be ruled out by instance count alone.
 
-**Tombstone and revocation marker eviction.** If your cache backend evicts entries under memory pressure before their TTL expires (for example, Redis with `maxmemory-policy allkeys-lru`), tombstones and family revocation markers can disappear early. A replayed authorization code would then appear fresh, or a revoked refresh token family would appear valid. Configuring Redis with `noeviction` (or `volatile-ttl` with sufficient allocated memory) eliminates this risk.
+**Tombstone and revocation marker eviction.** If your cache backend evicts entries under memory pressure before their TTL expires (for example, Redis with `maxmemory-policy allkeys-lru`), tombstones and family revocation markers can disappear early. A replayed authorization code would then appear fresh, or a revoked refresh token family would appear valid.
+
+Every entry the distributed-cache stores write carries an absolute expiry, making each entry "volatile" in Redis terminology. Under `volatile-ttl`, Redis evicts volatile keys with the nearest TTL first under memory pressure — tombstones and revocation markers are candidates for eviction, not protected from it. Only `noeviction` actually prevents this: instead of silently discarding data, Redis refuses writes, which the stores surface as `ZeeKayDaStoreException` (fail-closed). Configuring Redis with `noeviction` is the only policy that eliminates this risk.
 
 **Acceptable configurations (you decide):**
 
@@ -162,6 +164,8 @@ builder.Services.AddZeeKayDaAuth(options =>
     options.ClockSkewTolerance = TimeSpan.FromSeconds(5);
 });
 ```
+
+> 💡 **Tip:** `RefreshTokenLifetime` is an **idle timeout**, not an absolute session duration. Refresh tokens rotate on every use — each successful token refresh tombstones the old token and issues a new one with a fresh `RefreshTokenLifetime` window. A user who refreshes regularly can therefore maintain their session indefinitely. To enforce an absolute session cap you would need a mechanism outside `RefreshTokenLifetime`; ZeeKayDa.Auth does not currently provide one.
 
 For the valid ranges and the security trade-offs of each value, see [Token stores — Lifetime options](../reference/token-stores.md#lifetime-options).
 

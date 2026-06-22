@@ -24,7 +24,7 @@ For step-by-step registration instructions, see [Configure token stores](../how-
 |---|---|---|
 | Local development | `.AddInMemoryAuthorizationCodeStore()` | `.AddInMemoryRefreshTokenStore()` |
 | Integration tests | `.AddInMemoryAuthorizationCodeStore()` | `.AddInMemoryRefreshTokenStore()` |
-| Production (any instance count) where the concurrent-redemption race and eviction risk are explicitly accepted | `.AddDistributedCacheAuthorizationCodeStore()` — the TOCTOU race applies on any deployment (see [Distributed-cache stores](#distributed-cache-backed-stores)); ensure cache is configured with `noeviction` or `volatile-ttl` with adequate memory | `.AddDistributedCacheRefreshTokenStore()` — same trade-offs apply |
+| Production (any instance count) where the concurrent-redemption race and eviction risk are explicitly accepted | `.AddDistributedCacheAuthorizationCodeStore()` — the TOCTOU race applies on any deployment (see [Distributed-cache stores](#distributed-cache-backed-stores)); ensure cache is configured with `noeviction` | `.AddDistributedCacheRefreshTokenStore()` — same trade-offs apply |
 | Production where replay attacks are in the threat model, or any deployment with an evicting cache under memory pressure | Custom atomic store (Redis + Lua, SQL with optimistic concurrency) | Custom atomic store (same backends) |
 
 > ⚠️ **Warning:** Both in-memory stores are development and testing only. They lose all tokens on restart and silently disable single-use enforcement and reuse detection across multiple instances. Outside a `Development` environment the framework refuses to start with in-memory stores unless `AllowInMemoryStoresOutsideDevelopment` is set to `true`.
@@ -132,6 +132,8 @@ Controls how long an issued refresh token remains valid before expiring naturall
 options.TokenEndpoint.RefreshTokenLifetime = TimeSpan.FromDays(14);
 ```
 
+> 💡 **Tip:** `RefreshTokenLifetime` is an **idle timeout**, not an absolute session duration. Refresh tokens rotate on every use: each successful token refresh tombstones the old token and issues a new one with a fresh `RefreshTokenLifetime` window. A user who refreshes regularly can therefore maintain their session indefinitely. To enforce an absolute session cap you would need a mechanism outside `RefreshTokenLifetime` — ZeeKayDa.Auth does not currently provide one.
+
 `RefreshTokenLifetime` also governs tombstone retention for both store implementations: authorization code tombstones (records of redemption) are kept for `RefreshTokenLifetime` so that a replay of a redeemed code always produces `AlreadyRedeemed`, not `NotFound`, within the window in which the issued refresh token could still be alive.
 
 > ⚠️ **Warning:** ASP.NET Core Data Protection key retention must be at least `RefreshTokenLifetime`. Shorter retention causes stored token entries to become unreadable after key rotation, which surfaces as `NotFound` at request time and silently logs out every user holding a token issued under the rotated key. Configure key persistence and retention duration accordingly before deploying to production.
@@ -197,7 +199,9 @@ builder.Services
 
 **2. Tombstone and revocation marker eviction.** `IDistributedCache` can evict entries under memory pressure before their configured TTL expires. If a tombstone (for a replayed authorization code) or a family revocation marker is evicted early, the protection it provides disappears — a replayed code appears fresh, or a revoked family token appears valid.
 
-*This matters when:* your cache backend has a memory limit and can evict data. Redis configured with `maxmemory-policy allkeys-lru` is the common case where this risk applies. A Redis instance configured with `noeviction` (or `volatile-ttl` with a memory allocation large enough to hold all active entries) eliminates this risk.
+*This matters when:* your cache backend has a memory limit and can evict data. Redis configured with `maxmemory-policy allkeys-lru` is the common case where this risk applies.
+
+Every entry the distributed-cache stores write carries an absolute expiry, making each entry "volatile" in Redis terminology. Under `volatile-ttl`, Redis evicts volatile keys with the nearest TTL first when memory is full — which means tombstones and revocation markers are candidates for eviction, not protected from it. Only `noeviction` actually prevents eviction of these entries: instead of silently discarding data, Redis refuses writes and the stores surface the failure as `ZeeKayDaStoreException` (fail-closed). A Redis instance configured with `noeviction` eliminates this risk.
 
 **When the distributed-cache stores are acceptable for production:**
 
