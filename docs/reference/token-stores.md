@@ -24,8 +24,8 @@ For step-by-step registration instructions, see [Configure token stores](../how-
 |---|---|---|
 | Local development | `.AddInMemoryAuthorizationCodeStore()` | `.AddInMemoryRefreshTokenStore()` |
 | Integration tests | `.AddInMemoryAuthorizationCodeStore()` | `.AddInMemoryRefreshTokenStore()` |
-| Single-instance production with a non-evicting cache backend | `.AddDistributedCacheAuthorizationCodeStore()` — TOCTOU gap does not apply on a single instance; ensure cache is configured with `noeviction` or `volatile-ttl` with adequate memory (see [Distributed-cache stores](#distributed-cache-backed-stores)) | `.AddDistributedCacheRefreshTokenStore()` — same cache-eviction caveat applies |
-| Multi-instance production where TOCTOU risk is unacceptable, or any deployment with an evicting cache under memory pressure | Custom atomic store (Redis + Lua, SQL with optimistic concurrency) | Custom atomic store (same backends) |
+| Production (any instance count) where the concurrent-redemption race and eviction risk are explicitly accepted | `.AddDistributedCacheAuthorizationCodeStore()` — the TOCTOU race applies on any deployment (see [Distributed-cache stores](#distributed-cache-backed-stores)); ensure cache is configured with `noeviction` or `volatile-ttl` with adequate memory | `.AddDistributedCacheRefreshTokenStore()` — same trade-offs apply |
+| Production where replay attacks are in the threat model, or any deployment with an evicting cache under memory pressure | Custom atomic store (Redis + Lua, SQL with optimistic concurrency) | Custom atomic store (same backends) |
 
 > ⚠️ **Warning:** Both in-memory stores are development and testing only. They lose all tokens on restart and silently disable single-use enforcement and reuse detection across multiple instances. Outside a `Development` environment the framework refuses to start with in-memory stores unless `AllowInMemoryStoresOutsideDevelopment` is set to `true`.
 
@@ -191,22 +191,22 @@ builder.Services
 
 **Atomicity trade-offs.** The distributed-cache stores use `IDistributedCache`, which does not provide an atomic check-and-set primitive. This creates two concrete gaps that operators must evaluate before choosing these stores for production:
 
-**1. TOCTOU on single-use code redemption.** `TryRedeemAsync` performs a read-then-write using two separate `IDistributedCache` calls. Under concurrent redemption of the same authorization code from two instances simultaneously, both can read "not yet redeemed" before either writes the tombstone, allowing double-redemption. The window spans two round-trips to the cache backend.
+**1. TOCTOU on single-use code redemption.** `TryRedeemAsync` performs a read-then-write using two separate `IDistributedCache` calls. Because ASP.NET Core / Kestrel serves concurrent requests across the thread pool, two concurrent requests for the same authorization code can both read "not yet redeemed" before either writes the tombstone, allowing double-redemption. The window spans two round-trips to the cache backend. This race exists on any deployment — single or multi-instance — whenever the application processes concurrent requests.
 
-*This matters when:* you have multiple instances AND an adversary or buggy client that can race concurrent redemption requests. A single-instance deployment eliminates this risk entirely — ASP.NET Core / Kestrel does serve concurrent requests across thread-pool threads, but the thread-pool scheduling window is negligible compared to a full network round-trip to the cache.
+*This matters when:* an adversary or buggy client can race concurrent redemption requests. The risk may be acceptable for low-traffic internal applications where simultaneous authorization code redemption is implausible, but it cannot be eliminated by reducing instance count alone.
 
 **2. Tombstone and revocation marker eviction.** `IDistributedCache` can evict entries under memory pressure before their configured TTL expires. If a tombstone (for a replayed authorization code) or a family revocation marker is evicted early, the protection it provides disappears — a replayed code appears fresh, or a revoked family token appears valid.
 
 *This matters when:* your cache backend has a memory limit and can evict data. Redis configured with `maxmemory-policy allkeys-lru` is the common case where this risk applies. A Redis instance configured with `noeviction` (or `volatile-ttl` with a memory allocation large enough to hold all active entries) eliminates this risk.
 
-**When the distributed-cache stores are appropriate for production:**
+**When the distributed-cache stores are acceptable for production:**
 
-- Single-instance deployments where the TOCTOU gap cannot occur, with a cache backend configured to never evict entries under memory pressure.
-- Any deployment where double-redemption or marker eviction is within the accepted threat model (for example, an internal tool with trusted clients and no adversarial replay risk).
+- Any deployment where the TOCTOU concurrent-redemption race is within the accepted threat model (for example, an internal tool with trusted clients and no adversarial replay risk) AND the cache backend is configured to never evict entries under memory pressure.
+- Any deployment where both limitations above are within the accepted threat model.
 
 **When they are not appropriate:**
 
-- Multi-instance deployments where concurrent redemption from two instances is possible AND replay attacks are in the threat model.
+- Any deployment where replay attacks are in the threat model and concurrent token requests are possible — which is true of any non-trivial deployment regardless of instance count.
 - Any deployment backed by a cache with an evicting `maxmemory-policy` and no margin to guarantee all tombstones and revocation markers are retained for their full TTL.
 
 > ⚠️ **Warning:** If both limitations above apply to your deployment, use a custom atomic store (Redis + Lua, SQL with optimistic concurrency, or equivalent) instead. The distributed-cache stores do not provide the atomicity guarantees required by [RFC 9700 §2.1.1](https://www.rfc-editor.org/rfc/rfc9700#section-2.1.1) and [RFC 9700 §4.14.2](https://www.rfc-editor.org/rfc/rfc9700#section-4.14.2) under those conditions.

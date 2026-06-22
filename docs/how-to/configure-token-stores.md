@@ -22,8 +22,8 @@ For the full API reference, see [Token stores](../reference/token-stores.md).
 |---|---|
 | Local development | `.AddInMemoryStores()` |
 | Integration tests | `.AddInMemoryStores()` |
-| Single-instance production with a non-evicting cache backend | `.AddDistributedCacheTokenStores()` — see trade-offs below |
-| Multi-instance production, or any deployment with an evicting cache and a replay-attack threat model | Custom atomic stores |
+| Production (any instance count) where concurrent-redemption race and eviction risk are explicitly accepted | `.AddDistributedCacheTokenStores()` — see trade-offs below |
+| Production where replay attacks are in the threat model, or any deployment with an evicting cache | Custom atomic stores |
 
 > ⚠️ **Warning:** The in-memory stores are development and testing only — they lose all tokens on restart and disable reuse detection across instances. The distributed-cache stores have two concrete atomicity limitations; see [Option 2](#option-2--distributed-cache-stores) for a full trade-off analysis so you can decide whether they are right for your deployment.
 
@@ -82,18 +82,18 @@ builder.Services
 
 The distributed-cache stores have two atomicity gaps. You need to decide whether they apply to your deployment.
 
-**TOCTOU on single-use code redemption.** `TryRedeemAsync` performs a read-then-write as two separate cache calls. On a multi-instance deployment, two instances can both read the same code as "not yet redeemed" before either writes the tombstone, causing double-redemption. This cannot happen on a single-instance deployment.
+**TOCTOU on single-use code redemption.** `TryRedeemAsync` performs a read-then-write as two separate cache calls. Because ASP.NET Core / Kestrel serves concurrent requests across the thread pool, two requests can both read the same code as "not yet redeemed" before either writes the tombstone, causing double-redemption. This race exists on any deployment — single or multi-instance — whenever the application handles concurrent requests. The window spans two round-trips to the cache backend and may be an acceptable risk for low-traffic internal applications where concurrent authorization code redemption is implausible, but it cannot be ruled out by instance count alone.
 
 **Tombstone and revocation marker eviction.** If your cache backend evicts entries under memory pressure before their TTL expires (for example, Redis with `maxmemory-policy allkeys-lru`), tombstones and family revocation markers can disappear early. A replayed authorization code would then appear fresh, or a revoked refresh token family would appear valid. Configuring Redis with `noeviction` (or `volatile-ttl` with sufficient allocated memory) eliminates this risk.
 
-**Safe configurations:**
+**Acceptable configurations (you decide):**
 
-- Single-instance deployment + cache configured with `noeviction` or `volatile-ttl` with adequate memory.
-- Any deployment where double-redemption or marker eviction is within the accepted threat model.
+- Any deployment where the TOCTOU concurrent-redemption window is within the accepted threat model (for example, an internal tool with trusted clients and no adversarial replay risk) AND the cache backend is configured to never evict entries under memory pressure.
+- Any deployment where both limitations above are within the accepted threat model.
 
-**Not safe:**
+**Not acceptable:**
 
-- Multi-instance deployment where concurrent redemption from two instances is possible AND replay attacks are in the threat model.
+- Any deployment where replay attacks are in the threat model and concurrent token requests are possible — which is true of any non-trivial deployment. Use a custom atomic store instead.
 - Any deployment backed by an evicting cache (e.g. Redis `allkeys-lru`) without sufficient memory headroom to guarantee tombstones and revocation markers are never evicted.
 
 For the full reference, see [Distributed-cache stores — atomicity trade-offs](../reference/token-stores.md#distributed-cache-backed-stores).
