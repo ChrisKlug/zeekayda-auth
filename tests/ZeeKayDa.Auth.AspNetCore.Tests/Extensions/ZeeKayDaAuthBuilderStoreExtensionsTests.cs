@@ -438,6 +438,287 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
             .WithMessage("*IRefreshTokenStore is already registered*");
     }
 
+    // ── AddDistributedCacheAuthorizationCodeStore: argument validation ────────────────────────────
+
+    [Fact]
+    public void AddDistributedCacheAuthorizationCodeStore_throws_ArgumentNullException_when_builder_is_null()
+    {
+        var act = () => ((ZeeKayDaAuthBuilder)null!).AddDistributedCacheAuthorizationCodeStore();
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("builder");
+    }
+
+    // ── AddDistributedCacheAuthorizationCodeStore: happy path ────────────────────────────────────
+
+    [Fact]
+    public void AddDistributedCacheAuthorizationCodeStore_returns_builder_for_chaining()
+    {
+        var services = new ServiceCollection();
+        var builder = new ZeeKayDaAuthBuilder(services);
+
+        var returned = builder.AddDistributedCacheAuthorizationCodeStore();
+
+        returned.Should().BeSameAs(builder);
+    }
+
+    [Fact]
+    public void AddDistributedCacheAuthorizationCodeStore_registers_IAuthorizationCodeStore_as_singleton_with_DistributedCacheAuthorizationCodeStore_implementation()
+    {
+        var services = new ServiceCollection();
+        var builder = new ZeeKayDaAuthBuilder(services);
+
+        builder.AddDistributedCacheAuthorizationCodeStore();
+
+        services.Should().Contain(sd =>
+            sd.ServiceType == typeof(IAuthorizationCodeStore) &&
+            sd.ImplementationType == typeof(DistributedCacheAuthorizationCodeStore) &&
+            sd.Lifetime == ServiceLifetime.Singleton);
+    }
+
+    [Fact]
+    public void AddDistributedCacheAuthorizationCodeStore_registers_DistributedCacheStoreStartupValidator_as_IHostedService()
+    {
+        var services = new ServiceCollection();
+        var builder = new ZeeKayDaAuthBuilder(services);
+
+        builder.AddDistributedCacheAuthorizationCodeStore();
+
+        services.Should().Contain(sd =>
+            sd.ServiceType == typeof(IHostedService) &&
+            sd.ImplementationType == typeof(DistributedCacheStoreStartupValidator));
+    }
+
+    // ── AddDistributedCacheAuthorizationCodeStore: double-registration guard ─────────────────────
+
+    [Fact]
+    public void AddDistributedCacheAuthorizationCodeStore_throws_InvalidOperationException_when_IAuthorizationCodeStore_is_already_registered()
+    {
+        var services = new ServiceCollection();
+        var builder = new ZeeKayDaAuthBuilder(services);
+        builder.AddDistributedCacheAuthorizationCodeStore();
+
+        var act = () => builder.AddDistributedCacheAuthorizationCodeStore();
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*IAuthorizationCodeStore is already registered*");
+    }
+
+    [Fact]
+    public void AddDistributedCacheAuthorizationCodeStore_throws_InvalidOperationException_when_generic_AddAuthorizationCodeStore_was_called_first()
+    {
+        var services = new ServiceCollection();
+        var builder = new ZeeKayDaAuthBuilder(services);
+        builder.AddAuthorizationCodeStore<StubAuthorizationCodeStore>();
+
+        var act = () => builder.AddDistributedCacheAuthorizationCodeStore();
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*IAuthorizationCodeStore is already registered*");
+    }
+
+    // ── AddDistributedCacheAuthorizationCodeStore: isolation ─────────────────────────────────────
+
+    [Fact]
+    public void AddDistributedCacheAuthorizationCodeStore_does_not_register_IRefreshTokenStore()
+    {
+        var services = new ServiceCollection();
+        var builder = new ZeeKayDaAuthBuilder(services);
+
+        builder.AddDistributedCacheAuthorizationCodeStore();
+
+        services.Should().NotContain(sd => sd.ServiceType == typeof(IRefreshTokenStore));
+    }
+
+    // ── AddDistributedCacheRefreshTokenStore: argument validation ─────────────────────────────────
+
+    [Fact]
+    public void AddDistributedCacheRefreshTokenStore_throws_ArgumentNullException_when_builder_is_null()
+    {
+        var act = () => ((ZeeKayDaAuthBuilder)null!).AddDistributedCacheRefreshTokenStore();
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("builder");
+    }
+
+    // ── AddDistributedCacheRefreshTokenStore: happy path ─────────────────────────────────────────
+
+    [Fact]
+    public void AddDistributedCacheRefreshTokenStore_returns_builder_for_chaining()
+    {
+        var services = new ServiceCollection();
+        var builder = new ZeeKayDaAuthBuilder(services);
+
+        var returned = builder.AddDistributedCacheRefreshTokenStore();
+
+        returned.Should().BeSameAs(builder);
+    }
+
+    [Fact]
+    public void AddDistributedCacheRefreshTokenStore_registers_IRefreshTokenStore_as_singleton_with_DistributedCacheRefreshTokenStore_implementation()
+    {
+        var services = new ServiceCollection();
+        var builder = new ZeeKayDaAuthBuilder(services);
+
+        builder.AddDistributedCacheRefreshTokenStore();
+
+        services.Should().Contain(sd =>
+            sd.ServiceType == typeof(IRefreshTokenStore) &&
+            sd.ImplementationType == typeof(DistributedCacheRefreshTokenStore) &&
+            sd.Lifetime == ServiceLifetime.Singleton);
+    }
+
+    [Fact]
+    public void AddDistributedCacheRefreshTokenStore_registers_DistributedCacheStoreStartupValidator_as_IHostedService()
+    {
+        var services = new ServiceCollection();
+        var builder = new ZeeKayDaAuthBuilder(services);
+
+        builder.AddDistributedCacheRefreshTokenStore();
+
+        services.Should().Contain(sd =>
+            sd.ServiceType == typeof(IHostedService) &&
+            sd.ImplementationType == typeof(DistributedCacheStoreStartupValidator));
+    }
+
+    // ── AddDistributedCacheRefreshTokenStore: double-registration guard ───────────────────────────
+
+    [Fact]
+    public void AddDistributedCacheRefreshTokenStore_throws_InvalidOperationException_when_IRefreshTokenStore_is_already_registered()
+    {
+        var services = new ServiceCollection();
+        var builder = new ZeeKayDaAuthBuilder(services);
+        builder.AddDistributedCacheRefreshTokenStore();
+
+        var act = () => builder.AddDistributedCacheRefreshTokenStore();
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*IRefreshTokenStore is already registered*");
+    }
+
+    [Fact]
+    public void AddDistributedCacheRefreshTokenStore_throws_InvalidOperationException_when_generic_AddRefreshTokenStore_was_called_first()
+    {
+        var services = new ServiceCollection();
+        var builder = new ZeeKayDaAuthBuilder(services);
+        builder.AddRefreshTokenStore<StubRefreshTokenStore>();
+
+        var act = () => builder.AddDistributedCacheRefreshTokenStore();
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*IRefreshTokenStore is already registered*");
+    }
+
+    // ── AddDistributedCacheRefreshTokenStore: isolation ───────────────────────────────────────────
+
+    [Fact]
+    public void AddDistributedCacheRefreshTokenStore_does_not_register_IAuthorizationCodeStore()
+    {
+        var services = new ServiceCollection();
+        var builder = new ZeeKayDaAuthBuilder(services);
+
+        builder.AddDistributedCacheRefreshTokenStore();
+
+        services.Should().NotContain(sd => sd.ServiceType == typeof(IAuthorizationCodeStore));
+    }
+
+    // ── AddDistributedCacheTokenStores: argument validation ───────────────────────────────────────
+
+    [Fact]
+    public void AddDistributedCacheTokenStores_throws_ArgumentNullException_when_builder_is_null()
+    {
+        ZeeKayDaAuthBuilder builder = null!;
+        var act = () => builder.AddDistributedCacheTokenStores();
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("builder");
+    }
+
+    // ── AddDistributedCacheTokenStores: happy path ────────────────────────────────────────────────
+
+    [Fact]
+    public void AddDistributedCacheTokenStores_returns_builder_for_chaining()
+    {
+        var services = new ServiceCollection();
+        var builder = new ZeeKayDaAuthBuilder(services);
+
+        var returned = builder.AddDistributedCacheTokenStores();
+
+        returned.Should().BeSameAs(builder);
+    }
+
+    [Fact]
+    public void AddDistributedCacheTokenStores_registers_both_IAuthorizationCodeStore_and_IRefreshTokenStore()
+    {
+        var services = new ServiceCollection();
+        var builder = new ZeeKayDaAuthBuilder(services);
+
+        builder.AddDistributedCacheTokenStores();
+
+        services.Should().Contain(sd =>
+            sd.ServiceType == typeof(IAuthorizationCodeStore) &&
+            sd.ImplementationType == typeof(DistributedCacheAuthorizationCodeStore));
+        services.Should().Contain(sd =>
+            sd.ServiceType == typeof(IRefreshTokenStore) &&
+            sd.ImplementationType == typeof(DistributedCacheRefreshTokenStore));
+    }
+
+    [Fact]
+    public void AddDistributedCacheTokenStores_registers_DistributedCacheStoreStartupValidator_exactly_once()
+    {
+        var services = new ServiceCollection();
+        var builder = new ZeeKayDaAuthBuilder(services);
+
+        builder.AddDistributedCacheTokenStores();
+
+        services.Count(sd =>
+            sd.ServiceType == typeof(IHostedService) &&
+            sd.ImplementationType == typeof(DistributedCacheStoreStartupValidator))
+            .Should().Be(1, "TryAddEnumerable ensures idempotent registration across both calls");
+    }
+
+    [Fact]
+    public void Calling_AddDistributedCacheAuthorizationCodeStore_and_AddDistributedCacheRefreshTokenStore_separately_registers_DistributedCacheStoreStartupValidator_exactly_once()
+    {
+        var services = new ServiceCollection();
+        var builder = new ZeeKayDaAuthBuilder(services);
+
+        builder.AddDistributedCacheAuthorizationCodeStore();
+        builder.AddDistributedCacheRefreshTokenStore();
+
+        services.Count(sd =>
+            sd.ServiceType == typeof(IHostedService) &&
+            sd.ImplementationType == typeof(DistributedCacheStoreStartupValidator))
+            .Should().Be(1, "TryAddEnumerable ensures idempotent registration when called independently");
+    }
+
+    // ── AddDistributedCacheTokenStores: per-interface guard independence ──────────────────────────
+
+    [Fact]
+    public void AddDistributedCacheTokenStores_throws_InvalidOperationException_when_IAuthorizationCodeStore_is_already_registered_even_if_IRefreshTokenStore_is_not()
+    {
+        var services = new ServiceCollection();
+        var builder = new ZeeKayDaAuthBuilder(services);
+        builder.AddDistributedCacheAuthorizationCodeStore();
+
+        var act = () => builder.AddDistributedCacheTokenStores();
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*IAuthorizationCodeStore is already registered*");
+    }
+
+    [Fact]
+    public void AddDistributedCacheTokenStores_throws_InvalidOperationException_when_IRefreshTokenStore_is_already_registered_even_if_IAuthorizationCodeStore_is_not()
+    {
+        var services = new ServiceCollection();
+        var builder = new ZeeKayDaAuthBuilder(services);
+        builder.AddDistributedCacheRefreshTokenStore();
+
+        // AddDistributedCacheTokenStores calls AddDistributedCacheAuthorizationCodeStore first,
+        // which succeeds, then AddDistributedCacheRefreshTokenStore, which must throw.
+        var act = () => builder.AddDistributedCacheTokenStores();
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*IRefreshTokenStore is already registered*");
+    }
+
     // ── No-op stub implementations ────────────────────────────────────────────────────────────────
 
     private sealed class StubAuthorizationCodeStore : IAuthorizationCodeStore
