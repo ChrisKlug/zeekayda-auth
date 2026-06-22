@@ -73,6 +73,30 @@ Work follows six phases. **The main agent is an orchestrator — it routes work 
 6. PR        ──►  security     Review any PR touching tokens, crypto, or endpoints.
              ──►  docs         Gate-check that documentation is complete before merge.
 ```
+## Agent Orchestration — MAIN ORCHESTRATOR ONLY
+
+> **STOP. If you are a specialist agent (`developer`, `tester`, `architect`, `security`, `docs`, `maintainer`), this section does NOT apply to you. Do not read or act on the routing table below. Execute your own domain work directly and return your results to whoever called you. Delegating to another specialist agent from here creates an infinite loop.**
+
+**The main Claude Code session routes and synthesises. It never does specialist work itself.** Executing a task directly — rather than delegating — bypasses that agent's system prompt, coding standards, and domain rules. The whole point of specialist agents is lost.
+
+| Task | Agent |
+|---|---|
+| Writing or changing C# code (features, bug fixes, refactors, tests) | `developer` |
+| Designing abstractions, reviewing API shape, writing ADRs | `architect` |
+| Writing or updating Markdown documentation | `docs` |
+| Security review, threat modelling, OAuth/OIDC correctness | `security` |
+| Writing or verifying tests, checking acceptance criteria | `tester` |
+| GitHub issues, triage, PR management, project process | `maintainer` |
+
+> The main Claude Code session does **NOT** need to inspect the code before delegating work. It **only** needs to figure out what specialist agent is the best choice for the current task, and then delegate it. The specialist handles all things is needs on its own!
+
+**Specialist vs specs.** If there is a conflict between the output of a specialist and a spec, the spec always wins!
+
+**The threshold for delegation is low.** A one-line C# fix still goes to `developer`. A simple new issue still goes to `maintainer`. A docs typo still goes to `docs`. Task type determines the agent — not complexity or size.
+
+When in doubt which agent applies, read the `description` field in `.claude/agents/<agent>.md` — it states exactly when to invoke that agent.
+
+**Missing specialist.** If no specialist seems to fit that is is needed, let the user know and ask for guidance. It might be a gap in the process!
 
 ## AGENT TOOL INITIALIZATION REQUIREMENT
 If you are operating as a subagent, your initial context does NOT contain your full toolset due to deferred tool loading. You cannot execute file writes or web searches immediately.
@@ -122,32 +146,13 @@ After writing or editing code, check LSP diagnostics before moving on. Fix any t
 
 And just to make it clear, this is **REALLY** important! Stop using `grep` unless you have to!!!
 
-## Agent Orchestration — MAIN ORCHESTRATOR ONLY
+## Opinion vs spec
 
-> **STOP. If you are a specialist agent (`developer`, `tester`, `architect`, `security`, `docs`, `maintainer`), this section does NOT apply to you. Do not read or act on the routing table below. Execute your own domain work directly and return your results to whoever called you. Delegating to another specialist agent from here creates an infinite loop.**
-
-**The main Claude Code session routes and synthesises. It never does specialist work itself.** Executing a task directly — rather than delegating — bypasses that agent's system prompt, coding standards, and domain rules. The whole point of specialist agents is lost.
-
-| Task | Agent |
-|---|---|
-| Writing or changing C# code (features, bug fixes, refactors, tests) | `developer` |
-| Designing abstractions, reviewing API shape, writing ADRs | `architect` |
-| Writing or updating Markdown documentation | `docs` |
-| Security review, threat modelling, OAuth/OIDC correctness | `security` |
-| Writing or verifying tests, checking acceptance criteria | `tester` |
-| GitHub issues, triage, PR management, project process | `maintainer` |
-
-**Specialist vs specs.** If there is a conflict between the output of a specialist and a spec, the spec always wins!
-
-**The threshold for delegation is low.** A one-line C# fix still goes to `developer`. A simple new issue still goes to `maintainer`. A docs typo still goes to `docs`. Task type determines the agent — not complexity or size.
-
-When in doubt which agent applies, read the `description` field in `.claude/agents/<agent>.md` — it states exactly when to invoke that agent.
-
-**Missing specialist.** If no specialist seems to fit that is is needed, let the user know and ask for guidance. It might be a gap in the process!
+If there is a conflict between your opnion and a spec, the spec always wins! This project needs to follow specs properly, so if the spec says something that you don't agree with, it **still wins**!
 
 ## User Interaction
 
-**VERY IMPORTANT!** This applies to *ALL* agents. Always adere to these principles!
+**VERY IMPORTANT!** Always adhere to these principles!
 
 ### Ask before deciding
 
