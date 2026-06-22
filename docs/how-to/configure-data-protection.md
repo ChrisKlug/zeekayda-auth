@@ -40,12 +40,18 @@ re-authenticate.
 
 ### Authentication-state cookies
 
-ZeeKayDa.Auth registers several internal named cookie authentication schemes:
+ZeeKayDa.Auth registers four internal named cookie authentication schemes:
 
+- `zkd.session` — SSO session cookie, shared across all authentication methods. This is the
+  longest-lived of the four cookies: its lifetime is tied to the SSO session rather than to a
+  single authorization flow, so a returning user may hold a `zkd.session` cookie that was
+  written days or weeks before the current request. A key-ring gap is therefore most visible
+  for returning users — their `zkd.session` cookie was encrypted by a key that the new
+  instance does not yet hold, forcing a silent re-authentication even though the user
+  successfully signed in previously.
 - `zkd.interaction` — carries the authorization interaction context between redirects
 - `zkd.pending` — carries the half-authenticated principal during multi-step sign-in
 - `zkd.external` — carries the result of an external provider callback
-- The SSO session cookie
 
 These cookies are encrypted by ASP.NET Core's cookie authentication middleware using
 `IDataProtectionProvider`. If a user's browser sends a cookie that was written by instance A
@@ -416,6 +422,25 @@ in logs — the middleware treats an unreadable cookie as absent.
 **Resolution:** Same root cause — instances do not share a key ring. Apply one of the
 scenarios above. If you cannot confirm which instance wrote which cookie, enabling
 temporary sticky sessions while you fix the key ring will stop the re-prompts.
+
+### Startup log level for in-memory store override
+
+If the host uses `AddInMemoryStores()` and is running outside a Development environment
+with `AllowInMemoryStoresOutsideDevelopment = true`, ZeeKayDa.Auth emits a startup message
+via `InMemoryStoreWarningService` to alert operators that in-memory stores are active. The
+log level differs by environment:
+
+| Environment | `AllowInMemoryStoresOutsideDevelopment` | Log level |
+|---|---|---|
+| Development | n/a | `LogLevel.Warning` |
+| Non-Development | `true` | `LogLevel.Critical` |
+| Non-Development | `false` (default) | Startup exception (`ZeeKayDaConfigurationException`) |
+
+> ⚠️ **Warning:** When filtering application logs at `Warning` level to monitor for ZeeKayDa
+> configuration issues, remember that the in-memory store override message outside Development
+> is emitted at `LogLevel.Critical`. A log filter set to `Warning` and above will capture it;
+> a filter set to exactly `Warning` (treating `Critical` as a separate category) will not.
+> Configure your alerting to include `Critical` events from the `ZeeKayDa.Auth` log category.
 
 ---
 
