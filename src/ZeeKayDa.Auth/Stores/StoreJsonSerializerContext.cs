@@ -1,13 +1,12 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Serialization;
-using ZeeKayDa.Auth.Discovery;
-using ZeeKayDa.Auth.Stores;
 
-namespace ZeeKayDa.Auth.AspNetCore;
+namespace ZeeKayDa.Auth.Stores;
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
-[JsonSerializable(typeof(OpenIdConfigurationDocument))]
 [JsonSerializable(typeof(AuthorizationCodeEntry))]
 [JsonSerializable(typeof(RefreshTokenEntry))]
+[JsonSerializable(typeof(AuthorizationCodeTombstone))]
+[JsonSerializable(typeof(RefreshTokenCachePayload))]
 [ExcludeFromCodeCoverage(Justification = "Source-generated JSON serialization infrastructure — not hand-written logic.")]
-internal sealed partial class ZeeKayDaJsonSerializerContext : JsonSerializerContext { }
+internal sealed partial class StoreJsonSerializerContext : JsonSerializerContext { }

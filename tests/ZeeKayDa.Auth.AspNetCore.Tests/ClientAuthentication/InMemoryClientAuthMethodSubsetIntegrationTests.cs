@@ -1,12 +1,9 @@
-using System.Linq;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using ZeeKayDa.Auth;
-using ZeeKayDa.Auth.AspNetCore;
 using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Tokens;
 
@@ -145,7 +142,8 @@ public sealed class InMemoryClientAuthMethodSubsetIntegrationTests
                             AllowedTokenEndpointAuthMethods =
                                 new HashSet<string>(StringComparer.Ordinal)
                                     { TokenEndpointAuthMethods.ClientSecretPost },
-                        }));
+                        }))
+                .AddInMemoryStores();
             });
 
             builder.Configure(app =>
@@ -193,7 +191,8 @@ public sealed class InMemoryClientAuthMethodSubsetIntegrationTests
                             ["openid"])
                     // AllowedTokenEndpointAuthMethods defaults to { "client_secret_basic" }
                     // which matches the server's AuthMethodsSupported — no override needed.
-                    ));
+                    ))
+                .AddInMemoryStores();
             });
 
             builder.Configure(app =>

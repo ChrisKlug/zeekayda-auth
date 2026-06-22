@@ -6,8 +6,6 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using ZeeKayDa.Auth;
-using ZeeKayDa.Auth.AspNetCore;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests;
@@ -81,6 +79,12 @@ internal sealed class TestWebAppFactory : WebApplicationFactory<TestWebAppFactor
                     [],
                     ["openid"]));
 
+            // Register in-memory stores so the TokenStorePresenceValidator passes at startup.
+            // Tests that need custom stores can register them in _configureBuilder, but since
+            // ThrowIfAlreadyRegistered would reject a second registration, we only call this
+            // when the builder delegate has not registered them yet.
+            authBuilder.AddInMemoryStores();
+
             _configureBuilder?.Invoke(authBuilder);
         });
 
@@ -133,7 +137,8 @@ internal sealed class TestWebAppFactoryWithRemoteIp : WebApplicationFactory<Test
                 clients.AddPublic("test-client",
                     ["https://test.example.com/callback"],
                     [],
-                    ["openid"]));
+                    ["openid"]))
+              .AddInMemoryStores();
         });
 
         builder.Configure(app =>
@@ -174,7 +179,8 @@ internal sealed class TestWebAppFactoryWithPing : WebApplicationFactory<TestWebA
                 clients.AddPublic("test-client",
                     ["https://test.example.com/callback"],
                     [],
-                    ["openid"]));
+                    ["openid"]))
+              .AddInMemoryStores();
         });
 
         builder.Configure(app =>
@@ -226,7 +232,8 @@ internal sealed class TestWebAppFactoryWithVaryMiddleware : WebApplicationFactor
                 clients.AddPublic("test-client",
                     ["https://test.example.com/callback"],
                     [],
-                    ["openid"]));
+                    ["openid"]))
+              .AddInMemoryStores();
         });
 
         var varyToAdd = _varyToAdd;

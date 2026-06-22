@@ -68,7 +68,6 @@ namespace ZeeKayDa.Auth.Stores;
 internal sealed class DistributedCacheRefreshTokenStore : IRefreshTokenStore
 {
     private static readonly string DataProtectionPurpose = "ZeeKayDa.Auth:RefreshTokenStore";
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly byte[] RevocationSentinel = [1];
 
     private readonly IDistributedCache _cache;
@@ -120,8 +119,8 @@ internal sealed class DistributedCacheRefreshTokenStore : IRefreshTokenStore
             if (ttl <= TimeSpan.Zero)
                 throw new ZeeKayDaStoreException("Cannot store an already-expired refresh token entry.");
 
-            var payload = new CachePayload(false, entry, null);
-            var json = JsonSerializer.SerializeToUtf8Bytes(payload, JsonOptions);
+            var payload = new RefreshTokenCachePayload(false, entry, null);
+            var json = JsonSerializer.SerializeToUtf8Bytes(payload, StoreJsonSerializerContext.Default.RefreshTokenCachePayload);
             var protectedBytes = _protector.Protect(json);
 
             var cacheOptions = new DistributedCacheEntryOptions
@@ -161,11 +160,11 @@ internal sealed class DistributedCacheRefreshTokenStore : IRefreshTokenStore
         if (protectedBytes is null)
             return null;
 
-        CachePayload payload;
+        RefreshTokenCachePayload payload;
         try
         {
             var json = _protector.Unprotect(protectedBytes);
-            payload = JsonSerializer.Deserialize<CachePayload>(json, JsonOptions)!;
+            payload = JsonSerializer.Deserialize(json, StoreJsonSerializerContext.Default.RefreshTokenCachePayload)!;
         }
         catch (Exception ex) when (ex is CryptographicException or JsonException)
         {
@@ -227,11 +226,11 @@ internal sealed class DistributedCacheRefreshTokenStore : IRefreshTokenStore
         if (protectedBytes is null)
             return new RefreshTokenConsumptionOutcome.NotFound();
 
-        CachePayload payload;
+        RefreshTokenCachePayload payload;
         try
         {
             var json = _protector.Unprotect(protectedBytes);
-            payload = JsonSerializer.Deserialize<CachePayload>(json, JsonOptions)!;
+            payload = JsonSerializer.Deserialize(json, StoreJsonSerializerContext.Default.RefreshTokenCachePayload)!;
         }
         catch (Exception ex) when (ex is CryptographicException or JsonException)
         {
@@ -270,8 +269,8 @@ internal sealed class DistributedCacheRefreshTokenStore : IRefreshTokenStore
         // ADR 0008 §4a means SetAsync overwrites the live entry in place.
         try
         {
-            var tombstone = new CachePayload(true, null, payload.Entry.FamilyId);
-            var tombstoneJson = JsonSerializer.SerializeToUtf8Bytes(tombstone, JsonOptions);
+            var tombstone = new RefreshTokenCachePayload(true, null, payload.Entry.FamilyId);
+            var tombstoneJson = JsonSerializer.SerializeToUtf8Bytes(tombstone, StoreJsonSerializerContext.Default.RefreshTokenCachePayload);
             var protectedTombstone = _protector.Protect(tombstoneJson);
 
             var cacheOptions = new DistributedCacheEntryOptions
@@ -324,5 +323,6 @@ internal sealed class DistributedCacheRefreshTokenStore : IRefreshTokenStore
     private static string BuildCacheKey(string hashedSegment) => $"zkd:rt:{hashedSegment}";
     private static string BuildRevocationMarkerKey(string hashedSegment) => $"zkd:rt:family:{hashedSegment}:revoked";
 
-    private sealed record CachePayload(bool IsConsumed, RefreshTokenEntry? Entry, string? FamilyId);
 }
+
+internal sealed record RefreshTokenCachePayload(bool IsConsumed, RefreshTokenEntry? Entry, string? FamilyId);
