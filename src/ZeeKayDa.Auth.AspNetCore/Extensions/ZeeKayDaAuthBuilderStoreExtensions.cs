@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.AspNetCore;
 using ZeeKayDa.Auth.Stores;
 
@@ -73,6 +74,11 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
     /// across multiple instances. A startup warning is emitted before the first request.
     /// Do not use in production.
     /// </summary>
+    /// <remarks>
+    /// Outside a Development environment, startup fails with <see cref="ZeeKayDaConfigurationException"/>
+    /// unless <see cref="AuthorizationServerOptions.AllowInMemoryStoresOutsideDevelopment"/> is set to
+    /// <see langword="true"/>.
+    /// </remarks>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
     /// <exception cref="ArgumentNullException">
@@ -100,6 +106,11 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
     /// across multiple instances. A startup warning is emitted before the first request.
     /// Do not use in production.
     /// </summary>
+    /// <remarks>
+    /// Outside a Development environment, startup fails with <see cref="ZeeKayDaConfigurationException"/>
+    /// unless <see cref="AuthorizationServerOptions.AllowInMemoryStoresOutsideDevelopment"/> is set to
+    /// <see langword="true"/>.
+    /// </remarks>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
     /// <exception cref="ArgumentNullException">
@@ -127,6 +138,11 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
     /// across multiple instances. A startup warning is emitted before the first request.
     /// Do not use in production.
     /// </summary>
+    /// <remarks>
+    /// Outside a Development environment, startup fails with <see cref="ZeeKayDaConfigurationException"/>
+    /// unless <see cref="AuthorizationServerOptions.AllowInMemoryStoresOutsideDevelopment"/> is set to
+    /// <see langword="true"/>.
+    /// </remarks>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
     /// <exception cref="ArgumentNullException">
