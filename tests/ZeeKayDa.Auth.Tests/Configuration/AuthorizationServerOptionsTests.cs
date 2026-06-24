@@ -22,4 +22,23 @@ public sealed class AuthorizationServerOptionsTests
 
         options.AllowInMemoryStoresOutsideDevelopment.Should().BeTrue();
     }
+
+    [Fact]
+    public void AllowDevelopmentJwtSigningKeysOutsideDevelopment_defaults_to_false()
+    {
+        var options = new AuthorizationServerOptions();
+
+        options.AllowDevelopmentJwtSigningKeysOutsideDevelopment.Should().BeFalse();
+    }
+
+    [Fact]
+    public void AllowDevelopmentJwtSigningKeysOutsideDevelopment_can_be_set_to_true()
+    {
+        var options = new AuthorizationServerOptions
+        {
+            AllowDevelopmentJwtSigningKeysOutsideDevelopment = true,
+        };
+
+        options.AllowDevelopmentJwtSigningKeysOutsideDevelopment.Should().BeTrue();
+    }
 }

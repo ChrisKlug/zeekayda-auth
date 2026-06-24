@@ -47,6 +47,33 @@ public sealed class AuthorizationServerOptions
     public bool AllowInsecureIssuer { get; set; }
 
     /// <summary>
+    /// Gets or sets a value indicating whether development JWT signing keys are permitted
+    /// outside a Development environment.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Development signing keys are ephemeral or stored in a local file and are not suitable
+    /// for production. When this flag is <see langword="false"/> (the default) and the
+    /// application is not running in the <c>Development</c> environment, startup fails with a
+    /// <see cref="ZeeKayDaConfigurationException"/> so that an accidental development-key
+    /// configuration is never silently deployed to a non-development host.
+    /// </para>
+    /// <para>
+    /// Set this to <see langword="true"/> only in test hosts that intentionally run under a
+    /// non-Development environment name (e.g. integration test hosts configured as
+    /// <c>Production</c>). A <see cref="Microsoft.Extensions.Logging.LogLevel.Critical"/>
+    /// entry is emitted on every startup while the flag is set, because an ephemeral signing
+    /// key in production breaks signature validation for every relying party on restart
+    /// (more severe than in-memory stores which only break durability).
+    /// </para>
+    /// <para>
+    /// This flag MUST NOT be sourced from <c>appsettings.json</c> or any other file that may
+    /// be committed to source control. Set it explicitly in code or via an environment variable.
+    /// </para>
+    /// </remarks>
+    public bool AllowDevelopmentJwtSigningKeysOutsideDevelopment { get; set; }
+
+    /// <summary>
     /// Gets or sets a value indicating whether in-memory token stores are permitted outside a
     /// Development environment.
     /// </summary>
