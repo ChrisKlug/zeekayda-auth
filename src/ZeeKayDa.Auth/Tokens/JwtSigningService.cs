@@ -249,8 +249,8 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
                         "Each key must have a unique, stable identifier."));
             }
 
-            ValidateKeyStrength(descriptor);
             ValidateKeyAlgorithmCompatibility(descriptor, set.GetPrivateKey(i));
+            ValidateKeyStrength(descriptor);
         }
     }
 
