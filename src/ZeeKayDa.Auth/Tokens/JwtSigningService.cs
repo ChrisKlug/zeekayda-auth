@@ -166,6 +166,7 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
         return new SigningResult(headerSegment, signatureSegment, descriptor.Kid, descriptor.Algorithm);
     }
 
+    [ExcludeFromCodeCoverage(Justification = "Unreachable default arm — all SigningAlgorithm members are handled above.")]
     private static ReadOnlyMemory<byte> Sign(
         System.Security.Cryptography.AsymmetricAlgorithm privateKey,
         SigningAlgorithm algorithm,
@@ -194,6 +195,7 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
     private static byte[] SignEc(ECDsa ec, HashAlgorithmName hash, byte[] input)
         => ec.SignData(input, hash, DSASignatureFormat.Rfc3279DerSequence);
 
+    [ExcludeFromCodeCoverage(Justification = "Unreachable default arm — all SigningAlgorithm members are handled above.")]
     private static string BuildHeaderJson(SigningAlgorithm algorithm, string kid)
     {
         var algStr = algorithm switch

@@ -530,6 +530,91 @@ public sealed class JwtSigningServiceTests
         callCount.Should().Be(1, "the double-checked lock must prevent a second LoadKeysAsync call");
     }
 
+    // ── ValidateKeyStrength — null Curve.Oid ────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetSigningKeysAsync_throws_when_ec_descriptor_has_genuinely_null_curve_oid()
+    {
+        // ECParameters with a default-constructed ECCurve has Curve.Oid == null.
+        // ValidateKeyStrength does ecParams.Curve.Oid?.FriendlyName — the ?. short-circuits to null,
+        // and ?? string.Empty yields "" which is not in AcceptedEcCurveNames.
+        var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var nullOidParams = new ECParameters
+        {
+            Curve = new ECCurve(), // Oid is null on a default-constructed ECCurve
+            Q = ec.ExportParameters(false).Q,
+        };
+        var descriptor = new SigningKeyDescriptor("null-oid-strength-kid", SigningAlgorithm.ES256, nullOidParams);
+        var entry = new SigningKeyEntry(descriptor, 0);
+        using var set = new SigningKeySet([entry], [ec]);
+        await using var sut = BuildService(factory: () => set);
+        var ct = TestContext.Current.CancellationToken;
+
+        await sut.Awaiting(s => s.GetSigningKeysAsync(ct).AsTask())
+            .Should().ThrowAsync<ZeeKayDaConfigurationException>()
+            .WithMessage("*ec_unsupported_curve*");
+    }
+
+    // ── ValidateKeyAlgorithmCompatibility — null Curve.Oid on private key ───────────────────────────
+
+    [Fact]
+    public async Task GetSigningKeysAsync_throws_ec_curve_algorithm_mismatch_when_private_key_exports_null_curve_oid()
+    {
+        // The descriptor has a valid named curve (passes ValidateKeyStrength).
+        // The private key is a stub ECDsa whose ExportParameters returns Curve.Oid == null,
+        // hitting the ?? string.Empty path in ValidateKeyAlgorithmCompatibility.
+        // curveName becomes "" which does not match nistP256/P-256, so the mismatch is detected.
+        var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var ecParams = ec.ExportParameters(false);
+        var descriptor = new SigningKeyDescriptor("null-oid-compat-kid", SigningAlgorithm.ES256, ecParams);
+        var entry = new SigningKeyEntry(descriptor, 0);
+        using var set = new SigningKeySet([entry], [new NullOidEcDsa(ec)]);
+        await using var sut = BuildService(factory: () => set);
+        var ct = TestContext.Current.CancellationToken;
+
+        await sut.Awaiting(s => s.GetSigningKeysAsync(ct).AsTask())
+            .Should().ThrowAsync<ZeeKayDaConfigurationException>()
+            .WithMessage("*ec_curve_algorithm_mismatch*");
+    }
+
+    /// <summary>
+    /// A minimal ECDsa wrapper that delegates all real operations to an inner key but overrides
+    /// <see cref="ExportParameters"/> to return <c>Curve.Oid == null</c>, exercising the
+    /// <c>Oid?.FriendlyName ?? string.Empty</c> null-coalescing path in compatibility validation.
+    /// </summary>
+    private sealed class NullOidEcDsa : ECDsa
+    {
+        private readonly ECDsa _inner;
+
+        public NullOidEcDsa(ECDsa inner)
+        {
+            _inner = inner;
+        }
+
+        public override ECParameters ExportParameters(bool includePrivateParameters)
+        {
+            var p = _inner.ExportParameters(includePrivateParameters);
+            // Return a copy where Curve.Oid is null (default ECCurve has no Oid).
+            return new ECParameters
+            {
+                Curve = new ECCurve(),
+                Q = p.Q,
+                D = p.D,
+            };
+        }
+
+        public override byte[] SignHash(byte[] hash) => _inner.SignHash(hash);
+
+        public override bool VerifyHash(byte[] hash, byte[] signature) => _inner.VerifyHash(hash, signature);
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+                _inner.Dispose();
+            base.Dispose(disposing);
+        }
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────────────────────────
 
     private static string Base64UrlEncodeString(string input)
