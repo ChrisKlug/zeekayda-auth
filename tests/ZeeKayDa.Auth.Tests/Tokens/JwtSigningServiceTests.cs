@@ -81,7 +81,7 @@ public sealed class JwtSigningServiceTests
     [Fact]
     public void Constructor_throws_when_options_is_null()
     {
-        var act = () => new CountingSigningService(null!, new FakeTimeProvider(), () => MakeRsaSet().Set);
+        var act = () => new CountingSigningService(null!, new FakeTimeProvider(), () => MakeRsaSet());
         act.Should().Throw<ArgumentNullException>().WithParameterName("options");
     }
 
@@ -91,7 +91,7 @@ public sealed class JwtSigningServiceTests
         var act = () => new CountingSigningService(
             Options.Create(new FakeSigningServiceOptions()),
             null!,
-            () => MakeRsaSet().Set);
+            () => MakeRsaSet());
         act.Should().Throw<ArgumentNullException>().WithParameterName("timeProvider");
     }
 
@@ -100,7 +100,7 @@ public sealed class JwtSigningServiceTests
     [Fact]
     public async Task GetSigningKeysAsync_returns_descriptor_from_loaded_set()
     {
-        var (_, set) = MakeRsaSet("my-kid");
+        var set = MakeRsaSet("my-kid");
         await using var sut = BuildService(factory: () => set);
         var ct = TestContext.Current.CancellationToken;
 
@@ -166,7 +166,7 @@ public sealed class JwtSigningServiceTests
     [Fact]
     public async Task SignAsync_returns_matching_kid_in_result_and_in_header()
     {
-        var (_, set) = MakeRsaSet("kid-abc");
+        var set = MakeRsaSet("kid-abc");
         await using var sut = BuildService(factory: () => set);
         var payload = Encoding.UTF8.GetBytes(Base64UrlEncodeString("""{"sub":"alice"}"""));
         var ct = TestContext.Current.CancellationToken;
@@ -503,7 +503,7 @@ public sealed class JwtSigningServiceTests
             Interlocked.Increment(ref callCount);
             loadStarted.Release(); // signal that we have entered the factory
             await loadGate.WaitAsync().ConfigureAwait(false);
-            return MakeRsaSet().Set;
+            return MakeRsaSet();
         }
 
         var tp = new FakeTimeProvider();

@@ -20,17 +20,21 @@ namespace ZeeKayDa.Auth.Tokens;
 public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDisposable
     where TOptions : JwtSigningServiceOptions
 {
-    // All curve names accepted for EC keys — covers both macOS/Windows (nistPxxx) and Linux (P-xxx) naming.
-    private static readonly HashSet<string> AcceptedEcCurveNames =
-        new(StringComparer.OrdinalIgnoreCase) { "nistP256", "nistP384", "nistP521", "P-256", "P-384", "P-521" };
-
-    // Per-algorithm accepted curve names for the curve ↔ algorithm pairing check.
-    private static readonly IReadOnlyDictionary<SigningAlgorithm, string[]> AlgorithmCurveNames =
-        new Dictionary<SigningAlgorithm, string[]>
+    // OID values are stable across all platforms (macOS, Linux, Windows) unlike friendly names.
+    private static readonly HashSet<string> AcceptedEcCurveOids =
+        new(StringComparer.OrdinalIgnoreCase)
         {
-            [SigningAlgorithm.ES256] = ["nistP256", "P-256"],
-            [SigningAlgorithm.ES384] = ["nistP384", "P-384"],
-            [SigningAlgorithm.ES512] = ["nistP521", "P-521"],
+            "1.2.840.10045.3.1.7", // P-256
+            "1.3.132.0.34",        // P-384
+            "1.3.132.0.35",        // P-521
+        };
+
+    private static readonly IReadOnlyDictionary<SigningAlgorithm, string> AlgorithmCurveOids =
+        new Dictionary<SigningAlgorithm, string>
+        {
+            [SigningAlgorithm.ES256] = "1.2.840.10045.3.1.7", // P-256
+            [SigningAlgorithm.ES384] = "1.3.132.0.34",        // P-384
+            [SigningAlgorithm.ES512] = "1.3.132.0.35",        // P-521
         };
 
     private readonly TimeProvider _timeProvider;
@@ -273,14 +277,14 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
         else if (descriptor.KeyType == SigningKeyType.Ec)
         {
             var ecParams = descriptor.EcPublicParameters!.Value;
-            var curveName = ecParams.Curve.Oid?.FriendlyName;
+            var curveOid = ecParams.Curve.Oid?.Value;
 
-            if (!AcceptedEcCurveNames.Contains(curveName ?? string.Empty))
+            if (!AcceptedEcCurveOids.Contains(curveOid ?? string.Empty))
             {
                 throw new ZeeKayDaConfigurationException(
                     new ZeeKayDaConfigurationFailure(
                         "signing.ec_unsupported_curve",
-                        $"EC key '{descriptor.Kid}' uses curve '{curveName ?? "unknown"}'. " +
+                        $"EC key '{descriptor.Kid}' uses curve OID '{curveOid ?? "unknown"}'. " +
                         "Only NIST P-256, P-384, and P-521 are accepted."));
             }
         }
@@ -317,18 +321,17 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
         if (isEcAlgorithm && privateKey is ECDsa ecKey)
         {
             var ecParams = ecKey.ExportParameters(false);
-            var curveName = ecParams.Curve.Oid?.FriendlyName ?? string.Empty;
+            var curveOid = ecParams.Curve.Oid?.Value ?? string.Empty;
 
-            // AlgorithmCurveNames is populated for all EC algorithms so TryGetValue always finds the key.
-            AlgorithmCurveNames.TryGetValue(descriptor.Algorithm, out var expectedCurveOid);
+            AlgorithmCurveOids.TryGetValue(descriptor.Algorithm, out var expectedOid);
 
-            if (expectedCurveOid is null || !expectedCurveOid.Contains(curveName, StringComparer.OrdinalIgnoreCase))
+            if (expectedOid is null || !string.Equals(expectedOid, curveOid, StringComparison.OrdinalIgnoreCase))
             {
                 throw new ZeeKayDaConfigurationException(
                     new ZeeKayDaConfigurationFailure(
                         "signing.ec_curve_algorithm_mismatch",
                         $"Key '{descriptor.Kid}' uses algorithm {descriptor.Algorithm} which requires " +
-                        $"curve {string.Join(" or ", expectedCurveOid ?? [descriptor.Algorithm.ToString()])}, but the key uses curve '{curveName}'."));
+                        $"curve OID {expectedOid ?? descriptor.Algorithm.ToString()}, but the key uses curve OID '{curveOid}'."));
             }
         }
     }
