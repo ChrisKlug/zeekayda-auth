@@ -64,7 +64,7 @@ internal sealed class DevelopmentJwtSigningService
     {
         _fileSystem.EnsureDirectorySafe(directory);
 
-        var keyPath = Path.Combine(directory, KeyFileName);
+        var keyPath = Path.Join(directory, KeyFileName);
 
         if (_fileSystem.FileExists(keyPath))
             return LoadKeyFromFile(keyPath);

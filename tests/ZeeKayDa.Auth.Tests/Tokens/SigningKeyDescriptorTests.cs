@@ -10,7 +10,7 @@ public sealed class SigningKeyDescriptorTests
     [Fact]
     public void RsaConstructor_throws_when_kid_is_null()
     {
-        var rsa = RSA.Create(2048);
+        using var rsa = RSA.Create(2048);
         var parameters = rsa.ExportParameters(false);
 
         var act = () => new SigningKeyDescriptor(null!, SigningAlgorithm.RS256, parameters);
@@ -21,7 +21,7 @@ public sealed class SigningKeyDescriptorTests
     [Fact]
     public void RsaConstructor_throws_when_kid_is_empty()
     {
-        var rsa = RSA.Create(2048);
+        using var rsa = RSA.Create(2048);
         var parameters = rsa.ExportParameters(false);
 
         var act = () => new SigningKeyDescriptor(string.Empty, SigningAlgorithm.RS256, parameters);
@@ -35,7 +35,7 @@ public sealed class SigningKeyDescriptorTests
     [InlineData(SigningAlgorithm.ES512)]
     public void RsaConstructor_throws_when_ec_algorithm_is_passed(SigningAlgorithm algorithm)
     {
-        var rsa = RSA.Create(2048);
+        using var rsa = RSA.Create(2048);
         var parameters = rsa.ExportParameters(false);
 
         var act = () => new SigningKeyDescriptor("kid-1", algorithm, parameters);
@@ -101,7 +101,7 @@ public sealed class SigningKeyDescriptorTests
             SigningAlgorithm.ES384 => ECCurve.NamedCurves.nistP384,
             _ => ECCurve.NamedCurves.nistP521,
         };
-        var ec = ECDsa.Create(curve);
+        using var ec = ECDsa.Create(curve);
         var parameters = ec.ExportParameters(false);
 
         var descriptor = new SigningKeyDescriptor("kid-1", algorithm, parameters);

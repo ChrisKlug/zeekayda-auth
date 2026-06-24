@@ -185,7 +185,7 @@ public sealed class DevelopmentJwtSigningServiceTests
 
         await sut.GetSigningKeysAsync(ct);
 
-        var keyPath = Path.Combine(dir, "dev-signing-key.pem");
+        var keyPath = Path.Join(dir, "dev-signing-key.pem");
         fs.FileExists(keyPath).Should().BeTrue("the key file must be written on first startup");
     }
 
@@ -199,7 +199,7 @@ public sealed class DevelopmentJwtSigningServiceTests
 
         await sut.GetSigningKeysAsync(ct);
 
-        var keyPath = Path.Combine(dir, "dev-signing-key.pem");
+        var keyPath = Path.Join(dir, "dev-signing-key.pem");
         var pem = fs.ReadKeyFile(keyPath);
         pem.Should().StartWith("-----BEGIN RSA PRIVATE KEY-----");
     }
@@ -291,7 +291,7 @@ public sealed class DevelopmentJwtSigningServiceTests
         var fs = new InMemorySigningKeyFileSystem { FileTooPermissive = true };
 
         // Seed an existing file so the code tries to read rather than write.
-        var keyPath = Path.Combine(dir, "dev-signing-key.pem");
+        var keyPath = Path.Join(dir, "dev-signing-key.pem");
         fs.SeedFile(keyPath, "dummy content");
 
         await using var sut = BuildPersisted(dir, fs);
@@ -310,7 +310,7 @@ public sealed class DevelopmentJwtSigningServiceTests
         const string dir = "/fake/keys";
         var fs = new InMemorySigningKeyFileSystem { FileIsSymlink = true };
 
-        var keyPath = Path.Combine(dir, "dev-signing-key.pem");
+        var keyPath = Path.Join(dir, "dev-signing-key.pem");
         fs.SeedFile(keyPath, "dummy content");
 
         await using var sut = BuildPersisted(dir, fs);

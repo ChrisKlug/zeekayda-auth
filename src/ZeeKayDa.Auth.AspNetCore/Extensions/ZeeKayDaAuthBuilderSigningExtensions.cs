@@ -81,7 +81,7 @@ public static class ZeeKayDaAuthBuilderSigningExtensions
                 .Configure<Microsoft.Extensions.Hosting.IHostEnvironment>((options, env) =>
                 {
                     options.PersistToDirectory = persistTo
-                        ?? Path.Combine(env.ContentRootPath, ".zeekayda", "signing-keys");
+                        ?? Path.Join(env.ContentRootPath, ".zeekayda", "signing-keys");
                 });
         }
         // else: no argument passed → PersistToDirectory stays null → ephemeral mode.

@@ -18,7 +18,7 @@ public sealed class SigningKeySetTests
     [Fact]
     public void Constructor_throws_when_keys_is_null()
     {
-        var rsa = RSA.Create(2048);
+        using var rsa = RSA.Create(2048);
         var act = () => new SigningKeySet(null!, [rsa]);
         act.Should().Throw<ArgumentNullException>().WithParameterName("keys");
     }
@@ -76,7 +76,7 @@ public sealed class SigningKeySetTests
     public void GetPrivateKey_throws_ObjectDisposedException_after_Dispose()
     {
         var (rsa, entry) = MakeRsaEntry();
-        var set = new SigningKeySet([entry], [rsa]);
+        using var set = new SigningKeySet([entry], [rsa]);
 
         set.Dispose();
 
@@ -88,7 +88,7 @@ public sealed class SigningKeySetTests
     public void Dispose_can_be_called_multiple_times_without_throwing()
     {
         var (rsa, entry) = MakeRsaEntry();
-        var set = new SigningKeySet([entry], [rsa]);
+        using var set = new SigningKeySet([entry], [rsa]);
 
         set.Dispose();
         var act = () => set.Dispose();

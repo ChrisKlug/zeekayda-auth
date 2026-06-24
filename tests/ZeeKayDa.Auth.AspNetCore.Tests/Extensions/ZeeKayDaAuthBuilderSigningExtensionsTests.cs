@@ -103,7 +103,7 @@ public sealed class ZeeKayDaAuthBuilderSigningExtensionsTests
         await using var provider = services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<DevelopmentSigningKeyOptions>>().Value;
         options.PersistToDirectory.Should().Be(
-            Path.Combine("/app", ".zeekayda", "signing-keys"),
+            Path.Join("/app", ".zeekayda", "signing-keys"),
             "null means default path under ContentRootPath");
     }
 
