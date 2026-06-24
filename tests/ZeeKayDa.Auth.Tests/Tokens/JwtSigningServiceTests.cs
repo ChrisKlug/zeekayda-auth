@@ -52,14 +52,14 @@ public sealed class JwtSigningServiceTests
             => _factory();
     }
 
-    private static (RSA Key, SigningKeySet Set) MakeRsaSet(string kid = "test-kid")
+    private static SigningKeySet MakeRsaSet(string kid = "test-kid")
     {
         var rsa = RSA.Create(2048);
         var rsaParams = rsa.ExportParameters(false);
         var descriptor = new SigningKeyDescriptor(kid, SigningAlgorithm.RS256, rsaParams);
         var entry = new SigningKeyEntry(descriptor, 0);
         var set = new SigningKeySet([entry], [rsa]);
-        return (rsa, set);
+        return set;
     }
 
     private static CountingSigningService BuildService(
@@ -72,7 +72,7 @@ public sealed class JwtSigningServiceTests
         {
             RefreshInterval = refreshInterval ?? TimeSpan.FromMinutes(5),
         };
-        var f = factory ?? (() => MakeRsaSet().Set);
+        var f = factory ?? (() => MakeRsaSet());
         return new CountingSigningService(Options.Create(options), tp, f);
     }
 

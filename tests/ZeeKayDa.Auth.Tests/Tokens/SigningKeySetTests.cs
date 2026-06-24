@@ -26,7 +26,7 @@ public sealed class SigningKeySetTests
     [Fact]
     public void Constructor_throws_when_privateKeys_is_null()
     {
-        var (rsa, entry) = MakeRsaEntry();
+        var (_, entry) = MakeRsaEntry();
         var act = () => new SigningKeySet([entry], null!);
         act.Should().Throw<ArgumentNullException>().WithParameterName("privateKeys");
     }
@@ -41,8 +41,10 @@ public sealed class SigningKeySetTests
     [Fact]
     public void Constructor_throws_when_keys_and_privateKeys_lengths_differ()
     {
-        var (rsa, entry) = MakeRsaEntry();
-        var rsa2 = RSA.Create(2048);
+        var tuple = MakeRsaEntry();
+        using var rsa = tuple.Rsa;
+        var entry = tuple.Entry;
+        using var rsa2 = RSA.Create(2048);
         var act = () => new SigningKeySet([entry], [rsa, rsa2]);
         act.Should().Throw<ArgumentException>().WithParameterName("privateKeys");
     }

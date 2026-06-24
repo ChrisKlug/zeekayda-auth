@@ -330,7 +330,7 @@ public sealed class DevelopmentJwtSigningServiceTests
         var fs = new InMemorySigningKeyFileSystem();
 
         // Seed a file with invalid PEM content.
-        var keyPath = Path.Combine(dir, "dev-signing-key.pem");
+        var keyPath = Path.Join(dir, "dev-signing-key.pem");
         fs.SeedFile(keyPath, "this is not a valid PEM");
 
         await using var sut = BuildPersisted(dir, fs);

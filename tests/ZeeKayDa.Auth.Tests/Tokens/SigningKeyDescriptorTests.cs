@@ -52,7 +52,7 @@ public sealed class SigningKeyDescriptorTests
     [InlineData(SigningAlgorithm.PS512)]
     public void RsaConstructor_accepts_all_rsa_algorithms(SigningAlgorithm algorithm)
     {
-        var rsa = RSA.Create(2048);
+        using var rsa = RSA.Create(2048);
         var parameters = rsa.ExportParameters(false);
 
         var descriptor = new SigningKeyDescriptor("kid-1", algorithm, parameters);
@@ -68,7 +68,7 @@ public sealed class SigningKeyDescriptorTests
     [Fact]
     public void EcConstructor_throws_when_kid_is_null()
     {
-        var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var parameters = ec.ExportParameters(false);
 
         var act = () => new SigningKeyDescriptor(null!, SigningAlgorithm.ES256, parameters);
@@ -81,7 +81,7 @@ public sealed class SigningKeyDescriptorTests
     [InlineData(SigningAlgorithm.PS256)]
     public void EcConstructor_throws_when_rsa_algorithm_is_passed(SigningAlgorithm algorithm)
     {
-        var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var parameters = ec.ExportParameters(false);
 
         var act = () => new SigningKeyDescriptor("kid-1", algorithm, parameters);
@@ -117,7 +117,7 @@ public sealed class SigningKeyDescriptorTests
     [Fact]
     public void Kid_is_stable_and_matches_the_value_passed_to_constructor()
     {
-        var rsa = RSA.Create(2048);
+        using var rsa = RSA.Create(2048);
         var parameters = rsa.ExportParameters(false);
 
         var descriptor = new SigningKeyDescriptor("my-stable-kid", SigningAlgorithm.RS256, parameters);
