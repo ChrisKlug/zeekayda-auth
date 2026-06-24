@@ -54,7 +54,7 @@ public sealed class JwtSigningServiceTests
 
     private static (RSA Key, SigningKeySet Set) MakeRsaSet(string kid = "test-kid")
     {
-        var rsa = RSA.Create(2048);
+        using var rsa = RSA.Create(2048);
         var rsaParams = rsa.ExportParameters(false);
         var descriptor = new SigningKeyDescriptor(kid, SigningAlgorithm.RS256, rsaParams);
         var entry = new SigningKeyEntry(descriptor, 0);
@@ -197,7 +197,7 @@ public sealed class JwtSigningServiceTests
     [Fact]
     public async Task SignAsync_produces_signature_verifiable_with_corresponding_public_key()
     {
-        var rsa = RSA.Create(2048);
+        using var rsa = RSA.Create(2048);
         var rsaParams = rsa.ExportParameters(false);
         var descriptor = new SigningKeyDescriptor("vk-1", SigningAlgorithm.RS256, rsaParams);
         var entry = new SigningKeyEntry(descriptor, 0);
@@ -228,8 +228,8 @@ public sealed class JwtSigningServiceTests
     [Fact]
     public async Task GetSigningKeysAsync_throws_ZeeKayDaConfigurationException_on_duplicate_kid()
     {
-        var rsa1 = RSA.Create(2048);
-        var rsa2 = RSA.Create(2048);
+        using var rsa1 = RSA.Create(2048);
+        using var rsa2 = RSA.Create(2048);
         var desc1 = new SigningKeyDescriptor("duplicate-kid", SigningAlgorithm.RS256, rsa1.ExportParameters(false));
         var desc2 = new SigningKeyDescriptor("duplicate-kid", SigningAlgorithm.RS256, rsa2.ExportParameters(false));
         var entries = new[] { new SigningKeyEntry(desc1, 0), new SigningKeyEntry(desc2, 1) };
@@ -248,7 +248,7 @@ public sealed class JwtSigningServiceTests
     public async Task GetSigningKeysAsync_throws_ZeeKayDaConfigurationException_when_rsa_key_is_too_small()
     {
         // 1024-bit key — below the 2048-bit minimum.
-        var rsa = RSA.Create(1024);
+        using var rsa = RSA.Create(1024);
         var rsaParams = rsa.ExportParameters(false);
         var descriptor = new SigningKeyDescriptor("tiny-key", SigningAlgorithm.RS256, rsaParams);
         var entry = new SigningKeyEntry(descriptor, 0);
@@ -267,7 +267,7 @@ public sealed class JwtSigningServiceTests
         // Default RSAParameters has Modulus = null — bitLength computes to 0, below minimum.
         var rsaParams = new RSAParameters(); // Modulus is null
         var descriptor = new SigningKeyDescriptor("null-mod-key", SigningAlgorithm.RS256, rsaParams);
-        var rsa = RSA.Create(2048);
+        using var rsa = RSA.Create(2048);
         var entry = new SigningKeyEntry(descriptor, 0);
         using var set = new SigningKeySet([entry], [rsa]);
         await using var sut = BuildService(factory: () => set);
@@ -319,7 +319,7 @@ public sealed class JwtSigningServiceTests
     public async Task GetSigningKeysAsync_throws_ZeeKayDaConfigurationException_when_private_key_type_does_not_match_algorithm()
     {
         // EC descriptor (ES256) but private key is RSA — mismatch detected at load time.
-        var rsa = RSA.Create(2048);
+        using var rsa = RSA.Create(2048);
         var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var ecParams = ec.ExportParameters(false);
         var descriptor = new SigningKeyDescriptor("mismatch-kid", SigningAlgorithm.ES256, ecParams);
@@ -339,7 +339,7 @@ public sealed class JwtSigningServiceTests
     public async Task GetSigningKeysAsync_throws_when_ec_key_has_rsa_algorithm_in_private_key()
     {
         // RSA descriptor with an ECDsa private key — mismatch.
-        var rsa = RSA.Create(2048);
+        using var rsa = RSA.Create(2048);
         var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var rsaParams = rsa.ExportParameters(false);
         var descriptor = new SigningKeyDescriptor("mismatch-rsa-kid", SigningAlgorithm.RS256, rsaParams);
@@ -361,7 +361,7 @@ public sealed class JwtSigningServiceTests
     [InlineData(SigningAlgorithm.PS512)]
     public async Task SignAsync_produces_non_empty_result_for_all_rsa_algorithms(SigningAlgorithm algorithm)
     {
-        var rsa = RSA.Create(2048);
+        using var rsa = RSA.Create(2048);
         var rsaParams = rsa.ExportParameters(false);
         var descriptor = new SigningKeyDescriptor("rsa-kid", algorithm, rsaParams);
         var entry = new SigningKeyEntry(descriptor, 0);
