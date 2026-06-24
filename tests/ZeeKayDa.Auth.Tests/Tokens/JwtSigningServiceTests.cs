@@ -261,6 +261,23 @@ public sealed class JwtSigningServiceTests
             .WithMessage("*rsa_key_too_small*");
     }
 
+    [Fact]
+    public async Task GetSigningKeysAsync_throws_when_rsa_key_has_null_modulus()
+    {
+        // Default RSAParameters has Modulus = null — bitLength computes to 0, below minimum.
+        var rsaParams = new RSAParameters(); // Modulus is null
+        var descriptor = new SigningKeyDescriptor("null-mod-key", SigningAlgorithm.RS256, rsaParams);
+        var rsa = RSA.Create(2048);
+        var entry = new SigningKeyEntry(descriptor, 0);
+        using var set = new SigningKeySet([entry], [rsa]);
+        await using var sut = BuildService(factory: () => set);
+        var ct = TestContext.Current.CancellationToken;
+
+        await sut.Awaiting(s => s.GetSigningKeysAsync(ct).AsTask())
+            .Should().ThrowAsync<ZeeKayDaConfigurationException>()
+            .WithMessage("*rsa_key_too_small*");
+    }
+
     // ── EC curve validation ───────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -418,6 +435,29 @@ public sealed class JwtSigningServiceTests
         var keys = await sut.GetSigningKeysAsync(ct);
 
         keys.Should().ContainSingle().Which.Algorithm.Should().Be(SigningAlgorithm.ES512);
+    }
+
+    [Fact]
+    public async Task GetSigningKeysAsync_throws_when_ec_key_has_null_curve_oid()
+    {
+        // ECParameters with a null Curve.Oid — curveName will be null, which doesn't match any allowed value.
+        var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var ecParams = ec.ExportParameters(false);
+        // Build ECParameters with an explicit (non-named) curve that has no OID.
+        var noOidCurveParams = new ECParameters
+        {
+            Curve = ECCurve.CreateFromValue("1.2.840.10045.3.1.1"), // P-192 — not in allowed list
+            Q = ecParams.Q,
+        };
+        var descriptor = new SigningKeyDescriptor("null-oid-kid", SigningAlgorithm.ES256, noOidCurveParams);
+        var entry = new SigningKeyEntry(descriptor, 0);
+        using var set = new SigningKeySet([entry], [ec]);
+        await using var sut = BuildService(factory: () => set);
+        var ct = TestContext.Current.CancellationToken;
+
+        await sut.Awaiting(s => s.GetSigningKeysAsync(ct).AsTask())
+            .Should().ThrowAsync<ZeeKayDaConfigurationException>()
+            .WithMessage("*ec_unsupported_curve*");
     }
 
     // ── EC unsupported curve ─────────────────────────────────────────────────────────────────────

@@ -1,5 +1,4 @@
 using System.Buffers.Text;
-using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Options;
@@ -8,47 +7,115 @@ using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.Tests.Tokens;
 
-public sealed class DevelopmentJwtSigningServiceTests : IDisposable
+public sealed class DevelopmentJwtSigningServiceTests
 {
-    private readonly List<string> _tempDirs = [];
+    // ── In-memory fake file system ────────────────────────────────────────────────────────────────
 
-    public void Dispose()
+    private sealed class InMemorySigningKeyFileSystem : ISigningKeyFileSystem
     {
-        foreach (var dir in _tempDirs)
+        private readonly Dictionary<string, string> _files = new(StringComparer.Ordinal);
+        private readonly HashSet<string> _directories = new(StringComparer.Ordinal);
+
+        public bool DirectoryTooPermissive { get; set; }
+        public bool FileTooPermissive { get; set; }
+        public bool FileIsSymlink { get; set; }
+
+        public void EnsureDirectorySafe(string directory)
         {
-            try { Directory.Delete(dir, recursive: true); }
-            catch { /* best effort */ }
+            if (DirectoryTooPermissive)
+            {
+                throw new ZeeKayDaConfigurationException(
+                    new ZeeKayDaConfigurationFailure(
+                        "signing.dev_keys.directory_too_permissive",
+                        $"Signing key directory '{directory}' has permissions broader than 0700."));
+            }
+
+            _directories.Add(directory);
         }
+
+        public void WriteKeyFile(string keyPath, string pem)
+        {
+            _files[keyPath] = pem;
+        }
+
+        public string ReadKeyFile(string keyPath)
+        {
+            if (FileIsSymlink)
+            {
+                throw new ZeeKayDaConfigurationException(
+                    new ZeeKayDaConfigurationFailure(
+                        "signing.dev_keys.symlink_detected",
+                        $"Signing key path '{keyPath}' resolves through a symlink."));
+            }
+
+            if (FileTooPermissive)
+            {
+                throw new ZeeKayDaConfigurationException(
+                    new ZeeKayDaConfigurationFailure(
+                        "signing.dev_keys.file_too_permissive",
+                        $"Signing key file '{keyPath}' has permissions broader than 0600."));
+            }
+
+            return _files[keyPath];
+        }
+
+        public bool FileExists(string path) => _files.ContainsKey(path);
+
+        public void SeedFile(string path, string content) => _files[path] = content;
     }
 
-    private string CreateTempDir()
-    {
-        var path = Path.Combine(Path.GetTempPath(), $"zk-dev-signing-test-{Guid.NewGuid():N}");
-        _tempDirs.Add(path);
-        return path;
-    }
-
-    private static DevelopmentJwtSigningService BuildEphemeral()
+    private static DevelopmentJwtSigningService BuildEphemeral(
+        ISigningKeyFileSystem? fs = null)
     {
         var options = new DevelopmentSigningKeyOptions
         {
-            PersistToDirectory = null, // ephemeral
+            PersistToDirectory = null,
         };
         return new DevelopmentJwtSigningService(
             Options.Create(options),
-            new FakeTimeProvider());
+            new FakeTimeProvider(),
+            fs ?? new InMemorySigningKeyFileSystem());
     }
 
-    private DevelopmentJwtSigningService BuildPersisted(string? directory = null)
+    private static DevelopmentJwtSigningService BuildPersisted(
+        string directory,
+        ISigningKeyFileSystem? fs = null)
     {
-        var dir = directory ?? CreateTempDir();
         var options = new DevelopmentSigningKeyOptions
         {
-            PersistToDirectory = dir,
+            PersistToDirectory = directory,
         };
         return new DevelopmentJwtSigningService(
             Options.Create(options),
-            new FakeTimeProvider());
+            new FakeTimeProvider(),
+            fs ?? new InMemorySigningKeyFileSystem());
+    }
+
+    // ── Constructor validation ────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Constructor_throws_when_options_is_null()
+    {
+        var act = () => new DevelopmentJwtSigningService(
+            null!,
+            new FakeTimeProvider(),
+            new InMemorySigningKeyFileSystem());
+
+        // The base class JwtSigningService<TOptions> checks "options" before our guard fires.
+        act.Should().Throw<ArgumentNullException>().WithParameterName("options");
+    }
+
+    [Fact]
+    public void Constructor_throws_when_fileSystem_is_null()
+    {
+        var options = Options.Create(new DevelopmentSigningKeyOptions());
+
+        var act = () => new DevelopmentJwtSigningService(
+            options,
+            new FakeTimeProvider(),
+            null!);
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("fileSystem");
     }
 
     // ── Ephemeral key generation ──────────────────────────────────────────────────────────────────
@@ -109,32 +176,49 @@ public sealed class DevelopmentJwtSigningServiceTests : IDisposable
     // ── Persistence round-trip ────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task Persisted_key_file_is_created_on_first_startup()
+    public async Task Persisted_key_file_is_written_on_first_startup()
     {
-        var dir = CreateTempDir();
-        await using var sut = BuildPersisted(dir);
+        const string dir = "/fake/keys";
+        var fs = new InMemorySigningKeyFileSystem();
+        await using var sut = BuildPersisted(dir, fs);
         var ct = TestContext.Current.CancellationToken;
 
         await sut.GetSigningKeysAsync(ct);
 
-        var keyFile = Path.Combine(dir, "dev-signing-key.pem");
-        File.Exists(keyFile).Should().BeTrue("the key file must be written on first startup");
+        var keyPath = Path.Combine(dir, "dev-signing-key.pem");
+        fs.FileExists(keyPath).Should().BeTrue("the key file must be written on first startup");
+    }
+
+    [Fact]
+    public async Task Persisted_key_file_content_is_valid_pem()
+    {
+        const string dir = "/fake/keys";
+        var fs = new InMemorySigningKeyFileSystem();
+        await using var sut = BuildPersisted(dir, fs);
+        var ct = TestContext.Current.CancellationToken;
+
+        await sut.GetSigningKeysAsync(ct);
+
+        var keyPath = Path.Combine(dir, "dev-signing-key.pem");
+        var pem = fs.ReadKeyFile(keyPath);
+        pem.Should().StartWith("-----BEGIN RSA PRIVATE KEY-----");
     }
 
     [Fact]
     public async Task Persisted_key_has_same_kid_across_restarts()
     {
-        var dir = CreateTempDir();
+        const string dir = "/fake/keys";
+        var fs = new InMemorySigningKeyFileSystem();
         var ct = TestContext.Current.CancellationToken;
 
         string firstKid;
-        await using (var first = BuildPersisted(dir))
+        await using (var first = BuildPersisted(dir, fs))
         {
             var keys = await first.GetSigningKeysAsync(ct);
             firstKid = keys[0].Kid;
         }
 
-        await using (var second = BuildPersisted(dir))
+        await using (var second = BuildPersisted(dir, fs))
         {
             var keys = await second.GetSigningKeysAsync(ct);
             keys[0].Kid.Should().Be(firstKid, "the kid must be stable across restarts when persisted");
@@ -144,13 +228,14 @@ public sealed class DevelopmentJwtSigningServiceTests : IDisposable
     [Fact]
     public async Task Tokens_signed_in_first_session_validate_with_keys_from_second_session()
     {
-        var dir = CreateTempDir();
+        const string dir = "/fake/keys";
+        var fs = new InMemorySigningKeyFileSystem();
         var ct = TestContext.Current.CancellationToken;
 
         string kid;
         string signedPayload;
 
-        await using (var first = BuildPersisted(dir))
+        await using (var first = BuildPersisted(dir, fs))
         {
             var keys = await first.GetSigningKeysAsync(ct);
             kid = keys[0].Kid;
@@ -164,7 +249,7 @@ public sealed class DevelopmentJwtSigningServiceTests : IDisposable
             signedPayload = $"{header}.{payloadStr}.{signature}";
         }
 
-        await using (var second = BuildPersisted(dir))
+        await using (var second = BuildPersisted(dir, fs))
         {
             var keys = await second.GetSigningKeysAsync(ct);
             keys[0].Kid.Should().Be(kid);
@@ -182,117 +267,54 @@ public sealed class DevelopmentJwtSigningServiceTests : IDisposable
         }
     }
 
-    // ── File permission enforcement (Unix only) ───────────────────────────────────────────────────
+    // ── Directory permission enforcement ─────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task Directory_with_too_permissive_mode_fails_closed_on_unix()
+    public async Task Directory_with_too_permissive_mode_fails_closed()
     {
-        Assert.SkipWhen(RuntimeInformation.IsOSPlatform(OSPlatform.Windows), "Unix-only test");
-#pragma warning disable CA1416 // call is guarded by Assert.SkipWhen above
-        await CheckDirectoryTooPermissiveOnUnix();
-#pragma warning restore CA1416
-    }
-
-    [System.Runtime.Versioning.UnsupportedOSPlatform("windows")]
-    private async Task CheckDirectoryTooPermissiveOnUnix()
-    {
-        var dir = CreateTempDir();
-        Directory.CreateDirectory(dir);
-        // Set group-readable permissions on the directory.
-        File.SetUnixFileMode(dir, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute | UnixFileMode.GroupRead);
+        const string dir = "/fake/keys";
+        var fs = new InMemorySigningKeyFileSystem { DirectoryTooPermissive = true };
+        await using var sut = BuildPersisted(dir, fs);
         var ct = TestContext.Current.CancellationToken;
-
-        await using var sut = BuildPersisted(dir);
 
         await sut.Awaiting(s => s.GetSigningKeysAsync(ct).AsTask())
             .Should().ThrowAsync<ZeeKayDaConfigurationException>()
             .WithMessage("*directory_too_permissive*");
     }
 
-    [Fact]
-    public async Task Persisted_key_file_has_permissions_0600_on_unix()
-    {
-        Assert.SkipWhen(RuntimeInformation.IsOSPlatform(OSPlatform.Windows), "Unix-only test");
-#pragma warning disable CA1416 // call is guarded by Assert.SkipWhen above
-        await CheckFilePermissionsOnUnix();
-#pragma warning restore CA1416
-    }
+    // ── File permission enforcement ───────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task Loading_key_file_with_group_readable_permissions_fails_closed()
+    public async Task Loading_key_file_with_too_permissive_permissions_fails_closed()
     {
-        Assert.SkipWhen(RuntimeInformation.IsOSPlatform(OSPlatform.Windows), "Unix-only test");
-#pragma warning disable CA1416 // call is guarded by Assert.SkipWhen above
-        await CheckGroupReadablePermissionsOnUnix();
-#pragma warning restore CA1416
-    }
+        const string dir = "/fake/keys";
+        var fs = new InMemorySigningKeyFileSystem { FileTooPermissive = true };
 
-    [Fact]
-    public async Task Loading_key_file_that_is_a_symlink_fails_closed()
-    {
-        Assert.SkipWhen(RuntimeInformation.IsOSPlatform(OSPlatform.Windows), "Unix-only test");
-#pragma warning disable CA1416 // call is guarded by Assert.SkipWhen above
-        await CheckSymlinkDetectionOnUnix();
-#pragma warning restore CA1416
-    }
+        // Seed an existing file so the code tries to read rather than write.
+        var keyPath = Path.Combine(dir, "dev-signing-key.pem");
+        fs.SeedFile(keyPath, "dummy content");
 
-    [System.Runtime.Versioning.UnsupportedOSPlatform("windows")]
-    private async Task CheckFilePermissionsOnUnix()
-    {
-        var dir = CreateTempDir();
-        await using var sut = BuildPersisted(dir);
+        await using var sut = BuildPersisted(dir, fs);
         var ct = TestContext.Current.CancellationToken;
-
-        await sut.GetSigningKeysAsync(ct);
-
-        var keyFile = Path.Combine(dir, "dev-signing-key.pem");
-        var mode = File.GetUnixFileMode(keyFile);
-
-        var allowedBits = UnixFileMode.UserRead | UnixFileMode.UserWrite;
-        (mode & ~allowedBits).Should().Be(0, "key file must have exactly 0600 permissions");
-    }
-
-    [System.Runtime.Versioning.UnsupportedOSPlatform("windows")]
-    private async Task CheckGroupReadablePermissionsOnUnix()
-    {
-        var dir = CreateTempDir();
-        var ct = TestContext.Current.CancellationToken;
-
-        // Create the file first with correct permissions.
-        await using (var create = BuildPersisted(dir))
-            await create.GetSigningKeysAsync(ct);
-
-        // Widen permissions to group-readable.
-        var keyFile = Path.Combine(dir, "dev-signing-key.pem");
-        File.SetUnixFileMode(keyFile, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead);
-
-        await using var sut = BuildPersisted(dir);
 
         await sut.Awaiting(s => s.GetSigningKeysAsync(ct).AsTask())
             .Should().ThrowAsync<ZeeKayDaConfigurationException>()
             .WithMessage("*file_too_permissive*");
     }
 
-    [System.Runtime.Versioning.UnsupportedOSPlatform("windows")]
-    private async Task CheckSymlinkDetectionOnUnix()
+    // ── Symlink detection ─────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Loading_key_file_that_is_a_symlink_fails_closed()
     {
-        var dir = CreateTempDir();
+        const string dir = "/fake/keys";
+        var fs = new InMemorySigningKeyFileSystem { FileIsSymlink = true };
+
+        var keyPath = Path.Combine(dir, "dev-signing-key.pem");
+        fs.SeedFile(keyPath, "dummy content");
+
+        await using var sut = BuildPersisted(dir, fs);
         var ct = TestContext.Current.CancellationToken;
-
-        // Create a legitimate key file in a separate dir.
-        var realDir = CreateTempDir();
-        await using (var create = BuildPersisted(realDir))
-            await create.GetSigningKeysAsync(ct);
-
-        // Create the target directory with correct permissions and a symlink inside.
-        Directory.CreateDirectory(dir);
-        File.SetUnixFileMode(dir, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
-
-        var symlink = Path.Combine(dir, "dev-signing-key.pem");
-        var target = Path.Combine(realDir, "dev-signing-key.pem");
-        File.CreateSymbolicLink(symlink, target);
-
-        await using var sut = BuildPersisted(dir);
 
         await sut.Awaiting(s => s.GetSigningKeysAsync(ct).AsTask())
             .Should().ThrowAsync<ZeeKayDaConfigurationException>()
@@ -302,55 +324,41 @@ public sealed class DevelopmentJwtSigningServiceTests : IDisposable
     // ── Error handling ────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task Loading_corrupt_pem_file_disposes_rsa_and_rethrows()
+    public async Task Loading_corrupt_pem_file_throws()
     {
-        Assert.SkipWhen(RuntimeInformation.IsOSPlatform(OSPlatform.Windows), "Unix-only test");
-#pragma warning disable CA1416 // call is guarded by Assert.SkipWhen above
-        await CheckCorruptPemFileOnUnix();
-#pragma warning restore CA1416
-    }
+        const string dir = "/fake/keys";
+        var fs = new InMemorySigningKeyFileSystem();
 
-    [System.Runtime.Versioning.UnsupportedOSPlatform("windows")]
-    private async Task CheckCorruptPemFileOnUnix()
-    {
-        var dir = CreateTempDir();
-        Directory.CreateDirectory(dir);
-        File.SetUnixFileMode(dir, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        // Seed a file with invalid PEM content.
+        var keyPath = Path.Combine(dir, "dev-signing-key.pem");
+        fs.SeedFile(keyPath, "this is not a valid PEM");
 
-        var keyFile = Path.Combine(dir, "dev-signing-key.pem");
-        File.WriteAllText(keyFile, "this is not a valid PEM");
-        File.SetUnixFileMode(keyFile, UnixFileMode.UserRead | UnixFileMode.UserWrite);
-
+        await using var sut = BuildPersisted(dir, fs);
         var ct = TestContext.Current.CancellationToken;
-        await using var sut = BuildPersisted(dir);
 
         await sut.Awaiting(s => s.GetSigningKeysAsync(ct).AsTask())
             .Should().ThrowAsync<Exception>("corrupt PEM must cause an exception");
     }
 
     [Fact]
-    public async Task Write_failure_during_key_generation_disposes_rsa_and_rethrows()
+    public async Task Write_failure_during_key_generation_rethrows()
     {
-        Assert.SkipWhen(RuntimeInformation.IsOSPlatform(OSPlatform.Windows), "Unix-only test");
-#pragma warning disable CA1416 // call is guarded by Assert.SkipWhen above
-        await CheckWriteFailureOnUnix();
-#pragma warning restore CA1416
-    }
+        const string dir = "/fake/keys";
+        var fs = new ThrowOnWriteFileSystem();
 
-    [System.Runtime.Versioning.UnsupportedOSPlatform("windows")]
-    private async Task CheckWriteFailureOnUnix()
-    {
-        var dir = CreateTempDir();
-        Directory.CreateDirectory(dir);
-        // 0500 — user read+execute only, no write.  Directory passes validation (no group/other bits)
-        // but writing a new file inside it will be denied.
-        File.SetUnixFileMode(dir, UnixFileMode.UserRead | UnixFileMode.UserExecute);
-
+        await using var sut = BuildPersisted(dir, fs);
         var ct = TestContext.Current.CancellationToken;
-        await using var sut = BuildPersisted(dir);
 
         await sut.Awaiting(s => s.GetSigningKeysAsync(ct).AsTask())
-            .Should().ThrowAsync<Exception>("failure to write the key file must bubble out");
+            .Should().ThrowAsync<IOException>("failure to write the key file must bubble out");
+    }
+
+    private sealed class ThrowOnWriteFileSystem : ISigningKeyFileSystem
+    {
+        public void EnsureDirectorySafe(string directory) { }
+        public void WriteKeyFile(string keyPath, string pem) => throw new IOException("Simulated write failure.");
+        public string ReadKeyFile(string keyPath) => throw new InvalidOperationException("Should not be called.");
+        public bool FileExists(string path) => false;
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────────────────────────

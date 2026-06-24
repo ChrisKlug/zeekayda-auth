@@ -1,4 +1,5 @@
 using System.Buffers.Text;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
@@ -19,6 +20,19 @@ namespace ZeeKayDa.Auth.Tokens;
 public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDisposable
     where TOptions : JwtSigningServiceOptions
 {
+    // All curve names accepted for EC keys — covers both macOS/Windows (nistPxxx) and Linux (P-xxx) naming.
+    private static readonly HashSet<string> AcceptedEcCurveNames =
+        new(StringComparer.OrdinalIgnoreCase) { "nistP256", "nistP384", "nistP521", "P-256", "P-384", "P-521" };
+
+    // Per-algorithm accepted curve names for the curve ↔ algorithm pairing check.
+    private static readonly IReadOnlyDictionary<SigningAlgorithm, string[]> AlgorithmCurveNames =
+        new Dictionary<SigningAlgorithm, string[]>
+        {
+            [SigningAlgorithm.ES256] = ["nistP256", "P-256"],
+            [SigningAlgorithm.ES384] = ["nistP384", "P-384"],
+            [SigningAlgorithm.ES512] = ["nistP521", "P-521"],
+        };
+
     private readonly TimeProvider _timeProvider;
     private readonly TimeSpan _refreshInterval;
 
@@ -168,7 +182,7 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
             SigningAlgorithm.ES256 => SignEc((ECDsa)privateKey, HashAlgorithmName.SHA256, signingInput),
             SigningAlgorithm.ES384 => SignEc((ECDsa)privateKey, HashAlgorithmName.SHA384, signingInput),
             SigningAlgorithm.ES512 => SignEc((ECDsa)privateKey, HashAlgorithmName.SHA512, signingInput),
-            _ => throw new NotSupportedException($"Signing algorithm {algorithm} is not supported."),
+            _ => ThrowUnsupportedAlgorithm<ReadOnlyMemory<byte>>(algorithm),
         };
     }
 
@@ -193,7 +207,7 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
             SigningAlgorithm.ES256 => "ES256",
             SigningAlgorithm.ES384 => "ES384",
             SigningAlgorithm.ES512 => "ES512",
-            _ => throw new NotSupportedException($"Signing algorithm {algorithm} is not supported."),
+            _ => ThrowUnsupportedAlgorithm<string>(algorithm),
         };
 
         // Minimal JWS header: {"alg":"…","kid":"…"}
@@ -259,7 +273,7 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
             var ecParams = descriptor.EcPublicParameters!.Value;
             var curveName = ecParams.Curve.Oid?.FriendlyName;
 
-            if (curveName is not ("nistP256" or "nistP384" or "nistP521" or "P-256" or "P-384" or "P-521"))
+            if (!AcceptedEcCurveNames.Contains(curveName ?? string.Empty))
             {
                 throw new ZeeKayDaConfigurationException(
                     new ZeeKayDaConfigurationFailure(
@@ -303,22 +317,26 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
             var ecParams = ecKey.ExportParameters(false);
             var curveName = ecParams.Curve.Oid?.FriendlyName ?? string.Empty;
 
-            var expectedCurveOid = descriptor.Algorithm switch
-            {
-                SigningAlgorithm.ES256 => new[] { "nistP256", "P-256" },
-                SigningAlgorithm.ES384 => new[] { "nistP384", "P-384" },
-                SigningAlgorithm.ES512 => new[] { "nistP521", "P-521" },
-                _ => Array.Empty<string>(),
-            };
+            // AlgorithmCurveNames is populated for all EC algorithms so TryGetValue always finds the key.
+            AlgorithmCurveNames.TryGetValue(descriptor.Algorithm, out var expectedCurveOid);
 
-            if (!expectedCurveOid.Contains(curveName, StringComparer.OrdinalIgnoreCase))
+            if (expectedCurveOid is null || !expectedCurveOid.Contains(curveName, StringComparer.OrdinalIgnoreCase))
             {
                 throw new ZeeKayDaConfigurationException(
                     new ZeeKayDaConfigurationFailure(
                         "signing.ec_curve_algorithm_mismatch",
                         $"Key '{descriptor.Kid}' uses algorithm {descriptor.Algorithm} which requires " +
-                        $"curve {string.Join(" or ", expectedCurveOid)}, but the key uses curve '{curveName}'."));
+                        $"curve {string.Join(" or ", expectedCurveOid ?? [descriptor.Algorithm.ToString()])}, but the key uses curve '{curveName}'."));
             }
         }
     }
+
+    /// <summary>
+    /// Unreachable defensive guard for switch statements that are exhaustive over
+    /// <see cref="SigningAlgorithm"/>. Throws <see cref="NotSupportedException"/>.
+    /// </summary>
+    [ExcludeFromCodeCoverage(Justification = "Unreachable defensive guard — all enum members are handled in callers.")]
+    [DoesNotReturn]
+    private static T ThrowUnsupportedAlgorithm<T>(SigningAlgorithm algorithm)
+        => throw new NotSupportedException($"Signing algorithm {algorithm} is not supported.");
 }

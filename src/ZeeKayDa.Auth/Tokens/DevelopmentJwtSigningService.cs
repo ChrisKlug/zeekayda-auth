@@ -1,5 +1,3 @@
-using System.Runtime.InteropServices;
-using System.Runtime.Versioning;
 using System.Security.Cryptography;
 using Microsoft.Extensions.Options;
 
@@ -30,14 +28,17 @@ internal sealed class DevelopmentJwtSigningService
     private const string KeyFileName = "dev-signing-key.pem";
 
     private readonly IOptions<DevelopmentSigningKeyOptions> _devOptions;
+    private readonly ISigningKeyFileSystem _fileSystem;
 
     public DevelopmentJwtSigningService(
         IOptions<DevelopmentSigningKeyOptions> devOptions,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        ISigningKeyFileSystem fileSystem)
         : base(devOptions, timeProvider)
     {
-        ArgumentNullException.ThrowIfNull(devOptions);
+        ArgumentNullException.ThrowIfNull(fileSystem);
         _devOptions = devOptions;
+        _fileSystem = fileSystem;
     }
 
     /// <inheritdoc/>
@@ -59,19 +60,19 @@ internal sealed class DevelopmentJwtSigningService
 
     private static RSA GenerateEphemeralKey() => RSA.Create(MinimumRsaKeySize);
 
-    private static RSA LoadOrGeneratePersistedKey(string directory)
+    private RSA LoadOrGeneratePersistedKey(string directory)
     {
-        EnsureDirectorySafe(directory);
+        _fileSystem.EnsureDirectorySafe(directory);
 
         var keyPath = Path.Combine(directory, KeyFileName);
 
-        if (File.Exists(keyPath))
+        if (_fileSystem.FileExists(keyPath))
             return LoadKeyFromFile(keyPath);
 
         var rsa = RSA.Create(MinimumRsaKeySize);
         try
         {
-            WriteKeyToFile(keyPath, rsa);
+            _fileSystem.WriteKeyFile(keyPath, rsa.ExportRSAPrivateKeyPem());
             return rsa;
         }
         catch
@@ -81,14 +82,9 @@ internal sealed class DevelopmentJwtSigningService
         }
     }
 
-    private static RSA LoadKeyFromFile(string keyPath)
+    private RSA LoadKeyFromFile(string keyPath)
     {
-        ValidateNoSymlink(keyPath);
-
-        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            ValidateFilePermissions(keyPath);
-
-        var pem = File.ReadAllText(keyPath);
+        var pem = _fileSystem.ReadKeyFile(keyPath);
         var rsa = RSA.Create();
         try
         {
@@ -99,131 +95,6 @@ internal sealed class DevelopmentJwtSigningService
         {
             rsa.Dispose();
             throw;
-        }
-    }
-
-    private static void WriteKeyToFile(string keyPath, RSA rsa)
-    {
-        var pem = rsa.ExportRSAPrivateKeyPem();
-
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            WriteKeyFileWindows(keyPath, pem);
-        else
-            WriteKeyFileUnix(keyPath, pem);
-    }
-
-    [UnsupportedOSPlatform("windows")]
-    private static void WriteKeyFileUnix(string keyPath, string pem)
-    {
-        // Create with 0600 atomically — no create-then-chmod window.
-        var options = new FileStreamOptions
-        {
-            Mode = FileMode.CreateNew,
-            Access = FileAccess.Write,
-            Share = FileShare.None,
-            Options = FileOptions.None,
-            UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite,
-        };
-
-        using var stream = new FileStream(keyPath, options);
-        using var writer = new StreamWriter(stream);
-        writer.Write(pem);
-    }
-
-    [SupportedOSPlatform("windows")]
-    private static void WriteKeyFileWindows(string keyPath, string pem)
-    {
-        // Write with default permissions, then apply restrictive ACL.
-        File.WriteAllText(keyPath, pem);
-        WindowsFilePermissions.SetRestrictiveAcl(keyPath);
-    }
-
-    private static void EnsureDirectorySafe(string directory)
-    {
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-        {
-            EnsureDirectorySafeWindows(directory);
-        }
-        else
-        {
-            EnsureDirectoryUnix(directory);
-        }
-    }
-
-    [SupportedOSPlatform("windows")]
-    private static void EnsureDirectorySafeWindows(string directory)
-    {
-        Directory.CreateDirectory(directory);
-        WindowsFilePermissions.SetRestrictiveDirectoryAcl(directory);
-    }
-
-    [UnsupportedOSPlatform("windows")]
-    private static void EnsureDirectoryUnix(string directory)
-    {
-        if (Directory.Exists(directory))
-        {
-            ValidateDirectoryPermissions(directory);
-            return;
-        }
-
-        // Create with 0700 permissions.
-        Directory.CreateDirectory(directory);
-
-        var mode = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
-        File.SetUnixFileMode(directory, mode);
-    }
-
-    [UnsupportedOSPlatform("windows")]
-    private static void ValidateDirectoryPermissions(string directory)
-    {
-        var mode = File.GetUnixFileMode(directory);
-
-        var groupOrOtherBits =
-            UnixFileMode.GroupRead | UnixFileMode.GroupWrite | UnixFileMode.GroupExecute
-            | UnixFileMode.OtherRead | UnixFileMode.OtherWrite | UnixFileMode.OtherExecute;
-
-        if ((mode & groupOrOtherBits) != 0)
-        {
-            throw new ZeeKayDaConfigurationException(
-                new ZeeKayDaConfigurationFailure(
-                    "signing.dev_keys.directory_too_permissive",
-                    $"Signing key directory '{directory}' has permissions broader than 0700. " +
-                    "This indicates the directory may be accessible by other users. " +
-                    "Restrict permissions to 0700 (owner read/write/execute only) before proceeding."));
-        }
-    }
-
-    [UnsupportedOSPlatform("windows")]
-    private static void ValidateFilePermissions(string keyPath)
-    {
-        var mode = File.GetUnixFileMode(keyPath);
-
-        var groupOrOtherBits =
-            UnixFileMode.GroupRead | UnixFileMode.GroupWrite | UnixFileMode.GroupExecute
-            | UnixFileMode.OtherRead | UnixFileMode.OtherWrite | UnixFileMode.OtherExecute;
-
-        if ((mode & groupOrOtherBits) != 0)
-        {
-            throw new ZeeKayDaConfigurationException(
-                new ZeeKayDaConfigurationFailure(
-                    "signing.dev_keys.file_too_permissive",
-                    $"Signing key file '{keyPath}' has permissions broader than 0600. " +
-                    "The key file is treated as compromised. " +
-                    "Delete the file and restart the application to generate a new key."));
-        }
-    }
-
-    private static void ValidateNoSymlink(string keyPath)
-    {
-        var info = new FileInfo(keyPath);
-        if (info.LinkTarget is not null)
-        {
-            throw new ZeeKayDaConfigurationException(
-                new ZeeKayDaConfigurationFailure(
-                    "signing.dev_keys.symlink_detected",
-                    $"Signing key path '{keyPath}' resolves through a symlink. " +
-                    "Symlinks are not permitted for key files to prevent redirect attacks. " +
-                    "Remove the symlink and restart the application."));
         }
     }
 

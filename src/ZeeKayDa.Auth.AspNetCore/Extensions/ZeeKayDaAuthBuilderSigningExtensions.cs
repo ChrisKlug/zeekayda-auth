@@ -87,6 +87,7 @@ public static class ZeeKayDaAuthBuilderSigningExtensions
         // else: no argument passed → PersistToDirectory stays null → ephemeral mode.
 
         builder.Services.AddSingleton<TimeProvider>(TimeProvider.System);
+        builder.Services.AddSingleton<ISigningKeyFileSystem, OsSigningKeyFileSystem>();
         builder.Services.AddSingleton<IJwtSigningService, DevelopmentJwtSigningService>();
         builder.Services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IHostedService, DevelopmentSigningKeyWarningService>());
