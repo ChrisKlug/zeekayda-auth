@@ -283,7 +283,7 @@ public sealed class JwtSigningServiceTests
     [Fact]
     public async Task GetSigningKeysAsync_accepts_nistP256_with_ES256()
     {
-        var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var ecParams = ec.ExportParameters(false);
         var descriptor = new SigningKeyDescriptor("ec-kid", SigningAlgorithm.ES256, ecParams);
         var entry = new SigningKeyEntry(descriptor, 0);
@@ -300,7 +300,7 @@ public sealed class JwtSigningServiceTests
     public async Task GetSigningKeysAsync_throws_ZeeKayDaConfigurationException_on_ec_curve_algorithm_mismatch()
     {
         // P-384 key with ES256 (which requires P-256)
-        var ec = ECDsa.Create(ECCurve.NamedCurves.nistP384);
+        using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP384);
         var ecParams = ec.ExportParameters(false);
         var descriptor = new SigningKeyDescriptor("ec-kid", SigningAlgorithm.ES256, ecParams);
         var entry = new SigningKeyEntry(descriptor, 0);
@@ -320,7 +320,7 @@ public sealed class JwtSigningServiceTests
     {
         // EC descriptor (ES256) but private key is RSA — mismatch detected at load time.
         using var rsa = RSA.Create(2048);
-        var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var ecParams = ec.ExportParameters(false);
         var descriptor = new SigningKeyDescriptor("mismatch-kid", SigningAlgorithm.ES256, ecParams);
         var entry = new SigningKeyEntry(descriptor, 0);
@@ -340,7 +340,7 @@ public sealed class JwtSigningServiceTests
     {
         // RSA descriptor with an ECDsa private key — mismatch.
         using var rsa = RSA.Create(2048);
-        var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var rsaParams = rsa.ExportParameters(false);
         var descriptor = new SigningKeyDescriptor("mismatch-rsa-kid", SigningAlgorithm.RS256, rsaParams);
         var entry = new SigningKeyEntry(descriptor, 0);
@@ -389,7 +389,7 @@ public sealed class JwtSigningServiceTests
             SigningAlgorithm.ES384 => ECCurve.NamedCurves.nistP384,
             _ => ECCurve.NamedCurves.nistP521,
         };
-        var ec = ECDsa.Create(curve);
+        using var ec = ECDsa.Create(curve);
         var ecParams = ec.ExportParameters(false);
         var descriptor = new SigningKeyDescriptor("ec-kid", algorithm, ecParams);
         var entry = new SigningKeyEntry(descriptor, 0);
@@ -408,7 +408,7 @@ public sealed class JwtSigningServiceTests
     [Fact]
     public async Task GetSigningKeysAsync_accepts_nistP384_with_ES384()
     {
-        var ec = ECDsa.Create(ECCurve.NamedCurves.nistP384);
+        using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP384);
         var ecParams = ec.ExportParameters(false);
         var descriptor = new SigningKeyDescriptor("ec-384-kid", SigningAlgorithm.ES384, ecParams);
         var entry = new SigningKeyEntry(descriptor, 0);
@@ -424,7 +424,7 @@ public sealed class JwtSigningServiceTests
     [Fact]
     public async Task GetSigningKeysAsync_accepts_nistP521_with_ES512()
     {
-        var ec = ECDsa.Create(ECCurve.NamedCurves.nistP521);
+        using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP521);
         var ecParams = ec.ExportParameters(false);
         var descriptor = new SigningKeyDescriptor("ec-521-kid", SigningAlgorithm.ES512, ecParams);
         var entry = new SigningKeyEntry(descriptor, 0);
@@ -441,7 +441,7 @@ public sealed class JwtSigningServiceTests
     public async Task GetSigningKeysAsync_throws_when_ec_key_has_null_curve_oid()
     {
         // ECParameters with a null Curve.Oid — curveName will be null, which doesn't match any allowed value.
-        var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var ecParams = ec.ExportParameters(false);
         // Build ECParameters with an explicit (non-named) curve that has no OID.
         var noOidCurveParams = new ECParameters
@@ -468,7 +468,7 @@ public sealed class JwtSigningServiceTests
         // Construct an EC descriptor with P-192 — a real curve but not in the allowed set.
         // We build ECParameters with the P-192 OID so the FriendlyName does not match
         // nistP256/nistP384/nistP521/P-256/P-384/P-521.
-        var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var ecParams = ec.ExportParameters(false);
         // Replace the curve with a non-allowed named curve by building custom ECParameters.
         var unsupportedCurveParams = new ECParameters
@@ -494,8 +494,8 @@ public sealed class JwtSigningServiceTests
     {
         // Arrange: LoadKeysAsync blocks so that both callers can queue on the semaphore
         // before the first one finishes, forcing the second to hit the double-check path.
-        var loadStarted = new SemaphoreSlim(0, 1);
-        var loadGate = new SemaphoreSlim(0, 1);
+        using var loadStarted = new SemaphoreSlim(0, 1);
+        using var loadGate = new SemaphoreSlim(0, 1);
         var callCount = 0;
 
         async ValueTask<SigningKeySet> SlowFactory()
@@ -538,7 +538,7 @@ public sealed class JwtSigningServiceTests
         // ECParameters with a default-constructed ECCurve has Curve.Oid == null.
         // ValidateKeyStrength does ecParams.Curve.Oid?.FriendlyName — the ?. short-circuits to null,
         // and ?? string.Empty yields "" which is not in AcceptedEcCurveNames.
-        var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var nullOidParams = new ECParameters
         {
             Curve = new ECCurve(), // Oid is null on a default-constructed ECCurve
@@ -564,7 +564,7 @@ public sealed class JwtSigningServiceTests
         // The private key is a stub ECDsa whose ExportParameters returns Curve.Oid == null,
         // hitting the ?? string.Empty path in ValidateKeyAlgorithmCompatibility.
         // curveName becomes "" which does not match nistP256/P-256, so the mismatch is detected.
-        var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var ecParams = ec.ExportParameters(false);
         var descriptor = new SigningKeyDescriptor("null-oid-compat-kid", SigningAlgorithm.ES256, ecParams);
         var entry = new SigningKeyEntry(descriptor, 0);
