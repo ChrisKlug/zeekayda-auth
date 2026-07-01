@@ -45,6 +45,15 @@ internal sealed class DevelopmentSigningKeyOptions : JwtSigningServiceOptions
     /// <c>AddDevelopmentJwtSigningKeys</c> is
     /// <c>{IHostEnvironment.ContentRootPath}/.zeekayda/signing-keys/</c>.
     /// </para>
+    /// <para>
+    /// <b>Trust decision:</b> This value is developer-supplied configuration set at application
+    /// startup — it is never bound from runtime user input, URL parameters, or any untrusted
+    /// source. Absolute paths are therefore accepted intentionally: a developer configuring their
+    /// own machine chooses where keys are stored. Key confidentiality is enforced by
+    /// <see cref="ISigningKeyFileSystem"/> regardless of the path shape; the directory is created
+    /// with owner-only permissions (<c>0700</c>) and the key file with <c>0600</c>, and both are
+    /// validated for correct permissions and ownership before use.
+    /// </para>
     /// </remarks>
     public string? PersistToDirectory { get; set; }
 }

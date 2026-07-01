@@ -130,12 +130,20 @@ public sealed class SigningKeySetTests
         // Do not use `using var rsa` — the set takes ownership and disposes it.
         var rsa = tuple.Rsa;
         var set = new SigningKeySet([tuple.Entry], [rsa]);
+        try
+        {
+            set.Dispose(); // releases the cache's borrow; refcount drops to 0
 
-        set.Dispose(); // releases the cache's borrow; refcount drops to 0
+            var borrowed = set.TryBorrow();
 
-        var borrowed = set.TryBorrow();
-
-        borrowed.Should().BeFalse("a disposed set must not be borrowed");
+            borrowed.Should().BeFalse("a disposed set must not be borrowed");
+        }
+        finally
+        {
+            // Dispose again is safe (idempotent) and ensures cleanup if an assertion throws
+            // before the explicit Dispose above runs.
+            set.Dispose();
+        }
     }
 
     [Fact]
@@ -145,23 +153,31 @@ public sealed class SigningKeySetTests
         // Do not use `using var rsa` — we verify disposal state manually.
         var rsa = tuple.Rsa;
         var set = new SigningKeySet([tuple.Entry], [rsa]);
+        try
+        {
+            // Acquire a borrow (simulates a fast-path caller about to sign).
+            var borrowed = set.TryBorrow();
+            borrowed.Should().BeTrue();
 
-        // Acquire a borrow (simulates a fast-path caller about to sign).
-        var borrowed = set.TryBorrow();
-        borrowed.Should().BeTrue();
+            // Dispose the set (simulates DisposeAsync or a cache refresh).
+            set.Dispose();
 
-        // Dispose the set (simulates DisposeAsync or a cache refresh).
-        set.Dispose();
+            // The RSA is not yet disposed because the borrow is still outstanding.
+            var canExport = () => rsa.ExportParameters(false);
+            canExport.Should().NotThrow("key must remain usable while a borrow is outstanding");
 
-        // The RSA is not yet disposed because the borrow is still outstanding.
-        var canExport = () => rsa.ExportParameters(false);
-        canExport.Should().NotThrow("key must remain usable while a borrow is outstanding");
+            // Return the borrow — now refcount hits zero and keys are disposed.
+            set.Return();
 
-        // Return the borrow — now refcount hits zero and keys are disposed.
-        set.Return();
-
-        var cannotExport = () => rsa.ExportParameters(false);
-        cannotExport.Should().Throw<ObjectDisposedException>(
-            "key must be disposed once all borrows are returned");
+            var cannotExport = () => rsa.ExportParameters(false);
+            cannotExport.Should().Throw<ObjectDisposedException>(
+                "key must be disposed once all borrows are returned");
+        }
+        finally
+        {
+            // Ensure the set is always disposed even if an assertion throws before the
+            // explicit Dispose() and Return() above. Dispose() is idempotent.
+            set.Dispose();
+        }
     }
 }

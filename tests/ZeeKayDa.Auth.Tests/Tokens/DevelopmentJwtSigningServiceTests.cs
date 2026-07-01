@@ -178,6 +178,39 @@ public sealed class DevelopmentJwtSigningServiceTests
     // ── Key memoization (no rotation) ────────────────────────────────────────────────────────────
 
     [Fact]
+    public async Task Memoized_set_is_returned_when_LoadKeysAsync_is_invoked_again()
+    {
+        // The base class normally prevents a second LoadKeysAsync call because DevelopmentSigningKeyOptions
+        // sets RefreshInterval = TimeSpan.MaxValue. This test explicitly overrides RefreshInterval so
+        // the base class's cache expires, forcing a second LoadKeysAsync call. The memoization field
+        // in DevelopmentJwtSigningService then returns the same key set — verifying that the early-return
+        // branch in LoadKeysAsync is exercised and that the kid is stable across base-class re-invocations.
+        var timeProvider = new FakeTimeProvider();
+        var options = new DevelopmentSigningKeyOptions
+        {
+            PersistToDirectory = null,
+            RefreshInterval = TimeSpan.FromMinutes(1), // short interval to allow second LoadKeysAsync call
+        };
+        await using var sut = new DevelopmentJwtSigningService(
+            Options.Create(options),
+            timeProvider,
+            new InMemorySigningKeyFileSystem());
+        var ct = TestContext.Current.CancellationToken;
+
+        var firstKeys = await sut.GetSigningKeysAsync(ct);
+        var firstKid = firstKeys[0].Kid;
+
+        // Advance past the refresh interval so the base class re-calls LoadKeysAsync.
+        timeProvider.Advance(TimeSpan.FromMinutes(2));
+
+        var secondKeys = await sut.GetSigningKeysAsync(ct);
+        var secondKid = secondKeys[0].Kid;
+
+        secondKid.Should().Be(firstKid,
+            "the memoized key set must be returned even when the base class calls LoadKeysAsync a second time");
+    }
+
+    [Fact]
     public async Task Ephemeral_kid_is_unchanged_after_refresh_interval_elapses()
     {
         var timeProvider = new FakeTimeProvider();

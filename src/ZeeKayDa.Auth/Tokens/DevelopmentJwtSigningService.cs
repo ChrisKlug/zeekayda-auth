@@ -1,5 +1,8 @@
+using System.Buffers;
+using System.Buffers.Text;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using Microsoft.Extensions.Options;
 
 namespace ZeeKayDa.Auth.Tokens;
@@ -53,6 +56,10 @@ internal sealed class DevelopmentJwtSigningService
     /// <inheritdoc/>
     protected override ValueTask<SigningKeySet> LoadKeysAsync(CancellationToken cancellationToken)
     {
+        // CancellationToken is accepted to satisfy the abstract method contract but is not
+        // observed here because this implementation loads only from local memory or a local
+        // file — neither of which can block on a network call. A future network-bound
+        // implementation should propagate the token to all I/O operations.
         if (_memoizedSet is not null)
             return ValueTask.FromResult(_memoizedSet);
 
@@ -113,12 +120,34 @@ internal sealed class DevelopmentJwtSigningService
 
     private static string ComputeKid(RSA rsa)
     {
-        // Derive a stable kid from the public key's SHA-256 thumbprint (base64url-encoded).
-        var publicKeyBytes = rsa.ExportSubjectPublicKeyInfo();
-        var hash = SHA256.HashData(publicKeyBytes);
-        return Convert.ToBase64String(hash)
-            .TrimEnd('=')
-            .Replace('+', '-')
-            .Replace('/', '_');
+        // RFC 7638 JWK Thumbprint: SHA-256 of the canonical JSON of the minimal RSA JWK member
+        // set, with members in lexicographic order, no whitespace.
+        // For RSA: {"e":"<b64url(e)>","kty":"RSA","n":"<b64url(n)>"}
+        // This matches what external tools (jose-jwt, python-jose, online JWK inspectors) compute,
+        // so developers can correlate a kid in a token header to a key in a JWKS without confusion.
+        var rsaParams = rsa.ExportParameters(false);
+        var e = Base64UrlEncode(rsaParams.Exponent!);
+        var n = Base64UrlEncode(rsaParams.Modulus!);
+
+        // Use Utf8JsonWriter to produce the canonical JSON bytes without intermediate string allocation.
+        var buffer = new ArrayBufferWriter<byte>();
+        using (var writer = new Utf8JsonWriter(buffer, new JsonWriterOptions { Indented = false }))
+        {
+            writer.WriteStartObject();
+            writer.WriteString("e", e);
+            writer.WriteString("kty", "RSA");
+            writer.WriteString("n", n);
+            writer.WriteEndObject();
+        }
+
+        var hash = SHA256.HashData(buffer.WrittenSpan);
+        return Base64UrlEncode(hash);
+    }
+
+    private static string Base64UrlEncode(byte[] input)
+    {
+        var encoded = new byte[Base64Url.GetEncodedLength(input.Length)];
+        Base64Url.EncodeToUtf8(input, encoded);
+        return Encoding.ASCII.GetString(encoded);
     }
 }
