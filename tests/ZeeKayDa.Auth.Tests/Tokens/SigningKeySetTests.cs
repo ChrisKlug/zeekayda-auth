@@ -26,8 +26,9 @@ public sealed class SigningKeySetTests
     [Fact]
     public void Constructor_throws_when_privateKeys_is_null()
     {
-        var (rsa, entry) = MakeRsaEntry();
-        using var _ = rsa;
+        var tuple = MakeRsaEntry();
+        using var rsa = tuple.Rsa;
+        var entry = tuple.Entry;
         var act = () => new SigningKeySet([entry], null!);
         act.Should().Throw<ArgumentNullException>().WithParameterName("privateKeys");
     }
@@ -55,19 +56,23 @@ public sealed class SigningKeySetTests
     [Fact]
     public void ActiveKey_returns_first_entry()
     {
-        var (rsa1, entry1) = MakeRsaEntry("k1", 0);
-        var (rsa2, entry2) = MakeRsaEntry("k2", 1);
-        using var set = new SigningKeySet([entry1, entry2], [rsa1, rsa2]);
+        var tuple1 = MakeRsaEntry("k1", 0);
+        var tuple2 = MakeRsaEntry("k2", 1);
+        using var rsa1 = tuple1.Rsa;
+        using var rsa2 = tuple2.Rsa;
+        using var set = new SigningKeySet([tuple1.Entry, tuple2.Entry], [rsa1, rsa2]);
 
-        set.ActiveKey.Should().Be(entry1);
+        set.ActiveKey.Should().Be(tuple1.Entry);
     }
 
     [Fact]
     public void GetPrivateKey_returns_correct_key_by_index()
     {
-        var (rsa1, entry1) = MakeRsaEntry("k1", 0);
-        var (rsa2, entry2) = MakeRsaEntry("k2", 1);
-        using var set = new SigningKeySet([entry1, entry2], [rsa1, rsa2]);
+        var tuple1 = MakeRsaEntry("k1", 0);
+        var tuple2 = MakeRsaEntry("k2", 1);
+        using var rsa1 = tuple1.Rsa;
+        using var rsa2 = tuple2.Rsa;
+        using var set = new SigningKeySet([tuple1.Entry, tuple2.Entry], [rsa1, rsa2]);
 
         set.GetPrivateKey(0).Should().BeSameAs(rsa1);
         set.GetPrivateKey(1).Should().BeSameAs(rsa2);
@@ -78,8 +83,9 @@ public sealed class SigningKeySetTests
     [Fact]
     public void GetPrivateKey_throws_ObjectDisposedException_after_Dispose()
     {
-        var (rsa, entry) = MakeRsaEntry();
-        using var set = new SigningKeySet([entry], [rsa]);
+        var tuple = MakeRsaEntry();
+        using var rsa = tuple.Rsa;
+        using var set = new SigningKeySet([tuple.Entry], [rsa]);
 
         set.Dispose();
 
@@ -90,12 +96,72 @@ public sealed class SigningKeySetTests
     [Fact]
     public void Dispose_can_be_called_multiple_times_without_throwing()
     {
-        var (rsa, entry) = MakeRsaEntry();
-        using var set = new SigningKeySet([entry], [rsa]);
+        var tuple = MakeRsaEntry();
+        using var rsa = tuple.Rsa;
+        using var set = new SigningKeySet([tuple.Entry], [rsa]);
 
         set.Dispose();
         var act = () => set.Dispose();
 
         act.Should().NotThrow();
+    }
+
+    // ── Reference counting ────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void TryBorrow_returns_true_on_a_live_set()
+    {
+        var tuple = MakeRsaEntry();
+        using var rsa = tuple.Rsa;
+        using var set = new SigningKeySet([tuple.Entry], [rsa]);
+
+        var borrowed = set.TryBorrow();
+
+        borrowed.Should().BeTrue();
+
+        // Balance the borrow so the set can be cleaned up by the using block.
+        set.Return();
+    }
+
+    [Fact]
+    public void TryBorrow_returns_false_after_Dispose()
+    {
+        var tuple = MakeRsaEntry();
+        // Do not use `using var rsa` — the set takes ownership and disposes it.
+        var rsa = tuple.Rsa;
+        var set = new SigningKeySet([tuple.Entry], [rsa]);
+
+        set.Dispose(); // releases the cache's borrow; refcount drops to 0
+
+        var borrowed = set.TryBorrow();
+
+        borrowed.Should().BeFalse("a disposed set must not be borrowed");
+    }
+
+    [Fact]
+    public void Private_keys_are_not_disposed_until_all_borrows_are_returned()
+    {
+        var tuple = MakeRsaEntry();
+        // Do not use `using var rsa` — we verify disposal state manually.
+        var rsa = tuple.Rsa;
+        var set = new SigningKeySet([tuple.Entry], [rsa]);
+
+        // Acquire a borrow (simulates a fast-path caller about to sign).
+        var borrowed = set.TryBorrow();
+        borrowed.Should().BeTrue();
+
+        // Dispose the set (simulates DisposeAsync or a cache refresh).
+        set.Dispose();
+
+        // The RSA is not yet disposed because the borrow is still outstanding.
+        var canExport = () => rsa.ExportParameters(false);
+        canExport.Should().NotThrow("key must remain usable while a borrow is outstanding");
+
+        // Return the borrow — now refcount hits zero and keys are disposed.
+        set.Return();
+
+        var cannotExport = () => rsa.ExportParameters(false);
+        cannotExport.Should().Throw<ObjectDisposedException>(
+            "key must be disposed once all borrows are returned");
     }
 }

@@ -78,8 +78,17 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
     public async ValueTask<IReadOnlyList<SigningKeyDescriptor>> GetSigningKeysAsync(
         CancellationToken cancellationToken = default)
     {
-        var set = await GetOrRefreshCacheAsync(cancellationToken).ConfigureAwait(false);
-        return set.Descriptors;
+        // Borrow the set for the duration of the read; descriptors are safe to access
+        // without holding the lock once we hold a borrow.
+        var set = await BorrowSetAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return set.Descriptors;
+        }
+        finally
+        {
+            set.Return();
+        }
     }
 
     /// <inheritdoc/>
@@ -87,8 +96,17 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
         ReadOnlyMemory<byte> payloadSegment,
         CancellationToken cancellationToken = default)
     {
-        var set = await GetOrRefreshCacheAsync(cancellationToken).ConfigureAwait(false);
-        return PerformSign(set, payloadSegment);
+        // Borrow the set for the duration of the signing operation so that a concurrent
+        // DisposeAsync cannot release the private key objects while we are using them.
+        var set = await BorrowSetAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return PerformSign(set, payloadSegment);
+        }
+        finally
+        {
+            set.Return();
+        }
     }
 
     /// <inheritdoc/>
@@ -97,8 +115,12 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
         await _refreshLock.WaitAsync().ConfigureAwait(false);
         try
         {
-            _cachedSet?.Dispose();
+            var set = _cachedSet;
             _cachedSet = null;
+
+            // Dispose releases the cache's borrow. Private keys are freed only once all
+            // in-flight borrows (from the fast path) have also called Return().
+            set?.Dispose();
         }
         finally
         {
@@ -109,23 +131,34 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
         GC.SuppressFinalize(this);
     }
 
-    private async ValueTask<SigningKeySet> GetOrRefreshCacheAsync(CancellationToken cancellationToken)
+    /// <summary>
+    /// Returns the current (or freshly loaded) key set with a borrow already acquired.
+    /// The caller MUST call <see cref="SigningKeySet.Return"/> exactly once when done.
+    /// </summary>
+    private async ValueTask<SigningKeySet> BorrowSetAsync(CancellationToken cancellationToken)
     {
         var now = _timeProvider.GetUtcNow();
 
-        // Fast path: cache is still valid — avoid lock acquisition entirely.
+        // Fast path: cache is still valid — try to borrow without acquiring the lock.
+        // TryBorrow fails only if DisposeAsync has already zeroed the refcount, in which
+        // case we fall through to the slow path.
         var current = Volatile.Read(ref _cachedSet);
-        if (current is not null && now < _cacheExpiresAt)
+        if (current is not null && now < _cacheExpiresAt && current.TryBorrow())
             return current;
 
-        // Cache is cold or expired: single-flight gate.
+        // Cache is cold, expired, or being disposed: single-flight gate.
         await _refreshLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             // Re-check inside the lock; another caller may have refreshed while we waited.
             now = _timeProvider.GetUtcNow();
             if (_cachedSet is not null && now < _cacheExpiresAt)
+            {
+                // Inside the lock the set cannot be concurrently disposed, so TryBorrow
+                // is guaranteed to succeed here.
+                _cachedSet.TryBorrow();
                 return _cachedSet;
+            }
 
             var previous = _cachedSet;
             var newSet = await LoadKeysAsync(cancellationToken).ConfigureAwait(false);
@@ -133,14 +166,19 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
             ValidateKeySet(newSet);
 
             _cachedSet = newSet;
-            _cacheExpiresAt = _timeProvider.GetUtcNow().Add(_refreshInterval);
 
-            // Dispose the previous set's private keys now that we hold the lock and no
-            // in-flight SignAsync can reference the old set (they all came through the same
-            // lock path to reach the cache, or they used the previous Volatile.Read fast path
-            // and have already completed their signing operation before we refreshed).
+            // Guard against overflow when RefreshInterval is effectively infinite
+            // (e.g. TimeSpan.MaxValue set by DevelopmentSigningKeyOptions).
+            _cacheExpiresAt = _refreshInterval == TimeSpan.MaxValue
+                ? DateTimeOffset.MaxValue
+                : _timeProvider.GetUtcNow().Add(_refreshInterval);
+
+            // Release the cache's borrow on the old set. Its private keys are freed once
+            // any in-flight fast-path borrows that still hold a reference have also returned.
             previous?.Dispose();
 
+            // Acquire a borrow for the caller before releasing the lock.
+            newSet.TryBorrow();
             return newSet;
         }
         finally

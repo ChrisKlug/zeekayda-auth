@@ -11,6 +11,21 @@ namespace ZeeKayDa.Auth.Tokens;
 internal sealed class DevelopmentSigningKeyOptions : JwtSigningServiceOptions
 {
     /// <summary>
+    /// Initialises development options with an infinite refresh interval.
+    /// </summary>
+    /// <remarks>
+    /// Dev keys are memoized for the entire process lifetime. Setting
+    /// <see cref="JwtSigningServiceOptions.RefreshInterval"/> to <see cref="TimeSpan.MaxValue"/>
+    /// prevents the base class from ever calling <c>LoadKeysAsync</c> a second time and
+    /// disposing the key set that is still held by the memoization field, which would otherwise
+    /// cause an <see cref="ObjectDisposedException"/> on the next signing call.
+    /// </remarks>
+    public DevelopmentSigningKeyOptions()
+    {
+        RefreshInterval = TimeSpan.MaxValue;
+    }
+
+    /// <summary>
     /// Gets or sets the path to the directory where the development signing key is persisted.
     /// </summary>
     /// <remarks>

@@ -42,6 +42,15 @@ internal sealed class OsSigningKeyFileSystem : ISigningKeyFileSystem
     {
         // Open the file first to close the TOCTOU window: validate permissions on the
         // already-open handle so the path cannot be swapped between the check and the read.
+        //
+        // Residual TOCTOU risk: The symlink walk in ValidateNoSymlink re-inspects parent
+        // directory components by path string after the handle is open. An extremely narrow
+        // race exists where a parent directory could be swapped to a symlink after the file
+        // is opened but before the parent directory walk completes. On Unix the open handle
+        // prevents the leaf file from being swapped, which covers the highest-impact attack
+        // vector. Eliminating the residual parent-directory risk entirely would require
+        // opening each directory component as a file descriptor and using fstatat/openat
+        // exclusively, which is not available via the .NET BCL and is therefore deferred.
         using var stream = File.Open(keyPath, FileMode.Open, FileAccess.Read, FileShare.Read);
 
         ValidateNoSymlink(stream);
@@ -151,6 +160,8 @@ internal sealed class OsSigningKeyFileSystem : ISigningKeyFileSystem
         // On Windows, SafeFileHandle.IsInvalid would catch a broken symlink, but
         // FileSystemInfo.LinkTarget on the resolved name is the clearest cross-platform check.
         var resolvedPath = stream.Name;
+
+        // Check the leaf file itself.
         var info = new FileInfo(resolvedPath);
         if (info.LinkTarget is not null)
         {
@@ -160,6 +171,26 @@ internal sealed class OsSigningKeyFileSystem : ISigningKeyFileSystem
                     $"Signing key path '{resolvedPath}' resolves through a symlink. " +
                     "Symlinks are not permitted for key files to prevent redirect attacks. " +
                     "Remove the symlink and restart the application."));
+        }
+
+        // Walk every parent directory component to catch symlinks in the path hierarchy.
+        // An attacker with directory write access could redirect a parent directory to
+        // an attacker-controlled location even when the leaf file itself is not a symlink.
+        var directory = Path.GetDirectoryName(resolvedPath);
+        while (!string.IsNullOrEmpty(directory))
+        {
+            var dirInfo = new DirectoryInfo(directory);
+            if (dirInfo.LinkTarget is not null)
+            {
+                throw new ZeeKayDaConfigurationException(
+                    new ZeeKayDaConfigurationFailure(
+                        "signing.dev_keys.symlink_detected",
+                        $"Signing key path '{resolvedPath}' resolves through a symlinked directory '{directory}'. " +
+                        "Symlinks are not permitted anywhere in the key path to prevent redirect attacks. " +
+                        "Remove the symlink and restart the application."));
+            }
+
+            directory = Path.GetDirectoryName(directory);
         }
     }
 
