@@ -7,7 +7,7 @@
   </PropertyGroup>
 
   <!-- NuGet packaging and documentation — only applied to src/ projects -->
-  <PropertyGroup Condition="$(MSBuildProjectFullPath.Contains('/src/'))">
+  <PropertyGroup Condition="$(MSBuildProjectFullPath.Contains('/src/')) Or $(MSBuildProjectFullPath.Contains('\src\'))">
     <VersionPrefix>0.1.0</VersionPrefix>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <IsPackable>true</IsPackable>
@@ -24,14 +24,14 @@
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
   </PropertyGroup>
 
-  <ItemGroup Condition="$(MSBuildProjectFullPath.Contains('/src/'))">
+  <ItemGroup Condition="$(MSBuildProjectFullPath.Contains('/src/')) Or $(MSBuildProjectFullPath.Contains('\src\'))">
     <None Include="$(MSBuildThisFileDirectory)PACKAGE_README.md" Pack="true" PackagePath="/" />
     <None Include="$(MSBuildThisFileDirectory)assets/icon.png" Pack="true" PackagePath="/" />
     <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="All" />
   </ItemGroup>
 
   <!-- Test and samples projects should not produce NuGet packages -->
-  <PropertyGroup Condition="!$(MSBuildProjectFullPath.Contains('/src/'))">
+  <PropertyGroup Condition="!($(MSBuildProjectFullPath.Contains('/src/')) Or $(MSBuildProjectFullPath.Contains('\src\')))">
     <IsPackable>false</IsPackable>
   </PropertyGroup>
 
