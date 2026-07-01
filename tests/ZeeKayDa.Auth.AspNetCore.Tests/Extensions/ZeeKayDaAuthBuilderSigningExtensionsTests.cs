@@ -62,6 +62,26 @@ public sealed class ZeeKayDaAuthBuilderSigningExtensionsTests
     }
 
     [Fact]
+    public async Task AddDevelopmentJwtSigningKeys_does_not_overwrite_already_registered_TimeProvider()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment { ContentRootPath = "/app" });
+
+        // Pre-register a custom TimeProvider (e.g. a test double) before calling the extension.
+        var customTimeProvider = new StubTimeProvider();
+        services.AddSingleton<TimeProvider>(customTimeProvider);
+
+        var builder = new ZeeKayDaAuthBuilder(services);
+        builder.AddDevelopmentJwtSigningKeys();
+
+        await using var provider = services.BuildServiceProvider();
+        var tp = provider.GetRequiredService<TimeProvider>();
+        tp.Should().BeSameAs(customTimeProvider, "TryAddSingleton must not overwrite a pre-registered TimeProvider");
+    }
+
+    private sealed class StubTimeProvider : TimeProvider;
+
+    [Fact]
     public void AddDevelopmentJwtSigningKeys_registers_DevelopmentSigningKeyWarningService_as_IHostedService()
     {
         var services = new ServiceCollection();

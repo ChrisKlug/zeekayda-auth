@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Text;
 using Microsoft.Extensions.Options;
 
 namespace ZeeKayDa.Auth.Tokens;
@@ -17,6 +18,11 @@ namespace ZeeKayDa.Auth.Tokens;
 /// <c>DevelopmentSigningKeyWarningService</c> (an <c>IHostedService</c> registered alongside
 /// this provider). This provider's only responsibility is loading the key material.
 /// </para>
+/// <para>
+/// Dev keys are generated once and memoized. Unlike production providers, there is no
+/// rotation use-case for dev keys; rotating an ephemeral key would silently invalidate all
+/// tokens issued within the first refresh interval of the process lifetime.
+/// </para>
 /// </remarks>
 internal sealed class DevelopmentJwtSigningService
     : JwtSigningService<DevelopmentSigningKeyOptions>
@@ -29,6 +35,9 @@ internal sealed class DevelopmentJwtSigningService
 
     private readonly IOptions<DevelopmentSigningKeyOptions> _devOptions;
     private readonly ISigningKeyFileSystem _fileSystem;
+
+    // Memoized on first call — dev keys are never rotated within a process lifetime.
+    private SigningKeySet? _memoizedSet;
 
     public DevelopmentJwtSigningService(
         IOptions<DevelopmentSigningKeyOptions> devOptions,
@@ -44,6 +53,9 @@ internal sealed class DevelopmentJwtSigningService
     /// <inheritdoc/>
     protected override ValueTask<SigningKeySet> LoadKeysAsync(CancellationToken cancellationToken)
     {
+        if (_memoizedSet is not null)
+            return ValueTask.FromResult(_memoizedSet);
+
         var persistDir = _devOptions.Value.PersistToDirectory;
         var rsa = persistDir is not null
             ? LoadOrGeneratePersistedKey(persistDir)
@@ -55,6 +67,7 @@ internal sealed class DevelopmentJwtSigningService
         var entry = new SigningKeyEntry(descriptor, 0);
         var set = new SigningKeySet([entry], [rsa]);
 
+        _memoizedSet = set;
         return ValueTask.FromResult(set);
     }
 
@@ -84,17 +97,25 @@ internal sealed class DevelopmentJwtSigningService
 
     private RSA LoadKeyFromFile(string keyPath)
     {
-        var pem = _fileSystem.ReadKeyFile(keyPath);
-        var rsa = RSA.Create();
+        var pemBytes = _fileSystem.ReadKeyFile(keyPath);
         try
         {
-            rsa.ImportFromPem(pem);
-            return rsa;
+            var rsa = RSA.Create();
+            try
+            {
+                rsa.ImportFromPem(Encoding.UTF8.GetChars(pemBytes));
+                return rsa;
+            }
+            catch
+            {
+                rsa.Dispose();
+                throw;
+            }
         }
-        catch
+        finally
         {
-            rsa.Dispose();
-            throw;
+            // Zeroize the PEM bytes so the private key material does not linger on the heap.
+            CryptographicOperations.ZeroMemory(pemBytes);
         }
     }
 

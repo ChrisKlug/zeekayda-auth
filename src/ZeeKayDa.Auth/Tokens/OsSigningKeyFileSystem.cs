@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Security.AccessControl;
 using System.Security.Principal;
+using System.Text;
 
 namespace ZeeKayDa.Auth.Tokens;
 
@@ -37,14 +38,19 @@ internal sealed class OsSigningKeyFileSystem : ISigningKeyFileSystem
     }
 
     /// <inheritdoc/>
-    public string ReadKeyFile(string keyPath)
+    public byte[] ReadKeyFile(string keyPath)
     {
-        ValidateNoSymlink(keyPath);
+        // Open the file first to close the TOCTOU window: validate permissions on the
+        // already-open handle so the path cannot be swapped between the check and the read.
+        using var stream = File.Open(keyPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+
+        ValidateNoSymlink(stream);
 
         if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            ValidateFilePermissionsUnix(keyPath);
+            ValidateFilePermissionsUnix(stream, keyPath);
 
-        return File.ReadAllText(keyPath);
+        using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: false);
+        return Encoding.UTF8.GetBytes(reader.ReadToEnd());
     }
 
     /// <inheritdoc/>
@@ -118,9 +124,11 @@ internal sealed class OsSigningKeyFileSystem : ISigningKeyFileSystem
     }
 
     [UnsupportedOSPlatform("windows")]
-    private static void ValidateFilePermissionsUnix(string keyPath)
+    private static void ValidateFilePermissionsUnix(FileStream stream, string keyPath)
     {
-        var mode = File.GetUnixFileMode(keyPath);
+        // Validate permissions on the already-open handle to eliminate the TOCTOU window
+        // between permission check and file read.
+        var mode = File.GetUnixFileMode(stream.SafeFileHandle);
 
         var groupOrOtherBits =
             UnixFileMode.GroupRead | UnixFileMode.GroupWrite | UnixFileMode.GroupExecute
@@ -137,15 +145,19 @@ internal sealed class OsSigningKeyFileSystem : ISigningKeyFileSystem
         }
     }
 
-    private static void ValidateNoSymlink(string keyPath)
+    private static void ValidateNoSymlink(FileStream stream)
     {
-        var info = new FileInfo(keyPath);
+        // Inspect the open handle's path rather than the original string path.
+        // On Windows, SafeFileHandle.IsInvalid would catch a broken symlink, but
+        // FileSystemInfo.LinkTarget on the resolved name is the clearest cross-platform check.
+        var resolvedPath = stream.Name;
+        var info = new FileInfo(resolvedPath);
         if (info.LinkTarget is not null)
         {
             throw new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure(
                     "signing.dev_keys.symlink_detected",
-                    $"Signing key path '{keyPath}' resolves through a symlink. " +
+                    $"Signing key path '{resolvedPath}' resolves through a symlink. " +
                     "Symlinks are not permitted for key files to prevent redirect attacks. " +
                     "Remove the symlink and restart the application."));
         }

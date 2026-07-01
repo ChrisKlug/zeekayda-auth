@@ -57,16 +57,17 @@ public sealed class DevelopmentSigningKeyWarningServiceTests
 
     private static DevelopmentSigningKeyWarningService BuildSut(
         string environmentName,
-        bool allowOutsideDevelopment = false,
+        IReadOnlyList<string>? allowedEnvironments = null,
         CapturingLogger<DevelopmentSigningKeyWarningService>? logger = null,
         FakeSigningService? signingService = null)
     {
+        var options = new AuthorizationServerOptions();
+        if (allowedEnvironments is not null)
+            options.AllowedDevelopmentJwtSigningKeysEnvironments = allowedEnvironments;
+
         return new DevelopmentSigningKeyWarningService(
             new FakeHostEnvironment(environmentName),
-            Options.Create(new AuthorizationServerOptions
-            {
-                AllowDevelopmentJwtSigningKeysOutsideDevelopment = allowOutsideDevelopment,
-            }),
+            Options.Create(options),
             signingService ?? new FakeSigningService(),
             logger ?? new CapturingLogger<DevelopmentSigningKeyWarningService>());
     }
@@ -155,25 +156,26 @@ public sealed class DevelopmentSigningKeyWarningServiceTests
         await sut.Awaiting(s => s.StartAsync(CancellationToken.None)).Should().NotThrowAsync();
     }
 
-    // ── StartAsync: non-Development, flag false — hard failure ───────────────────────────────────
+    // ── StartAsync: non-Development, not in allowed list — hard failure ─────────────────────────
 
     [Theory]
     [InlineData("Production")]
     [InlineData("Staging")]
     [InlineData("Custom")]
-    public async Task StartAsync_throws_ZeeKayDaConfigurationException_outside_Development_when_flag_is_false(
+    public async Task StartAsync_throws_ZeeKayDaConfigurationException_when_environment_not_in_allowed_list(
         string environmentName)
     {
-        var sut = BuildSut(environmentName, allowOutsideDevelopment: false);
+        // Default list is ["Development"] — any other environment must fail.
+        var sut = BuildSut(environmentName);
 
         await sut.Awaiting(s => s.StartAsync(CancellationToken.None))
             .Should().ThrowAsync<ZeeKayDaConfigurationException>();
     }
 
     [Fact]
-    public async Task StartAsync_throws_with_code_signing_dev_keys_non_development_when_flag_is_false()
+    public async Task StartAsync_throws_with_code_signing_dev_keys_non_development_when_environment_not_in_list()
     {
-        var sut = BuildSut(Environments.Production, allowOutsideDevelopment: false);
+        var sut = BuildSut(Environments.Production);
 
         var ex = await sut.Awaiting(s => s.StartAsync(CancellationToken.None))
             .Should().ThrowAsync<ZeeKayDaConfigurationException>();
@@ -183,10 +185,10 @@ public sealed class DevelopmentSigningKeyWarningServiceTests
     }
 
     [Fact]
-    public async Task StartAsync_does_not_log_before_throwing_when_flag_is_false()
+    public async Task StartAsync_does_not_log_before_throwing_when_environment_not_in_allowed_list()
     {
         var logger = new CapturingLogger<DevelopmentSigningKeyWarningService>();
-        var sut = BuildSut(Environments.Production, allowOutsideDevelopment: false, logger: logger);
+        var sut = BuildSut(Environments.Production, logger: logger);
 
         await sut.Awaiting(s => s.StartAsync(CancellationToken.None))
             .Should().ThrowAsync<ZeeKayDaConfigurationException>();
@@ -194,16 +196,34 @@ public sealed class DevelopmentSigningKeyWarningServiceTests
         logger.Entries.Should().BeEmpty("exception is thrown before any log entry is written");
     }
 
-    // ── StartAsync: non-Development, flag true — Critical log, no exception ──────────────────────
+    [Fact]
+    public async Task StartAsync_allows_when_environment_added_to_allowed_list()
+    {
+        var sut = BuildSut("IntegrationTesting",
+            allowedEnvironments: ["Development", "IntegrationTesting"]);
+
+        await sut.Awaiting(s => s.StartAsync(CancellationToken.None)).Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task StartAsync_allowed_list_comparison_is_case_insensitive()
+    {
+        // "development" (lowercase) should match the default allowed entry "Development".
+        var sut = BuildSut("development");
+
+        await sut.Awaiting(s => s.StartAsync(CancellationToken.None)).Should().NotThrowAsync();
+    }
+
+    // ── StartAsync: non-Development, in allowed list — Critical log, no exception ──────────────
 
     [Theory]
     [InlineData("Production")]
     [InlineData("Staging")]
     [InlineData("Custom")]
-    public async Task StartAsync_does_not_throw_outside_Development_when_flag_is_true(
+    public async Task StartAsync_does_not_throw_when_environment_explicitly_added_to_allowed_list(
         string environmentName)
     {
-        var sut = BuildSut(environmentName, allowOutsideDevelopment: true);
+        var sut = BuildSut(environmentName, allowedEnvironments: ["Development", environmentName]);
 
         await sut.Awaiting(s => s.StartAsync(CancellationToken.None)).Should().NotThrowAsync();
     }
@@ -211,11 +231,13 @@ public sealed class DevelopmentSigningKeyWarningServiceTests
     [Theory]
     [InlineData("Production")]
     [InlineData("Staging")]
-    public async Task StartAsync_logs_Critical_outside_Development_when_flag_is_true(
+    public async Task StartAsync_logs_Critical_when_non_Development_environment_is_in_allowed_list(
         string environmentName)
     {
         var logger = new CapturingLogger<DevelopmentSigningKeyWarningService>();
-        var sut = BuildSut(environmentName, allowOutsideDevelopment: true, logger: logger);
+        var sut = BuildSut(environmentName,
+            allowedEnvironments: ["Development", environmentName],
+            logger: logger);
 
         await sut.StartAsync(CancellationToken.None);
 
@@ -224,10 +246,12 @@ public sealed class DevelopmentSigningKeyWarningServiceTests
     }
 
     [Fact]
-    public async Task StartAsync_logs_NonDevelopmentCriticalMessage_outside_Development_when_flag_is_true()
+    public async Task StartAsync_logs_NonDevelopmentCriticalMessage_when_non_Development_environment_is_in_allowed_list()
     {
         var logger = new CapturingLogger<DevelopmentSigningKeyWarningService>();
-        var sut = BuildSut(Environments.Production, allowOutsideDevelopment: true, logger: logger);
+        var sut = BuildSut(Environments.Production,
+            allowedEnvironments: ["Development", Environments.Production],
+            logger: logger);
 
         await sut.StartAsync(CancellationToken.None);
 

@@ -13,11 +13,10 @@ namespace ZeeKayDa.Auth.AspNetCore;
 /// startup rather than on the first token-signing request.
 /// </summary>
 /// <remarks>
-/// When the host environment is not <c>Development</c> and
-/// <see cref="AuthorizationServerOptions.AllowDevelopmentJwtSigningKeysOutsideDevelopment"/>
-/// is <see langword="false"/>, startup fails with a <see cref="ZeeKayDaConfigurationException"/>
-/// so that an accidental development-key configuration is never silently deployed to a
-/// non-development host.
+/// When the host environment name is not in
+/// <see cref="AuthorizationServerOptions.AllowedDevelopmentJwtSigningKeysEnvironments"/>,
+/// startup fails with a <see cref="ZeeKayDaConfigurationException"/> so that an accidental
+/// development-key configuration is never silently deployed to a non-permitted host.
 /// </remarks>
 internal sealed class DevelopmentSigningKeyWarningService : IHostedService
 {
@@ -28,7 +27,7 @@ internal sealed class DevelopmentSigningKeyWarningService : IHostedService
 
     internal const string NonDevelopmentCriticalMessage =
         "ZeeKayDa.Auth: development signing keys are active outside a Development environment. " +
-        "AllowDevelopmentJwtSigningKeysOutsideDevelopment has been set — this is a CRITICAL " +
+        "AllowedDevelopmentJwtSigningKeysEnvironments has been widened — this is a CRITICAL " +
         "misconfiguration. An ephemeral or local signing key in production breaks signature " +
         "validation for every relying party on restart. Replace AddDevelopmentJwtSigningKeys() " +
         "with a production key provider immediately.";
@@ -58,20 +57,28 @@ internal sealed class DevelopmentSigningKeyWarningService : IHostedService
     /// <inheritdoc/>
     public async Task StartAsync(CancellationToken cancellationToken)
     {
-        if (!_environment.IsDevelopment() && !_serverOptions.Value.AllowDevelopmentJwtSigningKeysOutsideDevelopment)
+        var allowedEnvironments = _serverOptions.Value.AllowedDevelopmentJwtSigningKeysEnvironments;
+        var currentEnvironment = _environment.EnvironmentName;
+
+        var isAllowed = allowedEnvironments.Any(e =>
+            string.Equals(e, currentEnvironment, StringComparison.OrdinalIgnoreCase));
+
+        if (!isAllowed)
         {
             throw new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure(
                     "signing.dev_keys.non_development",
-                    "Development signing keys are active outside a Development environment. " +
+                    $"Development signing keys are active in environment '{currentEnvironment}', " +
+                    "which is not in AllowedDevelopmentJwtSigningKeysEnvironments. " +
                     "This is a configuration error: development keys are ephemeral or stored in a " +
                     "local file and are not suitable for production. " +
-                    "Replace AddDevelopmentJwtSigningKeys() with a production key provider, or set " +
-                    "AllowDevelopmentJwtSigningKeysOutsideDevelopment = true if this is an " +
-                    "intentional non-Development test host (e.g. an integration test host)."));
+                    "Replace AddDevelopmentJwtSigningKeys() with a production key provider, or add " +
+                    "the environment name to AllowedDevelopmentJwtSigningKeysEnvironments if this is " +
+                    "an intentional non-Development test host (e.g. an integration test host)."));
         }
 
-        if (!_environment.IsDevelopment() && _serverOptions.Value.AllowDevelopmentJwtSigningKeysOutsideDevelopment)
+        var isDevelopment = string.Equals(currentEnvironment, "Development", StringComparison.OrdinalIgnoreCase);
+        if (!isDevelopment)
         {
             _logger.Log(LogLevel.Critical, NonDevelopmentCriticalMessage);
         }

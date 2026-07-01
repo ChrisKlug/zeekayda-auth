@@ -38,7 +38,7 @@ public sealed class DevelopmentJwtSigningServiceTests
             _files[keyPath] = pem;
         }
 
-        public string ReadKeyFile(string keyPath)
+        public byte[] ReadKeyFile(string keyPath)
         {
             if (FileIsSymlink)
             {
@@ -56,7 +56,7 @@ public sealed class DevelopmentJwtSigningServiceTests
                         $"Signing key file '{keyPath}' has permissions broader than 0600."));
             }
 
-            return _files[keyPath];
+            return System.Text.Encoding.UTF8.GetBytes(_files[keyPath]);
         }
 
         public bool FileExists(string path) => _files.ContainsKey(path);
@@ -65,7 +65,8 @@ public sealed class DevelopmentJwtSigningServiceTests
     }
 
     private static DevelopmentJwtSigningService BuildEphemeral(
-        ISigningKeyFileSystem? fs = null)
+        ISigningKeyFileSystem? fs = null,
+        FakeTimeProvider? timeProvider = null)
     {
         var options = new DevelopmentSigningKeyOptions
         {
@@ -73,13 +74,14 @@ public sealed class DevelopmentJwtSigningServiceTests
         };
         return new DevelopmentJwtSigningService(
             Options.Create(options),
-            new FakeTimeProvider(),
+            timeProvider ?? new FakeTimeProvider(),
             fs ?? new InMemorySigningKeyFileSystem());
     }
 
     private static DevelopmentJwtSigningService BuildPersisted(
         string directory,
-        ISigningKeyFileSystem? fs = null)
+        ISigningKeyFileSystem? fs = null,
+        FakeTimeProvider? timeProvider = null)
     {
         var options = new DevelopmentSigningKeyOptions
         {
@@ -87,7 +89,7 @@ public sealed class DevelopmentJwtSigningServiceTests
         };
         return new DevelopmentJwtSigningService(
             Options.Create(options),
-            new FakeTimeProvider(),
+            timeProvider ?? new FakeTimeProvider(),
             fs ?? new InMemorySigningKeyFileSystem());
     }
 
@@ -173,6 +175,49 @@ public sealed class DevelopmentJwtSigningServiceTests
         result.SignatureSegment.IsEmpty.Should().BeFalse();
     }
 
+    // ── Key memoization (no rotation) ────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Ephemeral_kid_is_unchanged_after_refresh_interval_elapses()
+    {
+        var timeProvider = new FakeTimeProvider();
+        await using var sut = BuildEphemeral(timeProvider: timeProvider);
+        var ct = TestContext.Current.CancellationToken;
+
+        var firstKeys = await sut.GetSigningKeysAsync(ct);
+        var firstKid = firstKeys[0].Kid;
+
+        // Advance past the default 5-minute refresh interval.
+        timeProvider.Advance(TimeSpan.FromMinutes(6));
+
+        var secondKeys = await sut.GetSigningKeysAsync(ct);
+        var secondKid = secondKeys[0].Kid;
+
+        secondKid.Should().Be(firstKid,
+            "dev keys must be memoized — rotating would silently invalidate tokens issued before the interval");
+    }
+
+    [Fact]
+    public async Task Persisted_kid_is_unchanged_after_refresh_interval_elapses()
+    {
+        const string dir = "/fake/keys";
+        var timeProvider = new FakeTimeProvider();
+        await using var sut = BuildPersisted(dir, timeProvider: timeProvider);
+        var ct = TestContext.Current.CancellationToken;
+
+        var firstKeys = await sut.GetSigningKeysAsync(ct);
+        var firstKid = firstKeys[0].Kid;
+
+        // Advance past the default 5-minute refresh interval.
+        timeProvider.Advance(TimeSpan.FromMinutes(6));
+
+        var secondKeys = await sut.GetSigningKeysAsync(ct);
+        var secondKid = secondKeys[0].Kid;
+
+        secondKid.Should().Be(firstKid,
+            "dev keys must be memoized — rotating persisted keys would invalidate active tokens");
+    }
+
     // ── Persistence round-trip ────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -200,7 +245,8 @@ public sealed class DevelopmentJwtSigningServiceTests
         await sut.GetSigningKeysAsync(ct);
 
         var keyPath = Path.Join(dir, "dev-signing-key.pem");
-        var pem = fs.ReadKeyFile(keyPath);
+        var pemBytes = fs.ReadKeyFile(keyPath);
+        var pem = Encoding.UTF8.GetString(pemBytes);
         pem.Should().StartWith("-----BEGIN RSA PRIVATE KEY-----");
     }
 
@@ -357,7 +403,7 @@ public sealed class DevelopmentJwtSigningServiceTests
     {
         public void EnsureDirectorySafe(string directory) { }
         public void WriteKeyFile(string keyPath, string pem) => throw new IOException("Simulated write failure.");
-        public string ReadKeyFile(string keyPath) => throw new InvalidOperationException("Should not be called.");
+        public byte[] ReadKeyFile(string keyPath) => throw new InvalidOperationException("Should not be called.");
         public bool FileExists(string path) => false;
     }
 

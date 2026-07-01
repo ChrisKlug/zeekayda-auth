@@ -18,11 +18,11 @@ public static class ZeeKayDaAuthBuilderSigningExtensions
     /// </summary>
     /// <remarks>
     /// <para>
-    /// This method is for <strong>local development and testing only</strong>. Outside a
-    /// Development environment, startup fails with <see cref="ZeeKayDaConfigurationException"/>
-    /// unless <see cref="AuthorizationServerOptions.AllowDevelopmentJwtSigningKeysOutsideDevelopment"/>
-    /// is set to <see langword="true"/>. A warning is always emitted at startup to make the
-    /// non-production nature of this configuration explicit.
+    /// This method is for <strong>local development and testing only</strong>. Startup fails
+    /// with <see cref="ZeeKayDaConfigurationException"/> if the host environment is not in
+    /// <see cref="AuthorizationServerOptions.AllowedDevelopmentJwtSigningKeysEnvironments"/>.
+    /// A warning is always emitted at startup to make the non-production nature of this
+    /// configuration explicit.
     /// </para>
     /// <para>
     /// Call with no arguments for an ephemeral key (default):
@@ -86,7 +86,7 @@ public static class ZeeKayDaAuthBuilderSigningExtensions
         }
         // else: no argument passed → PersistToDirectory stays null → ephemeral mode.
 
-        builder.Services.AddSingleton<TimeProvider>(TimeProvider.System);
+        builder.Services.TryAddSingleton<TimeProvider>(TimeProvider.System);
         builder.Services.AddSingleton<ISigningKeyFileSystem, OsSigningKeyFileSystem>();
         builder.Services.AddSingleton<IJwtSigningService, DevelopmentJwtSigningService>();
         builder.Services.TryAddEnumerable(

@@ -24,21 +24,23 @@ public sealed class AuthorizationServerOptionsTests
     }
 
     [Fact]
-    public void AllowDevelopmentJwtSigningKeysOutsideDevelopment_defaults_to_false()
+    public void AllowedDevelopmentJwtSigningKeysEnvironments_defaults_to_Development_only()
     {
         var options = new AuthorizationServerOptions();
 
-        options.AllowDevelopmentJwtSigningKeysOutsideDevelopment.Should().BeFalse();
+        options.AllowedDevelopmentJwtSigningKeysEnvironments.Should().ContainSingle()
+            .Which.Should().Be("Development");
     }
 
     [Fact]
-    public void AllowDevelopmentJwtSigningKeysOutsideDevelopment_can_be_set_to_true()
+    public void AllowedDevelopmentJwtSigningKeysEnvironments_can_be_widened()
     {
         var options = new AuthorizationServerOptions
         {
-            AllowDevelopmentJwtSigningKeysOutsideDevelopment = true,
+            AllowedDevelopmentJwtSigningKeysEnvironments = ["Development", "IntegrationTesting"],
         };
 
-        options.AllowDevelopmentJwtSigningKeysOutsideDevelopment.Should().BeTrue();
+        options.AllowedDevelopmentJwtSigningKeysEnvironments.Should().BeEquivalentTo(
+            new[] { "Development", "IntegrationTesting" });
     }
 }
