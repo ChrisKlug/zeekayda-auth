@@ -97,25 +97,17 @@ internal sealed class DevelopmentJwtSigningService
 
     private RSA LoadKeyFromFile(string keyPath)
     {
-        var pemBytes = _fileSystem.ReadKeyFile(keyPath);
+        using var keyFile = _fileSystem.ReadKeyFile(keyPath);
+        var rsa = RSA.Create();
         try
         {
-            var rsa = RSA.Create();
-            try
-            {
-                rsa.ImportFromPem(Encoding.UTF8.GetChars(pemBytes));
-                return rsa;
-            }
-            catch
-            {
-                rsa.Dispose();
-                throw;
-            }
+            rsa.ImportFromPem(Encoding.UTF8.GetString(keyFile.Bytes));
+            return rsa;
         }
-        finally
+        catch
         {
-            // Zeroize the PEM bytes so the private key material does not linger on the heap.
-            CryptographicOperations.ZeroMemory(pemBytes);
+            rsa.Dispose();
+            throw;
         }
     }
 

@@ -48,10 +48,21 @@ public sealed class SigningKeySet : IDisposable
 
         Keys = keys;
         _privateKeys = privateKeys;
+
+        // Pre-compute the descriptor list once for the set's lifetime. GetSigningKeysAsync
+        // is on the public JWKS hot path and must not allocate on every call.
+        Descriptors = keys.Select(e => e.Descriptor).ToList().AsReadOnly();
     }
 
     /// <summary>Gets the ordered key entries. The first entry is the active signing key.</summary>
     public IReadOnlyList<SigningKeyEntry> Keys { get; }
+
+    /// <summary>
+    /// Gets the pre-computed, read-only list of <see cref="SigningKeyDescriptor"/> instances for
+    /// this set. Stable for the lifetime of the set; returned directly from
+    /// <see cref="JwtSigningService{TOptions}.GetSigningKeysAsync"/> without further allocation.
+    /// </summary>
+    public IReadOnlyList<SigningKeyDescriptor> Descriptors { get; }
 
     /// <summary>Gets the active (first) signing key entry.</summary>
     public SigningKeyEntry ActiveKey => Keys[0];

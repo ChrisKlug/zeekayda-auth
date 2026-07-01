@@ -8,7 +8,7 @@ namespace ZeeKayDa.Auth.Tokens;
 /// This options type is for development and testing only. In production, use a real key
 /// provider backed by a KMS, HSM, or a securely stored key.
 /// </remarks>
-public sealed class DevelopmentSigningKeyOptions : JwtSigningServiceOptions
+internal sealed class DevelopmentSigningKeyOptions : JwtSigningServiceOptions
 {
     /// <summary>
     /// Gets or sets the path to the directory where the development signing key is persisted.

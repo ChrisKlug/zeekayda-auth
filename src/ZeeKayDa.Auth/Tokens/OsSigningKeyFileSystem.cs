@@ -38,7 +38,7 @@ internal sealed class OsSigningKeyFileSystem : ISigningKeyFileSystem
     }
 
     /// <inheritdoc/>
-    public byte[] ReadKeyFile(string keyPath)
+    public KeyFileContent ReadKeyFile(string keyPath)
     {
         // Open the file first to close the TOCTOU window: validate permissions on the
         // already-open handle so the path cannot be swapped between the check and the read.
@@ -50,7 +50,7 @@ internal sealed class OsSigningKeyFileSystem : ISigningKeyFileSystem
             ValidateFilePermissionsUnix(stream, keyPath);
 
         using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: false);
-        return Encoding.UTF8.GetBytes(reader.ReadToEnd());
+        return new KeyFileContent(Encoding.UTF8.GetBytes(reader.ReadToEnd()));
     }
 
     /// <inheritdoc/>

@@ -38,7 +38,7 @@ public sealed class DevelopmentJwtSigningServiceTests
             _files[keyPath] = pem;
         }
 
-        public byte[] ReadKeyFile(string keyPath)
+        public KeyFileContent ReadKeyFile(string keyPath)
         {
             if (FileIsSymlink)
             {
@@ -56,7 +56,7 @@ public sealed class DevelopmentJwtSigningServiceTests
                         $"Signing key file '{keyPath}' has permissions broader than 0600."));
             }
 
-            return System.Text.Encoding.UTF8.GetBytes(_files[keyPath]);
+            return new KeyFileContent(System.Text.Encoding.UTF8.GetBytes(_files[keyPath]));
         }
 
         public bool FileExists(string path) => _files.ContainsKey(path);
@@ -245,8 +245,8 @@ public sealed class DevelopmentJwtSigningServiceTests
         await sut.GetSigningKeysAsync(ct);
 
         var keyPath = Path.Join(dir, "dev-signing-key.pem");
-        var pemBytes = fs.ReadKeyFile(keyPath);
-        var pem = Encoding.UTF8.GetString(pemBytes);
+        using var keyFile = fs.ReadKeyFile(keyPath);
+        var pem = Encoding.UTF8.GetString(keyFile.Bytes);
         pem.Should().StartWith("-----BEGIN RSA PRIVATE KEY-----");
     }
 
@@ -403,7 +403,7 @@ public sealed class DevelopmentJwtSigningServiceTests
     {
         public void EnsureDirectorySafe(string directory) { }
         public void WriteKeyFile(string keyPath, string pem) => throw new IOException("Simulated write failure.");
-        public byte[] ReadKeyFile(string keyPath) => throw new InvalidOperationException("Should not be called.");
+        public KeyFileContent ReadKeyFile(string keyPath) => throw new InvalidOperationException("Should not be called.");
         public bool FileExists(string path) => false;
     }
 

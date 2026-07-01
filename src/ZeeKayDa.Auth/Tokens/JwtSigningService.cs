@@ -79,7 +79,7 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
         CancellationToken cancellationToken = default)
     {
         var set = await GetOrRefreshCacheAsync(cancellationToken).ConfigureAwait(false);
-        return set.Keys.Select(e => e.Descriptor).ToList().AsReadOnly();
+        return set.Descriptors;
     }
 
     /// <inheritdoc/>
@@ -197,7 +197,9 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static byte[] SignEc(ECDsa ec, HashAlgorithmName hash, byte[] input)
-        => ec.SignData(input, hash, DSASignatureFormat.Rfc3279DerSequence);
+        // RFC 7518 §3.4 requires the IEEE P1363 format (raw R||S concatenation).
+        // Rfc3279DerSequence (DER) is the wrong format and will fail on all standards-compliant RPs.
+        => ec.SignData(input, hash, DSASignatureFormat.IeeeP1363FixedFieldConcatenation);
 
     [ExcludeFromCodeCoverage(Justification = "Unreachable default arm — all SigningAlgorithm members are handled above.")]
     private static string BuildHeaderJson(SigningAlgorithm algorithm, string kid)

@@ -95,6 +95,7 @@ public sealed class JwtSigningServiceTests
         act.Should().Throw<ArgumentNullException>().WithParameterName("timeProvider");
     }
 
+
     // ── Key loading ───────────────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -118,6 +119,20 @@ public sealed class JwtSigningServiceTests
         await sut.GetSigningKeysAsync(ct);
 
         sut.LoadCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task GetSigningKeysAsync_returns_same_list_instance_on_repeated_calls()
+    {
+        // The descriptor list is memoized on SigningKeySet to avoid per-call allocation
+        // on the JWKS hot path. Two calls within the refresh interval must return the same object.
+        await using var sut = BuildService();
+        var ct = TestContext.Current.CancellationToken;
+
+        var first = await sut.GetSigningKeysAsync(ct);
+        var second = await sut.GetSigningKeysAsync(ct);
+
+        second.Should().BeSameAs(first, "the descriptor list must be memoised and returned by reference");
     }
 
     [Fact]
@@ -221,6 +236,50 @@ public sealed class JwtSigningServiceTests
             RSASignaturePadding.Pkcs1);
 
         valid.Should().BeTrue("the signature must be verifiable with the corresponding public key");
+    }
+
+    [Theory]
+    [InlineData(SigningAlgorithm.ES256, "1.2.840.10045.3.1.7")]  // P-256
+    [InlineData(SigningAlgorithm.ES384, "1.3.132.0.34")]         // P-384
+    [InlineData(SigningAlgorithm.ES512, "1.3.132.0.35")]         // P-521
+    public async Task SignAsync_ec_signature_is_in_ieee_p1363_format_and_verifiable(
+        SigningAlgorithm algorithm,
+        string curveOid)
+    {
+        // RFC 7518 §3.4 mandates the IEEE P1363 format (raw R||S), not DER.
+        // This test verifies the signature with IeeeP1363FixedFieldConcatenation — if the
+        // implementation wrongly uses Rfc3279DerSequence, VerifyData will return false.
+        using var ec = ECDsa.Create(ECCurve.CreateFromValue(curveOid));
+        var ecParams = ec.ExportParameters(false);
+        var descriptor = new SigningKeyDescriptor("ec-vk", algorithm, ecParams);
+        var entry = new SigningKeyEntry(descriptor, 0);
+        using var set = new SigningKeySet([entry], [ec]);
+        await using var sut = BuildService(factory: () => set);
+        var ct = TestContext.Current.CancellationToken;
+
+        var payloadStr = Base64UrlEncodeString("""{"sub":"alice"}""");
+        var payloadBytes = Encoding.UTF8.GetBytes(payloadStr);
+        var result = await sut.SignAsync(payloadBytes, ct);
+
+        var headerStr = Encoding.ASCII.GetString(result.HeaderSegment.Span);
+        var signingInput = Encoding.UTF8.GetBytes($"{headerStr}.{payloadStr}");
+        var signature = DecodeBase64Url(result.SignatureSegment);
+
+        var hashName = algorithm switch
+        {
+            SigningAlgorithm.ES256 => HashAlgorithmName.SHA256,
+            SigningAlgorithm.ES384 => HashAlgorithmName.SHA384,
+            _ => HashAlgorithmName.SHA512,
+        };
+
+        // Verify using IEEE P1363 format — this is what JWT validators expect.
+        var valid = ec.VerifyData(
+            signingInput,
+            signature,
+            hashName,
+            DSASignatureFormat.IeeeP1363FixedFieldConcatenation);
+
+        valid.Should().BeTrue($"EC signature for {algorithm} must use IEEE P1363 format as required by RFC 7518 §3.4");
     }
 
     // ── Duplicate kid validation ──────────────────────────────────────────────────────────────────

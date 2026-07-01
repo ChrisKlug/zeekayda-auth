@@ -156,16 +156,64 @@ public sealed class DevelopmentSigningKeyWarningServiceTests
         await sut.Awaiting(s => s.StartAsync(CancellationToken.None)).Should().NotThrowAsync();
     }
 
-    // ── StartAsync: non-Development, not in allowed list — hard failure ─────────────────────────
+    // ── StartAsync: Production environment — always a hard failure ──────────────────────────────
+
+    [Fact]
+    public async Task StartAsync_throws_ZeeKayDaConfigurationException_in_Production_environment()
+    {
+        // Production is always rejected, regardless of AllowedDevelopmentJwtSigningKeysEnvironments.
+        var sut = BuildSut(Environments.Production);
+
+        await sut.Awaiting(s => s.StartAsync(CancellationToken.None))
+            .Should().ThrowAsync<ZeeKayDaConfigurationException>();
+    }
+
+    [Fact]
+    public async Task StartAsync_throws_with_production_environment_code_when_environment_is_Production()
+    {
+        var sut = BuildSut(Environments.Production);
+
+        var ex = await sut.Awaiting(s => s.StartAsync(CancellationToken.None))
+            .Should().ThrowAsync<ZeeKayDaConfigurationException>();
+
+        ex.Which.AggregatedFailures.Should().ContainSingle()
+            .Which.Code.Should().Be(DevelopmentSigningKeyWarningService.ProductionEnvironmentFailureCode);
+    }
+
+    [Fact]
+    public async Task StartAsync_throws_in_Production_even_when_Production_is_in_allowed_list()
+    {
+        // The escape hatch must not apply to Production. AllowedDevelopmentJwtSigningKeysEnvironments
+        // cannot override the Production guard.
+        var sut = BuildSut(Environments.Production,
+            allowedEnvironments: ["Development", Environments.Production]);
+
+        await sut.Awaiting(s => s.StartAsync(CancellationToken.None))
+            .Should().ThrowAsync<ZeeKayDaConfigurationException>()
+            .WithMessage("*production*");
+    }
+
+    [Fact]
+    public async Task StartAsync_does_not_log_before_throwing_in_Production_environment()
+    {
+        var logger = new CapturingLogger<DevelopmentSigningKeyWarningService>();
+        var sut = BuildSut(Environments.Production, logger: logger);
+
+        await sut.Awaiting(s => s.StartAsync(CancellationToken.None))
+            .Should().ThrowAsync<ZeeKayDaConfigurationException>();
+
+        logger.Entries.Should().BeEmpty("exception is thrown before any log entry is written");
+    }
+
+    // ── StartAsync: non-Development, non-Production, not in allowed list — hard failure ────────
 
     [Theory]
-    [InlineData("Production")]
     [InlineData("Staging")]
     [InlineData("Custom")]
     public async Task StartAsync_throws_ZeeKayDaConfigurationException_when_environment_not_in_allowed_list(
         string environmentName)
     {
-        // Default list is ["Development"] — any other environment must fail.
+        // Default list is ["Development"] — any non-Production, non-Development environment must fail.
         var sut = BuildSut(environmentName);
 
         await sut.Awaiting(s => s.StartAsync(CancellationToken.None))
@@ -173,9 +221,9 @@ public sealed class DevelopmentSigningKeyWarningServiceTests
     }
 
     [Fact]
-    public async Task StartAsync_throws_with_code_signing_dev_keys_non_development_when_environment_not_in_list()
+    public async Task StartAsync_throws_with_code_signing_dev_keys_non_development_when_staging_not_in_list()
     {
-        var sut = BuildSut(Environments.Production);
+        var sut = BuildSut("Staging");
 
         var ex = await sut.Awaiting(s => s.StartAsync(CancellationToken.None))
             .Should().ThrowAsync<ZeeKayDaConfigurationException>();
@@ -188,7 +236,7 @@ public sealed class DevelopmentSigningKeyWarningServiceTests
     public async Task StartAsync_does_not_log_before_throwing_when_environment_not_in_allowed_list()
     {
         var logger = new CapturingLogger<DevelopmentSigningKeyWarningService>();
-        var sut = BuildSut(Environments.Production, logger: logger);
+        var sut = BuildSut("Staging", logger: logger);
 
         await sut.Awaiting(s => s.StartAsync(CancellationToken.None))
             .Should().ThrowAsync<ZeeKayDaConfigurationException>();
@@ -214,13 +262,12 @@ public sealed class DevelopmentSigningKeyWarningServiceTests
         await sut.Awaiting(s => s.StartAsync(CancellationToken.None)).Should().NotThrowAsync();
     }
 
-    // ── StartAsync: non-Development, in allowed list — Critical log, no exception ──────────────
+    // ── StartAsync: non-Development, non-Production, in allowed list — Critical log, no exception
 
     [Theory]
-    [InlineData("Production")]
     [InlineData("Staging")]
     [InlineData("Custom")]
-    public async Task StartAsync_does_not_throw_when_environment_explicitly_added_to_allowed_list(
+    public async Task StartAsync_does_not_throw_when_non_production_environment_added_to_allowed_list(
         string environmentName)
     {
         var sut = BuildSut(environmentName, allowedEnvironments: ["Development", environmentName]);
@@ -229,9 +276,9 @@ public sealed class DevelopmentSigningKeyWarningServiceTests
     }
 
     [Theory]
-    [InlineData("Production")]
     [InlineData("Staging")]
-    public async Task StartAsync_logs_Critical_when_non_Development_environment_is_in_allowed_list(
+    [InlineData("Custom")]
+    public async Task StartAsync_logs_Critical_when_non_Development_non_Production_environment_is_in_allowed_list(
         string environmentName)
     {
         var logger = new CapturingLogger<DevelopmentSigningKeyWarningService>();
@@ -246,11 +293,11 @@ public sealed class DevelopmentSigningKeyWarningServiceTests
     }
 
     [Fact]
-    public async Task StartAsync_logs_NonDevelopmentCriticalMessage_when_non_Development_environment_is_in_allowed_list()
+    public async Task StartAsync_logs_NonDevelopmentCriticalMessage_when_Staging_is_in_allowed_list()
     {
         var logger = new CapturingLogger<DevelopmentSigningKeyWarningService>();
-        var sut = BuildSut(Environments.Production,
-            allowedEnvironments: ["Development", Environments.Production],
+        var sut = BuildSut("Staging",
+            allowedEnvironments: ["Development", "Staging"],
             logger: logger);
 
         await sut.StartAsync(CancellationToken.None);

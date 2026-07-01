@@ -34,10 +34,10 @@ internal interface ISigningKeyFileSystem
     /// </summary>
     /// <param name="keyPath">The file path to read.</param>
     /// <returns>
-    /// The raw PEM content of the file as a UTF-8 byte array. The caller is responsible for
-    /// zeroizing this array after the key has been imported.
+    /// A <see cref="KeyFileContent"/> wrapping the raw PEM bytes. The caller must dispose it
+    /// promptly after the key has been imported so that key material is zeroed on the heap.
     /// </returns>
-    byte[] ReadKeyFile(string keyPath);
+    KeyFileContent ReadKeyFile(string keyPath);
 
     /// <summary>
     /// Returns <see langword="true"/> if a file exists at <paramref name="path"/>.
