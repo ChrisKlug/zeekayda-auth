@@ -26,7 +26,8 @@ public sealed class SigningKeySetTests
     [Fact]
     public void Constructor_throws_when_privateKeys_is_null()
     {
-        var (_, entry) = MakeRsaEntry();
+        var (rsa, entry) = MakeRsaEntry();
+        using var _ = rsa;
         var act = () => new SigningKeySet([entry], null!);
         act.Should().Throw<ArgumentNullException>().WithParameterName("privateKeys");
     }
