@@ -3,12 +3,12 @@ using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.Tests.Tokens;
 
-public sealed class JwtSigningServiceOptionsValidatorTests
+public sealed class DevelopmentSigningKeyOptionsValidatorTests
 {
     private static ValidateOptionsResult Validate(DevelopmentSigningKeyOptions options)
-        => new JwtSigningServiceOptionsValidator().Validate(null, options);
+        => new DevelopmentSigningKeyOptionsValidator().Validate(null, options);
 
-    // ── Zero / negative interval ──────────────────────────────────────────────────────────────────
+    // ── Non-MaxValue interval ─────────────────────────────────────────────────────────────────────
 
     [Fact]
     public void Validate_fails_when_RefreshInterval_is_zero()
@@ -32,12 +32,23 @@ public sealed class JwtSigningServiceOptionsValidatorTests
         result.FailureMessage.Should().Contain("RefreshInterval");
     }
 
-    // ── Valid interval ────────────────────────────────────────────────────────────────────────────
-
     [Fact]
-    public void Validate_succeeds_when_RefreshInterval_is_positive()
+    public void Validate_fails_when_RefreshInterval_is_finite_positive()
     {
         var options = new DevelopmentSigningKeyOptions { RefreshInterval = TimeSpan.FromSeconds(1) };
+
+        var result = Validate(options);
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("RefreshInterval");
+    }
+
+    // ── MaxValue ──────────────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Validate_succeeds_for_default_options()
+    {
+        var options = new DevelopmentSigningKeyOptions();
 
         var result = Validate(options);
 
@@ -45,9 +56,9 @@ public sealed class JwtSigningServiceOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_succeeds_for_default_options()
+    public void Validate_succeeds_when_RefreshInterval_is_MaxValue()
     {
-        var options = new DevelopmentSigningKeyOptions();
+        var options = new DevelopmentSigningKeyOptions { RefreshInterval = TimeSpan.MaxValue };
 
         var result = Validate(options);
 

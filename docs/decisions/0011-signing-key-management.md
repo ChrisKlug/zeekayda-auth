@@ -694,6 +694,20 @@ rotation. Static config plus a startup consistency check is the chosen approach.
 
 ---
 
+## Amendments
+
+### Amendment 1 — PR #286 (2026-07-02)
+
+**`AllowDevelopmentJwtSigningKeysOutsideDevelopment` replaced by `AllowedDevelopmentJwtSigningKeysEnvironments`**
+
+The original design specified a single `bool AllowDevelopmentJwtSigningKeysOutsideDevelopment` escape hatch (§2, §3.6). The implementation ships `IReadOnlyList<string> AllowedDevelopmentJwtSigningKeysEnvironments` on `AuthorizationServerOptions` instead. The list form is strictly more expressive: it allows development signing keys to be permitted in specific named non-production environments (e.g. `"Staging"`, `"IntegrationTest"`) without permitting them globally. The semantic invariant from §2 is unchanged — `Production` cannot be added to the list, the `LogLevel.Critical` entry still fires on every startup for any non-`Development` entry, and the feature flag remains on `AuthorizationServerOptions` (server-wide gate, not a per-provider knob). All §2 security requirements (key strength, file permissions, ownership, symlink protection) still apply regardless of the list contents.
+
+**`ISigningKeyFileSystem` renamed to `IDevelopmentSigningKeyFileSystem`**
+
+The §2 / §3.6 references to `ISigningKeyFileSystem` describe what shipped as `IDevelopmentSigningKeyFileSystem`. The rename scopes the interface to the development provider, clarifying that this is not a general-purpose signing file system abstraction used by production providers. The interface contract (async `ReadKeyFileAsync` / `WriteKeyFileAsync` / `EnsureDirectorySafe` / `FileExists` with `CancellationToken` propagation) is otherwise unchanged from the §2 description.
+
+---
+
 ## References
 
 - Issue **#187** — signing key management design session.

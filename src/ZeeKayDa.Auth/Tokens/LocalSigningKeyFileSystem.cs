@@ -45,16 +45,20 @@ internal static partial class PosixInterop
     {
         if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
         {
+            // macOS arm64 only — .NET 9 dropped macOS x64 support, so only arm64 is reachable.
             return NativeStatMacOs(path, out var macBuf) == 0 ? macBuf.st_uid : null;
         }
 
         if (RuntimeInformation.OSArchitecture == Architecture.X64)
-        {
             return NativeStatLinuxX64(path, out var x64Buf) == 0 ? x64Buf.st_uid : null;
-        }
 
-        // arm64 Linux and other 64-bit Linux ABI variants.
-        return NativeStatLinuxArm64(path, out var arm64Buf) == 0 ? arm64Buf.st_uid : null;
+        // arm64 and riscv64 share the same stat ABI on Linux.
+        if (RuntimeInformation.OSArchitecture is Architecture.Arm64 or Architecture.RiscV64)
+            return NativeStatLinuxArm64(path, out var arm64Buf) == 0 ? arm64Buf.st_uid : null;
+
+        // Unknown architecture (e.g. s390x has a different struct layout): fail closed
+        // rather than reading st_uid from an incorrect offset.
+        return null;
     }
 
     [LibraryImport("libc", EntryPoint = "stat", StringMarshalling = StringMarshalling.Utf8, SetLastError = true)]
@@ -190,19 +194,25 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
     [UnsupportedOSPlatform("windows")]
     private static void EnsureDirectorySafeUnix(string directory)
     {
-        if (Directory.Exists(directory))
+        var fullPath = Path.GetFullPath(directory);
+
+        if (Directory.Exists(fullPath))
         {
-            ValidateDirectoryPermissionsUnix(directory);
-            ValidateDirectoryOwnershipUnix(directory);
+            ValidateDirectoryPermissionsUnix(fullPath);
+            ValidateDirectoryChainOwnershipUnix(fullPath);
             return;
         }
 
-        Directory.CreateDirectory(directory);
+        Directory.CreateDirectory(fullPath);
 
         var mode = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
-        File.SetUnixFileMode(directory, mode);
+        File.SetUnixFileMode(fullPath, mode);
 
-        // The directory was just created by this process so we own it; no ownership check needed.
+        // The leaf was just created by this process so we own it. Validate ancestor directories
+        // that pre-existed — an attacker who owns an ancestor can rename or replace the subtree.
+        var parent = Path.GetDirectoryName(fullPath);
+        if (parent is not null)
+            ValidateDirectoryChainOwnershipUnix(parent);
     }
 
     [UnsupportedOSPlatform("windows")]
@@ -226,22 +236,40 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
     }
 
     [UnsupportedOSPlatform("windows")]
-    private static void ValidateDirectoryOwnershipUnix(string directory)
+    private static void ValidateDirectoryChainOwnershipUnix(string startDirectory)
     {
-        // ADR 0011 §2: every directory the provider creates or writes into MUST be owned by the
-        // current user. Without this check an attacker who pre-creates the directory (owned by
-        // them) with mode 0700 would pass the permission check but control the directory.
+        // ADR 0011 §2: every component of the directory chain the provider creates or writes into
+        // MUST be owned by the current user. Walk from startDirectory upward, checking ownership
+        // on every component that exists. Stop at root-owned (uid 0) directories — those are
+        // OS-managed and trusted. This prevents an attacker who owns an ancestor directory from
+        // renaming or replacing the signing-key subtree even if the leaf passes all checks.
         var currentUid = PosixInterop.GetCurrentUid();
-        var ownerUid = PosixInterop.GetOwnerUid(directory);
+        var current = startDirectory;
 
-        if (ownerUid is null || ownerUid.Value != currentUid)
+        while (!string.IsNullOrEmpty(current) && current != Path.GetPathRoot(current))
         {
-            throw new ZeeKayDaConfigurationException(
-                new ZeeKayDaConfigurationFailure(
-                    "signing.dev_keys.directory_not_owned_by_current_user",
-                    $"Signing key directory '{directory}' is not owned by the current user (UID {currentUid}). " +
-                    "The directory must be created by and owned by the current user to prevent " +
-                    "an attacker from pre-creating it with restrictive permissions."));
+            if (!Directory.Exists(current))
+            {
+                current = Path.GetDirectoryName(current);
+                continue;
+            }
+
+            var ownerUid = PosixInterop.GetOwnerUid(current);
+
+            if (ownerUid == 0)
+                break; // Root-owned: OS-managed and trusted.
+
+            if (ownerUid is null || ownerUid.Value != currentUid)
+            {
+                throw new ZeeKayDaConfigurationException(
+                    new ZeeKayDaConfigurationFailure(
+                        "signing.dev_keys.directory_not_owned_by_current_user",
+                        $"Signing key directory component '{current}' is not owned by the current user (UID {currentUid}). " +
+                        "Every component of the directory path must be owned by the current user " +
+                        "to prevent an attacker from controlling the signing key directory."));
+            }
+
+            current = Path.GetDirectoryName(current);
         }
     }
 

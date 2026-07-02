@@ -46,7 +46,8 @@ public sealed class SigningKeySet : IDisposable
     // Use int so Interlocked.Decrement can return the post-decrement value atomically.
     private int _refCount = 1;
 
-    private bool _disposed;
+    // 0 = live, 1 = disposed. int so Interlocked.Exchange can make the transition atomic.
+    private int _disposed;
 
     /// <summary>
     /// Initialises a new <see cref="SigningKeySet"/> from an ordered list of key pairs.
@@ -99,7 +100,7 @@ public sealed class SigningKeySet : IDisposable
     /// <param name="index">Zero-based index into <see cref="Keys"/>.</param>
     public AsymmetricAlgorithm GetPrivateKey(int index)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        ObjectDisposedException.ThrowIf(_disposed != 0, this);
         return _privateKeys[index];
     }
 
@@ -147,10 +148,9 @@ public sealed class SigningKeySet : IDisposable
     /// </summary>
     public void Dispose()
     {
-        if (_disposed)
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
             return;
 
-        _disposed = true;
         Return();
     }
 

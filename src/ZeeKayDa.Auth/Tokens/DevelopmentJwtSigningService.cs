@@ -66,8 +66,8 @@ internal sealed class DevelopmentJwtSigningService
             ? await LoadOrGeneratePersistedKeyAsync(persistDir, cancellationToken).ConfigureAwait(false)
             : GenerateEphemeralKey();
 
-        var kid = ComputeKid(rsa);
         var rsaParams = rsa.ExportParameters(false);
+        var kid = ComputeKid(rsaParams);
         var descriptor = new SigningKeyDescriptor(kid, SigningAlgorithm.RS256, rsaParams);
         var set = new SigningKeySet([new SigningKeyPair { Descriptor = descriptor, PrivateKey = rsa }]);
 
@@ -144,14 +144,13 @@ internal sealed class DevelopmentJwtSigningService
         }
     }
 
-    private static string ComputeKid(RSA rsa)
+    private static string ComputeKid(RSAParameters rsaParams)
     {
         // RFC 7638 JWK Thumbprint: SHA-256 of the canonical JSON of the minimal RSA JWK member
         // set, with members in lexicographic order, no whitespace.
         // For RSA: {"e":"<b64url(e)>","kty":"RSA","n":"<b64url(n)>"}
         // This matches what external tools (jose-jwt, python-jose, online JWK inspectors) compute,
         // so developers can correlate a kid in a token header to a key in a JWKS without confusion.
-        var rsaParams = rsa.ExportParameters(false);
         var e = Base64UrlEncode(rsaParams.Exponent!);
         var n = Base64UrlEncode(rsaParams.Modulus!);
 
