@@ -200,13 +200,20 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
     }
 
     /// <summary>
-    /// Writes the JWS header <c>{"alg":"&lt;algorithm&gt;","kid":"&lt;kid&gt;"}</c> as UTF-8
-    /// bytes using <see cref="Utf8JsonWriter"/> — no intermediate string allocation.
+    /// Writes the JWS header <c>{"alg":"&lt;algorithm&gt;","kid":"&lt;kid&gt;","typ":"JWT"}</c>
+    /// as UTF-8 bytes using <see cref="Utf8JsonWriter"/> — no intermediate string allocation.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// <see cref="SigningAlgorithm"/> enum member names match the RFC 7518 string identifiers
     /// exactly (RS256, ES256, etc.), so <c>algorithm.ToString()</c> produces the correct
     /// <c>alg</c> header value without a switch statement.
+    /// </para>
+    /// <para>
+    /// <c>typ</c> is always set to <c>"JWT"</c> per RFC 7519 §5.1 and RFC 8725 §3.11. It is
+    /// written here rather than by the caller so that every token produced by this service
+    /// carries it automatically — a caller that omits it would produce a non-compliant token.
+    /// </para>
     /// </remarks>
     private static ReadOnlyMemory<byte> BuildHeaderJsonBytes(SigningAlgorithm algorithm, string kid)
     {
@@ -216,6 +223,7 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
         writer.WriteStartObject();
         writer.WriteString("alg", algorithm.ToString());
         writer.WriteString("kid", JsonEncodedText.Encode(kid));
+        writer.WriteString("typ", "JWT");
         writer.WriteEndObject();
 
         writer.Flush();
