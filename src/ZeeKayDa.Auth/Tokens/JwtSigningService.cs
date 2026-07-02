@@ -65,7 +65,7 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
         var set = await BorrowSetAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            return set.Descriptors;
+            return set.Keys;
         }
         finally
         {
@@ -182,8 +182,7 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
 
     private static SigningResult PerformSign(SigningKeySet set, ReadOnlyMemory<byte> payloadSegment)
     {
-        var activeEntry = set.ActiveKey;
-        var descriptor = activeEntry.Descriptor;
+        var descriptor = set.ActiveKey;
         var privateKey = set.GetPrivateKey(0);
 
         var headerBytes = BuildHeaderJsonBytes(descriptor.Algorithm, descriptor.Kid);
@@ -260,8 +259,7 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
 
         for (var i = 0; i < set.Keys.Count; i++)
         {
-            var entry = set.Keys[i];
-            var descriptor = entry.Descriptor;
+            var descriptor = set.Keys[i];
 
             if (!seenKids.Add(descriptor.Kid))
             {

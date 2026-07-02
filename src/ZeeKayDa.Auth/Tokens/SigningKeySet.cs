@@ -65,33 +65,28 @@ public sealed class SigningKeySet : IDisposable
             throw new ArgumentException("At least one signing key pair is required.", nameof(keys));
 
         _privateKeys = new AsymmetricAlgorithm[keys.Count];
-        var entries = new SigningKeyEntry[keys.Count];
+        var descriptors = new SigningKeyDescriptor[keys.Count];
 
         for (var i = 0; i < keys.Count; i++)
         {
-            entries[i] = new SigningKeyEntry(keys[i].Descriptor);
+            descriptors[i] = keys[i].Descriptor;
             _privateKeys[i] = keys[i].PrivateKey;
         }
 
-        Keys = entries;
-
-        // Pre-compute the descriptor list once for the set's lifetime. GetSigningKeysAsync
-        // is on the public JWKS hot path and must not allocate on every call.
-        Descriptors = entries.Select(e => e.Descriptor).ToList().AsReadOnly();
+        // Pre-compute once for the set's lifetime. GetSigningKeysAsync is on the public
+        // JWKS hot path and must not allocate on every call.
+        Keys = Array.AsReadOnly(descriptors);
     }
 
-    /// <summary>Gets the ordered key entries. The first entry is the active signing key.</summary>
-    public IReadOnlyList<SigningKeyEntry> Keys { get; }
-
     /// <summary>
-    /// Gets the pre-computed, read-only list of <see cref="SigningKeyDescriptor"/> instances for
-    /// this set. Stable for the lifetime of the set; returned directly from
+    /// Gets the ordered key descriptors. The first entry is the active signing key. Stable for
+    /// the lifetime of the set; returned directly from
     /// <see cref="JwtSigningService{TOptions}.GetSigningKeysAsync"/> without further allocation.
     /// </summary>
-    public IReadOnlyList<SigningKeyDescriptor> Descriptors { get; }
+    public IReadOnlyList<SigningKeyDescriptor> Keys { get; }
 
-    /// <summary>Gets the active (first) signing key entry.</summary>
-    public SigningKeyEntry ActiveKey => Keys[0];
+    /// <summary>Gets the active (first) signing key descriptor.</summary>
+    public SigningKeyDescriptor ActiveKey => Keys[0];
 
     /// <summary>
     /// Gets the private key at the given zero-based position. Used by the base class to

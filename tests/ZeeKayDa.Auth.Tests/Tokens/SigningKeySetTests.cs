@@ -40,7 +40,7 @@ public sealed class SigningKeySetTests
         using var rsa2 = tuple2.Rsa;
         using var set = new SigningKeySet([tuple1.Pair, tuple2.Pair]);
 
-        set.ActiveKey.Descriptor.Kid.Should().Be("k1");
+        set.ActiveKey.Kid.Should().Be("k1");
     }
 
     [Fact]
