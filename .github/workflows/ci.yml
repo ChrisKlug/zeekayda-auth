@@ -13,10 +13,16 @@ on:
 permissions:
   contents: read
 
+env:
+  NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+
 jobs:
   build-and-test:
     name: Build and Test
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
 
     steps:
       - name: Checkout
@@ -25,10 +31,10 @@ jobs:
       - name: Cache NuGet packages
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
-          path: ~/.nuget/packages
-          key: nuget-${{ hashFiles('**/Directory.Packages.props') }}
+          path: ${{ env.NUGET_PACKAGES }}
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/Directory.Packages.props', '**/*.csproj', '**/global.json') }}
           restore-keys: |
-            nuget-
+            nuget-${{ runner.os }}-
 
       - name: Setup .NET
         uses: actions/setup-dotnet@9a946fdbd5fb07b82b2f5a4466058b876ab72bb2 # v5.3.0
@@ -44,13 +50,28 @@ jobs:
       - name: Test
         run: dotnet test --no-build --configuration Release --collect:"XPlat Code Coverage" --results-directory ./TestResults
 
-      - name: Upload coverage
+      - name: Upload coverage-${{ matrix.os }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
-          name: coverage
+          name: coverage-${{ runner.os }}
           path: ./TestResults/**/coverage.cobertura.xml
           if-no-files-found: ignore
+
+      - name: Code Coverage Summary Report
+        if: runner.os == 'Linux'
+        uses: irongut/CodeCoverageSummary@51cc3a756ddcd398d447c044c02cb6aa83fdae95
+        with:
+          filename: TestResults/**/coverage.cobertura.xml
+          format: markdown
+          output: both          # Logs to console AND creates a markdown file
+          badge: true           # Adds a visual status badge to the summary
+          indicators: true      # Uses ✔ and ❌ symbols for rapid visual scanning
+          hide_branch_rate: false
+
+      - name: Add Coverage PR/Job Summary
+        if: runner.os == 'Linux'
+        run: cat code-coverage-results.md >> $GITHUB_STEP_SUMMARY
 
   coverage-regression:
     name: Coverage Regression
@@ -69,10 +90,10 @@ jobs:
       - name: Cache NuGet packages
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
-          path: ~/.nuget/packages
-          key: nuget-${{ hashFiles('**/Directory.Packages.props') }}
+          path: ${{ env.NUGET_PACKAGES }}
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/Directory.Packages.props', '**/*.csproj', '**/global.json') }}
           restore-keys: |
-            nuget-
+            nuget-${{ runner.os }}-
 
       - name: Setup .NET
         uses: actions/setup-dotnet@9a946fdbd5fb07b82b2f5a4466058b876ab72bb2 # v5.3.0
@@ -125,8 +146,8 @@ jobs:
       - name: Cache NuGet packages
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
-          path: ~/.nuget/packages
-          key: nuget-${{ hashFiles('**/Directory.Packages.props') }}
+          path: ${{ env.NUGET_PACKAGES }}
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/Directory.Packages.props', '**/*.csproj', '**/global.json') }}
           restore-keys: |
             nuget-
 

@@ -242,6 +242,12 @@ The development provider derives from the §3 base class as
 `JwtSigningService<DevelopmentSigningKeyOptions>`, where
 `DevelopmentSigningKeyOptions : JwtSigningServiceOptions`.
 
+`ISigningKeyFileSystem` exposes async read/write operations (`ReadKeyFileAsync` /
+`WriteKeyFileAsync`) with a `CancellationToken`; production implementations must propagate
+the token to their underlying I/O. `DevelopmentJwtSigningService` propagates the token
+received from `LoadKeysAsync` to all file I/O calls; however, RSA key generation
+(`RSA.Create`) is CPU-bound and has no async variant, so that step cannot be cancelled.
+
 ### 3. Rotation and the optional base class
 
 #### 3.1 No third method on the interface
@@ -685,6 +691,20 @@ rotation. Static config plus a startup consistency check is the chosen approach.
 - **Single-flight refresh** prevents a thundering herd against a remote key source on the
   signing hot path — including via the anonymous `connect/jwks` read path (§4.3) — from
   becoming a self-inflicted availability incident.
+
+---
+
+## Amendments
+
+### Amendment 1 — PR #286 (2026-07-02)
+
+**`AllowDevelopmentJwtSigningKeysOutsideDevelopment` replaced by `AllowedDevelopmentJwtSigningKeysEnvironments`**
+
+The original design specified a single `bool AllowDevelopmentJwtSigningKeysOutsideDevelopment` escape hatch (§2, §3.6). The implementation ships `IReadOnlyList<string> AllowedDevelopmentJwtSigningKeysEnvironments` on `AuthorizationServerOptions` instead. The list form is strictly more expressive: it allows development signing keys to be permitted in specific named non-production environments (e.g. `"Staging"`, `"IntegrationTest"`) without permitting them globally. The semantic invariant from §2 is unchanged — `Production` cannot be added to the list, the `LogLevel.Critical` entry still fires on every startup for any non-`Development` entry, and the feature flag remains on `AuthorizationServerOptions` (server-wide gate, not a per-provider knob). All §2 security requirements (key strength, file permissions, ownership, symlink protection) still apply regardless of the list contents.
+
+**`ISigningKeyFileSystem` renamed to `IDevelopmentSigningKeyFileSystem`**
+
+The §2 / §3.6 references to `ISigningKeyFileSystem` describe what shipped as `IDevelopmentSigningKeyFileSystem`. The rename scopes the interface to the development provider, clarifying that this is not a general-purpose signing file system abstraction used by production providers. The interface contract (async `ReadKeyFileAsync` / `WriteKeyFileAsync` / `EnsureDirectorySafe` / `FileExists` with `CancellationToken` propagation) is otherwise unchanged from the §2 description.
 
 ---
 
