@@ -25,7 +25,8 @@ internal interface ISigningKeyFileSystem
     /// </summary>
     /// <param name="keyPath">The file path to write.</param>
     /// <param name="pem">The PEM-encoded key material.</param>
-    void WriteKeyFile(string keyPath, string pem);
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    ValueTask WriteKeyFileAsync(string keyPath, string pem, CancellationToken cancellationToken);
 
     /// <summary>
     /// Reads the PEM content from <paramref name="keyPath"/> as a UTF-8 byte array.
@@ -33,11 +34,12 @@ internal interface ISigningKeyFileSystem
     /// symlink or has permissions broader than expected.
     /// </summary>
     /// <param name="keyPath">The file path to read.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>
     /// A <see cref="KeyFileContent"/> wrapping the raw PEM bytes. The caller must dispose it
     /// promptly after the key has been imported so that key material is zeroed on the heap.
     /// </returns>
-    KeyFileContent ReadKeyFile(string keyPath);
+    ValueTask<KeyFileContent> ReadKeyFileAsync(string keyPath, CancellationToken cancellationToken);
 
     /// <summary>
     /// Returns <see langword="true"/> if a file exists at <paramref name="path"/>.

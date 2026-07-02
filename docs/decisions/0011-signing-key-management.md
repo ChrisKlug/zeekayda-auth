@@ -242,6 +242,12 @@ The development provider derives from the §3 base class as
 `JwtSigningService<DevelopmentSigningKeyOptions>`, where
 `DevelopmentSigningKeyOptions : JwtSigningServiceOptions`.
 
+`ISigningKeyFileSystem` exposes async read/write operations (`ReadKeyFileAsync` /
+`WriteKeyFileAsync`) with a `CancellationToken`; production implementations must propagate
+the token to their underlying I/O. `DevelopmentJwtSigningService` propagates the token
+received from `LoadKeysAsync` to all file I/O calls; however, RSA key generation
+(`RSA.Create`) is CPU-bound and has no async variant, so that step cannot be cancelled.
+
 ### 3. Rotation and the optional base class
 
 #### 3.1 No third method on the interface

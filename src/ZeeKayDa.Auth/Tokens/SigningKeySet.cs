@@ -3,6 +3,18 @@ using System.Security.Cryptography;
 namespace ZeeKayDa.Auth.Tokens;
 
 /// <summary>
+/// Pairs a public <see cref="SigningKeyDescriptor"/> with its corresponding private key.
+/// </summary>
+public readonly struct SigningKeyPair
+{
+    /// <summary>Gets the public key descriptor.</summary>
+    public SigningKeyDescriptor Descriptor { get; init; }
+
+    /// <summary>Gets the private key used for signing.</summary>
+    public AsymmetricAlgorithm PrivateKey { get; init; }
+}
+
+/// <summary>
 /// The set of currently trusted signing keys returned by <c>LoadKeysAsync</c> on the
 /// <see cref="JwtSigningService{TOptions}"/> base class.
 /// </summary>
@@ -37,34 +49,34 @@ public sealed class SigningKeySet : IDisposable
     private bool _disposed;
 
     /// <summary>
-    /// Initialises a new <see cref="SigningKeySet"/> with an ordered list of key entries.
+    /// Initialises a new <see cref="SigningKeySet"/> from an ordered list of key pairs.
     /// </summary>
     /// <param name="keys">
-    /// The ordered list of key entries. The first entry is the active signing key. Must be
-    /// non-null and non-empty.
+    /// The ordered list of key pairs. The first pair is the active signing key. Must be
+    /// non-null and non-empty. The set takes ownership of each <see cref="SigningKeyPair.PrivateKey"/>
+    /// and disposes them on <see cref="Dispose"/>.
     /// </param>
-    /// <param name="privateKeys">
-    /// The private key objects corresponding to each entry in <paramref name="keys"/>. Must
-    /// have the same length as <paramref name="keys"/>. The set takes ownership and disposes
-    /// them on <see cref="Dispose"/>.
-    /// </param>
-    public SigningKeySet(IReadOnlyList<SigningKeyEntry> keys, AsymmetricAlgorithm[] privateKeys)
+    public SigningKeySet(IReadOnlyList<SigningKeyPair> keys)
     {
         ArgumentNullException.ThrowIfNull(keys);
-        ArgumentNullException.ThrowIfNull(privateKeys);
 
         if (keys.Count == 0)
-            throw new ArgumentException("At least one signing key entry is required.", nameof(keys));
+            throw new ArgumentException("At least one signing key pair is required.", nameof(keys));
 
-        if (keys.Count != privateKeys.Length)
-            throw new ArgumentException("keys and privateKeys must have the same length.", nameof(privateKeys));
+        _privateKeys = new AsymmetricAlgorithm[keys.Count];
+        var entries = new SigningKeyEntry[keys.Count];
 
-        Keys = keys;
-        _privateKeys = privateKeys;
+        for (var i = 0; i < keys.Count; i++)
+        {
+            entries[i] = new SigningKeyEntry(keys[i].Descriptor);
+            _privateKeys[i] = keys[i].PrivateKey;
+        }
+
+        Keys = entries;
 
         // Pre-compute the descriptor list once for the set's lifetime. GetSigningKeysAsync
         // is on the public JWKS hot path and must not allocate on every call.
-        Descriptors = keys.Select(e => e.Descriptor).ToList().AsReadOnly();
+        Descriptors = entries.Select(e => e.Descriptor).ToList().AsReadOnly();
     }
 
     /// <summary>Gets the ordered key entries. The first entry is the active signing key.</summary>
@@ -81,8 +93,8 @@ public sealed class SigningKeySet : IDisposable
     public SigningKeyEntry ActiveKey => Keys[0];
 
     /// <summary>
-    /// Gets the private key for the key at <paramref name="index"/>. Used by the base class
-    /// to perform the signing operation.
+    /// Gets the private key at the given zero-based position. Used by the base class to
+    /// perform the signing operation.
     /// </summary>
     /// <param name="index">Zero-based index into <see cref="Keys"/>.</param>
     public AsymmetricAlgorithm GetPrivateKey(int index)

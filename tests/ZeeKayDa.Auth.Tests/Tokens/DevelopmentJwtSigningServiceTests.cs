@@ -33,12 +33,13 @@ public sealed class DevelopmentJwtSigningServiceTests
             _directories.Add(directory);
         }
 
-        public void WriteKeyFile(string keyPath, string pem)
+        public ValueTask WriteKeyFileAsync(string keyPath, string pem, CancellationToken cancellationToken)
         {
             _files[keyPath] = pem;
+            return ValueTask.CompletedTask;
         }
 
-        public KeyFileContent ReadKeyFile(string keyPath)
+        public ValueTask<KeyFileContent> ReadKeyFileAsync(string keyPath, CancellationToken cancellationToken)
         {
             if (FileIsSymlink)
             {
@@ -56,7 +57,7 @@ public sealed class DevelopmentJwtSigningServiceTests
                         $"Signing key file '{keyPath}' has permissions broader than 0600."));
             }
 
-            return new KeyFileContent(System.Text.Encoding.UTF8.GetBytes(_files[keyPath]));
+            return ValueTask.FromResult(new KeyFileContent(System.Text.Encoding.UTF8.GetBytes(_files[keyPath])));
         }
 
         public bool FileExists(string path) => _files.ContainsKey(path);
@@ -278,7 +279,7 @@ public sealed class DevelopmentJwtSigningServiceTests
         await sut.GetSigningKeysAsync(ct);
 
         var keyPath = Path.Join(dir, "dev-signing-key.pem");
-        using var keyFile = fs.ReadKeyFile(keyPath);
+        using var keyFile = await fs.ReadKeyFileAsync(keyPath, ct);
         var pem = Encoding.UTF8.GetString(keyFile.Bytes);
         pem.Should().StartWith("-----BEGIN RSA PRIVATE KEY-----");
     }
@@ -435,8 +436,8 @@ public sealed class DevelopmentJwtSigningServiceTests
     private sealed class ThrowOnWriteFileSystem : ISigningKeyFileSystem
     {
         public void EnsureDirectorySafe(string directory) { }
-        public void WriteKeyFile(string keyPath, string pem) => throw new IOException("Simulated write failure.");
-        public KeyFileContent ReadKeyFile(string keyPath) => throw new InvalidOperationException("Should not be called.");
+        public ValueTask WriteKeyFileAsync(string keyPath, string pem, CancellationToken cancellationToken) => throw new IOException("Simulated write failure.");
+        public ValueTask<KeyFileContent> ReadKeyFileAsync(string keyPath, CancellationToken cancellationToken) => throw new InvalidOperationException("Should not be called.");
         public bool FileExists(string path) => false;
     }
 

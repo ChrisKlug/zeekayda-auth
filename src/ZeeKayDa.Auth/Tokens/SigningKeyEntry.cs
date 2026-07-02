@@ -7,7 +7,4 @@ namespace ZeeKayDa.Auth.Tokens;
 /// <param name="Descriptor">
 /// The public key descriptor for this entry.
 /// </param>
-/// <param name="Index">
-/// The zero-based index of this entry's private key in the owning <see cref="SigningKeySet"/>.
-/// </param>
-public sealed record SigningKeyEntry(SigningKeyDescriptor Descriptor, int Index);
+public sealed record SigningKeyEntry(SigningKeyDescriptor Descriptor);

@@ -141,16 +141,16 @@ internal sealed class OsSigningKeyFileSystem : ISigningKeyFileSystem
     }
 
     /// <inheritdoc/>
-    public void WriteKeyFile(string keyPath, string pem)
+    public async ValueTask WriteKeyFileAsync(string keyPath, string pem, CancellationToken cancellationToken)
     {
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            WriteKeyFileWindows(keyPath, pem);
+            await WriteKeyFileWindowsAsync(keyPath, pem, cancellationToken).ConfigureAwait(false);
         else
-            WriteKeyFileUnix(keyPath, pem);
+            await WriteKeyFileUnixAsync(keyPath, pem, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
-    public KeyFileContent ReadKeyFile(string keyPath)
+    public async ValueTask<KeyFileContent> ReadKeyFileAsync(string keyPath, CancellationToken cancellationToken)
     {
         // Open the file first to close the TOCTOU window: validate permissions on the
         // already-open handle so the path cannot be swapped between the check and the read.
@@ -170,8 +170,8 @@ internal sealed class OsSigningKeyFileSystem : ISigningKeyFileSystem
         if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             ValidateFilePermissionsUnix(stream, keyPath);
 
-        using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: false);
-        return new KeyFileContent(Encoding.UTF8.GetBytes(reader.ReadToEnd()));
+        var bytes = await File.ReadAllBytesAsync(stream.Name, cancellationToken).ConfigureAwait(false);
+        return new KeyFileContent(bytes);
     }
 
     /// <inheritdoc/>
@@ -243,14 +243,14 @@ internal sealed class OsSigningKeyFileSystem : ISigningKeyFileSystem
     }
 
     [SupportedOSPlatform("windows")]
-    private static void WriteKeyFileWindows(string keyPath, string pem)
+    private static async ValueTask WriteKeyFileWindowsAsync(string keyPath, string pem, CancellationToken cancellationToken)
     {
-        File.WriteAllText(keyPath, pem);
+        await File.WriteAllTextAsync(keyPath, pem, cancellationToken).ConfigureAwait(false);
         ApplyRestrictiveFileAclWindows(keyPath);
     }
 
     [UnsupportedOSPlatform("windows")]
-    private static void WriteKeyFileUnix(string keyPath, string pem)
+    private static async ValueTask WriteKeyFileUnixAsync(string keyPath, string pem, CancellationToken cancellationToken)
     {
         // Create with 0600 atomically — no create-then-chmod window.
         var options = new FileStreamOptions
@@ -258,13 +258,13 @@ internal sealed class OsSigningKeyFileSystem : ISigningKeyFileSystem
             Mode = FileMode.CreateNew,
             Access = FileAccess.Write,
             Share = FileShare.None,
-            Options = FileOptions.None,
+            Options = FileOptions.Asynchronous,
             UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite,
         };
 
-        using var stream = new FileStream(keyPath, options);
-        using var writer = new StreamWriter(stream);
-        writer.Write(pem);
+        await using var stream = new FileStream(keyPath, options);
+        await using var writer = new StreamWriter(stream);
+        await writer.WriteAsync(pem.AsMemory(), cancellationToken).ConfigureAwait(false);
     }
 
     [UnsupportedOSPlatform("windows")]

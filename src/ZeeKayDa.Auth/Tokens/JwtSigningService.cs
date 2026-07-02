@@ -171,7 +171,7 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
     {
         var activeEntry = set.ActiveKey;
         var descriptor = activeEntry.Descriptor;
-        var privateKey = set.GetPrivateKey(activeEntry.Index);
+        var privateKey = set.GetPrivateKey(0);
 
         var headerBytes = BuildHeaderJsonBytes(descriptor.Algorithm, descriptor.Kid);
         var headerSegment = Base64UrlEncode(headerBytes);

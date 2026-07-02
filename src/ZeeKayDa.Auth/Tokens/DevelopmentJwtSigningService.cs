@@ -54,45 +54,42 @@ internal sealed class DevelopmentJwtSigningService
     }
 
     /// <inheritdoc/>
-    protected override ValueTask<SigningKeySet> LoadKeysAsync(CancellationToken cancellationToken)
+    protected override async ValueTask<SigningKeySet> LoadKeysAsync(CancellationToken cancellationToken)
     {
-        // CancellationToken is accepted to satisfy the abstract method contract but is not
-        // observed here because this implementation loads only from local memory or a local
-        // file — neither of which can block on a network call. A future network-bound
-        // implementation should propagate the token to all I/O operations.
+        // CancellationToken is propagated to all file I/O calls below.
+        // RSA.Create is CPU-bound and has no async variant, so key generation cannot be cancelled.
         if (_memoizedSet is not null)
-            return ValueTask.FromResult(_memoizedSet);
+            return _memoizedSet;
 
         var persistDir = _devOptions.Value.PersistToDirectory;
         var rsa = persistDir is not null
-            ? LoadOrGeneratePersistedKey(persistDir)
+            ? await LoadOrGeneratePersistedKeyAsync(persistDir, cancellationToken).ConfigureAwait(false)
             : GenerateEphemeralKey();
 
         var kid = ComputeKid(rsa);
         var rsaParams = rsa.ExportParameters(false);
         var descriptor = new SigningKeyDescriptor(kid, SigningAlgorithm.RS256, rsaParams);
-        var entry = new SigningKeyEntry(descriptor, 0);
-        var set = new SigningKeySet([entry], [rsa]);
+        var set = new SigningKeySet([new SigningKeyPair { Descriptor = descriptor, PrivateKey = rsa }]);
 
         _memoizedSet = set;
-        return ValueTask.FromResult(set);
+        return set;
     }
 
     private static RSA GenerateEphemeralKey() => RSA.Create(MinimumRsaKeySize);
 
-    private RSA LoadOrGeneratePersistedKey(string directory)
+    private async ValueTask<RSA> LoadOrGeneratePersistedKeyAsync(string directory, CancellationToken cancellationToken)
     {
         _fileSystem.EnsureDirectorySafe(directory);
 
         var keyPath = Path.Join(directory, KeyFileName);
 
         if (_fileSystem.FileExists(keyPath))
-            return LoadKeyFromFile(keyPath);
+            return await LoadKeyFromFileAsync(keyPath, cancellationToken).ConfigureAwait(false);
 
         var rsa = RSA.Create(MinimumRsaKeySize);
         try
         {
-            _fileSystem.WriteKeyFile(keyPath, rsa.ExportRSAPrivateKeyPem());
+            await _fileSystem.WriteKeyFileAsync(keyPath, rsa.ExportRSAPrivateKeyPem(), cancellationToken).ConfigureAwait(false);
             return rsa;
         }
         catch
@@ -102,9 +99,9 @@ internal sealed class DevelopmentJwtSigningService
         }
     }
 
-    private RSA LoadKeyFromFile(string keyPath)
+    private async ValueTask<RSA> LoadKeyFromFileAsync(string keyPath, CancellationToken cancellationToken)
     {
-        using var keyFile = _fileSystem.ReadKeyFile(keyPath);
+        using var keyFile = await _fileSystem.ReadKeyFileAsync(keyPath, cancellationToken).ConfigureAwait(false);
         var rsa = RSA.Create();
         try
         {
