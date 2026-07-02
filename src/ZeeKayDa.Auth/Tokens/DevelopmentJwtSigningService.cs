@@ -89,7 +89,22 @@ internal sealed class DevelopmentJwtSigningService
         var rsa = RSA.Create(MinimumRsaKeySize);
         try
         {
-            await _fileSystem.WriteKeyFileAsync(keyPath, rsa.ExportRSAPrivateKeyPem(), cancellationToken).ConfigureAwait(false);
+            // A 3072-bit RSA PKCS#1 PEM is at most ~3500 chars; 4096 is a safe upper bound.
+            const int MaxPemChars = 4096;
+            var pemBuffer = ArrayPool<char>.Shared.Rent(MaxPemChars);
+            try
+            {
+                if (!rsa.TryExportRSAPrivateKeyPem(pemBuffer, out var written))
+                    throw new InvalidOperationException("Failed to export RSA private key as PEM.");
+                await _fileSystem.WriteKeyFileAsync(keyPath, pemBuffer.AsMemory(0, written), cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            finally
+            {
+                pemBuffer.AsSpan().Clear();
+                ArrayPool<char>.Shared.Return(pemBuffer);
+            }
+
             return rsa;
         }
         catch
@@ -105,7 +120,21 @@ internal sealed class DevelopmentJwtSigningService
         var rsa = RSA.Create();
         try
         {
-            rsa.ImportFromPem(Encoding.UTF8.GetString(keyFile.Bytes));
+            // Decode the PEM bytes into a rented char[] so the private key material can be
+            // zeroed after import rather than lingering on the heap as an immutable string.
+            var charCount = Encoding.UTF8.GetCharCount(keyFile.Bytes);
+            var charBuffer = ArrayPool<char>.Shared.Rent(charCount);
+            try
+            {
+                Encoding.UTF8.GetChars(keyFile.Bytes, charBuffer.AsSpan(0, charCount));
+                rsa.ImportFromPem(charBuffer.AsSpan(0, charCount));
+            }
+            finally
+            {
+                charBuffer.AsSpan().Clear();
+                ArrayPool<char>.Shared.Return(charBuffer);
+            }
+
             return rsa;
         }
         catch

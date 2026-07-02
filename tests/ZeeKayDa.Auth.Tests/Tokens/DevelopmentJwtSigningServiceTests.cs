@@ -33,9 +33,9 @@ public sealed class DevelopmentJwtSigningServiceTests
             _directories.Add(directory);
         }
 
-        public ValueTask WriteKeyFileAsync(string keyPath, string pem, CancellationToken cancellationToken)
+        public ValueTask WriteKeyFileAsync(string keyPath, ReadOnlyMemory<char> pem, CancellationToken cancellationToken)
         {
-            _files[keyPath] = pem;
+            _files[keyPath] = new string(pem.Span);
             return ValueTask.CompletedTask;
         }
 
@@ -436,7 +436,7 @@ public sealed class DevelopmentJwtSigningServiceTests
     private sealed class ThrowOnWriteFileSystem : IDevelopmentSigningKeyFileSystem
     {
         public void EnsureDirectorySafe(string directory) { }
-        public ValueTask WriteKeyFileAsync(string keyPath, string pem, CancellationToken cancellationToken) => throw new IOException("Simulated write failure.");
+        public ValueTask WriteKeyFileAsync(string keyPath, ReadOnlyMemory<char> pem, CancellationToken cancellationToken) => throw new IOException("Simulated write failure.");
         public ValueTask<KeyFileContent> ReadKeyFileAsync(string keyPath, CancellationToken cancellationToken) => throw new InvalidOperationException("Should not be called.");
         public bool FileExists(string path) => false;
     }

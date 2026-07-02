@@ -3,12 +3,11 @@ using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Security.AccessControl;
 using System.Security.Principal;
-using System.Text;
 
 namespace ZeeKayDa.Auth.Tokens;
 
 /// <summary>
-/// Provides p/invoke access to <c>getuid()</c> and <c>stat()</c> for directory ownership
+/// Provides interop access to <c>getuid()</c> and <c>stat()</c> for directory ownership
 /// validation on Unix platforms.
 /// </summary>
 /// <remarks>
@@ -20,16 +19,22 @@ namespace ZeeKayDa.Auth.Tokens;
 /// <para>
 /// Two native stat structs are declared — one for macOS/BSD and one for Linux 64-bit — because
 /// the kernel ABI differs between platforms. Only the fields up to <c>st_uid</c> are bound;
-/// the remainder of each struct is covered by opaque padding sized to the full struct on each OS.
+/// the remainder of each struct is covered by blittable scalar padding sized to the full struct
+/// on each OS.
+/// </para>
+/// <para>
+/// <c>[LibraryImport]</c> is used in preference to <c>[DllImport]</c> because the source
+/// generator produces fully managed marshaling code at build time, which is the .NET 7+
+/// recommended pattern for new interop.
 /// </para>
 /// </remarks>
 [ExcludeFromCodeCoverage(Justification = "Platform-specific OS APIs cannot all be exercised on a single OS. Tests inject a fake IDevelopmentSigningKeyFileSystem instead.")]
-internal static class PosixInterop
+internal static partial class PosixInterop
 {
     /// <summary>Returns the real UID of the calling process.</summary>
-    [DllImport("libc", EntryPoint = "getuid", SetLastError = false)]
+    [LibraryImport("libc", EntryPoint = "getuid")]
     [UnsupportedOSPlatform("windows")]
-    internal static extern uint GetCurrentUid();
+    internal static partial uint GetCurrentUid();
 
     /// <summary>
     /// Returns the UID of the owner of the file or directory at <paramref name="path"/>,
@@ -52,21 +57,22 @@ internal static class PosixInterop
         return NativeStatLinuxArm64(path, out var arm64Buf) == 0 ? arm64Buf.st_uid : null;
     }
 
-    [DllImport("libc", EntryPoint = "stat", SetLastError = true)]
+    [LibraryImport("libc", EntryPoint = "stat", StringMarshalling = StringMarshalling.Utf8, SetLastError = true)]
     [UnsupportedOSPlatform("windows")]
-    private static extern int NativeStatMacOs(string path, out StatMacOs buf);
+    private static partial int NativeStatMacOs(string path, out StatMacOs buf);
 
-    [DllImport("libc", EntryPoint = "stat", SetLastError = true)]
+    [LibraryImport("libc", EntryPoint = "stat", StringMarshalling = StringMarshalling.Utf8, SetLastError = true)]
     [UnsupportedOSPlatform("windows")]
-    private static extern int NativeStatLinuxX64(string path, out StatLinuxX64 buf);
+    private static partial int NativeStatLinuxX64(string path, out StatLinuxX64 buf);
 
-    [DllImport("libc", EntryPoint = "stat", SetLastError = true)]
+    [LibraryImport("libc", EntryPoint = "stat", StringMarshalling = StringMarshalling.Utf8, SetLastError = true)]
     [UnsupportedOSPlatform("windows")]
-    private static extern int NativeStatLinuxArm64(string path, out StatLinuxArm64 buf);
+    private static partial int NativeStatLinuxArm64(string path, out StatLinuxArm64 buf);
 
     /// <summary>
-    /// macOS / BSD stat struct (arm64 and x64, 144 bytes). Fields are listed in native ABI order.
-    /// Layout: dev(4) mode(2) nlink(2) ino(8) uid(4) gid(4) ...
+    /// macOS / BSD stat struct (arm64 and x64, 144 bytes total). Fields in native ABI order.
+    /// Layout: dev(4) mode(2) nlink(2) ino(8) uid(4) gid(4) + 120 bytes padding.
+    /// Padding uses blittable scalar fields so the struct is compatible with [LibraryImport].
     /// </summary>
     [StructLayout(LayoutKind.Sequential)]
     internal struct StatMacOs
@@ -77,14 +83,14 @@ internal static class PosixInterop
         internal ulong st_ino;     // offset  8, 8 bytes
         internal uint st_uid;      // offset 16, 4 bytes ← we need this
         internal uint st_gid;      // offset 20, 4 bytes
-
-        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 120)]
-        private readonly byte[] _padding; // pads to 144 bytes total
+        // 120 bytes padding → total 144 bytes (15 × 8)
+        private ulong _p0, _p1, _p2, _p3, _p4, _p5, _p6, _p7, _p8, _p9, _p10, _p11, _p12, _p13, _p14;
     }
 
     /// <summary>
-    /// Linux x64 stat struct (144 bytes). Fields are listed in native ABI order.
-    /// Layout: dev(8) ino(8) nlink(8) mode(4) uid(4) gid(4) ...
+    /// Linux x64 stat struct (144 bytes total). Fields in native ABI order.
+    /// Layout: dev(8) ino(8) nlink(8) mode(4) uid(4) gid(4) + 108 bytes padding.
+    /// Padding uses blittable scalar fields so the struct is compatible with [LibraryImport].
     /// </summary>
     [StructLayout(LayoutKind.Sequential)]
     internal struct StatLinuxX64
@@ -95,14 +101,15 @@ internal static class PosixInterop
         internal uint st_mode;     // offset 24, 4 bytes
         internal uint st_uid;      // offset 28, 4 bytes ← we need this
         internal uint st_gid;      // offset 32, 4 bytes
-
-        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 108)]
-        private readonly byte[] _padding; // pads to 144 bytes total
+        // 108 bytes padding → total 144 bytes (4 + 13 × 8)
+        private uint _p0;          // offset 36, 4 bytes (aligns next field to 8-byte boundary)
+        private ulong _p1, _p2, _p3, _p4, _p5, _p6, _p7, _p8, _p9, _p10, _p11, _p12, _p13; // offset 40, 104 bytes
     }
 
     /// <summary>
-    /// Linux arm64 stat struct (128 bytes). Fields are listed in native ABI order.
-    /// Layout: dev(8) ino(8) mode(4) nlink(4) uid(4) gid(4) ...
+    /// Linux arm64 stat struct (128 bytes total). Fields in native ABI order.
+    /// Layout: dev(8) ino(8) mode(4) nlink(4) uid(4) gid(4) + 96 bytes padding.
+    /// Padding uses blittable scalar fields so the struct is compatible with [LibraryImport].
     /// </summary>
     [StructLayout(LayoutKind.Sequential)]
     internal struct StatLinuxArm64
@@ -113,9 +120,8 @@ internal static class PosixInterop
         internal uint st_nlink;    // offset 20, 4 bytes
         internal uint st_uid;      // offset 24, 4 bytes ← we need this
         internal uint st_gid;      // offset 28, 4 bytes
-
-        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 100)]
-        private readonly byte[] _padding; // pads to 128 bytes total
+        // 96 bytes padding → total 128 bytes (12 × 8)
+        private ulong _p0, _p1, _p2, _p3, _p4, _p5, _p6, _p7, _p8, _p9, _p10, _p11;
     }
 }
 
@@ -141,7 +147,7 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
     }
 
     /// <inheritdoc/>
-    public async ValueTask WriteKeyFileAsync(string keyPath, string pem, CancellationToken cancellationToken)
+    public async ValueTask WriteKeyFileAsync(string keyPath, ReadOnlyMemory<char> pem, CancellationToken cancellationToken)
     {
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             await WriteKeyFileWindowsAsync(keyPath, pem, cancellationToken).ConfigureAwait(false);
@@ -152,17 +158,12 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
     /// <inheritdoc/>
     public async ValueTask<KeyFileContent> ReadKeyFileAsync(string keyPath, CancellationToken cancellationToken)
     {
-        // Open the file first to close the TOCTOU window: validate permissions on the
-        // already-open handle so the path cannot be swapped between the check and the read.
-        //
-        // Residual TOCTOU risk: The symlink walk in ValidateNoSymlink re-inspects parent
-        // directory components by path string after the handle is open. An extremely narrow
-        // race exists where a parent directory could be swapped to a symlink after the file
-        // is opened but before the parent directory walk completes. On Unix the open handle
-        // prevents the leaf file from being swapped, which covers the highest-impact attack
-        // vector. Eliminating the residual parent-directory risk entirely would require
-        // opening each directory component as a file descriptor and using fstatat/openat
-        // exclusively, which is not available via the .NET BCL and is therefore deferred.
+        // Open the file first, then validate and read from the same handle to close the
+        // TOCTOU window. ValidateNoSymlink walks parent directories by path string after the
+        // handle is open — an extremely narrow race exists there, but the open handle prevents
+        // the leaf file from being swapped, which is the highest-impact attack vector.
+        // Eliminating the residual parent-directory risk entirely would require openat/fstatat,
+        // which are not available via the .NET BCL.
         using var stream = File.Open(keyPath, FileMode.Open, FileAccess.Read, FileShare.Read);
 
         ValidateNoSymlink(stream);
@@ -170,7 +171,9 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
         if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             ValidateFilePermissionsUnix(stream, keyPath);
 
-        var bytes = await File.ReadAllBytesAsync(stream.Name, cancellationToken).ConfigureAwait(false);
+        // Read from the already-open handle so validation and read are on the same file descriptor.
+        var bytes = new byte[stream.Length];
+        await stream.ReadExactlyAsync(bytes, cancellationToken).ConfigureAwait(false);
         return new KeyFileContent(bytes);
     }
 
@@ -243,14 +246,16 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
     }
 
     [SupportedOSPlatform("windows")]
-    private static async ValueTask WriteKeyFileWindowsAsync(string keyPath, string pem, CancellationToken cancellationToken)
+    private static async ValueTask WriteKeyFileWindowsAsync(string keyPath, ReadOnlyMemory<char> pem, CancellationToken cancellationToken)
     {
-        await File.WriteAllTextAsync(keyPath, pem, cancellationToken).ConfigureAwait(false);
+        await using var stream = new FileStream(keyPath, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: 4096, useAsync: true);
+        await using var writer = new StreamWriter(stream);
+        await writer.WriteAsync(pem, cancellationToken).ConfigureAwait(false);
         ApplyRestrictiveFileAclWindows(keyPath);
     }
 
     [UnsupportedOSPlatform("windows")]
-    private static async ValueTask WriteKeyFileUnixAsync(string keyPath, string pem, CancellationToken cancellationToken)
+    private static async ValueTask WriteKeyFileUnixAsync(string keyPath, ReadOnlyMemory<char> pem, CancellationToken cancellationToken)
     {
         // Create with 0600 atomically — no create-then-chmod window.
         var options = new FileStreamOptions
@@ -264,7 +269,7 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
 
         await using var stream = new FileStream(keyPath, options);
         await using var writer = new StreamWriter(stream);
-        await writer.WriteAsync(pem.AsMemory(), cancellationToken).ConfigureAwait(false);
+        await writer.WriteAsync(pem, cancellationToken).ConfigureAwait(false);
     }
 
     [UnsupportedOSPlatform("windows")]

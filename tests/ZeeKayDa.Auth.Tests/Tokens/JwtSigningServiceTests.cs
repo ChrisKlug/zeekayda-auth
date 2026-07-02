@@ -55,9 +55,17 @@ public sealed class JwtSigningServiceTests
     private static SigningKeySet MakeRsaSet(string kid = "test-kid")
     {
         var rsa = RSA.Create(2048);
-        var rsaParams = rsa.ExportParameters(false);
-        var descriptor = new SigningKeyDescriptor(kid, SigningAlgorithm.RS256, rsaParams);
-        return new SigningKeySet([new SigningKeyPair { Descriptor = descriptor, PrivateKey = rsa }]);
+        try
+        {
+            var rsaParams = rsa.ExportParameters(false);
+            var descriptor = new SigningKeyDescriptor(kid, SigningAlgorithm.RS256, rsaParams);
+            return new SigningKeySet([new SigningKeyPair { Descriptor = descriptor, PrivateKey = rsa }]);
+        }
+        catch
+        {
+            rsa.Dispose();
+            throw;
+        }
     }
 
     private static CountingSigningService BuildService(

@@ -24,9 +24,13 @@ internal interface IDevelopmentSigningKeyFileSystem
     /// so that only the current user can read the file.
     /// </summary>
     /// <param name="keyPath">The file path to write.</param>
-    /// <param name="pem">The PEM-encoded key material.</param>
+    /// <param name="pem">
+    /// The PEM-encoded key material as a char buffer. Callers should rent a <c>char[]</c>
+    /// from <see cref="System.Buffers.ArrayPool{T}"/>, write the PEM into it, pass it here,
+    /// then zero and return the array so that private key material does not linger on the heap.
+    /// </param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
-    ValueTask WriteKeyFileAsync(string keyPath, string pem, CancellationToken cancellationToken);
+    ValueTask WriteKeyFileAsync(string keyPath, ReadOnlyMemory<char> pem, CancellationToken cancellationToken);
 
     /// <summary>
     /// Reads the PEM content from <paramref name="keyPath"/> as a UTF-8 byte array.
