@@ -25,7 +25,10 @@ permissions:
 jobs:
   build-and-test:
     name: Build and Test
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Docs-only change — skipping .NET build and tests
         run: echo "Docs-only change detected. Build and test skipped."
