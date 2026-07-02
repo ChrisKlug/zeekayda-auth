@@ -70,7 +70,7 @@ Two internal types were renamed in PR #286 to make their development-only scope 
 matching the "Development" prefix convention already established on the public types:
 
 - `ISigningKeyFileSystem` → `IDevelopmentSigningKeyFileSystem`
-- `OsSigningKeyFileSystem` → `OsDevelopmentSigningKeyFileSystem`
+- `OsSigningKeyFileSystem` → `LocalSigningKeyFileSystem`
 
 These are `internal` types with no public surface impact. The renames are code-clarity changes, not
 breaking changes.
