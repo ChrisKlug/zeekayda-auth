@@ -40,7 +40,7 @@ The shape decided here is effectively permanent for the v1 lifecycle.
 - **ADR 0001 §3** establishes the strict core / AspNetCore boundary: `ZeeKayDa.Auth` contains no
   ASP.NET Core knowledge; `ZeeKayDa.Auth.AspNetCore` is the hosting adapter. Any new package must
   respect or extend this layering model.
-- **ADR 0011 §3.6** establishes the `AddXxx()` on `IZeeKayDaAuthBuilder` registration idiom.
+- **ADR 0011 §3.6** establishes the `AddXxx()` on `ZeeKayDaAuthBuilder` registration idiom.
   Every signing provider must register as a singleton `IJwtSigningService` through this pattern.
 - **ADR 0008** established the lesson that empty options classes and surface with no behaviour are
   an anti-pattern. A package that exists on NuGet but contains no meaningful type is the same
@@ -66,14 +66,14 @@ The shape decided here is effectively permanent for the v1 lifecycle.
 `DevelopmentSigningKeyWarningService`) remain in `ZeeKayDa.Auth` and `ZeeKayDa.Auth.AspNetCore`.
 They are not extracted to a separate package.
 
-Two internal types are renamed to make their development-only scope explicit in code, matching the
-"Development" prefix convention already established on the public types:
+Two internal types were renamed in PR #286 to make their development-only scope explicit in code,
+matching the "Development" prefix convention already established on the public types:
 
 - `ISigningKeyFileSystem` → `IDevelopmentSigningKeyFileSystem`
 - `OsSigningKeyFileSystem` → `OsDevelopmentSigningKeyFileSystem`
 
-These are `internal` types with no public surface impact. The rename is a code-clarity change, not
-a breaking change.
+These are `internal` types with no public surface impact. The renames are code-clarity changes, not
+breaking changes.
 
 **Rationale.** The development provider is deliberately part of the getting-started path — it is
 the first signing registration a new adopter encounters ("one line to get started"). Extracting it
@@ -100,7 +100,11 @@ they share the same external dependency (`Azure.Security.KeyVault.Keys`, `Azure.
 same operational context — consumers choosing between remote and cached signing are already
 committed to Azure Key Vault as their key store. Splitting them into two packages would require a
 consumer to swap package references rather than simply switch the extension method call, which is
-the wrong unit of configuration at that decision point.
+the wrong unit of configuration at that decision point. The two variants do represent different
+security postures: remote signing (#287) never exports private key material from Key Vault (every
+sign operation is a network call), while cached signing (#288) fetches key material and holds it
+in process memory for a configurable `RefreshInterval` in exchange for reduced latency. Consumers
+should choose between them based on their threat model, not their package management.
 
 The three OS-level providers are each in their own package because their dependencies,
 assemblies, and applicable deployment targets are entirely disjoint. A Windows deployment does not
@@ -109,21 +113,42 @@ package. Platform-specific packages may also carry platform-specific CI requirem
 runners for the Certificate Store tests, macOS runners for Keychain tests) that are isolated within
 the relevant package project.
 
+Each OS-level package targets the platform-specific TFM (`net9.0-windows`, `net9.0-macos`,
+`net9.0-linux`). NuGet rejects the reference at restore time if the consuming project's TFM does
+not match, producing a build-time failure rather than a runtime surprise. A portable project has
+no business depending on a platform-specific signing store.
+
+`ZeeKayDa.Auth.Linux` bundles two distinct signing approaches. The production PEM file provider
+(`AddPemFileSigning`) keeps private key material on disk and inherits the full filesystem-hardening
+requirements from ADR 0011 §2 (0600 permissions, ownership checks, symlink rejection, fail-closed
+on broad permissions) — it is not a development shortcut. The optional PKCS#11 extension routes
+signing through a hardware or software token via a native interop library, which is a separate
+attack surface from the PEM provider. That surface and its dependencies will be specified in full
+in issue #291.
+
 ### 3. Common structure for all provider packages
 
 Every provider package follows the same pattern:
 
-- **References:** `ZeeKayDa.Auth` (core) and `ZeeKayDa.Auth.AspNetCore` as package dependencies.
-- **Public API:** one or more `IZeeKayDaAuthBuilder` extension methods — the provider's entire
-  public surface. The naming convention is `Add<Provider>Signing(...)`.
-- **Internal implementation:** all concrete types (the `JwtSigningService<TOptions>` subclass,
-  options validators, any platform interop helpers) are `internal`. No public types beyond the
-  extension method(s).
+- **References:** `ZeeKayDa.Auth` (core) only. `ZeeKayDaAuthBuilder` — the entry point for all
+  `Add<Provider>Signing()` extension methods — lives in `ZeeKayDa.Auth`. Provider packages do not
+  need to depend on `ZeeKayDa.Auth.AspNetCore`. This preserves the ADR 0001 layering model and
+  keeps non-web hosts viable as a future target. (`ZeeKayDaAuthBuilder` was moved to
+  `ZeeKayDa.Auth` as a precondition for the first provider package; see the associated PR.)
+- **Public API:** one or more `ZeeKayDaAuthBuilder` extension methods — the provider's entire
+  consumer-visible surface. The naming convention is `Add<Provider>Signing(...)`. Any options type
+  passed to consumers via an `Action<TOptions>` configure callback is also `public` and forms part
+  of the stable SemVer contract per ADR 0011 §3.4.
+- **Internal implementation:** all concrete implementation types (the `JwtSigningService<TOptions>`
+  subclass and any platform interop helpers) are `internal`. This prevents accidental construction
+  outside of the intended DI wiring and keeps the SemVer surface minimal. It is not a security
+  control: the actual key-strength, algorithm, and curve-pairing invariants are enforced by the
+  public base class (`JwtSigningService<TOptions>`) and hold regardless of visibility modifiers.
 - **Registration:** each extension method follows the ADR 0011 §3.6 pattern — registers
   `IJwtSigningService` as a singleton and calls `builder.ThrowIfAlreadyRegistered(...)`.
 
 This keeps every provider package's public surface minimal and SemVer-stable: the only contract a
-consumer takes on is the extension method signature.
+consumer takes on is the extension method signature and any options type it exposes.
 
 ---
 
@@ -144,8 +169,12 @@ consumer takes on is the extension method signature.
   gets `AddDevelopmentJwtSigningKeys()` with no additional package reference. The one-line getting-
   started experience is intact.
 - **Minimal public surface per package.** Each package's public contract is one or two extension
-  method signatures. There is nothing for a consumer to misconfigure at the type level; all
-  decision-making happens through the registration call.
+  method signatures plus any options type. There is nothing for a consumer to misconfigure at the
+  type level; all decision-making happens through the registration call.
+- **Key-strength and algorithm enforcement survives the package split.** `JwtSigningService<TOptions>`
+  calls `ValidateKeySet` on every `LoadKeysAsync` result, enforcing the RSA ≥ 2048-bit floor, the
+  NIST-curve allowlist, and alg/curve pairing unconditionally. A provider package that implements
+  only `LoadKeysAsync` inherits these checks with no additional effort and no code path to skip them.
 
 ### Negative / Trade-offs
 
@@ -162,6 +191,25 @@ consumer takes on is the extension method signature.
   in its own package" has a deliberate exception for the development provider. Future contributors
   must understand why — it is documented here — so the exception is not cargo-culted away in a
   future "tidying" refactor that breaks the getting-started experience.
+- **Provider packages must be released when `JwtSigningService<TOptions>` has binary-incompatible
+  changes.** Because provider packages subclass `JwtSigningService<TOptions>`, a change to the base
+  class that adds an abstract member, alters a method signature, or removes a virtual member is a
+  binary-breaking change for all provider packages compiled against the prior version. Additive
+  changes (new non-abstract methods, new types, new extension methods) are safe. When a core release
+  includes a binary-impacting change to the base class, all provider packages must be updated and
+  re-released against the new version before consumers can upgrade core.
+- **The development provider's environment gate requires a hosted service runner.** The fail-closed
+  environment check (`DevelopmentSigningKeyWarningService`) is an `IHostedService` and only runs
+  under a host that starts hosted services. In worker or console hosts the gate never fires.
+  `DevelopmentJwtSigningService` mitigates this by injecting `IHostEnvironment` directly and
+  throwing `ZeeKayDaConfigurationException` from `LoadKeysAsync` if the environment is not
+  Development. The hosted service remains as the startup-warning UX layer; the hard fail-closed
+  travels with the key material and is independent of host model.
+- **Six package identities require NuGet signing and provenance attestations.** Six separately-
+  published package identities create six typosquat targets. All packages must be published with
+  NuGet repository signing and GitHub Actions provenance attestations so consumers can verify
+  publisher identity and build origin. Package IDs should be reserved on NuGet.org before the
+  project is publicly announced (see issue tracking NuGet publishing setup).
 
 ---
 
