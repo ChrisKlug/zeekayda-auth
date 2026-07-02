@@ -26,6 +26,11 @@ public sealed class ZeeKayDaAuthBuilder
     /// Throws <see cref="InvalidOperationException"/> if <paramref name="serviceType"/> is
     /// already registered in <see cref="Services"/>.
     /// </summary>
+    /// <remarks>
+    /// This method is intended for provider package authors implementing
+    /// <see cref="ZeeKayDaAuthBuilder"/> extension methods. Application code should not call
+    /// it directly.
+    /// </remarks>
     /// <param name="serviceType">The service interface type to check for duplicate registration.</param>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="serviceType"/> is <see langword="null"/>.</exception>
     /// <exception cref="InvalidOperationException">

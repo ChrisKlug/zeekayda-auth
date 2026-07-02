@@ -177,7 +177,7 @@ public sealed class DevelopmentSigningKeyWarningServiceTests
             .Should().ThrowAsync<ZeeKayDaConfigurationException>();
 
         ex.Which.AggregatedFailures.Should().ContainSingle()
-            .Which.Code.Should().Be(DevelopmentSigningKeyWarningService.ProductionEnvironmentFailureCode);
+            .Which.Code.Should().Be(DevelopmentSigningKeyGate.ProductionFailureCode);
     }
 
     [Fact]

@@ -26,16 +26,6 @@ internal sealed class DevelopmentSigningKeyOptions : JwtSigningServiceOptions
     }
 
     /// <summary>
-    /// Gets or sets the host environment name, injected by the AspNetCore registration layer.
-    /// Used by <see cref="DevelopmentJwtSigningService"/> to enforce the environment gate.
-    /// </summary>
-    /// <remarks>
-    /// This is populated via <c>Configure&lt;IHostEnvironment&gt;</c> in the extension method and
-    /// is not intended to be set directly by application code.
-    /// </remarks>
-    internal string? EnvironmentName { get; set; }
-
-    /// <summary>
     /// Gets or sets the path to the directory where the development signing key is persisted.
     /// </summary>
     /// <remarks>

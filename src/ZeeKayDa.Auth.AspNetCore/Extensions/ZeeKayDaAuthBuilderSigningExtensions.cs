@@ -108,28 +108,28 @@ public static class ZeeKayDaAuthBuilderSigningExtensions
     {
         builder.ThrowIfAlreadyRegistered(typeof(IJwtSigningService));
 
-        builder.Services.AddOptions<DevelopmentSigningKeyOptions>()
+        var optionsBuilder = builder.Services.AddOptions<DevelopmentSigningKeyOptions>()
             .ValidateOnStart();
 
-        // Always inject the environment name so DevelopmentJwtSigningService can enforce the
-        // environment gate as a hard fail, independent of DevelopmentSigningKeyWarningService.
-        builder.Services.AddOptions<DevelopmentSigningKeyOptions>()
-            .Configure<IHostEnvironment>((options, env) =>
+        if (persist)
+        {
+            optionsBuilder.Configure<IHostEnvironment>((options, env) =>
             {
-                options.EnvironmentName = env.EnvironmentName;
-
-                if (persist)
-                {
-                    options.PersistToDirectory = persistToDirectory
-                        ?? Path.Join(env.ContentRootPath, ".zeekayda", "signing-keys");
-                }
+                options.PersistToDirectory = persistToDirectory
+                    ?? Path.Join(env.ContentRootPath, ".zeekayda", "signing-keys");
             });
+        }
         // else: PersistToDirectory stays null → ephemeral mode.
 
         builder.Services.TryAddEnumerable(
             ServiceDescriptor.Singleton<
                 IValidateOptions<DevelopmentSigningKeyOptions>,
                 DevelopmentSigningKeyOptionsValidator>());
+
+        builder.Services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<
+                IValidateOptions<AuthorizationServerOptions>,
+                AllowedDevEnvironmentsValidator>());
 
         builder.Services.TryAddSingleton<TimeProvider>(TimeProvider.System);
         builder.Services.TryAddSingleton<IDevelopmentSigningKeyFileSystem, LocalSigningKeyFileSystem>();
