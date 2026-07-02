@@ -65,6 +65,11 @@ public sealed class DevelopmentJwtSigningServiceTests
         public void SeedFile(string path, string content) => _files[path] = content;
     }
 
+    // Default server options used by tests that are not testing the environment gate.
+    // EnvironmentName is left null on DevelopmentSigningKeyOptions so the gate is skipped.
+    private static readonly IOptions<AuthorizationServerOptions> DefaultServerOptions =
+        Options.Create(new AuthorizationServerOptions());
+
     private static DevelopmentJwtSigningService BuildEphemeral(
         IDevelopmentSigningKeyFileSystem? fs = null,
         FakeTimeProvider? timeProvider = null)
@@ -75,6 +80,7 @@ public sealed class DevelopmentJwtSigningServiceTests
         };
         return new DevelopmentJwtSigningService(
             Options.Create(options),
+            DefaultServerOptions,
             timeProvider ?? new FakeTimeProvider(),
             fs ?? new InMemorySigningKeyFileSystem());
     }
@@ -90,6 +96,7 @@ public sealed class DevelopmentJwtSigningServiceTests
         };
         return new DevelopmentJwtSigningService(
             Options.Create(options),
+            DefaultServerOptions,
             timeProvider ?? new FakeTimeProvider(),
             fs ?? new InMemorySigningKeyFileSystem());
     }
@@ -101,6 +108,7 @@ public sealed class DevelopmentJwtSigningServiceTests
     {
         var act = () => new DevelopmentJwtSigningService(
             null!,
+            DefaultServerOptions,
             new FakeTimeProvider(),
             new InMemorySigningKeyFileSystem());
 
@@ -115,6 +123,7 @@ public sealed class DevelopmentJwtSigningServiceTests
 
         var act = () => new DevelopmentJwtSigningService(
             options,
+            DefaultServerOptions,
             new FakeTimeProvider(),
             null!);
 
@@ -194,6 +203,7 @@ public sealed class DevelopmentJwtSigningServiceTests
         };
         await using var sut = new DevelopmentJwtSigningService(
             Options.Create(options),
+            DefaultServerOptions,
             timeProvider,
             new InMemorySigningKeyFileSystem());
         var ct = TestContext.Current.CancellationToken;
@@ -439,6 +449,96 @@ public sealed class DevelopmentJwtSigningServiceTests
         public ValueTask WriteKeyFileAsync(string keyPath, ReadOnlyMemory<char> pem, CancellationToken cancellationToken) => throw new IOException("Simulated write failure.");
         public ValueTask<KeyFileContent> ReadKeyFileAsync(string keyPath, CancellationToken cancellationToken) => throw new InvalidOperationException("Should not be called.");
         public bool FileExists(string path) => false;
+    }
+
+    // ── Environment gate ─────────────────────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("Production")]
+    [InlineData("production")]
+    [InlineData("PRODUCTION")]
+    public async Task LoadKeys_throws_in_Production_regardless_of_AllowedEnvironments(string env)
+    {
+        var devOptions = new DevelopmentSigningKeyOptions { EnvironmentName = env };
+        var serverOptions = new AuthorizationServerOptions
+        {
+            AllowedDevelopmentJwtSigningKeysEnvironments = ["Production"],
+        };
+        await using var sut = new DevelopmentJwtSigningService(
+            Options.Create(devOptions),
+            Options.Create(serverOptions),
+            new FakeTimeProvider(),
+            new InMemorySigningKeyFileSystem());
+
+        await sut.Awaiting(s => s.GetSigningKeysAsync(TestContext.Current.CancellationToken).AsTask())
+            .Should().ThrowAsync<ZeeKayDaConfigurationException>()
+            .WithMessage("*Production*");
+    }
+
+    [Theory]
+    [InlineData("Staging")]
+    [InlineData("IntegrationTest")]
+    public async Task LoadKeys_throws_when_environment_not_in_AllowedEnvironments(string env)
+    {
+        var devOptions = new DevelopmentSigningKeyOptions { EnvironmentName = env };
+        await using var sut = new DevelopmentJwtSigningService(
+            Options.Create(devOptions),
+            DefaultServerOptions,
+            new FakeTimeProvider(),
+            new InMemorySigningKeyFileSystem());
+
+        await sut.Awaiting(s => s.GetSigningKeysAsync(TestContext.Current.CancellationToken).AsTask())
+            .Should().ThrowAsync<ZeeKayDaConfigurationException>()
+            .WithMessage($"*{env}*");
+    }
+
+    [Theory]
+    [InlineData("Development")]
+    [InlineData("development")]
+    [InlineData("DEVELOPMENT")]
+    public async Task LoadKeys_succeeds_in_Development(string env)
+    {
+        var devOptions = new DevelopmentSigningKeyOptions { EnvironmentName = env };
+        await using var sut = new DevelopmentJwtSigningService(
+            Options.Create(devOptions),
+            DefaultServerOptions,
+            new FakeTimeProvider(),
+            new InMemorySigningKeyFileSystem());
+
+        var keys = await sut.GetSigningKeysAsync(TestContext.Current.CancellationToken);
+        keys.Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public async Task LoadKeys_succeeds_when_environment_is_in_AllowedEnvironments()
+    {
+        var devOptions = new DevelopmentSigningKeyOptions { EnvironmentName = "Staging" };
+        var serverOptions = new AuthorizationServerOptions
+        {
+            AllowedDevelopmentJwtSigningKeysEnvironments = ["Development", "Staging"],
+        };
+        await using var sut = new DevelopmentJwtSigningService(
+            Options.Create(devOptions),
+            Options.Create(serverOptions),
+            new FakeTimeProvider(),
+            new InMemorySigningKeyFileSystem());
+
+        var keys = await sut.GetSigningKeysAsync(TestContext.Current.CancellationToken);
+        keys.Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public async Task LoadKeys_skips_gate_when_EnvironmentName_is_null()
+    {
+        var devOptions = new DevelopmentSigningKeyOptions { EnvironmentName = null };
+        await using var sut = new DevelopmentJwtSigningService(
+            Options.Create(devOptions),
+            DefaultServerOptions,
+            new FakeTimeProvider(),
+            new InMemorySigningKeyFileSystem());
+
+        var keys = await sut.GetSigningKeysAsync(TestContext.Current.CancellationToken);
+        keys.Should().NotBeEmpty();
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────────────────────────

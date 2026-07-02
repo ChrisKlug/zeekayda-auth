@@ -17,9 +17,10 @@ namespace ZeeKayDa.Auth.Tokens;
 /// <c>AddDevelopmentJwtSigningKeys()</c>.
 /// </para>
 /// <para>
-/// The environment gate (hard fail outside Development) and startup warning are enforced by
-/// <c>DevelopmentSigningKeyWarningService</c> (an <c>IHostedService</c> registered alongside
-/// this provider). This provider's only responsibility is loading the key material.
+/// The environment gate is enforced here as a hard fail — mirroring the logic in
+/// <c>DevelopmentSigningKeyWarningService</c> — so that the gate holds even if the hosted
+/// service is not running (e.g. in unit test hosts). The startup warning and pre-warm are
+/// handled by <c>DevelopmentSigningKeyWarningService</c>.
 /// </para>
 /// <para>
 /// Dev keys are generated once and memoized. Unlike production providers, there is no
@@ -37,6 +38,7 @@ internal sealed class DevelopmentJwtSigningService
     private const string KeyFileName = "dev-signing-key.pem";
 
     private readonly IOptions<DevelopmentSigningKeyOptions> _devOptions;
+    private readonly IOptions<AuthorizationServerOptions> _serverOptions;
     private readonly IDevelopmentSigningKeyFileSystem _fileSystem;
 
     // Memoized on first call — dev keys are never rotated within a process lifetime.
@@ -44,12 +46,15 @@ internal sealed class DevelopmentJwtSigningService
 
     public DevelopmentJwtSigningService(
         IOptions<DevelopmentSigningKeyOptions> devOptions,
+        IOptions<AuthorizationServerOptions> serverOptions,
         TimeProvider timeProvider,
         IDevelopmentSigningKeyFileSystem fileSystem)
         : base(devOptions, timeProvider)
     {
+        ArgumentNullException.ThrowIfNull(serverOptions);
         ArgumentNullException.ThrowIfNull(fileSystem);
         _devOptions = devOptions;
+        _serverOptions = serverOptions;
         _fileSystem = fileSystem;
     }
 
@@ -58,6 +63,47 @@ internal sealed class DevelopmentJwtSigningService
     {
         // CancellationToken is propagated to all file I/O calls below.
         // RSA.Create is CPU-bound and has no async variant, so key generation cannot be cancelled.
+
+        // Environment gate — mirror the logic in DevelopmentSigningKeyWarningService so that the
+        // hard fail is enforced at the point of key use, independent of whether the hosted service
+        // has run. The environment name is injected via DevelopmentSigningKeyOptions so that the
+        // core project does not need to take a dependency on Microsoft.Extensions.Hosting.Abstractions.
+        var currentEnvironment = _devOptions.Value.EnvironmentName;
+
+        if (currentEnvironment is not null)
+        {
+            // Production is always a hard fail, regardless of AllowedDevelopmentJwtSigningKeysEnvironments.
+            var isProduction = string.Equals(currentEnvironment, "Production", StringComparison.OrdinalIgnoreCase);
+            if (isProduction)
+            {
+                throw new ZeeKayDaConfigurationException(
+                    new ZeeKayDaConfigurationFailure(
+                        "signing.dev_keys.production_environment",
+                        "Development signing keys are active in a Production environment. " +
+                        "AllowedDevelopmentJwtSigningKeysEnvironments cannot include the Production environment. " +
+                        "Development keys are ephemeral or stored in a local file and are not suitable for production. " +
+                        "Replace AddDevelopmentJwtSigningKeys() with a production key provider."));
+            }
+
+            var allowedEnvironments = _serverOptions.Value.AllowedDevelopmentJwtSigningKeysEnvironments;
+            var isAllowed = allowedEnvironments.Any(e =>
+                string.Equals(e, currentEnvironment, StringComparison.OrdinalIgnoreCase));
+
+            if (!isAllowed)
+            {
+                throw new ZeeKayDaConfigurationException(
+                    new ZeeKayDaConfigurationFailure(
+                        "signing.dev_keys.non_development",
+                        $"Development signing keys are active in environment '{currentEnvironment}', " +
+                        "which is not in AllowedDevelopmentJwtSigningKeysEnvironments. " +
+                        "This is a configuration error: development keys are ephemeral or stored in a " +
+                        "local file and are not suitable for production. " +
+                        "Replace AddDevelopmentJwtSigningKeys() with a production key provider, or add " +
+                        "the environment name to AllowedDevelopmentJwtSigningKeysEnvironments if this is " +
+                        "an intentional non-Development test host (e.g. an integration test host)."));
+            }
+        }
+
         if (_memoizedSet is not null)
             return _memoizedSet;
 

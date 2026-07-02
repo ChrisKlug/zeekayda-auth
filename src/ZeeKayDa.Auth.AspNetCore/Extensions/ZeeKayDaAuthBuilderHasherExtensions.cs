@@ -1,3 +1,4 @@
+using ZeeKayDa.Auth;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.AspNetCore;

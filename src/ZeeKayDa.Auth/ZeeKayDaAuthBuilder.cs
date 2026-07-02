@@ -1,6 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 
-namespace ZeeKayDa.Auth.AspNetCore;
+namespace ZeeKayDa.Auth;
 
 /// <summary>
 /// A builder for configuring ZeeKayDa.Auth services.
@@ -8,7 +8,7 @@ namespace ZeeKayDa.Auth.AspNetCore;
 /// <remarks>
 /// Returned by <c>AddZeeKayDaAuth()</c>. Use extension methods on this builder to register
 /// optional features (signing keys, client stores, etc.) without adding properties to
-/// <see cref="ZeeKayDa.Auth.AuthorizationServerOptions"/>.
+/// <see cref="AuthorizationServerOptions"/>.
 /// </remarks>
 public sealed class ZeeKayDaAuthBuilder
 {
@@ -16,8 +16,9 @@ public sealed class ZeeKayDaAuthBuilder
     /// Initialises a new <see cref="ZeeKayDaAuthBuilder"/> instance.
     /// </summary>
     /// <param name="services">The application service collection.</param>
-    internal ZeeKayDaAuthBuilder(IServiceCollection services)
+    public ZeeKayDaAuthBuilder(IServiceCollection services)
     {
+        ArgumentNullException.ThrowIfNull(services);
         Services = services;
     }
 
@@ -26,13 +27,15 @@ public sealed class ZeeKayDaAuthBuilder
     /// already registered in <see cref="Services"/>.
     /// </summary>
     /// <param name="serviceType">The service interface type to check for duplicate registration.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="serviceType"/> is <see langword="null"/>.</exception>
     /// <exception cref="InvalidOperationException">
     /// Thrown when a <see cref="ServiceDescriptor"/> with
     /// <see cref="ServiceDescriptor.ServiceType"/> equal to <paramref name="serviceType"/>
     /// already exists in <see cref="Services"/>.
     /// </exception>
-    internal void ThrowIfAlreadyRegistered(Type serviceType)
+    public void ThrowIfAlreadyRegistered(Type serviceType)
     {
+        ArgumentNullException.ThrowIfNull(serviceType);
         var existing = Services.FirstOrDefault(sd => sd.ServiceType == serviceType);
         if (existing is not null)
         {

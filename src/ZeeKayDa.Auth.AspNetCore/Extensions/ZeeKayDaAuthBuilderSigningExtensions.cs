@@ -111,15 +111,19 @@ public static class ZeeKayDaAuthBuilderSigningExtensions
         builder.Services.AddOptions<DevelopmentSigningKeyOptions>()
             .ValidateOnStart();
 
-        if (persist)
-        {
-            builder.Services.AddOptions<DevelopmentSigningKeyOptions>()
-                .Configure<IHostEnvironment>((options, env) =>
+        // Always inject the environment name so DevelopmentJwtSigningService can enforce the
+        // environment gate as a hard fail, independent of DevelopmentSigningKeyWarningService.
+        builder.Services.AddOptions<DevelopmentSigningKeyOptions>()
+            .Configure<IHostEnvironment>((options, env) =>
+            {
+                options.EnvironmentName = env.EnvironmentName;
+
+                if (persist)
                 {
                     options.PersistToDirectory = persistToDirectory
                         ?? Path.Join(env.ContentRootPath, ".zeekayda", "signing-keys");
-                });
-        }
+                }
+            });
         // else: PersistToDirectory stays null → ephemeral mode.
 
         builder.Services.TryAddEnumerable(
