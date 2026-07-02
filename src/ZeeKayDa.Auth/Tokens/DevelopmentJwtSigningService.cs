@@ -37,7 +37,7 @@ internal sealed class DevelopmentJwtSigningService
     private const string KeyFileName = "dev-signing-key.pem";
 
     private readonly IOptions<DevelopmentSigningKeyOptions> _devOptions;
-    private readonly ISigningKeyFileSystem _fileSystem;
+    private readonly IDevelopmentSigningKeyFileSystem _fileSystem;
 
     // Memoized on first call — dev keys are never rotated within a process lifetime.
     private SigningKeySet? _memoizedSet;
@@ -45,7 +45,7 @@ internal sealed class DevelopmentJwtSigningService
     public DevelopmentJwtSigningService(
         IOptions<DevelopmentSigningKeyOptions> devOptions,
         TimeProvider timeProvider,
-        ISigningKeyFileSystem fileSystem)
+        IDevelopmentSigningKeyFileSystem fileSystem)
         : base(devOptions, timeProvider)
     {
         ArgumentNullException.ThrowIfNull(fileSystem);

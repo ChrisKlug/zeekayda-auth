@@ -128,7 +128,7 @@ public static class ZeeKayDaAuthBuilderSigningExtensions
                 JwtSigningServiceOptionsValidator>());
 
         builder.Services.TryAddSingleton<TimeProvider>(TimeProvider.System);
-        builder.Services.AddSingleton<ISigningKeyFileSystem, OsSigningKeyFileSystem>();
+        builder.Services.AddSingleton<IDevelopmentSigningKeyFileSystem, LocalSigningKeyFileSystem>();
         builder.Services.AddSingleton<IJwtSigningService, DevelopmentJwtSigningService>();
         builder.Services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IHostedService, DevelopmentSigningKeyWarningService>());

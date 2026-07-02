@@ -23,7 +23,7 @@ namespace ZeeKayDa.Auth.Tokens;
 /// the remainder of each struct is covered by opaque padding sized to the full struct on each OS.
 /// </para>
 /// </remarks>
-[ExcludeFromCodeCoverage(Justification = "Platform-specific OS APIs cannot all be exercised on a single OS. Tests inject a fake ISigningKeyFileSystem instead.")]
+[ExcludeFromCodeCoverage(Justification = "Platform-specific OS APIs cannot all be exercised on a single OS. Tests inject a fake IDevelopmentSigningKeyFileSystem instead.")]
 internal static class PosixInterop
 {
     /// <summary>Returns the real UID of the calling process.</summary>
@@ -120,16 +120,16 @@ internal static class PosixInterop
 }
 
 /// <summary>
-/// Default <see cref="ISigningKeyFileSystem"/> implementation that delegates to real OS APIs.
+/// Default <see cref="IDevelopmentSigningKeyFileSystem"/> implementation that delegates to real OS APIs.
 /// On Unix, uses POSIX file-mode bits. On Windows, uses ACL-based access control.
 /// </summary>
 /// <remarks>
 /// This class is excluded from code coverage because its platform-specific branches cannot
-/// all be exercised on a single OS. Tests inject a fake <see cref="ISigningKeyFileSystem"/>
+/// all be exercised on a single OS. Tests inject a fake <see cref="IDevelopmentSigningKeyFileSystem"/>
 /// instead.
 /// </remarks>
 [ExcludeFromCodeCoverage(Justification = "Platform-specific OS APIs cannot all be exercised on a single OS. Tests inject a fake instead.")]
-internal sealed class OsSigningKeyFileSystem : ISigningKeyFileSystem
+internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSystem
 {
     /// <inheritdoc/>
     public void EnsureDirectorySafe(string directory)

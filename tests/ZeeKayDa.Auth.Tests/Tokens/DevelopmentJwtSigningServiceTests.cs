@@ -11,7 +11,7 @@ public sealed class DevelopmentJwtSigningServiceTests
 {
     // ── In-memory fake file system ────────────────────────────────────────────────────────────────
 
-    private sealed class InMemorySigningKeyFileSystem : ISigningKeyFileSystem
+    private sealed class InMemorySigningKeyFileSystem : IDevelopmentSigningKeyFileSystem
     {
         private readonly Dictionary<string, string> _files = new(StringComparer.Ordinal);
         private readonly HashSet<string> _directories = new(StringComparer.Ordinal);
@@ -66,7 +66,7 @@ public sealed class DevelopmentJwtSigningServiceTests
     }
 
     private static DevelopmentJwtSigningService BuildEphemeral(
-        ISigningKeyFileSystem? fs = null,
+        IDevelopmentSigningKeyFileSystem? fs = null,
         FakeTimeProvider? timeProvider = null)
     {
         var options = new DevelopmentSigningKeyOptions
@@ -81,7 +81,7 @@ public sealed class DevelopmentJwtSigningServiceTests
 
     private static DevelopmentJwtSigningService BuildPersisted(
         string directory,
-        ISigningKeyFileSystem? fs = null,
+        IDevelopmentSigningKeyFileSystem? fs = null,
         FakeTimeProvider? timeProvider = null)
     {
         var options = new DevelopmentSigningKeyOptions
@@ -433,7 +433,7 @@ public sealed class DevelopmentJwtSigningServiceTests
             .Should().ThrowAsync<IOException>("failure to write the key file must bubble out");
     }
 
-    private sealed class ThrowOnWriteFileSystem : ISigningKeyFileSystem
+    private sealed class ThrowOnWriteFileSystem : IDevelopmentSigningKeyFileSystem
     {
         public void EnsureDirectorySafe(string directory) { }
         public ValueTask WriteKeyFileAsync(string keyPath, string pem, CancellationToken cancellationToken) => throw new IOException("Simulated write failure.");

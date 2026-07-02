@@ -50,7 +50,7 @@ internal sealed class DevelopmentSigningKeyOptions : JwtSigningServiceOptions
     /// startup — it is never bound from runtime user input, URL parameters, or any untrusted
     /// source. Absolute paths are therefore accepted intentionally: a developer configuring their
     /// own machine chooses where keys are stored. Key confidentiality is enforced by
-    /// <see cref="ISigningKeyFileSystem"/> regardless of the path shape; the directory is created
+    /// <see cref="IDevelopmentSigningKeyFileSystem"/> regardless of the path shape; the directory is created
     /// with owner-only permissions (<c>0700</c>) and the key file with <c>0600</c>, and both are
     /// validated for correct permissions and ownership before use.
     /// </para>
