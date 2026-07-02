@@ -5,12 +5,12 @@ namespace ZeeKayDa.Auth.Tests.Tokens;
 
 public sealed class SigningKeySetTests
 {
-    private static (RSA Rsa, SigningKeyEntry Entry) MakeRsaEntry(string kid = "k1", int index = 0)
+    private static (RSA Rsa, SigningKeyPair Pair) MakeRsaEntry(string kid = "k1")
     {
         var rsa = RSA.Create(2048);
         var rsaParams = rsa.ExportParameters(false);
         var descriptor = new SigningKeyDescriptor(kid, SigningAlgorithm.RS256, rsaParams);
-        return (rsa, new SigningKeyEntry(descriptor, index));
+        return (rsa, new SigningKeyPair { Descriptor = descriptor, PrivateKey = rsa });
     }
 
     // ── Constructor validation ────────────────────────────────────────────────────────────────────
@@ -18,37 +18,15 @@ public sealed class SigningKeySetTests
     [Fact]
     public void Constructor_throws_when_keys_is_null()
     {
-        using var rsa = RSA.Create(2048);
-        var act = () => new SigningKeySet(null!, [rsa]);
+        var act = () => new SigningKeySet(null!);
         act.Should().Throw<ArgumentNullException>().WithParameterName("keys");
-    }
-
-    [Fact]
-    public void Constructor_throws_when_privateKeys_is_null()
-    {
-        var tuple = MakeRsaEntry();
-        using var rsa = tuple.Rsa;
-        var entry = tuple.Entry;
-        var act = () => new SigningKeySet([entry], null!);
-        act.Should().Throw<ArgumentNullException>().WithParameterName("privateKeys");
     }
 
     [Fact]
     public void Constructor_throws_when_keys_is_empty()
     {
-        var act = () => new SigningKeySet([], []);
+        var act = () => new SigningKeySet([]);
         act.Should().Throw<ArgumentException>().WithParameterName("keys");
-    }
-
-    [Fact]
-    public void Constructor_throws_when_keys_and_privateKeys_lengths_differ()
-    {
-        var tuple = MakeRsaEntry();
-        using var rsa = tuple.Rsa;
-        var entry = tuple.Entry;
-        using var rsa2 = RSA.Create(2048);
-        var act = () => new SigningKeySet([entry], [rsa, rsa2]);
-        act.Should().Throw<ArgumentException>().WithParameterName("privateKeys");
     }
 
     // ── Properties ────────────────────────────────────────────────────────────────────────────────
@@ -56,23 +34,23 @@ public sealed class SigningKeySetTests
     [Fact]
     public void ActiveKey_returns_first_entry()
     {
-        var tuple1 = MakeRsaEntry("k1", 0);
-        var tuple2 = MakeRsaEntry("k2", 1);
+        var tuple1 = MakeRsaEntry("k1");
+        var tuple2 = MakeRsaEntry("k2");
         using var rsa1 = tuple1.Rsa;
         using var rsa2 = tuple2.Rsa;
-        using var set = new SigningKeySet([tuple1.Entry, tuple2.Entry], [rsa1, rsa2]);
+        using var set = new SigningKeySet([tuple1.Pair, tuple2.Pair]);
 
-        set.ActiveKey.Should().Be(tuple1.Entry);
+        set.ActiveKey.Descriptor.Kid.Should().Be("k1");
     }
 
     [Fact]
     public void GetPrivateKey_returns_correct_key_by_index()
     {
-        var tuple1 = MakeRsaEntry("k1", 0);
-        var tuple2 = MakeRsaEntry("k2", 1);
+        var tuple1 = MakeRsaEntry("k1");
+        var tuple2 = MakeRsaEntry("k2");
         using var rsa1 = tuple1.Rsa;
         using var rsa2 = tuple2.Rsa;
-        using var set = new SigningKeySet([tuple1.Entry, tuple2.Entry], [rsa1, rsa2]);
+        using var set = new SigningKeySet([tuple1.Pair, tuple2.Pair]);
 
         set.GetPrivateKey(0).Should().BeSameAs(rsa1);
         set.GetPrivateKey(1).Should().BeSameAs(rsa2);
@@ -85,7 +63,7 @@ public sealed class SigningKeySetTests
     {
         var tuple = MakeRsaEntry();
         using var rsa = tuple.Rsa;
-        using var set = new SigningKeySet([tuple.Entry], [rsa]);
+        using var set = new SigningKeySet([tuple.Pair]);
 
         set.Dispose();
 
@@ -98,7 +76,7 @@ public sealed class SigningKeySetTests
     {
         var tuple = MakeRsaEntry();
         using var rsa = tuple.Rsa;
-        using var set = new SigningKeySet([tuple.Entry], [rsa]);
+        using var set = new SigningKeySet([tuple.Pair]);
 
         set.Dispose();
         var act = () => set.Dispose();
@@ -113,7 +91,7 @@ public sealed class SigningKeySetTests
     {
         var tuple = MakeRsaEntry();
         using var rsa = tuple.Rsa;
-        using var set = new SigningKeySet([tuple.Entry], [rsa]);
+        using var set = new SigningKeySet([tuple.Pair]);
 
         var borrowed = set.TryBorrow();
 
@@ -129,7 +107,7 @@ public sealed class SigningKeySetTests
         var tuple = MakeRsaEntry();
         // Do not use `using var rsa` — the set takes ownership and disposes it.
         var rsa = tuple.Rsa;
-        var set = new SigningKeySet([tuple.Entry], [rsa]);
+        var set = new SigningKeySet([tuple.Pair]);
         try
         {
             set.Dispose(); // releases the cache's borrow; refcount drops to 0
@@ -152,7 +130,7 @@ public sealed class SigningKeySetTests
         var tuple = MakeRsaEntry();
         // Do not use `using var rsa` — we verify disposal state manually.
         var rsa = tuple.Rsa;
-        var set = new SigningKeySet([tuple.Entry], [rsa]);
+        var set = new SigningKeySet([tuple.Pair]);
         try
         {
             // Acquire a borrow (simulates a fast-path caller about to sign).

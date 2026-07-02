@@ -57,9 +57,7 @@ public sealed class JwtSigningServiceTests
         var rsa = RSA.Create(2048);
         var rsaParams = rsa.ExportParameters(false);
         var descriptor = new SigningKeyDescriptor(kid, SigningAlgorithm.RS256, rsaParams);
-        var entry = new SigningKeyEntry(descriptor, 0);
-        var set = new SigningKeySet([entry], [rsa]);
-        return set;
+        return new SigningKeySet([new SigningKeyPair { Descriptor = descriptor, PrivateKey = rsa }]);
     }
 
     private static CountingSigningService BuildService(
@@ -215,8 +213,7 @@ public sealed class JwtSigningServiceTests
         using var rsa = RSA.Create(2048);
         var rsaParams = rsa.ExportParameters(false);
         var descriptor = new SigningKeyDescriptor("vk-1", SigningAlgorithm.RS256, rsaParams);
-        var entry = new SigningKeyEntry(descriptor, 0);
-        using var set = new SigningKeySet([entry], [rsa]);
+        using var set = new SigningKeySet([new SigningKeyPair { Descriptor = descriptor, PrivateKey = rsa }]);
         await using var sut = BuildService(factory: () => set);
         var ct = TestContext.Current.CancellationToken;
 
@@ -252,8 +249,7 @@ public sealed class JwtSigningServiceTests
         using var ec = ECDsa.Create(ECCurve.CreateFromValue(curveOid));
         var ecParams = ec.ExportParameters(false);
         var descriptor = new SigningKeyDescriptor("ec-vk", algorithm, ecParams);
-        var entry = new SigningKeyEntry(descriptor, 0);
-        using var set = new SigningKeySet([entry], [ec]);
+        using var set = new SigningKeySet([new SigningKeyPair { Descriptor = descriptor, PrivateKey = ec }]);
         await using var sut = BuildService(factory: () => set);
         var ct = TestContext.Current.CancellationToken;
 
@@ -291,8 +287,11 @@ public sealed class JwtSigningServiceTests
         using var rsa2 = RSA.Create(2048);
         var desc1 = new SigningKeyDescriptor("duplicate-kid", SigningAlgorithm.RS256, rsa1.ExportParameters(false));
         var desc2 = new SigningKeyDescriptor("duplicate-kid", SigningAlgorithm.RS256, rsa2.ExportParameters(false));
-        var entries = new[] { new SigningKeyEntry(desc1, 0), new SigningKeyEntry(desc2, 1) };
-        using var set = new SigningKeySet(entries, [rsa1, rsa2]);
+        using var set = new SigningKeySet(
+        [
+            new SigningKeyPair { Descriptor = desc1, PrivateKey = rsa1 },
+            new SigningKeyPair { Descriptor = desc2, PrivateKey = rsa2 },
+        ]);
         await using var sut = BuildService(factory: () => set);
         var ct = TestContext.Current.CancellationToken;
 
@@ -310,8 +309,7 @@ public sealed class JwtSigningServiceTests
         using var rsa = RSA.Create(1024);
         var rsaParams = rsa.ExportParameters(false);
         var descriptor = new SigningKeyDescriptor("tiny-key", SigningAlgorithm.RS256, rsaParams);
-        var entry = new SigningKeyEntry(descriptor, 0);
-        using var set = new SigningKeySet([entry], [rsa]);
+        using var set = new SigningKeySet([new SigningKeyPair { Descriptor = descriptor, PrivateKey = rsa }]);
         await using var sut = BuildService(factory: () => set);
         var ct = TestContext.Current.CancellationToken;
 
@@ -327,8 +325,7 @@ public sealed class JwtSigningServiceTests
         var rsaParams = new RSAParameters(); // Modulus is null
         var descriptor = new SigningKeyDescriptor("null-mod-key", SigningAlgorithm.RS256, rsaParams);
         using var rsa = RSA.Create(2048);
-        var entry = new SigningKeyEntry(descriptor, 0);
-        using var set = new SigningKeySet([entry], [rsa]);
+        using var set = new SigningKeySet([new SigningKeyPair { Descriptor = descriptor, PrivateKey = rsa }]);
         await using var sut = BuildService(factory: () => set);
         var ct = TestContext.Current.CancellationToken;
 
@@ -345,8 +342,7 @@ public sealed class JwtSigningServiceTests
         using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var ecParams = ec.ExportParameters(false);
         var descriptor = new SigningKeyDescriptor("ec-kid", SigningAlgorithm.ES256, ecParams);
-        var entry = new SigningKeyEntry(descriptor, 0);
-        using var set = new SigningKeySet([entry], [ec]);
+        using var set = new SigningKeySet([new SigningKeyPair { Descriptor = descriptor, PrivateKey = ec }]);
         await using var sut = BuildService(factory: () => set);
         var ct = TestContext.Current.CancellationToken;
 
@@ -362,8 +358,7 @@ public sealed class JwtSigningServiceTests
         using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP384);
         var ecParams = ec.ExportParameters(false);
         var descriptor = new SigningKeyDescriptor("ec-kid", SigningAlgorithm.ES256, ecParams);
-        var entry = new SigningKeyEntry(descriptor, 0);
-        using var set = new SigningKeySet([entry], [ec]);
+        using var set = new SigningKeySet([new SigningKeyPair { Descriptor = descriptor, PrivateKey = ec }]);
         await using var sut = BuildService(factory: () => set);
         var ct = TestContext.Current.CancellationToken;
 
@@ -382,8 +377,7 @@ public sealed class JwtSigningServiceTests
         using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var ecParams = ec.ExportParameters(false);
         var descriptor = new SigningKeyDescriptor("mismatch-kid", SigningAlgorithm.ES256, ecParams);
-        var entry = new SigningKeyEntry(descriptor, 0);
-        using var set = new SigningKeySet([entry], [rsa]);
+        using var set = new SigningKeySet([new SigningKeyPair { Descriptor = descriptor, PrivateKey = rsa }]);
         await using var sut = BuildService(factory: () => set);
         var ct = TestContext.Current.CancellationToken;
 
@@ -402,8 +396,7 @@ public sealed class JwtSigningServiceTests
         using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var rsaParams = rsa.ExportParameters(false);
         var descriptor = new SigningKeyDescriptor("mismatch-rsa-kid", SigningAlgorithm.RS256, rsaParams);
-        var entry = new SigningKeyEntry(descriptor, 0);
-        using var set = new SigningKeySet([entry], [ec]);
+        using var set = new SigningKeySet([new SigningKeyPair { Descriptor = descriptor, PrivateKey = ec }]);
         await using var sut = BuildService(factory: () => set);
         var ct = TestContext.Current.CancellationToken;
 
@@ -423,8 +416,7 @@ public sealed class JwtSigningServiceTests
         using var rsa = RSA.Create(2048);
         var rsaParams = rsa.ExportParameters(false);
         var descriptor = new SigningKeyDescriptor("rsa-kid", algorithm, rsaParams);
-        var entry = new SigningKeyEntry(descriptor, 0);
-        using var set = new SigningKeySet([entry], [rsa]);
+        using var set = new SigningKeySet([new SigningKeyPair { Descriptor = descriptor, PrivateKey = rsa }]);
         await using var sut = BuildService(factory: () => set);
         var payload = Encoding.UTF8.GetBytes(Base64UrlEncodeString("""{"sub":"alice"}"""));
         var ct = TestContext.Current.CancellationToken;
@@ -451,8 +443,7 @@ public sealed class JwtSigningServiceTests
         using var ec = ECDsa.Create(curve);
         var ecParams = ec.ExportParameters(false);
         var descriptor = new SigningKeyDescriptor("ec-kid", algorithm, ecParams);
-        var entry = new SigningKeyEntry(descriptor, 0);
-        using var set = new SigningKeySet([entry], [ec]);
+        using var set = new SigningKeySet([new SigningKeyPair { Descriptor = descriptor, PrivateKey = ec }]);
         await using var sut = BuildService(factory: () => set);
         var payload = Encoding.UTF8.GetBytes(Base64UrlEncodeString("""{"sub":"alice"}"""));
         var ct = TestContext.Current.CancellationToken;
@@ -470,8 +461,7 @@ public sealed class JwtSigningServiceTests
         using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP384);
         var ecParams = ec.ExportParameters(false);
         var descriptor = new SigningKeyDescriptor("ec-384-kid", SigningAlgorithm.ES384, ecParams);
-        var entry = new SigningKeyEntry(descriptor, 0);
-        using var set = new SigningKeySet([entry], [ec]);
+        using var set = new SigningKeySet([new SigningKeyPair { Descriptor = descriptor, PrivateKey = ec }]);
         await using var sut = BuildService(factory: () => set);
         var ct = TestContext.Current.CancellationToken;
 
@@ -486,8 +476,7 @@ public sealed class JwtSigningServiceTests
         using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP521);
         var ecParams = ec.ExportParameters(false);
         var descriptor = new SigningKeyDescriptor("ec-521-kid", SigningAlgorithm.ES512, ecParams);
-        var entry = new SigningKeyEntry(descriptor, 0);
-        using var set = new SigningKeySet([entry], [ec]);
+        using var set = new SigningKeySet([new SigningKeyPair { Descriptor = descriptor, PrivateKey = ec }]);
         await using var sut = BuildService(factory: () => set);
         var ct = TestContext.Current.CancellationToken;
 
@@ -509,8 +498,7 @@ public sealed class JwtSigningServiceTests
             Q = ecParams.Q,
         };
         var descriptor = new SigningKeyDescriptor("null-oid-kid", SigningAlgorithm.ES256, noOidCurveParams);
-        var entry = new SigningKeyEntry(descriptor, 0);
-        using var set = new SigningKeySet([entry], [ec]);
+        using var set = new SigningKeySet([new SigningKeyPair { Descriptor = descriptor, PrivateKey = ec }]);
         await using var sut = BuildService(factory: () => set);
         var ct = TestContext.Current.CancellationToken;
 
@@ -536,8 +524,7 @@ public sealed class JwtSigningServiceTests
             Q = ecParams.Q,
         };
         var descriptor = new SigningKeyDescriptor("bad-curve-kid", SigningAlgorithm.ES256, unsupportedCurveParams);
-        var entry = new SigningKeyEntry(descriptor, 0);
-        using var set = new SigningKeySet([entry], [ec]);
+        using var set = new SigningKeySet([new SigningKeyPair { Descriptor = descriptor, PrivateKey = ec }]);
         await using var sut = BuildService(factory: () => set);
         var ct = TestContext.Current.CancellationToken;
 
@@ -604,8 +591,7 @@ public sealed class JwtSigningServiceTests
             Q = ec.ExportParameters(false).Q,
         };
         var descriptor = new SigningKeyDescriptor("null-oid-strength-kid", SigningAlgorithm.ES256, nullOidParams);
-        var entry = new SigningKeyEntry(descriptor, 0);
-        using var set = new SigningKeySet([entry], [ec]);
+        using var set = new SigningKeySet([new SigningKeyPair { Descriptor = descriptor, PrivateKey = ec }]);
         await using var sut = BuildService(factory: () => set);
         var ct = TestContext.Current.CancellationToken;
 
@@ -626,8 +612,7 @@ public sealed class JwtSigningServiceTests
         using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var ecParams = ec.ExportParameters(false);
         var descriptor = new SigningKeyDescriptor("null-oid-compat-kid", SigningAlgorithm.ES256, ecParams);
-        var entry = new SigningKeyEntry(descriptor, 0);
-        using var set = new SigningKeySet([entry], [new NullOidEcDsa(ec)]);
+        using var set = new SigningKeySet([new SigningKeyPair { Descriptor = descriptor, PrivateKey = new NullOidEcDsa(ec) }]);
         await using var sut = BuildService(factory: () => set);
         var ct = TestContext.Current.CancellationToken;
 
