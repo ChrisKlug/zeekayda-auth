@@ -17,7 +17,7 @@ public abstract class JwtSigningServiceOptions
     /// Defaults to 5 minutes. The base class coalesces concurrent requests during a
     /// refresh using a single-flight gate so that a burst of signing or JWKS requests never
     /// fans out into multiple simultaneous <c>LoadKeysAsync</c> calls.
-    /// A zero or negative value is rejected at startup by <c>JwtSigningServiceOptionsValidator</c>.
+    /// A zero or negative value is rejected at startup by <c>DevelopmentSigningKeyOptionsValidator</c>.
     /// </remarks>
     public TimeSpan RefreshInterval { get; set; } = TimeSpan.FromMinutes(5);
 }

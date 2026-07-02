@@ -74,7 +74,7 @@ internal static partial class PosixInterop
     private static partial int NativeStatLinuxArm64(string path, out StatLinuxArm64 buf);
 
     /// <summary>
-    /// macOS / BSD stat struct (arm64 and x64, 144 bytes total). Fields in native ABI order.
+    /// macOS / BSD stat struct (arm64, 144 bytes total). Fields in native ABI order.
     /// Layout: dev(4) mode(2) nlink(2) ino(8) uid(4) gid(4) + 120 bytes padding.
     /// Padding uses blittable scalar fields so the struct is compatible with [LibraryImport].
     /// </summary>
@@ -203,6 +203,11 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
             return;
         }
 
+        // Note: Directory.CreateDirectory uses the process umask (typically 0755), so there is a
+        // narrow window between creation and SetUnixFileMode where the directory exists with looser
+        // permissions. Eliminating this would require a P/Invoke to mkdir(2) with mode 0700.
+        // For this dev-only provider the window is acceptable; the key file itself is created with
+        // atomic 0600 via FileStreamOptions.UnixCreateMode and is the true security boundary.
         Directory.CreateDirectory(fullPath);
 
         var mode = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;

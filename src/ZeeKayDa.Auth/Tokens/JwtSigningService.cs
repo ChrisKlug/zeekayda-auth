@@ -24,6 +24,8 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
     private readonly SemaphoreSlim _refreshLock = new(1, 1);
     private SigningKeySet? _cachedSet;
     private DateTimeOffset _cacheExpiresAt = DateTimeOffset.MinValue;
+    // 0 = live, 1 = disposed. int so Interlocked.Exchange makes the transition atomic.
+    private int _disposeState;
 
     /// <summary>
     /// Initialises the base class with options and a time provider.
@@ -92,6 +94,9 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
     /// <inheritdoc/>
     public async ValueTask DisposeAsync()
     {
+        if (Interlocked.Exchange(ref _disposeState, 1) != 0)
+            return;
+
         await _refreshLock.WaitAsync().ConfigureAwait(false);
         try
         {
@@ -143,7 +148,15 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
             var previous = _cachedSet;
             var newSet = await LoadKeysAsync(cancellationToken).ConfigureAwait(false);
 
-            ValidateKeySet(newSet);
+            try
+            {
+                ValidateKeySet(newSet);
+            }
+            catch
+            {
+                newSet.Dispose();
+                throw;
+            }
 
             _cachedSet = newSet;
 
