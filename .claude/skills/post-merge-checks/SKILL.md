@@ -1,40 +1,38 @@
 ---
-name: post-merge-check
-description: Verify if a merge requires changes to other issues etc
-user-invocable: true
-disable-model-invocation: true
+name: post-merge-checks
+description: Housekeeping after a PR merges — delete the local branch, pull main, remove resolved blockers from draft PRs and issues, and check whether the parent epic can close. Run whenever a PR has been merged.
 allowed-tools:
-  - dotnet *
+  - Bash(git *)
+  - Bash(gh *)
 ---
 
-# Post PR merge check
+# Post PR-Merge Checks
 
-When a PR has been merged, and the remote branch deleted, the following should happen
-
----
-
+Run this whenever a PR has been merged. This skill is the single source of truth for the post-merge flow.
 
 ## Steps
 
-### 1. Delete the local branch
+### 1. Clean up local state
 
-The merge has likely deleted the remote branch, so delete the local branch. And any worktree that might have been used
+The merge has likely deleted the remote branch. Delete the local branch and any worktree that was used for it.
 
-### 2. Pull the latest into the main branch
+### 2. Update main
 
-As the main branch has been updated, you need to pull the latest changes into the main branc. This should **always** be done, so you don't start new work on an old version of the code!
+```sh
+git checkout main
+git pull --ff-only
+```
 
-### 3. Verify if any blockers have changed
+**Always** do this so new work never starts from a stale main.
 
-If this PR closes any issues, these issue might be set up as blockers for other issues. You need to make sure that these blocks are removed.
-
-### Blocker Resolution on Merge
-
-Whenever a PR is merged, automatically:
+### 3. Resolve blockers
 
 1. Note the merged PR number **and** any issue numbers it closes (e.g. `Closes #N` in the PR body).
 2. Search all open draft PRs for a `## Blockers` section referencing the merged PR number or any closed issue number.
 3. For each matching PR, remove that blocker entry from the PR body.
-4. If the PR has no remaining blockers after removal, mark it as ready for review (`gh pr ready`).
-5. For each closed issue, check whether it is a sub-issue of a `type:epic`. If so, query all sub-issues of that epic. If every sub-issue is now closed, ask the user whether to close the epic.
-6. Use the GitHub CLI to look for any issue that has a blocker set up for any of the closed issues, and remove the blocks if found
+4. If a PR has no remaining blockers after removal, mark it ready for review (`gh pr ready`).
+5. Use the GitHub CLI to find any open issue with a blocker referencing the closed issues, and remove those blocks too.
+
+### 4. Check the parent epic
+
+For each closed issue, check whether it is a sub-issue of a `type:epic`. If so, query all sub-issues of that epic. If every sub-issue is now closed, ask the user whether to close the epic.

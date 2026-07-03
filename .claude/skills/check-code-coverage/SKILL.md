@@ -1,10 +1,10 @@
 ---
 name: check-code-coverage
-description: Run code coverage check to see coverage hasn't dropped to low
-user-invocable: true
-disable-model-invocation: true
+description: Compare test coverage on the current branch against main and fail if it regressed. Run before opening any PR — CI enforces a coverage regression gate, and this catches it locally first.
 allowed-tools:
-  - dotnet *
+  - Bash(dotnet *)
+  - Bash(git worktree *)
+  - Bash(cd *)
 ---
 
 # Run code coverage check
