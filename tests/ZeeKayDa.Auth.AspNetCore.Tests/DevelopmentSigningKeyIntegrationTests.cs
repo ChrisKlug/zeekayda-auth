@@ -1,3 +1,4 @@
+using System.Linq;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -131,9 +132,8 @@ public sealed class DevelopmentSigningKeyIntegrationTests
 
             if (ex is AggregateException aggregate)
             {
-                foreach (var inner in aggregate.InnerExceptions)
+                foreach (var found in aggregate.InnerExceptions.Select(FindZeeKayDaConfigurationException))
                 {
-                    var found = FindZeeKayDaConfigurationException(inner);
                     if (found is not null)
                         return found;
                 }
