@@ -132,10 +132,11 @@ public sealed class DevelopmentSigningKeyIntegrationTests
 
             if (ex is AggregateException aggregate)
             {
-                foreach (var found in aggregate.InnerExceptions.Select(FindZeeKayDaConfigurationException))
+                foreach (var found in aggregate.InnerExceptions
+                             .Select(FindZeeKayDaConfigurationException)
+                             .Where(found => found is not null))
                 {
-                    if (found is not null)
-                        return found;
+                    return found!;
                 }
             }
 
