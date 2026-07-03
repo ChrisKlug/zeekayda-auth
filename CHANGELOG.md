@@ -47,6 +47,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   `DevelopmentJwtSigningService` now calls this shared helper with no change in the `kid` values
   it produces. See ADR 0011 Amendment 2.
 
+- **`ZeeKayDa.Auth.Logging.ISanitizingLogger<T>` is now public** (#287)
+
+  Previously `internal`. Made public so that packages referencing only core `ZeeKayDa.Auth` —
+  such as `ZeeKayDa.Auth.AzureKeyVault`, and genuine third-party signing/storage providers — can
+  constructor-inject the framework's sanitizing-logger contract without `InternalsVisibleTo`,
+  which can only ever name first-party assemblies at build time. `SecretSanitizingLogger<T>` (the
+  concrete implementation) and its redaction-key allowlist stay `internal`. A new hosted service,
+  `SanitizingLoggerRegistrationStartupValidator`, fails startup with a `ZeeKayDaConfigurationException`
+  if a host registration has shadowed the framework's `ISanitizingLogger<>` singleton with a
+  non-`SecretSanitizingLogger<T>` implementation, since that would silently disable credential
+  redaction for the entire application. See ADR 0011 Amendment 2(d).
+
 - **`AuthorizationServerOptions.Logging.DisableExceptionSanitizing` config opt-out** (#173)
 
   New development opt-out. Set to `true` in `appsettings.Development.json` to have

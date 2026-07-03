@@ -128,6 +128,11 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         // detection, per-client validation, secret hashing) fails fast rather than at first request.
         services.AddHostedService<ClientRepositoryStartupActivator>();
 
+        // Fails fast if a host registration has shadowed ISanitizingLogger<>'s open-generic
+        // singleton with something other than the framework's own SecretSanitizingLogger<>,
+        // which would silently disable credential redaction for the entire application.
+        services.AddHostedService<SanitizingLoggerRegistrationStartupValidator>();
+
         // Register the built-in client secret authenticator and composite dispatcher. Both are
         // registered as singletons. The composite is registered as its concrete type (not as
         // IClientAuthenticator) so it is excluded from the IEnumerable<IClientAuthenticator>
