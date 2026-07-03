@@ -14,7 +14,7 @@ namespace ZeeKayDa.Auth.AspNetCore;
 /// </summary>
 /// <remarks>
 /// When the host environment name is not in
-/// <see cref="AuthorizationServerOptions.AllowedDevelopmentJwtSigningKeysEnvironments"/>,
+/// <see cref="DevelopmentSigningKeyOptions.AllowedDevelopmentJwtSigningKeysEnvironments"/>,
 /// startup fails with a <see cref="ZeeKayDaConfigurationException"/> so that an accidental
 /// development-key configuration is never silently deployed to a non-permitted host.
 /// </remarks>
@@ -32,32 +32,24 @@ internal sealed class DevelopmentSigningKeyWarningService : IHostedService
         "validation for every relying party on restart. Replace AddDevelopmentJwtSigningKeys() " +
         "with a production key provider immediately.";
 
-    internal const string ProductionEnvironmentFailureCode = "signing.dev_keys.production_environment";
-
-    internal const string ProductionEnvironmentFailureMessage =
-        "Development signing keys are active in a Production environment. " +
-        "AllowedDevelopmentJwtSigningKeysEnvironments cannot include the Production environment. " +
-        "Development keys are ephemeral or stored in a local file and are not suitable for production. " +
-        "Replace AddDevelopmentJwtSigningKeys() with a production key provider.";
-
     private readonly IHostEnvironment _environment;
-    private readonly IOptions<AuthorizationServerOptions> _serverOptions;
+    private readonly IOptions<DevelopmentSigningKeyOptions> _devOptions;
     private readonly IJwtSigningService _signingService;
     private readonly ISanitizingLogger<DevelopmentSigningKeyWarningService> _logger;
 
     public DevelopmentSigningKeyWarningService(
         IHostEnvironment environment,
-        IOptions<AuthorizationServerOptions> serverOptions,
+        IOptions<DevelopmentSigningKeyOptions> devOptions,
         IJwtSigningService signingService,
         ISanitizingLogger<DevelopmentSigningKeyWarningService> logger)
     {
         ArgumentNullException.ThrowIfNull(environment);
-        ArgumentNullException.ThrowIfNull(serverOptions);
+        ArgumentNullException.ThrowIfNull(devOptions);
         ArgumentNullException.ThrowIfNull(signingService);
         ArgumentNullException.ThrowIfNull(logger);
 
         _environment = environment;
-        _serverOptions = serverOptions;
+        _devOptions = devOptions;
         _signingService = signingService;
         _logger = logger;
     }
@@ -66,37 +58,11 @@ internal sealed class DevelopmentSigningKeyWarningService : IHostedService
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         var currentEnvironment = _environment.EnvironmentName;
-        var isProduction = string.Equals(currentEnvironment, "Production", StringComparison.OrdinalIgnoreCase);
 
-        // Production is always a hard fail, regardless of AllowedDevelopmentJwtSigningKeysEnvironments.
-        // The escape hatch cannot be used to enable dev keys in production because that is the
-        // exact common footgun the gate exists to prevent.
-        if (isProduction)
-        {
-            throw new ZeeKayDaConfigurationException(
-                new ZeeKayDaConfigurationFailure(
-                    ProductionEnvironmentFailureCode,
-                    ProductionEnvironmentFailureMessage));
-        }
-
-        var allowedEnvironments = _serverOptions.Value.AllowedDevelopmentJwtSigningKeysEnvironments;
-
-        var isAllowed = allowedEnvironments.Any(e =>
-            string.Equals(e, currentEnvironment, StringComparison.OrdinalIgnoreCase));
-
-        if (!isAllowed)
-        {
-            throw new ZeeKayDaConfigurationException(
-                new ZeeKayDaConfigurationFailure(
-                    "signing.dev_keys.non_development",
-                    $"Development signing keys are active in environment '{currentEnvironment}', " +
-                    "which is not in AllowedDevelopmentJwtSigningKeysEnvironments. " +
-                    "This is a configuration error: development keys are ephemeral or stored in a " +
-                    "local file and are not suitable for production. " +
-                    "Replace AddDevelopmentJwtSigningKeys() with a production key provider, or add " +
-                    "the environment name to AllowedDevelopmentJwtSigningKeysEnvironments if this is " +
-                    "an intentional non-Development test host (e.g. an integration test host)."));
-        }
+        // Production is always a hard fail; non-allowed environments also throw.
+        DevelopmentSigningKeyGate.Enforce(
+            currentEnvironment,
+            _devOptions.Value.AllowedDevelopmentJwtSigningKeysEnvironments);
 
         var isDevelopment = string.Equals(currentEnvironment, "Development", StringComparison.OrdinalIgnoreCase);
         if (!isDevelopment)

@@ -21,7 +21,7 @@ public static class ZeeKayDaAuthBuilderSigningExtensions
     /// <para>
     /// This method is for <strong>local development and testing only</strong>. Startup fails
     /// with <see cref="ZeeKayDaConfigurationException"/> if the host environment is not in
-    /// <see cref="AuthorizationServerOptions.AllowedDevelopmentJwtSigningKeysEnvironments"/>.
+    /// <see cref="DevelopmentSigningKeyOptions.AllowedDevelopmentJwtSigningKeysEnvironments"/>.
     /// A warning is always emitted at startup to make the non-production nature of this
     /// configuration explicit.
     /// </para>
@@ -61,7 +61,7 @@ public static class ZeeKayDaAuthBuilderSigningExtensions
     /// <para>
     /// This method is for <strong>local development and testing only</strong>. Startup fails
     /// with <see cref="ZeeKayDaConfigurationException"/> if the host environment is not in
-    /// <see cref="AuthorizationServerOptions.AllowedDevelopmentJwtSigningKeysEnvironments"/>.
+    /// <see cref="DevelopmentSigningKeyOptions.AllowedDevelopmentJwtSigningKeysEnvironments"/>.
     /// A warning is always emitted at startup to make the non-production nature of this
     /// configuration explicit.
     /// </para>
@@ -108,24 +108,33 @@ public static class ZeeKayDaAuthBuilderSigningExtensions
     {
         builder.ThrowIfAlreadyRegistered(typeof(IJwtSigningService));
 
-        builder.Services.AddOptions<DevelopmentSigningKeyOptions>()
+        var optionsBuilder = builder.Services.AddOptions<DevelopmentSigningKeyOptions>()
             .ValidateOnStart();
 
-        if (persist)
+        // Always populate EnvironmentName from the host so the environment gate in
+        // DevelopmentJwtSigningService and DevelopmentSigningKeyWarningService can read it
+        // without taking a dependency on IHostEnvironment in the core assembly.
+        optionsBuilder.Configure<IHostEnvironment>((options, env) =>
         {
-            builder.Services.AddOptions<DevelopmentSigningKeyOptions>()
-                .Configure<IHostEnvironment>((options, env) =>
-                {
-                    options.PersistToDirectory = persistToDirectory
-                        ?? Path.Join(env.ContentRootPath, ".zeekayda", "signing-keys");
-                });
-        }
-        // else: PersistToDirectory stays null → ephemeral mode.
+            options.EnvironmentName = env.EnvironmentName;
+
+            if (persist)
+            {
+                options.PersistToDirectory = persistToDirectory
+                    ?? Path.Join(env.ContentRootPath, ".zeekayda", "signing-keys");
+            }
+            // else: PersistToDirectory stays null → ephemeral mode.
+        });
 
         builder.Services.TryAddEnumerable(
             ServiceDescriptor.Singleton<
                 IValidateOptions<DevelopmentSigningKeyOptions>,
                 DevelopmentSigningKeyOptionsValidator>());
+
+        builder.Services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<
+                IValidateOptions<DevelopmentSigningKeyOptions>,
+                AllowedDevEnvironmentsValidator>());
 
         builder.Services.TryAddSingleton<TimeProvider>(TimeProvider.System);
         builder.Services.TryAddSingleton<IDevelopmentSigningKeyFileSystem, LocalSigningKeyFileSystem>();

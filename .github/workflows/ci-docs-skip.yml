@@ -1,13 +1,13 @@
 name: CI (docs skip)
 
-# This workflow exists solely to satisfy the "Build and Test" and "Format Check"
-# required status checks when a PR or push contains only docs/** changes.
+# This workflow exists solely to satisfy the "CI Complete" required status check
+# when a PR or push contains only docs/** changes.
 #
 # GitHub treats a skipped workflow (via paths-ignore) as a missing required check,
 # which blocks merging. The companion ci.yml uses paths-ignore to skip the real
-# build and test jobs for docs-only changes. This workflow mirrors
-# those job names and runs only on such changes, immediately passing — keeping
-# branch protection happy without wasting CI minutes on a .NET build.
+# build jobs for docs-only changes. This workflow produces the single "CI Complete"
+# check that branch protection requires, immediately passing — keeping branch
+# protection happy without wasting CI minutes on a .NET build.
 
 on:
   pull_request:
@@ -23,34 +23,9 @@ permissions:
   contents: read
 
 jobs:
-  build-and-test:
-    name: Build and Test
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - name: Docs-only change — skipping .NET build and tests
-        run: echo "Docs-only change detected. Build and test skipped."
-
-  format-check:
-    name: Format Check
+  ci-complete:
+    name: CI Complete
     runs-on: ubuntu-latest
     steps:
-      - name: Docs-only change — skipping format check
-        run: echo "Docs-only change detected. Format check skipped."
-
-  coverage-regression:
-    name: Coverage Regression
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
-    steps:
-      - name: Docs-only change — skipping coverage regression check
-        run: echo "Docs-only change detected. Coverage regression check skipped."
-
-  coverage-regression-script-tests:
-    name: Coverage Regression Script Tests
-    runs-on: ubuntu-latest
-    steps:
-      - name: Docs-only change — skipping coverage regression script tests
-        run: echo "Docs-only change detected. Coverage regression script tests skipped."
+      - name: Docs-only change — skipping CI
+        run: echo "Docs-only change detected. CI skipped."

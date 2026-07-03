@@ -72,6 +72,7 @@ public sealed class DevelopmentJwtSigningServiceTests
         var options = new DevelopmentSigningKeyOptions
         {
             PersistToDirectory = null,
+            // EnvironmentName = null → gate skipped (unit-test scenario with no host)
         };
         return new DevelopmentJwtSigningService(
             Options.Create(options),
@@ -87,6 +88,7 @@ public sealed class DevelopmentJwtSigningServiceTests
         var options = new DevelopmentSigningKeyOptions
         {
             PersistToDirectory = directory,
+            // EnvironmentName = null → gate skipped (unit-test scenario with no host)
         };
         return new DevelopmentJwtSigningService(
             Options.Create(options),
@@ -439,6 +441,98 @@ public sealed class DevelopmentJwtSigningServiceTests
         public ValueTask WriteKeyFileAsync(string keyPath, ReadOnlyMemory<char> pem, CancellationToken cancellationToken) => throw new IOException("Simulated write failure.");
         public ValueTask<KeyFileContent> ReadKeyFileAsync(string keyPath, CancellationToken cancellationToken) => throw new InvalidOperationException("Should not be called.");
         public bool FileExists(string path) => false;
+    }
+
+    // ── Environment gate ─────────────────────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("Production")]
+    [InlineData("production")]
+    [InlineData("PRODUCTION")]
+    public async Task LoadKeys_throws_in_Production_regardless_of_AllowedEnvironments(string env)
+    {
+        var devOptions = new DevelopmentSigningKeyOptions
+        {
+            EnvironmentName = env,
+            AllowedDevelopmentJwtSigningKeysEnvironments = ["Production"],
+        };
+        await using var sut = new DevelopmentJwtSigningService(
+            Options.Create(devOptions),
+            new FakeTimeProvider(),
+            new InMemorySigningKeyFileSystem());
+
+        await sut.Awaiting(s => s.GetSigningKeysAsync(TestContext.Current.CancellationToken).AsTask())
+            .Should().ThrowAsync<ZeeKayDaConfigurationException>()
+            .WithMessage("*Production*");
+    }
+
+    [Theory]
+    [InlineData("Staging")]
+    [InlineData("IntegrationTest")]
+    public async Task LoadKeys_throws_when_environment_not_in_AllowedEnvironments(string env)
+    {
+        var devOptions = new DevelopmentSigningKeyOptions
+        {
+            EnvironmentName = env,
+            // AllowedDevelopmentJwtSigningKeysEnvironments defaults to ["Development"]
+        };
+        await using var sut = new DevelopmentJwtSigningService(
+            Options.Create(devOptions),
+            new FakeTimeProvider(),
+            new InMemorySigningKeyFileSystem());
+
+        await sut.Awaiting(s => s.GetSigningKeysAsync(TestContext.Current.CancellationToken).AsTask())
+            .Should().ThrowAsync<ZeeKayDaConfigurationException>()
+            .WithMessage($"*{env}*");
+    }
+
+    [Theory]
+    [InlineData("Development")]
+    [InlineData("development")]
+    [InlineData("DEVELOPMENT")]
+    public async Task LoadKeys_succeeds_in_Development(string env)
+    {
+        var devOptions = new DevelopmentSigningKeyOptions
+        {
+            EnvironmentName = env,
+        };
+        await using var sut = new DevelopmentJwtSigningService(
+            Options.Create(devOptions),
+            new FakeTimeProvider(),
+            new InMemorySigningKeyFileSystem());
+
+        var keys = await sut.GetSigningKeysAsync(TestContext.Current.CancellationToken);
+        keys.Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public async Task LoadKeys_succeeds_when_environment_is_in_AllowedEnvironments()
+    {
+        var devOptions = new DevelopmentSigningKeyOptions
+        {
+            EnvironmentName = "Staging",
+            AllowedDevelopmentJwtSigningKeysEnvironments = ["Development", "Staging"],
+        };
+        await using var sut = new DevelopmentJwtSigningService(
+            Options.Create(devOptions),
+            new FakeTimeProvider(),
+            new InMemorySigningKeyFileSystem());
+
+        var keys = await sut.GetSigningKeysAsync(TestContext.Current.CancellationToken);
+        keys.Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public async Task LoadKeys_skips_gate_when_EnvironmentName_is_null()
+    {
+        // EnvironmentName = null (the default) → gate skipped (unit-test scenario with no host)
+        await using var sut = new DevelopmentJwtSigningService(
+            Options.Create(new DevelopmentSigningKeyOptions()),
+            new FakeTimeProvider(),
+            new InMemorySigningKeyFileSystem());
+
+        var keys = await sut.GetSigningKeysAsync(TestContext.Current.CancellationToken);
+        keys.Should().NotBeEmpty();
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────────────────────────

@@ -17,9 +17,12 @@ namespace ZeeKayDa.Auth.Tokens;
 /// <c>AddDevelopmentJwtSigningKeys()</c>.
 /// </para>
 /// <para>
-/// The environment gate (hard fail outside Development) and startup warning are enforced by
-/// <c>DevelopmentSigningKeyWarningService</c> (an <c>IHostedService</c> registered alongside
-/// this provider). This provider's only responsibility is loading the key material.
+/// The environment gate is enforced here via <see cref="DevelopmentSigningKeyGate.Enforce"/>
+/// so that the hard fail holds even if <c>DevelopmentSigningKeyWarningService</c> is not running
+/// (e.g. direct construction in unit tests). <c>DevelopmentSigningKeyWarningService</c> also
+/// calls the same gate helper, so the logic is not duplicated.
+/// The environment name is read from <see cref="DevelopmentSigningKeyOptions.EnvironmentName"/>;
+/// when <see langword="null"/> (no host, unit-test scenario), the gate is skipped.
 /// </para>
 /// <para>
 /// Dev keys are generated once and memoized. Unlike production providers, there is no
@@ -58,6 +61,14 @@ internal sealed class DevelopmentJwtSigningService
     {
         // CancellationToken is propagated to all file I/O calls below.
         // RSA.Create is CPU-bound and has no async variant, so key generation cannot be cancelled.
+
+        // Environment gate — enforced here so the check holds even when DevelopmentSigningKeyWarningService
+        // is not running (e.g. direct construction in unit tests). EnvironmentName is null when the
+        // service is constructed directly without a host; the gate is intentionally skipped in that case.
+        DevelopmentSigningKeyGate.Enforce(
+            _devOptions.Value.EnvironmentName,
+            _devOptions.Value.AllowedDevelopmentJwtSigningKeysEnvironments);
+
         if (_memoizedSet is not null)
             return _memoizedSet;
 
