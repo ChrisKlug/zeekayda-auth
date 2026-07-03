@@ -706,6 +706,81 @@ The original design specified a single `bool AllowDevelopmentJwtSigningKeysOutsi
 
 The §2 / §3.6 references to `ISigningKeyFileSystem` describe what shipped as `IDevelopmentSigningKeyFileSystem`. The rename scopes the interface to the development provider, clarifying that this is not a general-purpose signing file system abstraction used by production providers. The interface contract (async `ReadKeyFileAsync` / `WriteKeyFileAsync` / `EnsureDirectorySafe` / `FileExists` with `CancellationToken` propagation) is otherwise unchanged from the §2 description.
 
+### Amendment 2 — PR #298 (2026-07-03)
+
+*(PR number is a placeholder pending final assignment at merge time — this is the PR that ships #287, Azure Key Vault remote signing, the first production `IJwtSigningService` provider and the first real consumer of rotation.)*
+
+**(a) The base class's crypto step became an overridable async hook — `SignInputAsync`.**
+
+§1 states the async design on `IJwtSigningService` exists specifically so "a remote signer performs network I/O on every `SignAsync` call." Despite that, the originally-shipped `JwtSigningService<TOptions>` (PR #286) actually performed the cryptographic operation via a private, non-overridable, **synchronous** method that called `SigningAlgorithms.Sign` (which bottoms out in `AsymmetricAlgorithm.SignData`/`SignHash`) directly. Since RSA/ECDsa have no async signing member anywhere in the BCL, this made genuine async remote signing (a live network round trip to a KMS/HSM) impossible without either blocking a thread for the round trip or changing the base class. PR #287 changes the base class. `src/ZeeKayDa.Auth/Tokens/JwtSigningService.cs` now exposes:
+
+```csharp
+protected virtual ValueTask<ReadOnlyMemory<byte>> SignInputAsync(
+    SigningKeyPair activeKey, byte[] signingInput, CancellationToken cancellationToken)
+    => new(SigningAlgorithms.Sign(activeKey.Descriptor, signingInput, activeKey.PrivateKey));
+```
+
+Header construction, active-key selection, and `kid`/`alg` fixation remain entirely inside the base class's private, non-overridable `PerformSignAsync`. An override of `SignInputAsync` can only change **how** the signature bytes for the already-selected descriptor are produced — it can never change **which** key is selected or what the header says. This is exactly what preserves §1's "header and signature are always consistent by construction" invariant: there is still no code path, overridden or not, through which the header could disagree with the key that actually signs.
+
+This is a purely additive change — a new `protected virtual` method whose default body reproduces the prior synchronous behaviour exactly — so it is binary-compatible with the already-shipped `DevelopmentJwtSigningService` and does not require that provider (or any core release consumer) to be rebuilt or re-released.
+
+`activeKey.PrivateKey` is deliberately unused by remote-signing overrides — the Azure Key Vault provider (`AzureKeyVaultRemoteSigningJwtSigningService.SignInputAsync`) ignores it entirely, since Key Vault never exports the private key into process memory. This is a considered trade-off, not an oversight: there is no clean way in C# to give the default local-crypto implementation access to the active key's `AsymmetricAlgorithm` without it being part of the shared method signature, and the alternative — threading a `Func<>` callback instead of the packaged `SigningKeyPair` — adds an allocation and an indirection layer for a purely cosmetic gain (the same shape as `Stream.Read(buffer, offset, count)`, where not every override needs every parameter). No provider is *required* to override `SignInputAsync`: Windows Certificate Store / macOS Keychain / Linux PEM (future issues #289–#291) and Azure Key Vault *cached* signing (#288) all sign with local key handles and get correct behaviour from the default body, exactly like the development provider today. Only a genuinely remote/network signer needs to override it.
+
+**(b) `ISigningKeyRetirementWindowProvider` — the §3.3 derivation, implemented.**
+
+§3.3 mandates the `RetirementWindow` derivation but nothing implemented it until now — the development provider never needed it (a single ephemeral or persisted key, no rotation, nothing ever retires). PR #287 is the first consumer of rotation (Azure Key Vault) and ships the derivation as a core service alongside it:
+
+```csharp
+// src/ZeeKayDa.Auth/Tokens/ISigningKeyRetirementWindowProvider.cs
+public interface ISigningKeyRetirementWindowProvider
+{
+    TimeSpan GetRetirementWindow();
+}
+```
+
+The internal default implementation (`src/ZeeKayDa.Auth/Tokens/SigningKeyRetirementWindowProvider.cs`) computes exactly the §3.3(a′) floor:
+
+```
+RetirementWindow = TimeSpan.FromHours(1) + AuthorizationServerOptions.ClockSkewTolerance
+```
+
+— the only real term today, since neither the ID-token lifetime nor a JWT-access-token lifetime is configurable on `AuthorizationServerOptions` yet. It is registered via `services.TryAddSingleton<ISigningKeyRetirementWindowProvider, SigningKeyRetirementWindowProvider>()` inside `AddZeeKayDaAuthCore()` (`src/ZeeKayDa.Auth/Extensions/ZeeKayDaAuthCoreServiceCollectionExtensions.cs`) — deliberately in core, not in `ZeeKayDa.Auth.AspNetCore`'s `AddZeeKayDaAuth()`, because provider packages such as `ZeeKayDa.Auth.AzureKeyVault` deliberately do not reference `ZeeKayDa.Auth.AspNetCore` (ADR 0012 §3) and must still be able to resolve it.
+
+**This is the file to extend, not replace, once configurable per-token lifetimes exist.** When an ID-token lifetime and/or a configurable JWT-access-token lifetime are eventually added to `AuthorizationServerOptions`, `SigningKeyRetirementWindowProvider.GetRetirementWindow()` must take the `max(...)` of the 1-hour floor and those lifetimes per §3.3(a) — the floor is not deleted, it becomes the guard against the degenerate case §3.3(a′) already describes. The source carries a comment recording this obligation for whoever picks it up.
+
+**(c) `JwkThumbprint` — a new public core utility, extracted for genuine third-party extensibility.**
+
+Prior to PR #287, RFC 7638 JWK thumbprint computation existed only as a private `ComputeKid`-style method inline in the internal `SigningAlgorithms` class, used solely by `DevelopmentJwtSigningService` to derive a non-leaking `kid` from a locally-generated key's public parameters (rather than, say, the key's file path). PR #287 extracts this into a new **public** static class, `src/ZeeKayDa.Auth/Tokens/JwkThumbprint.cs`:
+
+```csharp
+public static class JwkThumbprint
+{
+    public static string Compute(RSAParameters rsaPublicParameters);
+    public static string Compute(ECParameters ecPublicParameters);
+}
+```
+
+This is documented as its own decision because of a real design flaw caught and fixed during PR #287's review, not merely a mechanical extraction. The Azure Key Vault provider needs the identical thumbprint derivation §4.2's kid discipline calls for — a Key Vault `kid` must not be the raw vault/key URI, since a `kid` is always public (every issued JWT header, and the JWKS) and embedding a real Azure resource identifier in it would leak reconnaissance value to anyone inspecting a token, with no functional benefit. The first attempt at reusing the existing (internal) thumbprint logic gave the Azure Key Vault provider `InternalsVisibleTo` friend-assembly access to `SigningAlgorithms`. That does not actually solve the general problem: `InternalsVisibleTo` only grants access to assemblies named explicitly at build time. It can serve a single first-party provider package ZeeKayDa itself controls, but it **fundamentally cannot** serve a genuine third party implementing this ADR's own §3.2/§4.2 extensibility contract ("any third party can subclass `JwtSigningService<TOptions>` and implement only `LoadKeysAsync`") — a third party's assembly can never be added to that friend list without ZeeKayDa shipping a new core release naming them specifically, which defeats the entire point of an open extension point.
+
+The fix is to make the thumbprint computation itself **public**, while `SigningAlgorithms` correctly stays `internal` — it holds ZeeKayDa-owned crypto dispatch and validation logic (`Sign`, `ValidateKeyAlgorithmCompatibility`, `ValidateKeyStrength`) that §4.2 already establishes third parties never call directly; only the RFC 7638 canonicalisation needed extraction. Any `JwtSigningService<TOptions>` author — first-party or genuinely third-party — can now derive a safe, non-leaking `kid` from a public key without hand-rolling RFC 7638 canonicalisation themselves.
+
+`DevelopmentJwtSigningService` was updated to call this same shared public helper (`src/ZeeKayDa.Auth/Tokens/DevelopmentJwtSigningService.cs`, `JwkThumbprint.Compute(rsaParams)`) in place of its own inline logic. This is a zero-behavioural-change refactor: the development provider produces byte-identical `kid` values before and after, confirmed by the existing `DevelopmentJwtSigningService` test suite passing unchanged and by the new `JwkThumbprintTests` known-answer-style coverage.
+
+**Normative addition to §3.5 — durable, provider-side-timestamp-derived rotation is the expected pattern going forward.**
+
+§3.5 already establishes that ZeeKayDa reads a provider's rotation on the provider's own schedule (no `RotateAsync`) and requires publish-then-activate. PR #287's Azure Key Vault provider is the first implementation of real multi-key rotation against that contract, and its design choice is recorded here as a normative refinement of §3.5 that future rotation-capable providers (Windows Certificate Store #289, macOS Keychain #290, Linux PEM #291, if any of them ever need multi-key rotation) are expected to follow:
+
+The provider derives its entire activation/retirement timeline from **Key Vault's own durable per-version `CreatedOn`/`NotBefore` timestamps** — never from local, in-memory "when did I first observe this kid" bookkeeping. In-memory history breaks on every process restart (a freshly-started replica has no history, so publish-then-activate either throws on cold start or silently no-ops) and is inconsistent across load-balanced replicas (each independently seeded by whenever it started polling). Concretely (`AzureKeyVaultRemoteSigningJwtSigningService.BuildActivationTimeline`):
+
+- `ActivatesAt(v)` is `v.CreatedOn` for the very first key version Key Vault has ever recorded for the key name (determined across **all** versions ever created, including disabled/expired ones — a durable, shared fact, not "oldest among currently-eligible," which could shift if an earlier version is later disabled), and `v.CreatedOn + RefreshInterval` for every subsequent version — the publish-then-activate delay §3.5 requires, since by the time a second version exists a relying party could plausibly have cached a JWKS containing only the first.
+- `NotBefore` is folded directly into `ActivatesAt` as `max(rawActivatesAt, v.NotBefore)`, rather than being checked separately at "now" — so every downstream computation that orders by or reasons about `ActivatesAt` automatically accounts for an operator-scheduled later go-live with no separate special case.
+- `Enabled = false` is an **immediate, unconditional exclusion** that bypasses `RetirementWindow` entirely: an operator disabling a suspected-compromised key version takes effect at once, not after the retirement window elapses.
+- `RetiredAt(v)` is the `ActivatesAt` of whichever version actually superseded `v` as the active signer, computed over eligible successors only (a version that is disabled, or already past its own `ExpiresOn` by the time it would activate, can never win the active-signer selection and so is never anyone's real successor — treating it as one would gate a still-legitimately-active predecessor's retirement window too early).
+
+This makes the whole timeline a stateless computation over `(the key store's version list, now, RefreshInterval, RetirementWindow)` — restart-safe, multi-replica-consistent, and fully testable with a `FakeTimeProvider` and fabricated timestamps, with no cross-call bookkeeping needed for anything that gates a trust decision. **An in-memory-only tracking of publish-then-activate or retirement state, going forward, should be considered non-compliant with §3.5** for any provider capable of holding more than one key at a time. (The one piece of cross-call state the Azure Key Vault provider does keep in memory — a plain kid-to-version map used purely to log §3.5's "kid vanished early" anomaly warning — is fine to lose on restart, since losing it only risks missing one log line, never a trust decision.)
+
+**`AzureKeyVaultSigningException` is intentionally not documented here.** It is a package-local transport exception for transient sign-time faults (`src/ZeeKayDa.Auth.AzureKeyVault/AzureKeyVaultSigningException.cs`, namespace `ZeeKayDa.Auth.AzureKeyVault`), not a type this ADR defines or amends. Making it a shared core exception type "for future remote providers" was considered and deliberately rejected as premature abstraction — ADR 0006's "colocate with the feature" rule reads more honestly here as *the Azure Key Vault feature specifically*, not *signing in general*, until a second real consumer exists.
+
 ---
 
 ## References

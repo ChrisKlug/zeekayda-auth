@@ -83,13 +83,42 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
         var set = await BorrowSetAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            return PerformSign(set, payloadSegment);
+            return await PerformSignAsync(set, payloadSegment, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
             set.Return();
         }
     }
+
+    /// <summary>
+    /// Produces the signature bytes for <paramref name="signingInput"/> using
+    /// <paramref name="activeKey"/>. The default implementation signs locally and synchronously
+    /// via <see cref="SigningAlgorithms.Sign"/>.
+    /// </summary>
+    /// <param name="activeKey">
+    /// The active signing key, exactly as selected and validated by the base class. Header
+    /// construction, active-key selection, and <c>kid</c>/<c>alg</c> assignment always happen in
+    /// the non-overridable caller of this method, so the header is guaranteed to match the key
+    /// used here — overriding this method cannot desynchronise the two.
+    /// </param>
+    /// <param name="signingInput">
+    /// The exact bytes to sign: <c>base64url(header) + '.' + base64url(payload)</c>.
+    /// </param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>The raw signature bytes in the format required by <c>activeKey.Descriptor.Algorithm</c>.</returns>
+    /// <remarks>
+    /// Override this method to perform signing remotely (e.g. a cloud KMS or HSM API) instead of
+    /// with a local, in-process private key. Remote overrides typically ignore
+    /// <see cref="SigningKeyPair.PrivateKey"/> on <paramref name="activeKey"/> entirely — the
+    /// descriptor is still needed to select the correct remote key and algorithm. There is no way
+    /// in C# to omit that unused member from the signature without adding an allocation-costing
+    /// indirection layer for no functional benefit, so it is documented as intentionally unused
+    /// by remote overrides rather than removed.
+    /// </remarks>
+    protected virtual ValueTask<ReadOnlyMemory<byte>> SignInputAsync(
+        SigningKeyPair activeKey, byte[] signingInput, CancellationToken cancellationToken)
+        => new(SigningAlgorithms.Sign(activeKey.Descriptor, signingInput, activeKey.PrivateKey));
 
     /// <inheritdoc/>
     public async ValueTask DisposeAsync()
@@ -180,7 +209,18 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
         }
     }
 
-    private static SigningResult PerformSign(SigningKeySet set, ReadOnlyMemory<byte> payloadSegment)
+    /// <summary>
+    /// Builds the JWS header and signing input for the active key and dispatches to
+    /// <see cref="SignInputAsync"/> for the actual cryptographic operation.
+    /// </summary>
+    /// <remarks>
+    /// This method is deliberately non-virtual: header construction, active-key selection, and
+    /// <c>kid</c>/<c>alg</c> assignment must always be consistent with whichever key actually
+    /// signs the input, so only the cryptographic step itself (<see cref="SignInputAsync"/>) is
+    /// overridable.
+    /// </remarks>
+    private async ValueTask<SigningResult> PerformSignAsync(
+        SigningKeySet set, ReadOnlyMemory<byte> payloadSegment, CancellationToken cancellationToken)
     {
         var descriptor = set.ActiveKey;
         var privateKey = set.GetPrivateKey(0);
@@ -192,7 +232,8 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
         // Written directly into a single buffer to avoid intermediate string allocations.
         var signingInput = AssembleSigningInput(headerSegment, payloadSegment);
 
-        var signatureBytes = SigningAlgorithms.Sign(descriptor, signingInput, privateKey);
+        var activeKey = new SigningKeyPair { Descriptor = descriptor, PrivateKey = privateKey };
+        var signatureBytes = await SignInputAsync(activeKey, signingInput, cancellationToken).ConfigureAwait(false);
         var signatureSegment = Base64UrlEncode(signatureBytes);
 
         return new SigningResult(headerSegment, signatureSegment, descriptor.Kid, descriptor.Algorithm);

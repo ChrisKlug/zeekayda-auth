@@ -52,6 +52,44 @@ public sealed class JwtSigningServiceTests
             => _factory();
     }
 
+    /// <summary>
+    /// A fake that overrides <see cref="JwtSigningService{TOptions}.SignInputAsync"/> to capture
+    /// the arguments it receives and return a caller-supplied signature — simulating a remote
+    /// signer (e.g. Key Vault) that ignores <see cref="SigningKeyPair.PrivateKey"/> entirely.
+    /// </summary>
+    private sealed class OverridingSigningService : JwtSigningService<FakeSigningServiceOptions>
+    {
+        private readonly Func<SigningKeySet> _factory;
+        private readonly ReadOnlyMemory<byte> _signatureOverride;
+
+        public SigningKeyPair? CapturedActiveKey { get; private set; }
+        public byte[]? CapturedSigningInput { get; private set; }
+        public int SignInputAsyncCallCount { get; private set; }
+
+        public OverridingSigningService(
+            IOptions<FakeSigningServiceOptions> options,
+            TimeProvider timeProvider,
+            Func<SigningKeySet> factory,
+            ReadOnlyMemory<byte> signatureOverride)
+            : base(options, timeProvider)
+        {
+            _factory = factory;
+            _signatureOverride = signatureOverride;
+        }
+
+        protected override ValueTask<SigningKeySet> LoadKeysAsync(CancellationToken cancellationToken)
+            => ValueTask.FromResult(_factory());
+
+        protected override ValueTask<ReadOnlyMemory<byte>> SignInputAsync(
+            SigningKeyPair activeKey, byte[] signingInput, CancellationToken cancellationToken)
+        {
+            SignInputAsyncCallCount++;
+            CapturedActiveKey = activeKey;
+            CapturedSigningInput = signingInput;
+            return new ValueTask<ReadOnlyMemory<byte>>(_signatureOverride);
+        }
+    }
+
     private static SigningKeySet MakeRsaSet(string kid = "test-kid")
     {
         var rsa = RSA.Create(2048);
@@ -284,6 +322,93 @@ public sealed class JwtSigningServiceTests
             DSASignatureFormat.IeeeP1363FixedFieldConcatenation);
 
         valid.Should().BeTrue($"EC signature for {algorithm} must use IEEE P1363 format as required by RFC 7518 §3.4");
+    }
+
+    // ── SignInputAsync override hook ─────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task SignAsync_invokes_SignInputAsync_override_exactly_once()
+    {
+        var set = MakeRsaSet("override-kid");
+        var options = Options.Create(new FakeSigningServiceOptions { RefreshInterval = TimeSpan.FromMinutes(5) });
+        var overrideSignature = new byte[] { 1, 2, 3, 4 };
+        await using var sut = new OverridingSigningService(options, new FakeTimeProvider(), () => set, overrideSignature);
+        var payload = Encoding.UTF8.GetBytes(Base64UrlEncodeString("""{"sub":"alice"}"""));
+        var ct = TestContext.Current.CancellationToken;
+
+        await sut.SignAsync(payload, ct);
+
+        sut.SignInputAsyncCallCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task SignAsync_uses_signature_bytes_returned_by_SignInputAsync_override()
+    {
+        var set = MakeRsaSet("override-kid");
+        var options = Options.Create(new FakeSigningServiceOptions { RefreshInterval = TimeSpan.FromMinutes(5) });
+        var overrideSignature = new byte[] { 9, 8, 7, 6, 5 };
+        await using var sut = new OverridingSigningService(options, new FakeTimeProvider(), () => set, overrideSignature);
+        var payload = Encoding.UTF8.GetBytes(Base64UrlEncodeString("""{"sub":"alice"}"""));
+        var ct = TestContext.Current.CancellationToken;
+
+        var result = await sut.SignAsync(payload, ct);
+
+        var actualSignatureBytes = DecodeBase64Url(result.SignatureSegment);
+        actualSignatureBytes.Should().Equal(overrideSignature);
+    }
+
+    [Fact]
+    public async Task SignAsync_passes_the_active_key_descriptor_to_the_SignInputAsync_override()
+    {
+        var set = MakeRsaSet("override-kid");
+        var options = Options.Create(new FakeSigningServiceOptions { RefreshInterval = TimeSpan.FromMinutes(5) });
+        await using var sut = new OverridingSigningService(options, new FakeTimeProvider(), () => set, new byte[] { 1 });
+        var payload = Encoding.UTF8.GetBytes(Base64UrlEncodeString("""{"sub":"alice"}"""));
+        var ct = TestContext.Current.CancellationToken;
+
+        await sut.SignAsync(payload, ct);
+
+        sut.CapturedActiveKey.Should().NotBeNull();
+        sut.CapturedActiveKey!.Value.Descriptor.Should().BeSameAs(set.ActiveKey);
+    }
+
+    [Fact]
+    public async Task SignAsync_passes_the_correct_signing_input_to_the_SignInputAsync_override()
+    {
+        // Header/kid/signing-input construction stays non-overridable — verify the override
+        // still receives exactly base64url(header) + '.' + base64url(payload), matching what
+        // the default (non-overridden) path signs.
+        var set = MakeRsaSet("override-kid");
+        var options = Options.Create(new FakeSigningServiceOptions { RefreshInterval = TimeSpan.FromMinutes(5) });
+        await using var sut = new OverridingSigningService(options, new FakeTimeProvider(), () => set, new byte[] { 1 });
+        var payloadStr = Base64UrlEncodeString("""{"sub":"alice"}""");
+        var payload = Encoding.UTF8.GetBytes(payloadStr);
+        var ct = TestContext.Current.CancellationToken;
+
+        var result = await sut.SignAsync(payload, ct);
+
+        var expectedSigningInput = Encoding.UTF8.GetBytes(
+            $"{Encoding.ASCII.GetString(result.HeaderSegment.Span)}.{payloadStr}");
+        sut.CapturedSigningInput.Should().Equal(expectedSigningInput);
+    }
+
+    [Fact]
+    public async Task SignAsync_header_and_kid_are_unaffected_by_SignInputAsync_override()
+    {
+        var set = MakeRsaSet("override-kid");
+        var options = Options.Create(new FakeSigningServiceOptions { RefreshInterval = TimeSpan.FromMinutes(5) });
+        await using var sut = new OverridingSigningService(options, new FakeTimeProvider(), () => set, new byte[] { 1 });
+        var payload = Encoding.UTF8.GetBytes(Base64UrlEncodeString("""{"sub":"alice"}"""));
+        var ct = TestContext.Current.CancellationToken;
+
+        var result = await sut.SignAsync(payload, ct);
+
+        result.Kid.Should().Be("override-kid");
+        result.Algorithm.Should().Be(SigningAlgorithm.RS256);
+        var headerJson = DecodeBase64UrlToString(result.HeaderSegment);
+        var doc = JsonDocument.Parse(headerJson);
+        doc.RootElement.GetProperty("kid").GetString().Should().Be("override-kid");
+        doc.RootElement.GetProperty("alg").GetString().Should().Be("RS256");
     }
 
     // ── Duplicate kid validation ──────────────────────────────────────────────────────────────────

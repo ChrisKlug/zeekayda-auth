@@ -1,6 +1,6 @@
 # ADR 0012 — Signing Provider NuGet Packaging Model
 
-**Status:** Proposed  
+**Status:** Accepted  
 **Date:** 2026-07-02
 
 ---
@@ -134,7 +134,7 @@ Every provider package follows the same pattern:
   `Add<Provider>Signing()` extension methods — lives in `ZeeKayDa.Auth`. Provider packages do not
   need to depend on `ZeeKayDa.Auth.AspNetCore`. This preserves the ADR 0001 layering model and
   keeps non-web hosts viable as a future target. (`ZeeKayDaAuthBuilder` was moved to
-  `ZeeKayDa.Auth` as a precondition for the first provider package; see the associated PR.)
+  `ZeeKayDa.Auth` as a precondition for the first provider package; see PR #297.)
 - **Public API:** one or more `ZeeKayDaAuthBuilder` extension methods — the provider's entire
   consumer-visible surface. The naming convention is `Add<Provider>Signing(...)`. Any options type
   passed to consumers via an `Action<TOptions>` configure callback is also `public` and forms part

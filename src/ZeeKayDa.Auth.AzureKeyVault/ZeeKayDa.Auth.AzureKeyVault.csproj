@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <PackageId>ZeeKayDa.Auth.AzureKeyVault</PackageId>
+    <Description>Azure Key Vault remote JWT signing provider for ZeeKayDa.Auth. Signing is performed remotely inside Key Vault; the private key never leaves the vault.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Azure.Security.KeyVault.Keys" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../ZeeKayDa.Auth/ZeeKayDa.Auth.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../ZeeKayDa.Auth.Analyzers/ZeeKayDa.Auth.Analyzers.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+</Project>

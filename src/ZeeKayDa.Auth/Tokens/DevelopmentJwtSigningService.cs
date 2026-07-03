@@ -1,8 +1,6 @@
 using System.Buffers;
-using System.Buffers.Text;
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;
 using Microsoft.Extensions.Options;
 
 namespace ZeeKayDa.Auth.Tokens;
@@ -78,7 +76,7 @@ internal sealed class DevelopmentJwtSigningService
             : GenerateEphemeralKey();
 
         var rsaParams = rsa.ExportParameters(false);
-        var kid = ComputeKid(rsaParams);
+        var kid = JwkThumbprint.Compute(rsaParams);
         var descriptor = new SigningKeyDescriptor(kid, SigningAlgorithm.RS256, rsaParams);
         var set = new SigningKeySet([new SigningKeyPair { Descriptor = descriptor, PrivateKey = rsa }]);
 
@@ -153,37 +151,5 @@ internal sealed class DevelopmentJwtSigningService
             rsa.Dispose();
             throw;
         }
-    }
-
-    private static string ComputeKid(RSAParameters rsaParams)
-    {
-        // RFC 7638 JWK Thumbprint: SHA-256 of the canonical JSON of the minimal RSA JWK member
-        // set, with members in lexicographic order, no whitespace.
-        // For RSA: {"e":"<b64url(e)>","kty":"RSA","n":"<b64url(n)>"}
-        // This matches what external tools (jose-jwt, python-jose, online JWK inspectors) compute,
-        // so developers can correlate a kid in a token header to a key in a JWKS without confusion.
-        var e = Base64UrlEncode(rsaParams.Exponent!);
-        var n = Base64UrlEncode(rsaParams.Modulus!);
-
-        // Use Utf8JsonWriter to produce the canonical JSON bytes without intermediate string allocation.
-        var buffer = new ArrayBufferWriter<byte>();
-        using (var writer = new Utf8JsonWriter(buffer, new JsonWriterOptions { Indented = false }))
-        {
-            writer.WriteStartObject();
-            writer.WriteString("e", e);
-            writer.WriteString("kty", "RSA");
-            writer.WriteString("n", n);
-            writer.WriteEndObject();
-        }
-
-        var hash = SHA256.HashData(buffer.WrittenSpan);
-        return Base64UrlEncode(hash);
-    }
-
-    private static string Base64UrlEncode(byte[] input)
-    {
-        var encoded = new byte[Base64Url.GetEncodedLength(input.Length)];
-        Base64Url.EncodeToUtf8(input, encoded);
-        return Encoding.ASCII.GetString(encoded);
     }
 }
