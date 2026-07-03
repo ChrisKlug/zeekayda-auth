@@ -200,3 +200,16 @@ jobs:
 
       - name: Check formatting
         run: dotnet format --verify-no-changes
+
+  ci-complete:
+    name: CI Complete
+    needs: [build-and-test, coverage-regression, coverage-regression-script-tests, log-hygiene, log-hygiene-script-tests, format-check]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Check all jobs passed
+        run: |
+          if [[ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" == "true" ]]; then
+            echo "One or more required jobs failed or were cancelled"
+            exit 1
+          fi
