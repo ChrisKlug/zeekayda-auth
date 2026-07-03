@@ -107,6 +107,18 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
                 IValidateOptions<AuthorizationServerOptions>,
                 ClientRepositoryPresenceValidator>());
 
+        // Captures the IServiceCollection reference so SanitizingLoggerRegistrationStartupValidator
+        // can detect closed-generic ISanitizingLogger<T> overrides once the container is built.
+        services.AddSingleton(new SanitizingLoggerClosedOverrideScanner(services));
+
+        // Fails fast if a host registration has shadowed ISanitizingLogger<>, at the open-generic
+        // or a closed-generic level, with something other than the framework's own
+        // SecretSanitizingLogger<>, which would silently disable credential redaction. Registered
+        // first among this method's hosted services — hosted services start in registration order —
+        // so no other hosted service below can log through a shadowed sanitizer before this check
+        // has a chance to abort startup.
+        services.AddHostedService<SanitizingLoggerRegistrationStartupValidator>();
+
         // Emits a startup warning when AllowInsecureIssuer is enabled.
         services.AddHostedService<InsecureIssuerWarningService>();
 
@@ -127,11 +139,6 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         // Resolves IClientRepository at startup so construction-time validation (duplicate
         // detection, per-client validation, secret hashing) fails fast rather than at first request.
         services.AddHostedService<ClientRepositoryStartupActivator>();
-
-        // Fails fast if a host registration has shadowed ISanitizingLogger<>'s open-generic
-        // singleton with something other than the framework's own SecretSanitizingLogger<>,
-        // which would silently disable credential redaction for the entire application.
-        services.AddHostedService<SanitizingLoggerRegistrationStartupValidator>();
 
         // Register the built-in client secret authenticator and composite dispatcher. Both are
         // registered as singletons. The composite is registered as its concrete type (not as

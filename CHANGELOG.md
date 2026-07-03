@@ -54,9 +54,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   constructor-inject the framework's sanitizing-logger contract without `InternalsVisibleTo`,
   which can only ever name first-party assemblies at build time. `SecretSanitizingLogger<T>` (the
   concrete implementation) and its redaction-key allowlist stay `internal`. A new hosted service,
-  `SanitizingLoggerRegistrationStartupValidator`, fails startup with a `ZeeKayDaConfigurationException`
-  if a host registration has shadowed the framework's `ISanitizingLogger<>` singleton with a
-  non-`SecretSanitizingLogger<T>` implementation, since that would silently disable credential
+  `SanitizingLoggerRegistrationStartupValidator` — registered first among `AddZeeKayDaAuth()`'s
+  hosted services — fails startup with a `ZeeKayDaConfigurationException` if a host registration
+  has shadowed the framework's `ISanitizingLogger<>` at either the open-generic level (a
+  replacement registered before or after `AddZeeKayDaAuth()`) or a closed-generic level (an
+  override for one specific type), since either would silently disable credential
   redaction for the entire application. See ADR 0011 Amendment 2(d).
 
 - **`AuthorizationServerOptions.Logging.DisableExceptionSanitizing` config opt-out** (#173)
