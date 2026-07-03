@@ -12,7 +12,7 @@ public sealed class AllowedDevEnvironmentsValidatorTests
     [Fact]
     public void Validate_succeeds_for_default_allowed_environments()
     {
-        var options = new AuthorizationServerOptions(); // defaults to ["Development"]
+        var options = new DevelopmentSigningKeyOptions(); // defaults to ["Development"]
         var result = Sut.Validate(null, options);
         result.Succeeded.Should().BeTrue();
     }
@@ -20,7 +20,7 @@ public sealed class AllowedDevEnvironmentsValidatorTests
     [Fact]
     public void Validate_succeeds_for_custom_non_production_environments()
     {
-        var options = new AuthorizationServerOptions
+        var options = new DevelopmentSigningKeyOptions
         {
             AllowedDevelopmentJwtSigningKeysEnvironments = ["Development", "Staging", "IntegrationTesting"],
         };
@@ -31,7 +31,7 @@ public sealed class AllowedDevEnvironmentsValidatorTests
     [Fact]
     public void Validate_succeeds_for_empty_allowed_list()
     {
-        var options = new AuthorizationServerOptions
+        var options = new DevelopmentSigningKeyOptions
         {
             AllowedDevelopmentJwtSigningKeysEnvironments = [],
         };
@@ -47,7 +47,7 @@ public sealed class AllowedDevEnvironmentsValidatorTests
     [InlineData("PRODUCTION")]
     public void Validate_fails_when_Production_is_in_allowed_list(string productionEntry)
     {
-        var options = new AuthorizationServerOptions
+        var options = new DevelopmentSigningKeyOptions
         {
             AllowedDevelopmentJwtSigningKeysEnvironments = ["Development", productionEntry],
         };
@@ -59,7 +59,7 @@ public sealed class AllowedDevEnvironmentsValidatorTests
     [Fact]
     public void Validate_fails_when_only_Production_in_list()
     {
-        var options = new AuthorizationServerOptions
+        var options = new DevelopmentSigningKeyOptions
         {
             AllowedDevelopmentJwtSigningKeysEnvironments = ["Production"],
         };
@@ -72,7 +72,7 @@ public sealed class AllowedDevEnvironmentsValidatorTests
     [Fact]
     public void Validate_fails_when_list_contains_empty_string()
     {
-        var options = new AuthorizationServerOptions
+        var options = new DevelopmentSigningKeyOptions
         {
             AllowedDevelopmentJwtSigningKeysEnvironments = ["Development", ""],
         };
@@ -84,7 +84,7 @@ public sealed class AllowedDevEnvironmentsValidatorTests
     [Fact]
     public void Validate_fails_when_list_contains_whitespace_only_string()
     {
-        var options = new AuthorizationServerOptions
+        var options = new DevelopmentSigningKeyOptions
         {
             AllowedDevelopmentJwtSigningKeysEnvironments = ["Development", "   "],
         };
@@ -98,7 +98,7 @@ public sealed class AllowedDevEnvironmentsValidatorTests
     [Fact]
     public void Validate_reports_all_errors_when_multiple_invalid_entries_present()
     {
-        var options = new AuthorizationServerOptions
+        var options = new DevelopmentSigningKeyOptions
         {
             AllowedDevelopmentJwtSigningKeysEnvironments = ["Production", ""],
         };
@@ -114,7 +114,7 @@ public sealed class AllowedDevEnvironmentsValidatorTests
     [Fact]
     public void Validate_succeeds_regardless_of_name_parameter()
     {
-        var options = new AuthorizationServerOptions();
+        var options = new DevelopmentSigningKeyOptions();
         Sut.Validate("some-name", options).Succeeded.Should().BeTrue();
         Sut.Validate(null, options).Succeeded.Should().BeTrue();
         Sut.Validate(string.Empty, options).Succeeded.Should().BeTrue();

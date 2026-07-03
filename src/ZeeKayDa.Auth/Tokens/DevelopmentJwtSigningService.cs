@@ -3,7 +3,6 @@ using System.Buffers.Text;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
 namespace ZeeKayDa.Auth.Tokens;
@@ -21,8 +20,9 @@ namespace ZeeKayDa.Auth.Tokens;
 /// The environment gate is enforced here via <see cref="DevelopmentSigningKeyGate.Enforce"/>
 /// so that the hard fail holds even if <c>DevelopmentSigningKeyWarningService</c> is not running
 /// (e.g. direct construction in unit tests). <c>DevelopmentSigningKeyWarningService</c> also
-/// calls the same gate helper, so the logic is not duplicated. <see cref="Microsoft.Extensions.Hosting.IHostEnvironment"/>
-/// is injected directly; when <see langword="null"/> (no host, unit-test scenario), the gate is skipped.
+/// calls the same gate helper, so the logic is not duplicated.
+/// The environment name is read from <see cref="DevelopmentSigningKeyOptions.EnvironmentName"/>;
+/// when <see langword="null"/> (no host, unit-test scenario), the gate is skipped.
 /// </para>
 /// <para>
 /// Dev keys are generated once and memoized. Unlike production providers, there is no
@@ -40,8 +40,6 @@ internal sealed class DevelopmentJwtSigningService
     private const string KeyFileName = "dev-signing-key.pem";
 
     private readonly IOptions<DevelopmentSigningKeyOptions> _devOptions;
-    private readonly IOptions<AuthorizationServerOptions> _serverOptions;
-    private readonly IHostEnvironment? _hostEnvironment;
     private readonly IDevelopmentSigningKeyFileSystem _fileSystem;
 
     // Memoized on first call — dev keys are never rotated within a process lifetime.
@@ -49,17 +47,12 @@ internal sealed class DevelopmentJwtSigningService
 
     public DevelopmentJwtSigningService(
         IOptions<DevelopmentSigningKeyOptions> devOptions,
-        IOptions<AuthorizationServerOptions> serverOptions,
-        IHostEnvironment? hostEnvironment,
         TimeProvider timeProvider,
         IDevelopmentSigningKeyFileSystem fileSystem)
         : base(devOptions, timeProvider)
     {
-        ArgumentNullException.ThrowIfNull(serverOptions);
         ArgumentNullException.ThrowIfNull(fileSystem);
         _devOptions = devOptions;
-        _serverOptions = serverOptions;
-        _hostEnvironment = hostEnvironment;
         _fileSystem = fileSystem;
     }
 
@@ -70,11 +63,11 @@ internal sealed class DevelopmentJwtSigningService
         // RSA.Create is CPU-bound and has no async variant, so key generation cannot be cancelled.
 
         // Environment gate — enforced here so the check holds even when DevelopmentSigningKeyWarningService
-        // is not running (e.g. direct construction in unit tests). IHostEnvironment is null when the
+        // is not running (e.g. direct construction in unit tests). EnvironmentName is null when the
         // service is constructed directly without a host; the gate is intentionally skipped in that case.
         DevelopmentSigningKeyGate.Enforce(
-            _hostEnvironment?.EnvironmentName,
-            _serverOptions.Value.AllowedDevelopmentJwtSigningKeysEnvironments);
+            _devOptions.Value.EnvironmentName,
+            _devOptions.Value.AllowedDevelopmentJwtSigningKeysEnvironments);
 
         if (_memoizedSet is not null)
             return _memoizedSet;

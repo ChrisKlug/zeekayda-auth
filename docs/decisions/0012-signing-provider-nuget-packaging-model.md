@@ -201,9 +201,9 @@ consumer takes on is the extension method signature and any options type it expo
 - **The development provider's environment gate requires a hosted service runner.** The fail-closed
   environment check (`DevelopmentSigningKeyWarningService`) is an `IHostedService` and only runs
   under a host that starts hosted services. In worker or console hosts the gate never fires.
-  `DevelopmentJwtSigningService` mitigates this by injecting `IHostEnvironment` directly and
-  throwing `ZeeKayDaConfigurationException` from `LoadKeysAsync` if the environment is not
-  Development. The hosted service remains as the startup-warning UX layer; the hard fail-closed
+  `DevelopmentJwtSigningService` mitigates this by enforcing the gate in `LoadKeysAsync` from
+  `DevelopmentSigningKeyOptions.EnvironmentName`, which the AspNetCore registration layer populates
+  from `IHostEnvironment` via `Configure<IHostEnvironment>`. The hosted service remains as the startup-warning UX layer; the hard fail-closed
   travels with the key material and is independent of host model.
 - **Six package identities require NuGet signing and provenance attestations.** Six separately-
   published package identities create six typosquat targets. All packages must be published with

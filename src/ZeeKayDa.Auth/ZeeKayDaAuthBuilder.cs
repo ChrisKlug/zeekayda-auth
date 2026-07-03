@@ -15,6 +15,10 @@ public sealed class ZeeKayDaAuthBuilder
     /// <summary>
     /// Initialises a new <see cref="ZeeKayDaAuthBuilder"/> instance.
     /// </summary>
+    /// <remarks>
+    /// This constructor is intended for use in provider package tests. Application code should
+    /// obtain a builder via <c>AddZeeKayDaAuth()</c>.
+    /// </remarks>
     /// <param name="services">The application service collection.</param>
     public ZeeKayDaAuthBuilder(IServiceCollection services)
     {
@@ -45,7 +49,7 @@ public sealed class ZeeKayDaAuthBuilder
         if (existing is not null)
         {
             throw new InvalidOperationException(
-                $"{serviceType.Name} is already registered. Use a single store registration method per interface.");
+                $"{serviceType.Name} is already registered. Only one registration per service type is allowed.");
         }
     }
 

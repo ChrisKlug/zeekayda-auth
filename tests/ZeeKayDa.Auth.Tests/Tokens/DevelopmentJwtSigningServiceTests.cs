@@ -1,8 +1,6 @@
 using System.Buffers.Text;
 using System.Security.Cryptography;
 using System.Text;
-using Microsoft.Extensions.FileProviders;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
 using ZeeKayDa.Auth.Tokens;
@@ -67,19 +65,6 @@ public sealed class DevelopmentJwtSigningServiceTests
         public void SeedFile(string path, string content) => _files[path] = content;
     }
 
-    private sealed class FakeHostEnvironment(string environmentName) : IHostEnvironment
-    {
-        public string EnvironmentName { get; set; } = environmentName;
-        public string ApplicationName { get; set; } = "TestApp";
-        public string ContentRootPath { get; set; } = "/";
-        public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
-    }
-
-    // Default server options used by tests that are not testing the environment gate.
-    // IHostEnvironment is passed as null in helpers so the gate is skipped.
-    private static readonly IOptions<AuthorizationServerOptions> DefaultServerOptions =
-        Options.Create(new AuthorizationServerOptions());
-
     private static DevelopmentJwtSigningService BuildEphemeral(
         IDevelopmentSigningKeyFileSystem? fs = null,
         FakeTimeProvider? timeProvider = null)
@@ -87,11 +72,10 @@ public sealed class DevelopmentJwtSigningServiceTests
         var options = new DevelopmentSigningKeyOptions
         {
             PersistToDirectory = null,
+            // EnvironmentName = null → gate skipped (unit-test scenario with no host)
         };
         return new DevelopmentJwtSigningService(
             Options.Create(options),
-            DefaultServerOptions,
-            null,          // IHostEnvironment? — null → gate skipped (unit-test scenario)
             timeProvider ?? new FakeTimeProvider(),
             fs ?? new InMemorySigningKeyFileSystem());
     }
@@ -104,11 +88,10 @@ public sealed class DevelopmentJwtSigningServiceTests
         var options = new DevelopmentSigningKeyOptions
         {
             PersistToDirectory = directory,
+            // EnvironmentName = null → gate skipped (unit-test scenario with no host)
         };
         return new DevelopmentJwtSigningService(
             Options.Create(options),
-            DefaultServerOptions,
-            null,          // IHostEnvironment? — null → gate skipped (unit-test scenario)
             timeProvider ?? new FakeTimeProvider(),
             fs ?? new InMemorySigningKeyFileSystem());
     }
@@ -120,8 +103,6 @@ public sealed class DevelopmentJwtSigningServiceTests
     {
         var act = () => new DevelopmentJwtSigningService(
             null!,
-            DefaultServerOptions,
-            null,
             new FakeTimeProvider(),
             new InMemorySigningKeyFileSystem());
 
@@ -136,8 +117,6 @@ public sealed class DevelopmentJwtSigningServiceTests
 
         var act = () => new DevelopmentJwtSigningService(
             options,
-            DefaultServerOptions,
-            null,
             new FakeTimeProvider(),
             null!);
 
@@ -217,8 +196,6 @@ public sealed class DevelopmentJwtSigningServiceTests
         };
         await using var sut = new DevelopmentJwtSigningService(
             Options.Create(options),
-            DefaultServerOptions,
-            null,          // IHostEnvironment? — null → gate skipped (unit-test scenario)
             timeProvider,
             new InMemorySigningKeyFileSystem());
         var ct = TestContext.Current.CancellationToken;
@@ -474,14 +451,13 @@ public sealed class DevelopmentJwtSigningServiceTests
     [InlineData("PRODUCTION")]
     public async Task LoadKeys_throws_in_Production_regardless_of_AllowedEnvironments(string env)
     {
-        var serverOptions = new AuthorizationServerOptions
+        var devOptions = new DevelopmentSigningKeyOptions
         {
+            EnvironmentName = env,
             AllowedDevelopmentJwtSigningKeysEnvironments = ["Production"],
         };
         await using var sut = new DevelopmentJwtSigningService(
-            Options.Create(new DevelopmentSigningKeyOptions()),
-            Options.Create(serverOptions),
-            new FakeHostEnvironment(env),
+            Options.Create(devOptions),
             new FakeTimeProvider(),
             new InMemorySigningKeyFileSystem());
 
@@ -495,10 +471,13 @@ public sealed class DevelopmentJwtSigningServiceTests
     [InlineData("IntegrationTest")]
     public async Task LoadKeys_throws_when_environment_not_in_AllowedEnvironments(string env)
     {
+        var devOptions = new DevelopmentSigningKeyOptions
+        {
+            EnvironmentName = env,
+            // AllowedDevelopmentJwtSigningKeysEnvironments defaults to ["Development"]
+        };
         await using var sut = new DevelopmentJwtSigningService(
-            Options.Create(new DevelopmentSigningKeyOptions()),
-            DefaultServerOptions,
-            new FakeHostEnvironment(env),
+            Options.Create(devOptions),
             new FakeTimeProvider(),
             new InMemorySigningKeyFileSystem());
 
@@ -513,10 +492,12 @@ public sealed class DevelopmentJwtSigningServiceTests
     [InlineData("DEVELOPMENT")]
     public async Task LoadKeys_succeeds_in_Development(string env)
     {
+        var devOptions = new DevelopmentSigningKeyOptions
+        {
+            EnvironmentName = env,
+        };
         await using var sut = new DevelopmentJwtSigningService(
-            Options.Create(new DevelopmentSigningKeyOptions()),
-            DefaultServerOptions,
-            new FakeHostEnvironment(env),
+            Options.Create(devOptions),
             new FakeTimeProvider(),
             new InMemorySigningKeyFileSystem());
 
@@ -527,14 +508,13 @@ public sealed class DevelopmentJwtSigningServiceTests
     [Fact]
     public async Task LoadKeys_succeeds_when_environment_is_in_AllowedEnvironments()
     {
-        var serverOptions = new AuthorizationServerOptions
+        var devOptions = new DevelopmentSigningKeyOptions
         {
+            EnvironmentName = "Staging",
             AllowedDevelopmentJwtSigningKeysEnvironments = ["Development", "Staging"],
         };
         await using var sut = new DevelopmentJwtSigningService(
-            Options.Create(new DevelopmentSigningKeyOptions()),
-            Options.Create(serverOptions),
-            new FakeHostEnvironment("Staging"),
+            Options.Create(devOptions),
             new FakeTimeProvider(),
             new InMemorySigningKeyFileSystem());
 
@@ -543,12 +523,11 @@ public sealed class DevelopmentJwtSigningServiceTests
     }
 
     [Fact]
-    public async Task LoadKeys_skips_gate_when_hostEnvironment_is_null()
+    public async Task LoadKeys_skips_gate_when_EnvironmentName_is_null()
     {
+        // EnvironmentName = null (the default) → gate skipped (unit-test scenario with no host)
         await using var sut = new DevelopmentJwtSigningService(
             Options.Create(new DevelopmentSigningKeyOptions()),
-            DefaultServerOptions,
-            null,          // IHostEnvironment? — null → gate skipped (unit-test scenario)
             new FakeTimeProvider(),
             new InMemorySigningKeyFileSystem());
 

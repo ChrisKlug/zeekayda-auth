@@ -44,14 +44,18 @@ public sealed class DevelopmentSigningKeyIntegrationTests
                     options.Issuer = "https://test.example.com";
                     options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
                     options.AllowInMemoryStoresOutsideDevelopment = true;
-                    if (_allowedEnvironments is not null)
-                        options.AllowedDevelopmentJwtSigningKeysEnvironments = _allowedEnvironments;
                 });
                 authBuilder
                     .AddInMemoryClients(clients =>
                         clients.AddPublic("test-client", ["https://test.example.com/callback"], [], ["openid"]))
                     .AddInMemoryStores()
                     .AddDevelopmentJwtSigningKeys();
+
+                if (_allowedEnvironments is not null)
+                {
+                    services.Configure<DevelopmentSigningKeyOptions>(options =>
+                        options.AllowedDevelopmentJwtSigningKeysEnvironments = _allowedEnvironments);
+                }
             });
 
             builder.Configure(app =>
@@ -78,10 +82,10 @@ public sealed class DevelopmentSigningKeyIntegrationTests
         var act = () => factory.CreateClient();
 
         // The ZeeKayDaConfigurationException is thrown from DevelopmentSigningKeyWarningService.StartAsync
-        // during host startup and propagates out of CreateClient.
+        // during host startup and propagates out of CreateClient as the inner exception of a
+        // HostAbortedException or AggregateException.
         act.Should().Throw<Exception>()
-            .Where(ex => ex is ZeeKayDaConfigurationException ||
-                         (ex.InnerException is ZeeKayDaConfigurationException));
+            .Where(ex => HasFailureCode(ex, DevelopmentSigningKeyGate.ProductionFailureCode));
     }
 
     [Fact]
@@ -91,8 +95,7 @@ public sealed class DevelopmentSigningKeyIntegrationTests
         var act = () => factory.CreateClient();
 
         act.Should().Throw<Exception>()
-            .Where(ex => ex is ZeeKayDaConfigurationException ||
-                         (ex.InnerException is ZeeKayDaConfigurationException));
+            .Where(ex => HasFailureCode(ex, DevelopmentSigningKeyGate.NonDevelopmentFailureCode));
     }
 
     [Fact]
@@ -101,5 +104,44 @@ public sealed class DevelopmentSigningKeyIntegrationTests
         using var factory = new DevSigningKeyFactory("Staging", allowedEnvironments: ["Development", "Staging"]);
         var act = () => factory.CreateClient();
         act.Should().NotThrow();
+    }
+
+    /// <summary>
+    /// Returns <see langword="true"/> when the exception chain contains a
+    /// <see cref="ZeeKayDaConfigurationException"/> that has a failure with the given
+    /// <paramref name="failureCode"/>. Walks inner exceptions and
+    /// <see cref="AggregateException"/> flattened inners.
+    /// </summary>
+    private static bool HasFailureCode(Exception ex, string failureCode)
+    {
+        var zcex = FindZeeKayDaConfigurationException(ex);
+        return zcex is not null && zcex.AggregatedFailures.Any(f => f.Code == failureCode);
+    }
+
+    /// <summary>
+    /// Walks the exception chain (including <see cref="AggregateException"/> inner exceptions)
+    /// to find the first <see cref="ZeeKayDaConfigurationException"/>.
+    /// </summary>
+    private static ZeeKayDaConfigurationException? FindZeeKayDaConfigurationException(Exception? ex)
+    {
+        while (ex is not null)
+        {
+            if (ex is ZeeKayDaConfigurationException zcex)
+                return zcex;
+
+            if (ex is AggregateException aggregate)
+            {
+                foreach (var inner in aggregate.InnerExceptions)
+                {
+                    var found = FindZeeKayDaConfigurationException(inner);
+                    if (found is not null)
+                        return found;
+                }
+            }
+
+            ex = ex.InnerException;
+        }
+
+        return null;
     }
 }
