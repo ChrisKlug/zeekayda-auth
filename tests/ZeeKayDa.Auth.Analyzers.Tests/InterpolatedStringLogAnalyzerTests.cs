@@ -354,6 +354,51 @@ public sealed class InterpolatedStringLogAnalyzerTests
             .Which.Id.Should().Be(InterpolatedStringLogAnalyzer.DiagnosticId);
     }
 
+    [Fact]
+    public async Task Diagnostic_still_fires_inside_friend_assembly_class_implementing_a_PUBLIC_ISanitizingLogger()
+    {
+        // Regression coverage for ADR 0011 Amendment 2(d): the exemption is gated on
+        // `ContainingAssembly.Name == "ZeeKayDa.Auth"` alone (InterpolatedStringLogAnalyzer.
+        // IsInLoggerImplementation), not on ISanitizingLogger<T>'s visibility. Making the
+        // interface public must not open a new way for a friend (or third-party) assembly's own
+        // ISanitizingLogger<T> implementation to self-exempt from the constant-template rule.
+        // Identical to Diagnostic_fires_inside_friend_assembly_class_implementing_ISanitizingLogger
+        // except the interface is public here — the outcome must be the same either way.
+        var coreSource = """
+            using Microsoft.Extensions.Logging;
+            namespace ZeeKayDa.Auth.Logging
+            {
+                public interface ISanitizingLogger<T> : ILogger<T> { }
+            }
+            """;
+
+        var aspNetCoreSource = """
+            using Microsoft.Extensions.Logging;
+            using ZeeKayDa.Auth.Logging;
+            namespace ZeeKayDa.Auth.AspNetCore.Services
+            {
+                internal sealed class FriendService : ISanitizingLogger<FriendService>
+                {
+                    private readonly ILogger<FriendService> _inner;
+                    public FriendService(ILogger<FriendService> inner) { _inner = inner; }
+                    public System.IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+                    public bool IsEnabled(LogLevel level) => false;
+                    public void Log<TState>(LogLevel level, Microsoft.Extensions.Logging.EventId id, TState state, System.Exception? ex, System.Func<TState, System.Exception?, string> f) { }
+                    public void DoWork()
+                    {
+                        string secret = "s3cr3t";
+                        _inner.LogInformation($"secret={secret}"); // must be flagged
+                    }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnosticsFromFriendAssemblyAsync(coreSource, aspNetCoreSource);
+
+        diagnostics.Should().ContainSingle()
+            .Which.Id.Should().Be(InterpolatedStringLogAnalyzer.DiagnosticId);
+    }
+
     // ── No diagnostic ─────────────────────────────────────────────────────────────────────────────
 
     [Fact]

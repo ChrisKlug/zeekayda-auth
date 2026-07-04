@@ -8,6 +8,59 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **`ZeeKayDa.Auth.AzureKeyVault` package — Azure Key Vault remote signing** (#287)
+
+  New NuGet package, the first production `IJwtSigningService` provider (ADR 0011, ADR 0012).
+  `AddAzureKeyVaultRemoteSigning(keyIdentifier, credential, configure?)` on `ZeeKayDaAuthBuilder`
+  registers a signing provider where every JWT signature is produced by a live call to Key
+  Vault's `CryptographyClient` — the private key never leaves the vault and is never held in
+  process memory. Supports real multi-key rotation with overlapping validity windows, derived
+  entirely from Key Vault's own durable per-version `CreatedOn`/`NotBefore` timestamps (restart-
+  safe and consistent across load-balanced replicas). `kid` is the RFC 7638 JWK thumbprint of
+  each key version's public key, not the raw Key Vault URI, so no vault/key name is disclosed via
+  a token header or the JWKS. See ADR 0011 Amendment 2 for the full design rationale.
+
+- **`JwtSigningService<TOptions>.SignInputAsync` — overridable async signing hook** (#287)
+
+  New `protected virtual ValueTask<ReadOnlyMemory<byte>> SignInputAsync(SigningKeyPair activeKey,
+  byte[] signingInput, CancellationToken cancellationToken)` on the core
+  `JwtSigningService<TOptions>` base class. The default body reproduces the prior synchronous
+  local-signing behaviour exactly, so this is additive and binary-compatible with
+  `DevelopmentJwtSigningService` and any existing provider. Overriding it is what makes a genuine
+  remote/network signer (such as Azure Key Vault) possible without blocking a thread for the
+  round trip; header construction, active-key selection, and `kid`/`alg` fixation remain
+  non-overridable. See ADR 0011 Amendment 2.
+
+- **`ISigningKeyRetirementWindowProvider`** (#287)
+
+  New core service implementing the ADR 0011 §3.3 `RetirementWindow` derivation (`1 hour +
+  ClockSkewTolerance`, until configurable per-token lifetimes exist), registered in
+  `AddZeeKayDaAuthCore()`. First consumed by the Azure Key Vault remote signing provider. See
+  ADR 0011 Amendment 2.
+
+- **`ZeeKayDa.Auth.Tokens.JwkThumbprint` — public RFC 7638 JWK thumbprint utility** (#287)
+
+  New public static class computing RFC 7638 JSON Web Key SHA-256 thumbprints for RSA and EC
+  public keys, extracted from logic previously private to the development signing provider. Lets
+  any `JwtSigningService<TOptions>` author — first-party or third-party — derive a safe,
+  non-leaking `kid` from a public key without hand-rolling RFC 7638 canonicalisation themselves.
+  `DevelopmentJwtSigningService` now calls this shared helper with no change in the `kid` values
+  it produces. See ADR 0011 Amendment 2.
+
+- **`ZeeKayDa.Auth.Logging.ISanitizingLogger<T>` is now public** (#287)
+
+  Previously `internal`. Made public so that packages referencing only core `ZeeKayDa.Auth` —
+  such as `ZeeKayDa.Auth.AzureKeyVault`, and genuine third-party signing/storage providers — can
+  constructor-inject the framework's sanitizing-logger contract without `InternalsVisibleTo`,
+  which can only ever name first-party assemblies at build time. `SecretSanitizingLogger<T>` (the
+  concrete implementation) and its redaction-key allowlist stay `internal`. A new hosted service,
+  `SanitizingLoggerRegistrationStartupValidator` — registered first among `AddZeeKayDaAuth()`'s
+  hosted services — fails startup with a `ZeeKayDaConfigurationException` if a host registration
+  has shadowed the framework's `ISanitizingLogger<>` at either the open-generic level (a
+  replacement registered before or after `AddZeeKayDaAuth()`) or a closed-generic level (an
+  override for one specific type), since either would silently disable credential
+  redaction for the entire application. See ADR 0011 Amendment 2(d).
+
 - **`AuthorizationServerOptions.Logging.DisableExceptionSanitizing` config opt-out** (#173)
 
   New development opt-out. Set to `true` in `appsettings.Development.json` to have
