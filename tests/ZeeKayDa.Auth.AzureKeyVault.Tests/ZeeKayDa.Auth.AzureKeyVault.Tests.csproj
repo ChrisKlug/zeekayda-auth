@@ -24,4 +24,12 @@
     <ProjectReference Include="../../src/ZeeKayDa.Auth.AzureKeyVault/ZeeKayDa.Auth.AzureKeyVault.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Real Key Vault-exported certificate secret fixtures (base64-encoded PKCS#12), captured
+         directly from an actual vault so KeyVaultCertificateReaderTests can validate the parser
+         against Key Vault's real PBE/MAC/key-bag encoding, not just .NET's own PFX export defaults.
+         These are throwaway, test-only key material — never real production secrets. -->
+    <None Include="Fixtures/RealKeyVaultExports/*.txt" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

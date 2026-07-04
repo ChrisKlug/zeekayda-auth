@@ -37,6 +37,27 @@ internal interface IKeyVaultCertificateReader
     /// </exception>
     ValueTask<(AsymmetricAlgorithm PrivateKey, SigningKeyType KeyType)> GetPrivateKeyMaterialAsync(
         string version, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Fetches only the public key for a specific certificate version, without ever downloading
+    /// the linked secret (and so without ever requiring the <c>secrets/get</c> permission or
+    /// extracting real private key material). Used for every included version except the active
+    /// signing key — see <c>AzureKeyVaultCachedSigningJwtSigningService.LoadKeysAsync</c>'s remarks
+    /// for why only the active key ever needs genuine private key material in process memory.
+    /// </summary>
+    /// <param name="version">The Key Vault certificate version identifier.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>
+    /// A public-only key — an <see cref="AsymmetricAlgorithm"/> holding no private key material —
+    /// and its <see cref="SigningKeyType"/>. The caller takes ownership of the returned instance
+    /// and is responsible for disposing it.
+    /// </returns>
+    /// <exception cref="ZeeKayDaConfigurationException">
+    /// Thrown when the certificate version does not exist or the credential lacks the required
+    /// permissions.
+    /// </exception>
+    ValueTask<(AsymmetricAlgorithm PublicKey, SigningKeyType KeyType)> GetPublicKeyMaterialAsync(
+        string version, CancellationToken cancellationToken);
 }
 
 /// <summary>

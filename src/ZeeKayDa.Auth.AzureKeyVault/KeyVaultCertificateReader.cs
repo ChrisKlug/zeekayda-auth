@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Security.Cryptography.Pkcs;
+using System.Security.Cryptography.X509Certificates;
 using Azure;
 using Azure.Security.KeyVault.Certificates;
 using Azure.Security.KeyVault.Secrets;
@@ -113,23 +114,55 @@ internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
         return ExtractPrivateKey(secret, version);
     }
 
-    private async ValueTask<KeyVaultSecret> DownloadCertificateSecretAsync(string version, CancellationToken cancellationToken)
+    /// <inheritdoc/>
+    public async ValueTask<(AsymmetricAlgorithm PublicKey, SigningKeyType KeyType)> GetPublicKeyMaterialAsync(
+        string version, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(version);
+
+        // Deliberately does not touch _secretClient at all: CertificateClient's own response
+        // already carries the public certificate (Cer) without requiring the secrets/get
+        // permission or downloading the PFX — see the class remarks for why that matters for
+        // every included version except the active signer.
+        var certificate = await GetCertificateVersionAsync(version, cancellationToken).ConfigureAwait(false);
+        return ExtractPublicKey(certificate.Cer, version);
+    }
+
+    private async ValueTask<KeyVaultCertificate> GetCertificateVersionAsync(
+        string version, CancellationToken cancellationToken)
     {
         try
         {
             var certificate = await _certificateClient
                 .GetCertificateVersionAsync(_certificateName, version, cancellationToken)
                 .ConfigureAwait(false);
+            return certificate.Value;
+        }
+        catch (RequestFailedException ex)
+        {
+            throw MapRequestFailedException(ex);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            throw MapUnexpectedFailure(ex);
+        }
+    }
 
-            if (!KeyVaultSecretIdentifier.TryCreate(certificate.Value.SecretId, out var secretIdentifier))
-            {
-                throw new ZeeKayDaConfigurationException(
-                    new ZeeKayDaConfigurationFailure(
-                        "signing.azure_key_vault.certificate_missing_secret",
-                        $"Key Vault certificate '{_certificateName}' version '{version}' in vault '{_vaultUri}' " +
-                        "has no linked secret identifier and cannot be used for local signing."));
-            }
+    private async ValueTask<KeyVaultSecret> DownloadCertificateSecretAsync(string version, CancellationToken cancellationToken)
+    {
+        var certificate = await GetCertificateVersionAsync(version, cancellationToken).ConfigureAwait(false);
 
+        if (!KeyVaultSecretIdentifier.TryCreate(certificate.SecretId, out var secretIdentifier))
+        {
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "signing.azure_key_vault.certificate_missing_secret",
+                    $"Key Vault certificate '{_certificateName}' version '{version}' in vault '{_vaultUri}' " +
+                    "has no linked secret identifier and cannot be used for local signing."));
+        }
+
+        try
+        {
             var secret = await _secretClient
                 .GetSecretAsync(secretIdentifier.Name, secretIdentifier.Version, cancellationToken)
                 .ConfigureAwait(false);
@@ -139,10 +172,30 @@ internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
         {
             throw MapRequestFailedException(ex);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException and not ZeeKayDaConfigurationException)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             throw MapUnexpectedFailure(ex);
         }
+    }
+
+    /// <summary>
+    /// Extracts the public key from a certificate version's CER-formatted public certificate
+    /// (<see cref="KeyVaultCertificate.Cer"/>) — never the linked secret/PFX, so this never
+    /// requires the <c>secrets/get</c> permission and never touches private key material.
+    /// </summary>
+    private (AsymmetricAlgorithm, SigningKeyType) ExtractPublicKey(byte[] cerBytes, string version)
+    {
+        using var certificate = X509CertificateLoader.LoadCertificate(cerBytes);
+
+        var rsaPublicKey = certificate.GetRSAPublicKey();
+        if (rsaPublicKey is not null)
+            return (rsaPublicKey, SigningKeyType.Rsa);
+
+        var ecdsaPublicKey = certificate.GetECDsaPublicKey();
+        if (ecdsaPublicKey is not null)
+            return (ecdsaPublicKey, SigningKeyType.Ec);
+
+        throw UnsupportedKeyTypeException(version);
     }
 
     private (AsymmetricAlgorithm, SigningKeyType) ExtractPrivateKey(KeyVaultSecret secret, string version)

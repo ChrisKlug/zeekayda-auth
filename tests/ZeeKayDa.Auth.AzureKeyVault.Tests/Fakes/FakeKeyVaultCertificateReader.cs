@@ -9,25 +9,39 @@ namespace ZeeKayDa.Auth.AzureKeyVault.Tests.Fakes;
 /// <see cref="FakeKeyVaultKeyReader"/>, adapted for Variant B: unlike the remote-signing reader,
 /// <see cref="GetPrivateKeyMaterialAsync"/> here must hand back a genuine, fully-usable
 /// <see cref="AsymmetricAlgorithm"/> with real private key material, because the cached-signing
-/// service signs locally with it. Full (private + public) key material is stored per version so
-/// that a fresh, independent key object is produced on every call — matching what the real
-/// <c>KeyVaultCertificateReader</c> does (a new object decoded from the downloaded secret on every
-/// call) and avoiding a shared-instance-disposed-twice hazard when the same version is loaded more
-/// than once across a test.
+/// service signs locally with it for the active version only — <see cref="GetPublicKeyMaterialAsync"/>
+/// hands back a public-only handle for every other included version. Full (private + public) key
+/// material is stored per version so that a fresh, independent key object is produced on every
+/// call — matching what the real <c>KeyVaultCertificateReader</c> does (a new object decoded from
+/// the downloaded secret, or the downloaded certificate, on every call) and avoiding a
+/// shared-instance-disposed-twice hazard when the same version is loaded more than once across a
+/// test.
 /// </summary>
 internal sealed class FakeKeyVaultCertificateReader : IKeyVaultCertificateReader
 {
     private readonly Dictionary<string, RSAParameters> _rsaMaterial = new(StringComparer.Ordinal);
     private readonly Dictionary<string, ECParameters> _ecMaterial = new(StringComparer.Ordinal);
     private readonly Dictionary<string, Exception> _privateKeyExceptions = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, Exception> _publicKeyExceptions = new(StringComparer.Ordinal);
 
     public List<KeyVaultCertificateVersionInfo> Versions { get; } = [];
 
     /// <summary>Every version passed to <see cref="GetPrivateKeyMaterialAsync"/>, in call order.</summary>
     public List<string> PrivateKeyMaterialCalls { get; } = [];
 
+    /// <summary>Every version passed to <see cref="GetPublicKeyMaterialAsync"/>, in call order.</summary>
+    public List<string> PublicKeyMaterialCalls { get; } = [];
+
     /// <summary>When set, <see cref="GetCertificateVersionsAsync"/> throws this instead of yielding versions.</summary>
     public Exception? VersionsException { get; set; }
+
+    /// <summary>
+    /// When set, invoked with the version and the exact key object right after
+    /// <see cref="GetPrivateKeyMaterialAsync"/> extracts it — lets a test capture the live handle
+    /// and later assert it was disposed (e.g. by calling <c>ExportParameters</c> on it and
+    /// expecting <see cref="ObjectDisposedException"/>) if the caller fails after extraction.
+    /// </summary>
+    public Action<string, AsymmetricAlgorithm>? OnPrivateKeyExtracted { get; set; }
 
     public KeyVaultCertificateVersionInfo AddRsaVersion(
         string version,
@@ -104,6 +118,14 @@ internal sealed class FakeKeyVaultCertificateReader : IKeyVaultCertificateReader
     /// </summary>
     public void SetPrivateKeyException(string version, Exception exception) => _privateKeyExceptions[version] = exception;
 
+    /// <summary>
+    /// Configures <see cref="GetPublicKeyMaterialAsync"/> to throw <paramref name="exception"/> for
+    /// this specific version — simulates a real <c>KeyVaultCertificateReader</c> failure (access
+    /// denied, certificate not found, ...) at the public-key-download step, which every included
+    /// version except the active one now goes through instead of <see cref="GetPrivateKeyMaterialAsync"/>.
+    /// </summary>
+    public void SetPublicKeyException(string version, Exception exception) => _publicKeyExceptions[version] = exception;
+
     /// <summary>Returns the public-only RSA parameters registered for <paramref name="version"/>, for kid assertions.</summary>
     public RSAParameters GetRsaMaterial(string version)
     {
@@ -146,6 +168,7 @@ internal sealed class FakeKeyVaultCertificateReader : IKeyVaultCertificateReader
             try
             {
                 rsa.ImportParameters(rsaParams);
+                OnPrivateKeyExtracted?.Invoke(version, rsa);
                 return ValueTask.FromResult<(AsymmetricAlgorithm, SigningKeyType)>((rsa, SigningKeyType.Rsa));
             }
             catch
@@ -161,6 +184,7 @@ internal sealed class FakeKeyVaultCertificateReader : IKeyVaultCertificateReader
             try
             {
                 ec.ImportParameters(ecParams);
+                OnPrivateKeyExtracted?.Invoke(version, ec);
                 return ValueTask.FromResult<(AsymmetricAlgorithm, SigningKeyType)>((ec, SigningKeyType.Ec));
             }
             catch
@@ -171,6 +195,47 @@ internal sealed class FakeKeyVaultCertificateReader : IKeyVaultCertificateReader
         }
 
         throw new KeyNotFoundException($"No fake certificate private key material registered for version '{version}'.");
+    }
+
+    public ValueTask<(AsymmetricAlgorithm PublicKey, SigningKeyType KeyType)> GetPublicKeyMaterialAsync(
+        string version, CancellationToken cancellationToken)
+    {
+        PublicKeyMaterialCalls.Add(version);
+
+        if (_publicKeyExceptions.TryGetValue(version, out var exception))
+            throw exception;
+
+        if (_rsaMaterial.TryGetValue(version, out var rsaParams))
+        {
+            var rsa = RSA.Create();
+            try
+            {
+                rsa.ImportParameters(new RSAParameters { Modulus = rsaParams.Modulus, Exponent = rsaParams.Exponent });
+                return ValueTask.FromResult<(AsymmetricAlgorithm, SigningKeyType)>((rsa, SigningKeyType.Rsa));
+            }
+            catch
+            {
+                rsa.Dispose();
+                throw;
+            }
+        }
+
+        if (_ecMaterial.TryGetValue(version, out var ecParams))
+        {
+            var ec = ECDsa.Create();
+            try
+            {
+                ec.ImportParameters(new ECParameters { Curve = ecParams.Curve, Q = ecParams.Q });
+                return ValueTask.FromResult<(AsymmetricAlgorithm, SigningKeyType)>((ec, SigningKeyType.Ec));
+            }
+            catch
+            {
+                ec.Dispose();
+                throw;
+            }
+        }
+
+        throw new KeyNotFoundException($"No fake certificate public key material registered for version '{version}'.");
     }
 
     private static Uri MakeVersionUri(string version) =>

@@ -19,11 +19,15 @@ namespace ZeeKayDa.Auth.AzureKeyVault;
 /// <see cref="LoadKeysAsync"/> derives the currently trusted key set entirely from Key Vault's own
 /// durable per-version <c>CreatedOn</c> timestamps, exactly as
 /// <c>AzureKeyVaultRemoteSigningJwtSigningService</c> does for keys — see that type's remarks for
-/// the full rationale (restart-safety and multi-replica consistency). The only material
-/// difference is that <see cref="SigningKeyPair.PrivateKey"/> here is genuine private key
-/// material extracted from the downloaded certificate, not a public-only handle, so this class
-/// never overrides <see cref="JwtSigningService{TOptions}.SignInputAsync"/> — the base class's
-/// default local-signing implementation is exactly what this provider needs.
+/// the full rationale (restart-safety and multi-replica consistency). The material difference is
+/// that the active version's <see cref="SigningKeyPair.PrivateKey"/> is genuine private key
+/// material extracted from the downloaded certificate secret, so this class never overrides
+/// <see cref="JwtSigningService{TOptions}.SignInputAsync"/> — the base class's default
+/// local-signing implementation is exactly what this provider needs. Every other included version
+/// (published-but-not-yet-active, or still within its retirement window) only ever gets a
+/// public-only handle, exactly like the remote-signing provider — it is never used to sign, only
+/// exposed via the JWKS, so keeping real private key material for it in process memory would be
+/// pure liability with no functional benefit (ADR 0011 §3.3(c)).
 /// </para>
 /// <para>
 /// <c>kid</c> is the RFC 7638 JWK thumbprint of each version's public key (via
@@ -117,20 +121,46 @@ internal sealed class AzureKeyVaultCachedSigningJwtSigningService : JwtSigningSe
         {
             foreach (var entry in included)
             {
-                var (privateKey, keyType) = await _certificateReader
-                    .GetPrivateKeyMaterialAsync(entry.Version.Version, cancellationToken)
-                    .ConfigureAwait(false);
+                var isActive = entry.Version.Version == active.Version.Version;
 
-                var descriptor = BuildDescriptor(privateKey, keyType, _options.Value.Algorithm);
-                keyPairs.Add(new SigningKeyPair { Descriptor = descriptor, PrivateKey = privateKey });
+                // Only the active version's SigningKeyPair.PrivateKey ever needs to hold genuine
+                // private key material: the base class's default SignInputAsync always signs with
+                // set.GetPrivateKey(0), i.e. the active key (index 0 — see SelectIncludedVersions).
+                // Every other included version (published-but-not-yet-active, or still within its
+                // retirement window) is only ever exposed via the JWKS, never used to sign, so it
+                // only ever needs a public-only handle — extracted without downloading the linked
+                // secret at all, so it never even requires the secrets/get permission for those
+                // versions. See ADR 0011 §3.3(c): keeping a retired private key alive in process
+                // memory when it can never sign again is pure liability.
+                var (key, keyType) = isActive
+                    ? await _certificateReader.GetPrivateKeyMaterialAsync(entry.Version.Version, cancellationToken).ConfigureAwait(false)
+                    : await _certificateReader.GetPublicKeyMaterialAsync(entry.Version.Version, cancellationToken).ConfigureAwait(false);
+
+                SigningKeyDescriptor descriptor;
+                try
+                {
+                    descriptor = BuildDescriptor(key, keyType, _options.Value.Algorithm);
+                }
+                catch
+                {
+                    // The key handle just obtained above was never added to keyPairs, so the outer
+                    // catch below would not dispose it — do so here before rethrowing, otherwise a
+                    // descriptor-build failure (e.g. an algorithm/key-type mismatch or an
+                    // unsupported curve) would leak a live key handle.
+                    key.Dispose();
+                    throw;
+                }
+
+                keyPairs.Add(new SigningKeyPair { Descriptor = descriptor, PrivateKey = key });
                 newKidVersions[descriptor.Kid] = entry.Version.Version;
             }
         }
         catch
         {
-            // Real private key material has already been downloaded and extracted for any keys
-            // built before the failure — unlike the remote provider's public-only handles, leaving
-            // these undisposed on a partial failure would leak live private key handles.
+            // Key material — real private key material for the active version, public-only
+            // handles for everything else — has already been downloaded and extracted for any
+            // keys built before the failure. Leaving these undisposed on a partial failure would
+            // leak live key handles (and, for the active version specifically, a live private key).
             foreach (var pair in keyPairs)
                 pair.PrivateKey.Dispose();
             throw;

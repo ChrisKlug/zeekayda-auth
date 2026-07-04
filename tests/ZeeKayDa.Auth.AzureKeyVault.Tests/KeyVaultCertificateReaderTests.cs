@@ -11,11 +11,11 @@ namespace ZeeKayDa.Auth.AzureKeyVault.Tests;
 
 /// <summary>
 /// Exercises <c>KeyVaultCertificateReader.ExtractPrivateKey</c> — the logic flagged as highest-risk
-/// for this issue: detecting a non-exportable certificate policy via <c>HasPrivateKey</c> after Key
-/// Vault has already returned HTTP 200 (there is no dedicated "forbidden" error for this case),
-/// rejecting non-PKCS#12 content types (PEM is explicitly unsupported), and surfacing malformed
-/// secret payloads as actionable <see cref="ZeeKayDaConfigurationException"/>s rather than raw SDK
-/// or cryptography exceptions.
+/// for this issue: detecting a non-exportable certificate policy by finding no key bag while
+/// walking the decoded PKCS#12 structure after Key Vault has already returned HTTP 200 (there is
+/// no dedicated "forbidden" error for this case), rejecting non-PKCS#12 content types (PEM is
+/// explicitly unsupported), and surfacing malformed secret payloads as actionable
+/// <see cref="ZeeKayDaConfigurationException"/>s rather than raw SDK or cryptography exceptions.
 /// </summary>
 /// <remarks>
 /// <see cref="KeyVaultCertificateReader"/> constructs real <c>CertificateClient</c>/<c>SecretClient</c>
@@ -55,6 +55,39 @@ public sealed class KeyVaultCertificateReaderTests
         {
             throw ex.InnerException;
         }
+    }
+
+    private static (AsymmetricAlgorithm PublicKey, SigningKeyType KeyType) InvokeExtractPublicKey(
+        KeyVaultCertificateReader reader, byte[] cerBytes, string version = "v1")
+    {
+        var method = typeof(KeyVaultCertificateReader).GetMethod(
+            "ExtractPublicKey", BindingFlags.NonPublic | BindingFlags.Instance)!;
+
+        try
+        {
+            var result = method.Invoke(reader, [cerBytes, version]);
+            return ((AsymmetricAlgorithm, SigningKeyType))result!;
+        }
+        catch (TargetInvocationException ex) when (ex.InnerException is not null)
+        {
+            throw ex.InnerException;
+        }
+    }
+
+    private static byte[] CreateSelfSignedRsaCerWithoutPrivateKey()
+    {
+        using var rsa = RSA.Create(2048);
+        var request = new CertificateRequest("CN=test", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        using var cert = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(30));
+        return cert.Export(X509ContentType.Cert);
+    }
+
+    private static byte[] CreateSelfSignedEcCerWithoutPrivateKey()
+    {
+        using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var request = new CertificateRequest("CN=test", ecdsa, HashAlgorithmName.SHA256);
+        using var cert = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(30));
+        return cert.Export(X509ContentType.Cert);
     }
 
     private static KeyVaultSecret BuildSecret(string base64Value, string? contentType = null)
@@ -169,7 +202,8 @@ public sealed class KeyVaultCertificateReaderTests
     {
         // Simulates Key Vault's confirmed behavior for a non-exportable certificate policy: HTTP
         // 200 with a PKCS#12 payload that contains the certificate but omits the private key —
-        // HasPrivateKey is the only reliable signal for this, and must be checked explicitly.
+        // finding no key bag while walking the decoded PKCS#12 structure is the only reliable
+        // signal for this, and must be checked explicitly.
         var reader = BuildReader();
         var secret = BuildSecret(Convert.ToBase64String(CreatePublicOnlyPfxWithoutPrivateKey()));
 
@@ -217,5 +251,104 @@ public sealed class KeyVaultCertificateReaderTests
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
             .WithMessage("*invalid_certificate_secret*");
+    }
+
+    // ── ExtractPublicKey (Fix for #312 medium finding: public-only path for non-active versions) ──
+
+    [Fact]
+    public void ExtractPublicKey_returns_rsa_public_only_key_with_no_private_parameters()
+    {
+        var reader = BuildReader();
+        var cerBytes = CreateSelfSignedRsaCerWithoutPrivateKey();
+
+        var (publicKey, keyType) = InvokeExtractPublicKey(reader, cerBytes);
+        using var _ = publicKey;
+
+        keyType.Should().Be(SigningKeyType.Rsa);
+        publicKey.Should().BeAssignableTo<RSA>();
+        ((RSA)publicKey).ExportParameters(includePrivateParameters: false).D.Should().BeNull(
+            "ExtractPublicKey must never extract or hold private key material — it is built purely from the CER, not the secret/PFX");
+    }
+
+    [Fact]
+    public void ExtractPublicKey_returns_ec_public_only_key_with_no_private_parameters()
+    {
+        var reader = BuildReader();
+        var cerBytes = CreateSelfSignedEcCerWithoutPrivateKey();
+
+        var (publicKey, keyType) = InvokeExtractPublicKey(reader, cerBytes);
+        using var _ = publicKey;
+
+        keyType.Should().Be(SigningKeyType.Ec);
+        publicKey.Should().BeAssignableTo<ECDsa>();
+        ((ECDsa)publicKey).ExportParameters(includePrivateParameters: false).D.Should().BeNull(
+            "ExtractPublicKey must never extract or hold private key material — it is built purely from the CER, not the secret/PFX");
+    }
+
+    // ── Real Key Vault-exported fixtures (PR #312 architect finding) ───────────────────────────
+    //
+    // Every test above builds its PKCS#12 payloads with .NET's own CertificateRequest/Export —
+    // which proves ExtractPrivateKeyFromPkcs12's logic is correct against .NET's own encoding
+    // choices, but does NOT prove it against Key Vault's actual PBE algorithm, MAC scheme, and
+    // key-bag-vs-shrouded-key-bag choice, which are not guaranteed to match .NET's defaults. These
+    // two fixtures are the literal base64 `SecretClient.GetSecretAsync().Value.Value` strings
+    // captured from a real Azure Key Vault certificate secret (exportable policy,
+    // software-protected, no password) — one RSA, one EC (P-256) — exercised through the exact same
+    // ExtractPrivateKey/ExtractPrivateKeyFromPkcs12 path production code uses.
+
+    private const string RealRsaFixtureFileName = "real-keyvault-rsa-certificate-secret.base64.txt";
+    private const string RealEcFixtureFileName = "real-keyvault-ec-certificate-secret.base64.txt";
+
+    private static string ReadFixture(string fileName)
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, "Fixtures", "RealKeyVaultExports", fileName);
+        File.Exists(path).Should().BeTrue(
+            $"the real Key Vault export fixture should be copied to '{path}' " +
+            "(see the <None Include=\"Fixtures/RealKeyVaultExports/*.txt\" ...> item in the test csproj)");
+        return File.ReadAllText(path).Trim();
+    }
+
+    [Fact]
+    public void ExtractPrivateKey_parses_a_real_keyvault_exported_rsa_certificate_secret()
+    {
+        var reader = BuildReader();
+        var secret = BuildSecret(ReadFixture(RealRsaFixtureFileName), contentType: "application/x-pkcs12");
+
+        var (privateKey, keyType) = InvokeExtractPrivateKey(reader, secret);
+        using var rsa = (RSA)privateKey;
+
+        keyType.Should().Be(SigningKeyType.Rsa);
+
+        // Confirms the key is genuinely usable, not just structurally decoded: a full parameter
+        // export (which requires a valid, consistent RSA private key) succeeds, the key size is a
+        // realistic signing key size, and the key can actually sign and be verified.
+        var parameters = rsa.ExportParameters(includePrivateParameters: true);
+        parameters.D.Should().NotBeNullOrEmpty();
+        rsa.KeySize.Should().BeGreaterThanOrEqualTo(2048);
+
+        var payload = "real-keyvault-rsa-fixture-payload"u8.ToArray();
+        var signature = rsa.SignData(payload, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        rsa.VerifyData(payload, signature, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1).Should().BeTrue();
+    }
+
+    [Fact]
+    public void ExtractPrivateKey_parses_a_real_keyvault_exported_ec_certificate_secret()
+    {
+        var reader = BuildReader();
+        var secret = BuildSecret(ReadFixture(RealEcFixtureFileName), contentType: "application/x-pkcs12");
+
+        var (privateKey, keyType) = InvokeExtractPrivateKey(reader, secret);
+        using var ecdsa = (ECDsa)privateKey;
+
+        keyType.Should().Be(SigningKeyType.Ec);
+
+        var parameters = ecdsa.ExportParameters(includePrivateParameters: true);
+        parameters.D.Should().NotBeNullOrEmpty();
+        parameters.Curve.Oid.Value.Should().Be(ECCurve.NamedCurves.nistP256.Oid.Value,
+            "the fixture is a P-256 certificate — this pins the curve so a future fixture swap can't silently change it");
+
+        var payload = "real-keyvault-ec-fixture-payload"u8.ToArray();
+        var signature = ecdsa.SignData(payload, HashAlgorithmName.SHA256);
+        ecdsa.VerifyData(payload, signature, HashAlgorithmName.SHA256).Should().BeTrue();
     }
 }

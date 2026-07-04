@@ -362,20 +362,22 @@ public sealed class AzureKeyVaultCachedSigningJwtSigningServiceTests
     }
 
     [Fact]
-    public async Task GetSigningKeysAsync_disposes_already_downloaded_private_keys_when_a_later_version_fails_to_load()
+    public async Task GetSigningKeysAsync_disposes_already_downloaded_active_private_key_when_a_later_version_fails_to_load()
     {
-        // Real private key material (unlike the remote provider's public-only handles) has already
-        // been downloaded and extracted for v1 by the time v2's download fails. The base class must
-        // not leak v1's live private key handle — the failure must still propagate cleanly to the
-        // caller either way (disposal is exercised via ObjectDisposedException NOT being masked by
-        // some other error if the reader itself misbehaves, but the core, directly assertable
-        // contract from the caller's point of view is that the original failure propagates unchanged).
+        // v0 is the active version, so real private key material has already been downloaded and
+        // extracted for it (via GetPrivateKeyMaterialAsync) by the time v1's public-key-only
+        // download (via GetPublicKeyMaterialAsync — v1 is published but not yet active) fails. The
+        // base class must not leak v0's live private key handle — the failure must still propagate
+        // cleanly to the caller either way (disposal is exercised via ObjectDisposedException NOT
+        // being masked by some other error if the reader itself misbehaves, but the core, directly
+        // assertable contract from the caller's point of view is that the original failure
+        // propagates unchanged).
         var ct = TestContext.Current.CancellationToken;
         var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
         var reader = new FakeKeyVaultCertificateReader();
         reader.AddRsaVersion("v1", createdOn: t0, notBefore: t0 + TimeSpan.FromDays(2)); // Not yet active -> published alongside the active v0.
         reader.AddRsaVersion("v0", createdOn: t0 - TimeSpan.FromDays(1));
-        reader.SetPrivateKeyException("v1", new ZeeKayDaConfigurationException(
+        reader.SetPublicKeyException("v1", new ZeeKayDaConfigurationException(
             new ZeeKayDaConfigurationFailure("signing.azure_key_vault.access_denied", "Simulated failure for v1.")));
         var timeProvider = new FakeTimeProvider(t0);
 
@@ -385,6 +387,88 @@ public sealed class AzureKeyVaultCachedSigningJwtSigningServiceTests
 
         (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
             .WithMessage("*access_denied*");
+    }
+
+    [Fact]
+    public async Task GetSigningKeysAsync_disposes_active_private_key_handle_when_BuildDescriptor_throws_for_it()
+    {
+        // Regression test for the mid-load private-key-handle leak: ValidateAlgorithmFamilyMatchesKeyType
+        // throws inside BuildDescriptor for an ES256/RSA mismatch AFTER the active version's real
+        // private key has already been extracted via GetPrivateKeyMaterialAsync. Before the fix,
+        // that just-extracted handle was never added to keyPairs and so was never disposed by the
+        // loop's catch block, leaking a live private key handle.
+        var ct = TestContext.Current.CancellationToken;
+        var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
+        var reader = new FakeKeyVaultCertificateReader();
+        reader.AddRsaVersion("v1", createdOn: t0);
+        AsymmetricAlgorithm? capturedKey = null;
+        reader.OnPrivateKeyExtracted = (_, key) => capturedKey = key;
+        var timeProvider = new FakeTimeProvider(t0);
+
+        await using var sut = BuildService(reader, timeProvider, algorithm: SigningAlgorithm.ES256);
+
+        var act = async () => await sut.GetSigningKeysAsync(ct);
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .WithMessage("*algorithm_key_type_mismatch*");
+
+        capturedKey.Should().NotBeNull();
+        var useAfterFailure = () => ((RSA)capturedKey!).ExportParameters(includePrivateParameters: false);
+        useAfterFailure.Should().Throw<ObjectDisposedException>(
+            "the private key handle extracted before BuildDescriptor's failure must not be leaked");
+    }
+
+    // ── Fix for #312 (medium finding): only the active key holds real private key material ──────
+
+    [Fact]
+    public async Task GetSigningKeysAsync_only_downloads_real_private_key_material_for_the_active_version()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
+        var t1 = t0 + TimeSpan.FromDays(1);
+        var reader = new FakeKeyVaultCertificateReader();
+        reader.AddRsaVersion("v1", createdOn: t0);
+        var timeProvider = new FakeTimeProvider(t0);
+
+        await using var sut = BuildService(reader, timeProvider, refreshInterval: DefaultRefreshInterval);
+        await sut.GetSigningKeysAsync(ct); // Bootstrap: v1 is the (only, active) version.
+
+        reader.AddRsaVersion("v2", createdOn: t1);
+        timeProvider.SetUtcNow(t1); // Cache expired -> reload; v2 is published but not yet active.
+        var keys = await sut.GetSigningKeysAsync(ct);
+
+        keys.Should().HaveCount(2, "v1 is still active and v2 is published-but-not-yet-active");
+        reader.PrivateKeyMaterialCalls.Should().OnlyContain(v => v == "v1",
+            "real private key material must only ever be downloaded for the active version, per ADR 0011 §3.3(c)");
+        reader.PublicKeyMaterialCalls.Should().Contain("v2",
+            "a published-but-not-yet-active version is only ever exposed via JWKS, so it needs only a public key");
+        reader.PublicKeyMaterialCalls.Should().NotContain("v1",
+            "the active version's private key is fetched via GetPrivateKeyMaterialAsync, not the public-only path");
+    }
+
+    [Fact]
+    public async Task GetSigningKeysAsync_only_downloads_public_key_material_for_a_retired_version_still_in_its_retirement_window()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
+        var t1 = t0 + TimeSpan.FromDays(1);
+        var reader = new FakeKeyVaultCertificateReader();
+        reader.AddRsaVersion("v1", createdOn: t0);
+        var timeProvider = new FakeTimeProvider(t0);
+
+        await using var sut = BuildService(
+            reader, timeProvider, refreshInterval: DefaultRefreshInterval, retirementWindow: DefaultRetirementWindow);
+        await sut.GetSigningKeysAsync(ct); // Bootstrap: v1 active.
+        reader.PrivateKeyMaterialCalls.Clear(); // Only the second load (below) is under test.
+
+        reader.AddRsaVersion("v2", createdOn: t1);
+        timeProvider.SetUtcNow(t1 + DefaultRefreshInterval); // v2 activates; v1 retires but stays in-window.
+        var keys = await sut.GetSigningKeysAsync(ct);
+
+        keys.Should().HaveCount(2, "v1 is retired but still within its retirement window");
+        reader.PrivateKeyMaterialCalls.Should().OnlyContain(v => v == "v2",
+            "v2 is now the active version, so only it needs real private key material");
+        reader.PublicKeyMaterialCalls.Should().Contain("v1",
+            "a retired-but-still-in-window version is only exposed via JWKS, so it needs only a public key");
     }
 
     // ── AC #1: private key downloaded once and cached — no reader call per sign ─────────────────
