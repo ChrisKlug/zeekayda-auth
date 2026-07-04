@@ -100,17 +100,25 @@ internal sealed class AzureKeyVaultRemoteSigningJwtSigningService : JwtSigningSe
     {
         var keyIdentifier = _options.Value.KeyIdentifier;
 
-        // Assumes GetKeyVersionsAsync returns a complete, consistent view of every version Key
-        // Vault has ever recorded for this key name — this is what makes the FirstEverVersion
-        // immediate-activation exemption in BuildActivationTimeline safe. A single-region vault
-        // gives strongly-consistent listing; a cross-region failover with replication lag could in
-        // principle return an incomplete list. The only scenario this could affect is a genuinely
-        // brand-new key (created less than RefreshInterval ago) whose true first version is
-        // transiently missing from the list during such a failover — a narrow window that fails
-        // toward a transient relying-party rejection, not toward forging a token with an
-        // unauthorized key. Not treated as a defect to guard against here: doing so would require
-        // reintroducing exactly the kind of process-local "have I seen this before" state that was
-        // deliberately eliminated elsewhere in this method for restart/multi-replica correctness.
+        // Confirmed, not assumed (issue #300; see ADR 0011 Amendment 3 for the full research and
+        // rationale): GetKeyVersionsAsync returns a complete, consistent view of every version Key
+        // Vault has ever recorded for this key name during normal operation — this is what makes
+        // the FirstEverVersion immediate-activation exemption in BuildActivationTimeline safe. Per
+        // Microsoft's documented Key Vault reliability model, all reads and writes are served from
+        // a single active region with synchronous zone-redundant replication, so under steady
+        // state there is no lagging read replica that a list call could observe. The only
+        // documented staleness window is a Microsoft-triggered regional failover, during which the
+        // vault runs read-only against an asynchronously-replicated secondary that may be missing
+        // very recent writes — a rare, best-effort event that can take hours to occur, not a
+        // per-request consistency knob a caller can trigger or race. The only scenario this could
+        // affect is a genuinely brand-new key (created less than RefreshInterval ago) whose true
+        // first version is transiently missing from the list during such a failover — a narrow
+        // window that fails toward a transient relying-party rejection, not toward forging a token
+        // with an unauthorized key, and one that self-heals on the next refresh cycle once the
+        // primary region recovers. Accepted as-is rather than mitigated: mitigating it would
+        // require reintroducing exactly the kind of process-local "have I seen this before" state
+        // that was deliberately eliminated elsewhere in this method for restart/multi-replica
+        // correctness, to guard against an outage-recovery mode that already self-heals.
         var allVersions = new List<KeyVaultKeyVersionInfo>();
         await foreach (var version in _keyReader.GetKeyVersionsAsync(cancellationToken).ConfigureAwait(false))
             allVersions.Add(version);
