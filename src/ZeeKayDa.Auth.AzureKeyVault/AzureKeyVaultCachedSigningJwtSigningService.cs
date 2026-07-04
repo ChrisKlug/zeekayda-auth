@@ -231,6 +231,9 @@ internal sealed class AzureKeyVaultCachedSigningJwtSigningService : JwtSigningSe
 
         foreach (var entry in timeline
             .Where(entry => entry.Version.Version != active.Version.Version)
+            // Disabled is an immediate, unconditional exclusion — bypasses the retirement window
+            // entirely, so an operator disabling a suspected-compromised certificate takes effect
+            // at once.
             .Where(entry => entry.Version.Enabled))
         {
             var notYetActive = entry.ActivatesAt > now;
