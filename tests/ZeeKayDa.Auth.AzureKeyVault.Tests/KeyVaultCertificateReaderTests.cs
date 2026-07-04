@@ -301,7 +301,7 @@ public sealed class KeyVaultCertificateReaderTests
 
     private static string ReadFixture(string fileName)
     {
-        var path = Path.Combine(AppContext.BaseDirectory, "Fixtures", "RealKeyVaultExports", fileName);
+        var path = Path.Join(AppContext.BaseDirectory, "Fixtures", "RealKeyVaultExports", fileName);
         File.Exists(path).Should().BeTrue(
             $"the real Key Vault export fixture should be copied to '{path}' " +
             "(see the <None Include=\"Fixtures/RealKeyVaultExports/*.txt\" ...> item in the test csproj)");
