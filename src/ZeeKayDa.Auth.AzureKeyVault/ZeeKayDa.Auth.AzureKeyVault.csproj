@@ -3,11 +3,14 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <PackageId>ZeeKayDa.Auth.AzureKeyVault</PackageId>
-    <Description>Azure Key Vault remote JWT signing provider for ZeeKayDa.Auth. Signing is performed remotely inside Key Vault; the private key never leaves the vault.</Description>
+    <Description>Azure Key Vault JWT signing providers for ZeeKayDa.Auth: remote signing (the private key never leaves Key Vault) and cached signing (the private key is downloaded once and cached in process memory for local signing).</Description>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Azure.Security.KeyVault.Keys" />
+    <PackageReference Include="Azure.Security.KeyVault.Certificates" />
+    <PackageReference Include="Azure.Security.KeyVault.Secrets" />
+    <PackageReference Include="System.Security.Cryptography.Pkcs" />
     <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
   </ItemGroup>
 

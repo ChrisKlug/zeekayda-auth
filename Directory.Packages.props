@@ -25,9 +25,15 @@
     <PackageVersion Include="Microsoft.CodeAnalysis.Analyzers" Version="3.11.0" />
   </ItemGroup>
   <ItemGroup>
-    <!-- Azure Key Vault remote signing provider (ZeeKayDa.Auth.AzureKeyVault) -->
+    <!-- Azure Key Vault signing providers (ZeeKayDa.Auth.AzureKeyVault) -->
     <!-- 4.10.0 was the latest stable release on nuget.org at the time this was added — double-check before release. -->
     <PackageVersion Include="Azure.Security.KeyVault.Keys" Version="4.10.0" />
+    <!-- 4.8.0 is the latest version compatible with the pinned Azure.Core used by Keys 4.10.0 at
+         the time this was added (Certificates 4.9.0 and Secrets 4.11.0 exist on nuget.org but were
+         not validated against this repo's toolchain) — double-check before release. -->
+    <PackageVersion Include="Azure.Security.KeyVault.Certificates" Version="4.8.0" />
+    <PackageVersion Include="Azure.Security.KeyVault.Secrets" Version="4.8.0" />
+    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.9" />
   </ItemGroup>
   <ItemGroup>
     <!-- xUnit v3 -->
