@@ -68,8 +68,10 @@ Labels: `type:task` (or other `type:*`), relevant `area:*`, `priority:*`
 
 - `area:core`, `area:aspnetcore`, `area:analyzers`, `area:docs`, `area:ci`, `area:security`, `area:extensibility`
 - `type:epic`, `type:task`, `type:bug`, `type:feature`, `type:design`, `type:refactor`, `type:test`, `type:docs`, `type:chore`
-- `priority:critical`, `priority:high`, `priority:normal`, `priority:low`
-- `status:idea` (unscoped future work, hidden from active view), `status:needs-repro`, `status:blocked`, `status:ready`
+- `priority:critical`, `priority:high`, `priority:medium`, `priority:low`
+- `status:idea` (unscoped future work, hidden from active view), `status:needs-repro`, `status:ready`
+
+There is deliberately no `status:blocked` label — blocked state is tracked with GitHub's native blocked-by relations (see Step 4), which resolve automatically when the blocking issue closes.
 - `good first issue`, `help wanted`, `wontfix`, `duplicate`, `question`
 
 Active work query: `is:open -label:status:idea`
@@ -86,6 +88,17 @@ gh api -X POST /repos/OWNER/REPO/issues/PARENT_NUMBER/sub_issues --field sub_iss
 ```
 
 Do this immediately after creating any issue that belongs to an epic. Sub-issue ordering reflects execution sequence — design before tasks, foundational tasks before dependent ones.
+
+### Blocked issues
+
+When an issue cannot start until another issue closes, record it with GitHub's native blocked-by relation — never a `status:blocked` label, never only body prose:
+
+```sh
+# issue_id is the BLOCKING issue's databaseId (same GraphQL lookup as above)
+gh api -X POST /repos/OWNER/REPO/issues/BLOCKED_NUMBER/dependencies/blocked_by -F issue_id=DATABASE_ID
+```
+
+The relation shows on both issues and resolves automatically when the blocker closes. A short body note explaining *why* it is blocked is still good practice; the relation is the machine-readable state.
 
 ## Triaging incoming issues
 

@@ -1,11 +1,56 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(git status *)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git show *)",
+      "Bash(git blame *)",
+      "Bash(git branch *)",
+      "Bash(git switch *)",
+      "Bash(git checkout *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(git stash *)",
+      "Bash(git fetch *)",
+      "Bash(git pull *)",
+      "Bash(git merge *)",
+      "Bash(git merge-base *)",
+      "Bash(git rev-parse *)",
+      "Bash(git ls-files *)",
+      "Bash(git worktree *)",
+      "Bash(dotnet *)",
+      "Bash(gh issue *)",
+      "Bash(gh pr *)",
+      "Bash(gh run *)",
+      "Bash(gh api *)",
+      "Bash(gh label *)",
+      "Bash(gh search *)",
+      "Bash(gh auth status *)",
+      "Bash(gh repo view *)",
+      "Bash(grep *)",
+      "Bash(rg *)",
+      "mcp__plugin_microsoft-docs_microsoft-learn__microsoft_docs_search"
+    ],
+    "ask": [
+      "Bash(git push --force *)",
+      "Bash(git push -f *)",
+      "Bash(git tag *)",
+      "Bash(gh pr merge *)",
+      "Bash(gh release *)"
+    ],
+    "deny": [
+      "Bash(gh repo delete *)"
+    ]
+  },
   "hooks": {
     "Stop": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "bash .github/hooks/scripts/check-format.sh"
+            "command": "bash .claude/hooks/scripts/check-format.sh"
           }
         ]
       }
