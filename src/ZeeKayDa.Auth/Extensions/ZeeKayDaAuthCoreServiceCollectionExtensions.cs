@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using ZeeKayDa.Auth.Logging;
+using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.Extensions;
 
@@ -11,12 +12,15 @@ namespace ZeeKayDa.Auth.Extensions;
 public static class ZeeKayDaAuthCoreServiceCollectionExtensions
 {
     /// <summary>
-    /// Registers ZeeKayDa.Auth core infrastructure — currently the
-    /// <see cref="ISanitizingLogger{T}"/> implementation — so that core services
-    /// (<see cref="ZeeKayDa.Auth.Clients.InMemoryClientRepository"/>,
+    /// Registers ZeeKayDa.Auth core infrastructure — the <see cref="ISanitizingLogger{T}"/>
+    /// implementation and <see cref="ISigningKeyRetirementWindowProvider"/> — so that core
+    /// services (<see cref="ZeeKayDa.Auth.Clients.InMemoryClientRepository"/>,
     /// <see cref="ZeeKayDa.Auth.Clients.Pbkdf2ClientSecretHasher"/>,
     /// <see cref="ZeeKayDa.Auth.Clients.ClientRegistrationValidator"/>) are resolvable without
-    /// the full ASP.NET Core integration.
+    /// the full ASP.NET Core integration. Signing-key provider packages (e.g.
+    /// <c>ZeeKayDa.Auth.AzureKeyVault</c>) that do not reference
+    /// <c>ZeeKayDa.Auth.AspNetCore</c> also depend on this method for
+    /// <see cref="ISigningKeyRetirementWindowProvider"/>.
     /// </summary>
     /// <param name="services">The service collection to add services to.</param>
     /// <returns><paramref name="services"/> for chaining.</returns>
@@ -38,6 +42,10 @@ public static class ZeeKayDaAuthCoreServiceCollectionExtensions
         // automatically receives SecretSanitizingLogger<T>. TryAdd is idempotent across
         // repeated calls and allows AddZeeKayDaAuth() to override this registration.
         services.TryAddSingleton(typeof(ISanitizingLogger<>), typeof(SecretSanitizingLogger<>));
+
+        // ADR 0011 §3.3: the retirement window derivation is central and never a per-provider
+        // option, so it is registered here in core rather than in any individual provider package.
+        services.TryAddSingleton<ISigningKeyRetirementWindowProvider, SigningKeyRetirementWindowProvider>();
 
         return services;
     }
