@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Security.Cryptography;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -248,14 +249,8 @@ internal sealed class AzureKeyVaultRemoteSigningJwtSigningService : JwtSigningSe
         // The timeline is sorted ascending by ActivatesAt, so the last eligible match encountered
         // while scanning forward is always the one with the greatest ActivatesAt <= now.
         ActivationEntry? active = null;
-        foreach (var entry in ascendingTimeline)
+        foreach (var entry in ascendingTimeline.Where(entry => entry.ActivatesAt <= now && IsEligibleAt(entry.Version, now)))
         {
-            if (entry.ActivatesAt > now)
-                continue;
-
-            if (!IsEligibleAt(entry.Version, now))
-                continue;
-
             active = entry;
         }
 

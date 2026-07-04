@@ -105,15 +105,31 @@ internal sealed class FakeKeyVaultKeyReader : IKeyVaultKeyReader
         if (_rsaMaterial.TryGetValue(version, out var rsaParams))
         {
             var rsa = RSA.Create();
-            rsa.ImportParameters(rsaParams);
-            return ValueTask.FromResult<(AsymmetricAlgorithm, SigningKeyType)>((rsa, SigningKeyType.Rsa));
+            try
+            {
+                rsa.ImportParameters(rsaParams);
+                return ValueTask.FromResult<(AsymmetricAlgorithm, SigningKeyType)>((rsa, SigningKeyType.Rsa));
+            }
+            catch
+            {
+                rsa.Dispose();
+                throw;
+            }
         }
 
         if (_ecMaterial.TryGetValue(version, out var ecParams))
         {
             var ec = ECDsa.Create();
-            ec.ImportParameters(ecParams);
-            return ValueTask.FromResult<(AsymmetricAlgorithm, SigningKeyType)>((ec, SigningKeyType.Ec));
+            try
+            {
+                ec.ImportParameters(ecParams);
+                return ValueTask.FromResult<(AsymmetricAlgorithm, SigningKeyType)>((ec, SigningKeyType.Ec));
+            }
+            catch
+            {
+                ec.Dispose();
+                throw;
+            }
         }
 
         throw new KeyNotFoundException($"No fake key material registered for version '{version}'.");

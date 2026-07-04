@@ -89,7 +89,7 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
     [Fact]
     public void AddAzureKeyVaultRemoteSigning_remarks_first_paragraph_states_exact_AC8_sentence()
     {
-        var xmlPath = Path.Combine(AppContext.BaseDirectory, "ZeeKayDa.Auth.AzureKeyVault.xml");
+        var xmlPath = Path.Join(AppContext.BaseDirectory, "ZeeKayDa.Auth.AzureKeyVault.xml");
         File.Exists(xmlPath).Should().BeTrue(
             $"the referenced project's generated XML doc file should be copied to '{xmlPath}' " +
             "(GenerateDocumentationFile is enabled repo-wide via Directory.Build.props)");
