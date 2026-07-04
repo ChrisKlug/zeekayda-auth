@@ -97,4 +97,5 @@ Prefer the LSP tool over text search for symbol-level navigation (definitions, r
 - **Be terse.** Short, precise answers; no progress narration; the user will ask if they need more.
 - **Ask before deciding.** Never resolve ambiguity by guessing. In the main session, ask the user. In a specialist agent, return the open question as your result — the orchestrator will route it.
 - **Never fabricate** facts, spec content, or API details. If uncertain, say so and ask.
-- **Never commit or push without explicit approval.** Report that changes are ready for review and wait for confirmation before `git commit` or `git push`.
+- **Review happens on the PR.** Commit and push freely on feature branches — the user reviews diffs in the pull request, not in the working tree. Never commit directly to `main`, and never merge a PR or create a release tag without explicit approval.
+- **Approval gates are harness-enforced.** The permission policy in `.claude/settings.json` makes `git tag`, force-pushes, `gh pr merge`, and `gh release` always prompt the user — even when a broader allow rule exists. A permission prompt at one of these points is the review gate working as intended; never look for an alternative command to avoid it.
