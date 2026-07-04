@@ -30,6 +30,17 @@ namespace ZeeKayDa.Auth.AzureKeyVault;
 /// pure liability with no functional benefit (ADR 0011 §3.3(c)).
 /// </para>
 /// <para>
+/// Every included version's <see cref="SigningKeyDescriptor"/> — including the active version's —
+/// is built from the exact same public-only source (<see cref="IKeyVaultCertificateReader.GetPublicKeyMaterialAsync"/>,
+/// sourced from the certificate's <c>Cer</c>, never the secret) rather than from two different
+/// code paths that happened to be mathematically guaranteed to agree. For the active version only,
+/// the real private key is additionally downloaded via
+/// <see cref="IKeyVaultCertificateReader.GetPrivateKeyMaterialAsync"/> purely to have something to
+/// sign with; the public-only handle used to build its descriptor is disposed immediately once the
+/// descriptor is built, since it is otherwise redundant with the private key's own public
+/// component.
+/// </para>
+/// <para>
 /// <c>kid</c> is the RFC 7638 JWK thumbprint of each version's public key (via
 /// <see cref="JwkThumbprint.Compute(RSAParameters)"/> / <see cref="JwkThumbprint.Compute(ECParameters)"/>),
 /// not the raw Key Vault certificate/secret version URI — a kid is always public, so embedding
@@ -123,23 +134,18 @@ internal sealed class AzureKeyVaultCachedSigningJwtSigningService : JwtSigningSe
             {
                 var isActive = entry.Version.Version == active.Version.Version;
 
-                // Only the active version's SigningKeyPair.PrivateKey ever needs to hold genuine
-                // private key material: the base class's default SignInputAsync always signs with
-                // set.GetPrivateKey(0), i.e. the active key (index 0 — see SelectIncludedVersions).
-                // Every other included version (published-but-not-yet-active, or still within its
-                // retirement window) is only ever exposed via the JWKS, never used to sign, so it
-                // only ever needs a public-only handle — extracted without downloading the linked
-                // secret at all, so it never even requires the secrets/get permission for those
-                // versions. See ADR 0011 §3.3(c): keeping a retired private key alive in process
-                // memory when it can never sign again is pure liability.
-                var (key, keyType) = isActive
-                    ? await _certificateReader.GetPrivateKeyMaterialAsync(entry.Version.Version, cancellationToken).ConfigureAwait(false)
-                    : await _certificateReader.GetPublicKeyMaterialAsync(entry.Version.Version, cancellationToken).ConfigureAwait(false);
+                // Every included version's descriptor — active or not — is always built from the
+                // same public-only source, never from the real private key: this keeps a single
+                // code path (and a single Key Vault API response) responsible for kid derivation
+                // for every version, rather than two paths that happen to be mathematically
+                // guaranteed to agree.
+                var (publicKey, keyType) = await _certificateReader
+                    .GetPublicKeyMaterialAsync(entry.Version.Version, cancellationToken).ConfigureAwait(false);
 
                 SigningKeyDescriptor descriptor;
                 try
                 {
-                    descriptor = BuildDescriptor(key, keyType, _options.Value.Algorithm);
+                    descriptor = BuildDescriptor(publicKey, keyType, _options.Value.Algorithm);
                 }
                 catch
                 {
@@ -147,11 +153,48 @@ internal sealed class AzureKeyVaultCachedSigningJwtSigningService : JwtSigningSe
                     // catch below would not dispose it — do so here before rethrowing, otherwise a
                     // descriptor-build failure (e.g. an algorithm/key-type mismatch or an
                     // unsupported curve) would leak a live key handle.
-                    key.Dispose();
+                    publicKey.Dispose();
                     throw;
                 }
 
-                keyPairs.Add(new SigningKeyPair { Descriptor = descriptor, PrivateKey = key });
+                // Only the active version's SigningKeyPair.PrivateKey ever needs to hold genuine
+                // private key material: the base class's default SignInputAsync always signs with
+                // set.GetPrivateKey(0), i.e. the active key (index 0 — see SelectIncludedVersions).
+                // Every other included version (published-but-not-yet-active, or still within its
+                // retirement window) is only ever exposed via the JWKS, never used to sign, so the
+                // public-only handle already obtained above is reused as-is — it never even
+                // required the secrets/get permission for those versions. See ADR 0011 §3.3(c):
+                // keeping a retired private key alive in process memory when it can never sign
+                // again is pure liability.
+                AsymmetricAlgorithm signingKey;
+                if (isActive)
+                {
+                    try
+                    {
+                        (signingKey, _) = await _certificateReader
+                            .GetPrivateKeyMaterialAsync(entry.Version.Version, cancellationToken).ConfigureAwait(false);
+                    }
+                    catch
+                    {
+                        // The descriptor was already built successfully at this point, but the
+                        // public-only handle used to build it is still live and was never added to
+                        // keyPairs — dispose it here before rethrowing so a private-key download
+                        // failure for the active version cannot leak it.
+                        publicKey.Dispose();
+                        throw;
+                    }
+
+                    // The public-only handle is now redundant: the private key just downloaded
+                    // carries the same public component, and only ever the private key is used
+                    // (as SigningKeyPair.PrivateKey) from this point on.
+                    publicKey.Dispose();
+                }
+                else
+                {
+                    signingKey = publicKey;
+                }
+
+                keyPairs.Add(new SigningKeyPair { Descriptor = descriptor, PrivateKey = signingKey });
                 newKidVersions[descriptor.Kid] = entry.Version.Version;
             }
         }
@@ -253,24 +296,32 @@ internal sealed class AzureKeyVaultCachedSigningJwtSigningService : JwtSigningSe
 
     private static DateTimeOffset Max(DateTimeOffset a, DateTimeOffset b) => a >= b ? a : b;
 
+    /// <summary>
+    /// Builds a <see cref="SigningKeyDescriptor"/> — and therefore its <c>kid</c> — from a
+    /// public-only key. Always called with the handle from
+    /// <see cref="IKeyVaultCertificateReader.GetPublicKeyMaterialAsync"/>, for every included
+    /// version including the active one, so every version's <c>kid</c> is derived through the same
+    /// single code path.
+    /// </summary>
     private static SigningKeyDescriptor BuildDescriptor(
-        AsymmetricAlgorithm privateKey, SigningKeyType keyType, SigningAlgorithm algorithm)
+        AsymmetricAlgorithm publicKey, SigningKeyType keyType, SigningAlgorithm algorithm)
     {
         ValidateAlgorithmFamilyMatchesKeyType(keyType, algorithm);
 
         return keyType switch
         {
-            SigningKeyType.Rsa => BuildRsaDescriptor((RSA)privateKey, algorithm),
-            SigningKeyType.Ec => BuildEcDescriptor((ECDsa)privateKey, algorithm),
+            SigningKeyType.Rsa => BuildRsaDescriptor((RSA)publicKey, algorithm),
+            SigningKeyType.Ec => BuildEcDescriptor((ECDsa)publicKey, algorithm),
             _ => throw new NotSupportedException($"Signing key type {keyType} is not supported."),
         };
     }
 
     private static SigningKeyDescriptor BuildRsaDescriptor(RSA rsa, SigningAlgorithm algorithm)
     {
-        // Exporting only the public parameters here is always permitted, even for a private key
-        // extracted from an X509Certificate2 loaded with EphemeralKeySet — unlike exporting the
-        // private components, it never requires an "exportable" capability on the key handle.
+        // Exporting only the public parameters here is always permitted — unlike exporting the
+        // private components, it never requires an "exportable" capability on the key handle. rsa
+        // is always public-only in practice (see BuildDescriptor's remarks), but includePrivateParameters:
+        // false is kept explicit regardless, since exporting private material was never needed here.
         var parameters = rsa.ExportParameters(includePrivateParameters: false);
         var kid = JwkThumbprint.Compute(parameters);
         return new SigningKeyDescriptor(kid, algorithm, parameters);

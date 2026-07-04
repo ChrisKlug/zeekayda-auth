@@ -242,6 +242,25 @@ public sealed class KeyVaultCertificateReaderTests
     }
 
     [Fact]
+    public void ExtractPrivateKey_throws_actionable_exception_for_null_secret_value()
+    {
+        // Regression test (security review finding L2): a null secret.Value previously escaped
+        // as an unmapped ArgumentNullException from Convert.FromBase64String instead of the same
+        // actionable ZeeKayDaConfigurationException the bad-base64 case already produces. The
+        // public KeyVaultSecret constructor rejects a null value, so SecretModelFactory (designed
+        // for mocking) is used to reproduce a secret whose Value is null, as could occur via the
+        // SDK's own deserialization path.
+        var reader = BuildReader();
+        var properties = SecretModelFactory.SecretProperties(name: "fake-cert");
+        var secret = SecretModelFactory.KeyVaultSecret(properties);
+
+        var act = () => InvokeExtractPrivateKey(reader, secret);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .WithMessage("*invalid_certificate_secret*");
+    }
+
+    [Fact]
     public void ExtractPrivateKey_throws_actionable_exception_for_valid_base64_that_is_not_a_pkcs12_payload()
     {
         var reader = BuildReader();
@@ -283,6 +302,20 @@ public sealed class KeyVaultCertificateReaderTests
         publicKey.Should().BeAssignableTo<ECDsa>();
         ((ECDsa)publicKey).ExportParameters(includePrivateParameters: false).D.Should().BeNull(
             "ExtractPublicKey must never extract or hold private key material — it is built purely from the CER, not the secret/PFX");
+    }
+
+    [Fact]
+    public void ExtractPublicKey_throws_actionable_exception_for_malformed_cer_bytes()
+    {
+        // Regression test (security review finding L1): unlike every other failure path in this
+        // class, a malformed Cer byte array previously escaped as a raw, unmapped
+        // CryptographicException from X509CertificateLoader.LoadCertificate.
+        var reader = BuildReader();
+
+        var act = () => InvokeExtractPublicKey(reader, "not a valid certificate"u8.ToArray());
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .WithMessage("*invalid_certificate_public_key*");
     }
 
     // ── Real Key Vault-exported fixtures (PR #312 architect finding) ───────────────────────────

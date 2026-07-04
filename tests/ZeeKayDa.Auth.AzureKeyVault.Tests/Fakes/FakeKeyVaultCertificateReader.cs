@@ -43,6 +43,14 @@ internal sealed class FakeKeyVaultCertificateReader : IKeyVaultCertificateReader
     /// </summary>
     public Action<string, AsymmetricAlgorithm>? OnPrivateKeyExtracted { get; set; }
 
+    /// <summary>
+    /// When set, invoked with the version and the exact key object right after
+    /// <see cref="GetPublicKeyMaterialAsync"/> extracts it — mirrors
+    /// <see cref="OnPrivateKeyExtracted"/>, but for the public-only path used to build every
+    /// included version's descriptor.
+    /// </summary>
+    public Action<string, AsymmetricAlgorithm>? OnPublicKeyExtracted { get; set; }
+
     public KeyVaultCertificateVersionInfo AddRsaVersion(
         string version,
         DateTimeOffset createdOn,
@@ -211,6 +219,7 @@ internal sealed class FakeKeyVaultCertificateReader : IKeyVaultCertificateReader
             try
             {
                 rsa.ImportParameters(new RSAParameters { Modulus = rsaParams.Modulus, Exponent = rsaParams.Exponent });
+                OnPublicKeyExtracted?.Invoke(version, rsa);
                 return ValueTask.FromResult<(AsymmetricAlgorithm, SigningKeyType)>((rsa, SigningKeyType.Rsa));
             }
             catch
@@ -226,6 +235,7 @@ internal sealed class FakeKeyVaultCertificateReader : IKeyVaultCertificateReader
             try
             {
                 ec.ImportParameters(new ECParameters { Curve = ecParams.Curve, Q = ecParams.Q });
+                OnPublicKeyExtracted?.Invoke(version, ec);
                 return ValueTask.FromResult<(AsymmetricAlgorithm, SigningKeyType)>((ec, SigningKeyType.Ec));
             }
             catch

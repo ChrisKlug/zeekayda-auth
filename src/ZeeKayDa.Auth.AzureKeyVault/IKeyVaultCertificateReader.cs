@@ -41,9 +41,12 @@ internal interface IKeyVaultCertificateReader
     /// <summary>
     /// Fetches only the public key for a specific certificate version, without ever downloading
     /// the linked secret (and so without ever requiring the <c>secrets/get</c> permission or
-    /// extracting real private key material). Used for every included version except the active
-    /// signing key — see <c>AzureKeyVaultCachedSigningJwtSigningService.LoadKeysAsync</c>'s remarks
-    /// for why only the active key ever needs genuine private key material in process memory.
+    /// extracting real private key material). Called for every included version, including the
+    /// active signing key — its <see cref="SigningKeyDescriptor"/> is always built from this
+    /// public-only source, never from <see cref="GetPrivateKeyMaterialAsync"/>'s result — see
+    /// <c>AzureKeyVaultCachedSigningJwtSigningService.LoadKeysAsync</c>'s remarks for the full
+    /// rationale and for why only the active version's actual <c>SigningKeyPair.PrivateKey</c>
+    /// additionally comes from <see cref="GetPrivateKeyMaterialAsync"/>.
     /// </summary>
     /// <param name="version">The Key Vault certificate version identifier.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>

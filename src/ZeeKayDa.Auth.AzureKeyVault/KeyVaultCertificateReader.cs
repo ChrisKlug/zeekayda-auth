@@ -185,7 +185,7 @@ internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
     /// </summary>
     private (AsymmetricAlgorithm, SigningKeyType) ExtractPublicKey(byte[] cerBytes, string version)
     {
-        using var certificate = X509CertificateLoader.LoadCertificate(cerBytes);
+        using var certificate = LoadCertificate(cerBytes, version);
 
         var rsaPublicKey = certificate.GetRSAPublicKey();
         if (rsaPublicKey is not null)
@@ -196,6 +196,22 @@ internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
             return (ecdsaPublicKey, SigningKeyType.Ec);
 
         throw UnsupportedKeyTypeException(version);
+    }
+
+    private X509Certificate2 LoadCertificate(byte[] cerBytes, string version)
+    {
+        try
+        {
+            return X509CertificateLoader.LoadCertificate(cerBytes);
+        }
+        catch (CryptographicException ex)
+        {
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "signing.azure_key_vault.invalid_certificate_public_key",
+                    $"Key Vault certificate '{_certificateName}' version '{version}' in vault '{_vaultUri}' did " +
+                    $"not contain a valid public certificate (Cer): {ex.Message}"));
+        }
     }
 
     private (AsymmetricAlgorithm, SigningKeyType) ExtractPrivateKey(KeyVaultSecret secret, string version)
@@ -209,6 +225,15 @@ internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
                     $"Key Vault certificate '{_certificateName}' version '{version}' in vault '{_vaultUri}' has " +
                     $"secret content type '{contentType}'. AddAzureKeyVaultCachedSigning only supports PKCS#12 " +
                     $"('{Pkcs12ContentType}') certificates."));
+        }
+
+        if (string.IsNullOrEmpty(secret.Value))
+        {
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "signing.azure_key_vault.invalid_certificate_secret",
+                    $"Key Vault certificate '{_certificateName}' version '{version}' in vault '{_vaultUri}' did " +
+                    "not contain a valid base64-encoded PKCS#12 payload."));
         }
 
         byte[] pfxBytes;
@@ -298,6 +323,14 @@ internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
         {
             rsa.Dispose();
         }
+        catch
+        {
+            // .NET's documented contract is that ImportPkcs8PrivateKey only ever throws
+            // CryptographicException for bad key data, but this handle must never leak
+            // regardless of what actually gets thrown in practice.
+            rsa.Dispose();
+            throw;
+        }
 
         var ecdsa = ECDsa.Create();
         try
@@ -309,6 +342,11 @@ internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
         {
             ecdsa.Dispose();
             throw UnsupportedKeyTypeException(version);
+        }
+        catch
+        {
+            ecdsa.Dispose();
+            throw;
         }
     }
 
@@ -325,6 +363,14 @@ internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
         {
             rsa.Dispose();
         }
+        catch
+        {
+            // .NET's documented contract is that ImportEncryptedPkcs8PrivateKey only ever throws
+            // CryptographicException for bad key data, but this handle must never leak
+            // regardless of what actually gets thrown in practice.
+            rsa.Dispose();
+            throw;
+        }
 
         var ecdsa = ECDsa.Create();
         try
@@ -336,6 +382,11 @@ internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
         {
             ecdsa.Dispose();
             throw UnsupportedKeyTypeException(version);
+        }
+        catch
+        {
+            ecdsa.Dispose();
+            throw;
         }
     }
 
@@ -360,9 +411,10 @@ internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
                     "signing.azure_key_vault.access_denied",
                     $"Access to Key Vault certificate '{_certificateName}' in vault '{_vaultUri}' was denied " +
                     $"(HTTP {ex.Status}" + (ex.ErrorCode is null ? "" : $", ErrorCode: {ex.ErrorCode}") +
-                    "). Verify the configured credential has been granted both 'certificates/get' and " +
-                    "'secrets/get' permissions (via an access policy, or the 'Key Vault Certificate User' " +
-                    "built-in RBAC role) on this vault — downloading a certificate's private key requires both.")),
+                    "). Verify the configured credential has been granted the required permissions (via an " +
+                    "access policy, or the 'Key Vault Certificate User' built-in RBAC role) on this vault: " +
+                    "every included version requires 'certificates/get', and the active signing version " +
+                    "additionally requires 'secrets/get' to download its private key.")),
             _ => new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure(
                     "signing.azure_key_vault.startup_failure",
