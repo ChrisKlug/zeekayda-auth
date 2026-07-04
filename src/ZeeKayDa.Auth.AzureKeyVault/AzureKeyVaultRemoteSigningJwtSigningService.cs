@@ -263,11 +263,8 @@ internal sealed class AzureKeyVaultRemoteSigningJwtSigningService : JwtSigningSe
         // Active goes first — the base class treats index 0 as the active signing key.
         var included = new List<ActivationEntry> { active };
 
-        foreach (var entry in timeline)
+        foreach (var entry in timeline.Where(entry => entry.Version.Version != active.Version.Version))
         {
-            if (entry.Version.Version == active.Version.Version)
-                continue;
-
             // Disabled is an immediate, unconditional exclusion — bypasses the retirement window
             // entirely, so an operator disabling a suspected-compromised key takes effect at once.
             if (!entry.Version.Enabled)
