@@ -1,64 +1,24 @@
 ---
 name: check-formatting
-description: Run dotnet format to verify that the code has been formatted properly
-user-invocable: true
-disable-model-invocation: true
+description: Verify and fix code formatting with dotnet format. Run before opening any PR, and whenever formatting errors are reported by CI or the Stop hook.
 allowed-tools:
-  - dotnet *
+  - Bash(git rev-parse *)
+  - Bash(dotnet format)
+  - Bash(dotnet format *)
 ---
 
-# Run dotnet format
+# Check and Fix Formatting
 
-This skill finds the solution file in the root and runs format on it. If it comes back with errors, it should fix them, and re-run `dotnet format`until there are no more errors
-
----
-
+A Stop hook (`.github/hooks/scripts/check-format.sh`) enforces formatting at the end of every turn — this skill is the fix-it procedure.
 
 ## Steps
 
-### 1. Find the solution file
+1. From the repo root (`git rev-parse --show-toplevel`), run:
 
-Run:
+   ```sh
+   dotnet format --verify-no-changes
+   ```
 
-```sh
-REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
-```
+2. If it exits non-zero, run `dotnet format` to fix the issues, then re-run the verify step.
 
-To find the repo root
-
-### 2. Move to repo root
-
-Run:
-
-```sh
-cd "$REPO_ROOT"
-```
-
-To make the repo root the current working directory
-
-### 3. Run format
-
-Run:
-
-```sh
-if OUTPUT=$(dotnet format --verify-no-changes 2>&1); then
-  exit 0
-fi
-
-REASON=$(printf 'Formatting check failed. Run `dotnet format` to fix the issues before finishing.\n\nOutput:\n%s' "$OUTPUT" | head -c 4000)
-jq -cn --arg reason "$REASON" '{"decision":"block","reason":$reason}'
-```
-
-To see if there are any formatting issues
-
-### 4. If formatting does not return 0
-
-Run:
-
-```sh
-dotnet format
-```
-
-to format the code. 
-
-Then start over at step 1 again until there are no more errors
+3. Repeat until `--verify-no-changes` exits 0.

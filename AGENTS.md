@@ -4,16 +4,20 @@
 
 ZeeKayDa.Auth is an open-source OpenID Connect identity provider framework for .NET. It is designed to be easy to use while being production-grade, spec-compliant, and security-first.
 
+- **Language**: C# / current .NET 10 · **Package format**: NuGet · **Test framework**: xUnit3
+- **Target**: library/framework (not a standalone application)
+- Merge to `main` → publish preview to GitHub Packages (`-preview` suffix); git tag `v*.*.*` → stable release on NuGet.org
+
 ## Governing Specifications
 
-All features and behaviour must be grounded in the relevant specification. When in doubt, the spec wins over convention or convenience.
+All features and behaviour must be grounded in the relevant specification. **The spec always wins** — over convention, convenience, .NET idiom, a specialist agent's output, and your own opinion. Every issue, design decision, and implementation must reference the relevant spec section where applicable.
 
 | Spec | Reference |
 |---|---|
 | OpenID Connect Core 1.0 | https://openid.net/specs/openid-connect-core-1_0.html |
 | OpenID Connect Discovery 1.0 | https://openid.net/specs/openid-connect-discovery-1_0.html |
 | OAuth 2.0 (RFC 6749) | https://www.rfc-editor.org/rfc/rfc6749 |
-| OAuth 2.1 *(draft — follow to extent possible, and ask there are any ambiguity)* | https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/ |
+| OAuth 2.1 *(draft — follow to the extent possible; ask on ambiguity)* | https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/ |
 | OAuth 2.0 Bearer Tokens (RFC 6750) | https://www.rfc-editor.org/rfc/rfc6750 |
 | PKCE (RFC 7636) | https://www.rfc-editor.org/rfc/rfc7636 |
 | JSON Web Token (RFC 7519) | https://www.rfc-editor.org/rfc/rfc7519 |
@@ -22,150 +26,75 @@ All features and behaviour must be grounded in the relevant specification. When 
 | OAuth 2.0 Security Best Current Practice (RFC 9700) | https://www.rfc-editor.org/rfc/rfc9700 |
 | OAuth 2.0 Authorization Server Issuer (RFC 9207) | https://www.rfc-editor.org/rfc/rfc9207 |
 
-Every issue, design decision, and implementation must reference the relevant spec section where applicable.
-
-## Technology Stack
-
-- **Language**: C# / current .NET 10
-- **Package format**: NuGet
-- **Test framework**: xUnit3
-- **Target**: library/framework (not a standalone application)
-- **Specs**: OpenID Connect Core 1.0, OAuth 2.0 (RFC 6749), PKCE (RFC 7636), and related RFCs
-
-## Repository Layout (planned)
+## Repository Layout
 
 ```
 src/
-  ZeeKayDa.Auth/              # Core library
-  ZeeKayDa.Auth.AspNetCore/   # ASP.NET Core integration
-tests/
-  ZeeKayDa.Auth.Tests/
-  ZeeKayDa.Auth.AspNetCore.Tests/
+  ZeeKayDa.Auth/                    # Core library
+  ZeeKayDa.Auth.AspNetCore/         # ASP.NET Core integration
+  ZeeKayDa.Auth.Analyzers/          # Roslyn analyzers
+  ZeeKayDa.Auth.AzureKeyVault/      # Azure Key Vault signing provider
+tests/                              # One test project per src project
 samples/
 docs/
 ```
 
-**Note:** `ZeeKayDa.Auth` has `InternalsVisibleTo` set to allow `ZeeKayDa.Auth.AspNetCore` to access internals. Do not add `public` to types solely to make them accessible from the ASP.NET Core project — use the existing internal visibility instead.
+**Note:** `ZeeKayDa.Auth` has `InternalsVisibleTo` for the other `src/` projects. Do not make types `public` solely for cross-project access — use the existing internal visibility.
 
 ## Project Conventions
 
 - Every change starts with a GitHub issue; no direct commits to `main`
 - Semantic versioning (SemVer) strictly enforced
-- Security issues go through the private security advisory process — never a public issue
-
-## NuGet Publishing
-
-- Merge to `main` → publish to preview feed (GitHub Packages) with `-preview` suffix
-- Git tag `v*.*.*` → publish to NuGet.org as stable release
+- Security issues go through the private security advisory process — **never** a public issue
 
 ## Development Workflow
 
-Work follows six phases. **The main agent is an orchestrator — it routes work and synthesises results. It does not execute phases itself.** Full workflow rules live in each specialist agent's config (`.claude/agents/<agent>.md`)
+Work follows six phases. Phases 1 and 3 run in the main session via the `/write-issue` skill; the rest are delegated to specialist agents.
 
 ```
-1. IDEA      ──►  maintainer   Assess ADR need; write the right issue type.
-2. DESIGN    ──►  architect    Write the ADR doc and open the ADR PR.
-             ──►  security     Threat-model the design; sign off before code is written.
-3. POST-ADR  ──►  maintainer   Create implementation issues from the settled ADR.
-4. BUILD     ──►  developer    Implement against the issue's acceptance criteria.
-             ──►  docs         Write documentation alongside the code.
-5. VERIFY    ──►  tester       Confirm acceptance criteria; write missing tests.
-6. PR        ──►  security     Review any PR touching tokens, crypto, or endpoints.
-             ──►  docs         Gate-check that documentation is complete before merge.
+1. IDEA      ──►  /write-issue   Assess ADR need; write the right issue type.
+2. DESIGN    ──►  architect      Write the ADR doc and open the ADR PR.
+             ──►  security       Threat-model the design; sign off before code is written.
+3. POST-ADR  ──►  /write-issue   Create implementation issues from the settled ADR.
+4. BUILD     ──►  developer      Implement against the issue's acceptance criteria.
+             ──►  docs           Write documentation alongside the code.
+5. VERIFY    ──►  tester         Confirm acceptance criteria; write missing tests.
+6. PR        ──►  security       Review any PR touching tokens, crypto, or endpoints.
+             ──►  docs           Gate-check that documentation is complete before merge.
 ```
-## Agent Orchestration — MAIN ORCHESTRATOR ONLY
 
-> **STOP. If you are a specialist agent (`developer`, `tester`, `architect`, `security`, `docs`, `maintainer`), this section does NOT apply to you. Do not read or act on the routing table below. Execute your own domain work directly and return your results to whoever called you. Delegating to another specialist agent from here creates an infinite loop.**
+After any PR merges, run the `/post-merge-checks` skill.
 
-**The main Claude Code session routes and synthesises. It never does specialist work itself.** Executing a task directly — rather than delegating — bypasses that agent's system prompt, coding standards, and domain rules. The whole point of specialist agents is lost.
+## Routing — MAIN ORCHESTRATOR ONLY
 
-| Task | Agent |
+> **STOP. If you are a specialist agent (`developer`, `tester`, `architect`, `security`, `docs`), this section does not apply to you. Execute your own domain work directly and return your results to whoever called you — never delegate to another specialist from here.**
+
+The main session routes and synthesises; it does not do specialist work itself, because that bypasses the specialist's system prompt and standards. **The threshold for delegation is low** — task *type* determines the route, not size. A one-line C# fix still goes to `developer`; a docs typo still goes to `docs`. You do not need to inspect the code before delegating — pick the route and hand it off with enough context from the conversation.
+
+| Task | Route |
 |---|---|
-| Writing or changing C# code (features, bug fixes, refactors, tests) | `developer` |
-| Designing abstractions, reviewing API shape, writing ADRs | `architect` |
-| Writing or updating Markdown documentation | `docs` |
-| Security review, threat modelling, OAuth/OIDC correctness | `security` |
-| Writing or verifying tests, checking acceptance criteria | `tester` |
-| GitHub issues, triage, PR management, project process | `maintainer` |
+| Writing or changing C# code (features, bug fixes, refactors) | `developer` agent |
+| Designing abstractions, API shape, writing ADRs | `architect` agent |
+| Writing or updating Markdown documentation | `docs` agent |
+| Security review, threat modelling, OAuth/OIDC correctness | `security` agent |
+| Writing or verifying tests, checking acceptance criteria | `tester` agent |
+| GitHub issues, triage, epics, sub-issue linking | `/write-issue` skill (main session) |
+| After a PR merges | `/post-merge-checks` skill (main session) |
+| Reviewing a branch or PR other than the current checkout | `/review-branch` skill, then the right review agent |
 
-> The main Claude Code session does **NOT** need to inspect the code before delegating work. It **only** needs to figure out what specialist agent is the best choice for the current task, and then delegate it. The specialist handles all things is needs on its own!
+If no route fits, tell the user and ask for guidance — it might be a gap in the process.
 
-**Specialist vs specs.** If there is a conflict between the output of a specialist and a spec, the spec always wins!
+## Deferred tools
 
-**The threshold for delegation is low.** A one-line C# fix still goes to `developer`. A simple new issue still goes to `maintainer`. A docs typo still goes to `docs`. Task type determines the agent — not complexity or size.
-
-When in doubt which agent applies, read the `description` field in `.claude/agents/<agent>.md` — it states exactly when to invoke that agent.
-
-**Missing specialist.** If no specialist seems to fit that is is needed, let the user know and ask for guidance. It might be a gap in the process!
-
-## AGENT TOOL INITIALIZATION REQUIREMENT
-If you are operating as a subagent, your initial context does NOT contain your full toolset due to deferred tool loading. You cannot execute file writes or web searches immediately.
-
-CRITICAL STEPS:
-1. Before performing any task analysis, you MUST invoke the `ToolSearch` or `Agent` mechanism to search for the tools required for this objective (e.g., search for "write_file", "view_file", "WebSearch").
-2. Do not attempt to guess tool parameters until you have explicitly queried and loaded the tool definition into your active session.
-3. If tool execution fails with a missing tool error, report the exact schema you need to the parent agent immediately instead of hallucinating a solution.
-
-## Auditing and Code Review
-
-Before reviewing any code, identify the correct branch that contains the changes to be reviewed — this may be `main`, a feature branch, or a PR branch. Do not assume the currently checked-out branch is correct.
-
-**Workflow:**
-1. Identify the target branch (ask the user if unclear — e.g. "which branch / PR should I review?")
-2. Create a worktree for it: `git worktree add <path> <branch>`
-3. Do all review work inside the worktree
-4. Remove the worktree when done: `git worktree remove <path>`
-
-Reviewing a stale or unrelated branch produces false negatives — changes that are already implemented appear missing. Always confirm the right branch first.
+Some tools (e.g. `LSP`, `WebFetch`) may arrive deferred — the schema is not loaded and calling them fails with `InputValidationError`. Load such a tool once with `ToolSearch("select:<ToolName>")` before its first call; don't guess parameters from memory. If it still fails after that, report the exact error to whoever called you instead of silently working around it.
 
 ## Code navigation
 
-**Always** prefer LSP over Grep/Glob/Read for code navigation.
-
-**Important!** LSP is a deferred tool — its schema is not pre-loaded. Before making any LSP call, you must load it first:
-```
-ToolSearch("select:LSP")
-```
-Calling LSP without doing this first will fail with `InputValidationError`. Do this once at the start of any session where you need code navigation.
-
-Capabilities to use:
-- `goToDefinition` / `goToImplementation` to jump to source
-- `findReferences` to see all usages across the codebase
-- `workspaceSymbol` to find where something is defined
-- `documentSymbol` to list all symbols in a file
-- `hover` for type info without reading the file
-- `incomingCalls` / `outgoingCalls` for call hierarchy
-
-Before renaming or changing a function signature, use `findReferences` to find all call sites first.
-
-Use Grep/Glob only for text/pattern searches (comments, strings, config values) where LSP doesn't help.
-
-After writing or editing code, check LSP diagnostics before moving on. Fix any type errors or missing imports immediately.
-
-**Important!** If the LSP seems to be giving you stale information, use the `/restart-lsp` skill to restart the LSP before starting to use `bash` and `grep`
-
-And just to make it clear, this is **REALLY** important! Stop using `grep` unless you have to!!!
-
-## Opinion vs spec
-
-If there is a conflict between your opnion and a spec, the spec always wins! This project needs to follow specs properly, so if the spec says something that you don't agree with, it **still wins**!
+Prefer the LSP tool over text search for symbol-level navigation (definitions, references, symbols, call hierarchy); use text search only for strings, comments, and config values. If LSP gives stale results, run `/restart-lsp`. If LSP is unavailable and restarting doesn't fix it, say so explicitly and wait for guidance rather than silently falling back.
 
 ## User Interaction
 
-**VERY IMPORTANT!** Always adhere to these principles!
-
-### Ask before deciding
-
-It is of utmost importance that you do not make decisions that stem from ambiguous information. If there are any questions that arise, it is always better to ask than to build something that is not what is needed. There is always a human in the loop. Ask them.
-
-### Never fabricate facts, specs, or API details
-
-> **Never fabricate, invent, or guess factual information.**
->
-> If you are uncertain, stop and ask the user rather than inferring something and presenting it as established fact. Ask before deciding, and ask before asserting.
-
-### Never commit or push code without approval
-
->**Never commit or push code without explicit approval from the user.** 
->
->Always let the user know that changes are ready for review and wait for their confirmation before running `git commit` or `git push`.
+- **Be terse.** Short, precise answers; no progress narration; the user will ask if they need more.
+- **Ask before deciding.** Never resolve ambiguity by guessing. In the main session, ask the user. In a specialist agent, return the open question as your result — the orchestrator will route it.
+- **Never fabricate** facts, spec content, or API details. If uncertain, say so and ask.
+- **Never commit or push without explicit approval.** Report that changes are ready for review and wait for confirmation before `git commit` or `git push`.
