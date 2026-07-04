@@ -9,7 +9,7 @@ allowed-tools:
 
 # Check and Fix Formatting
 
-A Stop hook (`.github/hooks/scripts/check-format.sh`) enforces formatting at the end of every turn — this skill is the fix-it procedure.
+A Stop hook (`.claude/hooks/scripts/check-format.sh`) enforces formatting at the end of every turn — this skill is the fix-it procedure.
 
 ## Steps
 

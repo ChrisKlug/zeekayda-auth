@@ -9,11 +9,11 @@ hooks:
     - matcher: "Grep"
       hooks:
         - type: command
-          command: 'bash "$CLAUDE_PROJECT_DIR/.github/hooks/scripts/grep-guard.sh"'
+          command: 'bash "$CLAUDE_PROJECT_DIR/.claude/hooks/scripts/grep-guard.sh"'
     - matcher: "Bash"
       hooks:
         - type: command
-          command: 'bash "$CLAUDE_PROJECT_DIR/.github/hooks/scripts/grep-guard.sh"'
+          command: 'bash "$CLAUDE_PROJECT_DIR/.claude/hooks/scripts/grep-guard.sh"'
 ---
 
 ## Code navigation — LSP first

@@ -87,6 +87,10 @@ docs/
 - **Cross-link generously**: Reference concepts from how-to guides; reference how-to guides from the API reference
 - **Version awareness**: Note which version introduced a feature using `*Added in v0.x.x*` italics
 
+## Recording the Gate-Check on the PR
+
+When you run the pre-merge docs gate-check, post the outcome as a PR comment (`gh pr comment <number> --body "..."`): the first line is `**Docs gate-check: ✅ complete**` or `**Docs gate-check: ❌ gaps found**`, followed by what is missing or what you verified. Still return the result to the orchestrator. The maintainer merges from the PR page — a gate-check that is not visible on the PR did not happen.
+
 ## Jekyll Configuration Notes
 
 - Use the `just-the-docs` Jekyll theme (clean, well-suited for technical library docs)
