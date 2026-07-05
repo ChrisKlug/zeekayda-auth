@@ -395,11 +395,7 @@ public sealed class AzureKeyVaultCachedSigningJwtSigningServiceTests
         // v0 is the active version, so real private key material has already been downloaded and
         // extracted for it (via GetPrivateKeyMaterialAsync) by the time v1's public-key-only
         // download (via GetPublicKeyMaterialAsync — v1 is published but not yet active) fails. The
-        // base class must not leak v0's live private key handle — the failure must still propagate
-        // cleanly to the caller either way (disposal is exercised via ObjectDisposedException NOT
-        // being masked by some other error if the reader itself misbehaves, but the core, directly
-        // assertable contract from the caller's point of view is that the original failure
-        // propagates unchanged).
+        // base class must not leak v0's live private key handle.
         var ct = TestContext.Current.CancellationToken;
         var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
         var reader = new FakeKeyVaultCertificateReader();
@@ -407,14 +403,24 @@ public sealed class AzureKeyVaultCachedSigningJwtSigningServiceTests
         reader.AddRsaVersion("v0", createdOn: t0 - TimeSpan.FromDays(1));
         reader.SetPublicKeyException("v1", new ZeeKayDaConfigurationException(
             new ZeeKayDaConfigurationFailure("signing.azure_key_vault.access_denied", "Simulated failure for v1.")));
+        AsymmetricAlgorithm? capturedKey = null;
+        reader.OnPrivateKeyExtracted = (version, key) =>
+        {
+            if (version == "v0")
+                capturedKey = key;
+        };
         var timeProvider = new FakeTimeProvider(t0);
 
         await using var sut = BuildService(reader, timeProvider);
 
         var act = async () => await sut.GetSigningKeysAsync(ct);
-
         (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
             .WithMessage("*access_denied*");
+
+        capturedKey.Should().NotBeNull();
+        var useAfterFailure = () => ((RSA)capturedKey!).ExportParameters(includePrivateParameters: false);
+        useAfterFailure.Should().Throw<ObjectDisposedException>(
+            "v0's already-downloaded active private key handle must not be leaked when v1's later load fails");
     }
 
     [Fact]
@@ -541,14 +547,20 @@ public sealed class AzureKeyVaultCachedSigningJwtSigningServiceTests
         reader.SetPrivateKeyException("v1", new ZeeKayDaConfigurationException(
             new ZeeKayDaConfigurationFailure(
                 "signing.azure_key_vault.access_denied", "Simulated private-key download failure for v1.")));
+        AsymmetricAlgorithm? capturedKey = null;
+        reader.OnPublicKeyExtracted = (_, key) => capturedKey = key;
         var timeProvider = new FakeTimeProvider(t0);
 
         await using var sut = BuildService(reader, timeProvider);
 
         var act = async () => await sut.GetSigningKeysAsync(ct);
-
         (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
             .WithMessage("*access_denied*");
+
+        capturedKey.Should().NotBeNull();
+        var useAfterFailure = () => ((RSA)capturedKey!).ExportParameters(includePrivateParameters: false);
+        useAfterFailure.Should().Throw<ObjectDisposedException>(
+            "the public-only key handle used to build the active version's descriptor must not be leaked when the subsequent private-key download fails");
     }
 
     // ── AC #1: private key downloaded once and cached — no reader call per sign ─────────────────
