@@ -15,7 +15,7 @@ namespace ZeeKayDa.Auth.AzureKeyVault;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Combines the two behaviors that <c>AzureKeyVaultSigningStartupActivator</c> (pre-warm only) and
+/// Combines the two behaviors that <c>AzureKeyVaultRemoteSigningStartupService</c> (pre-warm only) and
 /// <c>DevelopmentSigningKeyWarningService</c> (startup log only) each provide separately for the
 /// other two signing providers, because this provider needs both: pre-warming (common to every
 /// Key Vault provider) and a visible log line recording where the private key now lives (specific
