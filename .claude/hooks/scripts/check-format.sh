@@ -31,7 +31,11 @@ if [ "${#FILES[@]}" -eq 0 ]; then
   exit 0
 fi
 
-if OUTPUT=$(dotnet format --verify-no-changes --include "${FILES[@]}" 2>&1); then
+# Explicit solution path required: alongside ZeeKayDa.Auth.slnx, the repo now also carries
+# per-OS solution filters (ZeeKayDa.Auth.{Windows,MacOS,Linux}.slnf, see ci.yml) that
+# `dotnet format`'s auto-discovery treats as additional candidate solution files, causing a
+# "Multiple MSBuild solution files found" error when no path is given.
+if OUTPUT=$(dotnet format ZeeKayDa.Auth.slnx --verify-no-changes --include "${FILES[@]}" 2>&1); then
   exit 0
 fi
 

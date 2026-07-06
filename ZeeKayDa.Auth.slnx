@@ -2,11 +2,13 @@
   <Folder Name="/src/">
     <Project Path="src/ZeeKayDa.Auth.AspNetCore/ZeeKayDa.Auth.AspNetCore.csproj" />
     <Project Path="src/ZeeKayDa.Auth.AzureKeyVault/ZeeKayDa.Auth.AzureKeyVault.csproj" />
+    <Project Path="src/ZeeKayDa.Auth.Windows/ZeeKayDa.Auth.Windows.csproj" />
     <Project Path="src/ZeeKayDa.Auth/ZeeKayDa.Auth.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/ZeeKayDa.Auth.AspNetCore.Tests/ZeeKayDa.Auth.AspNetCore.Tests.csproj" />
     <Project Path="tests/ZeeKayDa.Auth.AzureKeyVault.Tests/ZeeKayDa.Auth.AzureKeyVault.Tests.csproj" />
+    <Project Path="tests/ZeeKayDa.Auth.Windows.Tests/ZeeKayDa.Auth.Windows.Tests.csproj" />
     <Project Path="tests/ZeeKayDa.Auth.Tests/ZeeKayDa.Auth.Tests.csproj" />
   </Folder>
 </Solution>

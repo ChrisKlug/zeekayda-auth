@@ -113,8 +113,8 @@ package. Platform-specific packages may also carry platform-specific CI requirem
 runners for the Certificate Store tests, macOS runners for Keychain tests) that are isolated within
 the relevant package project.
 
-Each OS-level package targets the platform-specific TFM (`net9.0-windows`, `net9.0-macos`,
-`net9.0-linux`). NuGet rejects the reference at restore time if the consuming project's TFM does
+Each OS-level package targets the platform-specific TFM (`net10.0-windows`, `net10.0-macos`,
+`net10.0-linux`). NuGet rejects the reference at restore time if the consuming project's TFM does
 not match, producing a build-time failure rather than a runtime surprise. A portable project has
 no business depending on a platform-specific signing store.
 
