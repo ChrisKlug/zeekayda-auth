@@ -102,7 +102,7 @@ public sealed class WindowsCertificateKeyExtractorTests
     public void ExtractPublicKey_handle_remains_usable_after_the_parent_certificate_is_disposed()
     {
         using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
-        using var publicKey = WindowsCertificateKeyExtractor.ExtractPublicKey(certificate, "AABBCC").publicKey;
+        using var publicKey = WindowsCertificateKeyExtractor.ExtractPublicKey(certificate, "AABBCC").PublicKey;
 
         certificate.Dispose();
 

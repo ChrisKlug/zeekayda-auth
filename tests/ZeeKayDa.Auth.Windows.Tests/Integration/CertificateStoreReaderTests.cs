@@ -108,8 +108,22 @@ public sealed class CertificateStoreReaderTests
         using var installed = new InstalledTestCertificate(testCertificate);
         var reader = new CertificateStoreReader();
 
-        using var found = reader.GetCertificate(ThumbprintFormat.Normalize(installed.Thumbprint), StoreLocation.CurrentUser, StoreName.My);
-        var (privateKey, keyType) = WindowsCertificateKeyExtractor.ExtractPrivateKey(found, installed.Thumbprint);
+        var found = reader.GetCertificate(ThumbprintFormat.Normalize(installed.Thumbprint), StoreLocation.CurrentUser, StoreName.My);
+        AsymmetricAlgorithm privateKey;
+        SigningKeyType keyType;
+        try
+        {
+            (privateKey, keyType) = WindowsCertificateKeyExtractor.ExtractPrivateKey(found, installed.Thumbprint);
+        }
+        finally
+        {
+            // Disposed here, deliberately before privateKey is used below - not deferred to the end
+            // of the method via `using var` - since the entire point of this test is to prove
+            // privateKey remains usable after its parent certificate is disposed. Deferring
+            // disposal to method exit would make the "signs correctly after disposal" assertion
+            // below vacuous, since `found` would still be alive when SignData runs.
+            found.Dispose();
+        }
 
         keyType.Should().Be(SigningKeyType.Rsa);
         var payload = "windows-certificate-store-signing-provider"u8.ToArray();
