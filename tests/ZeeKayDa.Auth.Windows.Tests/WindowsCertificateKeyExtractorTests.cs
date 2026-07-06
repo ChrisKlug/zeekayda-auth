@@ -76,7 +76,7 @@ public sealed class WindowsCertificateKeyExtractorTests
     public void ExtractPrivateKey_EC_handle_remains_usable_after_the_parent_certificate_is_disposed()
     {
         IDisposable? privateKey = null;
-        using var certificate = TestCertificateFactory.CreateEcSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+        var certificate = TestCertificateFactory.CreateEcSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
         try
         {
             (privateKey, _) = WindowsCertificateKeyExtractor.ExtractPrivateKey(certificate, "AABBCC");

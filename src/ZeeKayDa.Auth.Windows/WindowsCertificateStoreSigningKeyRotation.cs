@@ -157,14 +157,10 @@ internal static class WindowsCertificateStoreSigningKeyRotation
         if (timeline.Count < 2)
             return false;
 
-        foreach (var entry in timeline)
+        foreach (var entry in timeline.Where(entry =>
+            !string.Equals(entry.Certificate.Thumbprint, active.Certificate.Thumbprint, StringComparison.Ordinal) &&
+            entry.ActivatesAt > now))
         {
-            if (string.Equals(entry.Certificate.Thumbprint, active.Certificate.Thumbprint, StringComparison.Ordinal))
-                continue;
-
-            if (entry.ActivatesAt <= now)
-                continue;
-
             if (soonestPending is not { } current || entry.ActivatesAt < current.ActivatesAt)
                 soonestPending = entry;
         }
