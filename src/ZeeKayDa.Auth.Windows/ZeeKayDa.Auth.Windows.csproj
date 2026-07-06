@@ -2,7 +2,6 @@
 
   <PropertyGroup>
     <TargetFramework>net10.0-windows</TargetFramework>
-    <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <PackageId>ZeeKayDa.Auth.Windows</PackageId>
     <Description>Windows Certificate Store JWT signing provider for ZeeKayDa.Auth: loads X.509 certificates by thumbprint from the Windows Certificate Store and signs locally.</Description>
   </PropertyGroup>

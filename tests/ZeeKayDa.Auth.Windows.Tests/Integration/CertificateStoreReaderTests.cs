@@ -4,7 +4,9 @@
 // the one combination that never requires elevated/admin rights, so it works unattended on a
 // Windows CI runner.
 
+using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using ZeeKayDa.Auth.Tokens;
 using ZeeKayDa.Auth.Windows.Tests.Fixtures;
 
 namespace ZeeKayDa.Auth.Windows.Tests.Integration;
@@ -80,6 +82,45 @@ public sealed class CertificateStoreReaderTests
             .WithMessage($"*{missingThumbprint}*")
             .WithMessage("*My*")
             .WithMessage("*CurrentUser*");
+    }
+
+    // ── Real store-backed handle-outlives-certificate contract (security review informational #2) ──
+    // WindowsCertificateKeyExtractorTests proves the general BCL contract (an extracted handle
+    // survives disposing its parent certificate) cross-platform, against in-memory
+    // CertificateRequest.CreateSelfSigned certificates. This test proves the same contract holds for
+    // the actual production code path this provider depends on: a certificate installed into a real
+    // Windows Certificate Store, read back via CertificateStoreReader (which returns an independent
+    // copy per GetCertificate's own contract), with its private key extracted and the returned
+    // certificate then disposed before the extracted handle is used to sign — exactly the sequence
+    // WindowsCertificateStoreSigningJwtSigningService.LoadKeysAsync performs. Running this on the
+    // windows-latest CI runner automates the security-critical part of what would otherwise be a
+    // manual smoke test.
+    [Fact]
+    public void GetCertificate_extracted_private_key_handle_signs_correctly_after_the_returned_certificate_is_disposed()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "requires a real Windows Certificate Store");
+
+        // InstalledTestCertificate's constructor disposes the certificate passed into it (as part of
+        // its own PFX-round-trip fix), so capture the public key parameters up front rather than
+        // holding a reference to that certificate for later verification.
+        using var testCertificate = TestCertificateFactory.CreateRsaSelfSigned("windows-cert-store-sign-test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+        var publicParameters = testCertificate.GetRSAPublicKey()!.ExportParameters(includePrivateParameters: false);
+        using var installed = new InstalledTestCertificate(testCertificate);
+        var reader = new CertificateStoreReader();
+
+        var found = reader.GetCertificate(ThumbprintFormat.Normalize(installed.Thumbprint), StoreLocation.CurrentUser, StoreName.My);
+        var (privateKey, keyType) = WindowsCertificateKeyExtractor.ExtractPrivateKey(found, installed.Thumbprint);
+        found.Dispose();
+
+        keyType.Should().Be(SigningKeyType.Rsa);
+        var payload = "windows-certificate-store-signing-provider"u8.ToArray();
+        var signature = ((RSA)privateKey).SignData(payload, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        privateKey.Dispose();
+
+        using var publicRsa = RSA.Create();
+        publicRsa.ImportParameters(publicParameters);
+        publicRsa.VerifyData(payload, signature, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)
+            .Should().BeTrue("the signature produced by the handle extracted from a real store-backed certificate, after that certificate was disposed, must verify against the original certificate's public key");
     }
 
     [Fact]

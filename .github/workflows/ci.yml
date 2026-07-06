@@ -41,14 +41,28 @@ jobs:
         with:
           global-json-file: global.json
 
+      # Platform-specific provider packages (ZeeKayDa.Auth.Windows today; macOS Keychain #290 and
+      # Linux PEM #291 are planned per ADR 0012) have no business being built or tested on any OS
+      # but their own. ZeeKayDa.Auth.slnx remains the single canonical solution — these are thin
+      # solution *filters* (no duplicated project metadata) selecting which projects apply to each
+      # runner OS, so a package never gets pulled onto the wrong platform's leg.
+      - name: Select solution
+        shell: bash
+        run: |
+          case "${{ runner.os }}" in
+            Windows) echo "SOLUTION=ZeeKayDa.Auth.Windows.slnf" >> "$GITHUB_ENV" ;;
+            macOS)   echo "SOLUTION=ZeeKayDa.Auth.MacOS.slnf" >> "$GITHUB_ENV" ;;
+            Linux)   echo "SOLUTION=ZeeKayDa.Auth.Linux.slnf" >> "$GITHUB_ENV" ;;
+          esac
+
       - name: Restore
-        run: dotnet restore
+        run: dotnet restore ${{ env.SOLUTION }}
 
       - name: Build
-        run: dotnet build --no-restore --configuration Release
+        run: dotnet build ${{ env.SOLUTION }} --no-restore --configuration Release
 
       - name: Test
-        run: dotnet test --no-build --configuration Release --collect:"XPlat Code Coverage" --results-directory ./TestResults
+        run: dotnet test ${{ env.SOLUTION }} --no-build --configuration Release --collect:"XPlat Code Coverage" --results-directory ./TestResults
 
       - name: Upload coverage-${{ matrix.os }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -199,7 +213,13 @@ jobs:
         run: dotnet restore
 
       - name: Check formatting
-        run: dotnet format --verify-no-changes
+        # Explicit path required: with the per-OS ZeeKayDa.Auth.*.slnf filters alongside
+        # ZeeKayDa.Auth.slnx, `dotnet format`'s auto-discovery (unlike restore/build/test, which
+        # ignore .slnf files when no path is given) sees multiple candidate solution files and
+        # errors. ZeeKayDa.Auth.slnx is the canonical, unfiltered solution, so it's the right one
+        # to format-check in full — this job runs on ubuntu-latest only and, unlike execution/tests,
+        # formatting analysis of ZeeKayDa.Auth.Windows's source builds and checks fine cross-platform.
+        run: dotnet format ZeeKayDa.Auth.slnx --verify-no-changes
 
   ci-complete:
     name: CI Complete

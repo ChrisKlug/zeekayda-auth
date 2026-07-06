@@ -1,0 +1,13 @@
+{
+  "solution": {
+    "path": "ZeeKayDa.Auth.slnx",
+    "projects": [
+      "src/ZeeKayDa.Auth/ZeeKayDa.Auth.csproj",
+      "src/ZeeKayDa.Auth.AspNetCore/ZeeKayDa.Auth.AspNetCore.csproj",
+      "src/ZeeKayDa.Auth.AzureKeyVault/ZeeKayDa.Auth.AzureKeyVault.csproj",
+      "tests/ZeeKayDa.Auth.Tests/ZeeKayDa.Auth.Tests.csproj",
+      "tests/ZeeKayDa.Auth.AspNetCore.Tests/ZeeKayDa.Auth.AspNetCore.Tests.csproj",
+      "tests/ZeeKayDa.Auth.AzureKeyVault.Tests/ZeeKayDa.Auth.AzureKeyVault.Tests.csproj"
+    ]
+  }
+}
