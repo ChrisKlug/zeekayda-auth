@@ -1,3 +1,5 @@
+using System.Linq;
+
 namespace ZeeKayDa.Auth.Windows;
 
 /// <summary>
@@ -106,10 +108,11 @@ internal static class WindowsCertificateStoreSigningKeyRotation
             return IsEligibleAt(timeline[0].Certificate, now) ? timeline[0] : null;
 
         ActivationEntry? active = null;
-        foreach (var entry in timeline)
+        foreach (var entry in System.Linq.Enumerable.Where(
+            timeline,
+            entry => entry.ActivatesAt <= now && IsEligibleAt(entry.Certificate, now)))
         {
-            if (entry.ActivatesAt <= now && IsEligibleAt(entry.Certificate, now))
-                active = entry;
+            active = entry;
         }
 
         return active;
@@ -125,11 +128,9 @@ internal static class WindowsCertificateStoreSigningKeyRotation
     {
         var included = new List<ActivationEntry> { active };
 
-        foreach (var entry in timeline)
+        foreach (var entry in timeline.Where(entry =>
+            !string.Equals(entry.Certificate.Thumbprint, active.Certificate.Thumbprint, StringComparison.Ordinal)))
         {
-            if (string.Equals(entry.Certificate.Thumbprint, active.Certificate.Thumbprint, StringComparison.Ordinal))
-                continue;
-
             var notYetActive = entry.ActivatesAt > now;
             var stillWithinRetirementWindow = entry.RetiredAt is { } retiredAt && now - retiredAt <= retirementWindow;
 
