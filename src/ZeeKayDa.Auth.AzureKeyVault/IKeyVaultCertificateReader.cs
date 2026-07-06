@@ -84,4 +84,4 @@ internal readonly record struct KeyVaultCertificateVersionInfo(
     bool Enabled,
     DateTimeOffset CreatedOn,
     DateTimeOffset? NotBefore,
-    DateTimeOffset? ExpiresOn);
+    DateTimeOffset? ExpiresOn) : IKeyVaultVersionInfo;

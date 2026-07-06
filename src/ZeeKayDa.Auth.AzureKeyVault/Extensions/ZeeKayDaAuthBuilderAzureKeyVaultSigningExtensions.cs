@@ -103,7 +103,7 @@ public static class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensions
         builder.Services.TryAddSingleton<IKeyVaultKeyReader, KeyVaultKeyReader>();
         builder.Services.TryAddSingleton<IKeyVaultSigner, KeyVaultSigner>();
         builder.Services.AddSingleton<IJwtSigningService, AzureKeyVaultRemoteSigningJwtSigningService>();
-        builder.Services.AddHostedService<AzureKeyVaultSigningStartupActivator>();
+        builder.Services.AddHostedService<AzureKeyVaultRemoteSigningStartupService>();
 
         return builder;
     }

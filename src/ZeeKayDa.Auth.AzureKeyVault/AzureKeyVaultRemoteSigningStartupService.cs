@@ -17,11 +17,11 @@ namespace ZeeKayDa.Auth.AzureKeyVault;
 /// on <see cref="JwtSigningService{TOptions}"/> is otherwise entirely lazy — nothing else forces it
 /// to run before the first signing or JWKS request.
 /// </remarks>
-internal sealed class AzureKeyVaultSigningStartupActivator : IHostedService
+internal sealed class AzureKeyVaultRemoteSigningStartupService : IHostedService
 {
     private readonly IJwtSigningService _signingService;
 
-    public AzureKeyVaultSigningStartupActivator(IJwtSigningService signingService)
+    public AzureKeyVaultRemoteSigningStartupService(IJwtSigningService signingService)
     {
         ArgumentNullException.ThrowIfNull(signingService);
         _signingService = signingService;

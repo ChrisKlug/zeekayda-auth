@@ -161,7 +161,7 @@ public sealed class AzureKeyVaultRemoteSigningIntegrationTests
     // ── Startup activator ─────────────────────────────────────────────────────────────────────────
     // A full Microsoft.Extensions.Hosting generic host was considered here (per the plan) but adds
     // disproportionate scaffolding (a new package reference just for this test project) for the
-    // value it provides over exercising AzureKeyVaultSigningStartupActivator.StartAsync directly,
+    // value it provides over exercising AzureKeyVaultRemoteSigningStartupService.StartAsync directly,
     // which is exactly what the generic host would end up calling anyway. Constructing and calling
     // the activator directly, with a signing service that fails to load its keys, is a simpler and
     // equally faithful way to prove that a configuration fault aborts "startup" (StartAsync).
@@ -189,7 +189,7 @@ public sealed class AzureKeyVaultRemoteSigningIntegrationTests
             new FakeRetirementWindowProvider(TimeSpan.FromHours(1)),
             NullSanitizingLogger<AzureKeyVaultRemoteSigningJwtSigningService>.Instance);
 
-        var activator = new AzureKeyVaultSigningStartupActivator(signingService);
+        var activator = new AzureKeyVaultRemoteSigningStartupService(signingService);
 
         var act = async () => await activator.StartAsync(ct);
 
@@ -221,7 +221,7 @@ public sealed class AzureKeyVaultRemoteSigningIntegrationTests
             new FakeRetirementWindowProvider(TimeSpan.FromHours(1)),
             NullSanitizingLogger<AzureKeyVaultRemoteSigningJwtSigningService>.Instance);
 
-        var activator = new AzureKeyVaultSigningStartupActivator(signingService);
+        var activator = new AzureKeyVaultRemoteSigningStartupService(signingService);
 
         var act = async () => await activator.StartAsync(ct);
 

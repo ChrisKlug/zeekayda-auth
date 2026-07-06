@@ -1,4 +1,3 @@
-using System.Linq;
 using System.Security.Cryptography;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -113,9 +112,9 @@ internal sealed class AzureKeyVaultCachedSigningJwtSigningService : JwtSigningSe
         }
 
         var now = _timeProvider.GetUtcNow();
-        var timeline = BuildActivationTimeline(allVersions, _options.Value.RefreshInterval);
+        var timeline = KeyVaultSigningKeyRotation.BuildActivationTimeline(allVersions, _options.Value.RefreshInterval);
 
-        var active = SelectActiveVersion(timeline, now) ?? throw new ZeeKayDaConfigurationException(
+        var active = KeyVaultSigningKeyRotation.SelectActiveVersion(timeline, now) ?? throw new ZeeKayDaConfigurationException(
             new ZeeKayDaConfigurationFailure(
                 "signing.azure_key_vault.no_active_key",
                 $"No enabled, time-eligible version of Key Vault certificate '{certificateIdentifier.Name}' in " +
@@ -123,7 +122,7 @@ internal sealed class AzureKeyVaultCachedSigningJwtSigningService : JwtSigningSe
                 "least one enabled version whose NotBefore/ExpiresOn window includes the current time."));
 
         var retirementWindow = _retirementWindowProvider.GetRetirementWindow();
-        var included = SelectIncludedVersions(timeline, active, now, retirementWindow);
+        var included = KeyVaultSigningKeyRotation.SelectIncludedVersions(timeline, active, now, retirementWindow);
 
         var keyPairs = new List<SigningKeyPair>(included.Count);
         var newKidVersions = new Dictionary<string, string>(included.Count, StringComparer.Ordinal);
@@ -145,7 +144,12 @@ internal sealed class AzureKeyVaultCachedSigningJwtSigningService : JwtSigningSe
                 SigningKeyDescriptor descriptor;
                 try
                 {
-                    descriptor = BuildDescriptor(publicKey, keyType, _options.Value.Algorithm);
+                    descriptor = KeyVaultSigningKeyDescriptorFactory.BuildDescriptor(
+                        publicKey,
+                        keyType,
+                        _options.Value.Algorithm,
+                        nameof(AzureKeyVaultCachedSigningOptions),
+                        "Key Vault certificate key");
                 }
                 catch
                 {
@@ -215,175 +219,12 @@ internal sealed class AzureKeyVaultCachedSigningJwtSigningService : JwtSigningSe
         return new SigningKeySet(keyPairs);
     }
 
-    private static List<ActivationEntry> BuildActivationTimeline(
-        IReadOnlyList<KeyVaultCertificateVersionInfo> allVersions, TimeSpan refreshInterval)
-    {
-        var firstEverVersion = allVersions
-            .OrderBy(v => v.CreatedOn)
-            .ThenBy(v => v.Version, StringComparer.Ordinal)
-            .First()
-            .Version;
-
-        // See AzureKeyVaultRemoteSigningJwtSigningService.BuildActivationTimeline for the full
-        // derivation and rationale — the algorithm is identical here, applied to certificate
-        // versions instead of key versions.
-        var ordered = allVersions
-            .Select(v => new
-            {
-                Version = v,
-                ActivatesAt = Max(
-                    v.Version == firstEverVersion ? v.CreatedOn : v.CreatedOn + refreshInterval,
-                    v.NotBefore ?? DateTimeOffset.MinValue),
-            })
-            .OrderBy(x => x.ActivatesAt)
-            .ThenBy(x => x.Version.CreatedOn)
-            .ThenBy(x => x.Version.Version, StringComparer.Ordinal)
-            .ToList();
-
-        var entries = new ActivationEntry[ordered.Count];
-        DateTimeOffset? nextEligibleSuccessorActivatesAt = null;
-        for (var i = ordered.Count - 1; i >= 0; i--)
-        {
-            entries[i] = new ActivationEntry(ordered[i].Version, ordered[i].ActivatesAt, nextEligibleSuccessorActivatesAt);
-
-            if (IsEligibleAt(ordered[i].Version, ordered[i].ActivatesAt))
-                nextEligibleSuccessorActivatesAt = ordered[i].ActivatesAt;
-        }
-
-        return [.. entries];
-    }
-
-    private static ActivationEntry? SelectActiveVersion(IReadOnlyList<ActivationEntry> ascendingTimeline, DateTimeOffset now)
-    {
-        // The timeline is sorted ascending by ActivatesAt, so the last eligible match encountered
-        // while scanning forward is always the one with the greatest ActivatesAt <= now.
-        ActivationEntry? active = null;
-        foreach (var entry in ascendingTimeline.Where(entry => entry.ActivatesAt <= now && IsEligibleAt(entry.Version, now)))
-        {
-            active = entry;
-        }
-
-        return active;
-    }
-
-    private static List<ActivationEntry> SelectIncludedVersions(
-        IReadOnlyList<ActivationEntry> timeline, ActivationEntry active, DateTimeOffset now, TimeSpan retirementWindow)
-    {
-        // Active goes first — the base class treats index 0 as the active signing key.
-        var included = new List<ActivationEntry> { active };
-
-        foreach (var entry in timeline
-            .Where(entry => entry.Version.Version != active.Version.Version)
-            // Disabled is an immediate, unconditional exclusion — bypasses the retirement window
-            // entirely, so an operator disabling a suspected-compromised certificate takes effect
-            // at once.
-            .Where(entry => entry.Version.Enabled))
-        {
-            var notYetActive = entry.ActivatesAt > now;
-            var stillWithinRetirementWindow = entry.RetiredAt is { } retiredAt && now - retiredAt <= retirementWindow;
-
-            if (notYetActive || stillWithinRetirementWindow)
-                included.Add(entry);
-        }
-
-        return included;
-    }
-
-    private static bool IsEligibleAt(KeyVaultCertificateVersionInfo version, DateTimeOffset pointInTime) =>
-        version.Enabled
-        && (version.NotBefore is not { } notBefore || notBefore <= pointInTime)
-        && (version.ExpiresOn is not { } expiresOn || pointInTime <= expiresOn);
-
-    private static DateTimeOffset Max(DateTimeOffset a, DateTimeOffset b) => a >= b ? a : b;
-
-    /// <summary>
-    /// Builds a <see cref="SigningKeyDescriptor"/> — and therefore its <c>kid</c> — from a
-    /// public-only key. Always called with the handle from
-    /// <see cref="IKeyVaultCertificateReader.GetPublicKeyMaterialAsync"/>, for every included
-    /// version including the active one, so every version's <c>kid</c> is derived through the same
-    /// single code path.
-    /// </summary>
-    private static SigningKeyDescriptor BuildDescriptor(
-        AsymmetricAlgorithm publicKey, SigningKeyType keyType, SigningAlgorithm algorithm)
-    {
-        ValidateAlgorithmFamilyMatchesKeyType(keyType, algorithm);
-
-        return keyType switch
-        {
-            SigningKeyType.Rsa => BuildRsaDescriptor((RSA)publicKey, algorithm),
-            SigningKeyType.Ec => BuildEcDescriptor((ECDsa)publicKey, algorithm),
-            _ => throw new NotSupportedException($"Signing key type {keyType} is not supported."),
-        };
-    }
-
-    private static SigningKeyDescriptor BuildRsaDescriptor(RSA rsa, SigningAlgorithm algorithm)
-    {
-        // Exporting only the public parameters here is always permitted — unlike exporting the
-        // private components, it never requires an "exportable" capability on the key handle. rsa
-        // is always public-only in practice (see BuildDescriptor's remarks), but includePrivateParameters:
-        // false is kept explicit regardless, since exporting private material was never needed here.
-        var parameters = rsa.ExportParameters(includePrivateParameters: false);
-        var kid = JwkThumbprint.Compute(parameters);
-        return new SigningKeyDescriptor(kid, algorithm, parameters);
-    }
-
-    private static SigningKeyDescriptor BuildEcDescriptor(ECDsa ecdsa, SigningAlgorithm algorithm)
-    {
-        var parameters = ecdsa.ExportParameters(includePrivateParameters: false);
-        var kid = JwkThumbprint.Compute(parameters);
-        return new SigningKeyDescriptor(kid, algorithm, parameters);
-    }
-
-    /// <summary>
-    /// Fails fast with a clear, Key-Vault-specific message when the configured
-    /// <see cref="AzureKeyVaultCachedSigningOptions.Algorithm"/> does not match the actual
-    /// certificate key's type. Without this check the mismatch would only surface later as a more
-    /// generic <c>ZeeKayDaConfigurationException</c> from the base class's
-    /// <c>ValidateKeyAlgorithmCompatibility</c>, with no Key-Vault-specific remediation guidance.
-    /// </summary>
-    private static void ValidateAlgorithmFamilyMatchesKeyType(SigningKeyType keyType, SigningAlgorithm algorithm)
-    {
-        var isRsaAlgorithm = algorithm is
-            SigningAlgorithm.RS256 or SigningAlgorithm.RS384 or SigningAlgorithm.RS512
-            or SigningAlgorithm.PS256 or SigningAlgorithm.PS384 or SigningAlgorithm.PS512;
-
-        if (keyType == SigningKeyType.Rsa && !isRsaAlgorithm)
-        {
-            throw new ZeeKayDaConfigurationException(
-                new ZeeKayDaConfigurationFailure(
-                    "signing.azure_key_vault.algorithm_key_type_mismatch",
-                    $"AzureKeyVaultCachedSigningOptions.Algorithm is {algorithm}, but the Key Vault certificate " +
-                    "key is an RSA key. Use an RSA algorithm (RS256, RS384, RS512, PS256, PS384, or PS512)."));
-        }
-
-        if (keyType == SigningKeyType.Ec && isRsaAlgorithm)
-        {
-            throw new ZeeKayDaConfigurationException(
-                new ZeeKayDaConfigurationFailure(
-                    "signing.azure_key_vault.algorithm_key_type_mismatch",
-                    $"AzureKeyVaultCachedSigningOptions.Algorithm is {algorithm}, but the Key Vault certificate " +
-                    "key is an EC key. Use an EC algorithm (ES256, ES384, or ES512)."));
-        }
-    }
-
     private void WarnIfPreviouslyPublishedKidVanished(
         IEnumerable<string> newKids, IReadOnlyList<KeyVaultCertificateVersionInfo> currentRawVersions)
     {
-        if (_previouslyPublishedKidVersions.Count == 0)
-            return;
-
-        var newKidSet = new HashSet<string>(newKids, StringComparer.Ordinal);
-        var currentVersionStrings = new HashSet<string>(
-            currentRawVersions.Select(v => v.Version), StringComparer.Ordinal);
-
-        foreach (var (kid, version) in _previouslyPublishedKidVersions)
+        foreach (var (kid, version) in KeyVaultSigningKeyRotation.FindVanishedKids(
+            _previouslyPublishedKidVersions, newKids, currentRawVersions))
         {
-            if (newKidSet.Contains(kid))
-                continue;
-
-            if (currentVersionStrings.Contains(version))
-                continue; // Still in Key Vault — excluded for an expected reason (disabled or fully retired).
-
             _logger.LogWarning(
                 "Azure Key Vault signing certificate with kid {Kid} (Key Vault version {Version}) is no longer " +
                 "present in Key Vault at all. It was previously published and may still be cached in a relying " +
@@ -392,7 +233,4 @@ internal sealed class AzureKeyVaultCachedSigningJwtSigningService : JwtSigningSe
                 kid, version);
         }
     }
-
-    private readonly record struct ActivationEntry(
-        KeyVaultCertificateVersionInfo Version, DateTimeOffset ActivatesAt, DateTimeOffset? RetiredAt);
 }

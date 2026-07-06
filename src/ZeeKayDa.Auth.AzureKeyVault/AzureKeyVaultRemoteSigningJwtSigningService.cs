@@ -1,5 +1,3 @@
-using System.Linq;
-using System.Security.Cryptography;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Logging;
@@ -23,7 +21,8 @@ namespace ZeeKayDa.Auth.AzureKeyVault;
 /// </para>
 /// <para>
 /// <c>kid</c> is the RFC 7638 JWK thumbprint of each version's public key (via
-/// <see cref="JwkThumbprint.Compute(RSAParameters)"/> / <see cref="JwkThumbprint.Compute(ECParameters)"/>),
+/// <see cref="JwkThumbprint.Compute(System.Security.Cryptography.RSAParameters)"/> /
+/// <see cref="JwkThumbprint.Compute(System.Security.Cryptography.ECParameters)"/>),
 /// not the raw Key Vault version URI — a kid is always public (every issued token header, and the
 /// public JWKS), so embedding the vault/key name in it would leak real Azure resource identifiers
 /// for no functional benefit.
@@ -133,9 +132,9 @@ internal sealed class AzureKeyVaultRemoteSigningJwtSigningService : JwtSigningSe
         }
 
         var now = _timeProvider.GetUtcNow();
-        var timeline = BuildActivationTimeline(allVersions, _options.Value.RefreshInterval);
+        var timeline = KeyVaultSigningKeyRotation.BuildActivationTimeline(allVersions, _options.Value.RefreshInterval);
 
-        var active = SelectActiveVersion(timeline, now) ?? throw new ZeeKayDaConfigurationException(
+        var active = KeyVaultSigningKeyRotation.SelectActiveVersion(timeline, now) ?? throw new ZeeKayDaConfigurationException(
             new ZeeKayDaConfigurationFailure(
                 "signing.azure_key_vault.no_active_key",
                 $"No enabled, time-eligible version of Key Vault key '{keyIdentifier.Name}' in vault " +
@@ -143,7 +142,7 @@ internal sealed class AzureKeyVaultRemoteSigningJwtSigningService : JwtSigningSe
                 "version whose NotBefore/ExpiresOn window includes the current time."));
 
         var retirementWindow = _retirementWindowProvider.GetRetirementWindow();
-        var included = SelectIncludedVersions(timeline, active, now, retirementWindow);
+        var included = KeyVaultSigningKeyRotation.SelectIncludedVersions(timeline, active, now, retirementWindow);
 
         var keyPairs = new List<SigningKeyPair>(included.Count);
         var kidToUri = new Dictionary<string, Uri>(included.Count, StringComparer.Ordinal);
@@ -160,7 +159,12 @@ internal sealed class AzureKeyVaultRemoteSigningJwtSigningService : JwtSigningSe
                 SigningKeyDescriptor descriptor;
                 try
                 {
-                    descriptor = BuildDescriptor(publicKey, keyType, _options.Value.Algorithm);
+                    descriptor = KeyVaultSigningKeyDescriptorFactory.BuildDescriptor(
+                        publicKey,
+                        keyType,
+                        _options.Value.Algorithm,
+                        nameof(AzureKeyVaultRemoteSigningOptions),
+                        "Key Vault key");
                 }
                 catch
                 {
@@ -218,195 +222,12 @@ internal sealed class AzureKeyVaultRemoteSigningJwtSigningService : JwtSigningSe
             .ConfigureAwait(false);
     }
 
-    private static List<ActivationEntry> BuildActivationTimeline(
-        IReadOnlyList<KeyVaultKeyVersionInfo> allVersions, TimeSpan refreshInterval)
-    {
-        var firstEverVersion = allVersions
-            .OrderBy(v => v.CreatedOn)
-            .ThenBy(v => v.Version, StringComparer.Ordinal)
-            .First()
-            .Version;
-
-        // ActivatesAt is the earliest instant a version could ever legitimately win
-        // SelectActiveVersion's selection — the publish-then-activate delay (or the immediate
-        // bootstrap exemption for the very first version ever created), floored by NotBefore when
-        // the operator has explicitly scheduled the version's go-live later than that. Folding
-        // NotBefore in here (rather than treating it as a separate check applied only at "now")
-        // means every downstream computation that orders by, or reasons about, ActivatesAt
-        // automatically accounts for it correctly — there is no other point in this method that
-        // needs to know about NotBefore specially.
-        var ordered = allVersions
-            .Select(v => new
-            {
-                Version = v,
-                ActivatesAt = Max(
-                    v.Version == firstEverVersion ? v.CreatedOn : v.CreatedOn + refreshInterval,
-                    v.NotBefore ?? DateTimeOffset.MinValue),
-            })
-            .OrderBy(x => x.ActivatesAt)
-            .ThenBy(x => x.Version.CreatedOn)
-            .ThenBy(x => x.Version.Version, StringComparer.Ordinal)
-            .ToList();
-
-        // RetiredAt(v) must be the ActivatesAt of whichever version *actually* superseded v as the
-        // active signer — i.e. the next entry, in ActivatesAt order, that could ever legitimately
-        // win SelectActiveVersion's selection. A version that is disabled, or that is already
-        // outside its own ExpiresOn window at the instant it would activate, can never win that
-        // selection (see IsEligibleAt / SelectActiveVersion), so it must be skipped when looking for
-        // a predecessor's real successor — it is simply never anyone's successor. Naively using the
-        // positionally-next entry regardless of eligibility lets a chronologically-intervening but
-        // never-actually-active version's ActivatesAt gate a real predecessor's retirement window far
-        // too early, silently dropping a still-legitimately-active (or still-within-window) key out
-        // of GetSigningKeysAsync()/the JWKS before its already-issued tokens have stopped being
-        // relied upon — exactly the trust-boundary regression ADR 0011 §3.3 exists to prevent.
-        //
-        // Eligibility here is evaluated at the *candidate's own* ActivatesAt. Because ActivatesAt
-        // already incorporates NotBefore (above), IsEligibleAt's NotBefore check is satisfied by
-        // construction at that point — what remains to test is exactly Enabled and "already past
-        // ExpiresOn by the time it would activate", both permanent, non-time-varying disqualifications:
-        // such a version can never win SelectActiveVersion at any "now", so skipping it here is
-        // unconditionally correct. There is no residual imprecision left in this derivation.
-        var entries = new ActivationEntry[ordered.Count];
-        DateTimeOffset? nextEligibleSuccessorActivatesAt = null;
-        for (var i = ordered.Count - 1; i >= 0; i--)
-        {
-            entries[i] = new ActivationEntry(ordered[i].Version, ordered[i].ActivatesAt, nextEligibleSuccessorActivatesAt);
-
-            if (IsEligibleAt(ordered[i].Version, ordered[i].ActivatesAt))
-                nextEligibleSuccessorActivatesAt = ordered[i].ActivatesAt;
-        }
-
-        return [.. entries];
-    }
-
-    private static ActivationEntry? SelectActiveVersion(IReadOnlyList<ActivationEntry> ascendingTimeline, DateTimeOffset now)
-    {
-        // The timeline is sorted ascending by ActivatesAt, so the last eligible match encountered
-        // while scanning forward is always the one with the greatest ActivatesAt <= now.
-        ActivationEntry? active = null;
-        foreach (var entry in ascendingTimeline.Where(entry => entry.ActivatesAt <= now && IsEligibleAt(entry.Version, now)))
-        {
-            active = entry;
-        }
-
-        return active;
-    }
-
-    private static List<ActivationEntry> SelectIncludedVersions(
-        IReadOnlyList<ActivationEntry> timeline, ActivationEntry active, DateTimeOffset now, TimeSpan retirementWindow)
-    {
-        // Active goes first — the base class treats index 0 as the active signing key.
-        var included = new List<ActivationEntry> { active };
-
-        foreach (var entry in timeline.Where(entry => entry.Version.Version != active.Version.Version))
-        {
-            // Disabled is an immediate, unconditional exclusion — bypasses the retirement window
-            // entirely, so an operator disabling a suspected-compromised key takes effect at once.
-            if (!entry.Version.Enabled)
-                continue;
-
-            var notYetActive = entry.ActivatesAt > now;
-            var stillWithinRetirementWindow = entry.RetiredAt is { } retiredAt && now - retiredAt <= retirementWindow;
-
-            if (notYetActive || stillWithinRetirementWindow)
-                included.Add(entry);
-        }
-
-        return included;
-    }
-
-    // Named generically ("At", not "Now") because this same Enabled/NotBefore/ExpiresOn check is
-    // evaluated at two different kinds of point in time: the current wall-clock time (from
-    // SelectActiveVersion, to pick today's active signer) and each candidate's own ActivatesAt
-    // (from BuildActivationTimeline, to decide whether that candidate could ever legitimately have
-    // won that same selection once it activated). The NotBefore half of this check is, by the time
-    // BuildActivationTimeline calls it, already guaranteed true against ActivatesAt — see that
-    // method's comments — but it is left in place because SelectActiveVersion still needs it
-    // checked against the real wall-clock "now".
-    private static bool IsEligibleAt(KeyVaultKeyVersionInfo version, DateTimeOffset pointInTime) =>
-        version.Enabled
-        && (version.NotBefore is not { } notBefore || notBefore <= pointInTime)
-        && (version.ExpiresOn is not { } expiresOn || pointInTime <= expiresOn);
-
-    private static DateTimeOffset Max(DateTimeOffset a, DateTimeOffset b) => a >= b ? a : b;
-
-    private static SigningKeyDescriptor BuildDescriptor(
-        AsymmetricAlgorithm publicKey, SigningKeyType keyType, SigningAlgorithm algorithm)
-    {
-        ValidateAlgorithmFamilyMatchesKeyType(keyType, algorithm);
-
-        return keyType switch
-        {
-            SigningKeyType.Rsa => BuildRsaDescriptor((RSA)publicKey, algorithm),
-            SigningKeyType.Ec => BuildEcDescriptor((ECDsa)publicKey, algorithm),
-            _ => throw new NotSupportedException($"Signing key type {keyType} is not supported."),
-        };
-    }
-
-    private static SigningKeyDescriptor BuildRsaDescriptor(RSA rsa, SigningAlgorithm algorithm)
-    {
-        var parameters = rsa.ExportParameters(includePrivateParameters: false);
-        var kid = JwkThumbprint.Compute(parameters);
-        return new SigningKeyDescriptor(kid, algorithm, parameters);
-    }
-
-    private static SigningKeyDescriptor BuildEcDescriptor(ECDsa ecdsa, SigningAlgorithm algorithm)
-    {
-        var parameters = ecdsa.ExportParameters(includePrivateParameters: false);
-        var kid = JwkThumbprint.Compute(parameters);
-        return new SigningKeyDescriptor(kid, algorithm, parameters);
-    }
-
-    /// <summary>
-    /// Fails fast with a clear, Key-Vault-specific message when the configured
-    /// <see cref="AzureKeyVaultRemoteSigningOptions.Algorithm"/> does not match the actual Key
-    /// Vault key's type. Without this check the mismatch would only surface later as a more
-    /// generic <c>ZeeKayDaConfigurationException</c> from the base class's
-    /// <c>ValidateKeyAlgorithmCompatibility</c>, with no Key-Vault-specific remediation guidance.
-    /// </summary>
-    private static void ValidateAlgorithmFamilyMatchesKeyType(SigningKeyType keyType, SigningAlgorithm algorithm)
-    {
-        var isRsaAlgorithm = algorithm is
-            SigningAlgorithm.RS256 or SigningAlgorithm.RS384 or SigningAlgorithm.RS512
-            or SigningAlgorithm.PS256 or SigningAlgorithm.PS384 or SigningAlgorithm.PS512;
-
-        if (keyType == SigningKeyType.Rsa && !isRsaAlgorithm)
-        {
-            throw new ZeeKayDaConfigurationException(
-                new ZeeKayDaConfigurationFailure(
-                    "signing.azure_key_vault.algorithm_key_type_mismatch",
-                    $"AzureKeyVaultRemoteSigningOptions.Algorithm is {algorithm}, but the Key Vault key is an " +
-                    "RSA key. Use an RSA algorithm (RS256, RS384, RS512, PS256, PS384, or PS512)."));
-        }
-
-        if (keyType == SigningKeyType.Ec && isRsaAlgorithm)
-        {
-            throw new ZeeKayDaConfigurationException(
-                new ZeeKayDaConfigurationFailure(
-                    "signing.azure_key_vault.algorithm_key_type_mismatch",
-                    $"AzureKeyVaultRemoteSigningOptions.Algorithm is {algorithm}, but the Key Vault key is an " +
-                    "EC key. Use an EC algorithm (ES256, ES384, or ES512)."));
-        }
-    }
-
     private void WarnIfPreviouslyPublishedKidVanished(
         IEnumerable<string> newKids, IReadOnlyList<KeyVaultKeyVersionInfo> currentRawVersions)
     {
-        if (_previouslyPublishedKidVersions.Count == 0)
-            return;
-
-        var newKidSet = new HashSet<string>(newKids, StringComparer.Ordinal);
-        var currentVersionStrings = new HashSet<string>(
-            currentRawVersions.Select(v => v.Version), StringComparer.Ordinal);
-
-        foreach (var (kid, version) in _previouslyPublishedKidVersions)
+        foreach (var (kid, version) in KeyVaultSigningKeyRotation.FindVanishedKids(
+            _previouslyPublishedKidVersions, newKids, currentRawVersions))
         {
-            if (newKidSet.Contains(kid))
-                continue;
-
-            if (currentVersionStrings.Contains(version))
-                continue; // Still in Key Vault — excluded for an expected reason (disabled or fully retired).
-
             _logger.LogWarning(
                 "Azure Key Vault signing key with kid {Kid} (Key Vault version {Version}) is no longer present " +
                 "in Key Vault at all. It was previously published and may still be cached in a relying party's " +
@@ -415,7 +236,4 @@ internal sealed class AzureKeyVaultRemoteSigningJwtSigningService : JwtSigningSe
                 kid, version);
         }
     }
-
-    private readonly record struct ActivationEntry(
-        KeyVaultKeyVersionInfo Version, DateTimeOffset ActivatesAt, DateTimeOffset? RetiredAt);
 }
