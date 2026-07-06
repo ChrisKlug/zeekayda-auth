@@ -109,13 +109,10 @@ internal static class KeyVaultSigningKeyRotation
         // Active goes first — the base class treats index 0 as the active signing key.
         var included = new List<ActivationEntry<T>> { active };
 
-        foreach (var entry in timeline.Where(entry => entry.Version.Version != active.Version.Version))
+        foreach (var entry in timeline.Where(entry => entry.Version.Version != active.Version.Version && entry.Version.Enabled))
         {
             // Disabled is an immediate, unconditional exclusion — bypasses the retirement window
             // entirely, so an operator disabling a suspected-compromised key takes effect at once.
-            if (!entry.Version.Enabled)
-                continue;
-
             var notYetActive = entry.ActivatesAt > now;
             var stillWithinRetirementWindow = entry.RetiredAt is { } retiredAt && now - retiredAt <= retirementWindow;
 
