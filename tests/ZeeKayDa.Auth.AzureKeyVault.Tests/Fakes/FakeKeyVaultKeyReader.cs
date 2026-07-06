@@ -18,14 +18,23 @@ internal sealed class FakeKeyVaultKeyReader : IKeyVaultKeyReader
 {
     private readonly Dictionary<string, RSAParameters> _rsaMaterial = new(StringComparer.Ordinal);
     private readonly Dictionary<string, ECParameters> _ecMaterial = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, Exception> _materialExceptions = new(StringComparer.Ordinal);
 
     public List<KeyVaultKeyVersionInfo> Versions { get; } = [];
 
     /// <summary>When set, <see cref="GetKeyVersionsAsync"/> throws this instead of yielding versions.</summary>
     public Exception? VersionsException { get; set; }
 
-    /// <summary>When set, <see cref="GetKeyMaterialAsync"/> throws this instead of returning material.</summary>
+    /// <summary>When set, <see cref="GetKeyMaterialAsync"/> throws this instead of returning material, for every version.</summary>
     public Exception? MaterialException { get; set; }
+
+    /// <summary>
+    /// When set, invoked with the version and the exact key object right after
+    /// <see cref="GetKeyMaterialAsync"/> extracts it — lets a test capture the live handle and
+    /// later assert it was disposed (e.g. by calling <c>ExportParameters</c> on it and expecting
+    /// <see cref="ObjectDisposedException"/>) if the caller fails after extraction.
+    /// </summary>
+    public Action<string, AsymmetricAlgorithm>? OnKeyExtracted { get; set; }
 
     public KeyVaultKeyVersionInfo AddRsaVersion(
         string version,
@@ -76,6 +85,14 @@ internal sealed class FakeKeyVaultKeyReader : IKeyVaultKeyReader
         Versions[index] = existing with { Enabled = enabled };
     }
 
+    /// <summary>
+    /// Configures <see cref="GetKeyMaterialAsync"/> to throw <paramref name="exception"/> for this
+    /// specific version — simulates a real <c>KeyVaultKeyReader</c> failure (access denied, key
+    /// version not found, ...) for one version in a multi-version load, while other versions still
+    /// succeed.
+    /// </summary>
+    public void SetKeyMaterialException(string version, Exception exception) => _materialExceptions[version] = exception;
+
     /// <summary>Returns the public RSA parameters registered for <paramref name="version"/>, for assertions.</summary>
     public RSAParameters GetRsaMaterial(string version) => _rsaMaterial[version];
 
@@ -102,12 +119,16 @@ internal sealed class FakeKeyVaultKeyReader : IKeyVaultKeyReader
         if (MaterialException is not null)
             throw MaterialException;
 
+        if (_materialExceptions.TryGetValue(version, out var versionException))
+            throw versionException;
+
         if (_rsaMaterial.TryGetValue(version, out var rsaParams))
         {
             var rsa = RSA.Create();
             try
             {
                 rsa.ImportParameters(rsaParams);
+                OnKeyExtracted?.Invoke(version, rsa);
                 return ValueTask.FromResult<(AsymmetricAlgorithm, SigningKeyType)>((rsa, SigningKeyType.Rsa));
             }
             catch
@@ -123,6 +144,7 @@ internal sealed class FakeKeyVaultKeyReader : IKeyVaultKeyReader
             try
             {
                 ec.ImportParameters(ecParams);
+                OnKeyExtracted?.Invoke(version, ec);
                 return ValueTask.FromResult<(AsymmetricAlgorithm, SigningKeyType)>((ec, SigningKeyType.Ec));
             }
             catch
