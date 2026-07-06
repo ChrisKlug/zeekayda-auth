@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using Azure.Security.KeyVault.Keys;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
@@ -396,6 +397,68 @@ public sealed class AzureKeyVaultRemoteSigningJwtSigningServiceTests
 
         (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
             .WithMessage("*no_active_key*");
+    }
+
+    // ── Regression test for #315: mid-load key-handle leak on a partial LoadKeysAsync failure ───
+
+    [Fact]
+    public async Task GetSigningKeysAsync_disposes_already_obtained_key_handle_when_a_later_version_fails_to_load()
+    {
+        // v0 is the active version, so its public-only key handle has already been obtained and
+        // added to keyPairs by the time v1's key material download (v1 is published but not yet
+        // active) fails. The base class must not leak v0's live handle.
+        var ct = TestContext.Current.CancellationToken;
+        var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
+        var reader = new FakeKeyVaultKeyReader();
+        reader.AddRsaVersion("v1", createdOn: t0, notBefore: t0 + TimeSpan.FromDays(2)); // Not yet active -> published alongside the active v0.
+        reader.AddRsaVersion("v0", createdOn: t0 - TimeSpan.FromDays(1));
+        reader.SetKeyMaterialException("v1", new ZeeKayDaConfigurationException(
+            new ZeeKayDaConfigurationFailure("signing.azure_key_vault.access_denied", "Simulated failure for v1.")));
+        AsymmetricAlgorithm? capturedKey = null;
+        reader.OnKeyExtracted = (version, key) =>
+        {
+            if (version == "v0")
+                capturedKey = key;
+        };
+        var timeProvider = new FakeTimeProvider(t0);
+
+        await using var sut = BuildService(reader, timeProvider);
+
+        var act = async () => await sut.GetSigningKeysAsync(ct);
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .WithMessage("*access_denied*");
+
+        capturedKey.Should().NotBeNull();
+        var useAfterFailure = () => ((RSA)capturedKey!).ExportParameters(includePrivateParameters: false);
+        useAfterFailure.Should().Throw<ObjectDisposedException>(
+            "v0's already-obtained key handle must not be leaked when v1's later load fails");
+    }
+
+    [Fact]
+    public async Task GetSigningKeysAsync_disposes_key_handle_when_BuildDescriptor_throws_for_it()
+    {
+        // Regression test for the mid-load key-handle leak: ValidateAlgorithmFamilyMatchesKeyType
+        // throws inside BuildDescriptor for an ES256/RSA mismatch. The key handle already obtained
+        // from the reader for that same version was never added to keyPairs, so it must be disposed
+        // directly at the point of failure rather than leaked.
+        var ct = TestContext.Current.CancellationToken;
+        var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
+        var reader = new FakeKeyVaultKeyReader();
+        reader.AddRsaVersion("v1", createdOn: t0);
+        AsymmetricAlgorithm? capturedKey = null;
+        reader.OnKeyExtracted = (_, key) => capturedKey = key;
+        var timeProvider = new FakeTimeProvider(t0);
+
+        await using var sut = BuildService(reader, timeProvider, algorithm: SigningAlgorithm.ES256);
+
+        var act = async () => await sut.GetSigningKeysAsync(ct);
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .WithMessage("*algorithm_key_type_mismatch*");
+
+        capturedKey.Should().NotBeNull();
+        var useAfterFailure = () => ((RSA)capturedKey!).ExportParameters(includePrivateParameters: false);
+        useAfterFailure.Should().Throw<ObjectDisposedException>(
+            "the key handle obtained before BuildDescriptor's failure must not be leaked");
     }
 
     // ── SignInputAsync override ──────────────────────────────────────────────────────────────────

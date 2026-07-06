@@ -149,16 +149,43 @@ internal sealed class AzureKeyVaultRemoteSigningJwtSigningService : JwtSigningSe
         var kidToUri = new Dictionary<string, Uri>(included.Count, StringComparer.Ordinal);
         var newKidVersions = new Dictionary<string, string>(included.Count, StringComparer.Ordinal);
 
-        foreach (var entry in included)
+        try
         {
-            var (publicKey, keyType) = await _keyReader
-                .GetKeyMaterialAsync(entry.Version.Version, cancellationToken)
-                .ConfigureAwait(false);
+            foreach (var entry in included)
+            {
+                var (publicKey, keyType) = await _keyReader
+                    .GetKeyMaterialAsync(entry.Version.Version, cancellationToken)
+                    .ConfigureAwait(false);
 
-            var descriptor = BuildDescriptor(publicKey, keyType, _options.Value.Algorithm);
-            keyPairs.Add(new SigningKeyPair { Descriptor = descriptor, PrivateKey = publicKey });
-            kidToUri[descriptor.Kid] = entry.Version.Id;
-            newKidVersions[descriptor.Kid] = entry.Version.Version;
+                SigningKeyDescriptor descriptor;
+                try
+                {
+                    descriptor = BuildDescriptor(publicKey, keyType, _options.Value.Algorithm);
+                }
+                catch
+                {
+                    // The key handle just obtained above was never added to keyPairs, so the outer
+                    // catch below would not dispose it — do so here before rethrowing, otherwise a
+                    // descriptor-build failure (e.g. an algorithm/key-type mismatch or an
+                    // unsupported curve) would leak a live key handle.
+                    publicKey.Dispose();
+                    throw;
+                }
+
+                keyPairs.Add(new SigningKeyPair { Descriptor = descriptor, PrivateKey = publicKey });
+                kidToUri[descriptor.Kid] = entry.Version.Id;
+                newKidVersions[descriptor.Kid] = entry.Version.Version;
+            }
+        }
+        catch
+        {
+            // Every key handle obtained for a version processed before the failure — this provider
+            // only ever holds public-only handles, never real private key material — has already
+            // been added to keyPairs. Leaving these undisposed on a partial failure would leak live
+            // key handles until GC finalization.
+            foreach (var pair in keyPairs)
+                pair.PrivateKey.Dispose();
+            throw;
         }
 
         WarnIfPreviouslyPublishedKidVanished(kidToUri.Keys, allVersions);
