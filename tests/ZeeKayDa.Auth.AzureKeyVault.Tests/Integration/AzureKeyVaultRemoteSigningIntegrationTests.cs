@@ -158,16 +158,16 @@ public sealed class AzureKeyVaultRemoteSigningIntegrationTests
             .WithMessage("*access_denied*");
     }
 
-    // ── Startup activator ─────────────────────────────────────────────────────────────────────────
+    // ── Startup service ────────────────────────────────────────────────────────────────────────────
     // A full Microsoft.Extensions.Hosting generic host was considered here (per the plan) but adds
     // disproportionate scaffolding (a new package reference just for this test project) for the
     // value it provides over exercising AzureKeyVaultRemoteSigningStartupService.StartAsync directly,
     // which is exactly what the generic host would end up calling anyway. Constructing and calling
-    // the activator directly, with a signing service that fails to load its keys, is a simpler and
-    // equally faithful way to prove that a configuration fault aborts "startup" (StartAsync).
+    // the startup service directly, with a signing service that fails to load its keys, is a simpler
+    // and equally faithful way to prove that a configuration fault aborts "startup" (StartAsync).
 
     [Fact]
-    public async Task StartupActivator_StartAsync_forces_key_loading_and_propagates_configuration_failure()
+    public async Task RemoteSigningStartupService_StartAsync_forces_key_loading_and_propagates_configuration_failure()
     {
         var ct = TestContext.Current.CancellationToken;
         var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
@@ -189,16 +189,16 @@ public sealed class AzureKeyVaultRemoteSigningIntegrationTests
             new FakeRetirementWindowProvider(TimeSpan.FromHours(1)),
             NullSanitizingLogger<AzureKeyVaultRemoteSigningJwtSigningService>.Instance);
 
-        var activator = new AzureKeyVaultRemoteSigningStartupService(signingService);
+        var startupService = new AzureKeyVaultRemoteSigningStartupService(signingService);
 
-        var act = async () => await activator.StartAsync(ct);
+        var act = async () => await startupService.StartAsync(ct);
 
         (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
             .WithMessage("*no_key_versions*");
     }
 
     [Fact]
-    public async Task StartupActivator_StartAsync_succeeds_when_signing_keys_load_without_error()
+    public async Task RemoteSigningStartupService_StartAsync_succeeds_when_signing_keys_load_without_error()
     {
         var ct = TestContext.Current.CancellationToken;
         var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
@@ -221,9 +221,9 @@ public sealed class AzureKeyVaultRemoteSigningIntegrationTests
             new FakeRetirementWindowProvider(TimeSpan.FromHours(1)),
             NullSanitizingLogger<AzureKeyVaultRemoteSigningJwtSigningService>.Instance);
 
-        var activator = new AzureKeyVaultRemoteSigningStartupService(signingService);
+        var startupService = new AzureKeyVaultRemoteSigningStartupService(signingService);
 
-        var act = async () => await activator.StartAsync(ct);
+        var act = async () => await startupService.StartAsync(ct);
 
         await act.Should().NotThrowAsync();
     }
