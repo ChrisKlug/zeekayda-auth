@@ -217,7 +217,7 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
     // ── Logging (AC #2, #7, expiry warning) ─────────────────────────────────────────────────────
 
     [Fact]
-    public async Task Full_DI_wiring_logs_one_informational_line_per_loaded_certificate_exactly_once()
+    public async Task Full_DI_wiring_logs_one_informational_line_per_registered_certificate_on_every_load()
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), RequiresWindowsReason);
 
@@ -237,14 +237,66 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
         var signingService = provider.GetRequiredService<IJwtSigningService>();
 
         await signingService.GetSigningKeysAsync(ct);
-        var loadLinesAfterFirstCall = logger.Entries.Count(e => e.Level == LogLevel.Information);
-        loadLinesAfterFirstCall.Should().Be(1, "AC #2: one informational line for the one loaded certificate");
+        logger.Entries.Count(e => e.Level == LogLevel.Information).Should().Be(1,
+            "AC #2: one informational line for the one registered certificate");
 
+        // Active/included status is time-varying, not a static fact of config, so — unlike the
+        // too-soon-NotBefore warning's underlying algorithm output, which only changes when a
+        // rotation is actually in progress — this line is deliberately re-logged on every load,
+        // not gated to only the first one.
         timeProvider.SetUtcNow(T0 + refreshInterval); // Force a reload.
         await signingService.GetSigningKeysAsync(ct);
 
-        logger.Entries.Count(e => e.Level == LogLevel.Information).Should().Be(loadLinesAfterFirstCall,
-            "the per-certificate load line is a static fact of config and must not repeat on every refresh");
+        logger.Entries.Count(e => e.Level == LogLevel.Information).Should().Be(2,
+            "the per-certificate status line must repeat on every load, since active/included status can change over time");
+    }
+
+    [Fact]
+    public async Task Full_DI_wiring_per_certificate_log_reflects_active_included_and_excluded_status_as_rotation_progresses()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), RequiresWindowsReason);
+
+        var ct = TestContext.Current.CancellationToken;
+        var refreshInterval = TimeSpan.FromMinutes(5);
+        var retirementWindow = TimeSpan.FromHours(1);
+        var (services, reader, timeProvider) = BuildServices(T0, retirementWindow);
+        using var predecessor = TestCertificateFactory.CreateRsaSelfSigned("predecessor", T0 - TimeSpan.FromDays(30), T0 + TimeSpan.FromDays(365));
+        var successorNotBefore = T0 + TimeSpan.FromDays(1);
+        using var successor = TestCertificateFactory.CreateRsaSelfSigned("successor", successorNotBefore, T0 + TimeSpan.FromDays(400));
+        reader.AddCertificate(PrimaryThumbprint, predecessor);
+        reader.AddCertificate(SecondaryThumbprint, successor);
+        var logger = new CapturingSanitizingLogger<WindowsCertificateStoreSigningJwtSigningService>();
+        services.AddSingleton<ISanitizingLogger<WindowsCertificateStoreSigningJwtSigningService>>(logger);
+
+        var builder = new ZeeKayDaAuthBuilder(services);
+        builder.AddWindowsCertificateStoreSigning(PrimaryThumbprint, StoreLocation.CurrentUser, StoreName.My,
+            configure: options =>
+            {
+                options.AddCertificate(SecondaryThumbprint);
+                options.RefreshInterval = refreshInterval;
+            });
+
+        await using var provider = services.BuildServiceProvider();
+        var signingService = provider.GetRequiredService<IJwtSigningService>();
+
+        // Before the successor's NotBefore: predecessor is active, successor is pending.
+        await signingService.GetSigningKeysAsync(ct);
+        logger.Entries.Should().Contain(e => e.Message.Contains(PrimaryThumbprint) && e.Message.Contains("the active signer"));
+        logger.Entries.Should().Contain(e => e.Message.Contains(SecondaryThumbprint) && e.Message.Contains("not yet active"));
+        logger.Entries.Clear();
+
+        // After the successor activates but within the predecessor's retirement window.
+        timeProvider.SetUtcNow(successorNotBefore);
+        await signingService.GetSigningKeysAsync(ct);
+        logger.Entries.Should().Contain(e => e.Message.Contains(SecondaryThumbprint) && e.Message.Contains("the active signer"));
+        logger.Entries.Should().Contain(e => e.Message.Contains(PrimaryThumbprint) && e.Message.Contains("retirement window"));
+        logger.Entries.Clear();
+
+        // After the predecessor's retirement window has fully elapsed - no longer trusted at all.
+        timeProvider.SetUtcNow(successorNotBefore + retirementWindow + TimeSpan.FromMinutes(1));
+        await signingService.GetSigningKeysAsync(ct);
+        logger.Entries.Should().Contain(e => e.Message.Contains(PrimaryThumbprint) && e.Message.Contains("NOT included"),
+            "once a registered certificate's retirement window has fully elapsed, the log should say so plainly so an operator knows it can be removed from configuration");
     }
 
     [Fact]

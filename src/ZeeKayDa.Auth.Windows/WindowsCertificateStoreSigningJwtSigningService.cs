@@ -45,14 +45,6 @@ internal sealed class WindowsCertificateStoreSigningJwtSigningService : JwtSigni
     private readonly ISigningKeyRetirementWindowProvider _retirementWindowProvider;
     private readonly ISanitizingLogger<WindowsCertificateStoreSigningJwtSigningService> _logger;
 
-    // The set of registered thumbprints is fixed at process start (adding/removing a certificate
-    // requires a restart — out of scope per the issue), so the per-certificate load line and the
-    // too-soon-NotBefore warning are static facts of config that only ever need to be logged once,
-    // on the first successful load (always forced at startup by
-    // WindowsCertificateStoreSigningStartupService's pre-warm). Re-logging them on every subsequent
-    // RefreshInterval tick would just repeat the same conclusion.
-    private bool _hasLoggedInitialLoad;
-
     public WindowsCertificateStoreSigningJwtSigningService(
         IOptions<WindowsCertificateStoreSigningOptions> options,
         TimeProvider timeProvider,
@@ -106,7 +98,7 @@ internal sealed class WindowsCertificateStoreSigningJwtSigningService : JwtSigni
             var retirementWindow = _retirementWindowProvider.GetRetirementWindow();
             var included = WindowsCertificateStoreSigningKeyRotation.SelectIncludedCertificates(timeline, active, now, retirementWindow);
 
-            LogInitialLoadOnce(timeline, active, now, options.RefreshInterval, certificatesByThumbprint);
+            LogCertificateStatuses(timeline, active, included, now, options.RefreshInterval, retirementWindow, certificatesByThumbprint);
             WarnIfActiveCertificateExpiringSoon(active, now);
 
             var keyPairs = new List<SigningKeyPair>(included.Count);
@@ -179,23 +171,34 @@ internal sealed class WindowsCertificateStoreSigningJwtSigningService : JwtSigni
         }
     }
 
-    private void LogInitialLoadOnce(
+    private void LogCertificateStatuses(
         IReadOnlyList<WindowsCertificateStoreSigningKeyRotation.ActivationEntry> timeline,
         WindowsCertificateStoreSigningKeyRotation.ActivationEntry active,
-        DateTimeOffset now, TimeSpan refreshInterval,
+        IReadOnlyList<WindowsCertificateStoreSigningKeyRotation.ActivationEntry> included,
+        DateTimeOffset now, TimeSpan refreshInterval, TimeSpan retirementWindow,
         IReadOnlyDictionary<string, X509Certificate2> certificatesByThumbprint)
     {
-        if (_hasLoggedInitialLoad)
-            return;
-        _hasLoggedInitialLoad = true;
+        // Unlike a purely static config fact (thumbprint/subject/expiry never change once a
+        // certificate is loaded), each certificate's active/included/excluded status is a function
+        // of `now` and genuinely changes over the lifetime of a long-running process as a rotation
+        // progresses — so, unlike a one-shot log, this is re-evaluated and logged on every
+        // LoadKeysAsync call (at most once per RefreshInterval) rather than only at first load.
+        // Logging every registered certificate on every cycle — not just the currently-included
+        // ones — is deliberate: it lets an operator see exactly what the current configuration
+        // resolves to, including a certificate that is configured but has fallen out of the trusted
+        // set entirely (its retirement window has elapsed) and can now safely be removed.
+        var includedThumbprints = new HashSet<string>(
+            included.Select(e => e.Certificate.Thumbprint), StringComparer.Ordinal);
 
         foreach (var entry in timeline)
         {
             var certificate = certificatesByThumbprint[entry.Certificate.Thumbprint];
+            var status = DescribeStatus(entry, active, includedThumbprints, now, retirementWindow);
+
             _logger.LogInformation(
-                "ZeeKayDa.Auth: loaded Windows Certificate Store signing certificate '{Thumbprint}' " +
-                "(subject '{Subject}', expires {NotAfter:O}).",
-                entry.Certificate.Thumbprint, certificate.Subject, entry.Certificate.NotAfter);
+                "ZeeKayDa.Auth: Windows Certificate Store signing certificate '{Thumbprint}' " +
+                "(subject '{Subject}', expires {NotAfter:O}) is {Status}.",
+                entry.Certificate.Thumbprint, certificate.Subject, entry.Certificate.NotAfter, status);
         }
 
         if (WindowsCertificateStoreSigningKeyRotation.HasTooSoonPendingActivation(timeline, active, now, refreshInterval, out var soonestPending))
@@ -210,12 +213,34 @@ internal sealed class WindowsCertificateStoreSigningJwtSigningService : JwtSigni
         }
     }
 
+    private static string DescribeStatus(
+        WindowsCertificateStoreSigningKeyRotation.ActivationEntry entry,
+        WindowsCertificateStoreSigningKeyRotation.ActivationEntry active,
+        HashSet<string> includedThumbprints, DateTimeOffset now, TimeSpan retirementWindow)
+    {
+        if (string.Equals(entry.Certificate.Thumbprint, active.Certificate.Thumbprint, StringComparison.Ordinal))
+            return "the active signer";
+
+        if (!includedThumbprints.Contains(entry.Certificate.Thumbprint))
+        {
+            return "NOT included in the JWKS - its retirement window has fully elapsed; safe to remove " +
+                "from configuration";
+        }
+
+        if (entry.ActivatesAt > now)
+            return $"included in the JWKS, not yet active (activates at {entry.ActivatesAt:O})";
+
+        return "included in the JWKS, retired but still within its retirement window (until " +
+            $"{entry.RetiredAt!.Value + retirementWindow:O})";
+    }
+
     private void WarnIfActiveCertificateExpiringSoon(
         WindowsCertificateStoreSigningKeyRotation.ActivationEntry active, DateTimeOffset now)
     {
-        // Re-evaluated on every LoadKeysAsync call (not one-shot, unlike the checks above): unlike
-        // those two static facts of config, this is genuinely time-varying — a long-running process
-        // can cross into the 30-day window mid-lifetime. Repeats at most once per RefreshInterval.
+        // Re-evaluated on every LoadKeysAsync call, exactly like LogCertificateStatuses above:
+        // whether the active certificate is within 30 days of expiry is genuinely time-varying — a
+        // long-running process can cross into that window mid-lifetime. Repeats at most once per
+        // RefreshInterval for as long as the condition holds.
         if (active.Certificate.NotAfter - now <= TimeSpan.FromDays(30))
         {
             _logger.LogWarning(
