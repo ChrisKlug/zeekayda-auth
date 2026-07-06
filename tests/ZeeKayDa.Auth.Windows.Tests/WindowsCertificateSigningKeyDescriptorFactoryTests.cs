@@ -9,7 +9,7 @@ public sealed class WindowsCertificateSigningKeyDescriptorFactoryTests
     public void BuildDescriptor_for_RSA_key_derives_kid_via_JwkThumbprint_of_the_public_key()
     {
         using var rsa = RSA.Create(2048);
-        var publicOnly = RSA.Create();
+        using var publicOnly = RSA.Create();
         publicOnly.ImportParameters(rsa.ExportParameters(includePrivateParameters: false));
 
         var descriptor = WindowsCertificateSigningKeyDescriptorFactory.BuildDescriptor(
@@ -23,7 +23,7 @@ public sealed class WindowsCertificateSigningKeyDescriptorFactoryTests
     public void BuildDescriptor_for_EC_key_derives_kid_via_JwkThumbprint()
     {
         using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-        var publicOnly = ECDsa.Create();
+        using var publicOnly = ECDsa.Create();
         publicOnly.ImportParameters(ecdsa.ExportParameters(includePrivateParameters: false));
 
         var descriptor = WindowsCertificateSigningKeyDescriptorFactory.BuildDescriptor(
@@ -37,7 +37,7 @@ public sealed class WindowsCertificateSigningKeyDescriptorFactoryTests
     public void BuildDescriptor_kid_does_not_contain_the_raw_certificate_thumbprint()
     {
         using var rsa = RSA.Create(2048);
-        var publicOnly = RSA.Create();
+        using var publicOnly = RSA.Create();
         publicOnly.ImportParameters(rsa.ExportParameters(includePrivateParameters: false));
         const string thumbprint = "DEADBEEFCAFE0123456789ABCDEF0123456789AB";
 
@@ -51,7 +51,7 @@ public sealed class WindowsCertificateSigningKeyDescriptorFactoryTests
     public void BuildDescriptor_throws_algorithm_key_type_mismatch_when_EC_algorithm_configured_for_RSA_key()
     {
         using var rsa = RSA.Create(2048);
-        var publicOnly = RSA.Create();
+        using var publicOnly = RSA.Create();
         publicOnly.ImportParameters(rsa.ExportParameters(includePrivateParameters: false));
 
         var act = () => WindowsCertificateSigningKeyDescriptorFactory.BuildDescriptor(
@@ -64,7 +64,7 @@ public sealed class WindowsCertificateSigningKeyDescriptorFactoryTests
     public void BuildDescriptor_throws_algorithm_key_type_mismatch_when_RSA_algorithm_configured_for_EC_key()
     {
         using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-        var publicOnly = ECDsa.Create();
+        using var publicOnly = ECDsa.Create();
         publicOnly.ImportParameters(ecdsa.ExportParameters(includePrivateParameters: false));
 
         var act = () => WindowsCertificateSigningKeyDescriptorFactory.BuildDescriptor(

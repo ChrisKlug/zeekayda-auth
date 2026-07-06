@@ -112,9 +112,8 @@ internal sealed class WindowsCertificateStoreSigningJwtSigningService : JwtSigni
             var keyPairs = new List<SigningKeyPair>(included.Count);
             try
             {
-                foreach (var entry in included)
+                foreach (var thumbprint in included.Select(entry => entry.Certificate.Thumbprint))
                 {
-                    var thumbprint = entry.Certificate.Thumbprint;
                     var certificate = certificatesByThumbprint[thumbprint];
                     var isActive = string.Equals(thumbprint, active.Certificate.Thumbprint, StringComparison.Ordinal);
 

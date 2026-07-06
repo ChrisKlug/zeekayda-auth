@@ -42,25 +42,28 @@ internal sealed class CertificateStoreReader : ICertificateStoreReader
         // X509Certificate2Collection itself is not IDisposable, but every certificate it contains
         // is — dispose them explicitly once a standalone copy of the match has been made.
         var matches = store.Certificates.Find(X509FindType.FindByThumbprint, normalizedThumbprint, validOnly: false);
-        try
-        {
-            if (matches.Count == 0)
-            {
-                throw new ZeeKayDaConfigurationException(new ZeeKayDaConfigurationFailure(
-                    "signing.windows_certificate_store.certificate_not_found",
-                    $"No certificate with thumbprint '{normalizedThumbprint}' was found in the '{storeName}' " +
-                    $"store at '{storeLocation}'. Verify the thumbprint and that the certificate has been " +
-                    "installed into this exact store/location combination."));
-            }
-
-            // Return a standalone copy: every certificate in 'matches' is disposed in the finally
-            // block below, which would otherwise invalidate the handle the caller needs.
-            return new X509Certificate2(matches[0]);
-        }
-        finally
+        if (matches.Count == 0)
         {
             foreach (var match in matches)
-                match.Dispose();
+            {
+                using var _ = match;
+            }
+
+            throw new ZeeKayDaConfigurationException(new ZeeKayDaConfigurationFailure(
+                "signing.windows_certificate_store.certificate_not_found",
+                $"No certificate with thumbprint '{normalizedThumbprint}' was found in the '{storeName}' " +
+                $"store at '{storeLocation}'. Verify the thumbprint and that the certificate has been " +
+                "installed into this exact store/location combination."));
         }
+
+        // Return a standalone copy: every certificate in 'matches' is disposed after this copy
+        // has been made, which preserves the handle the caller needs.
+        var result = new X509Certificate2(matches[0]);
+        foreach (var match in matches)
+        {
+            using var _ = match;
+        }
+
+        return result;
     }
 }

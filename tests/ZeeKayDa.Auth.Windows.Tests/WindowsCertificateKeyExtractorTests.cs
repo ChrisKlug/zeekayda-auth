@@ -49,43 +49,66 @@ public sealed class WindowsCertificateKeyExtractorTests
     [Fact]
     public void ExtractPrivateKey_RSA_handle_remains_usable_after_the_parent_certificate_is_disposed()
     {
+        IDisposable? privateKey = null;
         var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
-        var (privateKey, _) = WindowsCertificateKeyExtractor.ExtractPrivateKey(certificate, "AABBCC");
+        try
+        {
+            (privateKey, _) = WindowsCertificateKeyExtractor.ExtractPrivateKey(certificate, "AABBCC");
+        }
+        finally
+        {
+            certificate.Dispose();
+        }
 
-        certificate.Dispose();
+        try
+        {
+            var act = () => ((RSA)privateKey).SignData("payload"u8.ToArray(), HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
 
-        var act = () => ((RSA)privateKey).SignData("payload"u8.ToArray(), HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
-
-        act.Should().NotThrow("the extracted handle must remain usable after its parent certificate is disposed - LoadKeysAsync's disposal ordering depends on this");
-        privateKey.Dispose();
+            act.Should().NotThrow("the extracted handle must remain usable after its parent certificate is disposed - LoadKeysAsync's disposal ordering depends on this");
+        }
+        finally
+        {
+            privateKey?.Dispose();
+        }
     }
 
     [Fact]
     public void ExtractPrivateKey_EC_handle_remains_usable_after_the_parent_certificate_is_disposed()
     {
-        var certificate = TestCertificateFactory.CreateEcSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
-        var (privateKey, _) = WindowsCertificateKeyExtractor.ExtractPrivateKey(certificate, "AABBCC");
+        IDisposable? privateKey = null;
+        using var certificate = TestCertificateFactory.CreateEcSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+        try
+        {
+            (privateKey, _) = WindowsCertificateKeyExtractor.ExtractPrivateKey(certificate, "AABBCC");
+        }
+        finally
+        {
+            certificate.Dispose();
+        }
 
-        certificate.Dispose();
+        try
+        {
+            var act = () => ((ECDsa)privateKey).SignData("payload"u8.ToArray(), HashAlgorithmName.SHA256);
 
-        var act = () => ((ECDsa)privateKey).SignData("payload"u8.ToArray(), HashAlgorithmName.SHA256);
-
-        act.Should().NotThrow("the extracted handle must remain usable after its parent certificate is disposed - LoadKeysAsync's disposal ordering depends on this");
-        privateKey.Dispose();
+            act.Should().NotThrow("the extracted handle must remain usable after its parent certificate is disposed - LoadKeysAsync's disposal ordering depends on this");
+        }
+        finally
+        {
+            privateKey?.Dispose();
+        }
     }
 
     [Fact]
     public void ExtractPublicKey_handle_remains_usable_after_the_parent_certificate_is_disposed()
     {
-        var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
-        var (publicKey, _) = WindowsCertificateKeyExtractor.ExtractPublicKey(certificate, "AABBCC");
+        using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+        using var publicKey = WindowsCertificateKeyExtractor.ExtractPublicKey(certificate, "AABBCC").publicKey;
 
         certificate.Dispose();
 
         var act = () => ((RSA)publicKey).ExportParameters(includePrivateParameters: false);
 
         act.Should().NotThrow("a non-active included certificate's public-only handle must also survive disposal of its parent certificate");
-        publicKey.Dispose();
     }
 
     [Fact]

@@ -108,9 +108,8 @@ public sealed class CertificateStoreReaderTests
         using var installed = new InstalledTestCertificate(testCertificate);
         var reader = new CertificateStoreReader();
 
-        var found = reader.GetCertificate(ThumbprintFormat.Normalize(installed.Thumbprint), StoreLocation.CurrentUser, StoreName.My);
+        using var found = reader.GetCertificate(ThumbprintFormat.Normalize(installed.Thumbprint), StoreLocation.CurrentUser, StoreName.My);
         var (privateKey, keyType) = WindowsCertificateKeyExtractor.ExtractPrivateKey(found, installed.Thumbprint);
-        found.Dispose();
 
         keyType.Should().Be(SigningKeyType.Rsa);
         var payload = "windows-certificate-store-signing-provider"u8.ToArray();
