@@ -157,12 +157,18 @@ internal static class WindowsCertificateStoreSigningKeyRotation
         if (timeline.Count < 2)
             return false;
 
-        soonestPending = timeline
-            .Where(entry =>
-                !string.Equals(entry.Certificate.Thumbprint, active.Certificate.Thumbprint, StringComparison.Ordinal) &&
-                entry.ActivatesAt > now)
-            .OrderBy(entry => entry.ActivatesAt)
-            .FirstOrDefault();
+        // Not a plain .OrderBy().FirstOrDefault(): ActivationEntry is a readonly record struct, so
+        // FirstOrDefault() on an empty filtered sequence returns default(ActivationEntry) rather
+        // than null, making `soonestPending` wrongly non-null when nothing is actually pending. A
+        // Copilot Autofix suggestion introduced exactly this regression once already - see git
+        // history - caught by HasTooSoonPendingActivation_false_when_no_certificate_is_pending.
+        foreach (var entry in timeline.Where(entry =>
+            !string.Equals(entry.Certificate.Thumbprint, active.Certificate.Thumbprint, StringComparison.Ordinal) &&
+            entry.ActivatesAt > now))
+        {
+            if (soonestPending is not { } current || entry.ActivatesAt < current.ActivatesAt)
+                soonestPending = entry;
+        }
 
         return soonestPending is { } pending && pending.ActivatesAt - now < refreshInterval;
     }
