@@ -20,7 +20,21 @@ public sealed class CertificateStoreReaderTests
 
         public InstalledTestCertificate(X509Certificate2 certificate)
         {
-            _certificate = certificate;
+            // TestCertificateFactory.CreateRsaSelfSigned's private key is ephemeral (an in-memory
+            // CNG key never associated with a persisted key container). On an interactive desktop,
+            // X509Store.Add() can silently persist an ephemeral key on the caller's behalf, but on
+            // a non-interactive CI session (e.g. GitHub Actions' windows-latest runner) that
+            // promotion does not reliably happen: the certificate is still added to the store and
+            // found by thumbprint, but re-reading it back reports HasPrivateKey = false. Round-tripping
+            // through a PFX export/reimport with PersistKeySet forces the private key into a durable
+            // CNG key container before the certificate is added, so it survives being read back by a
+            // separate X509Store.Open() call exactly as a real, deployment-installed certificate would.
+            const string temporaryPfxPassword = "test-only-not-a-real-secret";
+            var pfxBytes = certificate.Export(X509ContentType.Pfx, temporaryPfxPassword);
+            certificate.Dispose();
+            _certificate = X509CertificateLoader.LoadPkcs12(
+                pfxBytes, temporaryPfxPassword, X509KeyStorageFlags.PersistKeySet | X509KeyStorageFlags.Exportable);
+
             _store = new X509Store(StoreName.My, StoreLocation.CurrentUser);
             _store.Open(OpenFlags.ReadWrite);
             _store.Add(_certificate);

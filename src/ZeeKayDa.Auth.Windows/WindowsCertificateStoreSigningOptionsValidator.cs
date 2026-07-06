@@ -54,15 +54,33 @@ internal sealed class WindowsCertificateStoreSigningOptionsValidator : IValidate
 
         var normalizedPrimary = ThumbprintFormat.Normalize(options.Thumbprint);
         var seen = new HashSet<string>(StringComparer.Ordinal) { normalizedPrimary };
+        var hasEmptyAdditionalThumbprint = false;
+        var hasDuplicateAdditionalThumbprint = false;
         foreach (var additional in options.AdditionalThumbprints)
         {
-            if (!seen.Add(additional))
-            {
-                errors.Add(
-                    "AddCertificate was called with a thumbprint that duplicates the primary or another " +
-                    "already-registered certificate.");
-                break;
-            }
+            // AddCertificate already normalizes its argument (ThumbprintFormat.Normalize), so a
+            // thumbprint made up entirely of non-hex characters (e.g. copy-paste garbage) normalizes
+            // to "" here rather than throwing at registration time. Left uncaught, it would only
+            // surface later as a confusing "certificate not found: ''" configuration error at load
+            // time instead of a clear validation failure.
+            if (additional.Length == 0)
+                hasEmptyAdditionalThumbprint = true;
+            else if (!seen.Add(additional))
+                hasDuplicateAdditionalThumbprint = true;
+        }
+
+        if (hasEmptyAdditionalThumbprint)
+        {
+            errors.Add(
+                "AddCertificate was called with a thumbprint that contains no hex digits after " +
+                "normalization. Verify the thumbprint was copied correctly.");
+        }
+
+        if (hasDuplicateAdditionalThumbprint)
+        {
+            errors.Add(
+                "AddCertificate was called with a thumbprint that duplicates the primary or another " +
+                "already-registered certificate.");
         }
 
         return errors.Count > 0 ? ValidateOptionsResult.Fail(errors) : ValidateOptionsResult.Success;

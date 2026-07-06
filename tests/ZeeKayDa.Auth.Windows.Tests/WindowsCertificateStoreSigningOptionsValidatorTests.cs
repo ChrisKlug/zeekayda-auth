@@ -103,6 +103,17 @@ public sealed class WindowsCertificateStoreSigningOptionsValidatorTests
     }
 
     [Fact]
+    public void Validate_fails_when_AddCertificate_thumbprint_normalizes_to_empty()
+    {
+        var options = ValidOptions();
+        options.AddCertificate("!!!!!!!!!!!!!!!!"); // punctuation only - contains no 0-9/a-f/A-F characters at all
+
+        var result = new WindowsCertificateStoreSigningOptionsValidator().Validate(null, options);
+
+        result.Failed.Should().BeTrue("a thumbprint with no hex digits must be rejected at validation time, not surface later as a confusing 'certificate not found: ''' load-time failure");
+    }
+
+    [Fact]
     public void Validate_succeeds_with_distinct_additional_certificates()
     {
         var options = ValidOptions();
