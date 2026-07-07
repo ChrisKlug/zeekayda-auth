@@ -25,16 +25,21 @@ public readonly record struct RotationKey(string Id, DateTimeOffset ActivatesAt,
 /// A single key's position in the activation timeline built by <see cref="SigningKeyRotation.BuildActivationTimeline"/>.
 /// </summary>
 /// <param name="Key">The underlying key identity and activation window.</param>
-/// <param name="ActivatesAt">
-/// The earliest instant this key could ever legitimately win <see cref="SigningKeyRotation.SelectActiveKey"/>'s
-/// selection. Equal to <see cref="RotationKey.ActivatesAt"/> — anchor-agnostic rotation applies no
-/// additional delay or flooring on top of the caller-supplied activation time.
-/// </param>
 /// <param name="RetiredAt">
 /// The <see cref="ActivatesAt"/> of the key that actually superseded this one as the active signer,
 /// if any.
 /// </param>
-public readonly record struct RotationEntry(RotationKey Key, DateTimeOffset ActivatesAt, DateTimeOffset? RetiredAt);
+public readonly record struct RotationEntry(RotationKey Key, DateTimeOffset? RetiredAt)
+{
+    /// <summary>
+    /// Gets the earliest instant this key could ever legitimately win
+    /// <see cref="SigningKeyRotation.SelectActiveKey"/>'s selection. Always equal to
+    /// <see cref="RotationKey.ActivatesAt"/> — anchor-agnostic rotation applies no additional delay
+    /// or flooring on top of the caller-supplied activation time, so this is a computed accessor
+    /// over <see cref="Key"/> rather than a separately stored (and potentially divergent) field.
+    /// </summary>
+    public DateTimeOffset ActivatesAt => Key.ActivatesAt;
+}
 
 /// <summary>
 /// The stateless, anchor-agnostic rotation-timeline derivation shared by every signing provider that
@@ -86,7 +91,7 @@ public static class SigningKeyRotation
 
         for (var i = ordered.Count - 1; i >= 0; i--)
         {
-            entries[i] = new RotationEntry(ordered[i], ordered[i].ActivatesAt, nextEligibleSuccessorActivatesAt);
+            entries[i] = new RotationEntry(ordered[i], nextEligibleSuccessorActivatesAt);
 
             if (IsEligibleAt(ordered[i], ordered[i].ActivatesAt))
                 nextEligibleSuccessorActivatesAt = ordered[i].ActivatesAt;
@@ -99,6 +104,15 @@ public static class SigningKeyRotation
     /// Picks the currently active signing key out of an ascending activation timeline.
     /// </summary>
     /// <remarks>
+    /// <para>
+    /// <strong>Callers must fail closed on a <see langword="null"/> return.</strong> A
+    /// <see langword="null"/> result means no key is currently eligible to sign; the caller must
+    /// refuse to sign (e.g. by throwing a configuration exception), never fall back to an arbitrary
+    /// key from the timeline — signing with an expired or not-yet-activated key would issue tokens
+    /// relying parties are entitled to reject, and silently picking one would mask the very
+    /// misconfiguration this <see langword="null"/> exists to surface.
+    /// </para>
+    /// <para>
     /// <strong>Single-key bootstrap exemption:</strong> with exactly one registered key it is active
     /// immediately regardless of its <see cref="RotationKey.ActivatesAt"/> — there is no prior
     /// published JWKS state any relying party could have cached. This also covers the steady state
@@ -106,10 +120,11 @@ public static class SigningKeyRotation
     /// was already active and published well before the cleanup redeploy. The exemption applies only
     /// to activation timing, not to expiry: an already-expired sole key still fails closed (returns
     /// <see langword="null"/>) rather than being silently used to sign.
+    /// </para>
     /// </remarks>
     /// <returns>
     /// The active entry, or <see langword="null"/> if no key is currently eligible to sign (the
-    /// caller fails closed in this case).
+    /// caller must fail closed in this case — see remarks).
     /// </returns>
     public static RotationEntry? SelectActiveKey(IReadOnlyList<RotationEntry> timeline, DateTimeOffset now)
     {
