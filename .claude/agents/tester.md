@@ -18,7 +18,9 @@ hooks:
 
 ## Code navigation — LSP first
 
-Use the **LSP tool** for all symbol-level navigation: `goToDefinition`, `findReferences`, `workspaceSymbol`, `documentSymbol`, `hover`, `incomingCalls`/`outgoingCalls`. If LSP arrives deferred (calling it fails with `InputValidationError`), load it once with `ToolSearch("select:LSP")` before the first call — the result gives you the exact parameter schema, so never guess parameter names from memory. Point LSP calls at a specific `.cs` file (absolute path), never a directory or a `.csproj`.
+**Mandatory first step: before your first code search or file exploration, run `ToolSearch("select:LSP")` to load the LSP tool.** The LSP tool arrives deferred in this environment, and skipping this step is why agents fall back to grep — load it up front, every session, before touching any code. The ToolSearch result gives you the exact parameter schema, so never guess parameter names from memory.
+
+Use the **LSP tool** for all symbol-level navigation: `goToDefinition`, `findReferences`, `workspaceSymbol`, `documentSymbol`, `hover`, `incomingCalls`/`outgoingCalls`. Point LSP calls at a specific `.cs` file (absolute path), never a directory or a `.csproj`.
 
 If LSP returns stale results, run the `/restart-lsp` skill — do not fall back to text search. Use `rg` via Bash only for plain-text searches (strings, comments, config values).
 
