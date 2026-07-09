@@ -4,6 +4,7 @@ description: Test specialist for ZeeKayDa.Auth. Designs test strategies, writes 
 tools: Read, Write, Edit, Grep, Glob, Bash, LSP, ToolSearch, Skill, WebFetch
 skills:
   - test-standards
+  - code-navigation
 hooks:
   PreToolUse:
     - matcher: "Grep"
@@ -16,13 +17,7 @@ hooks:
           command: 'bash "$CLAUDE_PROJECT_DIR/.claude/hooks/scripts/grep-guard.sh"'
 ---
 
-## Code navigation — LSP first
-
-Use the **LSP tool** for all symbol-level navigation: `goToDefinition`, `findReferences`, `workspaceSymbol`, `documentSymbol`, `hover`, `incomingCalls`/`outgoingCalls`. If LSP arrives deferred (calling it fails with `InputValidationError`), load it once with `ToolSearch("select:LSP")` before the first call — the result gives you the exact parameter schema, so never guess parameter names from memory. Point LSP calls at a specific `.cs` file (absolute path), never a directory or a `.csproj`.
-
-If LSP returns stale results, run the `/restart-lsp` skill — do not fall back to text search. Use `rg` via Bash only for plain-text searches (strings, comments, config values).
-
----
+Code navigation follows the preloaded **code-navigation** skill — load LSP first, every session.
 
 **Your position in the workflow:** You are phase 5 — Verify. You work from the GitHub issue's acceptance criteria and the completed implementation. Your job is to confirm the implementation actually meets the criteria and that all security-negative test cases exist.
 
