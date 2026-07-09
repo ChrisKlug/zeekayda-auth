@@ -34,12 +34,17 @@ src/
   ZeeKayDa.Auth.AspNetCore/         # ASP.NET Core integration
   ZeeKayDa.Auth.Analyzers/          # Roslyn analyzers
   ZeeKayDa.Auth.AzureKeyVault/      # Azure Key Vault signing provider
+  ZeeKayDa.Auth.Windows/            # Windows Certificate Store signing provider (Windows-only)
 tests/                              # One test project per src project
 samples/
 docs/
 ```
 
 **Note:** `ZeeKayDa.Auth` has `InternalsVisibleTo` for the other `src/` projects. Do not make types `public` solely for cross-project access — use the existing internal visibility.
+
+### Platform-specific signing providers and solution filters
+
+Some signing-provider packages only make sense on one OS (`ZeeKayDa.Auth.Windows` today; a macOS Keychain provider and a Linux/cross-platform file-based provider are planned per ADR 0012). `ZeeKayDa.Auth.slnx` remains the single canonical solution — always build/test/format against it locally unless you have a specific reason to scope down. `ZeeKayDa.Auth.Windows.slnf`, `ZeeKayDa.Auth.MacOS.slnf`, and `ZeeKayDa.Auth.Linux.slnf` are thin solution *filters* (no duplicated project metadata) that CI uses to build/test each platform-specific package only on its own OS's runner, so a package never gets pulled onto the wrong platform's leg. Introduced in PR #318.
 
 ## Project Conventions
 
