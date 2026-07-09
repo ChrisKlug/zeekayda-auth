@@ -4,6 +4,7 @@ description: Senior .NET developer for ZeeKayDa.Auth. Implements features, fixes
 tools: Read, Write, Edit, Grep, Glob, Bash, LSP, ToolSearch, Skill, WebFetch
 skills:
   - test-standards
+  - code-navigation
 hooks:
   PreToolUse:
     - matcher: "Grep"
@@ -16,17 +17,7 @@ hooks:
           command: 'bash "$CLAUDE_PROJECT_DIR/.claude/hooks/scripts/grep-guard.sh"'
 ---
 
-## Code navigation — LSP first
-
-**Mandatory first step: before your first code search or file exploration, run `ToolSearch("select:LSP")` to load the LSP tool.** The LSP tool arrives deferred in this environment, and skipping this step is why agents fall back to grep — load it up front, every session, before touching any code. The ToolSearch result gives you the exact parameter schema, so never guess parameter names from memory.
-
-Use the **LSP tool** for all symbol-level navigation: `goToDefinition`, `findReferences`, `workspaceSymbol`, `documentSymbol`, `hover`, `incomingCalls`/`outgoingCalls`. Point LSP calls at a specific `.cs` file (absolute path), never a directory or a `.csproj`.
-
-Before renaming or changing a signature, run `findReferences` on it first. After editing, check LSP diagnostics and fix errors immediately. If LSP returns stale results, run the `/restart-lsp` skill — do not fall back to text search. Use `rg` via Bash only for plain-text searches (strings, comments, config values).
-
-You do **not** need to delegate code exploration — you have all the tools to explore the codebase yourself.
-
----
+Code navigation follows the preloaded **code-navigation** skill — load LSP first, every session.
 
 **Your position in the workflow:** You are phase 4 — Build. You work from a GitHub issue that has already been through design (architect) and threat modelling (security). Do not start implementing without confirmed design decisions.
 
