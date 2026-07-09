@@ -17,9 +17,11 @@ Please take a few minutes to read this guide before you start. It helps us revie
 7. [Commit Messages](#commit-messages)
 8. [Developer Certificate of Origin (DCO)](#developer-certificate-of-origin-dco)
 9. [Code Style](#code-style)
-10. [CI](#ci)
-11. [Release Process](#release-process)
-12. [Security Vulnerabilities](#security-vulnerabilities)
+10. [Building Locally](#building-locally)
+11. [Test Naming Convention](#test-naming-convention)
+12. [CI](#ci)
+13. [Release Process](#release-process)
+14. [Security Vulnerabilities](#security-vulnerabilities)
 
 ---
 
@@ -196,6 +198,29 @@ If you are unsure about a style decision, check how the surrounding code is writ
 
 ---
 
+## Building Locally
+
+`ZeeKayDa.Auth.slnx` is the single canonical solution — build, test, and format against it unless you have a specific reason to scope down:
+
+```bash
+dotnet build ZeeKayDa.Auth.slnx
+dotnet test ZeeKayDa.Auth.slnx
+```
+
+Some signing-provider packages only make sense on one OS (`ZeeKayDa.Auth.Windows` today; a macOS Keychain provider and a Linux/cross-platform file-based provider are planned). `ZeeKayDa.Auth.Windows.slnf`, `ZeeKayDa.Auth.MacOS.slnf`, and `ZeeKayDa.Auth.Linux.slnf` are thin solution *filters* over the same canonical solution — no duplicated project metadata — that scope a build/test run to only the projects valid on that OS. CI uses them so a platform-specific package is never built or tested on the wrong runner. You generally don't need them locally unless you're working on a platform-specific provider and want to confirm your change builds cleanly without the other platforms' projects in the mix, e.g.:
+
+```bash
+dotnet build ZeeKayDa.Auth.Windows.slnf
+```
+
+`dotnet format` does not auto-discover a single solution when both `.slnx` and `.slnf` files are present in the same directory — always pass `ZeeKayDa.Auth.slnx` explicitly:
+
+```bash
+dotnet format ZeeKayDa.Auth.slnx --verify-no-changes
+```
+
+---
+
 ## Test Naming Convention
 
 All test methods follow the `Method_verb_object_condition` pattern. The name should read like a plain-English sentence that answers *"what does this method do, and under what condition?"*
@@ -225,7 +250,7 @@ Every pull request and every push to `main` runs the following GitHub Actions jo
 
 | Job | What it checks |
 |---|---|
-| `build-and-test` | Restores, builds (warnings-as-errors), and runs the full test suite with code coverage on `ubuntu-latest`. |
+| `build-and-test` | Restores, builds (warnings-as-errors), and runs the full test suite with code coverage on a matrix of `ubuntu-latest`, `windows-latest`, and `macos-latest`, each using its own OS-specific solution filter (see [Building Locally](#building-locally)) so platform-specific provider packages only build/test on their own OS. |
 | `coverage-regression` | Runs PR and base-branch coverage, writes a coverage delta summary, and fails if line coverage decreases. |
 | `coverage-regression-script-tests` | Runs the fixture-driven smoke tests for `.github/scripts/check_coverage_regression.cs`. |
 | `format-check` | Runs `dotnet format --verify-no-changes` to ensure all code matches the `.editorconfig` rules. |
