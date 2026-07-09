@@ -15,12 +15,13 @@ namespace ZeeKayDa.Auth.Windows;
 /// <remarks>
 /// <para>
 /// <see cref="LoadKeysAsync"/> derives the currently trusted certificate set from the certificates'
-/// own <c>NotBefore</c>/<c>NotAfter</c> fields via <see cref="WindowsCertificateStoreSigningKeyRotation"/> —
-/// see that type's remarks for the full rationale (why the anchor differs from the Key Vault
-/// providers' <c>CreatedOn</c>-based derivation). Only the active certificate's private key is ever
-/// held: every other included certificate (published-but-not-yet-active, or still within its
-/// retirement window) gets only a public-only handle, since it is never used to sign — only exposed
-/// via the JWKS (ADR 0011 §3.3(c)).
+/// own <c>NotBefore</c>/<c>NotAfter</c> fields, mapped onto <see cref="RotationKey.ActivatesAt"/>/
+/// <see cref="RotationKey.ExpiresAt"/> and passed to the shared, anchor-agnostic
+/// <see cref="SigningKeyRotation"/> component — see that type's remarks for the full rationale (why
+/// the anchor differs from the Key Vault providers' <c>CreatedOn</c>-based derivation). Only the
+/// active certificate's private key is ever held: every other included certificate
+/// (published-but-not-yet-active, or still within its retirement window) gets only a public-only
+/// handle, since it is never used to sign — only exposed via the JWKS (ADR 0011 §3.3(c)).
 /// </para>
 /// <para>
 /// This class does not override <see cref="JwtSigningService{TOptions}.SignInputAsync"/> — per ADR
@@ -31,10 +32,10 @@ namespace ZeeKayDa.Auth.Windows;
 /// network round trip at sign time, so there is no transient-fault surface to wrap.
 /// </para>
 /// <para>
-/// <c>kid</c> is the RFC 7638 JWK thumbprint of each certificate's public key (via
-/// <see cref="WindowsCertificateSigningKeyDescriptorFactory"/>), never the certificate's own X.509
-/// thumbprint — a <c>kid</c> is always public, so using the store thumbprint directly would be
-/// exactly the kind of external-identifier leak <see cref="JwkThumbprint"/> exists to avoid.
+/// <c>kid</c> is the RFC 7638 JWK thumbprint of each certificate's public key (via the shared
+/// <see cref="SigningKeyDescriptorFactory"/>), never the certificate's own X.509 thumbprint — a
+/// <c>kid</c> is always public, so using the store thumbprint directly would be exactly the kind of
+/// external-identifier leak <see cref="JwkThumbprint"/> exists to avoid.
 /// </para>
 /// </remarks>
 internal sealed class WindowsCertificateStoreSigningJwtSigningService : JwtSigningService<WindowsCertificateStoreSigningOptions>
@@ -83,20 +84,20 @@ internal sealed class WindowsCertificateStoreSigningJwtSigningService : JwtSigni
                 certificatesByThumbprint[thumbprint] = _storeReader.GetCertificate(thumbprint, options.StoreLocation, options.StoreName);
 
             var now = _timeProvider.GetUtcNow();
-            var infos = certificatesByThumbprint
-                .Select(kvp => new WindowsCertificateStoreSigningKeyRotation.RegisteredCertificateInfo(
+            var rotationKeys = certificatesByThumbprint
+                .Select(kvp => new RotationKey(
                     kvp.Key, new DateTimeOffset(kvp.Value.NotBefore), new DateTimeOffset(kvp.Value.NotAfter)))
                 .ToList();
 
-            var timeline = WindowsCertificateStoreSigningKeyRotation.BuildActivationTimeline(infos);
-            var active = WindowsCertificateStoreSigningKeyRotation.SelectActiveVersion(timeline, now)
+            var timeline = SigningKeyRotation.BuildActivationTimeline(rotationKeys);
+            var active = SigningKeyRotation.SelectActiveKey(timeline, now)
                 ?? throw new ZeeKayDaConfigurationException(new ZeeKayDaConfigurationFailure(
                     "signing.windows_certificate_store.no_active_certificate",
                     "No registered certificate is currently eligible to sign. Verify at least one " +
                     "registered certificate's NotBefore has arrived and its NotAfter has not yet passed."));
 
             var retirementWindow = _retirementWindowProvider.GetRetirementWindow();
-            var included = WindowsCertificateStoreSigningKeyRotation.SelectIncludedCertificates(timeline, active, now, retirementWindow);
+            var included = SigningKeyRotation.SelectIncludedKeys(timeline, active, now, retirementWindow);
 
             LogCertificateStatuses(timeline, active, included, now, options.RefreshInterval, retirementWindow, certificatesByThumbprint);
             WarnIfActiveCertificateExpiringSoon(active, now);
@@ -104,16 +105,25 @@ internal sealed class WindowsCertificateStoreSigningJwtSigningService : JwtSigni
             var keyPairs = new List<SigningKeyPair>(included.Count);
             try
             {
-                foreach (var thumbprint in included.Select(entry => entry.Certificate.Thumbprint))
+                foreach (var thumbprint in included.Select(entry => entry.Key.Id))
                 {
                     var certificate = certificatesByThumbprint[thumbprint];
-                    var isActive = string.Equals(thumbprint, active.Certificate.Thumbprint, StringComparison.Ordinal);
+                    var isActive = string.Equals(thumbprint, active.Key.Id, StringComparison.Ordinal);
 
                     var (publicKey, keyType) = WindowsCertificateKeyExtractor.ExtractPublicKey(certificate, thumbprint);
                     SigningKeyDescriptor descriptor;
                     try
                     {
-                        descriptor = WindowsCertificateSigningKeyDescriptorFactory.BuildDescriptor(publicKey, keyType, options.Algorithm, thumbprint);
+                        descriptor = SigningKeyDescriptorFactory.BuildDescriptor(
+                            publicKey,
+                            keyType,
+                            options.Algorithm,
+                            "signing.windows_certificate_store.algorithm_key_type_mismatch",
+                            mismatchedKeyType => mismatchedKeyType == SigningKeyType.Rsa
+                                ? $"WindowsCertificateStoreSigningOptions.Algorithm is {options.Algorithm}, but certificate " +
+                                  $"'{thumbprint}' is an RSA certificate. Use an RSA algorithm (RS256, RS384, RS512, PS256, PS384, or PS512)."
+                                : $"WindowsCertificateStoreSigningOptions.Algorithm is {options.Algorithm}, but certificate " +
+                                  $"'{thumbprint}' is an EC certificate. Use an EC algorithm (ES256, ES384, or ES512).");
                     }
                     catch
                     {
@@ -171,9 +181,9 @@ internal sealed class WindowsCertificateStoreSigningJwtSigningService : JwtSigni
     }
 
     private void LogCertificateStatuses(
-        IReadOnlyList<WindowsCertificateStoreSigningKeyRotation.ActivationEntry> timeline,
-        WindowsCertificateStoreSigningKeyRotation.ActivationEntry active,
-        IReadOnlyList<WindowsCertificateStoreSigningKeyRotation.ActivationEntry> included,
+        IReadOnlyList<RotationEntry> timeline,
+        RotationEntry active,
+        IReadOnlyList<RotationEntry> included,
         DateTimeOffset now, TimeSpan refreshInterval, TimeSpan retirementWindow,
         IReadOnlyDictionary<string, X509Certificate2> certificatesByThumbprint)
     {
@@ -187,20 +197,20 @@ internal sealed class WindowsCertificateStoreSigningJwtSigningService : JwtSigni
         // resolves to, including a certificate that is configured but has fallen out of the trusted
         // set entirely (its retirement window has elapsed) and can now safely be removed.
         var includedThumbprints = new HashSet<string>(
-            included.Select(e => e.Certificate.Thumbprint), StringComparer.Ordinal);
+            included.Select(e => e.Key.Id), StringComparer.Ordinal);
 
         foreach (var entry in timeline)
         {
-            var certificate = certificatesByThumbprint[entry.Certificate.Thumbprint];
+            var certificate = certificatesByThumbprint[entry.Key.Id];
             var status = DescribeStatus(entry, active, includedThumbprints, now, retirementWindow);
 
             _logger.LogInformation(
                 "ZeeKayDa.Auth: Windows Certificate Store signing certificate '{Thumbprint}' " +
                 "(subject '{Subject}', expires {NotAfter:O}) is {Status}.",
-                entry.Certificate.Thumbprint, certificate.Subject, entry.Certificate.NotAfter, status);
+                entry.Key.Id, certificate.Subject, entry.Key.ExpiresAt, status);
         }
 
-        if (WindowsCertificateStoreSigningKeyRotation.HasTooSoonPendingActivation(timeline, active, now, refreshInterval, out var soonestPending))
+        if (SigningKeyRotation.HasTooSoonPendingActivation(timeline, active, now, refreshInterval, out var soonestPending))
         {
             _logger.LogWarning(
                 "ZeeKayDa.Auth: certificate '{Thumbprint}' activates at {ActivatesAt:O}, which is less " +
@@ -208,19 +218,19 @@ internal sealed class WindowsCertificateStoreSigningJwtSigningService : JwtSigni
                 "JWKS at RefreshInterval cadence may not have observed this certificate's public key " +
                 "before it starts signing. Set this certificate's NotBefore at least RefreshInterval in " +
                 "the future next time (see ADR 0011 §3.5 / issue #282).",
-                soonestPending!.Value.Certificate.Thumbprint, soonestPending.Value.ActivatesAt, refreshInterval);
+                soonestPending!.Value.Key.Id, soonestPending.Value.ActivatesAt, refreshInterval);
         }
     }
 
     private static string DescribeStatus(
-        WindowsCertificateStoreSigningKeyRotation.ActivationEntry entry,
-        WindowsCertificateStoreSigningKeyRotation.ActivationEntry active,
+        RotationEntry entry,
+        RotationEntry active,
         HashSet<string> includedThumbprints, DateTimeOffset now, TimeSpan retirementWindow)
     {
-        if (string.Equals(entry.Certificate.Thumbprint, active.Certificate.Thumbprint, StringComparison.Ordinal))
+        if (string.Equals(entry.Key.Id, active.Key.Id, StringComparison.Ordinal))
             return "the active signer";
 
-        if (!includedThumbprints.Contains(entry.Certificate.Thumbprint))
+        if (!includedThumbprints.Contains(entry.Key.Id))
         {
             return "NOT included in the JWKS - its retirement window has fully elapsed; safe to remove " +
                 "from configuration";
@@ -233,20 +243,19 @@ internal sealed class WindowsCertificateStoreSigningJwtSigningService : JwtSigni
             $"{entry.RetiredAt!.Value + retirementWindow:O})";
     }
 
-    private void WarnIfActiveCertificateExpiringSoon(
-        WindowsCertificateStoreSigningKeyRotation.ActivationEntry active, DateTimeOffset now)
+    private void WarnIfActiveCertificateExpiringSoon(RotationEntry active, DateTimeOffset now)
     {
         // Re-evaluated on every LoadKeysAsync call, exactly like LogCertificateStatuses above:
         // whether the active certificate is within 30 days of expiry is genuinely time-varying — a
         // long-running process can cross into that window mid-lifetime. Repeats at most once per
         // RefreshInterval for as long as the condition holds.
-        if (active.Certificate.NotAfter - now <= TimeSpan.FromDays(30))
+        if (active.Key.ExpiresAt - now <= TimeSpan.FromDays(30))
         {
             _logger.LogWarning(
                 "ZeeKayDa.Auth: the active Windows Certificate Store signing certificate '{Thumbprint}' " +
                 "expires at {NotAfter:O}, within 30 days. Rotate in a new certificate (via AddCertificate) " +
                 "before it expires.",
-                active.Certificate.Thumbprint, active.Certificate.NotAfter);
+                active.Key.Id, active.Key.ExpiresAt);
         }
     }
 }
