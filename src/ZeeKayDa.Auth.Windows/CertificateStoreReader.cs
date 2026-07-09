@@ -38,7 +38,7 @@ internal sealed class CertificateStoreReader : ICertificateStoreReader
 
         // validOnly:false — X.509 chain-trust/revocation validity is not a signing-key eligibility
         // concept here; NotBefore/NotAfter eligibility is decided by
-        // WindowsCertificateStoreSigningKeyRotation, not by the OS's notion of chain validity.
+        // ZeeKayDa.Auth.Tokens.SigningKeyRotation, not by the OS's notion of chain validity.
         // X509Certificate2Collection itself is not IDisposable, but every certificate it contains
         // is — dispose them explicitly once a standalone copy of the match has been made.
         var matches = store.Certificates.Find(X509FindType.FindByThumbprint, normalizedThumbprint, validOnly: false);

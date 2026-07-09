@@ -13,7 +13,7 @@ namespace ZeeKayDa.Auth.Windows;
 /// store on every refresh, which has no external cost. Instead it doubles as the threshold used
 /// to warn when a rotated-in certificate's <see cref="X509Certificate2.NotBefore"/> is scheduled
 /// too soon relative to how often relying parties are expected to have polled the JWKS (ADR 0011
-/// §3.5; see <c>WindowsCertificateStoreSigningKeyRotation.HasTooSoonPendingActivation</c>).
+/// §3.5; see <see cref="SigningKeyRotation.HasTooSoonPendingActivation"/>).
 /// </remarks>
 public sealed class WindowsCertificateStoreSigningOptions : JwtSigningServiceOptions
 {

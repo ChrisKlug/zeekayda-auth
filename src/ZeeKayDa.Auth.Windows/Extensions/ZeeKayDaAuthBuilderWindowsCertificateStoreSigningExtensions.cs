@@ -29,7 +29,7 @@ public static class ZeeKayDaAuthBuilderWindowsCertificateStoreSigningExtensions
     /// <paramref name="storeName"/> via <see cref="WindowsCertificateStoreSigningOptions.AddCertificate"/>
     /// in <paramref name="configure"/>. With exactly one registered certificate it is the active
     /// signer immediately; with two or more, the certificate whose <c>NotBefore</c> has arrived and
-    /// is most recent is the active signer. See <c>WindowsCertificateStoreSigningKeyRotation</c> and
+    /// is most recent is the active signer. See <see cref="SigningKeyRotation"/> and
     /// ADR 0011 §3.3/§3.5 for the full rotation/retirement model.
     /// </para>
     /// <para>
