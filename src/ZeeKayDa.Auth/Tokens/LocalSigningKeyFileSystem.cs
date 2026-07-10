@@ -7,20 +7,25 @@ using System.Security.Principal;
 namespace ZeeKayDa.Auth.Tokens;
 
 /// <summary>
-/// Provides interop access to <c>getuid()</c> and <c>stat()</c> for directory ownership
-/// validation on Unix platforms.
+/// Provides interop access to <c>getuid()</c>, <c>stat()</c>, and <c>lstat()</c> for directory
+/// ownership validation on Unix platforms.
 /// </summary>
 /// <remarks>
 /// <para>
 /// The current process UID from <c>getuid()</c> is compared against the directory owner UID
-/// obtained from <c>stat()</c> to detect attacker-controlled directories that pass the
-/// <c>0700</c> permission check but are owned by a different user.
+/// obtained from <c>stat()</c> (<see cref="GetOwnerUid"/>) to detect attacker-controlled
+/// directories that pass the <c>0700</c> permission check but are owned by a different user.
+/// <see cref="GetLinkOwnerUid"/> uses <c>lstat()</c> instead wherever a path component might
+/// itself be a symlink and the owner of the *link entry*, not whatever it points at, is the
+/// signal needed — see its own remarks for why the distinction is security-critical.
 /// </para>
 /// <para>
 /// Two native stat structs are declared — one for macOS/BSD and one for Linux 64-bit — because
 /// the kernel ABI differs between platforms. Only the fields up to <c>st_uid</c> are bound;
 /// the remainder of each struct is covered by blittable scalar padding sized to the full struct
-/// on each OS.
+/// on each OS. The same structs back both the <c>stat()</c> and <c>lstat()</c> bindings, since
+/// both syscalls fill an identical <c>struct stat</c> layout — they differ only in whether the
+/// kernel dereferences a trailing symlink before populating it.
 /// </para>
 /// <para>
 /// <c>[LibraryImport]</c> is used in preference to <c>[DllImport]</c> because the source
@@ -72,6 +77,50 @@ internal static partial class PosixInterop
     [LibraryImport("libc", EntryPoint = "stat", StringMarshalling = StringMarshalling.Utf8, SetLastError = true)]
     [UnsupportedOSPlatform("windows")]
     private static partial int NativeStatLinuxArm64(string path, out StatLinuxArm64 buf);
+
+    /// <summary>
+    /// Returns the UID of the owner of the directory entry at <paramref name="path"/> itself — if
+    /// that entry is a symlink, the symlink object's own owner, <strong>not</strong> the owner of
+    /// whatever it points at — or <see langword="null"/> if <c>lstat()</c> fails.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately distinct from <see cref="GetOwnerUid"/>, which calls <c>stat()</c> and therefore
+    /// follows a symlink to report the *target's* owner. That distinction matters wherever a caller
+    /// uses ownership as a trust signal for a path component that might itself be a symlink (e.g.
+    /// <c>FileSigningKeyReader.ValidateNoUntrustedSymlinkedAncestorUnix</c> in
+    /// <c>ZeeKayDa.Auth.FileSystem</c>, via <c>InternalsVisibleTo</c>): an unprivileged attacker can
+    /// create a symlink that *points at* a root-owned directory, and <c>stat()</c> on that link would
+    /// then wrongly report the target's root ownership rather than the attacker's own ownership of
+    /// the link they just created. <c>lstat()</c> reports the link entry's own owner regardless of
+    /// what it points at, which is the only sound signal for "could an unprivileged local attacker
+    /// have created or replaced this specific directory entry."
+    /// </remarks>
+    [UnsupportedOSPlatform("windows")]
+    internal static uint? GetLinkOwnerUid(string path)
+    {
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+            return NativeLstatMacOs(path, out var macBuf) == 0 ? macBuf.st_uid : null;
+
+        if (RuntimeInformation.OSArchitecture == Architecture.X64)
+            return NativeLstatLinuxX64(path, out var x64Buf) == 0 ? x64Buf.st_uid : null;
+
+        if (RuntimeInformation.OSArchitecture is Architecture.Arm64 or Architecture.RiscV64)
+            return NativeLstatLinuxArm64(path, out var arm64Buf) == 0 ? arm64Buf.st_uid : null;
+
+        return null;
+    }
+
+    [LibraryImport("libc", EntryPoint = "lstat", StringMarshalling = StringMarshalling.Utf8, SetLastError = true)]
+    [UnsupportedOSPlatform("windows")]
+    private static partial int NativeLstatMacOs(string path, out StatMacOs buf);
+
+    [LibraryImport("libc", EntryPoint = "lstat", StringMarshalling = StringMarshalling.Utf8, SetLastError = true)]
+    [UnsupportedOSPlatform("windows")]
+    private static partial int NativeLstatLinuxX64(string path, out StatLinuxX64 buf);
+
+    [LibraryImport("libc", EntryPoint = "lstat", StringMarshalling = StringMarshalling.Utf8, SetLastError = true)]
+    [UnsupportedOSPlatform("windows")]
+    private static partial int NativeLstatLinuxArm64(string path, out StatLinuxArm64 buf);
 
     /// <summary>
     /// macOS / BSD stat struct (arm64, 144 bytes total). Fields in native ABI order.

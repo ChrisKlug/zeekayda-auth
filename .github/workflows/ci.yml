@@ -41,11 +41,13 @@ jobs:
         with:
           global-json-file: global.json
 
-      # Platform-specific provider packages (ZeeKayDa.Auth.Windows today; macOS Keychain #290 and
-      # Linux PEM #291 are planned per ADR 0012) have no business being built or tested on any OS
-      # but their own. ZeeKayDa.Auth.slnx remains the single canonical solution — these are thin
+      # Platform-specific provider packages (ZeeKayDa.Auth.Windows today) have no business being
+      # built or tested on any OS but their own. ZeeKayDa.Auth.FileSystem (#291) is the exception:
+      # it is a portable, cross-platform provider (no P/Invoke, no OS-specific TFM — ADR 0012
+      # Amendment 2) and must build and test on every runner OS, so it appears in all three .slnf
+      # files below. ZeeKayDa.Auth.slnx remains the single canonical solution — these are thin
       # solution *filters* (no duplicated project metadata) selecting which projects apply to each
-      # runner OS, so a package never gets pulled onto the wrong platform's leg.
+      # runner OS, so a platform-specific package never gets pulled onto the wrong platform's leg.
       - name: Select solution
         shell: bash
         run: |
