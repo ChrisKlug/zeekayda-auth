@@ -92,7 +92,7 @@ the production platform the consumer ultimately targets.
 |---|---|
 | `ZeeKayDa.Auth.AzureKeyVault` | `AddAzureKeyVaultRemoteSigning(...)` (#287) and `AddAzureKeyVaultCachedSigning(...)` (#288) |
 | `ZeeKayDa.Auth.Windows` | `AddWindowsCertificateStoreSigning(...)` (#289) |
-| `ZeeKayDa.Auth.MacOS` | `AddMacOsKeychainSigning(...)` (#290) |
+| ~~`ZeeKayDa.Auth.MacOS`~~ | ~~`AddMacOsKeychainSigning(...)` (#290)~~ — **cancelled, will not ship; see Amendment 1** |
 | `ZeeKayDa.Auth.Linux` | `AddPemFileSigning(...)` and optionally a PKCS#11 extension (#291) |
 
 Both Azure Key Vault variants live in a single package (`ZeeKayDa.Auth.AzureKeyVault`) because
@@ -213,6 +213,24 @@ consumer takes on is the extension method signature and any options type it expo
 
 ---
 
+## Amendments
+
+### Amendment 1 — issue #290 descoped (2026-07-10)
+
+**The `ZeeKayDa.Auth.MacOS` package (#290, macOS Keychain provider) is cancelled and will not ship. The per-OS packaging *model* is otherwise unchanged.**
+
+Issue #290 was closed as "not planned" — a fully-implemented, reviewed PR (#323) was closed unmerged and its branch deleted. This was a product-scope decision, not a technical one: the realistic audience for a production macOS-hosted authorization server is too thin to justify permanently carrying native Security.framework P/Invoke. (Recorded in parallel as ADR 0011 Amendment 7.)
+
+Concretely for this ADR:
+
+- **The `ZeeKayDa.Auth.MacOS` row in §2's table is cancelled.** `AddMacOsKeychainSigning(...)` and the `net10.0-macos` package do not exist and will not be published. The macOS-specific CI note in §2 (macOS runners for Keychain tests) and the macOS Keychain interop dependency mentioned in the Context and §2 are moot.
+- **The macOS deployment target is now served by the file-based provider (#291).** With no native macOS store package, `ZeeKayDa.Auth` + `AddPemFileSigning`/`AddPfxFileSigning` (#291, cross-platform, in whatever package #291 ultimately publishes under) is the sole recommended signing provider for macOS-hosted deployments, in addition to its existing container/Linux/headless fallback role.
+- **The packaging model itself stands unchanged.** The core decision — "each production provider platform ships as its own thin NuGet package, referencing only `ZeeKayDa.Auth` core, with a minimal `Add<Provider>Signing()` public surface" (§2, §3) — remains correct and is still exercised by `ZeeKayDa.Auth.AzureKeyVault` (#287/#288), `ZeeKayDa.Auth.Windows` (#289), and the file-based provider (#291). Only the macOS row is removed. The count of package identities in the Consequences section drops from six to five (the two existing packages, Azure Key Vault, Windows, and the file-based provider); the operational-cost, typosquat, and signing/provenance consequences all scale down accordingly but are otherwise unchanged.
+
+The Context and §2 prose that enumerate #290 / macOS as one of the originally-planned provider surfaces are left intact by convention (they record what this ADR was written against); this amendment supersedes their forward-looking treatment of the macOS package as planned.
+
+---
+
 ## References
 
 - **ADR 0011** — Signing Key Management (establishes `IJwtSigningService`, `JwtSigningService<TOptions>`, `DevelopmentJwtSigningService`, and the `AddXxx()` registration pattern this ADR builds on).
@@ -222,5 +240,5 @@ consumer takes on is the extension method signature and any options type it expo
 - Issue **#287** — Azure Key Vault remote signing provider.
 - Issue **#288** — Azure Key Vault cached signing provider.
 - Issue **#289** — Windows Certificate Store provider.
-- Issue **#290** — macOS Keychain provider.
-- Issue **#291** — Linux OS-level signing key provider.
+- Issue **#290** — macOS Keychain provider *(descoped/closed "not planned" 2026-07-10; the `ZeeKayDa.Auth.MacOS` package will not ship — see Amendment 1)*.
+- Issue **#291** — file-based PEM/PFX signing key provider (cross-platform; now also the sole recommended provider for macOS deployments).
