@@ -97,9 +97,7 @@ internal abstract class FileSigningJwtSigningService<TOptions> : JwtSigningServi
         // Load every registered file up front — the timeline needs every registered file's
         // NotBefore/NotAfter, not just the ones that end up "included", to correctly compute
         // retirement anchors.
-        var certificatesByPath = new Dictionary<string, X509Certificate2>(paths.Count, StringComparer.Ordinal);
-        try
-        {
+        using var certificatesByPath = new Dictionary<string, X509Certificate2>(paths.Count, StringComparer.Ordinal);
             foreach (var path in paths)
                 certificatesByPath[path] = await LoadCertificateAsync(path, options, cancellationToken).ConfigureAwait(false);
 
@@ -180,16 +178,6 @@ internal abstract class FileSigningJwtSigningService<TOptions> : JwtSigningServi
             }
 
             return new SigningKeySet(keyPairs);
-        }
-        finally
-        {
-            // GetRSAPrivateKey()/GetECDsaPrivateKey()/GetRSAPublicKey()/GetECDsaPublicKey() return
-            // handle objects that remain valid after the parent X509Certificate2 is disposed
-            // (.NET Core 3.0+) — safe to dispose every loaded certificate here, after all needed
-            // handles have already been extracted above.
-            foreach (var certificate in certificatesByPath.Values)
-                certificate.Dispose();
-        }
     }
 
     private void LogCertificateStatuses(

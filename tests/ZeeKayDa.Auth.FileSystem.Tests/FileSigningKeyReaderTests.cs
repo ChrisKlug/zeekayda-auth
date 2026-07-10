@@ -65,7 +65,7 @@ public sealed class FileSigningKeyReaderTests
         try
         {
             using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", DateTimeOffset.UtcNow - TimeSpan.FromDays(1), DateTimeOffset.UtcNow + TimeSpan.FromDays(365));
-            var path = Path.Combine(rawTempDir.FullName, "key.pem");
+            var path = Path.Join(rawTempDir.FullName, "key.pem");
             await File.WriteAllTextAsync(path, TempSigningKeyDirectory.BuildCombinedPem(certificate), ct);
             if (!OperatingSystem.IsWindows())
                 File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
@@ -90,9 +90,9 @@ public sealed class FileSigningKeyReaderTests
 
         var ct = TestContext.Current.CancellationToken;
         using var tempDir = new TempSigningKeyDirectory();
-        var realSubdirectory = Path.Combine(tempDir.DirectoryPath, "real");
+        var realSubdirectory = Path.Join(tempDir.DirectoryPath, "real");
         Directory.CreateDirectory(realSubdirectory);
-        var symlinkedSubdirectory = Path.Combine(tempDir.DirectoryPath, "attacker-planted-link");
+        var symlinkedSubdirectory = Path.Join(tempDir.DirectoryPath, "attacker-planted-link");
 
         try
         {
@@ -105,10 +105,10 @@ public sealed class FileSigningKeyReaderTests
         }
 
         using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", DateTimeOffset.UtcNow - TimeSpan.FromDays(1), DateTimeOffset.UtcNow + TimeSpan.FromDays(365));
-        var path = Path.Combine(symlinkedSubdirectory, "key.pem");
+        var path = Path.Join(symlinkedSubdirectory, "key.pem");
         await File.WriteAllTextAsync(Path.Combine(realSubdirectory, "key.pem"), TempSigningKeyDirectory.BuildCombinedPem(certificate), ct);
         if (!OperatingSystem.IsWindows())
-            File.SetUnixFileMode(Path.Combine(realSubdirectory, "key.pem"), UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            File.SetUnixFileMode(Path.Join(realSubdirectory, "key.pem"), UnixFileMode.UserRead | UnixFileMode.UserWrite);
         var reader = new FileSigningKeyReader(new CapturingSanitizingLogger<FileSigningKeyReader>());
 
         // Unlike the OS temp directory above, this symlinked ancestor is owned by the current
@@ -145,7 +145,7 @@ public sealed class FileSigningKeyReaderTests
 
         var ct = TestContext.Current.CancellationToken;
         using var tempDir = new TempSigningKeyDirectory();
-        var attackerSymlink = Path.Combine(tempDir.DirectoryPath, "looks-like-root-owned");
+        var attackerSymlink = Path.Join(tempDir.DirectoryPath, "looks-like-root-owned");
 
         try
         {
@@ -158,8 +158,8 @@ public sealed class FileSigningKeyReaderTests
         }
 
         var leafFileName = $"zkda-lstat-regression-{Guid.NewGuid():N}.pem";
-        var path = Path.Combine(attackerSymlink, leafFileName);
-        var realLeafPath = Path.Combine(RootOwnedTarget, leafFileName);
+        var path = Path.Join(attackerSymlink, leafFileName);
+        var realLeafPath = Path.Join(RootOwnedTarget, leafFileName);
         try
         {
             using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", DateTimeOffset.UtcNow - TimeSpan.FromDays(1), DateTimeOffset.UtcNow + TimeSpan.FromDays(365));

@@ -58,7 +58,7 @@ internal sealed class TempSigningKeyDirectory : IDisposable
     /// </remarks>
     public string DirectoryPath { get; } = ResolveRealPath(Directory.CreateTempSubdirectory("zkda-filesystem-tests-").FullName);
 
-    public string GetPath(string fileName) => Path.Combine(DirectoryPath, fileName);
+    public string GetPath(string fileName) => Path.Join(DirectoryPath, fileName);
 
     /// <summary>
     /// Resolves every symlinked ancestor directory in <paramref name="path"/> to its real target,
@@ -90,12 +90,12 @@ internal sealed class TempSigningKeyDirectory : IDisposable
         var root = Path.GetPathRoot(fullPath) ?? string.Empty;
         var segments = fullPath[root.Length..].Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries);
 
-        // Path.Combine (not string concatenation) correctly handles a bare root like "/" on Unix,
+        // Path.Join (not string concatenation) correctly handles a bare root like "/" on Unix,
         // where naive concatenation would otherwise silently drop the leading separator.
         var resolved = root;
         foreach (var segment in segments)
         {
-            resolved = Path.Combine(resolved, segment);
+            resolved = Path.Join(resolved, segment);
 
             if (!Directory.Exists(resolved))
                 continue;
@@ -106,7 +106,7 @@ internal sealed class TempSigningKeyDirectory : IDisposable
 
             resolved = Path.IsPathRooted(linkTarget)
                 ? linkTarget
-                : Path.GetFullPath(Path.Combine(Path.GetDirectoryName(resolved) ?? root, linkTarget));
+                : Path.GetFullPath(Path.Join(Path.GetDirectoryName(resolved) ?? root, linkTarget));
         }
 
         return resolved;
