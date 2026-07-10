@@ -75,7 +75,6 @@ jobs:
           if-no-files-found: ignore
 
       - name: Code Coverage Summary Report
-        if: runner.os == 'Linux'
         uses: irongut/CodeCoverageSummary@51cc3a756ddcd398d447c044c02cb6aa83fdae95
         with:
           filename: TestResults/**/coverage.cobertura.xml
@@ -86,7 +85,6 @@ jobs:
           hide_branch_rate: false
 
       - name: Add Coverage PR/Job Summary
-        if: runner.os == 'Linux'
         run: cat code-coverage-results.md >> $GITHUB_STEP_SUMMARY
 
   coverage-regression:
@@ -128,6 +126,14 @@ jobs:
             --no-build --configuration Release \
             --collect:"XPlat Code Coverage" --results-directory ./TestResults/pr \
             -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Include="[ZeeKayDa.Auth.AspNetCore]*"
+          dotnet test tests/ZeeKayDa.Auth.AzureKeyVault.Tests/ \
+            --no-build --configuration Release \
+            --collect:"XPlat Code Coverage" --results-directory ./TestResults/pr \
+            -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Include="[ZeeKayDa.Auth.AzureKeyVault]*"
+          dotnet test tests/ZeeKayDa.Auth.FileSystem.Tests/ \
+            --no-build --configuration Release \
+            --collect:"XPlat Code Coverage" --results-directory ./TestResults/pr \
+            -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Include="[ZeeKayDa.Auth.FileSystem]*"
 
       - name: Measure base-branch coverage
         run: |
@@ -143,6 +149,14 @@ jobs:
             --no-build --configuration Release \
             --collect:"XPlat Code Coverage" --results-directory ./TestResults/base \
             -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Include="[ZeeKayDa.Auth.AspNetCore]*"
+          dotnet test tests/ZeeKayDa.Auth.AzureKeyVault.Tests/ \
+            --no-build --configuration Release \
+            --collect:"XPlat Code Coverage" --results-directory ./TestResults/base \
+            -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Include="[ZeeKayDa.Auth.AzureKeyVault]*"
+          dotnet test tests/ZeeKayDa.Auth.FileSystem.Tests/ \
+            --no-build --configuration Release \
+            --collect:"XPlat Code Coverage" --results-directory ./TestResults/base \
+            -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Include="[ZeeKayDa.Auth.FileSystem]*"
 
       - name: Check coverage regression
         run: dotnet run .github/scripts/check_coverage_regression.cs -- ./TestResults/pr ../coverage-base/TestResults/base

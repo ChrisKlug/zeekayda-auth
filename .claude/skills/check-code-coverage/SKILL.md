@@ -31,6 +31,14 @@ dotnet test tests/ZeeKayDa.Auth.AspNetCore.Tests/ \
   --no-build --configuration Release \
   --collect:"XPlat Code Coverage" --results-directory ./TestResults/pr \
   -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Include="[ZeeKayDa.Auth.AspNetCore]*"
+dotnet test tests/ZeeKayDa.Auth.AzureKeyVault.Tests/ \
+  --no-build --configuration Release \
+  --collect:"XPlat Code Coverage" --results-directory ./TestResults/pr \
+  -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Include="[ZeeKayDa.Auth.AzureKeyVault]*"
+dotnet test tests/ZeeKayDa.Auth.FileSystem.Tests/ \
+  --no-build --configuration Release \
+  --collect:"XPlat Code Coverage" --results-directory ./TestResults/pr \
+  -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Include="[ZeeKayDa.Auth.FileSystem]*"
 ```
 
 ### 2. Measure coverage in main
@@ -50,6 +58,14 @@ dotnet test tests/ZeeKayDa.Auth.AspNetCore.Tests/ \
   --no-build --configuration Release \
   --collect:"XPlat Code Coverage" --results-directory ./TestResults/base \
   -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Include="[ZeeKayDa.Auth.AspNetCore]*"
+dotnet test tests/ZeeKayDa.Auth.AzureKeyVault.Tests/ \
+  --no-build --configuration Release \
+  --collect:"XPlat Code Coverage" --results-directory ./TestResults/base \
+  -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Include="[ZeeKayDa.Auth.AzureKeyVault]*"
+dotnet test tests/ZeeKayDa.Auth.FileSystem.Tests/ \
+  --no-build --configuration Release \
+  --collect:"XPlat Code Coverage" --results-directory ./TestResults/base \
+  -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Include="[ZeeKayDa.Auth.FileSystem]*"
 ```
 
 ### 3. Compare the results
