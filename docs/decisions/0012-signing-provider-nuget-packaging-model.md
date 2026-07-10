@@ -213,6 +213,18 @@ consumer takes on is the extension method signature and any options type it expo
 
 ---
 
+## Amendments
+
+### Amendment 1 — issue #290 (2026-07-10)
+
+**The macOS Keychain provider (`ZeeKayDa.Auth.MacOS`, issue #290) targets the portable `net10.0` TFM, not the `net10.0-macos` this ADR's Decision §2 table implies — a deliberate, architect-confirmed exception to the per-OS-package platform-TFM rule.**
+
+Decision §2 states each OS-level package "targets the platform-specific TFM (`net10.0-windows`, `net10.0-macos`, `net10.0-linux`)", reasoning that NuGet's restore-time TFM check turns a platform mismatch into a build-time failure rather than a runtime surprise. That reasoning holds for `net10.0-windows`, which is a plain BCL-surface TFM that restores and builds on any OS with zero extra workloads. It does **not** hold for `net10.0-macos`: that is the .NET-for-macOS application-model TFM (the Xamarin.Mac-descended Cocoa/AppKit binding surface), and a project targeting it fails to restore with `NETSDK1147` unless the consumer first runs `dotnet workload install macos` — a large, AppKit-laden workload unrelated to signing a JWT. Verified directly on this repo's SDK (10.0.300): `net10.0-macos` fails restore with no workloads installed while `net10.0-windows` restores cleanly, and the CI macOS leg installs no such workload, so a `net10.0-macos` target would break CI restore for this package.
+
+`ZeeKayDa.Auth.MacOS` therefore targets `net10.0` and substitutes a runtime `OperatingSystem.IsMacOS()` gate in `AddMacOsKeychainSigning` (throwing `PlatformNotSupportedException`, mirroring the Windows provider's platform gate) plus `[SupportedOSPlatform("macos")]` annotations on the macOS-only interop surface for CA1416 analysis. **Trade-off:** this package loses the restore-time platform rejection Decision §2 valued — a portable or non-macOS project can now reference it and only discover the mismatch at runtime — accepted because the alternative (forcing every consumer to install the `macos` workload) is a far larger tax, and a common valid deployment is a portable `net10.0` ASP.NET Core app deployed to macOS, which a platform-specific TFM would wrongly exclude. Issue #291 (Linux PEM provider) must independently re-verify whether `net10.0-linux` carries the same workload requirement before adopting or diverging from this precedent. Full technical detail, plus the two Keychain-interop findings from the same implementation, is recorded in ADR 0011 Amendment 7.
+
+---
+
 ## References
 
 - **ADR 0011** — Signing Key Management (establishes `IJwtSigningService`, `JwtSigningService<TOptions>`, `DevelopmentJwtSigningService`, and the `AddXxx()` registration pattern this ADR builds on).

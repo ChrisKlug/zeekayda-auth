@@ -61,6 +61,18 @@ jobs:
       - name: Build
         run: dotnet build ${{ env.SOLUTION }} --no-restore --configuration Release
 
+      # The macOS Keychain integration tests (issue #290) create real keys/identities in the
+      # runner's login keychain and sign with them. Without this, the runner has no user session
+      # to satisfy the "app wants to use a key in your keychain" ACL prompt, and the job hangs
+      # instead of failing fast. set-key-partition-list is what actually suppresses the prompt —
+      # it grants command-line-tool processes silent access to private key material.
+      - name: Authorize non-interactive Keychain access
+        if: runner.os == 'macOS'
+        run: |
+          security unlock-keychain -p "" "$HOME/Library/Keychains/login.keychain-db"
+          security set-keychain-settings -lut 21600 "$HOME/Library/Keychains/login.keychain-db"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -k "" "$HOME/Library/Keychains/login.keychain-db"
+
       - name: Test
         run: dotnet test ${{ env.SOLUTION }} --no-build --configuration Release --collect:"XPlat Code Coverage" --results-directory ./TestResults
 

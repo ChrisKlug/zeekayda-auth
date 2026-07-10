@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      ADR 0012 lists "net10.0-macos" as this package's TFM, by analogy with
+      ZeeKayDa.Auth.Windows's "net10.0-windows". That analogy does not hold in practice:
+      "net10.0-macos" is the Mac Catalyst/AppKit application-model TFM (the .NET-for-macOS
+      workload, descended from Xamarin.Mac) and requires every consumer to run
+      `dotnet workload install macos` before they can even restore a project that references
+      this package - a multi-hundred-megabyte, Cocoa/AppKit-binding-laden workload that has
+      nothing to do with signing a JWT. Verified directly on this repo's SDK
+      (10.0.300): a bare `net10.0-macos` project fails to restore with NETSDK1147 ("workloads
+      must be installed: macos") with no workloads installed, whereas "net10.0-windows"
+      restores and builds with zero extra workloads on any OS. Windows's OS-versioned TFM
+      carries no such tax because it is a plain BCL-surface TFM, not an application-model one.
+
+      This package therefore targets the plain "net10.0" TFM instead, with a runtime
+      OperatingSystem.IsMacOS() guard in AddMacOsKeychainSigning (mirroring the platform-gate
+      pattern already used by AddWindowsCertificateStoreSigning) and [SupportedOSPlatform("macos")]
+      annotations on the macOS-only surface for CA1416 static analysis. This is a deliberate
+      deviation from ADR 0012's literal TFM table for this package only - flagged for architect
+      confirmation / a follow-up ADR 0012 amendment recording it. See the PR description for #290.
+    -->
+    <TargetFramework>net10.0</TargetFramework>
+    <PackageId>ZeeKayDa.Auth.MacOS</PackageId>
+    <Description>macOS Keychain JWT signing provider for ZeeKayDa.Auth: loads a signing key or certificate by label from the macOS Keychain and signs locally via Security.framework, without exporting private key material to managed memory.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../ZeeKayDa.Auth/ZeeKayDa.Auth.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../ZeeKayDa.Auth.Analyzers/ZeeKayDa.Auth.Analyzers.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+</Project>
