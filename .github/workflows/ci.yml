@@ -74,18 +74,8 @@ jobs:
           path: ./TestResults/**/coverage.cobertura.xml
           if-no-files-found: ignore
 
-      - name: Code Coverage Summary Report
-        uses: irongut/CodeCoverageSummary@51cc3a756ddcd398d447c044c02cb6aa83fdae95
-        with:
-          filename: TestResults/**/coverage.cobertura.xml
-          format: markdown
-          output: both          # Logs to console AND creates a markdown file
-          badge: true           # Adds a visual status badge to the summary
-          indicators: true      # Uses ✔ and ❌ symbols for rapid visual scanning
-          hide_branch_rate: false
-
-      - name: Add Coverage PR/Job Summary
-        run: cat code-coverage-results.md >> $GITHUB_STEP_SUMMARY
+      - name: Coverage summary
+        run: dotnet run .github/scripts/summarize_coverage.cs -- ./TestResults
 
   coverage-regression:
     name: Coverage Regression
@@ -188,6 +178,9 @@ jobs:
 
       - name: Run coverage-regression script smoke tests
         run: bash .github/scripts/tests/check_coverage_regression.tests.sh
+
+      - name: Run coverage-summary script smoke tests
+        run: bash .github/scripts/tests/summarize_coverage.tests.sh
 
   log-hygiene:
     name: Log Hygiene Check
