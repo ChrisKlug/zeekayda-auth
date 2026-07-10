@@ -120,14 +120,14 @@ internal static class InstalledTestKeychainItems
             var pfxPath = Path.Combine(Path.GetTempPath(), $"{label}.p12");
             File.WriteAllBytes(pfxPath, pfxBytes);
 
-            RunSecurityCli(false, "import", pfxPath, "-k", LoginKeychainPath, "-P", password, "-A");
+            RunSecurityCli(false, "import", pfxPath, "-k", TargetKeychainPath.Value, "-P", password, "-A");
 
             return new InstalledIdentity { Label = label, TemporaryPfxPath = pfxPath };
         }
 
         public void Dispose()
         {
-            RunSecurityCli(true, "delete-identity", "-c", Label, LoginKeychainPath);
+            RunSecurityCli(true, "delete-identity", "-c", Label, TargetKeychainPath.Value);
             File.Delete(TemporaryPfxPath);
         }
     }
@@ -148,20 +148,53 @@ internal static class InstalledTestKeychainItems
             var cerPath = Path.Combine(Path.GetTempPath(), $"{label}.cer");
             File.WriteAllBytes(cerPath, derBytes);
 
-            RunSecurityCli(false, "add-certificates", "-k", LoginKeychainPath, cerPath);
+            RunSecurityCli(false, "add-certificates", "-k", TargetKeychainPath.Value, cerPath);
 
             return new InstalledCertificateOnly { Label = label, TemporaryCerPath = cerPath };
         }
 
         public void Dispose()
         {
-            RunSecurityCli(true, "delete-certificate", "-c", Label, LoginKeychainPath);
+            RunSecurityCli(true, "delete-certificate", "-c", Label, TargetKeychainPath.Value);
             File.Delete(TemporaryCerPath);
         }
     }
 
-    private static readonly string LoginKeychainPath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Library", "Keychains", "login.keychain-db");
+    /// <summary>
+    /// Resolves the current default keychain path — not a hardcoded <c>login.keychain-db</c> path
+    /// — so these helpers follow whatever keychain the environment has set as default: the real
+    /// login keychain for a local developer run, or CI's dedicated, already-authorized keychain
+    /// (<c>ci-signing.keychain-db</c>, set up in <c>ci.yml</c>) on a hosted runner.
+    /// </summary>
+    private static readonly Lazy<string> TargetKeychainPath = new(ResolveDefaultKeychainPath);
+
+    private static string ResolveDefaultKeychainPath()
+    {
+        var startInfo = new ProcessStartInfo("security")
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+        };
+        startInfo.ArgumentList.Add("default-keychain");
+        startInfo.ArgumentList.Add("-d");
+        startInfo.ArgumentList.Add("user");
+
+        using var process = Process.Start(startInfo)!;
+        var output = process.StandardOutput.ReadToEnd();
+        process.WaitForExit();
+
+        if (process.ExitCode != 0)
+        {
+            var stderr = process.StandardError.ReadToEnd();
+            throw new InvalidOperationException(
+                $"`security default-keychain -d user` failed with exit code {process.ExitCode}: {stderr}");
+        }
+
+        // Output is the keychain path, quoted and newline-terminated, e.g.
+        // `    "/Users/x/Library/Keychains/login.keychain-db"\n`.
+        return output.Trim().Trim('"');
+    }
 
     private static string UniqueLabel(string prefix) => $"zeekayda-macos-test-{prefix}-{Guid.NewGuid():N}";
 

@@ -61,20 +61,33 @@ jobs:
       - name: Build
         run: dotnet build ${{ env.SOLUTION }} --no-restore --configuration Release
 
-      # The macOS Keychain integration tests (issue #290) create real keys/identities in the
-      # runner's login keychain and sign with them. Without this, the runner has no user session
-      # to satisfy the "app wants to use a key in your keychain" ACL prompt, and the job hangs
-      # instead of failing fast. set-key-partition-list is what actually suppresses the prompt —
-      # it grants command-line-tool processes silent access to private key material.
-      - name: Authorize non-interactive Keychain access
+      # The macOS Keychain integration tests (issue #290) create real keys/identities and sign
+      # with them. Hosted runners have no user session to satisfy the "app wants to use a key in
+      # your keychain" ACL prompt, and the job would hang instead of failing fast. Unlocking the
+      # runner's own login keychain isn't viable — its password isn't blank and isn't published by
+      # GitHub, so a guessed password fails outright (confirmed on a real run). Instead, create a
+      # dedicated, throwaway keychain scoped to this job with a password we control, make it the
+      # default (so SecKeyCreateRandomKey's kSecAttrIsPermanent items land there) while keeping
+      # login.keychain-db in the search list, and grant command-line-tool processes silent access
+      # via set-key-partition-list. The password is not a secret — the keychain is deleted at the
+      # end of this job and protects nothing beyond its own lifetime.
+      - name: Create and authorize a dedicated CI keychain
         if: runner.os == 'macOS'
         run: |
-          security unlock-keychain -p "" "$HOME/Library/Keychains/login.keychain-db"
-          security set-keychain-settings -lut 21600 "$HOME/Library/Keychains/login.keychain-db"
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -k "" "$HOME/Library/Keychains/login.keychain-db"
+          security create-keychain -p "ci-signing-keychain" ci-signing.keychain-db
+          security set-keychain-settings -lut 21600 ci-signing.keychain-db
+          security unlock-keychain -p "ci-signing-keychain" ci-signing.keychain-db
+          EXISTING=$(security list-keychains -d user | sed 's/[[:space:]]*"//;s/"$//')
+          security list-keychains -d user -s ci-signing.keychain-db $EXISTING
+          security default-keychain -d user -s ci-signing.keychain-db
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -k "ci-signing-keychain" ci-signing.keychain-db
 
       - name: Test
         run: dotnet test ${{ env.SOLUTION }} --no-build --configuration Release --collect:"XPlat Code Coverage" --results-directory ./TestResults
+
+      - name: Remove the dedicated CI keychain
+        if: always() && runner.os == 'macOS'
+        run: security delete-keychain ci-signing.keychain-db || true
 
       - name: Upload coverage-${{ matrix.os }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
