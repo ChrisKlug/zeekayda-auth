@@ -13,12 +13,15 @@ catch (Exception ex)
 
 static int Run(string[] args)
 {
-    if (args.Length != 1)
+    if (args.Length is not (1 or 2))
     {
-        Console.Error.WriteLine("Usage: summarize_coverage.cs <results-dir>");
+        Console.Error.WriteLine("Usage: summarize_coverage.cs <results-dir> [label]");
         return 2;
     }
 
+    // Optional label (e.g. the runner OS) distinguishes this table from the other build-and-test
+    // matrix legs when GitHub stacks every job's summary together on the run's overview page.
+    var label = args.Length == 2 ? args[1] : null;
     var packages = ReadPackages(args[0]);
 
     foreach (var package in packages)
@@ -27,7 +30,7 @@ static int Run(string[] args)
             $"{package.Name}: line {FormatPercent(package.Lines.Percent)}, branch {FormatPercent(package.Branches.Percent)}");
     }
 
-    WriteStepSummary(packages);
+    WriteStepSummary(packages, label);
 
     return 0;
 }
@@ -140,7 +143,7 @@ static (int Covered, int Valid) ReadBranchCoverage(XElement lineElement, string 
         Valid: int.Parse(counts[1], CultureInfo.InvariantCulture));
 }
 
-static void WriteStepSummary(IReadOnlyList<PackageCoverage> packages)
+static void WriteStepSummary(IReadOnlyList<PackageCoverage> packages, string? label)
 {
     var summaryPath = Environment.GetEnvironmentVariable("GITHUB_STEP_SUMMARY");
 
@@ -150,7 +153,7 @@ static void WriteStepSummary(IReadOnlyList<PackageCoverage> packages)
     }
 
     using var summary = File.AppendText(summaryPath);
-    summary.WriteLine("### Coverage Summary");
+    summary.WriteLine(string.IsNullOrWhiteSpace(label) ? "### Coverage Summary" : $"### Coverage Summary ({label})");
     summary.WriteLine();
     summary.WriteLine("| Package | Line | Branch |");
     summary.WriteLine("|---|---:|---:|");

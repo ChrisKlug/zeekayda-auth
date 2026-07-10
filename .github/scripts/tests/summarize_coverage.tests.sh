@@ -55,12 +55,17 @@ XML
 
 run_summarize() {
     local dir="$1"
+    local label="${2:-}"
     (
         cd "${REPO_ROOT}"
         # This is a smoke-test invocation of the script, not the real CI build-and-test step —
         # unset GITHUB_STEP_SUMMARY so it doesn't pollute the actual job summary.
         unset GITHUB_STEP_SUMMARY
-        dotnet run --no-launch-profile "${TARGET}" -- "${dir}"
+        if [[ -n "${label}" ]]; then
+            dotnet run --no-launch-profile "${TARGET}" -- "${dir}" "${label}"
+        else
+            dotnet run --no-launch-profile "${TARGET}" -- "${dir}"
+        fi
     )
 }
 
@@ -130,6 +135,20 @@ if [[ -f "${SUMMARY_FILE}" ]] && grep -q "ZeeKayDa.Auth.FileSystem" "${SUMMARY_F
     record_pass "writes markdown table to GITHUB_STEP_SUMMARY when set"
 else
     record_fail "writes markdown table to GITHUB_STEP_SUMMARY when set"
+fi
+
+# Case 6: an optional label (e.g. runner.os) is embedded in the summary heading, so per-OS
+# build-and-test tables are distinguishable when GitHub stacks every job's summary together.
+LABEL_SUMMARY_FILE="${WORK_DIR}/case6-summary.md"
+write_cobertura "${WORK_DIR}/case6" "ZeeKayDa.Auth.Windows" 4 10
+(
+    cd "${REPO_ROOT}"
+    GITHUB_STEP_SUMMARY="${LABEL_SUMMARY_FILE}" dotnet run --no-launch-profile "${TARGET}" -- "${WORK_DIR}/case6" "Windows" >/dev/null
+)
+if [[ -f "${LABEL_SUMMARY_FILE}" ]] && grep -q "### Coverage Summary (Windows)" "${LABEL_SUMMARY_FILE}"; then
+    record_pass "label is embedded in the summary heading when provided"
+else
+    record_fail "label is embedded in the summary heading when provided"
 fi
 
 echo

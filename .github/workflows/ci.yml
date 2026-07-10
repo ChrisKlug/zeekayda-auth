@@ -75,7 +75,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Coverage summary
-        run: dotnet run .github/scripts/summarize_coverage.cs -- ./TestResults
+        run: dotnet run .github/scripts/summarize_coverage.cs -- ./TestResults "${{ runner.os }}"
 
   coverage-regression:
     name: Coverage Regression
