@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <PackageId>ZeeKayDa.Auth.FileSystem</PackageId>
+    <Description>Cross-platform file-based (PEM/PFX) JWT signing provider for ZeeKayDa.Auth: loads an X.509 certificate and private key from operator-supplied files and signs locally.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../ZeeKayDa.Auth/ZeeKayDa.Auth.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../ZeeKayDa.Auth.Analyzers/ZeeKayDa.Auth.Analyzers.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+</Project>

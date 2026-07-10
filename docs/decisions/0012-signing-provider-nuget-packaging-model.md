@@ -93,7 +93,7 @@ the production platform the consumer ultimately targets.
 | `ZeeKayDa.Auth.AzureKeyVault` | `AddAzureKeyVaultRemoteSigning(...)` (#287) and `AddAzureKeyVaultCachedSigning(...)` (#288) |
 | `ZeeKayDa.Auth.Windows` | `AddWindowsCertificateStoreSigning(...)` (#289) |
 | ~~`ZeeKayDa.Auth.MacOS`~~ | ~~`AddMacOsKeychainSigning(...)` (#290)~~ — **cancelled, will not ship; see Amendment 1** |
-| `ZeeKayDa.Auth.Linux` | `AddPemFileSigning(...)` and optionally a PKCS#11 extension (#291) |
+| ~~`ZeeKayDa.Auth.Linux`~~ → `ZeeKayDa.Auth.FileSystem` | `AddPemFileSigning(...)` and `AddPfxFileSigning(...)` (#291) — ~~and optionally a PKCS#11 extension~~ (PKCS#11 descoped to its own future issue); **renamed and rescoped, see Amendment 2** |
 
 Both Azure Key Vault variants live in a single package (`ZeeKayDa.Auth.AzureKeyVault`) because
 they share the same external dependency (`Azure.Security.KeyVault.Keys`, `Azure.Identity`) and the
@@ -229,6 +229,24 @@ Concretely for this ADR:
 
 The Context and §2 prose that enumerate #290 / macOS as one of the originally-planned provider surfaces are left intact by convention (they record what this ADR was written against); this amendment supersedes their forward-looking treatment of the macOS package as planned.
 
+### Amendment 2 — issue #291 package identity resolved (2026-07-10)
+
+**The file-based provider (#291) ships as `ZeeKayDa.Auth.FileSystem`, targeting portable `net10.0`. This resolves the open item Amendment 1 left as "in whatever package #291 ultimately publishes under."**
+
+Amendment 1 established that the file-based provider (`AddPemFileSigning`/`AddPfxFileSigning`) is now the sole recommended signing provider for macOS deployments in addition to its original container/headless/Linux role, but deferred its package identity. Two facts are now decided:
+
+- **Package name: `ZeeKayDa.Auth.FileSystem`** (superseding the originally-planned `ZeeKayDa.Auth.Linux`). Every other provider package is named after the mechanism or platform it binds to (`.Windows`, `.AzureKeyVault`), not after "signing" — so `.FileSigning` was rejected as the only candidate carrying that redundant word, and `.FileSystem` names the mechanism (files on disk) consistently with that convention. `.Linux` is wrong because the provider is cross-platform. `.Local` was considered and rejected: it would collide with the existing local-development signing provider (`AddDevelopmentJwtSigningKeys`, referred to throughout ADR 0011 as "the local-dev provider"), an unrelated dev-only feature already living in core.
+- **TFM: portable `net10.0`**, not an OS-specific TFM. §2 requires each *OS-level* package to target a platform-specific TFM (`net10.0-windows`, etc.) precisely so NuGet rejects a portable reference to an interop-bound package at restore time. That rule exists to protect interop-bound packages; the file-based provider has no interop — `X509Certificate2.CreateFromPem` and `X509CertificateLoader` are portable BCL APIs. Gating it to one OS's TFM would be actively wrong: a portable consumer (a Linux container, a macOS host) must be able to reference it. `ZeeKayDa.Auth.FileSystem` is therefore the one production provider package that correctly targets portable `net10.0`.
+
+Concretely for this ADR:
+
+- **§2's `ZeeKayDa.Auth.Linux` table row is renamed to `ZeeKayDa.Auth.FileSystem` and rescoped.** Its public surface is `AddPemFileSigning(...)` and `AddPfxFileSigning(...)` (both #291).
+- **PKCS#11 / HSM support is descoped from #291 and is not part of this package.** The Context enumeration ("file-based PEM and optionally PKCS#11", and the "Linux provider may depend on a PKCS#11 interop library" dependency note) and the §2 prose describing `ZeeKayDa.Auth.Linux` as bundling a PEM provider plus "an optional PKCS#11 extension" are superseded. PKCS#11 was explicitly moved out of #291's scope — it talks to a hardware- or network-backed token rather than reading a flat file, architecturally closer to Key Vault remote signing (#288) than to a file loader — and, if wanted, will be filed as its own future issue against the #282 provider list. `ZeeKayDa.Auth.FileSystem` ships only the PEM and PFX file loaders.
+- **The platform-specific-TFM rule in §2 stands, but does not apply to this package.** It governs OS-level, interop-bound packages (`ZeeKayDa.Auth.Windows`); `ZeeKayDa.Auth.FileSystem` is portable by construction.
+- **The five-package count from Amendment 1 is unchanged** — this amendment only names and scopes the fifth package (the two existing packages, Azure Key Vault, Windows, and now `ZeeKayDa.Auth.FileSystem`).
+
+Amendment 1's forward-reference to "whatever package #291 ultimately publishes under" is resolved here: the package is `ZeeKayDa.Auth.FileSystem`. Per the convention Amendment 1 set for itself, its text is left intact as a record of what was known at the time.
+
 ---
 
 ## References
@@ -241,4 +259,4 @@ The Context and §2 prose that enumerate #290 / macOS as one of the originally-p
 - Issue **#288** — Azure Key Vault cached signing provider.
 - Issue **#289** — Windows Certificate Store provider.
 - Issue **#290** — macOS Keychain provider *(descoped/closed "not planned" 2026-07-10; the `ZeeKayDa.Auth.MacOS` package will not ship — see Amendment 1)*.
-- Issue **#291** — file-based PEM/PFX signing key provider (cross-platform; now also the sole recommended provider for macOS deployments).
+- Issue **#291** — file-based PEM/PFX signing key provider (ships as `ZeeKayDa.Auth.FileSystem`, portable `net10.0`, cross-platform; now also the sole recommended provider for macOS deployments; PKCS#11 descoped to its own future issue — see Amendment 2).
