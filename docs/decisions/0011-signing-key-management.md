@@ -855,6 +855,24 @@ Amendment 5 recorded issue #289's rotation and descriptor logic as internal, del
 
 This is a behavior-preserving consolidation of already-reviewed trust-boundary logic (#287/#288/#289), not a redesign; both retrofitted providers' externally observable behavior, failure codes, and exception message text are unchanged. Amendment 5's type/path/method references have been updated in place to point here.
 
+### Amendment 7 — issue #290 descoped (2026-07-10)
+
+**The macOS Keychain provider (#290) has been descoped and closed as "not planned." The anchor-agnostic `SigningKeyRotation`/`RotationKey` generalization stays exactly as shipped.**
+
+#290 (macOS Keychain signing key provider) — referenced above in Amendment 2's "Normative addition to §3.5" future-providers list, in Amendment 5's opening future-providers list, and in Amendment 6's "Why anchor-agnostic" closing paragraph as the imminent bare-key consumer that motivated *articulating* the anchor-agnostic design — has been closed unmerged. A fully-implemented, reviewed PR (#323) was closed and its branch deleted. This was a **product-scope decision, not a technical one**: the realistic audience for a production macOS-hosted authorization server is too thin to justify permanently carrying native Security.framework P/Invoke. The file-based PEM/PFX provider (#291) is now the **sole recommended signing provider for macOS deployments**, in addition to its existing role as the container/Linux fallback. The `ZeeKayDa.Auth.MacOS` package described in ADR 0012 §2 will not ship (see ADR 0012's Amendment 1).
+
+Amendments 2, 5, and 6 are left intact by deliberate convention: they record the design reasoning as it stood when each PR merged, and #290 was a genuine part of that reasoning at the time. This amendment supersedes their forward-looking references to #290 as a still-planned consumer; it does not rewrite them.
+
+**Should the anchor-agnostic/bare-key generalization in `SigningKeyRotation`/`RotationKey` be simplified now that its originally-motivating consumer is gone? No — leave it exactly as shipped.** This is a firm judgment, not a balanced trade-off, for three reasons:
+
+1. **The shape is exactly what #289 and #291 need anyway — #290 added none of the generality.** The generalization Amendment 6 introduced (`SigningKeyRotation` consuming a precomputed `(ActivatesAt, ExpiresAt)` `RotationKey` pair rather than an `X509Certificate2` or a raw `NotBefore`/`NotAfter`) exists so that core `ZeeKayDa.Auth` does not depend on `X509Certificate2` — coupling a protocol-core type to one specific credential representation would be a step backwards. Both #289 (Windows certs) and the still-open #291 (file-based PEM/PFX certs) are *separate* NuGet packages that each map their certificates' `NotBefore`/`NotAfter` onto that pair before calling in. That decoupling boundary is required for those two consumers regardless of whether #290 ever existed. #290 was merely the example used to *motivate the "anchor-agnostic" wording*; it contributed no actual generality to the design.
+
+2. **There is no bare-key-specific code in the core to remove.** All bare-key handling — the `AddKey(label, activatesAt)` overload, the fail-fast-without-`activatesAt` rule, and mapping a missing expiry to `DateTimeOffset.MaxValue` — lived entirely in #290's (now cancelled) provider package, never in `SigningKeyRotation`/`RotationKey`. The core type simply accepts two `DateTimeOffset`s and orders by them; it has no branch that knows or cares whether a timestamp originated from a certificate's `NotBefore` or an operator-configured value. `DateTimeOffset.MaxValue` as a never-expiring `ExpiresAt` is not a special case in the core — it is just a large value the ordering handles like any other. So #290's cancellation deletes **zero** lines from core and leaves no dead abstraction behind.
+
+3. **"Simplifying" would be a breaking change to already-shipped public surface, for negative benefit.** `SigningKeyRotation` and `RotationKey` are *public* core types (Amendment 6; ADR 0012 §3), already shipped and used by #289 in production. Reshaping them back toward an `X509Certificate2`- or `NotBefore`-named API would (a) re-couple core to a credential type it deliberately avoids, (b) break #291's ability to feed the same core cleanly from PEM/PFX certificates, and (c) be a SemVer-breaking change to types consumers already compile against — all to remove generality that costs nothing to keep and is already covered by tests.
+
+**Conclusion:** keep `SigningKeyRotation`/`RotationKey` exactly as shipped. The generalization is harmless, already tested, strictly more general at zero cost, and — importantly — was never a #290-specific artifact in the first place. It serves #289 today and #291 next, and would serve any future bare-key provider for free with no further core change.
+
 ---
 
 ## References
