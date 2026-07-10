@@ -55,8 +55,8 @@ public readonly record struct RotationEntry(RotationKey Key, DateTimeOffset? Ret
 /// other provider-specific type. Each provider maps its own durable per-key timestamp (an X.509
 /// certificate's <c>NotBefore</c>/<c>NotAfter</c>, or an explicit activation time for a bare,
 /// certificate-less key) onto <see cref="RotationKey"/> before calling in. This is what lets a
-/// certificate-backed provider (the Windows Certificate Store provider) and a bare-key provider (a
-/// future macOS Keychain provider) share the exact same rotation logic.
+/// certificate-backed provider (the Windows Certificate Store provider) and a potential future
+/// bare-key provider share the exact same rotation logic.
 /// </para>
 /// <para>
 /// Structurally analogous to the Azure Key Vault providers' internal rotation-timeline derivation,
