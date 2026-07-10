@@ -68,6 +68,45 @@ public sealed class AuthorizationServerOptions
     public bool AllowInMemoryStoresOutsideDevelopment { get; set; }
 
     /// <summary>
+    /// Gets or sets the list of environment names in which development JWT signing keys
+    /// (<c>AddDevelopmentJwtSigningKeys()</c>) are permitted. Defaults to <c>["Development"]</c>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Development signing keys are ephemeral or stored in a local file and are not suitable
+    /// for production. When the host environment is not in this list, startup fails with a
+    /// <see cref="ZeeKayDaConfigurationException"/> so that an accidental development-key
+    /// configuration is never silently deployed to a non-permitted host. This is a server-wide
+    /// safety gate — mirroring <see cref="AllowInMemoryStoresOutsideDevelopment"/> above — not a
+    /// per-provider tuning knob, so it lives here rather than on a provider-specific options type.
+    /// </para>
+    /// <para>
+    /// <c>Production</c> can never be added to this list: the gate rejects a <c>Production</c>
+    /// host environment unconditionally, regardless of the list's contents. This is enforced
+    /// both at startup validation time and again by the gate itself, so it cannot be bypassed
+    /// by misconfiguration.
+    /// </para>
+    /// <para>
+    /// The default list contains only <c>"Development"</c>. Callers may widen this list to
+    /// include additional environment names — for example,
+    /// <c>["Development", "IntegrationTesting", "CI"]</c> — for test hosts that intentionally
+    /// run under a non-Development environment name. A
+    /// <see cref="Microsoft.Extensions.Logging.LogLevel.Critical"/> entry is emitted on every
+    /// startup while the host environment is in the list but is not <c>"Development"</c>,
+    /// because an ephemeral or non-rotating signing key in such an environment breaks signature
+    /// validation for every relying party on restart.
+    /// </para>
+    /// <para>
+    /// This list MUST NOT be sourced from <c>appsettings.json</c> or any other file that may
+    /// be committed to source control. Set it explicitly in code or via an environment variable.
+    /// Sourcing from configuration defeats the purpose of the gate because a misconfiguration
+    /// in a config file could silently widen the allowed environments in production.
+    /// </para>
+    /// </remarks>
+    public IReadOnlyList<string> AllowedDevelopmentJwtSigningKeysEnvironments { get; set; } =
+        ["Development"];
+
+    /// <summary>
     /// Gets or sets the clock-skew grace window applied to token expiry checks in multi-node
     /// store implementations.
     /// </summary>

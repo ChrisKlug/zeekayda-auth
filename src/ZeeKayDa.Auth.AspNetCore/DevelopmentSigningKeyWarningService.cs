@@ -14,7 +14,7 @@ namespace ZeeKayDa.Auth.AspNetCore;
 /// </summary>
 /// <remarks>
 /// When the host environment name is not in
-/// <see cref="DevelopmentSigningKeyOptions.AllowedDevelopmentJwtSigningKeysEnvironments"/>,
+/// <see cref="AuthorizationServerOptions.AllowedDevelopmentJwtSigningKeysEnvironments"/>,
 /// startup fails with a <see cref="ZeeKayDaConfigurationException"/> so that an accidental
 /// development-key configuration is never silently deployed to a non-permitted host.
 /// </remarks>
@@ -33,23 +33,23 @@ internal sealed class DevelopmentSigningKeyWarningService : IHostedService
         "with a production key provider immediately.";
 
     private readonly IHostEnvironment _environment;
-    private readonly IOptions<DevelopmentSigningKeyOptions> _devOptions;
+    private readonly IOptions<AuthorizationServerOptions> _serverOptions;
     private readonly IJwtSigningService _signingService;
     private readonly ISanitizingLogger<DevelopmentSigningKeyWarningService> _logger;
 
     public DevelopmentSigningKeyWarningService(
         IHostEnvironment environment,
-        IOptions<DevelopmentSigningKeyOptions> devOptions,
+        IOptions<AuthorizationServerOptions> serverOptions,
         IJwtSigningService signingService,
         ISanitizingLogger<DevelopmentSigningKeyWarningService> logger)
     {
         ArgumentNullException.ThrowIfNull(environment);
-        ArgumentNullException.ThrowIfNull(devOptions);
+        ArgumentNullException.ThrowIfNull(serverOptions);
         ArgumentNullException.ThrowIfNull(signingService);
         ArgumentNullException.ThrowIfNull(logger);
 
         _environment = environment;
-        _devOptions = devOptions;
+        _serverOptions = serverOptions;
         _signingService = signingService;
         _logger = logger;
     }
@@ -62,7 +62,7 @@ internal sealed class DevelopmentSigningKeyWarningService : IHostedService
         // Production is always a hard fail; non-allowed environments also throw.
         DevelopmentSigningKeyGate.Enforce(
             currentEnvironment,
-            _devOptions.Value.AllowedDevelopmentJwtSigningKeysEnvironments);
+            _serverOptions.Value.AllowedDevelopmentJwtSigningKeysEnvironments);
 
         var isDevelopment = string.Equals(currentEnvironment, "Development", StringComparison.OrdinalIgnoreCase);
         if (!isDevelopment)
