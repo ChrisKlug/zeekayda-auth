@@ -109,22 +109,16 @@ jobs:
         run: |
           dotnet restore
           dotnet build --no-restore --configuration Release
-          dotnet test tests/ZeeKayDa.Auth.Tests/ \
-            --no-build --configuration Release \
-            --collect:"XPlat Code Coverage" --results-directory ./TestResults/pr \
-            -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Include="[ZeeKayDa.Auth]*"
-          dotnet test tests/ZeeKayDa.Auth.AspNetCore.Tests/ \
-            --no-build --configuration Release \
-            --collect:"XPlat Code Coverage" --results-directory ./TestResults/pr \
-            -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Include="[ZeeKayDa.Auth.AspNetCore]*"
-          dotnet test tests/ZeeKayDa.Auth.AzureKeyVault.Tests/ \
-            --no-build --configuration Release \
-            --collect:"XPlat Code Coverage" --results-directory ./TestResults/pr \
-            -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Include="[ZeeKayDa.Auth.AzureKeyVault]*"
-          dotnet test tests/ZeeKayDa.Auth.FileSystem.Tests/ \
-            --no-build --configuration Release \
-            --collect:"XPlat Code Coverage" --results-directory ./TestResults/pr \
-            -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Include="[ZeeKayDa.Auth.FileSystem]*"
+
+          # Packages are discovered from ZeeKayDa.Auth.slnx rather than hardcoded here, so a new
+          # cross-platform signing-provider package (epic #282) gets covered automatically as soon
+          # as it follows the tests/<Package>.Tests/ convention — see discover_coverage_projects.cs.
+          while IFS= read -r package; do
+            dotnet test "tests/${package}.Tests/" \
+              --no-build --configuration Release \
+              --collect:"XPlat Code Coverage" --results-directory ./TestResults/pr \
+              -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Include="[${package}]*"
+          done < <(dotnet run .github/scripts/discover_coverage_projects.cs -- .)
 
       # Rather than rebuild and retest the base branch from a git worktree (slow, and re-executes
       # the base branch's own test suite — including its own coverage-regression-script smoke
@@ -185,6 +179,9 @@ jobs:
 
       - name: Run coverage-summary script smoke tests
         run: bash .github/scripts/tests/summarize_coverage.tests.sh
+
+      - name: Run coverage-project-discovery script smoke tests
+        run: bash .github/scripts/tests/discover_coverage_projects.tests.sh
 
   log-hygiene:
     name: Log Hygiene Check
