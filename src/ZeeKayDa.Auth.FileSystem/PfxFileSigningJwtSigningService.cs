@@ -58,19 +58,7 @@ internal sealed class PfxFileSigningJwtSigningService : FileSigningJwtSigningSer
     }
 
     /// <inheritdoc/>
-    protected override SigningKeyDescriptor BuildKeyDescriptor(
-        AsymmetricAlgorithm publicKey, SigningKeyType keyType, string path, PfxFileSigningOptions options) =>
-        SigningKeyDescriptorFactory.BuildDescriptor(
-            publicKey,
-            keyType,
-            options.Algorithm,
-            "signing.file_signing.algorithm_key_type_mismatch",
-            mismatchedKeyType => mismatchedKeyType == SigningKeyType.Rsa
-                ? $"PfxFileSigningOptions.Algorithm is {options.Algorithm}, but the certificate at " +
-                  $"'{path}' is an RSA certificate. Use an RSA algorithm (RS256, RS384, RS512, PS256, " +
-                  "PS384, or PS512)."
-                : $"PfxFileSigningOptions.Algorithm is {options.Algorithm}, but the certificate at " +
-                  $"'{path}' is an EC certificate. Use an EC algorithm (ES256, ES384, or ES512).");
+    protected override SigningAlgorithm GetAlgorithm(PfxFileSigningOptions options) => options.Algorithm;
 
     private static Func<CancellationToken, ValueTask<string>> ResolvePasswordSource(string path, PfxFileSigningOptions options)
     {
@@ -78,6 +66,14 @@ internal sealed class PfxFileSigningJwtSigningService : FileSigningJwtSigningSer
             return options.PasswordSource!;
 
         var match = options.AdditionalFiles.FirstOrDefault(file => string.Equals(file.Path, path, StringComparison.Ordinal));
+
+        // Unreachable in practice: `path` always comes from GetRegisteredPaths(options) (this
+        // provider's own primary Path plus every AdditionalFiles entry), and
+        // PfxFileSigningOptionsValidator rejects a null PasswordSource on both the primary and every
+        // AddFile-registered entry before startup completes. InvalidOperationException (not
+        // ZeeKayDaConfigurationException) is deliberate here — this guards an internal invariant that
+        // "can't happen" given the two callers above, not a user-facing configuration failure a
+        // relying operator could hit and needs to act on.
         return match.PasswordSource
             ?? throw new InvalidOperationException($"No password source is registered for path '{path}'.");
     }

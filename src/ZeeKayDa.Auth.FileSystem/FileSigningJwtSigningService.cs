@@ -80,13 +80,39 @@ internal abstract class FileSigningJwtSigningService<TOptions> : JwtSigningServi
     protected abstract ValueTask<X509Certificate2> LoadCertificateAsync(string path, TOptions options, CancellationToken cancellationToken);
 
     /// <summary>
-    /// Builds the public key descriptor for a loaded file, validating that the configured algorithm
-    /// matches the certificate's actual key type. Implementations delegate to
-    /// <see cref="SigningKeyDescriptorFactory.BuildDescriptor"/>, supplying format-specific mismatch
-    /// wording (naming their own options type).
+    /// Returns the configured JWS algorithm — <c>PemFileSigningOptions.Algorithm</c> or
+    /// <c>PfxFileSigningOptions.Algorithm</c>. The base class cannot read this itself: per ADR 0011
+    /// §3.4, the shared <see cref="JwtSigningServiceOptions"/> base carries only
+    /// <see cref="JwtSigningServiceOptions.RefreshInterval"/>, so <c>Algorithm</c> exists only on the
+    /// derived, format-specific options types.
     /// </summary>
-    protected abstract SigningKeyDescriptor BuildKeyDescriptor(
-        AsymmetricAlgorithm publicKey, SigningKeyType keyType, string path, TOptions options);
+    protected abstract SigningAlgorithm GetAlgorithm(TOptions options);
+
+    /// <summary>
+    /// Builds the public key descriptor for a loaded file, validating that the configured algorithm
+    /// matches the certificate's actual key type, via the shared
+    /// <see cref="SigningKeyDescriptorFactory.BuildDescriptor"/>. The mismatch message names
+    /// <typeparamref name="TOptions"/> by its runtime type name, so both
+    /// <c>PemFileSigningOptions</c>/<c>PfxFileSigningOptions</c> get a correctly-named message from
+    /// this one shared implementation rather than each duplicating near-identical wording.
+    /// </summary>
+    private SigningKeyDescriptor BuildKeyDescriptor(
+        AsymmetricAlgorithm publicKey, SigningKeyType keyType, string path, TOptions options)
+    {
+        var algorithm = GetAlgorithm(options);
+        var optionsTypeName = typeof(TOptions).Name;
+
+        return SigningKeyDescriptorFactory.BuildDescriptor(
+            publicKey,
+            keyType,
+            algorithm,
+            "signing.file_signing.algorithm_key_type_mismatch",
+            mismatchedKeyType => mismatchedKeyType == SigningKeyType.Rsa
+                ? $"{optionsTypeName}.Algorithm is {algorithm}, but the certificate at '{path}' is an " +
+                  "RSA certificate. Use an RSA algorithm (RS256, RS384, RS512, PS256, PS384, or PS512)."
+                : $"{optionsTypeName}.Algorithm is {algorithm}, but the certificate at '{path}' is an " +
+                  "EC certificate. Use an EC algorithm (ES256, ES384, or ES512).");
+    }
 
     /// <inheritdoc/>
     protected override async ValueTask<SigningKeySet> LoadKeysAsync(CancellationToken cancellationToken)

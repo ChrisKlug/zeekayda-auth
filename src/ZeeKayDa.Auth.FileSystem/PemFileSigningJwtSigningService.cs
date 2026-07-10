@@ -57,17 +57,5 @@ internal sealed class PemFileSigningJwtSigningService : FileSigningJwtSigningSer
     }
 
     /// <inheritdoc/>
-    protected override SigningKeyDescriptor BuildKeyDescriptor(
-        AsymmetricAlgorithm publicKey, SigningKeyType keyType, string path, PemFileSigningOptions options) =>
-        SigningKeyDescriptorFactory.BuildDescriptor(
-            publicKey,
-            keyType,
-            options.Algorithm,
-            "signing.file_signing.algorithm_key_type_mismatch",
-            mismatchedKeyType => mismatchedKeyType == SigningKeyType.Rsa
-                ? $"PemFileSigningOptions.Algorithm is {options.Algorithm}, but the certificate at " +
-                  $"'{path}' is an RSA certificate. Use an RSA algorithm (RS256, RS384, RS512, PS256, " +
-                  "PS384, or PS512)."
-                : $"PemFileSigningOptions.Algorithm is {options.Algorithm}, but the certificate at " +
-                  $"'{path}' is an EC certificate. Use an EC algorithm (ES256, ES384, or ES512).");
+    protected override SigningAlgorithm GetAlgorithm(PemFileSigningOptions options) => options.Algorithm;
 }
