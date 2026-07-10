@@ -130,7 +130,7 @@ plain, unencrypted PEM — there is no passphrase.
 ## The environment gate
 
 Both overloads enforce a hard environment gate at startup. If the host environment is not in
-`DevelopmentSigningKeyOptions.AllowedDevelopmentJwtSigningKeysEnvironments` — which defaults to
+`AuthorizationServerOptions.AllowedDevelopmentJwtSigningKeysEnvironments` — which defaults to
 `["Development"]` — startup throws a `ZeeKayDaConfigurationException` and the application does
 not start. A `Production` environment name always fails this gate, regardless of what the list
 contains.
@@ -141,14 +141,39 @@ start.
 
 ### If your host reports a non-Development environment name
 
-The list this gate checks against —
-`AllowedDevelopmentJwtSigningKeysEnvironments` on the internal options type backing this
-provider — is deliberately not part of ZeeKayDa.Auth's public API surface. There is no supported
-way to widen it from your own application code.
+`AllowedDevelopmentJwtSigningKeysEnvironments` is a public property on `AuthorizationServerOptions`
+— the same root options type you already configure in the `AddZeeKayDaAuth(options => ...)`
+callback shown above. Set it there to widen the list of environment names the gate accepts:
 
-If you need `AddDevelopmentJwtSigningKeys()` to run in a host that reports something other than
-`"Development"` (for example, a local integration test host that sets its own environment name),
-the supported fix is to make that host report `Development` itself, by setting the standard ASP.NET
+```csharp
+using ZeeKayDa.Auth;
+using Microsoft.Extensions.DependencyInjection;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services
+    .AddZeeKayDaAuth(options =>
+    {
+        options.Issuer = "https://localhost:5001";
+        options.AllowedDevelopmentJwtSigningKeysEnvironments =
+            ["Development", "IntegrationTesting", "CI"];
+    })
+    .AddDevelopmentJwtSigningKeys();
+
+var app = builder.Build();
+app.MapZeeKayDaAuth();
+app.Run();
+```
+
+*Added in Unreleased.* `Production` still cannot be added to this list — the gate rejects a
+`Production` host environment unconditionally, regardless of what the list contains, and this is
+enforced both by startup validation and by the gate itself. For why this property lives on
+`AuthorizationServerOptions` rather than a provider-specific options type, see
+[ADR 0011 Amendment 8](https://github.com/ChrisKlug/zeekayda-auth/blob/main/docs/decisions/0011-signing-key-management.md).
+
+If you only need the host to report `Development` itself — for example, a local integration test
+host that would otherwise pick up its own environment name — it can be simpler to leave the list
+at its default and instead make that host report `Development`, by setting the standard ASP.NET
 Core environment variable:
 
 ```bash
@@ -156,14 +181,15 @@ ASPNETCORE_ENVIRONMENT=Development
 ```
 
 or, in a test host, by constructing `WebApplicationFactory` (or equivalent) with
-`UseEnvironment("Development")`.
+`UseEnvironment("Development")`. Reach for widening the list instead when the host's environment
+name itself is meaningful and you don't want to rename it — for example, a shared CI/QA host whose
+name is also used by other environment-gated checks.
 
 > ⚠️ **Warning:** Don't try to work around the gate by binding
 > `AllowedDevelopmentJwtSigningKeysEnvironments` from `appsettings.json` or any other file that
 > could end up committed to source control — this would silently defeat the whole point of the
-> gate. It also isn't reachable this way in practice: the option lives on an internal type, so
-> external application code cannot bind or set it directly. Widening the list is reserved for
-> ZeeKayDa.Auth's own in-repo integration test hosts, which is why the type stays internal.
+> gate. Set it explicitly in code, as shown above, or source it from an environment variable read
+> in code; never from a config file that could be committed.
 >
 > If a widened list is ever in effect, it does not fail quietly: every startup where the current
 > environment is in the list but is not exactly `Development` logs a `LogLevel.Critical` entry, on
