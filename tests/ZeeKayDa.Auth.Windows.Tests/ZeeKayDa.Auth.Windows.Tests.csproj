@@ -3,6 +3,7 @@
   <PropertyGroup>
     <TargetFramework>net10.0-windows</TargetFramework>
     <IsTestProject>true</IsTestProject>
+    <RunSettingsFilePath>$(MSBuildProjectDirectory)/coverage.runsettings</RunSettingsFilePath>
   </PropertyGroup>
 
   <ItemGroup>

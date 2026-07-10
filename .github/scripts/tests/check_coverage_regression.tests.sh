@@ -42,6 +42,9 @@ run_check() {
     local allowed="${3:-}"
     (
         cd "${REPO_ROOT}"
+        # This is a smoke-test invocation of the script, not the real CI regression-check step —
+        # unset GITHUB_STEP_SUMMARY so it doesn't pollute the actual job summary.
+        unset GITHUB_STEP_SUMMARY
         if [[ -n "${allowed}" ]]; then
             COVERAGE_ALLOWED_REGRESSION_PERCENT="${allowed}" \
                 dotnet run --no-launch-profile "${TARGET}" -- "${pr_dir}" "${base_dir}" >/dev/null

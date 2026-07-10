@@ -65,6 +65,11 @@ public sealed class CoverageRegressionScriptTests : IDisposable
             processStartInfo.ArgumentList.Add(scriptArgument);
         }
 
+        // This is a smoke-test invocation of the script, not the real CI regression-check step —
+        // clear any inherited GITHUB_STEP_SUMMARY so it doesn't pollute the actual job summary.
+        // The script treats a blank value the same as an unset one (see WriteStepSummary).
+        processStartInfo.Environment["GITHUB_STEP_SUMMARY"] = "";
+
         using var process = Process.Start(processStartInfo)
             ?? throw new InvalidOperationException("Failed to start coverage regression script process.");
 
