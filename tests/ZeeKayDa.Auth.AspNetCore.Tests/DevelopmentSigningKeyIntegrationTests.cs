@@ -40,23 +40,21 @@ public sealed class DevelopmentSigningKeyIntegrationTests
                 services.AddRouting();
                 services.AddMemoryCache();
                 services.AddDataProtection();
+                var allowedEnvironments = _allowedEnvironments;
                 var authBuilder = services.AddZeeKayDaAuth(options =>
                 {
                     options.Issuer = "https://test.example.com";
                     options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
                     options.AllowInMemoryStoresOutsideDevelopment = true;
+
+                    if (allowedEnvironments is not null)
+                        options.AllowedDevelopmentJwtSigningKeysEnvironments = allowedEnvironments;
                 });
                 authBuilder
                     .AddInMemoryClients(clients =>
                         clients.AddPublic("test-client", ["https://test.example.com/callback"], [], ["openid"]))
                     .AddInMemoryStores()
                     .AddDevelopmentJwtSigningKeys();
-
-                if (_allowedEnvironments is not null)
-                {
-                    services.Configure<DevelopmentSigningKeyOptions>(options =>
-                        options.AllowedDevelopmentJwtSigningKeysEnvironments = _allowedEnvironments);
-                }
             });
 
             builder.Configure(app =>

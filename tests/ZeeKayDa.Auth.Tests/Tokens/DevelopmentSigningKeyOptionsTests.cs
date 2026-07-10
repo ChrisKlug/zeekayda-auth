@@ -6,26 +6,8 @@ public sealed class DevelopmentSigningKeyOptionsTests
 {
     // ── Default property values ───────────────────────────────────────────────────────────────────
 
-    [Fact]
-    public void AllowedDevelopmentJwtSigningKeysEnvironments_defaults_to_Development_only()
-    {
-        var options = new DevelopmentSigningKeyOptions();
-
-        options.AllowedDevelopmentJwtSigningKeysEnvironments.Should().ContainSingle()
-            .Which.Should().Be("Development");
-    }
-
-    [Fact]
-    public void AllowedDevelopmentJwtSigningKeysEnvironments_can_be_widened()
-    {
-        var options = new DevelopmentSigningKeyOptions
-        {
-            AllowedDevelopmentJwtSigningKeysEnvironments = ["Development", "IntegrationTesting"],
-        };
-
-        options.AllowedDevelopmentJwtSigningKeysEnvironments.Should().BeEquivalentTo(
-            new[] { "Development", "IntegrationTesting" });
-    }
+    // AllowedDevelopmentJwtSigningKeysEnvironments moved to AuthorizationServerOptions (#332) — see
+    // AuthorizationServerOptionsTests for its default-value and widening coverage.
 
     [Fact]
     public void EnvironmentName_defaults_to_null()

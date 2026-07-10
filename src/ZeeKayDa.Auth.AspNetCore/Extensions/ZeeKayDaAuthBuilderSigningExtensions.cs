@@ -21,7 +21,7 @@ public static class ZeeKayDaAuthBuilderSigningExtensions
     /// <para>
     /// This method is for <strong>local development and testing only</strong>. Startup fails
     /// with <see cref="ZeeKayDaConfigurationException"/> if the host environment is not in
-    /// <see cref="DevelopmentSigningKeyOptions.AllowedDevelopmentJwtSigningKeysEnvironments"/>.
+    /// <see cref="AuthorizationServerOptions.AllowedDevelopmentJwtSigningKeysEnvironments"/>.
     /// A warning is always emitted at startup to make the non-production nature of this
     /// configuration explicit.
     /// </para>
@@ -61,7 +61,7 @@ public static class ZeeKayDaAuthBuilderSigningExtensions
     /// <para>
     /// This method is for <strong>local development and testing only</strong>. Startup fails
     /// with <see cref="ZeeKayDaConfigurationException"/> if the host environment is not in
-    /// <see cref="DevelopmentSigningKeyOptions.AllowedDevelopmentJwtSigningKeysEnvironments"/>.
+    /// <see cref="AuthorizationServerOptions.AllowedDevelopmentJwtSigningKeysEnvironments"/>.
     /// A warning is always emitted at startup to make the non-production nature of this
     /// configuration explicit.
     /// </para>
@@ -131,9 +131,13 @@ public static class ZeeKayDaAuthBuilderSigningExtensions
                 IValidateOptions<DevelopmentSigningKeyOptions>,
                 DevelopmentSigningKeyOptionsValidator>());
 
+        // AllowedDevelopmentJwtSigningKeysEnvironments lives on AuthorizationServerOptions (a
+        // server-wide gate, not a per-provider knob), so this validator targets that root
+        // options type. Registered here (not in AddZeeKayDaAuth()) because it only makes sense
+        // when AddDevelopmentJwtSigningKeys() is actually in use.
         builder.Services.TryAddEnumerable(
             ServiceDescriptor.Singleton<
-                IValidateOptions<DevelopmentSigningKeyOptions>,
+                IValidateOptions<AuthorizationServerOptions>,
                 AllowedDevEnvironmentsValidator>());
 
         builder.Services.TryAddSingleton<TimeProvider>(TimeProvider.System);

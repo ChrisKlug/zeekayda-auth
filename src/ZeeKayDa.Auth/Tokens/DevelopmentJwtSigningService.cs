@@ -20,7 +20,11 @@ namespace ZeeKayDa.Auth.Tokens;
 /// (e.g. direct construction in unit tests). <c>DevelopmentSigningKeyWarningService</c> also
 /// calls the same gate helper, so the logic is not duplicated.
 /// The environment name is read from <see cref="DevelopmentSigningKeyOptions.EnvironmentName"/>;
-/// when <see langword="null"/> (no host, unit-test scenario), the gate is skipped.
+/// when <see langword="null"/> (no host, unit-test scenario), the gate is skipped. The allowed
+/// environments list is read from
+/// <see cref="AuthorizationServerOptions.AllowedDevelopmentJwtSigningKeysEnvironments"/> — a
+/// server-wide gate, not a per-provider option — so this service also injects
+/// <see cref="IOptions{TOptions}"/> of the root options type.
 /// </para>
 /// <para>
 /// Dev keys are generated once and memoized. Unlike production providers, there is no
@@ -38,6 +42,7 @@ internal sealed class DevelopmentJwtSigningService
     private const string KeyFileName = "dev-signing-key.pem";
 
     private readonly IOptions<DevelopmentSigningKeyOptions> _devOptions;
+    private readonly IOptions<AuthorizationServerOptions> _serverOptions;
     private readonly IDevelopmentSigningKeyFileSystem _fileSystem;
 
     // Memoized on first call — dev keys are never rotated within a process lifetime.
@@ -45,12 +50,15 @@ internal sealed class DevelopmentJwtSigningService
 
     public DevelopmentJwtSigningService(
         IOptions<DevelopmentSigningKeyOptions> devOptions,
+        IOptions<AuthorizationServerOptions> serverOptions,
         TimeProvider timeProvider,
         IDevelopmentSigningKeyFileSystem fileSystem)
         : base(devOptions, timeProvider)
     {
+        ArgumentNullException.ThrowIfNull(serverOptions);
         ArgumentNullException.ThrowIfNull(fileSystem);
         _devOptions = devOptions;
+        _serverOptions = serverOptions;
         _fileSystem = fileSystem;
     }
 
@@ -65,7 +73,7 @@ internal sealed class DevelopmentJwtSigningService
         // service is constructed directly without a host; the gate is intentionally skipped in that case.
         DevelopmentSigningKeyGate.Enforce(
             _devOptions.Value.EnvironmentName,
-            _devOptions.Value.AllowedDevelopmentJwtSigningKeysEnvironments);
+            _serverOptions.Value.AllowedDevelopmentJwtSigningKeysEnvironments);
 
         if (_memoizedSet is not null)
             return _memoizedSet;
