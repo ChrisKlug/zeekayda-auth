@@ -10,8 +10,14 @@ nav_order: 10
 `AddPemFileSigning(...)` and `AddPfxFileSigning(...)` register a locally-stored PEM or PFX file as
 the `IJwtSigningService` for your authorization server. Both are portable, OS-independent BCL
 functionality — there is no platform interop, unlike the Windows Certificate Store provider — which
-makes this **the recommended signing provider for macOS-hosted deployments**, and the standard
-choice for containers, headless CI, and Linux hosts generally.
+makes this **the recommended signing provider when the production host itself runs macOS** (there
+is no native macOS Keychain provider), and the standard choice for containers, headless CI, and
+Linux hosts generally.
+
+> 💡 **Tip:** "The production host runs macOS" means the deployed server process itself runs on
+> macOS — not "I'm writing code on a Mac." If you're developing locally on any OS, including macOS,
+> use [Configure development signing keys](configure-development-signing-keys.md) instead; this
+> guide is about production and other non-development hosts.
 
 For the underlying `IJwtSigningService` abstraction and how signing keys reach the JWKS document,
 see [Signing keys](../reference/signing-keys.md).
