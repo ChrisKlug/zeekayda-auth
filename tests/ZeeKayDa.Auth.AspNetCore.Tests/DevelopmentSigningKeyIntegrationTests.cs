@@ -45,12 +45,12 @@ public sealed class DevelopmentSigningKeyIntegrationTests
                 {
                     options.Issuer = "https://test.example.com";
                     options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
-                    options.AllowInMemoryStoresOutsideDevelopment = true;
                 });
                 authBuilder
                     .AddInMemoryClients(clients =>
                         clients.AddPublic("test-client", ["https://test.example.com/callback"], [], ["openid"]))
-                    .AddInMemoryStores()
+                    // Integration test hosts run as "Production" by default; allow in-memory stores.
+                    .AddInMemoryStores(allowOutsideDevelopment: true)
                     .AddInMemoryDevelopmentJwtSigningKeys(o =>
                     {
                         if (allowedEnvironments is not null)

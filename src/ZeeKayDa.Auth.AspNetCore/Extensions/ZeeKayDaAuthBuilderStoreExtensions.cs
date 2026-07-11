@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.AspNetCore;
+using ZeeKayDa.Auth.Logging;
 using ZeeKayDa.Auth.Stores;
 
 namespace Microsoft.Extensions.DependencyInjection;
@@ -76,10 +77,18 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
     /// </summary>
     /// <remarks>
     /// Outside a Development environment, startup fails with <see cref="ZeeKayDaConfigurationException"/>
-    /// unless <see cref="AuthorizationServerOptions.AllowInMemoryStoresOutsideDevelopment"/> is set to
-    /// <see langword="true"/>.
+    /// unless <paramref name="allowOutsideDevelopment"/> is <see langword="true"/>. This gate is
+    /// enforced independently of any other in-memory store registration on the same builder — see
+    /// ADR 0008 §5.
     /// </remarks>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
+    /// <param name="allowOutsideDevelopment">
+    /// Set to <see langword="true"/> only in test hosts that intentionally run under a
+    /// non-Development environment name (e.g. integration test hosts configured as
+    /// <c>Production</c>). A <see cref="Microsoft.Extensions.Logging.LogLevel.Critical"/> entry is
+    /// still emitted on every startup so the override is always visible in logs. Defaults to
+    /// <see langword="false"/>.
+    /// </param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="builder"/> is <see langword="null"/>.
@@ -88,14 +97,19 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
     /// Thrown when an <see cref="IAuthorizationCodeStore"/> has already been registered.
     /// Only one store registration per interface is allowed.
     /// </exception>
-    public static ZeeKayDaAuthBuilder AddInMemoryAuthorizationCodeStore(this ZeeKayDaAuthBuilder builder)
+    public static ZeeKayDaAuthBuilder AddInMemoryAuthorizationCodeStore(
+        this ZeeKayDaAuthBuilder builder,
+        bool allowOutsideDevelopment = false)
     {
         ArgumentNullException.ThrowIfNull(builder);
 
         builder.ThrowIfAlreadyRegistered(typeof(IAuthorizationCodeStore));
         builder.Services.AddSingleton<IAuthorizationCodeStore, InMemoryAuthorizationCodeStore>();
-        builder.Services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IHostedService, InMemoryStoreWarningService>());
+        builder.Services.AddSingleton<IHostedService>(sp => new InMemoryStoreWarningService(
+            sp.GetRequiredService<IHostEnvironment>(),
+            InMemoryStoreWarningService.AuthorizationCodeStoreName,
+            allowOutsideDevelopment,
+            sp.GetRequiredService<ISanitizingLogger<InMemoryStoreWarningService>>()));
 
         return builder;
     }
@@ -108,10 +122,18 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
     /// </summary>
     /// <remarks>
     /// Outside a Development environment, startup fails with <see cref="ZeeKayDaConfigurationException"/>
-    /// unless <see cref="AuthorizationServerOptions.AllowInMemoryStoresOutsideDevelopment"/> is set to
-    /// <see langword="true"/>.
+    /// unless <paramref name="allowOutsideDevelopment"/> is <see langword="true"/>. This gate is
+    /// enforced independently of any other in-memory store registration on the same builder — see
+    /// ADR 0008 §5.
     /// </remarks>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
+    /// <param name="allowOutsideDevelopment">
+    /// Set to <see langword="true"/> only in test hosts that intentionally run under a
+    /// non-Development environment name (e.g. integration test hosts configured as
+    /// <c>Production</c>). A <see cref="Microsoft.Extensions.Logging.LogLevel.Critical"/> entry is
+    /// still emitted on every startup so the override is always visible in logs. Defaults to
+    /// <see langword="false"/>.
+    /// </param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="builder"/> is <see langword="null"/>.
@@ -120,14 +142,19 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
     /// Thrown when an <see cref="IRefreshTokenStore"/> has already been registered.
     /// Only one store registration per interface is allowed.
     /// </exception>
-    public static ZeeKayDaAuthBuilder AddInMemoryRefreshTokenStore(this ZeeKayDaAuthBuilder builder)
+    public static ZeeKayDaAuthBuilder AddInMemoryRefreshTokenStore(
+        this ZeeKayDaAuthBuilder builder,
+        bool allowOutsideDevelopment = false)
     {
         ArgumentNullException.ThrowIfNull(builder);
 
         builder.ThrowIfAlreadyRegistered(typeof(IRefreshTokenStore));
         builder.Services.AddSingleton<IRefreshTokenStore, InMemoryRefreshTokenStore>();
-        builder.Services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IHostedService, InMemoryStoreWarningService>());
+        builder.Services.AddSingleton<IHostedService>(sp => new InMemoryStoreWarningService(
+            sp.GetRequiredService<IHostEnvironment>(),
+            InMemoryStoreWarningService.RefreshTokenStoreName,
+            allowOutsideDevelopment,
+            sp.GetRequiredService<ISanitizingLogger<InMemoryStoreWarningService>>()));
 
         return builder;
     }
@@ -140,10 +167,19 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
     /// </summary>
     /// <remarks>
     /// Outside a Development environment, startup fails with <see cref="ZeeKayDaConfigurationException"/>
-    /// unless <see cref="AuthorizationServerOptions.AllowInMemoryStoresOutsideDevelopment"/> is set to
-    /// <see langword="true"/>.
+    /// unless <paramref name="allowOutsideDevelopment"/> is <see langword="true"/>. The value is
+    /// passed through to both <see cref="AddInMemoryAuthorizationCodeStore"/> and
+    /// <see cref="AddInMemoryRefreshTokenStore"/>, each of which gates on it independently — see
+    /// ADR 0008 §5.
     /// </remarks>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
+    /// <param name="allowOutsideDevelopment">
+    /// Set to <see langword="true"/> only in test hosts that intentionally run under a
+    /// non-Development environment name (e.g. integration test hosts configured as
+    /// <c>Production</c>). A <see cref="Microsoft.Extensions.Logging.LogLevel.Critical"/> entry is
+    /// still emitted on every startup so the override is always visible in logs. Defaults to
+    /// <see langword="false"/>.
+    /// </param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="builder"/> is <see langword="null"/>.
@@ -152,12 +188,14 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
     /// Thrown when an <see cref="IAuthorizationCodeStore"/> or <see cref="IRefreshTokenStore"/>
     /// has already been registered. Only one store registration per interface is allowed.
     /// </exception>
-    public static ZeeKayDaAuthBuilder AddInMemoryStores(this ZeeKayDaAuthBuilder builder)
+    public static ZeeKayDaAuthBuilder AddInMemoryStores(
+        this ZeeKayDaAuthBuilder builder,
+        bool allowOutsideDevelopment = false)
     {
         ArgumentNullException.ThrowIfNull(builder);
 
-        builder.AddInMemoryAuthorizationCodeStore();
-        builder.AddInMemoryRefreshTokenStore();
+        builder.AddInMemoryAuthorizationCodeStore(allowOutsideDevelopment);
+        builder.AddInMemoryRefreshTokenStore(allowOutsideDevelopment);
 
         return builder;
     }

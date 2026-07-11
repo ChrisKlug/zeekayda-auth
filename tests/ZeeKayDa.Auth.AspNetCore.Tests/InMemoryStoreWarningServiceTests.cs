@@ -1,7 +1,6 @@
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Logging;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests;
@@ -37,17 +36,18 @@ public sealed class InMemoryStoreWarningServiceTests
         public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
     }
 
+    private const string TestStoreName = InMemoryStoreWarningService.AuthorizationCodeStoreName;
+
     private static InMemoryStoreWarningService BuildSut(
         string environmentName,
         bool allowOutsideDevelopment = false,
-        CapturingLogger<InMemoryStoreWarningService>? logger = null)
+        CapturingLogger<InMemoryStoreWarningService>? logger = null,
+        string storeName = TestStoreName)
     {
         return new InMemoryStoreWarningService(
             new FakeHostEnvironment(environmentName),
-            Options.Create(new AuthorizationServerOptions
-            {
-                AllowInMemoryStoresOutsideDevelopment = allowOutsideDevelopment,
-            }),
+            storeName,
+            allowOutsideDevelopment,
             logger ?? new CapturingLogger<InMemoryStoreWarningService>());
     }
 
@@ -58,21 +58,26 @@ public sealed class InMemoryStoreWarningServiceTests
     {
         var act = () => new InMemoryStoreWarningService(
             null!,
-            Options.Create(new AuthorizationServerOptions()),
+            TestStoreName,
+            allowOutsideDevelopment: false,
             NullSanitizingLogger<InMemoryStoreWarningService>.Instance);
 
         act.Should().Throw<ArgumentNullException>().WithParameterName("environment");
     }
 
-    [Fact]
-    public void Constructor_throws_ArgumentNullException_when_options_is_null()
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Constructor_throws_ArgumentException_when_storeName_is_null_or_whitespace(string? storeName)
     {
         var act = () => new InMemoryStoreWarningService(
             new FakeHostEnvironment(Environments.Development),
-            null!,
+            storeName!,
+            allowOutsideDevelopment: false,
             NullSanitizingLogger<InMemoryStoreWarningService>.Instance);
 
-        act.Should().Throw<ArgumentNullException>().WithParameterName("options");
+        act.Should().Throw<ArgumentException>().WithParameterName("storeName");
     }
 
     [Fact]
@@ -80,7 +85,8 @@ public sealed class InMemoryStoreWarningServiceTests
     {
         var act = () => new InMemoryStoreWarningService(
             new FakeHostEnvironment(Environments.Development),
-            Options.Create(new AuthorizationServerOptions()),
+            TestStoreName,
+            allowOutsideDevelopment: false,
             null!);
 
         act.Should().Throw<ArgumentNullException>().WithParameterName("logger");
@@ -120,7 +126,21 @@ public sealed class InMemoryStoreWarningServiceTests
         await sut.StartAsync(CancellationToken.None);
 
         logger.Entries.Should().ContainSingle()
-            .Which.Message.Should().Be(InMemoryStoreWarningService.WarningMessage);
+            .Which.Message.Should().Be(string.Format(InMemoryStoreWarningService.WarningMessageFormat, TestStoreName));
+    }
+
+    [Theory]
+    [InlineData(InMemoryStoreWarningService.AuthorizationCodeStoreName)]
+    [InlineData(InMemoryStoreWarningService.RefreshTokenStoreName)]
+    public async Task StartAsync_names_the_store_in_the_Warning_message_in_Development_environment(string storeName)
+    {
+        var logger = new CapturingLogger<InMemoryStoreWarningService>();
+        var sut = BuildSut(Environments.Development, logger: logger, storeName: storeName);
+
+        await sut.StartAsync(CancellationToken.None);
+
+        logger.Entries.Should().ContainSingle()
+            .Which.Message.Should().Contain(storeName);
     }
 
     [Fact]
@@ -162,14 +182,14 @@ public sealed class InMemoryStoreWarningServiceTests
     }
 
     [Fact]
-    public async Task StartAsync_throws_with_message_mentioning_AllowInMemoryStoresOutsideDevelopment_when_flag_is_false()
+    public async Task StartAsync_throws_with_message_mentioning_allowOutsideDevelopment_when_flag_is_false()
     {
         var sut = BuildSut(Environments.Production, allowOutsideDevelopment: false);
 
         var ex = await sut.Awaiting(s => s.StartAsync(CancellationToken.None))
             .Should().ThrowAsync<ZeeKayDaConfigurationException>();
 
-        ex.Which.Message.Should().Contain("AllowInMemoryStoresOutsideDevelopment");
+        ex.Which.Message.Should().Contain("allowOutsideDevelopment");
     }
 
     [Fact]
@@ -222,7 +242,22 @@ public sealed class InMemoryStoreWarningServiceTests
         await sut.StartAsync(CancellationToken.None);
 
         logger.Entries.Should().ContainSingle()
-            .Which.Message.Should().Be(InMemoryStoreWarningService.NonDevelopmentOverrideWarningMessage);
+            .Which.Message.Should().Be(string.Format(
+                InMemoryStoreWarningService.NonDevelopmentOverrideWarningMessageFormat, TestStoreName));
+    }
+
+    [Theory]
+    [InlineData(InMemoryStoreWarningService.AuthorizationCodeStoreName)]
+    [InlineData(InMemoryStoreWarningService.RefreshTokenStoreName)]
+    public async Task StartAsync_names_the_store_in_the_Critical_override_message(string storeName)
+    {
+        var logger = new CapturingLogger<InMemoryStoreWarningService>();
+        var sut = BuildSut(Environments.Production, allowOutsideDevelopment: true, logger: logger, storeName: storeName);
+
+        await sut.StartAsync(CancellationToken.None);
+
+        logger.Entries.Should().ContainSingle()
+            .Which.Message.Should().Contain(storeName);
     }
 
     [Fact]

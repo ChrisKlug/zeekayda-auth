@@ -27,7 +27,7 @@ For step-by-step registration instructions, see [Configure token stores](../how-
 | Production (any instance count) where the concurrent-redemption race and eviction risk are explicitly accepted | `.AddDistributedCacheAuthorizationCodeStore()` — the TOCTOU race applies on any deployment (see [Distributed-cache stores](#distributed-cache-backed-stores)); ensure cache is configured with `noeviction` | `.AddDistributedCacheRefreshTokenStore()` — same trade-offs apply |
 | Production where replay attacks are in the threat model, or any deployment with an evicting cache under memory pressure | Custom atomic store (Redis + Lua, SQL with optimistic concurrency) | Custom atomic store (same backends) |
 
-> ⚠️ **Warning:** Both in-memory stores are development and testing only. They lose all tokens on restart and silently disable single-use enforcement and reuse detection across multiple instances. Outside a `Development` environment the framework refuses to start with in-memory stores unless `AllowInMemoryStoresOutsideDevelopment` is set to `true`.
+> ⚠️ **Warning:** Both in-memory stores are development and testing only. They lose all tokens on restart and silently disable single-use enforcement and reuse detection across multiple instances. Outside a `Development` environment the framework refuses to start with in-memory stores unless `allowOutsideDevelopment: true` is passed to the registration call.
 
 The distributed-cache stores have two concrete limitations that determine whether they are appropriate for a given production deployment — see [Distributed-cache stores](#distributed-cache-backed-stores) for the full trade-off analysis.
 
@@ -37,9 +37,9 @@ The distributed-cache stores have two concrete limitations that determine whethe
 
 All store registration goes through the `ZeeKayDaAuthBuilder` returned by `AddZeeKayDaAuth`. Each method checks at registration time that the targeted interface is not already registered; a second registration for the same interface throws `InvalidOperationException` immediately, naming the conflict.
 
-### `.AddInMemoryStores()`
+### `.AddInMemoryStores(bool allowOutsideDevelopment = false)`
 
-Registers both `InMemoryAuthorizationCodeStore` and `InMemoryRefreshTokenStore`. Emits a `LogLevel.Warning` at startup. Outside a `Development` environment, startup fails with `ZeeKayDaConfigurationException` unless `AuthorizationServerOptions.AllowInMemoryStoresOutsideDevelopment` is `true`.
+Registers both `InMemoryAuthorizationCodeStore` and `InMemoryRefreshTokenStore`. Emits a `LogLevel.Warning` at startup. Outside a `Development` environment, startup fails with `ZeeKayDaConfigurationException` unless `allowOutsideDevelopment` is `true`. The value is passed through to both `.AddInMemoryAuthorizationCodeStore()` and `.AddInMemoryRefreshTokenStore()`, each of which gates on it independently.
 
 ```csharp
 builder.Services
@@ -47,9 +47,9 @@ builder.Services
     .AddInMemoryStores();
 ```
 
-### `.AddInMemoryAuthorizationCodeStore()`
+### `.AddInMemoryAuthorizationCodeStore(bool allowOutsideDevelopment = false)`
 
-Registers only `InMemoryAuthorizationCodeStore` as `IAuthorizationCodeStore`. Emits the same startup warning as `.AddInMemoryStores()`. The environment check applies.
+Registers only `InMemoryAuthorizationCodeStore` as `IAuthorizationCodeStore`. Emits the same startup warning as `.AddInMemoryStores()`. The environment check applies, gated on this method's own `allowOutsideDevelopment` value — independent of any other in-memory store registration on the same builder.
 
 ```csharp
 builder.Services
@@ -58,9 +58,9 @@ builder.Services
     .AddRefreshTokenStore<MyPersistentRefreshTokenStore>();
 ```
 
-### `.AddInMemoryRefreshTokenStore()`
+### `.AddInMemoryRefreshTokenStore(bool allowOutsideDevelopment = false)`
 
-Registers only `InMemoryRefreshTokenStore` as `IRefreshTokenStore`. Emits the same startup warning as `.AddInMemoryStores()`. The environment check applies.
+Registers only `InMemoryRefreshTokenStore` as `IRefreshTokenStore`. Emits the same startup warning as `.AddInMemoryStores()`. The environment check applies, gated on this method's own `allowOutsideDevelopment` value — independent of any other in-memory store registration on the same builder.
 
 ### `.AddDistributedCacheTokenStores()`
 
@@ -161,7 +161,7 @@ The default is intentionally small. Values approaching half of `AuthorizationCod
 
 - **Single-instance is a deployment invariant, not a recommendation.** Running multiple instances with in-memory stores silently disables single-use enforcement ([RFC 9700 §2.1.1](https://www.rfc-editor.org/rfc/rfc9700#section-2.1.1)) and reuse detection ([RFC 9700 §4.14.2](https://www.rfc-editor.org/rfc/rfc9700#section-4.14.2)). Codes and tokens issued by instance A are invisible to instance B.
 - **All tokens are lost on process restart.** Authorization code loss is operationally acceptable (60-second lifetime); refresh token loss forces every active user to re-authenticate.
-- **Development and testing only.** In-memory stores are never an acceptable production choice. Outside a `Development` host environment the framework refuses to start unless `AuthorizationServerOptions.AllowInMemoryStoresOutsideDevelopment` is set to `true` (intended only for integration test hosts that intentionally run under a non-`Development` environment name).
+- **Development and testing only.** In-memory stores are never an acceptable production choice. Outside a `Development` host environment the framework refuses to start unless the registration call's `allowOutsideDevelopment` parameter is set to `true` (intended only for integration test hosts that intentionally run under a non-`Development` environment name). Each of `.AddInMemoryStores()`, `.AddInMemoryAuthorizationCodeStore()`, and `.AddInMemoryRefreshTokenStore()` gates on its own `allowOutsideDevelopment` value independently.
 
 **Startup warning text (emitted at `LogLevel.Warning`):**
 

@@ -425,12 +425,14 @@ temporary sticky sessions while you fix the key ring will stop the re-prompts.
 
 ### Startup log level for in-memory store override
 
-If the host uses `AddInMemoryStores()` and is running outside a Development environment
-with `AllowInMemoryStoresOutsideDevelopment = true`, ZeeKayDa.Auth emits a startup message
-via `InMemoryStoreWarningService` to alert operators that in-memory stores are active. The
-log level differs by environment:
+If the host uses `AddInMemoryStores()` (or either granular `AddInMemoryAuthorizationCodeStore()` /
+`AddInMemoryRefreshTokenStore()` call) with `allowOutsideDevelopment: true` and is running outside
+a Development environment, ZeeKayDa.Auth emits a startup message via `InMemoryStoreWarningService`
+to alert operators that in-memory stores are active. The log level differs by environment. Each
+registration method gates independently on its own `allowOutsideDevelopment` value, so a host that
+mixes granular calls with different values gets one outcome per store:
 
-| Environment | `AllowInMemoryStoresOutsideDevelopment` | Log level |
+| Environment | `allowOutsideDevelopment` | Log level |
 |---|---|---|
 | Development | n/a | `LogLevel.Warning` |
 | Non-Development | `true` | `LogLevel.Critical` |
