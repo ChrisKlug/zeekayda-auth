@@ -1,15 +1,25 @@
 # ADR 0011 — Signing Key Management
 
-**Status:** Accepted  
-**Date:** 2026-06-23
+**Status:** Accepted
+**Date:** 2026-06-23 (original) · rewritten 2026-07-11 (issue #337)
 
-> **Security sign-off required on the ADR PR.** §3 derives a `RetirementWindow` that
-> directly governs how long a retired signing key's *public* half stays published in the
-> JWKS, and therefore how long relying parties will continue to accept signatures made by
-> that key. This is a token-validation trust-boundary decision. The security agent MUST
-> review and approve the `RetirementWindow` derivation (§3.3) and the JWKS exposure
-> behaviour (§4.3) before this ADR is merged. The flag is called out again inline at the
-> relevant decision.
+> **Format note.** This ADR was migrated to the three-part format defined in
+> [`docs/decisions/README.md`](./README.md) (current state · considered and rejected
+> alternatives · changelog appendix) as part of issue #337. Its earlier chronological
+> amendment log (amendments 1–8) has been folded into the current-state description below and
+> reduced to pointer entries in the changelog appendix. Nothing substantive was dropped in the
+> migration; the security sign-off provenance that used to live in the amendment log is
+> preserved in the changelog appendix, and the sign-off that still governs today's design is
+> restated inline where it applies.
+
+> **Security sign-off required on this ADR PR.** The current state below derives a
+> `RetirementWindow` that directly governs how long a retired signing key's *public* half stays
+> published in the JWKS, and therefore how long relying parties will continue to accept
+> signatures made by that key. This is a token-validation trust-boundary decision. The security
+> agent MUST review and approve the `RetirementWindow` derivation (§3.3) and the JWKS exposure
+> behaviour (§4.3) before this ADR is merged. The environment-gate invariants that issue #337
+> re-homes (Production always rejected, mandatory `Critical` startup log, never sourced from
+> bindable configuration) are unchanged by this rewrite and are also in scope for the review.
 
 ---
 
@@ -20,47 +30,50 @@ JWS-protected objects in the near future — and must publish the corresponding 
 at the JWKS endpoint so relying parties can validate them. The `connect/jwks` endpoint is
 currently a `501 Not Implemented` placeholder, and `DiscoveryDocumentProvider` already
 advertises a derived `jwks_uri` (`src/ZeeKayDa.Auth/Discovery/DiscoveryDocumentProvider.cs`)
-that points at it. Nothing yet sits behind it. The signing-algorithm vocabulary exists
+that points at it. The signing-algorithm vocabulary exists
 (`src/ZeeKayDa.Auth/Tokens/SigningAlgorithm.cs`) and `id_token_signing_alg_values_supported`
-is advertised from static configuration (`IdTokenOptions.SigningAlgValuesSupported`), but
-there is no component that owns a private key, performs a signature, or maps a key to its
-JWK wire representation.
+is advertised from static configuration (`IdTokenOptions.SigningAlgValuesSupported`).
 
 This ADR (issue **#187**) settles signing key management end to end: the provider
-abstraction consumers implement to supply keys, the developer-experience helper for local
+abstraction consumers implement to supply keys, the developer-experience helpers for local
 work, the rotation and caching machinery, the token-pipeline integration, the JWKS
 endpoint, and the explicit exclusion of JWT encryption from v1.
 
-The design must serve the same two goals every ZeeKayDa.Auth decision serves: it must be
+The design serves the same two goals every ZeeKayDa.Auth decision serves: it must be
 **easy to use** (the local-development path is one line; the production path has exactly
 one correct way to implement it) and **secure by default** (private key material never
 leaves the signing component; insecure development shortcuts hard-fail outside Development).
 
 ### Constraints and prior decisions that shape this ADR
 
-- **No Microsoft.IdentityModel on the public surface.** ZeeKayDa.Auth keeps its dependency
-  graph minimal and intentional. `Microsoft.IdentityModel.Tokens` types
-  (`SecurityKey`, `SigningCredentials`, `JsonWebKey`, …) are convenient but they are a
-  large, churning surface that we do not want to bake into our own public contract. The
-  abstractions in this ADR are expressed entirely in BCL types and ZeeKayDa-owned types.
-  Any use of Microsoft crypto types is an *internal implementation detail* of a concrete
-  provider, never visible on an interface, descriptor, or options class.
+- **No Microsoft.IdentityModel on the public surface.** `Microsoft.IdentityModel.Tokens` types
+  (`SecurityKey`, `SigningCredentials`, `JsonWebKey`, …) are convenient but a large, churning
+  surface we do not want to bake into our own public contract. The abstractions here are
+  expressed entirely in BCL types and ZeeKayDa-owned types. Any use of Microsoft crypto types is
+  an *internal implementation detail* of a concrete provider, never visible on an interface,
+  descriptor, or options class.
 - **ADR 0002** (options shape — grouped nested per-endpoint options) governs where new
-  configuration lives. Server-wide safety gates live on the root `AuthorizationServerOptions`;
-  per-provider knobs live on a provider-specific options type.
+  configuration lives. Per-provider knobs live on a provider-specific options type; the
+  discovery-prefix grouping rule that hoists prefix-less settings to the root governs OIDC
+  discovery-document configuration specifically and does **not** license hoisting
+  feature-registration escape hatches onto the shared root (see ADR 0002's scope clarification,
+  and §2 / §3.6 below).
 - **ADR 0006** (exception hierarchy) governs the failure type: startup/configuration faults
   throw `ZeeKayDaConfigurationException`.
 - **ADR 0008** (authorization-code and refresh-token store) establishes the
   `AddXxx()`-on-`ZeeKayDaAuthBuilder` registration idiom, the `ThrowIfAlreadyRegistered`
-  double-registration guard, the `AllowInMemoryStoresOutsideDevelopment` escape-hatch
-  pattern (mirrored here), and — load-bearing for §3.3 — the fact that **refresh tokens are
-  validated by the authorization server against the token store, never by relying parties
-  against the JWKS**. Refresh-token family revocation (ADR 0008 §4) is an AS-side store
-  operation; a relying party never inspects a refresh token's signature.
+  double-registration guard, the in-memory-store escape-hatch pattern (mirrored here), the
+  precedent against empty options classes purely to hold a flag, and — load-bearing for §3.3 —
+  the fact that **refresh tokens are validated by the authorization server against the token
+  store, never by relying parties against the JWKS**. Refresh-token family revocation (ADR 0008
+  §4) is an AS-side store operation; a relying party never inspects a refresh token's signature.
+- **ADR 0012** (signing-provider NuGet packaging model) governs which provider ships in which
+  package, and why the shared rotation/descriptor helpers this ADR extracts must be *public* in
+  core rather than `internal` + `InternalsVisibleTo` (§3.5, §4.4).
 
 ---
 
-## Decision
+## Current State
 
 ### 1. Provider abstraction — a single non-generic `IJwtSigningService`
 
@@ -110,15 +123,15 @@ JWS header internally: it selects the active key and its algorithm, builds the h
 `base64url(header) "." base64url(payload)`, and signs it — all in a single atomic call.
 It returns **`SigningResult`** — `(ReadOnlyMemory<byte> HeaderSegment,
 ReadOnlyMemory<byte> SignatureSegment, string Kid, SigningAlgorithm Algorithm)`, where
-`HeaderSegment` and `SignatureSegment` are already base64url-encoded. The caller (`ITokenWriter`,
-§4.1) assembles the compact JWS: `header "." payload "." signature`.
+`HeaderSegment` and `SignatureSegment` are already base64url-encoded. `ITokenWriter` (§4.1)
+assembles the compact JWS: `header "." payload "." signature`.
 
-This is the pit-of-success guarantee for the token pipeline. Because the service builds the
-header in the same operation that selects the key and produces the signature, the header's
-`kid`/`alg` and the actual signing key are **always consistent by construction** — there is no
-window in which a key rotation can cause the header to advertise a different key than the one
-that signed. There is no API path through which a caller can supply a mismatched algorithm,
-choose the wrong key, or produce a header that disagrees with the signature.
+Because the service builds the header in the same operation that selects the key and produces
+the signature, the header's `kid`/`alg` and the actual signing key are **always consistent by
+construction** — there is no window in which a key rotation can cause the header to advertise a
+different key than the one that signed. There is no API path through which a caller can supply a
+mismatched algorithm, choose the wrong key, or produce a header that disagrees with the
+signature.
 
 **`alg:none` is not representable.** `SigningAlgorithm` has **no** `none` member and MUST
 never gain one; `none` MUST never appear in a JWS `alg` header emitted by ZeeKayDa. This is
@@ -135,134 +148,174 @@ produce a malformed token at signing time.
 **No `VerifyAsync`.** This interface is for *issuing* signatures. Verifying inbound
 client signatures (`private_key_jwt` client assertions, signed request objects) is a
 distinct concern with a distinct trust model — it consumes *client* keys, not the server's
-own keys — and is deferred to a separate future seam. Putting verification here would
-conflate "sign with my key" and "verify with someone else's key" on one interface.
+own keys — and is deferred to a separate future seam.
 
 **Async by deliberate design.** `SignAsync` and `GetSigningKeysAsync` are async even though
-the v1 implementations are CPU-bound and synchronous under the hood. The async signature is
-the seam that makes **remote signing (KMS / HSM / Azure Key Vault)** a non-breaking future
-addition: a remote signer performs network I/O on every `SignAsync` call. The companion
-invariant — **callers never hold private key material** — is what makes remote signing
-actually possible later: because `SignAsync` returns a finished signature rather than a key,
-the private key can live in an HSM that never exports it. Remote signing is **not
-implemented in v1**; only the seam is reserved.
+the local-key implementations are CPU-bound and synchronous under the hood. The async signature
+is the seam that makes **remote signing (KMS / HSM / Azure Key Vault)** possible: a remote
+signer performs network I/O on every `SignAsync` call. The companion invariant — **callers
+never hold private key material** — is what makes remote signing actually possible: because
+`SignAsync` returns a finished signature rather than a key, the private key can live in an HSM
+that never exports it.
 
-### 2. Developer experience — `AddDevelopmentJwtSigningKeys`
+### 2. Developer experience — two named development-key registration methods
 
-A single builder extension on `ZeeKayDaAuthBuilder` makes local development one line:
+Local development is one line. There are **two distinct, named** builder extensions on
+`ZeeKayDaAuthBuilder`, one per persistence mode:
 
 ```csharp
 builder.Services.AddZeeKayDaAuth(/* … */)
-       .AddDevelopmentJwtSigningKeys();            // ephemeral, in-memory
+       .AddInMemoryDevelopmentJwtSigningKeys();               // ephemeral, in-memory
 // or
-       .AddDevelopmentJwtSigningKeys(persistTo: null);   // persist to the default path
+       .AddPersistedDevelopmentJwtSigningKeys();              // persist to the default path
+// or
+       .AddPersistedDevelopmentJwtSigningKeys(persistTo: "/some/path");
 ```
 
-Signature: `AddDevelopmentJwtSigningKeys(string? persistTo = null)`.
-
-**Hard fail outside Development.** This method registers a development-only provider. If the
-host environment is not `Development`, startup fails with `ZeeKayDaConfigurationException`,
-exactly mirroring the in-memory store behaviour from ADR 0008. The escape hatch is a single
-server-wide flag on the root options class:
+Signatures:
 
 ```csharp
-public bool AllowDevelopmentJwtSigningKeysOutsideDevelopment { get; set; }   // default false
+AddInMemoryDevelopmentJwtSigningKeys(Action<DevelopmentSigningKeyOptions>? configure = null);
+AddPersistedDevelopmentJwtSigningKeys(string? persistTo = null, Action<DevelopmentSigningKeyOptions>? configure = null);
 ```
 
-When set to `true`, the provider is permitted to run outside Development and a
-`LogLevel.Critical` log entry is emitted (in-memory stores log `Warning`; development
-signing keys log `Critical` because a non-rotating, possibly-ephemeral signing key in a
-non-development host is a strictly more severe misconfiguration than a non-durable token
-store — it breaks signature validation for every relying party on restart). The flag lives
-on `AuthorizationServerOptions`, **not** on the provider options type, because it is a
-server-wide safety gate, not a per-provider tuning knob (§3.5, ADR 0002).
+The persistence choice lives in the **method name**, not in an argument whose `null` value has
+to be read against the grain. On `AddPersistedDevelopmentJwtSigningKeys`, `persistTo: null`
+means exactly one thing — "persist to the default path" — with no second reading available.
+Both methods take an optional `Action<DevelopmentSigningKeyOptions>? configure` callback,
+consistent with every production provider registration method (`AddPemFileSigning`,
+`AddPfxFileSigning`, the Azure Key Vault and Windows Certificate Store equivalents), which all
+already accept an `Action<TOptions>? configure = null`.
 
-`AllowDevelopmentJwtSigningKeysOutsideDevelopment` MUST NOT be settable from `appsettings.json`
-or any other file that may be committed to source control. It SHOULD be sourced from an
-environment variable or set explicitly in code, never bound from a config file — a committed
-`true` is exactly the silent escalation this gate exists to prevent. The `LogLevel.Critical`
-entry MUST fire on **every startup** while the flag is set — not once, not only on first
-detection — so the misconfiguration is never silent on a long-running or restarted host.
+`DevelopmentSigningKeyOptions` is a **public** provider-specific options type
+(`DevelopmentSigningKeyOptions : JwtSigningServiceOptions`), reachable through the `configure`
+callback with no `InternalsVisibleTo` grant or reflection required.
 
-Even with the flag set, the development provider still enforces **all** of the
-minimum-key-strength (§2) and file-permission/ownership/symlink requirements above. The
-escape hatch relaxes **only** the environment gate; it never relaxes any crypto or
-filesystem-hardening requirement.
+**Hard fail outside Development.** These methods register a development-only provider. If the
+host environment is not in the allowed-environments list (below), startup fails with
+`ZeeKayDaConfigurationException`, exactly mirroring the in-memory store behaviour from ADR 0008.
 
-**Ephemeral by default.** With no argument, a fresh RSA key is generated in memory on each
-startup. This is correct for local development: nothing persists, nothing leaks to disk.
-Passing `persistTo` opts into persistence so a developer's tokens survive an app restart.
+**The environment gate is a provider-scoped, code-only opt-in — `AllowedDevelopmentJwtSigningKeysEnvironments`.**
 
-**Minimum key strength.** Generated keys are not arbitrarily sized:
+```csharp
+public sealed class DevelopmentSigningKeyOptions : JwtSigningServiceOptions
+{
+    // Defaults to ["Development"]. Widening it to a named non-production environment
+    // (e.g. "Staging", "IntegrationTest") is an explicit, code-only opt-in.
+    public IReadOnlyList<string> AllowedDevelopmentJwtSigningKeysEnvironments { get; set; } = ["Development"];
+    // … EnvironmentName (host-populated), PersistToDirectory, inherited KeySourceRefreshInterval …
+}
+```
 
-- The development helper MUST generate **RSA keys of at least 3072 bits**. 3072 is the
-  recommendation for new keys per NIST SP 800-57 Part 1 Rev. 5 §5.6.1 Table 2, not merely the
-  2048-bit floor.
+The allowed-environments list lives on the **provider-specific `DevelopmentSigningKeyOptions`**,
+configured through the registration method's `configure` callback:
+
+```csharp
+builder.AddInMemoryDevelopmentJwtSigningKeys(o =>
+    o.AllowedDevelopmentJwtSigningKeysEnvironments = ["Development", "IntegrationTest"]);
+```
+
+It is deliberately **not** on the shared `AuthorizationServerOptions` root. It is inert unless
+one of the two development-key methods was called, so it belongs on the feature that gives it
+meaning — it appears in IntelliSense only when the development provider is actually being
+configured. Placing it on the root would make it a setting that silently does nothing unless an
+unrelated extension method was also called, which is the discoverability trap ADR 0008 already
+names in the auto-registration context. See the considered-and-rejected section for the reversal
+of PR #333, which had briefly hoisted this onto the root.
+
+The following invariants hold regardless of list contents:
+
+- The default list is exactly `["Development"]`.
+- **`Production` is rejected unconditionally**, case-insensitively, regardless of the list's
+  contents. This is enforced twice: `DevelopmentSigningKeyGate.Enforce` checks it before the
+  allowed-list membership check (so adding `"Production"` to the list can never satisfy the gate),
+  and `AllowedDevEnvironmentsValidator` — an `IValidateOptions<DevelopmentSigningKeyOptions>` —
+  rejects a list containing `"Production"` (and any null/empty entry) at startup.
+- When the current environment is in the allowed list but is not exactly `Development`, a
+  `LogLevel.Critical` entry is emitted on **every** startup — not once, not only on first
+  detection. This matches the severity the in-memory store gate uses in its own equivalent
+  case (ADR 0008 §5): when the relevant in-memory registration method's `allowOutsideDevelopment`
+  parameter is used outside `Development`, `InMemoryStoreWarningService` also escalates to
+  `Critical`, not `Warning` — the
+  plain `LogLevel.Warning` in-memory stores emit is scoped to the unremarkable case of using them
+  *inside* `Development`, where no escape hatch is in play. Both gates treat "an explicit opt-in
+  escape hatch for a Development-only feature is currently open outside Development" as
+  maximal-severity, because a non-rotating, possibly-ephemeral signing key and a non-durable
+  token store are each, in their own way, a correctness break for every relying party or client
+  on restart.
+- **The gate MUST NOT be sourced from bindable configuration.** `AllowedDevelopmentJwtSigningKeysEnvironments`
+  MUST NOT be settable from `appsettings.json` or any other file that may be committed to source
+  control. A code-only `configure` callback is intrinsically harder to accidentally wire to a
+  config file than a bindable root property, which is part of why the gate lives on the
+  provider options callback rather than the root. A committed environment name is exactly the
+  silent escalation this gate exists to prevent.
+
+Even with a widened list, the development provider still enforces **all** minimum-key-strength
+and file-permission/ownership/symlink requirements below. The escape hatch relaxes **only** the
+environment gate; it never relaxes any crypto or filesystem-hardening requirement.
+
+**Ephemeral vs. persisted.** `AddInMemoryDevelopmentJwtSigningKeys` generates a fresh RSA key in
+memory on each startup — nothing persists, nothing leaks to disk; correct for local development.
+`AddPersistedDevelopmentJwtSigningKeys` opts into persistence so a developer's tokens survive an
+app restart; with `persistTo: null` the default path is
+`{IHostEnvironment.ContentRootPath}/.zeekayda/signing-keys/`.
+
+**Minimum key strength.**
+
+- The development helper MUST generate **RSA keys of at least 3072 bits** (NIST SP 800-57
+  Part 1 Rev. 5 §5.6.1 Table 2's recommendation for new keys, not merely the 2048-bit floor).
 - The base class (§3.2) MUST reject any RSA key smaller than **2048 bits** (the hard minimum)
   with `ZeeKayDaConfigurationException`, regardless of provider.
-- Acceptable EC curves are exactly P-256, P-384, and P-521 (the curves backing the
-  `SigningAlgorithm` values). Non-NIST curves (e.g. secp256k1) MUST be rejected with
-  `ZeeKayDaConfigurationException`.
+- Acceptable EC curves are exactly P-256, P-384, and P-521. Non-NIST curves (e.g. secp256k1)
+  MUST be rejected with `ZeeKayDaConfigurationException`.
 
-**Persistence is safe by construction.** When persistence is opted into but no explicit
-path is given, the default path is `{IHostEnvironment.ContentRootPath}/.zeekayda/signing-keys/`.
+**Persistence is safe by construction.**
 
 - The directory is created with `0700` and key files with `0600` — **atomically at
-  open/create time**, not create-then-`chmod`. On .NET this means passing
-  `FileStreamOptions.UnixCreateMode = UserRead | UserWrite` when creating a key file, and
-  creating the directory with `0700` in the same operation. Creating with default permissions
-  and then narrowing is **prohibited**: there is a window between creation and the permission
-  change in which the file exists with the process umask's default mode, potentially readable
-  by another local user. The `umask` MUST NOT be relied upon for security — it can only remove
-  bits from a requested mode, so a permissive umask combined with create-then-`chmod` is
-  precisely the bug being closed here.
-- If an existing key file is found with permissions **broader than `0600`**, the provider
-  **fails loudly** (`ZeeKayDaConfigurationException`) rather than loading it — a key file
-  that other local users can read is treated as compromised, not as a warning.
-- **No symlink following.** When opening or creating a key file the provider MUST refuse to
-  follow symlinks: if the path (or any component of it) resolves through a symlink, the
-  provider fails with `ZeeKayDaConfigurationException`. This prevents a planted symlink from
+  open/create time**, not create-then-`chmod` (on .NET, `FileStreamOptions.UnixCreateMode =
+  UserRead | UserWrite` when creating a key file, and the directory created `0700` in the same
+  operation). Create-then-narrow is prohibited: it leaves a window in which the file exists with
+  the process umask's default mode. The `umask` MUST NOT be relied upon for security.
+- An existing key file with permissions **broader than `0600`** causes the provider to **fail
+  loudly** (`ZeeKayDaConfigurationException`) rather than load it — treated as compromised, not
+  as a warning.
+- **No symlink following.** If the path (or any component of it) resolves through a symlink, the
+  provider fails with `ZeeKayDaConfigurationException`, preventing a planted symlink from
   redirecting a freshly generated private key to an attacker-controlled location.
-- **Parent-directory ownership.** Every component of the directory chain the provider creates
-  or writes into MUST be owned by the current user. If any component is owned by a different
-  user, the provider fails closed (`ZeeKayDaConfigurationException`).
-- On Windows, the equivalent is a restrictive ACL granting the current user only, with no
-  `Everyone`/`Users` entries; the file's ACL MUST have **inheritance disabled**, so only the
-  current user (plus SYSTEM/Administrators at implementor discretion) appears in the DACL.
+- **Parent-directory ownership.** Every component of the directory chain the provider creates or
+  writes into MUST be owned by the current user; otherwise it fails closed.
+- On Windows, the equivalent is a restrictive ACL granting the current user only (plus
+  SYSTEM/Administrators at implementor discretion), with **inheritance disabled** and no
+  `Everyone`/`Users` entries.
 - On Linux there is no OS keystore integration: ephemeral or file-persisted are the only
-  development options. This is acceptable because the helper is development-only; production
-  keys come from a real provider (§3).
+  development options. Production keys come from a real provider (§3).
 
-**Key format: plain PEM.** No password-based encryption, no PKCS#12. PEM is the least
-surprising, most tool-compatible format for a file a developer may inspect, and the `0600`
-permission is the access control. Encrypting the PEM would require a passphrase-management
-story that is out of scope for a development helper.
+**Key format: plain PEM.** No password-based encryption, no PKCS#12. PEM is the least surprising,
+most tool-compatible format for a file a developer may inspect, and the `0600` permission is the
+access control.
 
 The development provider derives from the §3 base class as
-`JwtSigningService<DevelopmentSigningKeyOptions>`, where
-`DevelopmentSigningKeyOptions : JwtSigningServiceOptions`.
-
-`ISigningKeyFileSystem` exposes async read/write operations (`ReadKeyFileAsync` /
-`WriteKeyFileAsync`) with a `CancellationToken`; production implementations must propagate
-the token to their underlying I/O. `DevelopmentJwtSigningService` propagates the token
-received from `LoadKeysAsync` to all file I/O calls; however, RSA key generation
-(`RSA.Create`) is CPU-bound and has no async variant, so that step cannot be cancelled.
+`JwtSigningService<DevelopmentSigningKeyOptions>`. **`IDevelopmentSigningKeyFileSystem`** exposes
+async read/write operations (`ReadKeyFileAsync` / `WriteKeyFileAsync` / `EnsureDirectorySafe` /
+`FileExists`) with a `CancellationToken`; `DevelopmentJwtSigningService` propagates the token
+received from `LoadKeysAsync` to all file I/O. RSA key generation (`RSA.Create`) is CPU-bound
+with no async variant, so that step cannot be cancelled. The interface is scoped to the
+development provider by name — it is not a general-purpose signing file-system abstraction used
+by production providers.
 
 ### 3. Rotation and the optional base class
 
 #### 3.1 No third method on the interface
 
 `IJwtSigningService` stays at the two methods in §1. Rotation is **not** part of the public
-contract. A provider backed by a managed KMS rotates keys on the KMS's schedule, entirely
-outside ZeeKayDa's control; a provider backed by a database rotates on its own job. Forcing
-a `RotateAsync` (or similar) onto every implementor would impose a lifecycle model that most
-real providers do not own. ZeeKayDa is a **reader** of the trusted key set, not the rotation
-authority.
+contract. A provider backed by a managed KMS rotates keys on the KMS's schedule; a provider
+backed by a database rotates on its own job. ZeeKayDa is a **reader** of the trusted key set,
+not the rotation authority.
 
 #### 3.2 The optional base class `JwtSigningService<TOptions>`
 
-Most implementors should not reimplement caching, single-flight refresh, or the crypto call.
-An **optional** abstract base class carries all of it:
+Most implementors should not reimplement caching, single-flight refresh, or the crypto call. An
+**optional** abstract base class carries all of it and ships in v1:
 
 ```csharp
 namespace ZeeKayDa.Auth.Tokens;
@@ -273,45 +326,54 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService
     protected JwtSigningService(IOptions<TOptions> options, TimeProvider timeProvider) { /* … */ }
 
     /// <summary>
-    /// Loads the current set of trusted keys. Called at most once per RefreshInterval;
+    /// Loads the current set of trusted keys. Called at most once per KeySourceRefreshInterval;
     /// concurrent callers after the interval elapses are coalesced into a single load.
     /// </summary>
     protected abstract ValueTask<SigningKeySet> LoadKeysAsync(CancellationToken cancellationToken);
 
-    // IJwtSigningService implemented by the base class on top of LoadKeysAsync + the crypto call.
+    /// <summary>
+    /// Produces the signature bytes for the already-selected active key. Default body performs
+    /// the local BCL crypto operation; a remote (KMS/HSM) provider overrides this to make a
+    /// network round trip. It can only change HOW the signature is produced, never WHICH key is
+    /// selected or what the header says.
+    /// </summary>
+    protected virtual ValueTask<ReadOnlyMemory<byte>> SignInputAsync(
+        SigningKeyPair activeKey, byte[] signingInput, CancellationToken cancellationToken)
+        => new(SigningAlgorithms.Sign(activeKey.Descriptor, signingInput, activeKey.PrivateKey));
+
+    // IJwtSigningService implemented by the base class on top of LoadKeysAsync + SignInputAsync.
 }
 ```
 
 The base class owns:
 
 - **Interval-throttled caching** driven by an injected **`TimeProvider`** — never
-  `DateTime.Now` / `DateTimeOffset.UtcNow`. This keeps the whole rotation/caching path
-  unit-testable with a `FakeTimeProvider`, satisfying the testability principle (no running
-  server, no wall-clock dependency).
-- A **single-flight refresh gate**: when the refresh interval elapses, concurrent
-  first-requests do not all trigger `LoadKeysAsync` simultaneously; exactly one load runs
-  and the rest await its result. This matters on the hot path — signing is per-token-issuance
-  — where a thundering herd against a remote key source would be a self-inflicted outage.
-- The **`SignAsync` crypto call** itself, selecting the active key from the loaded set.
-- **Deterministic disposal of superseded private key material.** `SigningKeySet`, and any
-  type holding private key material, MUST be `IDisposable`. When the base class replaces the
-  cached set on refresh, it MUST `Dispose()` the previous set's private-key objects — the
-  `RSA` / `ECDsa` / `AsymmetricAlgorithm` instances — rather than leaving them to the GC.
-  These BCL types are `IDisposable` wrappers over unmanaged key handles that can retain key
-  bytes in process memory indefinitely until finalized; relying on GC is not acceptable for
-  key material. For a remote signer there is no local private key, so this disposes only the
-  cached local handle/copy (see §3.3c).
-- **Ordered disposal after in-flight signs.** Disposal of the old set's private-key objects
-  MUST be deferred until every in-flight `SignAsync` call that references the old set has
-  completed. Disposing an `RSA`/`ECDsa` while a concurrent `SignAsync` is mid-operation would
-  raise `ObjectDisposedException` (or worse). The single-flight refresh gate already
-  serialises the *loading* half; the same gate — or a reference count over the active set —
-  MUST also ensure no caller is mid-sign with the old key objects when they are disposed.
+  `DateTime.Now` / `DateTimeOffset.UtcNow` — keeping the whole rotation/caching path
+  unit-testable with a `FakeTimeProvider`.
+- A **single-flight refresh gate**: when the refresh interval elapses, exactly one
+  `LoadKeysAsync` runs and concurrent callers await its result. This matters on the signing hot
+  path, where a thundering herd against a remote key source would be a self-inflicted outage.
+- **Header construction, active-key selection, `kid`/`alg` fixation, and the `SignAsync`
+  crypto dispatch**, all inside a private, non-overridable `PerformSignAsync`. `SignInputAsync`
+  is the only overridable seam and can affect only the signature-bytes production for the
+  already-selected descriptor — it can never change which key is selected or what the header
+  says, which is what preserves §1's "header and signature are always consistent by
+  construction" invariant. Local-key providers (development, Windows Certificate Store,
+  file-based) inherit the default body unchanged; only a genuinely remote/network signer
+  overrides it.
+- **Deterministic disposal of superseded private key material.** `SigningKeySet`, and any type
+  holding private key material, MUST be `IDisposable`. When the base class replaces the cached
+  set on refresh, it MUST `Dispose()` the previous set's private-key objects (the `RSA` /
+  `ECDsa` / `AsymmetricAlgorithm` instances) rather than leaving them to the GC — those BCL types
+  wrap unmanaged key handles that can retain key bytes in process memory until finalized. For a
+  remote signer there is no local private key, so this disposes only the cached local handle/copy.
+- **Ordered disposal after in-flight signs.** Disposal of the old set's private-key objects MUST
+  be deferred until every in-flight `SignAsync` referencing the old set has completed; disposing
+  an `RSA`/`ECDsa` mid-operation would raise `ObjectDisposedException`.
 
-Implementors provide exactly one method: `LoadKeysAsync`, returning a **`SigningKeySet`**
-(the current trusted set: active key plus in-window keys, with whatever private material the
-provider holds to perform signatures). The development provider (§2) derives from this base.
-The base class ships in **v1**.
+Implementors provide exactly one method: `LoadKeysAsync`, returning a **`SigningKeySet`** (the
+current trusted set: active key plus in-window keys, with whatever private material the provider
+holds). The development provider (§2) derives from this base.
 
 #### 3.3 `RetirementWindow` is derived, not configurable
 
@@ -319,110 +381,194 @@ The base class ships in **v1**.
 > item the security agent must approve on this ADR PR.
 
 `RetirementWindow` is the period for which a key that is no longer the active signer remains
-published in the JWKS (and thus remains trusted by relying parties). It is **derived, not a
-user setting**:
+published in the JWKS (and thus remains trusted by relying parties). It is **derived, not a user
+setting**:
 
 ```
 RetirementWindow = max(access-token lifetime, ID-token lifetime, <floor>) + clock-skew allowance
 ```
 
-The window is measured from the moment the key **ceases to be the active signer** — i.e. the
-instant a successor key becomes the active signer — **not** from key creation or initial
-activation. Starting the clock at creation or first activation would retire the key before
-the last token it signed has expired, causing valid tokens to be rejected.
+The window is measured from the moment the key **ceases to be the active signer** — the instant
+a successor key becomes the active signer — **not** from key creation or initial activation.
+Starting the clock at creation or first activation would retire the key before the last token it
+signed has expired, causing valid tokens to be rejected.
 
-Four properties of this derivation are normative and must be stated explicitly:
+Four properties of this derivation are normative:
 
-- **(a) It is sized to the longest-lived *signature-validated* token.** A key may only be
-  retired from the JWKS once every token it could have signed has expired. The window is the
-  longest lifetime among the artifacts a relying party validates by *signature* — today the
-  ID token (`IdTokenOptions`), and the JWT access token once configurable
-  access-token lifetime lands. The clock-skew allowance covers relying parties whose clocks
-  trail the issuer's, consistent with the `ClockSkewTolerance` rationale in ADR 0008. Any
-  future artifact validated by signature against the JWKS (e.g. logout tokens, JARM
-  responses, SD-JWT) MUST be added to the `max(...)` set; introducing such an artifact
-  without extending this derivation is a security regression.
+- **(a) Sized to the longest-lived *signature-validated* token.** A key may only be retired from
+  the JWKS once every token it could have signed has expired. The window is the longest lifetime
+  among the artifacts a relying party validates by *signature* — today the ID token
+  (`IdTokenOptions`), and the JWT access token once configurable access-token lifetime lands. Any
+  future artifact validated by signature against the JWKS (logout tokens, JARM responses, SD-JWT)
+  MUST be added to the `max(...)` set; introducing such an artifact without extending this
+  derivation is a security regression.
 - **(a′) A conservative floor bridges the missing lifetime configuration.** `IdTokenOptions`
-  carries no ID-token lifetime property today (only `SigningAlgValuesSupported`), and there
-  is no configurable JWT-access-token lifetime yet, so **both** terms of the `max(...)` are
-  currently unconfigured. Until configurable per-token lifetimes are introduced, the
-  implementation MUST apply a floor of at least **1 hour** to the `max(...)` term, so that
-  `RetirementWindow` is never shorter than 1 hour + clock-skew. Without this floor the
-  `max(...)` would resolve over zero configured terms and produce a near-zero window that
-  would immediately invalidate every token in flight. 1 hour is longer than any typical ID
-  token yet far shorter than a refresh token — a safe bridge, **not** a permanent default.
-  Once ID-token and JWT-access-token lifetime configuration exists, the derivation uses the
-  configured values and the floor merely guards the degenerate case.
+  carries no ID-token lifetime property today (only `SigningAlgValuesSupported`), and there is no
+  configurable JWT-access-token lifetime yet, so **both** terms of the `max(...)` are currently
+  unconfigured. Until configurable per-token lifetimes exist, the implementation MUST apply a
+  floor of at least **1 hour** to the `max(...)` term, so `RetirementWindow` is never shorter than
+  1 hour + clock-skew. Without this floor the `max(...)` would resolve over zero configured terms
+  and produce a near-zero window that would immediately invalidate every token in flight. 1 hour
+  is a safe bridge, not a permanent default: once ID-token and JWT-access-token lifetime
+  configuration exists, the derivation uses the configured values and the floor merely guards the
+  degenerate case. The default implementation (`ISigningKeyRetirementWindowProvider`, §3.4)
+  currently computes exactly `TimeSpan.FromHours(1) + AuthorizationServerOptions.ClockSkewTolerance`.
 - **(b) Refresh-token lifetime is deliberately excluded.** `TokenEndpoint.RefreshTokenLifetime`
   (default 14 days) is *not* part of the `max(...)`. Refresh tokens are validated by the
-  authorization server against the refresh-token store (ADR 0008), **never by a relying
-  party against the JWKS**. Including the 14-day refresh lifetime would pin every retired
-  public key in the JWKS for two weeks for no validation benefit, enlarging the published
-  trust set far beyond what any verifier actually needs.
+  authorization server against the refresh-token store (ADR 0008), **never by a relying party
+  against the JWKS**. Including the 14-day refresh lifetime would pin every retired public key in
+  the JWKS for two weeks for no validation benefit.
 - **(c) The retired key's *private* material is destroyed immediately on retirement.**
-  `RetirementWindow` governs only how long the *public* key stays in the JWKS so that
-  already-issued tokens keep validating. Once a key stops being the active signer it signs
-  nothing further, so its private half has no further use and MUST be destroyed at once.
-  Keeping a retired private key alive is pure liability. For remote-signing providers
-  (HSM/KMS) there is no local private key to destroy — it never left the HSM; the obligation
-  there is to dispose whatever local *handle or copy* the base class or provider cached, not
-  the key itself.
+  `RetirementWindow` governs only how long the *public* key stays in the JWKS. Once a key stops
+  being the active signer it signs nothing further, so its private half MUST be destroyed at once
+  (via §3.2's deterministic disposal). For remote-signing providers (HSM/KMS) there is no local
+  private key to destroy — the obligation there is to dispose whatever local *handle or copy* the
+  base class or provider cached.
 
-The clock-skew allowance always **widens** the window — it is added to the `max(...)` term
-and never subtracts from it. Skew exists to keep accepting tokens for relying parties whose
-clocks trail the issuer's; shortening the window for skew would do the opposite of its
-purpose.
+The clock-skew allowance always **widens** the window — it is added to the `max(...)` term and
+never subtracts from it. `RetirementWindow` is **not** exposed on `JwtSigningServiceOptions` or
+anywhere else (see rejected alternatives); it is computed inside ZeeKayDa from token-lifetime
+configuration the server already owns.
 
-`RetirementWindow` is **not** exposed on `JwtSigningServiceOptions` or anywhere else (§3.4
-rejected alternative). It is computed inside ZeeKayDa from the token-lifetime configuration
-the server already owns.
-
-#### 3.4 `JwtSigningServiceOptions` carries `RefreshInterval` only
+#### 3.4 `JwtSigningServiceOptions` carries `KeySourceRefreshInterval` only
 
 ```csharp
 public abstract class JwtSigningServiceOptions
 {
-    public TimeSpan RefreshInterval { get; set; }   // base-class cache throttle
+    /// <summary>
+    /// How often the base class re-invokes LoadKeysAsync to refresh the cached trusted key set
+    /// (poll cadence, coalesced via the single-flight gate) AND, for rotation-capable providers
+    /// that publish-then-activate, the lead time a newly published key must be visible before it
+    /// may become the active signer. These two roles are deliberately ONE property, not two — see
+    /// the rejected "split into two knobs" alternative.
+    ///
+    /// null means "load once via LoadKeysAsync, never reload" — a real static-source mode for
+    /// immutable key sources, not a sentinel value.
+    /// </summary>
+    public TimeSpan? KeySourceRefreshInterval { get; set; }
 }
 ```
 
-The base options type carries **`RefreshInterval`** and nothing else. `RetirementWindow` is
-*not* here — see §3.3. Provider-specific options derive from this type
-(`DevelopmentSigningKeyOptions : JwtSigningServiceOptions`).
+The base options type carries **`KeySourceRefreshInterval`** and nothing else. `RetirementWindow`
+is *not* here (§3.3). Provider-specific options derive from this type.
 
-#### 3.5 Rotation for external providers — read-only with anomaly surfacing
+`KeySourceRefreshInterval` is a **nullable `TimeSpan?`**: a non-null value is the finite poll
+cadence; **`null` means "load once, never reload"**, a named static-source mode for an immutable
+key source. This replaces the earlier `TimeSpan.MaxValue`-as-sentinel design, in which a *mode*
+("never poll") was expressed via a *cadence* value plus a magic-number special case in the base
+class's refresh arithmetic. `DevelopmentSigningKeyOptions` defaults this to `null` (a
+locally-generated or file-persisted key set never changes at runtime, so there is nothing to
+poll; static mode is also what lets the base class avoid disposing a still-referenced memoized
+key set). `JwtSigningService<TOptions>.BorrowSetAsync` expresses the static case directly via a
+null check — no `TimeSpan.MaxValue` comparison and no overflow guard.
 
-For provider-owned rotation (KMS, database), ZeeKayDa reads the trusted set via
-`LoadKeysAsync` and surfaces anomalies rather than driving rotation. Specifically: if a
-previously-seen `kid` **vanishes** from `LoadKeysAsync` results without a replacement key
-having been active for at least `RetirementWindow`, the base class **logs a warning**. A key
-that disappears too early means tokens it signed are still in circulation but their key is no
-longer published — relying parties will start rejecting valid tokens. ZeeKayDa cannot prevent
-a misbehaving external provider from doing this, but it can make it loud.
+The name conveys **both** roles the value serves — poll cadence and, for Key Vault-style
+providers, publish-then-activate lead time (§3.5). They are one property on purpose: binding them
+to a single value makes it structurally impossible to configure an activation delay shorter than
+the poll interval, i.e. to activate a key before the process would even notice it exists — the
+exact race the publish-then-activate/retirement-window model exists to prevent (see the rejected
+"split into two knobs" alternative).
 
-**Publish-then-activate.** There is a symmetric race on the *addition* side: if a key starts
-signing before its public half appears in the JWKS, a relying party that fetches a fresh JWKS
-still will not find the new `kid` and will reject otherwise-valid tokens. A key therefore MUST
-appear in `GetSigningKeysAsync()` results — and so in the published JWKS — for at least one
-RP JWKS-cache-TTL period **before** it becomes the active signer. Implementations MUST NOT
-promote a key to active signer until it has been published. The exact TTL is RP-dependent; as
-a safe default the activation delay SHOULD be ≥ `RefreshInterval`, so an RP that polls the
+#### 3.5 Rotation for external providers — read-only, durable-timestamp-derived, with anomaly surfacing
+
+For provider-owned rotation (KMS, database, OS certificate store), ZeeKayDa reads the trusted set
+via `LoadKeysAsync` and surfaces anomalies rather than driving rotation.
+
+**Publish-then-activate.** If a key starts signing before its public half appears in the JWKS, a
+relying party that fetches a fresh JWKS still will not find the new `kid` and will reject
+otherwise-valid tokens. A key therefore MUST appear in `GetSigningKeysAsync()` results — and so
+in the published JWKS — for at least one RP JWKS-cache-TTL period **before** it becomes the active
+signer. Implementations MUST NOT promote a key to active signer until it has been published. As a
+safe default the activation delay SHOULD be ≥ `KeySourceRefreshInterval`, so an RP that polls the
 JWKS at the interval will have observed the key before the first token signed with it.
+
+**Anomaly surfacing (the "vanished kid" warning).** Rotation-capable providers keep a
+restart-tolerant, purely-for-logging map of previously-published `(kid, raw provider version
+string)` pairs. On each refresh, for a previously-published pair whose `kid` is no longer in the
+newly-included (trusted/published) set, the provider consults **the key store's own complete
+version list** (including disabled/expired versions) and logs a warning **only when that version
+has disappeared from the store's version list entirely** — i.e. the store stopped returning it
+(deleted/purged). A version that is still listed by the store but has simply aged out of its
+`RetirementWindow`, or been disabled, is the expected, non-anomalous case and stays silent. The
+trigger is "the key store no longer lists this version at all," anchored to the store's durable
+version list, not to elapsed-retirement-window bookkeeping. ZeeKayDa cannot prevent a misbehaving
+external provider from pulling a key prematurely, but it makes it loud.
+
+**Durable, provider-side-timestamp-derived rotation is the required pattern.** A rotation-capable
+provider MUST derive its entire activation/retirement timeline from the key store's own durable
+per-key timestamps — never from local, in-memory "when did I first observe this kid" bookkeeping,
+which breaks on process restart (a fresh replica has no history) and is inconsistent across
+load-balanced replicas. An in-memory-only tracking of publish-then-activate or retirement state
+is **non-compliant with this section** for any provider capable of holding more than one key at a
+time. (The one piece of cross-call state a provider may keep in memory — the kid→version map used
+purely for the "vanished kid" log line — is fine to lose on restart; losing it only risks missing
+one log line, never a trust decision.)
+
+The two shipped rotation models differ in which durable timestamp anchors the timeline, and the
+shared, anchor-agnostic machinery accommodates both:
+
+- **Azure Key Vault** anchors on Key Vault's own `CreatedOn`/`NotBefore`: `ActivatesAt(v)` is
+  `v.CreatedOn` for the very first version ever recorded for the key name (a durable, shared fact
+  determined across all versions ever created, including disabled/expired) and
+  `v.CreatedOn + KeySourceRefreshInterval` for every subsequent version (the publish-then-activate
+  delay); `NotBefore` folds into `ActivatesAt` as `max(rawActivatesAt, v.NotBefore)`;
+  `Enabled = false` is an immediate, unconditional exclusion that bypasses `RetirementWindow`
+  (an operator disabling a suspected-compromised version takes effect at once); `RetiredAt(v)` is
+  the `ActivatesAt` of whichever *eligible* successor actually superseded `v`. This makes the whole
+  timeline a stateless computation over `(the store's version list, now,
+  KeySourceRefreshInterval, RetirementWindow)` — restart-safe, multi-replica-consistent, and
+  fully `FakeTimeProvider`-testable. The Key Vault rotation model (`KeyVaultSigningKeyRotation`)
+  stays internal to `ZeeKayDa.Auth.AzureKeyVault`.
+- **Windows Certificate Store** (and, by the same pattern, the file-based provider) anchors on the
+  certificate's immutable `NotBefore`/`NotAfter` (a Windows store certificate has no `CreatedOn`
+  equivalent). `ActivatesAt(cert) = cert.NotBefore`, with **no** extra publish-then-activate delay
+  term (every registered certificate is fully visible in the JWKS as of process start; there is no
+  "has the store durably recorded this yet" question). The publish-then-activate safety property
+  therefore becomes the **operator's** responsibility: a certificate generated for rotation must
+  have its `NotBefore` set at least `KeySourceRefreshInterval` in the future.
+  `SigningKeyRotation.HasTooSoonPendingActivation` surfaces a startup warning when it is not — the
+  library's only defence, since a local store cannot prove when a certificate was actually
+  deployed.
+
+**Single-key bootstrap exemption.** With exactly one key registered, `SelectActiveKey` treats it
+as active immediately regardless of its activation timing (there is no prior published JWKS state
+any relying party could have cached), mirroring "the very first version ever used activates
+immediately." The exemption covers activation *timing only*, never expiry: a sole registered key
+whose expiry (`NotAfter`/`ExpiresOn`) has already passed still returns `null` (fail closed) —
+signing with a credential relying parties and the issuing CA consider invalid is a regression the
+exemption must never paper over.
 
 #### 3.6 DI registration pattern
 
-Every `.AddXxx()` signing extension on `ZeeKayDaAuthBuilder` is the consistent registration
-hook, analogous to `AddAuthentication()` in ASP.NET Core and to the store registration
-methods in ADR 0008. Each such method:
+Every `.AddXxx()` signing extension on `ZeeKayDaAuthBuilder` is the consistent registration hook,
+analogous to `AddAuthentication()` in ASP.NET Core and to the store registration methods in ADR
+0008. Each such method:
 
 1. registers `IJwtSigningService` as a **singleton**;
 2. calls `builder.ThrowIfAlreadyRegistered(typeof(IJwtSigningService))` so a second signing
    provider fails loudly at registration time rather than silently winning or losing;
-3. registers the per-provider `IValidateOptions<TOptions>` for startup validation.
+3. registers the per-provider `IValidateOptions<TOptions>` for startup validation (for the
+   development provider, `AllowedDevEnvironmentsValidator` as
+   `IValidateOptions<DevelopmentSigningKeyOptions>`, registered only inside the development-key
+   methods since it is only meaningful when that provider is in use).
 
-A shared **internal** helper extension standardises this plumbing so each public `AddXxx()`
-method is a thin, uniform call. `AllowDevelopmentJwtSigningKeysOutsideDevelopment` stays on
-`AuthorizationServerOptions` (§2) — server-wide gate, not a per-provider knob.
+A shared **internal** helper standardises this plumbing so each public `AddXxx()` method is a
+thin, uniform call.
+
+**Environment-conditional provider selection composes with the flat methods.** All signing
+registration methods return the same `ZeeKayDaAuthBuilder`, so choosing a provider by environment
+is an ordinary `if`/`else` on the builder — no dedicated sub-builder is needed (see the rejected
+alternative):
+
+```csharp
+var b = services.AddZeeKayDaAuth(opt => { /* … */ })
+                .AddSecretsHasher<Foo>()
+                .AddInMemoryStores();
+if (env.IsDevelopment())
+    b.AddInMemoryDevelopmentJwtSigningKeys();
+else
+    b.AddAzureKeyVaultRemoteSigning(/* … */);
+```
 
 ### 4. Token-pipeline integration and JWKS
 
@@ -430,188 +576,308 @@ method is a thin, uniform call. `AllowDevelopmentJwtSigningKeysOutsideDevelopmen
 
 `ITokenWriter` (in `ZeeKayDa.Auth`) is the **single** component that calls
 `IJwtSigningService.SignAsync`. It is **format-agnostic** — deliberately *not* `IJwtWriter`
-(§ Rejected Alternatives).
+(see rejected alternatives). Because the JWS header is part of the signed bytes, `kid`/`alg` are
+determined and fixed in the header before the signing input is formed. The flow:
 
-Because the JWS header is part of the signed bytes, the `kid` and `alg` must be determined
-and fixed in the header before the signing input is formed — they cannot be stamped in after
-signing. The service handles this atomically: `ITokenWriter` passes only the base64url-encoded
-payload, and the service constructs the header, forms the signing input, signs, and returns the
-header and signature as pre-encoded segments. The flow is therefore:
-
-1. Claim assembly: ID-token/access-token builders above `ITokenWriter` assemble the claims and
-   base64url-encode the payload segment.
+1. ID-token/access-token builders above `ITokenWriter` assemble claims and base64url-encode the
+   payload segment.
 2. `ITokenWriter` calls `SignAsync(payloadSegment)`.
-3. Internally, the service picks the active key, builds the header
-   `{"alg":"…","kid":"…"}`, base64url-encodes it, forms
-   `headerSegment "." payloadSegment`, and signs.
-4. `SigningResult` is returned containing `HeaderSegment`, `SignatureSegment`, `Kid`,
-   and `Algorithm` (all already base64url-encoded).
-5. `ITokenWriter` assembles the compact JWS:
-   `HeaderSegment "." payloadSegment "." SignatureSegment`.
+3. Internally the service picks the active key, builds the header `{"alg":"…","kid":"…"}`,
+   base64url-encodes it, forms `headerSegment "." payloadSegment`, and signs.
+4. `SigningResult` returns `HeaderSegment`, `SignatureSegment`, `Kid`, `Algorithm` (all
+   base64url-encoded).
+5. `ITokenWriter` assembles the compact JWS: `HeaderSegment "." payloadSegment "." SignatureSegment`.
 
-This design eliminates the TOCTOU race that would exist if `ITokenWriter` queried the active
-key separately and then passed the full signing input: there is no window between "learn which
-key is active" and "sign with that key" in which a rotation could produce a header whose `kid`
-disagrees with the actual signing key. The header and the signature are always consistent by
-construction.
-
-ID-token and JWT-access-token builders sit *above* `ITokenWriter` and own claim assembly;
-`ITokenWriter` owns `kid` + header construction + signing. The name is format-agnostic
-because a future reference/opaque-token writer is simply a different `ITokenWriter`
-implementation — no misnomer, no interface proliferation, and the JWE forward-compat story
-(§5) slots in cleanly.
+This eliminates the TOCTOU race that would exist if `ITokenWriter` queried the active key
+separately and then passed the full signing input. The name is format-agnostic because a future
+reference/opaque-token writer is simply a different `ITokenWriter` implementation.
 
 #### 4.2 Implementors never touch signing or JWS formatting
 
-Third-party key providers implement **only `LoadKeysAsync`** on the §3 base class. They never
-implement `SignAsync` directly and never handle JWS formatting. This is the pit of success:
-the only thing a provider author writes is "here are my current keys," and there is no wrong
-way to do that. Header construction, `kid` selection, base64url framing, and the crypto call
-all live in code ZeeKayDa owns and tests.
+Third-party key providers implement **only `LoadKeysAsync`** on the §3 base class (and, only for
+genuinely remote signers, override `SignInputAsync`). They never implement JWS formatting, `kid`
+selection, or base64url framing — all of that lives in code ZeeKayDa owns and tests. This is the
+pit of success: the only thing a provider author writes is "here are my current keys."
 
 #### 4.3 `IJwksDocumentProvider` and the JWKS endpoint
 
 `IJwksDocumentProvider` (in `ZeeKayDa.Auth`) mirrors `IDiscoveryDocumentProvider`. It calls
-`IJwtSigningService.GetSigningKeysAsync()` and maps the owned `SigningKeyDescriptor`s to a
-stable JWK-set wire record (`JsonWebKeySetDocument` or similar) whose fields are pinned with
-explicit `[JsonPropertyName]` attributes — **no Microsoft.IdentityModel type leakage**, the
-same discipline `OpenIdConfigurationDocument` already applies. The `connect/jwks` endpoint
-becomes a thin ASP.NET Core adapter over this provider, replacing the current `501`
-placeholder. Because `GetSigningKeysAsync` returns exactly the trusted set (active + in-window
-keys; §1), the JWKS publishes exactly those keys — this is the relying-party trust boundary
-the security sign-off (§3.3) covers.
+`GetSigningKeysAsync()` and maps the owned `SigningKeyDescriptor`s to a stable JWK-set wire record
+(`JsonWebKeySetDocument` or similar) whose fields are pinned with explicit `[JsonPropertyName]`
+attributes — **no Microsoft.IdentityModel type leakage**. The `connect/jwks` endpoint becomes a
+thin ASP.NET Core adapter over this provider, replacing the current `501` placeholder. Because
+`GetSigningKeysAsync` returns exactly the trusted set (active + in-window keys), the JWKS
+publishes exactly those keys — the relying-party trust boundary the security sign-off (§3.3)
+covers.
 
-**The JWKS read path shares the single-flight cache.** `connect/jwks` MUST serve from the
-same single-flight-gated cache as the signing path (§3.2). An anonymous request to
-`connect/jwks` MUST NOT be able to trigger an un-coalesced `LoadKeysAsync` against a remote
-key source: if the cache is cold or expired, the single-flight gate applies equally to the
-JWKS read path and the signing path, so a burst of unauthenticated JWKS requests cannot
-become a thundering herd against the key source.
+**The JWKS read path shares the single-flight cache.** `connect/jwks` MUST serve from the same
+single-flight-gated cache as the signing path (§3.2). A burst of anonymous JWKS requests against a
+cold or expired cache MUST NOT become a thundering herd against a remote key source.
 
-**`kid` uniqueness and stability.** A published JWKS MUST NOT contain duplicate `kid` values;
-the base class MUST detect a `SigningKeySet` carrying duplicate `kid`s and reject it at load
-time (`ZeeKayDaConfigurationException`). A `kid` MUST be stable for the entire life of a key
-— it never changes once assigned — so relying parties can match a token's header `kid` to a
-JWKS entry deterministically.
+**`kid` uniqueness and stability.** A published JWKS MUST NOT contain duplicate `kid` values; the
+base class MUST detect a `SigningKeySet` carrying duplicate `kid`s and reject it at load time
+(`ZeeKayDaConfigurationException`). A `kid` MUST be stable for the entire life of a key so relying
+parties can match a token's header `kid` to a JWKS entry deterministically.
 
-#### 4.4 Descriptor → JWK parameter extraction is hand-rolled over BCL crypto
+#### 4.4 Descriptor → JWK parameter extraction, and the shared public helpers
 
 Mapping a descriptor's public key to its JWK parameters is done with BCL primitives:
-`RSA.ExportParameters(false)` for RSA keys, `ECDsa.ExportParameters(false)` for EC keys
-(`false` = public parameters only — private material is never exported into a JWK), plus
-.NET's built-in `Base64Url` encoding for the parameter values. **No new dependency** — this
-is squarely within the "build it ourselves rather than take a dependency for a small,
-well-specified transform" trade-off, and the transform is fully specified by RFC 7517/7518.
-It is covered by **known-answer-vector unit tests** drawn from RFC 7517 / RFC 7520 so the
-hand-rolled mapping is provably correct.
+`RSA.ExportParameters(false)` / `ECDsa.ExportParameters(false)` (public parameters only — private
+material is never exported into a JWK), plus .NET's built-in `Base64Url` encoding. **No new
+dependency** — a small, fully-specified (RFC 7517/7518), test-covered transform, covered by
+known-answer-vector unit tests drawn from RFC 7517 / RFC 7520. Each emitted JWK MUST include
+`"use": "sig"` (plus `alg` and `kid`).
 
-Each emitted JWK MUST include `"use": "sig"` so relying parties do not mistakenly treat a
-signing key as an encryption key. (`alg` and `kid` are likewise emitted on every JWK.)
+Two derivations are shared across provider packages and are therefore **public** core types in
+`ZeeKayDa.Auth` (`src/ZeeKayDa.Auth/Tokens/`), alongside `SigningKeyDescriptor` /
+`SigningKeyType` / `SigningAlgorithm`:
 
-#### 4.5 `id_token_signing_alg_values_supported` stays static, cross-checked at startup
+- **`JwkThumbprint`** — RFC 7638 JWK thumbprint computation (`Compute(RSAParameters)` /
+  `Compute(ECParameters)`). A provider derives a safe, non-leaking `kid` from a public key with
+  it. A `kid` is always public (every issued JWT header, and the JWKS), so it MUST NOT be a raw
+  external identifier (a Key Vault/key URI, a certificate's X.509 thumbprint/subject/serial),
+  which would leak reconnaissance value. All providers use `JwkThumbprint`, never a raw
+  identifier.
+- **`SigningKeyRotation`** (with `RotationKey`/`RotationEntry`) and **`SigningKeyDescriptorFactory`** —
+  the stateless activation-timeline derivation (§3.5: `BuildActivationTimeline`, `SelectActiveKey`,
+  `SelectIncludedKeys`, `HasTooSoonPendingActivation`) and the RSA/EC descriptor building +
+  algorithm-family/key-type validation. `SigningKeyRotation` is **anchor-agnostic**: it consumes a
+  precomputed `(ActivatesAt, ExpiresAt)` pair per key rather than any credential-specific type
+  (no `X509Certificate2`, no raw `NotBefore`/`NotAfter`), so core `ZeeKayDa.Auth` depends on no
+  credential representation; each provider maps its own durable timestamp onto that pair before
+  calling in. Key Vault's structurally different model (`CreatedOn` anchor, delay term, `Enabled`
+  flag, vanished-kid detection) stays internal to its package.
 
-`id_token_signing_alg_values_supported` continues to be sourced from static configuration
-(`IdTokenOptions.SigningAlgValuesSupported`), **not** derived from the live key set. A
-startup `IValidateOptions` cross-check verifies that every advertised algorithm is one the
-registered `IJwtSigningService` can actually produce — catching the misconfiguration where the
-discovery document promises an algorithm no key can sign.
+These are **public**, not `internal` + `InternalsVisibleTo`, because the consumers are separate,
+non-friend NuGet packages (ADR 0012) and — decisively — because `InternalsVisibleTo` can only ever
+name first-party assemblies at build time, so it structurally cannot serve a genuine third party
+implementing this ADR's own §3.2/§4.2 extensibility contract. `SigningAlgorithms` (ZeeKayDa's
+crypto dispatch and validation) correctly stays `internal`: only the contracts that must cross the
+package boundary are public.
 
-**Rejected alternative — derive the advertised algorithms dynamically from the live key set.**
-Discovery is a *stable published contract*. Relying parties cache it. Deriving the advertised
-algorithm list from whatever keys happen to be loaded means the discovery document
-**flickers during rotation**: if a key of a different algorithm enters or leaves the trusted
-set, the advertised list changes underneath cached consumers. Static config with a startup
-consistency check gives a stable contract *and* catches the inconsistency that dynamic
-derivation was trying to prevent.
+#### 4.5 `ISanitizingLogger<T>` is public; concrete redaction stays internal
+
+Remote-signing providers (e.g. Azure Key Vault) constructor-inject `ISanitizingLogger<T>`
+(`src/ZeeKayDa.Auth/Logging/ISanitizingLogger.cs`) for log hygiene. The interface is **public**
+for the same reason as §4.4's helpers: a genuine third-party remote-signing provider (AWS KMS,
+HashiCorp Vault, an on-prem HSM) needs the same log-hygiene guarantee, which `InternalsVisibleTo`
+cannot grant. The concrete `SecretSanitizingLogger<T>` and its `SensitiveKeys` redaction allowlist
+stay **internal**.
+
+Making the interface nameable introduces a host-misconfiguration risk that internal visibility
+structurally ruled out: a host that registers its own `ISanitizingLogger<>` (open-generic, or a
+closed-generic `ISanitizingLogger<SomeType>`) can silently shadow the redaction wrapper, letting
+credential material reach a log sink unredacted. This is a host-side misconfiguration, not
+something an external caller can trigger, but the failure mode is silent. The mitigation is
+`SanitizingLoggerRegistrationStartupValidator` (`src/ZeeKayDa.Auth.AspNetCore/`), registered
+**first** among `AddZeeKayDaAuth()`'s hosted services (so no shadowed logger is used before the
+check runs): it resolves `ISanitizingLogger<T>` and asserts the instance is
+`SecretSanitizingLogger<T>` (open-generic case), and — via `SanitizingLoggerClosedOverrideScanner`,
+which holds the live `IServiceCollection` — scans for any closed-generic `ISanitizingLogger<T>`
+descriptor (closed-generic case, for any `T`). Both failures **fail hard** (a shadowed sanitizing
+logger is a silent security regression, unlike ADR 0008's client-repository shadow warning, which
+is only a functional footgun), aggregated into one `ZeeKayDaConfigurationException`. Replacing the
+interface with a public sealed concrete type would remove substitution entirely but touches ~34
+call sites across four packages plus both logging analyzers and three test doubles; it remains
+available as a future hardening step but is not pursued.
+
+The analyzer `ZEEKAYDA0002` (`InterpolatedStringLogAnalyzer`, requiring compile-time-constant
+`Log*` templates in `ZeeKayDa.*` namespaces) gates its exemption on
+`ContainingAssembly?.Name == "ZeeKayDa.Auth"` alone — the implemented interface's visibility plays
+no part — so making `ISanitizingLogger<T>` public does not open a template-constness bypass. A
+regression test
+(`InterpolatedStringLogAnalyzerTests.Diagnostic_still_fires_inside_friend_assembly_class_implementing_a_PUBLIC_ISanitizingLogger`)
+pins this.
 
 ### 5. JWT encryption (JWE) — absent end to end in v1
 
 There is **no** encryption support in v1: no `IEncryptionService`, no `EncryptionOptions`, no
-encryption discovery fields, no client-model encryption-preference fields — **not even an
-"off" toggle**.
+encryption discovery fields, no client-model encryption-preference fields — **not even an "off"
+toggle**.
 
-**Rationale.** v1 does not support dynamic client registration (RFC 7591). Clients are
-registered statically (ADR 0007), and the client model simply has no encryption-preference
-fields. No code path can request an encrypted token, so there is nothing to toggle. The
-relevant encryption discovery fields (`id_token_encryption_alg_values_supported`, etc.) are
-**OPTIONAL** in OIDC; their *absence* is the spec-correct signal that the provider does not
-offer encryption. Shipping an empty `EncryptionOptions` or an `Enabled = false` flag would be
-a SemVer commitment to a surface with no behaviour behind it — the same anti-pattern ADR 0008
-rejected when it deleted the empty `DistributedCacheTokenStoreOptions`.
+**Rationale.** v1 does not support dynamic client registration (RFC 7591). Clients are registered
+statically (ADR 0007) with no encryption-preference fields, so no code path can request an
+encrypted token and there is nothing to toggle. The encryption discovery fields
+(`id_token_encryption_alg_values_supported`, etc.) are **OPTIONAL** in OIDC; their *absence* is
+the spec-correct signal that the provider does not offer encryption. Shipping an empty
+`EncryptionOptions` or an `Enabled = false` flag would be a SemVer commitment to a surface with no
+behaviour behind it — the anti-pattern ADR 0008 rejected when it deleted the empty
+`DistributedCacheTokenStoreOptions`.
 
-**Forward-compat is preserved.** `ITokenWriter` is composable (§4.1). When encryption lands,
-a sibling `IEncryptionService` / `EncryptionService<TOptions>` seam is introduced (mirroring
-the signing seam), and `ITokenWriter` gains an optional JWE-wrap step — **sign first, then
-wrap as a nested JWT** per RFC 7519 §3. The client model and discovery document are extended
-at that point. Nothing in this ADR forecloses that path.
+**Forward-compat is preserved.** `ITokenWriter` is composable (§4.1). When encryption lands, a
+sibling `IEncryptionService` / `EncryptionService<TOptions>` seam is introduced (mirroring the
+signing seam), and `ITokenWriter` gains an optional JWE-wrap step — **sign first, then wrap as a
+nested JWT** per RFC 7519 §3. The client model and discovery document are extended at that point.
+
+### 6. `id_token_signing_alg_values_supported` stays static, cross-checked at startup
+
+`id_token_signing_alg_values_supported` continues to be sourced from static configuration
+(`IdTokenOptions.SigningAlgValuesSupported`), **not** derived from the live key set. A startup
+`IValidateOptions` cross-check verifies that every advertised algorithm is one the registered
+`IJwtSigningService` can actually produce — catching the misconfiguration where the discovery
+document promises an algorithm no key can sign. (Why not dynamic derivation: see rejected
+alternatives.)
 
 ---
 
-## Rejected Alternatives
+## Considered and Rejected Alternatives
 
-### A third method on `IJwtSigningService` for rotation
+### Environment-gate and registration-shape alternatives (issue #337)
 
-Considered: add `RotateAsync` (or a `CurrentKeyId`/state method) to the interface so ZeeKayDa
-could drive or observe rotation directly. **Rejected:** most real providers (KMS, managed
-databases) own rotation on their own schedule and lifecycle; a rotation method on the
-interface imposes a model they do not have and would force them to fake it. Rotation is a
-provider-private concern; ZeeKayDa reads the trusted set and surfaces anomalies (§3.5). The
-two-method interface stays minimal and every method maps to a real consumer need.
+#### PR #333's placement of `AllowedDevelopmentJwtSigningKeysEnvironments` on `AuthorizationServerOptions`
 
-### Generic `IJwtSigningService<TOptions>` on the public surface
+**Tried, shipped (PR #333, commit `79379c8`, 2026-07-10), and reverted (issue #337).** PR #333
+moved the allowed-environments list from the provider-specific options type onto the shared,
+public `AuthorizationServerOptions` root. Its stated goal — public configurability without
+`InternalsVisibleTo` or reflection — was sound and is kept; only the *placement* was wrong.
 
-Considered: make the interface itself generic over the options type. **Rejected:** the
-options type is an implementation detail of a *concrete provider*. Consumers of signing — the
-token writer, the JWKS provider — depend only on "sign this" and "give me the keys," neither
-of which is parameterised by provider options. Genericity belongs on the optional base class
-(`JwtSigningService<TOptions>`, §3.2), not on the consumed interface. A non-generic interface
-also keeps DI registration (`IJwtSigningService` singleton) simple and uniform.
+The justification cited "mirroring `AllowInMemoryStoresOutsideDevelopment`'s server-wide-gate
+placement (ADR 0002/0008)," which conflated two different things. The gate's *input* (the host
+environment name) is genuinely server-wide, but the gate's *policy* is entirely feature-scoped:
+the list is an inert no-op unless a development-signing-key method was also registered. A setting
+on the shared root that silently does nothing unless an unrelated extension method was called is
+the exact discoverability trap ADR 0008 names for auto-registration. Placing it back on the
+provider options means it appears in IntelliSense only when the feature it gates is actually being
+configured, is more consistent with the requirement that the gate never be sourced from bindable
+configuration (a code-only `configure` callback is harder to accidentally wire to `appsettings.json`
+than a bindable root property), and is a small security-discoverability improvement rather than a
+regression. The goal PR #333 was actually pursuing is achieved instead by making
+`DevelopmentSigningKeyOptions` public and reaching it through the registration method's `configure`
+callback (§2), which needs no `InternalsVisibleTo`. See ADR 0002's scope clarification and ADR
+0008's equivalent store-side move (the flag becoming an `allowOutsideDevelopment` parameter on the
+in-memory registration methods) — both are one decision made together.
 
-### `RetirementWindow` as a user-configurable option
+#### A dedicated signing-provider-selection sub-builder (`AddJwtSigning(signing => …)`)
 
-Considered: expose `RetirementWindow` on `JwtSigningServiceOptions`. **Rejected:** like the
-tombstone-retention and family-revocation-marker TTLs that ADR 0008 removed for the same
-reason, the only off-default values are unsafe or useless. Set it *shorter* than the longest
-signature-validated token lifetime and relying parties begin rejecting still-valid tokens
-whose key was pulled from the JWKS too early — a silent outage. Set it *longer* and the
-published trust set bloats with keys nothing needs. The correct value is fully *derivable*
-from token lifetimes the server already configures (§3.3), so it is derived and not exposed.
+**Considered and rejected.** A sub-builder callback was floated to make environment-conditional
+provider selection "cleaner." It is unnecessary: the flat `AddXxxSigning()` methods all return the
+same `ZeeKayDaAuthBuilder`, so environment branching already composes fine with an ordinary
+`if`/`else` on the builder (§3.6). A sub-builder would add a parallel API surface across four
+provider packages (core, FileSystem, AzureKeyVault, Windows) for a problem the reordering already
+solves, and would not generalise to store registration anyway — stores are "register up to two
+independent interfaces you may mix" (ADR 0008), not "pick exactly one provider," so a sub-builder
+would fight ADR 0008's deliberate mix-and-match design.
 
-### `IJwtWriter` instead of `ITokenWriter`
+#### Splitting `KeySourceRefreshInterval` into two properties (poll cadence vs. activation delay)
 
-Considered: name the writer after the JWT format it produces in v1. **Rejected:** it would be
-a misnomer the moment a reference/opaque-token writer is added — a non-JWT artifact emitted by
-something called `IJwtWriter`. The format-agnostic name lets the future opaque-token writer be
-another `ITokenWriter` implementation rather than forcing a second, parallel interface. The
-seam is named for its *role* (writing tokens), not its current *format*.
+**Considered and rejected.** The poll cadence and the Key Vault publish-then-activate lead time
+*look* separable, and the temptation is to expose two knobs. Binding them to one value is
+intentional: two independent knobs would allow configuring `activationDelay < pollInterval` — i.e.
+promoting a key to active signer before the process would even poll and notice it exists — which is
+exactly the race the publish-then-activate/retirement-window model (§3.5) exists to prevent. One
+property makes that misconfiguration unrepresentable. (This is the same "the only off-default
+values are unsafe" argument that keeps `RetirementWindow` derived rather than configurable.)
 
-### `ISigningService` instead of `IJwtSigningService`
+#### The `AddDevelopmentJwtSigningKeys(persistTo:)` two-overload shape
 
-**`ISigningService` instead of `IJwtSigningService`** — Considered: keep the name format-agnostic in case a future token format needs signing. Rejected: every outbound artifact signed by an OIDC/OAuth2 authorization server is a JWT (ID tokens, JWT access tokens, logout tokens, JARM, signed userinfo). Non-JWT formats (opaque reference tokens) are not signed at all. A generic name would imply flexibility that does not exist in this domain; the honest name is `IJwtSigningService`. If a genuinely different signing concern ever arises, it warrants its own purpose-named seam.
+**Replaced (issue #338).** The prior shape was `AddDevelopmentJwtSigningKeys()` (ephemeral) and
+`AddDevelopmentJwtSigningKeys(string? persistTo)` where `persistTo: null` meant "persist, but use
+the default path" — the opposite of what a `null` argument reads as, and the opposite of what the
+parameter-less overload does. It was also the only signing-provider method without a `configure`
+callback. Replaced by two named methods (§2) that put the persistence choice in the name and give
+`persistTo: null` exactly one meaning.
 
-### A shared signing-and-encryption abstraction
+### Provider-abstraction alternatives (original ADR)
 
-Considered: one abstraction (or one interface with both sign and encrypt operations) to cover
-JWS and JWE together. **Rejected:** signing and encryption use different keys, different trust
-directions, and have different lifecycles; v1 ships no encryption at all (§5). Coupling them
-now would either drag in encryption surface we deliberately exclude or produce a half-defined
-interface. The forward-compatible shape is *sibling* seams (`IJwtSigningService` /
-`IEncryptionService`) composed by `ITokenWriter`, introduced independently when encryption
-actually lands.
+#### A third method on `IJwtSigningService` for rotation
 
-### Microsoft.IdentityModel types on the public surface
+**Rejected.** Most real providers (KMS, managed databases) own rotation on their own schedule; a
+`RotateAsync`/state method imposes a lifecycle model they do not have and would force them to fake
+it. Rotation is provider-private; ZeeKayDa reads the trusted set and surfaces anomalies (§3.5).
 
-Considered: expose `SigningCredentials` / `SecurityKey` / `JsonWebKey` directly on the
-interface and descriptors to save the hand-rolled JWK mapping (§4.4). **Rejected:** it would
-bake a large, fast-moving third-party surface into our own public contract and our SemVer
-commitments, contradicting the minimal-dependency principle. The hand-rolled BCL mapping is a
-small, fully-specified, test-covered transform — an acceptable amount of owned code in
-exchange for keeping the dependency graph clean and the public surface ours.
+#### Generic `IJwtSigningService<TOptions>` on the public surface
 
-### Dynamic derivation of advertised signing algorithms
+**Rejected.** The options type is an implementation detail of a *concrete provider*. Consumers of
+signing (the token writer, the JWKS provider) depend only on "sign this" and "give me the keys,"
+neither parameterised by provider options. Genericity belongs on the optional base class
+(`JwtSigningService<TOptions>`), not the consumed interface; a non-generic interface also keeps DI
+registration uniform.
 
-Recorded in §4.5: rejected because it makes the published discovery contract flicker during
-rotation. Static config plus a startup consistency check is the chosen approach.
+#### `RetirementWindow` as a user-configurable option
+
+**Rejected.** Like the tombstone-retention and family-revocation-marker TTLs ADR 0008 removed, the
+only off-default values are unsafe or useless: shorter than the longest signature-validated token
+lifetime causes relying parties to reject still-valid tokens (a silent outage); longer bloats the
+published trust set. The correct value is fully derivable from token lifetimes the server already
+configures (§3.3), so it is derived, not exposed.
+
+#### `IJwtWriter` instead of `ITokenWriter`
+
+**Rejected.** It would be a misnomer the moment a reference/opaque-token writer is added. The
+format-agnostic name lets a future opaque-token writer be another `ITokenWriter` implementation
+rather than forcing a second parallel interface.
+
+#### `ISigningService` instead of `IJwtSigningService`
+
+**Rejected.** Every outbound artifact an OIDC/OAuth2 authorization server signs is a JWT (ID
+tokens, JWT access tokens, logout tokens, JARM, signed userinfo); non-JWT formats (opaque
+reference tokens) are not signed at all. A generic name would imply flexibility that does not exist
+in this domain; the honest name is `IJwtSigningService`.
+
+#### A shared signing-and-encryption abstraction
+
+**Rejected.** Signing and encryption use different keys, different trust directions, and different
+lifecycles; v1 ships no encryption (§5). The forward-compatible shape is *sibling* seams
+(`IJwtSigningService` / `IEncryptionService`) composed by `ITokenWriter`, introduced independently
+when encryption actually lands.
+
+#### Microsoft.IdentityModel types on the public surface
+
+**Rejected.** Exposing `SigningCredentials` / `SecurityKey` / `JsonWebKey` would bake a large,
+fast-moving third-party surface into our public contract and SemVer commitments. The hand-rolled
+BCL JWK mapping (§4.4) is a small, fully-specified, test-covered transform — an acceptable amount
+of owned code in exchange for keeping the dependency graph clean.
+
+#### Dynamic derivation of advertised signing algorithms
+
+**Rejected (§6).** Discovery is a stable published contract that relying parties cache. Deriving
+the advertised algorithm list from whatever keys happen to be loaded makes the discovery document
+flicker during rotation. Static config plus a startup consistency check gives a stable contract
+*and* catches the inconsistency dynamic derivation was trying to prevent.
+
+### Extensibility / packaging alternatives (surfaced during implementation)
+
+#### `InternalsVisibleTo` for `JwkThumbprint` / `ISanitizingLogger<T>` (instead of making them public)
+
+**Tried and rejected (PR #298 / #287).** The first attempt at reusing the RFC 7638 thumbprint
+logic and the sanitizing logger from the Azure Key Vault provider granted it friend-assembly
+access. `InternalsVisibleTo` only grants access to assemblies named explicitly at build time: it
+can serve a single first-party provider package, but it **fundamentally cannot** serve a genuine
+third party implementing this ADR's own §3.2/§4.2 extensibility contract without ZeeKayDa shipping
+a new core release naming them specifically — which defeats the point of an open extension point.
+The fix is to make the *contracts* public (`JwkThumbprint`, `SigningKeyRotation`,
+`SigningKeyDescriptorFactory`, `ISanitizingLogger<T>`) while ZeeKayDa's own crypto/redaction logic
+(`SigningAlgorithms`, `SecretSanitizingLogger<T>`) stays internal (§4.4, §4.5).
+
+#### `AzureKeyVaultSigningException` as a shared core exception type
+
+**Rejected as premature abstraction (PR #298).** It is a package-local transport exception for
+transient Key Vault sign-time faults. Making it a shared core type "for future remote providers"
+was rejected until a second real remote consumer exists — ADR 0006's "colocate with the feature"
+rule reads honestly here as *the Azure Key Vault feature specifically*, not *signing in general*.
+
+#### A public sealed concrete sanitizing-logger type (instead of a substitutable interface)
+
+**Considered and deferred (PR #298).** Replacing `ISanitizingLogger<T>` with a public sealed
+concrete type would structurally remove the host-shadowing risk (§4.5) but touches ~34 call sites
+across four packages plus both logging analyzers and three test doubles. The startup-validator
+mitigation is used instead; the sealed-type option remains available as a future hardening step.
+
+#### In-memory-only rotation/publish-then-activate state
+
+**Rejected as non-compliant (§3.5).** In-memory history breaks on restart and is inconsistent
+across replicas. Rotation-capable providers MUST derive their timeline from the key store's own
+durable timestamps.
+
+#### Simplifying `SigningKeyRotation`/`RotationKey` after the macOS provider was descoped
+
+**Rejected (issue #290 descoped, 2026-07-10).** #290 (macOS Keychain) was the bare-key consumer
+that motivated *articulating* `SigningKeyRotation`'s anchor-agnostic `(ActivatesAt, ExpiresAt)`
+shape, but contributed no actual generality: that decoupling is required by #289 (Windows) and
+#291 (file-based) regardless, there is no bare-key-specific code in core to remove (all of it lived
+in #290's cancelled package), and the types are already-shipped *public* core surface (reshaping
+them would re-couple core to `X509Certificate2`, break the file-based provider, and be a
+SemVer-breaking change). Kept exactly as shipped.
 
 ---
 
@@ -619,298 +885,108 @@ rotation. Static config plus a startup consistency check is the chosen approach.
 
 ### Positive
 
-- **One correct production path.** A provider author implements a single method
-  (`LoadKeysAsync`) and gets correct caching, single-flight refresh, header construction,
-  `kid` selection, and signing for free. There is no wrong way to wire signing.
+- **One correct production path.** A provider author implements a single method (`LoadKeysAsync`)
+  and gets correct caching, single-flight refresh, header construction, `kid` selection, and
+  signing for free; only a genuinely remote signer additionally overrides `SignInputAsync`.
 - **Private key material never leaves the signing component.** `SignAsync` returns a finished
-  signature; no caller — including `ITokenWriter` — ever holds a private key. This is the
-  invariant that makes future remote signing (KMS/HSM) a non-breaking addition.
-- **Clean, minimal public surface.** No Microsoft.IdentityModel leakage anywhere; everything
-  is BCL types or ZeeKayDa-owned types, all SemVer-stable.
-- **Fully unit-testable rotation/caching** via injected `TimeProvider` — no running server,
-  no wall clock.
-- **Secure-by-default local DX.** One line for local development; hard-fail outside
-  Development; `0600`/`0700` enforced; broader permissions fail loudly.
-- **Stable discovery contract** that does not flicker during rotation.
+  signature; no caller ever holds a private key — the invariant that makes remote signing
+  (KMS/HSM) possible.
+- **Clean, minimal public surface.** No Microsoft.IdentityModel leakage; everything is BCL or
+  ZeeKayDa-owned types. The extension contracts third parties need (`JwtSigningService<TOptions>`,
+  `JwkThumbprint`, `SigningKeyRotation`, `SigningKeyDescriptorFactory`, `ISanitizingLogger<T>`)
+  are public; ZeeKayDa's own crypto/redaction logic stays internal.
+- **Safety gates live with the features they gate.** The development-key environment gate is on
+  `DevelopmentSigningKeyOptions` (via `configure`) and the in-memory-store gate on the store
+  registration methods (ADR 0008) — each surfaces in IntelliSense only when its feature is
+  configured, and neither is reachable from bindable configuration.
+- **Fully unit-testable rotation/caching** via injected `TimeProvider`.
+- **Secure-by-default local DX**; **stable discovery contract** that does not flicker during
+  rotation.
 
 ### Negative / Trade-offs
 
-- **Hand-rolled JWK mapping is owned code** we must keep correct against RFC 7517/7518. The
-  known-answer-vector tests are the mitigation; the trade-off (vs. a Microsoft.IdentityModel
-  dependency) is accepted deliberately.
-- **`RetirementWindow` depends on token-lifetime configuration that is not present yet.**
-  Today **neither** term of the `max(...)` is configurable: there is no ID-token lifetime
-  property on `IdTokenOptions` (only `SigningAlgValuesSupported`) and no configurable
-  JWT-access-token lifetime. The 1-hour floor (§3.3 a′) bridges this gap so the window can
-  never collapse to near-zero. The access-token and ID-token lifetime terms become live when
-  configurable per-token lifetimes land; until then the floor governs. This coupling must be
-  honoured when those lifetimes are added — the derivation, not a new option, is updated, and
-  the floor reverts to guarding only the degenerate case.
-- **External-provider rotation anomalies can only be surfaced, not prevented.** ZeeKayDa logs
-  a warning when a `kid` vanishes too early (§3.5); it cannot stop a misbehaving external
-  provider from pulling a key prematurely.
-- **No encryption in v1** — acceptable given no dynamic client registration and OPTIONAL
-  discovery fields, with the forward-compat path preserved (§5).
+- **Hand-rolled JWK mapping is owned code** kept correct against RFC 7517/7518 via known-answer
+  vectors — accepted deliberately vs. a Microsoft.IdentityModel dependency.
+- **`RetirementWindow` depends on token-lifetime configuration not present yet.** The 1-hour floor
+  (§3.3 a′) bridges the gap until per-token lifetimes land; when they do, the *derivation* is
+  updated (not a new option) and the floor reverts to guarding the degenerate case.
+- **External-provider rotation anomalies can only be surfaced, not prevented** (§3.5).
+- **Public extension surface is a SemVer commitment.** Making the helper types public (rather than
+  `internal` + `InternalsVisibleTo`) is what genuine third-party providers need, but it fixes those
+  shapes as stable API. The `ISanitizingLogger<T>` host-shadowing risk is mitigated by a hard-failing
+  startup validator (§4.5) rather than closed off structurally.
+- **No encryption in v1** — acceptable given no dynamic client registration and OPTIONAL discovery
+  fields, with the forward-compat path preserved (§5).
 
 ---
 
 ## Security Considerations
 
-- **JWKS exposure is the relying-party trust boundary (security sign-off, §3.3 / §4.3).** A
-  key remains published — and therefore trusted by verifiers — for exactly `RetirementWindow`
-  after it stops being the active signer. Sizing this to `max(access-token, ID-token lifetime,
-  floor) + clock-skew` (with a 1-hour floor until per-token lifetimes are configurable, §3.3 a′)
-  and *excluding* refresh-token lifetime is the core security claim of this ADR and the item
-  requiring sign-off. Too short pulls keys before their tokens expire (valid tokens rejected);
-  too long over-publishes trust. The clock-skew term only ever widens the window (§3.3).
-- **Private key destruction on retirement (§3.3c).** A retired key's private half MUST be
-  destroyed immediately; only the public half lingers in the JWKS for `RetirementWindow`.
-  Keeping a retired private key is pure liability and is prohibited by the contract. The base
-  class enforces this by `Dispose()`-ing the superseded `SigningKeySet`'s private-key objects
-  on refresh (§3.2) rather than leaving them to the GC, and only after all in-flight
-  `SignAsync` calls that reference the old set have completed. For HSM/KMS providers there is
-  no local private key to destroy — only the cached local handle/copy is disposed.
-- **Development keys must never reach production.** `AddDevelopmentJwtSigningKeys` hard-fails
-  outside Development; the escape hatch logs `LogLevel.Critical` (more severe than the
-  in-memory store's `Warning`) because an ephemeral or non-rotating signing key in production
-  breaks signature validation for every relying party on restart.
-- **File-permission enforcement is fail-closed.** A persisted key file with permissions
-  broader than `0600` (or a non-restrictive ACL on Windows) is treated as compromised and
-  causes a hard failure, not a warning.
-- **Header `kid`/`alg` are determined from the active key before signing, and verified after.**
-  The header `kid`/`alg` are resolved from the active key, fixed in the signed bytes, and the
-  returned `SigningResult.Kid`/`Algorithm` MUST match them (§4.1). A header can therefore
-  never advertise a different key than the one that produced the signature — closing the class
-  of bugs where a token's header points relying parties at the wrong JWKS key. `none` is not a
-  representable algorithm (§1), so an unsigned token cannot be produced.
-- **No private key material in logs or exceptions.** No private key bytes, PEM contents, or
-  any private key material MUST appear in any log message or exception. A permission-failure
-  log records only the file path and the observed permission mode — never the key content.
-- **Minimum key strength is enforced (§2).** RSA keys below 2048 bits and non-NIST EC curves
-  are rejected at load time; the development helper generates RSA ≥ 3072 bits.
-- **Single-flight refresh** prevents a thundering herd against a remote key source on the
-  signing hot path — including via the anonymous `connect/jwks` read path (§4.3) — from
-  becoming a self-inflicted availability incident.
+- **JWKS exposure is the relying-party trust boundary (security sign-off, §3.3 / §4.3).** A key
+  remains published — and therefore trusted by verifiers — for exactly `RetirementWindow` after it
+  stops being the active signer. Sizing this to `max(access-token, ID-token lifetime, floor) +
+  clock-skew` (1-hour floor until per-token lifetimes are configurable) and *excluding*
+  refresh-token lifetime is the core security claim of this ADR and the item requiring sign-off.
+- **Environment gate invariants (in scope for issue #337's review, unchanged by the reversal).**
+  `Production` is rejected unconditionally regardless of `AllowedDevelopmentJwtSigningKeysEnvironments`
+  contents (enforced at validation time and again by the runtime gate); the `LogLevel.Critical`
+  entry fires on every startup for any non-`Development` allowed entry; and the gate is never
+  sourced from bindable configuration. Moving the list from the root back onto the provider options
+  changes only *where the list lives*, not any of these invariants — the runtime gate
+  (`DevelopmentSigningKeyGate.Enforce`) already takes the list as a plain parameter and is
+  indifferent to which options type sourced it. The equivalent in-memory-store gate (the flag
+  becoming an `allowOutsideDevelopment` parameter, moving onto the store registration methods per
+  ADR 0008 / issue #339) preserves its own fail-closed-outside-Development behaviour and mandatory
+  startup warning identically.
+- **Private key destruction on retirement (§3.3c).** Enforced by `Dispose()`-ing the superseded
+  `SigningKeySet`'s private-key objects on refresh, only after all in-flight `SignAsync` calls
+  referencing the old set complete. For HSM/KMS providers only the cached local handle/copy is
+  disposed.
+- **Development keys must never reach production.** The development methods hard-fail outside the
+  allowed environments; the widening escape hatch logs `LogLevel.Critical`.
+- **File-permission enforcement is fail-closed.** A persisted key file broader than `0600` (or a
+  non-restrictive Windows ACL) causes a hard failure, not a warning.
+- **Header `kid`/`alg` are consistent with the signature by construction (§1, §4.1).** `none` is
+  not a representable algorithm, so an unsigned token cannot be produced.
+- **No private key material in logs or exceptions.** A permission-failure log records only the
+  file path and observed mode — never key content. `ISanitizingLogger<T>` redaction cannot be
+  silently shadowed by a host (§4.5).
+- **Minimum key strength is enforced (§2).** RSA < 2048 bits and non-NIST EC curves are rejected at
+  load time; the development helper generates RSA ≥ 3072 bits.
+- **Single-flight refresh** prevents a thundering herd against a remote key source on the signing
+  hot path — including via the anonymous `connect/jwks` read path (§4.3).
 
 ---
 
-## Amendments
-
-### Amendment 1 — PR #286 (2026-07-02)
-
-**`AllowDevelopmentJwtSigningKeysOutsideDevelopment` replaced by `AllowedDevelopmentJwtSigningKeysEnvironments`**
-
-The original design specified a single `bool AllowDevelopmentJwtSigningKeysOutsideDevelopment` escape hatch (§2, §3.6). The implementation ships `IReadOnlyList<string> AllowedDevelopmentJwtSigningKeysEnvironments` on `AuthorizationServerOptions` instead. The list form is strictly more expressive: it allows development signing keys to be permitted in specific named non-production environments (e.g. `"Staging"`, `"IntegrationTest"`) without permitting them globally. The semantic invariant from §2 is unchanged — `Production` cannot be added to the list, the `LogLevel.Critical` entry still fires on every startup for any non-`Development` entry, and the feature flag remains on `AuthorizationServerOptions` (server-wide gate, not a per-provider knob). All §2 security requirements (key strength, file permissions, ownership, symlink protection) still apply regardless of the list contents.
-
-**`ISigningKeyFileSystem` renamed to `IDevelopmentSigningKeyFileSystem`**
-
-The §2 / §3.6 references to `ISigningKeyFileSystem` describe what shipped as `IDevelopmentSigningKeyFileSystem`. The rename scopes the interface to the development provider, clarifying that this is not a general-purpose signing file system abstraction used by production providers. The interface contract (async `ReadKeyFileAsync` / `WriteKeyFileAsync` / `EnsureDirectorySafe` / `FileExists` with `CancellationToken` propagation) is otherwise unchanged from the §2 description.
-
-### Amendment 2 — PR #298 (2026-07-03)
-
-*(PR number is a placeholder pending final assignment at merge time — this is the PR that ships #287, Azure Key Vault remote signing, the first production `IJwtSigningService` provider and the first real consumer of rotation.)*
-
-**(a) The base class's crypto step became an overridable async hook — `SignInputAsync`.**
-
-§1 states the async design on `IJwtSigningService` exists specifically so "a remote signer performs network I/O on every `SignAsync` call." Despite that, the originally-shipped `JwtSigningService<TOptions>` (PR #286) actually performed the cryptographic operation via a private, non-overridable, **synchronous** method that called `SigningAlgorithms.Sign` (which bottoms out in `AsymmetricAlgorithm.SignData`/`SignHash`) directly. Since RSA/ECDsa have no async signing member anywhere in the BCL, this made genuine async remote signing (a live network round trip to a KMS/HSM) impossible without either blocking a thread for the round trip or changing the base class. PR #287 changes the base class. `src/ZeeKayDa.Auth/Tokens/JwtSigningService.cs` now exposes:
-
-```csharp
-protected virtual ValueTask<ReadOnlyMemory<byte>> SignInputAsync(
-    SigningKeyPair activeKey, byte[] signingInput, CancellationToken cancellationToken)
-    => new(SigningAlgorithms.Sign(activeKey.Descriptor, signingInput, activeKey.PrivateKey));
-```
-
-Header construction, active-key selection, and `kid`/`alg` fixation remain entirely inside the base class's private, non-overridable `PerformSignAsync`. An override of `SignInputAsync` can only change **how** the signature bytes for the already-selected descriptor are produced — it can never change **which** key is selected or what the header says. This is exactly what preserves §1's "header and signature are always consistent by construction" invariant: there is still no code path, overridden or not, through which the header could disagree with the key that actually signs.
-
-This is a purely additive change — a new `protected virtual` method whose default body reproduces the prior synchronous behaviour exactly — so it is binary-compatible with the already-shipped `DevelopmentJwtSigningService` and does not require that provider (or any core release consumer) to be rebuilt or re-released.
-
-`activeKey.PrivateKey` is deliberately unused by remote-signing overrides — the Azure Key Vault provider (`AzureKeyVaultRemoteSigningJwtSigningService.SignInputAsync`) ignores it entirely, since Key Vault never exports the private key into process memory. This is a considered trade-off, not an oversight: there is no clean way in C# to give the default local-crypto implementation access to the active key's `AsymmetricAlgorithm` without it being part of the shared method signature, and the alternative — threading a `Func<>` callback instead of the packaged `SigningKeyPair` — adds an allocation and an indirection layer for a purely cosmetic gain (the same shape as `Stream.Read(buffer, offset, count)`, where not every override needs every parameter). No provider is *required* to override `SignInputAsync`: Windows Certificate Store / macOS Keychain / Linux PEM (future issues #289–#291) and Azure Key Vault *cached* signing (#288) all sign with local key handles and get correct behaviour from the default body, exactly like the development provider today. Only a genuinely remote/network signer needs to override it.
-
-**(b) `ISigningKeyRetirementWindowProvider` — the §3.3 derivation, implemented.**
-
-§3.3 mandates the `RetirementWindow` derivation but nothing implemented it until now — the development provider never needed it (a single ephemeral or persisted key, no rotation, nothing ever retires). PR #287 is the first consumer of rotation (Azure Key Vault) and ships the derivation as a core service alongside it:
-
-```csharp
-// src/ZeeKayDa.Auth/Tokens/ISigningKeyRetirementWindowProvider.cs
-public interface ISigningKeyRetirementWindowProvider
-{
-    TimeSpan GetRetirementWindow();
-}
-```
-
-The internal default implementation (`src/ZeeKayDa.Auth/Tokens/SigningKeyRetirementWindowProvider.cs`) computes exactly the §3.3(a′) floor:
-
-```
-RetirementWindow = TimeSpan.FromHours(1) + AuthorizationServerOptions.ClockSkewTolerance
-```
-
-— the only real term today, since neither the ID-token lifetime nor a JWT-access-token lifetime is configurable on `AuthorizationServerOptions` yet. It is registered via `services.TryAddSingleton<ISigningKeyRetirementWindowProvider, SigningKeyRetirementWindowProvider>()` inside `AddZeeKayDaAuthCore()` (`src/ZeeKayDa.Auth/Extensions/ZeeKayDaAuthCoreServiceCollectionExtensions.cs`) — deliberately in core, not in `ZeeKayDa.Auth.AspNetCore`'s `AddZeeKayDaAuth()`, because provider packages such as `ZeeKayDa.Auth.AzureKeyVault` deliberately do not reference `ZeeKayDa.Auth.AspNetCore` (ADR 0012 §3) and must still be able to resolve it.
-
-**This is the file to extend, not replace, once configurable per-token lifetimes exist.** When an ID-token lifetime and/or a configurable JWT-access-token lifetime are eventually added to `AuthorizationServerOptions`, `SigningKeyRetirementWindowProvider.GetRetirementWindow()` must take the `max(...)` of the 1-hour floor and those lifetimes per §3.3(a) — the floor is not deleted, it becomes the guard against the degenerate case §3.3(a′) already describes. The source carries a comment recording this obligation for whoever picks it up.
-
-**(c) `JwkThumbprint` — a new public core utility, extracted for genuine third-party extensibility.**
-
-Prior to PR #287, RFC 7638 JWK thumbprint computation existed only as a private `ComputeKid`-style method inline in the internal `SigningAlgorithms` class, used solely by `DevelopmentJwtSigningService` to derive a non-leaking `kid` from a locally-generated key's public parameters (rather than, say, the key's file path). PR #287 extracts this into a new **public** static class, `src/ZeeKayDa.Auth/Tokens/JwkThumbprint.cs`:
-
-```csharp
-public static class JwkThumbprint
-{
-    public static string Compute(RSAParameters rsaPublicParameters);
-    public static string Compute(ECParameters ecPublicParameters);
-}
-```
-
-This is documented as its own decision because of a real design flaw caught and fixed during PR #287's review, not merely a mechanical extraction. The Azure Key Vault provider needs the identical thumbprint derivation §4.2's kid discipline calls for — a Key Vault `kid` must not be the raw vault/key URI, since a `kid` is always public (every issued JWT header, and the JWKS) and embedding a real Azure resource identifier in it would leak reconnaissance value to anyone inspecting a token, with no functional benefit. The first attempt at reusing the existing (internal) thumbprint logic gave the Azure Key Vault provider `InternalsVisibleTo` friend-assembly access to `SigningAlgorithms`. That does not actually solve the general problem: `InternalsVisibleTo` only grants access to assemblies named explicitly at build time. It can serve a single first-party provider package ZeeKayDa itself controls, but it **fundamentally cannot** serve a genuine third party implementing this ADR's own §3.2/§4.2 extensibility contract ("any third party can subclass `JwtSigningService<TOptions>` and implement only `LoadKeysAsync`") — a third party's assembly can never be added to that friend list without ZeeKayDa shipping a new core release naming them specifically, which defeats the entire point of an open extension point.
-
-The fix is to make the thumbprint computation itself **public**, while `SigningAlgorithms` correctly stays `internal` — it holds ZeeKayDa-owned crypto dispatch and validation logic (`Sign`, `ValidateKeyAlgorithmCompatibility`, `ValidateKeyStrength`) that §4.2 already establishes third parties never call directly; only the RFC 7638 canonicalisation needed extraction. Any `JwtSigningService<TOptions>` author — first-party or genuinely third-party — can now derive a safe, non-leaking `kid` from a public key without hand-rolling RFC 7638 canonicalisation themselves.
-
-`DevelopmentJwtSigningService` was updated to call this same shared public helper (`src/ZeeKayDa.Auth/Tokens/DevelopmentJwtSigningService.cs`, `JwkThumbprint.Compute(rsaParams)`) in place of its own inline logic. This is a zero-behavioural-change refactor: the development provider produces byte-identical `kid` values before and after, confirmed by the existing `DevelopmentJwtSigningService` test suite passing unchanged and by the new `JwkThumbprintTests` known-answer-style coverage.
-
-**(d) `ISanitizingLogger<T>` made public — the identical argument from (c) applied a second time in the same PR.**
-
-The Azure Key Vault provider's `AzureKeyVaultRemoteSigningJwtSigningService` needs to constructor-inject `ISanitizingLogger<T>` (`src/ZeeKayDa.Auth/Logging/ISanitizingLogger.cs`) for one log call. `ISanitizingLogger<T>` was `internal`, so this initially required `[assembly: InternalsVisibleTo("ZeeKayDa.Auth.AzureKeyVault")]` (+ `.Tests`) in `src/ZeeKayDa.Auth/ZeeKayDaAuth.cs` — exactly the pattern (c) already rejected for `JwkThumbprint`, for exactly the same reason: `InternalsVisibleTo` can only ever name first-party assemblies at build time, so it cannot serve a genuine third party writing their own remote-signing provider (AWS KMS, HashiCorp Vault, an on-prem HSM) that would want the same log-hygiene guarantee. A CHANGELOG-only entry would have broken the rationale trail (c) itself established, so this amendment records the fix the same way.
-
-The interface was made public. `SecretSanitizingLogger<T>` — the concrete implementation, and its `SensitiveKeys` redaction allowlist — stays `internal`, exactly mirroring `SigningAlgorithms` staying `internal` while `JwkThumbprint` (extracted from it) went public: only the contract needs to cross the package boundary, not ZeeKayDa's own redaction logic.
-
-A pre-existing test, `ISanitizingLoggerVisibilityTests.ISanitizingLogger_must_remain_non_public`, asserted the interface must stay non-public, citing a concern that analyzer `ZEEKAYDA0002` (`InterpolatedStringLogAnalyzer`, which requires `Log*` message templates in `ZeeKayDa.*` namespaces to be compile-time constants so `SecretSanitizingLogger` can inspect them) exempts logger-wrapper implementations *by visibility*, and that making the interface public would let any assembly implement it and opt out of the constant-template rule. Reading `IsInLoggerImplementation` (`InterpolatedStringLogAnalyzer.cs`) directly shows the exemption is gated on `typeSymbol.ContainingAssembly?.Name != "ZeeKayDa.Auth"` alone — visibility of the implemented interface plays no part in the check. No assembly other than the literal core `ZeeKayDa.Auth` assembly can ever satisfy that gate, regardless of whether `ISanitizingLogger<T>` is internal or public. This was verified two ways, not just by inspection: empirically, by building a throwaway internal type in `ZeeKayDa.Auth.AzureKeyVault` (a friend assembly under the then-still-internal interface) that implemented `ISanitizingLogger<T>` and forwarded a non-constant template — `ZEEKAYDA0002` fired anyway; and as a permanent regression test, `InterpolatedStringLogAnalyzerTests.Diagnostic_still_fires_inside_friend_assembly_class_implementing_a_PUBLIC_ISanitizingLogger`, which compiles a *public* `ISanitizingLogger<T>` in one assembly and a friend-assembly implementation in another and asserts `ZEEKAYDA0002` still fires. The old test's stated rationale was stale; it has been replaced with `ISanitizingLoggerVisibilityTests.ISanitizingLogger_is_public` / `SecretSanitizingLogger_remains_internal`, which assert and document the current, correct invariant.
-
-Making the interface nameable does introduce new, real (if low-severity) risks that internal visibility structurally ruled out. `AddZeeKayDaAuthCore()` registers `ISanitizingLogger<>` as an open-generic singleton via `TryAddSingleton`, so a host that now registers its own `ISanitizingLogger<>` implementation — whether before `AddZeeKayDaAuth()` (wins the `TryAdd` race) or after via a plain `Add` (wins .NET DI's "last open-generic registration wins" resolution rule) — silently shadows the redaction wrapper for every ZeeKayDa service, not just ones the host intended to customize. A second, narrower variant of the same problem exists at the closed-generic level: a host registering `ISanitizingLogger<SomeSpecificType>` for one particular type shadows redaction only for that type, regardless of registration order, since .NET DI always prefers an exact closed-generic match over an open-generic fallback — the framework itself never registers a closed generic for this interface, so any closed registration found is unambiguous evidence of a shadow. Both are host misconfigurations inside the host's own trust boundary — not something a caller of the API or an external actor can trigger — but worth guarding against given how silent the failure mode is (no exception, no crash, just credential material reaching a log sink unredacted). Rather than closing this off structurally (e.g., replacing the interface with a public sealed concrete type, which would remove the possibility of substitution entirely but touches roughly 34 call sites across all four packages plus both logging analyzers plus three test doubles — a distinct, much larger change out of scope for this PR), the mitigation is a new hosted service, `SanitizingLoggerRegistrationStartupValidator` (`src/ZeeKayDa.Auth.AspNetCore/SanitizingLoggerRegistrationStartupValidator.cs`), registered by `AddZeeKayDaAuth()` first among its hosted services (before `InsecureIssuerWarningService`, `ClientRepositoryStartupActivator`, and the rest — hosted services start in registration order, and at least one of those siblings also logs through `ISanitizingLogger<T>`, so registering this check anywhere but first would leave a window where a shadowed logger gets used before the check has a chance to abort startup). It checks both failure modes and aggregates them into a single `ZeeKayDaConfigurationException` if both are present: it resolves `ISanitizingLogger<T>` for itself as `T` and checks the resolved instance is `SecretSanitizingLogger<T>` (catches the open-generic case), and it uses a companion `SanitizingLoggerClosedOverrideScanner` (`src/ZeeKayDa.Auth.AspNetCore/SanitizingLoggerClosedOverrideScanner.cs`) that holds a reference to the live `IServiceCollection` and scans it for any closed-generic `ISanitizingLogger<T>` descriptor (catches the closed-generic case, for any `T` — it does not need to know in advance which types exist, host or third-party). Both checks fail hard rather than warn — unlike `ClientRepositoryStartupActivator`'s analogous shadowing check (a warning, since a shadowed `IClientRepository` is a functional footgun), a shadowed sanitizing logger is a silent security regression, not a functional one. The sealed-concrete-type alternative remains available as a future hardening step if the ecosystem ever needs it, but is not pursued here.
-
-This entire amendment — both the visibility change and the two-part shadow guard — went through two full rounds of independent security and architect review: once on the design before implementation, and once on the actual committed diff afterward (`ea5c9b1`), including the closed-generic gap the first round of review had explicitly flagged as a known, accepted residual risk before it was closed in a follow-up commit. Both rounds returned APPROVE with no blocking findings.
-
-**Normative addition to §3.5 — durable, provider-side-timestamp-derived rotation is the expected pattern going forward.**
-
-§3.5 already establishes that ZeeKayDa reads a provider's rotation on the provider's own schedule (no `RotateAsync`) and requires publish-then-activate. PR #287's Azure Key Vault provider is the first implementation of real multi-key rotation against that contract, and its design choice is recorded here as a normative refinement of §3.5 that future rotation-capable providers (Windows Certificate Store #289, macOS Keychain #290, Linux PEM #291, if any of them ever need multi-key rotation) are expected to follow:
-
-The provider derives its entire activation/retirement timeline from **Key Vault's own durable per-version `CreatedOn`/`NotBefore` timestamps** — never from local, in-memory "when did I first observe this kid" bookkeeping. In-memory history breaks on every process restart (a freshly-started replica has no history, so publish-then-activate either throws on cold start or silently no-ops) and is inconsistent across load-balanced replicas (each independently seeded by whenever it started polling). Concretely (`AzureKeyVaultRemoteSigningJwtSigningService.BuildActivationTimeline`):
-
-- `ActivatesAt(v)` is `v.CreatedOn` for the very first key version Key Vault has ever recorded for the key name (determined across **all** versions ever created, including disabled/expired ones — a durable, shared fact, not "oldest among currently-eligible," which could shift if an earlier version is later disabled), and `v.CreatedOn + RefreshInterval` for every subsequent version — the publish-then-activate delay §3.5 requires, since by the time a second version exists a relying party could plausibly have cached a JWKS containing only the first.
-- `NotBefore` is folded directly into `ActivatesAt` as `max(rawActivatesAt, v.NotBefore)`, rather than being checked separately at "now" — so every downstream computation that orders by or reasons about `ActivatesAt` automatically accounts for an operator-scheduled later go-live with no separate special case.
-- `Enabled = false` is an **immediate, unconditional exclusion** that bypasses `RetirementWindow` entirely: an operator disabling a suspected-compromised key version takes effect at once, not after the retirement window elapses.
-- `RetiredAt(v)` is the `ActivatesAt` of whichever version actually superseded `v` as the active signer, computed over eligible successors only (a version that is disabled, or already past its own `ExpiresOn` by the time it would activate, can never win the active-signer selection and so is never anyone's real successor — treating it as one would gate a still-legitimately-active predecessor's retirement window too early).
-
-This makes the whole timeline a stateless computation over `(the key store's version list, now, RefreshInterval, RetirementWindow)` — restart-safe, multi-replica-consistent, and fully testable with a `FakeTimeProvider` and fabricated timestamps, with no cross-call bookkeeping needed for anything that gates a trust decision. **An in-memory-only tracking of publish-then-activate or retirement state, going forward, should be considered non-compliant with §3.5** for any provider capable of holding more than one key at a time. (The one piece of cross-call state the Azure Key Vault provider does keep in memory — a plain kid-to-version map used purely to log §3.5's "kid vanished early" anomaly warning — is fine to lose on restart, since losing it only risks missing one log line, never a trust decision.)
-
-**`AzureKeyVaultSigningException` is intentionally not documented here.** It is a package-local transport exception for transient sign-time faults (`src/ZeeKayDa.Auth.AzureKeyVault/AzureKeyVaultSigningException.cs`, namespace `ZeeKayDa.Auth.AzureKeyVault`), not a type this ADR defines or amends. Making it a shared core exception type "for future remote providers" was considered and deliberately rejected as premature abstraction — ADR 0006's "colocate with the feature" rule reads more honestly here as *the Azure Key Vault feature specifically*, not *signing in general*, until a second real consumer exists.
-
-### Amendment 3 — issue #300 (2026-07-04)
-
-**Key Vault's list-key-versions read consistency, verified rather than assumed — risk accepted as-is, no mitigation needed.**
-
-PR #298's security review flagged, as an expected-not-buggy but unverified assumption, that `BuildActivationTimeline`'s `FirstEverVersion` bootstrap exemption (Amendment 2, above) relies on `IKeyVaultKeyReader.GetKeyVersionsAsync` returning a complete, consistent view of every version Key Vault has ever recorded for a key name. If that list read were only eventually consistent, two replicas — or the same replica across two refresh cycles immediately after a version is created — could disagree about which version is "first ever" and therefore which one gets the immediate-activation exemption instead of the normal publish-then-activate delay.
-
-This is now confirmed against Microsoft's documented Key Vault reliability model (`https://learn.microsoft.com/azure/reliability/reliability-key-vault`), not left as an assumption:
-
-- **Within a region — synchronously replicated, effectively strongly consistent.** Key Vault data is synchronously replicated across availability zones in regions that support them, and during normal operation *all* traffic — reads and writes alike — is served from a single active (primary) region. There is no load-balanced "read replica" that a list-versions call could observe mid-lag: a version committed via key creation or rotation is visible to the very next list call against the same, only, serving region.
-- **Across the paired region — asynchronous, eventually consistent, but only during a Microsoft-triggered regional failover.** Key Vault replicates to its paired region asynchronously. If Microsoft fails a vault over — described as best-effort, likely delayed, and able to take hours to occur — the vault becomes read-only against that secondary, which *"might"* be missing the most recent writes. `List keys`/`Get (properties of) keys` are explicitly among the operations Microsoft states remain available in this read-only mode.
-- Microsoft documents no per-request consistency knob (nothing analogous to Cosmos DB consistency levels) and no formal staleness-window SLA for list operations specifically; the consistency behavior is a direct, fully-documented consequence of the replication architecture above, not a gap in the documentation.
-
-**Conclusion: the risk is accepted as-is, not mitigated.** The only condition under which `GetKeyVersionsAsync` could return an incomplete version list is a rare, Microsoft-initiated regional failover — not ordinary multi-replica load-balancing, and not a race a caller can trigger. Even then, the only version list operation ever affected is a **genuinely brand-new** key (created less than `RefreshInterval` ago, before a second version exists to make the bootstrap exemption moot); every other rotation decision in `BuildActivationTimeline` is unaffected because non-bootstrap versions activate on the normal `CreatedOn + RefreshInterval` delay regardless of list ordering. The failure mode is a transient, self-healing relying-party rejection (the new key briefly fails to activate) once the primary region recovers and the next refresh cycle re-lists — never a security regression, since a missing version can only cause a legitimate key to activate late, not cause an illegitimate one to be trusted. Building a mitigation (e.g. requiring an explicit operator-supplied `NotBefore` on every first version, or persisting a local "first version I've ever seen" fallback) would reintroduce exactly the process-local, restart-unsafe, multi-replica-inconsistent state that Amendment 2's `CreatedOn`-derived, stateless design was built to eliminate, to guard against an already-rare, already-self-healing, already non-security-relevant outage-recovery mode. `AzureKeyVaultRemoteSigningJwtSigningService.LoadKeysAsync` carries an updated code comment recording this same conclusion in place of the prior "assumes" phrasing.
-
-### Amendment 4 — issue #288 / PR #312 (2026-07-04)
-
-**§3.5's description of the "vanished kid" anomaly trigger corrected to match the implemented behaviour.**
-
-This is a documentation-accuracy fix, not a design change. The implemented behaviour is correct as-is (confirmed by both security and architect review); §3.5's original prose simply describes a broader trigger condition than the code actually detects, and this amendment brings the prose into line.
-
-§3.5 states the warning fires "if a previously-seen `kid` **vanishes** from `LoadKeysAsync` results without a replacement key having been active for at least `RetirementWindow`." That framing describes a more general condition than what is implemented. The actual anomaly detected — in both rotation-capable Azure Key Vault providers, whose logic is identical here (`AzureKeyVaultRemoteSigningJwtSigningService.WarnIfPreviouslyPublishedKidVanished` and `AzureKeyVaultCachedSigningJwtSigningService.WarnIfPreviouslyPublishedKidVanished`) — is narrower and simpler:
-
-- The provider keeps a plain map of previously-published `(kid, raw Key Vault version string)` pairs (the same restart-tolerant, purely-for-logging map Amendment 2 describes).
-- On each refresh, for a previously-published pair whose `kid` is no longer in the newly-included (trusted/published) set, the provider consults **Key Vault's own complete version list** — the full result of `GetKeyVersionsAsync` / `GetCertificateVersionsAsync`, including disabled and expired versions.
-- It logs the warning **only when that pair's raw version string has disappeared from Key Vault's version list entirely** — i.e. Key Vault stopped returning the version at all (e.g. it was deleted or purged unexpectedly).
-- A version that is **still returned by Key Vault** but has simply dropped out of the trusted/included set for a normal reason — it aged out of its `RetirementWindow`, or it was disabled — is treated as **expected** and does **not** trigger the warning.
-
-In other words, the real trigger is "Key Vault no longer lists this version at all," **not** "no replacement key has been active for at least `RetirementWindow`." A version legitimately ageing out of its retirement window is the expected, non-anomalous case and stays silent; the retirement window is not part of the trigger condition at all. Anchoring the check to Key Vault's durable version list (rather than to elapsed-retirement-window bookkeeping) is consistent with Amendment 2's principle that rotation/anomaly reasoning is derived from the key store's own durable facts rather than from local wall-clock state.
-
-The §3.5 goal is unchanged: surface loudly when a previously-published key disappears in a way that could make relying parties reject still-valid tokens whose signatures they can no longer verify against the JWKS. This amendment only corrects *how* that disappearance is defined. Nothing else in §3.5 (publish-then-activate, the read-only "surface, don't drive rotation" stance) is affected, and no requirement is added or removed.
-
-### Amendment 5 — issue #289 (PR number pending final assignment at merge time, 2026-07-06)
-
-**The Windows Certificate Store provider's rotation timeline is `NotBefore`-anchored, not `CreatedOn`-anchored — the normative pattern Amendment 2 anticipated, now actually built.**
-
-Amendment 2's "Normative addition to §3.5" recorded that future rotation-capable OS-native store providers (Windows Certificate Store #289, macOS Keychain #290, Linux PEM #291) are expected to derive their activation/retirement timeline from a durable, provider-side timestamp, the same way the Azure Key Vault providers derive theirs from Key Vault's own `CreatedOn`. Issue #289 is the first of these to ship, and its concrete mechanism (originally the internal `WindowsCertificateStoreSigningKeyRotation`; since extracted verbatim into the public core `SigningKeyRotation`, `src/ZeeKayDa.Auth/Tokens/SigningKeyRotation.cs` — see Amendment 6) is recorded here as that pattern's first real implementation — and it deliberately uses a *different* durable timestamp than Key Vault, for a reason worth stating explicitly.
-
-**Why the anchor differs from Key Vault's.** A Windows Certificate Store certificate has no equivalent of Key Vault's `CreatedOn` — there is no durable, store-recorded "when was this certificate added to this store" fact retrievable from `X509Store`/`X509Certificate2`. What a certificate *does* carry durably — embedded by the issuing CA at generation time, immutable, and identical no matter which replica or restart reads it — is `NotBefore`/`NotAfter`. So the rotation timeline (`SigningKeyRotation.BuildActivationTimeline` since Amendment 6's extraction) promotes `NotBefore` to the primary activation-ordering field directly: `ActivatesAt(cert) = cert.NotBefore`, with **no publish-then-activate delay term added on top** (contrast Key Vault's `CreatedOn` for the first version, `CreatedOn + RefreshInterval` for every subsequent one). The delay term is unnecessary here because every registered certificate is already fully visible in the JWKS as of process start — there is no "has the store durably recorded this yet" question analogous to a freshly-created Key Vault version that might not yet be visible to a concurrently-polling replica.
-
-**The publish-then-activate safety property becomes the operator's responsibility, not something the code can prove — exactly as issue #282 anticipated.** Key Vault's `CreatedOn`-based delay *proves* a version was published for at least `RefreshInterval` before it can activate. A certificate read from a local store cannot prove the equivalent: the library has no record of when the certificate was actually deployed into the store, only what its `NotBefore` field says. So `AddWindowsCertificateStoreSigning`'s rotation contract shifts that obligation to the operator: when generating a certificate for rotation, its `NotBefore` must be set at least `RefreshInterval` in the future (most CA/certificate tooling defaults `NotBefore` to "now," so this must be done deliberately). `SigningKeyRotation.HasTooSoonPendingActivation` (see Amendment 6) — surfaced as a startup warning by `WindowsCertificateStoreSigningJwtSigningService` — is the library's only defense here: it cannot prevent a misconfigured rotation, only make it loud.
-
-**The single-certificate bootstrap exemption applies to `NotBefore` timing only, not to expiry.** With exactly one certificate registered, `SelectActiveKey` (named `SelectActiveVersion` before Amendment 6's extraction) treats it as active immediately regardless of its `NotBefore` — mirroring Key Vault's "the very first version ever used activates immediately" exemption, since there is no prior published JWKS state any relying party could have cached. This also covers the steady state after a rotation completes and the retiring certificate is removed from config. The exemption does **not** extend to an already-expired sole certificate: `SelectActiveKey` still returns `null` (fail closed) if the sole registered certificate's `NotAfter` has already passed, mirroring the Key Vault providers' documented behavior when the active key reaches its `ExpiresOn` with no eligible successor — signing with a certificate that both relying parties and the issuing CA consider invalid is a security regression the bootstrap exemption must never paper over.
-
-**No vanished-kid anomaly detection, and no `SignInputAsync` override — both deliberately absent, not oversights.** Unlike the Key Vault providers, this provider's rotation timeline (`SigningKeyRotation`, per Amendment 6) has no equivalent of `FindVanishedKids`: that detection depends on polling a live, externally-mutable version list and noticing an entry disappear between polls, which has no equivalent here — the set of registered thumbprints is fixed at process start (adding, removing, or replacing a certificate requires a host restart, explicitly out of scope per the issue), so there is no live external state to notice vanishing. Per Amendment 2(a)'s own text, this provider was already named as one of the future providers expected to sign with local key handles and inherit the base class's default `SignInputAsync` unchanged — `WindowsCertificateStoreSigningJwtSigningService` confirms this: it extracts each certificate's private key via `X509Certificate2.GetRSAPrivateKey()`/`GetECDsaPrivateKey()` (CNG/CAPI-backed handles, never exported raw key bytes) and signs locally, with no network round trip and therefore no transient-fault transport exception analogous to `AzureKeyVaultSigningException`.
-
-**`kid` derivation follows the same JWK-thumbprint convention as Key Vault, not the certificate's own X.509 thumbprint.** The provider's descriptor building (originally the internal `WindowsCertificateSigningKeyDescriptorFactory`; since Amendment 6, the shared public core `SigningKeyDescriptorFactory`) computes `kid` via the existing public `JwkThumbprint.Compute(...)` utility over each certificate's public key parameters — never the certificate's SHA-1 thumbprint, subject name, or serial number, all of which are exactly the kind of raw external identifier §4.2/Amendment 2(c) already establish a `kid` must not leak. *(Superseded by Amendment 6.)* As originally written, this paragraph recorded the descriptor logic as a deliberate duplication of `KeyVaultSigningKeyDescriptorFactory`'s shape rather than a shared abstraction across the two provider packages, consistent with this codebase's convention of duplicating small provider-specific logic until a second real consumer justifies extraction. Amendment 6 is that extraction: with #290/#291 imminent as third and fourth consumers, the duplicated logic was consolidated into public core types — see Amendment 6 for the decision and rationale.
-
-### Amendment 6 — issue #319 / PR #320 (2026-07-07)
-
-**The file/OS-store rotation timeline and the descriptor factory are now shared, public core components — `SigningKeyRotation` and `SigningKeyDescriptorFactory` — superseding Amendment 5's "not a shared abstraction" statement.**
-
-Amendment 5 recorded issue #289's rotation and descriptor logic as internal, deliberately-duplicated provider code, "duplicating small provider-specific logic until a second real consumer justifies extraction." That second consumer is now imminent twice over (#290 macOS Keychain, #291 file-based PEM/PFX), and #289 had itself already become an independent second copy of the descriptor logic #317 extracted for Key Vault — because #317's extraction was `internal` to `ZeeKayDa.Auth.AzureKeyVault` and therefore unreachable from `ZeeKayDa.Auth.Windows`. Issue #319 consolidates the genuinely shared parts into two public types in core `ZeeKayDa.Auth` (`src/ZeeKayDa.Auth/Tokens/`), alongside `SigningKeyDescriptor`/`SigningKeyType`/`SigningAlgorithm`/`JwkThumbprint`:
-
-- **`SigningKeyRotation`** (with `RotationKey`/`RotationEntry`): the stateless activation-timeline derivation Amendment 5 describes — `BuildActivationTimeline`, `SelectActiveKey` (renamed from `SelectActiveVersion`), `SelectIncludedKeys`, `HasTooSoonPendingActivation` — moved verbatim from `WindowsCertificateStoreSigningKeyRotation` (deleted). All Amendment 5 semantics are preserved exactly: the single-key bootstrap exemption (activation timing only, never expiry — fail closed), successor-anchored retirement, the never-eligible-successor skip, and the too-soon-pending-activation warning.
-- **`SigningKeyDescriptorFactory`**: RSA/EC descriptor building (`ExportParameters(false)` → `JwkThumbprint.Compute` → `SigningKeyDescriptor`) and algorithm-family-vs-key-type validation, parameterized by a caller-supplied failure code and a mismatch-message delegate so each provider's exception text renders byte-for-byte as before. Both `WindowsCertificateSigningKeyDescriptorFactory` (deleted) and `KeyVaultSigningKeyDescriptorFactory` (retained as a thin internal delegator for its two call sites) now route through it.
-
-**Why public, not `internal`-plus-`InternalsVisibleTo`.** The consumers are separate, non-friend NuGet packages per ADR 0012 (`ZeeKayDa.Auth.Windows`, `ZeeKayDa.Auth.AzureKeyVault`, and the future #290/#291 packages), and friend-assembly access cannot be granted to genuine third-party signing-provider authors anyway — the same audience and the same reasoning that made `JwkThumbprint` public in core (Amendment 2 / #298) rather than internal.
-
-**Why anchor-agnostic.** `SigningKeyRotation` consumes a precomputed `ActivatesAt`/`ExpiresAt` pair per key (`RotationKey`) rather than an `X509Certificate2` or a raw `NotBefore`/`NotAfter`: each provider maps its own durable per-key timestamp onto those two fields before calling in. The Windows provider maps `NotBefore`/`NotAfter`; #290's bare, certificate-less Keychain keys can supply an explicit operator-configured activation time instead. This keeps the component free of any provider-specific type while preserving Amendment 5's `NotBefore`-anchored semantics for certificate-backed providers, and it deliberately excludes Key Vault's structurally different rotation model (`CreatedOn` anchor, publish-then-activate delay term, `Enabled` flag, vanished-`kid` anomaly detection) — `KeyVaultSigningKeyRotation` stays internal to `ZeeKayDa.Auth.AzureKeyVault`, unchanged.
-
-This is a behavior-preserving consolidation of already-reviewed trust-boundary logic (#287/#288/#289), not a redesign; both retrofitted providers' externally observable behavior, failure codes, and exception message text are unchanged. Amendment 5's type/path/method references have been updated in place to point here.
-
-### Amendment 7 — issue #290 descoped (2026-07-10)
-
-**The macOS Keychain provider (#290) has been descoped and closed as "not planned." The anchor-agnostic `SigningKeyRotation`/`RotationKey` generalization stays exactly as shipped.**
-
-#290 (macOS Keychain signing key provider) — referenced above in Amendment 2's "Normative addition to §3.5" future-providers list, in Amendment 5's opening future-providers list, and in Amendment 6's "Why anchor-agnostic" closing paragraph as the imminent bare-key consumer that motivated *articulating* the anchor-agnostic design — has been closed unmerged. A fully-implemented, reviewed PR (#323) was closed and its branch deleted. This was a **product-scope decision, not a technical one**: the realistic audience for a production macOS-hosted authorization server is too thin to justify permanently carrying native Security.framework P/Invoke. The file-based PEM/PFX provider (#291) is now the **sole recommended signing provider for macOS deployments**, in addition to its existing role as the container/Linux fallback. The `ZeeKayDa.Auth.MacOS` package described in ADR 0012 §2 will not ship (see ADR 0012's Amendment 1).
-
-Amendments 2, 5, and 6 are left intact by deliberate convention: they record the design reasoning as it stood when each PR merged, and #290 was a genuine part of that reasoning at the time. This amendment supersedes their forward-looking references to #290 as a still-planned consumer; it does not rewrite them.
-
-**Should the anchor-agnostic/bare-key generalization in `SigningKeyRotation`/`RotationKey` be simplified now that its originally-motivating consumer is gone? No — leave it exactly as shipped.** This is a firm judgment, not a balanced trade-off, for three reasons:
-
-1. **The shape is exactly what #289 and #291 need anyway — #290 added none of the generality.** The generalization Amendment 6 introduced (`SigningKeyRotation` consuming a precomputed `(ActivatesAt, ExpiresAt)` `RotationKey` pair rather than an `X509Certificate2` or a raw `NotBefore`/`NotAfter`) exists so that core `ZeeKayDa.Auth` does not depend on `X509Certificate2` — coupling a protocol-core type to one specific credential representation would be a step backwards. Both #289 (Windows certs) and the still-open #291 (file-based PEM/PFX certs) are *separate* NuGet packages that each map their certificates' `NotBefore`/`NotAfter` onto that pair before calling in. That decoupling boundary is required for those two consumers regardless of whether #290 ever existed. #290 was merely the example used to *motivate the "anchor-agnostic" wording*; it contributed no actual generality to the design.
-
-2. **There is no bare-key-specific code in the core to remove.** All bare-key handling — the `AddKey(label, activatesAt)` overload, the fail-fast-without-`activatesAt` rule, and mapping a missing expiry to `DateTimeOffset.MaxValue` — lived entirely in #290's (now cancelled) provider package, never in `SigningKeyRotation`/`RotationKey`. The core type simply accepts two `DateTimeOffset`s and orders by them; it has no branch that knows or cares whether a timestamp originated from a certificate's `NotBefore` or an operator-configured value. `DateTimeOffset.MaxValue` as a never-expiring `ExpiresAt` is not a special case in the core — it is just a large value the ordering handles like any other. So #290's cancellation deletes **zero** lines from core and leaves no dead abstraction behind.
-
-3. **"Simplifying" would be a breaking change to already-shipped public surface, for negative benefit.** `SigningKeyRotation` and `RotationKey` are *public* core types (Amendment 6; ADR 0012 §3), already shipped and used by #289 in production. Reshaping them back toward an `X509Certificate2`- or `NotBefore`-named API would (a) re-couple core to a credential type it deliberately avoids, (b) break #291's ability to feed the same core cleanly from PEM/PFX certificates, and (c) be a SemVer-breaking change to types consumers already compile against — all to remove generality that costs nothing to keep and is already covered by tests.
-
-**Conclusion:** keep `SigningKeyRotation`/`RotationKey` exactly as shipped. The generalization is harmless, already tested, strictly more general at zero cost, and — importantly — was never a #290-specific artifact in the first place. It serves #289 today and #291 next, and would serve any future bare-key provider for free with no further core change.
-
-### Amendment 8 — issue #332 (2026-07-10)
-
-**`AllowedDevelopmentJwtSigningKeysEnvironments` actually moved to `AuthorizationServerOptions`, closing the reachability gap Amendment 1 asserted was already closed.**
-
-Amendment 1 stated that when the original `bool AllowDevelopmentJwtSigningKeysOutsideDevelopment` (§2) was replaced by the list-typed `AllowedDevelopmentJwtSigningKeysEnvironments`, "the feature flag remains on `AuthorizationServerOptions` (server-wide gate, not a per-provider knob)." That sentence was wrong about what PR #286 actually shipped: the list lived on `DevelopmentSigningKeyOptions` (`src/ZeeKayDa.Auth/Tokens/DevelopmentSigningKeyOptions.cs`), an `internal sealed` provider-specific options type reachable only via `[InternalsVisibleTo]`. This was pure implementation drift — no amendment recorded a deliberate decision to keep it internal — surfaced while writing the how-to guide for #283 (PR #331): the only reachable workaround for a consumer running a CI/QA host under a non-`Development` environment name was renaming the host's environment to `Development` outright, which also disables the `Production`-name check for every other environment-gated feature on that host, not just this one.
-
-**Fix: move the property, not redesign it.** `AllowedDevelopmentJwtSigningKeysEnvironments` (`IReadOnlyList<string>`, still defaulting to `["Development"]`) now lives directly on `AuthorizationServerOptions`, exactly where Amendment 1 already said it was. This is the more conservative of the two shapes issue #332 offered as candidates:
-
-1. **(chosen)** A public property on `AuthorizationServerOptions`, unchanged in type and semantics from what already existed on `DevelopmentSigningKeyOptions` — just relocated to the root options class.
-2. An optional `Action<DevelopmentSigningKeyOptions>? configure` parameter added to both `AddDevelopmentJwtSigningKeys()` overloads, with `DevelopmentSigningKeyOptions` made public so the callback is reachable.
-
-Option 2 was rejected for the same reason Amendment 1's (inaccurate) text already gave for keeping this a root-options concern: this is a **server-wide safety gate**, not a per-provider tuning knob (ADR 0002, invoked verbatim by §3.6: "`AllowDevelopmentJwtSigningKeysOutsideDevelopment` stays on `AuthorizationServerOptions` — server-wide gate, not a per-provider knob"). `DevelopmentSigningKeyOptions` also carries `EnvironmentName` (host-populated by the AspNetCore registration layer from `IHostEnvironment.EnvironmentName` — never meant to be caller-set) and `RefreshInterval`/`PersistToDirectory`, which a public `configure` callback would expose as a side effect purely to reach the one property that needed reachability. Moving just the relevant property onto the already-public `AuthorizationServerOptions` gets acceptance criterion 1 (a consumer can widen the list with no `InternalsVisibleTo` access and no reference to any internal type — it is simply a property on the same `AuthorizationServerOptions` instance already configured via `AddZeeKayDaAuth(options => …)`) without any of that collateral exposure, and without adding a second configuration surface for the same gate that ADR 0008's `AllowInMemoryStoresOutsideDevelopment` already established the convention for.
-
-**What changed mechanically:**
-
-- `AuthorizationServerOptions.AllowedDevelopmentJwtSigningKeysEnvironments` (`src/ZeeKayDa.Auth/AuthorizationServerOptions.cs`) is the new, public, canonical location. `DevelopmentSigningKeyOptions` no longer declares this property at all — it keeps only `EnvironmentName`, `PersistToDirectory`, and the inherited `RefreshInterval`, none of which changed visibility or shape.
-- `AllowedDevEnvironmentsValidator` (`src/ZeeKayDa.Auth/Tokens/AllowedDevEnvironmentsValidator.cs`) now implements `IValidateOptions<AuthorizationServerOptions>` instead of `IValidateOptions<DevelopmentSigningKeyOptions>`, validating the same two rules against the new location (no null/empty entries; `Production` — case-insensitively — can never appear in the list). It is still registered only inside `AddDevelopmentJwtSigningKeys()` (`ZeeKayDaAuthBuilderSigningExtensions.RegisterDevelopmentSigningKeys`), not unconditionally in `AddZeeKayDaAuth()`, since it is only meaningful when the development provider is actually in use; `AuthorizationServerOptions` already has `ValidateOnStart()` activated by `AddZeeKayDaAuth()`, so the additional `IValidateOptions<AuthorizationServerOptions>` registration is picked up automatically with no further wiring.
-- `DevelopmentJwtSigningService` (`src/ZeeKayDa.Auth/Tokens/DevelopmentJwtSigningService.cs`) and `DevelopmentSigningKeyWarningService` (`src/ZeeKayDa.Auth.AspNetCore/DevelopmentSigningKeyWarningService.cs`) both now inject `IOptions<AuthorizationServerOptions>` alongside their existing options, reading `EnvironmentName` from `DevelopmentSigningKeyOptions` (unchanged — still host-populated) and `AllowedDevelopmentJwtSigningKeysEnvironments` from `AuthorizationServerOptions`. `DevelopmentSigningKeyGate.Enforce` itself is unchanged: it already took the allowed-environments list as a plain parameter, so it does not care which options type the caller sourced it from.
-
-**All §2 safety invariants are unchanged, not just preserved by convention:**
-
-- The default list is still exactly `["Development"]`.
-- `Production` is still rejected unconditionally by `DevelopmentSigningKeyGate.Enforce` regardless of the list's contents — this check runs before the allowed-list membership check and cannot be satisfied by adding `"Production"` to the list (also still enforced redundantly by `AllowedDevEnvironmentsValidator` at startup).
-- The `LogLevel.Critical` entry in `DevelopmentSigningKeyWarningService` still fires on every startup — not once — whenever the current environment is in the allowed list but is not exactly `Development`.
-- No `[InternalsVisibleTo]` grant in `src/ZeeKayDa.Auth/ZeeKayDaAuth.cs` needed to change: `DevelopmentSigningKeyOptions`'s visibility did not change (still `internal`, still needed by `ZeeKayDa.Auth.AspNetCore` for its other members), and no other type's visibility changed.
+## Changelog
+
+Pointer-only index (date · PR/issue · what changed). Full reasoning lives in the current-state and
+alternatives sections above.
+
+- **2026-06-23 — issue #187** — Initial ADR: `IJwtSigningService`, development helper, rotation/caching base class, derived `RetirementWindow`, JWKS endpoint, JWE exclusion. **Security sign-off:** the `RetirementWindow` derivation (§3.3) and JWKS exposure (§4.3) were reviewed and approved by the security agent as a token-validation trust-boundary decision before merge; this sign-off still governs today's derivation.
+- **2026-07-02 — PR #286** — Escape hatch became environment-list-based: `bool AllowDevelopmentJwtSigningKeysOutsideDevelopment` → `IReadOnlyList<string> AllowedDevelopmentJwtSigningKeysEnvironments` (default `["Development"]`). `ISigningKeyFileSystem` renamed `IDevelopmentSigningKeyFileSystem`.
+- **2026-07-03 — PR #298 (ships #287, Azure Key Vault remote signing — first production provider)** — Base-class `SignInputAsync` overridable async hook added (default body reproduces prior synchronous behaviour); `ISigningKeyRetirementWindowProvider` implements the §3.3 derivation; `JwkThumbprint` and `ISanitizingLogger<T>` made public (rejecting `InternalsVisibleTo`), with a hard-failing `SanitizingLoggerRegistrationStartupValidator` shadow guard; durable `CreatedOn`-derived rotation recorded as the normative pattern. **Security sign-off:** two full rounds of independent security + architect review (design, then the committed diff), both APPROVE with no blocking findings; the second round was against commit **`ea5c9b1`**, which closed the closed-generic sanitizing-logger shadow gap the first round flagged as a known accepted residual.
+- **2026-07-04 — issue #300** — Key Vault list-key-versions read-consistency verified against Microsoft's documented reliability model rather than assumed; risk **accepted as-is, no mitigation** (the only affected case is a genuinely brand-new key during a rare Microsoft-initiated regional failover, self-healing and never a security regression). Security review of PR #298 had flagged this as the item to verify.
+- **2026-07-04 — issue #288 / PR #312** — §3.5 "vanished kid" anomaly trigger prose corrected to match the implemented behaviour (trigger is "the key store no longer lists this version at all," not "no replacement active for `RetirementWindow`"); documentation-accuracy only, confirmed by security + architect review.
+- **2026-07-06 — issue #289** — Windows Certificate Store provider: `NotBefore`-anchored rotation timeline (no publish-then-activate delay term; the safety property becomes the operator's responsibility, surfaced by `HasTooSoonPendingActivation`).
+- **2026-07-07 — issue #319 / PR #320** — Rotation timeline and descriptor factory extracted to public core `SigningKeyRotation` (`RotationKey`/`RotationEntry`) and `SigningKeyDescriptorFactory`, anchor-agnostic; behaviour-preserving consolidation of already-reviewed trust-boundary logic (#287/#288/#289).
+- **2026-07-10 — issue #290 descoped** — macOS Keychain provider closed "not planned" (thin production audience); #291 (file-based) becomes the sole macOS/Linux provider. Anchor-agnostic `SigningKeyRotation`/`RotationKey` generalization kept exactly as shipped.
+- **2026-07-10 — PR #333 (commit `79379c8`, issue #332)** — `AllowedDevelopmentJwtSigningKeysEnvironments` moved from `DevelopmentSigningKeyOptions` (then `internal`) to the public `AuthorizationServerOptions` root. **Reverted by #337 below.**
+- **2026-07-11 — issue #337 (this PR)** — ADR migrated to the three-part format ([README](./README.md)). PR #333's root-options placement **reverted**: the list lives on the now-**public** `DevelopmentSigningKeyOptions`, configured via the registration method's `configure` callback (impl #338). `AddDevelopmentJwtSigningKeys` overloads replaced by `AddInMemoryDevelopmentJwtSigningKeys` / `AddPersistedDevelopmentJwtSigningKeys` (impl #338). `RefreshInterval` renamed and reshaped to nullable `KeySourceRefreshInterval` (`null` = load once; replaces the `TimeSpan.MaxValue` sentinel; kept as one property serving both poll cadence and publish-then-activate lead time) (impl #340). Dedicated signing sub-builder (`AddJwtSigning(signing => …)`) and splitting `KeySourceRefreshInterval` in two both recorded as rejected. **Environment-gate invariants unchanged:** Production always rejected, mandatory `Critical` startup log, never sourced from bindable configuration.
 
 ---
 
 ## References
 
 - Issue **#187** — signing key management design session.
-- **ADR 0002** — options shape (server-wide gate on root, per-provider knobs on provider
-  options).
+- **ADR 0002** — options shape (grouping rule scope; per-provider knobs on provider options).
 - **ADR 0006** — exception hierarchy (`ZeeKayDaConfigurationException`).
-- **ADR 0007** — client registration model (static registration; no encryption-preference
-  fields).
+- **ADR 0007** — client registration model (static registration; no encryption-preference fields).
 - **ADR 0008** — authorization-code/refresh-token store (registration idiom,
   `ThrowIfAlreadyRegistered`, escape-hatch pattern, refresh-token-via-store validation,
-  empty-options-class SemVer lesson).
+  empty-options-class SemVer lesson, and the equivalent `allowOutsideDevelopment` parameter
+  placement change made together with this one).
+- **ADR 0012** — signing-provider NuGet packaging model (why shared helpers are public in core,
+  not `internal` + `InternalsVisibleTo`).
 - RFC 7515 (JWS), RFC 7517 (JWK), RFC 7518 (JWA), RFC 7519 (JWT), RFC 7520 (JOSE examples),
-  RFC 7591 (dynamic client registration), RFC 9700 (OAuth security BCP).
+  RFC 7591 (dynamic client registration), RFC 7638 (JWK thumbprint), RFC 9700 (OAuth security BCP).

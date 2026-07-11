@@ -1,7 +1,17 @@
 # ADR 0008 — Authorization Code and Refresh Token Store
 
-**Status:** Accepted (amended 2026-06-22)  
-**Date:** 2026-06-07
+**Status:** Accepted
+**Date:** 2026-06-07 (original) · rewritten 2026-07-11 (issue #337)
+
+> **Format note.** This ADR was migrated to the three-part format defined in
+> [`docs/decisions/README.md`](./README.md) (current state · considered and rejected
+> alternatives · changelog appendix) as part of issue #337. Its earlier chronological amendment
+> log (entries 2026-06-20 through 2026-07-11) has been folded into the current-state description
+> below, with the reasoning behind reverted or rejected approaches moved into the
+> considered-and-rejected section and the log reduced to pointer entries in the changelog appendix.
+> All normative MUST / MUST NOT store contracts (single-use enforcement, reuse detection, atomic
+> consumption, family revocation, clock-skew tolerance, handle hashing) are preserved verbatim;
+> nothing substantive was dropped in the migration.
 
 **Amends ADR 0005 §6b** — extends the authorization-code bound-parameter list with
 `AuthTime`, `Acr`, and `Amr`. See §2.
@@ -61,7 +71,7 @@ Deferring them further would block the token endpoint entirely.
 
 ---
 
-## Decision
+## Current State
 
 ### 1. Store interface design: purpose-specific interfaces backed by a default `IDistributedCache` implementation
 
@@ -705,10 +715,17 @@ rather than enumerating individual token entries — `IDistributedCache` cannot 
 `TryConsumeAsync` and `FindAsync` check the marker; if present, they return `Revoked` /
 `null` respectively.
 
-**Marker TTL = `RefreshTokenLifetime` + small grace.** Once every token plausibly issued
+**Marker TTL = `RefreshTokenLifetime` + 5 minutes grace.** Once every token plausibly issued
 into the family has expired, the marker is a no-op and can be evicted. A previous draft
 called the marker "pinned" — that wording has been dropped; an unbounded marker would grow
-unboundedly. The grace covers clock skew between the issuer and the cache backend.
+unboundedly. The 5-minute grace covers clock skew between the issuer and the cache backend. It is
+a **derived invariant hardcoded in `DistributedCacheRefreshTokenStore`, not an operator knob**
+(see the Considered-and-Rejected entry on configurable TTLs), and it is deliberately kept
+**independent** of `AuthorizationServerOptions.ClockSkewTolerance` (§6): the two express different
+concerns at different magnitudes — the marker grace ensures the revocation marker outlives every
+token in the family (minutes), whereas `ClockSkewTolerance` guards per-request `ExpiresAt` liveness
+checks against inter-node drift (seconds). Coupling them would over-couple two independent safety
+mechanisms.
 
 **Family revocation marker race (distributed default — not benign):** The marker-check
 and consume steps in `TryConsumeAsync` are not atomic with `RevokeFamilyAsync`. Consider
@@ -780,9 +797,9 @@ returned by `AddZeeKayDaAuth`. The full API surface is:
 
 | Method | Registers | Notes |
 |---|---|---|
-| `.AddInMemoryStores()` | Both in-memory stores | Dev/test only — emits startup warning |
-| `.AddInMemoryAuthorizationCodeStore()` | `InMemoryAuthorizationCodeStore` as `IAuthorizationCodeStore` | Dev/test only — emits startup warning |
-| `.AddInMemoryRefreshTokenStore()` | `InMemoryRefreshTokenStore` as `IRefreshTokenStore` | Dev/test only — emits startup warning |
+| `.AddInMemoryStores(bool allowOutsideDevelopment = false)` | Both in-memory stores | Dev/test only — emits startup warning; fail-closed outside `Development` unless `allowOutsideDevelopment: true` |
+| `.AddInMemoryAuthorizationCodeStore(bool allowOutsideDevelopment = false)` | `InMemoryAuthorizationCodeStore` as `IAuthorizationCodeStore` | Dev/test only — emits startup warning; fail-closed outside `Development` unless `allowOutsideDevelopment: true` |
+| `.AddInMemoryRefreshTokenStore(bool allowOutsideDevelopment = false)` | `InMemoryRefreshTokenStore` as `IRefreshTokenStore` | Dev/test only — emits startup warning; fail-closed outside `Development` unless `allowOutsideDevelopment: true` |
 | `.AddAuthorizationCodeStore<T>()` | `T` as `IAuthorizationCodeStore` (singleton) | Recommended path for custom stores; `T : class, IAuthorizationCodeStore` |
 | `.AddRefreshTokenStore<T>()` | `T` as `IRefreshTokenStore` (singleton) | Recommended path for custom stores; `T : class, IRefreshTokenStore` |
 | `.AddDistributedCacheTokenStores()` | Both distributed-cache stores | Dev/test only; see warning below |
@@ -884,6 +901,23 @@ This warning fires unconditionally whenever `.AddInMemoryStores()`,
 there is no suppression mechanism. In-memory stores are development and testing only,
 regardless of instance count.
 
+**Outside `Development`, the same emitter escalates to `LogLevel.Critical`.** In-memory stores are
+**fail-closed outside `Development` by default**: startup throws `ZeeKayDaConfigurationException`
+unless the relevant registration method's `bool allowOutsideDevelopment = false` parameter is set
+to `true`. Each of the three in-memory registration methods carries its own `allowOutsideDevelopment`
+parameter and gates independently on it, so mixing granular calls with different values is allowed
+and each is enforced separately. The escape hatch lives on the registration methods themselves —
+**not** on `AuthorizationServerOptions` and not in bindable configuration — because the flag is
+meaningless unless one of those methods was called, and a single flag does not justify a dedicated
+options type (per this ADR's own empty-`DistributedCacheTokenStoreOptions` precedent; see
+Considered and Rejected Alternatives). When `allowOutsideDevelopment` is `true` and the host
+environment is not `Development`, the same `IHostedService` logs at `Critical`, not `Warning`, on
+every startup — not once, not only on first detection — naming the override explicitly ("in-memory
+token stores are active outside a Development environment... ensure this is intentional"). This
+mirrors ADR 0011 §2's treatment of `AllowedDevelopmentJwtSigningKeysEnvironments`: both gates emit
+`Critical`, not `Warning`, when their Development-only escape hatch is open outside `Development`,
+because in each case an explicit opt-in has overridden a secure-by-default failure.
+
 The XML doc on all three in-memory registration methods MUST lead with this limitation,
 first sentence:
 
@@ -930,9 +964,15 @@ a configurable option invites operators to set it downward, silently defeating t
 RFC 9700 §2.1.1 replay-detection guarantee. Setting tombstone TTL below
 `AuthorizationCodeLifetime` would cause a delayed replay to return `NotFound` instead
 of `AlreadyRedeemed`, bypassing family revocation with no startup error to signal the
-misconfiguration. The option can be introduced in a future release if a genuine use case
-emerges; removing it now keeps the surface minimal and the security invariant
-unconditional. See amendment 2026-06-20 in §"Amendments" below.
+misconfiguration. The `max(RefreshTokenLifetime, remaining ExpiresAt)` formula from earlier
+drafts simplifies to just `RefreshTokenLifetime` because the startup-validator rule AC-4d
+(`RefreshTokenLifetime >= AuthorizationCodeLifetime`) guarantees `RefreshTokenLifetime` always
+dominates the second term. That simplification is **only correct while AC-4d is enforced at
+startup**; if that invariant were ever relaxed, the simplification would silently become unsafe
+and the full `max(...)` formula would need to be reinstated. The option can be introduced in a
+future release if a genuine use case emerges; removing it now keeps the surface minimal and the
+security invariant unconditional (the rejected configurable option is recorded in Considered and
+Rejected Alternatives).
 
 The tombstone retention defaults to `RefreshTokenLifetime` rather than the previous draft's
 60 s + 60 s grace. A 120 s window means an attacker who delays code replay beyond two minutes
@@ -1268,7 +1308,66 @@ scope and will be decided in the back-channel logout ADR.
 
 ---
 
-## Rejected Alternatives
+## Considered and Rejected Alternatives
+
+### Auto-registration of both stores (and asymmetric auto/explicit registration)
+
+**Shipped, then reverted (2026-06-20).** An earlier revision auto-registered both
+`IAuthorizationCodeStore` and `IRefreshTokenStore` via `TryAddSingleton` inside `AddZeeKayDaAuth`.
+That was overturned in favour of explicit opt-in (§4, §5): `AddZeeKayDaAuth` now registers neither
+store, a startup presence validator fails closed if either is missing, and the easy path
+(`.AddInMemoryStores()`) emits a mandatory startup warning. Auto-registration silently promoted a
+development-grade default into production; explicit opt-in makes the choice visible where the
+developer can see it.
+
+A weaker variant — **asymmetric registration**: auto-registering only the authorization-code store
+(on the argument that codes are short-lived and harmless to lose on restart) while requiring
+explicit opt-in for the refresh-token store — was also considered and rejected, for two reasons.
+(1) In a multi-instance deployment a code issued on instance A and redeemed on instance B silently
+fails — the same correctness violation as losing a refresh token across instances — so the
+"short-lived, therefore harmless" argument breaks down at the multi-instance boundary. (2)
+Asymmetric wiring is a discoverability trap: a developer who understands how one store is
+registered assumes the other follows suit, and discovers the difference only when production breaks.
+A uniform explicit-opt-in model eliminates both.
+
+### `AllowInMemoryStoresOutsideDevelopment` on `AuthorizationServerOptions` (PR #333's root placement)
+
+**Placed on the shared root, then reverted (issue #337 / #339).** The escape hatch that permits
+in-memory stores outside `Development` briefly lived as a `bool` on the shared, public
+`AuthorizationServerOptions` root, following PR #333's root-hoisting precedent. Its goal — an
+explicit, discoverable opt-in — was sound and is kept; only the *placement* was wrong. The flag is
+inert unless one of the in-memory registration methods was called, so a setting on the shared root
+silently does nothing unless an unrelated extension method was also called — the same
+discoverability trap this ADR names for auto-registration. It now lives as a
+`bool allowOutsideDevelopment = false` parameter on each of the three in-memory registration
+methods (§5), where it surfaces in IntelliSense only when the feature it gates is being configured
+and is intrinsically harder to wire to bindable configuration. This is one decision made together
+with ADR 0011's equivalent move of `AllowedDevelopmentJwtSigningKeysEnvironments` off the root onto
+the development-signing-key provider options; both reverse PR #333's root-hoisting precedent (see
+the ADR 0002 grouping-rule scope clarification).
+
+### Operator-configurable tombstone / family-revocation-marker TTLs (and an empty options class to hold them)
+
+**Shipped as options, then removed (2026-06-20 / 2026-06-21).** Two TTLs were once exposed as
+operator-configurable options: `AuthorizationCodeTombstoneRetention` (§6) and
+`FamilyRevocationMarkerTtl` (on `DistributedCacheTokenStoreOptions`). Both were removed because the
+only off-default value an operator can set is either harmful or useless. Setting either TTL
+*shorter* than `RefreshTokenLifetime` lets a delayed code replay return `NotFound` instead of
+`AlreadyRedeemed`, or lets a revoked family silently revive before its tokens expire — in both
+cases defeating the RFC 9700 §2.1.1 / §4.13 replay-detection guarantee, with no startup error to
+signal the misconfiguration. Setting either *longer* wastes cache space for no security benefit.
+Both are therefore derived invariants: tombstone TTL is `RefreshTokenLifetime` (the `max(...)`
+formula collapses under startup rule AC-4d, §6), and the marker TTL is `RefreshTokenLifetime + 5
+minutes` grace, hardcoded in `DistributedCacheRefreshTokenStore`.
+
+Removing `FamilyRevocationMarkerTtl` left `DistributedCacheTokenStoreOptions` with no properties.
+Shipping an empty public options class was rejected as a SemVer commitment to a surface with no
+behaviour behind it, so the class was deleted entirely — and with it the
+`AddDistributedCacheTokenStores(Action<DistributedCacheTokenStoreOptions>)` overload; only the
+no-argument `AddDistributedCacheTokenStores()` exists until the class has real content. This is the
+empty-options-class anti-pattern later cited by ADR 0011 §5 when it declined to ship an empty
+`EncryptionOptions`. Either option can be reintroduced if a genuine operator-facing use case
+emerges.
 
 ### Two-phase commit (`TryRedeemAsync` returning `CommitToken` → separate `CompleteRedemptionAsync`)
 
@@ -1666,16 +1765,16 @@ expiry guarantee is effectively nullified. The startup validator SHOULD warn if
 
 ---
 
-## Amendments
+## Changelog
 
-- **2026-06-20 — Remove `AuthorizationCodeTombstoneRetention` as a configurable option** — The `AuthorizationCodeTombstoneRetention` property was listed in §6's configuration table as an operator-configurable option on `DistributedCacheTokenStoreOptions`. It is removed. Tombstone TTL is now hardcoded to `RefreshTokenLifetime` with no operator override. The only safe direction to adjust tombstone TTL is upward (longer), but exposing the knob invites operators to set it downward, silently defeating the RFC 9700 §2.1.1 replay-detection guarantee: a tombstone TTL shorter than `AuthorizationCodeLifetime` causes a delayed replay to return `NotFound` instead of `AlreadyRedeemed`, bypassing family revocation with no startup error. The `max(RefreshTokenLifetime, remaining ExpiresAt)` formula from earlier drafts simplifies to just `RefreshTokenLifetime` given the startup-validator rule AC-4d (`RefreshTokenLifetime >= AuthorizationCodeLifetime`), which guarantees that `RefreshTokenLifetime` always dominates the second term. This simplification is only correct because AC-4d is enforced at startup; if that invariant were ever relaxed, the simplification would silently become unsafe and the full `max(...)` formula would need to be reinstated. For clients that do not issue refresh tokens, `RefreshTokenLifetime` produces a tombstone that lives slightly longer than strictly necessary — harmless, and erring in the safe direction. The option can be reintroduced in a future release if a genuine use case emerges. §6 table and surrounding prose updated accordingly. Reference: issue #245 (startup-validator rule for tombstone TTL — closed as won't-implement as a result of this decision).
+Pointer-only index (date · PR/issue · what changed). Full reasoning lives in the current-state,
+considered-and-rejected, and security-considerations sections above.
 
-- **2026-06-20 — Add `ClockSkewTolerance` to `AuthorizationServerOptions`** — A `ClockSkewTolerance` property (type `TimeSpan`, default `5 s`) is added to `AuthorizationServerOptions`. In load-balanced deployments, node clocks can drift; the `ExpiresAt` liveness check in `TryRedeemAsync` (`entry.ExpiresAt > now`) could reject a valid authorization code on a node whose clock is slightly ahead of the issuing node. The tolerance is applied as a grace window (`entry.ExpiresAt + tolerance > now`) in any store implementation that operates across multiple nodes — the in-memory store is excluded because it is a single-instance deployment invariant (one process, one clock; inter-node skew is structurally impossible) and tombstone TTL is unaffected (dominated by `RefreshTokenLifetime`). The property lives on `AuthorizationServerOptions` rather than `DistributedCacheTokenStoreOptions` because clock skew is a deployment property, not a store implementation detail: a custom SQL store or Redis store would need the same grace window and should not have to rediscover the value on a store-specific option. The default of 5 seconds is intentionally small — unlike JWT validation (5-minute convention), authorization codes are short-lived, server-to-server, and exchange against a hard `ExpiresAt`; a large tolerance weakens the expiry guarantee. The startup validator SHOULD warn if `ClockSkewTolerance >= AuthorizationCodeLifetime / 2`. §6 table and §"Security Considerations — Clock skew tolerance" added accordingly.
-
-- **2026-06-20 — Explicit opt-in store registration; no auto-registration; `.AddInMemoryStores()` with mandatory startup warning** — The previously-accepted §5 decision registered both `IAuthorizationCodeStore` and `IRefreshTokenStore` automatically via `TryAddSingleton` inside `AddZeeKayDaAuth`. That decision is overturned. `AddZeeKayDaAuth` now leaves both interfaces unregistered. Startup validation (`ZeeKayDaConfigurationException`) fails if either is absent, naming the missing interface and pointing to the docs. The builder gains two explicit opt-in methods: `.AddInMemoryStores()` (registers both in-memory implementations; development and testing only; emits a mandatory `LogLevel.Warning` before the first request via `IHostedService` or `IStartupFilter`; the exact warning text is recorded in §5) and `.AddDistributedCacheTokenStores()` (unchanged from prior decision). Custom implementations are registered directly on `IServiceCollection` and the two stores remain independently replaceable. §4, §5, §9, §11, and the Consequences section updated accordingly. **Rejected alternative — asymmetric registration (auto-register auth codes, explicit refresh tokens):** The argument that authorization codes are short-lived and therefore harmless to lose on restart was considered as a basis for auto-registering only the auth code store while requiring explicit opt-in for the refresh token store. This was rejected for two reasons: (1) In multi-instance deployments a code issued on instance A validated on instance B silently fails, the same correctness violation as losing a refresh token across instances — the "short-lived so harmless" argument breaks down at the multi-instance boundary. (2) Asymmetric registration is a discoverability trap: a developer who understands how one store is wired assumes the other follows the same pattern. Discovering that they behave differently only when the application breaks in production is a footgun that a consistent explicit-opt-in model eliminates.
-
-- **2026-06-20 — Double registration throws; typed builder methods; granular in-memory registration** — Three design requirements are added to §5. (1) Every builder registration method MUST throw `InvalidOperationException` immediately at registration time if the targeted store interface is already present in `Services`. The exception MUST name the conflicting interface. A silent `TryAdd`-style no-op creates an invisible footgun — the developer registers a custom store and then calls `.AddInMemoryStores()`; the in-memory default wins silently. Throwing at registration time surfaces the conflict where the developer can fix it. (2) Two typed extension methods are added to `ZeeKayDaAuthBuilder`: `.AddAuthorizationCodeStore<T>()` (where `T : class, IAuthorizationCodeStore`) and `.AddRefreshTokenStore<T>()` (where `T : class, IRefreshTokenStore`). These are the recommended path for registering custom store implementations; they register the type as a singleton and are subject to the double-registration check. Direct `IServiceCollection.AddSingleton` registration is still supported for advanced scenarios but bypasses the double-registration check. (3) Two granular in-memory registration methods are added: `.AddInMemoryAuthorizationCodeStore()` and `.AddInMemoryRefreshTokenStore()`. They complement the existing `.AddInMemoryStores()` (which registers both). The granular methods allow operators who want in-memory for one store and custom for the other to express that naturally within the builder chain without triggering the double-registration check. All three in-memory registration methods emit the mandatory startup warning. (4) `InMemoryTokenStoreOptions.SemaphoreEvictionWindow` is removed from the §6 options table. Per-handle semaphores are now evicted by a post-eviction callback registered on the `IMemoryCache` entry rather than by a time-based scan; the option no longer exists. §5 and §6 updated accordingly.
-
-- **2026-06-21 — Remove `FamilyRevocationMarkerTtl` and `DistributedCacheTokenStoreOptions`** — `FamilyRevocationMarkerTtl` is removed from `DistributedCacheTokenStoreOptions` for the same reason `AuthorizationCodeTombstoneRetention` was removed in the 2026-06-20 amendment: the only off-default value an operator can set is either harmful or useless. Setting the marker TTL shorter than `RefreshTokenLifetime` allows revoked families to silently revive before their tokens expire, defeating RFC 9700 §2.1.1 reuse detection. Setting it longer wastes cache space without security benefit. The marker TTL is a derived invariant (`RefreshTokenLifetime + 5 minutes` grace for clock skew between the issuer and the cache backend), not a tuning parameter. It is now hardcoded in `DistributedCacheRefreshTokenStore`; the 5-minute grace is consistent with the `ClockSkewTolerance` rationale and does not need to be operator-configurable for the same reasons `ClockSkewTolerance` itself is a fixed default in the absence of unusual infrastructure. With `FamilyRevocationMarkerTtl` gone, `DistributedCacheTokenStoreOptions` has no remaining properties. Shipping an empty public class is a SemVer commitment: the class becomes a stable API surface that the framework cannot change, even though it has no content. The class is therefore removed entirely. It will be reintroduced when a genuine operator-facing option for the distributed store is identified. Consequently, the `AddDistributedCacheTokenStores(Action<DistributedCacheTokenStoreOptions>)` overload MUST NOT be added to `ZeeKayDaAuthBuilder` until the class has real content; only the no-argument `AddDistributedCacheTokenStores()` overload exists. §5 package placement table updated (row for `DistributedCacheTokenStoreOptions` removed). §6 options table updated (row for `Family revocation marker TTL` removed). §6 prose paragraph explaining `DistributedCacheTokenStoreOptions` binding removed.
-
-- **2026-06-22 — ClockSkewTolerance applied; revocation marker grace kept independent** — `ClockSkewTolerance` (default 5 s, on `AuthorizationServerOptions`) is now applied as a grace window in `DistributedCacheAuthorizationCodeStore.TryRedeemAsync` and both `ExpiresAt` checks in `DistributedCacheRefreshTokenStore` (`FindAsync`, `TryConsumeAsync`). The 5-minute grace in `RevokeFamilyAsync` (`RefreshTokenLifetime + 5 minutes`) is kept independent: it expresses a different concern — revocation markers must outlive all tokens in the family — at a different magnitude (minutes, not seconds). Coupling it to `ClockSkewTolerance` would be confusing and over-couple two independent safety mechanisms.
+- **2026-06-07 — follows ADR 0005 §6b** — Initial ADR: purpose-specific `IAuthorizationCodeStore` / `IRefreshTokenStore` interfaces; closed-hierarchy redemption/consumption outcome types; single-use tombstoning; refresh-token rotation and RFC 9700 §4.13 family revocation; in-memory + `IDistributedCache` defaults; `SHA-256(handle)` cache keys; DP-encrypted entry values; fail-closed exception contract (`ZeeKayDaStoreException`). Amends ADR 0005 §6b's bound-parameter list (`AuthTime` / `Acr` / `Amr`).
+- **2026-06-20 — issue #245 (closed won't-implement)** — `AuthorizationCodeTombstoneRetention` removed as a configurable option; tombstone TTL fixed at `RefreshTokenLifetime` (`max(...)` collapses under startup rule AC-4d). Reasoning in §6 and Considered-and-Rejected.
+- **2026-06-20** — `ClockSkewTolerance` (`TimeSpan`, default 5 s) added to `AuthorizationServerOptions` as a deployment property (not a store detail); applied as an `ExpiresAt` grace window in multi-node stores. See §6 and Security Considerations.
+- **2026-06-20** — Store registration made explicit opt-in; `TryAddSingleton` auto-registration removed; `.AddInMemoryStores()` added with mandatory startup warning. Reverted auto-registration and rejected asymmetric registration recorded in Considered-and-Rejected.
+- **2026-06-20** — Double-registration now throws `InvalidOperationException`; typed `.AddAuthorizationCodeStore<T>()` / `.AddRefreshTokenStore<T>()` and granular `.AddInMemoryAuthorizationCodeStore()` / `.AddInMemoryRefreshTokenStore()` added; `InMemoryTokenStoreOptions.SemaphoreEvictionWindow` removed (semaphores now evicted by an `IMemoryCache` post-eviction callback). See §5, §4c.
+- **2026-06-21** — `FamilyRevocationMarkerTtl` removed; marker TTL fixed at `RefreshTokenLifetime + 5 min` grace, hardcoded. Empty `DistributedCacheTokenStoreOptions` deleted (empty public options class = SemVer commitment); only the no-arg `AddDistributedCacheTokenStores()` remains. See §4d and Considered-and-Rejected.
+- **2026-06-22** — `ClockSkewTolerance` applied in `DistributedCacheAuthorizationCodeStore.TryRedeemAsync` and both `ExpiresAt` checks in `DistributedCacheRefreshTokenStore`; the marker's 5-min grace kept independent of `ClockSkewTolerance`. See §4d.
+- **2026-07-11 — issue #337 (this PR), impl #339** — `AllowInMemoryStoresOutsideDevelopment` moved off `AuthorizationServerOptions` onto a `bool allowOutsideDevelopment = false` parameter on the three in-memory registration methods (reverses PR #333's root placement — see Considered-and-Rejected). In-memory-outside-`Development` startup log corrected to `Critical`, not `Warning` (§5), matching ADR 0011 §2. ADR migrated to the three-part format ([README](./README.md)). **Invariants unchanged:** fail-closed outside `Development` unless opted in; mandatory startup warning whenever an in-memory store is registered.
