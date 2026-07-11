@@ -884,6 +884,17 @@ This warning fires unconditionally whenever `.AddInMemoryStores()`,
 there is no suppression mechanism. In-memory stores are development and testing only,
 regardless of instance count.
 
+**Outside `Development`, the same emitter escalates to `LogLevel.Critical`.** In-memory stores
+are fail-closed outside `Development` by default: startup throws `ZeeKayDaConfigurationException`
+unless the relevant registration method's `allowOutsideDevelopment` parameter (see the 2026-07-11
+amendment below) is `true`. When it is `true` and the host environment is not `Development`, the
+same `IHostedService` logs at `Critical`, not `Warning`, on every startup — not once, not only on
+first detection — naming the override explicitly ("in-memory token stores are active outside a
+Development environment... ensure this is intentional"). This mirrors ADR 0011 §2's treatment of
+`AllowedDevelopmentJwtSigningKeysEnvironments`: both gates emit `Critical`, not `Warning`, when
+their Development-only escape hatch is open outside `Development`, because in each case an
+explicit opt-in has overridden a secure-by-default failure.
+
 The XML doc on all three in-memory registration methods MUST lead with this limitation,
 first sentence:
 

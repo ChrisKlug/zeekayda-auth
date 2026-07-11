@@ -233,10 +233,15 @@ The following invariants hold regardless of list contents:
   rejects a list containing `"Production"` (and any null/empty entry) at startup.
 - When the current environment is in the allowed list but is not exactly `Development`, a
   `LogLevel.Critical` entry is emitted on **every** startup — not once, not only on first
-  detection. Development signing keys log `Critical` (in-memory stores log `Warning`) because a
-  non-rotating, possibly-ephemeral signing key in a non-development host breaks signature
-  validation for every relying party on restart — a strictly more severe misconfiguration than a
-  non-durable token store.
+  detection. This matches the severity the in-memory store gate uses in its own equivalent
+  case (ADR 0008 §5): when `AllowInMemoryStoresOutsideDevelopment` is used outside
+  `Development`, `InMemoryStoreWarningService` also escalates to `Critical`, not `Warning` — the
+  plain `LogLevel.Warning` in-memory stores emit is scoped to the unremarkable case of using them
+  *inside* `Development`, where no escape hatch is in play. Both gates treat "an explicit opt-in
+  escape hatch for a Development-only feature is currently open outside Development" as
+  maximal-severity, because a non-rotating, possibly-ephemeral signing key and a non-durable
+  token store are each, in their own way, a correctness break for every relying party or client
+  on restart.
 - **The gate MUST NOT be sourced from bindable configuration.** `AllowedDevelopmentJwtSigningKeysEnvironments`
   MUST NOT be settable from `appsettings.json` or any other file that may be committed to source
   control. A code-only `configure` callback is intrinsically harder to accidentally wire to a
