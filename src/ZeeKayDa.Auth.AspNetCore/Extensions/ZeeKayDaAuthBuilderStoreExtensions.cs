@@ -107,6 +107,7 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
         builder.Services.AddSingleton<IAuthorizationCodeStore, InMemoryAuthorizationCodeStore>();
         builder.Services.AddSingleton<IHostedService>(sp => new InMemoryStoreWarningService(
             sp.GetRequiredService<IHostEnvironment>(),
+            InMemoryStoreWarningService.AuthorizationCodeStoreName,
             allowOutsideDevelopment,
             sp.GetRequiredService<ISanitizingLogger<InMemoryStoreWarningService>>()));
 
@@ -151,6 +152,7 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
         builder.Services.AddSingleton<IRefreshTokenStore, InMemoryRefreshTokenStore>();
         builder.Services.AddSingleton<IHostedService>(sp => new InMemoryStoreWarningService(
             sp.GetRequiredService<IHostEnvironment>(),
+            InMemoryStoreWarningService.RefreshTokenStoreName,
             allowOutsideDevelopment,
             sp.GetRequiredService<ISanitizingLogger<InMemoryStoreWarningService>>()));
 

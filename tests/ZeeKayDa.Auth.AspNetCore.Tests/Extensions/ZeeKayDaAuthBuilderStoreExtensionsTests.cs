@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using ZeeKayDa.Auth.Logging;
 using ZeeKayDa.Auth.Stores;
 
@@ -18,13 +19,34 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
         public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
     }
 
+    private sealed class CapturingLogger<T> : ISanitizingLogger<T>
+    {
+        public List<(LogLevel Level, string Message)> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            Entries.Add((logLevel, formatter(state, exception)));
+        }
+    }
+
     private static ServiceCollection CreateServicesWithWarningServiceDependencies(
-        string environmentName = "Development")
+        string environmentName = "Development",
+        CapturingLogger<InMemoryStoreWarningService>? capturingLogger = null)
     {
         var services = new ServiceCollection();
         services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment(environmentName));
         services.AddSingleton<ISanitizingLogger<InMemoryStoreWarningService>>(
-            NullSanitizingLogger<InMemoryStoreWarningService>.Instance);
+            (ISanitizingLogger<InMemoryStoreWarningService>?)capturingLogger
+                ?? NullSanitizingLogger<InMemoryStoreWarningService>.Instance);
         return services;
     }
 
@@ -426,6 +448,28 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
         using var provider = services.BuildServiceProvider();
         provider.GetServices<IHostedService>().OfType<InMemoryStoreWarningService>()
             .Should().HaveCount(2, "each store registration captures and enforces its own allowOutsideDevelopment value");
+    }
+
+    [Fact]
+    public async Task AddInMemoryStores_logs_two_distinctly_worded_lines_not_the_same_line_twice()
+    {
+        var capturingLogger = new CapturingLogger<InMemoryStoreWarningService>();
+        var services = CreateServicesWithWarningServiceDependencies(capturingLogger: capturingLogger);
+        var builder = new ZeeKayDaAuthBuilder(services);
+
+        builder.AddInMemoryStores();
+
+        using var provider = services.BuildServiceProvider();
+        foreach (var warningService in provider.GetServices<IHostedService>().OfType<InMemoryStoreWarningService>())
+            await warningService.StartAsync(CancellationToken.None);
+
+        capturingLogger.Entries.Should().HaveCount(2);
+        capturingLogger.Entries.Select(entry => entry.Message).Distinct()
+            .Should().HaveCount(2, "each store's log line must name its own store, not repeat an identical message");
+        capturingLogger.Entries.Should().Contain(entry =>
+            entry.Message.Contains(InMemoryStoreWarningService.AuthorizationCodeStoreName));
+        capturingLogger.Entries.Should().Contain(entry =>
+            entry.Message.Contains(InMemoryStoreWarningService.RefreshTokenStoreName));
     }
 
     // ── AddInMemoryStores: allowOutsideDevelopment parameter ──────────────────────────────────────

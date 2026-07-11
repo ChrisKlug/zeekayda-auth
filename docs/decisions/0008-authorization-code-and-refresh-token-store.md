@@ -901,6 +901,12 @@ This warning fires unconditionally whenever `.AddInMemoryStores()`,
 there is no suppression mechanism. In-memory stores are development and testing only,
 regardless of instance count.
 
+Each registration's `IHostedService` instance appends a trailing sentence naming its own store
+(e.g. `"Store: authorization code store."` / `"Store: refresh token store."`) after the verbatim
+text above. This keeps `.AddInMemoryStores()` — which registers one instance per store — from
+emitting the identical line twice; the verbatim requirement governs the leading text, not the
+full message.
+
 **Outside `Development`, the same emitter escalates to `LogLevel.Critical`.** In-memory stores are
 **fail-closed outside `Development` by default**: startup throws `ZeeKayDaConfigurationException`
 unless the relevant registration method's `bool allowOutsideDevelopment = false` parameter is set
@@ -1778,3 +1784,4 @@ considered-and-rejected, and security-considerations sections above.
 - **2026-06-21** — `FamilyRevocationMarkerTtl` removed; marker TTL fixed at `RefreshTokenLifetime + 5 min` grace, hardcoded. Empty `DistributedCacheTokenStoreOptions` deleted (empty public options class = SemVer commitment); only the no-arg `AddDistributedCacheTokenStores()` remains. See §4d and Considered-and-Rejected.
 - **2026-06-22** — `ClockSkewTolerance` applied in `DistributedCacheAuthorizationCodeStore.TryRedeemAsync` and both `ExpiresAt` checks in `DistributedCacheRefreshTokenStore`; the marker's 5-min grace kept independent of `ClockSkewTolerance`. See §4d.
 - **2026-07-11 — issue #337 (this PR), impl #339** — `AllowInMemoryStoresOutsideDevelopment` moved off `AuthorizationServerOptions` onto a `bool allowOutsideDevelopment = false` parameter on the three in-memory registration methods (reverses PR #333's root placement — see Considered-and-Rejected). In-memory-outside-`Development` startup log corrected to `Critical`, not `Warning` (§5), matching ADR 0011 §2. ADR migrated to the three-part format ([README](./README.md)). **Invariants unchanged:** fail-closed outside `Development` unless opted in; mandatory startup warning whenever an in-memory store is registered.
+- **2026-07-11 — PR #345 review follow-up** — Each in-memory registration's warning/critical log line now names its own store (§5), so `.AddInMemoryStores()` emits two distinctly-worded lines instead of the same line twice. The §5 verbatim requirement governs only the leading sentence block; per-store text is appended after it.
