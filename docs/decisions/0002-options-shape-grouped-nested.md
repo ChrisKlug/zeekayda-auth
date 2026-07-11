@@ -1,9 +1,17 @@
 # ADR 0002 — Options Shape: Grouped Nested Per-Endpoint Options on `AuthorizationServerOptions`
 
-**Status:** Accepted  
-**Date:** 2026-06-07
+**Status:** Accepted
+**Date:** 2026-06-07 (original) · rewritten 2026-07-11 (issue #337)
 
-> **Amended by ADR 0007 §1a (2026-06-08):** `TokenEndpoint.AuthMethodsSupported` is changed from `ICollection<TokenEndpointAuthMethod>` (enum) to `ICollection<string>` (ordinal), and the `TokenEndpointAuthMethod` enum is removed. The discovery document advertises this configured server allowlist exactly; registered `IClientAuthenticator` methods are validated as capability coverage, not automatically advertised. The validator rules below remain in spirit (non-empty, at least one non-`"none"` method, coverage by an authenticator, etc.) but their type-system expression changes. The discussion below is preserved as historical record.
+> **Format note.** This ADR was migrated to the three-part format defined in
+> [`docs/decisions/README.md`](./README.md) (current state · considered and rejected
+> alternatives · changelog appendix) as part of issue #337. Its earlier top "Decision" section and
+> its dated amendment log (the inline §4 validator amendment, the `SecurityHeaders`
+> framework-behavior-group amendment, and the grouping-rule scope clarification) have been folded
+> into the current-state description below and reduced to pointer entries in the changelog
+> appendix. Nothing substantive was dropped in the migration.
+
+> **Amended by ADR 0007 §1a (2026-06-08):** `TokenEndpoint.AuthMethodsSupported` is changed from `ICollection<TokenEndpointAuthMethod>` (enum) to `ICollection<string>` (ordinal), and the `TokenEndpointAuthMethod` enum is removed. The discovery document advertises this configured server allowlist exactly; registered `IClientAuthenticator` methods are validated as capability coverage, not automatically advertised. The validator rules below remain in spirit (non-empty, at least one non-`"none"` method, coverage by an authenticator, etc.) but their type-system expression changes. The discussion below is preserved as historical record; ADR 0007 is the authority for the current `string`-based shape.
 
 ---
 
@@ -43,7 +51,7 @@ After 1.0 it would not be.
 
 ---
 
-## Decision
+## Current State
 
 `AuthorizationServerOptions` is reshaped into a **grouped nested** model: server-wide settings stay
 on the root class; per-endpoint settings move onto strongly-typed nested option groups exposed as
@@ -133,6 +141,21 @@ call site: any property ending in `Endpoint` configures a network-accessible HTT
 properties without the suffix (`IdToken`, `Response`, `DiscoveryDocument`) configure protocol
 artifacts or cross-endpoint concepts.
 
+**Framework-behavior groups: a second permitted category outside the spec-prefix rule.** Some
+settings govern the framework's *own* runtime behaviour — HTTP security headers, caching policy,
+logging policy — and have **no** OIDC Discovery 1.0 / RFC 8414 discovery-key counterpart at all.
+`SecurityHeaders` on `AuthorizationServerOptions` is the motivating case: it controls the HTTP
+security headers ZeeKayDa.Auth itself emits, not server-capability metadata advertised to clients,
+so the spec-prefix rule does not reach it. This ADR formally recognises a second category —
+**framework-behavior groups** — which collect settings that govern the framework's runtime
+behaviour (headers, caching policy, logging policy, etc.) with no discovery-document analogue.
+Framework-behavior groups are permitted outside the spec-prefix rule, subject to two constraints:
+their names must be plain, descriptive English, and they MUST NOT carry an `Endpoint` suffix (they
+are not HTTP endpoints). The `SecurityHeaders` name is correct for this category. A property that
+*does* have a discovery-key counterpart belongs in its spec-prefix group and MUST NOT be placed in
+a framework-behavior group. Any future framework-behavior group follows this precedent: descriptive
+name, no `Endpoint` suffix, not subject to the spec-prefix rule.
+
 ### 2. Per-endpoint properties migration table (initial cut)
 
 Concrete moves required by this ADR for the surface that exists today:
@@ -220,11 +243,21 @@ future serialisation/`IConfiguration` binding.
 
 ### 4. Validator stays single-rooted
 
-> **Amendment (AA-M4, AA-M5 — 2026-06-13):** Two responsibilities were extracted from the validator: (1) CORS-origin canonicalization and deduplication moved to `AuthorizationServerOptionsPostConfigurer : IPostConfigureOptions<AuthorizationServerOptions>`, which runs before validation and freezes `DiscoveryOptions.CorsOrigins` into an immutable canonical snapshot (AA-M4 — `IValidateOptions<T>.Validate` is a read-only contract; mutation during validation is unexpected and can produce subtle ordering bugs). (2) The async `IScopeRepository` presence check moved to `ScopePresenceStartupValidator : IHostedService`, whose `StartAsync` is awaitable (AA-M5 — blocking on async I/O in the synchronous `Validate` method risks deadlocks in certain hosting configurations). `AuthorizationServerOptionsValidator` is now a pure read-only check, as the `IValidateOptions<T>` contract requires.
-
 The validator remains a single `IValidateOptions<AuthorizationServerOptions>` (today:
-`AuthorizationServerOptionsValidator` in `ZeeKayDa.Auth/Configuration/`) that reaches into the
-groups:
+`AuthorizationServerOptionsValidator` in `ZeeKayDa.Auth/Configuration/`), and is a **pure read-only
+check**, exactly as the `IValidateOptions<T>` contract requires. Two responsibilities a validator
+must not carry are deliberately kept out of it:
+
+- **CORS-origin canonicalization and deduplication** run in
+  `AuthorizationServerOptionsPostConfigurer : IPostConfigureOptions<AuthorizationServerOptions>`,
+  which executes *before* validation and freezes `DiscoveryOptions.CorsOrigins` into an immutable
+  canonical snapshot. `IValidateOptions<T>.Validate` is a read-only contract; mutating options
+  during validation is unexpected and can produce subtle ordering bugs.
+- **The async `IScopeRepository` presence check** runs in `ScopePresenceStartupValidator :
+  IHostedService`, whose `StartAsync` is awaitable. Blocking on async I/O inside the synchronous
+  `Validate` method risks deadlocks in certain hosting configurations.
+
+The validator reaches into the groups:
 
 ```csharp
 if (options.TokenEndpoint.AuthMethodsSupported is null) …
@@ -291,7 +324,7 @@ remains closed.
 
 ---
 
-## Rejected Alternatives
+## Considered and Rejected Alternatives
 
 ### Builder extensions per endpoint (`.WithTokenEndpointConfiguration(...)`)
 
@@ -411,7 +444,7 @@ recorded here only so the option is not silently relitigated.
 
 ---
 
-## Security Note
+## Security Considerations
 
 **`TokenEndpoint.AuthMethodsSupported` — validator rules and per-client enforcement dependency.**
 
@@ -439,6 +472,19 @@ a flag that papers over an absent control.
 
 ---
 
+## Changelog
+
+Pointer-only index (date · PR/issue · what changed). Full reasoning lives in the current-state and
+alternatives sections above.
+
+- **2026-06-07 — issue #51** — Initial ADR: `AuthorizationServerOptions` reshaped into grouped-nested per-endpoint options; spec-prefix grouping rule; `sealed`, get-only, default-initialised group classes; single-rooted validator; endpoint surface stays internal (ADR 0001 / #43).
+- **2026-06-08 — ADR 0007 §1a** — `TokenEndpoint.AuthMethodsSupported` changed from the `TokenEndpointAuthMethod` enum to `ICollection<string>` (ordinal); enum removed. ADR 0007 is the authority; the enum-based validator discussion here is retained as historical record (see the note at the top of this ADR).
+- **2026-06-13 — architecture review AA-M4 / AA-M5** — `AuthorizationServerOptionsValidator` made a pure read-only check: CORS-origin canonicalization moved to `AuthorizationServerOptionsPostConfigurer`; the async `IScopeRepository` presence check moved to `ScopePresenceStartupValidator : IHostedService`. Folded into §4.
+- **2026-06-13 — architecture review AA-m13 (resolves #159 partial)** — `SecurityHeaders` recognised as a **framework-behavior group** outside the spec-prefix rule (descriptive name, no `Endpoint` suffix); name blessed, no rename. Folded into §1.
+- **2026-07-11 — issue #337 (this PR)** — ADR migrated to the three-part format ([README](./README.md)). Grouping-rule scope clarified: the "no shared discovery-prefix → root" fallback governs discovery-document / RFC 8414 metadata configuration only and does **not** license hoisting a feature-registration escape hatch onto the shared root (PR #333 misread it as precedent for `AllowedDevelopmentJwtSigningKeysEnvironments`; reversed — see ADR 0011 and ADR 0008's equivalent `AllowInMemoryStoresOutsideDevelopment` reversal). Folded into §1.
+
+---
+
 ## References
 
 - [OpenID Connect Discovery 1.0 §3 — Provider Metadata](https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderMetadata)
@@ -455,12 +501,4 @@ a flag that papers over an absent control.
   [OpenIddict](https://documentation.openiddict.com/configuration/)'s pure-fluent builder model
   and [Microsoft.Identity.Web](https://learn.microsoft.com/en-us/entra/msal/dotnet/microsoft-identity-web/)'s
   flat `MicrosoftIdentityOptions` — both were considered as reference points; neither was adopted
-  wholesale, for the reasons in *Rejected Alternatives* above.
-
----
-
-## Amendments
-
-- **2026-07-11 — Grouping-rule scope clarified: it does not license hoisting feature-registration escape hatches onto the root** — The §1 "no shared discovery-prefix → root options" fallback governs OIDC discovery-document / RFC 8414 metadata configuration specifically. It does **not** license placing a feature-registration escape hatch or safety gate (a flag/list that is inert unless a specific opt-in feature was also registered) onto the shared `AuthorizationServerOptions` root by default; such a gate co-locates with the feature that introduces it (its provider-specific options type or its registration method) unless there is a genuine cross-feature reason to share it. This clarification exists because PR #333 cited this ADR (alongside ADR 0008) as precedent for hoisting `AllowedDevelopmentJwtSigningKeysEnvironments` onto the root — a misreading of this rule's scope, reversed by issue #337. The clarification is folded into §1 (see "Scope of the 'no shared prefix → root' fallback"). Reference: issue #337; ADR 0011 (dev-signing-key gate) and ADR 0008 (`AllowInMemoryStoresOutsideDevelopment` gate) record the equivalent placement reversals.
-
-- **2026-06-13 — `SecurityHeaders` is a framework-behavior group, outside the spec-prefix rule** — `SecurityHeaders` on `AuthorizationServerOptions` has no OIDC Discovery 1.0 or RFC 8414 discovery-key counterpart; it controls HTTP security headers emitted by the ZeeKayDa.Auth framework itself, not server capability metadata advertised to clients, and therefore sits outside the spec-prefix rule in §1. This ADR formally recognises a second category — **framework-behavior groups** — which collect settings that govern the framework's own runtime behavior (headers, caching policy, logging policy, etc.) with no discovery-document analogue. Framework-behavior groups are permitted outside the spec-prefix rule; their names must be plain, descriptive English and MUST NOT carry an `Endpoint` suffix, as they are not HTTP endpoints. The `SecurityHeaders` name is hereby blessed as correct for this category and no rename is warranted. Going forward, any new framework-behavior group must follow this precedent: descriptive name, no `Endpoint` suffix, not subject to the spec-prefix rule; a property that does have a discovery-key counterpart must go into a spec-prefix group and must never be placed in a framework-behavior group. Reference: architecture review finding AA-m13, 2026-06-13. Resolves #159 (partial).
+  wholesale, for the reasons in *Considered and Rejected Alternatives* above.
