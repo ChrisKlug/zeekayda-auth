@@ -7,7 +7,8 @@ namespace ZeeKayDa.Auth.Tokens;
 /// refresh interval is <see cref="TimeSpan.MaxValue"/> before the host begins accepting requests.
 /// </summary>
 /// <remarks>
-/// This validator is registered via <c>AddDevelopmentJwtSigningKeys()</c> and activated by
+/// This validator is registered via <c>AddInMemoryDevelopmentJwtSigningKeys()</c> or
+/// <c>AddPersistedDevelopmentJwtSigningKeys()</c> and activated by
 /// <c>ValidateOnStart()</c>. Development signing keys are memoized for the process lifetime and
 /// cannot be rotated; a finite <see cref="JwtSigningServiceOptions.RefreshInterval"/> would cause
 /// the base class to dispose the memoized <see cref="SigningKeySet"/> on cache expiry and then

@@ -22,28 +22,4 @@ public sealed class AuthorizationServerOptionsTests
 
         options.AllowInMemoryStoresOutsideDevelopment.Should().BeTrue();
     }
-
-    [Fact]
-    public void AllowedDevelopmentJwtSigningKeysEnvironments_defaults_to_Development_only()
-    {
-        var options = new AuthorizationServerOptions();
-
-        options.AllowedDevelopmentJwtSigningKeysEnvironments.Should().ContainSingle()
-            .Which.Should().Be("Development");
-    }
-
-    [Fact]
-    public void AllowedDevelopmentJwtSigningKeysEnvironments_can_be_widened()
-    {
-        // This is the public, external entry point acceptance criterion 1 (#332) requires:
-        // a consumer widens the list via a public property with no InternalsVisibleTo access
-        // and no reference to an internal type.
-        var options = new AuthorizationServerOptions
-        {
-            AllowedDevelopmentJwtSigningKeysEnvironments = ["Development", "IntegrationTesting", "CI"],
-        };
-
-        options.AllowedDevelopmentJwtSigningKeysEnvironments.Should().BeEquivalentTo(
-            new[] { "Development", "IntegrationTesting", "CI" });
-    }
 }

@@ -65,13 +65,9 @@ public sealed class DevelopmentJwtSigningServiceTests
         public void SeedFile(string path, string content) => _files[path] = content;
     }
 
-    private static IOptions<AuthorizationServerOptions> DefaultServerOptions() =>
-        Options.Create(new AuthorizationServerOptions());
-
     private static DevelopmentJwtSigningService BuildEphemeral(
         IDevelopmentSigningKeyFileSystem? fs = null,
-        FakeTimeProvider? timeProvider = null,
-        IOptions<AuthorizationServerOptions>? serverOptions = null)
+        FakeTimeProvider? timeProvider = null)
     {
         var options = new DevelopmentSigningKeyOptions
         {
@@ -80,7 +76,6 @@ public sealed class DevelopmentJwtSigningServiceTests
         };
         return new DevelopmentJwtSigningService(
             Options.Create(options),
-            serverOptions ?? DefaultServerOptions(),
             timeProvider ?? new FakeTimeProvider(),
             fs ?? new InMemorySigningKeyFileSystem());
     }
@@ -88,8 +83,7 @@ public sealed class DevelopmentJwtSigningServiceTests
     private static DevelopmentJwtSigningService BuildPersisted(
         string directory,
         IDevelopmentSigningKeyFileSystem? fs = null,
-        FakeTimeProvider? timeProvider = null,
-        IOptions<AuthorizationServerOptions>? serverOptions = null)
+        FakeTimeProvider? timeProvider = null)
     {
         var options = new DevelopmentSigningKeyOptions
         {
@@ -98,7 +92,6 @@ public sealed class DevelopmentJwtSigningServiceTests
         };
         return new DevelopmentJwtSigningService(
             Options.Create(options),
-            serverOptions ?? DefaultServerOptions(),
             timeProvider ?? new FakeTimeProvider(),
             fs ?? new InMemorySigningKeyFileSystem());
     }
@@ -110,26 +103,11 @@ public sealed class DevelopmentJwtSigningServiceTests
     {
         var act = () => new DevelopmentJwtSigningService(
             null!,
-            DefaultServerOptions(),
             new FakeTimeProvider(),
             new InMemorySigningKeyFileSystem());
 
         // The base class JwtSigningService<TOptions> checks "options" before our guard fires.
         act.Should().Throw<ArgumentNullException>().WithParameterName("options");
-    }
-
-    [Fact]
-    public void Constructor_throws_when_serverOptions_is_null()
-    {
-        var options = Options.Create(new DevelopmentSigningKeyOptions());
-
-        var act = () => new DevelopmentJwtSigningService(
-            options,
-            null!,
-            new FakeTimeProvider(),
-            new InMemorySigningKeyFileSystem());
-
-        act.Should().Throw<ArgumentNullException>().WithParameterName("serverOptions");
     }
 
     [Fact]
@@ -139,7 +117,6 @@ public sealed class DevelopmentJwtSigningServiceTests
 
         var act = () => new DevelopmentJwtSigningService(
             options,
-            DefaultServerOptions(),
             new FakeTimeProvider(),
             null!);
 
@@ -219,7 +196,6 @@ public sealed class DevelopmentJwtSigningServiceTests
         };
         await using var sut = new DevelopmentJwtSigningService(
             Options.Create(options),
-            DefaultServerOptions(),
             timeProvider,
             new InMemorySigningKeyFileSystem());
         var ct = TestContext.Current.CancellationToken;
@@ -475,14 +451,13 @@ public sealed class DevelopmentJwtSigningServiceTests
     [InlineData("PRODUCTION")]
     public async Task LoadKeys_throws_in_Production_regardless_of_AllowedEnvironments(string env)
     {
-        var devOptions = new DevelopmentSigningKeyOptions { EnvironmentName = env };
-        var serverOptions = new AuthorizationServerOptions
+        var devOptions = new DevelopmentSigningKeyOptions
         {
+            EnvironmentName = env,
             AllowedDevelopmentJwtSigningKeysEnvironments = ["Production"],
         };
         await using var sut = new DevelopmentJwtSigningService(
             Options.Create(devOptions),
-            Options.Create(serverOptions),
             new FakeTimeProvider(),
             new InMemorySigningKeyFileSystem());
 
@@ -496,11 +471,10 @@ public sealed class DevelopmentJwtSigningServiceTests
     [InlineData("IntegrationTest")]
     public async Task LoadKeys_throws_when_environment_not_in_AllowedEnvironments(string env)
     {
-        var devOptions = new DevelopmentSigningKeyOptions { EnvironmentName = env };
         // AllowedDevelopmentJwtSigningKeysEnvironments defaults to ["Development"]
+        var devOptions = new DevelopmentSigningKeyOptions { EnvironmentName = env };
         await using var sut = new DevelopmentJwtSigningService(
             Options.Create(devOptions),
-            DefaultServerOptions(),
             new FakeTimeProvider(),
             new InMemorySigningKeyFileSystem());
 
@@ -521,7 +495,6 @@ public sealed class DevelopmentJwtSigningServiceTests
         };
         await using var sut = new DevelopmentJwtSigningService(
             Options.Create(devOptions),
-            DefaultServerOptions(),
             new FakeTimeProvider(),
             new InMemorySigningKeyFileSystem());
 
@@ -532,14 +505,13 @@ public sealed class DevelopmentJwtSigningServiceTests
     [Fact]
     public async Task LoadKeys_succeeds_when_environment_is_in_AllowedEnvironments()
     {
-        var devOptions = new DevelopmentSigningKeyOptions { EnvironmentName = "Staging" };
-        var serverOptions = new AuthorizationServerOptions
+        var devOptions = new DevelopmentSigningKeyOptions
         {
+            EnvironmentName = "Staging",
             AllowedDevelopmentJwtSigningKeysEnvironments = ["Development", "Staging"],
         };
         await using var sut = new DevelopmentJwtSigningService(
             Options.Create(devOptions),
-            Options.Create(serverOptions),
             new FakeTimeProvider(),
             new InMemorySigningKeyFileSystem());
 
@@ -553,7 +525,6 @@ public sealed class DevelopmentJwtSigningServiceTests
         // EnvironmentName = null (the default) → gate skipped (unit-test scenario with no host)
         await using var sut = new DevelopmentJwtSigningService(
             Options.Create(new DevelopmentSigningKeyOptions()),
-            DefaultServerOptions(),
             new FakeTimeProvider(),
             new InMemorySigningKeyFileSystem());
 

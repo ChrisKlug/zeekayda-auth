@@ -21,23 +21,31 @@ public static class ZeeKayDaAuthBuilderSigningExtensions
     /// <para>
     /// This method is for <strong>local development and testing only</strong>. Startup fails
     /// with <see cref="ZeeKayDaConfigurationException"/> if the host environment is not in
-    /// <see cref="AuthorizationServerOptions.AllowedDevelopmentJwtSigningKeysEnvironments"/>.
+    /// <see cref="DevelopmentSigningKeyOptions.AllowedDevelopmentJwtSigningKeysEnvironments"/>
+    /// (which defaults to <c>["Development"]</c>, settable via <paramref name="configure"/>).
     /// A warning is always emitted at startup to make the non-production nature of this
     /// configuration explicit.
     /// </para>
     /// <para>
-    /// To persist the key so that tokens survive restarts, use the overload that accepts a
-    /// <c>persistTo</c> argument:
+    /// To persist the key so that tokens survive restarts, use
+    /// <see cref="AddPersistedDevelopmentJwtSigningKeys"/> instead:
     /// <code>
     /// // Default path ({ContentRootPath}/.zeekayda/signing-keys/):
-    /// builder.Services.AddZeeKayDaAuth(…).AddDevelopmentJwtSigningKeys(persistTo: null);
+    /// builder.Services.AddZeeKayDaAuth(…).AddPersistedDevelopmentJwtSigningKeys();
     ///
     /// // Custom path:
-    /// builder.Services.AddZeeKayDaAuth(…).AddDevelopmentJwtSigningKeys(persistTo: "/path/to/keys");
+    /// builder.Services.AddZeeKayDaAuth(…).AddPersistedDevelopmentJwtSigningKeys(persistTo: "/path/to/keys");
     /// </code>
     /// </para>
     /// </remarks>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
+    /// <param name="configure">
+    /// An optional callback to further configure <see cref="InMemoryDevelopmentSigningKeyOptions"/>
+    /// (for example, widening
+    /// <see cref="InMemoryDevelopmentSigningKeyOptions.AllowedDevelopmentJwtSigningKeysEnvironments"/>
+    /// for an intentional non-Development test host). This type deliberately has no
+    /// <c>PersistToDirectory</c> member — see <see cref="InMemoryDevelopmentSigningKeyOptions"/> for why.
+    /// </param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="builder"/> is <see langword="null"/>.
@@ -46,11 +54,35 @@ public static class ZeeKayDaAuthBuilderSigningExtensions
     /// Thrown when an <see cref="IJwtSigningService"/> has already been registered.
     /// Only one signing key provider is allowed.
     /// </exception>
-    public static ZeeKayDaAuthBuilder AddDevelopmentJwtSigningKeys(
-        this ZeeKayDaAuthBuilder builder)
+    public static ZeeKayDaAuthBuilder AddInMemoryDevelopmentJwtSigningKeys(
+        this ZeeKayDaAuthBuilder builder,
+        Action<InMemoryDevelopmentSigningKeyOptions>? configure = null)
     {
         ArgumentNullException.ThrowIfNull(builder);
-        return RegisterDevelopmentSigningKeys(builder, persistToDirectory: null, persist: false);
+
+        RegisterDevelopmentSigningKeys(builder, persistToDirectory: null, persist: false);
+
+        if (configure is not null)
+        {
+            // Apply the caller's callback against the smaller public surface type, then copy the
+            // result onto the real internal DevelopmentSigningKeyOptions instance. This is what
+            // keeps PersistToDirectory unreachable from this method's configure callback while
+            // still letting DevelopmentJwtSigningService and friends consume a single
+            // IOptions<DevelopmentSigningKeyOptions> regardless of which registration method ran.
+            builder.Services.AddOptions<DevelopmentSigningKeyOptions>().Configure(options =>
+            {
+                var surface = new InMemoryDevelopmentSigningKeyOptions
+                {
+                    AllowedDevelopmentJwtSigningKeysEnvironments = options.AllowedDevelopmentJwtSigningKeysEnvironments,
+                };
+
+                configure(surface);
+
+                options.AllowedDevelopmentJwtSigningKeysEnvironments = surface.AllowedDevelopmentJwtSigningKeysEnvironments;
+            });
+        }
+
+        return builder;
     }
 
     /// <summary>
@@ -61,14 +93,17 @@ public static class ZeeKayDaAuthBuilderSigningExtensions
     /// <para>
     /// This method is for <strong>local development and testing only</strong>. Startup fails
     /// with <see cref="ZeeKayDaConfigurationException"/> if the host environment is not in
-    /// <see cref="AuthorizationServerOptions.AllowedDevelopmentJwtSigningKeysEnvironments"/>.
+    /// <see cref="DevelopmentSigningKeyOptions.AllowedDevelopmentJwtSigningKeysEnvironments"/>
+    /// (which defaults to <c>["Development"]</c>, settable via <paramref name="configure"/>).
     /// A warning is always emitted at startup to make the non-production nature of this
     /// configuration explicit.
     /// </para>
     /// <para>
     /// Pass <see langword="null"/> as <paramref name="persistTo"/> to use the default path
     /// (<c>{ContentRootPath}/.zeekayda/signing-keys/</c>). Pass an explicit directory path to
-    /// use a custom location.
+    /// use a custom location. Unlike <see cref="AddInMemoryDevelopmentJwtSigningKeys"/>,
+    /// <paramref name="persistTo"/> being <see langword="null"/> always means "persist to the
+    /// default path" — there is no ephemeral reading of this overload.
     /// </para>
     /// <para>
     /// Persisted key files are created with restrictive permissions (<c>0600</c> on Unix,
@@ -77,13 +112,18 @@ public static class ZeeKayDaAuthBuilderSigningExtensions
     /// </para>
     /// <para>
     /// For an ephemeral in-memory key (no persistence), call
-    /// <see cref="AddDevelopmentJwtSigningKeys(ZeeKayDaAuthBuilder)"/> with no arguments.
+    /// <see cref="AddInMemoryDevelopmentJwtSigningKeys"/> instead.
     /// </para>
     /// </remarks>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
     /// <param name="persistTo">
     /// The directory in which to store the key file. Pass <see langword="null"/> to use
     /// <c>{ContentRootPath}/.zeekayda/signing-keys/</c>. Pass an explicit path to override.
+    /// </param>
+    /// <param name="configure">
+    /// An optional callback to further configure <see cref="DevelopmentSigningKeyOptions"/> (for
+    /// example, widening <see cref="DevelopmentSigningKeyOptions.AllowedDevelopmentJwtSigningKeysEnvironments"/>
+    /// for an intentional non-Development test host).
     /// </param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
     /// <exception cref="ArgumentNullException">
@@ -93,28 +133,38 @@ public static class ZeeKayDaAuthBuilderSigningExtensions
     /// Thrown when an <see cref="IJwtSigningService"/> has already been registered.
     /// Only one signing key provider is allowed.
     /// </exception>
-    public static ZeeKayDaAuthBuilder AddDevelopmentJwtSigningKeys(
+    public static ZeeKayDaAuthBuilder AddPersistedDevelopmentJwtSigningKeys(
         this ZeeKayDaAuthBuilder builder,
-        string? persistTo)
+        string? persistTo = null,
+        Action<DevelopmentSigningKeyOptions>? configure = null)
     {
         ArgumentNullException.ThrowIfNull(builder);
-        return RegisterDevelopmentSigningKeys(builder, persistToDirectory: persistTo, persist: true);
+
+        RegisterDevelopmentSigningKeys(builder, persistToDirectory: persistTo, persist: true);
+
+        if (configure is not null)
+            builder.Services.AddOptions<DevelopmentSigningKeyOptions>().Configure(configure);
+
+        return builder;
     }
 
-    private static ZeeKayDaAuthBuilder RegisterDevelopmentSigningKeys(
+    private static void RegisterDevelopmentSigningKeys(
         ZeeKayDaAuthBuilder builder,
         string? persistToDirectory,
         bool persist)
     {
         builder.ThrowIfAlreadyRegistered(typeof(IJwtSigningService));
 
-        var optionsBuilder = builder.Services.AddOptions<DevelopmentSigningKeyOptions>()
+        builder.Services.AddOptions<DevelopmentSigningKeyOptions>()
             .ValidateOnStart();
 
         // Always populate EnvironmentName from the host so the environment gate in
         // DevelopmentJwtSigningService and DevelopmentSigningKeyWarningService can read it
-        // without taking a dependency on IHostEnvironment in the core assembly.
-        optionsBuilder.Configure<IHostEnvironment>((options, env) =>
+        // without taking a dependency on IHostEnvironment in the core assembly. EnvironmentName's
+        // setter is internal (ZeeKayDa.Auth.AspNetCore has InternalsVisibleTo access), so no
+        // caller-supplied configure callback (of either public surface type) can ever override or
+        // spoof it.
+        builder.Services.AddOptions<DevelopmentSigningKeyOptions>().Configure<IHostEnvironment>((options, env) =>
         {
             options.EnvironmentName = env.EnvironmentName;
 
@@ -131,13 +181,13 @@ public static class ZeeKayDaAuthBuilderSigningExtensions
                 IValidateOptions<DevelopmentSigningKeyOptions>,
                 DevelopmentSigningKeyOptionsValidator>());
 
-        // AllowedDevelopmentJwtSigningKeysEnvironments lives on AuthorizationServerOptions (a
-        // server-wide gate, not a per-provider knob), so this validator targets that root
-        // options type. Registered here (not in AddZeeKayDaAuth()) because it only makes sense
-        // when AddDevelopmentJwtSigningKeys() is actually in use.
+        // AllowedDevelopmentJwtSigningKeysEnvironments lives on DevelopmentSigningKeyOptions (a
+        // provider-scoped, code-only opt-in, not a server-wide gate — ADR 0011 §2), so this
+        // validator targets that type. Registered here (not in AddZeeKayDaAuth()) because it only
+        // makes sense when a development-key registration method is actually in use.
         builder.Services.TryAddEnumerable(
             ServiceDescriptor.Singleton<
-                IValidateOptions<AuthorizationServerOptions>,
+                IValidateOptions<DevelopmentSigningKeyOptions>,
                 AllowedDevEnvironmentsValidator>());
 
         builder.Services.TryAddSingleton<TimeProvider>(TimeProvider.System);
@@ -145,7 +195,5 @@ public static class ZeeKayDaAuthBuilderSigningExtensions
         builder.Services.AddSingleton<IJwtSigningService, DevelopmentJwtSigningService>();
         builder.Services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IHostedService, DevelopmentSigningKeyWarningService>());
-
-        return builder;
     }
 }

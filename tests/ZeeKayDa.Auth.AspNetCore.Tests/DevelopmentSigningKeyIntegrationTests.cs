@@ -46,15 +46,16 @@ public sealed class DevelopmentSigningKeyIntegrationTests
                     options.Issuer = "https://test.example.com";
                     options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
                     options.AllowInMemoryStoresOutsideDevelopment = true;
-
-                    if (allowedEnvironments is not null)
-                        options.AllowedDevelopmentJwtSigningKeysEnvironments = allowedEnvironments;
                 });
                 authBuilder
                     .AddInMemoryClients(clients =>
                         clients.AddPublic("test-client", ["https://test.example.com/callback"], [], ["openid"]))
                     .AddInMemoryStores()
-                    .AddDevelopmentJwtSigningKeys();
+                    .AddInMemoryDevelopmentJwtSigningKeys(o =>
+                    {
+                        if (allowedEnvironments is not null)
+                            o.AllowedDevelopmentJwtSigningKeysEnvironments = allowedEnvironments;
+                    });
             });
 
             builder.Configure(app =>
