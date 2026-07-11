@@ -7,7 +7,7 @@ public sealed class PemFileSigningOptionsValidatorTests
     private static PemFileSigningOptions ValidOptions() => new()
     {
         Path = "/etc/zeekayda/signing.pem",
-        RefreshInterval = TimeSpan.FromMinutes(5),
+        KeySourceRefreshInterval = TimeSpan.FromMinutes(5),
         Algorithm = SigningAlgorithm.RS256,
     };
 
@@ -20,27 +20,27 @@ public sealed class PemFileSigningOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_fails_when_RefreshInterval_is_MaxValue()
+    public void Validate_fails_when_KeySourceRefreshInterval_is_null()
     {
         var options = ValidOptions();
-        options.RefreshInterval = TimeSpan.MaxValue;
+        options.KeySourceRefreshInterval = null;
 
         var result = new PemFileSigningOptionsValidator().Validate(null, options);
 
         result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("RefreshInterval");
+        result.FailureMessage.Should().Contain("KeySourceRefreshInterval");
     }
 
     [Fact]
-    public void Validate_fails_when_RefreshInterval_is_below_the_one_minute_floor()
+    public void Validate_fails_when_KeySourceRefreshInterval_is_below_the_one_minute_floor()
     {
         var options = ValidOptions();
-        options.RefreshInterval = TimeSpan.FromSeconds(30);
+        options.KeySourceRefreshInterval = TimeSpan.FromSeconds(30);
 
         var result = new PemFileSigningOptionsValidator().Validate(null, options);
 
         result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("RefreshInterval");
+        result.FailureMessage.Should().Contain("KeySourceRefreshInterval");
     }
 
     [Theory]

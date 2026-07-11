@@ -23,18 +23,19 @@ namespace ZeeKayDa.Auth.Tokens;
 public sealed class DevelopmentSigningKeyOptions : JwtSigningServiceOptions
 {
     /// <summary>
-    /// Initialises development options with an infinite refresh interval.
+    /// Initialises development options in static-source mode.
     /// </summary>
     /// <remarks>
     /// Dev keys are memoized for the entire process lifetime. Setting
-    /// <see cref="JwtSigningServiceOptions.RefreshInterval"/> to <see cref="TimeSpan.MaxValue"/>
+    /// <see cref="JwtSigningServiceOptions.KeySourceRefreshInterval"/> to <see langword="null"/>
     /// prevents the base class from ever calling <c>LoadKeysAsync</c> a second time and
     /// disposing the key set that is still held by the memoization field, which would otherwise
     /// cause an <see cref="ObjectDisposedException"/> on the next signing call.
     /// </remarks>
     public DevelopmentSigningKeyOptions()
     {
-        RefreshInterval = TimeSpan.MaxValue;
+        // Static-source mode: dev keys never change for the life of the process (see remarks).
+        KeySourceRefreshInterval = null;
     }
 
     /// <summary>

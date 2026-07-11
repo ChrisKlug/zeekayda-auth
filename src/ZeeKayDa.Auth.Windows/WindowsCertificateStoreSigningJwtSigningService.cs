@@ -99,7 +99,9 @@ internal sealed class WindowsCertificateStoreSigningJwtSigningService : JwtSigni
             var retirementWindow = _retirementWindowProvider.GetRetirementWindow();
             var included = SigningKeyRotation.SelectIncludedKeys(timeline, active, now, retirementWindow);
 
-            LogCertificateStatuses(timeline, active, included, now, options.RefreshInterval, retirementWindow, certificatesByThumbprint);
+            // WindowsCertificateStoreSigningOptionsValidator rejects null (static-source mode is
+            // not supported by this provider), so this is guaranteed non-null.
+            LogCertificateStatuses(timeline, active, included, now, options.KeySourceRefreshInterval!.Value, retirementWindow, certificatesByThumbprint);
             WarnIfActiveCertificateExpiringSoon(active, now);
 
             var keyPairs = new List<SigningKeyPair>(included.Count);
@@ -191,7 +193,7 @@ internal sealed class WindowsCertificateStoreSigningJwtSigningService : JwtSigni
         // certificate is loaded), each certificate's active/included/excluded status is a function
         // of `now` and genuinely changes over the lifetime of a long-running process as a rotation
         // progresses — so, unlike a one-shot log, this is re-evaluated and logged on every
-        // LoadKeysAsync call (at most once per RefreshInterval) rather than only at first load.
+        // LoadKeysAsync call (at most once per KeySourceRefreshInterval) rather than only at first load.
         // Logging every registered certificate on every cycle — not just the currently-included
         // ones — is deliberate: it lets an operator see exactly what the current configuration
         // resolves to, including a certificate that is configured but has fallen out of the trusted
@@ -214,9 +216,9 @@ internal sealed class WindowsCertificateStoreSigningJwtSigningService : JwtSigni
         {
             _logger.LogWarning(
                 "ZeeKayDa.Auth: certificate '{Thumbprint}' activates at {ActivatesAt:O}, which is less " +
-                "than RefreshInterval ({RefreshInterval}) away from now. A relying party polling the " +
-                "JWKS at RefreshInterval cadence may not have observed this certificate's public key " +
-                "before it starts signing. Set this certificate's NotBefore at least RefreshInterval in " +
+                "than KeySourceRefreshInterval ({KeySourceRefreshInterval}) away from now. A relying party polling the " +
+                "JWKS at KeySourceRefreshInterval cadence may not have observed this certificate's public key " +
+                "before it starts signing. Set this certificate's NotBefore at least KeySourceRefreshInterval in " +
                 "the future next time (see ADR 0011 §3.5 / issue #282).",
                 soonestPending!.Value.Key.Id, soonestPending.Value.ActivatesAt, refreshInterval);
         }
@@ -248,7 +250,7 @@ internal sealed class WindowsCertificateStoreSigningJwtSigningService : JwtSigni
         // Re-evaluated on every LoadKeysAsync call, exactly like LogCertificateStatuses above:
         // whether the active certificate is within 30 days of expiry is genuinely time-varying — a
         // long-running process can cross into that window mid-lifetime. Repeats at most once per
-        // RefreshInterval for as long as the condition holds.
+        // KeySourceRefreshInterval for as long as the condition holds.
         if (active.Key.ExpiresAt - now <= TimeSpan.FromDays(30))
         {
             _logger.LogWarning(

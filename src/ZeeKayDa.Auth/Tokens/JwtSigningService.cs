@@ -18,7 +18,8 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
     where TOptions : JwtSigningServiceOptions
 {
     private readonly TimeProvider _timeProvider;
-    private readonly TimeSpan _refreshInterval;
+    // null = static-source mode: LoadKeysAsync is invoked at most once and the cache never expires.
+    private readonly TimeSpan? _keySourceRefreshInterval;
 
     // Single-flight refresh gate: null means "no refresh in flight or cache valid".
     private readonly SemaphoreSlim _refreshLock = new(1, 1);
@@ -42,13 +43,15 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
         ArgumentNullException.ThrowIfNull(timeProvider);
 
         _timeProvider = timeProvider;
-        _refreshInterval = options.Value.RefreshInterval;
+        _keySourceRefreshInterval = options.Value.KeySourceRefreshInterval;
     }
 
     /// <summary>
     /// Loads the current set of trusted signing keys. Called by the base class at most once
-    /// per <see cref="JwtSigningServiceOptions.RefreshInterval"/>; concurrent callers after
-    /// the interval elapses are coalesced into a single load via the single-flight gate.
+    /// per <see cref="JwtSigningServiceOptions.KeySourceRefreshInterval"/>; concurrent callers after
+    /// the interval elapses are coalesced into a single load via the single-flight gate. When
+    /// <see cref="JwtSigningServiceOptions.KeySourceRefreshInterval"/> is <see langword="null"/>
+    /// (static-source mode), this method is called at most once for the lifetime of the service.
     /// </summary>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>
@@ -189,11 +192,11 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
 
             _cachedSet = newSet;
 
-            // Guard against overflow when RefreshInterval is effectively infinite
-            // (e.g. TimeSpan.MaxValue set by DevelopmentSigningKeyOptions).
-            _cacheExpiresAt = _refreshInterval == TimeSpan.MaxValue
-                ? DateTimeOffset.MaxValue
-                : _timeProvider.GetUtcNow().Add(_refreshInterval);
+            // null means static-source mode (see JwtSigningServiceOptions.KeySourceRefreshInterval):
+            // the cache never expires, so LoadKeysAsync above is never invoked again.
+            _cacheExpiresAt = _keySourceRefreshInterval is { } interval
+                ? _timeProvider.GetUtcNow().Add(interval)
+                : DateTimeOffset.MaxValue;
 
             // Release the cache's borrow on the old set. Its private keys are freed once
             // any in-flight fast-path borrows that still hold a reference have also returned.

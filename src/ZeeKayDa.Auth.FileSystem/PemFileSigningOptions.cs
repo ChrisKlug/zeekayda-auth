@@ -6,7 +6,7 @@ namespace ZeeKayDa.Auth.FileSystem;
 /// Configuration options for <c>AddPemFileSigning</c>.
 /// </summary>
 /// <remarks>
-/// <see cref="JwtSigningServiceOptions.RefreshInterval"/> is inherited from the base class and
+/// <see cref="JwtSigningServiceOptions.KeySourceRefreshInterval"/> is inherited from the base class and
 /// defaults to 5 minutes. Unlike the Azure Key Vault providers, this value does not gate a
 /// re-download of private key material — every registered file is re-read from disk on every
 /// refresh, which has no external cost. Instead it doubles as the threshold used to warn when a

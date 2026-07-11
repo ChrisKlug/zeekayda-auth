@@ -14,7 +14,7 @@ public sealed class AzureKeyVaultRemoteSigningOptionsValidatorTests
         KeyIdentifier = new KeyVaultKeyIdentifier(KeyIdentifierUri),
         Credential = new FakeTokenCredential(),
         Algorithm = SigningAlgorithm.RS256,
-        RefreshInterval = TimeSpan.FromMinutes(5),
+        KeySourceRefreshInterval = TimeSpan.FromMinutes(5),
     };
 
     private static ValidateOptionsResult Validate(AzureKeyVaultRemoteSigningOptions options)
@@ -32,66 +32,66 @@ public sealed class AzureKeyVaultRemoteSigningOptionsValidatorTests
         result.Succeeded.Should().BeTrue();
     }
 
-    // ── RefreshInterval ───────────────────────────────────────────────────────────────────────────
+    // ── KeySourceRefreshInterval ───────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Validate_fails_when_RefreshInterval_is_zero()
+    public void Validate_fails_when_KeySourceRefreshInterval_is_zero()
     {
         var options = ValidOptions();
-        options.RefreshInterval = TimeSpan.Zero;
+        options.KeySourceRefreshInterval = TimeSpan.Zero;
 
         var result = Validate(options);
 
         result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("RefreshInterval");
+        result.FailureMessage.Should().Contain("KeySourceRefreshInterval");
     }
 
     [Fact]
-    public void Validate_fails_when_RefreshInterval_is_negative()
+    public void Validate_fails_when_KeySourceRefreshInterval_is_negative()
     {
         var options = ValidOptions();
-        options.RefreshInterval = TimeSpan.FromSeconds(-1);
+        options.KeySourceRefreshInterval = TimeSpan.FromSeconds(-1);
 
         var result = Validate(options);
 
         result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("RefreshInterval");
+        result.FailureMessage.Should().Contain("KeySourceRefreshInterval");
     }
 
     [Fact]
-    public void Validate_fails_when_RefreshInterval_is_MaxValue()
+    public void Validate_fails_when_KeySourceRefreshInterval_is_null()
     {
-        // MaxValue is the local-development provider's "never refresh" trick — explicitly rejected
-        // here, since real Key Vault rotation polling requires a finite interval.
+        // null is the local-development provider's static-source ("never refresh") mode — explicitly
+        // rejected here, since real Key Vault rotation polling requires a finite interval.
         var options = ValidOptions();
-        options.RefreshInterval = TimeSpan.MaxValue;
+        options.KeySourceRefreshInterval = null;
 
         var result = Validate(options);
 
         result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("RefreshInterval");
+        result.FailureMessage.Should().Contain("KeySourceRefreshInterval");
     }
 
     [Fact]
-    public void Validate_fails_when_RefreshInterval_is_positive_but_below_the_one_minute_floor()
+    public void Validate_fails_when_KeySourceRefreshInterval_is_positive_but_below_the_one_minute_floor()
     {
-        // RefreshInterval doubles as the publish-then-activate delay (ADR 0011 §3.5); a value this
+        // KeySourceRefreshInterval doubles as the publish-then-activate delay (ADR 0011 §3.5); a value this
         // short would defeat that protection against essentially any real relying party's JWKS
         // cache TTL, and would poll Key Vault often enough to risk throttling.
         var options = ValidOptions();
-        options.RefreshInterval = TimeSpan.FromSeconds(30);
+        options.KeySourceRefreshInterval = TimeSpan.FromSeconds(30);
 
         var result = Validate(options);
 
         result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("RefreshInterval");
+        result.FailureMessage.Should().Contain("KeySourceRefreshInterval");
     }
 
     [Fact]
-    public void Validate_succeeds_when_RefreshInterval_is_exactly_the_one_minute_floor()
+    public void Validate_succeeds_when_KeySourceRefreshInterval_is_exactly_the_one_minute_floor()
     {
         var options = ValidOptions();
-        options.RefreshInterval = TimeSpan.FromMinutes(1);
+        options.KeySourceRefreshInterval = TimeSpan.FromMinutes(1);
 
         var result = Validate(options);
 
@@ -146,7 +146,7 @@ public sealed class AzureKeyVaultRemoteSigningOptionsValidatorTests
     public void Validate_reports_every_violation_simultaneously_rather_than_failing_fast()
     {
         var options = ValidOptions();
-        options.RefreshInterval = TimeSpan.Zero;
+        options.KeySourceRefreshInterval = TimeSpan.Zero;
         options.KeyIdentifier = default;
         options.Credential = null;
         options.Algorithm = (SigningAlgorithm)999;
@@ -155,7 +155,7 @@ public sealed class AzureKeyVaultRemoteSigningOptionsValidatorTests
 
         result.Failed.Should().BeTrue();
         result.Failures.Should().HaveCount(4, "all four violations must be reported in a single batch, not one at a time");
-        result.Failures.Should().Contain(f => f.Contains("RefreshInterval"));
+        result.Failures.Should().Contain(f => f.Contains("KeySourceRefreshInterval"));
         result.Failures.Should().Contain(f => f.Contains("KeyIdentifier"));
         result.Failures.Should().Contain(f => f.Contains("Credential"));
         result.Failures.Should().Contain(f => f.Contains("Algorithm"));

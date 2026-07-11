@@ -8,42 +8,42 @@ public sealed class DevelopmentSigningKeyOptionsValidatorTests
     private static ValidateOptionsResult Validate(DevelopmentSigningKeyOptions options)
         => new DevelopmentSigningKeyOptionsValidator().Validate(null, options);
 
-    // ── Non-MaxValue interval ─────────────────────────────────────────────────────────────────────
+    // ── Non-null (finite) interval ────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Validate_fails_when_RefreshInterval_is_zero()
+    public void Validate_fails_when_KeySourceRefreshInterval_is_zero()
     {
-        var options = new DevelopmentSigningKeyOptions { RefreshInterval = TimeSpan.Zero };
+        var options = new DevelopmentSigningKeyOptions { KeySourceRefreshInterval = TimeSpan.Zero };
 
         var result = Validate(options);
 
         result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("RefreshInterval");
+        result.FailureMessage.Should().Contain("KeySourceRefreshInterval");
     }
 
     [Fact]
-    public void Validate_fails_when_RefreshInterval_is_negative()
+    public void Validate_fails_when_KeySourceRefreshInterval_is_negative()
     {
-        var options = new DevelopmentSigningKeyOptions { RefreshInterval = TimeSpan.FromSeconds(-1) };
+        var options = new DevelopmentSigningKeyOptions { KeySourceRefreshInterval = TimeSpan.FromSeconds(-1) };
 
         var result = Validate(options);
 
         result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("RefreshInterval");
+        result.FailureMessage.Should().Contain("KeySourceRefreshInterval");
     }
 
     [Fact]
-    public void Validate_fails_when_RefreshInterval_is_finite_positive()
+    public void Validate_fails_when_KeySourceRefreshInterval_is_finite_positive()
     {
-        var options = new DevelopmentSigningKeyOptions { RefreshInterval = TimeSpan.FromSeconds(1) };
+        var options = new DevelopmentSigningKeyOptions { KeySourceRefreshInterval = TimeSpan.FromSeconds(1) };
 
         var result = Validate(options);
 
         result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("RefreshInterval");
+        result.FailureMessage.Should().Contain("KeySourceRefreshInterval");
     }
 
-    // ── MaxValue ──────────────────────────────────────────────────────────────────────────────────
+    // ── null (static-source mode) ─────────────────────────────────────────────────────────────────
 
     [Fact]
     public void Validate_succeeds_for_default_options()
@@ -56,9 +56,9 @@ public sealed class DevelopmentSigningKeyOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_succeeds_when_RefreshInterval_is_MaxValue()
+    public void Validate_succeeds_when_KeySourceRefreshInterval_is_null()
     {
-        var options = new DevelopmentSigningKeyOptions { RefreshInterval = TimeSpan.MaxValue };
+        var options = new DevelopmentSigningKeyOptions { KeySourceRefreshInterval = null };
 
         var result = Validate(options);
 

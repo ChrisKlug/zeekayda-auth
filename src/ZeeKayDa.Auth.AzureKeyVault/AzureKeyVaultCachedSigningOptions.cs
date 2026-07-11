@@ -8,7 +8,7 @@ namespace ZeeKayDa.Auth.AzureKeyVault;
 /// Configuration options for <c>AddAzureKeyVaultCachedSigning</c>.
 /// </summary>
 /// <remarks>
-/// <see cref="JwtSigningServiceOptions.RefreshInterval"/> is inherited from the base class and
+/// <see cref="JwtSigningServiceOptions.KeySourceRefreshInterval"/> is inherited from the base class and
 /// defaults to 5 minutes. As with the remote-signing provider, this value doubles as both the
 /// publish-then-activate delay applied to every rotated-in certificate version, and the interval
 /// on which certificate versions are rediscovered and their private key material re-downloaded

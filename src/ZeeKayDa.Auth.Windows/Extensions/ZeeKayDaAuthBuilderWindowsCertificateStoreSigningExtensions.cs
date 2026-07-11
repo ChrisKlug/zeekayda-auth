@@ -34,7 +34,7 @@ public static class ZeeKayDaAuthBuilderWindowsCertificateStoreSigningExtensions
     /// </para>
     /// <para>
     /// Adding, removing, or updating a certificate registered with this method requires a host
-    /// restart — the store is read at startup and on each <see cref="JwtSigningServiceOptions.RefreshInterval"/>
+    /// restart — the store is read at startup and on each <see cref="JwtSigningServiceOptions.KeySourceRefreshInterval"/>
     /// tick thereafter, but the set of registered thumbprints itself is fixed at process start.
     /// </para>
     /// </remarks>
@@ -44,7 +44,7 @@ public static class ZeeKayDaAuthBuilderWindowsCertificateStoreSigningExtensions
     /// <param name="storeName">The store name to search.</param>
     /// <param name="configure">
     /// An optional callback to further configure <see cref="WindowsCertificateStoreSigningOptions"/>
-    /// (for example, <see cref="JwtSigningServiceOptions.RefreshInterval"/>,
+    /// (for example, <see cref="JwtSigningServiceOptions.KeySourceRefreshInterval"/>,
     /// <see cref="WindowsCertificateStoreSigningOptions.Algorithm"/>, or additional certificates for
     /// rotation via <see cref="WindowsCertificateStoreSigningOptions.AddCertificate"/>).
     /// </param>

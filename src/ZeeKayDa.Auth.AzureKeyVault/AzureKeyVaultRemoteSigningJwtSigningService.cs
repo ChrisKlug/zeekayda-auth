@@ -110,7 +110,7 @@ internal sealed class AzureKeyVaultRemoteSigningJwtSigningService : JwtSigningSe
         // vault runs read-only against an asynchronously-replicated secondary that may be missing
         // very recent writes — a rare, best-effort event that can take hours to occur, not a
         // per-request consistency knob a caller can trigger or race. The only scenario this could
-        // affect is a genuinely brand-new key (created less than RefreshInterval ago) whose true
+        // affect is a genuinely brand-new key (created less than KeySourceRefreshInterval ago) whose true
         // first version is transiently missing from the list during such a failover — a narrow
         // window that fails toward a transient relying-party rejection, not toward forging a token
         // with an unauthorized key, and one that self-heals on the next refresh cycle once the
@@ -132,7 +132,10 @@ internal sealed class AzureKeyVaultRemoteSigningJwtSigningService : JwtSigningSe
         }
 
         var now = _timeProvider.GetUtcNow();
-        var timeline = KeyVaultSigningKeyRotation.BuildActivationTimeline(allVersions, _options.Value.RefreshInterval);
+
+        // AzureKeyVaultRemoteSigningOptionsValidator rejects null (static-source mode is not
+        // supported by this provider), so the value is guaranteed non-null by the time this runs.
+        var timeline = KeyVaultSigningKeyRotation.BuildActivationTimeline(allVersions, _options.Value.KeySourceRefreshInterval!.Value);
 
         var active = KeyVaultSigningKeyRotation.SelectActiveVersion(timeline, now) ?? throw new ZeeKayDaConfigurationException(
             new ZeeKayDaConfigurationFailure(

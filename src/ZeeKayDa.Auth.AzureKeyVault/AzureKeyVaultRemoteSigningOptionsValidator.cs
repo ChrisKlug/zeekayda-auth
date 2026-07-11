@@ -11,7 +11,7 @@ namespace ZeeKayDa.Auth.AzureKeyVault;
 /// </remarks>
 internal sealed class AzureKeyVaultRemoteSigningOptionsValidator : IValidateOptions<AzureKeyVaultRemoteSigningOptions>
 {
-    // RefreshInterval doubles as the publish-then-activate delay (ADR 0011 §3.5) — the library
+    // KeySourceRefreshInterval doubles as the publish-then-activate delay (ADR 0011 §3.5) — the library
     // cannot know a relying party's actual JWKS-cache TTL, so it cannot enforce the "long enough"
     // half of that requirement, but it CAN reject a value so short it would either defeat the
     // publish-then-activate protection against essentially any real-world RP cache TTL, or drive
@@ -25,20 +25,20 @@ internal sealed class AzureKeyVaultRemoteSigningOptionsValidator : IValidateOpti
     {
         var errors = new List<string>();
 
-        if (options.RefreshInterval == TimeSpan.MaxValue)
+        if (options.KeySourceRefreshInterval is null)
         {
             errors.Add(
-                "AzureKeyVaultRemoteSigningOptions.RefreshInterval must be a positive, finite TimeSpan. " +
-                "TimeSpan.MaxValue (the local-development provider's 'never refresh' value) cannot be reused " +
-                "here — real Key Vault key rotation requires periodic polling on a finite interval.");
+                "AzureKeyVaultRemoteSigningOptions.KeySourceRefreshInterval must be a positive, finite TimeSpan. " +
+                "null (the local-development provider's 'load once, never reload' static mode) cannot be " +
+                "reused here — real Key Vault key rotation requires periodic polling on a finite interval.");
         }
-        else if (options.RefreshInterval < MinimumRefreshInterval)
+        else if (options.KeySourceRefreshInterval.Value < MinimumRefreshInterval)
         {
             errors.Add(
-                $"AzureKeyVaultRemoteSigningOptions.RefreshInterval must be at least {MinimumRefreshInterval} " +
+                $"AzureKeyVaultRemoteSigningOptions.KeySourceRefreshInterval must be at least {MinimumRefreshInterval} " +
                 "(it doubles as the publish-then-activate delay per ADR 0011 §3.5, and a shorter value both " +
                 "risks Key Vault throttling and is shorter than most relying parties' JWKS cache TTL). " +
-                "You are still responsible for ensuring RefreshInterval exceeds your actual relying parties' " +
+                "You are still responsible for ensuring KeySourceRefreshInterval exceeds your actual relying parties' " +
                 "JWKS cache TTL — this floor only rejects values that are almost certainly a mistake.");
         }
 

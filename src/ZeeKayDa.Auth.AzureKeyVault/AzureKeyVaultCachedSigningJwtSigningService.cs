@@ -112,7 +112,10 @@ internal sealed class AzureKeyVaultCachedSigningJwtSigningService : JwtSigningSe
         }
 
         var now = _timeProvider.GetUtcNow();
-        var timeline = KeyVaultSigningKeyRotation.BuildActivationTimeline(allVersions, _options.Value.RefreshInterval);
+
+        // AzureKeyVaultCachedSigningOptionsValidator rejects null (static-source mode is not
+        // supported by this provider), so the value is guaranteed non-null by the time this runs.
+        var timeline = KeyVaultSigningKeyRotation.BuildActivationTimeline(allVersions, _options.Value.KeySourceRefreshInterval!.Value);
 
         var active = KeyVaultSigningKeyRotation.SelectActiveVersion(timeline, now) ?? throw new ZeeKayDaConfigurationException(
             new ZeeKayDaConfigurationFailure(

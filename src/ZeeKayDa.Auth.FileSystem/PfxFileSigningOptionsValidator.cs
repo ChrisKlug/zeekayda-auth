@@ -20,19 +20,19 @@ internal sealed class PfxFileSigningOptionsValidator : IValidateOptions<PfxFileS
     {
         var errors = new List<string>();
 
-        if (options.RefreshInterval == TimeSpan.MaxValue)
+        if (options.KeySourceRefreshInterval is null)
         {
             errors.Add(
-                "PfxFileSigningOptions.RefreshInterval must be a positive, finite TimeSpan. " +
-                "TimeSpan.MaxValue (the local-development provider's 'never refresh' value) cannot be " +
-                "reused here.");
+                "PfxFileSigningOptions.KeySourceRefreshInterval must be a positive, finite TimeSpan. " +
+                "null (the local-development provider's 'load once, never reload' static mode) cannot " +
+                "be reused here.");
         }
-        else if (options.RefreshInterval < MinimumRefreshInterval)
+        else if (options.KeySourceRefreshInterval.Value < MinimumRefreshInterval)
         {
             errors.Add(
-                $"PfxFileSigningOptions.RefreshInterval must be at least {MinimumRefreshInterval} " +
+                $"PfxFileSigningOptions.KeySourceRefreshInterval must be at least {MinimumRefreshInterval} " +
                 "(it doubles as the too-soon-NotBefore warning threshold per ADR 0011 §3.5). You are " +
-                "still responsible for ensuring RefreshInterval exceeds your actual relying parties' " +
+                "still responsible for ensuring KeySourceRefreshInterval exceeds your actual relying parties' " +
                 "JWKS cache TTL — this floor only rejects values that are almost certainly a mistake.");
         }
 

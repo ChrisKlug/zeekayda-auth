@@ -34,13 +34,13 @@ public static class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensions
     /// Rotation bootstrap behavior: the very first key version this deployment ever uses activates
     /// immediately (there is no prior published JWKS state any relying party could have cached).
     /// Every subsequent rotation requires the new Key Vault key version to exist for at least
-    /// <see cref="JwtSigningServiceOptions.RefreshInterval"/> before it is expected to sign
+    /// <see cref="JwtSigningServiceOptions.KeySourceRefreshInterval"/> before it is expected to sign
     /// anything — a relying party could plausibly have cached a JWKS containing only the previous
     /// version. Operators should create rotated-in key versions with that much lead time before
     /// they need to become active.
     /// </para>
     /// <para>
-    /// <see cref="JwtSigningServiceOptions.RefreshInterval"/> doubles as this publish-then-activate
+    /// <see cref="JwtSigningServiceOptions.KeySourceRefreshInterval"/> doubles as this publish-then-activate
     /// delay, so it must exceed your relying parties' actual JWKS cache TTL — the library rejects
     /// values below a one-minute floor as an almost-certain misconfiguration, but cannot verify a
     /// value above that floor is actually long enough for your specific relying parties.
@@ -57,7 +57,7 @@ public static class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensions
     /// <param name="credential">The credential used to authenticate to Key Vault.</param>
     /// <param name="configure">
     /// An optional callback to further configure <see cref="AzureKeyVaultRemoteSigningOptions"/>
-    /// (for example, <see cref="JwtSigningServiceOptions.RefreshInterval"/> or
+    /// (for example, <see cref="JwtSigningServiceOptions.KeySourceRefreshInterval"/> or
     /// <see cref="AzureKeyVaultRemoteSigningOptions.Algorithm"/>).
     /// </param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
@@ -133,7 +133,7 @@ public static class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensions
     /// Rotation bootstrap behavior, the publish-then-activate delay, and the fail-closed behavior
     /// on an expired active certificate with no enabled successor are identical to
     /// <see cref="AddAzureKeyVaultRemoteSigning"/> — see that method's remarks for the full
-    /// explanation. <see cref="JwtSigningServiceOptions.RefreshInterval"/> also governs how often
+    /// explanation. <see cref="JwtSigningServiceOptions.KeySourceRefreshInterval"/> also governs how often
     /// this provider re-downloads private key material for every in-window certificate version,
     /// which is more sensitive traffic than the remote-signing provider's public-key-only refresh.
     /// </para>
@@ -152,7 +152,7 @@ public static class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensions
     /// <param name="credential">The credential used to authenticate to Key Vault.</param>
     /// <param name="configure">
     /// An optional callback to further configure <see cref="AzureKeyVaultCachedSigningOptions"/>
-    /// (for example, <see cref="JwtSigningServiceOptions.RefreshInterval"/> or
+    /// (for example, <see cref="JwtSigningServiceOptions.KeySourceRefreshInterval"/> or
     /// <see cref="AzureKeyVaultCachedSigningOptions.Algorithm"/>).
     /// </param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>

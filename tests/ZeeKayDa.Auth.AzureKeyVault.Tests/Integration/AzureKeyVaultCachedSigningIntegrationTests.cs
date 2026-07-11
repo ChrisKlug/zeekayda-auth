@@ -76,7 +76,7 @@ public sealed class AzureKeyVaultCachedSigningIntegrationTests
 
         var builder = new ZeeKayDaAuthBuilder(services);
         builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, new FakeTokenCredential(),
-            configure: options => options.RefreshInterval = refreshInterval);
+            configure: options => options.KeySourceRefreshInterval = refreshInterval);
 
         await using var provider = services.BuildServiceProvider();
         var signingService = provider.GetRequiredService<IJwtSigningService>();
