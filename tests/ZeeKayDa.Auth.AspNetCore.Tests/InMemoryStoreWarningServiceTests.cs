@@ -1,7 +1,6 @@
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Logging;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests;
@@ -44,10 +43,7 @@ public sealed class InMemoryStoreWarningServiceTests
     {
         return new InMemoryStoreWarningService(
             new FakeHostEnvironment(environmentName),
-            Options.Create(new AuthorizationServerOptions
-            {
-                AllowInMemoryStoresOutsideDevelopment = allowOutsideDevelopment,
-            }),
+            allowOutsideDevelopment,
             logger ?? new CapturingLogger<InMemoryStoreWarningService>());
     }
 
@@ -58,21 +54,10 @@ public sealed class InMemoryStoreWarningServiceTests
     {
         var act = () => new InMemoryStoreWarningService(
             null!,
-            Options.Create(new AuthorizationServerOptions()),
+            allowOutsideDevelopment: false,
             NullSanitizingLogger<InMemoryStoreWarningService>.Instance);
 
         act.Should().Throw<ArgumentNullException>().WithParameterName("environment");
-    }
-
-    [Fact]
-    public void Constructor_throws_ArgumentNullException_when_options_is_null()
-    {
-        var act = () => new InMemoryStoreWarningService(
-            new FakeHostEnvironment(Environments.Development),
-            null!,
-            NullSanitizingLogger<InMemoryStoreWarningService>.Instance);
-
-        act.Should().Throw<ArgumentNullException>().WithParameterName("options");
     }
 
     [Fact]
@@ -80,7 +65,7 @@ public sealed class InMemoryStoreWarningServiceTests
     {
         var act = () => new InMemoryStoreWarningService(
             new FakeHostEnvironment(Environments.Development),
-            Options.Create(new AuthorizationServerOptions()),
+            allowOutsideDevelopment: false,
             null!);
 
         act.Should().Throw<ArgumentNullException>().WithParameterName("logger");
@@ -162,14 +147,14 @@ public sealed class InMemoryStoreWarningServiceTests
     }
 
     [Fact]
-    public async Task StartAsync_throws_with_message_mentioning_AllowInMemoryStoresOutsideDevelopment_when_flag_is_false()
+    public async Task StartAsync_throws_with_message_mentioning_allowOutsideDevelopment_when_flag_is_false()
     {
         var sut = BuildSut(Environments.Production, allowOutsideDevelopment: false);
 
         var ex = await sut.Awaiting(s => s.StartAsync(CancellationToken.None))
             .Should().ThrowAsync<ZeeKayDaConfigurationException>();
 
-        ex.Which.Message.Should().Contain("AllowInMemoryStoresOutsideDevelopment");
+        ex.Which.Message.Should().Contain("allowOutsideDevelopment");
     }
 
     [Fact]

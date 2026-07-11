@@ -122,9 +122,6 @@ public sealed class InMemoryClientAuthMethodSubsetIntegrationTests
                     options.Issuer = "https://test.example.com";
                     // Only client_secret_basic is in AuthMethodsSupported.
                     // The ClientSecretAuthenticator covers it, satisfying AuthenticatorCoverageValidator.
-                    // Integration test hosts run as "Production"; allow in-memory stores so only
-                    // the intentional auth-method failure fires, not the environment guard.
-                    options.AllowInMemoryStoresOutsideDevelopment = true;
                 })
                 .AddInMemoryClients(clients =>
                     clients.Add(
@@ -146,7 +143,9 @@ public sealed class InMemoryClientAuthMethodSubsetIntegrationTests
                                 new HashSet<string>(StringComparer.Ordinal)
                                     { TokenEndpointAuthMethods.ClientSecretPost },
                         }))
-                .AddInMemoryStores();
+                // Integration test hosts run as "Production"; allow in-memory stores so only
+                // the intentional auth-method failure fires, not the environment guard.
+                .AddInMemoryStores(allowOutsideDevelopment: true);
             });
 
             builder.Configure(app =>
@@ -180,8 +179,6 @@ public sealed class InMemoryClientAuthMethodSubsetIntegrationTests
                 services.AddZeeKayDaAuth(options =>
                 {
                     options.Issuer = "https://test.example.com";
-                    // Integration test hosts run as "Production" by default; allow in-memory stores.
-                    options.AllowInMemoryStoresOutsideDevelopment = true;
                 })
                 .AddInMemoryClients(clients =>
                     clients.Add(
@@ -197,7 +194,8 @@ public sealed class InMemoryClientAuthMethodSubsetIntegrationTests
                     // AllowedTokenEndpointAuthMethods defaults to { "client_secret_basic" }
                     // which matches the server's AuthMethodsSupported — no override needed.
                     ))
-                .AddInMemoryStores();
+                // Integration test hosts run as "Production" by default; allow in-memory stores.
+                .AddInMemoryStores(allowOutsideDevelopment: true);
             });
 
             builder.Configure(app =>

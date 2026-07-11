@@ -1,22 +1,32 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Logging;
 
 namespace ZeeKayDa.Auth.AspNetCore;
 
 /// <summary>
-/// Emits a startup warning when in-memory token stores are active, alerting operators that
+/// Emits a startup warning when an in-memory token store is active, alerting operators that
 /// tokens will be lost on process restart and that single-use enforcement and reuse detection
 /// are disabled across multiple instances.
 /// </summary>
 /// <remarks>
-/// When the host environment is not <c>Development</c> and
-/// <see cref="AuthorizationServerOptions.AllowInMemoryStoresOutsideDevelopment"/> is
-/// <see langword="false"/>, startup fails with a <see cref="ZeeKayDaConfigurationException"/>
-/// so that accidental in-memory configurations are never silently deployed to non-development
-/// hosts. Set the flag to <see langword="true"/> only in test hosts that intentionally run
-/// outside Development.
+/// <para>
+/// One instance of this service is registered per in-memory store registration call
+/// (<c>AddInMemoryAuthorizationCodeStore()</c>, <c>AddInMemoryRefreshTokenStore()</c>, or both
+/// via <c>AddInMemoryStores()</c>), each capturing the <c>allowOutsideDevelopment</c> value
+/// supplied to its own registration call. This means the gate is enforced independently per
+/// store: a consumer who calls <c>AddInMemoryAuthorizationCodeStore(allowOutsideDevelopment:
+/// true)</c> and <c>AddInMemoryRefreshTokenStore()</c> (defaulting to <see langword="false"/>)
+/// on the same builder still fails startup outside <c>Development</c>, because the refresh
+/// token store's instance of this service was never granted the override.
+/// </para>
+/// <para>
+/// When the host environment is not <c>Development</c> and the captured
+/// <c>allowOutsideDevelopment</c> value is <see langword="false"/>, startup fails with a
+/// <see cref="ZeeKayDaConfigurationException"/> so that accidental in-memory configurations are
+/// never silently deployed to non-development hosts. Pass <see langword="true"/> only in test
+/// hosts that intentionally run outside Development.
+/// </para>
 /// </remarks>
 internal sealed class InMemoryStoreWarningService : IHostedService
 {
@@ -28,24 +38,23 @@ internal sealed class InMemoryStoreWarningService : IHostedService
 
     internal const string NonDevelopmentOverrideWarningMessage =
         "ZeeKayDa.Auth: in-memory token stores are active outside a Development environment. " +
-        "AllowInMemoryStoresOutsideDevelopment has been set — ensure this is intentional (e.g. " +
-        "an integration test host). Do not use in-memory stores in production.";
+        "allowOutsideDevelopment has been set to true for this registration — ensure this is " +
+        "intentional (e.g. an integration test host). Do not use in-memory stores in production.";
 
     private readonly IHostEnvironment _environment;
-    private readonly IOptions<AuthorizationServerOptions> _options;
+    private readonly bool _allowOutsideDevelopment;
     private readonly ISanitizingLogger<InMemoryStoreWarningService> _logger;
 
     public InMemoryStoreWarningService(
         IHostEnvironment environment,
-        IOptions<AuthorizationServerOptions> options,
+        bool allowOutsideDevelopment,
         ISanitizingLogger<InMemoryStoreWarningService> logger)
     {
         ArgumentNullException.ThrowIfNull(environment);
-        ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(logger);
 
         _environment = environment;
-        _options = options;
+        _allowOutsideDevelopment = allowOutsideDevelopment;
         _logger = logger;
     }
 
@@ -58,7 +67,7 @@ internal sealed class InMemoryStoreWarningService : IHostedService
             return Task.CompletedTask;
         }
 
-        if (!_options.Value.AllowInMemoryStoresOutsideDevelopment)
+        if (!_allowOutsideDevelopment)
         {
             throw new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure(
@@ -66,8 +75,8 @@ internal sealed class InMemoryStoreWarningService : IHostedService
                     "In-memory token stores are active outside a Development environment. " +
                     "This is a configuration error: in-memory stores lose all tokens on restart " +
                     "and disable single-use enforcement across instances. " +
-                    "Replace AddInMemoryStores() with a persistent store implementation, or set " +
-                    "AllowInMemoryStoresOutsideDevelopment = true if this host is an intentional " +
+                    "Replace this registration with a persistent store implementation, or pass " +
+                    "allowOutsideDevelopment: true if this host is an intentional " +
                     "non-Development test host."));
         }
 

@@ -51,13 +51,16 @@ app.MapZeeKayDaAuth();
 app.Run();
 ```
 
-At startup, ZeeKayDa.Auth emits a `LogLevel.Warning` to confirm the stores are active and remind you not to use them in production. Outside a `Development` environment the application refuses to start unless you explicitly set `AllowInMemoryStoresOutsideDevelopment = true`.
+At startup, ZeeKayDa.Auth emits a `LogLevel.Warning` to confirm the stores are active and remind you not to use them in production. Outside a `Development` environment the application refuses to start unless you explicitly pass `allowOutsideDevelopment: true` to the registration call.
 
-> 💡 **Tip:** For integration tests running under a non-`Development` environment name, set `AllowInMemoryStoresOutsideDevelopment = true` in the test host configuration:
+> 💡 **Tip:** For integration tests running under a non-`Development` environment name, pass `allowOutsideDevelopment: true` to the registration call in the test host configuration:
 >
 > ```csharp
-> options.AllowInMemoryStoresOutsideDevelopment = true;
+> .AddInMemoryStores(allowOutsideDevelopment: true);
 > ```
+>
+> `.AddInMemoryAuthorizationCodeStore()` and `.AddInMemoryRefreshTokenStore()` each accept the
+> same parameter and gate on it independently — see [Mixing stores](#mixing-stores) below.
 
 ---
 
@@ -141,6 +144,15 @@ builder.Services
 ```
 
 > ⚠️ **Warning:** `.AddInMemoryAuthorizationCodeStore()` still emits a startup warning and is still subject to the `Development`-environment check. This pattern is useful during development while building a persistent refresh token store; it is not a production configuration.
+
+Each in-memory registration method carries its own `allowOutsideDevelopment` parameter and is gated independently — passing it on one call has no effect on another. For example, this configuration still fails to start outside `Development` because `.AddInMemoryRefreshTokenStore()` was not opted in, even though the authorization code store was:
+
+```csharp
+builder.Services
+    .AddZeeKayDaAuth(options => { options.Issuer = "https://id.example.com"; })
+    .AddInMemoryAuthorizationCodeStore(allowOutsideDevelopment: true)
+    .AddInMemoryRefreshTokenStore(); // allowOutsideDevelopment defaults to false — still fails closed
+```
 
 ---
 

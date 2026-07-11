@@ -1,11 +1,33 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
+using ZeeKayDa.Auth.Logging;
 using ZeeKayDa.Auth.Stores;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests.Extensions;
 
 public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
 {
+    // ── Fake infrastructure for InMemoryStoreWarningService resolution ───────────────────────────
+
+    private sealed class FakeHostEnvironment(string environmentName) : IHostEnvironment
+    {
+        public string EnvironmentName { get; set; } = environmentName;
+        public string ApplicationName { get; set; } = "TestApp";
+        public string ContentRootPath { get; set; } = "/";
+        public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
+    }
+
+    private static ServiceCollection CreateServicesWithWarningServiceDependencies(
+        string environmentName = "Development")
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment(environmentName));
+        services.AddSingleton<ISanitizingLogger<InMemoryStoreWarningService>>(
+            NullSanitizingLogger<InMemoryStoreWarningService>.Instance);
+        return services;
+    }
+
     // ── AddAuthorizationCodeStore: argument validation ────────────────────────────────────────────
 
     [Fact]
@@ -223,14 +245,14 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     [Fact]
     public void AddInMemoryAuthorizationCodeStore_registers_InMemoryStoreWarningService_as_IHostedService()
     {
-        var services = new ServiceCollection();
+        var services = CreateServicesWithWarningServiceDependencies();
         var builder = new ZeeKayDaAuthBuilder(services);
 
         builder.AddInMemoryAuthorizationCodeStore();
 
-        services.Should().Contain(sd =>
-            sd.ServiceType == typeof(IHostedService) &&
-            sd.ImplementationType == typeof(InMemoryStoreWarningService));
+        using var provider = services.BuildServiceProvider();
+        provider.GetServices<IHostedService>().Should().ContainSingle()
+            .Which.Should().BeOfType<InMemoryStoreWarningService>();
     }
 
     // ── AddInMemoryAuthorizationCodeStore: double-registration guard ──────────────────────────────
@@ -301,14 +323,14 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     [Fact]
     public void AddInMemoryRefreshTokenStore_registers_InMemoryStoreWarningService_as_IHostedService()
     {
-        var services = new ServiceCollection();
+        var services = CreateServicesWithWarningServiceDependencies();
         var builder = new ZeeKayDaAuthBuilder(services);
 
         builder.AddInMemoryRefreshTokenStore();
 
-        services.Should().Contain(sd =>
-            sd.ServiceType == typeof(IHostedService) &&
-            sd.ImplementationType == typeof(InMemoryStoreWarningService));
+        using var provider = services.BuildServiceProvider();
+        provider.GetServices<IHostedService>().Should().ContainSingle()
+            .Which.Should().BeOfType<InMemoryStoreWarningService>();
     }
 
     // ── AddInMemoryRefreshTokenStore: double-registration guard ───────────────────────────────────
@@ -380,32 +402,87 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     }
 
     [Fact]
-    public void AddInMemoryStores_registers_InMemoryStoreWarningService_exactly_once()
+    public void AddInMemoryStores_registers_InMemoryStoreWarningService_once_per_store()
     {
-        var services = new ServiceCollection();
+        var services = CreateServicesWithWarningServiceDependencies();
         var builder = new ZeeKayDaAuthBuilder(services);
 
         builder.AddInMemoryStores();
 
-        services.Count(sd =>
-            sd.ServiceType == typeof(IHostedService) &&
-            sd.ImplementationType == typeof(InMemoryStoreWarningService))
-            .Should().Be(1, "TryAddEnumerable ensures idempotent registration across both calls");
+        using var provider = services.BuildServiceProvider();
+        provider.GetServices<IHostedService>().OfType<InMemoryStoreWarningService>()
+            .Should().HaveCount(2, "each of the two stores registers its own independently-gated warning service");
     }
 
     [Fact]
-    public void Calling_AddInMemoryAuthorizationCodeStore_and_AddInMemoryRefreshTokenStore_separately_registers_InMemoryStoreWarningService_exactly_once()
+    public void Calling_AddInMemoryAuthorizationCodeStore_and_AddInMemoryRefreshTokenStore_separately_registers_InMemoryStoreWarningService_once_per_store()
     {
-        var services = new ServiceCollection();
+        var services = CreateServicesWithWarningServiceDependencies();
         var builder = new ZeeKayDaAuthBuilder(services);
 
         builder.AddInMemoryAuthorizationCodeStore();
         builder.AddInMemoryRefreshTokenStore();
 
-        services.Count(sd =>
-            sd.ServiceType == typeof(IHostedService) &&
-            sd.ImplementationType == typeof(InMemoryStoreWarningService))
-            .Should().Be(1, "TryAddEnumerable ensures idempotent registration when called independently");
+        using var provider = services.BuildServiceProvider();
+        provider.GetServices<IHostedService>().OfType<InMemoryStoreWarningService>()
+            .Should().HaveCount(2, "each store registration captures and enforces its own allowOutsideDevelopment value");
+    }
+
+    // ── AddInMemoryStores: allowOutsideDevelopment parameter ──────────────────────────────────────
+
+    [Fact]
+    public async Task AddInMemoryStores_passes_allowOutsideDevelopment_through_to_both_underlying_registrations()
+    {
+        var services = CreateServicesWithWarningServiceDependencies(Environments.Production);
+        var builder = new ZeeKayDaAuthBuilder(services);
+
+        builder.AddInMemoryStores(allowOutsideDevelopment: true);
+
+        using var provider = services.BuildServiceProvider();
+        var warningServices = provider.GetServices<IHostedService>().OfType<InMemoryStoreWarningService>();
+
+        foreach (var warningService in warningServices)
+            await warningService.Awaiting(s => s.StartAsync(CancellationToken.None)).Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task Mixed_allowOutsideDevelopment_values_across_granular_calls_are_enforced_independently()
+    {
+        // ADR 0008 §5: each of the three in-memory registration methods carries its own
+        // allowOutsideDevelopment parameter and gates independently on it. Mixing granular calls
+        // with different values must not let one call's override leak into the other's gate.
+        var services = CreateServicesWithWarningServiceDependencies(Environments.Production);
+        var builder = new ZeeKayDaAuthBuilder(services);
+
+        builder.AddInMemoryAuthorizationCodeStore(allowOutsideDevelopment: true);
+        builder.AddInMemoryRefreshTokenStore(allowOutsideDevelopment: false);
+
+        using var provider = services.BuildServiceProvider();
+        var warningServices = provider.GetServices<IHostedService>()
+            .OfType<InMemoryStoreWarningService>()
+            .ToList();
+
+        warningServices.Should().HaveCount(2);
+
+        var outcomes = new List<bool>();
+        foreach (var warningService in warningServices)
+        {
+            try
+            {
+                await warningService.StartAsync(CancellationToken.None);
+                outcomes.Add(false);
+            }
+            catch (ZeeKayDaConfigurationException)
+            {
+                outcomes.Add(true);
+            }
+        }
+
+        outcomes.Should().ContainSingle(threw => threw,
+            "the refresh-token-store registration (allowOutsideDevelopment: false) must still fail " +
+            "closed outside Development even though the auth-code-store registration allowed it");
+        outcomes.Should().ContainSingle(threw => !threw,
+            "the auth-code-store registration (allowOutsideDevelopment: true) must not fail");
     }
 
     // ── AddInMemoryStores: per-interface guard independence ───────────────────────────────────────

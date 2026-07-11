@@ -67,10 +67,6 @@ internal sealed class TestWebAppFactory : WebApplicationFactory<TestWebAppFactor
                 // Advertise "none" so the public test client passes the subset validation.
                 options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
 
-                // Integration test hosts run as "Production" by default; allow in-memory stores
-                // so the startup guard does not block test startup.
-                options.AllowInMemoryStoresOutsideDevelopment = true;
-
                 // Allow per-test overrides (e.g. path-bearing issuer, AllowInsecureIssuer, etc.)
                 _configureOptions?.Invoke(options);
             });
@@ -91,8 +87,10 @@ internal sealed class TestWebAppFactory : WebApplicationFactory<TestWebAppFactor
             // Register in-memory stores so the TokenStorePresenceValidator passes at startup,
             // but only when _configureBuilder has not already registered stores. This avoids
             // a ThrowIfAlreadyRegistered exception when the caller brings its own stores.
+            // Integration test hosts run as "Production" by default; allow in-memory stores so
+            // the startup guard does not block test startup.
             if (!authBuilder.Services.Any(d => d.ServiceType == typeof(IAuthorizationCodeStore)))
-                authBuilder.AddInMemoryStores();
+                authBuilder.AddInMemoryStores(allowOutsideDevelopment: true);
         });
 
         builder.Configure(app =>
@@ -139,15 +137,14 @@ internal sealed class TestWebAppFactoryWithRemoteIp : WebApplicationFactory<Test
                 options.AllowInsecureIssuer = true;
                 // Advertise "none" so the public test client passes the subset validation.
                 options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
-                // Integration test hosts run as "Production" by default; allow in-memory stores.
-                options.AllowInMemoryStoresOutsideDevelopment = true;
                 _configureOptions?.Invoke(options);
             }).AddInMemoryClients(clients =>
                 clients.AddPublic("test-client",
                     ["https://test.example.com/callback"],
                     [],
                     ["openid"]))
-              .AddInMemoryStores();
+              // Integration test hosts run as "Production" by default; allow in-memory stores.
+              .AddInMemoryStores(allowOutsideDevelopment: true);
         });
 
         builder.Configure(app =>
@@ -184,14 +181,13 @@ internal sealed class TestWebAppFactoryWithPing : WebApplicationFactory<TestWebA
             {
                 options.Issuer = "https://test.example.com";
                 options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
-                // Integration test hosts run as "Production" by default; allow in-memory stores.
-                options.AllowInMemoryStoresOutsideDevelopment = true;
             }).AddInMemoryClients(clients =>
                 clients.AddPublic("test-client",
                     ["https://test.example.com/callback"],
                     [],
                     ["openid"]))
-              .AddInMemoryStores();
+              // Integration test hosts run as "Production" by default; allow in-memory stores.
+              .AddInMemoryStores(allowOutsideDevelopment: true);
         });
 
         builder.Configure(app =>
@@ -238,15 +234,14 @@ internal sealed class TestWebAppFactoryWithVaryMiddleware : WebApplicationFactor
             {
                 options.Issuer = "https://test.example.com";
                 options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
-                // Integration test hosts run as "Production" by default; allow in-memory stores.
-                options.AllowInMemoryStoresOutsideDevelopment = true;
                 _configureOptions?.Invoke(options);
             }).AddInMemoryClients(clients =>
                 clients.AddPublic("test-client",
                     ["https://test.example.com/callback"],
                     [],
                     ["openid"]))
-              .AddInMemoryStores();
+              // Integration test hosts run as "Production" by default; allow in-memory stores.
+              .AddInMemoryStores(allowOutsideDevelopment: true);
         });
 
         var varyToAdd = _varyToAdd;
