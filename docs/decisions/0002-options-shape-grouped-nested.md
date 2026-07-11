@@ -76,6 +76,25 @@ The rule is mechanical: pick any property, look at its discovery key, find the p
 group. If no other current or near-future spec field shares the prefix, the property lives on the
 root.
 
+**Scope of the "no shared prefix → root" fallback (clarified 2026-07-11, issue #337).** This
+fallback governs **OIDC discovery-document / RFC 8414 metadata configuration** — properties that
+have a discovery-document counterpart (or a spec-defined endpoint-modifier relationship, §"Endpoint-affinity"
+below). It is *not* a general licence to hoist arbitrary settings onto the shared
+`AuthorizationServerOptions` root merely because they lack a discovery prefix. In particular, a
+**feature-registration escape hatch or safety gate** — a flag or list that is inert unless a
+specific opt-in feature (a signing-key provider, an in-memory store, etc.) was also registered — is
+**not** a discovery-metadata property at all, so this rule says nothing about where it belongs.
+Such a gate co-locates with the feature that introduces it (on that feature's provider-specific
+options type, or as a parameter on its registration method), **not** on the root by default,
+unless there is a genuine *cross-feature* reason to share it. Placing a feature-scoped gate on the
+shared root creates a setting that silently does nothing unless an unrelated extension method was
+called — the discoverability trap ADR 0008 names in the auto-registration context. This
+clarification is recorded because PR #333 cited this ADR (alongside ADR 0008) as precedent for
+hoisting `AllowedDevelopmentJwtSigningKeysEnvironments` onto `AuthorizationServerOptions`; that was
+a misreading of this rule's scope, reversed by issue #337 (see ADR 0011 and ADR 0008). The
+grouping rule places *discovery-shaped configuration*; it does not adjudicate the placement of
+service-registration escape hatches.
+
 **Why the rule extends beyond endpoint prefixes.** Restricting grouping to endpoint names was the
 strictest possible reading of the spec; extending it to any shared spec prefix is the *consistent*
 reading. The DX wins are real (`options.IdToken.SigningAlgValuesSupported`,
@@ -441,5 +460,7 @@ a flag that papers over an absent control.
 ---
 
 ## Amendments
+
+- **2026-07-11 — Grouping-rule scope clarified: it does not license hoisting feature-registration escape hatches onto the root** — The §1 "no shared discovery-prefix → root options" fallback governs OIDC discovery-document / RFC 8414 metadata configuration specifically. It does **not** license placing a feature-registration escape hatch or safety gate (a flag/list that is inert unless a specific opt-in feature was also registered) onto the shared `AuthorizationServerOptions` root by default; such a gate co-locates with the feature that introduces it (its provider-specific options type or its registration method) unless there is a genuine cross-feature reason to share it. This clarification exists because PR #333 cited this ADR (alongside ADR 0008) as precedent for hoisting `AllowedDevelopmentJwtSigningKeysEnvironments` onto the root — a misreading of this rule's scope, reversed by issue #337. The clarification is folded into §1 (see "Scope of the 'no shared prefix → root' fallback"). Reference: issue #337; ADR 0011 (dev-signing-key gate) and ADR 0008 (`AllowInMemoryStoresOutsideDevelopment` gate) record the equivalent placement reversals.
 
 - **2026-06-13 — `SecurityHeaders` is a framework-behavior group, outside the spec-prefix rule** — `SecurityHeaders` on `AuthorizationServerOptions` has no OIDC Discovery 1.0 or RFC 8414 discovery-key counterpart; it controls HTTP security headers emitted by the ZeeKayDa.Auth framework itself, not server capability metadata advertised to clients, and therefore sits outside the spec-prefix rule in §1. This ADR formally recognises a second category — **framework-behavior groups** — which collect settings that govern the framework's own runtime behavior (headers, caching policy, logging policy, etc.) with no discovery-document analogue. Framework-behavior groups are permitted outside the spec-prefix rule; their names must be plain, descriptive English and MUST NOT carry an `Endpoint` suffix, as they are not HTTP endpoints. The `SecurityHeaders` name is hereby blessed as correct for this category and no rename is warranted. Going forward, any new framework-behavior group must follow this precedent: descriptive name, no `Endpoint` suffix, not subject to the spec-prefix rule; a property that does have a discovery-key counterpart must go into a spec-prefix group and must never be placed in a framework-behavior group. Reference: architecture review finding AA-m13, 2026-06-13. Resolves #159 (partial).
