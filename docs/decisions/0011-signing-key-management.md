@@ -234,8 +234,9 @@ The following invariants hold regardless of list contents:
 - When the current environment is in the allowed list but is not exactly `Development`, a
   `LogLevel.Critical` entry is emitted on **every** startup — not once, not only on first
   detection. This matches the severity the in-memory store gate uses in its own equivalent
-  case (ADR 0008 §5): when `AllowInMemoryStoresOutsideDevelopment` is used outside
-  `Development`, `InMemoryStoreWarningService` also escalates to `Critical`, not `Warning` — the
+  case (ADR 0008 §5): when the relevant in-memory registration method's `allowOutsideDevelopment`
+  parameter is used outside `Development`, `InMemoryStoreWarningService` also escalates to
+  `Critical`, not `Warning` — the
   plain `LogLevel.Warning` in-memory stores emit is scoped to the unremarkable case of using them
   *inside* `Development`, where no escape hatch is in play. Both gates treat "an explicit opt-in
   escape hatch for a Development-only feature is currently open outside Development" as
@@ -743,8 +744,8 @@ than a bindable root property), and is a small security-discoverability improvem
 regression. The goal PR #333 was actually pursuing is achieved instead by making
 `DevelopmentSigningKeyOptions` public and reaching it through the registration method's `configure`
 callback (§2), which needs no `InternalsVisibleTo`. See ADR 0002's scope clarification and ADR
-0008's equivalent store-side move (`AllowInMemoryStoresOutsideDevelopment` onto the in-memory
-registration methods) — both are one decision made together.
+0008's equivalent store-side move (the flag becoming an `allowOutsideDevelopment` parameter on the
+in-memory registration methods) — both are one decision made together.
 
 #### A dedicated signing-provider-selection sub-builder (`AddJwtSigning(signing => …)`)
 
@@ -933,9 +934,9 @@ SemVer-breaking change). Kept exactly as shipped.
   sourced from bindable configuration. Moving the list from the root back onto the provider options
   changes only *where the list lives*, not any of these invariants — the runtime gate
   (`DevelopmentSigningKeyGate.Enforce`) already takes the list as a plain parameter and is
-  indifferent to which options type sourced it. The equivalent in-memory-store gate
-  (`AllowInMemoryStoresOutsideDevelopment`, moving onto the store registration methods per ADR
-  0008 / issue #339) preserves its own fail-closed-outside-Development behaviour and mandatory
+  indifferent to which options type sourced it. The equivalent in-memory-store gate (the flag
+  becoming an `allowOutsideDevelopment` parameter, moving onto the store registration methods per
+  ADR 0008 / issue #339) preserves its own fail-closed-outside-Development behaviour and mandatory
   startup warning identically.
 - **Private key destruction on retirement (§3.3c).** Enforced by `Dispose()`-ing the superseded
   `SigningKeySet`'s private-key objects on refresh, only after all in-flight `SignAsync` calls
@@ -983,7 +984,7 @@ alternatives sections above.
 - **ADR 0007** — client registration model (static registration; no encryption-preference fields).
 - **ADR 0008** — authorization-code/refresh-token store (registration idiom,
   `ThrowIfAlreadyRegistered`, escape-hatch pattern, refresh-token-via-store validation,
-  empty-options-class SemVer lesson, and the equivalent `AllowInMemoryStoresOutsideDevelopment`
+  empty-options-class SemVer lesson, and the equivalent `allowOutsideDevelopment` parameter
   placement change made together with this one).
 - **ADR 0012** — signing-provider NuGet packaging model (why shared helpers are public in core,
   not `internal` + `InternalsVisibleTo`).
