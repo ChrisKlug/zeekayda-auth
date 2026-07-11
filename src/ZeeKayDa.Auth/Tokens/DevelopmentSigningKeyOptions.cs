@@ -1,12 +1,24 @@
 namespace ZeeKayDa.Auth.Tokens;
 
 /// <summary>
-/// Options for the development signing key provider registered by
-/// <c>AddInMemoryDevelopmentJwtSigningKeys()</c> or <c>AddPersistedDevelopmentJwtSigningKeys()</c>.
+/// Options for the development signing key provider that is actually registered and consumed
+/// internally regardless of which registration method is used
+/// (<c>AddInMemoryDevelopmentJwtSigningKeys()</c> or <c>AddPersistedDevelopmentJwtSigningKeys()</c>).
 /// </summary>
 /// <remarks>
+/// <para>
 /// This options type is for development and testing only. In production, use a real key
 /// provider backed by a KMS, HSM, or a securely stored key.
+/// </para>
+/// <para>
+/// This is also the public <c>configure</c> callback type for
+/// <c>AddPersistedDevelopmentJwtSigningKeys()</c>, since persistence configuration
+/// (<see cref="PersistToDirectory"/>) is meaningful for that method. It is deliberately
+/// <strong>not</strong> the callback type for <c>AddInMemoryDevelopmentJwtSigningKeys()</c> — that
+/// method uses the smaller <see cref="InMemoryDevelopmentSigningKeyOptions"/> instead, which has no
+/// <see cref="PersistToDirectory"/> member, so that an in-memory registration can never be silently
+/// turned into a persisted one through its configure callback.
+/// </para>
 /// </remarks>
 public sealed class DevelopmentSigningKeyOptions : JwtSigningServiceOptions
 {

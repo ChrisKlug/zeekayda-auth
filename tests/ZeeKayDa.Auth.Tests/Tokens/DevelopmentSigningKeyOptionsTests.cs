@@ -29,8 +29,9 @@ public sealed class DevelopmentSigningKeyOptionsTests
     }
 
     // ── AllowedDevelopmentJwtSigningKeysEnvironments (issue #338 — moved back from
-    // AuthorizationServerOptions, reachable via the registration methods' public configure
-    // callback) ────────────────────────────────────────────────────────────────────────────────────
+    // AuthorizationServerOptions, reachable via AddPersistedDevelopmentJwtSigningKeys' public
+    // configure callback. The in-memory variant uses the separate, smaller
+    // InMemoryDevelopmentSigningKeyOptions type instead — see #338 follow-up.) ──────────────────────
 
     [Fact]
     public void AllowedDevelopmentJwtSigningKeysEnvironments_defaults_to_Development_only()

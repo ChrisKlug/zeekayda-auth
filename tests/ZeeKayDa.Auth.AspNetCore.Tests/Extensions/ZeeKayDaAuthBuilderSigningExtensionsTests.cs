@@ -1,3 +1,4 @@
+using System.Reflection;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
@@ -7,6 +8,46 @@ namespace ZeeKayDa.Auth.AspNetCore.Tests.Extensions;
 
 public sealed class ZeeKayDaAuthBuilderSigningExtensionsTests
 {
+    // ── Configure surface type guarantee (issue #338 follow-up — PersistToDirectory must not be
+    // reachable from AddInMemoryDevelopmentJwtSigningKeys' public configure callback) ───────────────
+
+    [Fact]
+    public void AddInMemoryDevelopmentJwtSigningKeys_configure_parameter_type_has_no_PersistToDirectory()
+    {
+        // Reflects on the actual public method signature — the type used here is precisely what a
+        // caller's configure lambda is checked against by the compiler, so this pins the
+        // compile-time guarantee: no source file could ever write
+        // "AddInMemoryDevelopmentJwtSigningKeys(o => o.PersistToDirectory = ...)" because the
+        // parameter type used for "o" has no such member.
+        var method = typeof(ZeeKayDaAuthBuilderSigningExtensions).GetMethod(
+            nameof(ZeeKayDaAuthBuilderSigningExtensions.AddInMemoryDevelopmentJwtSigningKeys));
+
+        var configureParameterType = method!.GetParameters()
+            .Single(p => p.Name == "configure").ParameterType;
+        var callbackTargetType = configureParameterType.GetGenericArguments().Single();
+
+        callbackTargetType.Should().Be(typeof(InMemoryDevelopmentSigningKeyOptions));
+        callbackTargetType.GetProperty(
+                "PersistToDirectory", BindingFlags.Public | BindingFlags.Instance)
+            .Should().BeNull();
+    }
+
+    [Fact]
+    public void AddPersistedDevelopmentJwtSigningKeys_configure_parameter_type_has_PersistToDirectory()
+    {
+        var method = typeof(ZeeKayDaAuthBuilderSigningExtensions).GetMethod(
+            nameof(ZeeKayDaAuthBuilderSigningExtensions.AddPersistedDevelopmentJwtSigningKeys));
+
+        var configureParameterType = method!.GetParameters()
+            .Single(p => p.Name == "configure").ParameterType;
+        var callbackTargetType = configureParameterType.GetGenericArguments().Single();
+
+        callbackTargetType.Should().Be(typeof(DevelopmentSigningKeyOptions));
+        callbackTargetType.GetProperty(
+                "PersistToDirectory", BindingFlags.Public | BindingFlags.Instance)
+            .Should().NotBeNull("the persisted variant's configure surface legitimately needs it");
+    }
+
     // ── Argument validation ───────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -134,6 +175,23 @@ public sealed class ZeeKayDaAuthBuilderSigningExtensionsTests
     }
 
     [Fact]
+    public async Task AddInMemoryDevelopmentJwtSigningKeys_configure_callback_leaves_PersistToDirectory_null()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment { ContentRootPath = "/app" });
+        var builder = new ZeeKayDaAuthBuilder(services);
+
+        builder.AddInMemoryDevelopmentJwtSigningKeys(o =>
+            o.AllowedDevelopmentJwtSigningKeysEnvironments = ["Development", "IntegrationTesting"]);
+
+        await using var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<DevelopmentSigningKeyOptions>>().Value;
+        options.PersistToDirectory.Should().BeNull(
+            "the in-memory configure callback's type has no PersistToDirectory member to set it through, " +
+            "so an in-memory registration can never silently become a persisted one");
+    }
+
+    [Fact]
     public void AddInMemoryDevelopmentJwtSigningKeys_throws_InvalidOperationException_when_called_twice()
     {
         var services = new ServiceCollection();
@@ -212,6 +270,24 @@ public sealed class ZeeKayDaAuthBuilderSigningExtensionsTests
         var options = provider.GetRequiredService<IOptions<DevelopmentSigningKeyOptions>>().Value;
         options.AllowedDevelopmentJwtSigningKeysEnvironments.Should().BeEquivalentTo(
             new[] { "Development", "Staging" });
+    }
+
+    [Fact]
+    public async Task AddPersistedDevelopmentJwtSigningKeys_configure_callback_can_override_PersistToDirectory()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment { ContentRootPath = "/app" });
+        var builder = new ZeeKayDaAuthBuilder(services);
+
+        // No persistTo argument — the default path is applied first — then the configure
+        // callback overrides it, proving PersistToDirectory is legitimately reachable and
+        // settable through the persisted variant's configure surface.
+        builder.AddPersistedDevelopmentJwtSigningKeys(
+            configure: o => o.PersistToDirectory = "/overridden/keys");
+
+        await using var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<DevelopmentSigningKeyOptions>>().Value;
+        options.PersistToDirectory.Should().Be("/overridden/keys");
     }
 
     [Fact]
