@@ -7,7 +7,7 @@ namespace ZeeKayDa.Auth.FileSystem;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <see cref="JwtSigningServiceOptions.RefreshInterval"/> is inherited from the base class and
+/// <see cref="JwtSigningServiceOptions.KeySourceRefreshInterval"/> is inherited from the base class and
 /// defaults to 5 minutes; see the remarks on <see cref="PemFileSigningOptions"/> for what it governs
 /// in this provider (a startup-warning threshold, not a re-download cadence).
 /// </para>

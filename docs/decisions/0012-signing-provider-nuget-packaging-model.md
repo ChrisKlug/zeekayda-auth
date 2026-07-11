@@ -103,7 +103,7 @@ consumer to swap package references rather than simply switch the extension meth
 the wrong unit of configuration at that decision point. The two variants do represent different
 security postures: remote signing (#287) never exports private key material from Key Vault (every
 sign operation is a network call), while cached signing (#288) fetches key material and holds it
-in process memory for a configurable `RefreshInterval` in exchange for reduced latency. Consumers
+in process memory for a configurable `KeySourceRefreshInterval` in exchange for reduced latency. Consumers
 should choose between them based on their threat model, not their package management.
 
 The three OS-level providers are each in their own package because their dependencies,

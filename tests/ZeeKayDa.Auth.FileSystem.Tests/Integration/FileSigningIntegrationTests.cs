@@ -79,7 +79,7 @@ public sealed class FileSigningIntegrationTests
         builder.AddPemFileSigning(predecessorPath, configure: options =>
         {
             options.AddFile(successorPath);
-            options.RefreshInterval = refreshInterval;
+            options.KeySourceRefreshInterval = refreshInterval;
         });
 
         await using var provider = services.BuildServiceProvider();
@@ -107,7 +107,7 @@ public sealed class FileSigningIntegrationTests
         builder.AddPemFileSigning(predecessorPath, configure: options =>
         {
             options.AddFile(successorPath);
-            options.RefreshInterval = refreshInterval;
+            options.KeySourceRefreshInterval = refreshInterval;
         });
 
         await using var provider = services.BuildServiceProvider();

@@ -47,7 +47,7 @@ public static class ZeeKayDaAuthBuilderFileSigningExtensions
     /// <param name="path">The path to the required/primary combined cert+key PEM file.</param>
     /// <param name="configure">
     /// An optional callback to further configure <see cref="PemFileSigningOptions"/> (for example,
-    /// <see cref="JwtSigningServiceOptions.RefreshInterval"/>,
+    /// <see cref="JwtSigningServiceOptions.KeySourceRefreshInterval"/>,
     /// <see cref="PemFileSigningOptions.Algorithm"/>, or additional files for rotation via
     /// <see cref="PemFileSigningOptions.AddFile"/>).
     /// </param>
@@ -113,7 +113,7 @@ public static class ZeeKayDaAuthBuilderFileSigningExtensions
     /// <param name="passwordSource">The delegate that supplies <paramref name="path"/>'s password.</param>
     /// <param name="configure">
     /// An optional callback to further configure <see cref="PfxFileSigningOptions"/> (for example,
-    /// <see cref="JwtSigningServiceOptions.RefreshInterval"/>,
+    /// <see cref="JwtSigningServiceOptions.KeySourceRefreshInterval"/>,
     /// <see cref="PfxFileSigningOptions.Algorithm"/>, or additional files for rotation via
     /// <see cref="PfxFileSigningOptions.AddFile"/>).
     /// </param>

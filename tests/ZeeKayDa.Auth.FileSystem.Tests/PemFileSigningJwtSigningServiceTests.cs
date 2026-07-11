@@ -34,7 +34,7 @@ public sealed class PemFileSigningJwtSigningServiceTests
         {
             Path = primaryPath,
             Algorithm = algorithm,
-            RefreshInterval = refreshInterval ?? TimeSpan.FromMinutes(5),
+            KeySourceRefreshInterval = refreshInterval ?? TimeSpan.FromMinutes(5),
         };
         foreach (var additional in additionalPaths ?? [])
             options.AddFile(additional);
@@ -264,7 +264,7 @@ public sealed class PemFileSigningJwtSigningServiceTests
     // ── Too-soon-NotBefore startup warning (AC #12) ──────────────────────────────────────────────
 
     [Fact]
-    public async Task GetSigningKeysAsync_logs_a_warning_when_the_soonest_pending_NotBefore_is_closer_than_RefreshInterval()
+    public async Task GetSigningKeysAsync_logs_a_warning_when_the_soonest_pending_NotBefore_is_closer_than_KeySourceRefreshInterval()
     {
         var ct = TestContext.Current.CancellationToken;
         var refreshInterval = TimeSpan.FromMinutes(5);

@@ -136,7 +136,7 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
             configure: options =>
             {
                 options.AddCertificate(SecondaryThumbprint);
-                options.RefreshInterval = refreshInterval;
+                options.KeySourceRefreshInterval = refreshInterval;
             });
 
         await using var provider = services.BuildServiceProvider();
@@ -231,7 +231,7 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
 
         var builder = new ZeeKayDaAuthBuilder(services);
         builder.AddWindowsCertificateStoreSigning(PrimaryThumbprint, StoreLocation.CurrentUser, StoreName.My,
-            configure: options => options.RefreshInterval = refreshInterval);
+            configure: options => options.KeySourceRefreshInterval = refreshInterval);
 
         await using var provider = services.BuildServiceProvider();
         var signingService = provider.GetRequiredService<IJwtSigningService>();
@@ -273,7 +273,7 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
             configure: options =>
             {
                 options.AddCertificate(SecondaryThumbprint);
-                options.RefreshInterval = refreshInterval;
+                options.KeySourceRefreshInterval = refreshInterval;
             });
 
         await using var provider = services.BuildServiceProvider();
@@ -300,7 +300,7 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
     }
 
     [Fact]
-    public async Task Full_DI_wiring_logs_startup_warning_when_soonest_pending_NotBefore_is_closer_than_RefreshInterval()
+    public async Task Full_DI_wiring_logs_startup_warning_when_soonest_pending_NotBefore_is_closer_than_KeySourceRefreshInterval()
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), RequiresWindowsReason);
 
@@ -319,7 +319,7 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
             configure: options =>
             {
                 options.AddCertificate(SecondaryThumbprint);
-                options.RefreshInterval = refreshInterval;
+                options.KeySourceRefreshInterval = refreshInterval;
             });
 
         await using var provider = services.BuildServiceProvider();

@@ -37,7 +37,7 @@ public sealed class WindowsCertificateStoreSigningJwtSigningServiceTests
             Thumbprint = primaryThumbprint,
             StoreLocation = StoreLocation.CurrentUser,
             StoreName = StoreName.My,
-            RefreshInterval = refreshInterval ?? TimeSpan.FromMinutes(5),
+            KeySourceRefreshInterval = refreshInterval ?? TimeSpan.FromMinutes(5),
         };
         foreach (var additional in additionalThumbprints ?? [])
             settingsOptions.AddCertificate(additional);

@@ -53,7 +53,7 @@ public sealed class AzureKeyVaultCachedSigningJwtSigningServiceTests
             CertificateIdentifier = new KeyVaultCertificateIdentifier(CertificateIdentifierUri),
             Credential = new FakeTokenCredential(),
             Algorithm = algorithm,
-            RefreshInterval = refreshInterval ?? DefaultRefreshInterval,
+            KeySourceRefreshInterval = refreshInterval ?? DefaultRefreshInterval,
         });
 
         return new AzureKeyVaultCachedSigningJwtSigningService(
@@ -99,7 +99,7 @@ public sealed class AzureKeyVaultCachedSigningJwtSigningServiceTests
         await sut.GetSigningKeysAsync(ct); // Prime the initial (bootstrap) load.
 
         reader.AddRsaVersion("v2", createdOn: t1);
-        timeProvider.SetUtcNow(t1); // Cache has expired (> RefreshInterval since the first load).
+        timeProvider.SetUtcNow(t1); // Cache has expired (> KeySourceRefreshInterval since the first load).
 
         var keys = await sut.GetSigningKeysAsync(ct);
 
@@ -576,7 +576,7 @@ public sealed class AzureKeyVaultCachedSigningJwtSigningServiceTests
 
         await using var sut = BuildService(reader, timeProvider);
         await sut.GetSigningKeysAsync(ct);
-        await sut.GetSigningKeysAsync(ct); // Still within the cache's RefreshInterval — no reload.
+        await sut.GetSigningKeysAsync(ct); // Still within the cache's KeySourceRefreshInterval — no reload.
 
         reader.PrivateKeyMaterialCalls.Should().ContainSingle(
             "the private key must be downloaded once at load and cached, not re-downloaded on every call within the refresh interval");
