@@ -1,13 +1,23 @@
 name: CI (docs skip)
 
-# This workflow exists solely to satisfy the "CI Complete" required status check
-# when a PR or push contains only docs/** changes.
+# This workflow exists solely to satisfy required status checks when a PR or push
+# contains only docs/** changes.
 #
 # GitHub treats a skipped workflow (via paths-ignore) as a missing required check,
 # which blocks merging. The companion ci.yml uses paths-ignore to skip the real
-# build jobs for docs-only changes. This workflow produces the single "CI Complete"
-# check that branch protection requires, immediately passing — keeping branch
-# protection happy without wasting CI minutes on a .NET build.
+# build jobs for docs-only changes. This workflow produces stub jobs whose names
+# match main's branch-protection required_status_checks contexts exactly
+# ("Format Check", "Build and Test (ubuntu-latest)", "Build and Test (windows-latest)",
+# "Build and Test (macos-latest)" — verify with
+# `gh api repos/<owner>/<repo>/branches/main/protection/required_status_checks -q .contexts`
+# if branch protection is ever reconfigured), immediately passing — keeping branch
+# protection happy without wasting CI minutes on a .NET build. It also emits a "CI
+# Complete" check for parity with ci.yml's aggregator job, though branch protection
+# does not currently require that context.
+#
+# If you add/rename a required check in ci.yml or in branch protection, update the
+# matching stub job here too — otherwise a docs-only PR will be permanently
+# unmergeable, waiting forever on a required check that no workflow run ever reports.
 
 on:
   pull_request:
@@ -23,9 +33,27 @@ permissions:
   contents: read
 
 jobs:
+  build-and-test-skip:
+    name: Build and Test
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Docs-only change — skipping build and test
+        run: echo "Docs-only change detected. Build and Test skipped."
+
+  format-check-skip:
+    name: Format Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Docs-only change — skipping format check
+        run: echo "Docs-only change detected. Format Check skipped."
+
   ci-complete:
     name: CI Complete
     runs-on: ubuntu-latest
+    needs: [build-and-test-skip, format-check-skip]
     steps:
       - name: Docs-only change — skipping CI
         run: echo "Docs-only change detected. CI skipped."
