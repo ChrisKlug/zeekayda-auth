@@ -59,6 +59,28 @@ This separation exists because ADRs change during review. Writing implementation
 
 > 💡 If you are an external contributor with a feature idea, open a **Feature Request** — the maintainers will determine whether an ADR is needed and create the appropriate issues.
 
+### Pre-1.0 Stability Policy
+
+ZeeKayDa.Auth has not yet tagged a release — `CHANGELOG.md` is still entirely under
+`[Unreleased]`, and there are no external consumers depending on a published version. This has
+concrete, temporary implications for how we work:
+
+- Breaking API changes need **no deprecation shims**, `[Obsolete]` attributes, or migration
+  guides. If a shape is wrong, we fix it directly rather than carrying the old shape alongside
+  the new one.
+- ADRs may be **rewritten in place** to describe the current design, rather than amended in
+  perpetuity. See [`docs/decisions/README.md`](docs/decisions/README.md) for the ADR format and
+  the opportunistic-migration policy this enables.
+
+This is a deliberate but temporary relaxation — it exists only because nothing yet depends on the
+current shapes being stable.
+
+> ⚠️ **Removal trigger:** Once the first version is tagged (see
+> [Cutting a stable release](#cutting-a-stable-release) — `CHANGELOG.md`'s `[Unreleased]` section
+> moves to a versioned section and a `git tag` is pushed), this policy no longer applies and this
+> section must be removed or revisited. From that point on, external consumers exist and normal
+> semantic-versioning deprecation discipline applies to breaking changes.
+
 ### Issue Title Format
 
 Issue titles must be written in imperative sentence case and describe the work directly.
