@@ -61,13 +61,13 @@ public sealed class DevelopmentSigningKeyWarningServiceTests
         CapturingLogger<DevelopmentSigningKeyWarningService>? logger = null,
         FakeSigningService? signingService = null)
     {
-        var serverOptions = new AuthorizationServerOptions();
+        var devOptions = new DevelopmentSigningKeyOptions();
         if (allowedEnvironments is not null)
-            serverOptions.AllowedDevelopmentJwtSigningKeysEnvironments = allowedEnvironments;
+            devOptions.AllowedDevelopmentJwtSigningKeysEnvironments = allowedEnvironments;
 
         return new DevelopmentSigningKeyWarningService(
             new FakeHostEnvironment(environmentName),
-            Options.Create(serverOptions),
+            Options.Create(devOptions),
             signingService ?? new FakeSigningService(),
             logger ?? new CapturingLogger<DevelopmentSigningKeyWarningService>());
     }
@@ -79,7 +79,7 @@ public sealed class DevelopmentSigningKeyWarningServiceTests
     {
         var act = () => new DevelopmentSigningKeyWarningService(
             null!,
-            Options.Create(new AuthorizationServerOptions()),
+            Options.Create(new DevelopmentSigningKeyOptions()),
             new FakeSigningService(),
             NullSanitizingLogger<DevelopmentSigningKeyWarningService>.Instance);
 
@@ -95,7 +95,7 @@ public sealed class DevelopmentSigningKeyWarningServiceTests
             new FakeSigningService(),
             NullSanitizingLogger<DevelopmentSigningKeyWarningService>.Instance);
 
-        act.Should().Throw<ArgumentNullException>().WithParameterName("serverOptions");
+        act.Should().Throw<ArgumentNullException>().WithParameterName("devOptions");
     }
 
     [Fact]
@@ -103,7 +103,7 @@ public sealed class DevelopmentSigningKeyWarningServiceTests
     {
         var act = () => new DevelopmentSigningKeyWarningService(
             new FakeHostEnvironment(Environments.Development),
-            Options.Create(new AuthorizationServerOptions()),
+            Options.Create(new DevelopmentSigningKeyOptions()),
             null!,
             NullSanitizingLogger<DevelopmentSigningKeyWarningService>.Instance);
 
@@ -115,7 +115,7 @@ public sealed class DevelopmentSigningKeyWarningServiceTests
     {
         var act = () => new DevelopmentSigningKeyWarningService(
             new FakeHostEnvironment(Environments.Development),
-            Options.Create(new AuthorizationServerOptions()),
+            Options.Create(new DevelopmentSigningKeyOptions()),
             new FakeSigningService(),
             null!);
 

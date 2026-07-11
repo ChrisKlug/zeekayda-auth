@@ -10,23 +10,31 @@ public sealed class ZeeKayDaAuthBuilderSigningExtensionsTests
     // ── Argument validation ───────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void AddDevelopmentJwtSigningKeys_throws_ArgumentNullException_when_builder_is_null()
+    public void AddInMemoryDevelopmentJwtSigningKeys_throws_ArgumentNullException_when_builder_is_null()
     {
-        var act = () => ((ZeeKayDaAuthBuilder)null!).AddDevelopmentJwtSigningKeys();
+        var act = () => ((ZeeKayDaAuthBuilder)null!).AddInMemoryDevelopmentJwtSigningKeys();
 
         act.Should().Throw<ArgumentNullException>().WithParameterName("builder");
     }
 
-    // ── Ephemeral mode (no argument) ─────────────────────────────────────────────────────────────
+    [Fact]
+    public void AddPersistedDevelopmentJwtSigningKeys_throws_ArgumentNullException_when_builder_is_null()
+    {
+        var act = () => ((ZeeKayDaAuthBuilder)null!).AddPersistedDevelopmentJwtSigningKeys();
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("builder");
+    }
+
+    // ── Ephemeral mode (AddInMemoryDevelopmentJwtSigningKeys) ────────────────────────────────────
 
     [Fact]
-    public async Task AddDevelopmentJwtSigningKeys_with_no_argument_registers_IJwtSigningService()
+    public async Task AddInMemoryDevelopmentJwtSigningKeys_registers_IJwtSigningService()
     {
         var services = new ServiceCollection();
         services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment { ContentRootPath = "/app" });
         var builder = new ZeeKayDaAuthBuilder(services);
 
-        builder.AddDevelopmentJwtSigningKeys();
+        builder.AddInMemoryDevelopmentJwtSigningKeys();
 
         await using var provider = services.BuildServiceProvider();
         var service = provider.GetRequiredService<IJwtSigningService>();
@@ -34,27 +42,27 @@ public sealed class ZeeKayDaAuthBuilderSigningExtensionsTests
     }
 
     [Fact]
-    public async Task AddDevelopmentJwtSigningKeys_with_no_argument_leaves_PersistToDirectory_null()
+    public async Task AddInMemoryDevelopmentJwtSigningKeys_leaves_PersistToDirectory_null()
     {
         var services = new ServiceCollection();
         services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment { ContentRootPath = "/app" });
         var builder = new ZeeKayDaAuthBuilder(services);
 
-        builder.AddDevelopmentJwtSigningKeys();
+        builder.AddInMemoryDevelopmentJwtSigningKeys();
 
         await using var provider = services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<DevelopmentSigningKeyOptions>>().Value;
-        options.PersistToDirectory.Should().BeNull("no argument means ephemeral mode");
+        options.PersistToDirectory.Should().BeNull("this method registers the ephemeral in-memory provider");
     }
 
     [Fact]
-    public async Task AddDevelopmentJwtSigningKeys_with_no_argument_registers_TimeProvider_System_singleton()
+    public async Task AddInMemoryDevelopmentJwtSigningKeys_registers_TimeProvider_System_singleton()
     {
         var services = new ServiceCollection();
         services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment { ContentRootPath = "/app" });
         var builder = new ZeeKayDaAuthBuilder(services);
 
-        builder.AddDevelopmentJwtSigningKeys();
+        builder.AddInMemoryDevelopmentJwtSigningKeys();
 
         await using var provider = services.BuildServiceProvider();
         var tp = provider.GetRequiredService<TimeProvider>();
@@ -62,7 +70,7 @@ public sealed class ZeeKayDaAuthBuilderSigningExtensionsTests
     }
 
     [Fact]
-    public async Task AddDevelopmentJwtSigningKeys_does_not_overwrite_already_registered_TimeProvider()
+    public async Task AddInMemoryDevelopmentJwtSigningKeys_does_not_overwrite_already_registered_TimeProvider()
     {
         var services = new ServiceCollection();
         services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment { ContentRootPath = "/app" });
@@ -72,7 +80,7 @@ public sealed class ZeeKayDaAuthBuilderSigningExtensionsTests
         services.AddSingleton<TimeProvider>(customTimeProvider);
 
         var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddDevelopmentJwtSigningKeys();
+        builder.AddInMemoryDevelopmentJwtSigningKeys();
 
         await using var provider = services.BuildServiceProvider();
         var tp = provider.GetRequiredService<TimeProvider>();
@@ -82,13 +90,13 @@ public sealed class ZeeKayDaAuthBuilderSigningExtensionsTests
     private sealed class StubTimeProvider : TimeProvider;
 
     [Fact]
-    public void AddDevelopmentJwtSigningKeys_registers_DevelopmentSigningKeyWarningService_as_IHostedService()
+    public void AddInMemoryDevelopmentJwtSigningKeys_registers_DevelopmentSigningKeyWarningService_as_IHostedService()
     {
         var services = new ServiceCollection();
         services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment { ContentRootPath = "/app" });
         var builder = new ZeeKayDaAuthBuilder(services);
 
-        builder.AddDevelopmentJwtSigningKeys();
+        builder.AddInMemoryDevelopmentJwtSigningKeys();
 
         var registrations = services
             .Where(d => d.ServiceType == typeof(IHostedService))
@@ -98,62 +106,151 @@ public sealed class ZeeKayDaAuthBuilderSigningExtensionsTests
     }
 
     [Fact]
-    public void AddDevelopmentJwtSigningKeys_returns_builder_for_chaining()
+    public void AddInMemoryDevelopmentJwtSigningKeys_returns_builder_for_chaining()
     {
         var services = new ServiceCollection();
         services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment { ContentRootPath = "/app" });
         var builder = new ZeeKayDaAuthBuilder(services);
 
-        var returned = builder.AddDevelopmentJwtSigningKeys();
+        var returned = builder.AddInMemoryDevelopmentJwtSigningKeys();
 
         returned.Should().BeSameAs(builder);
     }
 
-    // ── Persist to default path (null argument) ──────────────────────────────────────────────────
-
     [Fact]
-    public async Task AddDevelopmentJwtSigningKeys_with_null_sets_PersistToDirectory_to_default_path()
+    public async Task AddInMemoryDevelopmentJwtSigningKeys_applies_configure_callback()
     {
         var services = new ServiceCollection();
         services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment { ContentRootPath = "/app" });
         var builder = new ZeeKayDaAuthBuilder(services);
 
-        builder.AddDevelopmentJwtSigningKeys(persistTo: null);
+        builder.AddInMemoryDevelopmentJwtSigningKeys(o =>
+            o.AllowedDevelopmentJwtSigningKeysEnvironments = ["Development", "IntegrationTesting"]);
+
+        await using var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<DevelopmentSigningKeyOptions>>().Value;
+        options.AllowedDevelopmentJwtSigningKeysEnvironments.Should().BeEquivalentTo(
+            new[] { "Development", "IntegrationTesting" });
+    }
+
+    [Fact]
+    public void AddInMemoryDevelopmentJwtSigningKeys_throws_InvalidOperationException_when_called_twice()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment { ContentRootPath = "/app" });
+        var builder = new ZeeKayDaAuthBuilder(services);
+        builder.AddInMemoryDevelopmentJwtSigningKeys();
+
+        var act = () => builder.AddInMemoryDevelopmentJwtSigningKeys();
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*IJwtSigningService*already registered*");
+    }
+
+    // ── Persist to default path (AddPersistedDevelopmentJwtSigningKeys with no argument) ────────
+
+    [Fact]
+    public async Task AddPersistedDevelopmentJwtSigningKeys_with_no_argument_sets_PersistToDirectory_to_default_path()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment { ContentRootPath = "/app" });
+        var builder = new ZeeKayDaAuthBuilder(services);
+
+        builder.AddPersistedDevelopmentJwtSigningKeys();
 
         await using var provider = services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<DevelopmentSigningKeyOptions>>().Value;
         options.PersistToDirectory.Should().Be(
             Path.Join("/app", ".zeekayda", "signing-keys"),
-            "null means default path under ContentRootPath");
+            "no argument means the default path under ContentRootPath");
     }
 
-    // ── Persist to explicit path ──────────────────────────────────────────────────────────────────
-
     [Fact]
-    public async Task AddDevelopmentJwtSigningKeys_with_explicit_path_sets_PersistToDirectory()
+    public async Task AddPersistedDevelopmentJwtSigningKeys_with_null_sets_PersistToDirectory_to_default_path()
     {
         var services = new ServiceCollection();
         services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment { ContentRootPath = "/app" });
         var builder = new ZeeKayDaAuthBuilder(services);
 
-        builder.AddDevelopmentJwtSigningKeys(persistTo: "/custom/keys");
+        builder.AddPersistedDevelopmentJwtSigningKeys(persistTo: null);
+
+        await using var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<DevelopmentSigningKeyOptions>>().Value;
+        options.PersistToDirectory.Should().Be(
+            Path.Join("/app", ".zeekayda", "signing-keys"),
+            "persistTo: null always means the default path — there is no ephemeral reading of this overload");
+    }
+
+    // ── Persist to explicit path ──────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task AddPersistedDevelopmentJwtSigningKeys_with_explicit_path_sets_PersistToDirectory()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment { ContentRootPath = "/app" });
+        var builder = new ZeeKayDaAuthBuilder(services);
+
+        builder.AddPersistedDevelopmentJwtSigningKeys(persistTo: "/custom/keys");
 
         await using var provider = services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<DevelopmentSigningKeyOptions>>().Value;
         options.PersistToDirectory.Should().Be("/custom/keys");
     }
 
-    // ── Double-registration guard ─────────────────────────────────────────────────────────────────
-
     [Fact]
-    public void AddDevelopmentJwtSigningKeys_throws_InvalidOperationException_when_called_twice()
+    public async Task AddPersistedDevelopmentJwtSigningKeys_applies_configure_callback()
     {
         var services = new ServiceCollection();
         services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment { ContentRootPath = "/app" });
         var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddDevelopmentJwtSigningKeys();
 
-        var act = () => builder.AddDevelopmentJwtSigningKeys();
+        builder.AddPersistedDevelopmentJwtSigningKeys(
+            persistTo: "/custom/keys",
+            configure: o => o.AllowedDevelopmentJwtSigningKeysEnvironments = ["Development", "Staging"]);
+
+        await using var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<DevelopmentSigningKeyOptions>>().Value;
+        options.AllowedDevelopmentJwtSigningKeysEnvironments.Should().BeEquivalentTo(
+            new[] { "Development", "Staging" });
+    }
+
+    [Fact]
+    public void AddPersistedDevelopmentJwtSigningKeys_returns_builder_for_chaining()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment { ContentRootPath = "/app" });
+        var builder = new ZeeKayDaAuthBuilder(services);
+
+        var returned = builder.AddPersistedDevelopmentJwtSigningKeys();
+
+        returned.Should().BeSameAs(builder);
+    }
+
+    // ── Double-registration guard ─────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void AddPersistedDevelopmentJwtSigningKeys_throws_InvalidOperationException_when_called_twice()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment { ContentRootPath = "/app" });
+        var builder = new ZeeKayDaAuthBuilder(services);
+        builder.AddPersistedDevelopmentJwtSigningKeys();
+
+        var act = () => builder.AddPersistedDevelopmentJwtSigningKeys();
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*IJwtSigningService*already registered*");
+    }
+
+    [Fact]
+    public void AddInMemoryDevelopmentJwtSigningKeys_then_AddPersistedDevelopmentJwtSigningKeys_throws_InvalidOperationException()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment { ContentRootPath = "/app" });
+        var builder = new ZeeKayDaAuthBuilder(services);
+        builder.AddInMemoryDevelopmentJwtSigningKeys();
+
+        var act = () => builder.AddPersistedDevelopmentJwtSigningKeys();
 
         act.Should().Throw<InvalidOperationException>()
             .WithMessage("*IJwtSigningService*already registered*");

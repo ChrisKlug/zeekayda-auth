@@ -8,7 +8,8 @@ internal static class DevelopmentSigningKeyGate
         "Development signing keys are active in a Production environment. " +
         "AllowedDevelopmentJwtSigningKeysEnvironments cannot include the Production environment. " +
         "Development keys are ephemeral or stored in a local file and are not suitable for production. " +
-        "Replace AddDevelopmentJwtSigningKeys() with a production key provider.";
+        "Replace AddInMemoryDevelopmentJwtSigningKeys()/AddPersistedDevelopmentJwtSigningKeys() with " +
+        "a production key provider.";
 
     internal const string NonDevelopmentFailureCode = "signing.dev_keys.non_development";
 
@@ -17,9 +18,10 @@ internal static class DevelopmentSigningKeyGate
         "which is not in AllowedDevelopmentJwtSigningKeysEnvironments. " +
         "This is a configuration error: development keys are ephemeral or stored in a " +
         "local file and are not suitable for production. " +
-        "Replace AddDevelopmentJwtSigningKeys() with a production key provider, or add " +
-        "the environment name to AllowedDevelopmentJwtSigningKeysEnvironments if this is " +
-        "an intentional non-Development test host (e.g. an integration test host).";
+        "Replace AddInMemoryDevelopmentJwtSigningKeys()/AddPersistedDevelopmentJwtSigningKeys() " +
+        "with a production key provider, or add the environment name to " +
+        "AllowedDevelopmentJwtSigningKeysEnvironments if this is an intentional non-Development " +
+        "test host (e.g. an integration test host).";
 
     /// <summary>
     /// Enforces the environment gate. No-op when <paramref name="environmentName"/> is
