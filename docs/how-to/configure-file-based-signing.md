@@ -134,7 +134,7 @@ so callers are not forced into DI-resolution machinery for what is usually a sim
 > secret file, or a secret store at runtime instead.
 
 `PasswordSource` is invoked on every `LoadKeysAsync` call — that includes the periodic
-`RefreshInterval` re-read described below, not just startup. If your password source is slow or
+`KeySourceRefreshInterval` re-read described below, not just startup. If your password source is slow or
 remote, cache the value yourself inside the delegate rather than re-fetching it every time.
 
 #### Example: reading from an environment variable

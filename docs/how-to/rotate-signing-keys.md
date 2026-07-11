@@ -91,12 +91,12 @@ otherwise-valid token signed with a `kid` it has simply never seen.
 
 ZeeKayDa.Auth's providers avoid this by requiring a new key to be **published** — visible in
 `GetSigningKeysAsync()` results, and so in the JWKS — for some lead time **before** it is
-promoted to active signer. That lead time is `RefreshInterval`, the same setting every provider's
-options type inherits from `JwtSigningServiceOptions`. Set `RefreshInterval` to something at
+promoted to active signer. That lead time is `KeySourceRefreshInterval`, the same setting every provider's
+options type inherits from `JwtSigningServiceOptions`. Set `KeySourceRefreshInterval` to something at
 least as long as your relying parties' JWKS cache TTL, and a relying party that polls the JWKS at
 that interval will always have observed a new key before the first token is signed with it.
 
-> ⚠️ **Warning:** `RefreshInterval` does double duty as this activation lead time for the
+> ⚠️ **Warning:** `KeySourceRefreshInterval` does double duty as this activation lead time for the
 > certificate-backed providers (Windows Certificate Store, file-based PEM/PFX) — see the
 > provider-specific sections below for exactly what you have to do to satisfy it.
 
@@ -127,7 +127,7 @@ versions in application configuration at all.
 Your job as the operator is:
 
 1. **Create the new key or certificate version in Key Vault** with enough lead time before it
-   needs to be live — at least `RefreshInterval`, so it has been visible to the provider (and
+   needs to be live — at least `KeySourceRefreshInterval`, so it has been visible to the provider (and
    therefore published in the JWKS) for at least that long before it becomes the active signer.
 2. **Do not disable or delete the old version** until its retirement window has elapsed. The
    provider needs the old version's public key to remain available to keep validating tokens
@@ -152,7 +152,7 @@ restart.
 
 The rotation procedure is the same for both:
 
-1. **Generate the new certificate or file**, setting its `NotBefore` at least `RefreshInterval`
+1. **Generate the new certificate or file**, setting its `NotBefore` at least `KeySourceRefreshInterval`
    in the future. This is the step that satisfies publish-then-activate for these two providers:
    because every registered certificate is already fully visible in the JWKS from process start,
    there is no separate "has this been published yet" delay the library can add on top — the
@@ -191,12 +191,12 @@ builder.Services
         path: "/etc/zeekayda/signing/current.pem",
         configure: options =>
         {
-            options.RefreshInterval = TimeSpan.FromMinutes(10);
+            options.KeySourceRefreshInterval = TimeSpan.FromMinutes(10);
         });
 ```
 
 During rotation, with the new certificate registered alongside the old one — deploy this and
-restart once the new file exists with its `NotBefore` set at least `RefreshInterval` (10 minutes,
+restart once the new file exists with its `NotBefore` set at least `KeySourceRefreshInterval` (10 minutes,
 here) in the future:
 
 ```csharp
@@ -209,7 +209,7 @@ builder.Services
         path: "/etc/zeekayda/signing/current.pem",
         configure: options =>
         {
-            options.RefreshInterval = TimeSpan.FromMinutes(10);
+            options.KeySourceRefreshInterval = TimeSpan.FromMinutes(10);
             options.AddFile("/etc/zeekayda/signing/rotated-in.pem");
         });
 ```
@@ -227,7 +227,7 @@ builder.Services
         path: "/etc/zeekayda/signing/rotated-in.pem",
         configure: options =>
         {
-            options.RefreshInterval = TimeSpan.FromMinutes(10);
+            options.KeySourceRefreshInterval = TimeSpan.FromMinutes(10);
         });
 ```
 
@@ -246,9 +246,9 @@ had elapsed. Restore the old key if you still have it, and wait the full retirem
 time before removing it.
 
 **Relying parties reject tokens signed by the newly-active key, immediately after rotation.** You
-most likely set the new certificate's `NotBefore` to "now" instead of at least `RefreshInterval`
+most likely set the new certificate's `NotBefore` to "now" instead of at least `KeySourceRefreshInterval`
 in the future — or, for Key Vault, created the new version and let it activate without waiting
-`RefreshInterval` for it to be observed. A relying party with a cached JWKS from before the new
+`KeySourceRefreshInterval` for it to be observed. A relying party with a cached JWKS from before the new
 key existed has no way to know about it yet. There is no way to undo an early activation
 retroactively; the fix is to make sure the *next* rotation gives the new key enough lead time.
 

@@ -8,15 +8,18 @@ nav_order: 7
 *Added in Unreleased.*
 
 ZeeKayDa.Auth requires an `IJwtSigningService` to be registered before the application starts.
-`AddDevelopmentJwtSigningKeys()` registers a provider that generates its own RSA key locally, so
-you can run the authorization server on your machine without provisioning a KMS, HSM, or
-certificate first.
+There are two named registration methods that generate an RSA key locally, so you can run the
+authorization server on your machine without provisioning a KMS, HSM, or certificate first:
+
+- `AddInMemoryDevelopmentJwtSigningKeys()` — ephemeral, in-memory key.
+- `AddPersistedDevelopmentJwtSigningKeys()` — key persisted to a local file.
 
 For the underlying `IJwtSigningService` abstraction and how signing keys reach the JWKS document,
 see [Signing keys](../reference/signing-keys.md).
 
-> ⚠️ **Warning:** This provider is for local development and testing only. It is never suitable
-> for production — see [Not for production](#not-for-production-use) below for what to use instead.
+> ⚠️ **Warning:** Both providers are for local development and testing only. Neither is ever
+> suitable for production — see [Not for production](#not-for-production-use) below for what to
+> use instead.
 
 ## Before you start
 
@@ -29,8 +32,8 @@ see [Signing keys](../reference/signing-keys.md).
 
 ## Option 1 — Ephemeral in-memory key (zero configuration)
 
-Call `.AddDevelopmentJwtSigningKeys()` with no arguments to generate a fresh RSA key (at least
-3072 bits) in memory on every startup:
+Call `.AddInMemoryDevelopmentJwtSigningKeys()` with no arguments to generate a fresh RSA key (at
+least 3072 bits) in memory on every startup:
 
 ```csharp
 using ZeeKayDa.Auth;
@@ -43,7 +46,7 @@ builder.Services
     {
         options.Issuer = "https://localhost:5001";
     })
-    .AddDevelopmentJwtSigningKeys();
+    .AddInMemoryDevelopmentJwtSigningKeys();
 
 var app = builder.Build();
 app.MapZeeKayDaAuth();
@@ -62,8 +65,8 @@ browser or a test client — stop validating immediately.
 
 ## Option 2 — Persisted key
 
-Call `.AddDevelopmentJwtSigningKeys(persistTo: ...)` to write the RSA key to a local file the
-first time it is generated, and load it back on every subsequent startup:
+Call `.AddPersistedDevelopmentJwtSigningKeys()` to write the RSA key to a local file the first
+time it is generated, and load it back on every subsequent startup:
 
 ```csharp
 using ZeeKayDa.Auth;
@@ -76,19 +79,20 @@ builder.Services
     {
         options.Issuer = "https://localhost:5001";
     })
-    .AddDevelopmentJwtSigningKeys(persistTo: null);
+    .AddPersistedDevelopmentJwtSigningKeys();
 
 var app = builder.Build();
 app.MapZeeKayDaAuth();
 app.Run();
 ```
 
-Passing `persistTo: null` stores the key at the default path,
+With no `persistTo` argument (or `persistTo: null`), the key is stored at the default path,
 `{ContentRootPath}/.zeekayda/signing-keys/dev-signing-key.pem`. Pass an explicit directory to use
-a different location:
+a different location — unlike the in-memory method, `persistTo: null` on this method always means
+"persist to the default path," never "don't persist":
 
 ```csharp
-.AddDevelopmentJwtSigningKeys(persistTo: "/Users/me/.local/share/zeekayda-dev-keys")
+.AddPersistedDevelopmentJwtSigningKeys(persistTo: "/Users/me/.local/share/zeekayda-dev-keys")
 ```
 
 The key file itself is always named `dev-signing-key.pem` inside that directory, and it is a
@@ -129,21 +133,23 @@ plain, unencrypted PEM — there is no passphrase.
 
 ## The environment gate
 
-Both overloads enforce a hard environment gate at startup. If the host environment is not in
-`AuthorizationServerOptions.AllowedDevelopmentJwtSigningKeysEnvironments` — which defaults to
-`["Development"]` — startup throws a `ZeeKayDaConfigurationException` and the application does
-not start. A `Production` environment name always fails this gate, regardless of what the list
-contains.
+Both methods enforce a hard environment gate at startup. If the host environment is not in the
+provider's allowed-environments list — which defaults to `["Development"]` — startup throws a
+`ZeeKayDaConfigurationException` and the application does not start. A `Production` environment
+name always fails this gate, regardless of what the list contains.
 
-This exists so that an accidental `AddDevelopmentJwtSigningKeys()` registration can never be
-silently deployed: it either runs in a genuinely `Development`-named environment or it refuses to
-start.
+This exists so that an accidental development-key registration can never be silently deployed: it
+either runs in a genuinely `Development`-named environment or it refuses to start.
 
 ### If your host reports a non-Development environment name
 
-`AllowedDevelopmentJwtSigningKeysEnvironments` is a public property on `AuthorizationServerOptions`
-— the same root options type you already configure in the `AddZeeKayDaAuth(options => ...)`
-callback shown above. Set it there to widen the list of environment names the gate accepts:
+The allowed-environments list is a **public, code-only opt-in** reached through each method's own
+`configure` callback — it is a provider-scoped setting, not a property on the shared
+`AuthorizationServerOptions` root, because it is inert unless one of the two development-key
+methods is actually in use.
+
+For `.AddInMemoryDevelopmentJwtSigningKeys(...)`, configure
+`InMemoryDevelopmentSigningKeyOptions.AllowedDevelopmentJwtSigningKeysEnvironments`:
 
 ```csharp
 using ZeeKayDa.Auth;
@@ -155,21 +161,30 @@ builder.Services
     .AddZeeKayDaAuth(options =>
     {
         options.Issuer = "https://localhost:5001";
-        options.AllowedDevelopmentJwtSigningKeysEnvironments =
-            ["Development", "IntegrationTesting", "CI"];
     })
-    .AddDevelopmentJwtSigningKeys();
+    .AddInMemoryDevelopmentJwtSigningKeys(options =>
+        options.AllowedDevelopmentJwtSigningKeysEnvironments =
+            ["Development", "IntegrationTesting", "CI"]);
 
 var app = builder.Build();
 app.MapZeeKayDaAuth();
 app.Run();
 ```
 
+For `.AddPersistedDevelopmentJwtSigningKeys(...)`, the same property lives on
+`DevelopmentSigningKeyOptions`, reached through its own `configure` callback:
+
+```csharp
+.AddPersistedDevelopmentJwtSigningKeys(configure: options =>
+    options.AllowedDevelopmentJwtSigningKeysEnvironments =
+        ["Development", "IntegrationTesting", "CI"]);
+```
+
 *Added in Unreleased.* `Production` still cannot be added to this list — the gate rejects a
 `Production` host environment unconditionally, regardless of what the list contains, and this is
-enforced both by startup validation and by the gate itself. For why this property lives on
-`AuthorizationServerOptions` rather than a provider-specific options type, see
-[ADR 0011 Amendment 8](https://github.com/ChrisKlug/zeekayda-auth/blob/main/docs/decisions/0011-signing-key-management.md).
+enforced both by startup validation and by the gate itself. For why this property lives on the
+provider-specific options type rather than a shared root, see
+[ADR 0011 §2 and its "Considered and Rejected Alternatives" section on PR #333's reversal](https://github.com/ChrisKlug/zeekayda-auth/blob/main/docs/decisions/0011-signing-key-management.md).
 
 If you only need the host to report `Development` itself — for example, a local integration test
 host that would otherwise pick up its own environment name — it can be simpler to leave the list
@@ -201,10 +216,11 @@ name is also used by other environment-gated checks.
 
 ## Not for production use
 
-`AddDevelopmentJwtSigningKeys()` is never appropriate for a production deployment. The key is
-either regenerated on every restart (ephemeral) or stored as plaintext PEM with no HSM, KMS, or
-hardware-backed protection (persisted) — neither survives a compromise of the host filesystem, and
-the ephemeral option invalidates every issued token on every restart.
+Neither `AddInMemoryDevelopmentJwtSigningKeys()` nor `AddPersistedDevelopmentJwtSigningKeys()` is
+ever appropriate for a production deployment. The key is either regenerated on every restart
+(in-memory) or stored as plaintext PEM with no HSM, KMS, or hardware-backed protection
+(persisted) — neither survives a compromise of the host filesystem, and the in-memory option
+invalidates every issued token on every restart.
 
 For production, register one of the production signing key providers instead:
 

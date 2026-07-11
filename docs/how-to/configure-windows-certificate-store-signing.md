@@ -126,7 +126,7 @@ builder.Services
 
 With exactly one registered certificate, it is the active signer immediately. With two or more registered, the certificate whose `NotBefore` has arrived and is most recent becomes the active signer — the operator's responsibility is to set the new certificate's `NotBefore` far enough in the future to give relying parties time to fetch the updated JWKS before it activates.
 
-> ⚠️ **Warning:** The set of registered thumbprints is fixed at process start. Every `RefreshInterval` tick re-reads the *same* configured thumbprints from the store — it does not discover new certificates that were added to the store after startup, and it does not notice a certificate that was removed. Adding, removing, or replacing a registered thumbprint requires a host restart.
+> ⚠️ **Warning:** The set of registered thumbprints is fixed at process start. Every `KeySourceRefreshInterval` tick re-reads the *same* configured thumbprints from the store — it does not discover new certificates that were added to the store after startup, and it does not notice a certificate that was removed. Adding, removing, or replacing a registered thumbprint requires a host restart.
 
 For the full activation and retirement timing model — including how `NotBefore` anchors publish-then-activate rotation — see [Rotate signing keys](rotate-signing-keys.md).
 

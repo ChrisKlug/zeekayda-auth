@@ -109,7 +109,8 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
 current trusted set, in whatever form the provider holds its keys. The base class does the rest:
 
 - **Interval-throttled caching**, driven by an injected `TimeProvider` (never wall-clock reads).
-  `LoadKeysAsync` is called at most once per `RefreshInterval`.
+  `LoadKeysAsync` is called at most once per `KeySourceRefreshInterval`, or exactly once ever if
+  `KeySourceRefreshInterval` is `null` (static-source mode).
 - **Single-flight refresh.** When the cache expires, concurrent callers are coalesced into one
   `LoadKeysAsync` call rather than each triggering their own — this applies equally on the signing
   hot path and on JWKS reads (see [The JWKS endpoint](#the-jwks-endpoint) below), so a burst of
@@ -135,21 +136,27 @@ namespace ZeeKayDa.Auth.Tokens;
 
 public abstract class JwtSigningServiceOptions
 {
-    public TimeSpan RefreshInterval { get; set; } = TimeSpan.FromMinutes(5);
+    public TimeSpan? KeySourceRefreshInterval { get; set; } = TimeSpan.FromMinutes(5);
 }
 ```
 
-`RefreshInterval` is the only property on the base options type. Every provider-specific options
-type (`DevelopmentSigningKeyOptions`, `AzureKeyVaultRemoteSigningOptions`,
-`WindowsCertificateStoreSigningOptions`, `PemFileSigningOptions`, `PfxFileSigningOptions`) derives
-from it and may add its own properties.
+`KeySourceRefreshInterval` is the only property on the base options type. Every provider-specific
+options type (`DevelopmentSigningKeyOptions`, `AzureKeyVaultRemoteSigningOptions`,
+`AzureKeyVaultCachedSigningOptions`, `WindowsCertificateStoreSigningOptions`,
+`PemFileSigningOptions`, `PfxFileSigningOptions`) derives from it and may add its own properties.
 
-> 💡 **Tip:** `RefreshInterval` means something different depending on the provider. For a remote
-> provider such as Azure Key Vault, it is the re-download cadence — how often the provider re-polls
-> the remote key source for changes. For a local file or certificate-store provider, there is
-> nothing remote to re-poll; the interval instead governs a startup-warning threshold for pending
-> key rotations (see [Rotate signing keys](../how-to/rotate-signing-keys.md)). This
-> nuance is covered in full, with concrete values, in each provider's how-to guide.
+`KeySourceRefreshInterval` is nullable: a non-null value is the finite poll cadence described
+below, and `null` means "load once via `LoadKeysAsync`, never reload" — a named static-source mode
+for an immutable key source, not a sentinel value. `DevelopmentSigningKeyOptions` defaults this to
+`null`, since a locally-generated or file-persisted development key never changes at runtime.
+
+> 💡 **Tip:** `KeySourceRefreshInterval` means something different depending on the provider. For a
+> remote provider such as Azure Key Vault, it is the re-download cadence *and* the
+> publish-then-activate lead time a rotated-in key must be visible for before it can become the
+> active signer. For a local file or certificate-store provider, there is nothing remote to
+> re-poll; the interval instead governs a startup-warning threshold for pending key rotations (see
+> [Rotate signing keys](../how-to/rotate-signing-keys.md)). This nuance is covered in full, with
+> concrete values, in each provider's how-to guide.
 
 ---
 
@@ -249,12 +256,12 @@ following the same idiom used elsewhere in ZeeKayDa.Auth (see
 ```csharp
 builder.Services
     .AddZeeKayDaAuth(options => { options.Issuer = "https://id.example.com"; })
-    .AddDevelopmentJwtSigningKeys();
+    .AddInMemoryDevelopmentJwtSigningKeys();
 ```
 
 See the how-to guide for each provider's exact method signature and required setup:
 
-- [Configure development signing keys](../how-to/configure-development-signing-keys.md) — `.AddDevelopmentJwtSigningKeys(...)`
+- [Configure development signing keys](../how-to/configure-development-signing-keys.md) — `.AddInMemoryDevelopmentJwtSigningKeys(...)` / `.AddPersistedDevelopmentJwtSigningKeys(...)`
 - [Configure Azure Key Vault signing](../how-to/configure-azure-key-vault-signing.md) — `.AddAzureKeyVaultRemoteSigning(...)` / `.AddAzureKeyVaultCachedSigning(...)`
 - [Configure Windows Certificate Store signing](../how-to/configure-windows-certificate-store-signing.md) — `.AddWindowsCertificateStoreSigning(...)`
 - [Configure file-based signing](../how-to/configure-file-based-signing.md) — `.AddPemFileSigning(...)` / `.AddPfxFileSigning(...)`
