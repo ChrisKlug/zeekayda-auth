@@ -381,6 +381,15 @@ The base class owns:
   be disposed out from under the just-installed cache and the next `GetPrivateKey` would throw
   `ObjectDisposedException`. The ask/refresh split avoids that failure structurally by never
   calling `LoadKeysAsync` at all on an unchanged cycle, rather than by having it return a sentinel.
+  `HasKeySetChangedAsync` throwing is **fail-closed by design**: the exception propagates straight
+  out of `BorrowSetAsync` to the current caller (the in-flight `GetSigningKeysAsync`/`SignAsync`
+  fails), and `_cachedSet`/`_cacheExpiresAt` are left untouched — no stale-cache fallback, nothing
+  swallowed. This is deliberately the same failure shape `LoadKeysAsync` throwing already has, so
+  adding the ask (a second network-capable operation) introduces no new failure mode — only the
+  same existing "fail closed, no silent stale-key fallback" convention the base class has always had
+  for `LoadKeysAsync`. Providers of this hook MUST NOT invent divergent fail-soft behaviour
+  (swallow-and-treat-as-unchanged, or swallow-and-keep-serving-the-stale-set): a silent fallback
+  would mask an operational check failing.
 - **Header construction, active-key selection, `kid`/`alg` fixation, and the `SignAsync`
   crypto dispatch**, all inside a private, non-overridable `PerformSignAsync`. `SignInputAsync`
   is the only overridable seam and can affect only the signature-bytes production for the
@@ -597,6 +606,26 @@ per-version metadata already fetched today (comparable in kind to the existing
 `_previouslyPublishedKidVersions` bookkeeping, not a new private-key-bearing cache), §3.3(c)'s
 immediate destruction of retired private material is untouched — no key bytes ever live outside the
 `SigningKeySet` disposal graph.
+
+**Change-detection baseline is captured only on a successful load, never on the ask (guidance for
+the follow-up cached providers).** The comparison baseline
+(`AzureKeyVaultCachedSigningJwtSigningService._previouslyIncludedVersions`) is written **only inside
+`LoadKeysAsync`**, never inside `HasKeySetChangedAsync` itself. Each ask therefore always diffs the
+freshly computed set against the set captured by the last successful *load* — i.e. the set that was
+actually materialised and served — not against whatever the previous *ask* happened to compute. The
+follow-up cached providers (#347 / #348 / #349), which each implement their own version of this same
+hook against their own backing store, MUST replicate this write-only-on-load pattern rather than
+updating the baseline from the ask path. The reason is correctness-under-failure, not a subtle
+steady-state drift: in normal operation, diffing against the last ask and diffing against the last
+load coincide, because any ask that reports a change is immediately followed by a reload that would
+rewrite the baseline anyway. The divergence appears when a reported change is *not* followed by a
+successful load — the ask runs before, and separately from, `LoadKeysAsync`, and the reload can fail
+(fail-closed, §3.2). If the baseline were written from the ask, that ask would have recorded a set
+that was never actually served; every subsequent ask would then diff against that phantom baseline,
+report "unchanged," and permanently mask the pending change, wedging the service on the stale key
+set. Anchoring the baseline write to `LoadKeysAsync` keeps the baseline and the currently-served set
+provably in lockstep: the baseline advances if and only if a new set was actually built and
+installed.
 
 **Single-key bootstrap exemption.** With exactly one key registered, `SelectActiveKey` treats it
 as active immediately regardless of its activation timing (there is no prior published JWKS state

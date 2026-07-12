@@ -57,6 +57,16 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
     /// <returns>
     /// The trusted key set. The first entry is the active signing key. Must never be empty.
     /// </returns>
+    /// <remarks>
+    /// Every call MUST return a genuinely new <see cref="SigningKeySet"/> instance; this method
+    /// MUST NOT return the same instance twice (for example a memoised set held to signal
+    /// "unchanged" — use <see cref="HasKeySetChangedAsync"/> for that instead). The returned set's
+    /// private-key objects are owned by the base class: immediately after installing a freshly
+    /// loaded set as current, the base class unconditionally <c>Dispose()</c>s the superseded
+    /// reference. Returning the same instance on a subsequent call would therefore dispose the
+    /// object that was just installed as the current set, and the next <c>GetPrivateKey</c> call on
+    /// it would throw <see cref="ObjectDisposedException"/>. See ADR 0011 §3.2.
+    /// </remarks>
     protected abstract ValueTask<SigningKeySet> LoadKeysAsync(CancellationToken cancellationToken);
 
     /// <summary>
@@ -80,6 +90,17 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
     /// a cheap, metadata-only check (e.g. re-enumerating version metadata without downloading key
     /// material); anything expensive enough to want to skip belongs in <see cref="LoadKeysAsync"/>
     /// itself, not here.
+    /// <para>
+    /// An override throwing is <b>fail-closed by design</b>. The base class awaits this method with
+    /// no fallback: if it throws, the exception propagates straight out to the current caller (the
+    /// in-flight <see cref="GetSigningKeysAsync"/> / <see cref="SignAsync"/> fails) and the cached
+    /// set and its expiry are left untouched — there is no stale-cache fallback and the exception is
+    /// never swallowed. This is deliberately the exact same failure shape as <see cref="LoadKeysAsync"/>
+    /// throwing, which also propagates directly with no fallback. Do not invent divergent fail-soft
+    /// behaviour (swallow-and-treat-as-unchanged, or swallow-and-continue-serving-the-stale-set): a
+    /// silent fallback would mask an operational check failing, which is exactly what fail-closed
+    /// exists to prevent. See ADR 0011 §3.2.
+    /// </para>
     /// </remarks>
     protected virtual ValueTask<bool> HasKeySetChangedAsync(CancellationToken cancellationToken) => new(true);
 
