@@ -61,16 +61,20 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
     /// Every call MUST return a genuinely new <see cref="SigningKeySet"/> instance; this method
     /// MUST NOT return the same instance twice (for example a memoised set held to signal
     /// "unchanged" — use <see cref="HasKeySetChangedAsync"/> for that instead). This is enforced at
-    /// runtime, not just documented: the base class compares the returned instance against the
-    /// previously cached set by reference immediately after this method returns, and throws an
-    /// <see cref="InvalidOperationException"/> right away if they are the same object — before the
-    /// previous set is disposed or the new one is installed as current. Without that guard, the
-    /// returned set's private-key objects are owned by the base class: immediately after installing
-    /// a freshly loaded set as current, the base class unconditionally <c>Dispose()</c>s the
-    /// superseded reference, so returning the same instance on a subsequent call would dispose the
-    /// object that was just installed as the current set, and the next <c>GetPrivateKey</c> call on
-    /// it would throw a confusing, disconnected <see cref="ObjectDisposedException"/> instead. See
-    /// ADR 0011 §3.2.
+    /// runtime, not just documented — but only for the naive case: the base class compares the
+    /// returned instance against the previously cached set by reference immediately after this
+    /// method returns, and throws an <see cref="InvalidOperationException"/> right away if they are
+    /// the same object — before the previous set is disposed or the new one is installed as
+    /// current. This is a reference-equality tripwire, not a deep check: building a genuinely new
+    /// <see cref="SigningKeySet"/> that nonetheless wraps the same underlying key objects as the
+    /// previous set is still this method's responsibility to avoid, and would reproduce the same
+    /// failure the guard exists to catch. Without either guard, the returned set's private-key
+    /// objects are owned by the base class: immediately after installing a freshly loaded set as
+    /// current, the base class unconditionally <c>Dispose()</c>s the superseded reference, so
+    /// returning the same instance (or the same underlying keys via a new wrapper) would dispose
+    /// objects still referenced by the current set, and the next <c>GetPrivateKey</c> call on it
+    /// would throw a confusing, disconnected <see cref="ObjectDisposedException"/> instead. See ADR
+    /// 0011 §3.2.
     /// </remarks>
     protected abstract ValueTask<SigningKeySet> LoadKeysAsync(CancellationToken cancellationToken);
 
