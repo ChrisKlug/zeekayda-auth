@@ -59,6 +59,30 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
     /// </returns>
     protected abstract ValueTask<SigningKeySet> LoadKeysAsync(CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Asked once per refresh cycle, after <see cref="JwtSigningServiceOptions.KeySourceRefreshInterval"/>
+    /// elapses and only when a previous key set already exists, whether the trusted key set has
+    /// actually changed since the last successful <see cref="LoadKeysAsync"/> call.
+    /// </summary>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>
+    /// <see langword="false"/> to keep serving the existing cached set for another interval
+    /// without calling <see cref="LoadKeysAsync"/> — skipping an expensive key-material reload
+    /// when nothing has rotated. <see langword="true"/> (the default) to proceed with a normal
+    /// <see cref="LoadKeysAsync"/> refresh, exactly as if this method did not exist.
+    /// </returns>
+    /// <remarks>
+    /// This is the "ask" step described in ADR 0011 §3.2, in front of the "refresh." The default
+    /// implementation always returns <see langword="true"/>, so every provider that does not
+    /// override this method keeps today's unconditional-rebuild behaviour unchanged. It is never
+    /// consulted for the first load — a cold start (no previous set) always calls
+    /// <see cref="LoadKeysAsync"/> directly. A provider overriding this method should perform only
+    /// a cheap, metadata-only check (e.g. re-enumerating version metadata without downloading key
+    /// material); anything expensive enough to want to skip belongs in <see cref="LoadKeysAsync"/>
+    /// itself, not here.
+    /// </remarks>
+    protected virtual ValueTask<bool> HasKeySetChangedAsync(CancellationToken cancellationToken) => new(true);
+
     /// <inheritdoc/>
     public async ValueTask<IReadOnlyList<SigningKeyDescriptor>> GetSigningKeysAsync(
         CancellationToken cancellationToken = default)
@@ -178,6 +202,23 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
             }
 
             var previous = _cachedSet;
+
+            // The "ask" step (ADR 0011 §3.2): when a previous set already exists, give the
+            // implementor a chance to report "nothing has changed" cheaply, without paying for a
+            // full LoadKeysAsync reload. Never consulted on a cold start (previous is null) — a
+            // cold start always loads.
+            if (previous is not null && !await HasKeySetChangedAsync(cancellationToken).ConfigureAwait(false))
+            {
+                // Unchanged: extend the expiry and keep serving the existing set. LoadKeysAsync is
+                // not invoked, and nothing is swapped or disposed.
+                _cacheExpiresAt = ComputeNextCacheExpiry();
+
+                // Inside the lock the set cannot be concurrently disposed, so TryBorrow is
+                // guaranteed to succeed here.
+                previous.TryBorrow();
+                return previous;
+            }
+
             var newSet = await LoadKeysAsync(cancellationToken).ConfigureAwait(false);
 
             try
@@ -191,12 +232,7 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
             }
 
             _cachedSet = newSet;
-
-            // null means static-source mode (see JwtSigningServiceOptions.KeySourceRefreshInterval):
-            // the cache never expires, so LoadKeysAsync above is never invoked again.
-            _cacheExpiresAt = _keySourceRefreshInterval is { } interval
-                ? _timeProvider.GetUtcNow().Add(interval)
-                : DateTimeOffset.MaxValue;
+            _cacheExpiresAt = ComputeNextCacheExpiry();
 
             // Release the cache's borrow on the old set. Its private keys are freed once
             // any in-flight fast-path borrows that still hold a reference have also returned.
@@ -211,6 +247,20 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
             _refreshLock.Release();
         }
     }
+
+    /// <summary>
+    /// Computes the cache's next expiry instant from the current time, applied identically whether
+    /// the cache is being extended (the "ask" reported no change) or replaced (a fresh
+    /// <see cref="LoadKeysAsync"/> result was just installed).
+    /// </summary>
+    private DateTimeOffset ComputeNextCacheExpiry() =>
+        // null means static-source mode (see JwtSigningServiceOptions.KeySourceRefreshInterval):
+        // the cache never expires. HasKeySetChangedAsync is realistically never reached in this
+        // mode, since the cache never expires and BorrowSetAsync's slow path is therefore never
+        // re-entered after the first load — this branch exists only as a defensive fallback.
+        _keySourceRefreshInterval is { } interval
+            ? _timeProvider.GetUtcNow().Add(interval)
+            : DateTimeOffset.MaxValue;
 
     /// <summary>
     /// Builds the JWS header and signing input for the active key and dispatches to

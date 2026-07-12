@@ -647,6 +647,196 @@ public sealed class AzureKeyVaultCachedSigningJwtSigningServiceTests
         isValid.Should().BeTrue("the signature must be verifiable against the certificate's own public key");
     }
 
+    // ── HasKeySetChangedAsync: metadata-only change detection (ADR 0011 §3.5) ───────────────────────
+
+    [Fact]
+    public async Task GetSigningKeysAsync_skips_key_material_download_when_versions_are_unchanged_between_polls()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
+        var reader = new FakeKeyVaultCertificateReader();
+        reader.AddRsaVersion("v1", createdOn: t0);
+        var timeProvider = new FakeTimeProvider(t0);
+
+        await using var sut = BuildService(reader, timeProvider, refreshInterval: DefaultRefreshInterval);
+        await sut.GetSigningKeysAsync(ct); // Bootstrap load.
+        reader.PrivateKeyMaterialCalls.Clear();
+        reader.PublicKeyMaterialCalls.Clear();
+
+        timeProvider.SetUtcNow(t0 + DefaultRefreshInterval); // Cache expires -> triggers the "ask" step.
+        var keys = await sut.GetSigningKeysAsync(ct);
+
+        keys.Should().HaveCount(1);
+        reader.PrivateKeyMaterialCalls.Should().BeEmpty(
+            "no version changed since the last load, so HasKeySetChangedAsync must report no change and LoadKeysAsync must not run");
+        reader.PublicKeyMaterialCalls.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task SignAsync_still_succeeds_after_an_unchanged_poll_skips_the_reload()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
+        var reader = new FakeKeyVaultCertificateReader();
+        reader.AddRsaVersion("v1", createdOn: t0);
+        var timeProvider = new FakeTimeProvider(t0);
+
+        await using var sut = BuildService(reader, timeProvider, refreshInterval: DefaultRefreshInterval);
+        await sut.GetSigningKeysAsync(ct); // Bootstrap load.
+
+        timeProvider.SetUtcNow(t0 + DefaultRefreshInterval); // Unchanged poll -> ask reports "no change".
+        var payload = "payload"u8.ToArray();
+
+        var act = async () => await sut.SignAsync(payload, ct);
+
+        await act.Should().NotThrowAsync(
+            "the cached SigningKeySet must remain usable (not disposed) when the ask reports no change");
+    }
+
+    [Fact]
+    public async Task HasKeySetChangedAsync_triggers_rebuild_when_a_new_certificate_version_appears()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
+        var reader = new FakeKeyVaultCertificateReader();
+        reader.AddRsaVersion("v1", createdOn: t0);
+        var timeProvider = new FakeTimeProvider(t0);
+
+        await using var sut = BuildService(reader, timeProvider, refreshInterval: DefaultRefreshInterval);
+        await sut.GetSigningKeysAsync(ct); // Bootstrap load.
+        reader.PrivateKeyMaterialCalls.Clear();
+        reader.PublicKeyMaterialCalls.Clear();
+
+        reader.AddRsaVersion("v2", createdOn: t0 + DefaultRefreshInterval);
+        timeProvider.SetUtcNow(t0 + DefaultRefreshInterval);
+        var keys = await sut.GetSigningKeysAsync(ct);
+
+        keys.Should().HaveCount(2, "v2 must be published as soon as it appears, per publish-then-activate");
+        reader.PublicKeyMaterialCalls.Should().NotBeEmpty(
+            "a new certificate version appearing must trigger a real reload, downloading key material again");
+    }
+
+    [Fact]
+    public async Task HasKeySetChangedAsync_triggers_rebuild_when_a_non_active_versions_enabled_flag_flips()
+    {
+        // ADR 0011 Amendment 2's revocation case: disabling a version that is not the active
+        // signer must still be reported as a change, even though the active version's identifier
+        // is unchanged.
+        var ct = TestContext.Current.CancellationToken;
+        var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
+        var t1 = t0 + TimeSpan.FromDays(1);
+        var retirementWindow = TimeSpan.FromHours(2);
+        var reader = new FakeKeyVaultCertificateReader();
+        reader.AddRsaVersion("v1", createdOn: t0);
+        var timeProvider = new FakeTimeProvider(t0);
+
+        await using var sut = BuildService(
+            reader, timeProvider, refreshInterval: DefaultRefreshInterval, retirementWindow: retirementWindow);
+        await sut.GetSigningKeysAsync(ct); // Bootstrap: v1 active.
+
+        reader.AddRsaVersion("v2", createdOn: t1);
+        timeProvider.SetUtcNow(t1 + DefaultRefreshInterval); // v2 activates; v1 retires but stays in-window.
+        await sut.GetSigningKeysAsync(ct); // v1 + v2 both included.
+        reader.PrivateKeyMaterialCalls.Clear();
+        reader.PublicKeyMaterialCalls.Clear();
+
+        // Disable v1 (the non-active, retired-but-in-window version). Only a small amount of time
+        // passes (well inside the 2-hour retirement window if v1 were still enabled) so the change
+        // is attributable solely to the Enabled flag flip, not to elapsed time.
+        reader.SetEnabled("v1", enabled: false);
+        timeProvider.SetUtcNow(t1 + DefaultRefreshInterval + DefaultRefreshInterval);
+        var keys = await sut.GetSigningKeysAsync(ct);
+
+        keys.Should().ContainSingle(
+            "v1's disabled flag must exclude it immediately, even though the active version (v2) is unchanged");
+        reader.PublicKeyMaterialCalls.Should().NotBeEmpty(
+            "a non-active version's Enabled flag flipping must still trigger a rebuild");
+    }
+
+    [Fact]
+    public async Task HasKeySetChangedAsync_triggers_rebuild_when_elapsed_time_alone_moves_a_version_out_of_its_retirement_window()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
+        var t1 = t0 + TimeSpan.FromDays(1);
+        var retirementWindow = TimeSpan.FromHours(1);
+        var reader = new FakeKeyVaultCertificateReader();
+        reader.AddRsaVersion("v1", createdOn: t0);
+        var timeProvider = new FakeTimeProvider(t0);
+
+        await using var sut = BuildService(
+            reader, timeProvider, refreshInterval: DefaultRefreshInterval, retirementWindow: retirementWindow);
+        await sut.GetSigningKeysAsync(ct); // Bootstrap: v1 active.
+
+        reader.AddRsaVersion("v2", createdOn: t1);
+        timeProvider.SetUtcNow(t1 + DefaultRefreshInterval); // v2 activates; v1 retired but still in-window.
+        await sut.GetSigningKeysAsync(ct); // v1 + v2 both included.
+        reader.PrivateKeyMaterialCalls.Clear();
+        reader.PublicKeyMaterialCalls.Clear();
+
+        // No Key Vault-side change at all — just elapsed time pushing v1 past its retirement window.
+        timeProvider.SetUtcNow(t1 + DefaultRefreshInterval + retirementWindow + TimeSpan.FromMinutes(1));
+        var keys = await sut.GetSigningKeysAsync(ct);
+
+        keys.Should().ContainSingle("v1's retirement window has now fully elapsed");
+        reader.PublicKeyMaterialCalls.Should().NotBeEmpty(
+            "a version leaving its retirement window purely from elapsed time must still trigger a rebuild, " +
+            "even with no Key Vault-side change");
+    }
+
+    [Fact]
+    public async Task HasKeySetChangedAsync_only_enumerates_certificate_versions_and_never_downloads_key_material_when_reporting_no_change()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
+        var reader = new FakeKeyVaultCertificateReader();
+        reader.AddRsaVersion("v1", createdOn: t0);
+        var timeProvider = new FakeTimeProvider(t0);
+
+        await using var sut = BuildService(reader, timeProvider, refreshInterval: DefaultRefreshInterval);
+        await sut.GetSigningKeysAsync(ct); // Bootstrap load.
+        var enumerationCallsAfterBootstrap = reader.GetCertificateVersionsCallCount;
+        reader.PrivateKeyMaterialCalls.Clear();
+        reader.PublicKeyMaterialCalls.Clear();
+
+        timeProvider.SetUtcNow(t0 + DefaultRefreshInterval); // Unchanged poll.
+        await sut.GetSigningKeysAsync(ct);
+
+        reader.GetCertificateVersionsCallCount.Should().Be(enumerationCallsAfterBootstrap + 1,
+            "the ask step must enumerate certificate versions exactly once per cycle");
+        reader.PrivateKeyMaterialCalls.Should().BeEmpty("the ask's metadata-only check must never download key material");
+        reader.PublicKeyMaterialCalls.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task HasKeySetChangedAsync_only_enumerates_certificate_versions_before_a_real_reload_downloads_key_material()
+    {
+        // Proves the "ask" itself is metadata-only even on a cycle that ends up rebuilding: the
+        // ask's own enumeration call never touches key material — only the subsequent, separate
+        // LoadKeysAsync reload (which shares the same ComputeIncludedVersionsAsync helper and so
+        // enumerates a second time) ever calls the key-material endpoints.
+        var ct = TestContext.Current.CancellationToken;
+        var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
+        var reader = new FakeKeyVaultCertificateReader();
+        reader.AddRsaVersion("v1", createdOn: t0);
+        var timeProvider = new FakeTimeProvider(t0);
+
+        await using var sut = BuildService(reader, timeProvider, refreshInterval: DefaultRefreshInterval);
+        await sut.GetSigningKeysAsync(ct); // Bootstrap load.
+        var enumerationCallsAfterBootstrap = reader.GetCertificateVersionsCallCount;
+        reader.PrivateKeyMaterialCalls.Clear();
+        reader.PublicKeyMaterialCalls.Clear();
+
+        reader.AddRsaVersion("v2", createdOn: t0 + DefaultRefreshInterval); // A genuine change.
+        timeProvider.SetUtcNow(t0 + DefaultRefreshInterval);
+        await sut.GetSigningKeysAsync(ct);
+
+        reader.GetCertificateVersionsCallCount.Should().Be(enumerationCallsAfterBootstrap + 2,
+            "one enumeration for the ask (HasKeySetChangedAsync) and a second, separate one for the real reload " +
+            "(LoadKeysAsync) that the \"true\" answer then triggers");
+        reader.PublicKeyMaterialCalls.Should().NotBeEmpty("the real reload — not the ask — is what downloads key material");
+    }
+
     // ── WarnIfPreviouslyPublishedKidVanished (ADR 0011 §3.5 anomaly surfacing) ──────────────────────
 
     [Fact]

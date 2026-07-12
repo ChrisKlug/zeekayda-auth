@@ -90,6 +90,43 @@ public sealed class JwtSigningServiceTests
         }
     }
 
+    /// <summary>
+    /// A fake that overrides <see cref="JwtSigningService{TOptions}.HasKeySetChangedAsync"/> with a
+    /// caller-supplied predicate and counts how many times it (and <see cref="LoadKeysAsync"/>) are
+    /// invoked — exercises the ADR 0011 §3.2 "ask" step in front of the reload.
+    /// </summary>
+    private sealed class ControllableHasChangedSigningService : JwtSigningService<FakeSigningServiceOptions>
+    {
+        private readonly Func<SigningKeySet> _factory;
+        private readonly Func<bool> _hasChanged;
+
+        public int LoadCount { get; private set; }
+        public int HasKeySetChangedAsyncCallCount { get; private set; }
+
+        public ControllableHasChangedSigningService(
+            IOptions<FakeSigningServiceOptions> options,
+            TimeProvider timeProvider,
+            Func<SigningKeySet> factory,
+            Func<bool> hasChanged)
+            : base(options, timeProvider)
+        {
+            _factory = factory;
+            _hasChanged = hasChanged;
+        }
+
+        protected override ValueTask<SigningKeySet> LoadKeysAsync(CancellationToken cancellationToken)
+        {
+            LoadCount++;
+            return ValueTask.FromResult(_factory());
+        }
+
+        protected override ValueTask<bool> HasKeySetChangedAsync(CancellationToken cancellationToken)
+        {
+            HasKeySetChangedAsyncCallCount++;
+            return new ValueTask<bool>(_hasChanged());
+        }
+    }
+
     private static SigningKeySet MakeRsaSet(string kid = "test-kid")
     {
         var rsa = RSA.Create(2048);
@@ -219,6 +256,105 @@ public sealed class JwtSigningServiceTests
         await sut.GetSigningKeysAsync(ct);
 
         sut.LoadCount.Should().Be(2, "second call is past the refresh interval");
+    }
+
+    [Fact]
+    public async Task GetSigningKeysAsync_default_HasKeySetChangedAsync_reloads_on_every_elapsed_cycle_for_providers_that_dont_override_it()
+    {
+        // A provider that does not override HasKeySetChangedAsync (like CountingSigningService
+        // here) must keep today's unconditional-rebuild behaviour: LoadKeysAsync runs every time
+        // the refresh interval elapses, with no skipped cycles.
+        var timeProvider = new FakeTimeProvider();
+        await using var sut = BuildService(timeProvider: timeProvider, refreshInterval: TimeSpan.FromMinutes(5));
+        var ct = TestContext.Current.CancellationToken;
+
+        await sut.GetSigningKeysAsync(ct);
+        timeProvider.Advance(TimeSpan.FromMinutes(6));
+        await sut.GetSigningKeysAsync(ct);
+        timeProvider.Advance(TimeSpan.FromMinutes(6));
+        await sut.GetSigningKeysAsync(ct);
+
+        sut.LoadCount.Should().Be(3, "the default HasKeySetChangedAsync always returns true, so every elapsed cycle triggers LoadKeysAsync");
+    }
+
+    // ── HasKeySetChangedAsync hook (ADR 0011 §3.2 "ask" step) ────────────────────────────────────────
+
+    [Fact]
+    public async Task GetSigningKeysAsync_does_not_call_HasKeySetChangedAsync_on_cold_start()
+    {
+        // The very first BorrowSetAsync call has no previous set to compare against, so the "ask"
+        // step must never be consulted — only LoadKeysAsync runs.
+        var timeProvider = new FakeTimeProvider();
+        var options = Options.Create(new FakeSigningServiceOptions { KeySourceRefreshInterval = TimeSpan.FromMinutes(5) });
+        await using var sut = new ControllableHasChangedSigningService(
+            options,
+            timeProvider,
+            () => MakeRsaSet(),
+            hasChanged: () => throw new InvalidOperationException("HasKeySetChangedAsync must not be called on cold start."));
+        var ct = TestContext.Current.CancellationToken;
+
+        await sut.GetSigningKeysAsync(ct);
+
+        sut.LoadCount.Should().Be(1);
+        sut.HasKeySetChangedAsyncCallCount.Should().Be(0,
+            "cold start (no previous set) must call LoadKeysAsync directly without consulting HasKeySetChangedAsync");
+    }
+
+    [Fact]
+    public async Task GetSigningKeysAsync_skips_LoadKeysAsync_when_HasKeySetChangedAsync_returns_false()
+    {
+        var timeProvider = new FakeTimeProvider();
+        var set = MakeRsaSet("unchanged-kid");
+        var options = Options.Create(new FakeSigningServiceOptions { KeySourceRefreshInterval = TimeSpan.FromMinutes(5) });
+        await using var sut = new ControllableHasChangedSigningService(options, timeProvider, () => set, hasChanged: () => false);
+        var ct = TestContext.Current.CancellationToken;
+
+        var first = await sut.GetSigningKeysAsync(ct);
+        timeProvider.Advance(TimeSpan.FromMinutes(6));
+        var second = await sut.GetSigningKeysAsync(ct);
+
+        sut.LoadCount.Should().Be(1, "HasKeySetChangedAsync returning false must skip the LoadKeysAsync reload");
+        second.Should().BeSameAs(first, "the same cached SigningKeySet's memoised descriptor list must still be served");
+    }
+
+    [Fact]
+    public async Task SignAsync_still_succeeds_after_HasKeySetChangedAsync_returns_false_no_ObjectDisposedException()
+    {
+        // Regression guard: HasKeySetChangedAsync returning false must extend the cache and keep
+        // serving the existing SigningKeySet without disposing it. If the base class incorrectly
+        // disposed it anyway, this sign would throw ObjectDisposedException.
+        var timeProvider = new FakeTimeProvider();
+        var set = MakeRsaSet("unchanged-kid");
+        var options = Options.Create(new FakeSigningServiceOptions { KeySourceRefreshInterval = TimeSpan.FromMinutes(5) });
+        await using var sut = new ControllableHasChangedSigningService(options, timeProvider, () => set, hasChanged: () => false);
+        var payload = Encoding.UTF8.GetBytes(Base64UrlEncodeString("""{"sub":"alice"}"""));
+        var ct = TestContext.Current.CancellationToken;
+
+        var first = await sut.SignAsync(payload, ct);
+        timeProvider.Advance(TimeSpan.FromMinutes(6));
+        var second = await sut.SignAsync(payload, ct);
+
+        first.Kid.Should().Be("unchanged-kid");
+        second.Kid.Should().Be("unchanged-kid");
+        sut.LoadCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task GetSigningKeysAsync_reloads_when_HasKeySetChangedAsync_returns_true()
+    {
+        // Returning true behaves identically to the default: the hook path does not change
+        // anything about a normal rebuild.
+        var timeProvider = new FakeTimeProvider();
+        var options = Options.Create(new FakeSigningServiceOptions { KeySourceRefreshInterval = TimeSpan.FromMinutes(5) });
+        await using var sut = new ControllableHasChangedSigningService(options, timeProvider, () => MakeRsaSet(), hasChanged: () => true);
+        var ct = TestContext.Current.CancellationToken;
+
+        await sut.GetSigningKeysAsync(ct);
+        timeProvider.Advance(TimeSpan.FromMinutes(6));
+        await sut.GetSigningKeysAsync(ct);
+
+        sut.LoadCount.Should().Be(2, "HasKeySetChangedAsync returning true must behave exactly like the default: LoadKeysAsync runs on every elapsed cycle");
+        sut.HasKeySetChangedAsyncCallCount.Should().Be(1, "consulted once per elapsed cycle, only after a previous set already exists");
     }
 
     // ── Static-source mode (KeySourceRefreshInterval is null) ────────────────────────────────────────
