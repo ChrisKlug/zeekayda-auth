@@ -36,6 +36,14 @@ internal sealed class FakeKeyVaultCertificateReader : IKeyVaultCertificateReader
     public Exception? VersionsException { get; set; }
 
     /// <summary>
+    /// The number of times <see cref="GetCertificateVersionsAsync"/> has been invoked (once per
+    /// call, regardless of how many versions it yields) — lets a test distinguish the cheap,
+    /// metadata-only enumeration from the key-material downloads tracked by
+    /// <see cref="PrivateKeyMaterialCalls"/> / <see cref="PublicKeyMaterialCalls"/>.
+    /// </summary>
+    public int GetCertificateVersionsCallCount { get; private set; }
+
+    /// <summary>
     /// When set, invoked with the version and the exact key object right after
     /// <see cref="GetPrivateKeyMaterialAsync"/> extracts it — lets a test capture the live handle
     /// and later assert it was disposed (e.g. by calling <c>ExportParameters</c> on it and
@@ -151,6 +159,8 @@ internal sealed class FakeKeyVaultCertificateReader : IKeyVaultCertificateReader
     public async IAsyncEnumerable<KeyVaultCertificateVersionInfo> GetCertificateVersionsAsync(
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
+        GetCertificateVersionsCallCount++;
+
         if (VersionsException is not null)
             throw VersionsException;
 

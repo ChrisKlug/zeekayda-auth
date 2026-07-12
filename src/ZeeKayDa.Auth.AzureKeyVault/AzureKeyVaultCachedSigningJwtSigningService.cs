@@ -64,6 +64,15 @@ internal sealed class AzureKeyVaultCachedSigningJwtSigningService : JwtSigningSe
     private IReadOnlyDictionary<string, string> _previouslyPublishedKidVersions =
         new Dictionary<string, string>(StringComparer.Ordinal);
 
+    // The included version set (by version identifier, Enabled state, and whether the entry was
+    // the active version) as of the previous successful LoadKeysAsync call. IsActive has to be
+    // part of the comparison, not just membership and Enabled — see ToVersionSet's remarks. Null
+    // means "no successful LoadKeysAsync has run yet" — a state HasKeySetChangedAsync never
+    // actually observes, since the base class only calls it once a previous SigningKeySet already
+    // exists (ADR 0011 §3.2), which itself implies at least one successful LoadKeysAsync already
+    // populated this field.
+    private IReadOnlySet<(string Version, bool Enabled, bool IsActive)>? _previouslyIncludedVersions;
+
     /// <summary>
     /// Initialises the service with its options, time source, and the Key Vault certificate seam
     /// it downloads private key material through.
@@ -92,40 +101,10 @@ internal sealed class AzureKeyVaultCachedSigningJwtSigningService : JwtSigningSe
     /// <inheritdoc/>
     protected override async ValueTask<SigningKeySet> LoadKeysAsync(CancellationToken cancellationToken)
     {
-        var certificateIdentifier = _options.Value.CertificateIdentifier;
+        var (allVersions, included) = await ComputeIncludedVersionsAsync(cancellationToken).ConfigureAwait(false);
 
-        // See AzureKeyVaultRemoteSigningJwtSigningService.LoadKeysAsync for the full research and
-        // rationale (issue #300 / ADR 0011 Amendment 3) behind treating this list as a complete,
-        // consistent view of every certificate version Key Vault has ever recorded during normal
-        // operation — the same Key Vault reliability model applies to certificates as to keys.
-        var allVersions = new List<KeyVaultCertificateVersionInfo>();
-        await foreach (var version in _certificateReader.GetCertificateVersionsAsync(cancellationToken).ConfigureAwait(false))
-            allVersions.Add(version);
-
-        if (allVersions.Count == 0)
-        {
-            throw new ZeeKayDaConfigurationException(
-                new ZeeKayDaConfigurationFailure(
-                    "signing.azure_key_vault.no_certificate_versions",
-                    $"Key Vault certificate '{certificateIdentifier.Name}' in vault '{certificateIdentifier.VaultUri}' " +
-                    "has no versions. Create at least one certificate version before starting the host."));
-        }
-
-        var now = _timeProvider.GetUtcNow();
-
-        // AzureKeyVaultCachedSigningOptionsValidator rejects null (static-source mode is not
-        // supported by this provider), so the value is guaranteed non-null by the time this runs.
-        var timeline = KeyVaultSigningKeyRotation.BuildActivationTimeline(allVersions, _options.Value.KeySourceRefreshInterval!.Value);
-
-        var active = KeyVaultSigningKeyRotation.SelectActiveVersion(timeline, now) ?? throw new ZeeKayDaConfigurationException(
-            new ZeeKayDaConfigurationFailure(
-                "signing.azure_key_vault.no_active_key",
-                $"No enabled, time-eligible version of Key Vault certificate '{certificateIdentifier.Name}' in " +
-                $"vault '{certificateIdentifier.VaultUri}' has activated yet. Verify the certificate has at " +
-                "least one enabled version whose NotBefore/ExpiresOn window includes the current time."));
-
-        var retirementWindow = _retirementWindowProvider.GetRetirementWindow();
-        var included = KeyVaultSigningKeyRotation.SelectIncludedVersions(timeline, active, now, retirementWindow);
+        // SelectIncludedVersions always places the active version first.
+        var activeVersion = included[0].Version.Version;
 
         var keyPairs = new List<SigningKeyPair>(included.Count);
         var newKidVersions = new Dictionary<string, string>(included.Count, StringComparer.Ordinal);
@@ -134,7 +113,7 @@ internal sealed class AzureKeyVaultCachedSigningJwtSigningService : JwtSigningSe
         {
             foreach (var entry in included)
             {
-                var isActive = entry.Version.Version == active.Version.Version;
+                var isActive = entry.Version.Version == activeVersion;
 
                 // Every included version's descriptor — active or not — is always built from the
                 // same public-only source, never from the real private key: this keeps a single
@@ -218,9 +197,121 @@ internal sealed class AzureKeyVaultCachedSigningJwtSigningService : JwtSigningSe
 
         WarnIfPreviouslyPublishedKidVanished(newKidVersions.Keys, allVersions);
         _previouslyPublishedKidVersions = newKidVersions;
+        _previouslyIncludedVersions = ToVersionSet(included);
 
         return new SigningKeySet(keyPairs);
     }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <para>
+    /// Recomputes the included version set from the same cheap, metadata-only enumeration
+    /// (<see cref="IKeyVaultCertificateReader.GetCertificateVersionsAsync"/> — no secret or
+    /// private-key download) and rotation-timeline derivation that <see cref="LoadKeysAsync"/>
+    /// itself performs (<see cref="ComputeIncludedVersionsAsync"/>), and compares it — by version
+    /// identifier, <see cref="KeyVaultCertificateVersionInfo.Enabled"/> state, and which entry is
+    /// active — against what was included as of the last successful <see cref="LoadKeysAsync"/>
+    /// cycle. The comparison covers the whole included set, not merely the active version: a
+    /// non-active version's <c>Enabled</c> flag flipping, or a version entering or leaving its
+    /// retirement window purely from elapsed time, must still be reported as a change even when
+    /// the active version is unchanged.
+    /// </para>
+    /// <para>
+    /// Active-version identity has to be part of the comparison, not just membership and
+    /// <c>Enabled</c> state, or a normal scheduled rotation silently stalls. Because
+    /// <c>KeySourceRefreshInterval</c> is both the poll cadence and the publish-then-activate lead
+    /// time (ADR 0011 §3.5), a rotation typically spans two polls: at poll N, v2 is published but
+    /// not yet active (included set becomes v1 active + v2 not-active — a membership change, so
+    /// this method correctly reports a change and v2's public-only handle gets loaded). At poll
+    /// N+1, v2 becomes active while v1 (still within its retirement window) remains included — the
+    /// same two version identifiers and <c>Enabled</c> states as poll N, just with the active slot
+    /// swapped. Comparing only version identifier and <c>Enabled</c> state would see no change and
+    /// skip the reload, leaving the service signing with v1 indefinitely — past the intended
+    /// handoff, and potentially past v1's own expiry. See ADR 0011 §3.5 "Metadata-only change
+    /// detection for cached-key providers."
+    /// </para>
+    /// </remarks>
+    protected override async ValueTask<bool> HasKeySetChangedAsync(CancellationToken cancellationToken)
+    {
+        var (_, included) = await ComputeIncludedVersionsAsync(cancellationToken).ConfigureAwait(false);
+        var currentVersions = ToVersionSet(included);
+
+        // The base class only ever calls this once a previous SigningKeySet already exists (ADR
+        // 0011 §3.2), which itself implies at least one successful LoadKeysAsync already ran and
+        // populated _previouslyIncludedVersions — the null-forgiving operator relies on that
+        // guarantee rather than re-checking it.
+        return !currentVersions.SetEquals(_previouslyIncludedVersions!);
+    }
+
+    /// <summary>
+    /// Enumerates every certificate version Key Vault has ever recorded and derives the currently
+    /// included version set (active version first, per <see cref="KeyVaultSigningKeyRotation.SelectIncludedVersions{T}"/>)
+    /// from it. Shared by <see cref="LoadKeysAsync"/> and <see cref="HasKeySetChangedAsync"/> so the
+    /// metadata-only "ask" step in front of a reload uses the exact same rotation-timeline
+    /// derivation as the reload itself.
+    /// </summary>
+    private async ValueTask<(
+        List<KeyVaultCertificateVersionInfo> AllVersions,
+        List<KeyVaultSigningKeyRotation.ActivationEntry<KeyVaultCertificateVersionInfo>> Included)>
+        ComputeIncludedVersionsAsync(CancellationToken cancellationToken)
+    {
+        var certificateIdentifier = _options.Value.CertificateIdentifier;
+
+        // See AzureKeyVaultRemoteSigningJwtSigningService.LoadKeysAsync for the full research and
+        // rationale (issue #300 / ADR 0011 Amendment 3) behind treating this list as a complete,
+        // consistent view of every certificate version Key Vault has ever recorded during normal
+        // operation — the same Key Vault reliability model applies to certificates as to keys.
+        var allVersions = new List<KeyVaultCertificateVersionInfo>();
+        await foreach (var version in _certificateReader.GetCertificateVersionsAsync(cancellationToken).ConfigureAwait(false))
+            allVersions.Add(version);
+
+        if (allVersions.Count == 0)
+        {
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "signing.azure_key_vault.no_certificate_versions",
+                    $"Key Vault certificate '{certificateIdentifier.Name}' in vault '{certificateIdentifier.VaultUri}' " +
+                    "has no versions. Create at least one certificate version before starting the host."));
+        }
+
+        var now = _timeProvider.GetUtcNow();
+
+        // AzureKeyVaultCachedSigningOptionsValidator rejects null (static-source mode is not
+        // supported by this provider), so the value is guaranteed non-null by the time this runs.
+        var timeline = KeyVaultSigningKeyRotation.BuildActivationTimeline(allVersions, _options.Value.KeySourceRefreshInterval!.Value);
+
+        var active = KeyVaultSigningKeyRotation.SelectActiveVersion(timeline, now) ?? throw new ZeeKayDaConfigurationException(
+            new ZeeKayDaConfigurationFailure(
+                "signing.azure_key_vault.no_active_key",
+                $"No enabled, time-eligible version of Key Vault certificate '{certificateIdentifier.Name}' in " +
+                $"vault '{certificateIdentifier.VaultUri}' has activated yet. Verify the certificate has at " +
+                "least one enabled version whose NotBefore/ExpiresOn window includes the current time."));
+
+        var retirementWindow = _retirementWindowProvider.GetRetirementWindow();
+        var included = KeyVaultSigningKeyRotation.SelectIncludedVersions(timeline, active, now, retirementWindow);
+
+        return (allVersions, included);
+    }
+
+    /// <summary>
+    /// Projects an included version list into a set suitable for change comparison in
+    /// <see cref="HasKeySetChangedAsync"/>. Includes an <c>IsActive</c> bit — keyed by position,
+    /// since <see cref="KeyVaultSigningKeyRotation.SelectIncludedVersions{T}"/> always places the
+    /// active version at index 0 — alongside version identifier and <c>Enabled</c> state.
+    /// </summary>
+    /// <remarks>
+    /// Comparing only version identifier and <c>Enabled</c> state (without <c>IsActive</c>) misses
+    /// the moment a rotation actually completes: because <c>KeySourceRefreshInterval</c> is both
+    /// the poll cadence and the publish-then-activate lead time, the poll where v2 is published
+    /// (not yet active alongside active v1) and the later poll where v2 becomes active (v1 still
+    /// retiring) both produce the identical <c>{v1, v2}</c> version-identifier/<c>Enabled</c> set —
+    /// so the activation poll would be indistinguishable from "nothing changed" and the reload that
+    /// promotes v2 to active would be skipped indefinitely. See <see cref="HasKeySetChangedAsync"/>'s
+    /// remarks for the full two-poll failure mode.
+    /// </remarks>
+    private static HashSet<(string Version, bool Enabled, bool IsActive)> ToVersionSet(
+        IEnumerable<KeyVaultSigningKeyRotation.ActivationEntry<KeyVaultCertificateVersionInfo>> included) =>
+        included.Select((entry, i) => (entry.Version.Version, entry.Version.Enabled, IsActive: i == 0)).ToHashSet();
 
     private void WarnIfPreviouslyPublishedKidVanished(
         IEnumerable<string> newKids, IReadOnlyList<KeyVaultCertificateVersionInfo> currentRawVersions)

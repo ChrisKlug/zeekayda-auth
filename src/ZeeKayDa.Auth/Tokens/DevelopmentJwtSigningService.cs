@@ -26,9 +26,11 @@ namespace ZeeKayDa.Auth.Tokens;
 /// provider-scoped, code-only opt-in, not a server-wide setting (ADR 0011 §2).
 /// </para>
 /// <para>
-/// Dev keys are generated once and memoized. Unlike production providers, there is no
-/// rotation use-case for dev keys; rotating an ephemeral key would silently invalidate all
-/// tokens issued within the first refresh interval of the process lifetime.
+/// Dev keys are generated once, and <see cref="HasKeySetChangedAsync"/> is hardcoded to report
+/// "unchanged" so that <see cref="LoadKeysAsync"/> is never invoked a second time for the
+/// lifetime of the service instance. Unlike production providers, there is no rotation
+/// use-case for dev keys; rotating an ephemeral key would silently invalidate all tokens issued
+/// within the first refresh interval of the process lifetime.
 /// </para>
 /// </remarks>
 internal sealed class DevelopmentJwtSigningService
@@ -42,9 +44,6 @@ internal sealed class DevelopmentJwtSigningService
 
     private readonly IOptions<DevelopmentSigningKeyOptions> _devOptions;
     private readonly IDevelopmentSigningKeyFileSystem _fileSystem;
-
-    // Memoized on first call — dev keys are never rotated within a process lifetime.
-    private SigningKeySet? _memoizedSet;
 
     public DevelopmentJwtSigningService(
         IOptions<DevelopmentSigningKeyOptions> devOptions,
@@ -70,9 +69,6 @@ internal sealed class DevelopmentJwtSigningService
             _devOptions.Value.EnvironmentName,
             _devOptions.Value.AllowedDevelopmentJwtSigningKeysEnvironments);
 
-        if (_memoizedSet is not null)
-            return _memoizedSet;
-
         var persistDir = _devOptions.Value.PersistToDirectory;
         var rsa = persistDir is not null
             ? await LoadOrGeneratePersistedKeyAsync(persistDir, cancellationToken).ConfigureAwait(false)
@@ -81,11 +77,23 @@ internal sealed class DevelopmentJwtSigningService
         var rsaParams = rsa.ExportParameters(false);
         var kid = JwkThumbprint.Compute(rsaParams);
         var descriptor = new SigningKeyDescriptor(kid, SigningAlgorithm.RS256, rsaParams);
-        var set = new SigningKeySet([new SigningKeyPair { Descriptor = descriptor, PrivateKey = rsa }]);
-
-        _memoizedSet = set;
-        return set;
+        return new SigningKeySet([new SigningKeyPair { Descriptor = descriptor, PrivateKey = rsa }]);
     }
+
+    /// <summary>
+    /// Always reports "unchanged" so that <see cref="LoadKeysAsync"/> is invoked at most once for
+    /// the lifetime of this service instance.
+    /// </summary>
+    /// <remarks>
+    /// This is a hardcoded <see langword="false"/>, not a check against a memoized field, because
+    /// the base class only ever calls this method once a previous <see cref="SigningKeySet"/>
+    /// already exists — which itself implies <see cref="LoadKeysAsync"/> already ran successfully
+    /// once. A conditional check here would be unreachable defensive code: there is no state in
+    /// which this method is consulted before the first load has already happened. Dev keys are
+    /// never rotated within a process lifetime (see the class-level remarks), so "unchanged" is
+    /// always the correct answer once reached.
+    /// </remarks>
+    protected override ValueTask<bool> HasKeySetChangedAsync(CancellationToken cancellationToken) => new(false);
 
     private static RSA GenerateEphemeralKey() => RSA.Create(MinimumRsaKeySize);
 

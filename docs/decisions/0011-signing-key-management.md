@@ -341,6 +341,17 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService
         SigningKeyPair activeKey, byte[] signingInput, CancellationToken cancellationToken)
         => new(SigningAlgorithms.Sign(activeKey.Descriptor, signingInput, activeKey.PrivateKey));
 
+    /// <summary>
+    /// Asked once per refresh cycle, after the interval elapses and only when a previous set
+    /// already exists, whether the trusted key set has actually changed since the last successful
+    /// load. Returning false lets the base class keep serving the existing cached set for another
+    /// interval WITHOUT calling LoadKeysAsync — skipping an expensive key-material reload when
+    /// nothing has rotated. The default always returns true, so every provider that does not
+    /// override it keeps the unconditional-rebuild behaviour unchanged. Never consulted for the
+    /// first load.
+    /// </summary>
+    protected virtual ValueTask<bool> HasKeySetChangedAsync(CancellationToken cancellationToken) => new(true);
+
     // IJwtSigningService implemented by the base class on top of LoadKeysAsync + SignInputAsync.
 }
 ```
@@ -353,6 +364,32 @@ The base class owns:
 - A **single-flight refresh gate**: when the refresh interval elapses, exactly one
   `LoadKeysAsync` runs and concurrent callers await its result. This matters on the signing hot
   path, where a thundering herd against a remote key source would be a self-inflicted outage.
+- **A change-detection ("ask") step in front of the reload ("refresh").** When the refresh
+  interval elapses and a previous set already exists, `BorrowSetAsync` first calls
+  `HasKeySetChangedAsync`. If it returns `false`, the base class extends `_cacheExpiresAt` by
+  another interval and keeps serving the existing cached set (re-borrowed) — `LoadKeysAsync` is
+  not invoked, and nothing is swapped or disposed. Only when it returns `true` (or there is no
+  previous set — the first load is never skippable) does the base class proceed exactly as before:
+  `LoadKeysAsync` runs, its returned set replaces the cache, and the superseded set is disposed.
+  The default `HasKeySetChangedAsync` returns `true`, so every provider that does not override it
+  keeps today's unconditional-rebuild behaviour unchanged; the split exists so a provider whose
+  backing store rotates rarely (a production certificate: months, not minutes) can skip
+  re-downloading and re-materialising key material on every poll, while the **poll cadence itself
+  is unchanged** — the ask still runs every interval. `LoadKeysAsync` MUST never return the same
+  `SigningKeySet` instance twice to signal "unchanged": the refresh path unconditionally
+  `Dispose()`s the previous reference after installing the new one, so a repeated instance would
+  be disposed out from under the just-installed cache and the next `GetPrivateKey` would throw
+  `ObjectDisposedException`. The ask/refresh split avoids that failure structurally by never
+  calling `LoadKeysAsync` at all on an unchanged cycle, rather than by having it return a sentinel.
+  `HasKeySetChangedAsync` throwing is **fail-closed by design**: the exception propagates straight
+  out of `BorrowSetAsync` to the current caller (the in-flight `GetSigningKeysAsync`/`SignAsync`
+  fails), and `_cachedSet`/`_cacheExpiresAt` are left untouched — no stale-cache fallback, nothing
+  swallowed. This is deliberately the same failure shape `LoadKeysAsync` throwing already has, so
+  adding the ask (a second network-capable operation) introduces no new failure mode — only the
+  same existing "fail closed, no silent stale-key fallback" convention the base class has always had
+  for `LoadKeysAsync`. Providers of this hook MUST NOT invent divergent fail-soft behaviour
+  (swallow-and-treat-as-unchanged, or swallow-and-keep-serving-the-stale-set): a silent fallback
+  would mask an operational check failing.
 - **Header construction, active-key selection, `kid`/`alg` fixation, and the `SignAsync`
   crypto dispatch**, all inside a private, non-overridable `PerformSignAsync`. `SignInputAsync`
   is the only overridable seam and can affect only the signature-bytes production for the
@@ -529,6 +566,66 @@ shared, anchor-agnostic machinery accommodates both:
   `SigningKeyRotation.HasTooSoonPendingActivation` surfaces a startup warning when it is not — the
   library's only defence, since a local store cannot prove when a certificate was actually
   deployed.
+
+**Metadata-only change detection for cached-key providers.** The Azure Key Vault *cached-signing*
+provider (`AzureKeyVaultCachedSigningJwtSigningService`) overrides `HasKeySetChangedAsync` (§3.2)
+so a poll whose trusted set is unchanged skips the expensive key-material download entirely. The
+override recomputes the *included version set* from the same cheap, metadata-only enumeration
+`LoadKeysAsync` already performs (`GetCertificateVersionsAsync` — the durable version list, with
+**no** secret/private-key download) via the existing `KeyVaultSigningKeyRotation.BuildActivationTimeline`
+/ `SelectActiveVersion` / `SelectIncludedVersions` helpers, and compares it — by version identifier,
+`Enabled` state, **and which entry is active** — against what was included as of the last successful
+cycle. The comparison is over the **whole** included set, not merely "did the active version
+change": a non-active version's `Enabled` flag flipping (the immediate-exclusion revocation case
+above), or a version entering or leaving its retirement window purely from elapsed time, must still
+trigger a rebuild even when the active-version identifier is unchanged.
+
+Active-version identity has to be one of the compared fields in its own right, not merely
+version-identifier-plus-`Enabled` membership, or a normal scheduled rotation silently stalls.
+`KeySourceRefreshInterval` is both the poll cadence and the publish-then-activate lead time (this
+section, above), so a rotation typically spans exactly two polls: at poll *N*, the new version (v2)
+is published but not yet active alongside the still-active v1 — a membership change from the prior
+poll, so the comparison correctly detects it and `LoadKeysAsync` runs, downloading v2's public-only
+handle. At poll *N+1*, v2 becomes active while v1 (still inside its retirement window) remains
+included — the included set is still `{v1, v2}` with the same version identifiers and `Enabled`
+states as poll *N*, only the active slot has swapped. A comparison keyed only on version identifier
+and `Enabled` state cannot distinguish this from "nothing changed" and would skip the rebuild
+indefinitely, leaving the service signing with v1's private key past the intended handoff — and
+potentially past v1's own certificate expiry, since the reload that would have promoted v2 to
+active never runs. Comparing active-version identity alongside membership and `Enabled` state
+closes this gap: the poll-*N+1* activation swap is itself a difference in the compared tuple set,
+so it is correctly detected as a change.
+
+Only a genuine difference lets the base class call `LoadKeysAsync`, which is itself unchanged — it
+still builds a brand-new `SigningKeySet` from scratch, including genuinely fresh private key
+material for the active version. Two safety properties are preserved by construction: because the
+metadata check still runs on **every** cycle at `KeySourceRefreshInterval` cadence, the immediate
+`Enabled = false` exclusion and the "vanished kid" anomaly surfacing lose no reaction time — only
+the key-material download is skipped, never the check; and because the "ask" reads only the same
+per-version metadata already fetched today (comparable in kind to the existing
+`_previouslyPublishedKidVersions` bookkeeping, not a new private-key-bearing cache), §3.3(c)'s
+immediate destruction of retired private material is untouched — no key bytes ever live outside the
+`SigningKeySet` disposal graph.
+
+**Change-detection baseline is captured only on a successful load, never on the ask (guidance for
+the follow-up cached providers).** The comparison baseline
+(`AzureKeyVaultCachedSigningJwtSigningService._previouslyIncludedVersions`) is written **only inside
+`LoadKeysAsync`**, never inside `HasKeySetChangedAsync` itself. Each ask therefore always diffs the
+freshly computed set against the set captured by the last successful *load* — i.e. the set that was
+actually materialised and served — not against whatever the previous *ask* happened to compute. The
+follow-up cached providers (#347 / #348 / #349), which each implement their own version of this same
+hook against their own backing store, MUST replicate this write-only-on-load pattern rather than
+updating the baseline from the ask path. The reason is correctness-under-failure, not a subtle
+steady-state drift: in normal operation, diffing against the last ask and diffing against the last
+load coincide, because any ask that reports a change is immediately followed by a reload that would
+rewrite the baseline anyway. The divergence appears when a reported change is *not* followed by a
+successful load — the ask runs before, and separately from, `LoadKeysAsync`, and the reload can fail
+(fail-closed, §3.2). If the baseline were written from the ask, that ask would have recorded a set
+that was never actually served; every subsequent ask would then diff against that phantom baseline,
+report "unchanged," and permanently mask the pending change, wedging the service on the stale key
+set. Anchoring the baseline write to `LoadKeysAsync` keeps the baseline and the currently-served set
+provably in lockstep: the baseline advances if and only if a new set was actually built and
+installed.
 
 **Single-key bootstrap exemption.** With exactly one key registered, `SelectActiveKey` treats it
 as active immediately regardless of its activation timing (there is no prior published JWKS state
@@ -869,6 +966,19 @@ mitigation is used instead; the sealed-type option remains available as a future
 across replicas. Rotation-capable providers MUST derive their timeline from the key store's own
 durable timestamps.
 
+#### A per-version raw-secret-byte cache to skip the download on a cache hit (issue #334)
+
+**Considered and rejected.** #334's original body proposed caching the raw downloaded
+certificate-secret bytes per Key Vault version so a cache hit could skip the network call inside
+`LoadKeysAsync`. Rejected: it would place private-key-bearing bytes in a side-cache living
+*outside* `SigningKeySet`'s disposal graph, forfeiting the "retired private material destroyed
+immediately" property §3.3(c) currently gets for free. Such a cache would need its own eviction
+logic tied to the rotation timeline, and getting it wrong risks retired private key material
+lingering in process memory — the exact failure §3.3(c) exists to prevent. The chosen design
+(the `HasKeySetChangedAsync` ask/refresh split, §3.2 / §3.5) reaches the same "skip the expensive
+download when nothing rotated" goal by comparing only per-version *metadata*, which is never key
+material, and so never introduces a private-key-bearing cache at all.
+
 #### Simplifying `SigningKeyRotation`/`RotationKey` after the macOS provider was descoped
 
 **Rejected (issue #290 descoped, 2026-07-10).** #290 (macOS Keychain) was the bare-key consumer
@@ -972,7 +1082,9 @@ alternatives sections above.
 - **2026-07-07 — issue #319 / PR #320** — Rotation timeline and descriptor factory extracted to public core `SigningKeyRotation` (`RotationKey`/`RotationEntry`) and `SigningKeyDescriptorFactory`, anchor-agnostic; behaviour-preserving consolidation of already-reviewed trust-boundary logic (#287/#288/#289).
 - **2026-07-10 — issue #290 descoped** — macOS Keychain provider closed "not planned" (thin production audience); #291 (file-based) becomes the sole macOS/Linux provider. Anchor-agnostic `SigningKeyRotation`/`RotationKey` generalization kept exactly as shipped.
 - **2026-07-10 — PR #333 (commit `79379c8`, issue #332)** — `AllowedDevelopmentJwtSigningKeysEnvironments` moved from `DevelopmentSigningKeyOptions` (then `internal`) to the public `AuthorizationServerOptions` root. **Reverted by #337 below.**
-- **2026-07-11 — issue #337 (this PR)** — ADR migrated to the three-part format ([README](./README.md)). PR #333's root-options placement **reverted**: the list lives on the now-**public** `DevelopmentSigningKeyOptions`, configured via the registration method's `configure` callback (impl #338). `AddDevelopmentJwtSigningKeys` overloads replaced by `AddInMemoryDevelopmentJwtSigningKeys` / `AddPersistedDevelopmentJwtSigningKeys` (impl #338). `RefreshInterval` renamed and reshaped to nullable `KeySourceRefreshInterval` (`null` = load once; replaces the `TimeSpan.MaxValue` sentinel; kept as one property serving both poll cadence and publish-then-activate lead time) (impl #340). Dedicated signing sub-builder (`AddJwtSigning(signing => …)`) and splitting `KeySourceRefreshInterval` in two both recorded as rejected. **Environment-gate invariants unchanged:** Production always rejected, mandatory `Critical` startup log, never sourced from bindable configuration.
+- **2026-07-12 — issue #334 (this PR)** — Base class gains an overridable `HasKeySetChangedAsync` change-detection hook, defaulting to `true` (= today's unconditional rebuild, so every provider except the Azure Key Vault cached-signing one is behaviour-unchanged); `BorrowSetAsync` consults it on the expiry path when a previous set exists and, on `false`, extends the cache by another interval without calling `LoadKeysAsync`, swapping, or disposing (§3.2). The Azure Key Vault cached-signing provider overrides it with a metadata-only, whole-included-set comparison (version id + `Enabled` state) over the durable version list, skipping the key-material download when nothing has rotated while leaving the per-cycle revocation/anomaly check and §3.3(c) private-material destruction untouched (§3.5). A per-version raw-secret-byte cache recorded as rejected (it would move private-key-bearing bytes outside the `SigningKeySet` disposal graph). Follow-ups **#347** (remote KV signing), **#348** (Windows Certificate Store), **#349** (file-based PEM/PFX) — all sub-issues of epic **#187**, all blocked on this landing — opt the remaining providers in individually.
+- **2026-07-12 — PR #350 security review** — the version-id + `Enabled` comparison above shipped with a gap: it did not compare which entry was *active*, so the publish-then-activate activation poll (the second of the two polls described in §3.5) produced the same compared tuple set as the immediately preceding publish poll and was incorrectly treated as "unchanged," stalling rotation indefinitely. Fixed by adding active-version identity (keyed by position — index 0 is always active, per `SelectIncludedVersions`) as a third field in the compared tuple; §3.5 above updated to describe the corrected three-field basis and the failure mode it closes.
+- **2026-07-11 — issue #337** — ADR migrated to the three-part format ([README](./README.md)). PR #333's root-options placement **reverted**: the list lives on the now-**public** `DevelopmentSigningKeyOptions`, configured via the registration method's `configure` callback (impl #338). `AddDevelopmentJwtSigningKeys` overloads replaced by `AddInMemoryDevelopmentJwtSigningKeys` / `AddPersistedDevelopmentJwtSigningKeys` (impl #338). `RefreshInterval` renamed and reshaped to nullable `KeySourceRefreshInterval` (`null` = load once; replaces the `TimeSpan.MaxValue` sentinel; kept as one property serving both poll cadence and publish-then-activate lead time) (impl #340). Dedicated signing sub-builder (`AddJwtSigning(signing => …)`) and splitting `KeySourceRefreshInterval` in two both recorded as rejected. **Environment-gate invariants unchanged:** Production always rejected, mandatory `Critical` startup log, never sourced from bindable configuration.
 
 ---
 
