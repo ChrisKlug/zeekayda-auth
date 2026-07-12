@@ -1,4 +1,3 @@
-using System.Linq;
 using System.Security.Cryptography;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
