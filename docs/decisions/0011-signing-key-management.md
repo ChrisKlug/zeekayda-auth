@@ -564,21 +564,39 @@ so a poll whose trusted set is unchanged skips the expensive key-material downlo
 override recomputes the *included version set* from the same cheap, metadata-only enumeration
 `LoadKeysAsync` already performs (`GetCertificateVersionsAsync` — the durable version list, with
 **no** secret/private-key download) via the existing `KeyVaultSigningKeyRotation.BuildActivationTimeline`
-/ `SelectActiveVersion` / `SelectIncludedVersions` helpers, and compares it — by version identifier
-**and** `Enabled` state — against what was included as of the last successful cycle. The comparison
-is over the **whole** included set, not merely "did the active version change": a non-active
-version's `Enabled` flag flipping (the immediate-exclusion revocation case above), or a version
-entering or leaving its retirement window purely from elapsed time, must still trigger a rebuild
-even when the active-version identifier is unchanged. Only a genuine difference lets the base class
-call `LoadKeysAsync`, which is itself unchanged — it still builds a brand-new `SigningKeySet` from
-scratch, including genuinely fresh private key material for the active version. Two safety
-properties are preserved by construction: because the metadata check still runs on **every** cycle
-at `KeySourceRefreshInterval` cadence, the immediate `Enabled = false` exclusion and the
-"vanished kid" anomaly surfacing lose no reaction time — only the key-material download is skipped,
-never the check; and because the "ask" reads only the same per-version metadata already fetched
-today (comparable in kind to the existing `_previouslyPublishedKidVersions` bookkeeping, not a new
-private-key-bearing cache), §3.3(c)'s immediate destruction of retired private material is
-untouched — no key bytes ever live outside the `SigningKeySet` disposal graph.
+/ `SelectActiveVersion` / `SelectIncludedVersions` helpers, and compares it — by version identifier,
+`Enabled` state, **and which entry is active** — against what was included as of the last successful
+cycle. The comparison is over the **whole** included set, not merely "did the active version
+change": a non-active version's `Enabled` flag flipping (the immediate-exclusion revocation case
+above), or a version entering or leaving its retirement window purely from elapsed time, must still
+trigger a rebuild even when the active-version identifier is unchanged.
+
+Active-version identity has to be one of the compared fields in its own right, not merely
+version-identifier-plus-`Enabled` membership, or a normal scheduled rotation silently stalls.
+`KeySourceRefreshInterval` is both the poll cadence and the publish-then-activate lead time (this
+section, above), so a rotation typically spans exactly two polls: at poll *N*, the new version (v2)
+is published but not yet active alongside the still-active v1 — a membership change from the prior
+poll, so the comparison correctly detects it and `LoadKeysAsync` runs, downloading v2's public-only
+handle. At poll *N+1*, v2 becomes active while v1 (still inside its retirement window) remains
+included — the included set is still `{v1, v2}` with the same version identifiers and `Enabled`
+states as poll *N*, only the active slot has swapped. A comparison keyed only on version identifier
+and `Enabled` state cannot distinguish this from "nothing changed" and would skip the rebuild
+indefinitely, leaving the service signing with v1's private key past the intended handoff — and
+potentially past v1's own certificate expiry, since the reload that would have promoted v2 to
+active never runs. Comparing active-version identity alongside membership and `Enabled` state
+closes this gap: the poll-*N+1* activation swap is itself a difference in the compared tuple set,
+so it is correctly detected as a change.
+
+Only a genuine difference lets the base class call `LoadKeysAsync`, which is itself unchanged — it
+still builds a brand-new `SigningKeySet` from scratch, including genuinely fresh private key
+material for the active version. Two safety properties are preserved by construction: because the
+metadata check still runs on **every** cycle at `KeySourceRefreshInterval` cadence, the immediate
+`Enabled = false` exclusion and the "vanished kid" anomaly surfacing lose no reaction time — only
+the key-material download is skipped, never the check; and because the "ask" reads only the same
+per-version metadata already fetched today (comparable in kind to the existing
+`_previouslyPublishedKidVersions` bookkeeping, not a new private-key-bearing cache), §3.3(c)'s
+immediate destruction of retired private material is untouched — no key bytes ever live outside the
+`SigningKeySet` disposal graph.
 
 **Single-key bootstrap exemption.** With exactly one key registered, `SelectActiveKey` treats it
 as active immediately regardless of its activation timing (there is no prior published JWKS state
@@ -1036,6 +1054,7 @@ alternatives sections above.
 - **2026-07-10 — issue #290 descoped** — macOS Keychain provider closed "not planned" (thin production audience); #291 (file-based) becomes the sole macOS/Linux provider. Anchor-agnostic `SigningKeyRotation`/`RotationKey` generalization kept exactly as shipped.
 - **2026-07-10 — PR #333 (commit `79379c8`, issue #332)** — `AllowedDevelopmentJwtSigningKeysEnvironments` moved from `DevelopmentSigningKeyOptions` (then `internal`) to the public `AuthorizationServerOptions` root. **Reverted by #337 below.**
 - **2026-07-12 — issue #334 (this PR)** — Base class gains an overridable `HasKeySetChangedAsync` change-detection hook, defaulting to `true` (= today's unconditional rebuild, so every provider except the Azure Key Vault cached-signing one is behaviour-unchanged); `BorrowSetAsync` consults it on the expiry path when a previous set exists and, on `false`, extends the cache by another interval without calling `LoadKeysAsync`, swapping, or disposing (§3.2). The Azure Key Vault cached-signing provider overrides it with a metadata-only, whole-included-set comparison (version id + `Enabled` state) over the durable version list, skipping the key-material download when nothing has rotated while leaving the per-cycle revocation/anomaly check and §3.3(c) private-material destruction untouched (§3.5). A per-version raw-secret-byte cache recorded as rejected (it would move private-key-bearing bytes outside the `SigningKeySet` disposal graph). Follow-ups **#347** (remote KV signing), **#348** (Windows Certificate Store), **#349** (file-based PEM/PFX) — all sub-issues of epic **#187**, all blocked on this landing — opt the remaining providers in individually.
+- **2026-07-12 — PR #350 security review** — the version-id + `Enabled` comparison above shipped with a gap: it did not compare which entry was *active*, so the publish-then-activate activation poll (the second of the two polls described in §3.5) produced the same compared tuple set as the immediately preceding publish poll and was incorrectly treated as "unchanged," stalling rotation indefinitely. Fixed by adding active-version identity (keyed by position — index 0 is always active, per `SelectIncludedVersions`) as a third field in the compared tuple; §3.5 above updated to describe the corrected three-field basis and the failure mode it closes.
 - **2026-07-11 — issue #337** — ADR migrated to the three-part format ([README](./README.md)). PR #333's root-options placement **reverted**: the list lives on the now-**public** `DevelopmentSigningKeyOptions`, configured via the registration method's `configure` callback (impl #338). `AddDevelopmentJwtSigningKeys` overloads replaced by `AddInMemoryDevelopmentJwtSigningKeys` / `AddPersistedDevelopmentJwtSigningKeys` (impl #338). `RefreshInterval` renamed and reshaped to nullable `KeySourceRefreshInterval` (`null` = load once; replaces the `TimeSpan.MaxValue` sentinel; kept as one property serving both poll cadence and publish-then-activate lead time) (impl #340). Dedicated signing sub-builder (`AddJwtSigning(signing => …)`) and splitting `KeySourceRefreshInterval` in two both recorded as rejected. **Environment-gate invariants unchanged:** Production always rejected, mandatory `Critical` startup log, never sourced from bindable configuration.
 
 ---
