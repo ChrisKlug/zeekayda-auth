@@ -181,19 +181,19 @@ public sealed class DevelopmentJwtSigningServiceTests
     // ── Key memoization (no rotation) ────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task Memoized_set_is_returned_when_LoadKeysAsync_is_invoked_again()
+    public async Task Kid_is_stable_across_refresh_cycles_because_HasKeySetChangedAsync_always_reports_unchanged()
     {
-        // The base class normally prevents a second LoadKeysAsync call because DevelopmentSigningKeyOptions
-        // sets KeySourceRefreshInterval = null (static-source mode). This test explicitly overrides
-        // KeySourceRefreshInterval with a finite value so the base class's cache expires, forcing a
-        // second LoadKeysAsync call. The memoization field in DevelopmentJwtSigningService then
-        // returns the same key set — verifying that the early-return branch in LoadKeysAsync is
-        // exercised and that the kid is stable across base-class re-invocations.
+        // DevelopmentJwtSigningService overrides HasKeySetChangedAsync to always return false, so
+        // once a refresh cycle is reached the base class never calls LoadKeysAsync a second time —
+        // it just extends the cache's expiry and keeps serving the existing set. This test sets a
+        // finite KeySourceRefreshInterval so the base class's cache actually expires and re-enters
+        // its slow path, then verifies the kid served afterwards is unchanged (proving the "ask"
+        // step reported "unchanged" rather than a second LoadKeysAsync call regenerating a key).
         var timeProvider = new FakeTimeProvider();
         var options = new DevelopmentSigningKeyOptions
         {
             PersistToDirectory = null,
-            KeySourceRefreshInterval = TimeSpan.FromMinutes(1), // short interval to allow second LoadKeysAsync call
+            KeySourceRefreshInterval = TimeSpan.FromMinutes(1), // short interval to force cache expiry
         };
         await using var sut = new DevelopmentJwtSigningService(
             Options.Create(options),
@@ -204,14 +204,14 @@ public sealed class DevelopmentJwtSigningServiceTests
         var firstKeys = await sut.GetSigningKeysAsync(ct);
         var firstKid = firstKeys[0].Kid;
 
-        // Advance past the refresh interval so the base class re-calls LoadKeysAsync.
+        // Advance past the refresh interval so the base class re-enters its slow path.
         timeProvider.Advance(TimeSpan.FromMinutes(2));
 
         var secondKeys = await sut.GetSigningKeysAsync(ct);
         var secondKid = secondKeys[0].Kid;
 
         secondKid.Should().Be(firstKid,
-            "the memoized key set must be returned even when the base class calls LoadKeysAsync a second time");
+            "HasKeySetChangedAsync always reports unchanged, so the same key set keeps being served");
     }
 
     [Fact]

@@ -60,12 +60,17 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
     /// <remarks>
     /// Every call MUST return a genuinely new <see cref="SigningKeySet"/> instance; this method
     /// MUST NOT return the same instance twice (for example a memoised set held to signal
-    /// "unchanged" — use <see cref="HasKeySetChangedAsync"/> for that instead). The returned set's
-    /// private-key objects are owned by the base class: immediately after installing a freshly
-    /// loaded set as current, the base class unconditionally <c>Dispose()</c>s the superseded
-    /// reference. Returning the same instance on a subsequent call would therefore dispose the
+    /// "unchanged" — use <see cref="HasKeySetChangedAsync"/> for that instead). This is enforced at
+    /// runtime, not just documented: the base class compares the returned instance against the
+    /// previously cached set by reference immediately after this method returns, and throws an
+    /// <see cref="InvalidOperationException"/> right away if they are the same object — before the
+    /// previous set is disposed or the new one is installed as current. Without that guard, the
+    /// returned set's private-key objects are owned by the base class: immediately after installing
+    /// a freshly loaded set as current, the base class unconditionally <c>Dispose()</c>s the
+    /// superseded reference, so returning the same instance on a subsequent call would dispose the
     /// object that was just installed as the current set, and the next <c>GetPrivateKey</c> call on
-    /// it would throw <see cref="ObjectDisposedException"/>. See ADR 0011 §3.2.
+    /// it would throw a confusing, disconnected <see cref="ObjectDisposedException"/> instead. See
+    /// ADR 0011 §3.2.
     /// </remarks>
     protected abstract ValueTask<SigningKeySet> LoadKeysAsync(CancellationToken cancellationToken);
 
@@ -90,6 +95,16 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
     /// a cheap, metadata-only check (e.g. re-enumerating version metadata without downloading key
     /// material); anything expensive enough to want to skip belongs in <see cref="LoadKeysAsync"/>
     /// itself, not here.
+    /// <para>
+    /// Returning <see langword="false"/> from this method is the correct, supported way to report
+    /// "nothing has changed since the last cycle." Naively achieving the same effect by having
+    /// <see cref="LoadKeysAsync"/> return the same <see cref="SigningKeySet"/> instance it returned
+    /// last time — instead of overriding this method — is not supported and no longer fails
+    /// confusingly later: the base class now detects that reference-equality violation immediately
+    /// after <see cref="LoadKeysAsync"/> returns and throws an <see cref="InvalidOperationException"/>
+    /// on the spot, rather than disposing the set and only surfacing the mistake as a disconnected
+    /// <see cref="ObjectDisposedException"/> from a later <c>GetPrivateKey</c> call.
+    /// </para>
     /// <para>
     /// An override throwing is <b>fail-closed by design</b>. The base class awaits this method with
     /// no fallback: if it throws, the exception propagates straight out to the current caller (the
@@ -241,6 +256,21 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
             }
 
             var newSet = await LoadKeysAsync(cancellationToken).ConfigureAwait(false);
+
+            // Enforce the "always a new instance" contract immediately, before anything is
+            // validated, disposed, or installed as current. Failing here — rather than letting
+            // the stale instance get disposed and re-installed — means the previous cached set is
+            // left completely intact: this call fails loudly, but the service keeps serving the
+            // last known good set to any other caller, and a subsequent call can still succeed if
+            // the implementor does not hit this every time.
+            if (previous is not null && ReferenceEquals(newSet, previous))
+            {
+                throw new InvalidOperationException(
+                    $"{GetType().Name}.LoadKeysAsync returned the same SigningKeySet instance as " +
+                    "the previously cached set. LoadKeysAsync must always return a new instance on " +
+                    "every call; to report that nothing has changed since the last cycle, override " +
+                    "HasKeySetChangedAsync to return false instead.");
+            }
 
             try
             {
