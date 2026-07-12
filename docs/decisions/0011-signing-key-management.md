@@ -627,6 +627,15 @@ set. Anchoring the baseline write to `LoadKeysAsync` keeps the baseline and the 
 provably in lockstep: the baseline advances if and only if a new set was actually built and
 installed.
 
+**Issue #347 ships the same pattern for the remote-signing provider.**
+`AzureKeyVaultRemoteSigningJwtSigningService` now overrides `HasKeySetChangedAsync` identically to
+the cached-signing provider above — the same `ComputeIncludedVersionsAsync` extraction (shared with
+`LoadKeysAsync`), the same three-field `(Version, Enabled, IsActive)` comparison tuple, and the same
+write-only-on-load baseline discipline. It is simpler only in that `LoadKeysAsync` itself has no
+active/non-active private-key branching to preserve (this provider is always public-key-only — see
+§1's remote-signing description) — the change-detection logic and its rationale are otherwise
+unchanged from above.
+
 **Single-key bootstrap exemption.** With exactly one key registered, `SelectActiveKey` treats it
 as active immediately regardless of its activation timing (there is no prior published JWKS state
 any relying party could have cached), mirroring "the very first version ever used activates
@@ -1085,6 +1094,7 @@ alternatives sections above.
 - **2026-07-12 — issue #334 (this PR)** — Base class gains an overridable `HasKeySetChangedAsync` change-detection hook, defaulting to `true` (= today's unconditional rebuild, so every provider except the Azure Key Vault cached-signing one is behaviour-unchanged); `BorrowSetAsync` consults it on the expiry path when a previous set exists and, on `false`, extends the cache by another interval without calling `LoadKeysAsync`, swapping, or disposing (§3.2). The Azure Key Vault cached-signing provider overrides it with a metadata-only, whole-included-set comparison (version id + `Enabled` state) over the durable version list, skipping the key-material download when nothing has rotated while leaving the per-cycle revocation/anomaly check and §3.3(c) private-material destruction untouched (§3.5). A per-version raw-secret-byte cache recorded as rejected (it would move private-key-bearing bytes outside the `SigningKeySet` disposal graph). Follow-ups **#347** (remote KV signing), **#348** (Windows Certificate Store), **#349** (file-based PEM/PFX) — all sub-issues of epic **#187**, all blocked on this landing — opt the remaining providers in individually.
 - **2026-07-12 — PR #350 security review** — the version-id + `Enabled` comparison above shipped with a gap: it did not compare which entry was *active*, so the publish-then-activate activation poll (the second of the two polls described in §3.5) produced the same compared tuple set as the immediately preceding publish poll and was incorrectly treated as "unchanged," stalling rotation indefinitely. Fixed by adding active-version identity (keyed by position — index 0 is always active, per `SelectIncludedVersions`) as a third field in the compared tuple; §3.5 above updated to describe the corrected three-field basis and the failure mode it closes.
 - **2026-07-11 — issue #337** — ADR migrated to the three-part format ([README](./README.md)). PR #333's root-options placement **reverted**: the list lives on the now-**public** `DevelopmentSigningKeyOptions`, configured via the registration method's `configure` callback (impl #338). `AddDevelopmentJwtSigningKeys` overloads replaced by `AddInMemoryDevelopmentJwtSigningKeys` / `AddPersistedDevelopmentJwtSigningKeys` (impl #338). `RefreshInterval` renamed and reshaped to nullable `KeySourceRefreshInterval` (`null` = load once; replaces the `TimeSpan.MaxValue` sentinel; kept as one property serving both poll cadence and publish-then-activate lead time) (impl #340). Dedicated signing sub-builder (`AddJwtSigning(signing => …)`) and splitting `KeySourceRefreshInterval` in two both recorded as rejected. **Environment-gate invariants unchanged:** Production always rejected, mandatory `Critical` startup log, never sourced from bindable configuration.
+- **2026-07-12 — issue #347** — `AzureKeyVaultRemoteSigningJwtSigningService` now overrides `HasKeySetChangedAsync` with the same metadata-only, three-field `(Version, Enabled, IsActive)` comparison as the cached-signing provider (§3.5), via a shared `ComputeIncludedVersionsAsync` extraction used by both `LoadKeysAsync` and the new override. Straight port, no new design decisions: this provider's `LoadKeysAsync` has no active/non-active private-key branching to preserve, so the port is proportionately simpler than the template. #348 (Windows Certificate Store) and #349 (file-based PEM/PFX) remain open follow-ups.
 
 ---
 

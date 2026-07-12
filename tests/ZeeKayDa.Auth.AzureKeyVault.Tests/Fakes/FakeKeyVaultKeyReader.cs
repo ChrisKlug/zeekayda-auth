@@ -22,6 +22,17 @@ internal sealed class FakeKeyVaultKeyReader : IKeyVaultKeyReader
 
     public List<KeyVaultKeyVersionInfo> Versions { get; } = [];
 
+    /// <summary>Every version passed to <see cref="GetKeyMaterialAsync"/>, in call order.</summary>
+    public List<string> KeyMaterialCalls { get; } = [];
+
+    /// <summary>
+    /// The number of times <see cref="GetKeyVersionsAsync"/> has been invoked (once per call,
+    /// regardless of how many versions it yields) — lets a test distinguish the cheap,
+    /// metadata-only enumeration from the key-material downloads tracked by
+    /// <see cref="KeyMaterialCalls"/>.
+    /// </summary>
+    public int GetKeyVersionsCallCount { get; private set; }
+
     /// <summary>When set, <see cref="GetKeyVersionsAsync"/> throws this instead of yielding versions.</summary>
     public Exception? VersionsException { get; set; }
 
@@ -102,6 +113,8 @@ internal sealed class FakeKeyVaultKeyReader : IKeyVaultKeyReader
     public async IAsyncEnumerable<KeyVaultKeyVersionInfo> GetKeyVersionsAsync(
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
+        GetKeyVersionsCallCount++;
+
         if (VersionsException is not null)
             throw VersionsException;
 
@@ -116,6 +129,8 @@ internal sealed class FakeKeyVaultKeyReader : IKeyVaultKeyReader
     public ValueTask<(AsymmetricAlgorithm PublicKey, SigningKeyType KeyType)> GetKeyMaterialAsync(
         string version, CancellationToken cancellationToken)
     {
+        KeyMaterialCalls.Add(version);
+
         if (MaterialException is not null)
             throw MaterialException;
 
