@@ -653,10 +653,11 @@ changing, and the configured thumbprint set
 `IOptions<TOptions>` (not `IOptionsMonitor<TOptions>`) and is fixed for the lifetime of the
 process — `AddWindowsCertificateStoreSigning`'s own remarks already document that adding, removing,
 or replacing a registered certificate requires a host restart. A restart is a cold start, and a
-cold start always calls `LoadKeysAsync` directly, never this hook (§3.2). So, within a single
-process lifetime, the *only* input that can genuinely change between two calls to this method is
-elapsed time moving a certificate in or out of its active/included/retirement window. The override
-therefore recomputes `SigningKeyRotation.BuildActivationTimeline` / `SelectActiveKey` /
+cold start always calls `LoadKeysAsync` directly, never this hook (§3.2). So, for a thumbprint
+that remains present and accessible in the store, the only input that can genuinely change between
+two calls to this method, within a single process lifetime, is elapsed time moving a certificate in
+or out of its active/included/retirement window. The override therefore recomputes
+`SigningKeyRotation.BuildActivationTimeline` / `SelectActiveKey` /
 `SelectIncludedKeys` purely from the `RotationKey` list (thumbprint + `NotBefore`/`NotAfter`)
 recorded at the last successful `LoadKeysAsync` call, re-evaluated against the current time — zero
 calls to `ICertificateStoreReader.GetCertificate`, which is cheaper even than the Key Vault
@@ -675,6 +676,34 @@ reports a change rather than failing itself; the subsequent `LoadKeysAsync` call
 closed with its usual `signing.windows_certificate_store.no_active_certificate` error — this
 method's contract is only ever "did the trusted set change," never "is the configuration currently
 valid."
+
+**Consequence: out-of-band store deletion is no longer detected within a refresh interval.**
+Because the ask never touches the store, deleting a registered certificate from the Windows
+Certificate Store out of band (outside the process that registered it) is not something
+`HasKeySetChangedAsync` can ever notice — it only sees what it was told at the last successful
+`LoadKeysAsync`. This is accepted, not an oversight: (a) `WindowsCertificateKeyExtractor` already
+duplicates the certificate's CNG/CAPI private-key handle into memory when the certificate is
+loaded, and that handle remains valid and usable for signing even after the underlying certificate
+is deleted from the store — store-side deletion was never a reliable "kill this cert now" lever,
+even before issue #348, since a process that already loaded the certificate keeps signing with it
+regardless; and (b) any change to the *registered* thumbprint set (adding, removing, or replacing a
+certificate in configuration) already requires a host restart (§3.2), and a restart is a cold start
+that always runs a real `LoadKeysAsync` — the very set this hook is a shortcut for — regardless of
+what this override does.
+
+**Issue #348 also relocated the near-expiry warning from `LoadKeysAsync` into
+`HasKeySetChangedAsync`.** The 30-day active-certificate-expiry warning previously fired only
+inside `LoadKeysAsync`; once an unchanged refresh cycle could skip `LoadKeysAsync` entirely, that
+warning would stop re-firing in the common steady state (a single long-lived certificate, no
+rotation in flight), letting a long-running process silently cross into its 30-day expiry window
+with no signal until the certificate actually expired and signing failed closed. The check now
+runs from `HasKeySetChangedAsync` itself — it only needs the cached active entry's `ExpiresAt`
+compared against `TimeProvider.GetUtcNow()`, so it adds no store access — and fires on every ask
+cycle (whether or not that cycle also triggers a reload) for as long as the condition holds.
+`LoadKeysAsync` keeps a single call to the same check, guarded so it only runs for the cold-start
+load (before any ask has ever run for this instance); every later call to `LoadKeysAsync` was
+preceded, in the same cycle, by an ask that already performed the check, so the warning never
+double-logs.
 
 **Single-key bootstrap exemption.** With exactly one key registered, `SelectActiveKey` treats it
 as active immediately regardless of its activation timing (there is no prior published JWKS state
@@ -1070,6 +1099,12 @@ SemVer-breaking change). Kept exactly as shipped.
   (§3.3 a′) bridges the gap until per-token lifetimes land; when they do, the *derivation* is
   updated (not a new option) and the floor reverts to guarding the degenerate case.
 - **External-provider rotation anomalies can only be surfaced, not prevented** (§3.5).
+- **Windows Certificate Store: out-of-band store deletion is not detected within a refresh
+  interval.** `HasKeySetChangedAsync`'s zero-store-access ask (§3.5) cannot notice a registered
+  certificate being deleted from the store outside the process; accepted because the already
+  in-memory-duplicated CNG/CAPI key handle keeps signing regardless, and any change to the
+  registered thumbprint set already requires a host restart, which always runs a real
+  `LoadKeysAsync`.
 - **Public extension surface is a SemVer commitment.** Making the helper types public (rather than
   `internal` + `InternalsVisibleTo`) is what genuine third-party providers need, but it fixes those
   shapes as stable API. The `ISanitizingLogger<T>` host-shadowing risk is mitigated by a hard-failing
@@ -1136,6 +1171,7 @@ alternatives sections above.
 - **2026-07-11 — issue #337** — ADR migrated to the three-part format ([README](./README.md)). PR #333's root-options placement **reverted**: the list lives on the now-**public** `DevelopmentSigningKeyOptions`, configured via the registration method's `configure` callback (impl #338). `AddDevelopmentJwtSigningKeys` overloads replaced by `AddInMemoryDevelopmentJwtSigningKeys` / `AddPersistedDevelopmentJwtSigningKeys` (impl #338). `RefreshInterval` renamed and reshaped to nullable `KeySourceRefreshInterval` (`null` = load once; replaces the `TimeSpan.MaxValue` sentinel; kept as one property serving both poll cadence and publish-then-activate lead time) (impl #340). Dedicated signing sub-builder (`AddJwtSigning(signing => …)`) and splitting `KeySourceRefreshInterval` in two both recorded as rejected. **Environment-gate invariants unchanged:** Production always rejected, mandatory `Critical` startup log, never sourced from bindable configuration.
 - **2026-07-12 — issue #347** — `AzureKeyVaultRemoteSigningJwtSigningService` now overrides `HasKeySetChangedAsync` with the same metadata-only, three-field `(Version, Enabled, IsActive)` comparison as the cached-signing provider (§3.5), via a shared `ComputeIncludedVersionsAsync` extraction used by both `LoadKeysAsync` and the new override. Straight port, no new design decisions: this provider's `LoadKeysAsync` has no active/non-active private-key branching to preserve, so the port is proportionately simpler than the template. #348 (Windows Certificate Store) and #349 (file-based PEM/PFX) remain open follow-ups.
 - **2026-07-13 — issue #348** — `WindowsCertificateStoreSigningJwtSigningService` overrides `HasKeySetChangedAsync` too, but — unlike both Key Vault providers above — with **no store access in the ask at all**: an X.509 thumbprint is content-addressed (a SHA-1 hash of the certificate's own DER encoding), so a fixed thumbprint's `NotBefore`/`NotAfter` cannot change without the thumbprint itself changing, and the configured thumbprint set is bound once from `IOptions<TOptions>` and fixed for the process lifetime (`AddWindowsCertificateStoreSigning` already documents that changing it requires a restart, i.e. a cold start, which never reaches this hook). The override therefore recomputes the rotation timeline purely from the `RotationKey` list cached at the last successful `LoadKeysAsync`, re-evaluated against the current time — cheaper than even the Key Vault providers' metadata-only network call. Comparison shape (whole included set, keyed by thumbprint and which entry is active, via the now-public `SigningKeyRotation.ToChangeDetectionSet`) and the write-only-on-load baseline discipline both carry over unchanged; there is no `Enabled` counterpart, since a certificate registration has none. Added a regression test proving the same "active identity must be part of the comparison" lesson as PR #350's finding, and confirmed by the same red/green process (temporarily dropping `IsActive` from the tuple, observing the test fail, then restoring it). #349 (file-based PEM/PFX) remains the last open follow-up.
+- **2026-07-13 — issue #348 follow-up review** — architect and security review of the `HasKeySetChangedAsync` override above both converged on the same finding: the 30-day active-certificate-expiry warning lived only in `LoadKeysAsync`, so an unchanged ask cycle that now skips `LoadKeysAsync` entirely also silently skipped re-firing that warning, contradicting the method's own documented "repeats for as long as the condition holds" cadence. Fixed by relocating the check into `HasKeySetChangedAsync` itself (no store access added — it only needs the cached active entry's `ExpiresAt`), firing on every ask cycle; `LoadKeysAsync` keeps one guarded call for the cold-start case only, so the warning neither goes missing in the steady state nor double-logs on a cycle where a reload also runs. §3.5 above updated with the fix and with an explicit "consequences" note accepting that out-of-band store deletion is not detected within a refresh interval (§"Consequences" / Negative-Trade-offs). The "only elapsed time can change" phrasing (§3.5 and the code's own XML remarks) corrected to scope explicitly to "a thumbprint that remains present and accessible in the store."
 
 ---
 

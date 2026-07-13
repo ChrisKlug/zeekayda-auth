@@ -288,4 +288,91 @@ public sealed class WindowsCertificateStoreSigningJwtSigningServiceTests
                 "the ask must report a change (never silently keep serving the expired certificate), " +
                 "and the real LoadKeysAsync reload is what actually fails closed");
     }
+
+    // ── Near-expiry warning: relocated into HasKeySetChangedAsync's ask (issue #348 follow-up) ─────
+
+    [Fact]
+    public async Task GetSigningKeysAsync_warns_when_the_active_certificate_is_within_30_days_of_expiry_on_cold_start()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var reader = new FakeCertificateStoreReader();
+        using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(10));
+        reader.AddCertificate(PrimaryThumbprint, certificate);
+        var timeProvider = new FakeTimeProvider(T0);
+        var logger = new CapturingSanitizingLogger<WindowsCertificateStoreSigningJwtSigningService>();
+
+        await using var sut = BuildService(reader, timeProvider, PrimaryThumbprint, logger: logger);
+
+        await sut.GetSigningKeysAsync(ct); // Cold start: no ask has ever run yet.
+
+        logger.Entries.Should().ContainSingle(e =>
+                e.Level == LogLevel.Warning && e.Message.Contains(PrimaryThumbprint) && e.Message.Contains("within 30 days"),
+            "the cold-start LoadKeysAsync call must still perform the expiry check, since no ask has ever run to cover it");
+    }
+
+    [Fact]
+    public async Task GetSigningKeysAsync_warns_again_on_a_later_unchanged_cycle_once_the_expiry_threshold_is_crossed()
+    {
+        // Regression test for the follow-up finding on issue #348: an unchanged refresh cycle now
+        // skips LoadKeysAsync entirely, so the warning must be re-evaluated inside
+        // HasKeySetChangedAsync itself, or a long-running process could cross into the 30-day
+        // expiry window with zero signal until signing actually starts failing.
+        var ct = TestContext.Current.CancellationToken;
+        var refreshInterval = TimeSpan.FromMinutes(5);
+        var reader = new FakeCertificateStoreReader();
+        using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(40));
+        reader.AddCertificate(PrimaryThumbprint, certificate);
+        var timeProvider = new FakeTimeProvider(T0);
+        var logger = new CapturingSanitizingLogger<WindowsCertificateStoreSigningJwtSigningService>();
+
+        await using var sut = BuildService(reader, timeProvider, PrimaryThumbprint, refreshInterval: refreshInterval, logger: logger);
+        await sut.GetSigningKeysAsync(ct); // Bootstrap load: 40 days to expiry, no warning yet.
+
+        logger.Entries.Should().NotContain(e => e.Level == LogLevel.Warning && e.Message.Contains("within 30 days"));
+
+        timeProvider.SetUtcNow(T0 + TimeSpan.FromDays(25)); // 15 days from expiry now; also past refreshInterval -> triggers the ask.
+        reader.Calls.Clear();
+        await sut.GetSigningKeysAsync(ct);
+
+        logger.Entries.Should().ContainSingle(e =>
+                e.Level == LogLevel.Warning && e.Message.Contains(PrimaryThumbprint) && e.Message.Contains("within 30 days"),
+            "the ask itself must re-evaluate the expiry check on every cycle, even one that reports no change and skips LoadKeysAsync entirely");
+        reader.Calls.Should().BeEmpty(
+            "the relocated expiry check must not reintroduce store access - it only needs the cached active entry's ExpiresAt");
+    }
+
+    [Fact]
+    public async Task GetSigningKeysAsync_does_not_double_log_the_expiry_warning_on_a_cycle_where_a_reload_also_happens()
+    {
+        // The ask fires the expiry warning on every cycle, including ones that go on to report a
+        // change and trigger LoadKeysAsync. LoadKeysAsync must not also fire it for that same cycle.
+        var ct = TestContext.Current.CancellationToken;
+        var refreshInterval = TimeSpan.FromMinutes(5);
+        var reader = new FakeCertificateStoreReader();
+        using var predecessor = TestCertificateFactory.CreateRsaSelfSigned("predecessor", T0 - TimeSpan.FromDays(30), T0 + TimeSpan.FromDays(40));
+        var successorNotBefore = T0 + TimeSpan.FromMinutes(1);
+        using var successor = TestCertificateFactory.CreateRsaSelfSigned("successor", successorNotBefore, T0 + TimeSpan.FromDays(20));
+        reader.AddCertificate(PrimaryThumbprint, predecessor);
+        reader.AddCertificate(SecondaryThumbprint, successor);
+        var timeProvider = new FakeTimeProvider(T0);
+        var logger = new CapturingSanitizingLogger<WindowsCertificateStoreSigningJwtSigningService>();
+
+        await using var sut = BuildService(
+            reader, timeProvider, PrimaryThumbprint, [SecondaryThumbprint],
+            refreshInterval: refreshInterval, logger: logger);
+        await sut.GetSigningKeysAsync(ct); // Bootstrap: predecessor active (40 days to expiry - no warning).
+        logger.Entries.Clear();
+
+        // One refreshInterval later, the cache expires and the ask runs. The successor already
+        // crossed its own activation window (at successorNotBefore, well before this poll) and is
+        // now the active signer - membership unchanged (predecessor still within its retirement
+        // window) but the active slot flips, which alone is enough to trigger a real reload. The
+        // successor's own ~20-day expiry crosses the warning threshold at this same poll.
+        timeProvider.SetUtcNow(T0 + refreshInterval);
+        var keys = await sut.GetSigningKeysAsync(ct);
+
+        keys.Should().HaveCount(2, "the predecessor is still within its retirement window");
+        logger.Entries.Count(e => e.Level == LogLevel.Warning && e.Message.Contains("within 30 days")).Should().Be(1,
+            "the ask already performed the expiry check this cycle, so LoadKeysAsync's own cold-start-only call must not repeat it");
+    }
 }

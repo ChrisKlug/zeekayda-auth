@@ -40,6 +40,9 @@ namespace ZeeKayDa.Auth.Windows;
 /// </remarks>
 internal sealed class WindowsCertificateStoreSigningJwtSigningService : JwtSigningService<WindowsCertificateStoreSigningOptions>
 {
+    // Bound once (IOptions<T>, not IOptionsMonitor<T>) — HasKeySetChangedAsync's zero-store-access
+    // shortcut relies on the registered thumbprint set being fixed for the process lifetime.
+    // Revisit that override if the thumbprint set ever becomes hot-reloadable.
     private readonly IOptions<WindowsCertificateStoreSigningOptions> _options;
     private readonly TimeProvider _timeProvider;
     private readonly ICertificateStoreReader _storeReader;
@@ -119,7 +122,15 @@ internal sealed class WindowsCertificateStoreSigningJwtSigningService : JwtSigni
             // WindowsCertificateStoreSigningOptionsValidator rejects null (static-source mode is
             // not supported by this provider), so this is guaranteed non-null.
             LogCertificateStatuses(timeline, active, included, now, options.KeySourceRefreshInterval!.Value, retirementWindow, certificatesByThumbprint);
-            WarnIfActiveCertificateExpiringSoon(active, now);
+
+            // HasKeySetChangedAsync itself repeats this same check on every ask cycle once a
+            // previous load exists (see that method's remarks), so only the cold-start call needs
+            // it here too: the very first LoadKeysAsync call, before any ask has ever run against
+            // this instance. _rotationKeys is still null only on that first call — every other
+            // call to LoadKeysAsync was preceded, in the same cycle, by an ask that already
+            // performed this check, so repeating it here would double-log.
+            if (_rotationKeys is null)
+                WarnIfActiveCertificateExpiringSoon(active, now);
 
             var keyPairs = new List<SigningKeyPair>(included.Count);
             try
@@ -219,15 +230,18 @@ internal sealed class WindowsCertificateStoreSigningJwtSigningService : JwtSigni
     /// remarks already document that adding, removing, or replacing a registered certificate
     /// requires a host restart. A restart is a cold start, and a cold start always calls
     /// <see cref="LoadKeysAsync"/> directly — this method is never consulted then (ADR 0011 §3.2).
-    /// So the only input that can genuinely change between two calls to this method, within the
-    /// same process, is elapsed time moving a certificate in or out of its active/included/
-    /// retirement window. This override therefore recomputes <see cref="SigningKeyRotation.BuildActivationTimeline"/>
-    /// purely from the <see cref="RotationKey"/> list recorded at the last successful
-    /// <see cref="LoadKeysAsync"/> call, re-evaluated against the current time — no store access
-    /// at all, which is cheaper than even the Key Vault providers' still-necessary metadata-only
-    /// network call (a Key Vault version's <c>Enabled</c> flag or expiry can mutate independently
-    /// of its identity between polls, so Key Vault must re-poll; a certificate's thumbprint-keyed
-    /// facts cannot).
+    /// So, for a thumbprint that remains present and accessible in the store, the only input that
+    /// can genuinely change between two calls to this method, within the same process, is elapsed
+    /// time moving a certificate in or out of its active/included/retirement window — see this
+    /// class's own remarks (and ADR 0011 §3.5) for the accepted, deliberate consequence that
+    /// follows: an out-of-band deletion of a registered certificate from the store is not one of
+    /// the things this method can ever notice. This override therefore recomputes
+    /// <see cref="SigningKeyRotation.BuildActivationTimeline"/> purely from the
+    /// <see cref="RotationKey"/> list recorded at the last successful <see cref="LoadKeysAsync"/>
+    /// call, re-evaluated against the current time — no store access at all, which is cheaper than
+    /// even the Key Vault providers' still-necessary metadata-only network call (a Key Vault
+    /// version's <c>Enabled</c> flag or expiry can mutate independently of its identity between
+    /// polls, so Key Vault must re-poll; a certificate's thumbprint-keyed facts cannot).
     /// </para>
     /// <para>
     /// The comparison covers the whole included set, keyed by thumbprint and which entry is
@@ -237,6 +251,18 @@ internal sealed class WindowsCertificateStoreSigningJwtSigningService : JwtSigni
     /// between two overlapping certificates can cross a poll boundary where the included
     /// thumbprint set does not change but which entry is active does, and comparing membership
     /// alone would silently skip the reload that promotes the new active certificate.
+    /// </para>
+    /// <para>
+    /// This method also re-evaluates <see cref="WarnIfActiveCertificateExpiringSoon"/> against the
+    /// cached active entry, on every call — not only when it goes on to report a change. The base
+    /// class only calls <see cref="LoadKeysAsync"/> when this method reports a change, so a
+    /// long-running process with a single, stable certificate can otherwise go the rest of the
+    /// process lifetime without a single reload once bootstrapped, and the warning would never
+    /// re-fire even after the certificate crosses into its 30-day expiry window.
+    /// <see cref="LoadKeysAsync"/> only repeats the same check for the cold-start call, before any
+    /// previous load exists for this method to have run against; every other call to
+    /// <see cref="LoadKeysAsync"/> was preceded, in the same cycle, by a call to this method that
+    /// already performed the check, so the warning never double-logs for the same cycle.
     /// </para>
     /// <para>
     /// If no registered certificate is currently eligible to sign (every one has expired since the
@@ -259,6 +285,10 @@ internal sealed class WindowsCertificateStoreSigningJwtSigningService : JwtSigni
         var active = SigningKeyRotation.SelectActiveKey(timeline, now);
         if (active is null)
             return new ValueTask<bool>(true);
+
+        // Fired on every ask cycle, whether or not this cycle goes on to report a change — see
+        // this method's remarks and WarnIfActiveCertificateExpiringSoon's own remarks.
+        WarnIfActiveCertificateExpiringSoon(active.Value, now);
 
         var retirementWindow = _retirementWindowProvider.GetRetirementWindow();
         var included = SigningKeyRotation.SelectIncludedKeys(timeline, active.Value, now, retirementWindow);
@@ -332,10 +362,15 @@ internal sealed class WindowsCertificateStoreSigningJwtSigningService : JwtSigni
 
     private void WarnIfActiveCertificateExpiringSoon(RotationEntry active, DateTimeOffset now)
     {
-        // Re-evaluated on every LoadKeysAsync call, exactly like LogCertificateStatuses above:
-        // whether the active certificate is within 30 days of expiry is genuinely time-varying — a
-        // long-running process can cross into that window mid-lifetime. Repeats at most once per
-        // KeySourceRefreshInterval for as long as the condition holds.
+        // Called from HasKeySetChangedAsync on every ask cycle once a previous load exists — not
+        // only LogCertificateStatuses's more limited "on every LoadKeysAsync call" cadence — plus
+        // once directly from LoadKeysAsync for the cold-start case, before any ask has ever run.
+        // Whether the active certificate is within 30 days of expiry is genuinely time-varying — a
+        // long-running process can cross into that window mid-lifetime — and an unchanged refresh
+        // cycle that skips LoadKeysAsync entirely must not also skip this check, or the warning
+        // could go unraised for the rest of the process's life. Repeats at most once per
+        // KeySourceRefreshInterval (the ask cadence) for as long as the condition holds, never
+        // twice for the same cycle — see the two call sites' own remarks for how that is enforced.
         if (active.Key.ExpiresAt - now <= TimeSpan.FromDays(30))
         {
             _logger.LogWarning(
