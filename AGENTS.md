@@ -58,14 +58,26 @@ Some signing-provider packages only make sense on one OS (`ZeeKayDa.Auth.Windows
 
 ## Development Workflow
 
-Work follows six phases. Phases 1 and 3 run in the main session via the `/write-issue` skill; the rest are delegated to specialist agents.
+Work follows six phases plus one conditional checkpoint. Phases 1 and 3 run in the main session via the `/write-issue` skill; the rest are delegated to specialist agents.
 
 ```
 1. IDEA      ──►  /write-issue   Assess ADR need; write the right issue type.
-2. DESIGN    ──►  architect      Write the ADR doc and open the ADR PR.
+2. DESIGN    ──►  architect      Write the ADR doc (context → usage sketch → extension sketch →
+                                  decision → consequences) and open the ADR PR.
              ──►  security       Threat-model the design; sign off before code is written.
 3. POST-ADR  ──►  /write-issue   Create implementation issues from the settled ADR.
-4. BUILD     ──►  developer      Implement against the issue's acceptance criteria.
+
+   SKETCH GATE (type:task issues only, conditional) ──►  architect
+     If the issue adds or changes any public API surface — a new public type/member, a new/changed
+     interface, anything a 3rd-party developer would subclass, implement, or call — the architect
+     writes a usage sketch (and an extension sketch, if it's an extension point), posts both as a
+     comment on the issue, and waits for the maintainer's explicit sign-off before BUILD starts.
+     Skipped entirely for issues with no public API surface change (bug fixes, internal refactors,
+     test-only work) — those go straight to BUILD.
+
+4. BUILD     ──►  developer      Implement against the issue's acceptance criteria (and the
+                                  signed-off sketch, if the gate above applied). Refuses to start a
+                                  public-API-surface issue with no signed-off sketch yet.
              ──►  docs           Write documentation alongside the code.
 5. VERIFY    ──►  tester         Confirm acceptance criteria; write missing tests.
 6. PR        ──►  security       Review any PR touching tokens, crypto, or endpoints.
@@ -84,6 +96,7 @@ The main session routes and synthesises; it does not do specialist work itself, 
 |---|---|
 | Writing or changing C# code (features, bug fixes, refactors) | `developer` agent |
 | Designing abstractions, API shape, writing ADRs | `architect` agent |
+| A `type:task` issue that adds/changes public API surface, before a developer picks it up | `architect` agent first (usage/extension sketch, wait for maintainer sign-off), then `developer` |
 | Writing or updating Markdown documentation | `docs` agent |
 | Security review, threat modelling, OAuth/OIDC correctness | `security` agent |
 | Writing or verifying tests, checking acceptance criteria | `tester` agent |
