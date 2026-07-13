@@ -633,7 +633,13 @@ the cached-signing provider above — the same `ComputeIncludedVersionsAsync` ex
 `LoadKeysAsync`), the same three-field `(Version, Enabled, IsActive)` comparison tuple, and the same
 write-only-on-load baseline discipline. It is simpler only in that `LoadKeysAsync` itself has no
 active/non-active private-key branching to preserve (this provider is always public-key-only — see
-§1's remote-signing description) — the change-detection logic and its rationale are otherwise
+§1's remote-signing description). Of the two safety properties described above, only the first
+translates directly: the metadata check still runs every cycle, so the immediate `Enabled = false`
+exclusion and "vanished kid" anomaly surfacing lose no reaction time here either. The second does
+not — §3.3(c) is **moot**, not "preserved," for this provider: it never holds private key material
+in the first place (every version, including the active one, is always a public-only handle; signing
+happens remotely inside Key Vault), so there is no retired private material whose destruction this
+change could ever have put at risk. The change-detection logic and its rationale are otherwise
 unchanged from above.
 
 **Single-key bootstrap exemption.** With exactly one key registered, `SelectActiveKey` treats it
