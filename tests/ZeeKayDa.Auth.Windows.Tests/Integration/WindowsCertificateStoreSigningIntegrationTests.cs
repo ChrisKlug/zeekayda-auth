@@ -217,10 +217,36 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
     // ── Logging (AC #2, #7, expiry warning) ─────────────────────────────────────────────────────
 
     [Fact]
-    public async Task Full_DI_wiring_logs_one_informational_line_per_registered_certificate_on_every_load()
+    public async Task Full_DI_wiring_logs_one_informational_line_per_registered_certificate_on_first_load()
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), RequiresWindowsReason);
 
+        var ct = TestContext.Current.CancellationToken;
+        var (services, reader, _) = BuildServices(T0);
+        using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+        reader.AddCertificate(PrimaryThumbprint, certificate);
+        var logger = new CapturingSanitizingLogger<WindowsCertificateStoreSigningJwtSigningService>();
+        services.AddSingleton<ISanitizingLogger<WindowsCertificateStoreSigningJwtSigningService>>(logger);
+
+        var builder = new ZeeKayDaAuthBuilder(services);
+        builder.AddWindowsCertificateStoreSigning(PrimaryThumbprint, StoreLocation.CurrentUser, StoreName.My);
+
+        await using var provider = services.BuildServiceProvider();
+        var signingService = provider.GetRequiredService<IJwtSigningService>();
+
+        await signingService.GetSigningKeysAsync(ct);
+
+        logger.Entries.Count(e => e.Level == LogLevel.Information).Should().Be(1,
+            "AC #2: one informational line for the one registered certificate");
+    }
+
+    [Fact]
+    public async Task Full_DI_wiring_does_not_log_again_when_an_unchanged_cycle_skips_the_reload()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), RequiresWindowsReason);
+
+        // HasKeySetChangedAsync reports "no change" here (nothing has rotated), so LoadKeysAsync —
+        // and the LogCertificateStatuses call inside it — must not run a second time (issue #348).
         var ct = TestContext.Current.CancellationToken;
         var refreshInterval = TimeSpan.FromMinutes(5);
         var (services, reader, timeProvider) = BuildServices(T0);
@@ -235,20 +261,14 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
 
         await using var provider = services.BuildServiceProvider();
         var signingService = provider.GetRequiredService<IJwtSigningService>();
+        await signingService.GetSigningKeysAsync(ct); // Bootstrap load.
 
+        timeProvider.SetUtcNow(T0 + refreshInterval); // Cache expires -> triggers the "ask" step.
         await signingService.GetSigningKeysAsync(ct);
+
         logger.Entries.Count(e => e.Level == LogLevel.Information).Should().Be(1,
-            "AC #2: one informational line for the one registered certificate");
-
-        // Active/included status is time-varying, not a static fact of config, so — unlike the
-        // too-soon-NotBefore warning's underlying algorithm output, which only changes when a
-        // rotation is actually in progress — this line is deliberately re-logged on every load,
-        // not gated to only the first one.
-        timeProvider.SetUtcNow(T0 + refreshInterval); // Force a reload.
-        await signingService.GetSigningKeysAsync(ct);
-
-        logger.Entries.Count(e => e.Level == LogLevel.Information).Should().Be(2,
-            "the per-certificate status line must repeat on every load, since active/included status can change over time");
+            "with only one registered certificate and no elapsed-time boundary crossed, nothing has " +
+            "changed, so the per-certificate status line must not repeat");
     }
 
     [Fact]

@@ -642,6 +642,40 @@ happens remotely inside Key Vault), so there is no retired private material whos
 change could ever have put at risk. The change-detection logic and its rationale are otherwise
 unchanged from above.
 
+**Issue #348 ships the same pattern for the Windows Certificate Store provider — with no store
+access at all in the "ask."** `WindowsCertificateStoreSigningJwtSigningService` also overrides
+`HasKeySetChangedAsync`, but its ask needs no live check against the backing store, unlike both
+Key Vault providers above. The reason is structural, not an optimisation choice made for its own
+sake: an X.509 thumbprint is a SHA-1 hash of the certificate's own DER encoding — content-addressed
+— so for a *fixed* thumbprint, `NotBefore`/`NotAfter` cannot change without the thumbprint itself
+changing, and the configured thumbprint set
+(`WindowsCertificateStoreSigningOptions.Thumbprint`/`AdditionalThumbprints`) is bound once from
+`IOptions<TOptions>` (not `IOptionsMonitor<TOptions>`) and is fixed for the lifetime of the
+process — `AddWindowsCertificateStoreSigning`'s own remarks already document that adding, removing,
+or replacing a registered certificate requires a host restart. A restart is a cold start, and a
+cold start always calls `LoadKeysAsync` directly, never this hook (§3.2). So, within a single
+process lifetime, the *only* input that can genuinely change between two calls to this method is
+elapsed time moving a certificate in or out of its active/included/retirement window. The override
+therefore recomputes `SigningKeyRotation.BuildActivationTimeline` / `SelectActiveKey` /
+`SelectIncludedKeys` purely from the `RotationKey` list (thumbprint + `NotBefore`/`NotAfter`)
+recorded at the last successful `LoadKeysAsync` call, re-evaluated against the current time — zero
+calls to `ICertificateStoreReader.GetCertificate`, which is cheaper even than the Key Vault
+providers' still-necessary metadata-only network call (a Key Vault version's `Enabled` flag or
+expiry can mutate independently of its identity between polls, so Key Vault must re-poll; none of a
+certificate's thumbprint-keyed facts can). The comparison shape is otherwise identical in spirit —
+`SigningKeyRotation.ToChangeDetectionSet` compares the whole included set keyed by thumbprint and
+which entry is active, not just "did the active thumbprint change," for the same two-poll handoff
+reason as above (a rotation between two overlapping certificates can leave the included thumbprint
+set unchanged across a poll boundary while the active entry swaps). It carries no `Enabled`
+counterpart — a certificate registration has no equivalent flag — and it writes its baseline
+(`_previouslyIncludedKeys`) only inside `LoadKeysAsync`, following the same write-only-on-load
+discipline as the Key Vault providers. If this method's own recomputation finds no certificate
+currently eligible to sign (every registered certificate has expired since the last load), it
+reports a change rather than failing itself; the subsequent `LoadKeysAsync` call is what fails
+closed with its usual `signing.windows_certificate_store.no_active_certificate` error — this
+method's contract is only ever "did the trusted set change," never "is the configuration currently
+valid."
+
 **Single-key bootstrap exemption.** With exactly one key registered, `SelectActiveKey` treats it
 as active immediately regardless of its activation timing (there is no prior published JWKS state
 any relying party could have cached), mirroring "the very first version ever used activates
@@ -1101,6 +1135,7 @@ alternatives sections above.
 - **2026-07-12 — PR #350 security review** — the version-id + `Enabled` comparison above shipped with a gap: it did not compare which entry was *active*, so the publish-then-activate activation poll (the second of the two polls described in §3.5) produced the same compared tuple set as the immediately preceding publish poll and was incorrectly treated as "unchanged," stalling rotation indefinitely. Fixed by adding active-version identity (keyed by position — index 0 is always active, per `SelectIncludedVersions`) as a third field in the compared tuple; §3.5 above updated to describe the corrected three-field basis and the failure mode it closes.
 - **2026-07-11 — issue #337** — ADR migrated to the three-part format ([README](./README.md)). PR #333's root-options placement **reverted**: the list lives on the now-**public** `DevelopmentSigningKeyOptions`, configured via the registration method's `configure` callback (impl #338). `AddDevelopmentJwtSigningKeys` overloads replaced by `AddInMemoryDevelopmentJwtSigningKeys` / `AddPersistedDevelopmentJwtSigningKeys` (impl #338). `RefreshInterval` renamed and reshaped to nullable `KeySourceRefreshInterval` (`null` = load once; replaces the `TimeSpan.MaxValue` sentinel; kept as one property serving both poll cadence and publish-then-activate lead time) (impl #340). Dedicated signing sub-builder (`AddJwtSigning(signing => …)`) and splitting `KeySourceRefreshInterval` in two both recorded as rejected. **Environment-gate invariants unchanged:** Production always rejected, mandatory `Critical` startup log, never sourced from bindable configuration.
 - **2026-07-12 — issue #347** — `AzureKeyVaultRemoteSigningJwtSigningService` now overrides `HasKeySetChangedAsync` with the same metadata-only, three-field `(Version, Enabled, IsActive)` comparison as the cached-signing provider (§3.5), via a shared `ComputeIncludedVersionsAsync` extraction used by both `LoadKeysAsync` and the new override. Straight port, no new design decisions: this provider's `LoadKeysAsync` has no active/non-active private-key branching to preserve, so the port is proportionately simpler than the template. #348 (Windows Certificate Store) and #349 (file-based PEM/PFX) remain open follow-ups.
+- **2026-07-13 — issue #348** — `WindowsCertificateStoreSigningJwtSigningService` overrides `HasKeySetChangedAsync` too, but — unlike both Key Vault providers above — with **no store access in the ask at all**: an X.509 thumbprint is content-addressed (a SHA-1 hash of the certificate's own DER encoding), so a fixed thumbprint's `NotBefore`/`NotAfter` cannot change without the thumbprint itself changing, and the configured thumbprint set is bound once from `IOptions<TOptions>` and fixed for the process lifetime (`AddWindowsCertificateStoreSigning` already documents that changing it requires a restart, i.e. a cold start, which never reaches this hook). The override therefore recomputes the rotation timeline purely from the `RotationKey` list cached at the last successful `LoadKeysAsync`, re-evaluated against the current time — cheaper than even the Key Vault providers' metadata-only network call. Comparison shape (whole included set, keyed by thumbprint and which entry is active, via the now-public `SigningKeyRotation.ToChangeDetectionSet`) and the write-only-on-load baseline discipline both carry over unchanged; there is no `Enabled` counterpart, since a certificate registration has none. Added a regression test proving the same "active identity must be part of the comparison" lesson as PR #350's finding, and confirmed by the same red/green process (temporarily dropping `IsActive` from the tuple, observing the test fail, then restoring it). #349 (file-based PEM/PFX) remains the last open follow-up.
 
 ---
 

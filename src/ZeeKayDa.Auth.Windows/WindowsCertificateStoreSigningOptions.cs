@@ -8,11 +8,12 @@ namespace ZeeKayDa.Auth.Windows;
 /// </summary>
 /// <remarks>
 /// <see cref="JwtSigningServiceOptions.KeySourceRefreshInterval"/> is inherited from the base class and
-/// defaults to 5 minutes. Unlike the Azure Key Vault providers, this value does not gate a
-/// re-download of private key material — every registered certificate is read from the local
-/// store on every refresh, which has no external cost. Instead it doubles as the threshold used
-/// to warn when a rotated-in certificate's <see cref="X509Certificate2.NotBefore"/> is scheduled
-/// too soon relative to how often relying parties are expected to have polled the JWKS (ADR 0011
+/// defaults to 5 minutes. Every registered certificate is re-read from the local store on a cycle
+/// where the trusted set has actually changed since the last cycle — see
+/// <see cref="WindowsCertificateStoreSigningJwtSigningService.HasKeySetChangedAsync"/> for the
+/// cheap, store-access-free check that decides this. It also doubles as the threshold used to
+/// warn when a rotated-in certificate's <see cref="X509Certificate2.NotBefore"/> is scheduled too
+/// soon relative to how often relying parties are expected to have polled the JWKS (ADR 0011
 /// §3.5; see <see cref="SigningKeyRotation.HasTooSoonPendingActivation"/>).
 /// </remarks>
 public sealed class WindowsCertificateStoreSigningOptions : JwtSigningServiceOptions

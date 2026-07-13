@@ -198,4 +198,42 @@ public sealed class SigningKeyRotationTests
         hasWarning.Should().BeFalse();
         soonest.Should().BeNull();
     }
+
+    // ── ToChangeDetectionSet ──────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void ToChangeDetectionSet_marks_only_the_first_entry_as_active()
+    {
+        var predecessor = Key("AAA", activatesAt: T0 - TimeSpan.FromDays(30));
+        var successor = Key("BBB", activatesAt: T0 + TimeSpan.FromDays(1));
+        var timeline = SigningKeyRotation.BuildActivationTimeline([predecessor, successor]);
+        var active = SigningKeyRotation.SelectActiveKey(timeline, now: T0)!.Value;
+        var included = SigningKeyRotation.SelectIncludedKeys(timeline, active, now: T0, DefaultRetirementWindow);
+
+        var set = SigningKeyRotation.ToChangeDetectionSet(included);
+
+        set.Should().BeEquivalentTo([("AAA", true), ("BBB", false)],
+            "SelectIncludedKeys always places the active key first, so only index 0 is marked active");
+    }
+
+    [Fact]
+    public void ToChangeDetectionSet_reports_a_change_when_only_which_entry_is_active_differs()
+    {
+        // The #350/#351 regression lesson, expressed directly against ToChangeDetectionSet rather
+        // than through a provider: the same two identifiers, with the active slot swapped, must
+        // compare as unequal sets.
+        var beforeHandoff = SigningKeyRotation.ToChangeDetectionSet(
+        [
+            new RotationEntry(Key("AAA", T0), null),
+            new RotationEntry(Key("BBB", T0 + TimeSpan.FromDays(1)), null),
+        ]);
+        var afterHandoff = SigningKeyRotation.ToChangeDetectionSet(
+        [
+            new RotationEntry(Key("BBB", T0 + TimeSpan.FromDays(1)), null),
+            new RotationEntry(Key("AAA", T0), null),
+        ]);
+
+        beforeHandoff.SetEquals(afterHandoff).Should().BeFalse(
+            "the active slot swapping between the same two identifiers must be detected as a change");
+    }
 }

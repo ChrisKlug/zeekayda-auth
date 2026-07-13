@@ -46,6 +46,23 @@ internal sealed class WindowsCertificateStoreSigningJwtSigningService : JwtSigni
     private readonly ISigningKeyRetirementWindowProvider _retirementWindowProvider;
     private readonly ISanitizingLogger<WindowsCertificateStoreSigningJwtSigningService> _logger;
 
+    // The registered RotationKeys (thumbprint + NotBefore/NotAfter) as of the last successful
+    // LoadKeysAsync call. An X.509 thumbprint is a SHA-1 hash of the certificate's DER encoding —
+    // content-addressed — so a fixed thumbprint's NotBefore/NotAfter cannot change without the
+    // thumbprint itself changing, and the configured thumbprint set is fixed for the lifetime of
+    // the process (IOptions<T>, not IOptionsMonitor<T> — see AddWindowsCertificateStoreSigning's
+    // remarks: adding, removing, or replacing a registered certificate requires a host restart).
+    // Caching this list therefore lets HasKeySetChangedAsync recompute the rotation timeline with
+    // zero store access — see that method's remarks. Null means "no successful LoadKeysAsync has
+    // run yet," a state HasKeySetChangedAsync never actually observes (ADR 0011 §3.2: the base
+    // class only calls it once a previous SigningKeySet already exists).
+    private IReadOnlyList<RotationKey>? _rotationKeys;
+
+    // The included key set (by thumbprint and whether the entry was active) as of the last
+    // successful LoadKeysAsync call. IsActive has to be part of the comparison, not just
+    // membership — see SigningKeyRotation.ToChangeDetectionSet's remarks.
+    private IReadOnlySet<(string Id, bool IsActive)>? _previouslyIncludedKeys;
+
     public WindowsCertificateStoreSigningJwtSigningService(
         IOptions<WindowsCertificateStoreSigningOptions> options,
         TimeProvider timeProvider,
@@ -169,6 +186,12 @@ internal sealed class WindowsCertificateStoreSigningJwtSigningService : JwtSigni
                 throw;
             }
 
+            // Recorded only now — after the SigningKeySet has actually been built successfully —
+            // never from HasKeySetChangedAsync's ask itself. See that method's remarks and ADR
+            // 0011 §3.5's "change-detection baseline is captured only on a successful load" rule.
+            _rotationKeys = rotationKeys;
+            _previouslyIncludedKeys = SigningKeyRotation.ToChangeDetectionSet(included);
+
             return new ValueTask<SigningKeySet>(new SigningKeySet(keyPairs));
         }
         finally
@@ -180,6 +203,68 @@ internal sealed class WindowsCertificateStoreSigningJwtSigningService : JwtSigni
             foreach (var certificate in certificatesByThumbprint.Values)
                 certificate.Dispose();
         }
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <para>
+    /// Unlike the Azure Key Vault providers' <c>HasKeySetChangedAsync</c> overrides, this override
+    /// never re-opens a certificate store handle — it needs none. An X.509 thumbprint is a SHA-1
+    /// hash of the certificate's own DER encoding: for a fixed thumbprint, <c>NotBefore</c>/
+    /// <c>NotAfter</c> cannot change without the thumbprint itself changing, and the configured
+    /// thumbprint set (<see cref="WindowsCertificateStoreSigningOptions.Thumbprint"/>/
+    /// <see cref="WindowsCertificateStoreSigningOptions.AdditionalThumbprints"/>) is fixed for the
+    /// lifetime of the process — it is bound once from <see cref="IOptions{TOptions}"/>, not
+    /// <c>IOptionsMonitor&lt;TOptions&gt;</c>, and <c>AddWindowsCertificateStoreSigning</c>'s own
+    /// remarks already document that adding, removing, or replacing a registered certificate
+    /// requires a host restart. A restart is a cold start, and a cold start always calls
+    /// <see cref="LoadKeysAsync"/> directly — this method is never consulted then (ADR 0011 §3.2).
+    /// So the only input that can genuinely change between two calls to this method, within the
+    /// same process, is elapsed time moving a certificate in or out of its active/included/
+    /// retirement window. This override therefore recomputes <see cref="SigningKeyRotation.BuildActivationTimeline"/>
+    /// purely from the <see cref="RotationKey"/> list recorded at the last successful
+    /// <see cref="LoadKeysAsync"/> call, re-evaluated against the current time — no store access
+    /// at all, which is cheaper than even the Key Vault providers' still-necessary metadata-only
+    /// network call (a Key Vault version's <c>Enabled</c> flag or expiry can mutate independently
+    /// of its identity between polls, so Key Vault must re-poll; a certificate's thumbprint-keyed
+    /// facts cannot).
+    /// </para>
+    /// <para>
+    /// The comparison covers the whole included set, keyed by thumbprint and which entry is
+    /// active — not merely "did the active thumbprint change" — via
+    /// <see cref="SigningKeyRotation.ToChangeDetectionSet"/>, exactly mirroring the Key Vault
+    /// providers' comparison shape and the lesson behind it (ADR 0011 §3.5): a normal rotation
+    /// between two overlapping certificates can cross a poll boundary where the included
+    /// thumbprint set does not change but which entry is active does, and comparing membership
+    /// alone would silently skip the reload that promotes the new active certificate.
+    /// </para>
+    /// <para>
+    /// If no registered certificate is currently eligible to sign (every one has expired since the
+    /// last load), this method reports a change rather than failing itself — the subsequent
+    /// <see cref="LoadKeysAsync"/> call is what fails closed with its usual, actionable
+    /// <c>signing.windows_certificate_store.no_active_certificate</c> error; this method's own
+    /// contract is only ever "did the trusted set change," never "is the configuration currently
+    /// valid."
+    /// </para>
+    /// </remarks>
+    protected override ValueTask<bool> HasKeySetChangedAsync(CancellationToken cancellationToken)
+    {
+        // The base class only calls this once a previous SigningKeySet already exists (ADR 0011
+        // §3.2), which itself implies at least one successful LoadKeysAsync already ran and
+        // populated these fields — the null-forgiving operators rely on that guarantee rather than
+        // re-checking it.
+        var timeline = SigningKeyRotation.BuildActivationTimeline(_rotationKeys!);
+        var now = _timeProvider.GetUtcNow();
+
+        var active = SigningKeyRotation.SelectActiveKey(timeline, now);
+        if (active is null)
+            return new ValueTask<bool>(true);
+
+        var retirementWindow = _retirementWindowProvider.GetRetirementWindow();
+        var included = SigningKeyRotation.SelectIncludedKeys(timeline, active.Value, now, retirementWindow);
+        var currentIncludedKeys = SigningKeyRotation.ToChangeDetectionSet(included);
+
+        return new ValueTask<bool>(!currentIncludedKeys.SetEquals(_previouslyIncludedKeys!));
     }
 
     private void LogCertificateStatuses(
