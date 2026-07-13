@@ -68,7 +68,8 @@ internal sealed class AzureKeyVaultRemoteSigningJwtSigningService : JwtSigningSe
 
     // The included version set (by version identifier, Enabled state, and whether the entry was
     // the active version) as of the previous successful LoadKeysAsync call. IsActive has to be
-    // part of the comparison, not just membership and Enabled — see ToVersionSet's remarks. Null
+    // part of the comparison, not just membership and Enabled — see
+    // KeyVaultSigningKeyRotation.ToChangeDetectionSet's remarks. Null
     // means "no successful LoadKeysAsync has run yet" — a state HasKeySetChangedAsync never
     // actually observes, since the base class only calls it once a previous SigningKeySet already
     // exists (ADR 0011 §3.2), which itself implies at least one successful LoadKeysAsync already
@@ -158,7 +159,7 @@ internal sealed class AzureKeyVaultRemoteSigningJwtSigningService : JwtSigningSe
 
         WarnIfPreviouslyPublishedKidVanished(kidToUri.Keys, allVersions);
         _previouslyPublishedKidVersions = newKidVersions;
-        _previouslyIncludedVersions = ToVersionSet(included);
+        _previouslyIncludedVersions = KeyVaultSigningKeyRotation.ToChangeDetectionSet(included);
 
         var set = new SigningKeySet(keyPairs);
 
@@ -219,7 +220,7 @@ internal sealed class AzureKeyVaultRemoteSigningJwtSigningService : JwtSigningSe
     protected override async ValueTask<bool> HasKeySetChangedAsync(CancellationToken cancellationToken)
     {
         var (_, included) = await ComputeIncludedVersionsAsync(cancellationToken).ConfigureAwait(false);
-        var currentVersions = ToVersionSet(included);
+        var currentVersions = KeyVaultSigningKeyRotation.ToChangeDetectionSet(included);
 
         // The base class only ever calls this once a previous SigningKeySet already exists (ADR
         // 0011 §3.2), which itself implies at least one successful LoadKeysAsync already ran and
@@ -292,26 +293,6 @@ internal sealed class AzureKeyVaultRemoteSigningJwtSigningService : JwtSigningSe
 
         return (allVersions, included);
     }
-
-    /// <summary>
-    /// Projects an included version list into a set suitable for change comparison in
-    /// <see cref="HasKeySetChangedAsync"/>. Includes an <c>IsActive</c> bit — keyed by position,
-    /// since <see cref="KeyVaultSigningKeyRotation.SelectIncludedVersions{T}"/> always places the
-    /// active version at index 0 — alongside version identifier and <c>Enabled</c> state.
-    /// </summary>
-    /// <remarks>
-    /// Comparing only version identifier and <c>Enabled</c> state (without <c>IsActive</c>) misses
-    /// the moment a rotation actually completes: because <c>KeySourceRefreshInterval</c> is both
-    /// the poll cadence and the publish-then-activate lead time, the poll where v2 is published
-    /// (not yet active alongside active v1) and the later poll where v2 becomes active (v1 still
-    /// retiring) both produce the identical <c>{v1, v2}</c> version-identifier/<c>Enabled</c> set —
-    /// so the activation poll would be indistinguishable from "nothing changed" and the reload that
-    /// promotes v2 to active would be skipped indefinitely. See <see cref="HasKeySetChangedAsync"/>'s
-    /// remarks for the full two-poll failure mode.
-    /// </remarks>
-    private static HashSet<(string Version, bool Enabled, bool IsActive)> ToVersionSet(
-        IEnumerable<KeyVaultSigningKeyRotation.ActivationEntry<KeyVaultKeyVersionInfo>> included) =>
-        included.Select((entry, i) => (entry.Version.Version, entry.Version.Enabled, IsActive: i == 0)).ToHashSet();
 
     private void WarnIfPreviouslyPublishedKidVanished(
         IEnumerable<string> newKids, IReadOnlyList<KeyVaultKeyVersionInfo> currentRawVersions)
