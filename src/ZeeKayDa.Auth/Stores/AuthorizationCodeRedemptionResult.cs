@@ -41,17 +41,17 @@ namespace ZeeKayDa.Auth.Stores;
 /// over-revoke on legitimate requests.
 /// </para>
 /// </remarks>
-public abstract class AuthorizationCodeRedemptionOutcome
+public abstract class AuthorizationCodeRedemptionResult
 {
     [ExcludeFromCodeCoverage]
-    private AuthorizationCodeRedemptionOutcome() { }
+    private AuthorizationCodeRedemptionResult() { }
 
     /// <summary>
     /// The code was valid, bound to the presenting client, and has been marked as redeemed.
     /// A tombstone has been written with the family identifier so that any subsequent replay
     /// of the same code will surface as <see cref="AlreadyRedeemed"/>.
     /// </summary>
-    public sealed class Redeemed : AuthorizationCodeRedemptionOutcome
+    public sealed class Redeemed : AuthorizationCodeRedemptionResult
     {
         /// <summary>
         /// The entry that was stored at issuance time, containing all claims needed for token
@@ -77,7 +77,7 @@ public abstract class AuthorizationCodeRedemptionOutcome
     /// legitimate client.
     /// </para>
     /// </remarks>
-    public sealed class ClientMismatch : AuthorizationCodeRedemptionOutcome { }
+    public sealed class ClientMismatch : AuthorizationCodeRedemptionResult { }
 
     /// <summary>
     /// The code has already been redeemed; a tombstone entry exists in the store.
@@ -100,7 +100,7 @@ public abstract class AuthorizationCodeRedemptionOutcome
     /// empty or unknown family identifier.
     /// </para>
     /// </remarks>
-    public sealed class AlreadyRedeemed : AuthorizationCodeRedemptionOutcome
+    public sealed class AlreadyRedeemed : AuthorizationCodeRedemptionResult
     {
         /// <summary>
         /// The refresh token family identifier committed into the tombstone during the original
@@ -129,5 +129,5 @@ public abstract class AuthorizationCodeRedemptionOutcome
     /// Caller MUST return <c>error=invalid_grant</c> per RFC 6749 §5.2. No store state is
     /// modified by this outcome.
     /// </remarks>
-    public sealed class NotFound : AuthorizationCodeRedemptionOutcome { }
+    public sealed class NotFound : AuthorizationCodeRedemptionResult { }
 }
