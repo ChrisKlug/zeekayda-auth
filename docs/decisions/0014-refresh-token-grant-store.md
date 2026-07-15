@@ -1,6 +1,6 @@
 # ADR 0014 — Refresh-Token Grant Store: Queryable Persisted-Grant Model
 
-**Status:** Accepted (pending security sign-off — see banner)
+**Status:** Accepted (security review complete — all three items signed off, see banner)
 **Date:** 2026-07-15 (issue #376, from the epic #352 extension-API review)
 
 > **Relationship to ADR 0013.** This ADR is the refresh-token counterpart to
@@ -33,14 +33,14 @@
 > needs its own assessment. The three items requiring explicit sign-off:
 >
 > 1. **Cleartext queryable columns replacing an all-encrypted-blob model.** `FamilyId`,
->    `SubjectHash`, `ClientId`, `FamilyAbsoluteExpiry`, `ExpiresAt`, and `Status` are stored as
+>    `Subject`, `ClientId`, `FamilyAbsoluteExpiry`, `ExpiresAt`, and `Status` are stored as
 >    non-secret cleartext columns so reuse/revoke/mismatch/expiry are decidable as SQL predicates
 >    over live rows (§2, §3). This is a bigger cleartext surface than ADR 0013's single plaintext
->    `FamilyId`. Needs assessment of: what a read-only store observer learns; whether `SubjectHash`
->    (a framework SHA-256 of the subject) can be reversed to the raw subject; and whether
->    `SubjectHash` **correlation** risk differs from `FamilyId` correlation risk given subjects are
->    long-lived, stable identifiers that recur across many families and over months, unlike a
->    per-family random GUID (§ "Security Considerations", item 1).
+>    `FamilyId`. Needs assessment of: what a read-only store observer learns; how the subject column
+>    should be protected given the subject is PII; and whether the subject column's **correlation**
+>    risk differs from `FamilyId` correlation risk given subjects are long-lived, stable identifiers
+>    that recur across many families and over months, unlike a per-family random GUID
+>    (§ "Security Considerations", item 1).
 > 2. **Mark-don't-delete + absolute-family-lifetime cap vs. the accept-grace clock-skew rule.**
 >    Consumed/revoked rows are retained as tombstones, not deleted, until self-cleaned past
 >    `FamilyAbsoluteExpiry` (§5, §6). Needs confirmation that the interaction of the retained
@@ -53,6 +53,71 @@
 >    Needs confirmation that collapsing to one catch site does **not** reintroduce a fail-open path
 >    that 0013's two-site design was protecting against — specifically that reuse and revocation
 >    detection never depend on a successful decrypt.
+>
+> **Security review outcome (2026-07-15):**
+>
+> - **Item 1 — cleartext columns / `Subject`: ✅ SIGN-OFF (supersedes the 2026-07-15 BLOCK; see
+>   Changelog).** `ClientId`, `FamilyAbsoluteExpiry`, `ExpiresAt`, `Status`, and the random-GUID
+>   `FamilyId` clear: none is a bearer credential, they disclose only operational/correlation
+>   metadata already implied by a grant's existence, and `FamilyId`'s reasoning transfers directly
+>   from ADR 0013's granted sign-off (random 128-bit, unguessable, no capability if leaked).
+>   `HandleHash` is a bare SHA-256 but its preimage is a 256-bit random handle, so it resists
+>   reversal. **The subject column also clears — as an honestly-named cleartext `Subject` string, not
+>   a hash.** The original design stored it as `StoreKey(H(entry.Sub))`, a bare unkeyed SHA-256, and
+>   the first review BLOCKED that: over a guessable, low-entropy, enumerable preimage (sequential
+>   ids, emails) a read-only store observer reverses the hash by rainbow table trivially, so
+>   "hashed" bought no confidentiality against the very attacker in scope — it only created false
+>   confidence that a control existed. The maintainer's revision draws the honest conclusion. The
+>   HMAC-with-pepper fix the first review proposed was reconsidered and **rejected** for a correct
+>   operational reason: `RevokeBySubjectAsync` is a security control that must *never* fail to match,
+>   which is fundamentally incompatible with a keyed secret that gets rotated — rotating the pepper
+>   silently breaks subject-level revocation for every pre-rotation row, and a two-pepper scheme only
+>   defers the same failure at real complexity cost. The two reference implementations this ADR is
+>   modelled on confirm the honest posture: **neither Duende IdentityServer (`PersistedGrant.SubjectId`)
+>   nor OpenIddict (`OpenIddictToken.Subject`) hashes the subject at all** — both store it as a plain
+>   PII/foreign-key column and hash only the token *handle* (this ADR's `HandleHash`). The subject is
+>   therefore protected the same way they protect it and the same way this ADR already accepts
+>   cleartext `FamilyId`: it is **not a bearer credential**, and its confidentiality rests on
+>   **database-level access control (least-privilege roles), encryption at rest (disk/backend-level),
+>   and standard PII-handling policy over the whole grant table** — infrastructure-layer controls,
+>   not an illusory application-level hash. **Threat-model note on cleartext vs. the blocked hash:**
+>   for the read-only-DB-access attacker in scope, cleartext is *not* materially worse than the
+>   blocked SHA-256 — that hash was reversible for exactly this (guessable) input class, so both
+>   expose the raw subject; cleartext simply removes a reversal step that was already cheap and stops
+>   overstating the protection. The residual, *inherent* correlation risk is unchanged from what the
+>   hashed design already carried: because the column is deterministic and queryable, an observer with
+>   DB read can see that N families share one subject and correlate a user's grants across families
+>   over months — stronger than `FamilyId`'s per-chain scope. That is intrinsic to *having a queryable
+>   subject column at all* (the price of `RevokeBySubjectAsync`), it was never closed by the hash, and
+>   it is accepted here and called out in Security Considerations. **Note on ADR 0008:** this does
+>   move the subject from ADR 0008's encrypted-payload-only treatment to an additional cleartext
+>   queryable column (the encrypted copy still lives inside `ProtectedPayload`); that at-rest exposure
+>   is the deliberate, necessary cost of making by-subject revocation a SQL predicate, and matches the
+>   reference implementations.
+> - **Item 2 — mark-don't-delete vs. absolute cap vs. accept-grace: ✅ SIGN-OFF.** The arithmetic
+>   composes safely. A grant is honoured only while `Status == Active` and
+>   `now < ExpiresAt + ClockSkewTolerance`; the clamp guarantees `ExpiresAt <= FamilyAbsoluteExpiry`,
+>   so the latest honour instant is `FamilyAbsoluteExpiry + skew` — the accept-grace band applied
+>   consistently, not an over-run of policy. The sweep predicate
+>   `family_absolute_expiry < now - skew` deletes a row only *after* `now > FamilyAbsoluteExpiry +
+>   skew`, i.e. strictly after every token in that family has passed its own accept-grace window, so
+>   a tombstone is never physically removed while still needed for reuse detection. `FamilyAbsoluteExpiry`
+>   is shared verbatim across the whole family, so the family is swept atomically — no split-sweep
+>   leaves a live sibling without its family's tombstones. Status-before-expiry ordering in
+>   `TryConsumeAsync` means the reuse/revoked signal is only ever lost to `NotFound` after the token
+>   is independently expired and unredeemable anyway. The `DateTimeOffset.MaxValue` sentinel disables
+>   cap + sweep (unbounded row growth), which is a resource concern, not a fail-open one, and is a
+>   warned, explicit opt-in. **Non-blocking implementation note:** guard `now + RefreshTokenLifetime`
+>   and `ExpiresAt + ClockSkewTolerance` against `DateTimeOffset` overflow near the sentinel.
+> - **Item 3 — single `Unprotect` catch site: ✅ SIGN-OFF.** Verified against the §4 flow: `NotFound`
+>   (null), `Revoked`, `AlreadyConsumed` (reuse), accept-grace expiry, and `ClientMismatch` are all
+>   decided from cleartext columns *before* the CAS and *before* any `Unprotect`; the CAS pivots on
+>   the `Status` column; the lost-race re-read branch also reads cleartext only. The sole `Unprotect`
+>   runs *after* the CAS has already marked the row `Consumed`, on the happy path, and its failure
+>   degrades to `NotFound` — fail-**closed** (the token is already dead, no successor issued, no reuse
+>   enabled). No security decision anywhere in the coordinator rides on a successful decrypt, so
+>   collapsing to one catch site reintroduces no fail-open path. `RevokeFamilyAsync` /
+>   `RevokeBySubjectAsync` are cleartext-predicate only. Confirmed sound.
 
 ---
 
@@ -71,7 +136,7 @@ insert-if-absent tombstone answers. A refresh token is a *richer, long-lived, ad
 it belongs to a rotation **family** and to a **subject**, and its security-critical operations are
 **revocation by family** (RFC 9700 §4.13, on reuse detection) and, prospectively, **revocation by
 subject** (logout-all). Those are queries: `UPDATE ... SET status = Revoked WHERE family_id = @f`
-and `... WHERE subject_hash = @s`.
+and `... WHERE subject = @s`.
 
 A dumb opaque KV cannot express those predicates. Backing them on a KV forces the machinery ADR
 0013's parked refresh-token draft accreted *solely because the KV could not query*: a write-once
@@ -140,8 +205,11 @@ public sealed record RefreshTokenGrant
     /// <summary>Queryable. Cleartext, non-secret random GUID shared across a rotation chain. Index this.</summary>
     public required string FamilyId { get; init; }
 
-    /// <summary>Queryable. Framework hash of the subject (subject is PII — the raw value is never stored). Index this.</summary>
-    public required StoreKey SubjectHash { get; init; }
+    /// <summary>Queryable. Cleartext subject identifier (PII, not a bearer credential). NOT a
+    /// <see cref="StoreKey"/>: it is honest cleartext, not opaque-already-hashed. Protected by
+    /// DB access control + encryption at rest, the Duende/OpenIddict posture (see Security
+    /// Considerations). Index this.</summary>
+    public required string Subject { get; init; }
 
     /// <summary>Queryable. Cleartext client_id (public, not secret) the grant is bound to.</summary>
     public required string ClientId { get; init; }
@@ -172,12 +240,16 @@ public enum RefreshGrantStatus
 }
 ```
 
-Both `HandleHash` and `SubjectHash` are `StoreKey` (ADR 0013 §2), whose constructor is
-framework-only. A backend therefore can never fabricate a `StoreKey` from a raw handle or a raw
-subject: "hash before you key" and "never persist the raw user id" are both **structurally
-unrepresentable in third-party code** — ADR 0013's property, extended to the subject. `FamilyId`
-stays a cleartext `string` because the settled DP-key-rotation-survival requirement mandates it be
-recoverable *without* decryption, and it is a non-secret GUID (§7).
+`HandleHash` is a `StoreKey` (ADR 0013 §2), whose constructor is framework-only, so a backend can
+never fabricate one from a raw handle: "hash before you key" is **structurally unrepresentable in
+third-party code**. `Subject` is deliberately **not** a `StoreKey` — that type means "opaque,
+already-hashed" (ADR 0013 §2), and reusing it for a cleartext PII column would misrepresent what the
+column is. The subject is stored as an honest cleartext `string`; it is not a bearer credential, and
+its confidentiality rests on infrastructure-layer controls (DB access control, encryption at rest,
+PII policy), the same posture Duende IdentityServer and OpenIddict take for their subject columns and
+the same posture this ADR already accepts for cleartext `FamilyId` (see Security Considerations).
+`FamilyId` likewise stays a cleartext `string` because the settled DP-key-rotation-survival
+requirement mandates it be recoverable *without* decryption, and it is a non-secret GUID (§7).
 
 ### 3. `IRefreshTokenGrantStore` — five methods, one atomicity invariant
 
@@ -219,10 +291,12 @@ public interface IRefreshTokenGrantStore
     /// still-live token in the family must remain findable and read as Revoked.</summary>
     ValueTask RevokeFamilyAsync(string familyId, CancellationToken ct);
 
-    /// <summary>Set Status=Revoked for EVERY grant whose SubjectHash == <paramref name="subjectHash"/>.
+    /// <summary>Set Status=Revoked for EVERY grant whose Subject == <paramref name="subject"/>.
     /// Same completeness bar as RevokeFamilyAsync. Present so a FUTURE subject-level logout-all is
-    /// possible; the endpoint is deferred and no coordinator method calls this yet (§6).</summary>
-    ValueTask RevokeBySubjectAsync(StoreKey subjectHash, CancellationToken ct);
+    /// possible; the endpoint is deferred and no coordinator method calls this yet (§6). The subject
+    /// arrives as cleartext (it is a plain equality predicate, not a keyed lookup) — this control
+    /// must never fail to match, which is why the subject is not peppered/keyed (§ item 1).</summary>
+    ValueTask RevokeBySubjectAsync(string subject, CancellationToken ct);
 }
 ```
 
@@ -262,7 +336,7 @@ entry.ExpiresAt = min(now + RefreshTokenLifetime, entry.FamilyAbsoluteExpiry)   
 grant = new RefreshTokenGrant {
     HandleHash           = key,
     FamilyId             = entry.FamilyId,             // cleartext column
-    SubjectHash          = StoreKey(H(entry.Sub)),     // subject hashed, never stored raw
+    Subject              = entry.Sub,                  // cleartext PII column (not hashed; see §item 1)
     ClientId             = entry.ClientId,             // cleartext column
     FamilyAbsoluteExpiry = entry.FamilyAbsoluteExpiry, // plain column — no separate metadata record
     ExpiresAt            = entry.ExpiresAt,
@@ -340,7 +414,7 @@ consume, which a revoked family blocks. This replaces the parked KV draft's whol
 marker/`fm`-record/TTL-sizing apparatus: revocation is a predicate over rows that already exist, so
 there is no revocation horizon to size from a bare `familyId`.
 
-**Subject revocation** is `RevokeBySubjectAsync(subjectHash)` → the identical shape with a different
+**Subject revocation** is `RevokeBySubjectAsync(subject)` → the identical shape with a different
 predicate. It exists on the grant store **now** so a future logout-all is *possible*, but the
 endpoint that would call it is **explicitly deferred** — it is not part of #376's build, no
 coordinator method invokes it yet, and its presence on the store is a capability, not a shipped
@@ -373,16 +447,16 @@ reintroduce a fail-open path is security-sign-off item 3.)
 
 - **SQL passes the newcomer test cleanly.** The one atomicity invariant is a native single-statement
   atomic CAS under row locking; revocation is a single `UPDATE`, complete by construction. The only
-  "remember to" is two indexes (`family_id`, `subject_hash`) — and a *missing* index is a pure
+  "remember to" is two indexes (`family_id`, `subject`) — and a *missing* index is a pure
   performance regression: the query still returns the correct rows. Nothing a docs-ignorant author
   plausibly writes here silently breaks a security control.
 - **Cosmos: correctness-safe, perf needs a partition-key choice.** Whatever the partition key, the
   queries return the right rows, so correctness holds. Partition-key choice only drives cost
   (partition by `familyId` makes family revocation single-partition and by-subject fan out; by
-  `subjectHash` flips it; by `handleHash` fans both out). A newcomer can pick a slow key, never a
+  `subject` flips it; by `handleHash` fans both out). A newcomer can pick a slow key, never a
   wrong one — so Cosmos passes the newcomer test for correctness with a documented modelling note.
 - **Redis is explicitly NOT first-class.** Redis has no `WHERE family_id = X`, so a Redis backend
-  must maintain its own `family:{id} → {handles}` and `subject:{hash} → {handles}` secondary index
+  must maintain its own `family:{id} → {handles}` and `subject:{subject} → {handles}` secondary index
   sets. That is a **non-transactional dual-write** on every insert: if the grant write and the index
   add are not atomic-together and a crash lands between them, the index drifts — a live grant exists
   that `RevokeFamilyAsync` will never see, i.e. a still-`Active` token in a "revoked" family, a
@@ -428,10 +502,11 @@ path. It exercises:
   no longer use the KV primitive; the two extension points are now distinct interface *types*, so
   they are self-describing in IntelliSense without marker interfaces.
 - **Kept:** `RefreshTokenEntry` as the decrypted protocol payload the endpoint sees in
-  `Consumed.Entry`; it gains `FamilyAbsoluteExpiry`. Its `Sub`, `Scope`, session id, `IssuedAt`, and
-  previous-handle-hash stay *inside* `ProtectedPayload`; `FamilyId` / `ClientId` / `ExpiresAt` are
-  duplicated up onto `RefreshTokenGrant` as queryable columns (the encrypted copy is authoritative
-  for issuance; the columns are for query/expiry/reuse decisions).
+  `Consumed.Entry`; it gains `FamilyAbsoluteExpiry`. Its `Scope`, session id, `IssuedAt`, and
+  previous-handle-hash stay *inside* `ProtectedPayload`; `FamilyId` / `Subject` / `ClientId` /
+  `ExpiresAt` are duplicated up onto `RefreshTokenGrant` as queryable columns (the encrypted copy is
+  authoritative for issuance; the columns are for query/expiry/reuse/by-subject-revocation decisions).
+  `Sub` therefore now exists both inside `ProtectedPayload` and as the cleartext `Subject` column.
 - **Kept, sealed, unchanged public surface:** `IRefreshTokenStore` (coordinator), implemented by
   sealed `RefreshTokenStore`, now composed over `IRefreshTokenGrantStore`. No `RevokeBySubjectAsync`
   coordinator method is added (logout-all deferred, §6).
@@ -539,9 +614,12 @@ ADR says so plainly so the capability is not mistaken for a shipped feature.
 
 - **Larger cleartext surface than ADR 0013.** Six non-secret columns are stored in clear (vs. 0013's
   single plaintext `FamilyId`), and — because refresh tokens live for months, not
-  seconds-to-minutes — they sit at rest far longer. `SubjectHash` in particular is a stable,
-  long-lived identifier recurring across many families, so its at-rest correlation profile differs
-  from a per-family random GUID. Flagged for security sign-off (banner item 1).
+  seconds-to-minutes — they sit at rest far longer. The cleartext `Subject` column in particular is a
+  stable, long-lived identifier recurring across many families, so its at-rest correlation profile
+  differs from a per-family random GUID, and it moves the subject from ADR 0008's encrypted-payload-only
+  treatment into an additional cleartext queryable column (the necessary cost of by-subject
+  revocation as a SQL predicate). Assessed and signed off (banner item 1): the subject is PII, not a
+  bearer credential, and is protected at the infrastructure layer, matching Duende/OpenIddict.
 - **Relational-first, not backend-agnostic.** The store now *requires* equality-query +
   bulk-update-by-predicate, so Redis (and any non-queryable backend) is no longer a first-class DIY
   target — it needs a framework-owned adapter or the conformance kit. This is a deliberate narrowing
@@ -558,15 +636,28 @@ ADR says so plainly so the capability is not mistaken for a shipped feature.
 
 ## Security Considerations
 
-- **Cleartext queryable columns (sign-off item 1).** `FamilyId`, `SubjectHash`, `ClientId`,
-  `FamilyAbsoluteExpiry`, `ExpiresAt`, `Status` are non-secret and stored in clear so revocation,
-  reuse, mismatch, and expiry are decidable as predicates without decryption. None is a bearer
-  credential and the raw handle and raw subject never reach the store (both arrive as `StoreKey`
-  hashes). The open questions for review: what a read-only store observer learns from this set;
-  whether `SubjectHash` (framework SHA-256 of the subject) resists reversal to the raw subject; and
-  whether `SubjectHash` correlation risk exceeds `FamilyId` correlation risk given the subject is a
-  stable, long-lived identifier recurring across families over months, unlike a per-family random
-  GUID.
+- **Cleartext queryable columns, including `Subject` (sign-off item 1 — SIGNED OFF).** `FamilyId`,
+  `Subject`, `ClientId`, `FamilyAbsoluteExpiry`, `ExpiresAt`, `Status` are non-secret and stored in
+  clear so revocation, reuse, mismatch, and expiry are decidable as predicates without decryption.
+  None is a bearer credential. The raw handle never reaches the store (it arrives as a `StoreKey`
+  hash whose 256-bit random preimage resists reversal). The **subject is stored as honest cleartext**,
+  not a hash: a bare SHA-256 over a guessable, low-entropy subject (sequential ids, emails) is
+  reversible by rainbow table for the very read-only-DB attacker in scope, so it would provide false
+  confidence, not confidentiality — and an HMAC-with-pepper alternative was rejected because
+  `RevokeBySubjectAsync` is a control that must never fail to match, which pepper rotation would
+  silently break. This is the posture of both reference implementations the store is modelled on
+  (Duende `PersistedGrant.SubjectId`, OpenIddict `OpenIddictToken.Subject` — both plain columns; only
+  the token *handle* is hashed). The subject is therefore protected as PII by **database-level access
+  control (least-privilege roles), encryption at rest (disk/backend-level), and standard PII-handling
+  policy over the grant table** — infrastructure-layer controls, exactly as for cleartext `FamilyId`.
+- **Residual subject-correlation risk (accepted).** Because `Subject` is deterministic and queryable,
+  a read-only store observer can see that N families share one subject and correlate a user's grants
+  across families over months — a wider correlation scope than `FamilyId`'s per-chain scope. This is
+  intrinsic to having a queryable subject column at all (the price of by-subject revocation); it was
+  never closed by the previously-proposed hash (which was itself deterministic), and cleartext does
+  not widen it. Accepted as the cost of the capability. A read-only observer of this column set learns
+  only which client and subject a grant binds, its lifecycle state, and its expiries — no bearer
+  credential and no token-redeemable material.
 - **Mark-don't-delete + absolute cap vs. accept-grace (sign-off item 2).** Consumed/revoked rows are
   retained as tombstones until swept past `FamilyAbsoluteExpiry - skew` (§5). Review must confirm the
   clamp `ExpiresAt = min(now + RefreshTokenLifetime, FamilyAbsoluteExpiry)`, the accept-grace window
@@ -586,8 +677,12 @@ ADR says so plainly so the capability is not mistaken for a shipped feature.
   `Guarded(...)` wraps thrown faults as `ZeeKayDaStoreException` and rethrows
   `OperationCanceledException` unwrapped, while `FindByHandleAsync`'s contract forbids
   catch-and-return-null (a fault-masked-as-absent read fails open on reuse detection).
-- **Handle and subject confidentiality:** the raw handle and raw subject never reach the store; only
-  `StoreKey` hashes do. A persistence breach yields no redeemable tokens and no raw subject ids.
+- **Handle confidentiality:** the raw handle never reaches the store; only its `StoreKey` hash does,
+  so a persistence breach yields **no redeemable tokens**. The subject *is* present in cleartext (it
+  is PII, not a bearer credential), protected at the infrastructure layer as described above; a breach
+  of the store discloses subject identifiers and grant metadata but grants no token-redemption or
+  impersonation capability. This is the deliberate, Duende/OpenIddict-consistent trade for making
+  by-subject revocation a reliable SQL predicate.
 
 ---
 
@@ -605,9 +700,27 @@ ADR says so plainly so the capability is not mistaken for a shipped feature.
   the ADR 0013 §1 internal-member pattern; deletes the refresh-token KV marker interface. Decides the
   issue's open question NO (`TryConsumeAsync` does not self-revoke). Depends on ADR 0013 (#375) for
   the shared `StoreKey`, sealing, `Guarded`, and accept-grace concepts it references.
-- 2026-07-15 — security review — **PENDING.** Three refresh-token-scoped items require explicit
-  sign-off before #376 implementation starts (see banner): (1) the enlarged cleartext-column surface
-  and `SubjectHash` correlation profile; (2) mark-don't-delete + the absolute-lifetime cap's
-  interaction with the accept-grace clock-skew rule; (3) the single-`Unprotect`-catch-site
-  simplification not reintroducing a fail-open path. Not inherited from ADR 0013's
-  authorization-code sign-off.
+- 2026-07-15 — security review — **COMPLETE, MIXED.** Items 2 (mark-don't-delete vs. absolute cap
+  vs. accept-grace) and 3 (single `Unprotect` catch site) **signed off**. Item 1 (enlarged cleartext
+  surface) **BLOCKED**: the operational/metadata columns and the random-GUID `FamilyId` cleared, but
+  `SubjectHash` was a bare unkeyed SHA-256 over a guessable, low-entropy subject preimage and thus
+  reversible to the raw subject by a read-only store observer. Unblock was said to require an
+  HMAC-SHA256 keyed MAC (pepper).
+- 2026-07-15 — security review (follow-up) — **ITEM 1 UNBLOCKED / SIGNED OFF; reversal of the BLOCK
+  above.** The proposed HMAC-with-pepper fix was reconsidered and **rejected on operational grounds**:
+  `RevokeBySubjectAsync` is a security control that must never fail to match, which is fundamentally
+  incompatible with a rotatable secret — pepper rotation silently breaks subject-level revocation for
+  every pre-rotation row, and a two-pepper scheme only defers the same failure at real complexity cost.
+  Research into the two reference implementations this ADR invokes confirmed the correct posture:
+  **neither Duende IdentityServer (`PersistedGrant.SubjectId`) nor OpenIddict (`OpenIddictToken.Subject`)
+  hashes the subject at all** — both store it as a plain PII column and hash only the token *handle*
+  (this ADR's `HandleHash`). The prior review's own premise (a bare hash over a guessable subject is
+  trivially reversible for the in-scope read-only-DB attacker) shows the hash provided false confidence,
+  not confidentiality — so honest cleartext is not materially weaker for that threat model. **Resolution:**
+  replace `SubjectHash` (`StoreKey`, SHA-256-derived) with a plain cleartext `Subject` (`string`, NOT
+  `StoreKey`), protected as PII by database-level access control, encryption at rest, and PII-handling
+  policy — the Duende/OpenIddict posture, consistent with this ADR's own cleartext `FamilyId`. The
+  residual deterministic cross-family correlation (intrinsic to any queryable subject column, never
+  closed by the hash) is called out and accepted in Security Considerations. `RevokeBySubjectAsync` now
+  takes a `string subject`. Item 1 signed off; all three items now cleared. Implementation may proceed
+  once ADR 0013 (#375) is merged.
