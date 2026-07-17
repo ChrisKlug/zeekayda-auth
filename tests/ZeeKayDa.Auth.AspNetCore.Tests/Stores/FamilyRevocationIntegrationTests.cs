@@ -64,13 +64,13 @@ public sealed class FamilyRevocationIntegrationTests
 
         var firstOutcome = await codeStore.TryRedeemAsync(code, clientId, familyId, CancellationToken.None);
 
-        firstOutcome.Should().BeOfType<AuthorizationCodeRedemptionOutcome.Redeemed>(
+        firstOutcome.Should().BeOfType<AuthorizationCodeRedemptionResult.Redeemed>(
             "the first redemption of a valid, unexpired code must succeed");
 
         var replayFamilyId = Guid.NewGuid().ToString("N");
         var replayOutcome = await codeStore.TryRedeemAsync(code, clientId, replayFamilyId, CancellationToken.None);
 
-        replayOutcome.Should().BeOfType<AuthorizationCodeRedemptionOutcome.AlreadyRedeemed>(
+        replayOutcome.Should().BeOfType<AuthorizationCodeRedemptionResult.AlreadyRedeemed>(
                 "replaying the same code must return AlreadyRedeemed")
             .Which.FamilyId.Should().Be(familyId,
                 "tombstone must carry the familyId from the first redemption, not the replay attempt's argument");

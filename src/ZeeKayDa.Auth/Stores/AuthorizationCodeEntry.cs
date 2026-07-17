@@ -32,7 +32,7 @@ public sealed record AuthorizationCodeEntry
     /// <remarks>
     /// The token endpoint MUST verify that the presenting <c>client_id</c> matches this value
     /// before accepting the code. A mismatch MUST be surfaced as
-    /// <see cref="AuthorizationCodeRedemptionOutcome.ClientMismatch"/>.
+    /// <see cref="AuthorizationCodeRedemptionResult.ClientMismatch"/>.
     /// </remarks>
     public required string ClientId { get; init; }
 
@@ -138,7 +138,7 @@ public sealed record AuthorizationCodeEntry
     /// </summary>
     /// <remarks>
     /// Store implementations MUST treat entries past this timestamp as non-existent, returning
-    /// <see cref="AuthorizationCodeRedemptionOutcome.NotFound"/> rather than exposing expired
+    /// <see cref="AuthorizationCodeRedemptionResult.NotFound"/> rather than exposing expired
     /// entries to callers.
     /// </remarks>
     public required DateTimeOffset ExpiresAt { get; init; }

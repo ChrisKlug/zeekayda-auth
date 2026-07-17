@@ -98,14 +98,14 @@ public sealed class IAuthorizationCodeStoreTests
     }
 
     [Fact]
-    public void TryRedeemAsync_returns_ValueTask_of_AuthorizationCodeRedemptionOutcome()
+    public void TryRedeemAsync_returns_ValueTask_of_AuthorizationCodeRedemptionResult()
     {
         var method = typeof(IAuthorizationCodeStore).GetMethod(
             "TryRedeemAsync",
             BindingFlags.Public | BindingFlags.Instance)!;
 
         method.ReturnType.Should().Be(
-            typeof(ValueTask<AuthorizationCodeRedemptionOutcome>));
+            typeof(ValueTask<AuthorizationCodeRedemptionResult>));
     }
 
     [Fact]
@@ -161,13 +161,28 @@ public sealed class IAuthorizationCodeStoreTests
         parameters[3].ParameterType.Should().Be(typeof(CancellationToken));
     }
 
+    // ── Sealing member (ADR 0013 §1) ─────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void IAuthorizationCodeStore_declares_exactly_one_internal_method()
+    {
+        var internalMethods = typeof(IAuthorizationCodeStore)
+            .GetMethods(BindingFlags.NonPublic | BindingFlags.Instance)
+            .Where(m => !m.IsPublic)
+            .ToList();
+
+        internalMethods.Should().ContainSingle(
+            because: "an internal member is what blocks third-party implementation of this " +
+                     "framework-sealed interface (ADR 0013 §1), and there must be exactly one");
+    }
+
     // ── Implementability via a fake ───────────────────────────────────────────────────────────────
 
     [Fact]
     public void A_fake_implementation_is_assignable_to_the_interface()
     {
         IAuthorizationCodeStore store = new FakeAuthorizationCodeStore(
-            new AuthorizationCodeRedemptionOutcome.NotFound());
+            new AuthorizationCodeRedemptionResult.NotFound());
 
         store.Should().BeAssignableTo<IAuthorizationCodeStore>();
     }
@@ -176,7 +191,7 @@ public sealed class IAuthorizationCodeStoreTests
     public async Task Fake_StoreAsync_completes_without_throwing()
     {
         var store = new FakeAuthorizationCodeStore(
-            new AuthorizationCodeRedemptionOutcome.NotFound());
+            new AuthorizationCodeRedemptionResult.NotFound());
 
         var act = async () => await store.StoreAsync("raw-code", BuildEntry(), CancellationToken.None);
 
@@ -188,7 +203,7 @@ public sealed class IAuthorizationCodeStoreTests
     {
         var entry = BuildEntry();
         var store = new FakeAuthorizationCodeStore(
-            new AuthorizationCodeRedemptionOutcome.Redeemed { Entry = entry });
+            new AuthorizationCodeRedemptionResult.Redeemed { Entry = entry });
 
         var outcome = await store.TryRedeemAsync(
             code: "raw-code",
@@ -196,7 +211,7 @@ public sealed class IAuthorizationCodeStoreTests
             familyId: "family-1",
             cancellationToken: CancellationToken.None);
 
-        outcome.Should().BeOfType<AuthorizationCodeRedemptionOutcome.Redeemed>()
+        outcome.Should().BeOfType<AuthorizationCodeRedemptionResult.Redeemed>()
             .Which.Entry.Should().BeSameAs(entry);
     }
 
@@ -204,7 +219,7 @@ public sealed class IAuthorizationCodeStoreTests
     public async Task Fake_TryRedeemAsync_returns_configured_ClientMismatch_outcome()
     {
         var store = new FakeAuthorizationCodeStore(
-            new AuthorizationCodeRedemptionOutcome.ClientMismatch());
+            new AuthorizationCodeRedemptionResult.ClientMismatch());
 
         var outcome = await store.TryRedeemAsync(
             code: "raw-code",
@@ -212,14 +227,14 @@ public sealed class IAuthorizationCodeStoreTests
             familyId: "family-1",
             cancellationToken: CancellationToken.None);
 
-        outcome.Should().BeOfType<AuthorizationCodeRedemptionOutcome.ClientMismatch>();
+        outcome.Should().BeOfType<AuthorizationCodeRedemptionResult.ClientMismatch>();
     }
 
     [Fact]
     public async Task Fake_TryRedeemAsync_returns_configured_AlreadyRedeemed_outcome()
     {
         var store = new FakeAuthorizationCodeStore(
-            new AuthorizationCodeRedemptionOutcome.AlreadyRedeemed { FamilyId = "family-old" });
+            new AuthorizationCodeRedemptionResult.AlreadyRedeemed { FamilyId = "family-old" });
 
         var outcome = await store.TryRedeemAsync(
             code: "replayed-code",
@@ -227,7 +242,7 @@ public sealed class IAuthorizationCodeStoreTests
             familyId: "family-new",
             cancellationToken: CancellationToken.None);
 
-        outcome.Should().BeOfType<AuthorizationCodeRedemptionOutcome.AlreadyRedeemed>()
+        outcome.Should().BeOfType<AuthorizationCodeRedemptionResult.AlreadyRedeemed>()
             .Which.FamilyId.Should().Be("family-old");
     }
 
@@ -235,7 +250,7 @@ public sealed class IAuthorizationCodeStoreTests
     public async Task Fake_TryRedeemAsync_returns_configured_NotFound_outcome()
     {
         var store = new FakeAuthorizationCodeStore(
-            new AuthorizationCodeRedemptionOutcome.NotFound());
+            new AuthorizationCodeRedemptionResult.NotFound());
 
         var outcome = await store.TryRedeemAsync(
             code: "unknown-code",
@@ -243,7 +258,7 @@ public sealed class IAuthorizationCodeStoreTests
             familyId: "family-1",
             cancellationToken: CancellationToken.None);
 
-        outcome.Should().BeOfType<AuthorizationCodeRedemptionOutcome.NotFound>();
+        outcome.Should().BeOfType<AuthorizationCodeRedemptionResult.NotFound>();
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────────────────────────
@@ -270,19 +285,23 @@ public sealed class IAuthorizationCodeStoreTests
     /// </summary>
     private sealed class FakeAuthorizationCodeStore : IAuthorizationCodeStore
     {
-        private readonly AuthorizationCodeRedemptionOutcome _outcome;
+        private readonly AuthorizationCodeRedemptionResult _outcome;
 
-        public FakeAuthorizationCodeStore(AuthorizationCodeRedemptionOutcome outcome)
+        public FakeAuthorizationCodeStore(AuthorizationCodeRedemptionResult outcome)
             => _outcome = outcome;
 
         public Task StoreAsync(string code, AuthorizationCodeEntry entry, CancellationToken cancellationToken)
             => Task.CompletedTask;
 
-        public ValueTask<AuthorizationCodeRedemptionOutcome> TryRedeemAsync(
+        public ValueTask<AuthorizationCodeRedemptionResult> TryRedeemAsync(
             string code,
             string clientId,
             string familyId,
             CancellationToken cancellationToken)
             => ValueTask.FromResult(_outcome);
+
+        // Satisfiable here because ZeeKayDa.Auth.Tests is a friend assembly (ADR 0013 §1) —
+        // a genuine third-party assembly could not implement IAuthorizationCodeStore at all.
+        void IAuthorizationCodeStore.SealAsFrameworkOwnedProtocol() { }
     }
 }

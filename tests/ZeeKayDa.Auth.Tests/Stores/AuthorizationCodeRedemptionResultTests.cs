@@ -4,7 +4,7 @@ using ZeeKayDa.Auth.Stores;
 
 namespace ZeeKayDa.Auth.Tests.Stores;
 
-public sealed class AuthorizationCodeRedemptionOutcomeTests
+public sealed class AuthorizationCodeRedemptionResultTests
 {
     // ── Shared fixture ────────────────────────────────────────────────────────────────────────────
 
@@ -27,15 +27,15 @@ public sealed class AuthorizationCodeRedemptionOutcomeTests
     // ── Base-class shape ──────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void AuthorizationCodeRedemptionOutcome_is_abstract()
+    public void AuthorizationCodeRedemptionResult_is_abstract()
     {
-        typeof(AuthorizationCodeRedemptionOutcome).IsAbstract.Should().BeTrue();
+        typeof(AuthorizationCodeRedemptionResult).IsAbstract.Should().BeTrue();
     }
 
     [Fact]
-    public void AuthorizationCodeRedemptionOutcome_has_a_private_constructor_only()
+    public void AuthorizationCodeRedemptionResult_has_a_private_constructor_only()
     {
-        var constructors = typeof(AuthorizationCodeRedemptionOutcome)
+        var constructors = typeof(AuthorizationCodeRedemptionResult)
             .GetConstructors(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
 
         constructors.Should().ContainSingle(because: "there is exactly one constructor");
@@ -44,13 +44,13 @@ public sealed class AuthorizationCodeRedemptionOutcomeTests
     }
 
     [Fact]
-    public void AuthorizationCodeRedemptionOutcome_cannot_be_subclassed_externally()
+    public void AuthorizationCodeRedemptionResult_cannot_be_subclassed_externally()
     {
         // Because the base class constructor is private, any attempt to define a subclass
         // outside the declaring assembly would fail at compile time (or at runtime via
         // TypeLoadException if constructed via reflection). We verify the invariant by
         // confirming no public constructor is accessible.
-        var publicCtor = typeof(AuthorizationCodeRedemptionOutcome)
+        var publicCtor = typeof(AuthorizationCodeRedemptionResult)
             .GetConstructors(BindingFlags.Instance | BindingFlags.Public);
 
         publicCtor.Should().BeEmpty(
@@ -60,65 +60,65 @@ public sealed class AuthorizationCodeRedemptionOutcomeTests
     // ── Nested type hierarchy ─────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Redeemed_is_a_subtype_of_AuthorizationCodeRedemptionOutcome()
+    public void Redeemed_is_a_subtype_of_AuthorizationCodeRedemptionResult()
     {
-        typeof(AuthorizationCodeRedemptionOutcome.Redeemed)
-            .Should().BeAssignableTo<AuthorizationCodeRedemptionOutcome>();
+        typeof(AuthorizationCodeRedemptionResult.Redeemed)
+            .Should().BeAssignableTo<AuthorizationCodeRedemptionResult>();
     }
 
     [Fact]
-    public void ClientMismatch_is_a_subtype_of_AuthorizationCodeRedemptionOutcome()
+    public void ClientMismatch_is_a_subtype_of_AuthorizationCodeRedemptionResult()
     {
-        typeof(AuthorizationCodeRedemptionOutcome.ClientMismatch)
-            .Should().BeAssignableTo<AuthorizationCodeRedemptionOutcome>();
+        typeof(AuthorizationCodeRedemptionResult.ClientMismatch)
+            .Should().BeAssignableTo<AuthorizationCodeRedemptionResult>();
     }
 
     [Fact]
-    public void AlreadyRedeemed_is_a_subtype_of_AuthorizationCodeRedemptionOutcome()
+    public void AlreadyRedeemed_is_a_subtype_of_AuthorizationCodeRedemptionResult()
     {
-        typeof(AuthorizationCodeRedemptionOutcome.AlreadyRedeemed)
-            .Should().BeAssignableTo<AuthorizationCodeRedemptionOutcome>();
+        typeof(AuthorizationCodeRedemptionResult.AlreadyRedeemed)
+            .Should().BeAssignableTo<AuthorizationCodeRedemptionResult>();
     }
 
     [Fact]
-    public void NotFound_is_a_subtype_of_AuthorizationCodeRedemptionOutcome()
+    public void NotFound_is_a_subtype_of_AuthorizationCodeRedemptionResult()
     {
-        typeof(AuthorizationCodeRedemptionOutcome.NotFound)
-            .Should().BeAssignableTo<AuthorizationCodeRedemptionOutcome>();
+        typeof(AuthorizationCodeRedemptionResult.NotFound)
+            .Should().BeAssignableTo<AuthorizationCodeRedemptionResult>();
     }
 
     [Fact]
     public void Redeemed_is_sealed()
     {
-        typeof(AuthorizationCodeRedemptionOutcome.Redeemed).IsSealed.Should().BeTrue();
+        typeof(AuthorizationCodeRedemptionResult.Redeemed).IsSealed.Should().BeTrue();
     }
 
     [Fact]
     public void ClientMismatch_is_sealed()
     {
-        typeof(AuthorizationCodeRedemptionOutcome.ClientMismatch).IsSealed.Should().BeTrue();
+        typeof(AuthorizationCodeRedemptionResult.ClientMismatch).IsSealed.Should().BeTrue();
     }
 
     [Fact]
     public void AlreadyRedeemed_is_sealed()
     {
-        typeof(AuthorizationCodeRedemptionOutcome.AlreadyRedeemed).IsSealed.Should().BeTrue();
+        typeof(AuthorizationCodeRedemptionResult.AlreadyRedeemed).IsSealed.Should().BeTrue();
     }
 
     [Fact]
     public void NotFound_is_sealed()
     {
-        typeof(AuthorizationCodeRedemptionOutcome.NotFound).IsSealed.Should().BeTrue();
+        typeof(AuthorizationCodeRedemptionResult.NotFound).IsSealed.Should().BeTrue();
     }
 
     [Fact]
     public void There_are_exactly_four_concrete_subtypes()
     {
         // Guards against a future subtype being added without updating all switch sites.
-        var subtypes = typeof(AuthorizationCodeRedemptionOutcome).Assembly
+        var subtypes = typeof(AuthorizationCodeRedemptionResult).Assembly
             .GetTypes()
-            .Where(t => t != typeof(AuthorizationCodeRedemptionOutcome)
-                        && typeof(AuthorizationCodeRedemptionOutcome).IsAssignableFrom(t))
+            .Where(t => t != typeof(AuthorizationCodeRedemptionResult)
+                        && typeof(AuthorizationCodeRedemptionResult).IsAssignableFrom(t))
             .ToList();
 
         subtypes.Should().HaveCount(4, because: "the closed union has exactly four cases");
@@ -131,7 +131,7 @@ public sealed class AuthorizationCodeRedemptionOutcomeTests
     {
         var entry = BuildEntry();
 
-        var outcome = new AuthorizationCodeRedemptionOutcome.Redeemed { Entry = entry };
+        var outcome = new AuthorizationCodeRedemptionResult.Redeemed { Entry = entry };
 
         outcome.Entry.Should().BeSameAs(entry);
     }
@@ -139,10 +139,10 @@ public sealed class AuthorizationCodeRedemptionOutcomeTests
     [Fact]
     public void Redeemed_can_be_assigned_to_base_type()
     {
-        AuthorizationCodeRedemptionOutcome outcome =
-            new AuthorizationCodeRedemptionOutcome.Redeemed { Entry = BuildEntry() };
+        AuthorizationCodeRedemptionResult outcome =
+            new AuthorizationCodeRedemptionResult.Redeemed { Entry = BuildEntry() };
 
-        outcome.Should().BeOfType<AuthorizationCodeRedemptionOutcome.Redeemed>();
+        outcome.Should().BeOfType<AuthorizationCodeRedemptionResult.Redeemed>();
     }
 
     // ── ClientMismatch ────────────────────────────────────────────────────────────────────────────
@@ -150,10 +150,10 @@ public sealed class AuthorizationCodeRedemptionOutcomeTests
     [Fact]
     public void ClientMismatch_can_be_instantiated_and_assigned_to_base_type()
     {
-        AuthorizationCodeRedemptionOutcome outcome =
-            new AuthorizationCodeRedemptionOutcome.ClientMismatch();
+        AuthorizationCodeRedemptionResult outcome =
+            new AuthorizationCodeRedemptionResult.ClientMismatch();
 
-        outcome.Should().BeOfType<AuthorizationCodeRedemptionOutcome.ClientMismatch>();
+        outcome.Should().BeOfType<AuthorizationCodeRedemptionResult.ClientMismatch>();
     }
 
     // ── AlreadyRedeemed ───────────────────────────────────────────────────────────────────────────
@@ -164,8 +164,8 @@ public sealed class AuthorizationCodeRedemptionOutcomeTests
         // AC-6: FamilyId must be `required string` (non-nullable). The compiler emits
         // RequiredMemberAttribute on the property when `required` is present in source.
         // This test ensures a refactor cannot silently drop the `required` keyword.
-        var property = typeof(AuthorizationCodeRedemptionOutcome.AlreadyRedeemed)
-            .GetProperty(nameof(AuthorizationCodeRedemptionOutcome.AlreadyRedeemed.FamilyId),
+        var property = typeof(AuthorizationCodeRedemptionResult.AlreadyRedeemed)
+            .GetProperty(nameof(AuthorizationCodeRedemptionResult.AlreadyRedeemed.FamilyId),
                 BindingFlags.Public | BindingFlags.Instance)!;
 
         property.GetCustomAttributesData()
@@ -177,8 +177,8 @@ public sealed class AuthorizationCodeRedemptionOutcomeTests
     [Fact]
     public void AlreadyRedeemed_FamilyId_property_type_is_non_nullable_string()
     {
-        var property = typeof(AuthorizationCodeRedemptionOutcome.AlreadyRedeemed)
-            .GetProperty(nameof(AuthorizationCodeRedemptionOutcome.AlreadyRedeemed.FamilyId),
+        var property = typeof(AuthorizationCodeRedemptionResult.AlreadyRedeemed)
+            .GetProperty(nameof(AuthorizationCodeRedemptionResult.AlreadyRedeemed.FamilyId),
                 BindingFlags.Public | BindingFlags.Instance)!;
 
         property.PropertyType.Should().Be(typeof(string),
@@ -188,7 +188,7 @@ public sealed class AuthorizationCodeRedemptionOutcomeTests
     [Fact]
     public void AlreadyRedeemed_stores_the_FamilyId()
     {
-        var outcome = new AuthorizationCodeRedemptionOutcome.AlreadyRedeemed
+        var outcome = new AuthorizationCodeRedemptionResult.AlreadyRedeemed
         {
             FamilyId = "family-xyz",
         };
@@ -199,10 +199,10 @@ public sealed class AuthorizationCodeRedemptionOutcomeTests
     [Fact]
     public void AlreadyRedeemed_can_be_assigned_to_base_type()
     {
-        AuthorizationCodeRedemptionOutcome outcome =
-            new AuthorizationCodeRedemptionOutcome.AlreadyRedeemed { FamilyId = "family-xyz" };
+        AuthorizationCodeRedemptionResult outcome =
+            new AuthorizationCodeRedemptionResult.AlreadyRedeemed { FamilyId = "family-xyz" };
 
-        outcome.Should().BeOfType<AuthorizationCodeRedemptionOutcome.AlreadyRedeemed>();
+        outcome.Should().BeOfType<AuthorizationCodeRedemptionResult.AlreadyRedeemed>();
     }
 
     // ── NotFound ──────────────────────────────────────────────────────────────────────────────────
@@ -210,10 +210,10 @@ public sealed class AuthorizationCodeRedemptionOutcomeTests
     [Fact]
     public void NotFound_can_be_instantiated_and_assigned_to_base_type()
     {
-        AuthorizationCodeRedemptionOutcome outcome =
-            new AuthorizationCodeRedemptionOutcome.NotFound();
+        AuthorizationCodeRedemptionResult outcome =
+            new AuthorizationCodeRedemptionResult.NotFound();
 
-        outcome.Should().BeOfType<AuthorizationCodeRedemptionOutcome.NotFound>();
+        outcome.Should().BeOfType<AuthorizationCodeRedemptionResult.NotFound>();
     }
 
     // ── Pattern-matching exhaustiveness ───────────────────────────────────────────────────────────
@@ -225,22 +225,22 @@ public sealed class AuthorizationCodeRedemptionOutcomeTests
     [InlineData("not_found")]
     public void Switch_expression_covers_all_four_cases(string expectedTag)
     {
-        AuthorizationCodeRedemptionOutcome outcome = expectedTag switch
+        AuthorizationCodeRedemptionResult outcome = expectedTag switch
         {
-            "redeemed" => new AuthorizationCodeRedemptionOutcome.Redeemed { Entry = BuildEntry() },
-            "client_mismatch" => new AuthorizationCodeRedemptionOutcome.ClientMismatch(),
-            "already_redeemed" => new AuthorizationCodeRedemptionOutcome.AlreadyRedeemed { FamilyId = "f-1" },
-            _ => new AuthorizationCodeRedemptionOutcome.NotFound(),
+            "redeemed" => new AuthorizationCodeRedemptionResult.Redeemed { Entry = BuildEntry() },
+            "client_mismatch" => new AuthorizationCodeRedemptionResult.ClientMismatch(),
+            "already_redeemed" => new AuthorizationCodeRedemptionResult.AlreadyRedeemed { FamilyId = "f-1" },
+            _ => new AuthorizationCodeRedemptionResult.NotFound(),
         };
 
         // A switch expression over all four cases must compile without a default arm warning,
         // proving the hierarchy is closed enough for exhaustive matching.
         var actualTag = outcome switch
         {
-            AuthorizationCodeRedemptionOutcome.Redeemed => "redeemed",
-            AuthorizationCodeRedemptionOutcome.ClientMismatch => "client_mismatch",
-            AuthorizationCodeRedemptionOutcome.AlreadyRedeemed => "already_redeemed",
-            AuthorizationCodeRedemptionOutcome.NotFound => "not_found",
+            AuthorizationCodeRedemptionResult.Redeemed => "redeemed",
+            AuthorizationCodeRedemptionResult.ClientMismatch => "client_mismatch",
+            AuthorizationCodeRedemptionResult.AlreadyRedeemed => "already_redeemed",
+            AuthorizationCodeRedemptionResult.NotFound => "not_found",
             _ => "unknown",
         };
 
@@ -251,10 +251,10 @@ public sealed class AuthorizationCodeRedemptionOutcomeTests
     public void Pattern_match_on_Redeemed_exposes_Entry()
     {
         var entry = BuildEntry();
-        AuthorizationCodeRedemptionOutcome outcome =
-            new AuthorizationCodeRedemptionOutcome.Redeemed { Entry = entry };
+        AuthorizationCodeRedemptionResult outcome =
+            new AuthorizationCodeRedemptionResult.Redeemed { Entry = entry };
 
-        if (outcome is AuthorizationCodeRedemptionOutcome.Redeemed redeemed)
+        if (outcome is AuthorizationCodeRedemptionResult.Redeemed redeemed)
         {
             redeemed.Entry.Should().BeSameAs(entry);
         }
@@ -267,10 +267,10 @@ public sealed class AuthorizationCodeRedemptionOutcomeTests
     [Fact]
     public void Pattern_match_on_AlreadyRedeemed_exposes_FamilyId()
     {
-        AuthorizationCodeRedemptionOutcome outcome =
-            new AuthorizationCodeRedemptionOutcome.AlreadyRedeemed { FamilyId = "family-abc" };
+        AuthorizationCodeRedemptionResult outcome =
+            new AuthorizationCodeRedemptionResult.AlreadyRedeemed { FamilyId = "family-abc" };
 
-        if (outcome is AuthorizationCodeRedemptionOutcome.AlreadyRedeemed ar)
+        if (outcome is AuthorizationCodeRedemptionResult.AlreadyRedeemed ar)
         {
             ar.FamilyId.Should().Be("family-abc");
         }

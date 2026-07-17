@@ -3,6 +3,7 @@
     <Project Path="src/ZeeKayDa.Auth.AspNetCore/ZeeKayDa.Auth.AspNetCore.csproj" />
     <Project Path="src/ZeeKayDa.Auth.AzureKeyVault/ZeeKayDa.Auth.AzureKeyVault.csproj" />
     <Project Path="src/ZeeKayDa.Auth.FileSystem/ZeeKayDa.Auth.FileSystem.csproj" />
+    <Project Path="src/ZeeKayDa.Auth.TestKit/ZeeKayDa.Auth.TestKit.csproj" />
     <Project Path="src/ZeeKayDa.Auth.Windows/ZeeKayDa.Auth.Windows.csproj" />
     <Project Path="src/ZeeKayDa.Auth/ZeeKayDa.Auth.csproj" />
   </Folder>
