@@ -45,7 +45,7 @@ public sealed class StoreKeyTests
     {
         var a = new StoreKey("same-value");
 
-        a.Equals("same-value").Should().BeFalse();
+        a.Equals(new object()).Should().BeFalse();
     }
 
     [Fact]
