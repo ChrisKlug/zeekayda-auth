@@ -90,10 +90,15 @@ the extension point down to exactly that.
   extension-point shape and the one tombstone behaviour called out in the sign-off banner.
 - **ADR 0006** (exception hierarchy): store I/O faults surface as `ZeeKayDaStoreException`. This
   ADR makes *producing* that exception a framework responsibility, not the implementer's.
-- **ADR 0007 / the extension-API review** established the "reserved variant unnameable by third
-  parties via an `internal` member" pattern (`ClientAuthMethod`). This ADR applies the same
-  internal-member idea to seal `IAuthorizationCodeStore` against third-party implementation while
-  leaving it public for cross-assembly consumption (§1).
+- **ADR 0007** established a *reserved-value* pattern (`TokenEndpointAuthMethods.None` is a
+  reserved string constant no custom `IClientAuthenticator` may claim) — a related but distinct
+  idea from what this ADR needs. The extension-API review sketched a stronger *reserved-member*
+  variant (an internal member blocking whole-interface implementation, tentatively named around
+  `ClientAuthMethod`) on the unmerged `arch/extension-api-review` branch; that sketch never landed
+  in `src/`. This ADR originates the reserved-member idiom for real, for `IAuthorizationCodeStore`
+  (§1) — it is not reusing existing framework code, only the *shape* of an idea sketched
+  elsewhere. Once this lands, it becomes the first real precedent for later extension points
+  (starting with the refresh-token store reshape) to reuse.
 - Nothing is published yet (pre-1.0, see `CONTRIBUTING.md`'s Pre-1.0 Stability Policy), so the
   cost of reshaping the extension point now is this ADR plus a re-parenting of the first-party
   stores — the cost of shipping the current shape is a permanent public API that fails the
@@ -127,11 +132,13 @@ separate assembly, can inject and consume it), but gains an `internal` interface
 friend assemblies — those named in `[assembly: InternalsVisibleTo]` — can satisfy. A third-party
 assembly attempting `class MyStore : IAuthorizationCodeStore` gets a **compile error** (it cannot
 implement the internal member), while any assembly consuming `IAuthorizationCodeStore` via DI is
-completely unaffected. This mirrors the `ClientAuthMethod` "reserved-variant-via-internal-member"
-pattern from the extension-API review — the wrong thing (a hand-rolled protocol store) becomes
-structurally unrepresentable outside the framework, rather than merely discouraged in prose.
-Making the interface `internal` was rejected because `ZeeKayDa.Auth.AspNetCore` depends on it
-cross-assembly (see Alternatives).
+completely unaffected. This is the same shape of idea sketched as `ClientAuthMethod` on the
+unmerged `arch/extension-api-review` branch, but that sketch never shipped — this ADR is the
+first place a "reserved-member-via-internal" seal actually lands in `src/`, giving later
+extension points (starting with the refresh-token store reshape) a real precedent to reuse. The
+wrong thing (a hand-rolled protocol store) becomes structurally unrepresentable outside the
+framework, rather than merely discouraged in prose. Making the interface `internal` was rejected
+because `ZeeKayDa.Auth.AspNetCore` depends on it cross-assembly (see Alternatives).
 
 ### 2. `StoreKey` — an opaque, already-hashed key
 

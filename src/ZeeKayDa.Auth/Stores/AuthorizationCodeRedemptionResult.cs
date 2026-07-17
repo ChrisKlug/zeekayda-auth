@@ -89,34 +89,26 @@ public abstract class AuthorizationCodeRedemptionResult
     /// <c>error=invalid_grant</c> (RFC 9700 §2.1.1).
     /// </para>
     /// <para>
-    /// In the normal case the tombstone is readable and <see cref="FamilyId"/> is the non-empty
-    /// identifier that was written atomically during the original redemption.
-    /// </para>
-    /// <para>
-    /// In the DP-key-rotation edge case (key ring replaced before <c>RefreshTokenLifetime</c>
-    /// elapses) the tombstone ciphertext cannot be decrypted and <see cref="FamilyId"/> will be
-    /// <see cref="string.Empty"/>. Callers MUST treat an empty <see cref="FamilyId"/> as
-    /// "reject the replay but skip revocation" — do NOT call <c>RevokeFamilyAsync</c> with an
-    /// empty or unknown family identifier.
+    /// <see cref="FamilyId"/> is the plaintext identifier written atomically into the tombstone
+    /// envelope during the original redemption (ADR 0013 §7) — it is recoverable even across a
+    /// Data-Protection key rotation, since it lives in the envelope's cleartext part rather than
+    /// its Data-Protection-protected part. Callers MUST always call <c>RevokeFamilyAsync</c> with
+    /// it; the pre-0013 "empty <see cref="FamilyId"/> means skip revocation" fallback no longer
+    /// applies — a rotated key can no longer degrade this outcome.
     /// </para>
     /// </remarks>
     public sealed class AlreadyRedeemed : AuthorizationCodeRedemptionResult
     {
         /// <summary>
-        /// The refresh token family identifier committed into the tombstone during the original
-        /// redemption, or <see cref="string.Empty"/> when the tombstone ciphertext is
-        /// unrecoverable (DP key rotation before <c>RefreshTokenLifetime</c>).
+        /// The refresh token family identifier committed into the tombstone envelope during the
+        /// original redemption (ADR 0013 §7). Plaintext, and recoverable even when the envelope's
+        /// Data-Protection-protected part cannot be decrypted (e.g. after a key rotation).
         /// </summary>
         /// <remarks>
-        /// <para>
-        /// When non-empty: caller MUST revoke all tokens in this family via the refresh token
-        /// store before returning an error to the client.
-        /// </para>
-        /// <para>
-        /// When empty: the replay is still rejected with <c>error=invalid_grant</c>, but
-        /// family revocation must be skipped — <c>RevokeFamilyAsync</c> is a no-op on an
-        /// empty or unknown family identifier.
-        /// </para>
+        /// Caller MUST revoke all tokens in this family via the refresh token store before
+        /// returning an error to the client. A future tombstone-loss edge case may still surface
+        /// <see cref="string.Empty"/> if the tombstone record itself is missing; that case remains
+        /// "reject the replay, skip revocation" — but a DP key rotation alone no longer causes it.
         /// </remarks>
         public required string FamilyId { get; init; }
     }
