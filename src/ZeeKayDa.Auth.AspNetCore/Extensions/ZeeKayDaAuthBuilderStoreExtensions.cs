@@ -14,10 +14,12 @@ namespace Microsoft.Extensions.DependencyInjection;
 public static class ZeeKayDaAuthBuilderStoreExtensions
 {
     /// <summary>
-    /// Registers <typeparamref name="T"/> as the singleton <see cref="IAuthorizationCodeStore"/> implementation. This is the recommended registration path for production use.
+    /// Registers <typeparamref name="T"/> as the singleton <see cref="IAuthorizationCodeBackingStore"/>
+    /// implementation, wired underneath the framework's sealed coordinator. This is the
+    /// recommended registration path for production use (ADR 0013 §4).
     /// </summary>
     /// <typeparam name="T">
-    /// The concrete type that implements <see cref="IAuthorizationCodeStore"/>. Must be a
+    /// The concrete type that implements <see cref="IAuthorizationCodeBackingStore"/>. Must be a
     /// reference type with a publicly accessible constructor so that the DI container can
     /// instantiate it.
     /// </typeparam>
@@ -31,12 +33,13 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
     /// Only one store registration per interface is allowed.
     /// </exception>
     public static ZeeKayDaAuthBuilder AddAuthorizationCodeStore<T>(this ZeeKayDaAuthBuilder builder)
-        where T : class, IAuthorizationCodeStore
+        where T : class, IAuthorizationCodeBackingStore
     {
         ArgumentNullException.ThrowIfNull(builder);
 
         builder.ThrowIfAlreadyRegistered(typeof(IAuthorizationCodeStore));
-        builder.Services.AddSingleton<IAuthorizationCodeStore, T>();
+        builder.Services.AddSingleton<IAuthorizationCodeBackingStore, T>();
+        builder.Services.AddSingleton<IAuthorizationCodeStore, AuthorizationCodeStore>();
 
         return builder;
     }
@@ -104,7 +107,8 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
         ArgumentNullException.ThrowIfNull(builder);
 
         builder.ThrowIfAlreadyRegistered(typeof(IAuthorizationCodeStore));
-        builder.Services.AddSingleton<IAuthorizationCodeStore, InMemoryAuthorizationCodeStore>();
+        builder.Services.AddSingleton<IAuthorizationCodeBackingStore, InMemoryAuthorizationCodeBackingStore>();
+        builder.Services.AddSingleton<IAuthorizationCodeStore, AuthorizationCodeStore>();
         builder.Services.AddSingleton<IHostedService>(sp => new InMemoryStoreWarningService(
             sp.GetRequiredService<IHostEnvironment>(),
             InMemoryStoreWarningService.AuthorizationCodeStoreName,
@@ -219,7 +223,8 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
         ArgumentNullException.ThrowIfNull(builder);
 
         builder.ThrowIfAlreadyRegistered(typeof(IAuthorizationCodeStore));
-        builder.Services.AddSingleton<IAuthorizationCodeStore, DistributedCacheAuthorizationCodeStore>();
+        builder.Services.AddSingleton<IAuthorizationCodeBackingStore, DistributedCacheAuthorizationCodeBackingStore>();
+        builder.Services.AddSingleton<IAuthorizationCodeStore, AuthorizationCodeStore>();
         builder.Services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IHostedService, DistributedCacheStoreStartupValidator>());
 
