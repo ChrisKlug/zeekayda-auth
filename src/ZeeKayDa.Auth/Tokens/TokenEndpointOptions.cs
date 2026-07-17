@@ -50,4 +50,33 @@ public sealed class TokenEndpointOptions
     /// </para>
     /// </remarks>
     public TimeSpan RefreshTokenLifetime { get; set; } = TimeSpan.FromDays(14);
+
+    /// <summary>
+    /// Gets or sets the absolute wall-clock lifetime of a refresh token family, measured from the
+    /// family's first token. Defaults to 90 days.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Baked into <c>FamilyAbsoluteExpiry</c> at family birth (<c>now + AbsoluteFamilyLifetime</c>)
+    /// and propagated verbatim through every rotation in the family, so the whole chain shares one
+    /// absolute ceiling (ADR 0014 §5). Each token's own expiry is clamped to
+    /// <c>min(now + RefreshTokenLifetime, FamilyAbsoluteExpiry)</c> — <see cref="RefreshTokenLifetime"/>
+    /// is the per-token idle window; this option is the whole-family hard cap. There is no
+    /// separate idle-timeout option.
+    /// </para>
+    /// <para>
+    /// Must be greater than <see cref="TimeSpan.Zero"/>. Values at or below zero are rejected at
+    /// startup by <c>AuthorizationServerOptionsValidator</c>.
+    /// </para>
+    /// <para>
+    /// <strong>Escape hatch.</strong> Setting this to <see cref="TimeSpan.MaxValue"/> — the
+    /// <see cref="DateTimeOffset.MaxValue"/>-equivalent sentinel for a duration-typed option —
+    /// disables the absolute cap: refresh token families then live indefinitely, bounded only by
+    /// <see cref="RefreshTokenLifetime"/> idle expiry. This causes unbounded row growth in a
+    /// persisted grant store (a resource concern, not a fail-open one) and is a warned, explicit
+    /// opt-in: the framework emits a startup warning whenever this sentinel is configured, so an
+    /// unbounded family lifetime is never a silent accident.
+    /// </para>
+    /// </remarks>
+    public TimeSpan AbsoluteFamilyLifetime { get; set; } = TimeSpan.FromDays(90);
 }

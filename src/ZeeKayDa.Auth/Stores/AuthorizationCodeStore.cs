@@ -4,6 +4,8 @@ using System.Text.Json;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Options;
 
+using static ZeeKayDa.Auth.Stores.StoreGuard;
+
 namespace ZeeKayDa.Auth.Stores;
 
 /// <summary>
@@ -211,39 +213,4 @@ internal sealed class AuthorizationCodeStore : IAuthorizationCodeStore
     private static StoreKey BuildTombstoneKey(string code) => new($"zkd:code:t:{HashHex(code)}");
 
     private static string HashHex(string handle) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(handle)));
-
-    // Wraps a backing-store call, converting any thrown exception into ZeeKayDaStoreException
-    // (ADR 0006, ADR 0013 §8). Cancellation is not a store fault: OperationCanceledException is
-    // rethrown unwrapped rather than misclassified as an infrastructure failure.
-    private static async ValueTask<T> Guarded<T>(Func<ValueTask<T>> operation, string action)
-    {
-        try
-        {
-            return await operation().ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception ex) when (ex is not ZeeKayDaStoreException)
-        {
-            throw new ZeeKayDaStoreException($"Failed to {action}.", ex);
-        }
-    }
-
-    private static async ValueTask Guarded(Func<ValueTask> operation, string action)
-    {
-        try
-        {
-            await operation().ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception ex) when (ex is not ZeeKayDaStoreException)
-        {
-            throw new ZeeKayDaStoreException($"Failed to {action}.", ex);
-        }
-    }
 }
