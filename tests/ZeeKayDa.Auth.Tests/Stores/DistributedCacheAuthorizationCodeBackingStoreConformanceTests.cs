@@ -2,6 +2,7 @@ using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Stores;
+using ZeeKayDa.Auth.TestKit.Stores;
 
 namespace ZeeKayDa.Auth.Tests.Stores;
 

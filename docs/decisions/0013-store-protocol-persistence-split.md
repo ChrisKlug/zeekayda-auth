@@ -426,15 +426,32 @@ primary key is atomic insert-if-absent — is a single primitive their backend p
 
 **Conformance kit.** Two invariant families remain that the CLR cannot enforce structurally, so
 they are the residual tier-3 target left after the reshape dissolved everything else (per the
-"docs are not a mitigation" ordering). The framework ships a **ready-to-derive xUnit base class**
-(an abstract fixture the implementer subclasses, supplying a factory for their backend); running it
-is a **MUST for any production backend**:
+"docs are not a mitigation" ordering). The framework ships a **ready-to-derive xUnit base class**,
+`AuthorizationCodeBackingStoreConformanceTests` (an abstract fixture the implementer subclasses,
+supplying a factory for their backend); running it is a **MUST for any production backend**:
 
 1. **Atomicity** — a concurrent-insert race proving exactly one of N simultaneous `TryInsertAsync`
    calls to the same key returns `true`.
 2. **Fail-closed** — fault-injection cases proving that when the backend throws, the fault surfaces
    as `ZeeKayDaStoreException` on all three operations, and specifically that `GetAsync`
    **throws-not-swallows** on a transport fault (it does NOT catch-and-return-null, §3/§8).
+
+**Packaging.** The kit ships in a separate package, **`ZeeKayDa.Auth.TestKit`**, not in
+`ZeeKayDa.Auth` itself. This is what makes the kit genuinely usable by a third party rather than
+only by first-party code: `ZeeKayDa.Auth.TestKit` is granted `[InternalsVisibleTo]` friend access
+to `ZeeKayDa.Auth`, so the kit's own code can construct `StoreKey` values internally to drive the
+abstract test methods — but `StoreKey`'s constructor itself stays `internal` to `ZeeKayDa.Auth`
+(§2) and no general-purpose public factory (e.g. a naked `StoreKey.CreateForTesting(string)`) is
+added to reach it. A third-party backing-store author references `ZeeKayDa.Auth.TestKit` (not
+`ZeeKayDa.Auth`'s internals) from their own test project, derives
+`AuthorizationCodeBackingStoreConformanceTests`, and implements `CreateStore()` returning their own
+`IAuthorizationCodeBackingStore` — they never construct a `StoreKey` themselves, and the kit's
+friend-assembly privilege does not leak to their assembly. This closes the last gap in "a
+docs-ignorant .NET developer can derive and run this kit from their own project," which the kit's
+former home inside the internal `ZeeKayDa.Auth.Tests` project could not satisfy. The first-party
+`InMemory*`/`DistributedCache*` conformance tests (`tests/ZeeKayDa.Auth.Tests/Stores/`) derive the
+same base class via a project reference to `ZeeKayDa.Auth.TestKit`, proving the first-party stores
+conform through the identical path a third party would use.
 
 Atomicity-to-backend mappings the kit exercises: Redis `SET key value NX PX <ttl>`; relational SQL
 `INSERT` against a `PRIMARY KEY`/`UNIQUE` constraint (or `ON CONFLICT DO NOTHING` returning 0
@@ -612,3 +629,16 @@ so a two-phase protocol would add surface area and a dangling-commit failure mod
   (one distinct family per code tombstone, so no rotation chain to correlate), while rotation-survival
   is a strict security gain. Banner and §7 residual-disclosure note updated to record this. Refresh-token
   store §7 analogue remains out of scope and requires its own sign-off.
+- 2026-07-17 — architect review — **§10 conformance kit repackaged into `ZeeKayDa.Auth.TestKit`.**
+  Closes a design gap the initial implementation left open: `StoreKey`'s constructor is
+  (correctly) `internal`, so the conformance kit could previously only be derived from an assembly
+  already on `ZeeKayDa.Auth`'s `[InternalsVisibleTo]` list — a genuine third-party backing-store
+  author had no way to drive it from their own external test project. Moved
+  `AuthorizationCodeBackingStoreConformanceTests` out of the internal `ZeeKayDa.Auth.Tests` project
+  into a new package, `ZeeKayDa.Auth.TestKit`, which is itself granted `[InternalsVisibleTo]`
+  friend access to `ZeeKayDa.Auth` so the kit can construct `StoreKey` internally on the
+  implementer's behalf. Explicitly rejected a naked public `StoreKey.CreateForTesting(string)`
+  factory as the fix, since that would let any consumer (not just test code) fabricate a `StoreKey`
+  from an arbitrary raw string, reopening the handle-hashing invariant (§2) the `internal`
+  constructor exists to close. §10 updated to describe the packaging; no change to `StoreKey`'s or
+  `IAuthorizationCodeBackingStore`'s public surface.

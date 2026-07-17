@@ -24,6 +24,7 @@
 
   <ItemGroup>
     <ProjectReference Include="../../src/ZeeKayDa.Auth/ZeeKayDa.Auth.csproj" />
+    <ProjectReference Include="../../src/ZeeKayDa.Auth.TestKit/ZeeKayDa.Auth.TestKit.csproj" />
   </ItemGroup>
 
 </Project>

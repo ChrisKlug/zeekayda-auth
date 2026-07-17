@@ -1,4 +1,5 @@
 using ZeeKayDa.Auth.Stores;
+using ZeeKayDa.Auth.TestKit.Stores;
 
 namespace ZeeKayDa.Auth.Tests.Stores;
 

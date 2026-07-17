@@ -1,6 +1,6 @@
 using ZeeKayDa.Auth.Stores;
 
-namespace ZeeKayDa.Auth.Tests.Stores;
+namespace ZeeKayDa.Auth.TestKit.Stores;
 
 /// <summary>
 /// Ready-to-derive conformance kit for <see cref="IAuthorizationCodeBackingStore"/> implementers
@@ -9,13 +9,14 @@ namespace ZeeKayDa.Auth.Tests.Stores;
 /// is a genuine atomic insert-if-absent, not a read-then-write with a TOCTOU window.
 /// </summary>
 /// <remarks>
-/// Note for third-party implementers: <see cref="StoreKey"/> is constructed only by the
-/// framework, so this abstract base class — like any test that must synthesize a
-/// <see cref="StoreKey"/> to drive <see cref="IAuthorizationCodeBackingStore"/> directly — can
-/// currently only be derived from an assembly with internal access to <c>ZeeKayDa.Auth</c> (see
-/// <c>[InternalsVisibleTo]</c>). A genuine external backing-store author cannot yet construct a
-/// <see cref="StoreKey"/> to drive this kit from their own test project. This is a known gap
-/// flagged for the architect, not an oversight silently worked around here.
+/// Ships in the <c>ZeeKayDa.Auth.TestKit</c> package, not <c>ZeeKayDa.Auth</c> itself. Reference
+/// <c>ZeeKayDa.Auth.TestKit</c> from your own test project, derive this class, and implement
+/// <see cref="CreateStore"/> to return your <see cref="IAuthorizationCodeBackingStore"/>. You do
+/// not need to construct a <see cref="StoreKey"/> yourself — <see cref="StoreKey"/>'s constructor
+/// stays <c>internal</c> to <c>ZeeKayDa.Auth</c> (ADR 0013 §2), and this kit constructs the
+/// <see cref="StoreKey"/> values it needs internally via the friend-assembly access granted to
+/// <c>ZeeKayDa.Auth.TestKit</c>. This is what lets a genuine third-party backing-store author
+/// derive and run the kit from their own external test project.
 /// </remarks>
 public abstract class AuthorizationCodeBackingStoreConformanceTests
 {
@@ -68,8 +69,8 @@ public abstract class AuthorizationCodeBackingStoreConformanceTests
         gate.Release(concurrency);
         var results = await Task.WhenAll(tasks);
 
-        results.Count(r => r).Should().Be(1,
-            because: "the backend's TryInsertAsync MUST be a genuine atomic insert-if-absent (ADR 0013 §3, §10)");
+        // The backend's TryInsertAsync MUST be a genuine atomic insert-if-absent (ADR 0013 §3, §10).
+        Assert.Equal(1, results.Count(r => r));
     }
 
     [Fact]
@@ -82,8 +83,8 @@ public abstract class AuthorizationCodeBackingStoreConformanceTests
         await store.TryInsertAsync(key, value, FarFuture, CancellationToken.None);
         var result = await store.GetAsync(key, CancellationToken.None);
 
-        result.Should().NotBeNull();
-        result!.Value.ToArray().Should().Equal(value);
+        Assert.NotNull(result);
+        Assert.Equal(value, result.Value.ToArray());
     }
 
     [Fact]
@@ -93,7 +94,7 @@ public abstract class AuthorizationCodeBackingStoreConformanceTests
 
         var result = await store.GetAsync(NewKey(), CancellationToken.None);
 
-        result.Should().BeNull();
+        Assert.Null(result);
     }
 
     [Fact]
@@ -101,9 +102,7 @@ public abstract class AuthorizationCodeBackingStoreConformanceTests
     {
         var store = CreateStore();
 
-        var act = async () => await store.RemoveAsync(NewKey(), CancellationToken.None);
-
-        await act.Should().NotThrowAsync();
+        await store.RemoveAsync(NewKey(), CancellationToken.None);
     }
 
     [Fact]
@@ -115,7 +114,7 @@ public abstract class AuthorizationCodeBackingStoreConformanceTests
 
         await store.RemoveAsync(key, CancellationToken.None);
 
-        (await store.GetAsync(key, CancellationToken.None)).Should().BeNull();
+        Assert.Null(await store.GetAsync(key, CancellationToken.None));
     }
 
     // ── §3/§8 fail-closed: transport faults must propagate, never be swallowed ─────────────────
@@ -128,10 +127,9 @@ public abstract class AuthorizationCodeBackingStoreConformanceTests
         if (store is null)
             return;
 
-        var act = async () => await store.TryInsertAsync(NewKey(), new byte[] { 1 }, FarFuture, CancellationToken.None);
-
-        await act.Should().ThrowAsync<TransportFaultException>(
-            because: "a backing store MUST let a transport fault propagate rather than swallow it (ADR 0013 §3/§8)");
+        // A backing store MUST let a transport fault propagate rather than swallow it (ADR 0013 §3/§8).
+        await Assert.ThrowsAsync<TransportFaultException>(
+            () => store.TryInsertAsync(NewKey(), new byte[] { 1 }, FarFuture, CancellationToken.None).AsTask());
     }
 
     /// <summary>
@@ -148,10 +146,8 @@ public abstract class AuthorizationCodeBackingStoreConformanceTests
         if (store is null)
             return;
 
-        var act = async () => await store.GetAsync(NewKey(), CancellationToken.None);
-
-        await act.Should().ThrowAsync<TransportFaultException>(
-            because: "a swallowed fault here reads as \"confirmed absent,\" silently reopening the replay window (ADR 0013 §3/§8)");
+        await Assert.ThrowsAsync<TransportFaultException>(
+            () => store.GetAsync(NewKey(), CancellationToken.None).AsTask());
     }
 
     [Fact]
@@ -162,10 +158,9 @@ public abstract class AuthorizationCodeBackingStoreConformanceTests
         if (store is null)
             return;
 
-        var act = async () => await store.RemoveAsync(NewKey(), CancellationToken.None);
-
-        await act.Should().ThrowAsync<TransportFaultException>(
-            because: "a backing store MUST let a transport fault propagate rather than swallow it (ADR 0013 §3/§8)");
+        // A backing store MUST let a transport fault propagate rather than swallow it (ADR 0013 §3/§8).
+        await Assert.ThrowsAsync<TransportFaultException>(
+            () => store.RemoveAsync(NewKey(), CancellationToken.None).AsTask());
     }
 
     /// <summary>A distinct, clearly-fake exception type used to inject transport faults, so these
