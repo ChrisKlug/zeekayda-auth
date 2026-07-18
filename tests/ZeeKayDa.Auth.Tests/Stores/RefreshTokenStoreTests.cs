@@ -115,42 +115,44 @@ public sealed class RefreshTokenStoreTests
     [Fact]
     public async Task TryConsumeAsync_Consumed_entry_matches_stored_entry()
     {
-        // NOTE (flagged implementation concern, not fixed here — see final test report): the
-        // ProtectedPayload is built from the caller's original `entry` object, whose ExpiresAt is
-        // NOT rewritten to the §5 clamp before encryption — only the cleartext RefreshTokenGrant
-        // column is clamped. So the entry handed back on Consumed carries the caller's original,
-        // unclamped ExpiresAt verbatim, not the value actually enforced by the coordinator. This
-        // test pins the ACTUAL behaviour; StoreAsync_clamps_ExpiresAt_to_* above pins the (correct)
-        // clamp on the grant's cleartext column used for real expiry decisions.
+        // The §5 clamp is applied to the encrypted entry before it is protected, so every field
+        // round-trips verbatim EXCEPT ExpiresAt, which reflects the clamped value actually
+        // enforced — never the caller's original, possibly-larger ExpiresAt (fam-roundtrip's
+        // FamilyAbsoluteExpiry is FarFuture, so RefreshTokenLifetime is the binding bound here).
         var store = CreateStore();
         const string handle = "round-trip-handle";
         var entry = BuildEntry(clientId: "client-a", familyId: "fam-roundtrip");
 
+        var before = DateTimeOffset.UtcNow;
         await store.StoreAsync(handle, entry, CancellationToken.None);
         var outcome = await store.TryConsumeAsync(handle, "client-a", CancellationToken.None);
 
-        outcome.Should().BeOfType<RefreshTokenConsumptionResult.Consumed>()
-            .Which.Entry.Should().BeEquivalentTo(entry,
-                because: "every field of the caller-supplied entry — including its original, " +
-                          "unclamped ExpiresAt — round-trips verbatim through the encrypted payload");
+        var consumed = outcome.Should().BeOfType<RefreshTokenConsumptionResult.Consumed>().Subject;
+        consumed.Entry.Should().BeEquivalentTo(entry,
+            options => options.Excluding(e => e.ExpiresAt),
+            because: "every field of the caller-supplied entry except ExpiresAt round-trips verbatim");
+        consumed.Entry.ExpiresAt.Should().BeCloseTo(
+            before + new AuthorizationServerOptions().TokenEndpoint.RefreshTokenLifetime, TimeSpan.FromSeconds(5),
+            because: "the returned entry's ExpiresAt must match the clamped value the coordinator actually enforces");
     }
 
     [Fact]
     public async Task FindAsync_returns_stored_entry_when_all_checks_pass()
     {
-        // See the NOTE on TryConsumeAsync_Consumed_entry_matches_stored_entry above: the
-        // returned entry's ExpiresAt is the caller's original, unclamped value (round-tripped
-        // through the encrypted payload verbatim), not the clamped value on the grant's
-        // cleartext column that actually drives the expiry decision below.
+        // See TryConsumeAsync_Consumed_entry_matches_stored_entry above: ExpiresAt reflects the
+        // §5-clamped value actually enforced, not the caller's original, possibly-larger ExpiresAt.
         var store = CreateStore();
         const string handle = "find-round-trip";
         var entry = BuildEntry(clientId: "client-a", familyId: "fam-1");
 
+        var before = DateTimeOffset.UtcNow;
         await store.StoreAsync(handle, entry, CancellationToken.None);
         var result = await store.FindAsync(handle, CancellationToken.None);
 
         result.Should().NotBeNull(because: "a stored, unexpired, unconsumed entry must be found");
-        result.Should().BeEquivalentTo(entry);
+        result.Should().BeEquivalentTo(entry, options => options.Excluding(e => e.ExpiresAt));
+        result!.ExpiresAt.Should().BeCloseTo(
+            before + new AuthorizationServerOptions().TokenEndpoint.RefreshTokenLifetime, TimeSpan.FromSeconds(5));
     }
 
     [Fact]

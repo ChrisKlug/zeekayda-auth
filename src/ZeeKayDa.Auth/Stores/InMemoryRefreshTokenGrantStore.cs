@@ -27,15 +27,21 @@ namespace ZeeKayDa.Auth.Stores;
 /// </para>
 /// <para>
 /// <strong>Revocation scans.</strong> <see cref="RevokeFamilyAsync"/> and
-/// <see cref="RevokeBySubjectAsync"/> enumerate the whole dictionary. This is correct (complete
-/// by construction — every entry is visited) and acceptable for an in-process, dev/test-sized
-/// store; a relational or Cosmos backend would express the same completeness guarantee as an
-/// indexed <c>UPDATE ... WHERE</c> instead.
+/// <see cref="RevokeBySubjectAsync"/> enumerate the whole dictionary under <see cref="_revokeLock"/>,
+/// held for the duration of the scan, and <see cref="InsertAsync"/> takes the same lock's read side
+/// before adding a row. This closes the ADR 0014 §9 mid-revoke-insert race: without it, a grant
+/// inserted concurrently with a revoke scan could be missed by the enumeration and left
+/// <c>Active</c> in an already-"revoked" family, silently breaking the completeness guarantee
+/// (RFC 9700 §4.13) the interface promises. This is correct (complete by construction — every
+/// entry present at the end of a revoke call has been visited) and acceptable for an in-process,
+/// dev/test-sized store; a relational or Cosmos backend expresses the same completeness guarantee
+/// as an indexed <c>UPDATE ... WHERE</c> instead.
 /// </para>
 /// </remarks>
 internal sealed class InMemoryRefreshTokenGrantStore : IRefreshTokenGrantStore
 {
     private readonly ConcurrentDictionary<StoreKey, RefreshTokenGrant> _grants = new();
+    private readonly ReaderWriterLockSlim _revokeLock = new(LockRecursionPolicy.NoRecursion);
 
     /// <inheritdoc/>
     public ValueTask InsertAsync(RefreshTokenGrant grant, CancellationToken cancellationToken)
@@ -43,9 +49,17 @@ internal sealed class InMemoryRefreshTokenGrantStore : IRefreshTokenGrantStore
         ArgumentNullException.ThrowIfNull(grant);
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (!_grants.TryAdd(grant.HandleHash, grant))
-            throw new ZeeKayDaStoreException(
-                "The refresh token handle collided with an existing grant.");
+        _revokeLock.EnterReadLock();
+        try
+        {
+            if (!_grants.TryAdd(grant.HandleHash, grant))
+                throw new ZeeKayDaStoreException(
+                    "The refresh token handle collided with an existing grant.");
+        }
+        finally
+        {
+            _revokeLock.ExitReadLock();
+        }
 
         return ValueTask.CompletedTask;
     }
@@ -94,19 +108,29 @@ internal sealed class InMemoryRefreshTokenGrantStore : IRefreshTokenGrantStore
 
     private void RevokeWhere(Func<RefreshTokenGrant, bool> predicate)
     {
-        foreach (var (key, current) in _grants)
+        // Excludes concurrent InsertAsync for the duration of the scan (see class remarks) so a
+        // grant inserted mid-revoke cannot be missed by the enumeration below.
+        _revokeLock.EnterWriteLock();
+        try
         {
-            if (!predicate(current) || current.Status == RefreshGrantStatus.Revoked)
-                continue;
+            foreach (var (key, current) in _grants)
+            {
+                if (!predicate(current) || current.Status == RefreshGrantStatus.Revoked)
+                    continue;
 
-            var revoked = current with { Status = RefreshGrantStatus.Revoked };
+                var revoked = current with { Status = RefreshGrantStatus.Revoked };
 
-            // A concurrent update losing this CAS means someone else already mutated the row
-            // (e.g. a concurrent consume); the loop's completeness bar (every matching row ends
-            // up Revoked) is preserved by re-checking on the next pass over this key is not
-            // needed here because Consumed/Revoked are both terminal — either outcome already
-            // satisfies "no longer Active", which is all that matters for family/subject revocation.
-            _grants.TryUpdate(key, revoked, current);
+                // A concurrent update losing this CAS means someone else already mutated the row
+                // (e.g. a concurrent consume); the loop's completeness bar (every matching row ends
+                // up Revoked) is preserved because Consumed/Revoked are both terminal — either
+                // outcome already satisfies "no longer Active", which is all that matters for
+                // family/subject revocation.
+                _grants.TryUpdate(key, revoked, current);
+            }
+        }
+        finally
+        {
+            _revokeLock.ExitWriteLock();
         }
     }
 }
