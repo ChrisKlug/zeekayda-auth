@@ -11,6 +11,17 @@ namespace ZeeKayDa.Auth.Stores;
 /// </summary>
 /// <remarks>
 /// <para>
+/// <strong>This is NOT the "framework-owned Redis adapter that owns the secondary-index maintenance
+/// correctly, once" ADR 0014 §8 anticipates as the sanctioned production path for a non-queryable
+/// backend.</strong> <see cref="IDistributedCache"/> has no atomic multi-key primitive (no
+/// transactional read-modify-write, no native compare-and-set across a grant row and its indexes),
+/// so this adapter cannot structurally close the TOCTOU/index-drift gap §8 describes — it can only
+/// document it, which the remarks below do. A correct, production-grade Redis adapter (Lua scripting
+/// or hash-tagged <c>WATCH-MULTI-EXEC</c>) remains unbuilt; the sanctioned production path today is a
+/// natively queryable backend (relational SQL or Cosmos) implementing <see cref="IRefreshTokenGrantStore"/>
+/// directly. Treat this class as the dev/test convenience slot only.
+/// </para>
+/// <para>
 /// <strong>Not a queryable backend (ADR 0014 §8).</strong> <see cref="IDistributedCache"/> has no
 /// native <c>WHERE</c>, so this store maintains its own secondary indexes — a
 /// <c>zkd:rtg:family:{familyId}</c> entry and a <c>zkd:rtg:subject:{subject}</c> entry, each a

@@ -474,6 +474,16 @@ reintroduce a fail-open path is security-sign-off item 3.)
   still implement the interface, inheriting the index-completeness burden, and only *then* reaches
   the tier-3 last resort: the conformance kit (§9).
 
+  **Shipped-status note (added at implementation time, PR #383 review):** the first-party
+  `DistributedCacheRefreshTokenGrantStore` this implementation ships over `IDistributedCache` is
+  **not** the "first-party Redis adapter that owns the secondary-index maintenance correctly, once"
+  described above — `IDistributedCache` has no atomic multi-key primitive, so that adapter cannot
+  structurally close the TOCTOU/index-drift gap this section describes; it can only document it
+  (which it does, at length, in its type-level remarks). It fills the dev/test convenience slot only.
+  The correct, production-grade Redis adapter this section anticipates (Lua scripting or hash-tagged
+  `WATCH-MULTI-EXEC`) remains unbuilt. The sanctioned production path today is a natively queryable
+  backend (relational SQL or Cosmos).
+
 ### 9. Revocation-completeness conformance kit (exotic backends only)
 
 Mirroring ADR 0013 §10's derive-and-run xUnit fixture pattern, the framework ships a conformance kit
@@ -724,3 +734,19 @@ ADR says so plainly so the capability is not mistaken for a shipped feature.
   closed by the hash) is called out and accepted in Security Considerations. `RevokeBySubjectAsync` now
   takes a `string subject`. Item 1 signed off; all three items now cleared. Implementation may proceed
   once ADR 0013 (#375) is merged.
+- 2026-07-18 — implementation (PR #383) — architect and security review of the implementation (not
+  just the design) found and fixed two bugs: `StoreAsync`'s §5 clamp is now applied to the encrypted
+  entry too (previously only the cleartext column was clamped, so `Consumed.Entry`/`FindAsync` could
+  disagree with the enforced expiry); `InMemoryRefreshTokenGrantStore`'s family/subject revoke now
+  locks against concurrent `InsertAsync` during its scan, closing a snapshot-enumeration race. Both
+  reviews also independently confirmed a real gap neither this ADR's design sign-off nor ADR 0008
+  addressed: `RevokeFamilyAsync`/`RevokeBySubjectAsync` do not gate a grant inserted *after* the
+  revoke call returns into a family/subject with zero live rows at call time — an RFC 9700 §4.13
+  completeness window, tracked separately as issue #386 and requiring its own security sign-off before
+  any endpoint sequences consume→revoke. `IRefreshTokenGrantStore`'s XML docs were corrected to stop
+  claiming completeness the implementation cannot structurally deliver for post-revoke inserts. Added
+  `TokenEndpointOptions.ComputeFamilyAbsoluteExpiry` as a framework-owned, sentinel-safe helper for the
+  birth-time `AbsoluteFamilyLifetime` → `FamilyAbsoluteExpiry` conversion, so a future caller can't
+  re-derive the `TimeSpan.MaxValue` overflow trap independently. §8 amended with a shipped-status note:
+  `DistributedCacheRefreshTokenGrantStore` fills the dev/test convenience slot only, not the
+  production-grade Redis adapter this section anticipates.

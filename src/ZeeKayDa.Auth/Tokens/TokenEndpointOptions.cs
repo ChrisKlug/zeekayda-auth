@@ -79,4 +79,34 @@ public sealed class TokenEndpointOptions
     /// </para>
     /// </remarks>
     public TimeSpan AbsoluteFamilyLifetime { get; set; } = TimeSpan.FromDays(90);
+
+    /// <summary>
+    /// Computes the <c>FamilyAbsoluteExpiry</c> to bake into a refresh token family at birth, from
+    /// <paramref name="now"/> and this instance's <see cref="AbsoluteFamilyLifetime"/>.
+    /// </summary>
+    /// <param name="now">The current time, at family birth.</param>
+    /// <remarks>
+    /// Sentinel-safe: when <see cref="AbsoluteFamilyLifetime"/> is the <see cref="TimeSpan.MaxValue"/>
+    /// escape hatch, a naive <c>now + AbsoluteFamilyLifetime</c> overflows and throws
+    /// <see cref="ArgumentOutOfRangeException"/> — turning the documented "unbounded cap" opt-in into
+    /// a crash. This method special-cases the sentinel (mapping it to <see cref="DateTimeOffset.MaxValue"/>)
+    /// and falls back to <see cref="DateTimeOffset.MaxValue"/> for any other addition that would
+    /// otherwise overflow, so the mapping from option to expiry lives in exactly one place and every
+    /// caller (e.g. the future token endpoint issuing the first token of a family) gets it right for
+    /// free rather than re-deriving it.
+    /// </remarks>
+    public DateTimeOffset ComputeFamilyAbsoluteExpiry(DateTimeOffset now)
+    {
+        if (AbsoluteFamilyLifetime == TimeSpan.MaxValue)
+            return DateTimeOffset.MaxValue;
+
+        try
+        {
+            return now + AbsoluteFamilyLifetime;
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return DateTimeOffset.MaxValue;
+        }
+    }
 }

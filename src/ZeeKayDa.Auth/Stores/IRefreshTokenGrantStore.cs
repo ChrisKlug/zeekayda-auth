@@ -54,22 +54,33 @@ public interface IRefreshTokenGrantStore
 
     /// <summary>
     /// Set <see cref="RefreshGrantStatus.Revoked"/> for EVERY grant whose <see cref="RefreshTokenGrant.FamilyId"/>
-    /// equals <paramref name="familyId"/>. Idempotent. Correctness bar is COMPLETENESS — every
-    /// grant in the family, including still-live and any inserted mid-revoke, MUST end up revoked
-    /// (RFC 9700 §4.13). Mark, do not delete: a still-live token in the family must remain findable
-    /// and read as revoked.
+    /// equals <paramref name="familyId"/> AND that already exists at the moment this call evaluates
+    /// its predicate. Idempotent. Correctness bar is COMPLETENESS over EXISTING rows — every grant
+    /// already in the family, including one inserted concurrently with (but not strictly after) this
+    /// call, MUST end up revoked (RFC 9700 §4.13). Mark, do not delete: a still-live token in the
+    /// family must remain findable and read as revoked.
     /// </summary>
     /// <param name="familyId">The family identifier to revoke.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <remarks>
+    /// <strong>Known gap, tracked separately (issue #386):</strong> this method does NOT gate future
+    /// inserts — a grant <c>InsertAsync</c>'d into <paramref name="familyId"/> strictly after this
+    /// call returns (including one for a family with zero live rows at call time) is NOT retroactively
+    /// revoked and remains <see cref="RefreshGrantStatus.Active"/>. Closing that gap requires either a
+    /// durable revoked-family marker consulted by <see cref="InsertAsync"/> or a fail-closed
+    /// insert-time gate — a design change with security weight, not yet made. Do not rely on this
+    /// method alone to prevent a family from ever issuing a new live token again.
+    /// </remarks>
     ValueTask RevokeFamilyAsync(string familyId, CancellationToken cancellationToken);
 
     /// <summary>
     /// Set <see cref="RefreshGrantStatus.Revoked"/> for EVERY grant whose <see cref="RefreshTokenGrant.Subject"/>
-    /// equals <paramref name="subject"/>. Same completeness bar as <see cref="RevokeFamilyAsync"/>.
-    /// Present so a FUTURE subject-level logout-all is possible; the endpoint is deferred and no
-    /// coordinator method calls this yet (ADR 0014 §6). The subject arrives as cleartext (it is a
-    /// plain equality predicate, not a keyed lookup) — this control must never fail to match, which
-    /// is why the subject is not peppered/keyed (see ADR 0014 sign-off item 1).
+    /// equals <paramref name="subject"/> AND that already exists at the moment this call evaluates
+    /// its predicate. Same completeness bar, and the same known post-call-insert gap (issue #386), as
+    /// <see cref="RevokeFamilyAsync"/>. Present so a FUTURE subject-level logout-all is possible; the
+    /// endpoint is deferred and no coordinator method calls this yet (ADR 0014 §6). The subject
+    /// arrives as cleartext (it is a plain equality predicate, not a keyed lookup) — this control must
+    /// never fail to match, which is why the subject is not peppered/keyed (see ADR 0014 sign-off item 1).
     /// </summary>
     /// <param name="subject">The subject identifier to revoke all grants for.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
