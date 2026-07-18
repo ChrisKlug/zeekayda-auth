@@ -293,6 +293,50 @@ public abstract class RefreshTokenGrantStoreConformanceTests
         AssertPropagatedFault(fault, thrown);
     }
 
+    // ── §9 case 5 (issue #386): post-revoke insert completeness via IsFamilyRevokedAsync ───────────
+
+    /// <summary>
+    /// Distinct from the mid-revoke concurrent-overlap case above (case 1): here the insert happens
+    /// strictly AFTER <c>RevokeFamilyAsync</c> has already returned, not racing it. Issue #386's fix
+    /// does not require a grant inserted after a revoke to be born <c>Revoked</c> on its own row —
+    /// it requires the consume-time gate (ADR 0014 §11) to see the family as revoked regardless,
+    /// which is exactly what <see cref="IRefreshTokenGrantStore.IsFamilyRevokedAsync"/> must report.
+    /// </summary>
+    [Fact]
+    public async Task IsFamilyRevokedAsync_reports_revoked_for_a_grant_inserted_strictly_after_RevokeFamilyAsync_returns()
+    {
+        var store = CreateStore();
+        var familyId = $"family-{Guid.NewGuid():N}";
+        await store.InsertAsync(NewGrant(familyId), CancellationToken.None);
+
+        await store.RevokeFamilyAsync(familyId, CancellationToken.None);
+
+        var postRevokeGrant = NewGrant(familyId);
+        await store.InsertAsync(postRevokeGrant, CancellationToken.None);
+
+        var isRevoked = await store.IsFamilyRevokedAsync(familyId, CancellationToken.None);
+
+        Assert.True(isRevoked);
+    }
+
+    /// <summary>
+    /// The dangerous one (ADR 0014 §11): if <c>IsFamilyRevokedAsync</c> swallows a transport fault
+    /// and returns <see langword="false"/>, the consume-time gate reads that as "not revoked" and
+    /// fails open on exactly the reuse it was added to catch.
+    /// </summary>
+    [Fact]
+    public async Task IsFamilyRevokedAsync_propagates_a_transport_fault_instead_of_swallowing_it()
+    {
+        var fault = new TransportFaultException();
+        var store = CreateFaultInjectedStore(fault);
+        if (store is null)
+            return;
+
+        var thrown = await Assert.ThrowsAnyAsync<Exception>(
+            () => store.IsFamilyRevokedAsync("fam-fault", CancellationToken.None).AsTask());
+        AssertPropagatedFault(fault, thrown);
+    }
+
     /// <summary>
     /// Accepts either the raw fault propagating unwrapped (the ADR 0014 §3-documented contract:
     /// "native exceptions may propagate freely; the coordinator's Guarded wrapper maps them") or

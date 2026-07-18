@@ -118,6 +118,18 @@
 >   enabled). No security decision anywhere in the coordinator rides on a successful decrypt, so
 >   collapsing to one catch site reintroduces no fail-open path. `RevokeFamilyAsync` /
 >   `RevokeBySubjectAsync` are cleartext-predicate only. Confirmed sound.
+>
+> **Amendment 2026-07-18 — issue #386 (post-revoke insert completeness): ✅ SIGN-OFF.** Scoped
+> *only* to the consume-time family-revoked gate added by this amendment (§11); the three items
+> above are unchanged and not re-opened. The fix adds one read-only method (`IsFamilyRevokedAsync`)
+> that `TryConsumeAsync`/`FindAsync` consult before honouring a grant's own `Active` status, so a
+> successor inserted after a `RevokeFamilyAsync` is caught at *its* redeem, not at write time. No new
+> write-path invariant, no two-phase write. Sign-off is conditional on the §11 contract:
+> `IsFamilyRevokedAsync` MUST be a strongly-consistent/primary read and MUST throw on fault (never
+> catch-and-return-`false`) — a stale-replica or fault-swallowed `false` fails open on reuse
+> detection, the same failure class as `FindByHandleAsync`'s fail-closed contract. The bounded,
+> attacker-timed residual race (§11, Security Considerations) is accepted, not a gap. The rejected
+> insert-time defence-in-depth is explicitly not added (§11, alternatives).
 
 ---
 
@@ -251,7 +263,14 @@ the same posture this ADR already accepts for cleartext `FamilyId` (see Security
 `FamilyId` likewise stays a cleartext `string` because the settled DP-key-rotation-survival
 requirement mandates it be recoverable *without* decryption, and it is a non-secret GUID (§7).
 
-### 3. `IRefreshTokenGrantStore` — five methods, one atomicity invariant
+### 3. `IRefreshTokenGrantStore` — six methods, one atomicity invariant
+
+> **Amended by issue #386 (2026-07-18).** A sixth method, `IsFamilyRevokedAsync`, was added — see
+> the method comment below and §11. It is a **read-only equality query**, not a new write-path
+> invariant, so it does not reopen the over-unification the Context section rejects: the interface
+> still owns no protocol, no state machine beyond the one CAS, no outcome selection. The "exactly
+> five methods" framing below now reads as six; the reasoning for keeping the surface minimal (no
+> bulk remove, no bulk-read-by-family/subject) is unchanged.
 
 ```csharp
 namespace ZeeKayDa.Auth.Stores;
@@ -297,6 +316,16 @@ public interface IRefreshTokenGrantStore
     /// arrives as cleartext (it is a plain equality predicate, not a keyed lookup) — this control
     /// must never fail to match, which is why the subject is not peppered/keyed (§ item 1).</summary>
     ValueTask RevokeBySubjectAsync(string subject, CancellationToken ct);
+
+    /// <summary>Return true if ANY grant whose FamilyId == <paramref name="familyId"/> currently
+    /// reads Revoked. Read-only, no side effects (issue #386, §11). The coordinator calls this before
+    /// honouring a grant's own Active status, so a successor inserted after RevokeFamilyAsync is
+    /// caught at consume time. MUST be a strongly-consistent / primary read (a stale-replica read that
+    /// misses a just-committed revoke fails open) and MUST throw on fault — you MUST NOT
+    /// catch-and-return false (false reads as "not revoked" and defeats the gate). Same fail-closed
+    /// tier as FindByHandleAsync. SQL: SELECT EXISTS(SELECT 1 FROM grants WHERE family_id=@f AND
+    /// status=Revoked).</summary>
+    ValueTask<bool> IsFamilyRevokedAsync(string familyId, CancellationToken ct);
 }
 ```
 
@@ -356,6 +385,7 @@ grant = Guarded(store.FindByHandleAsync(key))
 if grant is null                                -> NotFound
 if grant.Status == Revoked                      -> Revoked{ grant.FamilyId }          // cleartext, no decrypt
 if grant.Status == Consumed                     -> AlreadyConsumed{ grant.FamilyId }  // reuse detected; no decrypt
+if Guarded(store.IsFamilyRevokedAsync(grant.FamilyId)) -> Revoked{ grant.FamilyId }   // #386 gate (§11): family revoked even if THIS row still reads Active
 if now >= grant.ExpiresAt + ClockSkewTolerance  -> NotFound                           // accept-grace expiry (ADR 0013 §6)
 if grant.ClientId != clientId                   -> ClientMismatch                     // no consume, no revoke; no decrypt
 // single-use pivot — the ONLY correctness-critical atomic op in the whole design:
@@ -501,6 +531,11 @@ path. It exercises:
 4. **Fail-closed / throws-not-swallows** — fault injection proving native faults surface as
    `ZeeKayDaStoreException`, and specifically that `FindByHandleAsync` throws (does NOT
    catch-and-return-null) on a transport fault (ADR 0013 §3/§8).
+5. **Post-revoke insert completeness (issue #386, §11)** — `RevokeFamilyAsync`, then a grant inserted
+   *strictly after* the revoke returns, then assert `IsFamilyRevokedAsync` reports the family revoked
+   (i.e. a subsequent consume treats the new grant as dead). This is distinct from case 1's
+   concurrent-overlap race. Plus a fail-closed case: `IsFamilyRevokedAsync` throws (does NOT
+   catch-and-return `false`) on a transport fault.
 
 ### 10. Renames and public-type impact
 
@@ -523,6 +558,53 @@ path. It exercises:
 - Registration idiom: `.AddRefreshTokenGrantStore<SqlRefreshTokenGrantStore>()`, wiring the
   third-party grant store plus the framework's sealed coordinator, exactly as ADR 0013 §4 wires the
   code-store coordinator over its backing store.
+
+### 11. Issue #386 — post-revoke insert completeness (consume-time family-revoked gating)
+
+**The gap.** `RevokeFamilyAsync` / `RevokeBySubjectAsync` mark only rows that exist *when the call
+evaluates its predicate*. A grant `InsertAsync`'d into the family **after** (or racing) the revoke
+call is never visited by that scan and lands `Active`, fully usable. The exploit (issue #386): two
+requests race to redeem `RT0`; the winner's CAS succeeds and it begins issuing successor `RT1` via
+`StoreAsync`; the loser detects `AlreadyConsumed{FamilyId}` and calls `RevokeFamilyAsync(familyId)`.
+If `RT1`'s insert lands after that revoke returns, `RT1` is a live token in a revoked family — an
+RFC 9700 §4.13 completeness hole. §6's "complete by construction" claim held only over rows already
+present, not over the family identifier.
+
+**The fix — gate at consume time, not write time.** `InsertAsync` is **untouched**: grants always
+insert `Active`, no protocol decision on the write path. A sixth read-only method
+`IsFamilyRevokedAsync(familyId)` (§3) reports whether any grant in the family currently reads
+`Revoked`. `TryConsumeAsync` (mandatory — it is the successor-minting decision) **and** `FindAsync`
+(so introspection never reports a revoked-family grant as live) call it before honouring a grant's
+own `Active` status; a revoked family kills the grant regardless of its own row.
+
+This closes the gap because **there is no multi-step write to interrupt**. Every redeem re-derives
+family state fresh from what is durably committed *at that instant*, and the tombstone that triggered
+the revoke is itself permanent (mark-don't-delete, §5/§6). So insert/revoke ordering and any crash
+between them stop mattering: whenever `RT1` is finally presented, the durable `Revoked` sibling is
+already there to be seen. `familyId` is only ever obtained from an existing row (e.g.
+`AlreadyConsumed{FamilyId}`), so the revoking scan always leaves at least one durable tombstone — no
+zero-rows-at-revoke marker is needed.
+
+**Contract (security sign-off conditions).** `IsFamilyRevokedAsync` MUST be a
+strongly-consistent / primary read — a stale read-replica that misses a just-committed revoke fails
+open. It MUST throw on transport/backend fault and MUST NOT catch-and-return `false` (a
+`false`-masked fault reads as "not revoked" and defeats the gate). Same fail-closed tier as
+`FindByHandleAsync` (§3). The conformance kit (§9) gains a case: after `RevokeFamilyAsync`, a grant
+inserted *strictly after* the revoke returns MUST be reported revoked by a subsequent consume
+(distinct from §9's existing concurrent-overlap case), plus a fail-closed fault-propagation case for
+`IsFamilyRevokedAsync`.
+
+**Accepted residual (bounded, attacker-timed).** A consume's `IsFamilyRevokedAsync` can pass
+microseconds before a concurrent `RevokeFamilyAsync` commits, letting that one consume mint a
+successor — which then dies at *its own* next consume, one rotation later. This live-request window is
+inherent to every detect-and-revoke design (RFC 9700 §4.13 always has one); it needs active racing,
+not a passive failure, and it self-heals in one rotation. Accepted, not a gap.
+
+**What changes for implementers.** Add `IsFamilyRevokedAsync` to the first-party stores and wire the
+two coordinator call sites. The "Known gap, tracked separately (issue #386)" `<remarks>` on
+`RevokeFamilyAsync` (and the corresponding sentence on `RevokeBySubjectAsync`) in
+`src/ZeeKayDa.Auth/Stores/IRefreshTokenGrantStore.cs` are **deleted** — the gap is closed, so the
+XML docs must stop describing it as open.
 
 ---
 
@@ -600,6 +682,37 @@ Rejected as scope creep for #376: the store-level capability is cheap and future
 now, but the endpoint (session model, auth, audit, RP-initiated-logout semantics) is a separate
 design deferred to its own issue. The store supports the predicate; nothing calls it yet, and the
 ADR says so plainly so the capability is not mistaken for a shipped feature.
+
+### Insert-time born-`Revoked` gate (issue #386 Candidate 1)
+
+Have `InsertAsync` decide `Active`-vs-`Revoked` itself via a cross-row conditional write (e.g.
+`INSERT ... status = CASE WHEN EXISTS(family_id=@f AND status=Revoked) THEN Revoked ELSE Active`).
+Rejected: it puts a **protocol decision on the write path of the extension point third parties
+implement directly** (there is no backing-store split for refresh tokens — `IRefreshTokenGrantStore`
+*is* what SQL/Cosmos authors write), and it is a *second, harder* atomic invariant on top of the
+`TryMarkConsumedAsync` CAS. The CAS is single-key; this is a multi-row predicate-plus-write that only
+serialises correctly against a concurrent `RevokeFamilyAsync` under SERIALIZABLE or an explicit
+family lock. Under READ COMMITTED it compiles, passes the happy path, and silently leaks the race —
+exactly the "newcomer footgun" §8 already warns against. Consume-time gating (§11) needs no write-path
+invariant at all.
+
+### Insert-then-verify-then-revoke at the coordinator (issue #386, considered)
+
+Coordinator inserts the successor `Active`, then reads family state, then re-revokes it if the family
+turns out revoked. Rejected: a **two-phase write with no compensating action**. A crash or connection
+loss between the insert and the verify/re-revoke leaves the successor permanently `Active` in a
+revoked family with nothing that will ever retry the fixup — an unbounded durability gap, worse than
+the original bug because it needs no concurrency at all. §11's consume-time gate has no write sequence
+to interrupt.
+
+### Insert-time "best-effort" born-`Revoked` as defence-in-depth alongside §11
+
+Keep §11's consume-time gate *and* also add a best-effort family-revoked check in `InsertAsync`.
+Rejected as a **false-confidence control**: it reintroduces the exact backend-coupling and
+isolation-level fragility the two alternatives above were rejected for, to cover a case consume-time
+gating already covers **completely** (a successor is caught at its own redeem regardless of insert
+ordering). A second, weaker check that can only ever agree with the authoritative one adds surface and
+implies a robustness it does not provide. One gate, at consume time, is the whole design.
 
 ---
 
@@ -683,6 +796,13 @@ ADR says so plainly so the capability is not mistaken for a shipped feature.
 - **Family revocation completeness (RFC 9700 §4.13)** is complete by construction on a queryable
   store (§6). The one way to break it — a drifting secondary index on a non-queryable backend — is
   kept off the sanctioned path (§8) and pinned by the conformance kit's mid-revoke-insert case (§9).
+- **Post-revoke insert completeness (issue #386, §11).** A successor inserted after a
+  `RevokeFamilyAsync` returns is caught at *its own* consume by the `IsFamilyRevokedAsync` gate, not
+  left `Active`. The gate is fail-closed (strongly-consistent read, throws-not-swallows — §11); a
+  stale-replica or fault-swallowed `false` reads as "not revoked" and fails open, which the contract
+  and conformance kit (§9 case 5) forbid. The bounded, attacker-timed live-request race that remains
+  (a consume passing microseconds before a concurrent revoke commits) self-heals in one rotation and
+  is accepted, not a gap — inherent to any RFC 9700 §4.13 detect-and-revoke flow.
 - **Fail-closed I/O** is the shared obligation from ADR 0013 §8, unchanged: the framework's
   `Guarded(...)` wraps thrown faults as `ZeeKayDaStoreException` and rethrows
   `OperationCanceledException` unwrapped, while `FindByHandleAsync`'s contract forbids
@@ -750,3 +870,16 @@ ADR says so plainly so the capability is not mistaken for a shipped feature.
   re-derive the `TimeSpan.MaxValue` overflow trap independently. §8 amended with a shipped-status note:
   `DistributedCacheRefreshTokenGrantStore` fills the dev/test convenience slot only, not the
   production-grade Redis adapter this section anticipates.
+- 2026-07-18 — issue #386 amendment — closes the post-revoke insert completeness gap
+  (`RevokeFamilyAsync`/`RevokeBySubjectAsync` did not gate a grant inserted after the revoke call
+  returned). Adds §11 and a sixth interface method `IsFamilyRevokedAsync` (read-only,
+  strongly-consistent, fail-closed) consulted by `TryConsumeAsync` and `FindAsync` before honouring a
+  grant's own `Active` status — **consume-time gating**, no write-path invariant. Rejects the
+  insert-time born-`Revoked` gate (write-path protocol decision + isolation-sensitive second atomic
+  invariant), insert-then-verify-then-revoke (two-phase write with an unbounded crash-durability gap),
+  and an insert-time defence-in-depth check (false-confidence, re-imports the coupling for no
+  coverage). §3 updated five→six methods; §9 conformance kit gains a strictly-after-revoke insert case
+  plus an `IsFamilyRevokedAsync` fail-closed case; records a bounded, attacker-timed, one-rotation
+  self-healing residual race as accepted. Security sign-off granted 2026-07-18 (banner amendment),
+  scoped to this fix only. Implementation deletes the now-obsolete "Known gap (issue #386)" remarks on
+  `RevokeFamilyAsync`/`RevokeBySubjectAsync` in `IRefreshTokenGrantStore.cs`.

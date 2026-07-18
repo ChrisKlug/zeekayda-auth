@@ -117,6 +117,26 @@ internal sealed class DistributedCacheRefreshTokenGrantStore : IRefreshTokenGran
         await RevokeIndexedGrantsAsync(BuildSubjectIndexKey(subject), cancellationToken).ConfigureAwait(false);
     }
 
+    /// <inheritdoc/>
+    public async ValueTask<bool> IsFamilyRevokedAsync(string familyId, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(familyId);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var index = await ReadIndexAsync(BuildFamilyIndexKey(familyId), cancellationToken).ConfigureAwait(false);
+        if (index is null)
+            return false;
+
+        foreach (var handleHash in index.HandleHashes)
+        {
+            var grant = await ReadGrantAsync(handleHash, cancellationToken).ConfigureAwait(false);
+            if (grant is not null && grant.Status == RefreshGrantStatus.Revoked)
+                return true;
+        }
+
+        return false;
+    }
+
     private async Task RevokeIndexedGrantsAsync(string indexKey, CancellationToken cancellationToken)
     {
         var index = await ReadIndexAsync(indexKey, cancellationToken).ConfigureAwait(false);

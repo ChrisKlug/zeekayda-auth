@@ -115,6 +115,13 @@ internal sealed class RefreshTokenStore : IRefreshTokenStore
         if (grant is null || grant.Status != RefreshGrantStatus.Active)
             return null;
 
+        // #386 gate (ADR 0014 §11): a successor inserted after RevokeFamilyAsync still reads
+        // Active on its own row, so introspection must not report it as a live grant either.
+        if (await Guarded(
+                () => _grantStore.IsFamilyRevokedAsync(grant.FamilyId, cancellationToken),
+                "check whether the refresh token family is revoked").ConfigureAwait(false))
+            return null;
+
         if (_timeProvider.GetUtcNow() >= grant.ExpiresAt + _clockSkewTolerance)
             return null;
 
@@ -154,6 +161,13 @@ internal sealed class RefreshTokenStore : IRefreshTokenStore
 
         if (grant.Status == RefreshGrantStatus.Consumed)
             return new RefreshTokenConsumptionResult.AlreadyConsumed { FamilyId = grant.FamilyId };
+
+        // #386 gate (ADR 0014 §11): the family may have been revoked after this grant was
+        // inserted, so its own still-Active status is not the last word — re-check the family.
+        if (await Guarded(
+                () => _grantStore.IsFamilyRevokedAsync(grant.FamilyId, cancellationToken),
+                "check whether the refresh token family is revoked").ConfigureAwait(false))
+            return new RefreshTokenConsumptionResult.Revoked { FamilyId = grant.FamilyId };
 
         if (_timeProvider.GetUtcNow() >= grant.ExpiresAt + _clockSkewTolerance)
             return new RefreshTokenConsumptionResult.NotFound();

@@ -440,6 +440,59 @@ public sealed class RefreshTokenStoreTests
             because: "§4: the revocation check happens before the client-mismatch check");
     }
 
+    // ── #386 gate: IsFamilyRevokedAsync catches a family revoked out-of-band of this row's own status ─
+
+    [Fact]
+    public async Task TryConsumeAsync_returns_Revoked_when_grant_reads_Active_but_IsFamilyRevokedAsync_reports_true()
+    {
+        // Simulates the exact issue #386 exploit: this grant's OWN row is still Active (e.g. it was
+        // inserted strictly after a sibling's RevokeFamilyAsync returned), but the family reads
+        // revoked. The gate must catch this regardless of the row's own status.
+        const string familyId = "fam-386-consume";
+        var innerStore = new InMemoryRefreshTokenGrantStore();
+        var store = CreateStore(grantStore: new FamilyRevokedOverrideGrantStore(innerStore, familyId));
+        const string handle = "family-revoked-out-of-band-consume";
+
+        await store.StoreAsync(handle, BuildEntry(familyId: familyId), CancellationToken.None);
+
+        var outcome = await store.TryConsumeAsync(handle, "client-a", CancellationToken.None);
+
+        outcome.Should().BeOfType<RefreshTokenConsumptionResult.Revoked>()
+            .Which.FamilyId.Should().Be(familyId);
+    }
+
+    [Fact]
+    public async Task FindAsync_returns_null_when_grant_reads_Active_but_IsFamilyRevokedAsync_reports_true()
+    {
+        const string familyId = "fam-386-find";
+        var innerStore = new InMemoryRefreshTokenGrantStore();
+        var store = CreateStore(grantStore: new FamilyRevokedOverrideGrantStore(innerStore, familyId));
+        const string handle = "family-revoked-out-of-band-find";
+
+        await store.StoreAsync(handle, BuildEntry(familyId: familyId), CancellationToken.None);
+
+        var result = await store.FindAsync(handle, CancellationToken.None);
+
+        result.Should().BeNull(
+            because: "introspection must not report a revoked-family grant as live, even though its own row is Active");
+    }
+
+    [Fact]
+    public async Task TryConsumeAsync_returns_Revoked_not_ClientMismatch_when_IsFamilyRevokedAsync_reports_true_and_client_mismatches()
+    {
+        const string familyId = "fam-386-mismatch";
+        var innerStore = new InMemoryRefreshTokenGrantStore();
+        var store = CreateStore(grantStore: new FamilyRevokedOverrideGrantStore(innerStore, familyId));
+        const string handle = "family-revoked-out-of-band-mismatch";
+
+        await store.StoreAsync(handle, BuildEntry(clientId: "client-a", familyId: familyId), CancellationToken.None);
+
+        var outcome = await store.TryConsumeAsync(handle, "client-b", CancellationToken.None);
+
+        outcome.Should().BeOfType<RefreshTokenConsumptionResult.Revoked>(
+            because: "§11: the family-revoked gate runs before the client-mismatch check, same ordering as the row's own Revoked status");
+    }
+
     [Fact]
     public async Task TryConsumeAsync_returns_Revoked_not_AlreadyConsumed_when_consumed_then_family_revoked_then_replayed()
     {
@@ -856,6 +909,9 @@ public sealed class RefreshTokenStoreTests
 
         public ValueTask RevokeBySubjectAsync(string subject, CancellationToken cancellationToken)
             => throw new InvalidOperationException("Simulated grant store failure.");
+
+        public ValueTask<bool> IsFamilyRevokedAsync(string familyId, CancellationToken cancellationToken)
+            => throw new InvalidOperationException("Simulated grant store failure.");
     }
 
     /// <summary>
@@ -886,6 +942,9 @@ public sealed class RefreshTokenStoreTests
 
         public ValueTask RevokeBySubjectAsync(string subject, CancellationToken cancellationToken)
             => _inner.RevokeBySubjectAsync(subject, cancellationToken);
+
+        public ValueTask<bool> IsFamilyRevokedAsync(string familyId, CancellationToken cancellationToken)
+            => _inner.IsFamilyRevokedAsync(familyId, cancellationToken);
     }
 
     /// <summary>
@@ -922,6 +981,9 @@ public sealed class RefreshTokenStoreTests
 
         public ValueTask RevokeBySubjectAsync(string subject, CancellationToken cancellationToken)
             => _inner.RevokeBySubjectAsync(subject, cancellationToken);
+
+        public ValueTask<bool> IsFamilyRevokedAsync(string familyId, CancellationToken cancellationToken)
+            => _inner.IsFamilyRevokedAsync(familyId, cancellationToken);
     }
 
     private sealed class CancellationThrowingOnMarkConsumedGrantStore : IRefreshTokenGrantStore
@@ -944,6 +1006,46 @@ public sealed class RefreshTokenStoreTests
 
         public ValueTask RevokeBySubjectAsync(string subject, CancellationToken cancellationToken)
             => _inner.RevokeBySubjectAsync(subject, cancellationToken);
+
+        public ValueTask<bool> IsFamilyRevokedAsync(string familyId, CancellationToken cancellationToken)
+            => _inner.IsFamilyRevokedAsync(familyId, cancellationToken);
+    }
+
+    /// <summary>
+    /// Wraps a real grant store; <see cref="IsFamilyRevokedAsync"/> always reports
+    /// <see langword="true"/> for <paramref name="revokedFamilyId"/>, regardless of what
+    /// <see cref="_inner"/>'s rows actually say — deterministically simulating the issue #386
+    /// scenario where a grant's own row still reads <see cref="RefreshGrantStatus.Active"/> but a
+    /// sibling's revoke has already committed.
+    /// </summary>
+    private sealed class FamilyRevokedOverrideGrantStore : IRefreshTokenGrantStore
+    {
+        private readonly IRefreshTokenGrantStore _inner;
+        private readonly string _revokedFamilyId;
+
+        public FamilyRevokedOverrideGrantStore(IRefreshTokenGrantStore inner, string revokedFamilyId)
+        {
+            _inner = inner;
+            _revokedFamilyId = revokedFamilyId;
+        }
+
+        public ValueTask InsertAsync(RefreshTokenGrant grant, CancellationToken cancellationToken)
+            => _inner.InsertAsync(grant, cancellationToken);
+
+        public ValueTask<RefreshTokenGrant?> FindByHandleAsync(StoreKey handleHash, CancellationToken cancellationToken)
+            => _inner.FindByHandleAsync(handleHash, cancellationToken);
+
+        public ValueTask<bool> TryMarkConsumedAsync(StoreKey handleHash, CancellationToken cancellationToken)
+            => _inner.TryMarkConsumedAsync(handleHash, cancellationToken);
+
+        public ValueTask RevokeFamilyAsync(string familyId, CancellationToken cancellationToken)
+            => _inner.RevokeFamilyAsync(familyId, cancellationToken);
+
+        public ValueTask RevokeBySubjectAsync(string subject, CancellationToken cancellationToken)
+            => _inner.RevokeBySubjectAsync(subject, cancellationToken);
+
+        public ValueTask<bool> IsFamilyRevokedAsync(string familyId, CancellationToken cancellationToken)
+            => ValueTask.FromResult(string.Equals(familyId, _revokedFamilyId, StringComparison.Ordinal));
     }
 
     private sealed class ProtectFailingDataProtectionProvider : IDataProtectionProvider
