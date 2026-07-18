@@ -96,21 +96,16 @@ public sealed class FamilyRevocationIntegrationTests
 
         var consumeOutcome = await tokenStore.TryConsumeAsync(tokenHandle, clientId, CancellationToken.None);
 
-        // FLAGGED BEHAVIOUR CHANGE (see final test report for the full write-up, not fixed here):
-        // under ADR 0008's original marker-based design, RevokeFamilyAsync persisted a
-        // family-level marker independent of any row, so a token stored afterward into an
-        // already-revoked family would still read as Revoked. ADR 0014's queryable model has no
-        // such marker — RevokeFamilyAsync only marks rows that already exist at the time it runs
-        // (§6). A grant stored into a family AFTER it was revoked, with zero rows existing at
-        // revoke time, is Active and consumable. The ADR argues this is safe in the legitimate
-        // rotation flow (a revoked family blocks the consume that would trigger a rotation
-        // insert), but this test's own scenario — auth-code replay detected and the family
-        // revoked before the FIRST refresh token of that family is ever stored — is not that
-        // rotation case, and is not explicitly covered by the ADR's reasoning.
-        consumeOutcome.Should().BeOfType<RefreshTokenConsumptionResult.Consumed>(
-            "ADR 0014's queryable model has no persistent family-revocation marker; " +
-            "RevokeFamilyAsync only marks rows that exist at call time (§6), so a grant stored " +
-            "afterward into the same family is unaffected by the earlier revocation");
+        // ADR 0014 §12 (issue #388) closes exactly this gap: RevokeFamilyAsync now unconditionally
+        // inserts a durable revocation sentinel, even when the family had zero rows at revoke time
+        // (as here — the auth-code replay is detected and the family revoked before the FIRST
+        // refresh token of that family is ever stored). The sentinel arms the §11
+        // IsFamilyRevokedAsync gate, so a grant stored afterward into the same family is caught at
+        // its own consume, closing the "auth-code replayed before its first refresh token" hole.
+        consumeOutcome.Should().BeOfType<RefreshTokenConsumptionResult.Revoked>(
+                "ADR 0014 §12's revocation sentinel arms the family-revoked gate even when the family " +
+                "had zero rows at revoke time, so a grant stored afterward is dead on arrival")
+            .Which.FamilyId.Should().Be(familyId);
     }
 
     [Fact]
