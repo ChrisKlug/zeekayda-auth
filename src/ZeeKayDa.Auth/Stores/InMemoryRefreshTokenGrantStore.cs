@@ -106,6 +106,24 @@ internal sealed class InMemoryRefreshTokenGrantStore : IRefreshTokenGrantStore
         return ValueTask.CompletedTask;
     }
 
+    /// <inheritdoc/>
+    public ValueTask<bool> IsFamilyRevokedAsync(string familyId, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(familyId);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // Plain read of already-committed state: no lock needed. _revokeLock only needs to
+        // exclude a concurrent InsertAsync from being missed by a RevokeWhere *scan* (ADR 0014
+        // §9); a single-row-per-family membership read has nothing to race against that would
+        // change the answer's correctness — either the revoke has committed and is visible on
+        // the dictionary already (ConcurrentDictionary read-your-writes), or it hasn't yet, which
+        // is the same bounded, accepted race ADR 0014 §11 calls out for every backend.
+        var revoked = _grants.Values.Any(grant =>
+            grant.Status == RefreshGrantStatus.Revoked && string.Equals(grant.FamilyId, familyId, StringComparison.Ordinal));
+
+        return ValueTask.FromResult(revoked);
+    }
+
     private void RevokeWhere(Func<RefreshTokenGrant, bool> predicate)
     {
         // Excludes concurrent InsertAsync for the duration of the scan (see class remarks) so a

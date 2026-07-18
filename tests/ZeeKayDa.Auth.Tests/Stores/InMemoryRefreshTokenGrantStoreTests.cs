@@ -237,6 +237,87 @@ public sealed class InMemoryRefreshTokenGrantStoreTests
         await act.Should().NotThrowAsync();
     }
 
+    // ── IsFamilyRevokedAsync (issue #386, ADR 0014 §11) ──────────────────────────────────────────────
+
+    [Fact]
+    public async Task IsFamilyRevokedAsync_returns_true_when_a_grant_in_the_family_is_Revoked()
+    {
+        var store = new InMemoryRefreshTokenGrantStore();
+        const string familyId = "family-revoked";
+        var grant = BuildGrant(familyId: familyId);
+        await store.InsertAsync(grant, CancellationToken.None);
+        await store.RevokeFamilyAsync(familyId, CancellationToken.None);
+
+        var result = await store.IsFamilyRevokedAsync(familyId, CancellationToken.None);
+
+        result.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task IsFamilyRevokedAsync_returns_true_for_a_successor_inserted_strictly_after_the_revoke()
+    {
+        // The exact issue #386 scenario: RT0 gets revoked, RT1 is inserted afterwards still Active.
+        var store = new InMemoryRefreshTokenGrantStore();
+        const string familyId = "family-post-revoke-insert";
+        var rt0 = BuildGrant(familyId: familyId);
+        await store.InsertAsync(rt0, CancellationToken.None);
+        await store.RevokeFamilyAsync(familyId, CancellationToken.None);
+
+        var rt1 = BuildGrant(familyId: familyId);
+        await store.InsertAsync(rt1, CancellationToken.None);
+
+        var result = await store.IsFamilyRevokedAsync(familyId, CancellationToken.None);
+
+        result.Should().BeTrue(because: "the family reads revoked even though rt1's own row is still Active");
+        (await store.FindByHandleAsync(rt1.HandleHash, CancellationToken.None))!.Status
+            .Should().Be(RefreshGrantStatus.Active, because: "InsertAsync is unchanged and never itself decides Active vs Revoked");
+    }
+
+    [Fact]
+    public async Task IsFamilyRevokedAsync_returns_false_when_no_grant_in_the_family_is_Revoked()
+    {
+        var store = new InMemoryRefreshTokenGrantStore();
+        const string familyId = "family-live";
+        await store.InsertAsync(BuildGrant(familyId: familyId), CancellationToken.None);
+
+        var result = await store.IsFamilyRevokedAsync(familyId, CancellationToken.None);
+
+        result.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task IsFamilyRevokedAsync_returns_false_for_an_unknown_family_id()
+    {
+        var store = new InMemoryRefreshTokenGrantStore();
+
+        var result = await store.IsFamilyRevokedAsync("completely-unknown-family", CancellationToken.None);
+
+        result.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task IsFamilyRevokedAsync_ignores_Revoked_grants_in_a_different_family()
+    {
+        var store = new InMemoryRefreshTokenGrantStore();
+        await store.InsertAsync(BuildGrant(familyId: "other-family", status: RefreshGrantStatus.Revoked), CancellationToken.None);
+        const string familyId = "family-not-revoked";
+        await store.InsertAsync(BuildGrant(familyId: familyId), CancellationToken.None);
+
+        var result = await store.IsFamilyRevokedAsync(familyId, CancellationToken.None);
+
+        result.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task IsFamilyRevokedAsync_throws_ArgumentNullException_for_null_familyId()
+    {
+        var store = new InMemoryRefreshTokenGrantStore();
+
+        var act = async () => await store.IsFamilyRevokedAsync(null!, CancellationToken.None);
+
+        await act.Should().ThrowAsync<ArgumentNullException>();
+    }
+
     // ── Argument guards ───────────────────────────────────────────────────────────────────────────
 
     [Fact]

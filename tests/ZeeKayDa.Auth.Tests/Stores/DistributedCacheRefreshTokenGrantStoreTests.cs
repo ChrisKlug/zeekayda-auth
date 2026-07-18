@@ -177,6 +177,84 @@ public sealed class DistributedCacheRefreshTokenGrantStoreTests
         (await store.FindByHandleAsync(g3.HandleHash, CancellationToken.None))!.Status.Should().Be(RefreshGrantStatus.Active);
     }
 
+    // ── IsFamilyRevokedAsync (issue #386, ADR 0014 §11) ──────────────────────────────────────────────
+
+    [Fact]
+    public async Task IsFamilyRevokedAsync_returns_true_when_an_indexed_grant_in_the_family_is_Revoked()
+    {
+        var store = new DistributedCacheRefreshTokenGrantStore(NewCache());
+        const string familyId = "family-revoked";
+        var grant = BuildGrant(familyId: familyId);
+        await store.InsertAsync(grant, CancellationToken.None);
+        await store.RevokeFamilyAsync(familyId, CancellationToken.None);
+
+        var result = await store.IsFamilyRevokedAsync(familyId, CancellationToken.None);
+
+        result.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task IsFamilyRevokedAsync_returns_true_for_a_successor_inserted_strictly_after_the_revoke()
+    {
+        var store = new DistributedCacheRefreshTokenGrantStore(NewCache());
+        const string familyId = "family-post-revoke-insert";
+        var rt0 = BuildGrant(familyId: familyId);
+        await store.InsertAsync(rt0, CancellationToken.None);
+        await store.RevokeFamilyAsync(familyId, CancellationToken.None);
+
+        var rt1 = BuildGrant(familyId: familyId);
+        await store.InsertAsync(rt1, CancellationToken.None);
+
+        var result = await store.IsFamilyRevokedAsync(familyId, CancellationToken.None);
+
+        result.Should().BeTrue(because: "the family reads revoked even though rt1's own row is still Active");
+    }
+
+    [Fact]
+    public async Task IsFamilyRevokedAsync_returns_false_when_no_indexed_grant_in_the_family_is_Revoked()
+    {
+        var store = new DistributedCacheRefreshTokenGrantStore(NewCache());
+        const string familyId = "family-live";
+        await store.InsertAsync(BuildGrant(familyId: familyId), CancellationToken.None);
+
+        var result = await store.IsFamilyRevokedAsync(familyId, CancellationToken.None);
+
+        result.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task IsFamilyRevokedAsync_returns_false_for_an_unindexed_family()
+    {
+        var store = new DistributedCacheRefreshTokenGrantStore(NewCache());
+
+        var result = await store.IsFamilyRevokedAsync("never-seen-family", CancellationToken.None);
+
+        result.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task IsFamilyRevokedAsync_propagates_a_transport_fault_instead_of_swallowing_it()
+    {
+        var fault = new TransportFaultException();
+        var store = new DistributedCacheRefreshTokenGrantStore(new AlwaysFaultingDistributedCache(fault));
+
+        var act = async () => await store.IsFamilyRevokedAsync("family-1", CancellationToken.None);
+
+        await act.Should().ThrowAsync<ZeeKayDaStoreException>(
+                because: "a fault masked as false reads as \"not revoked\" and defeats the gate (ADR 0014 §11)")
+            .Where(ex => ex.InnerException is TransportFaultException);
+    }
+
+    [Fact]
+    public async Task IsFamilyRevokedAsync_throws_ArgumentNullException_for_null_familyId()
+    {
+        var store = new DistributedCacheRefreshTokenGrantStore(NewCache());
+
+        var act = async () => await store.IsFamilyRevokedAsync(null!, CancellationToken.None);
+
+        await act.Should().ThrowAsync<ArgumentNullException>();
+    }
+
     // ── §8 fail-closed: transport faults must propagate, never be swallowed ────────────────────
 
     [Fact]

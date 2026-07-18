@@ -956,6 +956,9 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
 
         public ValueTask RevokeBySubjectAsync(string subject, CancellationToken cancellationToken)
             => ValueTask.CompletedTask;
+
+        public ValueTask<bool> IsFamilyRevokedAsync(string familyId, CancellationToken cancellationToken)
+            => ValueTask.FromResult(false);
     }
 
     private sealed class AnotherStubRefreshTokenGrantStore : IRefreshTokenGrantStore
@@ -974,5 +977,8 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
 
         public ValueTask RevokeBySubjectAsync(string subject, CancellationToken cancellationToken)
             => ValueTask.CompletedTask;
+
+        public ValueTask<bool> IsFamilyRevokedAsync(string familyId, CancellationToken cancellationToken)
+            => ValueTask.FromResult(false);
     }
 }

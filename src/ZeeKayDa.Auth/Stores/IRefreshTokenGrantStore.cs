@@ -9,7 +9,7 @@ namespace ZeeKayDa.Auth.Stores;
 /// freely; the coordinator's Guarded wrapper (ADR 0013 §8) maps them to <see cref="ZeeKayDaStoreException"/>.
 /// </summary>
 /// <remarks>
-/// See ADR 0014 §3 for why the interface is deliberately limited to exactly these five methods —
+/// See ADR 0014 §3 for why the interface is deliberately limited to exactly these six methods —
 /// in particular, why there is no bulk remove/cleanup method and no bulk-read-by-family/subject.
 /// </remarks>
 public interface IRefreshTokenGrantStore
@@ -62,27 +62,36 @@ public interface IRefreshTokenGrantStore
     /// </summary>
     /// <param name="familyId">The family identifier to revoke.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
-    /// <remarks>
-    /// <strong>Known gap, tracked separately (issue #386):</strong> this method does NOT gate future
-    /// inserts — a grant <c>InsertAsync</c>'d into <paramref name="familyId"/> strictly after this
-    /// call returns (including one for a family with zero live rows at call time) is NOT retroactively
-    /// revoked and remains <see cref="RefreshGrantStatus.Active"/>. Closing that gap requires either a
-    /// durable revoked-family marker consulted by <see cref="InsertAsync"/> or a fail-closed
-    /// insert-time gate — a design change with security weight, not yet made. Do not rely on this
-    /// method alone to prevent a family from ever issuing a new live token again.
-    /// </remarks>
     ValueTask RevokeFamilyAsync(string familyId, CancellationToken cancellationToken);
 
     /// <summary>
     /// Set <see cref="RefreshGrantStatus.Revoked"/> for EVERY grant whose <see cref="RefreshTokenGrant.Subject"/>
     /// equals <paramref name="subject"/> AND that already exists at the moment this call evaluates
-    /// its predicate. Same completeness bar, and the same known post-call-insert gap (issue #386), as
-    /// <see cref="RevokeFamilyAsync"/>. Present so a FUTURE subject-level logout-all is possible; the
-    /// endpoint is deferred and no coordinator method calls this yet (ADR 0014 §6). The subject
-    /// arrives as cleartext (it is a plain equality predicate, not a keyed lookup) — this control must
-    /// never fail to match, which is why the subject is not peppered/keyed (see ADR 0014 sign-off item 1).
+    /// its predicate. Same completeness bar as <see cref="RevokeFamilyAsync"/>. Present so a FUTURE
+    /// subject-level logout-all is possible; the endpoint is deferred and no coordinator method calls
+    /// this yet (ADR 0014 §6). The subject arrives as cleartext (it is a plain equality predicate, not
+    /// a keyed lookup) — this control must never fail to match, which is why the subject is not
+    /// peppered/keyed (see ADR 0014 sign-off item 1).
     /// </summary>
     /// <param name="subject">The subject identifier to revoke all grants for.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     ValueTask RevokeBySubjectAsync(string subject, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Return <see langword="true"/> iff ANY grant whose <see cref="RefreshTokenGrant.FamilyId"/>
+    /// equals <paramref name="familyId"/> currently reads <see cref="RefreshGrantStatus.Revoked"/>.
+    /// Read-only, no side effects (issue #386, ADR 0014 §11). The coordinator calls this before
+    /// honouring a grant's own <see cref="RefreshGrantStatus.Active"/> status, so a successor
+    /// inserted after <see cref="RevokeFamilyAsync"/> is caught at consume time.
+    /// </summary>
+    /// <param name="familyId">The family identifier to check.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <remarks>
+    /// MUST be a strongly-consistent / primary read — a stale-replica read that misses a
+    /// just-committed revoke fails open. MUST throw on fault; you MUST NOT catch-and-return
+    /// <see langword="false"/> (a fault masked as <see langword="false"/> reads as "not revoked" and
+    /// defeats the gate). Same fail-closed tier as <see cref="FindByHandleAsync"/>.
+    /// SQL: <c>SELECT EXISTS(SELECT 1 FROM grants WHERE family_id=@f AND status=Revoked)</c>.
+    /// </remarks>
+    ValueTask<bool> IsFamilyRevokedAsync(string familyId, CancellationToken cancellationToken);
 }

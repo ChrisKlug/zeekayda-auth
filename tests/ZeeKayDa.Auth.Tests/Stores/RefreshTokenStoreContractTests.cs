@@ -467,12 +467,13 @@ public sealed class RefreshTokenStoreContractTests
     }
 
     [Fact]
-    public void IRefreshTokenGrantStore_has_exactly_five_methods()
+    public void IRefreshTokenGrantStore_has_exactly_six_methods()
     {
         var methods = typeof(IRefreshTokenGrantStore).GetMethods(BindingFlags.Public | BindingFlags.Instance);
 
-        methods.Should().HaveCount(5,
-            "InsertAsync, FindByHandleAsync, TryMarkConsumedAsync, RevokeFamilyAsync, RevokeBySubjectAsync (ADR 0014 §3)");
+        methods.Should().HaveCount(6,
+            "InsertAsync, FindByHandleAsync, TryMarkConsumedAsync, RevokeFamilyAsync, RevokeBySubjectAsync, " +
+            "IsFamilyRevokedAsync (ADR 0014 §3, amended by issue #386)");
     }
 
     [Fact]

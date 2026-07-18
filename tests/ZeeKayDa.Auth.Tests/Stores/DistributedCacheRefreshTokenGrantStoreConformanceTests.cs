@@ -17,6 +17,12 @@ public sealed class DistributedCacheRefreshTokenGrantStoreConformanceTests : Ref
 {
     protected override bool SupportsAtomicConsume => false;
 
+    // Issue #386's fix closes the SECURITY gap left by this store's index-based, non-transactional
+    // RevokeFamilyAsync/RevokeBySubjectAsync by gating consume on IsFamilyRevokedAsync rather than a
+    // grant's own Status column (see case 5 above, which this store passes). It does not retrofit
+    // RevokeFamilyAsync/RevokeBySubjectAsync into a two-phase write, so a grant whose index entry was
+    // read before a concurrent insert still comes back Active on its own row — verified by
+    // temporarily removing this override and observing the mid-revoke-insert sub-case fail.
     protected override bool SupportsMidRevokeInsertCompleteness => false;
 
     protected override IRefreshTokenGrantStore CreateStore()
