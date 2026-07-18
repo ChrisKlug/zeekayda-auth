@@ -126,6 +126,10 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         // AuthorizationServerOptions.Logging.DisableExceptionSanitizing.
         services.AddHostedService<ExceptionSanitizingDisabledWarningService>();
 
+        // Emits a startup warning when AuthorizationServerOptions.TokenEndpoint.AbsoluteFamilyLifetime
+        // is set to the TimeSpan.MaxValue unbounded escape-hatch sentinel (ADR 0014 §5).
+        services.AddHostedService<AbsoluteFamilyLifetimeUnboundedWarningService>();
+
         // Validates that IScopeRepository exposes the 'openid' scope. Done in a hosted service
         // so the check is awaitable — IValidateOptions<T>.Validate is synchronous and blocking
         // on async I/O risks deadlocks in certain hosting configurations.

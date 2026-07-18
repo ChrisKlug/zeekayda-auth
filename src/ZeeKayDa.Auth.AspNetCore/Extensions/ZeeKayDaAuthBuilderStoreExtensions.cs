@@ -45,10 +45,12 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
     }
 
     /// <summary>
-    /// Registers <typeparamref name="T"/> as the singleton <see cref="IRefreshTokenStore"/> implementation. This is the recommended registration path for production use.
+    /// Registers <typeparamref name="T"/> as the singleton <see cref="IRefreshTokenGrantStore"/>
+    /// implementation, wired underneath the framework's sealed coordinator. This is the
+    /// recommended registration path for production use (ADR 0014 §4/§10).
     /// </summary>
     /// <typeparam name="T">
-    /// The concrete type that implements <see cref="IRefreshTokenStore"/>. Must be a
+    /// The concrete type that implements <see cref="IRefreshTokenGrantStore"/>. Must be a
     /// reference type with a publicly accessible constructor so that the DI container can
     /// instantiate it.
     /// </typeparam>
@@ -61,13 +63,14 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
     /// Thrown when an <see cref="IRefreshTokenStore"/> has already been registered.
     /// Only one store registration per interface is allowed.
     /// </exception>
-    public static ZeeKayDaAuthBuilder AddRefreshTokenStore<T>(this ZeeKayDaAuthBuilder builder)
-        where T : class, IRefreshTokenStore
+    public static ZeeKayDaAuthBuilder AddRefreshTokenGrantStore<T>(this ZeeKayDaAuthBuilder builder)
+        where T : class, IRefreshTokenGrantStore
     {
         ArgumentNullException.ThrowIfNull(builder);
 
         builder.ThrowIfAlreadyRegistered(typeof(IRefreshTokenStore));
-        builder.Services.AddSingleton<IRefreshTokenStore, T>();
+        builder.Services.AddSingleton<IRefreshTokenGrantStore, T>();
+        builder.Services.AddSingleton<IRefreshTokenStore, RefreshTokenStore>();
 
         return builder;
     }
@@ -153,7 +156,8 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
         ArgumentNullException.ThrowIfNull(builder);
 
         builder.ThrowIfAlreadyRegistered(typeof(IRefreshTokenStore));
-        builder.Services.AddSingleton<IRefreshTokenStore, InMemoryRefreshTokenStore>();
+        builder.Services.AddSingleton<IRefreshTokenGrantStore, InMemoryRefreshTokenGrantStore>();
+        builder.Services.AddSingleton<IRefreshTokenStore, RefreshTokenStore>();
         builder.Services.AddSingleton<IHostedService>(sp => new InMemoryStoreWarningService(
             sp.GetRequiredService<IHostEnvironment>(),
             InMemoryStoreWarningService.RefreshTokenStoreName,
@@ -250,7 +254,8 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
         ArgumentNullException.ThrowIfNull(builder);
 
         builder.ThrowIfAlreadyRegistered(typeof(IRefreshTokenStore));
-        builder.Services.AddSingleton<IRefreshTokenStore, DistributedCacheRefreshTokenStore>();
+        builder.Services.AddSingleton<IRefreshTokenGrantStore, DistributedCacheRefreshTokenGrantStore>();
+        builder.Services.AddSingleton<IRefreshTokenStore, RefreshTokenStore>();
         builder.Services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IHostedService, DistributedCacheStoreStartupValidator>());
 

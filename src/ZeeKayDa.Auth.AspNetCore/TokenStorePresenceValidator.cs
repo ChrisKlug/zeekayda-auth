@@ -48,7 +48,7 @@ internal sealed class TokenStorePresenceValidator : IHostedService
             failures.Add(new ZeeKayDaConfigurationFailure(
                 "stores.refresh_token_store.missing",
                 "No IRefreshTokenStore has been registered. " +
-                "Call builder.AddInMemoryRefreshTokenStore(), builder.AddRefreshTokenStore<T>(), " +
+                "Call builder.AddInMemoryRefreshTokenStore(), builder.AddRefreshTokenGrantStore<T>(), " +
                 "or builder.AddDistributedCacheRefreshTokenStore()."));
 
         if (failures.Count > 0)

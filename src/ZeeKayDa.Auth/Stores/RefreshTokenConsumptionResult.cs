@@ -21,16 +21,16 @@ namespace ZeeKayDa.Auth.Stores;
 /// </list>
 /// </para>
 /// </remarks>
-public abstract class RefreshTokenConsumptionOutcome
+public abstract class RefreshTokenConsumptionResult
 {
     [ExcludeFromCodeCoverage]
-    private RefreshTokenConsumptionOutcome() { }
+    private RefreshTokenConsumptionResult() { }
 
     /// <summary>
     /// The token was valid and has been atomically consumed. The entry is returned for use
     /// in issuing a rotated token.
     /// </summary>
-    public sealed class Consumed : RefreshTokenConsumptionOutcome
+    public sealed class Consumed : RefreshTokenConsumptionResult
     {
         /// <summary>Gets the refresh token entry that was consumed.</summary>
         public required RefreshTokenEntry Entry { get; init; }
@@ -52,7 +52,7 @@ public abstract class RefreshTokenConsumptionOutcome
     /// MUST be rejected with <c>invalid_grant</c> only.
     /// </para>
     /// </remarks>
-    public sealed class ClientMismatch : RefreshTokenConsumptionOutcome { }
+    public sealed class ClientMismatch : RefreshTokenConsumptionResult { }
 
     /// <summary>
     /// The token handle was found but had already been consumed — reuse detected.
@@ -67,7 +67,7 @@ public abstract class RefreshTokenConsumptionOutcome
     /// in ADR 0008 §4.
     /// </para>
     /// </remarks>
-    public sealed class AlreadyConsumed : RefreshTokenConsumptionOutcome
+    public sealed class AlreadyConsumed : RefreshTokenConsumptionResult
     {
         /// <summary>Gets the family identifier of the replayed token chain.</summary>
         public required string FamilyId { get; init; }
@@ -84,7 +84,7 @@ public abstract class RefreshTokenConsumptionOutcome
     /// idempotency guarantee, or may skip the call knowing the revocation is already in effect.
     /// Either approach is correct.
     /// </remarks>
-    public sealed class Revoked : RefreshTokenConsumptionOutcome
+    public sealed class Revoked : RefreshTokenConsumptionResult
     {
         /// <summary>Gets the family identifier that was revoked.</summary>
         public required string FamilyId { get; init; }
@@ -93,5 +93,5 @@ public abstract class RefreshTokenConsumptionOutcome
     /// <summary>
     /// No token matching the given handle was found. The request MUST be rejected.
     /// </summary>
-    public sealed class NotFound : RefreshTokenConsumptionOutcome { }
+    public sealed class NotFound : RefreshTokenConsumptionResult { }
 }

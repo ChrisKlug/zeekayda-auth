@@ -208,6 +208,15 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
                 "retention covers the authorization code validity window.");
         }
 
+        // ADR 0014 §5: a zero or negative absolute family lifetime is nonsensical and must be
+        // rejected at startup. TimeSpan.MaxValue is the explicit, warned "unbounded" sentinel and
+        // remains valid here.
+        if (options.TokenEndpoint.AbsoluteFamilyLifetime <= TimeSpan.Zero)
+        {
+            errors.Add(
+                "AuthorizationServerOptions.TokenEndpoint.AbsoluteFamilyLifetime must be greater than zero.");
+        }
+
         // Validate IdToken group
         if (options.IdToken.SigningAlgValuesSupported is null)
         {

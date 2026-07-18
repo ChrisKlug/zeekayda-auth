@@ -50,4 +50,63 @@ public sealed class TokenEndpointOptions
     /// </para>
     /// </remarks>
     public TimeSpan RefreshTokenLifetime { get; set; } = TimeSpan.FromDays(14);
+
+    /// <summary>
+    /// Gets or sets the absolute wall-clock lifetime of a refresh token family, measured from the
+    /// family's first token. Defaults to 90 days.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Baked into <c>FamilyAbsoluteExpiry</c> at family birth (<c>now + AbsoluteFamilyLifetime</c>)
+    /// and propagated verbatim through every rotation in the family, so the whole chain shares one
+    /// absolute ceiling (ADR 0014 §5). Each token's own expiry is clamped to
+    /// <c>min(now + RefreshTokenLifetime, FamilyAbsoluteExpiry)</c> — <see cref="RefreshTokenLifetime"/>
+    /// is the per-token idle window; this option is the whole-family hard cap. There is no
+    /// separate idle-timeout option.
+    /// </para>
+    /// <para>
+    /// Must be greater than <see cref="TimeSpan.Zero"/>. Values at or below zero are rejected at
+    /// startup by <c>AuthorizationServerOptionsValidator</c>.
+    /// </para>
+    /// <para>
+    /// <strong>Escape hatch.</strong> Setting this to <see cref="TimeSpan.MaxValue"/> — the
+    /// <see cref="DateTimeOffset.MaxValue"/>-equivalent sentinel for a duration-typed option —
+    /// disables the absolute cap: refresh token families then live indefinitely, bounded only by
+    /// <see cref="RefreshTokenLifetime"/> idle expiry. This causes unbounded row growth in a
+    /// persisted grant store (a resource concern, not a fail-open one) and is a warned, explicit
+    /// opt-in: the framework emits a startup warning whenever this sentinel is configured, so an
+    /// unbounded family lifetime is never a silent accident.
+    /// </para>
+    /// </remarks>
+    public TimeSpan AbsoluteFamilyLifetime { get; set; } = TimeSpan.FromDays(90);
+
+    /// <summary>
+    /// Computes the <c>FamilyAbsoluteExpiry</c> to bake into a refresh token family at birth, from
+    /// <paramref name="now"/> and this instance's <see cref="AbsoluteFamilyLifetime"/>.
+    /// </summary>
+    /// <param name="now">The current time, at family birth.</param>
+    /// <remarks>
+    /// Sentinel-safe: when <see cref="AbsoluteFamilyLifetime"/> is the <see cref="TimeSpan.MaxValue"/>
+    /// escape hatch, a naive <c>now + AbsoluteFamilyLifetime</c> overflows and throws
+    /// <see cref="ArgumentOutOfRangeException"/> — turning the documented "unbounded cap" opt-in into
+    /// a crash. This method special-cases the sentinel (mapping it to <see cref="DateTimeOffset.MaxValue"/>)
+    /// and falls back to <see cref="DateTimeOffset.MaxValue"/> for any other addition that would
+    /// otherwise overflow, so the mapping from option to expiry lives in exactly one place and every
+    /// caller (e.g. the future token endpoint issuing the first token of a family) gets it right for
+    /// free rather than re-deriving it.
+    /// </remarks>
+    public DateTimeOffset ComputeFamilyAbsoluteExpiry(DateTimeOffset now)
+    {
+        if (AbsoluteFamilyLifetime == TimeSpan.MaxValue)
+            return DateTimeOffset.MaxValue;
+
+        try
+        {
+            return now + AbsoluteFamilyLifetime;
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return DateTimeOffset.MaxValue;
+        }
+    }
 }
