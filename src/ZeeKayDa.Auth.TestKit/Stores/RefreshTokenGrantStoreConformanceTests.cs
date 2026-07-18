@@ -337,6 +337,45 @@ public abstract class RefreshTokenGrantStoreConformanceTests
         AssertPropagatedFault(fault, thrown);
     }
 
+    // ── Backend-level precondition for the ADR 0014 §12 (issue #388) revocation sentinel ──────────
+    //
+    // §9 case 6 as originally drafted ("RevokeFamilyAsync on a zero-row family, then insert a
+    // grant, then assert IsFamilyRevokedAsync reports it revoked") describes the coordinator's
+    // *composed* behaviour, not something either backend's IRefreshTokenGrantStore implementation
+    // does on its own: issue #388 shipped entirely in RefreshTokenStore.RevokeFamilyAsync, which
+    // constructs a Revoked-status sentinel row itself and inserts it via InsertAsync — the
+    // backend's own RevokeFamilyAsync method (UPDATE ... WHERE family_id = @f) still matches
+    // nothing on a zero-row family and is unchanged. Exercising case 6 as drafted against a bare
+    // IRefreshTokenGrantStore would therefore just prove that RevokeFamilyAsync-on-empty-family is
+    // a no-op, which is correct backend behaviour, not a regression — asserting IsFamilyRevokedAsync
+    // afterwards would legitimately return false at this layer, so a literal port of case 6 would
+    // be testing the wrong layer and (if written to expect true) would be asserting something the
+    // interface never promises.
+    //
+    // What the coordinator's fix DOES depend on, and what the interface's InsertAsync contract has
+    // never explicitly stated one way or the other, is that InsertAsync tolerates a grant born
+    // Revoked with no prior Active row for its family, and that IsFamilyRevokedAsync sees it. A
+    // hypothetical third-party backend that (wrongly) assumed InsertAsync is only ever called with
+    // Active status — e.g. one that derives "family exists" from "an Active row has ever been
+    // written" rather than from row presence — would break the sentinel technique silently. That is
+    // a genuine, non-redundant assertion about the IRefreshTokenGrantStore contract, so it is
+    // covered here instead of a literal case 6 port.
+    [Fact]
+    public async Task InsertAsync_accepts_a_grant_born_Revoked_with_no_prior_row_and_IsFamilyRevokedAsync_reports_it()
+    {
+        var store = CreateStore();
+        var familyId = $"family-{Guid.NewGuid():N}";
+        var revokedFromBirth = NewGrant(familyId, status: RefreshGrantStatus.Revoked);
+
+        await store.InsertAsync(revokedFromBirth, CancellationToken.None);
+
+        var stored = await store.FindByHandleAsync(revokedFromBirth.HandleHash, CancellationToken.None);
+        Assert.Equal(RefreshGrantStatus.Revoked, stored!.Status);
+
+        var isRevoked = await store.IsFamilyRevokedAsync(familyId, CancellationToken.None);
+        Assert.True(isRevoked);
+    }
+
     /// <summary>
     /// Accepts either the raw fault propagating unwrapped (the ADR 0014 §3-documented contract:
     /// "native exceptions may propagate freely; the coordinator's Guarded wrapper maps them") or

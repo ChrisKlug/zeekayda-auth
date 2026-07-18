@@ -130,6 +130,28 @@
 > detection, the same failure class as `FindByHandleAsync`'s fail-closed contract. The bounded,
 > attacker-timed residual race (§11, Security Considerations) is accepted, not a gap. The rejected
 > insert-time defence-in-depth is explicitly not added (§11, alternatives).
+>
+> **Amendment 2026-07-18 — issue #388 (zero-row-family revocation sentinel): ⏳ PENDING SECURITY
+> REVIEW OF THE IMPLEMENTATION.** Scoped *only* to the revocation-sentinel fix added by this
+> amendment (§12); §11 and the three original items are unchanged and not re-opened. The design was
+> discussed and approved (architect proposal + security critique) before this write-up; security has
+> **not** yet reviewed the shipped code, so this entry is **not** a sign-off. §12 closes the gap §11's
+> "familyId always comes from an existing row" assumption leaves open: an auth-code replayed *before*
+> its first refresh token is stored lets `RevokeFamilyAsync` run against a zero-row family and leave no
+> trace for the §11 gate. The fix has `RevokeFamilyAsync` unconditionally insert one durable, `Revoked`
+> revocation-sentinel row keyed deterministically on `familyId`, with `FamilyAbsoluteExpiry` computed
+> the same way a real family's is (`ComputeFamilyAbsoluteExpiry`, **not** bounded by the shorter
+> auth-code lifetime — an earlier draft that so bounded it failed open, caught in the design critique).
+> No new interface method; no public `InsertAsync` contract change (insert-if-absent for the one
+> reserved sentinel key is a coordinator-internal helper that, on any insert failure, re-reads via
+> `FindByHandleAsync` to confirm the sentinel is genuinely durable before treating the failure as a
+> benign self-collision — an earlier draft that swallowed the exception unconditionally would have
+> silently masked a genuine transport fault as success, caught in review and fixed before this
+> amendment). Review must confirm: the sentinel's expiry is family-scoped (not auth-code-scoped) so it
+> outlives any successor; the deterministic key preserves `RevokeFamilyAsync` idempotency with no
+> unbounded row growth; the sentinel can never be redeemed (empty payload, `Revoked` status); and the
+> confirming `FindByHandleAsync` re-read is itself fail-closed (its own faults propagate, are never
+> swallowed).
 
 ---
 
@@ -536,6 +558,16 @@ path. It exercises:
    (i.e. a subsequent consume treats the new grant as dead). This is distinct from case 1's
    concurrent-overlap race. Plus a fail-closed case: `IsFamilyRevokedAsync` throws (does NOT
    catch-and-return `false`) on a transport fault.
+6. **`InsertAsync` accepts a born-`Revoked` grant (issue #388, §12)** — insert a grant that is
+   `Revoked` from birth with **no prior `Active` row** for its family, then assert
+   `IsFamilyRevokedAsync` reports the family revoked. This is the backend-level precondition the
+   coordinator's §12 sentinel technique depends on (`InsertAsync` must tolerate a `Revoked`-from-birth
+   row, and the family-revoked query must see it). The end-to-end zero-row-family completeness proof —
+   `RevokeFamilyAsync` on a family with no rows arming the gate for a later-inserted successor — is a
+   *coordinator*-level scenario (the sentinel insert lives in `RefreshTokenStore`, not the backend), so
+   it is pinned in `RefreshTokenStoreTests.cs`, not this shared backend conformance kit; a bare
+   `IRefreshTokenGrantStore.RevokeFamilyAsync` is still a no-op on zero rows and the kit must not assert
+   otherwise.
 
 ### 10. Renames and public-type impact
 
@@ -605,6 +637,93 @@ two coordinator call sites. The "Known gap, tracked separately (issue #386)" `<r
 `RevokeFamilyAsync` (and the corresponding sentence on `RevokeBySubjectAsync`) in
 `src/ZeeKayDa.Auth/Stores/IRefreshTokenGrantStore.cs` are **deleted** — the gap is closed, so the
 XML docs must stop describing it as open.
+
+### 12. Issue #388 — revocation of a zero-row family (revocation sentinel)
+
+**The gap.** §11 closes the post-revoke insert race *provided the revoked family has at least one
+durable row when `RevokeFamilyAsync` runs* — its last paragraph rests on exactly that: "`familyId` is
+only ever obtained from an existing row … so the revoking scan always leaves at least one durable
+tombstone — no zero-rows-at-revoke marker is needed." Issue #388 is the case that assumption misses.
+An authorization code can be **replayed before its first refresh token is ever stored**: the winner's
+CAS on the auth-code store succeeds and it *begins* minting `RT1` via `StoreAsync`, while the loser
+detects the replay and calls `RevokeFamilyAsync(familyId)` — but at that instant the family has **zero
+rows** (the winner's `StoreAsync` has not yet committed, or is in flight). `RevokeFamilyAsync`'s
+`UPDATE … WHERE family_id = @f` matches nothing and leaves no trace. When `RT1`'s insert then lands
+`Active`, §11's `IsFamilyRevokedAsync` gate finds **no `Revoked` sibling** to see, and `RT1` is a live
+token in a family that was explicitly revoked — the RFC 9700 §4.13 hole reopened one layer down.
+
+**The fix — a durable revocation sentinel.** `RevokeFamilyAsync(familyId)` now **unconditionally**
+inserts one additional row — a synthetic *revocation sentinel* — alongside its existing bulk-revoke of
+any real pre-existing rows:
+
+- `FamilyId` = the family being revoked; `Status` = `Revoked`.
+- `HandleHash` = a **deterministic** key derived from the family id (`H("revocation-sentinel:" +
+  familyId)`), **not** a random handle — so repeated `RevokeFamilyAsync` calls for the same family
+  always target the same row. A random key would insert a new phantom row every call: unbounded growth
+  and a broken idempotency contract (the interface doc comment requires `RevokeFamilyAsync` be
+  idempotent).
+- `Subject` / `ClientId` = fixed, clearly-reserved sentinel constants, documented as the
+  revocation-marker sentinel — **not** real subject/client data, chosen so they cannot collide with
+  real values.
+- `ProtectedPayload` = empty. A sentinel row is `Revoked`, so it never reaches the `Unprotect` happy
+  path (§4/§7); it is a marker, never a redeemable grant.
+- `FamilyAbsoluteExpiry` = computed **the same way a real family's expiry is computed** —
+  `TokenEndpointOptions.ComputeFamilyAbsoluteExpiry(now)` (the sentinel-safe helper against the
+  `TimeSpan.MaxValue` overflow case, added in PR #383), fed by
+  `AuthorizationServerOptions.TokenEndpoint.AbsoluteFamilyLifetime`, which `RefreshTokenStore` already
+  has injected via `IOptions<AuthorizationServerOptions>`. This is **not** endpoint-supplied and
+  **not** bounded by the (much shorter) auth-code lifetime: a short-lived sentinel would be swept (§5)
+  before a genuinely-inserted successor's own, much longer, lifetime ends, silently reopening the very
+  gap this section closes.
+
+Now `RevokeFamilyAsync` leaves a durable `Revoked` row for the family **whether or not any real row
+existed at call time**, so §11's gate arms unconditionally: whenever `RT1` is finally presented, the
+sentinel is already there for `IsFamilyRevokedAsync` to find.
+
+**Why unconditional, not conditional-on-empty-family.** A "only insert the sentinel if the family has
+no rows" check needs a family-existence read the six-method interface deliberately does not offer (§3
+rejects bulk-read-by-family), and a check-then-insert is itself TOCTOU-shaped against a concurrent
+`StoreAsync`. Unconditional costs one extra write on a cold, rare path (revocation) and needs **no new
+interface surface**.
+
+**Insert-if-absent for the one reserved key.** `InsertAsync`'s contract still throws on any
+`HandleHash` collision — "the handle is 256-bit random, so a collision is a genuine duplicate/bug"
+(§3), and that stays true for every real grant. The sentinel deliberately reuses one deterministic key
+across repeated revokes, so the sentinel-insert step alone needs **insert-if-absent** semantics. This
+is achieved **without changing the public `InsertAsync` contract**: the coordinator owns the sentinel
+key format entirely, so a collision on *that* key is provably the coordinator's own prior sentinel —
+expected and benign — and is distinguishable from a genuine random-handle collision. **The coordinator
+does not infer this from the exception alone.** `Guarded` (§8) flattens every native fault into the
+same `ZeeKayDaStoreException` type, so a genuine transport/database fault on the sentinel insert would
+be indistinguishable from a benign self-collision by exception shape. Instead, on any exception from the
+sentinel `InsertAsync`, the coordinator re-reads the sentinel's key via `FindByHandleAsync` to confirm
+the row is *actually* durably present and `Revoked` before treating the failure as benign; if the
+confirming read shows the sentinel is genuinely absent (or the read itself throws), the original
+exception propagates instead of being swallowed — `RevokeFamilyAsync` must never return successfully
+while the sentinel isn't confirmed durable. Every other collision (any real grant's random handle)
+still propagates as the duplicate/bug it is; `InsertAsync` as third parties implement it is untouched.
+
+**Crash-safety.** Unlike the §11-rejected insert-then-verify-then-revoke candidate, this has no
+multi-step write to interrupt: step 1 (insert the sentinel) is **self-sufficient**.
+`IsFamilyRevokedAsync` returns `true` the moment the sentinel exists, arming the gate for the whole
+family regardless of whether the bulk-revoke of any pre-existing rows has run yet, and regardless of a
+crash between the two. The sentinel is durable (mark-don't-delete, §5) until it self-cleans past the
+family's absolute expiry — i.e. after every token the family could ever mint has itself expired.
+
+**What changes for implementers.** Nothing changes in any backend. No new interface method, no
+`InsertAsync` contract change, and **no per-backend code** — the entire fix lives in the framework
+coordinator (`RefreshTokenStore.RevokeFamilyAsync` in `RefreshTokenStore.cs`), which composes the two
+grant-store primitives that already exist: it first calls `_grantStore.InsertAsync(sentinel)` to insert
+the sentinel, then the existing `_grantStore.RevokeFamilyAsync(familyId)` for the bulk mark. Sentinel
+construction — the deterministic `HandleHash` (`H("revocation-sentinel:" + familyId)`), the reserved
+`Subject`/`ClientId` constant, the empty payload, the `Revoked` status, and the `FamilyAbsoluteExpiry`
+from `ComputeFamilyAbsoluteExpiry` — is all **protocol**, so it belongs in the coordinator, not smeared
+into each persistence backend; this placement follows ADR 0014's "coordinator owns protocol, backend
+owns persistence" split and covers every backend, including future third-party ones, for free. The
+insert-if-absent self-collision catch is a coordinator-internal `try/catch` scoped to only the sentinel
+`InsertAsync` call, so `InsertAsync`'s throw-on-collision contract is untouched for every real grant.
+The conformance kit (§9) gains a zero-row-family case: `RevokeFamilyAsync` on a family with no rows,
+then a grant inserted into that family, then assert `IsFamilyRevokedAsync` reports it revoked.
 
 ---
 
@@ -714,6 +833,44 @@ gating already covers **completely** (a successor is caught at its own redeem re
 ordering). A second, weaker check that can only ever agree with the authoritative one adds surface and
 implies a robustness it does not provide. One gate, at consume time, is the whole design.
 
+### A separate `revoked_families` marker table (issue #388)
+
+Record zero-row-family revocations in a dedicated side table (`revoked_families(family_id, expiry)`)
+that `IsFamilyRevokedAsync` also consults. Rejected: functionally equivalent to the sentinel row, but
+it adds a whole new table/index/TTL concept back onto the extension point — precisely the
+marker/metadata machinery this ADR's original redesign *removed* (Context; §6). §12's sentinel reuses
+the existing grant-row shape and the existing `IsFamilyRevokedAsync`/`RevokeFamilyAsync` mechanism
+verbatim, with no new interface surface and no second storage concept for an implementer to get wrong.
+
+### Endpoint-side sequencing — don't revoke until an RT is confirmed stored (issue #388)
+
+Have the endpoint defer `RevokeFamilyAsync` until a refresh token for the family is confirmed to
+exist, so the family is never revoked while it has zero rows. Rejected as insufficient alone: it cannot
+observe an **in-flight, not-yet-committed** `StoreAsync` (the winner's `RT1` write may be seconds from
+committing when the loser must decide to revoke), so the zero-row window is real regardless of endpoint
+ordering. Worse, waiting-to-revoke would *weaken* the RFC 9700 §4.13 code-interception defence this
+revoke path exists to serve — the revoke must fire immediately on replay detection, not be gated on a
+successor's durability. The sentinel makes revocation correct *whenever* it fires, which is the
+property actually needed.
+
+### Bound the sentinel's expiry by the auth-code lifetime (issue #388, earlier draft)
+
+An earlier draft of §12 sized the sentinel's `FamilyAbsoluteExpiry` from the (short) auth-code
+lifetime — reasoning that the race only exists around auth-code redemption. Rejected (caught in the
+design critique): traced through the actual timeline, a sentinel that expires on the auth-code horizon
+is **swept (§5) while a genuinely-inserted successor's own, much longer, family lifetime is still
+running**, so `IsFamilyRevokedAsync` stops finding it and the family silently un-revokes — failing
+open exactly when it matters. The sentinel must share the *family's* absolute expiry
+(`ComputeFamilyAbsoluteExpiry`), so it outlives every token the family could ever mint.
+
+### A random per-call sentinel key (issue #388)
+
+Give each `RevokeFamilyAsync` call a fresh random sentinel handle. Rejected: it breaks
+`RevokeFamilyAsync`'s idempotency contract (§3) and causes **unbounded row growth** — every repeated
+revoke of the same family inserts another phantom `Revoked` row. The deterministic
+`H("revocation-sentinel:" + familyId)` key makes repeated revokes converge on one row (insert-if-absent
+against itself), which is what keeps the operation idempotent and bounded.
+
 ---
 
 ## Consequences
@@ -750,6 +907,11 @@ implies a robustness it does not provide. One gate, at consume time, is the whol
 - **The CAS atomicity invariant is irreducible.** The CLR cannot prove a given backend's
   `TryMarkConsumedAsync` is atomic — the honest ceiling, mitigated by the mapping guidance and the
   conformance kit (§9), same shape as ADR 0013's insert-if-absent ceiling.
+- **One extra write per revocation (issue #388).** `RevokeFamilyAsync` now always inserts a
+  revocation-sentinel row in addition to its bulk mark, so every family revocation costs one more write
+  than before. Revocation is a cold, rare, reuse-triggered path, and the write is idempotent
+  (deterministic key), so this is accepted as the cost of closing the zero-row-family gap without a new
+  interface method or a second storage concept (§12).
 - **Pre-publication blast radius.** New `IRefreshTokenGrantStore` / `RefreshTokenGrant` /
   `RefreshGrantStatus`; deletes the refresh-token KV marker; renames the consumption outcome type;
   rewrites the first-party refresh-token store as a thin grant-store adapter. Endpoint callers are
@@ -803,6 +965,15 @@ implies a robustness it does not provide. One gate, at consume time, is the whol
   and conformance kit (§9 case 5) forbid. The bounded, attacker-timed live-request race that remains
   (a consume passing microseconds before a concurrent revoke commits) self-heals in one rotation and
   is accepted, not a gap — inherent to any RFC 9700 §4.13 detect-and-revoke flow.
+- **Zero-row-family revocation completeness (issue #388, §12).** A family revoked while it holds zero
+  rows — an auth-code replayed before its first refresh token is stored — would otherwise leave no
+  trace for the §11 `IsFamilyRevokedAsync` gate, and a later-inserted successor would read `Active`.
+  `RevokeFamilyAsync` now unconditionally inserts a durable, deterministic-keyed, `Revoked` revocation
+  sentinel whose `FamilyAbsoluteExpiry` is family-scoped (not auth-code-scoped), so the gate arms even
+  for a zero-row family and stays armed until every token the family could mint has expired. The
+  sentinel carries no `ProtectedPayload` and is `Revoked`, so it is never redeemable. **Pending
+  security review of the shipped implementation** (banner); the design was reviewed and approved
+  pre-implementation.
 - **Fail-closed I/O** is the shared obligation from ADR 0013 §8, unchanged: the framework's
   `Guarded(...)` wraps thrown faults as `ZeeKayDaStoreException` and rethrows
   `OperationCanceledException` unwrapped, while `FindByHandleAsync`'s contract forbids
@@ -883,3 +1054,25 @@ implies a robustness it does not provide. One gate, at consume time, is the whol
   self-healing residual race as accepted. Security sign-off granted 2026-07-18 (banner amendment),
   scoped to this fix only. Implementation deletes the now-obsolete "Known gap (issue #386)" remarks on
   `RevokeFamilyAsync`/`RevokeBySubjectAsync` in `IRefreshTokenGrantStore.cs`.
+- 2026-07-18 — issue #388 amendment — closes the zero-row-family revocation gap §11's "familyId always
+  comes from an existing row" assumption left open (an auth-code replayed before its first refresh
+  token is stored lets `RevokeFamilyAsync` run against a family with no rows and leave no trace for the
+  §11 gate). Adds §12: `RevokeFamilyAsync` now unconditionally inserts one durable `Revoked`
+  revocation-sentinel row, keyed deterministically on `familyId` (`H("revocation-sentinel:" +
+  familyId)`) so repeated revokes stay idempotent with no row growth, with reserved non-colliding
+  `Subject`/`ClientId` constants, an empty `ProtectedPayload`, and `FamilyAbsoluteExpiry` computed the
+  same way a real family's is (`ComputeFamilyAbsoluteExpiry`) — **not** bounded by the shorter
+  auth-code lifetime. No new interface method and no public `InsertAsync` contract change: insert-if-
+  absent for the one reserved sentinel key is a coordinator-internal catch-the-self-collision helper.
+  Rejects a separate `revoked_families` marker table (re-adds removed marker machinery), endpoint-side
+  sequencing (cannot observe an in-flight `StoreAsync`, and would weaken the RFC 9700 §4.13 defence),
+  an auth-code-lifetime-bounded sentinel expiry (fails open once swept before a successor's longer
+  lifetime ends), and a random per-call sentinel key (breaks idempotency, unbounded growth). §9
+  conformance kit gains a zero-row-family case. Implementation lives **entirely in the framework
+  coordinator** (`RefreshTokenStore.RevokeFamilyAsync`), composing the existing
+  `_grantStore.InsertAsync` (sentinel) + `_grantStore.RevokeFamilyAsync` (bulk mark) primitives — no
+  backend file (`InMemoryRefreshTokenGrantStore`, `DistributedCacheRefreshTokenGrantStore`) and no
+  interface is touched, since sentinel construction is protocol and belongs in the coordinator per
+  ADR 0014's coordinator-owns-protocol split. **Security sign-off pending review
+  of the shipped implementation** (design reviewed and approved pre-implementation; banner entry marked
+  PENDING, not granted).
