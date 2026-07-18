@@ -8,7 +8,8 @@ namespace ZeeKayDa.Auth.TestKit.Stores;
 /// CLR cannot verify structurally — revocation completeness by family and by subject (including a
 /// grant inserted mid-revoke, the race a drifting secondary index loses), the CAS atomicity
 /// invariant on <see cref="IRefreshTokenGrantStore.TryMarkConsumedAsync"/>, and fail-closed fault
-/// propagation on <see cref="IRefreshTokenGrantStore.FindByHandleAsync"/>.
+/// propagation on <see cref="IRefreshTokenGrantStore.FindByHandleAsync"/> and
+/// <see cref="IRefreshTokenGrantStore.TryMarkConsumedAsync"/>.
 /// </summary>
 /// <remarks>
 /// Ships in the <c>ZeeKayDa.Auth.TestKit</c> package, not <c>ZeeKayDa.Auth</c> itself. Reference
@@ -290,6 +291,25 @@ public abstract class RefreshTokenGrantStoreConformanceTests
 
         var thrown = await Assert.ThrowsAnyAsync<Exception>(
             () => store.InsertAsync(NewGrant(familyId: "fam-fault"), CancellationToken.None).AsTask());
+        AssertPropagatedFault(fault, thrown);
+    }
+
+    /// <summary>
+    /// Also dangerous (ADR 0014 §3/§9): if <c>TryMarkConsumedAsync</c> swallows a transport fault
+    /// and returns <see langword="false"/>, the coordinator reads that as "CAS lost" — the same
+    /// replay is then free to retry indefinitely instead of surfacing the fault, silently defeating
+    /// reuse detection exactly as a swallowed <c>FindByHandleAsync</c> fault would.
+    /// </summary>
+    [Fact]
+    public async Task TryMarkConsumedAsync_propagates_a_transport_fault_instead_of_swallowing_it()
+    {
+        var fault = new TransportFaultException();
+        var store = CreateFaultInjectedStore(fault);
+        if (store is null)
+            return;
+
+        var thrown = await Assert.ThrowsAnyAsync<Exception>(
+            () => store.TryMarkConsumedAsync(NewKey(), CancellationToken.None).AsTask());
         AssertPropagatedFault(fault, thrown);
     }
 
