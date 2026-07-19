@@ -412,6 +412,61 @@ Implementors provide exactly one method: `LoadKeysAsync`, returning a **`Signing
 current trusted set: active key plus in-window keys, with whatever private material the provider
 holds). The development provider (§2) derives from this base.
 
+**`SigningKeySet` construction names the active key explicitly (issue #355).** A `SigningKeySet`
+is constructed from a **named active key plus a lifecycle-neutral collection of additional keys**,
+not from a single positional list whose first element is the active key by convention:
+
+```csharp
+public SigningKeySet(SigningKeyPair activeKey, IEnumerable<SigningKeyPair>? additionalKeys = null);
+```
+
+The earlier `SigningKeySet(IReadOnlyList<SigningKeyPair> keys)` constructor made "the first entry
+is the active signing key" a documented convention enforced nowhere. A provider whose
+`LoadKeysAsync` assembled its list in any other order would silently sign every token with a
+retired (or not-yet-active) key — code that compiles, still publishes a complete JWKS, and still
+passes a happy-path test, because every published key continues to verify. That is exactly the
+failure this project's design principles forbid treating as a documentation problem: an
+invariant a naive implementation can violate while compiling and passing a happy-path test is an
+open API-design problem, and the required fix is to reshape the extension point so the wrong
+thing cannot be expressed — not a runtime guard and not a conformance test. Making the active key
+a **distinct, mandatory constructor parameter** does exactly that: there is no ordering left to
+get wrong. `ActiveKey` is now backed by that parameter, not by `Keys[0]`. Two properties that
+were previously a runtime check or an unenforced convention become structural — there is always
+exactly one active key (the old "at least one key required" `ArgumentException` on an empty list
+is gone; emptiness is now unrepresentable), and which key is active is unambiguous.
+
+The second parameter is named **`additionalKeys`**, deliberately lifecycle-neutral. Per §3.5's
+publish-then-activate rule, at any instant the non-active bucket can hold both keys already
+published but not yet activated (future) *and* keys no longer signing but still inside their
+retirement window; the codebase already treats these two sub-cases identically as a single flat
+"included but not active" list (`SelectIncludedKeys` / `SelectIncludedVersions`). Naming the
+bucket `retired` (as the issue's own draft signature did) would mislabel the pre-published case.
+`verificationOnlyKeys` was considered and rejected as subtly wrong in the other direction — the
+active key's public half also verifies, and a not-yet-active key verifies nothing yet, so
+"verification-only" is neither a clean partition of function nor accurate for the future case.
+`additionalKeys` names the bucket purely by its relationship to the active key ("the active key,
+plus these additional trusted keys"), which is exactly the distinction the constructor draws.
+This is a **naming fix, not a new third bucket**: the model remains two buckets — active, and
+everything-else.
+
+**`Keys` ordering and JWKS output are unchanged.** The constructor still materialises `Keys` as a
+single active-first descriptor array (active key first, then `additionalKeys` in their supplied
+order), so `GetSigningKeysAsync` keeps returning the same pre-computed, allocation-free list on
+the hot path (§4.3) and the JWKS is byte-for-byte identical to before. Active-first ordering is
+retained purely as an implementation artifact — for zero-allocation reuse and stable output — but
+it is **no longer load-bearing**: `ActiveKey` derives from the named parameter, not from position.
+JWKS array order carries no protocol meaning anyway (RFC 7517 §5.1: a JWK Set is unordered by
+default; relying parties match by `kid`, §4.5), so no independent JWKS reordering is introduced.
+
+**Duplicate-`kid` validation stays at the load path, not the constructor.** The constructor does
+not reject a `kid` that appears in both `activeKey` and `additionalKeys`. Duplicate-`kid`
+rejection remains the base class's single load-time responsibility (§4.3 — reject a
+`SigningKeySet` carrying duplicate `kid`s with `ZeeKayDaConfigurationException`), alongside the
+key/algorithm-compatibility check (§1). Splitting that invariant into a second constructor-level
+check would fragment it across two sites and two exception types (`ArgumentException` vs
+`ZeeKayDaConfigurationException`) for no benefit; the base class load path is already the one
+chokepoint every provider's returned set flows through.
+
 #### 3.3 `RetirementWindow` is derived, not configurable
 
 > **Security sign-off point.** The derivation and its safety argument below are the specific
@@ -1172,6 +1227,7 @@ alternatives sections above.
 - **2026-07-12 — issue #347** — `AzureKeyVaultRemoteSigningJwtSigningService` now overrides `HasKeySetChangedAsync` with the same metadata-only, three-field `(Version, Enabled, IsActive)` comparison as the cached-signing provider (§3.5), via a shared `ComputeIncludedVersionsAsync` extraction used by both `LoadKeysAsync` and the new override. Straight port, no new design decisions: this provider's `LoadKeysAsync` has no active/non-active private-key branching to preserve, so the port is proportionately simpler than the template. #348 (Windows Certificate Store) and #349 (file-based PEM/PFX) remain open follow-ups.
 - **2026-07-13 — issue #348** — `WindowsCertificateStoreSigningJwtSigningService` overrides `HasKeySetChangedAsync` too, but — unlike both Key Vault providers above — with **no store access in the ask at all**: an X.509 thumbprint is content-addressed (a SHA-1 hash of the certificate's own DER encoding), so a fixed thumbprint's `NotBefore`/`NotAfter` cannot change without the thumbprint itself changing, and the configured thumbprint set is bound once from `IOptions<TOptions>` and fixed for the process lifetime (`AddWindowsCertificateStoreSigning` already documents that changing it requires a restart, i.e. a cold start, which never reaches this hook). The override therefore recomputes the rotation timeline purely from the `RotationKey` list cached at the last successful `LoadKeysAsync`, re-evaluated against the current time — cheaper than even the Key Vault providers' metadata-only network call. Comparison shape (whole included set, keyed by thumbprint and which entry is active, via the now-public `SigningKeyRotation.ToChangeDetectionSet`) and the write-only-on-load baseline discipline both carry over unchanged; there is no `Enabled` counterpart, since a certificate registration has none. Added a regression test proving the same "active identity must be part of the comparison" lesson as PR #350's finding, and confirmed by the same red/green process (temporarily dropping `IsActive` from the tuple, observing the test fail, then restoring it). #349 (file-based PEM/PFX) remains the last open follow-up.
 - **2026-07-13 — issue #348 follow-up review** — architect and security review of the `HasKeySetChangedAsync` override above both converged on the same finding: the 30-day active-certificate-expiry warning lived only in `LoadKeysAsync`, so an unchanged ask cycle that now skips `LoadKeysAsync` entirely also silently skipped re-firing that warning, contradicting the method's own documented "repeats for as long as the condition holds" cadence. Fixed by relocating the check into `HasKeySetChangedAsync` itself (no store access added — it only needs the cached active entry's `ExpiresAt`), firing on every ask cycle; `LoadKeysAsync` keeps one guarded call for the cold-start case only, so the warning neither goes missing in the steady state nor double-logs on a cycle where a reload also runs. §3.5 above updated with the fix and with an explicit "consequences" note accepting that out-of-band store deletion is not detected within a refresh interval (§"Consequences" / Negative-Trade-offs). The "only elapsed time can change" phrasing (§3.5 and the code's own XML remarks) corrected to scope explicitly to "a thumbprint that remains present and accessible in the store."
+- **2026-07-19 — issue #355** — `SigningKeySet` construction reshaped from a single positional `IReadOnlyList<SigningKeyPair>` (first entry = active by unenforced convention) to a named `SigningKeySet(SigningKeyPair activeKey, IEnumerable<SigningKeyPair>? additionalKeys = null)`, so the active signing key can no longer be selected by list order and an out-of-order custom provider can no longer silently sign with a retired/not-yet-active key (§3.2, structural tier-1 fix). `ActiveKey` now derives from the named parameter rather than `Keys[0]`; the empty-set `ArgumentException` disappears (emptiness is unrepresentable); `Keys`/JWKS ordering and the hot-path zero-alloc reuse are unchanged. Second bucket named `additionalKeys` — lifecycle-neutral (covers both pre-published/future and within-retirement-window keys), not `retired`; two buckets, no new third list. Duplicate-`kid` validation stays at the base-class load path (§4.3), not the constructor.
 
 ---
 
