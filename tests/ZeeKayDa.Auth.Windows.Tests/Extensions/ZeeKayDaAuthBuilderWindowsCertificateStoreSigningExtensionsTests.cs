@@ -27,7 +27,7 @@ public sealed class ZeeKayDaAuthBuilderWindowsCertificateStoreSigningExtensionsT
         var services = new ServiceCollection();
         var builder = new ZeeKayDaAuthBuilder(services);
 
-        var act = () => builder.AddWindowsCertificateStoreSigning(Thumbprint, StoreLocation.CurrentUser, StoreName.My);
+        var act = () => builder.AddWindowsCertificateStoreSigning(Thumbprint, SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My);
 
         act.Should().Throw<PlatformNotSupportedException>().WithMessage("*Windows*");
     }
@@ -41,7 +41,7 @@ public sealed class ZeeKayDaAuthBuilderWindowsCertificateStoreSigningExtensionsT
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), "the platform gate fires before argument validation off Windows");
 
-        var act = () => ((ZeeKayDaAuthBuilder)null!).AddWindowsCertificateStoreSigning(Thumbprint, StoreLocation.CurrentUser, StoreName.My);
+        var act = () => ((ZeeKayDaAuthBuilder)null!).AddWindowsCertificateStoreSigning(Thumbprint, SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My);
 
         act.Should().Throw<ArgumentNullException>().WithParameterName("builder");
     }
@@ -57,7 +57,7 @@ public sealed class ZeeKayDaAuthBuilderWindowsCertificateStoreSigningExtensionsT
         var services = new ServiceCollection();
         var builder = new ZeeKayDaAuthBuilder(services);
 
-        var act = () => builder.AddWindowsCertificateStoreSigning(thumbprint!, StoreLocation.CurrentUser, StoreName.My);
+        var act = () => builder.AddWindowsCertificateStoreSigning(thumbprint!, SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My);
 
         act.Should().Throw<ArgumentException>().WithParameterName("thumbprint");
     }
@@ -73,7 +73,7 @@ public sealed class ZeeKayDaAuthBuilderWindowsCertificateStoreSigningExtensionsT
         services.AddSingleton<IJwtSigningService>(NoOpJwtSigningService.Instance);
         var builder = new ZeeKayDaAuthBuilder(services);
 
-        var act = () => builder.AddWindowsCertificateStoreSigning(Thumbprint, StoreLocation.CurrentUser, StoreName.My);
+        var act = () => builder.AddWindowsCertificateStoreSigning(Thumbprint, SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My);
 
         act.Should().Throw<InvalidOperationException>().WithMessage("*IJwtSigningService*already registered*");
     }
@@ -92,7 +92,7 @@ public sealed class ZeeKayDaAuthBuilderWindowsCertificateStoreSigningExtensionsT
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         var builder = new ZeeKayDaAuthBuilder(services);
 
-        builder.AddWindowsCertificateStoreSigning(Thumbprint, StoreLocation.CurrentUser, StoreName.My);
+        builder.AddWindowsCertificateStoreSigning(Thumbprint, SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My);
 
         await using var provider = services.BuildServiceProvider();
         var service = provider.GetRequiredService<IJwtSigningService>();
@@ -108,7 +108,7 @@ public sealed class ZeeKayDaAuthBuilderWindowsCertificateStoreSigningExtensionsT
         services.AddSingleton<ICertificateStoreReader>(new FakeCertificateStoreReader());
         var builder = new ZeeKayDaAuthBuilder(services);
 
-        var returned = builder.AddWindowsCertificateStoreSigning(Thumbprint, StoreLocation.CurrentUser, StoreName.My);
+        var returned = builder.AddWindowsCertificateStoreSigning(Thumbprint, SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My);
 
         returned.Should().BeSameAs(builder);
     }

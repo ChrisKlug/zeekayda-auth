@@ -43,7 +43,7 @@ public sealed class AzureKeyVaultCachedSigningIntegrationTests
         services.AddSingleton<TimeProvider>(new FakeTimeProvider(t0));
 
         var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, new FakeTokenCredential());
+        builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
         await using var provider = services.BuildServiceProvider();
         var signingService = provider.GetRequiredService<IJwtSigningService>();
@@ -53,7 +53,7 @@ public sealed class AzureKeyVaultCachedSigningIntegrationTests
         keys.Should().ContainSingle();
         keys[0].Kid.Should().NotBeNullOrEmpty();
         keys[0].Kid.Should().NotContain("fake-vault", "kid must be the RFC 7638 thumbprint, never a Key Vault identifier (AC #3)");
-        keys[0].Algorithm.Should().Be(SigningAlgorithm.RS256, "the default AzureKeyVaultCachedSigningOptions.Algorithm is RS256");
+        keys[0].Algorithm.Should().Be(SigningAlgorithm.RS256, "the configured algorithm was RS256");
         keys[0].RsaPublicParameters.Should().NotBeNull("the JWKS entry must expose only the public key");
     }
 
@@ -75,7 +75,7 @@ public sealed class AzureKeyVaultCachedSigningIntegrationTests
         services.AddSingleton<TimeProvider>(timeProvider);
 
         var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, new FakeTokenCredential(),
+        builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential(),
             configure: options => options.KeySourceRefreshInterval = refreshInterval);
 
         await using var provider = services.BuildServiceProvider();
@@ -106,7 +106,7 @@ public sealed class AzureKeyVaultCachedSigningIntegrationTests
         services.AddSingleton<TimeProvider>(new FakeTimeProvider(t0));
 
         var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, new FakeTokenCredential());
+        builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
         await using var provider = services.BuildServiceProvider();
         var signingService = provider.GetRequiredService<IJwtSigningService>();
@@ -140,7 +140,7 @@ public sealed class AzureKeyVaultCachedSigningIntegrationTests
         services.AddSingleton<TimeProvider>(new FakeTimeProvider(t0));
 
         var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, new FakeTokenCredential());
+        builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
         await using var provider = services.BuildServiceProvider();
         var signingService = provider.GetRequiredService<IJwtSigningService>();
@@ -171,7 +171,7 @@ public sealed class AzureKeyVaultCachedSigningIntegrationTests
         services.AddSingleton<TimeProvider>(new FakeTimeProvider(t0));
 
         var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, new FakeTokenCredential());
+        builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
         await using var provider = services.BuildServiceProvider();
         var signingService = provider.GetRequiredService<IJwtSigningService>();
@@ -202,7 +202,7 @@ public sealed class AzureKeyVaultCachedSigningIntegrationTests
         services.AddSingleton<TimeProvider>(new FakeTimeProvider(t0));
 
         var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, new FakeTokenCredential());
+        builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
         await using var provider = services.BuildServiceProvider();
         var signingService = provider.GetRequiredService<IJwtSigningService>();
@@ -229,7 +229,7 @@ public sealed class AzureKeyVaultCachedSigningIntegrationTests
         services.AddSingleton<TimeProvider>(new FakeTimeProvider(t0));
 
         var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, new FakeTokenCredential());
+        builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
         await using var provider = services.BuildServiceProvider();
         var hostedServices = provider.GetServices<Microsoft.Extensions.Hosting.IHostedService>().ToList();
@@ -256,7 +256,7 @@ public sealed class AzureKeyVaultCachedSigningIntegrationTests
         services.AddSingleton<TimeProvider>(new FakeTimeProvider(t0));
 
         var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, new FakeTokenCredential());
+        builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
         await using var provider = services.BuildServiceProvider();
         var hostedServices = provider.GetServices<Microsoft.Extensions.Hosting.IHostedService>().ToList();

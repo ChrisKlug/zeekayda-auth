@@ -54,11 +54,11 @@ public static class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensions
     /// </remarks>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
     /// <param name="keyIdentifier">The Key Vault (or Managed HSM) key to sign with.</param>
+    /// <param name="algorithm">The JWS algorithm to sign with.</param>
     /// <param name="credential">The credential used to authenticate to Key Vault.</param>
     /// <param name="configure">
     /// An optional callback to further configure <see cref="AzureKeyVaultRemoteSigningOptions"/>
-    /// (for example, <see cref="JwtSigningServiceOptions.KeySourceRefreshInterval"/> or
-    /// <see cref="AzureKeyVaultRemoteSigningOptions.Algorithm"/>).
+    /// (for example, <see cref="JwtSigningServiceOptions.KeySourceRefreshInterval"/>).
     /// </param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
     /// <exception cref="ArgumentNullException">
@@ -72,6 +72,7 @@ public static class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensions
     public static ZeeKayDaAuthBuilder AddAzureKeyVaultRemoteSigning(
         this ZeeKayDaAuthBuilder builder,
         KeyVaultKeyIdentifier keyIdentifier,
+        SigningAlgorithm algorithm,
         TokenCredential credential,
         Action<AzureKeyVaultRemoteSigningOptions>? configure = null)
     {
@@ -89,6 +90,7 @@ public static class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensions
             .Configure(options =>
             {
                 options.KeyIdentifier = keyIdentifier;
+                options.Algorithm = algorithm;
                 options.Credential = credential;
             })
             .Configure(configure ?? (_ => { }))
@@ -149,11 +151,11 @@ public static class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensions
     /// The Key Vault certificate to sign with. Must have been created with an exportable key
     /// policy.
     /// </param>
+    /// <param name="algorithm">The JWS algorithm to sign with.</param>
     /// <param name="credential">The credential used to authenticate to Key Vault.</param>
     /// <param name="configure">
     /// An optional callback to further configure <see cref="AzureKeyVaultCachedSigningOptions"/>
-    /// (for example, <see cref="JwtSigningServiceOptions.KeySourceRefreshInterval"/> or
-    /// <see cref="AzureKeyVaultCachedSigningOptions.Algorithm"/>).
+    /// (for example, <see cref="JwtSigningServiceOptions.KeySourceRefreshInterval"/>).
     /// </param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
     /// <exception cref="ArgumentNullException">
@@ -167,6 +169,7 @@ public static class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensions
     public static ZeeKayDaAuthBuilder AddAzureKeyVaultCachedSigning(
         this ZeeKayDaAuthBuilder builder,
         KeyVaultCertificateIdentifier certificateIdentifier,
+        SigningAlgorithm algorithm,
         TokenCredential credential,
         Action<AzureKeyVaultCachedSigningOptions>? configure = null)
     {
@@ -184,6 +187,7 @@ public static class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensions
             .Configure(options =>
             {
                 options.CertificateIdentifier = certificateIdentifier;
+                options.Algorithm = algorithm;
                 options.Credential = credential;
             })
             .Configure(configure ?? (_ => { }))

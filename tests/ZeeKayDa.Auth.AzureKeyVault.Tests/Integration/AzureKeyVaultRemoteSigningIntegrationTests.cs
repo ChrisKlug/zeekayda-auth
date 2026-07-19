@@ -43,7 +43,7 @@ public sealed class AzureKeyVaultRemoteSigningIntegrationTests
         services.AddSingleton<TimeProvider>(new FakeTimeProvider(t0));
 
         var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, new FakeTokenCredential());
+        builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
         await using var provider = services.BuildServiceProvider();
         var signingService = provider.GetRequiredService<IJwtSigningService>();
@@ -52,7 +52,7 @@ public sealed class AzureKeyVaultRemoteSigningIntegrationTests
 
         keys.Should().ContainSingle();
         keys[0].Kid.Should().NotBeNullOrEmpty();
-        keys[0].Algorithm.Should().Be(SigningAlgorithm.RS256, "the default AzureKeyVaultRemoteSigningOptions.Algorithm is RS256");
+        keys[0].Algorithm.Should().Be(SigningAlgorithm.RS256, "the configured algorithm was RS256");
         keys[0].RsaPublicParameters.Should().NotBeNull("no private key material should be reachable anywhere from the descriptor");
     }
 
@@ -72,7 +72,7 @@ public sealed class AzureKeyVaultRemoteSigningIntegrationTests
         services.AddSingleton<TimeProvider>(new FakeTimeProvider(t0));
 
         var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, new FakeTokenCredential());
+        builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
         await using var provider = services.BuildServiceProvider();
         var signingService = provider.GetRequiredService<IJwtSigningService>();
@@ -110,7 +110,7 @@ public sealed class AzureKeyVaultRemoteSigningIntegrationTests
         services.AddSingleton<TimeProvider>(new FakeTimeProvider(t0));
 
         var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, new FakeTokenCredential());
+        builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
         await using var provider = services.BuildServiceProvider();
         var signingService = provider.GetRequiredService<IJwtSigningService>();
@@ -147,7 +147,7 @@ public sealed class AzureKeyVaultRemoteSigningIntegrationTests
         services.AddSingleton<TimeProvider>(new FakeTimeProvider(t0));
 
         var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, new FakeTokenCredential());
+        builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
         await using var provider = services.BuildServiceProvider();
         var signingService = provider.GetRequiredService<IJwtSigningService>();

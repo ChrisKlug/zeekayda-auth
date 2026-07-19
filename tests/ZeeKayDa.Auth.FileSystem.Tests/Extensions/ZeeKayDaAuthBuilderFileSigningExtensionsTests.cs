@@ -33,7 +33,7 @@ public sealed class ZeeKayDaAuthBuilderFileSigningExtensionsTests
     [Fact]
     public void AddPemFileSigning_throws_ArgumentNullException_when_builder_is_null()
     {
-        var act = () => ((ZeeKayDaAuthBuilder)null!).AddPemFileSigning(PemPath);
+        var act = () => ((ZeeKayDaAuthBuilder)null!).AddPemFileSigning(PemPath, SigningAlgorithm.RS256);
 
         act.Should().Throw<ArgumentNullException>().WithParameterName("builder");
     }
@@ -46,7 +46,7 @@ public sealed class ZeeKayDaAuthBuilderFileSigningExtensionsTests
     {
         var builder = NewBuilder();
 
-        var act = () => builder.AddPemFileSigning(path!);
+        var act = () => builder.AddPemFileSigning(path!, SigningAlgorithm.RS256);
 
         act.Should().Throw<ArgumentException>().WithParameterName("path");
     }
@@ -56,7 +56,7 @@ public sealed class ZeeKayDaAuthBuilderFileSigningExtensionsTests
     [Fact]
     public void AddPfxFileSigning_throws_ArgumentNullException_when_builder_is_null()
     {
-        var act = () => ((ZeeKayDaAuthBuilder)null!).AddPfxFileSigning(PfxPath, AnyPassword());
+        var act = () => ((ZeeKayDaAuthBuilder)null!).AddPfxFileSigning(PfxPath, SigningAlgorithm.RS256, AnyPassword());
 
         act.Should().Throw<ArgumentNullException>().WithParameterName("builder");
     }
@@ -69,7 +69,7 @@ public sealed class ZeeKayDaAuthBuilderFileSigningExtensionsTests
     {
         var builder = NewBuilder();
 
-        var act = () => builder.AddPfxFileSigning(path!, AnyPassword());
+        var act = () => builder.AddPfxFileSigning(path!, SigningAlgorithm.RS256, AnyPassword());
 
         act.Should().Throw<ArgumentException>().WithParameterName("path");
     }
@@ -79,7 +79,7 @@ public sealed class ZeeKayDaAuthBuilderFileSigningExtensionsTests
     {
         var builder = NewBuilder();
 
-        var act = () => builder.AddPfxFileSigning(PfxPath, passwordSource: null!);
+        var act = () => builder.AddPfxFileSigning(PfxPath, SigningAlgorithm.RS256, passwordSource: null!);
 
         act.Should().Throw<ArgumentNullException>().WithParameterName("passwordSource");
     }
@@ -92,7 +92,7 @@ public sealed class ZeeKayDaAuthBuilderFileSigningExtensionsTests
         var builder = NewBuilder();
         builder.Services.AddSingleton<IJwtSigningService>(NoOpJwtSigningService.Instance);
 
-        var act = () => builder.AddPemFileSigning(PemPath);
+        var act = () => builder.AddPemFileSigning(PemPath, SigningAlgorithm.RS256);
 
         act.Should().Throw<InvalidOperationException>().WithMessage("*IJwtSigningService*already registered*");
     }
@@ -103,7 +103,7 @@ public sealed class ZeeKayDaAuthBuilderFileSigningExtensionsTests
         var builder = NewBuilder();
         builder.Services.AddSingleton<IJwtSigningService>(NoOpJwtSigningService.Instance);
 
-        var act = () => builder.AddPfxFileSigning(PfxPath, AnyPassword());
+        var act = () => builder.AddPfxFileSigning(PfxPath, SigningAlgorithm.RS256, AnyPassword());
 
         act.Should().Throw<InvalidOperationException>().WithMessage("*IJwtSigningService*already registered*");
     }
@@ -112,9 +112,9 @@ public sealed class ZeeKayDaAuthBuilderFileSigningExtensionsTests
     public void AddPfxFileSigning_after_AddPemFileSigning_on_the_same_builder_throws()
     {
         var builder = NewBuilder();
-        builder.AddPemFileSigning(PemPath);
+        builder.AddPemFileSigning(PemPath, SigningAlgorithm.RS256);
 
-        var act = () => builder.AddPfxFileSigning(PfxPath, AnyPassword());
+        var act = () => builder.AddPfxFileSigning(PfxPath, SigningAlgorithm.RS256, AnyPassword());
 
         act.Should().Throw<InvalidOperationException>("AC #13: only one signing provider, of any kind, may be registered");
     }
@@ -123,9 +123,9 @@ public sealed class ZeeKayDaAuthBuilderFileSigningExtensionsTests
     public void AddPemFileSigning_after_AddPfxFileSigning_on_the_same_builder_throws()
     {
         var builder = NewBuilder();
-        builder.AddPfxFileSigning(PfxPath, AnyPassword());
+        builder.AddPfxFileSigning(PfxPath, SigningAlgorithm.RS256, AnyPassword());
 
-        var act = () => builder.AddPemFileSigning(PemPath);
+        var act = () => builder.AddPemFileSigning(PemPath, SigningAlgorithm.RS256);
 
         act.Should().Throw<InvalidOperationException>("AC #13: only one signing provider, of any kind, may be registered");
     }
@@ -134,9 +134,9 @@ public sealed class ZeeKayDaAuthBuilderFileSigningExtensionsTests
     public void AddPemFileSigning_after_AddPemFileSigning_on_the_same_builder_throws()
     {
         var builder = NewBuilder();
-        builder.AddPemFileSigning(PemPath);
+        builder.AddPemFileSigning(PemPath, SigningAlgorithm.RS256);
 
-        var act = () => builder.AddPemFileSigning(PemPath);
+        var act = () => builder.AddPemFileSigning(PemPath, SigningAlgorithm.RS256);
 
         act.Should().Throw<InvalidOperationException>();
     }
@@ -148,7 +148,7 @@ public sealed class ZeeKayDaAuthBuilderFileSigningExtensionsTests
     {
         var builder = NewBuilder();
 
-        builder.AddPemFileSigning(PemPath);
+        builder.AddPemFileSigning(PemPath, SigningAlgorithm.RS256);
 
         await using var provider = builder.Services.BuildServiceProvider();
         var service = provider.GetRequiredService<IJwtSigningService>();
@@ -160,7 +160,7 @@ public sealed class ZeeKayDaAuthBuilderFileSigningExtensionsTests
     {
         var builder = NewBuilder();
 
-        builder.AddPfxFileSigning(PfxPath, AnyPassword());
+        builder.AddPfxFileSigning(PfxPath, SigningAlgorithm.RS256, AnyPassword());
 
         await using var provider = builder.Services.BuildServiceProvider();
         var service = provider.GetRequiredService<IJwtSigningService>();
@@ -172,7 +172,7 @@ public sealed class ZeeKayDaAuthBuilderFileSigningExtensionsTests
     {
         var builder = NewBuilder();
 
-        builder.AddPemFileSigning(PemPath);
+        builder.AddPemFileSigning(PemPath, SigningAlgorithm.RS256);
 
         await using var provider = builder.Services.BuildServiceProvider();
         provider.GetServices<IHostedService>().OfType<FileSigningStartupService>().Should().ContainSingle();
@@ -183,7 +183,7 @@ public sealed class ZeeKayDaAuthBuilderFileSigningExtensionsTests
     {
         var builder = NewBuilder();
 
-        builder.AddPfxFileSigning(PfxPath, AnyPassword());
+        builder.AddPfxFileSigning(PfxPath, SigningAlgorithm.RS256, AnyPassword());
 
         await using var provider = builder.Services.BuildServiceProvider();
         provider.GetServices<IHostedService>().OfType<FileSigningStartupService>().Should().ContainSingle();
@@ -194,7 +194,7 @@ public sealed class ZeeKayDaAuthBuilderFileSigningExtensionsTests
     {
         var builder = NewBuilder();
 
-        var returned = builder.AddPemFileSigning(PemPath);
+        var returned = builder.AddPemFileSigning(PemPath, SigningAlgorithm.RS256);
 
         returned.Should().BeSameAs(builder);
     }
@@ -204,7 +204,7 @@ public sealed class ZeeKayDaAuthBuilderFileSigningExtensionsTests
     {
         var builder = NewBuilder();
 
-        var returned = builder.AddPfxFileSigning(PfxPath, AnyPassword());
+        var returned = builder.AddPfxFileSigning(PfxPath, SigningAlgorithm.RS256, AnyPassword());
 
         returned.Should().BeSameAs(builder);
     }
@@ -214,7 +214,7 @@ public sealed class ZeeKayDaAuthBuilderFileSigningExtensionsTests
     {
         var builder = NewBuilder();
 
-        builder.AddPemFileSigning(PemPath, configure: options =>
+        builder.AddPemFileSigning(PemPath, SigningAlgorithm.RS256, configure: options =>
         {
             options.Algorithm = SigningAlgorithm.ES256;
             options.AddFile("/etc/zeekayda/rotated-in.pem");

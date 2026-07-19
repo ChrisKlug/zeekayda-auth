@@ -45,11 +45,11 @@ public static class ZeeKayDaAuthBuilderFileSigningExtensions
     /// </remarks>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
     /// <param name="path">The path to the required/primary combined cert+key PEM file.</param>
+    /// <param name="algorithm">The JWS algorithm to sign with.</param>
     /// <param name="configure">
     /// An optional callback to further configure <see cref="PemFileSigningOptions"/> (for example,
-    /// <see cref="JwtSigningServiceOptions.KeySourceRefreshInterval"/>,
-    /// <see cref="PemFileSigningOptions.Algorithm"/>, or additional files for rotation via
-    /// <see cref="PemFileSigningOptions.AddFile"/>).
+    /// <see cref="JwtSigningServiceOptions.KeySourceRefreshInterval"/> or additional files for
+    /// rotation via <see cref="PemFileSigningOptions.AddFile"/>).
     /// </param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
     /// <exception cref="ArgumentNullException">
@@ -65,6 +65,7 @@ public static class ZeeKayDaAuthBuilderFileSigningExtensions
     public static ZeeKayDaAuthBuilder AddPemFileSigning(
         this ZeeKayDaAuthBuilder builder,
         string path,
+        SigningAlgorithm algorithm,
         Action<PemFileSigningOptions>? configure = null)
     {
         ArgumentNullException.ThrowIfNull(builder);
@@ -77,7 +78,11 @@ public static class ZeeKayDaAuthBuilderFileSigningExtensions
         builder.ThrowIfAlreadyRegistered(typeof(IJwtSigningService));
 
         builder.Services.AddOptions<PemFileSigningOptions>()
-            .Configure(options => options.Path = path)
+            .Configure(options =>
+            {
+                options.Path = path;
+                options.Algorithm = algorithm;
+            })
             .Configure(configure ?? (_ => { }))
             .ValidateOnStart();
 
@@ -110,12 +115,12 @@ public static class ZeeKayDaAuthBuilderFileSigningExtensions
     /// </remarks>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
     /// <param name="path">The path to the required/primary PFX/PKCS#12 file.</param>
+    /// <param name="algorithm">The JWS algorithm to sign with.</param>
     /// <param name="passwordSource">The delegate that supplies <paramref name="path"/>'s password.</param>
     /// <param name="configure">
     /// An optional callback to further configure <see cref="PfxFileSigningOptions"/> (for example,
-    /// <see cref="JwtSigningServiceOptions.KeySourceRefreshInterval"/>,
-    /// <see cref="PfxFileSigningOptions.Algorithm"/>, or additional files for rotation via
-    /// <see cref="PfxFileSigningOptions.AddFile"/>).
+    /// <see cref="JwtSigningServiceOptions.KeySourceRefreshInterval"/> or additional files for
+    /// rotation via <see cref="PfxFileSigningOptions.AddFile"/>).
     /// </param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
     /// <exception cref="ArgumentNullException">
@@ -132,6 +137,7 @@ public static class ZeeKayDaAuthBuilderFileSigningExtensions
     public static ZeeKayDaAuthBuilder AddPfxFileSigning(
         this ZeeKayDaAuthBuilder builder,
         string path,
+        SigningAlgorithm algorithm,
         Func<CancellationToken, ValueTask<string>> passwordSource,
         Action<PfxFileSigningOptions>? configure = null)
     {
@@ -147,6 +153,7 @@ public static class ZeeKayDaAuthBuilderFileSigningExtensions
             .Configure(options =>
             {
                 options.Path = path;
+                options.Algorithm = algorithm;
                 options.PasswordSource = passwordSource;
             })
             .Configure(configure ?? (_ => { }))
