@@ -185,6 +185,35 @@ public static class SigningKeyRotation
         return soonestPending is { } pending && pending.ActivatesAt - now < refreshInterval;
     }
 
+    /// <summary>
+    /// Projects an included key list into a set suitable for change comparison in a provider's
+    /// <c>HasKeySetChangedAsync</c> override. Includes an <c>IsActive</c> bit — keyed by position,
+    /// since <see cref="SelectIncludedKeys"/> always places the active key at index 0 — alongside
+    /// each key's identifier.
+    /// </summary>
+    /// <remarks>
+    /// <paramref name="included"/> is the <see cref="RotationEntry"/> list produced directly by
+    /// <see cref="SelectIncludedKeys"/>, evaluated before any <see cref="SigningKeySet"/> is
+    /// constructed from it. This method's <c>i == 0</c> positional derivation of <c>IsActive</c>
+    /// is therefore coupled to <see cref="SelectIncludedKeys"/>'s own active-first guarantee, not
+    /// to <see cref="SigningKeySet"/>'s internal storage order — issue #355's reshaping of
+    /// <see cref="SigningKeySet"/>'s constructor (naming the active key explicitly rather than by
+    /// position) does not touch this method or its correctness.
+    /// </remarks>
+    /// <remarks>
+    /// Comparing only key identifiers (without <c>IsActive</c>) misses the moment a rotation
+    /// actually completes: a normal two-key rotation can cross a poll boundary where the included
+    /// identifier set does not change but which entry is active does (the predecessor retires,
+    /// the successor activates, and both remain included throughout the predecessor's retirement
+    /// window) — comparing membership alone would silently skip the reload that promotes the new
+    /// active key. <c>ZeeKayDa.Auth.AzureKeyVault</c>'s <c>KeyVaultSigningKeyRotation.ToChangeDetectionSet</c>
+    /// is the equivalent Key Vault-anchored derivation, with the same rationale in fuller detail
+    /// (that package additionally tracks an <c>Enabled</c> flag, which has no equivalent here) —
+    /// the core lesson applies here unchanged. See ADR 0011 §3.5.
+    /// </remarks>
+    public static HashSet<(string Id, bool IsActive)> ToChangeDetectionSet(IEnumerable<RotationEntry> included) =>
+        included.Select((entry, i) => (entry.Key.Id, IsActive: i == 0)).ToHashSet();
+
     // Named generically ("At", not "Now") because this same ExpiresAt check is evaluated at two
     // different kinds of point in time: the current wall-clock time (from SelectActiveKey, to pick
     // today's active signer) and each candidate's own ActivatesAt (from BuildActivationTimeline, to

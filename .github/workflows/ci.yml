@@ -197,7 +197,8 @@ jobs:
   log-hygiene-script-tests:
     name: Log Hygiene Script Tests
     runs-on: ubuntu-latest
-    permissions: {}
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout

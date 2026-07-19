@@ -41,6 +41,14 @@
   <ItemGroup>
     <!-- xUnit v3 -->
     <PackageVersion Include="xunit.v3" Version="3.2.2" />
+    <!-- Attributes-only package (no test-runner OutputType=Exe requirement) for the non-test
+         ZeeKayDa.Auth.TestKit library, which ships [Fact]-annotated base classes for consumers
+         to derive from rather than being itself an executable test project. -->
+    <PackageVersion Include="xunit.v3.extensibility.core" Version="3.2.2" />
+    <!-- Free (Apache-2.0), Assert-only package — used instead of FluentAssertions in the public
+         ZeeKayDa.Auth.TestKit package so third-party consumers are never forced into
+         FluentAssertions 8.x's commercial license just to run the conformance kit. -->
+    <PackageVersion Include="xunit.v3.assert" Version="3.2.2" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.6.0" />
     <PackageVersion Include="coverlet.collector" Version="10.0.1" />

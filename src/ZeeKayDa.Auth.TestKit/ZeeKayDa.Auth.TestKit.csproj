@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <PackageId>ZeeKayDa.Auth.TestKit</PackageId>
+    <Description>Conformance test kit for ZeeKayDa.Auth extension points: ready-to-derive xUnit base classes that let a third-party backing-store author prove their implementation against the framework's invariants, without needing internal access to ZeeKayDa.Auth itself.</Description>
+    <!-- CS1591 (missing XML doc) is suppressed for [Fact]/[Theory] test methods only: per this
+         repo's test-standards convention, a test method's readable-English-sentence name IS its
+         documentation; the abstract/virtual members a consumer actually overrides keep full XML
+         docs. -->
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3.extensibility.core" />
+    <PackageReference Include="xunit.v3.assert" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../ZeeKayDa.Auth/ZeeKayDa.Auth.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../ZeeKayDa.Auth.Analyzers/ZeeKayDa.Auth.Analyzers.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+</Project>

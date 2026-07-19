@@ -503,4 +503,244 @@ public sealed class AzureKeyVaultRemoteSigningJwtSigningServiceTests
         result.Kid.Should().Be(keys[0].Kid);
         result.Algorithm.Should().Be(keys[0].Algorithm);
     }
+
+    // ── HasKeySetChangedAsync: metadata-only change detection (ADR 0011 §3.5) ───────────────────────
+
+    [Fact]
+    public async Task GetSigningKeysAsync_skips_key_material_download_when_versions_are_unchanged_between_polls()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
+        var reader = new FakeKeyVaultKeyReader();
+        reader.AddRsaVersion("v1", createdOn: t0);
+        var timeProvider = new FakeTimeProvider(t0);
+
+        await using var sut = BuildService(reader, timeProvider, refreshInterval: DefaultRefreshInterval);
+        await sut.GetSigningKeysAsync(ct); // Bootstrap load.
+        reader.KeyMaterialCalls.Clear();
+
+        timeProvider.SetUtcNow(t0 + DefaultRefreshInterval); // Cache expires -> triggers the "ask" step.
+        var keys = await sut.GetSigningKeysAsync(ct);
+
+        keys.Should().HaveCount(1);
+        reader.KeyMaterialCalls.Should().BeEmpty(
+            "no version changed since the last load, so HasKeySetChangedAsync must report no change and LoadKeysAsync must not run");
+    }
+
+    [Fact]
+    public async Task SignAsync_still_succeeds_after_an_unchanged_poll_skips_the_reload()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
+        var reader = new FakeKeyVaultKeyReader();
+        reader.AddRsaVersion("v1", createdOn: t0);
+        var timeProvider = new FakeTimeProvider(t0);
+
+        await using var sut = BuildService(reader, timeProvider, refreshInterval: DefaultRefreshInterval);
+        await sut.GetSigningKeysAsync(ct); // Bootstrap load.
+
+        timeProvider.SetUtcNow(t0 + DefaultRefreshInterval); // Unchanged poll -> ask reports "no change".
+        var payload = "payload"u8.ToArray();
+
+        var act = async () => await sut.SignAsync(payload, ct);
+
+        await act.Should().NotThrowAsync(
+            "the cached SigningKeySet must remain usable (not disposed) when the ask reports no change");
+    }
+
+    [Fact]
+    public async Task HasKeySetChangedAsync_triggers_rebuild_when_a_new_key_version_appears()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
+        var reader = new FakeKeyVaultKeyReader();
+        reader.AddRsaVersion("v1", createdOn: t0);
+        var timeProvider = new FakeTimeProvider(t0);
+
+        await using var sut = BuildService(reader, timeProvider, refreshInterval: DefaultRefreshInterval);
+        await sut.GetSigningKeysAsync(ct); // Bootstrap load.
+        reader.KeyMaterialCalls.Clear();
+
+        reader.AddRsaVersion("v2", createdOn: t0 + DefaultRefreshInterval);
+        timeProvider.SetUtcNow(t0 + DefaultRefreshInterval);
+        var keys = await sut.GetSigningKeysAsync(ct);
+
+        keys.Should().HaveCount(2, "v2 must be published as soon as it appears, per publish-then-activate");
+        reader.KeyMaterialCalls.Should().NotBeEmpty(
+            "a new key version appearing must trigger a real reload, downloading key material again");
+    }
+
+    [Fact]
+    public async Task HasKeySetChangedAsync_triggers_rebuild_when_a_non_active_versions_enabled_flag_flips()
+    {
+        // ADR 0011 Amendment 2's revocation case: disabling a version that is not the active
+        // signer must still be reported as a change, even though the active version's identifier
+        // is unchanged.
+        var ct = TestContext.Current.CancellationToken;
+        var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
+        var t1 = t0 + TimeSpan.FromDays(1);
+        var retirementWindow = TimeSpan.FromHours(2);
+        var reader = new FakeKeyVaultKeyReader();
+        reader.AddRsaVersion("v1", createdOn: t0);
+        var timeProvider = new FakeTimeProvider(t0);
+
+        await using var sut = BuildService(
+            reader, timeProvider, refreshInterval: DefaultRefreshInterval, retirementWindow: retirementWindow);
+        await sut.GetSigningKeysAsync(ct); // Bootstrap: v1 active.
+
+        reader.AddRsaVersion("v2", createdOn: t1);
+        timeProvider.SetUtcNow(t1 + DefaultRefreshInterval); // v2 activates; v1 retires but stays in-window.
+        await sut.GetSigningKeysAsync(ct); // v1 + v2 both included.
+        reader.KeyMaterialCalls.Clear();
+
+        // Disable v1 (the non-active, retired-but-in-window version). Only a small amount of time
+        // passes (well inside the 2-hour retirement window if v1 were still enabled) so the change
+        // is attributable solely to the Enabled flag flip, not to elapsed time.
+        reader.SetEnabled("v1", enabled: false);
+        timeProvider.SetUtcNow(t1 + DefaultRefreshInterval + DefaultRefreshInterval);
+        var keys = await sut.GetSigningKeysAsync(ct);
+
+        keys.Should().ContainSingle(
+            "v1's disabled flag must exclude it immediately, even though the active version (v2) is unchanged");
+        reader.KeyMaterialCalls.Should().NotBeEmpty(
+            "a non-active version's Enabled flag flipping must still trigger a rebuild");
+    }
+
+    [Fact]
+    public async Task HasKeySetChangedAsync_triggers_rebuild_when_elapsed_time_alone_moves_a_version_out_of_its_retirement_window()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
+        var t1 = t0 + TimeSpan.FromDays(1);
+        var retirementWindow = TimeSpan.FromHours(1);
+        var reader = new FakeKeyVaultKeyReader();
+        reader.AddRsaVersion("v1", createdOn: t0);
+        var timeProvider = new FakeTimeProvider(t0);
+
+        await using var sut = BuildService(
+            reader, timeProvider, refreshInterval: DefaultRefreshInterval, retirementWindow: retirementWindow);
+        await sut.GetSigningKeysAsync(ct); // Bootstrap: v1 active.
+
+        reader.AddRsaVersion("v2", createdOn: t1);
+        timeProvider.SetUtcNow(t1 + DefaultRefreshInterval); // v2 activates; v1 retired but still in-window.
+        await sut.GetSigningKeysAsync(ct); // v1 + v2 both included.
+        reader.KeyMaterialCalls.Clear();
+
+        // No Key Vault-side change at all — just elapsed time pushing v1 past its retirement window.
+        timeProvider.SetUtcNow(t1 + DefaultRefreshInterval + retirementWindow + TimeSpan.FromMinutes(1));
+        var keys = await sut.GetSigningKeysAsync(ct);
+
+        keys.Should().ContainSingle("v1's retirement window has now fully elapsed");
+        reader.KeyMaterialCalls.Should().NotBeEmpty(
+            "a version leaving its retirement window purely from elapsed time must still trigger a rebuild, " +
+            "even with no Key Vault-side change");
+    }
+
+    [Fact]
+    public async Task HasKeySetChangedAsync_triggers_rebuild_when_the_active_version_changes_with_membership_unchanged()
+    {
+        // Regression test for the same class of bug already found and fixed for the sibling
+        // cached-signing provider: ToVersionSet must compare IsActive, not just version identifier
+        // and Enabled state. KeySourceRefreshInterval is both the poll cadence and the
+        // publish-then-activate lead time, so a normal rotation spans two polls. At poll N, v2 is
+        // published but not yet active — the included set becomes {v1 active, v2 not-active}, a
+        // membership change from the single-version bootstrap state, so this poll is correctly
+        // reported as a change regardless of the fix (see
+        // GetSigningKeysAsync_rotated_in_version_is_published_but_not_yet_active). The poll under
+        // test here is the *next* one (N+1): no Key Vault-side change at all happens between the two
+        // polls — same two versions, same Enabled states — but v2 has now crossed into its
+        // activation window and becomes the active signer while v1 (still within its retirement
+        // window) remains included. Comparing only version identifier and Enabled state would see
+        // {v1, v2} on both polls and report "no change," silently skipping the reload and leaving the
+        // service signing with v1 past its intended rotation point.
+        var ct = TestContext.Current.CancellationToken;
+        var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
+        var t1 = t0 + TimeSpan.FromDays(1);
+        var reader = new FakeKeyVaultKeyReader();
+        reader.AddRsaVersion("v1", createdOn: t0);
+        var timeProvider = new FakeTimeProvider(t0);
+        var signer = new FakeKeyVaultSigner();
+
+        await using var sut = BuildService(
+            reader, timeProvider, refreshInterval: DefaultRefreshInterval, retirementWindow: DefaultRetirementWindow,
+            signer: signer);
+        await sut.GetSigningKeysAsync(ct); // Bootstrap: v1 active.
+
+        var v2 = reader.AddRsaVersion("v2", createdOn: t1);
+        timeProvider.SetUtcNow(t1); // Poll N: v2 published but not yet active (membership change).
+        await sut.GetSigningKeysAsync(ct); // v1 active + v2 not-active; both now recorded as "previously included".
+        reader.KeyMaterialCalls.Clear();
+
+        // Poll N+1: one KeySourceRefreshInterval later, with no Key Vault-side change whatsoever —
+        // v2 now activates and v1 (still within its retirement window) stays included. Same version
+        // identifiers, same Enabled states as poll N; only which entry is active differs.
+        timeProvider.SetUtcNow(t1 + DefaultRefreshInterval);
+        var keys = await sut.GetSigningKeysAsync(ct);
+
+        keys.Should().HaveCount(2, "v1 is still within its retirement window and v2 is now active");
+        keys[0].Kid.Should().Be(JwkThumbprint.Compute(reader.GetRsaMaterial("v2")),
+            "the handoff must actually happen: v2 must become the active (index 0) signing key at this poll");
+        reader.KeyMaterialCalls.Should().NotBeEmpty(
+            "the active-slot handoff alone must be enough to trigger a real reload, even with membership and " +
+            "Enabled states unchanged since the previous poll");
+
+        // Prove the reload is not merely cosmetic: the service must actually sign with v2 going
+        // forward, dispatching to the Key Vault signer with v2's own versioned key URI and kid.
+        await sut.SignAsync("payload"u8.ToArray(), ct);
+
+        signer.Calls.Should().ContainSingle();
+        signer.Calls[0].KeyVersionUri.Should().Be(v2.Id, "signing after the handoff must target v2's Key Vault key version, not v1's");
+        signer.Calls[0].Kid.Should().Be(JwkThumbprint.Compute(reader.GetRsaMaterial("v2")),
+            "signing after the handoff must use v2's kid");
+    }
+
+    [Fact]
+    public async Task HasKeySetChangedAsync_only_enumerates_key_versions_and_never_downloads_key_material_when_reporting_no_change()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
+        var reader = new FakeKeyVaultKeyReader();
+        reader.AddRsaVersion("v1", createdOn: t0);
+        var timeProvider = new FakeTimeProvider(t0);
+
+        await using var sut = BuildService(reader, timeProvider, refreshInterval: DefaultRefreshInterval);
+        await sut.GetSigningKeysAsync(ct); // Bootstrap load.
+        var enumerationCallsAfterBootstrap = reader.GetKeyVersionsCallCount;
+        reader.KeyMaterialCalls.Clear();
+
+        timeProvider.SetUtcNow(t0 + DefaultRefreshInterval); // Unchanged poll.
+        await sut.GetSigningKeysAsync(ct);
+
+        reader.GetKeyVersionsCallCount.Should().Be(enumerationCallsAfterBootstrap + 1,
+            "the ask step must enumerate key versions exactly once per cycle");
+        reader.KeyMaterialCalls.Should().BeEmpty("the ask's metadata-only check must never download key material");
+    }
+
+    [Fact]
+    public async Task HasKeySetChangedAsync_only_enumerates_key_versions_before_a_real_reload_downloads_key_material()
+    {
+        // Proves the "ask" itself is metadata-only even on a cycle that ends up rebuilding: the
+        // ask's own enumeration call never touches key material — only the subsequent, separate
+        // LoadKeysAsync reload (which shares the same ComputeIncludedVersionsAsync helper and so
+        // enumerates a second time) ever calls GetKeyMaterialAsync.
+        var ct = TestContext.Current.CancellationToken;
+        var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
+        var reader = new FakeKeyVaultKeyReader();
+        reader.AddRsaVersion("v1", createdOn: t0);
+        var timeProvider = new FakeTimeProvider(t0);
+
+        await using var sut = BuildService(reader, timeProvider, refreshInterval: DefaultRefreshInterval);
+        await sut.GetSigningKeysAsync(ct); // Bootstrap load.
+        var enumerationCallsAfterBootstrap = reader.GetKeyVersionsCallCount;
+        reader.KeyMaterialCalls.Clear();
+
+        reader.AddRsaVersion("v2", createdOn: t0 + DefaultRefreshInterval); // A genuine change.
+        timeProvider.SetUtcNow(t0 + DefaultRefreshInterval);
+        await sut.GetSigningKeysAsync(ct);
+
+        reader.GetKeyVersionsCallCount.Should().Be(enumerationCallsAfterBootstrap + 2,
+            "one enumeration for the ask (HasKeySetChangedAsync) and a second, separate one for the real reload " +
+            "(LoadKeysAsync) that the \"true\" answer then triggers");
+        reader.KeyMaterialCalls.Should().NotBeEmpty("the real reload — not the ask — is what downloads key material");
+    }
 }

@@ -136,12 +136,13 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
         }
         else
         {
-            foreach (var grantType in options.GrantTypesSupported)
+            var invalidGrantTypes = options.GrantTypesSupported.Where(grantType => !Enum.IsDefined(grantType));
+
+            foreach (var grantType in invalidGrantTypes)
             {
-                if (!Enum.IsDefined(grantType))
-                    errors.Add(
-                        $"AuthorizationServerOptions.GrantTypesSupported contains invalid value '{(int)grantType}'. " +
-                        $"Expected a valid {nameof(GrantType)} enum member.");
+                errors.Add(
+                    $"AuthorizationServerOptions.GrantTypesSupported contains invalid value '{(int)grantType}'. " +
+                    $"Expected a valid {nameof(GrantType)} enum member.");
             }
         }
 
@@ -206,6 +207,15 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
                 "AuthorizationServerOptions.TokenEndpoint.RefreshTokenLifetime must be greater than or equal to " +
                 "AuthorizationServerOptions.AuthorizationEndpoint.AuthorizationCodeLifetime to ensure tombstone " +
                 "retention covers the authorization code validity window.");
+        }
+
+        // ADR 0014 §5: a zero or negative absolute family lifetime is nonsensical and must be
+        // rejected at startup. TimeSpan.MaxValue is the explicit, warned "unbounded" sentinel and
+        // remains valid here.
+        if (options.TokenEndpoint.AbsoluteFamilyLifetime <= TimeSpan.Zero)
+        {
+            errors.Add(
+                "AuthorizationServerOptions.TokenEndpoint.AbsoluteFamilyLifetime must be greater than zero.");
         }
 
         // Validate IdToken group

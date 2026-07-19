@@ -123,6 +123,28 @@ internal static class KeyVaultSigningKeyRotation
         return included;
     }
 
+    /// <summary>
+    /// Projects an included version list into a set suitable for change comparison in a provider's
+    /// <c>HasKeySetChangedAsync</c> override. Includes an <c>IsActive</c> bit — keyed by position,
+    /// since <see cref="SelectIncludedVersions{T}"/> always places the active version at index 0 —
+    /// alongside version identifier and <c>Enabled</c> state.
+    /// </summary>
+    /// <remarks>
+    /// Comparing only version identifier and <c>Enabled</c> state (without <c>IsActive</c>) misses
+    /// the moment a rotation actually completes: because <c>KeySourceRefreshInterval</c> is both
+    /// the poll cadence and the publish-then-activate lead time, the poll where v2 is published
+    /// (not yet active alongside active v1) and the later poll where v2 becomes active (v1 still
+    /// retiring) both produce the identical <c>{v1, v2}</c> version-identifier/<c>Enabled</c> set —
+    /// so the activation poll would be indistinguishable from "nothing changed" and the reload that
+    /// promotes v2 to active would be skipped indefinitely. See each provider's
+    /// <c>HasKeySetChangedAsync</c> remarks for the full two-poll failure mode, and ADR 0011 §3.5
+    /// "Metadata-only change detection for cached-key providers."
+    /// </remarks>
+    public static HashSet<(string Version, bool Enabled, bool IsActive)> ToChangeDetectionSet<T>(
+        IEnumerable<ActivationEntry<T>> included)
+        where T : struct, IKeyVaultVersionInfo =>
+        included.Select((entry, i) => (entry.Version.Version, entry.Version.Enabled, IsActive: i == 0)).ToHashSet();
+
     // Named generically ("At", not "Now") because this same Enabled/NotBefore/ExpiresOn check is
     // evaluated at two different kinds of point in time: the current wall-clock time (from
     // SelectActiveVersion, to pick today's active signer) and each candidate's own ActivatesAt

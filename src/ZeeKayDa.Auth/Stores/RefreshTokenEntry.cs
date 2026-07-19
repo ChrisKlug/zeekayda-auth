@@ -62,4 +62,16 @@ public sealed record RefreshTokenEntry
 
     /// <summary>Gets the UTC timestamp at which this token expires.</summary>
     public required DateTimeOffset ExpiresAt { get; init; }
+
+    /// <summary>
+    /// Gets the absolute wall-clock ceiling shared verbatim by every token in this family.
+    /// </summary>
+    /// <remarks>
+    /// Baked at family birth (the first token of the family) from
+    /// <c>AuthorizationServerOptions.TokenEndpoint.AbsoluteFamilyLifetime</c> and propagated
+    /// unchanged through every rotation, so the whole chain shares one absolute cap (ADR 0014
+    /// §5). Each token's own <see cref="ExpiresAt"/> is clamped to
+    /// <c>min(now + RefreshTokenLifetime, FamilyAbsoluteExpiry)</c>.
+    /// </remarks>
+    public required DateTimeOffset FamilyAbsoluteExpiry { get; init; }
 }

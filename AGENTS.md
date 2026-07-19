@@ -58,40 +58,59 @@ Some signing-provider packages only make sense on one OS (`ZeeKayDa.Auth.Windows
 
 ## Development Workflow
 
-Work follows six phases. Phases 1 and 3 run in the main session via the `/write-issue` skill; the rest are delegated to specialist agents.
+**Ceremony scales with blast radius.** Match the process to the risk — don't spend a day of design docs on a one-file fix, and don't land a new public API without agreeing its shape first.
+
+| Change | Process |
+|---|---|
+| Internal / mechanical — bug fix, refactor, test, chore | Just build it (`developer`). No design gate, no ADR. |
+| New or changed **public API** / behaviour | Agree the shape with the maintainer first — a short discussion in the issue (the "mini-ADR": what, why, one line on the alternative). Then build. |
+| Touches **tokens, crypto, or endpoints** | A `security` look — at the shape, the PR, or both. |
+| A **big or hard-to-reverse** decision | Record a lean ADR (below). Rare. |
+
+- **One narrow issue = one buildable thing.** No epics by default; sequence with `blocked by` / `blocks` relationships, not epic hierarchies.
+- The shape discussion happens in the **main session with the maintainer** and is captured in the **issue thread** — not a separate document. That is the maintainer's one involvement point; keep them out of the build/review loop otherwise.
+- After a PR merges, run `/post-merge-checks`.
+
+### Lean ADRs
+
+An ADR records a decision worth remembering — not a design essay. Half a page, decision first:
 
 ```
-1. IDEA      ──►  /write-issue   Assess ADR need; write the right issue type.
-2. DESIGN    ──►  architect      Write the ADR doc and open the ADR PR.
-             ──►  security       Threat-model the design; sign off before code is written.
-3. POST-ADR  ──►  /write-issue   Create implementation issues from the settled ADR.
-4. BUILD     ──►  developer      Implement against the issue's acceptance criteria.
-             ──►  docs           Write documentation alongside the code.
-5. VERIFY    ──►  tester         Confirm acceptance criteria; write missing tests.
-6. PR        ──►  security       Review any PR touching tokens, crypto, or endpoints.
-             ──►  docs           Gate-check that documentation is complete before merge.
+# ADR NNNN — <title>
+Status: Accepted   ·   Date: YYYY-MM-DD   ·   Issue: #N
+
+## Decision
+<what we decided — 1–3 sentences>
+
+## Why
+<the reasoning and the main rejected alternative — a few bullets>
+
+## Consequences
+<only if non-obvious — what changes, what to watch>
 ```
 
-After any PR merges, run the `/post-merge-checks` skill.
+No mandatory usage/extension-sketch sections, no security banners, no changelog appendix. Sketches are a design *technique* (pressure-test an API shape during the discussion), not required ADR content. If an ADR runs long it's doing too much — split the decision or cut words.
 
 ## Routing — MAIN ORCHESTRATOR ONLY
 
 > **STOP. If you are a specialist agent (`developer`, `tester`, `architect`, `security`, `docs`), this section does not apply to you. Execute your own domain work directly and return your results to whoever called you — never delegate to another specialist from here.**
 
-The main session routes and synthesises; it does not do specialist work itself, because that bypasses the specialist's system prompt and standards. **The threshold for delegation is low** — task *type* determines the route, not size. A one-line C# fix still goes to `developer`; a docs typo still goes to `docs`. You do not need to inspect the code before delegating — pick the route and hand it off with enough context from the conversation.
+The main session and the maintainer own **design discussion and decisions** — hold those here, directly, in conversation. Don't route a design question to the `architect` just to have it thought about. What the main session does *not* do is specialist **execution**: writing or changing C# goes to `developer`, a security review to `security`, and so on — that keeps each specialist's standards in force.
+
+**Don't over-orchestrate.** Converge on the decision with the maintainer first, then delegate execution *once*. Do not reflexively chain `architect` → `security` → spike → review on a change; add each hop only when the blast-radius table above calls for it. Spikes are for genuinely novel or risky mechanisms, not routine work. Every extra agent hop is tokens and latency.
 
 | Task | Route |
 |---|---|
 | Writing or changing C# code (features, bug fixes, refactors) | `developer` agent |
-| Designing abstractions, API shape, writing ADRs | `architect` agent |
+| A genuinely hard API/abstraction design needing specialist depth | `architect` agent (otherwise just discuss it here with the maintainer) |
 | Writing or updating Markdown documentation | `docs` agent |
-| Security review, threat modelling, OAuth/OIDC correctness | `security` agent |
+| Security review of a token/crypto/endpoint change | `security` agent |
 | Writing or verifying tests, checking acceptance criteria | `tester` agent |
-| GitHub issues, triage, epics, sub-issue linking | `/write-issue` skill (main session) |
+| Writing or triaging a GitHub issue | `/write-issue` skill, or write it directly if the shape is already clear |
 | After a PR merges | `/post-merge-checks` skill (main session) |
 | Reviewing a branch or PR other than the current checkout | `/review-branch` skill, then the right review agent |
 
-If no route fits, tell the user and ask for guidance — it might be a gap in the process.
+If no route fits, tell the user — it might be a gap in the process.
 
 ## Deferred tools
 

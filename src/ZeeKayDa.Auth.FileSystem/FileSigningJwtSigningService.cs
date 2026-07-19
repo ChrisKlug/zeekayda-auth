@@ -44,6 +44,22 @@ internal abstract class FileSigningJwtSigningService<TOptions> : JwtSigningServi
     private readonly ISigningKeyRetirementWindowProvider _retirementWindowProvider;
     private readonly ISanitizingLogger<FileSigningJwtSigningService<TOptions>> _logger;
 
+    // Per registered path, the file's last-write timestamp (a cheap stat, never a content read) and
+    // the certificate's own NotBefore/NotAfter, as of the last successful LoadKeysAsync call. Lets
+    // HasKeySetChangedAsync detect a changed file (mtime differs) and recompute the rotation
+    // timeline (from the recorded NotBefore/NotAfter, which cannot change without the mtime also
+    // changing) without re-reading or re-parsing anything. Null means "no successful LoadKeysAsync
+    // has run yet" — a state HasKeySetChangedAsync never actually observes, since the base class
+    // only calls it once a previous SigningKeySet already exists (ADR 0011 §3.2), which itself
+    // implies at least one successful LoadKeysAsync already populated this field.
+    private IReadOnlyDictionary<string, (DateTimeOffset LastWriteTimeUtc, DateTimeOffset NotBefore, DateTimeOffset NotAfter)>?
+        _previouslyLoadedFiles;
+
+    // The included path set (by path and whether the entry was active) as of the last successful
+    // LoadKeysAsync call. IsActive has to be part of the comparison, not just membership — see
+    // SigningKeyRotation.ToChangeDetectionSet's remarks.
+    private IReadOnlySet<(string Id, bool IsActive)>? _previouslyIncludedPaths;
+
     /// <summary>
     /// Initialises the shared base class.
     /// </summary>
@@ -124,15 +140,31 @@ internal abstract class FileSigningJwtSigningService<TOptions> : JwtSigningServi
         // NotBefore/NotAfter, not just the ones that end up "included", to correctly compute
         // retirement anchors.
         var certificatesByPath = new Dictionary<string, X509Certificate2>(paths.Count, StringComparer.Ordinal);
+        var fileMetadata = new Dictionary<string, (DateTimeOffset LastWriteTimeUtc, DateTimeOffset NotBefore, DateTimeOffset NotAfter)>(
+            paths.Count, StringComparer.Ordinal);
         try
         {
             foreach (var path in paths)
-                certificatesByPath[path] = await LoadCertificateAsync(path, options, cancellationToken).ConfigureAwait(false);
+            {
+                // Stat *before* reading/parsing the file's contents, not after: if a write races this
+                // load, this ordering fails toward "the stat is now stale, so the very next
+                // HasKeySetChangedAsync ask sees a further mtime change and reloads again" (an extra,
+                // harmless reload) rather than "the content read is stale relative to what the mtime
+                // implies" (a missed reload that could persist indefinitely) — see this method's
+                // remarks and HasKeySetChangedAsync's for the full failure mode this ordering avoids.
+                var lastWriteTimeUtc = new DateTimeOffset(File.GetLastWriteTimeUtc(path), TimeSpan.Zero);
+                var certificate = await LoadCertificateAsync(path, options, cancellationToken).ConfigureAwait(false);
+                certificatesByPath[path] = certificate;
+                fileMetadata[path] = (
+                    lastWriteTimeUtc,
+                    new DateTimeOffset(certificate.NotBefore),
+                    new DateTimeOffset(certificate.NotAfter));
+            }
 
             var now = _timeProvider.GetUtcNow();
-            var rotationKeys = certificatesByPath
-                .Select(kvp => new RotationKey(
-                    kvp.Key, new DateTimeOffset(kvp.Value.NotBefore), new DateTimeOffset(kvp.Value.NotAfter)))
+
+            var rotationKeys = fileMetadata
+                .Select(kvp => new RotationKey(kvp.Key, kvp.Value.NotBefore, kvp.Value.NotAfter))
                 .ToList();
 
             var timeline = SigningKeyRotation.BuildActivationTimeline(rotationKeys);
@@ -207,7 +239,15 @@ internal abstract class FileSigningJwtSigningService<TOptions> : JwtSigningServi
                 throw;
             }
 
-            return new SigningKeySet(keyPairs);
+            // Recorded only now — after the SigningKeySet has actually been built successfully —
+            // never from HasKeySetChangedAsync's ask itself. See that method's remarks and ADR 0011
+            // §3.5's "change-detection baseline is captured only on a successful load" rule.
+            _previouslyLoadedFiles = fileMetadata;
+            _previouslyIncludedPaths = SigningKeyRotation.ToChangeDetectionSet(included);
+
+            // `included` (and therefore `keyPairs`, built from it above) is active-first, so
+            // splitting off the first entry as the named active key is safe.
+            return new SigningKeySet(keyPairs[0], keyPairs.Skip(1));
         }
         finally
         {
@@ -218,9 +258,100 @@ internal abstract class FileSigningJwtSigningService<TOptions> : JwtSigningServi
             // IDisposable — a "using var" on the dictionary (as a prior automated code-review
             // suggestion proposed) does not compile and, even if it somehow did, would not dispose
             // the certificate *values* it holds; each certificate must be disposed explicitly.
-            foreach (var certificate in certificatesByPath.Values)
-                certificate.Dispose();
+            DisposeCertificates(certificatesByPath.Values);
         }
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <para>
+    /// Never re-reads or re-parses a registered file. Three distinct triggers are checked, all
+    /// against the metadata recorded at the last successful <see cref="LoadKeysAsync"/> call
+    /// (<see cref="_previouslyLoadedFiles"/> / <see cref="_previouslyIncludedPaths"/>), never against
+    /// whatever a previous call to this method itself computed — see ADR 0011 §3.5's "change
+    /// detection baseline is captured only on a successful load" rule.
+    /// </para>
+    /// <para>
+    /// First, whether a path was added or removed from <see cref="GetRegisteredPaths"/> since the
+    /// last load — checked before touching the filesystem at all. Second, for every path still
+    /// registered, whether its contents changed, via the cheap <see cref="File.GetLastWriteTimeUtc(string)"/>
+    /// stat call (never a content read) compared against the timestamp recorded at the last load.
+    /// <see cref="LoadKeysAsync"/> stats each file immediately before reading and parsing its
+    /// contents (not afterward), so the recorded timestamp always precedes the content it is meant to
+    /// represent: a write that races a load can only make the recorded timestamp stale relative to a
+    /// later write, which this method (or the next one) will then correctly detect as a further
+    /// change — it can never make the timestamp understate a change that already happened, which
+    /// would otherwise cause this method to report "unchanged" indefinitely. A missing file's
+    /// <see cref="File.GetLastWriteTimeUtc(string)"/> returns a sentinel value rather than throwing,
+    /// which will not match the recorded real timestamp and so correctly reports a change (outright
+    /// removal is also independently caught by the path-set check above). Third,
+    /// whether elapsed time alone moved a certificate in or out of its retirement window, even with
+    /// zero file changes — <see cref="SigningKeyRotation.SelectActiveKey"/>/
+    /// <see cref="SigningKeyRotation.SelectIncludedKeys"/> are functions of <c>now</c>, so this
+    /// recomputes the rotation timeline from the recorded <c>NotBefore</c>/<c>NotAfter</c> metadata
+    /// (safe to reuse without re-reading the file: it cannot change without the mtime also changing,
+    /// which the second check above already covers) against the current time, and compares the
+    /// resulting active path and included path set — via
+    /// <see cref="SigningKeyRotation.ToChangeDetectionSet"/>, exactly mirroring the Windows
+    /// Certificate Store and Key Vault providers' comparison shape — against what was recorded at
+    /// the last load. Comparing membership alone would miss the moment a rotation actually completes
+    /// (see that method's remarks for the full two-poll failure mode).
+    /// </para>
+    /// <para>
+    /// If no registered file is currently eligible to sign (every one has expired since the last
+    /// load), this method reports a change rather than failing itself — the subsequent
+    /// <see cref="LoadKeysAsync"/> call is what fails closed with its usual, actionable
+    /// <c>signing.file_signing.no_active_certificate</c> error; this method's own contract is only
+    /// ever "did the trusted set change," never "is the configuration currently valid."
+    /// </para>
+    /// </remarks>
+    protected override ValueTask<bool> HasKeySetChangedAsync(CancellationToken cancellationToken)
+    {
+        var currentPaths = GetRegisteredPaths(_options.Value);
+
+        // The base class only calls this once a previous SigningKeySet already exists (ADR 0011
+        // §3.2), which itself implies at least one successful LoadKeysAsync already ran and
+        // populated these fields — the null-forgiving operators below rely on that guarantee rather
+        // than re-checking it.
+        if (currentPaths.Count != _previouslyLoadedFiles!.Count ||
+            currentPaths.Any(path => !_previouslyLoadedFiles.ContainsKey(path)))
+        {
+            return new ValueTask<bool>(true);
+        }
+
+        foreach (var path in currentPaths)
+        {
+            var currentLastWriteTimeUtc = new DateTimeOffset(File.GetLastWriteTimeUtc(path), TimeSpan.Zero);
+            if (currentLastWriteTimeUtc != _previouslyLoadedFiles[path].LastWriteTimeUtc)
+                return new ValueTask<bool>(true);
+        }
+
+        var rotationKeys = currentPaths
+            .Select(path =>
+            {
+                var metadata = _previouslyLoadedFiles[path];
+                return new RotationKey(path, metadata.NotBefore, metadata.NotAfter);
+            })
+            .ToList();
+
+        var timeline = SigningKeyRotation.BuildActivationTimeline(rotationKeys);
+        var now = _timeProvider.GetUtcNow();
+
+        var active = SigningKeyRotation.SelectActiveKey(timeline, now);
+        if (active is null)
+            return new ValueTask<bool>(true);
+
+        var retirementWindow = _retirementWindowProvider.GetRetirementWindow();
+        var included = SigningKeyRotation.SelectIncludedKeys(timeline, active.Value, now, retirementWindow);
+        var currentIncludedPaths = SigningKeyRotation.ToChangeDetectionSet(included);
+
+        return new ValueTask<bool>(!currentIncludedPaths.SetEquals(_previouslyIncludedPaths!));
+    }
+
+    private static void DisposeCertificates(IEnumerable<X509Certificate2> certificates)
+    {
+        foreach (var certificate in certificates)
+            certificate.Dispose();
     }
 
     private void LogCertificateStatuses(

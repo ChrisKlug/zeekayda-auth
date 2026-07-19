@@ -64,13 +64,13 @@ public sealed class FamilyRevocationIntegrationTests
 
         var firstOutcome = await codeStore.TryRedeemAsync(code, clientId, familyId, CancellationToken.None);
 
-        firstOutcome.Should().BeOfType<AuthorizationCodeRedemptionOutcome.Redeemed>(
+        firstOutcome.Should().BeOfType<AuthorizationCodeRedemptionResult.Redeemed>(
             "the first redemption of a valid, unexpired code must succeed");
 
         var replayFamilyId = Guid.NewGuid().ToString("N");
         var replayOutcome = await codeStore.TryRedeemAsync(code, clientId, replayFamilyId, CancellationToken.None);
 
-        replayOutcome.Should().BeOfType<AuthorizationCodeRedemptionOutcome.AlreadyRedeemed>(
+        replayOutcome.Should().BeOfType<AuthorizationCodeRedemptionResult.AlreadyRedeemed>(
                 "replaying the same code must return AlreadyRedeemed")
             .Which.FamilyId.Should().Be(familyId,
                 "tombstone must carry the familyId from the first redemption, not the replay attempt's argument");
@@ -89,15 +89,22 @@ public sealed class FamilyRevocationIntegrationTests
             SsoSessionId = Guid.NewGuid().ToString("N"),
             IssuedAt = now,
             ExpiresAt = farFuture,
+            FamilyAbsoluteExpiry = farFuture,
         };
 
         await tokenStore.StoreAsync(tokenHandle, tokenEntry, CancellationToken.None);
 
         var consumeOutcome = await tokenStore.TryConsumeAsync(tokenHandle, clientId, CancellationToken.None);
 
-        consumeOutcome.Should().BeOfType<RefreshTokenConsumptionOutcome.Revoked>(
-                "a token whose family was revoked before it was stored must be rejected as Revoked, " +
-                "confirming the revocation is persisted at the family level rather than on individual token entries")
+        // ADR 0014 §12 (issue #388) closes exactly this gap: RevokeFamilyAsync now unconditionally
+        // inserts a durable revocation sentinel, even when the family had zero rows at revoke time
+        // (as here — the auth-code replay is detected and the family revoked before the FIRST
+        // refresh token of that family is ever stored). The sentinel arms the §11
+        // IsFamilyRevokedAsync gate, so a grant stored afterward into the same family is caught at
+        // its own consume, closing the "auth-code replayed before its first refresh token" hole.
+        consumeOutcome.Should().BeOfType<RefreshTokenConsumptionResult.Revoked>(
+                "ADR 0014 §12's revocation sentinel arms the family-revoked gate even when the family " +
+                "had zero rows at revoke time, so a grant stored afterward is dead on arrival")
             .Which.FamilyId.Should().Be(familyId);
     }
 
@@ -123,6 +130,7 @@ public sealed class FamilyRevocationIntegrationTests
             SsoSessionId = Guid.NewGuid().ToString("N"),
             IssuedAt = now,
             ExpiresAt = farFuture,
+            FamilyAbsoluteExpiry = farFuture,
         };
 
         await tokenStore.StoreAsync(tokenHandle, tokenEntry, CancellationToken.None);
@@ -131,7 +139,7 @@ public sealed class FamilyRevocationIntegrationTests
 
         var consumeOutcome = await tokenStore.TryConsumeAsync(tokenHandle, clientId, CancellationToken.None);
 
-        consumeOutcome.Should().BeOfType<RefreshTokenConsumptionOutcome.Revoked>(
+        consumeOutcome.Should().BeOfType<RefreshTokenConsumptionResult.Revoked>(
                 "revocation must retroactively apply to tokens that existed before RevokeFamilyAsync was called")
             .Which.FamilyId.Should().Be(familyId,
                 "the Revoked outcome must carry the familyId that was revoked");

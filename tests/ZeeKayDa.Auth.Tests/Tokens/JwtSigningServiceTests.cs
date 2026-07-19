@@ -90,6 +90,80 @@ public sealed class JwtSigningServiceTests
         }
     }
 
+    /// <summary>
+    /// A fake that overrides <see cref="JwtSigningService{TOptions}.HasKeySetChangedAsync"/> with a
+    /// caller-supplied predicate and counts how many times it (and <see cref="LoadKeysAsync"/>) are
+    /// invoked — exercises the ADR 0011 §3.2 "ask" step in front of the reload.
+    /// </summary>
+    private sealed class ControllableHasChangedSigningService : JwtSigningService<FakeSigningServiceOptions>
+    {
+        private readonly Func<SigningKeySet> _factory;
+        private readonly Func<bool> _hasChanged;
+
+        public int LoadCount { get; private set; }
+        public int HasKeySetChangedAsyncCallCount { get; private set; }
+
+        public ControllableHasChangedSigningService(
+            IOptions<FakeSigningServiceOptions> options,
+            TimeProvider timeProvider,
+            Func<SigningKeySet> factory,
+            Func<bool> hasChanged)
+            : base(options, timeProvider)
+        {
+            _factory = factory;
+            _hasChanged = hasChanged;
+        }
+
+        protected override ValueTask<SigningKeySet> LoadKeysAsync(CancellationToken cancellationToken)
+        {
+            LoadCount++;
+            return ValueTask.FromResult(_factory());
+        }
+
+        protected override ValueTask<bool> HasKeySetChangedAsync(CancellationToken cancellationToken)
+        {
+            HasKeySetChangedAsyncCallCount++;
+            return new ValueTask<bool>(_hasChanged());
+        }
+    }
+
+    /// <summary>
+    /// Builds a <see cref="SigningKeySet"/> wrapping a caller-supplied private key object, so a test
+    /// can construct two distinct <see cref="SigningKeySet"/> instances that nonetheless share the
+    /// same underlying <see cref="RSA"/> object for a given <c>kid</c>.
+    /// </summary>
+    private static SigningKeySet MakeRsaSetWithPrivateKey(RSA rsa, string kid = "test-kid")
+    {
+        var rsaParams = rsa.ExportParameters(false);
+        var descriptor = new SigningKeyDescriptor(kid, SigningAlgorithm.RS256, rsaParams);
+        return new SigningKeySet(new SigningKeyPair { Descriptor = descriptor, PrivateKey = rsa });
+    }
+
+    /// <summary>
+    /// Builds a two-key <see cref="SigningKeySet"/>: a genuinely fresh active key plus a
+    /// caller-supplied additional (non-active) key wrapping <paramref name="additionalRsa"/> — so
+    /// a test can construct two distinct <see cref="SigningKeySet"/> instances with distinct active
+    /// keys that nonetheless share the same underlying <see cref="RSA"/> object at a non-active
+    /// index for a given <c>kid</c>.
+    /// </summary>
+    private static SigningKeySet MakeRsaSetWithAdditionalKey(string activeKid, string additionalKid, RSA additionalRsa)
+    {
+        var activeRsa = RSA.Create(2048);
+        try
+        {
+            var activeDescriptor = new SigningKeyDescriptor(activeKid, SigningAlgorithm.RS256, activeRsa.ExportParameters(false));
+            var additionalDescriptor = new SigningKeyDescriptor(additionalKid, SigningAlgorithm.RS256, additionalRsa.ExportParameters(false));
+            return new SigningKeySet(
+                new SigningKeyPair { Descriptor = activeDescriptor, PrivateKey = activeRsa },
+                [new SigningKeyPair { Descriptor = additionalDescriptor, PrivateKey = additionalRsa }]);
+        }
+        catch
+        {
+            activeRsa.Dispose();
+            throw;
+        }
+    }
+
     private static SigningKeySet MakeRsaSet(string kid = "test-kid")
     {
         var rsa = RSA.Create(2048);
@@ -97,7 +171,7 @@ public sealed class JwtSigningServiceTests
         {
             var rsaParams = rsa.ExportParameters(false);
             var descriptor = new SigningKeyDescriptor(kid, SigningAlgorithm.RS256, rsaParams);
-            return new SigningKeySet([new SigningKeyPair { Descriptor = descriptor, PrivateKey = rsa }]);
+            return new SigningKeySet(new SigningKeyPair { Descriptor = descriptor, PrivateKey = rsa });
         }
         catch
         {
@@ -221,6 +295,398 @@ public sealed class JwtSigningServiceTests
         sut.LoadCount.Should().Be(2, "second call is past the refresh interval");
     }
 
+    [Fact]
+    public async Task GetSigningKeysAsync_default_HasKeySetChangedAsync_reloads_on_every_elapsed_cycle_for_providers_that_dont_override_it()
+    {
+        // A provider that does not override HasKeySetChangedAsync (like CountingSigningService
+        // here) must keep today's unconditional-rebuild behaviour: LoadKeysAsync runs every time
+        // the refresh interval elapses, with no skipped cycles.
+        var timeProvider = new FakeTimeProvider();
+        await using var sut = BuildService(timeProvider: timeProvider, refreshInterval: TimeSpan.FromMinutes(5));
+        var ct = TestContext.Current.CancellationToken;
+
+        await sut.GetSigningKeysAsync(ct);
+        timeProvider.Advance(TimeSpan.FromMinutes(6));
+        await sut.GetSigningKeysAsync(ct);
+        timeProvider.Advance(TimeSpan.FromMinutes(6));
+        await sut.GetSigningKeysAsync(ct);
+
+        sut.LoadCount.Should().Be(3, "the default HasKeySetChangedAsync always returns true, so every elapsed cycle triggers LoadKeysAsync");
+    }
+
+    // ── HasKeySetChangedAsync hook (ADR 0011 §3.2 "ask" step) ────────────────────────────────────────
+
+    [Fact]
+    public async Task GetSigningKeysAsync_does_not_call_HasKeySetChangedAsync_on_cold_start()
+    {
+        // The very first BorrowSetAsync call has no previous set to compare against, so the "ask"
+        // step must never be consulted — only LoadKeysAsync runs.
+        var timeProvider = new FakeTimeProvider();
+        var options = Options.Create(new FakeSigningServiceOptions { KeySourceRefreshInterval = TimeSpan.FromMinutes(5) });
+        await using var sut = new ControllableHasChangedSigningService(
+            options,
+            timeProvider,
+            () => MakeRsaSet(),
+            hasChanged: () => throw new InvalidOperationException("HasKeySetChangedAsync must not be called on cold start."));
+        var ct = TestContext.Current.CancellationToken;
+
+        await sut.GetSigningKeysAsync(ct);
+
+        sut.LoadCount.Should().Be(1);
+        sut.HasKeySetChangedAsyncCallCount.Should().Be(0,
+            "cold start (no previous set) must call LoadKeysAsync directly without consulting HasKeySetChangedAsync");
+    }
+
+    [Fact]
+    public async Task GetSigningKeysAsync_skips_LoadKeysAsync_when_HasKeySetChangedAsync_returns_false()
+    {
+        var timeProvider = new FakeTimeProvider();
+        var set = MakeRsaSet("unchanged-kid");
+        var options = Options.Create(new FakeSigningServiceOptions { KeySourceRefreshInterval = TimeSpan.FromMinutes(5) });
+        await using var sut = new ControllableHasChangedSigningService(options, timeProvider, () => set, hasChanged: () => false);
+        var ct = TestContext.Current.CancellationToken;
+
+        var first = await sut.GetSigningKeysAsync(ct);
+        timeProvider.Advance(TimeSpan.FromMinutes(6));
+        var second = await sut.GetSigningKeysAsync(ct);
+
+        sut.LoadCount.Should().Be(1, "HasKeySetChangedAsync returning false must skip the LoadKeysAsync reload");
+        second.Should().BeSameAs(first, "the same cached SigningKeySet's memoised descriptor list must still be served");
+    }
+
+    [Fact]
+    public async Task SignAsync_still_succeeds_after_HasKeySetChangedAsync_returns_false_no_ObjectDisposedException()
+    {
+        // Regression guard: HasKeySetChangedAsync returning false must extend the cache and keep
+        // serving the existing SigningKeySet without disposing it. If the base class incorrectly
+        // disposed it anyway, this sign would throw ObjectDisposedException.
+        var timeProvider = new FakeTimeProvider();
+        var set = MakeRsaSet("unchanged-kid");
+        var options = Options.Create(new FakeSigningServiceOptions { KeySourceRefreshInterval = TimeSpan.FromMinutes(5) });
+        await using var sut = new ControllableHasChangedSigningService(options, timeProvider, () => set, hasChanged: () => false);
+        var payload = Encoding.UTF8.GetBytes(Base64UrlEncodeString("""{"sub":"alice"}"""));
+        var ct = TestContext.Current.CancellationToken;
+
+        var first = await sut.SignAsync(payload, ct);
+        timeProvider.Advance(TimeSpan.FromMinutes(6));
+        var second = await sut.SignAsync(payload, ct);
+
+        first.Kid.Should().Be("unchanged-kid");
+        second.Kid.Should().Be("unchanged-kid");
+        sut.LoadCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task GetSigningKeysAsync_reloads_when_HasKeySetChangedAsync_returns_true()
+    {
+        // Returning true behaves identically to the default: the hook path does not change
+        // anything about a normal rebuild.
+        var timeProvider = new FakeTimeProvider();
+        var options = Options.Create(new FakeSigningServiceOptions { KeySourceRefreshInterval = TimeSpan.FromMinutes(5) });
+        await using var sut = new ControllableHasChangedSigningService(options, timeProvider, () => MakeRsaSet(), hasChanged: () => true);
+        var ct = TestContext.Current.CancellationToken;
+
+        await sut.GetSigningKeysAsync(ct);
+        timeProvider.Advance(TimeSpan.FromMinutes(6));
+        await sut.GetSigningKeysAsync(ct);
+
+        sut.LoadCount.Should().Be(2, "HasKeySetChangedAsync returning true must behave exactly like the default: LoadKeysAsync runs on every elapsed cycle");
+        sut.HasKeySetChangedAsyncCallCount.Should().Be(1, "consulted once per elapsed cycle, only after a previous set already exists");
+    }
+
+    [Fact]
+    public async Task GetSigningKeysAsync_propagates_exception_from_HasKeySetChangedAsync_and_leaves_cached_set_untouched()
+    {
+        // Fail-closed contract (ADR 0011 §3.2): a throwing HasKeySetChangedAsync must propagate
+        // straight to the caller with no fallback, and must leave the cached set and its expiry
+        // untouched — a subsequent, well-behaved call must still serve the previously cached key
+        // set rather than a reloaded or corrupted one.
+        var timeProvider = new FakeTimeProvider();
+        var set = MakeRsaSet("cached-kid");
+        var callCount = 0;
+        var options = Options.Create(new FakeSigningServiceOptions { KeySourceRefreshInterval = TimeSpan.FromMinutes(5) });
+        await using var sut = new ControllableHasChangedSigningService(
+            options,
+            timeProvider,
+            () => set,
+            hasChanged: () =>
+            {
+                callCount++;
+                return callCount switch
+                {
+                    1 => throw new InvalidOperationException("simulated cheap-check failure"),
+                    _ => false,
+                };
+            });
+        var ct = TestContext.Current.CancellationToken;
+
+        var first = await sut.GetSigningKeysAsync(ct);
+        timeProvider.Advance(TimeSpan.FromMinutes(6));
+
+        await sut.Awaiting(s => s.GetSigningKeysAsync(ct).AsTask())
+            .Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("simulated cheap-check failure");
+
+        var second = await sut.GetSigningKeysAsync(ct);
+
+        sut.LoadCount.Should().Be(1,
+            "the failed ask must not have triggered a reload, and the recovered call must keep serving the cached set rather than reloading");
+        second.Should().BeSameAs(first,
+            "the cached key set's memoised descriptor list must be untouched by the earlier failed HasKeySetChangedAsync call");
+    }
+
+    // ── LoadKeysAsync "same instance" guard (ADR 0011 §3.2) ──────────────────────────────────────────
+
+    [Fact]
+    public async Task GetSigningKeysAsync_throws_InvalidOperationException_when_LoadKeysAsync_returns_same_instance_as_previously_cached_set()
+    {
+        // A provider that naively returns the same SigningKeySet instance from LoadKeysAsync on a
+        // later cycle — instead of overriding HasKeySetChangedAsync to report "unchanged" — must be
+        // caught immediately and loudly. CountingSigningService does not override
+        // HasKeySetChangedAsync, so this exercises exactly the anti-pattern the guard exists for.
+        var timeProvider = new FakeTimeProvider();
+        var set = MakeRsaSet("stale-kid");
+        await using var sut = BuildService(timeProvider: timeProvider, refreshInterval: TimeSpan.FromMinutes(5), factory: () => set);
+        var ct = TestContext.Current.CancellationToken;
+
+        await sut.GetSigningKeysAsync(ct);
+        timeProvider.Advance(TimeSpan.FromMinutes(6));
+
+        var thrown = await sut.Awaiting(s => s.GetSigningKeysAsync(ct).AsTask())
+            .Should().ThrowAsync<InvalidOperationException>();
+
+        thrown.Which.Message.Should().Contain("LoadKeysAsync").And.Contain("HasKeySetChangedAsync",
+            "the error must point the implementor at both the misbehaving method and the sanctioned fix");
+    }
+
+    [Fact]
+    public async Task GetSigningKeysAsync_does_not_trigger_same_instance_guard_on_cold_start()
+    {
+        // The guard compares the freshly loaded set against a previously cached set. On a cold
+        // start (previous is null) there is nothing to compare against, so a LoadKeysAsync that
+        // would otherwise trip the guard on a later cycle must not trigger it on the very first
+        // load — only one call is made here, so the same fixed instance is returned exactly once.
+        var set = MakeRsaSet("cold-start-kid");
+        await using var sut = BuildService(factory: () => set);
+        var ct = TestContext.Current.CancellationToken;
+
+        var act = () => sut.GetSigningKeysAsync(ct).AsTask();
+
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task GetSigningKeysAsync_leaves_previous_key_set_intact_and_lock_released_after_same_instance_guard_throws()
+    {
+        // Regression/guard test: hitting the "same instance" guard must not corrupt the cache or
+        // leave the refresh lock held. The previously cached SigningKeySet must remain undisposed
+        // (proving the base class did not dispose the very object it just flagged as invalid before
+        // installing it), and a subsequent, well-behaved refresh must still succeed without hanging.
+        var timeProvider = new FakeTimeProvider();
+        SigningKeySet? goodSet = null;
+        var callCount = 0;
+
+        SigningKeySet Factory()
+        {
+            callCount++;
+            return callCount switch
+            {
+                1 => goodSet = MakeRsaSet("good-kid"),
+                2 => goodSet!, // buggy: same instance as the previously cached set — trips the guard
+                _ => MakeRsaSet("replacement-kid"), // well-behaved again on any later cycle
+            };
+        }
+
+        await using var sut = BuildService(timeProvider: timeProvider, refreshInterval: TimeSpan.FromMinutes(5), factory: Factory);
+        var ct = TestContext.Current.CancellationToken;
+
+        await sut.GetSigningKeysAsync(ct);
+        timeProvider.Advance(TimeSpan.FromMinutes(6));
+
+        await sut.Awaiting(s => s.GetSigningKeysAsync(ct).AsTask())
+            .Should().ThrowAsync<InvalidOperationException>();
+
+        // The previously cached set is still intact — not disposed by the failed refresh attempt.
+        var accessPrivateKey = () => goodSet!.GetPrivateKey(0);
+        accessPrivateKey.Should().NotThrow<ObjectDisposedException>(
+            "the guard must fire before disposing or installing anything, leaving the last known good set usable");
+
+        // The refresh lock was released, not left held: a subsequent call completes promptly
+        // rather than hanging, and a well-behaved LoadKeysAsync can still succeed afterwards.
+        var thirdCallTask = sut.GetSigningKeysAsync(ct).AsTask();
+        var completed = await Task.WhenAny(thirdCallTask, Task.Delay(TimeSpan.FromSeconds(5), ct));
+        completed.Should().BeSameAs(thirdCallTask, "a subsequent call must not deadlock after the guard throws");
+
+        var keys = await thirdCallTask;
+        keys.Should().ContainSingle().Which.Kid.Should().Be("replacement-kid");
+    }
+
+    // ── LoadKeysAsync reused-private-key-object guard (#361) ────────────────────────────────────────
+
+    [Fact]
+    public async Task GetSigningKeysAsync_throws_InvalidOperationException_when_LoadKeysAsync_returns_new_SigningKeySet_wrapping_previous_sets_private_key()
+    {
+        // A provider that constructs a genuinely new SigningKeySet instance every call passes the
+        // "same instance" guard, but if that new instance wraps the same underlying private key
+        // object as the previous set for a shared kid, it must still be caught immediately and
+        // loudly — otherwise the mistake only surfaces later as a disconnected ObjectDisposedException
+        // once the previous set is disposed and its (shared) private key goes with it.
+        var timeProvider = new FakeTimeProvider();
+        using var rsa = RSA.Create(2048);
+        var callCount = 0;
+
+        SigningKeySet Factory()
+        {
+            callCount++;
+            return MakeRsaSetWithPrivateKey(rsa, "shared-kid"); // buggy: new SigningKeySet, same RSA object every call
+        }
+
+        await using var sut = BuildService(timeProvider: timeProvider, refreshInterval: TimeSpan.FromMinutes(5), factory: Factory);
+        var ct = TestContext.Current.CancellationToken;
+
+        await sut.GetSigningKeysAsync(ct);
+        timeProvider.Advance(TimeSpan.FromMinutes(6));
+
+        var thrown = await sut.Awaiting(s => s.GetSigningKeysAsync(ct).AsTask())
+            .Should().ThrowAsync<InvalidOperationException>();
+
+        thrown.Which.Message.Should().Contain("shared-kid")
+            .And.Contain("same private key object")
+            .And.NotContain("same SigningKeySet instance",
+                "the error message must distinguish the reused-private-key-object case from the existing same-instance guard");
+        callCount.Should().Be(2, "the guard must fire on the second (offending) LoadKeysAsync call");
+    }
+
+    [Fact]
+    public async Task GetSigningKeysAsync_does_not_trigger_reused_private_key_guard_on_cold_start()
+    {
+        // On a cold start there is no previous set to compare against, so a LoadKeysAsync that would
+        // otherwise trip the guard on a later cycle must not trigger it on the very first load.
+        using var rsa = RSA.Create(2048);
+        await using var sut = BuildService(factory: () => MakeRsaSetWithPrivateKey(rsa, "cold-start-shared-kid"));
+        var ct = TestContext.Current.CancellationToken;
+
+        var act = () => sut.GetSigningKeysAsync(ct).AsTask();
+
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task GetSigningKeysAsync_does_not_trigger_reused_private_key_guard_when_kid_is_not_shared()
+    {
+        // The guard only compares kids present in both sets. A rotated key with a different kid,
+        // even if it happened to reuse a private key object under a different identifier, is outside
+        // this guard's scope and must not be flagged.
+        var timeProvider = new FakeTimeProvider();
+        using var rsa = RSA.Create(2048);
+        var callCount = 0;
+
+        SigningKeySet Factory()
+        {
+            callCount++;
+            return callCount switch
+            {
+                1 => MakeRsaSetWithPrivateKey(rsa, "kid-one"),
+                _ => MakeRsaSetWithPrivateKey(rsa, "kid-two"),
+            };
+        }
+
+        await using var sut = BuildService(timeProvider: timeProvider, refreshInterval: TimeSpan.FromMinutes(5), factory: Factory);
+        var ct = TestContext.Current.CancellationToken;
+
+        await sut.GetSigningKeysAsync(ct);
+        timeProvider.Advance(TimeSpan.FromMinutes(6));
+
+        var act = () => sut.GetSigningKeysAsync(ct).AsTask();
+
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task GetSigningKeysAsync_throws_InvalidOperationException_when_reused_private_key_object_is_at_a_non_active_index()
+    {
+        // The reused-object guard must scan every shared kid, not just the active key at index 0.
+        // Both sets here have a genuinely distinct active key (a fresh RSA object each cycle), but
+        // share the same underlying RSA object between their additional (retired) keys under the
+        // same kid — at index 1, not index 0.
+        var timeProvider = new FakeTimeProvider();
+        using var sharedRetiredRsa = RSA.Create(2048);
+        var callCount = 0;
+
+        SigningKeySet Factory()
+        {
+            callCount++;
+            return callCount switch
+            {
+                1 => MakeRsaSetWithAdditionalKey("active-1", "retired-shared", sharedRetiredRsa),
+                _ => MakeRsaSetWithAdditionalKey("active-2", "retired-shared", sharedRetiredRsa), // buggy: retired key reuses the previous set's RSA object
+            };
+        }
+
+        await using var sut = BuildService(timeProvider: timeProvider, refreshInterval: TimeSpan.FromMinutes(5), factory: Factory);
+        var ct = TestContext.Current.CancellationToken;
+
+        await sut.GetSigningKeysAsync(ct);
+        timeProvider.Advance(TimeSpan.FromMinutes(6));
+
+        var thrown = await sut.Awaiting(s => s.GetSigningKeysAsync(ct).AsTask())
+            .Should().ThrowAsync<InvalidOperationException>();
+
+        thrown.Which.Message.Should().Contain("retired-shared")
+            .And.Contain("same private key object")
+            .And.NotContain("same SigningKeySet instance",
+                "the error message must distinguish the reused-private-key-object case from the existing same-instance guard");
+        callCount.Should().Be(2, "the guard must fire on the second (offending) LoadKeysAsync call");
+    }
+
+    [Fact]
+    public async Task GetSigningKeysAsync_leaves_previous_key_set_intact_and_lock_released_after_reused_private_key_guard_throws()
+    {
+        // Regression/guard test: hitting the "reused private key object" guard must not corrupt the
+        // cache or leave the refresh lock held. The previously cached SigningKeySet must remain
+        // undisposed (proving the base class did not dispose the very object it just flagged as
+        // invalid before installing it), and a subsequent, well-behaved refresh must still succeed
+        // without hanging.
+        var timeProvider = new FakeTimeProvider();
+        using var rsa = RSA.Create(2048);
+        SigningKeySet? goodSet = null;
+        var callCount = 0;
+
+        SigningKeySet Factory()
+        {
+            callCount++;
+            return callCount switch
+            {
+                1 => goodSet = MakeRsaSetWithPrivateKey(rsa, "shared-kid"),
+                2 => MakeRsaSetWithPrivateKey(rsa, "shared-kid"), // buggy: new SigningKeySet, same RSA object as previous set
+                _ => MakeRsaSet("replacement-kid"), // well-behaved again on any later cycle
+            };
+        }
+
+        await using var sut = BuildService(timeProvider: timeProvider, refreshInterval: TimeSpan.FromMinutes(5), factory: Factory);
+        var ct = TestContext.Current.CancellationToken;
+
+        await sut.GetSigningKeysAsync(ct);
+        timeProvider.Advance(TimeSpan.FromMinutes(6));
+
+        await sut.Awaiting(s => s.GetSigningKeysAsync(ct).AsTask())
+            .Should().ThrowAsync<InvalidOperationException>();
+
+        // The previously cached set is still intact — not disposed by the failed refresh attempt.
+        var accessPrivateKey = () => goodSet!.GetPrivateKey(0);
+        accessPrivateKey.Should().NotThrow<ObjectDisposedException>(
+            "the guard must fire before disposing or installing anything, leaving the last known good set usable");
+
+        // The refresh lock was released, not left held: a subsequent call completes promptly
+        // rather than hanging, and a well-behaved LoadKeysAsync can still succeed afterwards.
+        var thirdCallTask = sut.GetSigningKeysAsync(ct).AsTask();
+        var completed = await Task.WhenAny(thirdCallTask, Task.Delay(TimeSpan.FromSeconds(5), ct));
+        completed.Should().BeSameAs(thirdCallTask, "a subsequent call must not deadlock after the guard throws");
+
+        var keys = await thirdCallTask;
+        keys.Should().ContainSingle().Which.Kid.Should().Be("replacement-kid");
+    }
+
     // ── Static-source mode (KeySourceRefreshInterval is null) ────────────────────────────────────────
 
     [Fact]
@@ -318,7 +784,7 @@ public sealed class JwtSigningServiceTests
         using var rsa = RSA.Create(2048);
         var rsaParams = rsa.ExportParameters(false);
         var descriptor = new SigningKeyDescriptor("vk-1", SigningAlgorithm.RS256, rsaParams);
-        using var set = new SigningKeySet([new SigningKeyPair { Descriptor = descriptor, PrivateKey = rsa }]);
+        using var set = new SigningKeySet(new SigningKeyPair { Descriptor = descriptor, PrivateKey = rsa });
         await using var sut = BuildService(factory: () => set);
         var ct = TestContext.Current.CancellationToken;
 
@@ -354,7 +820,7 @@ public sealed class JwtSigningServiceTests
         using var ec = ECDsa.Create(ECCurve.CreateFromValue(curveOid));
         var ecParams = ec.ExportParameters(false);
         var descriptor = new SigningKeyDescriptor("ec-vk", algorithm, ecParams);
-        using var set = new SigningKeySet([new SigningKeyPair { Descriptor = descriptor, PrivateKey = ec }]);
+        using var set = new SigningKeySet(new SigningKeyPair { Descriptor = descriptor, PrivateKey = ec });
         await using var sut = BuildService(factory: () => set);
         var ct = TestContext.Current.CancellationToken;
 
@@ -480,10 +946,8 @@ public sealed class JwtSigningServiceTests
         var desc1 = new SigningKeyDescriptor("duplicate-kid", SigningAlgorithm.RS256, rsa1.ExportParameters(false));
         var desc2 = new SigningKeyDescriptor("duplicate-kid", SigningAlgorithm.RS256, rsa2.ExportParameters(false));
         using var set = new SigningKeySet(
-        [
             new SigningKeyPair { Descriptor = desc1, PrivateKey = rsa1 },
-            new SigningKeyPair { Descriptor = desc2, PrivateKey = rsa2 },
-        ]);
+            [new SigningKeyPair { Descriptor = desc2, PrivateKey = rsa2 }]);
         await using var sut = BuildService(factory: () => set);
         var ct = TestContext.Current.CancellationToken;
 
@@ -501,7 +965,7 @@ public sealed class JwtSigningServiceTests
         using var rsa = RSA.Create(1024);
         var rsaParams = rsa.ExportParameters(false);
         var descriptor = new SigningKeyDescriptor("tiny-key", SigningAlgorithm.RS256, rsaParams);
-        using var set = new SigningKeySet([new SigningKeyPair { Descriptor = descriptor, PrivateKey = rsa }]);
+        using var set = new SigningKeySet(new SigningKeyPair { Descriptor = descriptor, PrivateKey = rsa });
         await using var sut = BuildService(factory: () => set);
         var ct = TestContext.Current.CancellationToken;
 
@@ -517,7 +981,7 @@ public sealed class JwtSigningServiceTests
         var rsaParams = new RSAParameters(); // Modulus is null
         var descriptor = new SigningKeyDescriptor("null-mod-key", SigningAlgorithm.RS256, rsaParams);
         using var rsa = RSA.Create(2048);
-        using var set = new SigningKeySet([new SigningKeyPair { Descriptor = descriptor, PrivateKey = rsa }]);
+        using var set = new SigningKeySet(new SigningKeyPair { Descriptor = descriptor, PrivateKey = rsa });
         await using var sut = BuildService(factory: () => set);
         var ct = TestContext.Current.CancellationToken;
 
@@ -534,7 +998,7 @@ public sealed class JwtSigningServiceTests
         using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var ecParams = ec.ExportParameters(false);
         var descriptor = new SigningKeyDescriptor("ec-kid", SigningAlgorithm.ES256, ecParams);
-        using var set = new SigningKeySet([new SigningKeyPair { Descriptor = descriptor, PrivateKey = ec }]);
+        using var set = new SigningKeySet(new SigningKeyPair { Descriptor = descriptor, PrivateKey = ec });
         await using var sut = BuildService(factory: () => set);
         var ct = TestContext.Current.CancellationToken;
 
@@ -550,7 +1014,7 @@ public sealed class JwtSigningServiceTests
         using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP384);
         var ecParams = ec.ExportParameters(false);
         var descriptor = new SigningKeyDescriptor("ec-kid", SigningAlgorithm.ES256, ecParams);
-        using var set = new SigningKeySet([new SigningKeyPair { Descriptor = descriptor, PrivateKey = ec }]);
+        using var set = new SigningKeySet(new SigningKeyPair { Descriptor = descriptor, PrivateKey = ec });
         await using var sut = BuildService(factory: () => set);
         var ct = TestContext.Current.CancellationToken;
 
@@ -569,7 +1033,7 @@ public sealed class JwtSigningServiceTests
         using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var ecParams = ec.ExportParameters(false);
         var descriptor = new SigningKeyDescriptor("mismatch-kid", SigningAlgorithm.ES256, ecParams);
-        using var set = new SigningKeySet([new SigningKeyPair { Descriptor = descriptor, PrivateKey = rsa }]);
+        using var set = new SigningKeySet(new SigningKeyPair { Descriptor = descriptor, PrivateKey = rsa });
         await using var sut = BuildService(factory: () => set);
         var ct = TestContext.Current.CancellationToken;
 
@@ -588,7 +1052,7 @@ public sealed class JwtSigningServiceTests
         using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var rsaParams = rsa.ExportParameters(false);
         var descriptor = new SigningKeyDescriptor("mismatch-rsa-kid", SigningAlgorithm.RS256, rsaParams);
-        using var set = new SigningKeySet([new SigningKeyPair { Descriptor = descriptor, PrivateKey = ec }]);
+        using var set = new SigningKeySet(new SigningKeyPair { Descriptor = descriptor, PrivateKey = ec });
         await using var sut = BuildService(factory: () => set);
         var ct = TestContext.Current.CancellationToken;
 
@@ -608,7 +1072,7 @@ public sealed class JwtSigningServiceTests
         using var rsa = RSA.Create(2048);
         var rsaParams = rsa.ExportParameters(false);
         var descriptor = new SigningKeyDescriptor("rsa-kid", algorithm, rsaParams);
-        using var set = new SigningKeySet([new SigningKeyPair { Descriptor = descriptor, PrivateKey = rsa }]);
+        using var set = new SigningKeySet(new SigningKeyPair { Descriptor = descriptor, PrivateKey = rsa });
         await using var sut = BuildService(factory: () => set);
         var payload = Encoding.UTF8.GetBytes(Base64UrlEncodeString("""{"sub":"alice"}"""));
         var ct = TestContext.Current.CancellationToken;
@@ -635,7 +1099,7 @@ public sealed class JwtSigningServiceTests
         using var ec = ECDsa.Create(curve);
         var ecParams = ec.ExportParameters(false);
         var descriptor = new SigningKeyDescriptor("ec-kid", algorithm, ecParams);
-        using var set = new SigningKeySet([new SigningKeyPair { Descriptor = descriptor, PrivateKey = ec }]);
+        using var set = new SigningKeySet(new SigningKeyPair { Descriptor = descriptor, PrivateKey = ec });
         await using var sut = BuildService(factory: () => set);
         var payload = Encoding.UTF8.GetBytes(Base64UrlEncodeString("""{"sub":"alice"}"""));
         var ct = TestContext.Current.CancellationToken;
@@ -653,7 +1117,7 @@ public sealed class JwtSigningServiceTests
         using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP384);
         var ecParams = ec.ExportParameters(false);
         var descriptor = new SigningKeyDescriptor("ec-384-kid", SigningAlgorithm.ES384, ecParams);
-        using var set = new SigningKeySet([new SigningKeyPair { Descriptor = descriptor, PrivateKey = ec }]);
+        using var set = new SigningKeySet(new SigningKeyPair { Descriptor = descriptor, PrivateKey = ec });
         await using var sut = BuildService(factory: () => set);
         var ct = TestContext.Current.CancellationToken;
 
@@ -668,7 +1132,7 @@ public sealed class JwtSigningServiceTests
         using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP521);
         var ecParams = ec.ExportParameters(false);
         var descriptor = new SigningKeyDescriptor("ec-521-kid", SigningAlgorithm.ES512, ecParams);
-        using var set = new SigningKeySet([new SigningKeyPair { Descriptor = descriptor, PrivateKey = ec }]);
+        using var set = new SigningKeySet(new SigningKeyPair { Descriptor = descriptor, PrivateKey = ec });
         await using var sut = BuildService(factory: () => set);
         var ct = TestContext.Current.CancellationToken;
 
@@ -690,7 +1154,7 @@ public sealed class JwtSigningServiceTests
             Q = ecParams.Q,
         };
         var descriptor = new SigningKeyDescriptor("null-oid-kid", SigningAlgorithm.ES256, noOidCurveParams);
-        using var set = new SigningKeySet([new SigningKeyPair { Descriptor = descriptor, PrivateKey = ec }]);
+        using var set = new SigningKeySet(new SigningKeyPair { Descriptor = descriptor, PrivateKey = ec });
         await using var sut = BuildService(factory: () => set);
         var ct = TestContext.Current.CancellationToken;
 
@@ -716,7 +1180,7 @@ public sealed class JwtSigningServiceTests
             Q = ecParams.Q,
         };
         var descriptor = new SigningKeyDescriptor("bad-curve-kid", SigningAlgorithm.ES256, unsupportedCurveParams);
-        using var set = new SigningKeySet([new SigningKeyPair { Descriptor = descriptor, PrivateKey = ec }]);
+        using var set = new SigningKeySet(new SigningKeyPair { Descriptor = descriptor, PrivateKey = ec });
         await using var sut = BuildService(factory: () => set);
         var ct = TestContext.Current.CancellationToken;
 
@@ -783,7 +1247,7 @@ public sealed class JwtSigningServiceTests
             Q = ec.ExportParameters(false).Q,
         };
         var descriptor = new SigningKeyDescriptor("null-oid-strength-kid", SigningAlgorithm.ES256, nullOidParams);
-        using var set = new SigningKeySet([new SigningKeyPair { Descriptor = descriptor, PrivateKey = ec }]);
+        using var set = new SigningKeySet(new SigningKeyPair { Descriptor = descriptor, PrivateKey = ec });
         await using var sut = BuildService(factory: () => set);
         var ct = TestContext.Current.CancellationToken;
 
@@ -804,7 +1268,7 @@ public sealed class JwtSigningServiceTests
         using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var ecParams = ec.ExportParameters(false);
         var descriptor = new SigningKeyDescriptor("null-oid-compat-kid", SigningAlgorithm.ES256, ecParams);
-        using var set = new SigningKeySet([new SigningKeyPair { Descriptor = descriptor, PrivateKey = new NullOidEcDsa(ec) }]);
+        using var set = new SigningKeySet(new SigningKeyPair { Descriptor = descriptor, PrivateKey = new NullOidEcDsa(ec) });
         await using var sut = BuildService(factory: () => set);
         var ct = TestContext.Current.CancellationToken;
 

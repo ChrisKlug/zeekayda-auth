@@ -3,6 +3,11 @@ using ZeeKayDa.Auth.Stores;
 
 namespace ZeeKayDa.Auth.Tests.Stores;
 
+/// <summary>
+/// Verifies the type shape of <see cref="RefreshTokenEntry"/>, <see cref="RefreshTokenGrant"/>,
+/// <see cref="RefreshGrantStatus"/>, <see cref="RefreshTokenConsumptionResult"/>, and
+/// <see cref="IRefreshTokenStore"/>'s method signatures (ADR 0014 §2/§10).
+/// </summary>
 public sealed class RefreshTokenStoreContractTests
 {
     // ── RefreshTokenEntry — type shape ────────────────────────────────────────────────────────────
@@ -14,8 +19,6 @@ public sealed class RefreshTokenStoreContractTests
 
         type.IsSealed.Should().BeTrue();
         type.IsValueType.Should().BeFalse();
-
-        // Records expose a compiler-synthesised <Clone>$ method; classes do not.
         type.GetMethod("<Clone>$").Should().NotBeNull(
             "the presence of <Clone>$ is the canonical way to confirm a type is a record at runtime");
     }
@@ -27,7 +30,6 @@ public sealed class RefreshTokenStoreContractTests
 
         prop.Should().NotBeNull();
 
-        // init-only setters carry an IsExternalInit modreq on the setter's return parameter
         var setter = prop!.GetSetMethod(nonPublic: false);
         setter.Should().NotBeNull("FamilyId must have a public setter");
         var isInitOnly = setter!.ReturnParameter
@@ -102,6 +104,17 @@ public sealed class RefreshTokenStoreContractTests
     }
 
     [Fact]
+    public void RefreshTokenEntry_FamilyAbsoluteExpiry_is_a_required_init_only_property()
+    {
+        var prop = typeof(RefreshTokenEntry).GetProperty(nameof(RefreshTokenEntry.FamilyAbsoluteExpiry));
+
+        prop.Should().NotBeNull();
+        prop!.PropertyType.Should().Be(typeof(DateTimeOffset));
+        prop.GetCustomAttribute<System.Runtime.CompilerServices.RequiredMemberAttribute>()
+            .Should().NotBeNull("FamilyAbsoluteExpiry must be required (ADR 0014 §10)");
+    }
+
+    [Fact]
     public void RefreshTokenEntry_PreviousTokenHandleHash_is_nullable_and_not_required()
     {
         var prop = typeof(RefreshTokenEntry).GetProperty(nameof(RefreshTokenEntry.PreviousTokenHandleHash));
@@ -118,30 +131,10 @@ public sealed class RefreshTokenStoreContractTests
     public void RefreshTokenEntry_two_instances_with_same_values_are_equal()
     {
         var now = DateTimeOffset.UtcNow;
-        // IReadOnlyList<string> uses reference equality; share the same instance so records compare equal.
         IReadOnlyList<string> scope = ["openid", "profile"];
 
-        var a = new RefreshTokenEntry
-        {
-            FamilyId = "fam-1",
-            ClientId = "client-1",
-            Sub = "user-1",
-            Scope = scope,
-            SsoSessionId = "sso-1",
-            IssuedAt = now,
-            ExpiresAt = now.AddHours(1),
-        };
-
-        var b = new RefreshTokenEntry
-        {
-            FamilyId = "fam-1",
-            ClientId = "client-1",
-            Sub = "user-1",
-            Scope = scope,
-            SsoSessionId = "sso-1",
-            IssuedAt = now,
-            ExpiresAt = now.AddHours(1),
-        };
+        var a = BuildEntry(scope: scope, now: now);
+        var b = BuildEntry(scope: scope, now: now);
 
         a.Should().Be(b);
         (a == b).Should().BeTrue();
@@ -150,19 +143,7 @@ public sealed class RefreshTokenStoreContractTests
     [Fact]
     public void RefreshTokenEntry_two_instances_with_different_FamilyId_are_not_equal()
     {
-        var now = DateTimeOffset.UtcNow;
-
-        var a = new RefreshTokenEntry
-        {
-            FamilyId = "fam-1",
-            ClientId = "client-1",
-            Sub = "user-1",
-            Scope = ["openid"],
-            SsoSessionId = "sso-1",
-            IssuedAt = now,
-            ExpiresAt = now.AddHours(1),
-        };
-
+        var a = BuildEntry();
         var b = a with { FamilyId = "fam-2" };
 
         a.Should().NotBe(b);
@@ -171,16 +152,7 @@ public sealed class RefreshTokenStoreContractTests
     [Fact]
     public void RefreshTokenEntry_PreviousTokenHandleHash_defaults_to_null_when_not_set()
     {
-        var entry = new RefreshTokenEntry
-        {
-            FamilyId = "fam-1",
-            ClientId = "client-1",
-            Sub = "user-1",
-            Scope = ["openid"],
-            SsoSessionId = "sso-1",
-            IssuedAt = DateTimeOffset.UtcNow,
-            ExpiresAt = DateTimeOffset.UtcNow.AddHours(1),
-        };
+        var entry = BuildEntry();
 
         entry.PreviousTokenHandleHash.Should().BeNull();
     }
@@ -188,118 +160,115 @@ public sealed class RefreshTokenStoreContractTests
     [Fact]
     public void RefreshTokenEntry_with_PreviousTokenHandleHash_set_equals_another_instance_with_same_hash()
     {
-        var now = DateTimeOffset.UtcNow;
-
-        var a = new RefreshTokenEntry
-        {
-            FamilyId = "fam-1",
-            ClientId = "client-1",
-            Sub = "user-1",
-            Scope = ["openid"],
-            SsoSessionId = "sso-1",
-            IssuedAt = now,
-            ExpiresAt = now.AddHours(1),
-            PreviousTokenHandleHash = "abc123",
-        };
-
+        var a = BuildEntry() with { PreviousTokenHandleHash = "abc123" };
         var b = a with { };
 
         a.Should().Be(b);
     }
 
-    // ── RefreshTokenConsumptionOutcome — type hierarchy ───────────────────────────────────────────
+    private static RefreshTokenEntry BuildEntry(IReadOnlyList<string>? scope = null, DateTimeOffset? now = null)
+    {
+        var n = now ?? DateTimeOffset.UtcNow;
+        return new RefreshTokenEntry
+        {
+            FamilyId = "fam-1",
+            ClientId = "client-1",
+            Sub = "user-1",
+            Scope = scope ?? ["openid"],
+            SsoSessionId = "sso-1",
+            IssuedAt = n,
+            ExpiresAt = n.AddHours(1),
+            FamilyAbsoluteExpiry = n.AddDays(90),
+        };
+    }
+
+    // ── RefreshTokenConsumptionResult — type hierarchy (ADR 0014 §10 rename) ─────────────────────
 
     [Fact]
-    public void RefreshTokenConsumptionOutcome_is_abstract()
+    public void RefreshTokenConsumptionResult_is_abstract()
     {
-        typeof(RefreshTokenConsumptionOutcome).IsAbstract.Should().BeTrue();
+        typeof(RefreshTokenConsumptionResult).IsAbstract.Should().BeTrue();
     }
 
     [Fact]
-    public void RefreshTokenConsumptionOutcome_cannot_be_instantiated_directly()
+    public void RefreshTokenConsumptionResult_has_exactly_one_constructor_and_it_is_private()
     {
-        var constructors = typeof(RefreshTokenConsumptionOutcome)
-            .GetConstructors(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+        var allCtors = typeof(RefreshTokenConsumptionResult)
+            .GetConstructors(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
 
-        // The only constructor must be private (sealing the hierarchy from outside)
-        constructors.Should().ContainSingle(
+        allCtors.Should().ContainSingle(
             "the type must have exactly one constructor to be a closed hierarchy");
-        constructors[0].IsPrivate.Should().BeTrue(
+        allCtors[0].IsPrivate.Should().BeTrue(
             "a private constructor prevents any subtype from being declared outside the assembly");
     }
 
     [Fact]
-    public void RefreshTokenConsumptionOutcome_Consumed_is_sealed()
+    public void RefreshTokenConsumptionResult_Consumed_is_sealed()
     {
-        typeof(RefreshTokenConsumptionOutcome.Consumed).IsSealed.Should().BeTrue();
+        typeof(RefreshTokenConsumptionResult.Consumed).IsSealed.Should().BeTrue();
     }
 
     [Fact]
-    public void RefreshTokenConsumptionOutcome_ClientMismatch_is_sealed()
+    public void RefreshTokenConsumptionResult_ClientMismatch_is_sealed()
     {
-        typeof(RefreshTokenConsumptionOutcome.ClientMismatch).IsSealed.Should().BeTrue();
+        typeof(RefreshTokenConsumptionResult.ClientMismatch).IsSealed.Should().BeTrue();
     }
 
     [Fact]
-    public void RefreshTokenConsumptionOutcome_AlreadyConsumed_is_sealed()
+    public void RefreshTokenConsumptionResult_AlreadyConsumed_is_sealed()
     {
-        typeof(RefreshTokenConsumptionOutcome.AlreadyConsumed).IsSealed.Should().BeTrue();
+        typeof(RefreshTokenConsumptionResult.AlreadyConsumed).IsSealed.Should().BeTrue();
     }
 
     [Fact]
-    public void RefreshTokenConsumptionOutcome_Revoked_is_sealed()
+    public void RefreshTokenConsumptionResult_Revoked_is_sealed()
     {
-        typeof(RefreshTokenConsumptionOutcome.Revoked).IsSealed.Should().BeTrue();
+        typeof(RefreshTokenConsumptionResult.Revoked).IsSealed.Should().BeTrue();
     }
 
     [Fact]
-    public void RefreshTokenConsumptionOutcome_NotFound_is_sealed()
+    public void RefreshTokenConsumptionResult_NotFound_is_sealed()
     {
-        typeof(RefreshTokenConsumptionOutcome.NotFound).IsSealed.Should().BeTrue();
+        typeof(RefreshTokenConsumptionResult.NotFound).IsSealed.Should().BeTrue();
     }
 
     [Fact]
-    public void RefreshTokenConsumptionOutcome_Consumed_inherits_from_RefreshTokenConsumptionOutcome()
+    public void RefreshTokenConsumptionResult_Consumed_inherits_from_RefreshTokenConsumptionResult()
     {
-        typeof(RefreshTokenConsumptionOutcome.Consumed)
-            .Should().BeAssignableTo<RefreshTokenConsumptionOutcome>();
+        typeof(RefreshTokenConsumptionResult.Consumed).Should().BeAssignableTo<RefreshTokenConsumptionResult>();
     }
 
     [Fact]
-    public void RefreshTokenConsumptionOutcome_ClientMismatch_inherits_from_RefreshTokenConsumptionOutcome()
+    public void RefreshTokenConsumptionResult_ClientMismatch_inherits_from_RefreshTokenConsumptionResult()
     {
-        typeof(RefreshTokenConsumptionOutcome.ClientMismatch)
-            .Should().BeAssignableTo<RefreshTokenConsumptionOutcome>();
+        typeof(RefreshTokenConsumptionResult.ClientMismatch).Should().BeAssignableTo<RefreshTokenConsumptionResult>();
     }
 
     [Fact]
-    public void RefreshTokenConsumptionOutcome_AlreadyConsumed_inherits_from_RefreshTokenConsumptionOutcome()
+    public void RefreshTokenConsumptionResult_AlreadyConsumed_inherits_from_RefreshTokenConsumptionResult()
     {
-        typeof(RefreshTokenConsumptionOutcome.AlreadyConsumed)
-            .Should().BeAssignableTo<RefreshTokenConsumptionOutcome>();
+        typeof(RefreshTokenConsumptionResult.AlreadyConsumed).Should().BeAssignableTo<RefreshTokenConsumptionResult>();
     }
 
     [Fact]
-    public void RefreshTokenConsumptionOutcome_Revoked_inherits_from_RefreshTokenConsumptionOutcome()
+    public void RefreshTokenConsumptionResult_Revoked_inherits_from_RefreshTokenConsumptionResult()
     {
-        typeof(RefreshTokenConsumptionOutcome.Revoked)
-            .Should().BeAssignableTo<RefreshTokenConsumptionOutcome>();
+        typeof(RefreshTokenConsumptionResult.Revoked).Should().BeAssignableTo<RefreshTokenConsumptionResult>();
     }
 
     [Fact]
-    public void RefreshTokenConsumptionOutcome_NotFound_inherits_from_RefreshTokenConsumptionOutcome()
+    public void RefreshTokenConsumptionResult_NotFound_inherits_from_RefreshTokenConsumptionResult()
     {
-        typeof(RefreshTokenConsumptionOutcome.NotFound)
-            .Should().BeAssignableTo<RefreshTokenConsumptionOutcome>();
+        typeof(RefreshTokenConsumptionResult.NotFound).Should().BeAssignableTo<RefreshTokenConsumptionResult>();
     }
 
-    // ── RefreshTokenConsumptionOutcome — subtype properties ───────────────────────────────────────
+    // ── RefreshTokenConsumptionResult — subtype properties ────────────────────────────────────────
 
     [Fact]
     public void Consumed_has_required_Entry_property_of_type_RefreshTokenEntry()
     {
-        var prop = typeof(RefreshTokenConsumptionOutcome.Consumed)
-            .GetProperty(nameof(RefreshTokenConsumptionOutcome.Consumed.Entry));
+        var prop = typeof(RefreshTokenConsumptionResult.Consumed)
+            .GetProperty(nameof(RefreshTokenConsumptionResult.Consumed.Entry));
 
         prop.Should().NotBeNull();
         prop!.PropertyType.Should().Be(typeof(RefreshTokenEntry));
@@ -310,8 +279,8 @@ public sealed class RefreshTokenStoreContractTests
     [Fact]
     public void AlreadyConsumed_has_required_FamilyId_property_of_type_string()
     {
-        var prop = typeof(RefreshTokenConsumptionOutcome.AlreadyConsumed)
-            .GetProperty(nameof(RefreshTokenConsumptionOutcome.AlreadyConsumed.FamilyId));
+        var prop = typeof(RefreshTokenConsumptionResult.AlreadyConsumed)
+            .GetProperty(nameof(RefreshTokenConsumptionResult.AlreadyConsumed.FamilyId));
 
         prop.Should().NotBeNull();
         prop!.PropertyType.Should().Be(typeof(string));
@@ -322,8 +291,8 @@ public sealed class RefreshTokenStoreContractTests
     [Fact]
     public void Revoked_has_required_FamilyId_property_of_type_string()
     {
-        var prop = typeof(RefreshTokenConsumptionOutcome.Revoked)
-            .GetProperty(nameof(RefreshTokenConsumptionOutcome.Revoked.FamilyId));
+        var prop = typeof(RefreshTokenConsumptionResult.Revoked)
+            .GetProperty(nameof(RefreshTokenConsumptionResult.Revoked.FamilyId));
 
         prop.Should().NotBeNull();
         prop!.PropertyType.Should().Be(typeof(string));
@@ -334,33 +303,96 @@ public sealed class RefreshTokenStoreContractTests
     [Fact]
     public void ClientMismatch_has_no_additional_declared_properties()
     {
-        var ownProps = typeof(RefreshTokenConsumptionOutcome.ClientMismatch)
+        var ownProps = typeof(RefreshTokenConsumptionResult.ClientMismatch)
             .GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly);
 
-        ownProps.Should().BeEmpty(
-            "ClientMismatch carries no additional data beyond the base type");
+        ownProps.Should().BeEmpty();
     }
 
     [Fact]
     public void NotFound_has_no_additional_declared_properties()
     {
-        var ownProps = typeof(RefreshTokenConsumptionOutcome.NotFound)
+        var ownProps = typeof(RefreshTokenConsumptionResult.NotFound)
             .GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly);
 
-        ownProps.Should().BeEmpty(
-            "NotFound carries no additional data beyond the base type");
+        ownProps.Should().BeEmpty();
     }
 
-    // ── RefreshTokenConsumptionOutcome — closed hierarchy enforcement ─────────────────────────────
+    // ── RefreshTokenGrant — type shape (ADR 0014 §2) ──────────────────────────────────────────────
 
     [Fact]
-    public void RefreshTokenConsumptionOutcome_has_exactly_one_constructor_and_it_is_private()
+    public void RefreshTokenGrant_is_a_sealed_record()
     {
-        var allCtors = typeof(RefreshTokenConsumptionOutcome)
-            .GetConstructors(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        var type = typeof(RefreshTokenGrant);
 
-        allCtors.Should().ContainSingle();
-        allCtors[0].IsPrivate.Should().BeTrue();
+        type.IsSealed.Should().BeTrue();
+        type.GetMethod("<Clone>$").Should().NotBeNull();
+    }
+
+    [Fact]
+    public void RefreshTokenGrant_HandleHash_is_of_type_StoreKey()
+    {
+        var prop = typeof(RefreshTokenGrant).GetProperty(nameof(RefreshTokenGrant.HandleHash));
+
+        prop.Should().NotBeNull();
+        prop!.PropertyType.Should().Be(typeof(StoreKey));
+    }
+
+    [Fact]
+    public void RefreshTokenGrant_Subject_is_a_plain_string_not_a_StoreKey()
+    {
+        // ADR 0014 sign-off item 1: Subject is deliberately cleartext, NOT an opaque hash.
+        var prop = typeof(RefreshTokenGrant).GetProperty(nameof(RefreshTokenGrant.Subject));
+
+        prop.Should().NotBeNull();
+        prop!.PropertyType.Should().Be(typeof(string));
+    }
+
+    [Fact]
+    public void RefreshTokenGrant_FamilyId_is_a_plain_string_not_a_StoreKey()
+    {
+        var prop = typeof(RefreshTokenGrant).GetProperty(nameof(RefreshTokenGrant.FamilyId));
+
+        prop.Should().NotBeNull();
+        prop!.PropertyType.Should().Be(typeof(string));
+    }
+
+    [Fact]
+    public void RefreshTokenGrant_ProtectedPayload_is_ReadOnlyMemory_of_byte()
+    {
+        var prop = typeof(RefreshTokenGrant).GetProperty(nameof(RefreshTokenGrant.ProtectedPayload));
+
+        prop.Should().NotBeNull();
+        prop!.PropertyType.Should().Be(typeof(ReadOnlyMemory<byte>));
+    }
+
+    [Fact]
+    public void RefreshTokenGrant_Status_is_of_type_RefreshGrantStatus()
+    {
+        var prop = typeof(RefreshTokenGrant).GetProperty(nameof(RefreshTokenGrant.Status));
+
+        prop.Should().NotBeNull();
+        prop!.PropertyType.Should().Be(typeof(RefreshGrantStatus));
+    }
+
+    // ── RefreshGrantStatus — enum shape ────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void RefreshGrantStatus_has_exactly_three_members()
+    {
+        Enum.GetValues<RefreshGrantStatus>().Should().HaveCount(3);
+    }
+
+    [Fact]
+    public void RefreshGrantStatus_Active_is_zero()
+    {
+        ((int)RefreshGrantStatus.Active).Should().Be(0, "Active must be the enum default value");
+    }
+
+    [Fact]
+    public void RefreshGrantStatus_Consumed_and_Revoked_are_distinct_terminal_states()
+    {
+        ((int)RefreshGrantStatus.Consumed).Should().NotBe((int)RefreshGrantStatus.Revoked);
     }
 
     // ── IRefreshTokenStore — method signatures ────────────────────────────────────────────────────
@@ -379,8 +411,7 @@ public sealed class RefreshTokenStoreContractTests
             new[] { typeof(string), typeof(RefreshTokenEntry), typeof(CancellationToken) });
 
         method.Should().NotBeNull("StoreAsync must be declared on IRefreshTokenStore");
-        method!.ReturnType.Should().Be(typeof(Task),
-            "StoreAsync must return Task (not ValueTask)");
+        method!.ReturnType.Should().Be(typeof(Task), "StoreAsync must return Task (not ValueTask)");
     }
 
     [Fact]
@@ -391,8 +422,7 @@ public sealed class RefreshTokenStoreContractTests
             new[] { typeof(string), typeof(CancellationToken) });
 
         method.Should().NotBeNull("FindAsync must be declared on IRefreshTokenStore");
-        method!.ReturnType.Should().Be(typeof(ValueTask<RefreshTokenEntry?>),
-            "FindAsync must return ValueTask<RefreshTokenEntry?>");
+        method!.ReturnType.Should().Be(typeof(ValueTask<RefreshTokenEntry?>));
     }
 
     [Fact]
@@ -403,8 +433,8 @@ public sealed class RefreshTokenStoreContractTests
             new[] { typeof(string), typeof(string), typeof(CancellationToken) });
 
         method.Should().NotBeNull("TryConsumeAsync must be declared on IRefreshTokenStore");
-        method!.ReturnType.Should().Be(typeof(ValueTask<RefreshTokenConsumptionOutcome>),
-            "TryConsumeAsync must return ValueTask<RefreshTokenConsumptionOutcome>");
+        method!.ReturnType.Should().Be(typeof(ValueTask<RefreshTokenConsumptionResult>),
+            "TryConsumeAsync must return ValueTask<RefreshTokenConsumptionResult> (ADR 0014 §10 rename)");
     }
 
     [Fact]
@@ -415,17 +445,57 @@ public sealed class RefreshTokenStoreContractTests
             new[] { typeof(string), typeof(CancellationToken) });
 
         method.Should().NotBeNull("RevokeFamilyAsync must be declared on IRefreshTokenStore");
-        method!.ReturnType.Should().Be(typeof(Task),
-            "RevokeFamilyAsync must return Task (not ValueTask)");
+        method!.ReturnType.Should().Be(typeof(Task), "RevokeFamilyAsync must return Task (not ValueTask)");
     }
 
     [Fact]
-    public void IRefreshTokenStore_has_exactly_four_methods()
+    public void IRefreshTokenStore_has_exactly_four_public_methods()
     {
-        var methods = typeof(IRefreshTokenStore)
-            .GetMethods(BindingFlags.Public | BindingFlags.Instance);
+        var methods = typeof(IRefreshTokenStore).GetMethods(BindingFlags.Public | BindingFlags.Instance);
 
         methods.Should().HaveCount(4,
-            "the interface contract defines exactly four methods: StoreAsync, FindAsync, TryConsumeAsync, RevokeFamilyAsync");
+            "the public contract defines exactly four methods: StoreAsync, FindAsync, TryConsumeAsync, RevokeFamilyAsync; " +
+            "SealAsFrameworkOwnedProtocol is internal and deliberately excluded from this count");
+    }
+
+    // ── IRefreshTokenGrantStore — method signatures (ADR 0014 §3) ─────────────────────────────────
+
+    [Fact]
+    public void IRefreshTokenGrantStore_is_an_interface()
+    {
+        typeof(IRefreshTokenGrantStore).IsInterface.Should().BeTrue();
+    }
+
+    [Fact]
+    public void IRefreshTokenGrantStore_has_exactly_six_methods()
+    {
+        var methods = typeof(IRefreshTokenGrantStore).GetMethods(BindingFlags.Public | BindingFlags.Instance);
+
+        methods.Should().HaveCount(6,
+            "InsertAsync, FindByHandleAsync, TryMarkConsumedAsync, RevokeFamilyAsync, RevokeBySubjectAsync, " +
+            "IsFamilyRevokedAsync (ADR 0014 §3, amended by issue #386)");
+    }
+
+    [Fact]
+    public void IRefreshTokenGrantStore_TryMarkConsumedAsync_returns_ValueTask_of_bool()
+    {
+        var method = typeof(IRefreshTokenGrantStore).GetMethod(
+            nameof(IRefreshTokenGrantStore.TryMarkConsumedAsync),
+            new[] { typeof(StoreKey), typeof(CancellationToken) });
+
+        method.Should().NotBeNull();
+        method!.ReturnType.Should().Be(typeof(ValueTask<bool>),
+            "TryMarkConsumedAsync reports whether THIS call performed the CAS transition");
+    }
+
+    [Fact]
+    public void IRefreshTokenGrantStore_FindByHandleAsync_returns_ValueTask_of_nullable_RefreshTokenGrant()
+    {
+        var method = typeof(IRefreshTokenGrantStore).GetMethod(
+            nameof(IRefreshTokenGrantStore.FindByHandleAsync),
+            new[] { typeof(StoreKey), typeof(CancellationToken) });
+
+        method.Should().NotBeNull();
+        method!.ReturnType.Should().Be(typeof(ValueTask<RefreshTokenGrant?>));
     }
 }
