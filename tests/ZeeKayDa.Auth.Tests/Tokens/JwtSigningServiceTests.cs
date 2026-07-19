@@ -532,7 +532,7 @@ public sealed class JwtSigningServiceTests
         // loudly — otherwise the mistake only surfaces later as a disconnected ObjectDisposedException
         // once the previous set is disposed and its (shared) private key goes with it.
         var timeProvider = new FakeTimeProvider();
-        var rsa = RSA.Create(2048);
+        using var rsa = RSA.Create(2048);
         var callCount = 0;
 
         SigningKeySet Factory()
@@ -562,7 +562,7 @@ public sealed class JwtSigningServiceTests
     {
         // On a cold start there is no previous set to compare against, so a LoadKeysAsync that would
         // otherwise trip the guard on a later cycle must not trigger it on the very first load.
-        var rsa = RSA.Create(2048);
+        using var rsa = RSA.Create(2048);
         await using var sut = BuildService(factory: () => MakeRsaSetWithPrivateKey(rsa, "cold-start-shared-kid"));
         var ct = TestContext.Current.CancellationToken;
 
@@ -578,7 +578,7 @@ public sealed class JwtSigningServiceTests
         // even if it happened to reuse a private key object under a different identifier, is outside
         // this guard's scope and must not be flagged.
         var timeProvider = new FakeTimeProvider();
-        var rsa = RSA.Create(2048);
+        using var rsa = RSA.Create(2048);
         var callCount = 0;
 
         SigningKeySet Factory()
@@ -610,7 +610,7 @@ public sealed class JwtSigningServiceTests
         // share the same underlying RSA object between their additional (retired) keys under the
         // same kid — at index 1, not index 0.
         var timeProvider = new FakeTimeProvider();
-        var sharedRetiredRsa = RSA.Create(2048);
+        using var sharedRetiredRsa = RSA.Create(2048);
         var callCount = 0;
 
         SigningKeySet Factory()
@@ -648,7 +648,7 @@ public sealed class JwtSigningServiceTests
         // invalid before installing it), and a subsequent, well-behaved refresh must still succeed
         // without hanging.
         var timeProvider = new FakeTimeProvider();
-        var rsa = RSA.Create(2048);
+        using var rsa = RSA.Create(2048);
         SigningKeySet? goodSet = null;
         var callCount = 0;
 
