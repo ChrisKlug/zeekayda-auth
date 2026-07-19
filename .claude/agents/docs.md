@@ -78,6 +78,7 @@ docs/
 - All code blocks must have a language tag (` ```csharp `, ` ```json `, etc.)
 - Use `> 💡 **Tip:**` for non-obvious helpful notes
 - Use `> ⚠️ **Warning:**` for security-relevant cautions
+- Never cite internal issue or PR numbers (`#123`, "issue #123", "PR #123") in tutorials, how-to guides, reference, or concepts pages — a consumer configuring the library doesn't have this repo's tracker open and doesn't care which issue shipped a behaviour. Describe the current behaviour directly instead of framing it as a change ("X is skipped when unchanged", not "since issue #349, X is skipped"). ADR changelog entries under `docs/decisions/` are the one exception — tracking the issue that drove each decision is the point of that changelog
 
 ## How You Work
 
