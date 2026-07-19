@@ -61,8 +61,9 @@ internal static class WindowsCertificateKeyExtractor
         throw new ZeeKayDaConfigurationException(new ZeeKayDaConfigurationFailure(
             "signing.windows_certificate_store.private_key_not_found",
             $"Certificate '{thumbprint}' has a private key, but it could not be accessed by this " +
-            "process. Verify the process identity has permission to use the private key (see the " +
-            "Certificates MMC snap-in's 'Manage Private Keys', or 'certutil -repairstore')."));
+            $"process{ProcessIdentityHelper.FormatIdentitySuffix(ProcessIdentityHelper.TryResolveProcessIdentity())}. " +
+            "Verify the process identity has permission to use the private key (see the Certificates " +
+            "MMC snap-in's 'Manage Private Keys', or 'certutil -repairstore')."));
     }
 
     private static ZeeKayDaConfigurationException UnsupportedKeyType(string thumbprint) =>

@@ -87,6 +87,28 @@ public sealed class ZeeKayDaExceptionHierarchyTests
         ex.AggregatedFailures[0].Code.Should().Be("code.a");
     }
 
+    [Fact]
+    public void ZeeKayDaConfigurationException_with_inner_exception_preserves_it()
+    {
+        var innerException = new InvalidOperationException("root cause");
+
+        var ex = new ZeeKayDaConfigurationException(
+            new ZeeKayDaConfigurationFailure("test.code", "test message"), innerException);
+
+        ex.InnerException.Should().BeSameAs(innerException);
+    }
+
+    [Fact]
+    public void ZeeKayDaConfigurationException_with_inner_exception_sets_Message_and_AggregatedFailures()
+    {
+        var failure = new ZeeKayDaConfigurationFailure("test.code", "test message");
+
+        var ex = new ZeeKayDaConfigurationException(failure, new InvalidOperationException("root cause"));
+
+        ex.Message.Should().Be("1 configuration error(s):\n  [test.code] test message");
+        ex.AggregatedFailures.Should().ContainSingle().Which.Should().Be(failure);
+    }
+
     // ── ZeeKayDaInteractionException ─────────────────────────────────────────────────────────────
 
     [Fact]

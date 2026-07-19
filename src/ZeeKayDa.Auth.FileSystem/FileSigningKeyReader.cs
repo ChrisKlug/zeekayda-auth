@@ -125,6 +125,16 @@ internal sealed class FileSigningKeyReader
                 "AddPemFileSigning/AddPfxFileSigning (or options.AddFile) is correct and readable by " +
                 "the process identity."));
         }
+        catch (UnauthorizedAccessException ex)
+        {
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "signing.file_signing.access_denied",
+                    $"Signing key file '{path}' exists but could not be opened{ProcessIdentityHelper.FormatIdentitySuffix(ProcessIdentityHelper.TryResolveProcessIdentity())}. " +
+                    "Verify the file's owner/ACL grants read access to the process identity the application " +
+                    "runs as."),
+                ex);
+        }
     }
 
     private static void ValidateNoSymlink(FileStream stream, string originalPath)

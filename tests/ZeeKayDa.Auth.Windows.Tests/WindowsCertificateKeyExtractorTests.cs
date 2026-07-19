@@ -114,13 +114,24 @@ public sealed class WindowsCertificateKeyExtractorTests
     [Fact]
     public void ExtractPrivateKey_throws_private_key_not_found_when_certificate_has_no_private_key()
     {
+        // Distinct from the "key exists but this process cannot access it" branch, which additionally
+        // includes the resolved process identity (exercised at the ProcessIdentityHelper.FormatIdentitySuffix
+        // level in ZeeKayDa.Auth.Tests — reproducing a real restrictive CNG key ACL is not practical in
+        // a portable unit test): this is the "no private key installed alongside the certificate"
+        // branch, which never mentions a process identity at all.
         using var certificate = TestCertificateFactory.CreateRsaSelfSigned(
             "test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365), withPrivateKey: false);
 
         var act = () => WindowsCertificateKeyExtractor.ExtractPrivateKey(certificate, "AABBCC");
 
-        act.Should().Throw<ZeeKayDaConfigurationException>().WithMessage("*private_key_not_found*");
+        act.Should().Throw<ZeeKayDaConfigurationException>().WithMessage("*private_key_not_found*")
+            .Which.Message.Should().NotContain("running as");
     }
+
+    // FormatIdentitySuffix/TryResolveProcessIdentity now live in the shared
+    // ZeeKayDa.Auth.ProcessIdentityHelper (consolidated with ZeeKayDa.Auth.FileSystem's identical
+    // copy per PR #410's review) — see ProcessIdentityHelperTests in ZeeKayDa.Auth.Tests for their
+    // tests.
 
     [Fact]
     public void ExtractPublicKey_succeeds_for_a_certificate_with_no_private_key()

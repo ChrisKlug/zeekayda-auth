@@ -94,7 +94,7 @@ To grant access:
 - **Using the Certificates MMC snap-in:** locate the certificate under **Personal > Certificates**, right-click it, choose **All Tasks > Manage Private Keys...**, and grant the service account or App Pool identity **Read** permission.
 - **Scripted deployments:** grant access to the underlying CNG key container using `icacls` or PowerShell's `Set-Acl` against the key's file under `%ProgramData%\Microsoft\Crypto\Keys` (CNG) or the legacy CAPI key store, or use `certutil -repairstore` to repair key ACLs after an import.
 
-If the private key exists but cannot be accessed by the current process identity, ZeeKayDa.Auth surfaces a configuration error identifying the certificate by thumbprint and pointing back at "Manage Private Keys" / `certutil -repairstore` — so if you see that error at startup, this permission step is the first thing to check.
+If the private key exists but cannot be accessed by the current process identity, ZeeKayDa.Auth surfaces a configuration error identifying the certificate by thumbprint, the resolved process identity (when it can be determined), and pointing back at "Manage Private Keys" / `certutil -repairstore` — so if you see that error at startup, this permission step is the first thing to check, and the identity named in the message is exactly the one to grant access to.
 
 ## Rotation is fixed at startup, not live
 
