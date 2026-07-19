@@ -127,6 +127,43 @@ public sealed class JwtSigningServiceTests
         }
     }
 
+    /// <summary>
+    /// Builds a <see cref="SigningKeySet"/> wrapping a caller-supplied private key object, so a test
+    /// can construct two distinct <see cref="SigningKeySet"/> instances that nonetheless share the
+    /// same underlying <see cref="RSA"/> object for a given <c>kid</c>.
+    /// </summary>
+    private static SigningKeySet MakeRsaSetWithPrivateKey(RSA rsa, string kid = "test-kid")
+    {
+        var rsaParams = rsa.ExportParameters(false);
+        var descriptor = new SigningKeyDescriptor(kid, SigningAlgorithm.RS256, rsaParams);
+        return new SigningKeySet(new SigningKeyPair { Descriptor = descriptor, PrivateKey = rsa });
+    }
+
+    /// <summary>
+    /// Builds a two-key <see cref="SigningKeySet"/>: a genuinely fresh active key plus a
+    /// caller-supplied additional (non-active) key wrapping <paramref name="additionalRsa"/> — so
+    /// a test can construct two distinct <see cref="SigningKeySet"/> instances with distinct active
+    /// keys that nonetheless share the same underlying <see cref="RSA"/> object at a non-active
+    /// index for a given <c>kid</c>.
+    /// </summary>
+    private static SigningKeySet MakeRsaSetWithAdditionalKey(string activeKid, string additionalKid, RSA additionalRsa)
+    {
+        var activeRsa = RSA.Create(2048);
+        try
+        {
+            var activeDescriptor = new SigningKeyDescriptor(activeKid, SigningAlgorithm.RS256, activeRsa.ExportParameters(false));
+            var additionalDescriptor = new SigningKeyDescriptor(additionalKid, SigningAlgorithm.RS256, additionalRsa.ExportParameters(false));
+            return new SigningKeySet(
+                new SigningKeyPair { Descriptor = activeDescriptor, PrivateKey = activeRsa },
+                [new SigningKeyPair { Descriptor = additionalDescriptor, PrivateKey = additionalRsa }]);
+        }
+        catch
+        {
+            activeRsa.Dispose();
+            throw;
+        }
+    }
+
     private static SigningKeySet MakeRsaSet(string kid = "test-kid")
     {
         var rsa = RSA.Create(2048);
@@ -456,6 +493,172 @@ public sealed class JwtSigningServiceTests
             {
                 1 => goodSet = MakeRsaSet("good-kid"),
                 2 => goodSet!, // buggy: same instance as the previously cached set — trips the guard
+                _ => MakeRsaSet("replacement-kid"), // well-behaved again on any later cycle
+            };
+        }
+
+        await using var sut = BuildService(timeProvider: timeProvider, refreshInterval: TimeSpan.FromMinutes(5), factory: Factory);
+        var ct = TestContext.Current.CancellationToken;
+
+        await sut.GetSigningKeysAsync(ct);
+        timeProvider.Advance(TimeSpan.FromMinutes(6));
+
+        await sut.Awaiting(s => s.GetSigningKeysAsync(ct).AsTask())
+            .Should().ThrowAsync<InvalidOperationException>();
+
+        // The previously cached set is still intact — not disposed by the failed refresh attempt.
+        var accessPrivateKey = () => goodSet!.GetPrivateKey(0);
+        accessPrivateKey.Should().NotThrow<ObjectDisposedException>(
+            "the guard must fire before disposing or installing anything, leaving the last known good set usable");
+
+        // The refresh lock was released, not left held: a subsequent call completes promptly
+        // rather than hanging, and a well-behaved LoadKeysAsync can still succeed afterwards.
+        var thirdCallTask = sut.GetSigningKeysAsync(ct).AsTask();
+        var completed = await Task.WhenAny(thirdCallTask, Task.Delay(TimeSpan.FromSeconds(5), ct));
+        completed.Should().BeSameAs(thirdCallTask, "a subsequent call must not deadlock after the guard throws");
+
+        var keys = await thirdCallTask;
+        keys.Should().ContainSingle().Which.Kid.Should().Be("replacement-kid");
+    }
+
+    // ── LoadKeysAsync reused-private-key-object guard (#361) ────────────────────────────────────────
+
+    [Fact]
+    public async Task GetSigningKeysAsync_throws_InvalidOperationException_when_LoadKeysAsync_returns_new_SigningKeySet_wrapping_previous_sets_private_key()
+    {
+        // A provider that constructs a genuinely new SigningKeySet instance every call passes the
+        // "same instance" guard, but if that new instance wraps the same underlying private key
+        // object as the previous set for a shared kid, it must still be caught immediately and
+        // loudly — otherwise the mistake only surfaces later as a disconnected ObjectDisposedException
+        // once the previous set is disposed and its (shared) private key goes with it.
+        var timeProvider = new FakeTimeProvider();
+        var rsa = RSA.Create(2048);
+        var callCount = 0;
+
+        SigningKeySet Factory()
+        {
+            callCount++;
+            return MakeRsaSetWithPrivateKey(rsa, "shared-kid"); // buggy: new SigningKeySet, same RSA object every call
+        }
+
+        await using var sut = BuildService(timeProvider: timeProvider, refreshInterval: TimeSpan.FromMinutes(5), factory: Factory);
+        var ct = TestContext.Current.CancellationToken;
+
+        await sut.GetSigningKeysAsync(ct);
+        timeProvider.Advance(TimeSpan.FromMinutes(6));
+
+        var thrown = await sut.Awaiting(s => s.GetSigningKeysAsync(ct).AsTask())
+            .Should().ThrowAsync<InvalidOperationException>();
+
+        thrown.Which.Message.Should().Contain("shared-kid")
+            .And.Contain("same private key object")
+            .And.NotContain("same SigningKeySet instance",
+                "the error message must distinguish the reused-private-key-object case from the existing same-instance guard");
+        callCount.Should().Be(2, "the guard must fire on the second (offending) LoadKeysAsync call");
+    }
+
+    [Fact]
+    public async Task GetSigningKeysAsync_does_not_trigger_reused_private_key_guard_on_cold_start()
+    {
+        // On a cold start there is no previous set to compare against, so a LoadKeysAsync that would
+        // otherwise trip the guard on a later cycle must not trigger it on the very first load.
+        var rsa = RSA.Create(2048);
+        await using var sut = BuildService(factory: () => MakeRsaSetWithPrivateKey(rsa, "cold-start-shared-kid"));
+        var ct = TestContext.Current.CancellationToken;
+
+        var act = () => sut.GetSigningKeysAsync(ct).AsTask();
+
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task GetSigningKeysAsync_does_not_trigger_reused_private_key_guard_when_kid_is_not_shared()
+    {
+        // The guard only compares kids present in both sets. A rotated key with a different kid,
+        // even if it happened to reuse a private key object under a different identifier, is outside
+        // this guard's scope and must not be flagged.
+        var timeProvider = new FakeTimeProvider();
+        var rsa = RSA.Create(2048);
+        var callCount = 0;
+
+        SigningKeySet Factory()
+        {
+            callCount++;
+            return callCount switch
+            {
+                1 => MakeRsaSetWithPrivateKey(rsa, "kid-one"),
+                _ => MakeRsaSetWithPrivateKey(rsa, "kid-two"),
+            };
+        }
+
+        await using var sut = BuildService(timeProvider: timeProvider, refreshInterval: TimeSpan.FromMinutes(5), factory: Factory);
+        var ct = TestContext.Current.CancellationToken;
+
+        await sut.GetSigningKeysAsync(ct);
+        timeProvider.Advance(TimeSpan.FromMinutes(6));
+
+        var act = () => sut.GetSigningKeysAsync(ct).AsTask();
+
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task GetSigningKeysAsync_throws_InvalidOperationException_when_reused_private_key_object_is_at_a_non_active_index()
+    {
+        // The reused-object guard must scan every shared kid, not just the active key at index 0.
+        // Both sets here have a genuinely distinct active key (a fresh RSA object each cycle), but
+        // share the same underlying RSA object between their additional (retired) keys under the
+        // same kid — at index 1, not index 0.
+        var timeProvider = new FakeTimeProvider();
+        var sharedRetiredRsa = RSA.Create(2048);
+        var callCount = 0;
+
+        SigningKeySet Factory()
+        {
+            callCount++;
+            return callCount switch
+            {
+                1 => MakeRsaSetWithAdditionalKey("active-1", "retired-shared", sharedRetiredRsa),
+                _ => MakeRsaSetWithAdditionalKey("active-2", "retired-shared", sharedRetiredRsa), // buggy: retired key reuses the previous set's RSA object
+            };
+        }
+
+        await using var sut = BuildService(timeProvider: timeProvider, refreshInterval: TimeSpan.FromMinutes(5), factory: Factory);
+        var ct = TestContext.Current.CancellationToken;
+
+        await sut.GetSigningKeysAsync(ct);
+        timeProvider.Advance(TimeSpan.FromMinutes(6));
+
+        var thrown = await sut.Awaiting(s => s.GetSigningKeysAsync(ct).AsTask())
+            .Should().ThrowAsync<InvalidOperationException>();
+
+        thrown.Which.Message.Should().Contain("retired-shared")
+            .And.Contain("same private key object")
+            .And.NotContain("same SigningKeySet instance",
+                "the error message must distinguish the reused-private-key-object case from the existing same-instance guard");
+        callCount.Should().Be(2, "the guard must fire on the second (offending) LoadKeysAsync call");
+    }
+
+    [Fact]
+    public async Task GetSigningKeysAsync_leaves_previous_key_set_intact_and_lock_released_after_reused_private_key_guard_throws()
+    {
+        // Regression/guard test: hitting the "reused private key object" guard must not corrupt the
+        // cache or leave the refresh lock held. The previously cached SigningKeySet must remain
+        // undisposed (proving the base class did not dispose the very object it just flagged as
+        // invalid before installing it), and a subsequent, well-behaved refresh must still succeed
+        // without hanging.
+        var timeProvider = new FakeTimeProvider();
+        var rsa = RSA.Create(2048);
+        SigningKeySet? goodSet = null;
+        var callCount = 0;
+
+        SigningKeySet Factory()
+        {
+            callCount++;
+            return callCount switch
+            {
+                1 => goodSet = MakeRsaSetWithPrivateKey(rsa, "shared-kid"),
+                2 => MakeRsaSetWithPrivateKey(rsa, "shared-kid"), // buggy: new SigningKeySet, same RSA object as previous set
                 _ => MakeRsaSet("replacement-kid"), // well-behaved again on any later cycle
             };
         }
