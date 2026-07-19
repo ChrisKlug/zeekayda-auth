@@ -40,13 +40,13 @@ public static class ZeeKayDaAuthBuilderWindowsCertificateStoreSigningExtensions
     /// </remarks>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
     /// <param name="thumbprint">The thumbprint of the required/primary certificate to sign with.</param>
+    /// <param name="algorithm">The JWS algorithm to sign with.</param>
     /// <param name="storeLocation">The store location to search.</param>
     /// <param name="storeName">The store name to search.</param>
     /// <param name="configure">
     /// An optional callback to further configure <see cref="WindowsCertificateStoreSigningOptions"/>
-    /// (for example, <see cref="JwtSigningServiceOptions.KeySourceRefreshInterval"/>,
-    /// <see cref="WindowsCertificateStoreSigningOptions.Algorithm"/>, or additional certificates for
-    /// rotation via <see cref="WindowsCertificateStoreSigningOptions.AddCertificate"/>).
+    /// (for example, <see cref="JwtSigningServiceOptions.KeySourceRefreshInterval"/> or additional
+    /// certificates for rotation via <see cref="WindowsCertificateStoreSigningOptions.AddCertificate"/>).
     /// </param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
     /// <exception cref="PlatformNotSupportedException">
@@ -65,6 +65,7 @@ public static class ZeeKayDaAuthBuilderWindowsCertificateStoreSigningExtensions
     public static ZeeKayDaAuthBuilder AddWindowsCertificateStoreSigning(
         this ZeeKayDaAuthBuilder builder,
         string thumbprint,
+        SigningAlgorithm algorithm,
         StoreLocation storeLocation,
         StoreName storeName,
         Action<WindowsCertificateStoreSigningOptions>? configure = null)
@@ -93,6 +94,7 @@ public static class ZeeKayDaAuthBuilderWindowsCertificateStoreSigningExtensions
             .Configure(options =>
             {
                 options.Thumbprint = ThumbprintFormat.Normalize(thumbprint);
+                options.Algorithm = algorithm;
                 options.StoreLocation = storeLocation;
                 options.StoreName = storeName;
             })

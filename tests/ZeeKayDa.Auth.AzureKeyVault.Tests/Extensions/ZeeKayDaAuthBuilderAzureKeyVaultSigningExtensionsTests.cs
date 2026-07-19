@@ -21,7 +21,7 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
     [Fact]
     public void AddAzureKeyVaultRemoteSigning_throws_ArgumentNullException_when_builder_is_null()
     {
-        var act = () => ((ZeeKayDaAuthBuilder)null!).AddAzureKeyVaultRemoteSigning(KeyIdentifier, new FakeTokenCredential());
+        var act = () => ((ZeeKayDaAuthBuilder)null!).AddAzureKeyVaultRemoteSigning(KeyIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
         act.Should().Throw<ArgumentNullException>().WithParameterName("builder");
     }
@@ -32,7 +32,7 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
         var services = new ServiceCollection();
         var builder = new ZeeKayDaAuthBuilder(services);
 
-        var act = () => builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, null!);
+        var act = () => builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, SigningAlgorithm.RS256, null!);
 
         act.Should().Throw<ArgumentNullException>().WithParameterName("credential");
     }
@@ -46,7 +46,7 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
         services.AddSingleton<IJwtSigningService>(NoOpJwtSigningService.Instance);
         var builder = new ZeeKayDaAuthBuilder(services);
 
-        var act = () => builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, new FakeTokenCredential());
+        var act = () => builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
         act.Should().Throw<InvalidOperationException>()
             .WithMessage("*IJwtSigningService*already registered*");
@@ -67,7 +67,7 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         var builder = new ZeeKayDaAuthBuilder(services);
 
-        builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, new FakeTokenCredential());
+        builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
         await using var provider = services.BuildServiceProvider();
         var service = provider.GetRequiredService<IJwtSigningService>();
@@ -82,7 +82,7 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
         services.AddSingleton<IKeyVaultSigner>(new FakeKeyVaultSigner());
         var builder = new ZeeKayDaAuthBuilder(services);
 
-        var returned = builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, new FakeTokenCredential());
+        var returned = builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
         returned.Should().BeSameAs(builder);
     }
@@ -126,7 +126,7 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
     [Fact]
     public void AddAzureKeyVaultCachedSigning_throws_ArgumentNullException_when_builder_is_null()
     {
-        var act = () => ((ZeeKayDaAuthBuilder)null!).AddAzureKeyVaultCachedSigning(CertificateIdentifier, new FakeTokenCredential());
+        var act = () => ((ZeeKayDaAuthBuilder)null!).AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
         act.Should().Throw<ArgumentNullException>().WithParameterName("builder");
     }
@@ -137,7 +137,7 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
         var services = new ServiceCollection();
         var builder = new ZeeKayDaAuthBuilder(services);
 
-        var act = () => builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, null!);
+        var act = () => builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.RS256, null!);
 
         act.Should().Throw<ArgumentNullException>().WithParameterName("credential");
     }
@@ -151,7 +151,7 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
         services.AddSingleton<IJwtSigningService>(NoOpJwtSigningService.Instance);
         var builder = new ZeeKayDaAuthBuilder(services);
 
-        var act = () => builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, new FakeTokenCredential());
+        var act = () => builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
         act.Should().Throw<InvalidOperationException>()
             .WithMessage("*IJwtSigningService*already registered*");
@@ -166,9 +166,9 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
         services.AddSingleton<IKeyVaultKeyReader>(new FakeKeyVaultKeyReader());
         services.AddSingleton<IKeyVaultSigner>(new FakeKeyVaultSigner());
         var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, new FakeTokenCredential());
+        builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
-        var act = () => builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, new FakeTokenCredential());
+        var act = () => builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
         act.Should().Throw<InvalidOperationException>()
             .WithMessage("*IJwtSigningService*already registered*");
@@ -184,7 +184,7 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         var builder = new ZeeKayDaAuthBuilder(services);
 
-        builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, new FakeTokenCredential());
+        builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
         await using var provider = services.BuildServiceProvider();
         var service = provider.GetRequiredService<IJwtSigningService>();
@@ -198,7 +198,7 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
         services.AddSingleton<IKeyVaultCertificateReader>(new FakeKeyVaultCertificateReader());
         var builder = new ZeeKayDaAuthBuilder(services);
 
-        var returned = builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, new FakeTokenCredential());
+        var returned = builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
         returned.Should().BeSameAs(builder);
     }

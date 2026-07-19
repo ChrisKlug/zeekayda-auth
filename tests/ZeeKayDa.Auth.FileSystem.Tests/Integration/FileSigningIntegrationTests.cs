@@ -49,7 +49,7 @@ public sealed class FileSigningIntegrationTests
         var (services, _) = BuildServices(T0);
 
         var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddPemFileSigning(path);
+        builder.AddPemFileSigning(path, SigningAlgorithm.RS256);
 
         await using var provider = services.BuildServiceProvider();
         var signingService = provider.GetRequiredService<IJwtSigningService>();
@@ -76,7 +76,7 @@ public sealed class FileSigningIntegrationTests
         var (services, _) = BuildServices(T0);
 
         var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddPemFileSigning(predecessorPath, configure: options =>
+        builder.AddPemFileSigning(predecessorPath, SigningAlgorithm.RS256, configure: options =>
         {
             options.AddFile(successorPath);
             options.KeySourceRefreshInterval = refreshInterval;
@@ -104,7 +104,7 @@ public sealed class FileSigningIntegrationTests
         var (services, timeProvider) = BuildServices(T0);
 
         var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddPemFileSigning(predecessorPath, configure: options =>
+        builder.AddPemFileSigning(predecessorPath, SigningAlgorithm.RS256, configure: options =>
         {
             options.AddFile(successorPath);
             options.KeySourceRefreshInterval = refreshInterval;
@@ -133,7 +133,7 @@ public sealed class FileSigningIntegrationTests
         var (services, _) = BuildServices(T0);
 
         var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddPfxFileSigning(path, _ => ValueTask.FromResult(CorrectPassword));
+        builder.AddPfxFileSigning(path, SigningAlgorithm.RS256, _ => ValueTask.FromResult(CorrectPassword));
 
         await using var provider = services.BuildServiceProvider();
         var signingService = provider.GetRequiredService<IJwtSigningService>();
@@ -155,7 +155,7 @@ public sealed class FileSigningIntegrationTests
         var (services, _) = BuildServices(T0);
 
         var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddPemFileSigning(missingPath);
+        builder.AddPemFileSigning(missingPath, SigningAlgorithm.RS256);
 
         await using var provider = services.BuildServiceProvider();
         var signingService = provider.GetRequiredService<IJwtSigningService>();
@@ -174,7 +174,7 @@ public sealed class FileSigningIntegrationTests
         var (services, _) = BuildServices(T0);
 
         var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddPemFileSigning(path);
+        builder.AddPemFileSigning(path, SigningAlgorithm.RS256);
 
         await using var provider = services.BuildServiceProvider();
         var signingService = provider.GetRequiredService<IJwtSigningService>();
@@ -194,7 +194,7 @@ public sealed class FileSigningIntegrationTests
         var (services, _) = BuildServices(T0);
 
         var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddPfxFileSigning(path, _ => ValueTask.FromResult("wrong-password"));
+        builder.AddPfxFileSigning(path, SigningAlgorithm.RS256, _ => ValueTask.FromResult("wrong-password"));
 
         await using var provider = services.BuildServiceProvider();
         var signingService = provider.GetRequiredService<IJwtSigningService>();
@@ -218,7 +218,7 @@ public sealed class FileSigningIntegrationTests
         var (services, _) = BuildServices(T0);
 
         var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddPemFileSigning(path);
+        builder.AddPemFileSigning(path, SigningAlgorithm.RS256);
 
         await using var provider = services.BuildServiceProvider();
         var signingService = provider.GetRequiredService<IJwtSigningService>();
@@ -243,7 +243,7 @@ public sealed class FileSigningIntegrationTests
         var (services, _) = BuildServices(T0);
 
         var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddPemFileSigning(missingPath);
+        builder.AddPemFileSigning(missingPath, SigningAlgorithm.RS256);
 
         await using var provider = services.BuildServiceProvider();
         var startupService = provider.GetServices<IHostedService>().OfType<FileSigningStartupService>().Single();
@@ -263,7 +263,7 @@ public sealed class FileSigningIntegrationTests
         var (services, _) = BuildServices(T0);
 
         var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddPemFileSigning(path);
+        builder.AddPemFileSigning(path, SigningAlgorithm.RS256);
 
         await using var provider = services.BuildServiceProvider();
         var startupService = provider.GetServices<IHostedService>().OfType<FileSigningStartupService>().Single();
