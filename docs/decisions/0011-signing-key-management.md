@@ -752,6 +752,45 @@ certificate in configuration) already requires a host restart (§3.2), and a res
 that always runs a real `LoadKeysAsync` — the very set this hook is a shortcut for — regardless of
 what this override does.
 
+**Issue #349 ships the same pattern for the file-based provider — one override on the shared base
+class covers both PEM and PFX.** `FileSigningJwtSigningService<TOptions>`, the shared base class
+behind both `PemFileSigningJwtSigningService` and `PfxFileSigningJwtSigningService`, overrides
+`HasKeySetChangedAsync` once, so both subclasses gain the skip-on-unchanged behaviour from a single
+change. The comparison basis is a small superset of the Windows Certificate Store provider's: the
+*registered path set* (a path added or removed from `GetRegisteredPaths` is checked first, before
+touching the filesystem at all), each remaining path's **file mtime** (`File.GetLastWriteTimeUtc`
+— a stat call, never a content read, compared against the timestamp recorded at the last successful
+load), and — only once the path set and every mtime are unchanged — the recomputed *(active path,
+included path set)* tuple, via the same generic `SigningKeyRotation.ToChangeDetectionSet` helper
+#347/#348 already use, evaluated against the current time from the `NotBefore`/`NotAfter` recorded at
+the last load rather than by re-parsing any file. The path-set check needs no filesystem access;
+the mtime check is a stat per registered path; only the third trigger recomputes the rotation
+timeline, and it does so purely from already-recorded metadata. A missing file's
+`File.GetLastWriteTimeUtc` returns a sentinel rather than throwing, which will not match the
+recorded real timestamp and so is itself correctly reported as a change (outright removal is also
+independently caught by the path-set check).
+
+Unlike the certificate-store provider, a file's mtime is *not* content-addressed the way a
+thumbprint is — two different byte sequences can share an mtime after a filesystem-clock-resolution
+coincidence, and mtime alone is not a strong integrity signal. That is deliberately not a problem
+here: mtime is used only to decide whether to re-read the file, never as a substitute for the
+key/algorithm-compatibility and minimum-key-strength validation the base class already performs at
+every real `LoadKeysAsync` (§1, §2). A false "unchanged" verdict — an actual rotation whose new
+file happens to collide on mtime with the old one — only delays that rotation being picked up by one
+more refresh interval; it does not weaken any signature, trust, or validation guarantee, because the
+worst case is identical in kind to any other cache-hit cycle: the previously-loaded (still valid,
+still published) key keeps signing for one extra interval. The baseline
+(`_previouslyLoadedFiles` / `_previouslyIncludedPaths`) is written only inside `LoadKeysAsync` on
+success, never from the ask itself, following the same write-only-on-load discipline as the Key
+Vault and Windows Certificate Store providers above. If this method's own recomputation finds no
+registered file currently eligible to sign, it reports a change rather than failing itself; the
+subsequent `LoadKeysAsync` call is what fails closed with its usual
+`signing.file_signing.no_active_certificate` error.
+
+This closes epic **#187**'s `HasKeySetChangedAsync` follow-up set opened by issue #334: all four
+shipped providers (Azure Key Vault cached-signing and remote-signing, Windows Certificate Store,
+and now file-based PEM/PFX) implement the change-detection hook.
+
 **Issue #348 also relocated the near-expiry warning from `LoadKeysAsync` into
 `HasKeySetChangedAsync`.** The 30-day active-certificate-expiry warning previously fired only
 inside `LoadKeysAsync`; once an unchanged refresh cycle could skip `LoadKeysAsync` entirely, that
@@ -1233,6 +1272,19 @@ alternatives sections above.
 - **2026-07-12 — issue #347** — `AzureKeyVaultRemoteSigningJwtSigningService` now overrides `HasKeySetChangedAsync` with the same metadata-only, three-field `(Version, Enabled, IsActive)` comparison as the cached-signing provider (§3.5), via a shared `ComputeIncludedVersionsAsync` extraction used by both `LoadKeysAsync` and the new override. Straight port, no new design decisions: this provider's `LoadKeysAsync` has no active/non-active private-key branching to preserve, so the port is proportionately simpler than the template. #348 (Windows Certificate Store) and #349 (file-based PEM/PFX) remain open follow-ups.
 - **2026-07-13 — issue #348** — `WindowsCertificateStoreSigningJwtSigningService` overrides `HasKeySetChangedAsync` too, but — unlike both Key Vault providers above — with **no store access in the ask at all**: an X.509 thumbprint is content-addressed (a SHA-1 hash of the certificate's own DER encoding), so a fixed thumbprint's `NotBefore`/`NotAfter` cannot change without the thumbprint itself changing, and the configured thumbprint set is bound once from `IOptions<TOptions>` and fixed for the process lifetime (`AddWindowsCertificateStoreSigning` already documents that changing it requires a restart, i.e. a cold start, which never reaches this hook). The override therefore recomputes the rotation timeline purely from the `RotationKey` list cached at the last successful `LoadKeysAsync`, re-evaluated against the current time — cheaper than even the Key Vault providers' metadata-only network call. Comparison shape (whole included set, keyed by thumbprint and which entry is active, via the now-public `SigningKeyRotation.ToChangeDetectionSet`) and the write-only-on-load baseline discipline both carry over unchanged; there is no `Enabled` counterpart, since a certificate registration has none. Added a regression test proving the same "active identity must be part of the comparison" lesson as PR #350's finding, and confirmed by the same red/green process (temporarily dropping `IsActive` from the tuple, observing the test fail, then restoring it). #349 (file-based PEM/PFX) remains the last open follow-up.
 - **2026-07-13 — issue #348 follow-up review** — architect and security review of the `HasKeySetChangedAsync` override above both converged on the same finding: the 30-day active-certificate-expiry warning lived only in `LoadKeysAsync`, so an unchanged ask cycle that now skips `LoadKeysAsync` entirely also silently skipped re-firing that warning, contradicting the method's own documented "repeats for as long as the condition holds" cadence. Fixed by relocating the check into `HasKeySetChangedAsync` itself (no store access added — it only needs the cached active entry's `ExpiresAt`), firing on every ask cycle; `LoadKeysAsync` keeps one guarded call for the cold-start case only, so the warning neither goes missing in the steady state nor double-logs on a cycle where a reload also runs. §3.5 above updated with the fix and with an explicit "consequences" note accepting that out-of-band store deletion is not detected within a refresh interval (§"Consequences" / Negative-Trade-offs). The "only elapsed time can change" phrasing (§3.5 and the code's own XML remarks) corrected to scope explicitly to "a thumbprint that remains present and accessible in the store."
+- **2026-07-19 — issue #349** — `FileSigningJwtSigningService<TOptions>` (the shared base class
+  behind `PemFileSigningJwtSigningService` and `PfxFileSigningJwtSigningService`) overrides
+  `HasKeySetChangedAsync` once, covering both subclasses in a single change: registered-path-set
+  membership, then per-path `File.GetLastWriteTimeUtc` (a stat, never a content read), then —
+  only when both are unchanged — a recomputed `(active path, included path set)` tuple via the
+  shared `SigningKeyRotation.ToChangeDetectionSet` helper #347/#348 also use, evaluated against
+  the `NotBefore`/`NotAfter` metadata recorded at the last successful load rather than by
+  re-parsing any file. mtime is not a strong integrity signal on its own, but is used only to
+  decide whether to re-read — a mtime-collision false "unchanged" only delays picking up a
+  rotation by one refresh interval, it does not weaken any validation guarantee. Same
+  write-only-on-load baseline discipline as the other three providers. Closes epic #187's
+  `HasKeySetChangedAsync` follow-up set opened by issue #334 (all four shipped providers now
+  implement the hook).
 - **2026-07-19 — issue #355** — `SigningKeySet` construction reshaped from a single positional `IReadOnlyList<SigningKeyPair>` (first entry = active by unenforced convention) to a named `SigningKeySet(SigningKeyPair activeKey, IEnumerable<SigningKeyPair>? additionalKeys = null)`, so the active signing key can no longer be selected by list order and an out-of-order custom provider can no longer silently sign with a retired/not-yet-active key (§3.2, structural tier-1 fix). `ActiveKey` now derives from the named parameter rather than `Keys[0]`; the empty-set `ArgumentException` disappears (emptiness is unrepresentable); `Keys`/JWKS ordering and the hot-path zero-alloc reuse are unchanged. Second bucket named `additionalKeys` — lifecycle-neutral (covers both pre-published/future and within-retirement-window keys), not `retired`; two buckets, no new third list. Duplicate-`kid` validation stays at the base-class load path (§4.3), not the constructor.
 
 ---
