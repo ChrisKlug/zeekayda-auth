@@ -357,6 +357,47 @@ public sealed class JwtSigningServiceTests
         sut.HasKeySetChangedAsyncCallCount.Should().Be(1, "consulted once per elapsed cycle, only after a previous set already exists");
     }
 
+    [Fact]
+    public async Task GetSigningKeysAsync_propagates_exception_from_HasKeySetChangedAsync_and_leaves_cached_set_untouched()
+    {
+        // Fail-closed contract (ADR 0011 §3.2): a throwing HasKeySetChangedAsync must propagate
+        // straight to the caller with no fallback, and must leave the cached set and its expiry
+        // untouched — a subsequent, well-behaved call must still serve the previously cached key
+        // set rather than a reloaded or corrupted one.
+        var timeProvider = new FakeTimeProvider();
+        var set = MakeRsaSet("cached-kid");
+        var callCount = 0;
+        var options = Options.Create(new FakeSigningServiceOptions { KeySourceRefreshInterval = TimeSpan.FromMinutes(5) });
+        await using var sut = new ControllableHasChangedSigningService(
+            options,
+            timeProvider,
+            () => set,
+            hasChanged: () =>
+            {
+                callCount++;
+                return callCount switch
+                {
+                    1 => throw new InvalidOperationException("simulated cheap-check failure"),
+                    _ => false,
+                };
+            });
+        var ct = TestContext.Current.CancellationToken;
+
+        var first = await sut.GetSigningKeysAsync(ct);
+        timeProvider.Advance(TimeSpan.FromMinutes(6));
+
+        await sut.Awaiting(s => s.GetSigningKeysAsync(ct).AsTask())
+            .Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("simulated cheap-check failure");
+
+        var second = await sut.GetSigningKeysAsync(ct);
+
+        sut.LoadCount.Should().Be(1,
+            "the failed ask must not have triggered a reload, and the recovered call must keep serving the cached set rather than reloading");
+        second.Should().BeSameAs(first,
+            "the cached key set's memoised descriptor list must be untouched by the earlier failed HasKeySetChangedAsync call");
+    }
+
     // ── LoadKeysAsync "same instance" guard (ADR 0011 §3.2) ──────────────────────────────────────────
 
     [Fact]
