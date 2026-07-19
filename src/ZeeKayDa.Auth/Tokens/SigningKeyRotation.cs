@@ -192,6 +192,15 @@ public static class SigningKeyRotation
     /// each key's identifier.
     /// </summary>
     /// <remarks>
+    /// <paramref name="included"/> is the <see cref="RotationEntry"/> list produced directly by
+    /// <see cref="SelectIncludedKeys"/>, evaluated before any <see cref="SigningKeySet"/> is
+    /// constructed from it. This method's <c>i == 0</c> positional derivation of <c>IsActive</c>
+    /// is therefore coupled to <see cref="SelectIncludedKeys"/>'s own active-first guarantee, not
+    /// to <see cref="SigningKeySet"/>'s internal storage order — issue #355's reshaping of
+    /// <see cref="SigningKeySet"/>'s constructor (naming the active key explicitly rather than by
+    /// position) does not touch this method or its correctness.
+    /// </remarks>
+    /// <remarks>
     /// Comparing only key identifiers (without <c>IsActive</c>) misses the moment a rotation
     /// actually completes: a normal two-key rotation can cross a poll boundary where the included
     /// identifier set does not change but which entry is active does (the predecessor retires,

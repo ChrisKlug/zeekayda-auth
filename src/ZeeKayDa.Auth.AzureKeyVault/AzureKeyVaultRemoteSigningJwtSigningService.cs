@@ -161,7 +161,9 @@ internal sealed class AzureKeyVaultRemoteSigningJwtSigningService : JwtSigningSe
         _previouslyPublishedKidVersions = newKidVersions;
         _previouslyIncludedVersions = KeyVaultSigningKeyRotation.ToChangeDetectionSet(included);
 
-        var set = new SigningKeySet(keyPairs);
+        // `included` (and therefore `keyPairs`, built from it above) is active-first, so
+        // splitting off the first entry as the named active key is safe.
+        var set = new SigningKeySet(keyPairs[0], keyPairs.Skip(1));
 
         // Atomic wholesale replacement, deliberately assigned only right before returning the new
         // set — see the field's own doc comment above for the consistency trade-off this implies.
