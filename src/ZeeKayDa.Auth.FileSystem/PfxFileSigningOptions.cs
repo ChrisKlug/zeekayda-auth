@@ -9,7 +9,13 @@ namespace ZeeKayDa.Auth.FileSystem;
 /// <para>
 /// <see cref="JwtSigningServiceOptions.KeySourceRefreshInterval"/> is inherited from the base class and
 /// defaults to 5 minutes; see the remarks on <see cref="PemFileSigningOptions"/> for what it governs
-/// in this provider (a startup-warning threshold, not a re-download cadence).
+/// in this provider (a startup-warning threshold, not a re-download cadence) — specifically, it is
+/// the threshold used to warn when a rotated-in file's
+/// <see cref="System.Security.Cryptography.X509Certificates.X509Certificate2.NotBefore"/> is
+/// scheduled too soon relative to how often relying parties are expected to have polled the JWKS
+/// (ADR 0011 §3.5; see <see cref="SigningKeyRotation.HasTooSoonPendingActivation"/>). This applies
+/// identically to PFX, since <see cref="AdditionalFiles"/> supports the same pre-staged
+/// successor-certificate rotation pattern PEM does.
 /// </para>
 /// <para>
 /// <strong>Why <see cref="PasswordSource"/> is <c>Func&lt;CancellationToken, ValueTask&lt;string&gt;&gt;</c>.</strong>

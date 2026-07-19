@@ -208,12 +208,14 @@ host environment is not in the allowed-environments list (below), startup fails 
 **The environment gate is a provider-scoped, code-only opt-in — `AllowedDevelopmentJwtSigningKeysEnvironments`.**
 
 ```csharp
-public sealed class DevelopmentSigningKeyOptions : JwtSigningServiceOptions
+public sealed class DevelopmentSigningKeyOptions : StaticKeySourceOptions // amended by issue #409; was JwtSigningServiceOptions
 {
     // Defaults to ["Development"]. Widening it to a named non-production environment
     // (e.g. "Staging", "IntegrationTest") is an explicit, code-only opt-in.
     public IReadOnlyList<string> AllowedDevelopmentJwtSigningKeysEnvironments { get; set; } = ["Development"];
-    // … EnvironmentName (host-populated), PersistToDirectory, inherited KeySourceRefreshInterval …
+    // … EnvironmentName (host-populated), PersistToDirectory …
+    // No refresh-cadence property: StaticKeySourceOptions carries none (§3.4), replacing the
+    // pre-#409 "inherited KeySourceRefreshInterval, always null" phrasing.
 }
 ```
 
@@ -339,8 +341,11 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService
     protected JwtSigningService(IOptions<TOptions> options, TimeProvider timeProvider) { /* … */ }
 
     /// <summary>
-    /// Loads the current set of trusted keys. Called at most once per KeySourceRefreshInterval;
-    /// concurrent callers after the interval elapses are coalesced into a single load.
+    /// Loads the current set of trusted keys. For rotating-tier providers (`RotatingKeySourceOptions`,
+    /// amended by issue #409 — historically `KeySourceRefreshInterval` on the base options type),
+    /// called at most once per `KeyRotationCheckInterval`, with concurrent callers after the
+    /// interval elapses coalesced into a single load; for static-tier providers
+    /// (`StaticKeySourceOptions`) called exactly once, ever.
     /// </summary>
     protected abstract ValueTask<SigningKeySet> LoadKeysAsync(CancellationToken cancellationToken);
 
@@ -674,10 +679,18 @@ property.**
   (b) inside `KeyVaultSigningKeyRotation.BuildActivationTimeline` itself, so a future custom
   KMS/HSM provider modeled on this pattern cannot silently reintroduce the activation race by
   forgetting a cross-field validator.
-- **File and Windows Certificate Store** gain **`AssumedRelyingPartyPropagationLag`**, feeding
-  `SigningKeyRotation.HasTooSoonPendingActivation`, replacing the old reuse of the rotation-check
-  interval as a proxy for RP-side JWKS cache staleness. Defaults to `KeyRotationCheckInterval`
-  when unset, preserving today's behaviour exactly.
+- **File (both PEM and PFX) and Windows Certificate Store** gain
+  **`AssumedRelyingPartyPropagationLag`**, feeding `SigningKeyRotation.HasTooSoonPendingActivation`,
+  replacing the old reuse of the rotation-check interval as a proxy for RP-side JWKS cache
+  staleness. Defaults to `KeyRotationCheckInterval` when unset, preserving today's behaviour
+  exactly. This property lives on the shared `RotatingKeySourceOptions`-derived base that
+  `PemFileSigningOptions` and `PfxFileSigningOptions` both inherit from (mirroring the shared
+  `FileSigningJwtSigningService<TOptions>` base at the service level, whose `LoadKeysAsync`
+  feeds the too-soon check for both PEM and PFX identically) — it is **not** PEM-only.
+  `PfxFileSigningOptions` gains the same `HasTooSoonPendingActivation` XML-doc cross-reference
+  as `PemFileSigningOptions` and `WindowsCertificateStoreSigningOptions` already carry, since PFX
+  also supports pre-staged successor certificates via `AdditionalFiles` and the too-soon warning
+  is equally live for it.
 
 Both new properties default to the rotation-check interval specifically so that a consumer who
 upgrades and sets nothing observes identical runtime behaviour to before the split.
@@ -710,13 +723,17 @@ shared, anchor-agnostic machinery accommodates both:
 - **Azure Key Vault** anchors on Key Vault's own `CreatedOn`/`NotBefore`: `ActivatesAt(v)` is
   `v.CreatedOn` for the very first version ever recorded for the key name (a durable, shared fact
   determined across all versions ever created, including disabled/expired) and
-  `v.CreatedOn + KeySourceRefreshInterval` for every subsequent version (the publish-then-activate
-  delay); `NotBefore` folds into `ActivatesAt` as `max(rawActivatesAt, v.NotBefore)`;
+  `v.CreatedOn + SigningKeyActivationDelay` for every subsequent version (the publish-then-activate
+  delay term — **amended by issue #409**: `BuildActivationTimeline` derives this lead term from
+  `SigningKeyActivationDelay`, defaulting to `KeyRotationCheckInterval` when unset, not from the
+  poll cadence directly; the historical text below and the pre-#409 references to
+  `KeySourceRefreshInterval` supplying this term are superseded — see §3.4/§3.5's amendment
+  above); `NotBefore` folds into `ActivatesAt` as `max(rawActivatesAt, v.NotBefore)`;
   `Enabled = false` is an immediate, unconditional exclusion that bypasses `RetirementWindow`
   (an operator disabling a suspected-compromised version takes effect at once); `RetiredAt(v)` is
   the `ActivatesAt` of whichever *eligible* successor actually superseded `v`. This makes the whole
   timeline a stateless computation over `(the store's version list, now,
-  KeySourceRefreshInterval, RetirementWindow)` — restart-safe, multi-replica-consistent, and
+  SigningKeyActivationDelay, RetirementWindow)` — restart-safe, multi-replica-consistent, and
   fully `FakeTimeProvider`-testable. The Key Vault rotation model (`KeyVaultSigningKeyRotation`)
   stays internal to `ZeeKayDa.Auth.AzureKeyVault`.
 - **Windows Certificate Store** (and, by the same pattern, the file-based provider) anchors on the
@@ -725,7 +742,10 @@ shared, anchor-agnostic machinery accommodates both:
   term (every registered certificate is fully visible in the JWKS as of process start; there is no
   "has the store durably recorded this yet" question). The publish-then-activate safety property
   therefore becomes the **operator's** responsibility: a certificate generated for rotation must
-  have its `NotBefore` set at least `KeySourceRefreshInterval` in the future.
+  have its `NotBefore` set at least `AssumedRelyingPartyPropagationLag` in the future (**amended by
+  issue #409**: this family's lead-time input is `AssumedRelyingPartyPropagationLag`, defaulting to
+  `KeyRotationCheckInterval` when unset — see §3.4/§3.5's amendment above; pre-#409 references to
+  `KeySourceRefreshInterval` supplying this figure are superseded).
   `SigningKeyRotation.HasTooSoonPendingActivation` surfaces a startup warning when it is not — the
   library's only defence, since a local store cannot prove when a certificate was actually
   deployed.
@@ -744,9 +764,12 @@ above), or a version entering or leaving its retirement window purely from elaps
 trigger a rebuild even when the active-version identifier is unchanged.
 
 Active-version identity has to be one of the compared fields in its own right, not merely
-version-identifier-plus-`Enabled` membership, or a normal scheduled rotation silently stalls.
-`KeySourceRefreshInterval` is both the poll cadence and the publish-then-activate lead time (this
-section, above), so a rotation typically spans exactly two polls: at poll *N*, the new version (v2)
+version-identifier-plus-`Enabled` membership, or a normal scheduled rotation silently stalls. The
+poll cadence is `KeyRotationCheckInterval` and the publish-then-activate lead time is
+`SigningKeyActivationDelay` (**amended by issue #409** — historically one shared property,
+`KeySourceRefreshInterval`, serving both roles; see §3.4/§3.5's amendment above). With
+`SigningKeyActivationDelay` at its default (equal to `KeyRotationCheckInterval`), a rotation
+typically spans exactly two polls, as before: at poll *N*, the new version (v2)
 is published but not yet active alongside the still-active v1 — a membership change from the prior
 poll, so the comparison correctly detects it and `LoadKeysAsync` runs, downloading v2's public-only
 handle. At poll *N+1*, v2 becomes active while v1 (still inside its retirement window) remains
@@ -762,7 +785,7 @@ so it is correctly detected as a change.
 Only a genuine difference lets the base class call `LoadKeysAsync`, which is itself unchanged — it
 still builds a brand-new `SigningKeySet` from scratch, including genuinely fresh private key
 material for the active version. Two safety properties are preserved by construction: because the
-metadata check still runs on **every** cycle at `KeySourceRefreshInterval` cadence, the immediate
+metadata check still runs on **every** cycle at `KeyRotationCheckInterval` cadence, the immediate
 `Enabled = false` exclusion and the "vanished kid" anomaly surfacing lose no reaction time — only
 the key-material download is skipped, never the check; and because the "ask" reads only the same
 per-version metadata already fetched today (comparable in kind to the existing
