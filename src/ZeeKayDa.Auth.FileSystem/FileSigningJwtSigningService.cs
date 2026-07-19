@@ -220,9 +220,14 @@ internal abstract class FileSigningJwtSigningService<TOptions> : JwtSigningServi
             // IDisposable — a "using var" on the dictionary (as a prior automated code-review
             // suggestion proposed) does not compile and, even if it somehow did, would not dispose
             // the certificate *values* it holds; each certificate must be disposed explicitly.
-            foreach (var certificate in certificatesByPath.Values)
-                certificate.Dispose();
+            DisposeCertificates(certificatesByPath.Values);
         }
+    }
+
+    private static void DisposeCertificates(IEnumerable<X509Certificate2> certificates)
+    {
+        foreach (var certificate in certificates)
+            certificate.Dispose();
     }
 
     private void LogCertificateStatuses(

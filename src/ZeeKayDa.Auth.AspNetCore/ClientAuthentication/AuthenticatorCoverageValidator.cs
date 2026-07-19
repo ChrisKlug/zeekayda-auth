@@ -100,11 +100,11 @@ internal sealed class AuthenticatorCoverageValidator : IValidateOptions<Authoriz
         }
 
         // Every server-advertised method (except none) must have a covering authenticator.
-        foreach (var methodString in serverMethods)
-        {
-            if (string.Equals(methodString, TokenEndpointAuthMethods.None, StringComparison.Ordinal))
-                continue;
+        var advertisedMethodsRequiringAuthenticators = serverMethods.Where(
+            methodString => !string.Equals(methodString, TokenEndpointAuthMethods.None, StringComparison.Ordinal));
 
+        foreach (var methodString in advertisedMethodsRequiringAuthenticators)
+        {
             if (!declared.ContainsKey(methodString))
             {
                 errors.Add(
