@@ -133,9 +133,13 @@ so callers are not forced into DI-resolution machinery for what is usually a sim
 > the string ends up embedded) has the password. Source it from an environment variable, a mounted
 > secret file, or a secret store at runtime instead.
 
-`PasswordSource` is invoked on every `LoadKeysAsync` call — that includes the periodic
-`KeySourceRefreshInterval` re-read described below, not just startup. If your password source is slow or
-remote, cache the value yourself inside the delegate rather than re-fetching it every time.
+`PasswordSource` is invoked every time `LoadKeysAsync` actually runs: at startup, and again
+whenever a later `KeySourceRefreshInterval` tick detects that something changed (see
+[Unchanged files are never re-read on a refresh poll](#unchanged-files-are-never-re-read-on-a-refresh-poll)
+below). *Since Unreleased (issue #349), an unchanged tick no longer invokes `LoadKeysAsync` at
+all*, so `PasswordSource` is no longer called on every refresh interval — only when a reload
+actually happens. If your password source is slow or remote, cache the value yourself inside the
+delegate rather than re-fetching it every time it's called.
 
 #### Example: reading from an environment variable
 
@@ -269,6 +273,39 @@ For the full activation/retirement timing model — how `NotBefore` anchors when
 becomes active, why you need lead time before it does, and the operator's responsibility for
 scheduling that lead time against relying parties' JWKS cache TTLs — see
 [Rotate signing keys](rotate-signing-keys.md).
+
+---
+
+## Unchanged files are never re-read on a refresh poll
+
+*Added in Unreleased (issue #349).*
+
+Both providers check for a change on every `KeySourceRefreshInterval` tick, but that check never
+re-reads or re-parses a registered file unless something has actually changed. Three things are
+checked, cheapest first:
+
+1. **The registered path set** — has a path been added to or removed from configuration since the
+   last load? Checked first, with no filesystem access at all.
+2. **Each remaining path's file modification time** (`File.GetLastWriteTimeUtc`) — a single stat
+   call per registered file, never a content read, compared against the timestamp recorded the last
+   time that file was actually loaded.
+3. **Elapsed time alone** — even with zero file changes, a registered certificate can move into or
+   out of its retirement window purely because time has passed. This is recomputed from the
+   `NotBefore`/`NotAfter` metadata already recorded at the last load, not by re-parsing the file.
+
+Only when one of these three actually indicates a change does the provider re-read and re-parse the
+file (and, for the PFX provider, re-invoke `PasswordSource`). This mirrors the same
+skip-on-unchanged behavior already shipped for the Azure Key Vault and Windows Certificate Store
+providers — see [Configure Azure Key Vault signing](configure-azure-key-vault-signing.md) and
+[Configure Windows Certificate Store signing](configure-windows-certificate-store-signing.md).
+
+> 💡 **Tip:** A file's modification time is not a strong integrity signal the way a certificate
+> thumbprint is — two different files can coincidentally share an mtime after a filesystem
+> clock-resolution collision. That's not a problem here: mtime is used only to decide whether to
+> re-read a file, never as a substitute for the algorithm/key-type and minimum-key-strength
+> validation the provider already performs on every real load. In the rare case of a false
+> "unchanged" verdict, the worst outcome is that an actual rotation is picked up one refresh
+> interval later than it otherwise would have been — not a weakened signature or trust guarantee.
 
 ---
 

@@ -129,6 +129,62 @@ current trusted set, in whatever form the provider holds its keys. The base clas
 
 ---
 
+## `SigningKeySet` and `SigningKeyPair`
+
+`SigningKeySet` (`ZeeKayDa.Auth.Tokens`) is the type `LoadKeysAsync` returns: the currently trusted
+set of keys, together with the private key material needed to sign.
+
+```csharp
+namespace ZeeKayDa.Auth.Tokens;
+
+public readonly struct SigningKeyPair
+{
+    public SigningKeyDescriptor Descriptor { get; init; }
+    public AsymmetricAlgorithm PrivateKey { get; init; }
+}
+
+public sealed class SigningKeySet : IDisposable
+{
+    public SigningKeySet(SigningKeyPair activeKey, IEnumerable<SigningKeyPair>? additionalKeys = null);
+
+    public IReadOnlyList<SigningKeyDescriptor> Keys { get; }
+    public SigningKeyDescriptor ActiveKey { get; }
+}
+```
+
+*The constructor shape changed in Unreleased (issue #355).* The active signing key is now a
+**mandatory named parameter**, not inferred from list position. Earlier builds took a single
+positional `IReadOnlyList<SigningKeyPair>` and treated its first entry as active by convention — a
+convention enforced nowhere, so a custom `LoadKeysAsync` override that assembled its key list in a
+different order could silently sign every token with a retired or not-yet-active key, while the
+JWKS still published every key correctly and a happy-path test still passed. Construct a set like
+this:
+
+```csharp
+var activeKey = new SigningKeyPair { Descriptor = activeDescriptor, PrivateKey = activeRsa };
+var retiredKey = new SigningKeyPair { Descriptor = retiredDescriptor, PrivateKey = retiredRsa };
+
+var keySet = new SigningKeySet(activeKey, additionalKeys: [retiredKey]);
+```
+
+`additionalKeys` is deliberately a single, lifecycle-neutral bucket — it covers both
+not-yet-activated keys and keys still inside their retirement window, not two separate "future" and
+"retired" lists. May be `null` or empty. `Keys` (and therefore the JWKS) still happens to list the
+active key first, for a zero-allocation hot path and stable output order, but that ordering is an
+implementation detail: `ActiveKey` always derives from the constructor's `activeKey` parameter,
+never from `Keys[0]`. Duplicate `kid` values between `activeKey` and `additionalKeys` are not
+rejected by the constructor; that validation stays at the base class's load path.
+
+> ⚠️ **Warning:** `SigningKeyPair.PrivateKey` is not guaranteed to hold genuine private key
+> material. A remote-signing provider (Azure Key Vault, for example) never releases a key's private
+> half at all — `PrivateKey` instead holds a public-only key handle, used only to validate
+> algorithm/key-type compatibility at load time. That kind of provider's `SignInputAsync` override
+> signs via the remote API using the key's descriptor and never reads `PrivateKey`. If you write a
+> custom provider, do not assume `PrivateKey` is safe to sign with directly unless you know your own
+> provider populated it with genuine private key material.
+
+---
+
 ## `JwtSigningServiceOptions`
 
 ```csharp
@@ -290,6 +346,23 @@ These three types exist specifically because a genuine third-party provider live
 package and cannot use `InternalsVisibleTo` to share ZeeKayDa's internal logic — the same reasoning
 that keeps `IJwtSigningService` itself free of any Microsoft.IdentityModel or provider-specific
 type.
+
+> ⚠️ **Warning:** Every call to `LoadKeysAsync` must return a genuinely new `SigningKeySet`
+> wrapping genuinely new private-key objects. Neither of the following is permitted, and both are
+> enforced at runtime immediately after `LoadKeysAsync` returns, before the previous set is disposed
+> or the new one installed:
+>
+> - Returning the **same `SigningKeySet` instance** twice.
+> - Returning a **genuinely new** `SigningKeySet` that nonetheless wraps one of the previous set's
+>   private-key objects under a shared `kid` *(added in Unreleased, issue #361)* — for example,
+>   memoising a private key object across calls to avoid re-creating it.
+>
+> Both mistakes throw an `InvalidOperationException` right away, with a message distinguishing
+> which case was hit. Without either guard, the base class would go on to dispose the superseded
+> set's private-key objects as normal, and the next signing/JWKS call against the still-current set
+> would fail with a confusing, disconnected `ObjectDisposedException` instead. If nothing has
+> actually changed since the last refresh cycle, override `HasKeySetChangedAsync` to report that —
+> don't try to signal "unchanged" by returning the same (or an equivalent) `SigningKeySet`.
 
 ---
 
