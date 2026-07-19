@@ -148,6 +148,201 @@ An informational log line, emitted once at startup (not on every refresh), recor
 
 ---
 
+## Provisioning the Key Vault resource
+
+The sections above cover the .NET side of the registration call. This section covers the other
+half: creating the actual key or certificate in Key Vault, and configuring Key Vault's own
+auto-rotation for it. Nothing here is ZeeKayDa.Auth-specific — it's standard Key Vault
+provisioning — but the choice you make here does interact with how ZeeKayDa.Auth activates
+rotated-in versions, so read [Rotation and Key Vault's rotation config](#rotation-and-key-vaults-rotation-config)
+below once you've picked a path.
+
+### Bare key or certificate?
+
+The real decision here is not "which ZeeKayDa.Auth provider am I using" — it's what you actually
+need out of Key Vault:
+
+| | Bare key | Certificate |
+|---|---|---|
+| Works with `AddAzureKeyVaultRemoteSigning` | Yes | Yes — point at the certificate's auto-created key |
+| Works with `AddAzureKeyVaultCachedSigning` | No | Yes — the only option |
+| Setup overhead | Minimal — just a key | Higher — subject name, issuer, possibly a CA relationship |
+| Auto-rotation trigger options | Duration only: `timeAfterCreate` / `timeBeforeExpiry` | Duration (`daysBeforeExpiry`) **or** percentage-of-lifetime |
+| Exportable key policy | Should be `false` for signing-only use — no legitimate reason to export a key only ever used via the remote Sign API | Must be `true` for cached signing (required for the private-key download to succeed); should be `false` if the certificate is only ever used with remote signing |
+
+A Key Vault **Certificate** always has an addressable **Key** (and Secret) auto-created alongside
+it with the same name and version. `AddAzureKeyVaultRemoteSigning` can point at that auto-created
+key instead of a standalone bare key, which is a reasonable way to get percentage-of-lifetime
+rotation for remote signing too, at the cost of carrying certificate lifecycle overhead (subject
+name, issuer) that a pure signing key has no real need for.
+
+`AddAzureKeyVaultCachedSigning`, on the other hand, has no bare-key alternative: `KeyClient.GetKeyAsync`
+never returns private key material, exportable or not, under any circumstances — a certificate's
+linked secret is the only path Key Vault exposes for retrieving private key material at all, and
+only when the certificate's key policy is exportable. See
+[Why a certificate, and not a key](#why-a-certificate-and-not-a-key) above.
+
+> ⚠️ **Warning:** Only set a key's or certificate's key policy to exportable if you actually
+> intend to use cached signing with it. An exportable policy is a real reduction in the guarantees
+> Key Vault otherwise gives you — don't apply it as a blanket default across every key or
+> certificate in the vault.
+
+### Setting up a bare key with auto-rotation (remote signing)
+
+Create the key:
+
+```bash
+az keyvault key create \
+  --vault-name my-vault \
+  --name token-signing-key \
+  --kty RSA \
+  --size 2048
+```
+
+Then configure its rotation policy. A Key Vault key's rotation policy is a separate resource from
+the key itself (`GET`/`PUT /keys/{key-name}/rotationpolicy`), and only supports duration-based
+triggers — there is no percentage-of-lifetime option for a bare key:
+
+```json
+{
+  "lifetimeActions": [
+    {
+      "trigger": { "timeAfterCreate": "P18M" },
+      "action": { "type": "Rotate" }
+    },
+    {
+      "trigger": { "timeBeforeExpiry": "P30D" },
+      "action": { "type": "Notify" }
+    }
+  ],
+  "attributes": { "expiryTime": "P2Y" }
+}
+```
+
+Save that as `rotation-policy.json` and apply it:
+
+```bash
+az keyvault key rotation-policy update \
+  --vault-name my-vault \
+  --name token-signing-key \
+  --value @rotation-policy.json
+```
+
+Durations are ISO 8601 (`P18M` = 18 months, `P30D` = 30 days, `P2Y` = 2 years). Each
+`lifetimeActions` entry sets exactly one of `timeAfterCreate` or `timeBeforeExpiry` on its
+trigger — `Rotate` creates a new key version automatically, `Notify` only emits an Event Grid
+notification without rotating. `attributes.expiryTime` sets the expiry Key Vault stamps on the
+*new* version each time it rotates. Key Vault enforces a minimum lead time between creation and
+expiry for any rotation trigger — **7 days** for a standard Key Vault, **28 days** for Managed
+HSM (a higher floor; don't reuse a vault's rotation policy JSON unmodified against an HSM).
+
+The PowerShell equivalent:
+
+```powershell
+Set-AzKeyVaultKeyRotationPolicy -VaultName "my-vault" -KeyName "token-signing-key" `
+  -ExpiresIn (New-TimeSpan -Days 730) `
+  -KeyRotationLifetimeAction @{Action = "Rotate"; TimeAfterCreate = (New-TimeSpan -Days 540)}
+```
+
+> 💡 **Tip:** `Set-AzKeyVaultKeyRotationPolicy` only works against a vault; for Managed HSM, use
+> the `az keyvault key rotation-policy update` CLI form shown above instead.
+
+### Setting up a certificate with auto-rotation (cached signing, or remote signing against the cert's key)
+
+Fetch and adapt the default policy, or write your own. The important fields for a signing-only
+certificate are `key_props.exportable` (only `true` if you're using cached signing) and
+`lifetime_actions` (the auto-rotation trigger):
+
+```bash
+az keyvault certificate get-default-policy > policy.json
+```
+
+Edit `policy.json` so it looks roughly like this — `exportable: true` only if this certificate
+will back cached signing:
+
+```json
+{
+  "issuer": { "name": "Self" },
+  "key_props": {
+    "exportable": true,
+    "kty": "RSA",
+    "key_size": 2048,
+    "reuse_key": false
+  },
+  "secret_props": { "contentType": "application/x-pkcs12" },
+  "x509_props": {
+    "subject": "CN=token-signing-cert",
+    "validity_months": 24
+  },
+  "lifetime_actions": [
+    {
+      "trigger": { "lifetime_percentage": 80 },
+      "action": { "action_type": "AutoRenew" }
+    },
+    {
+      "trigger": { "days_before_expiry": 30 },
+      "action": { "action_type": "EmailContacts" }
+    }
+  ]
+}
+```
+
+Then create the certificate:
+
+```bash
+az keyvault certificate create \
+  --vault-name my-vault \
+  --name token-signing-cert \
+  --policy @policy.json
+```
+
+`lifetime_actions` on a certificate policy is where percentage-of-lifetime rotation actually
+lives — `lifetime_percentage: 80` with `action_type: AutoRenew` reissues the certificate (new
+certificate, secret, and key version, all together) once it's 80% of the way through its
+validity period. The only two valid `action_type` values are `AutoRenew` and `EmailContacts` — do
+not confuse this with the key rotation policy's `Rotate`/`Notify` action names above; the two
+mechanisms are configured differently even though both call themselves "rotation."
+
+> ⚠️ **Warning:** The certificate policy's wire format is **snake_case** throughout (`issuer`,
+> `key_props`, `secret_props`, `x509_props`, `lifetime_actions`, `action_type`) — this is what
+> `az keyvault certificate create --policy`, `get-default-policy`, and the raw REST API all
+> actually expect. Don't confuse this with the key rotation policy above, which is a separate,
+> newer, **camelCase** schema (`lifetimeActions`, `timeAfterCreate`, `action.type`). The two
+> policies look superficially similar but use different casing conventions and different field
+> names for the same concepts — copying one schema's shape into the other's command will fail.
+
+The PowerShell equivalent, setting or updating percentage-of-lifetime auto-renew and an
+email-notification trigger on an existing certificate:
+
+```powershell
+Set-AzKeyVaultCertificatePolicy -VaultName "my-vault" -Name "token-signing-cert" `
+  -RenewAtPercentageLifetime 80 -EmailAtPercentageLifetime 90
+```
+
+Only set one of `-RenewAtPercentageLifetime` / `-RenewAtNumberOfDaysBeforeExpiry` (and similarly
+for the `-EmailAt...` pair) at a time — they're alternative ways of expressing the same trigger,
+not values that combine.
+
+### Rotation and Key Vault's rotation config
+
+Both mechanisms above are proactive: Key Vault runs rotation as a scheduled background job once
+the configured trigger is reached, not lazily on next access. Either one works identically with
+ZeeKayDa.Auth's own activation timing, because ZeeKayDa.Auth anchors on Key Vault's immutable
+per-version `CreatedOn` timestamp regardless of what triggered the new version's creation — see the
+"Why Key Vault gets an enforced overlap" tip in
+[Rotate signing keys](rotate-signing-keys.md#windows-certificate-store-and-file-based-pempfx--manual-registration)
+for the full explanation of `max(CreatedOn + KeySourceRefreshInterval, NotBefore)`.
+
+In practice this means: whichever rotation trigger you configure here (`timeAfterCreate`/
+`timeBeforeExpiry` for a bare key, or `lifetimePercentage`/`daysBeforeExpiry` for a certificate)
+only decides *when Key Vault creates the new version*. From that point on, ZeeKayDa.Auth's own
+publish-then-activate delay — see the "Rotation" section under each option above and
+[The model, in plain language](rotate-signing-keys.md#the-model-in-plain-language) — still applies
+on top: the new version won't actually become the active signer until it has been visible for at
+least `KeySourceRefreshInterval`. Set Key Vault's own rotation trigger with enough lead time
+before the certificate's or key's actual expiry that this additional delay never pushes activation
+past `ExpiresOn`.
+
 ## Required Azure role assignments
 
 Both variants need the application's identity to be able to authenticate to Key Vault, but they need different permissions once authenticated. Configure your vault to use the Azure RBAC permission model (not the legacy access-policy model) and assign one of these built-in roles, scoped as narrowly as possible — ideally to the specific key or certificate, not the whole vault:
