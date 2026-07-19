@@ -278,10 +278,13 @@ has arrived and is most recent becomes the active signer.
 For combined cert+key files:
 
 ```csharp
-.AddPemFileSigning("/etc/zeekayda/signing/tls-current.pem", options =>
-{
-    options.AddFile("/etc/zeekayda/signing/tls-next.pem");
-});
+.AddPemFileSigning(
+    "/etc/zeekayda/signing/tls-current.pem",
+    algorithm: SigningAlgorithm.RS256,
+    configure: options =>
+    {
+        options.AddFile("/etc/zeekayda/signing/tls-next.pem");
+    });
 ```
 
 For separate certificate/private-key file pairs, `AddFile` accepts a matching `keyPath` parameter:
