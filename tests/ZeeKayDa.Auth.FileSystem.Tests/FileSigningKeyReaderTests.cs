@@ -106,7 +106,7 @@ public sealed class FileSigningKeyReaderTests
 
         using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", DateTimeOffset.UtcNow - TimeSpan.FromDays(1), DateTimeOffset.UtcNow + TimeSpan.FromDays(365));
         var path = Path.Join(symlinkedSubdirectory, "key.pem");
-        await File.WriteAllTextAsync(Path.Combine(realSubdirectory, "key.pem"), TempSigningKeyDirectory.BuildCombinedPem(certificate), ct);
+        await File.WriteAllTextAsync(Path.Join(realSubdirectory, "key.pem"), TempSigningKeyDirectory.BuildCombinedPem(certificate), ct);
         if (!OperatingSystem.IsWindows())
             File.SetUnixFileMode(Path.Join(realSubdirectory, "key.pem"), UnixFileMode.UserRead | UnixFileMode.UserWrite);
         var reader = new FileSigningKeyReader(new CapturingSanitizingLogger<FileSigningKeyReader>());
