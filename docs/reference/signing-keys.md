@@ -352,14 +352,29 @@ Use the shared public core utilities rather than reimplementing their logic:
 - **`SigningKeyRotation`** — the stateless activation-timeline derivation (which key is active,
   which others are still trusted, whether a pending activation is scheduled too soon) for providers
   that derive their trusted set from a precomputed per-key activation/expiry window.
+- **`ISigningKeyRetirementWindowProvider`** — inject this (it's already registered by
+  `AddZeeKayDaAuthCore`) to get the current retirement window (see
+  [Rotate signing keys](../how-to/rotate-signing-keys.md) for what it means) as a `TimeSpan`,
+  derived from token-lifetime configuration. Every built-in
+  provider takes this as a constructor dependency and feeds it into `SigningKeyRotation`'s
+  inclusion check — do the same rather than hardcoding your own retirement duration.
 - **`SigningKeyDescriptorFactory`** — builds a validated `SigningKeyDescriptor` from raw RSA/EC
   public key material.
 - **`JwkThumbprint`** — derives a non-leaking `kid` from public key parameters.
 
-These three types exist specifically because a genuine third-party provider lives in its own NuGet
+These utilities exist specifically because a genuine third-party provider lives in its own NuGet
 package and cannot use `InternalsVisibleTo` to share ZeeKayDa's internal logic — the same reasoning
 that keeps `IJwtSigningService` itself free of any Microsoft.IdentityModel or provider-specific
 type.
+
+> ⚠️ **Warning:** `LoadKeysAsync` is responsible for its own filtering — nothing above it does.
+> `GetSigningKeysAsync` (and the JWKS endpoint behind it) returns whatever `SigningKeySet` your
+> `LoadKeysAsync` most recently produced, verbatim: the base class does not re-check which keys are
+> still within their retirement window, and does not prune a fully-retired key out for you. If your
+> `LoadKeysAsync` naively returns every key it has ever seen instead of applying
+> `SigningKeyRotation`'s inclusion logic, retired keys accumulate in the JWKS forever rather than
+> aging out — silently widening the set of keys a relying party is told to trust, with no error or
+> warning to indicate anything is wrong.
 
 > ⚠️ **Warning:** Every call to `LoadKeysAsync` must return a genuinely new `SigningKeySet`
 > wrapping genuinely new private-key objects. Neither of the following is permitted, and both are

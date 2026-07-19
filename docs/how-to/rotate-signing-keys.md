@@ -150,6 +150,21 @@ provider-recorded creation timestamp. Unlike Key Vault, their configuration is f
 start — adding, removing, or replacing a certificate always requires a config change and a
 restart.
 
+> 💡 **Tip:** Why Key Vault gets an enforced overlap and these two don't. Key Vault stamps every
+> key/certificate version with its own immutable `CreatedOn` timestamp the instant the version is
+> created — a fact Key Vault itself remembers forever, independent of anything the operator
+> supplies. ZeeKayDa.Auth uses that to compute each version's real activation time as
+> `max(CreatedOn + KeySourceRefreshInterval, NotBefore)`, so a rotated-in Key Vault version can
+> never activate sooner than one full `KeySourceRefreshInterval` after it was actually created —
+> regardless of what `NotBefore` ends up being, including versions Key Vault's own automatic
+> rotation policies create with no meaningfully-future `NotBefore` at all. A plain file or a
+> Windows Certificate Store entry has no equivalent durable, tamper-proof "when was this actually
+> created" timestamp for ZeeKayDa.Auth to anchor on — file modification time is explicitly not
+> used for this because it resets on every redeploy of the identical file, which would make the
+> library's activation timing depend on deployment mechanics rather than the certificate's actual
+> age. That's why, for these two providers, `NotBefore` is the *only* signal, entirely under your
+> control, with no library-enforced floor under it.
+
 The rotation procedure is the same for both:
 
 1. **Generate the new certificate or file**, setting its `NotBefore` at least `KeySourceRefreshInterval`
