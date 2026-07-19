@@ -467,16 +467,6 @@ check would fragment it across two sites and two exception types (`ArgumentExcep
 `ZeeKayDaConfigurationException`) for no benefit; the base class load path is already the one
 chokepoint every provider's returned set flows through.
 
-This is a design/sign-off amendment only; a follow-up `type:task` implements the constructor and
-updates all **five** current construction sites — the four production providers
-(`AzureKeyVaultRemoteSigningJwtSigningService`, `AzureKeyVaultCachedSigningJwtSigningService`,
-`WindowsCertificateStoreSigningJwtSigningService`, `FileSigningJwtSigningService`) plus
-`DevelopmentJwtSigningService`. Because a constructor signature change and its call sites must
-compile together, that is necessarily a single PR. The migration is mechanical at each site: the
-four production providers already build their `keyPairs` from `included`, which
-`SelectIncludedKeys` guarantees is active-first, so they split off `keyPairs[0]` as `activeKey`;
-the development provider constructs a single-key set as `new SigningKeySet(pair)`.
-
 #### 3.3 `RetirementWindow` is derived, not configurable
 
 > **Security sign-off point.** The derivation and its safety argument below are the specific
