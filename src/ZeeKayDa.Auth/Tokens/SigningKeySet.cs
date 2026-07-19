@@ -10,7 +10,16 @@ public readonly struct SigningKeyPair
     /// <summary>Gets the public key descriptor.</summary>
     public SigningKeyDescriptor Descriptor { get; init; }
 
-    /// <summary>Gets the private key used for signing.</summary>
+    /// <summary>
+    /// Gets the private key used for signing.
+    /// </summary>
+    /// <remarks>
+    /// For a remote-signing provider (e.g. Azure Key Vault), this holds a public-only key handle
+    /// rather than genuine private key material — Key Vault never releases the private key. It is
+    /// still real, non-null key material used to validate algorithm/key-type compatibility at load
+    /// time; a remote provider's <see cref="JwtSigningService{TOptions}.SignInputAsync"/> override
+    /// signs via the remote API using the descriptor and does not read this property.
+    /// </remarks>
     public AsymmetricAlgorithm PrivateKey { get; init; }
 }
 
