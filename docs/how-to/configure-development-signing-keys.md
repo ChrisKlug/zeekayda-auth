@@ -88,8 +88,9 @@ app.Run();
 
 With no `persistTo` argument (or `persistTo: null`), the key is stored at the default path,
 `{ContentRootPath}/.zeekayda/signing-keys/dev-signing-key.pem`. Pass an explicit directory to use
-a different location — unlike the in-memory method, `persistTo: null` on this method always means
-"persist to the default path," never "don't persist":
+a different location; `persistTo: null` always means "persist to the default path," never "don't
+persist" — this method has no non-persisting mode, that's what `AddInMemoryDevelopmentJwtSigningKeys`
+is for:
 
 ```csharp
 .AddPersistedDevelopmentJwtSigningKeys(persistTo: "/Users/me/.local/share/zeekayda-dev-keys")
@@ -180,7 +181,7 @@ For `.AddPersistedDevelopmentJwtSigningKeys(...)`, the same property lives on
         ["Development", "IntegrationTesting", "CI"]);
 ```
 
-*Added in Unreleased.* `Production` still cannot be added to this list — the gate rejects a
+`Production` still cannot be added to this list — the gate rejects a
 `Production` host environment unconditionally, regardless of what the list contains, and this is
 enforced both by startup validation and by the gate itself. For why this property lives on the
 provider-specific options type rather than a shared root, see
