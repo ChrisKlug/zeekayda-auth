@@ -58,7 +58,7 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
         reader.AddCertificate(PrimaryThumbprint, certificate);
 
         var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddWindowsCertificateStoreSigning(PrimaryThumbprint, StoreLocation.CurrentUser, StoreName.My);
+        builder.AddWindowsCertificateStoreSigning(PrimaryThumbprint, SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My);
 
         await using var provider = services.BuildServiceProvider();
         var signingService = provider.GetRequiredService<IJwtSigningService>();
@@ -85,7 +85,7 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
         reader.AddCertificate(SecondaryThumbprint, secondary);
 
         var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddWindowsCertificateStoreSigning(PrimaryThumbprint, StoreLocation.CurrentUser, StoreName.My,
+        builder.AddWindowsCertificateStoreSigning(PrimaryThumbprint, SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My,
             configure: options => options.AddCertificate(SecondaryThumbprint));
 
         await using var provider = services.BuildServiceProvider();
@@ -107,7 +107,7 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
         reader.AddCertificate(PrimaryThumbprint, certificate);
 
         var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddWindowsCertificateStoreSigning(PrimaryThumbprint, StoreLocation.CurrentUser, StoreName.My);
+        builder.AddWindowsCertificateStoreSigning(PrimaryThumbprint, SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My);
 
         await using var provider = services.BuildServiceProvider();
         var signingService = provider.GetRequiredService<IJwtSigningService>();
@@ -132,7 +132,7 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
         reader.AddCertificate(SecondaryThumbprint, successor);
 
         var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddWindowsCertificateStoreSigning(PrimaryThumbprint, StoreLocation.CurrentUser, StoreName.My,
+        builder.AddWindowsCertificateStoreSigning(PrimaryThumbprint, SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My,
             configure: options =>
             {
                 options.AddCertificate(SecondaryThumbprint);
@@ -161,7 +161,7 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
         var (services, _, _) = BuildServices(T0); // No certificate registered -> certificate_not_found.
 
         var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddWindowsCertificateStoreSigning(PrimaryThumbprint, StoreLocation.CurrentUser, StoreName.My);
+        builder.AddWindowsCertificateStoreSigning(PrimaryThumbprint, SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My);
 
         await using var provider = services.BuildServiceProvider();
         var signingService = provider.GetRequiredService<IJwtSigningService>();
@@ -183,7 +183,7 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
         reader.AddCertificate(PrimaryThumbprint, certificate);
 
         var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddWindowsCertificateStoreSigning(PrimaryThumbprint, StoreLocation.CurrentUser, StoreName.My);
+        builder.AddWindowsCertificateStoreSigning(PrimaryThumbprint, SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My);
 
         await using var provider = services.BuildServiceProvider();
         var signingService = provider.GetRequiredService<IJwtSigningService>();
@@ -204,7 +204,7 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
             "signing.windows_certificate_store.store_inaccessible", "Simulated store-access failure."));
 
         var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddWindowsCertificateStoreSigning(PrimaryThumbprint, StoreLocation.CurrentUser, StoreName.My);
+        builder.AddWindowsCertificateStoreSigning(PrimaryThumbprint, SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My);
 
         await using var provider = services.BuildServiceProvider();
         var signingService = provider.GetRequiredService<IJwtSigningService>();
@@ -229,7 +229,7 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
         services.AddSingleton<ISanitizingLogger<WindowsCertificateStoreSigningJwtSigningService>>(logger);
 
         var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddWindowsCertificateStoreSigning(PrimaryThumbprint, StoreLocation.CurrentUser, StoreName.My);
+        builder.AddWindowsCertificateStoreSigning(PrimaryThumbprint, SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My);
 
         await using var provider = services.BuildServiceProvider();
         var signingService = provider.GetRequiredService<IJwtSigningService>();
@@ -256,7 +256,7 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
         services.AddSingleton<ISanitizingLogger<WindowsCertificateStoreSigningJwtSigningService>>(logger);
 
         var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddWindowsCertificateStoreSigning(PrimaryThumbprint, StoreLocation.CurrentUser, StoreName.My,
+        builder.AddWindowsCertificateStoreSigning(PrimaryThumbprint, SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My,
             configure: options => options.KeySourceRefreshInterval = refreshInterval);
 
         await using var provider = services.BuildServiceProvider();
@@ -289,7 +289,7 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
         services.AddSingleton<ISanitizingLogger<WindowsCertificateStoreSigningJwtSigningService>>(logger);
 
         var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddWindowsCertificateStoreSigning(PrimaryThumbprint, StoreLocation.CurrentUser, StoreName.My,
+        builder.AddWindowsCertificateStoreSigning(PrimaryThumbprint, SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My,
             configure: options =>
             {
                 options.AddCertificate(SecondaryThumbprint);
@@ -335,7 +335,7 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
         services.AddSingleton<ISanitizingLogger<WindowsCertificateStoreSigningJwtSigningService>>(logger);
 
         var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddWindowsCertificateStoreSigning(PrimaryThumbprint, StoreLocation.CurrentUser, StoreName.My,
+        builder.AddWindowsCertificateStoreSigning(PrimaryThumbprint, SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My,
             configure: options =>
             {
                 options.AddCertificate(SecondaryThumbprint);
@@ -362,7 +362,7 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
         services.AddSingleton<ISanitizingLogger<WindowsCertificateStoreSigningJwtSigningService>>(logger);
 
         var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddWindowsCertificateStoreSigning(PrimaryThumbprint, StoreLocation.CurrentUser, StoreName.My);
+        builder.AddWindowsCertificateStoreSigning(PrimaryThumbprint, SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My);
 
         await using var provider = services.BuildServiceProvider();
         var signingService = provider.GetRequiredService<IJwtSigningService>();
@@ -383,7 +383,7 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
         var (services, _, _) = BuildServices(T0); // No certificate registered.
 
         var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddWindowsCertificateStoreSigning(PrimaryThumbprint, StoreLocation.CurrentUser, StoreName.My);
+        builder.AddWindowsCertificateStoreSigning(PrimaryThumbprint, SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My);
 
         await using var provider = services.BuildServiceProvider();
         var startupService = provider.GetServices<IHostedService>().OfType<WindowsCertificateStoreSigningStartupService>().Single();
@@ -404,7 +404,7 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
         reader.AddCertificate(PrimaryThumbprint, certificate);
 
         var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddWindowsCertificateStoreSigning(PrimaryThumbprint, StoreLocation.CurrentUser, StoreName.My);
+        builder.AddWindowsCertificateStoreSigning(PrimaryThumbprint, SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My);
 
         await using var provider = services.BuildServiceProvider();
         var startupService = provider.GetServices<IHostedService>().OfType<WindowsCertificateStoreSigningStartupService>().Single();
