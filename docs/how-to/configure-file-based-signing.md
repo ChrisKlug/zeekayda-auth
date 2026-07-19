@@ -136,10 +136,10 @@ so callers are not forced into DI-resolution machinery for what is usually a sim
 `PasswordSource` is invoked every time `LoadKeysAsync` actually runs: at startup, and again
 whenever a later `KeySourceRefreshInterval` tick detects that something changed (see
 [Unchanged files are never re-read on a refresh poll](#unchanged-files-are-never-re-read-on-a-refresh-poll)
-below). *Since Unreleased (issue #349), an unchanged tick no longer invokes `LoadKeysAsync` at
-all*, so `PasswordSource` is no longer called on every refresh interval — only when a reload
-actually happens. If your password source is slow or remote, cache the value yourself inside the
-delegate rather than re-fetching it every time it's called.
+below). An unchanged tick never invokes `LoadKeysAsync` at all, so `PasswordSource` is not called on
+every refresh interval — only when a reload actually happens. If your password source is slow or
+remote, cache the value yourself inside the delegate rather than re-fetching it every time it's
+called.
 
 #### Example: reading from an environment variable
 
@@ -277,8 +277,6 @@ scheduling that lead time against relying parties' JWKS cache TTLs — see
 ---
 
 ## Unchanged files are never re-read on a refresh poll
-
-*Added in Unreleased (issue #349).*
 
 Both providers check for a change on every `KeySourceRefreshInterval` tick, but that check never
 re-reads or re-parses a registered file unless something has actually changed. Three things are

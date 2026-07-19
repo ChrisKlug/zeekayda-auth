@@ -7,16 +7,24 @@ nav_order: 6
 
 *Added in Unreleased.*
 
-ZeeKayDa.Auth signs every ID token — and, in future, every JWT access token — with a private key
-that a provider you register supplies. The provider also exposes the corresponding public keys so
-relying parties can validate those signatures via the JWKS (JSON Web Key Set) endpoint.
+ZeeKayDa.Auth signs its tokens with a private key that a provider you register supplies. The
+provider also exposes the corresponding public keys so relying parties can validate those
+signatures via the JWKS (JSON Web Key Set) endpoint.
+
+> 💡 **Tip:** ZeeKayDa.Auth is pre-alpha. Everything on this page — `IJwtSigningService`, every
+> built-in provider, the JWKS document shape — is fully implemented and tested today. What is not
+> yet implemented is `connect/token` itself, so no ID token or access token is actually issued to a
+> client through this pipeline yet; see
+> [Pre-alpha advertised endpoints](discovery-endpoint.md#pre-alpha-advertised-endpoints).
 
 The core guarantee behind this abstraction is simple to state and load-bearing everywhere else in
 the design: **private key material never leaves the signing component**, and **callers never
 choose a key or algorithm**. The token pipeline hands the signing service a payload and gets back a
 finished signature; it never touches a key, never decides which key is active, and never assembles
-a JWS header by hand. This is what makes remote signing (a cloud KMS or HSM) a non-breaking future
-shape rather than a redesign — see [`IJwtSigningService`](#ijwtsigningservice) below.
+a JWS header by hand. This is what already lets remote signing — where the private key never
+enters the process, such as [Azure Key Vault remote signing](../how-to/configure-azure-key-vault-signing.md)
+— plug in as a provider like any other, and lets a third-party KMS or HSM provider do the same
+without a redesign — see [`IJwtSigningService`](#ijwtsigningservice) below.
 
 Exactly one signing provider may be registered per application. For setup instructions, see the
 how-to guide for the provider you want:
@@ -100,13 +108,21 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
 
     protected abstract ValueTask<SigningKeySet> LoadKeysAsync(CancellationToken cancellationToken);
 
+    protected virtual ValueTask<bool> HasKeySetChangedAsync(CancellationToken cancellationToken);
+
     protected virtual ValueTask<ReadOnlyMemory<byte>> SignInputAsync(
         SigningKeyPair activeKey, byte[] signingInput, CancellationToken cancellationToken);
 }
 ```
 
-**Implementors write exactly one method: `LoadKeysAsync`.** It returns a `SigningKeySet` — the
-current trusted set, in whatever form the provider holds its keys. The base class does the rest:
+**Implementors must write `LoadKeysAsync`, and may optionally override `HasKeySetChangedAsync`.**
+`LoadKeysAsync` returns a `SigningKeySet` — the current trusted set, in whatever form the provider
+holds its keys. `HasKeySetChangedAsync` is asked once per refresh cycle, after
+`KeySourceRefreshInterval` elapses and only when a previous key set already exists; returning
+`false` lets the provider skip an expensive `LoadKeysAsync` reload when a cheap metadata-only check
+shows nothing has actually rotated. The default implementation always returns `true`, so a provider
+that does not override it keeps the unconditional-reload behavior described below. The base class
+does the rest:
 
 - **Interval-throttled caching**, driven by an injected `TimeProvider` (never wall-clock reads).
   `LoadKeysAsync` is called at most once per `KeySourceRefreshInterval`, or exactly once ever if
@@ -152,13 +168,9 @@ public sealed class SigningKeySet : IDisposable
 }
 ```
 
-*The constructor shape changed in Unreleased (issue #355).* The active signing key is now a
-**mandatory named parameter**, not inferred from list position. Earlier builds took a single
-positional `IReadOnlyList<SigningKeyPair>` and treated its first entry as active by convention — a
-convention enforced nowhere, so a custom `LoadKeysAsync` override that assembled its key list in a
-different order could silently sign every token with a retired or not-yet-active key, while the
-JWKS still published every key correctly and a happy-path test still passed. Construct a set like
-this:
+The active signing key is a **mandatory named parameter**, not inferred from list position — a
+custom `LoadKeysAsync` override can never silently sign with a retired or not-yet-active key by
+assembling its key list in the wrong order. Construct a set like this:
 
 ```csharp
 var activeKey = new SigningKeyPair { Descriptor = activeDescriptor, PrivateKey = activeRsa };
@@ -289,8 +301,8 @@ same single-flight cache as the signing path described above: an anonymous burst
 `connect/jwks` cannot trigger an uncoalesced `LoadKeysAsync` call against a remote key source, even
 against a cold cache.
 
-> ⚠️ **Warning:** The full JWKS document provider described above is still in progress
-> (tracked by issue #188). Until it ships, `connect/jwks` returns `501 Not Implemented`. The
+> ⚠️ **Warning:** The full JWKS document provider described above is still in progress.
+> Until it ships, `connect/jwks` returns `501 Not Implemented`. The
 > endpoint path, the discovery `jwks_uri` cross-reference, and the caching/`"use": "sig"` behavior
 > documented here are the fixed design (ADR 0011 §4.3) that the shipped endpoint will implement;
 > this warning will be removed once it lands.
@@ -354,8 +366,8 @@ type.
 >
 > - Returning the **same `SigningKeySet` instance** twice.
 > - Returning a **genuinely new** `SigningKeySet` that nonetheless wraps one of the previous set's
->   private-key objects under a shared `kid` *(added in Unreleased, issue #361)* — for example,
->   memoising a private key object across calls to avoid re-creating it.
+>   private-key objects under a shared `kid` — for example, memoising a private key object across
+>   calls to avoid re-creating it.
 >
 > Both mistakes throw an `InvalidOperationException` right away, with a message distinguishing
 > which case was hit. Without either guard, the base class would go on to dispose the superseded

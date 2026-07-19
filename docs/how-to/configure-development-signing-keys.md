@@ -184,7 +184,7 @@ For `.AddPersistedDevelopmentJwtSigningKeys(...)`, the same property lives on
 `Production` host environment unconditionally, regardless of what the list contains, and this is
 enforced both by startup validation and by the gate itself. For why this property lives on the
 provider-specific options type rather than a shared root, see
-[ADR 0011 §2 and its "Considered and Rejected Alternatives" section on PR #333's reversal](https://github.com/ChrisKlug/zeekayda-auth/blob/main/docs/decisions/0011-signing-key-management.md).
+[ADR 0011 §2 and its "Considered and Rejected Alternatives" section](https://github.com/ChrisKlug/zeekayda-auth/blob/main/docs/decisions/0011-signing-key-management.md).
 
 If you only need the host to report `Development` itself — for example, a local integration test
 host that would otherwise pick up its own environment name — it can be simpler to leave the list
