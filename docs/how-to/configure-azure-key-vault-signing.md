@@ -70,11 +70,8 @@ builder.Services
     })
     .AddAzureKeyVaultRemoteSigning(
         keyIdentifier,
-        credential: new DefaultAzureCredential(),
-        configure: options =>
-        {
-            options.Algorithm = SigningAlgorithm.RS256;
-        });
+        algorithm: SigningAlgorithm.RS256,
+        credential: new DefaultAzureCredential());
 
 var app = builder.Build();
 app.MapZeeKayDaAuth();
@@ -121,11 +118,8 @@ builder.Services
     })
     .AddAzureKeyVaultCachedSigning(
         certificateIdentifier,
-        credential: new DefaultAzureCredential(),
-        configure: options =>
-        {
-            options.Algorithm = SigningAlgorithm.RS256;
-        });
+        algorithm: SigningAlgorithm.RS256,
+        credential: new DefaultAzureCredential());
 
 var app = builder.Build();
 app.MapZeeKayDaAuth();

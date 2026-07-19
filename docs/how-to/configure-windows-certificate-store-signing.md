@@ -72,12 +72,9 @@ builder.Services
     })
     .AddWindowsCertificateStoreSigning(
         thumbprint: "AB CD EF 01 23 45 67 89 AB CD EF 01 23 45 67 89 AB CD EF 01",
+        algorithm: SigningAlgorithm.RS256,
         storeLocation: StoreLocation.LocalMachine,
-        storeName: StoreName.My,
-        configure: options =>
-        {
-            options.Algorithm = SigningAlgorithm.RS256;
-        });
+        storeName: StoreName.My);
 
 var app = builder.Build();
 app.MapZeeKayDaAuth();
@@ -111,12 +108,11 @@ builder.Services
     })
     .AddWindowsCertificateStoreSigning(
         thumbprint: "AB CD EF 01 23 45 67 89 AB CD EF 01 23 45 67 89 AB CD EF 01",
+        algorithm: SigningAlgorithm.RS256,
         storeLocation: StoreLocation.LocalMachine,
         storeName: StoreName.My,
         configure: options =>
         {
-            options.Algorithm = SigningAlgorithm.RS256;
-
             // The incoming certificate for a planned rotation. Its NotBefore should be set far
             // enough in the future that relying parties have had time to poll the updated JWKS
             // before it becomes the active signer.

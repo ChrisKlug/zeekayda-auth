@@ -65,7 +65,7 @@ builder.Services
     {
         options.Issuer = "https://id.example.com";
     })
-    .AddPemFileSigning("/etc/zeekayda/signing/tls.pem");
+    .AddPemFileSigning("/etc/zeekayda/signing/tls.pem", algorithm: SigningAlgorithm.RS256);
 
 var app = builder.Build();
 app.MapZeeKayDaAuth();
@@ -74,27 +74,25 @@ app.Run();
 
 There is no password — the file must contain the unencrypted private key alongside the certificate.
 
-### Setting the algorithm
+### The algorithm parameter
 
-A certificate's key does not itself declare RS256 vs PS256, or RSA vs EC. Set `Algorithm` to match
-the key type actually contained in the file; it defaults to `RS256`:
+A certificate's key does not itself declare RS256 vs PS256, or RSA vs EC — so `algorithm` is a
+required parameter, not something ZeeKayDa.Auth can infer from the file. Pass the value matching
+the key type actually contained in the file:
 
 ```csharp
-.AddPemFileSigning("/etc/zeekayda/signing/tls.pem", options =>
-{
-    options.Algorithm = SigningAlgorithm.ES256; // must match an EC key in the file
-});
+.AddPemFileSigning("/etc/zeekayda/signing/tls.pem", algorithm: SigningAlgorithm.ES256); // an EC key
 ```
 
-If `Algorithm` does not match the certificate's actual key type (for example, `ES256` set against
+If `algorithm` does not match the certificate's actual key type (for example, `ES256` passed for
 an RSA certificate), startup fails validation.
 
 ---
 
 ## Option 2 — PFX file
 
-Call `.AddPfxFileSigning(path, passwordSource)` with the path to a PKCS#12 bundle and a delegate
-that supplies its password:
+Call `.AddPfxFileSigning(path, algorithm, passwordSource)` with the path to a PKCS#12 bundle, the
+JWS algorithm matching the bundle's key, and a delegate that supplies its password:
 
 ```csharp
 using ZeeKayDa.Auth;
@@ -109,6 +107,7 @@ builder.Services
     })
     .AddPfxFileSigning(
         "/etc/zeekayda/signing/tls.pfx",
+        algorithm: SigningAlgorithm.RS256,
         passwordSource: static (cancellationToken) =>
             ValueTask.FromResult(Environment.GetEnvironmentVariable("ZEEKAYDA_PFX_PASSWORD")
                 ?? throw new InvalidOperationException("ZEEKAYDA_PFX_PASSWORD is not set.")));
@@ -146,6 +145,7 @@ called.
 ```csharp
 .AddPfxFileSigning(
     "/etc/zeekayda/signing/tls.pfx",
+    algorithm: SigningAlgorithm.RS256,
     passwordSource: static (cancellationToken) =>
         ValueTask.FromResult(Environment.GetEnvironmentVariable("ZEEKAYDA_PFX_PASSWORD")
             ?? throw new InvalidOperationException("ZEEKAYDA_PFX_PASSWORD is not set.")));
@@ -159,6 +159,7 @@ environment variable:
 ```csharp
 .AddPfxFileSigning(
     "/etc/zeekayda/signing/tls.pfx",
+    algorithm: SigningAlgorithm.RS256,
     passwordSource: static async (cancellationToken) =>
     {
         var password = await File.ReadAllTextAsync(
@@ -171,16 +172,13 @@ environment variable:
 > host provides — mount it read-only and restrict it to the process identity, the same as the key
 > file itself.
 
-### Setting the algorithm
+### The algorithm parameter
 
-As with the PEM provider, `Algorithm` must match the bundle's actual key type and defaults to
-`RS256`:
+As with the PEM provider, `algorithm` is a required parameter and must match the bundle's actual
+key type:
 
 ```csharp
-.AddPfxFileSigning(path, passwordSource, options =>
-{
-    options.Algorithm = SigningAlgorithm.RS256;
-});
+.AddPfxFileSigning(path, algorithm: SigningAlgorithm.ES256, passwordSource); // an EC key
 ```
 
 ---
