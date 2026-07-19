@@ -42,6 +42,13 @@ internal sealed class PemFileSigningOptionsValidator : IValidateOptions<PemFileS
         if (string.IsNullOrWhiteSpace(options.Path))
             errors.Add("PemFileSigningOptions.Path must be set to a non-empty file path.");
 
+        if (options.KeyPath is not null && string.IsNullOrWhiteSpace(options.KeyPath))
+        {
+            errors.Add(
+                "PemFileSigningOptions.KeyPath must be null (a combined cert+key Path) or a " +
+                "non-empty file path — never empty/whitespace-only.");
+        }
+
         if (!Enum.IsDefined(options.Algorithm))
         {
             errors.Add(
@@ -54,28 +61,55 @@ internal sealed class PemFileSigningOptionsValidator : IValidateOptions<PemFileS
         return errors.Count > 0 ? ValidateOptionsResult.Fail(errors) : ValidateOptionsResult.Success;
     }
 
+    // Every filesystem path this configuration touches — the primary cert path, its optional
+    // companion key path, and each additional file's cert/key paths — must be pairwise distinct.
+    // Two entries sharing a path would make FileSigningJwtSigningService<TOptions>'s flattened
+    // path-timestamp tracking ambiguous (issue #405): the same path would back two different
+    // registered entries, so a single stat/mtime cannot unambiguously represent "this entry
+    // changed" for both.
     private static void AppendDuplicatePathErrors(PemFileSigningOptions options, List<string> errors)
     {
-        var seen = new HashSet<string>(StringComparer.Ordinal) { options.Path };
+        var seen = new HashSet<string>(StringComparer.Ordinal);
         var hasEmptyAdditionalPath = false;
-        var hasDuplicateAdditionalPath = false;
+        var hasDuplicatePath = false;
 
-        foreach (var additional in options.AdditionalPaths)
+        // Empty/whitespace-only Path/KeyPath is already reported by the dedicated errors above, so
+        // an empty value here is silently skipped rather than re-flagged via hasEmptyAdditionalPath
+        // (which is reserved for AddFile's own empty-path error message below); it still must not be
+        // added to `seen`, since two independently-empty values are not "the same path".
+        void Track(string? path, bool reportEmptyAsAddFileError)
         {
-            if (string.IsNullOrWhiteSpace(additional))
-                hasEmptyAdditionalPath = true;
-            else if (!seen.Add(additional))
-                hasDuplicateAdditionalPath = true;
+            if (path is null)
+                return;
+
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                if (reportEmptyAsAddFileError)
+                    hasEmptyAdditionalPath = true;
+            }
+            else if (!seen.Add(path))
+            {
+                hasDuplicatePath = true;
+            }
+        }
+
+        Track(options.Path, reportEmptyAsAddFileError: false);
+        Track(options.KeyPath, reportEmptyAsAddFileError: false);
+
+        foreach (var file in options.AdditionalFiles)
+        {
+            Track(file.Path, reportEmptyAsAddFileError: true);
+            Track(file.KeyPath, reportEmptyAsAddFileError: true);
         }
 
         if (hasEmptyAdditionalPath)
             errors.Add("AddFile was called with a null, empty, or whitespace-only path.");
 
-        if (hasDuplicateAdditionalPath)
+        if (hasDuplicatePath)
         {
             errors.Add(
-                "AddFile was called with a path that duplicates the primary path or another " +
-                "already-registered file.");
+                "AddFile was called with a path that duplicates the primary path, the primary key " +
+                "path, or another already-registered file's path/key path.");
         }
     }
 }

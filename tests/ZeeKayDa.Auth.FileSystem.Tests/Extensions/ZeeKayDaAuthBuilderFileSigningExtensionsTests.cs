@@ -51,6 +51,68 @@ public sealed class ZeeKayDaAuthBuilderFileSigningExtensionsTests
         act.Should().Throw<ArgumentException>().WithParameterName("path");
     }
 
+    // ── AddPemFileSigning(certPath, keyPath, ...): the split-file overload (issue #405) ─────────────
+
+    [Fact]
+    public void AddPemFileSigning_with_keyPath_throws_ArgumentNullException_when_builder_is_null()
+    {
+        var act = () => ((ZeeKayDaAuthBuilder)null!).AddPemFileSigning(PemPath, "/etc/zeekayda/signing.key", SigningAlgorithm.RS256);
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("builder");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void AddPemFileSigning_with_keyPath_throws_ArgumentException_when_certPath_is_null_or_whitespace(string? certPath)
+    {
+        var builder = NewBuilder();
+
+        var act = () => builder.AddPemFileSigning(certPath!, "/etc/zeekayda/signing.key", SigningAlgorithm.RS256);
+
+        act.Should().Throw<ArgumentException>().WithParameterName("path");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void AddPemFileSigning_with_keyPath_throws_ArgumentException_when_keyPath_is_null_or_whitespace(string? keyPath)
+    {
+        var builder = NewBuilder();
+
+        var act = () => builder.AddPemFileSigning(PemPath, keyPath!, SigningAlgorithm.RS256);
+
+        act.Should().Throw<ArgumentException>().WithParameterName("keyPath");
+    }
+
+    [Fact]
+    public async Task AddPemFileSigning_with_keyPath_sets_Path_and_KeyPath_on_options()
+    {
+        var builder = NewBuilder();
+        const string keyPath = "/etc/zeekayda/signing.key";
+
+        builder.AddPemFileSigning(PemPath, keyPath, SigningAlgorithm.RS256);
+
+        await using var provider = builder.Services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<PemFileSigningOptions>>().Value;
+        options.Path.Should().Be(PemPath);
+        options.KeyPath.Should().Be(keyPath);
+    }
+
+    [Fact]
+    public async Task AddPemFileSigning_with_keyPath_resolves_IJwtSigningService_as_PemFileSigningJwtSigningService()
+    {
+        var builder = NewBuilder();
+
+        builder.AddPemFileSigning(PemPath, "/etc/zeekayda/signing.key", SigningAlgorithm.RS256);
+
+        await using var provider = builder.Services.BuildServiceProvider();
+        var service = provider.GetRequiredService<IJwtSigningService>();
+        service.Should().BeOfType<PemFileSigningJwtSigningService>();
+    }
+
     // ── AddPfxFileSigning: argument validation ───────────────────────────────────────────────────
 
     [Fact]
@@ -224,7 +286,7 @@ public sealed class ZeeKayDaAuthBuilderFileSigningExtensionsTests
         var options = provider.GetRequiredService<IOptions<PemFileSigningOptions>>().Value;
         options.Path.Should().Be(PemPath);
         options.Algorithm.Should().Be(SigningAlgorithm.ES256);
-        options.AdditionalPaths.Should().ContainSingle().Which.Should().Be("/etc/zeekayda/rotated-in.pem");
+        options.AdditionalFiles.Should().ContainSingle().Which.Path.Should().Be("/etc/zeekayda/rotated-in.pem");
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────────────────────────

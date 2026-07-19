@@ -130,6 +130,33 @@ internal sealed class TempSigningKeyDirectory : IDisposable
         return path;
     }
 
+    /// <summary>
+    /// Writes only the certificate PEM block (no private key) to its own file, secured to the
+    /// current identity — the certificate half of a split cert/key registration (issue #405).
+    /// </summary>
+    public string WriteCertificateOnlyPemFile(string fileName, X509Certificate2 certificate)
+    {
+        var path = GetPath(fileName);
+        File.WriteAllText(path, certificate.ExportCertificatePem() + Environment.NewLine);
+        SecureToCurrentIdentity(path);
+        return path;
+    }
+
+    /// <summary>
+    /// Writes only the private-key PEM block to its own file, secured to the current identity — the
+    /// key half of a split cert/key registration (issue #405).
+    /// </summary>
+    public string WriteKeyOnlyPemFile(string fileName, X509Certificate2 certificate)
+    {
+        var path = GetPath(fileName);
+        var keyPem = certificate.GetRSAPrivateKey() is { } rsa
+            ? rsa.ExportPkcs8PrivateKeyPem()
+            : certificate.GetECDsaPrivateKey()!.ExportPkcs8PrivateKeyPem();
+        File.WriteAllText(path, keyPem + Environment.NewLine);
+        SecureToCurrentIdentity(path);
+        return path;
+    }
+
     /// <summary>Writes a PFX/PKCS#12 bundle, secured to the current process identity only.</summary>
     public string WritePfxFile(string fileName, X509Certificate2 certificate, string password)
     {

@@ -106,4 +106,67 @@ public sealed class PemFileSigningOptionsValidatorTests
 
         result.Succeeded.Should().BeTrue();
     }
+
+    // ── Split cert/key files (issue #405) ────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Validate_succeeds_when_KeyPath_is_a_distinct_non_empty_path()
+    {
+        var options = ValidOptions();
+        options.KeyPath = "/etc/zeekayda/signing.key";
+
+        var result = new PemFileSigningOptionsValidator().Validate(null, options);
+
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Validate_fails_when_KeyPath_is_whitespace_only(string keyPath)
+    {
+        var options = ValidOptions();
+        options.KeyPath = keyPath;
+
+        var result = new PemFileSigningOptionsValidator().Validate(null, options);
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("KeyPath");
+    }
+
+    [Fact]
+    public void Validate_fails_when_KeyPath_duplicates_the_primary_Path()
+    {
+        var options = ValidOptions();
+        options.KeyPath = options.Path;
+
+        var result = new PemFileSigningOptionsValidator().Validate(null, options);
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("duplicates");
+    }
+
+    [Fact]
+    public void Validate_fails_when_an_additional_files_KeyPath_duplicates_the_primary_KeyPath()
+    {
+        var options = ValidOptions();
+        options.KeyPath = "/etc/zeekayda/signing.key";
+        options.AddFile("/etc/zeekayda/rotated-in.pem", options.KeyPath);
+
+        var result = new PemFileSigningOptionsValidator().Validate(null, options);
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("duplicates");
+    }
+
+    [Fact]
+    public void Validate_succeeds_with_a_distinct_split_additional_file()
+    {
+        var options = ValidOptions();
+        options.AddFile("/etc/zeekayda/rotated-in.pem", "/etc/zeekayda/rotated-in.key");
+
+        var result = new PemFileSigningOptionsValidator().Validate(null, options);
+
+        result.Succeeded.Should().BeTrue();
+    }
 }

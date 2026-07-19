@@ -27,17 +27,21 @@ internal sealed class PfxFileSigningJwtSigningService : FileSigningJwtSigningSer
     }
 
     /// <inheritdoc/>
-    protected override IReadOnlyList<string> GetRegisteredPaths(PfxFileSigningOptions options)
+    protected override IReadOnlyList<RegisteredSigningFile> GetRegisteredFiles(PfxFileSigningOptions options)
     {
-        var paths = new List<string>(1 + options.AdditionalFiles.Count) { options.Path };
-        paths.AddRange(options.AdditionalFiles.Select(file => file.Path));
-        return paths;
+        // The PFX format inherently bundles cert+key+chain in one file, so every entry here has only
+        // a single backing path — issue #405's optional companion key path is PEM-only and does not
+        // apply to this provider.
+        var files = new List<RegisteredSigningFile>(1 + options.AdditionalFiles.Count) { new(options.Path) };
+        files.AddRange(options.AdditionalFiles.Select(file => new RegisteredSigningFile(file.Path)));
+        return files;
     }
 
     /// <inheritdoc/>
     protected override async ValueTask<X509Certificate2> LoadCertificateAsync(
-        string path, PfxFileSigningOptions options, CancellationToken cancellationToken)
+        RegisteredSigningFile file, PfxFileSigningOptions options, CancellationToken cancellationToken)
     {
+        var path = file.Id;
         var passwordSource = ResolvePasswordSource(path, options);
         var bytes = await _reader.ReadAllBytesAsync(path, cancellationToken).ConfigureAwait(false);
         var password = await passwordSource(cancellationToken).ConfigureAwait(false);

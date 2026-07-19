@@ -28,11 +28,13 @@ public sealed class PemFileSigningJwtSigningServiceTests
         TimeSpan? refreshInterval = null,
         TimeSpan? retirementWindow = null,
         SigningAlgorithm algorithm = SigningAlgorithm.RS256,
+        string? keyPath = null,
         ISanitizingLogger<FileSigningJwtSigningService<PemFileSigningOptions>>? logger = null)
     {
         var options = new PemFileSigningOptions
         {
             Path = primaryPath,
+            KeyPath = keyPath,
             Algorithm = algorithm,
             KeySourceRefreshInterval = refreshInterval ?? TimeSpan.FromMinutes(5),
         };
@@ -198,6 +200,158 @@ public sealed class PemFileSigningJwtSigningServiceTests
 
         var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
         exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.symlink_detected");
+    }
+
+    // ── Split cert/key files (issue #405) ────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetSigningKeysAsync_loads_the_certificate_from_separate_cert_and_key_files()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+        var certPath = tempDir.WriteCertificateOnlyPemFile("cert.pem", certificate);
+        var keyPath = tempDir.WriteKeyOnlyPemFile("key.pem", certificate);
+        await using var sut = BuildService(certPath, new FakeTimeProvider(T0), keyPath: keyPath);
+
+        var keys = await sut.GetSigningKeysAsync(ct);
+
+        keys.Should().ContainSingle();
+        keys[0].KeyType.Should().Be(SigningKeyType.Rsa);
+    }
+
+    [Fact]
+    public async Task SignAsync_signs_with_the_private_key_from_the_separately_registered_key_file()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+        var certPath = tempDir.WriteCertificateOnlyPemFile("cert.pem", certificate);
+        var keyPath = tempDir.WriteKeyOnlyPemFile("key.pem", certificate);
+        await using var sut = BuildService(certPath, new FakeTimeProvider(T0), keyPath: keyPath);
+        var payloadSegment = SigningTestHelpers.Base64UrlEncode("{\"sub\":\"test-subject\"}"u8.ToArray());
+
+        var result = await sut.SignAsync(payloadSegment, ct);
+        var keys = await sut.GetSigningKeysAsync(ct);
+        var descriptor = keys.Single(k => k.Kid == result.Kid);
+
+        SigningTestHelpers.VerifyRsaSignature(descriptor, result, payloadSegment).Should().BeTrue(
+            "the signature must verify against the certificate's public key even though the private " +
+            "key came from a separately-registered file");
+    }
+
+    [Fact]
+    public async Task GetSigningKeysAsync_throws_when_the_separately_registered_key_file_is_broader_than_0600_on_Unix()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "0600-mode enforcement is the Unix permission model.");
+
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+        var certPath = tempDir.WriteCertificateOnlyPemFile("cert.pem", certificate);
+        var keyPath = tempDir.WriteKeyOnlyPemFile("key.pem", certificate);
+        tempDir.MakeTooPermissive(keyPath); // Widen only the separate key file, not the cert file.
+        await using var sut = BuildService(certPath, new FakeTimeProvider(T0), keyPath: keyPath);
+
+        var act = async () => await sut.GetSigningKeysAsync(ct);
+
+        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.file_too_permissive");
+    }
+
+    [Fact]
+    public async Task GetSigningKeysAsync_throws_when_the_separately_registered_key_files_ACL_grants_a_broad_principal_on_Windows()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "broad-principal ACL enforcement is the Windows permission model.");
+
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+        var certPath = tempDir.WriteCertificateOnlyPemFile("cert.pem", certificate);
+        var keyPath = tempDir.WriteKeyOnlyPemFile("key.pem", certificate);
+        tempDir.MakeTooPermissive(keyPath); // Widen only the separate key file, not the cert file.
+        await using var sut = BuildService(certPath, new FakeTimeProvider(T0), keyPath: keyPath);
+
+        var act = async () => await sut.GetSigningKeysAsync(ct);
+
+        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.file_too_permissive");
+    }
+
+    [Fact]
+    public async Task GetSigningKeysAsync_throws_when_the_separately_registered_key_file_does_not_exist()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+        var certPath = tempDir.WriteCertificateOnlyPemFile("cert.pem", certificate);
+        var missingKeyPath = tempDir.GetPath("does-not-exist.key");
+        await using var sut = BuildService(certPath, new FakeTimeProvider(T0), keyPath: missingKeyPath);
+
+        var act = async () => await sut.GetSigningKeysAsync(ct);
+
+        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.file_not_found");
+    }
+
+    [Fact]
+    public async Task GetSigningKeysAsync_reloads_when_only_the_separately_registered_key_files_mtime_changes()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var refreshInterval = TimeSpan.FromMinutes(5);
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+        var certPath = tempDir.WriteCertificateOnlyPemFile("cert.pem", certificate);
+        var keyPath = tempDir.WriteKeyOnlyPemFile("key.pem", certificate);
+        var timeProvider = new FakeTimeProvider(T0);
+        await using var sut = BuildService(certPath, timeProvider, keyPath: keyPath, refreshInterval: refreshInterval);
+
+        await sut.GetSigningKeysAsync(ct); // Bootstrap load.
+
+        // Corrupts only the separately-registered key file's content (the certificate file's mtime
+        // is untouched) — mirroring cert-manager's "rotate privkey.pem, leave fullchain.pem alone"
+        // pattern. If HasKeySetChangedAsync only tracked the certificate path's mtime (missing the
+        // companion key path), this corruption would go undetected and the stale-but-valid keys
+        // would keep being served instead of the load failing on the corrupted key file.
+        File.WriteAllText(keyPath, "this is not a valid PEM file");
+        timeProvider.SetUtcNow(T0 + refreshInterval);
+
+        var act = async () => await sut.GetSigningKeysAsync(ct);
+
+        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>(
+            "the separately-registered key file's mtime change must be detected and force a reread, " +
+            "which then fails on the now-corrupted content");
+        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.invalid_pem");
+    }
+
+    [Fact]
+    public async Task HasKeySetChangedAsync_reports_a_change_when_only_the_separately_registered_key_files_mtime_changes()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var refreshInterval = TimeSpan.FromMinutes(5);
+        using var tempDir = new TempSigningKeyDirectory();
+        using var original = TestCertificateFactory.CreateRsaSelfSigned("original", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+        using var replacement = TestCertificateFactory.CreateRsaSelfSigned("replacement", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+        var certPath = tempDir.WriteCertificateOnlyPemFile("cert.pem", original);
+        var keyPath = tempDir.WriteKeyOnlyPemFile("key.pem", original);
+        var timeProvider = new FakeTimeProvider(T0);
+        await using var sut = BuildService(certPath, timeProvider, keyPath: keyPath, refreshInterval: refreshInterval);
+
+        var first = await sut.GetSigningKeysAsync(ct);
+
+        // Only the certificate file is rewritten (with a different key pair) — the separately
+        // registered key file's mtime is left untouched by this write. A correct implementation must
+        // still detect the certificate path's own mtime change; this test's sibling above proves the
+        // reverse (only the key file's mtime changing is also detected).
+        tempDir.WriteCertificateOnlyPemFile("cert.pem", replacement);
+        tempDir.WriteKeyOnlyPemFile("key.pem", replacement); // A cert file needs its matching key to load successfully.
+        timeProvider.SetUtcNow(T0 + refreshInterval);
+
+        var second = await sut.GetSigningKeysAsync(ct);
+
+        second[0].Kid.Should().NotBe(first[0].Kid,
+            "the certificate file's content (and mtime) changed, so HasKeySetChangedAsync must report " +
+            "a change and LoadKeysAsync must reread and reparse it");
     }
 
     // ── Multi-file rotation via AddFile (AC #9/#10) ──────────────────────────────────────────────
