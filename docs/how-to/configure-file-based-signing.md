@@ -91,8 +91,8 @@ an RSA certificate), startup fails validation.
 
 If your certificate and private key already live in two separate files — the convention used by
 Let's Encrypt/certbot (`fullchain.pem` + `privkey.pem`), cert-manager in Kubernetes, and most
-corporate PKI tooling — call the `.AddPemFileSigning(certPath, keyPath, algorithm)` overload
-instead of manually concatenating them into a single combined file:
+corporate PKI tooling — pass the private-key file's path as the `keyPath` parameter instead of
+manually concatenating them into a single combined file:
 
 ```csharp
 builder.Services
@@ -102,8 +102,8 @@ builder.Services
     })
     .AddPemFileSigning(
         "/etc/zeekayda/signing/fullchain.pem",
-        "/etc/zeekayda/signing/privkey.pem",
-        algorithm: SigningAlgorithm.RS256);
+        algorithm: SigningAlgorithm.RS256,
+        keyPath: "/etc/zeekayda/signing/privkey.pem");
 ```
 
 Both files are read independently and each is subject to exactly the same filesystem permission
@@ -284,13 +284,13 @@ For combined cert+key files:
 });
 ```
 
-For separate certificate/private-key file pairs, `AddFile` has a matching two-path overload:
+For separate certificate/private-key file pairs, `AddFile` accepts a matching `keyPath` parameter:
 
 ```csharp
 .AddPemFileSigning(
     "/etc/zeekayda/signing/fullchain-current.pem",
-    "/etc/zeekayda/signing/privkey-current.pem",
     algorithm: SigningAlgorithm.RS256,
+    keyPath: "/etc/zeekayda/signing/privkey-current.pem",
     configure: options =>
     {
         options.AddFile(
