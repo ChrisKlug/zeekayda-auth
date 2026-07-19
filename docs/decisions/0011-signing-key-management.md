@@ -541,7 +541,78 @@ never subtracts from it. `RetirementWindow` is **not** exposed on `JwtSigningSer
 anywhere else (see rejected alternatives); it is computed inside ZeeKayDa from token-lifetime
 configuration the server already owns.
 
-#### 3.4 `JwtSigningServiceOptions` carries `KeySourceRefreshInterval` only
+#### 3.4 A three-tier options hierarchy (amended, issue #409)
+
+> **Supersedes the single-property design below the historical description.** The original
+> `KeySourceRefreshInterval`-on-`JwtSigningServiceOptions` design (kept further down for context)
+> is replaced by a three-tier hierarchy that separates *load-once* sources, *rotating* sources,
+> and the base type both derive from. This section records the ratified shape; it is a
+> naming/regrouping fix, not a behaviour change — see "Backward compatibility" below.
+
+```csharp
+public abstract class JwtSigningServiceOptions
+{
+    // No rotation-shaped property at all. Every rotation-related knob lives on one of the
+    // two tiers below, never on the shared base.
+}
+
+/// <summary>Options for a provider whose key source is immutable for the process lifetime.</summary>
+public abstract class StaticKeySourceOptions : JwtSigningServiceOptions
+{
+    // No refresh-cadence property. The base class treats this tier as load-once-forever
+    // structurally — LoadKeysAsync runs exactly once, never on a timer — replacing the old
+    // "KeySourceRefreshInterval == null" sentinel with a real type distinction.
+}
+
+/// <summary>Options for a provider whose key source can change while the process runs.</summary>
+public abstract class RotatingKeySourceOptions : JwtSigningServiceOptions
+{
+    /// <summary>
+    /// How often the base class re-evaluates whether the active/included key set has changed
+    /// (poll cadence, coalesced via the single-flight gate and the HasKeySetChangedAsync ask,
+    /// §3.2). Applies uniformly to all four rotating providers — File, PFX, Windows Certificate
+    /// Store, and Azure Key Vault (cached and remote) — including cert-store, where most cycles
+    /// do no I/O (§3.5).
+    /// </summary>
+    public TimeSpan KeyRotationCheckInterval { get; set; }
+}
+```
+
+**Tier assignment.** `DevelopmentSigningKeyOptions` is the sole consumer of
+`StaticKeySourceOptions` — a locally-generated or file-persisted development key set never
+changes at runtime, so there is nothing to poll. `RotatingKeySourceOptions` is the shared parent
+for the File, PFX, Windows Certificate Store, and Azure Key Vault (cached and remote) provider
+options types — **not Key-Vault-only**, correcting the single-property design's implication that
+only Key Vault rotates.
+
+**Rename.** `KeySourceRefreshInterval` → **`KeyRotationCheckInterval`**, moved from the base type
+onto `RotatingKeySourceOptions`. The meaning is unchanged from the historical description below:
+how often the library re-evaluates whether the active/included key set has changed.
+
+**Backward compatibility.** This is a naming and type-hierarchy fix, not a behaviour change. All
+current defaults are preserved exactly: the development provider's load-once behaviour (now
+structural via `StaticKeySourceOptions` rather than a `null` sentinel), the rotating providers'
+poll cadence, expiry fail-closed detection, scheduled certificate promotion at `NotBefore`, and
+the file provider's mtime-triggered reload (§3.5) all continue to work identically. Periodic
+re-evaluation for File/PFX/cert-store providers remains load-bearing — there is still no sign-time
+`NotAfter` guard elsewhere in `JwtSigningService.cs`.
+
+**New properties introduced alongside the rename** — `SigningKeyActivationDelay`
+(Key-Vault-only) and `AssumedRelyingPartyPropagationLag` (File/cert-store-only) — are specified in
+§3.5, since both replace roles the single `KeySourceRefreshInterval` property used to overload.
+
+**Extensibility documentation requirement.** Every new/renamed property on these three tiers
+requires XML doc coverage. A dedicated docs-site page is also required, walking a third-party
+implementor through the three-tier model with Azure Key Vault as the worked example of "how to
+build a rotating provider with its own enforced timing property, and where to enforce its
+invariant" — see
+[Implement a custom signing key provider](../how-to/implement-custom-signing-provider.md)
+(outline stubbed alongside this amendment; content is follow-up implementation work).
+
+---
+
+<details>
+<summary>Historical description (pre-#409): the single-property design this section replaces</summary>
 
 ```csharp
 public abstract class JwtSigningServiceOptions
@@ -560,25 +631,24 @@ public abstract class JwtSigningServiceOptions
 }
 ```
 
-The base options type carries **`KeySourceRefreshInterval`** and nothing else. `RetirementWindow`
-is *not* here (§3.3). Provider-specific options derive from this type.
+The base options type carried **`KeySourceRefreshInterval`** and nothing else. `RetirementWindow`
+is *not* here (§3.3). Provider-specific options derived from this type.
 
-`KeySourceRefreshInterval` is a **nullable `TimeSpan?`**: a non-null value is the finite poll
-cadence; **`null` means "load once, never reload"**, a named static-source mode for an immutable
-key source. This replaces the earlier `TimeSpan.MaxValue`-as-sentinel design, in which a *mode*
+`KeySourceRefreshInterval` was a **nullable `TimeSpan?`**: a non-null value was the finite poll
+cadence; **`null` meant "load once, never reload,"** a named static-source mode for an immutable
+key source. This replaced the earlier `TimeSpan.MaxValue`-as-sentinel design, in which a *mode*
 ("never poll") was expressed via a *cadence* value plus a magic-number special case in the base
-class's refresh arithmetic. `DevelopmentSigningKeyOptions` defaults this to `null` (a
-locally-generated or file-persisted key set never changes at runtime, so there is nothing to
-poll; static mode is also what lets the base class avoid disposing a still-referenced memoized
-key set). `JwtSigningService<TOptions>.BorrowSetAsync` expresses the static case directly via a
-null check — no `TimeSpan.MaxValue` comparison and no overflow guard.
+class's refresh arithmetic. `DevelopmentSigningKeyOptions` defaulted this to `null`.
 
-The name conveys **both** roles the value serves — poll cadence and, for Key Vault-style
-providers, publish-then-activate lead time (§3.5). They are one property on purpose: binding them
-to a single value makes it structurally impossible to configure an activation delay shorter than
-the poll interval, i.e. to activate a key before the process would even notice it exists — the
-exact race the publish-then-activate/retirement-window model exists to prevent (see the rejected
-"split into two knobs" alternative).
+The single property deliberately conveyed **both** roles — poll cadence and, for Key Vault-style
+providers, publish-then-activate lead time — because binding them to one value made it
+structurally impossible to configure an activation delay shorter than the poll interval. Issue
+#409 found this conflated a *third*, unrelated meaning (File/cert-store "too-soon" warning
+threshold) into the same property, and that the "one property, two roles" argument only actually
+held for Key Vault. §3.4/§3.5 above and below record the corrected design: the invariant is now
+enforced by validation (§3.5) rather than by refusing to separate the properties.
+
+</details>
 
 #### 3.5 Rotation for external providers — read-only, durable-timestamp-derived, with anomaly surfacing
 
@@ -589,9 +659,28 @@ via `LoadKeysAsync` and surfaces anomalies rather than driving rotation.
 relying party that fetches a fresh JWKS still will not find the new `kid` and will reject
 otherwise-valid tokens. A key therefore MUST appear in `GetSigningKeysAsync()` results — and so
 in the published JWKS — for at least one RP JWKS-cache-TTL period **before** it becomes the active
-signer. Implementations MUST NOT promote a key to active signer until it has been published. As a
-safe default the activation delay SHOULD be ≥ `KeySourceRefreshInterval`, so an RP that polls the
-JWKS at the interval will have observed the key before the first token signed with it.
+signer. Implementations MUST NOT promote a key to active signer until it has been published.
+
+**Amendment (issue #409): the activation delay and the poll cadence are now separate,
+per-provider-family properties, each with its own invariant enforcement — not one shared
+property.**
+
+- **Azure Key Vault (cached and remote)** gains **`SigningKeyActivationDelay`** on
+  `AzureKeyVaultCachedSigningOptions`/`AzureKeyVaultRemoteSigningOptions`, defaulting to
+  `KeyRotationCheckInterval` (§3.4) when unset. The invariant `ActivationDelay >=
+  KeyRotationCheckInterval` — a newly-published key must not be able to activate before the
+  process would even notice it exists — is enforced in exactly **two** places: (a) one shared
+  validation helper used by both Key Vault option validators (not duplicated per-validator), and
+  (b) inside `KeyVaultSigningKeyRotation.BuildActivationTimeline` itself, so a future custom
+  KMS/HSM provider modeled on this pattern cannot silently reintroduce the activation race by
+  forgetting a cross-field validator.
+- **File and Windows Certificate Store** gain **`AssumedRelyingPartyPropagationLag`**, feeding
+  `SigningKeyRotation.HasTooSoonPendingActivation`, replacing the old reuse of the rotation-check
+  interval as a proxy for RP-side JWKS cache staleness. Defaults to `KeyRotationCheckInterval`
+  when unset, preserving today's behaviour exactly.
+
+Both new properties default to the rotation-check interval specifically so that a consumer who
+upgrades and sets nothing observes identical runtime behaviour to before the split.
 
 **Anomaly surfacing (the "vanished kid" warning).** Rotation-capable providers keep a
 restart-tolerant, purely-for-logging map of previously-published `(kid, raw provider version
@@ -1048,13 +1137,36 @@ would fight ADR 0008's deliberate mix-and-match design.
 
 #### Splitting `KeySourceRefreshInterval` into two properties (poll cadence vs. activation delay)
 
-**Considered and rejected.** The poll cadence and the Key Vault publish-then-activate lead time
-*look* separable, and the temptation is to expose two knobs. Binding them to one value is
-intentional: two independent knobs would allow configuring `activationDelay < pollInterval` — i.e.
-promoting a key to active signer before the process would even poll and notice it exists — which is
-exactly the race the publish-then-activate/retirement-window model (§3.5) exists to prevent. One
-property makes that misconfiguration unrepresentable. (This is the same "the only off-default
-values are unsafe" argument that keeps `RetirementWindow` derived rather than configurable.)
+**Originally rejected here; superseded by issue #409 (§3.4/§3.5 amendment).** The poll cadence and
+the Key Vault publish-then-activate lead time *look* separable, and the original argument against
+splitting them was that two independent knobs would allow configuring `activationDelay <
+pollInterval` — i.e. promoting a key to active signer before the process would even poll and
+notice it exists. Issue #409 found the single property was actually overloaded with a **third**,
+unrelated meaning (a File/cert-store "too-soon" warning threshold, a proxy for RP-side JWKS cache
+staleness, not Key-Vault activation timing at all), and that collapsing all three into one name
+was becoming harder to reason about than the misconfiguration the single property prevented. The
+amended design (§3.4/§3.5) splits the properties back out — `KeyRotationCheckInterval` (shared,
+renamed from `KeySourceRefreshInterval`), `SigningKeyActivationDelay` (Key-Vault-only), and
+`AssumedRelyingPartyPropagationLag` (File/cert-store-only) — and preserves the original safety
+argument by moving the `ActivationDelay >= KeyRotationCheckInterval` invariant into validation
+(enforced in two places: a shared validator helper and inside
+`KeyVaultSigningKeyRotation.BuildActivationTimeline` itself) rather than by refusing to let the
+values vary independently.
+
+#### Splitting `IJwtSigningService`/`JwtSigningService<TOptions>` into separate key-source and signing abstractions (issue #409)
+
+**Considered and rejected.** Proposed as an alternative to the three-tier options split, by
+analogy with the `Stores/` split for authorization codes/refresh tokens (ADR 0008). Rejected
+because: both overloaded meanings that motivated #409 live entirely on the key-source side, and
+signing code (`SignInputAsync`/`SignAsync`) never touches these properties at all — a source/signer
+split would not address the naming problem it was proposed to solve. Source and signer never vary
+independently in any current provider: only `AzureKeyVaultRemoteSigningJwtSigningService` overrides
+`SignInputAsync`, and it is 1:1 coupled to its own `LoadKeysAsync`. The `Stores/` precedent doesn't
+transfer — storage technology and protocol semantics genuinely vary independently there; that axis
+doesn't exist here. A split would also add cross-boundary lease-handoff complexity for the
+sign-time `SigningKeySet` borrow (§3.2) for no benefit. **One narrow future trigger to revisit:**
+once the real JWKS endpoint (`connect/jwks`, currently `501`, §4.3) ships, reconsider whether
+`GetSigningKeysAsync` vs. `SignAsync` should split against a concrete consumer.
 
 #### The `AddDevelopmentJwtSigningKeys(persistTo:)` two-overload shape
 
@@ -1299,6 +1411,7 @@ alternatives sections above.
   `HasKeySetChangedAsync` follow-up set opened by issue #334 (all four shipped providers now
   implement the hook).
 - **2026-07-19 — issue #355** — `SigningKeySet` construction reshaped from a single positional `IReadOnlyList<SigningKeyPair>` (first entry = active by unenforced convention) to a named `SigningKeySet(SigningKeyPair activeKey, IEnumerable<SigningKeyPair>? additionalKeys = null)`, so the active signing key can no longer be selected by list order and an out-of-order custom provider can no longer silently sign with a retired/not-yet-active key (§3.2, structural tier-1 fix). `ActiveKey` now derives from the named parameter rather than `Keys[0]`; the empty-set `ArgumentException` disappears (emptiness is unrepresentable); `Keys`/JWKS ordering and the hot-path zero-alloc reuse are unchanged. Second bucket named `additionalKeys` — lifecycle-neutral (covers both pre-published/future and within-retirement-window keys), not `retired`; two buckets, no new third list. Duplicate-`kid` validation stays at the base-class load path (§4.3), not the constructor.
+- **2026-07-20 — issue #409 (design only, no implementation in this PR)** — §3.4/§3.5 amended: the overloaded `KeySourceRefreshInterval` (`TimeSpan?` on `JwtSigningServiceOptions`) is replaced by a three-tier options hierarchy — `JwtSigningServiceOptions` (base, no rotation property), `StaticKeySourceOptions` (load-once-forever, used only by `DevelopmentSigningKeyOptions`, replacing the `null`-sentinel), and `RotatingKeySourceOptions` (used by File, PFX, Windows Certificate Store, *and* Azure Key Vault cached/remote — not Key-Vault-only as the old single-property design implied), carrying the renamed **`KeyRotationCheckInterval`**. Two new properties split out the roles the old property overloaded: **`SigningKeyActivationDelay`** (Key-Vault-only, on `AzureKeyVaultCachedSigningOptions`/`AzureKeyVaultRemoteSigningOptions`, invariant `>= KeyRotationCheckInterval` enforced in a shared validator helper *and* inside `KeyVaultSigningKeyRotation.BuildActivationTimeline`) and **`AssumedRelyingPartyPropagationLag`** (File/cert-store-only, feeding `HasTooSoonPendingActivation`); both default to `KeyRotationCheckInterval` when unset, preserving today's runtime behaviour exactly. A source/signer abstraction split (analogous to ADR 0008's `Stores/`) was considered and rejected — see Rejected Alternatives. Naming/regrouping only; no behaviour change. Property renames, validators, and the docs-site extensibility page (three-tier model, Azure Key Vault worked example) are follow-up implementation work, tracked separately from this ADR amendment.
 
 ---
 
