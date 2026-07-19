@@ -125,6 +125,35 @@ public abstract class RefreshTokenGrantStoreConformanceTests
         }
     }
 
+    /// <summary>
+    /// ADR 0014 §9 case 1 (issue #359): <c>RevokeFamilyAsync</c> is documented "Idempotent" and its
+    /// completeness bar is EVERY existing grant in the family, not just <see cref="RefreshGrantStatus.Active"/>
+    /// ones — a grant already <see cref="RefreshGrantStatus.Consumed"/> before the call still ends up
+    /// <see cref="RefreshGrantStatus.Revoked"/>, and calling the method again is a safe no-op that
+    /// leaves every grant's status unchanged.
+    /// </summary>
+    [Fact]
+    public async Task RevokeFamilyAsync_is_idempotent_and_also_revokes_an_already_Consumed_grant()
+    {
+        var store = CreateStore();
+        var familyId = $"family-{Guid.NewGuid():N}";
+        var activeGrant = NewGrant(familyId);
+        var consumedGrant = NewGrant(familyId);
+        await store.InsertAsync(activeGrant, CancellationToken.None);
+        await store.InsertAsync(consumedGrant, CancellationToken.None);
+        Assert.True(await store.TryMarkConsumedAsync(consumedGrant.HandleHash, CancellationToken.None));
+
+        await store.RevokeFamilyAsync(familyId, CancellationToken.None);
+        await store.RevokeFamilyAsync(familyId, CancellationToken.None);
+
+        foreach (var grant in new[] { activeGrant, consumedGrant })
+        {
+            var result = await store.FindByHandleAsync(grant.HandleHash, CancellationToken.None);
+            Assert.NotNull(result);
+            Assert.Equal(RefreshGrantStatus.Revoked, result!.Status);
+        }
+    }
+
     [Fact]
     public async Task RevokeFamilyAsync_does_not_affect_grants_in_a_different_family()
     {
