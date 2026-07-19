@@ -119,6 +119,14 @@ public sealed class SigningKeySet : IDisposable
     }
 
     /// <summary>
+    /// Gets the private key paired with <see cref="ActiveKey"/>. Prefer this over
+    /// <see cref="GetPrivateKey(int)"/> when the caller's intent is "give me the active key's
+    /// private key" — it names the concept directly rather than relying on the fact that the
+    /// active key happens to sit at index 0 internally.
+    /// </summary>
+    public AsymmetricAlgorithm GetActivePrivateKey() => GetPrivateKey(0);
+
+    /// <summary>
     /// Attempts to increment the borrow count so the caller can safely use the private keys.
     /// Returns <see langword="false"/> if the set has already been fully disposed (refcount
     /// already at zero), in which case the caller must not use this set.

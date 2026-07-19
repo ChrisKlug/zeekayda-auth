@@ -94,6 +94,18 @@ public sealed class SigningKeySetTests
     // ── Disposal ─────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
+    public void GetActivePrivateKey_returns_the_private_key_paired_with_ActiveKey()
+    {
+        var active = MakeRsaEntry("k1");
+        var additional = MakeRsaEntry("k2");
+        using var activeRsa = active.Rsa;
+        using var additionalRsa = additional.Rsa;
+        using var set = new SigningKeySet(active.Pair, [additional.Pair]);
+
+        set.GetActivePrivateKey().Should().BeSameAs(activeRsa);
+    }
+
+    [Fact]
     public void GetPrivateKey_throws_ObjectDisposedException_after_Dispose()
     {
         var tuple = MakeRsaEntry();

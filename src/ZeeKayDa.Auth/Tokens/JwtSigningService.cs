@@ -331,7 +331,7 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
         SigningKeySet set, ReadOnlyMemory<byte> payloadSegment, CancellationToken cancellationToken)
     {
         var descriptor = set.ActiveKey;
-        var privateKey = set.GetPrivateKey(0);
+        var privateKey = set.GetActivePrivateKey();
 
         var headerBytes = BuildHeaderJsonBytes(descriptor.Algorithm, descriptor.Kid);
         var headerSegment = Base64UrlEncode(headerBytes);
