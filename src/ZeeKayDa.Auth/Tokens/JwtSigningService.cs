@@ -58,23 +58,41 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
     /// The trusted key set. The first entry is the active signing key. Must never be empty.
     /// </returns>
     /// <remarks>
-    /// Every call MUST return a genuinely new <see cref="SigningKeySet"/> instance; this method
-    /// MUST NOT return the same instance twice (for example a memoised set held to signal
-    /// "unchanged" — use <see cref="HasKeySetChangedAsync"/> for that instead). This is enforced at
-    /// runtime, not just documented — but only for the naive case: the base class compares the
-    /// returned instance against the previously cached set by reference immediately after this
-    /// method returns, and throws an <see cref="InvalidOperationException"/> right away if they are
-    /// the same object — before the previous set is disposed or the new one is installed as
-    /// current. This is a reference-equality tripwire, not a deep check: building a genuinely new
-    /// <see cref="SigningKeySet"/> that nonetheless wraps the same underlying key objects as the
-    /// previous set is still this method's responsibility to avoid, and would reproduce the same
-    /// failure the guard exists to catch. Without either guard, the returned set's private-key
-    /// objects are owned by the base class: immediately after installing a freshly loaded set as
-    /// current, the base class unconditionally <c>Dispose()</c>s the superseded reference, so
-    /// returning the same instance (or the same underlying keys via a new wrapper) would dispose
-    /// objects still referenced by the current set, and the next <c>GetPrivateKey</c> call on it
-    /// would throw a confusing, disconnected <see cref="ObjectDisposedException"/> instead. See ADR
-    /// 0011 §3.2.
+    /// Every call MUST return a genuinely new <see cref="SigningKeySet"/> instance, and that new
+    /// instance MUST wrap genuinely new private-key objects — reusing the underlying key material
+    /// of a previously returned set is not permitted even when it is wrapped in a new
+    /// <see cref="SigningKeySet"/> (for example a memoised set held to signal "unchanged" — use
+    /// <see cref="HasKeySetChangedAsync"/> for that instead). Both failure modes are enforced at
+    /// runtime, not just documented, immediately after this method returns and before the previous
+    /// set is disposed or the new one is installed as current:
+    /// <list type="bullet">
+    /// <item>
+    /// <description>
+    /// <b>Same instance:</b> the base class compares the returned instance against the previously
+    /// cached set by reference and throws an <see cref="InvalidOperationException"/> right away if
+    /// they are the same object.
+    /// </description>
+    /// </item>
+    /// <item>
+    /// <description>
+    /// <b>Same private key under a shared kid:</b> for every <c>kid</c> present in both the new and
+    /// previous set, the base class also compares the two sets' private-key objects by reference and
+    /// throws an <see cref="InvalidOperationException"/> if any pair is the same object — even though
+    /// the enclosing <see cref="SigningKeySet"/> instance is genuinely new. Without this check, the
+    /// failure would surface later and much less clearly, as a confusing, disconnected
+    /// <see cref="ObjectDisposedException"/> once the previous set is disposed below.
+    /// </description>
+    /// </item>
+    /// </list>
+    /// Neither guard is a full deep-equality check of the whole key set: they do not compare public
+    /// key material, algorithm metadata, or keys whose <c>kid</c> does not also appear in the
+    /// previous set. They only catch instance reuse and reused private-key objects under a shared
+    /// <c>kid</c> — the two ways a naive or partially-naive <see cref="LoadKeysAsync"/> override can
+    /// accidentally hand ownership of live key material to two sets at once. Without either guard,
+    /// the returned set's private-key objects are owned by the base class: immediately after
+    /// installing a freshly loaded set as current, the base class unconditionally <c>Dispose()</c>s
+    /// the superseded reference, so returning the same instance (or the same underlying keys via a
+    /// new wrapper) would dispose objects still referenced by the current set. See ADR 0011 §3.2.
     /// </remarks>
     protected abstract ValueTask<SigningKeySet> LoadKeysAsync(CancellationToken cancellationToken);
 
@@ -276,6 +294,22 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
                     "HasKeySetChangedAsync to return false instead.");
             }
 
+            // Deeper variant of the same tripwire: a genuinely new SigningKeySet can still wrap one
+            // of the previous set's private key objects under a shared kid. previous is not disposed
+            // yet at this point (disposal happens further below, after validation and install), so
+            // reading its private keys here is safe.
+            if (previous is not null && FindReusedPrivateKeyKid(newSet, previous) is { } reusedKid)
+            {
+                throw new InvalidOperationException(
+                    $"{GetType().Name}.LoadKeysAsync returned a new SigningKeySet for kid '{reusedKid}' " +
+                    "that wraps the same private key object as the previously cached set. Unlike the " +
+                    "same-instance guard, this is a different SigningKeySet instance, but it still " +
+                    "shares underlying key material with the set it is meant to replace. LoadKeysAsync " +
+                    "must always supply genuinely new private key objects on every call, even when " +
+                    "building a new SigningKeySet; to report that nothing has changed since the last " +
+                    "cycle, override HasKeySetChangedAsync to return false instead.");
+            }
+
             try
             {
                 ValidateKeySet(newSet);
@@ -400,6 +434,30 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
         var encoded = new byte[Base64Url.GetEncodedLength(span.Length)];
         Base64Url.EncodeToUtf8(span, encoded);
         return encoded;
+    }
+
+    /// <summary>
+    /// Finds a <c>kid</c> shared between <paramref name="newSet"/> and <paramref name="previous"/>
+    /// whose private key object is the exact same reference in both sets. Returns
+    /// <see langword="null"/> if no such <c>kid</c> exists.
+    /// </summary>
+    private static string? FindReusedPrivateKeyKid(SigningKeySet newSet, SigningKeySet previous)
+    {
+        var previousIndexByKid = new Dictionary<string, int>(previous.Keys.Count, StringComparer.Ordinal);
+        for (var i = 0; i < previous.Keys.Count; i++)
+            previousIndexByKid[previous.Keys[i].Kid] = i;
+
+        for (var i = 0; i < newSet.Keys.Count; i++)
+        {
+            var kid = newSet.Keys[i].Kid;
+            if (previousIndexByKid.TryGetValue(kid, out var previousIndex) &&
+                ReferenceEquals(newSet.GetPrivateKey(i), previous.GetPrivateKey(previousIndex)))
+            {
+                return kid;
+            }
+        }
+
+        return null;
     }
 
     private static void ValidateKeySet(SigningKeySet set)

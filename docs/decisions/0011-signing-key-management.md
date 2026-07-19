@@ -381,6 +381,12 @@ The base class owns:
   be disposed out from under the just-installed cache and the next `GetPrivateKey` would throw
   `ObjectDisposedException`. The ask/refresh split avoids that failure structurally by never
   calling `LoadKeysAsync` at all on an unchanged cycle, rather than by having it return a sentinel.
+  Both the same-instance case and the subtler variant — a genuinely new `SigningKeySet` that
+  nonetheless wraps one of the previous set's private-key objects under a shared `kid` — are
+  enforced at runtime immediately after `LoadKeysAsync` returns, before the previous set is disposed
+  or the new one installed, each with its own `InvalidOperationException`. Neither check is a full
+  deep-equality comparison of the two sets; the second only compares private-key object identity for
+  `kid`s common to both sets.
   `HasKeySetChangedAsync` throwing is **fail-closed by design**: the exception propagates straight
   out of `BorrowSetAsync` to the current caller (the in-flight `GetSigningKeysAsync`/`SignAsync`
   fails), and `_cachedSet`/`_cacheExpiresAt` are left untouched — no stale-cache fallback, nothing
