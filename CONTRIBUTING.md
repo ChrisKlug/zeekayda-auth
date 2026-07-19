@@ -43,21 +43,22 @@ This applies to everything except trivial typo fixes. Opening an issue first:
 
 If you want to work on an existing issue, leave a comment to say so. A maintainer will assign it to you.
 
-### ADR-First Development
+### Ceremony scales with blast radius
 
-Non-trivial features follow a **three-tier issue model**:
+Process is matched to the risk of the change, not applied uniformly:
 
-1. **Epic** (`type:epic`) — Created first when a new feature area is identified. The permanent coordination point: it accumulates notes, links to all related design and task sub-issues, and is closed when all sub-issues are closed (after confirming with the user). Title prefix: `Epic: `. Progress is tracked via GitHub's sub-issue rollup.
-2. **Design issue** (`type:design`) — An ADR / architecture planning issue. Always a sub-issue of an epic. Contains the problem statement, spec references, open design questions, and sign-off criteria. *No implementation acceptance criteria.* Closed when the ADR PR merges.
-3. **Task issue** (`type:task`) — Created by the maintainer *after* the ADR PR merges (for ADR-path work) or directly (for non-ADR work). Always a sub-issue of an epic. Carries the precise, testable acceptance criteria grounded in the settled design. Closed when the implementation PR merges.
+| Change | Process |
+|---|---|
+| Internal / mechanical — bug fix, refactor, test, chore | Just build it. No design gate, no ADR. |
+| New or changed **public API** / behaviour | Agree the shape with a maintainer first — a short discussion in the issue thread (the "mini-ADR": what, why, one line on the alternative). Then build. |
+| Touches **tokens, crypto, or endpoints** | A security review — of the shape, the PR, or both. |
+| A **big or hard-to-reverse** decision | Record a lean ADR (`docs/decisions/`) — decision, why, consequences, about half a page. Rare. |
 
-Sub-issues within an epic are ordered to reflect execution sequence — design issues precede tasks, foundational tasks precede dependent ones.
+**One narrow issue = one buildable thing.** There is no epic tier by default — issues are sequenced with GitHub's native `blocked by` / `blocks` relationships instead of an epic hierarchy. The shape discussion for a public-API change happens directly in that issue's thread, not in a separate design document.
 
-This separation exists because ADRs change during review. Writing implementation acceptance criteria before the design is settled produces stale, misleading requirements. The three-tier model ensures developers always work from stable, agreed-upon decisions, and the epic keeps the full feature lifecycle visible in one place.
+**Ideas that are not yet ready** for design or implementation are tagged `status:idea`. They are excluded from the active-work view (`is:open -label:status:idea`).
 
-**Ideas that are not yet ready** for design or implementation are tagged `status:idea`. They live safely in the repo (typically as sub-issues of a parking-lot epic) and are excluded from the active-work view (`is:open -label:status:idea`).
-
-> 💡 If you are an external contributor with a feature idea, open a **Feature Request** — the maintainers will determine whether an ADR is needed and create the appropriate issues.
+> 💡 If you are an external contributor with a feature idea, open a **Feature Request** — a maintainer will determine what process the change needs and shape the issue accordingly.
 
 ### Pre-1.0 Stability Policy
 

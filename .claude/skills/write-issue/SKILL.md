@@ -1,6 +1,6 @@
 ---
 name: write-issue
-description: Write a well-structured GitHub issue for ZeeKayDa.Auth — decides between an ADR issue and an implementation issue, applies the issue templates, hierarchy, and labels, and links sub-issues to their epic. Use when fleshing out a new idea, filing a bug, creating design or implementation issues, or triaging incoming issues.
+description: Write a well-structured GitHub issue for ZeeKayDa.Auth — decides between an ADR issue and an implementation issue, applies the issue templates and labels, and sequences related work with blocked-by relations. Use when fleshing out a new idea, filing a bug, creating design or implementation issues, or triaging incoming issues.
 argument-hint: [idea or issue description]
 allowed-tools:
   - Bash(gh *)
@@ -24,9 +24,11 @@ Routine work does **not** need an ADR: adding a property to an existing model, f
 
 Never write an ADR issue until the problem is fully understood — ask clarifying questions first.
 
-## Step 2 — Identify or create the parent epic
+## Step 2 — Sequence it, don't nest it
 
-Every `type:design` and `type:task` issue must be a sub-issue of a `type:epic`. If no epic exists for the feature area, create one first (title prefix: `Epic: `). Epics are permanent coordination points, closed only when all sub-issues are closed — confirm with the user before closing one.
+There is no epic tier by default (per the workflow-leaning pivot in PR #377 — see `AGENTS.md`'s Development Workflow section). One narrow issue = one buildable thing. If this issue can't start until another one closes, record that with GitHub's native `blocked by` relation (Step 4) instead of nesting it under a coordination issue.
+
+`type:epic` still exists as a label for the rare case of a genuinely large, multi-issue effort that needs a standing coordination point — don't create one by default, and don't feel obligated to find or attach an existing one just because the work sits in a feature area that once had one (most have since been closed/dissolved). If you're unsure whether a given piece of work warrants one, ask the user rather than defaulting to "yes."
 
 ## Step 3 — Write the issue
 
@@ -76,9 +78,21 @@ There is deliberately no `status:blocked` label — blocked state is tracked wit
 
 Active work query: `is:open -label:status:idea`
 
-## Step 4 — Link the sub-issue to its epic
+## Step 4 — Blocked issues
 
-Always use the native GitHub sub-issues API — never a text "Sub-issues" list in the epic body, never `Sub-issue of #N` lines in child bodies:
+When an issue cannot start until another issue closes, record it with GitHub's native blocked-by relation — never a `status:blocked` label, never only body prose:
+
+```sh
+# issue_id is the BLOCKING issue's databaseId
+gh api graphql -f query='{ repository(owner: "OWNER", name: "REPO") { issue(number: N) { databaseId } } }'
+gh api -X POST /repos/OWNER/REPO/issues/BLOCKED_NUMBER/dependencies/blocked_by -F issue_id=DATABASE_ID
+```
+
+The relation shows on both issues and resolves automatically when the blocker closes. A short body note explaining *why* it is blocked is still good practice; the relation is the machine-readable state.
+
+### If an epic is genuinely warranted
+
+Link a sub-issue to it with the native GitHub sub-issues API — never a text "Sub-issues" list in the epic body, never `Sub-issue of #N` lines in child bodies:
 
 ```sh
 # Get the child issue's database ID
@@ -86,19 +100,6 @@ gh api graphql -f query='{ repository(owner: "OWNER", name: "REPO") { issue(numb
 # Link it to the parent epic
 gh api -X POST /repos/OWNER/REPO/issues/PARENT_NUMBER/sub_issues --field sub_issue_id=DATABASE_ID
 ```
-
-Do this immediately after creating any issue that belongs to an epic. Sub-issue ordering reflects execution sequence — design before tasks, foundational tasks before dependent ones.
-
-### Blocked issues
-
-When an issue cannot start until another issue closes, record it with GitHub's native blocked-by relation — never a `status:blocked` label, never only body prose:
-
-```sh
-# issue_id is the BLOCKING issue's databaseId (same GraphQL lookup as above)
-gh api -X POST /repos/OWNER/REPO/issues/BLOCKED_NUMBER/dependencies/blocked_by -F issue_id=DATABASE_ID
-```
-
-The relation shows on both issues and resolves automatically when the blocker closes. A short body note explaining *why* it is blocked is still good practice; the relation is the machine-readable state.
 
 ## Triaging incoming issues
 
