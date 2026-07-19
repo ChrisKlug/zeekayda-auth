@@ -189,6 +189,7 @@ builder.Services
     })
     .AddPemFileSigning(
         path: "/etc/zeekayda/signing/current.pem",
+        algorithm: SigningAlgorithm.RS256,
         configure: options =>
         {
             options.KeySourceRefreshInterval = TimeSpan.FromMinutes(10);
@@ -207,6 +208,7 @@ builder.Services
     })
     .AddPemFileSigning(
         path: "/etc/zeekayda/signing/current.pem",
+        algorithm: SigningAlgorithm.RS256,
         configure: options =>
         {
             options.KeySourceRefreshInterval = TimeSpan.FromMinutes(10);
@@ -225,6 +227,7 @@ builder.Services
     })
     .AddPemFileSigning(
         path: "/etc/zeekayda/signing/rotated-in.pem",
+        algorithm: SigningAlgorithm.RS256,
         configure: options =>
         {
             options.KeySourceRefreshInterval = TimeSpan.FromMinutes(10);

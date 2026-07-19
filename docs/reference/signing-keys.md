@@ -59,10 +59,11 @@ public interface IJwtSigningService
 }
 ```
 
-**`GetSigningKeysAsync`** returns every currently trusted signing key — the active key plus any
-keys still inside their retirement/overlap window. It excludes fully retired keys and
-not-yet-activated keys. This is exactly the set that must appear in the JWKS
-([RFC 7517](https://www.rfc-editor.org/rfc/rfc7517)).
+**`GetSigningKeysAsync`** returns every currently trusted signing key — the active key, any
+not-yet-activated key already published ahead of its own activation (the publish-then-activate
+lead time described below), and any retired key still inside its retirement/overlap window. It
+excludes only fully retired keys — those whose retirement window has elapsed. This is exactly the
+set that must appear in the JWKS ([RFC 7517](https://www.rfc-editor.org/rfc/rfc7517)).
 
 **`SignAsync`** takes the base64url-encoded payload segment — you never pass raw claims bytes or a
 key selector — and returns a [`SigningResult`](#signingkeydescriptor--signingresult) with the
@@ -219,9 +220,10 @@ for an immutable key source, not a sentinel value. `DevelopmentSigningKeyOptions
 `null`, since a locally-generated or file-persisted development key never changes at runtime.
 
 > 💡 **Tip:** `KeySourceRefreshInterval` means something different depending on the provider. For a
-> remote provider such as Azure Key Vault, it is the re-download cadence *and* the
-> publish-then-activate lead time a rotated-in key must be visible for before it can become the
-> active signer. For a local file or certificate-store provider, there is nothing remote to
+> remote provider such as Azure Key Vault, it is the recheck cadence — key material is only
+> actually re-downloaded when that recheck detects a change — *and* the publish-then-activate lead
+> time a rotated-in key must be visible for before it can become the active signer. For a local
+> file or certificate-store provider, there is nothing remote to
 > re-poll; the interval instead governs a startup-warning threshold for pending key rotations (see
 > [Rotate signing keys](../how-to/rotate-signing-keys.md)). This nuance is covered in full, with
 > concrete values, in each provider's how-to guide.
