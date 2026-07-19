@@ -2,7 +2,7 @@
 title: "Rotate signing keys"
 description: "How signing key rotation and retirement work in ZeeKayDa.Auth, and how to rotate keys for each provider."
 parent: "How-to Guides"
-nav_order: 11
+nav_order: 12
 ---
 
 *Added in Unreleased.*
@@ -17,10 +17,8 @@ JWKS document, see [Signing keys](../reference/signing-keys.md).
 
 ## Before you start
 
-- You already have a production signing key provider registered. If not, pick one first:
-  - [Configure Azure Key Vault signing](configure-azure-key-vault-signing.md)
-  - [Configure Windows Certificate Store signing](configure-windows-certificate-store-signing.md)
-  - [Configure file-based (PEM/PFX) signing](configure-file-based-signing.md)
+- You already have a production signing key provider registered. If not, see
+  [Configure signing keys: choosing a provider](configure-signing-keys.md) to pick one first.
 - This guide does not apply to [development signing keys](configure-development-signing-keys.md) —
   those keys are never rotated; they are regenerated or replaced wholesale, and doing that in a
   non-development environment is already disallowed by the environment gate.

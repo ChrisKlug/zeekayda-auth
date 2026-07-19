@@ -2,7 +2,7 @@
 title: "Configure development signing keys"
 description: "How to set up local-development JWT signing keys in ZeeKayDa.Auth."
 parent: "How-to Guides"
-nav_order: 7
+nav_order: 8
 ---
 
 *Added in Unreleased.*

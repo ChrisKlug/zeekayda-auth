@@ -2,7 +2,7 @@
 title: "Configure Azure Key Vault signing"
 description: "How to configure Azure Key Vault as a JWT signing key provider in ZeeKayDa.Auth, remote or cached."
 parent: "How-to Guides"
-nav_order: 8
+nav_order: 9
 ---
 
 *Added in Unreleased.*
@@ -187,141 +187,37 @@ only when the certificate's key policy is exportable. See
 > Key Vault otherwise gives you — don't apply it as a blanket default across every key or
 > certificate in the vault.
 
-### Setting up a bare key with auto-rotation (remote signing)
+### Setting up a bare key (remote signing)
 
-Create the key:
-
-```bash
-az keyvault key create \
-  --vault-name my-vault \
-  --name token-signing-key \
-  --kty RSA \
-  --size 2048
-```
-
-Then configure its rotation policy. A Key Vault key's rotation policy is a separate resource from
-the key itself (`GET`/`PUT /keys/{key-name}/rotationpolicy`), and only supports duration-based
-triggers — there is no percentage-of-lifetime option for a bare key:
-
-```json
-{
-  "lifetimeActions": [
-    {
-      "trigger": { "timeAfterCreate": "P18M" },
-      "action": { "type": "Rotate" }
-    },
-    {
-      "trigger": { "timeBeforeExpiry": "P30D" },
-      "action": { "type": "Notify" }
-    }
-  ],
-  "attributes": { "expiryTime": "P2Y" }
-}
-```
-
-Save that as `rotation-policy.json` and apply it:
+Create the key with any tool — for example:
 
 ```bash
-az keyvault key rotation-policy update \
-  --vault-name my-vault \
-  --name token-signing-key \
-  --value @rotation-policy.json
+az keyvault key create --vault-name my-vault --name token-signing-key --kty RSA --size 2048
 ```
 
-Durations are ISO 8601 (`P18M` = 18 months, `P30D` = 30 days, `P2Y` = 2 years). Each
-`lifetimeActions` entry sets exactly one of `timeAfterCreate` or `timeBeforeExpiry` on its
-trigger — `Rotate` creates a new key version automatically, `Notify` only emits an Event Grid
-notification without rotating. `attributes.expiryTime` sets the expiry Key Vault stamps on the
-*new* version each time it rotates. Key Vault enforces a minimum lead time between creation and
-expiry for any rotation trigger — **7 days** for a standard Key Vault, **28 days** for Managed
-HSM (a higher floor; don't reuse a vault's rotation policy JSON unmodified against an HSM).
+For auto-rotation, configure a key rotation policy — a separate resource from the key itself,
+supporting duration-based triggers (`timeAfterCreate`/`timeBeforeExpiry`; no percentage-of-lifetime
+option for a bare key). Full instructions, JSON policy shape, and the PowerShell equivalent:
+[Configure cryptographic key auto-rotation in Azure Key Vault](https://learn.microsoft.com/azure/key-vault/keys/how-to-configure-key-rotation).
 
-The PowerShell equivalent:
+### Setting up a certificate (cached signing, or remote signing against the cert's key)
 
-```powershell
-Set-AzKeyVaultKeyRotationPolicy -VaultName "my-vault" -KeyName "token-signing-key" `
-  -ExpiresIn (New-TimeSpan -Days 730) `
-  -KeyRotationLifetimeAction @{Action = "Rotate"; TimeAfterCreate = (New-TimeSpan -Days 540)}
-```
-
-> 💡 **Tip:** `Set-AzKeyVaultKeyRotationPolicy` only works against a vault; for Managed HSM, use
-> the `az keyvault key rotation-policy update` CLI form shown above instead.
-
-### Setting up a certificate with auto-rotation (cached signing, or remote signing against the cert's key)
-
-Fetch and adapt the default policy, or write your own. The important fields for a signing-only
-certificate are `key_props.exportable` (only `true` if you're using cached signing) and
-`lifetime_actions` (the auto-rotation trigger):
+Create the certificate with any tool — for example, using the CLI's default self-signed policy:
 
 ```bash
-az keyvault certificate get-default-policy > policy.json
+az keyvault certificate create --vault-name my-vault --name token-signing-cert \
+  --policy "$(az keyvault certificate get-default-policy)"
 ```
 
-Edit `policy.json` so it looks roughly like this — `exportable: true` only if this certificate
-will back cached signing:
+Set `key_props.exportable: true` in the policy only if this certificate will back cached signing
+(see the warning above). For auto-rotation — including the percentage-of-lifetime trigger a bare
+key doesn't support — configure the certificate's lifetime actions. Full instructions, policy JSON
+shape, and the PowerShell equivalent:
+[Tutorial: Configure certificate autorotation in Key Vault](https://learn.microsoft.com/azure/key-vault/certificates/tutorial-rotate-certificates).
 
-```json
-{
-  "issuer": { "name": "Self" },
-  "key_props": {
-    "exportable": true,
-    "kty": "RSA",
-    "key_size": 2048,
-    "reuse_key": false
-  },
-  "secret_props": { "contentType": "application/x-pkcs12" },
-  "x509_props": {
-    "subject": "CN=token-signing-cert",
-    "validity_months": 24
-  },
-  "lifetime_actions": [
-    {
-      "trigger": { "lifetime_percentage": 80 },
-      "action": { "action_type": "AutoRenew" }
-    },
-    {
-      "trigger": { "days_before_expiry": 30 },
-      "action": { "action_type": "EmailContacts" }
-    }
-  ]
-}
-```
-
-Then create the certificate:
-
-```bash
-az keyvault certificate create \
-  --vault-name my-vault \
-  --name token-signing-cert \
-  --policy @policy.json
-```
-
-`lifetime_actions` on a certificate policy is where percentage-of-lifetime rotation actually
-lives — `lifetime_percentage: 80` with `action_type: AutoRenew` reissues the certificate (new
-certificate, secret, and key version, all together) once it's 80% of the way through its
-validity period. The only two valid `action_type` values are `AutoRenew` and `EmailContacts` — do
-not confuse this with the key rotation policy's `Rotate`/`Notify` action names above; the two
-mechanisms are configured differently even though both call themselves "rotation."
-
-> ⚠️ **Warning:** The certificate policy's wire format is **snake_case** throughout (`issuer`,
-> `key_props`, `secret_props`, `x509_props`, `lifetime_actions`, `action_type`) — this is what
-> `az keyvault certificate create --policy`, `get-default-policy`, and the raw REST API all
-> actually expect. Don't confuse this with the key rotation policy above, which is a separate,
-> newer, **camelCase** schema (`lifetimeActions`, `timeAfterCreate`, `action.type`). The two
-> policies look superficially similar but use different casing conventions and different field
-> names for the same concepts — copying one schema's shape into the other's command will fail.
-
-The PowerShell equivalent, setting or updating percentage-of-lifetime auto-renew and an
-email-notification trigger on an existing certificate:
-
-```powershell
-Set-AzKeyVaultCertificatePolicy -VaultName "my-vault" -Name "token-signing-cert" `
-  -RenewAtPercentageLifetime 80 -EmailAtPercentageLifetime 90
-```
-
-Only set one of `-RenewAtPercentageLifetime` / `-RenewAtNumberOfDaysBeforeExpiry` (and similarly
-for the `-EmailAt...` pair) at a time — they're alternative ways of expressing the same trigger,
-not values that combine.
+> 💡 **Tip:** The certificate policy and the key rotation policy are two different, separately
+> documented mechanisms with different JSON shapes — don't copy one schema's fields into the
+> other's command.
 
 ### Rotation and Key Vault's rotation config
 

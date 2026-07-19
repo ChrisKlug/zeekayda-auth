@@ -2,7 +2,7 @@
 title: "Configure file-based signing"
 description: "How to configure a PEM or PFX file as a JWT signing key provider in ZeeKayDa.Auth."
 parent: "How-to Guides"
-nav_order: 10
+nav_order: 11
 ---
 
 *Added in Unreleased.*

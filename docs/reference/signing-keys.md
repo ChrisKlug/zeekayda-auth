@@ -26,9 +26,12 @@ enters the process, such as [Azure Key Vault remote signing](../how-to/configure
 — plug in as a provider like any other, and lets a third-party KMS or HSM provider do the same
 without a redesign — see [`IJwtSigningService`](#ijwtsigningservice) below.
 
-Exactly one signing provider may be registered per application. For setup instructions, see the
-how-to guide for the provider you want:
+Exactly one signing provider may be registered per application. If you have not picked a provider
+yet, start with [Configure signing keys: choosing a provider](../how-to/configure-signing-keys.md)
+for a decision table comparing all of them. Otherwise, go straight to the how-to guide for the
+provider you want:
 
+- [Configure signing keys: choosing a provider](../how-to/configure-signing-keys.md) — start here if you haven't picked a provider yet
 - [Configure development signing keys](../how-to/configure-development-signing-keys.md)
 - [Configure Azure Key Vault signing](../how-to/configure-azure-key-vault-signing.md)
 - [Configure Windows Certificate Store signing](../how-to/configure-windows-certificate-store-signing.md)
@@ -397,6 +400,7 @@ type.
 
 ## Related pages
 
+- [Configure signing keys: choosing a provider](../how-to/configure-signing-keys.md) — decision table comparing all providers
 - [Configure development signing keys](../how-to/configure-development-signing-keys.md)
 - [Configure Azure Key Vault signing](../how-to/configure-azure-key-vault-signing.md)
 - [Configure Windows Certificate Store signing](../how-to/configure-windows-certificate-store-signing.md)

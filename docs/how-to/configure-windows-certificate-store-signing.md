@@ -2,7 +2,7 @@
 title: "Configure Windows Certificate Store signing"
 description: "How to configure the Windows Certificate Store as a JWT signing key provider in ZeeKayDa.Auth."
 parent: "How-to Guides"
-nav_order: 9
+nav_order: 10
 ---
 
 *Added in Unreleased.*
