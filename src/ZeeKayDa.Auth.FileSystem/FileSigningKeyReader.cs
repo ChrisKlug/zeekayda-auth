@@ -1,6 +1,5 @@
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
-using System.Security;
 using System.Security.AccessControl;
 using System.Security.Principal;
 using Microsoft.Extensions.Logging;
@@ -131,44 +130,12 @@ internal sealed class FileSigningKeyReader
             throw new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure(
                     "signing.file_signing.access_denied",
-                    $"Signing key file '{path}' exists but could not be opened{FormatIdentitySuffix(TryResolveProcessIdentity())}. " +
+                    $"Signing key file '{path}' exists but could not be opened{ProcessIdentityHelper.FormatIdentitySuffix(ProcessIdentityHelper.TryResolveProcessIdentity())}. " +
                     "Verify the file's owner/ACL grants read access to the process identity the application " +
                     "runs as."),
                 ex);
         }
     }
-
-    /// <summary>
-    /// Formats the resolved process identity, if any, as a parenthetical suffix for an access-denied
-    /// diagnostic message. A <see langword="null"/> or empty <paramref name="identity"/> — the
-    /// best-effort degradation outcome when resolution fails or returns nothing usable — yields an
-    /// empty suffix rather than a misleading or malformed message.
-    /// </summary>
-    internal static string FormatIdentitySuffix(string? identity) =>
-        string.IsNullOrEmpty(identity) ? string.Empty : $" (running as '{identity}')";
-
-    /// <summary>
-    /// Resolves the current process identity for inclusion in an access-denied diagnostic message,
-    /// best-effort. Identity resolution must never throw or mask the real
-    /// <see cref="UnauthorizedAccessException"/> root cause: a failure returns <see langword="null"/>,
-    /// which <see cref="FormatIdentitySuffix"/> then omits from the message.
-    /// </summary>
-    private static string? TryResolveProcessIdentity()
-    {
-        try
-        {
-            return RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
-                ? TryResolveWindowsIdentity()
-                : Environment.UserName;
-        }
-        catch (Exception ex) when (ex is SecurityException or UnauthorizedAccessException)
-        {
-            return null;
-        }
-    }
-
-    [SupportedOSPlatform("windows")]
-    private static string? TryResolveWindowsIdentity() => WindowsIdentity.GetCurrent().Name;
 
     private static void ValidateNoSymlink(FileStream stream, string originalPath)
     {
