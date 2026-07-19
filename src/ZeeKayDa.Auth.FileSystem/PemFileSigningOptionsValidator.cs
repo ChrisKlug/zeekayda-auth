@@ -67,6 +67,15 @@ internal sealed class PemFileSigningOptionsValidator : IValidateOptions<PemFileS
     // path-timestamp tracking ambiguous (issue #405): the same path would back two different
     // registered entries, so a single stat/mtime cannot unambiguously represent "this entry
     // changed" for both.
+    //
+    // Each non-empty path is normalized via Path.GetFullPath before comparison, so purely
+    // string-level differences (e.g. "tls.pem" vs "./tls.pem", or redundant separators like
+    // "/etc/zeekayda//tls.pem" vs "/etc/zeekayda/tls.pem") are still caught as duplicates. This
+    // is pure string canonicalization — no filesystem access. It deliberately does NOT resolve
+    // symlink targets or perform case-insensitive-filesystem comparison; that would require
+    // filesystem I/O inside an options validator and platform-dependent guessing, which was
+    // assessed in PR #411's security review as disproportionate to a non-exploitable
+    // correctness gap (it degrades to a load failure, not key confusion).
     private static void AppendDuplicatePathErrors(PemFileSigningOptions options, List<string> errors)
     {
         var seen = new HashSet<string>(StringComparer.Ordinal);
@@ -87,7 +96,7 @@ internal sealed class PemFileSigningOptionsValidator : IValidateOptions<PemFileS
                 if (reportEmptyAsAddFileError)
                     hasEmptyAdditionalPath = true;
             }
-            else if (!seen.Add(path))
+            else if (!seen.Add(Path.GetFullPath(path)))
             {
                 hasDuplicatePath = true;
             }

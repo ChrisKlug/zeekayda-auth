@@ -169,4 +169,32 @@ public sealed class PemFileSigningOptionsValidatorTests
 
         result.Succeeded.Should().BeTrue();
     }
+
+    // ── Path normalization for duplicate detection (issue #405 follow-up) ───────────────────────────
+
+    [Fact]
+    public void Validate_fails_when_AddFile_duplicates_the_primary_Path_via_redundant_separators()
+    {
+        var options = ValidOptions();
+        options.Path = "/etc/zeekayda//signing.pem";
+        options.AddFile("/etc/zeekayda/signing.pem");
+
+        var result = new PemFileSigningOptionsValidator().Validate(null, options);
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("duplicates");
+    }
+
+    [Fact]
+    public void Validate_fails_when_AddFile_duplicates_the_primary_Path_via_a_relative_segment()
+    {
+        var options = ValidOptions();
+        options.Path = "/etc/zeekayda/signing.pem";
+        options.AddFile("/etc/zeekayda/other/../signing.pem");
+
+        var result = new PemFileSigningOptionsValidator().Validate(null, options);
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("duplicates");
+    }
 }
