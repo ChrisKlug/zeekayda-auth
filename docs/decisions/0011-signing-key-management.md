@@ -175,21 +175,31 @@ builder.Services.AddZeeKayDaAuth(/* … */)
 Signatures:
 
 ```csharp
-AddInMemoryDevelopmentJwtSigningKeys(Action<DevelopmentSigningKeyOptions>? configure = null);
+AddInMemoryDevelopmentJwtSigningKeys(Action<InMemoryDevelopmentSigningKeyOptions>? configure = null);
 AddPersistedDevelopmentJwtSigningKeys(string? persistTo = null, Action<DevelopmentSigningKeyOptions>? configure = null);
 ```
 
 The persistence choice lives in the **method name**, not in an argument whose `null` value has
 to be read against the grain. On `AddPersistedDevelopmentJwtSigningKeys`, `persistTo: null`
 means exactly one thing — "persist to the default path" — with no second reading available.
-Both methods take an optional `Action<DevelopmentSigningKeyOptions>? configure` callback,
-consistent with every production provider registration method (`AddPemFileSigning`,
-`AddPfxFileSigning`, the Azure Key Vault and Windows Certificate Store equivalents), which all
-already accept an `Action<TOptions>? configure = null`.
+Both methods take an optional `configure` callback, consistent with every production provider
+registration method (`AddPemFileSigning`, `AddPfxFileSigning`, the Azure Key Vault and Windows
+Certificate Store equivalents), which all already accept an `Action<TOptions>? configure = null`
+— but the two development methods deliberately do **not** share the same `TOptions` for that
+callback (see below).
 
-`DevelopmentSigningKeyOptions` is a **public** provider-specific options type
-(`DevelopmentSigningKeyOptions : JwtSigningServiceOptions`), reachable through the `configure`
-callback with no `InternalsVisibleTo` grant or reflection required.
+`DevelopmentSigningKeyOptions` (`DevelopmentSigningKeyOptions : JwtSigningServiceOptions`) is the
+**public**, provider-specific options type the signing pipeline actually consumes regardless of
+which registration method was used, and is the `configure` callback type for
+`AddPersistedDevelopmentJwtSigningKeys`. `AddInMemoryDevelopmentJwtSigningKeys` deliberately does
+**not** reuse it as its own callback type — it exposes the smaller, separate
+`InMemoryDevelopmentSigningKeyOptions`, which has no `PersistToDirectory` member at all. This is
+intentional: if the in-memory method's callback exposed `PersistToDirectory`, a caller could set
+it and silently turn an "ephemeral" registration into a persisted one. Values set through
+`InMemoryDevelopmentSigningKeyOptions` are copied onto the real, internally-registered
+`DevelopmentSigningKeyOptions` instance before it reaches the base class. Both options types are
+reachable through their respective `configure` callback with no `InternalsVisibleTo` grant or
+reflection required.
 
 **Hard fail outside Development.** These methods register a development-only provider. If the
 host environment is not in the allowed-environments list (below), startup fails with
@@ -207,8 +217,11 @@ public sealed class DevelopmentSigningKeyOptions : JwtSigningServiceOptions
 }
 ```
 
-The allowed-environments list lives on the **provider-specific `DevelopmentSigningKeyOptions`**,
-configured through the registration method's `configure` callback:
+The allowed-environments list lives on each method's own provider-specific options type —
+`DevelopmentSigningKeyOptions` for `AddPersistedDevelopmentJwtSigningKeys`,
+`InMemoryDevelopmentSigningKeyOptions` for `AddInMemoryDevelopmentJwtSigningKeys` — both exposing
+a property of the same name, configured through the registration method's own `configure`
+callback:
 
 ```csharp
 builder.AddInMemoryDevelopmentJwtSigningKeys(o =>
