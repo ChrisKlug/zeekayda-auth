@@ -27,7 +27,10 @@ public readonly struct SigningKeyPair
 /// garbage collector.
 /// </para>
 /// <para>
-/// The first entry in <see cref="Keys"/> is always treated as the active signing key.
+/// <see cref="ActiveKey"/> is named explicitly at construction time; it is not inferred from
+/// list position. <see cref="Keys"/> still happens to place the active key first (for
+/// zero-allocation hot-path reuse and stable JWKS output), but that ordering is an
+/// implementation detail, not the source of truth for which key is active.
 /// </para>
 /// <para>
 /// Reference counting ensures that private key objects are never disposed while an in-flight
@@ -50,47 +53,63 @@ public sealed class SigningKeySet : IDisposable
     private int _disposed;
 
     /// <summary>
-    /// Initialises a new <see cref="SigningKeySet"/> from an ordered list of key pairs.
+    /// Initialises a new <see cref="SigningKeySet"/> from an explicitly named active key plus a
+    /// lifecycle-neutral collection of additional trusted keys.
     /// </summary>
-    /// <param name="keys">
-    /// The ordered list of key pairs. The first pair is the active signing key. Must be
-    /// non-null and non-empty. The set takes ownership of each <see cref="SigningKeyPair.PrivateKey"/>
-    /// and disposes them on <see cref="Dispose"/>.
+    /// <param name="activeKey">
+    /// The key pair currently used to sign new tokens. This is the sole source of
+    /// <see cref="ActiveKey"/> — it is no longer inferred from list position.
     /// </param>
-    public SigningKeySet(IReadOnlyList<SigningKeyPair> keys)
+    /// <param name="additionalKeys">
+    /// Every other currently trusted key pair: keys published but not yet activated, and keys
+    /// no longer signing but still inside their retirement window. Deliberately not split into
+    /// separate "future" and "retired" buckets — the base class already treats both as a single
+    /// "included but not active" list. May be <see langword="null"/> or empty. Duplicate
+    /// <c>kid</c> values between <paramref name="activeKey"/> and <paramref name="additionalKeys"/>
+    /// are not rejected here; that check stays at the base class's load path.
+    /// </param>
+    /// <remarks>
+    /// The set takes ownership of each <see cref="SigningKeyPair.PrivateKey"/> and disposes them
+    /// on <see cref="Dispose"/>.
+    /// </remarks>
+    public SigningKeySet(SigningKeyPair activeKey, IEnumerable<SigningKeyPair>? additionalKeys = null)
     {
-        ArgumentNullException.ThrowIfNull(keys);
+        var additional = additionalKeys?.ToArray() ?? [];
 
-        if (keys.Count == 0)
-            throw new ArgumentException("At least one signing key pair is required.", nameof(keys));
+        _privateKeys = new AsymmetricAlgorithm[additional.Length + 1];
+        var descriptors = new SigningKeyDescriptor[additional.Length + 1];
 
-        _privateKeys = new AsymmetricAlgorithm[keys.Count];
-        var descriptors = new SigningKeyDescriptor[keys.Count];
+        descriptors[0] = activeKey.Descriptor;
+        _privateKeys[0] = activeKey.PrivateKey;
 
-        for (var i = 0; i < keys.Count; i++)
+        for (var i = 0; i < additional.Length; i++)
         {
-            descriptors[i] = keys[i].Descriptor;
-            _privateKeys[i] = keys[i].PrivateKey;
+            descriptors[i + 1] = additional[i].Descriptor;
+            _privateKeys[i + 1] = additional[i].PrivateKey;
         }
 
         // Pre-compute once for the set's lifetime. GetSigningKeysAsync is on the public
         // JWKS hot path and must not allocate on every call.
         Keys = Array.AsReadOnly(descriptors);
+        ActiveKey = activeKey.Descriptor;
     }
 
     /// <summary>
-    /// Gets the ordered key descriptors. The first entry is the active signing key. Stable for
-    /// the lifetime of the set; returned directly from
-    /// <see cref="JwtSigningService{TOptions}.GetSigningKeysAsync"/> without further allocation.
+    /// Gets the key descriptors, active key first followed by <c>additionalKeys</c> in their
+    /// supplied order. This active-first ordering is retained purely as an implementation detail
+    /// for zero-allocation reuse and stable JWKS output — JWKS array order carries no protocol
+    /// meaning (RFC 7517 §5.1), and <see cref="ActiveKey"/> derives from the constructor's
+    /// <c>activeKey</c> parameter, not from this array's position.
     /// </summary>
     public IReadOnlyList<SigningKeyDescriptor> Keys { get; }
 
-    /// <summary>Gets the active (first) signing key descriptor.</summary>
-    public SigningKeyDescriptor ActiveKey => Keys[0];
+    /// <summary>Gets the active signing key descriptor, as named at construction time.</summary>
+    public SigningKeyDescriptor ActiveKey { get; }
 
     /// <summary>
     /// Gets the private key at the given zero-based position. Used by the base class to
-    /// perform the signing operation.
+    /// perform the signing operation. Index 0 corresponds to <see cref="ActiveKey"/> because
+    /// the private-key array is built active-first, matching <see cref="Keys"/>.
     /// </summary>
     /// <param name="index">Zero-based index into <see cref="Keys"/>.</param>
     public AsymmetricAlgorithm GetPrivateKey(int index)

@@ -207,7 +207,9 @@ internal abstract class FileSigningJwtSigningService<TOptions> : JwtSigningServi
                 throw;
             }
 
-            return new SigningKeySet(keyPairs);
+            // `included` (and therefore `keyPairs`, built from it above) is active-first, so
+            // splitting off the first entry as the named active key is safe.
+            return new SigningKeySet(keyPairs[0], keyPairs.Skip(1));
         }
         finally
         {

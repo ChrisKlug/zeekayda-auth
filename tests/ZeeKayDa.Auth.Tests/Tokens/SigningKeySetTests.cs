@@ -13,47 +13,82 @@ public sealed class SigningKeySetTests
         return (rsa, new SigningKeyPair { Descriptor = descriptor, PrivateKey = rsa });
     }
 
-    // ── Constructor validation ────────────────────────────────────────────────────────────────────
-
-    [Fact]
-    public void Constructor_throws_when_keys_is_null()
-    {
-        var act = () => new SigningKeySet(null!);
-        act.Should().Throw<ArgumentNullException>().WithParameterName("keys");
-    }
-
-    [Fact]
-    public void Constructor_throws_when_keys_is_empty()
-    {
-        var act = () => new SigningKeySet([]);
-        act.Should().Throw<ArgumentException>().WithParameterName("keys");
-    }
-
     // ── Properties ────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void ActiveKey_returns_first_entry()
+    public void ActiveKey_reflects_the_named_active_parameter_not_list_order()
     {
-        var tuple1 = MakeRsaEntry("k1");
-        var tuple2 = MakeRsaEntry("k2");
-        using var rsa1 = tuple1.Rsa;
-        using var rsa2 = tuple2.Rsa;
-        using var set = new SigningKeySet([tuple1.Pair, tuple2.Pair]);
+        var active = MakeRsaEntry("k1");
+        var additional = MakeRsaEntry("k2");
+        using var activeRsa = active.Rsa;
+        using var additionalRsa = additional.Rsa;
+        using var set = new SigningKeySet(active.Pair, [additional.Pair]);
 
         set.ActiveKey.Kid.Should().Be("k1");
     }
 
     [Fact]
+    public void ActiveKey_reflects_the_named_active_parameter_even_when_additionalKeys_would_sort_earlier()
+    {
+        // additionalKeys is supplied in an order that, under the old positional convention,
+        // would have made "k0" (not the named active key) look active. ActiveKey must still
+        // report the named parameter.
+        var active = MakeRsaEntry("k9");
+        var additional = MakeRsaEntry("k0");
+        using var activeRsa = active.Rsa;
+        using var additionalRsa = additional.Rsa;
+        using var set = new SigningKeySet(active.Pair, [additional.Pair]);
+
+        set.ActiveKey.Kid.Should().Be("k9");
+    }
+
+    [Fact]
+    public void Constructor_accepts_null_additionalKeys()
+    {
+        var active = MakeRsaEntry("k1");
+        using var activeRsa = active.Rsa;
+        using var set = new SigningKeySet(active.Pair, additionalKeys: null);
+
+        set.ActiveKey.Kid.Should().Be("k1");
+        set.Keys.Should().ContainSingle().Which.Kid.Should().Be("k1");
+    }
+
+    [Fact]
+    public void Constructor_accepts_empty_additionalKeys()
+    {
+        var active = MakeRsaEntry("k1");
+        using var activeRsa = active.Rsa;
+        using var set = new SigningKeySet(active.Pair, []);
+
+        set.ActiveKey.Kid.Should().Be("k1");
+        set.Keys.Should().ContainSingle().Which.Kid.Should().Be("k1");
+    }
+
+    [Fact]
+    public void Keys_is_active_first_then_additionalKeys_in_supplied_order()
+    {
+        var active = MakeRsaEntry("k1");
+        var second = MakeRsaEntry("k2");
+        var third = MakeRsaEntry("k3");
+        using var activeRsa = active.Rsa;
+        using var secondRsa = second.Rsa;
+        using var thirdRsa = third.Rsa;
+        using var set = new SigningKeySet(active.Pair, [second.Pair, third.Pair]);
+
+        set.Keys.Select(k => k.Kid).Should().Equal("k1", "k2", "k3");
+    }
+
+    [Fact]
     public void GetPrivateKey_returns_correct_key_by_index()
     {
-        var tuple1 = MakeRsaEntry("k1");
-        var tuple2 = MakeRsaEntry("k2");
-        using var rsa1 = tuple1.Rsa;
-        using var rsa2 = tuple2.Rsa;
-        using var set = new SigningKeySet([tuple1.Pair, tuple2.Pair]);
+        var active = MakeRsaEntry("k1");
+        var additional = MakeRsaEntry("k2");
+        using var activeRsa = active.Rsa;
+        using var additionalRsa = additional.Rsa;
+        using var set = new SigningKeySet(active.Pair, [additional.Pair]);
 
-        set.GetPrivateKey(0).Should().BeSameAs(rsa1);
-        set.GetPrivateKey(1).Should().BeSameAs(rsa2);
+        set.GetPrivateKey(0).Should().BeSameAs(activeRsa);
+        set.GetPrivateKey(1).Should().BeSameAs(additionalRsa);
     }
 
     // ── Disposal ─────────────────────────────────────────────────────────────────────────────────
@@ -63,7 +98,7 @@ public sealed class SigningKeySetTests
     {
         var tuple = MakeRsaEntry();
         using var rsa = tuple.Rsa;
-        using var set = new SigningKeySet([tuple.Pair]);
+        using var set = new SigningKeySet(tuple.Pair);
 
         set.Dispose();
 
@@ -76,7 +111,7 @@ public sealed class SigningKeySetTests
     {
         var tuple = MakeRsaEntry();
         using var rsa = tuple.Rsa;
-        using var set = new SigningKeySet([tuple.Pair]);
+        using var set = new SigningKeySet(tuple.Pair);
 
         set.Dispose();
         var act = () => set.Dispose();
@@ -91,7 +126,7 @@ public sealed class SigningKeySetTests
     {
         var tuple = MakeRsaEntry();
         using var rsa = tuple.Rsa;
-        using var set = new SigningKeySet([tuple.Pair]);
+        using var set = new SigningKeySet(tuple.Pair);
 
         var borrowed = set.TryBorrow();
 
@@ -105,7 +140,7 @@ public sealed class SigningKeySetTests
     public void TryBorrow_returns_false_after_Dispose()
     {
         var tuple = MakeRsaEntry();
-        using var set = new SigningKeySet([tuple.Pair]);
+        using var set = new SigningKeySet(tuple.Pair);
 
         set.Dispose(); // releases the cache's borrow; refcount drops to 0
 
@@ -119,7 +154,7 @@ public sealed class SigningKeySetTests
     {
         var tuple = MakeRsaEntry();
         var rsa = tuple.Rsa; // held to verify disposal state; the set also owns it
-        using var set = new SigningKeySet([tuple.Pair]);
+        using var set = new SigningKeySet(tuple.Pair);
 
         // Acquire a borrow (simulates a fast-path caller about to sign).
         var borrowed = set.TryBorrow();

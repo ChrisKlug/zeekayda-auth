@@ -77,7 +77,7 @@ internal sealed class DevelopmentJwtSigningService
         var rsaParams = rsa.ExportParameters(false);
         var kid = JwkThumbprint.Compute(rsaParams);
         var descriptor = new SigningKeyDescriptor(kid, SigningAlgorithm.RS256, rsaParams);
-        return new SigningKeySet([new SigningKeyPair { Descriptor = descriptor, PrivateKey = rsa }]);
+        return new SigningKeySet(new SigningKeyPair { Descriptor = descriptor, PrivateKey = rsa });
     }
 
     /// <summary>

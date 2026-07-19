@@ -203,7 +203,9 @@ internal sealed class WindowsCertificateStoreSigningJwtSigningService : JwtSigni
             _rotationKeys = rotationKeys;
             _previouslyIncludedKeys = SigningKeyRotation.ToChangeDetectionSet(included);
 
-            return new ValueTask<SigningKeySet>(new SigningKeySet(keyPairs));
+            // `included` (and therefore `keyPairs`, built from it above) is active-first, so
+            // splitting off the first entry as the named active key is safe.
+            return new ValueTask<SigningKeySet>(new SigningKeySet(keyPairs[0], keyPairs.Skip(1)));
         }
         finally
         {
