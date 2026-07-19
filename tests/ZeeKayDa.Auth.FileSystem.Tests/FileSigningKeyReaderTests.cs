@@ -47,6 +47,50 @@ public sealed class FileSigningKeyReaderTests
         logger.Entries.Should().NotContain(e => e.Level == LogLevel.Warning);
     }
 
+    // ── Access-denied wrapping (issue #406) ──────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task ReadPemTextAsync_throws_ZeeKayDaConfigurationException_when_the_file_is_inaccessible_to_the_process_identity()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "the Unix owner-permission model is what makes a same-user 'inaccessible' file reliably reproducible without elevated privileges; the Windows Deny-ACE equivalent is covered separately below.");
+
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", DateTimeOffset.UtcNow - TimeSpan.FromDays(1), DateTimeOffset.UtcNow + TimeSpan.FromDays(365));
+        var path = tempDir.WritePemFile("key.pem", certificate);
+        tempDir.MakeInaccessible(path);
+        var reader = new FileSigningKeyReader(new CapturingSanitizingLogger<FileSigningKeyReader>());
+
+        var act = async () => await reader.ReadPemTextAsync(path, ct);
+
+        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>(
+            "a raw UnauthorizedAccessException must never leak past this reader");
+        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.access_denied");
+        exception.Which.InnerException.Should().BeOfType<UnauthorizedAccessException>(
+            "the original root cause must be preserved for operators who inspect it");
+    }
+
+    [Fact]
+    public void FormatIdentitySuffix_includes_the_identity_when_resolution_succeeds()
+    {
+        var suffix = FileSigningKeyReader.FormatIdentitySuffix("svc-account");
+
+        suffix.Should().Be(" (running as 'svc-account')");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    public void FormatIdentitySuffix_omits_the_identity_when_resolution_degrades(string? identity)
+    {
+        // Best-effort degradation (issue #406): if WindowsIdentity.GetCurrent().Name/Environment.UserName
+        // throws or returns empty, the caller passes null/empty through here rather than letting a
+        // secondary failure mask the real UnauthorizedAccessException.
+        var suffix = FileSigningKeyReader.FormatIdentitySuffix(identity);
+
+        suffix.Should().BeEmpty();
+    }
+
     // ── Root-owned symlinked ancestor (regression: macOS /tmp -> /private/tmp etc.) ────────────────
     //
     // These two tests exercise FileSigningKeyReader.ValidateNoUntrustedSymlinkedAncestorUnix directly

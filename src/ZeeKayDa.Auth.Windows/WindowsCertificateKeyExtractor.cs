@@ -1,5 +1,7 @@
+using System.Security;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using System.Security.Principal;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.Windows;
@@ -61,8 +63,36 @@ internal static class WindowsCertificateKeyExtractor
         throw new ZeeKayDaConfigurationException(new ZeeKayDaConfigurationFailure(
             "signing.windows_certificate_store.private_key_not_found",
             $"Certificate '{thumbprint}' has a private key, but it could not be accessed by this " +
-            "process. Verify the process identity has permission to use the private key (see the " +
-            "Certificates MMC snap-in's 'Manage Private Keys', or 'certutil -repairstore')."));
+            $"process{FormatIdentitySuffix(TryResolveProcessIdentity())}. Verify the process identity " +
+            "has permission to use the private key (see the Certificates MMC snap-in's 'Manage Private " +
+            "Keys', or 'certutil -repairstore')."));
+    }
+
+    /// <summary>
+    /// Formats the resolved process identity, if any, as a parenthetical suffix for an access-denied
+    /// diagnostic message. A <see langword="null"/> or empty <paramref name="identity"/> — the
+    /// best-effort degradation outcome when resolution fails or returns nothing usable — yields an
+    /// empty suffix rather than a misleading or malformed message.
+    /// </summary>
+    internal static string FormatIdentitySuffix(string? identity) =>
+        string.IsNullOrEmpty(identity) ? string.Empty : $" (running as '{identity}')";
+
+    /// <summary>
+    /// Resolves the current process identity for inclusion in an access-denied diagnostic message,
+    /// best-effort. Identity resolution must never throw or mask the real root cause: a failure
+    /// returns <see langword="null"/>, which <see cref="FormatIdentitySuffix"/> then omits from the
+    /// message.
+    /// </summary>
+    private static string? TryResolveProcessIdentity()
+    {
+        try
+        {
+            return WindowsIdentity.GetCurrent().Name;
+        }
+        catch (Exception ex) when (ex is SecurityException or UnauthorizedAccessException)
+        {
+            return null;
+        }
     }
 
     private static ZeeKayDaConfigurationException UnsupportedKeyType(string thumbprint) =>

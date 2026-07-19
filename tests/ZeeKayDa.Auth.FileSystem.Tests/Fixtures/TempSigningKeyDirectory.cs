@@ -162,6 +162,31 @@ internal sealed class TempSigningKeyDirectory : IDisposable
     }
 
     /// <summary>
+    /// Removes all access to an already-written file for the current process identity, simulating
+    /// the "file exists but is inaccessible" failure mode (e.g. ownership by a different user on
+    /// Unix, or a denying ACE on Windows) that <c>FileSigningKeyReader.OpenOrThrowMissing</c> must
+    /// surface as a <c>ZeeKayDaConfigurationException</c> rather than a raw
+    /// <see cref="UnauthorizedAccessException"/>.
+    /// </summary>
+    public void MakeInaccessible(string path)
+    {
+        if (OperatingSystem.IsWindows())
+            DenyCurrentUserWindows(path);
+        else
+            File.SetUnixFileMode(path, UnixFileMode.None);
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static void DenyCurrentUserWindows(string path)
+    {
+        var fileInfo = new FileInfo(path);
+        var security = fileInfo.GetAccessControl();
+        var currentUser = WindowsIdentity.GetCurrent().User!;
+        security.AddAccessRule(new FileSystemAccessRule(currentUser, FileSystemRights.Read, AccessControlType.Deny));
+        fileInfo.SetAccessControl(security);
+    }
+
+    /// <summary>
     /// Widens this fixture's own directory to be world-writable, to exercise
     /// <c>FileSigningKeyReader</c>'s best-effort (log-only, non-fatal) world-writable-parent-directory
     /// warning. Unix only — the Windows ACL equivalent is a separate, dedicated code path; a no-op

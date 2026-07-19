@@ -60,6 +60,14 @@ Consumers who rely solely on the library's internal redaction — without indepe
 host-level log hygiene — may inadvertently write plaintext credentials (including `client_secret`
 and `Authorization` header values) to their log sinks.
 
+`ZeeKayDaConfigurationException` messages are a separate, deliberately unredacted case: they are
+operator-facing startup diagnostics, thrown from `IHostedService.StartAsync` before Kestrel accepts
+any request, so they may contain signing-key file paths, certificate thumbprints, and the process
+identity the application runs as. This detail is intentional — it is what makes the diagnostic
+actionable for the operator reading startup/deployment logs — but it must never be surfaced to an
+HTTP client (for example, via a problem-details mapper or exception-handling middleware that echoes
+exception messages into a response body).
+
 See the **[Configure host-level log hygiene](docs/how-to/configure-host-log-hygiene.md)** how-to
 guide for concrete, copy-paste steps to:
 

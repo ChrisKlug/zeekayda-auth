@@ -200,6 +200,13 @@ not a convenience default, applied fail-closed:
 > ZeeKayDa.Auth throws a `ZeeKayDaConfigurationException` rather than silently loading a file that
 > could have been tampered with by another local user.
 
+A distinct, narrower-permission failure mode is the file being correctly locked down but owned by a
+*different* identity than the one the application actually runs as (for example, a key file created
+by an interactive deployment user but read by a service account). ZeeKayDa.Auth surfaces this too as
+a `ZeeKayDaConfigurationException`, naming the resolved process identity when it can be determined,
+rather than letting a raw `UnauthorizedAccessException` propagate — grant that identity read access
+to the file (`chown`/`chmod` on Unix, `icacls` on Windows) and restart.
+
 Fix a `0600`-violation on Unix with:
 
 ```bash

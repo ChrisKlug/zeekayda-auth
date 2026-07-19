@@ -37,6 +37,25 @@ public class ZeeKayDaConfigurationException : ZeeKayDaException
     }
 
     /// <summary>
+    /// Initialises a new instance from a single structured <paramref name="failure"/>, preserving
+    /// the original exception that triggered it as <see cref="Exception.InnerException"/>.
+    /// </summary>
+    /// <param name="failure">
+    /// The structured failure. Carries a stable <see cref="ZeeKayDaConfigurationFailure.Code"/> and
+    /// a human-readable message.
+    /// </param>
+    /// <param name="innerException">
+    /// The lower-level exception (for example a BCL <see cref="UnauthorizedAccessException"/>) that
+    /// caused this configuration failure. Preserved so operators can inspect the original root cause
+    /// alongside the framework's actionable message.
+    /// </param>
+    public ZeeKayDaConfigurationException(ZeeKayDaConfigurationFailure failure, Exception innerException)
+        : base(ComposeMessage([failure]), innerException)
+    {
+        AggregatedFailures = [failure];
+    }
+
+    /// <summary>
     /// The structured validation failures that contributed to this exception.
     /// Always contains at least one entry.
     /// </summary>
