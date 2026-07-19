@@ -87,6 +87,33 @@ the key type actually contained in the file:
 If `algorithm` does not match the certificate's actual key type (for example, `ES256` passed for
 an RSA certificate), startup fails validation.
 
+### Separate certificate and private-key files
+
+If your certificate and private key already live in two separate files — the convention used by
+Let's Encrypt/certbot (`fullchain.pem` + `privkey.pem`), cert-manager in Kubernetes, and most
+corporate PKI tooling — pass the private-key file's path as the `keyPath` parameter instead of
+manually concatenating them into a single combined file:
+
+```csharp
+builder.Services
+    .AddZeeKayDaAuth(options =>
+    {
+        options.Issuer = "https://id.example.com";
+    })
+    .AddPemFileSigning(
+        "/etc/zeekayda/signing/fullchain.pem",
+        algorithm: SigningAlgorithm.RS256,
+        keyPath: "/etc/zeekayda/signing/privkey.pem");
+```
+
+Both files are read independently and each is subject to exactly the same filesystem permission
+hardening described in [Filesystem permission hardening](#filesystem-permission-hardening) below —
+the private-key file is the one that actually carries sensitive key material, so it gets no less
+scrutiny than a combined file would.
+
+Rotation with split files works the same way as the combined-file case, via
+`options.AddFile(certPath, keyPath)` — see [Rotation](#rotation) below.
+
 ---
 
 ## Option 2 — PFX file
@@ -248,12 +275,36 @@ has arrived and is most recent becomes the active signer.
 
 ### PEM rotation
 
+For combined cert+key files:
+
 ```csharp
-.AddPemFileSigning("/etc/zeekayda/signing/tls-current.pem", options =>
-{
-    options.AddFile("/etc/zeekayda/signing/tls-next.pem");
-});
+.AddPemFileSigning(
+    "/etc/zeekayda/signing/tls-current.pem",
+    algorithm: SigningAlgorithm.RS256,
+    configure: options =>
+    {
+        options.AddFile("/etc/zeekayda/signing/tls-next.pem");
+    });
 ```
+
+For separate certificate/private-key file pairs, `AddFile` accepts a matching `keyPath` parameter:
+
+```csharp
+.AddPemFileSigning(
+    "/etc/zeekayda/signing/fullchain-current.pem",
+    algorithm: SigningAlgorithm.RS256,
+    keyPath: "/etc/zeekayda/signing/privkey-current.pem",
+    configure: options =>
+    {
+        options.AddFile(
+            "/etc/zeekayda/signing/fullchain-next.pem",
+            "/etc/zeekayda/signing/privkey-next.pem");
+    });
+```
+
+A rotated-in split file pair does not need to match the primary registration's shape — you can mix
+a combined primary file with a split additional file (via `options.AddFile(certPath, keyPath)`), or
+the reverse, since each registered file's shape is independent.
 
 ### PFX rotation
 
@@ -295,6 +346,11 @@ checked, cheapest first:
 3. **Elapsed time alone** — even with zero file changes, a registered certificate can move into or
    out of its retirement window purely because time has passed. This is recomputed from the
    `NotBefore`/`NotAfter` metadata already recorded at the last load, not by re-parsing the file.
+
+> 💡 **Tip:** For a split certificate/private-key registration, **either** file's modification time
+> changing counts as that registered entry changing — not just the certificate file's. This matters
+> for tools like cert-manager, which commonly rotate `privkey.pem` and `fullchain.pem` at slightly
+> different moments (or, less commonly, only one of the two) rather than as a single atomic write.
 
 Only when one of these three actually indicates a change does the provider re-read and re-parse the
 file (and, for the PFX provider, re-invoke `PasswordSource`). This mirrors the same
