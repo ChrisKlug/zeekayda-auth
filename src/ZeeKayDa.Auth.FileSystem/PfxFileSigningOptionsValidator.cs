@@ -1,4 +1,6 @@
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using ZeeKayDa.Auth.Logging;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.FileSystem;
@@ -15,6 +17,14 @@ internal sealed class PfxFileSigningOptionsValidator : IValidateOptions<PfxFileS
     // cadence in this provider.
     private static readonly TimeSpan MinimumRefreshInterval = TimeSpan.FromMinutes(1);
 
+    private readonly ISanitizingLogger<PfxFileSigningOptionsValidator> _logger;
+
+    public PfxFileSigningOptionsValidator(ISanitizingLogger<PfxFileSigningOptionsValidator> logger)
+    {
+        ArgumentNullException.ThrowIfNull(logger);
+        _logger = logger;
+    }
+
     /// <inheritdoc/>
     public ValidateOptionsResult Validate(string? name, PfxFileSigningOptions options)
     {
@@ -29,6 +39,16 @@ internal sealed class PfxFileSigningOptionsValidator : IValidateOptions<PfxFileS
                 "exceeds your actual relying parties' JWKS cache TTL — this floor only rejects values that " +
                 "are almost certainly a mistake.");
         }
+
+        var positiveError = JwksPropagationDelay.ValidatePositive(
+            nameof(PfxFileSigningOptions), options.AssumedJwksPropagationDelay);
+        if (positiveError is not null)
+            errors.Add(positiveError);
+
+        var tooShortWarning = JwksPropagationDelay.WarnIfShorterThanCheckInterval(
+            nameof(PfxFileSigningOptions), options.AssumedJwksPropagationDelay, options.KeyRotationCheckInterval);
+        if (tooShortWarning is not null)
+            _logger.LogWarning("ZeeKayDa.Auth: {Warning}", tooShortWarning);
 
         if (string.IsNullOrWhiteSpace(options.Path))
             errors.Add("PfxFileSigningOptions.Path must be set to a non-empty file path.");

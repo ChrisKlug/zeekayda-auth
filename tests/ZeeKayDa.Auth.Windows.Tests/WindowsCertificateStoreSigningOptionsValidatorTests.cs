@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.Windows.Tests;
@@ -14,7 +15,7 @@ public sealed class WindowsCertificateStoreSigningOptionsValidatorTests
     [Fact]
     public void Validate_succeeds_for_valid_options()
     {
-        var result = new WindowsCertificateStoreSigningOptionsValidator().Validate(null, ValidOptions());
+        var result = new WindowsCertificateStoreSigningOptionsValidator(NullSanitizingLogger<WindowsCertificateStoreSigningOptionsValidator>.Instance).Validate(null, ValidOptions());
 
         result.Succeeded.Should().BeTrue();
     }
@@ -29,7 +30,7 @@ public sealed class WindowsCertificateStoreSigningOptionsValidatorTests
         var options = ValidOptions();
         options.KeyRotationCheckInterval = TimeSpan.FromSeconds(30);
 
-        var result = new WindowsCertificateStoreSigningOptionsValidator().Validate(null, options);
+        var result = new WindowsCertificateStoreSigningOptionsValidator(NullSanitizingLogger<WindowsCertificateStoreSigningOptionsValidator>.Instance).Validate(null, options);
 
         result.Failed.Should().BeTrue();
         result.FailureMessage.Should().Contain("KeyRotationCheckInterval");
@@ -41,7 +42,7 @@ public sealed class WindowsCertificateStoreSigningOptionsValidatorTests
         var options = ValidOptions();
         options.Thumbprint = string.Empty;
 
-        var result = new WindowsCertificateStoreSigningOptionsValidator().Validate(null, options);
+        var result = new WindowsCertificateStoreSigningOptionsValidator(NullSanitizingLogger<WindowsCertificateStoreSigningOptionsValidator>.Instance).Validate(null, options);
 
         result.Failed.Should().BeTrue();
         result.FailureMessage.Should().Contain("Thumbprint");
@@ -53,7 +54,7 @@ public sealed class WindowsCertificateStoreSigningOptionsValidatorTests
         var options = ValidOptions();
         options.Algorithm = (SigningAlgorithm)999;
 
-        var result = new WindowsCertificateStoreSigningOptionsValidator().Validate(null, options);
+        var result = new WindowsCertificateStoreSigningOptionsValidator(NullSanitizingLogger<WindowsCertificateStoreSigningOptionsValidator>.Instance).Validate(null, options);
 
         result.Failed.Should().BeTrue();
         result.FailureMessage.Should().Contain("Algorithm");
@@ -65,7 +66,7 @@ public sealed class WindowsCertificateStoreSigningOptionsValidatorTests
         var options = ValidOptions();
         options.AddCertificate(options.Thumbprint);
 
-        var result = new WindowsCertificateStoreSigningOptionsValidator().Validate(null, options);
+        var result = new WindowsCertificateStoreSigningOptionsValidator(NullSanitizingLogger<WindowsCertificateStoreSigningOptionsValidator>.Instance).Validate(null, options);
 
         result.Failed.Should().BeTrue();
         result.FailureMessage.Should().Contain("duplicates");
@@ -77,7 +78,7 @@ public sealed class WindowsCertificateStoreSigningOptionsValidatorTests
         var options = ValidOptions();
         options.AddCertificate("  aa bb cc dd ee ff 00 11 22 33 44 55 66 77 88 99 aa bb cc d  ");
 
-        var result = new WindowsCertificateStoreSigningOptionsValidator().Validate(null, options);
+        var result = new WindowsCertificateStoreSigningOptionsValidator(NullSanitizingLogger<WindowsCertificateStoreSigningOptionsValidator>.Instance).Validate(null, options);
 
         result.Failed.Should().BeTrue("thumbprints are normalized before comparison");
     }
@@ -89,7 +90,7 @@ public sealed class WindowsCertificateStoreSigningOptionsValidatorTests
         options.AddCertificate("1111111111111111111111111111111111111A");
         options.AddCertificate("1111111111111111111111111111111111111A");
 
-        var result = new WindowsCertificateStoreSigningOptionsValidator().Validate(null, options);
+        var result = new WindowsCertificateStoreSigningOptionsValidator(NullSanitizingLogger<WindowsCertificateStoreSigningOptionsValidator>.Instance).Validate(null, options);
 
         result.Failed.Should().BeTrue();
     }
@@ -100,7 +101,7 @@ public sealed class WindowsCertificateStoreSigningOptionsValidatorTests
         var options = ValidOptions();
         options.AddCertificate("!!!!!!!!!!!!!!!!"); // punctuation only - contains no 0-9/a-f/A-F characters at all
 
-        var result = new WindowsCertificateStoreSigningOptionsValidator().Validate(null, options);
+        var result = new WindowsCertificateStoreSigningOptionsValidator(NullSanitizingLogger<WindowsCertificateStoreSigningOptionsValidator>.Instance).Validate(null, options);
 
         result.Failed.Should().BeTrue("a thumbprint with no hex digits must be rejected at validation time, not surface later as a confusing 'certificate not found: ''' load-time failure");
     }
@@ -112,8 +113,51 @@ public sealed class WindowsCertificateStoreSigningOptionsValidatorTests
         options.AddCertificate("1111111111111111111111111111111111111A");
         options.AddCertificate("2222222222222222222222222222222222222B");
 
-        var result = new WindowsCertificateStoreSigningOptionsValidator().Validate(null, options);
+        var result = new WindowsCertificateStoreSigningOptionsValidator(NullSanitizingLogger<WindowsCertificateStoreSigningOptionsValidator>.Instance).Validate(null, options);
 
         result.Succeeded.Should().BeTrue();
+    }
+
+    // ── AssumedJwksPropagationDelay validation (security review of PR #414, ADR 0011 §3.5) ───────
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Validate_fails_when_AssumedJwksPropagationDelay_is_zero_or_negative(int seconds)
+    {
+        var options = ValidOptions();
+        options.AssumedJwksPropagationDelay = TimeSpan.FromSeconds(seconds);
+
+        var result = new WindowsCertificateStoreSigningOptionsValidator(NullSanitizingLogger<WindowsCertificateStoreSigningOptionsValidator>.Instance).Validate(null, options);
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("AssumedJwksPropagationDelay");
+    }
+
+    [Fact]
+    public void Validate_warns_but_succeeds_when_AssumedJwksPropagationDelay_is_shorter_than_KeyRotationCheckInterval()
+    {
+        var options = ValidOptions();
+        options.KeyRotationCheckInterval = TimeSpan.FromMinutes(5);
+        options.AssumedJwksPropagationDelay = TimeSpan.FromMinutes(1);
+        var logger = new CapturingSanitizingLogger<WindowsCertificateStoreSigningOptionsValidator>();
+
+        var result = new WindowsCertificateStoreSigningOptionsValidator(logger).Validate(null, options);
+
+        result.Succeeded.Should().BeTrue();
+        logger.Entries.Should().ContainSingle(e =>
+            e.Level == LogLevel.Warning && e.Message.Contains("AssumedJwksPropagationDelay"));
+    }
+
+    [Fact]
+    public void Validate_does_not_warn_when_AssumedJwksPropagationDelay_is_unset()
+    {
+        var options = ValidOptions();
+        var logger = new CapturingSanitizingLogger<WindowsCertificateStoreSigningOptionsValidator>();
+
+        var result = new WindowsCertificateStoreSigningOptionsValidator(logger).Validate(null, options);
+
+        result.Succeeded.Should().BeTrue();
+        logger.Entries.Should().BeEmpty();
     }
 }

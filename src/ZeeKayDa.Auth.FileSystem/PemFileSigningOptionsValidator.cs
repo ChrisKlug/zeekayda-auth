@@ -1,4 +1,6 @@
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using ZeeKayDa.Auth.Logging;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.FileSystem;
@@ -18,6 +20,14 @@ internal sealed class PemFileSigningOptionsValidator : IValidateOptions<PemFileS
     // real-world relying-party JWKS cache TTL.
     private static readonly TimeSpan MinimumRefreshInterval = TimeSpan.FromMinutes(1);
 
+    private readonly ISanitizingLogger<PemFileSigningOptionsValidator> _logger;
+
+    public PemFileSigningOptionsValidator(ISanitizingLogger<PemFileSigningOptionsValidator> logger)
+    {
+        ArgumentNullException.ThrowIfNull(logger);
+        _logger = logger;
+    }
+
     /// <inheritdoc/>
     public ValidateOptionsResult Validate(string? name, PemFileSigningOptions options)
     {
@@ -32,6 +42,16 @@ internal sealed class PemFileSigningOptionsValidator : IValidateOptions<PemFileS
                 "exceeds your actual relying parties' JWKS cache TTL — this floor only rejects values that " +
                 "are almost certainly a mistake.");
         }
+
+        var positiveError = JwksPropagationDelay.ValidatePositive(
+            nameof(PemFileSigningOptions), options.AssumedJwksPropagationDelay);
+        if (positiveError is not null)
+            errors.Add(positiveError);
+
+        var tooShortWarning = JwksPropagationDelay.WarnIfShorterThanCheckInterval(
+            nameof(PemFileSigningOptions), options.AssumedJwksPropagationDelay, options.KeyRotationCheckInterval);
+        if (tooShortWarning is not null)
+            _logger.LogWarning("ZeeKayDa.Auth: {Warning}", tooShortWarning);
 
         if (string.IsNullOrWhiteSpace(options.Path))
             errors.Add("PemFileSigningOptions.Path must be set to a non-empty file path.");
