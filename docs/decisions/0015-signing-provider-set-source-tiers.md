@@ -1,7 +1,8 @@
 # ADR 0015 — Signing-Key Provider: KeySet / KeySource Tiers and the Data-Not-Objects Contract
 
-**Status:** Proposed (security review required before merge — see "Security Considerations")
-**Date:** 2026-07-20 (issue #418)
+**Status:** Accepted (security approve-with-conditions; both must-fix conditions resolved and should-fix
+notes folded in — see "Security Considerations" and the changelog)
+**Date:** 2026-07-20 (issue #418; security conditions resolved 2026-07-21)
 
 > **Relationship to ADR 0011.** This ADR **supersedes** the following parts of
 > [ADR 0011](./0011-signing-key-management.md): the three-tier options hierarchy (§3.4), the
@@ -89,11 +90,14 @@ public abstract class KeySourceOptions : JwtSigningServiceOptions
     public TimeSpan RefreshInterval { get; set; } = TimeSpan.FromHours(1);
 
     /// <summary>
-    /// How long before a key's ActivateAt its public half must already be published. On this tier
-    /// the framework enforces it: a key may not become the active signer until PublicationLead has
-    /// elapsed since it first appeared in a listing. Defaults to RefreshInterval when left unset.
-    /// Invariant: PublicationLead >= RefreshInterval (a key must not be able to activate before the
-    /// process would even re-ask and notice it). Replaces ADR 0011's SigningKeyActivationDelay.
+    /// How long before a key's ActivateAt its public half must already have been published. Enforced
+    /// entirely through durable, ActivateAt-derived timing: the base treats PublishAt = ActivateAt −
+    /// PublicationLead as the instant the key's public half must already be in the JWKS (see §3), and
+    /// the provider maps its store's durable timestamp onto ActivateAt so that lead is satisfied
+    /// (e.g. Key Vault: ActivateAt = CreatedOn + PublicationLead). It is NEVER derived from
+    /// observed/first-seen time. Defaults to RefreshInterval when left unset. Invariant:
+    /// PublicationLead >= RefreshInterval — a config-level relationship (the lead is at least one poll
+    /// cycle), not per-key state. Replaces ADR 0011's SigningKeyActivationDelay.
     /// </summary>
     public TimeSpan PublicationLead { get; set; } // unset => resolves to RefreshInterval
 }
@@ -168,9 +172,15 @@ Consequences that fall out of "data, not objects":
   (ADR 0011 §4.4). ADR 0011's rule "a `kid` MUST NOT be a raw external identifier" (Key Vault URI,
   X.509 thumbprint) becomes **structurally enforced**: a provider supplies only its internal `KeyId`
   and the public key, and cannot express a leaking `kid` because it never supplies the `kid` at all.
-- **Only the active key's private material is ever materialised.** `CreateSignerAsync` is called only
-  for the selected active key. Non-active, future, and retired keys never have their private material
-  loaded at all — they exist only as public `KeyListing`s.
+- **The base requests private material only for the active key.** `CreateSignerAsync` is called only
+  for the selected active key; the base never asks for a non-active, future, or retired key's private
+  material. Whether that material is *actually* held out of process memory is then a **provider
+  obligation, not a structural guarantee** — a provider over a bundled format (PFX, a Windows
+  Certificate Store entry) reads the whole thing, private half included, when it reads the file at
+  all, so "non-active private material is never resident" holds only if that provider extracts the
+  public listing without retaining the private material until `CreateSignerAsync` asks for the active
+  key's. `implement-custom-signing-provider.md` MUST state this obligation for bundled-format
+  providers (trackable into the how-to follow-up).
 - **`LocalSigner` collapses the default/override split.** Local providers (development, File/PEM, PFX,
   Windows Certificate Store) build a `LocalSigner` in `CreateSignerAsync`. A remote provider (KV
   remote signing, KMS, HSM) returns its own `ISigner` whose `SignAsync` is a network call — the
@@ -181,6 +191,15 @@ Consequences that fall out of "data, not objects":
   sets. An implementer never holds a key object now, so both mistakes become **unrepresentable** —
   the same structural-fix principle as issue #355's active-key reshape. The guards, and the
   `SigningKeySet`/`SigningKeyPair` types themselves, are removed.
+- **`ISigner.Dispose` MUST release only its own per-activation handle.** The base disposes the
+  `ISigner` each time the active key changes. A remote `ISigner` (KV/KMS) that references a shared,
+  DI-owned SDK client MUST NOT tear that client down on `Dispose` — it disposes only whatever local
+  handle or copy it introduced. This is a normative contract on `ISigner`, not advisory prose.
+- **Duplicate-`kid` rejection still runs — now on the derived thumbprints.** The base computes each
+  listing's `kid` via `JwkThumbprint.Compute(PublicKey)` at `ListKeysAsync` time and rejects a
+  listing set that yields duplicate `kid`s with `ZeeKayDaConfigurationException` (ADR 0011 §4.3),
+  alongside the key/algorithm-compatibility and key-strength checks (§7). The chokepoint moves from
+  ADR 0011's load path to `ListKeysAsync`, but the invariant is unchanged.
 
 ### 3. One shared timeline engine, unchanged
 
@@ -232,19 +251,25 @@ function over immutable public data.
   machinery (`ToChangeDetectionSet`, the three-field `(Version, Enabled, IsActive)` tuple, the
   write-only-on-load baseline) is removed with it.
 
-### 5. Disposal — only the active key is ever loaded (option (a))
+### 5. Disposal — the base loads private material only for the active key (option (a), accepted)
 
-Because `CreateSignerAsync` is called only for the active key, non-active/future/retired keys' private
-material is **never materialised at all**. This is a strict improvement on ADR 0011 §3.3(c)'s "destroy
-retired private material promptly": there is nothing to destroy for a key that was never loaded.
+Because `CreateSignerAsync` is called only for the active key, the base never requests private material
+for a non-active/future/retired key. This improves on ADR 0011 §3.3(c)'s "destroy retired private
+material promptly" — but note the limit made explicit in §2: for a **bundled format** (PFX,
+cert-store) that yields the whole key when read, keeping non-active private material out of process
+memory is a **provider obligation**, not something the contract structurally guarantees.
 
 For the **previously-active** signer at a handoff, Tier A's lazy recompute disposes it **opportunistically**
 when the computed active `KeyId` changes on the next request — bounded by request cadence, falling back
 to shutdown if the process goes idle at the handoff instant. This is a **relaxation** of ADR 0011
 §3.3(c)'s "immediately on retirement" to "shortly after, bounded by request cadence; the retiring
-signer's private material is reclaimed on the next recompute or at shutdown." **This is a
-security-sign-off item** (see below). Tier B disposes the superseded signer after in-flight
-`SignAsync` calls complete, per ADR 0011 §3.2's ordered-disposal rule.
+signer's private material is reclaimed on the next recompute or at shutdown." Security **accepted this
+relaxation as-is**. To bound the idle-app worst case (a retired key's private `ISigner` resident until
+shutdown if no request arrives at the handoff), an **optional** Tier A scavenge timer that recomputes
+active-key selection and disposes a superseded signer on a low-frequency tick **may** be added — it is
+a noted possibility, not a requirement, and is trackable into the follow-up implementation issues.
+Tier B disposes the superseded signer after in-flight `SignAsync` calls complete, per ADR 0011 §3.2's
+ordered-disposal rule.
 
 ### 6. No `Enabled` flag — omission is the kill switch
 
@@ -259,18 +284,34 @@ immediately, retirement window or not.
   `ListKeysAsync` stops returning it ⇒ it is gone on the next poll. Key Vault's `Enabled=false`
   collapses into **"the Key Vault provider lists enabled versions only."**
 
-Consequences recorded:
+**Omission must not be an overloaded signal.** A vanish from a listing could otherwise mean three
+indistinguishable things — a key legitimately aged past its window, a key accidentally dropped early,
+or a provider that failed to read its store completely. The contract disambiguates all three:
 
-- The Key Vault package's parallel `KeyVaultSigningKeyRotation` (which existed mainly to track
-  `Enabled` and detect vanished-`kid` anomalies) **largely folds into the shared engine**. The
-  vanished-`kid` "anomaly" becomes the **expected kill path** — downgraded from an error signal to an
-  observability log line.
-- **One documented footgun (Tier B):** a provider that returns only active + future keys — omitting
-  keys inside their retirement window — drops retired keys *instantly*, so tokens still in flight and
-  signed by a just-retired key would be rejected by a relying party that re-fetched the JWKS. A Tier B
-  provider MUST keep returning a retiring key until its derived retirement window closes. (Documented
-  in one sentence in the how-to; the normal KV/DB pattern of keeping old versions satisfies it
-  automatically.)
+1. **Post-window vanish — expected, silent.** A key that stops being listed *after* its derived
+   retirement window has closed is the normal end of life. No log beyond routine.
+2. **Within-window vanish — dropped, but `Warning`.** A key that stops being listed *while still
+   inside its derived retirement window* is still dropped from the JWKS on the next refresh (the kill
+   switch still fires — this is what makes emergency revocation immediate). But the base **MUST emit a
+   `Warning`**: this is the accidental-omission / vanished-`kid` detector, and it is the one genuine
+   capability the old Key Vault model had that a naive kill-by-omission would lose. This signal
+   **MUST NOT** be downgraded to info/observability; it stays at `Warning`. It is the price of dropping
+   the explicit `Enabled` flag, and it is preserved deliberately.
+3. **Failed or partial read — throw, never drop.** `ListKeysAsync` carries a **completeness
+   contract**: a provider that cannot produce a *complete* read of its current key set **MUST throw**
+   (fail closed, per ADR 0011 §3.2), never return a short or partial list. A partial read **MUST NOT**
+   be interpretable as "these keys were killed." This closes the failure mode where a transient store
+   error silently revokes every key it failed to enumerate.
+
+Given (1)–(3), a Tier B provider MUST keep returning a retiring key until its derived retirement window
+closes; the normal KV/DB pattern of keeping old versions/rows satisfies this automatically, and any
+accidental early omission is caught loudly by (2) rather than passing silently.
+
+Consequence for the Key Vault package: its parallel `KeyVaultSigningKeyRotation` (which existed mainly
+to track `Enabled` and detect vanished-`kid` anomalies) **largely folds into the shared engine** —
+`Enabled=false` collapses into "the Key Vault provider lists enabled versions only," and the
+vanished-`kid` detection is now the shared within-window `Warning` of (2) above, kept at `Warning`, not
+removed.
 
 ### 7. Algorithm handling — unchanged in spirit, now all on public data
 
@@ -368,9 +409,11 @@ shared abstraction to carry a concept three of four providers had no equivalent 
 registration has no enable bit). Collapsing it into "the provider lists trusted keys only" makes
 revocation uniform across every Tier B backing store (revoke/disable/delete → stops being listed →
 gone next poll) and removes a bespoke, provider-conditional kill-switch from the shared contract. The
-cost — a provider that omits still-retiring keys drops them instantly — is a single documented footgun,
-not a structural hazard, because the natural KV/DB pattern (keep old versions/rows) satisfies the
-retirement-window obligation automatically.
+one capability the explicit flag had that naive omission would lose — telling an *accidental* early
+drop apart from a legitimate aging-out — is preserved by the within-window-vanish `Warning` and the
+`ListKeysAsync` completeness contract (§6), so omission is a three-state disambiguated signal
+(post-window vanish silent / within-window vanish dropped-plus-`Warning` / failed read throws), not an
+overloaded one.
 
 ### `PublicationLead` on the shared base instead of per-tier
 
@@ -397,8 +440,9 @@ review point — see "Security Considerations".)
   (the exact rot #418 catalogued).
 - **A provider cannot alias, reuse, or mis-order private key objects** — it never holds one. The #355
   reuse-guards and same-instance checks are deleted as unrepresentable.
-- **Least-privilege key loading**: only the active key's private material is ever materialised;
-  non-active/future/retired keys never leave public form.
+- **Least-privilege key loading**: the base requests private material only for the active key;
+  non-active/future/retired keys are only ever asked for in public form (keeping them out of memory is
+  then a provider obligation for bundled formats — §2/§5).
 - **Kid-leak resistance is structural**: the provider cannot supply a raw external identifier as `kid`,
   because it never supplies the `kid`.
 - **Tier A has near-zero machinery** (one snapshot, no locks/refcounts/single-flight); Tier B is much
@@ -410,11 +454,12 @@ review point — see "Security Considerations".)
 - **A breaking reshape of a two-week-old, already-ratified design.** Accepted because nothing shipped
   and the abstraction quality gain is large (issue #418's explicit authorisation).
 - **Retired-private-key destruction is relaxed from "immediately" to "bounded by request cadence"** on
-  Tier A (§5) — a security-sign-off item, mitigated by the fact that non-active private material is
-  never loaded at all.
-- **The Tier B retirement-window footgun** (§6) is a documented behaviour, not a structural guard —
-  accepted because the natural backing-store pattern satisfies it and the alternative (an `Enabled`
-  flag) reintroduces the provider-conditional concept this ADR removes.
+  Tier A (§5) — security accepted this as-is; the base never requests non-active private material, and
+  an optional scavenge timer can bound the idle-app worst case.
+- **The Tier B early-drop case** (§6) is handled by a `Warning` (within-window vanish) plus a
+  `ListKeysAsync` completeness-MUST (failed/partial read throws), not left as an unguarded footgun —
+  accepted over an `Enabled` flag, which would reintroduce the provider-conditional concept this ADR
+  removes while covering less (no delete/purge, no DB/KMS store).
 - **New public type surface** (`KeySetOptions`, `KeySourceOptions`, `KeyListing`, `KeyId`,
   `PublicKeyParameters`, `ISigner`, `LocalSigner`) is a SemVer commitment — offset by the removal of
   `SigningKeySet`/`SigningKeyPair`/`LoadKeysAsync`/`HasKeySetChangedAsync`/`SignInputAsync`.
@@ -425,24 +470,27 @@ review point — see "Security Considerations".)
 
 ## Security Considerations
 
-The following require **security sign-off before merge** (issue #418 flags this ADR as
-`area:security`, since PR #415's review found the superseded abstraction's docs factually wrong twice):
+Security reviewed this ADR on PR #419 and returned **approve-with-conditions**; Chris adjudicated, and
+the conditions below are now folded into the current-state sections above. This section records the
+trust-boundary items and how each was resolved (issue #418 flags this ADR `area:security`, since PR
+#415's review found the superseded abstraction's docs factually wrong twice):
 
-1. **Kill-switch-via-omission semantics (§6).** Revocation is uniform: a key stops being trusted when
-   the provider stops listing it (revoke/disable/delete in the store → gone next poll, bounded by
-   `RefreshInterval`, or immediately on restart). Key Vault's `Enabled=false` becomes "list enabled
-   versions only." The reviewer should confirm this is at least as strong as ADR 0011's genuine-`Enabled`
-   kill-switch — it is intended to be *stronger and more uniform*, because it also covers delete/purge
-   and applies identically to DB/KMS stores that never had an `Enabled` bit. The single footgun (a
-   provider omitting still-retiring keys drops them instantly) is documented; confirm the one-sentence
-   how-to note is sufficient mitigation given the natural KV/DB pattern avoids it.
+1. **Kill-switch-via-omission semantics (§6) — resolved.** Revocation is uniform: a key stops being
+   trusted when the provider stops listing it (revoke/disable/delete → gone next poll, bounded by
+   `RefreshInterval`, or immediately on restart), which is *stronger and more uniform* than ADR 0011's
+   `Enabled` kill-switch (it also covers delete/purge and DB/KMS stores with no `Enabled` bit).
+   **Condition 2 fix:** omission is disambiguated into three states — post-window vanish (silent),
+   within-window vanish (dropped **plus a `Warning`**, the accidental-omission / vanished-`kid`
+   detector, kept at `Warning`, never downgraded), and failed/partial read (`ListKeysAsync`
+   **MUST throw**, never return a short list a partial read could be mistaken for a kill). This
+   preserves the one capability the explicit `Enabled` flag had that naive omission would lose.
 
-2. **The §3.3(c) disposal relaxation (§5).** Non-active private material is *never loaded* (strictly
-   better than "destroy promptly"), but the previously-active signer on Tier A is disposed
-   opportunistically on the next active-`KeyId` recompute — "shortly after, bounded by request cadence,
-   reclaimed on next recompute or at shutdown" — not "immediately on retirement." Confirm this relaxation
-   is acceptable, given the retiring key signed nothing further and its window is a handoff instant, not
-   an operator-visible interval.
+2. **The §3.3(c) disposal relaxation (§5) — accepted as-is.** The base requests private material only
+   for the active key; the previously-active Tier A signer is disposed opportunistically on the next
+   active-`KeyId` recompute ("bounded by request cadence, reclaimed on next recompute or at shutdown"),
+   not "immediately." An **optional** scavenge timer is noted to bound the idle-app worst case.
+   (Overstatement corrected per should-fix: keeping non-active private material out of memory is a
+   provider obligation for bundled formats, not a structural guarantee — §2/§5.)
 
 3. **Fallback availability during the `PublicationLead` window — no fail-closed gap.** While a rotated-in
    key is published-but-not-yet-active, the **prior active key stays active** until the successor's
@@ -453,16 +501,20 @@ The following require **security sign-off before merge** (issue #418 flags this 
    applies only where it did in ADR 0011: `SelectActiveKey` returning `null` when *every* configured key
    has expired — a real misconfiguration, correctly surfaced, never signed around.)
 
-Additional points the reviewer should weigh (found while writing; see the PR summary):
+Additional points (found while writing; carried through review):
 
-4. **`PublicationLead` on both tiers** is one concept with tier-specific enforcement, not the #409
-   two-concepts-one-name mistake (argued in Rejected Alternatives) — confirm the naming does not
-   re-introduce the ambiguity #418 set out to remove.
+4. **`PublicationLead` is durable, `ActivateAt`-derived on both tiers — Condition 1 fix.** Its
+   enforcement is *only* `PublishAt = ActivateAt − PublicationLead` (§3), a durable derivation; all
+   "since it first appeared in a listing" / observed-first-seen wording has been struck. This preserves
+   ADR 0011 §3.5's ban on in-memory, restart-/replica-inconsistent observed-time bookkeeping — the
+   invariant `PublicationLead >= RefreshInterval` is a config-level relationship, not per-key state. It
+   is one concept with tier-specific *enforcement point* (advisory startup warning on Tier A where the
+   operator owns `ActivateAt`; framework-derived `PublishAt` on Tier B), not the #409
+   two-concepts-one-name mistake (Rejected Alternatives).
 
-5. **`ISigner` disposal must not tear down a shared remote client.** The base disposes the `ISigner`
-   each time the active key changes; a remote `ISigner` (KV/KMS) that references a shared, DI-owned SDK
-   client MUST release only its own per-activation handle on `Dispose`, never the shared client. This is
-   an implementation contract note for remote providers, called out so it is not discovered the hard way.
+5. **`ISigner.Dispose` MUST release only its own per-activation handle — now a contract MUST (§2).** The
+   base disposes the `ISigner` each time the active key changes; a remote `ISigner` (KV/KMS) referencing
+   a shared, DI-owned SDK client MUST NOT tear that client down on `Dispose`.
 
 6. **Tier A wall-clock expiry with no successor is a runtime fail-closed.** Since Tier A never re-reads,
    a set whose active key expires with no configured successor drifts to `SelectActiveKey == null` and
@@ -488,10 +540,22 @@ being unrepresentable — remains governed by ADR 0011 and its existing sign-off
   `AssumedJwksPropagationDelay`, `KeyRotationCheckInterval`, `StaticKeySourceOptions`, and the
   `Enabled` concept (kill-by-omission). Reuses `SigningKeyRotation` unchanged as the single engine;
   `RetirementWindow`/`PublishAt`/`DeactivateAt` all derived, operator sets only `ActivateAt`. Relaxes
-  ADR 0011 §3.3(c) retired-private-key destruction to "bounded by request cadence" (non-active material
-  never loaded at all). **Supersedes ADR 0011 §3.2 (partial), §3.3(c), §3.4, §3.5.** **Security
-  sign-off required before merge** (kill-by-omission, disposal relaxation, `PublicationLead`-window
-  availability) — pending as of this PR.
+  ADR 0011 §3.3(c) retired-private-key destruction to "bounded by request cadence" (the base requests
+  non-active material only for the active key). **Supersedes ADR 0011 §3.2 (partial), §3.3(c), §3.4,
+  §3.5.**
+- **2026-07-21 — issue #418, security review on PR #419** — approve-with-conditions, adjudicated by
+  @ChrisKlug; both must-fix conditions resolved and should-fix notes folded in. **Condition 1
+  (Tier B `PublicationLead`):** removed the conflicting "since it first appeared in a listing"
+  observed-time definition; `PublicationLead` is now durable, `ActivateAt`-derived only
+  (`PublishAt = ActivateAt − PublicationLead`), preserving ADR 0011 §3.5's ban on in-memory
+  observed-time bookkeeping (§1/§3). **Condition 2 (kill-by-omission):** omission disambiguated into
+  three states — post-window vanish silent, within-window vanish dropped **plus `Warning`** (the
+  vanished-`kid` detector, never downgraded), failed/partial read **MUST throw** (`ListKeysAsync`
+  completeness contract) (§6). **Should-fix:** optional Tier A scavenge timer noted (§5);
+  "non-active private material never materialised" corrected to a provider obligation for bundled
+  formats (§2/§5); duplicate-`kid` rejection restated as running on derived thumbprints at
+  `ListKeysAsync` time (§2/§7); `ISigner.Dispose`-must-not-dispose-shared-client raised to a contract
+  MUST (§2).
 
 ---
 
