@@ -603,7 +603,7 @@ re-evaluation for File/PFX/cert-store providers remains load-bearing — there i
 `NotAfter` guard elsewhere in `JwtSigningService.cs`.
 
 **New properties introduced alongside the rename** — `SigningKeyActivationDelay`
-(Key-Vault-only) and `AssumedRelyingPartyPropagationLag` (File/cert-store-only) — are specified in
+(Key-Vault-only) and `AssumedJwksPropagationDelay` (File/cert-store-only) — are specified in
 §3.5, since both replace roles the single `KeySourceRefreshInterval` property used to overload.
 
 **Extensibility documentation requirement.** Every new/renamed property on these three tiers
@@ -680,7 +680,7 @@ property.**
   KMS/HSM provider modeled on this pattern cannot silently reintroduce the activation race by
   forgetting a cross-field validator.
 - **File (both PEM and PFX) and Windows Certificate Store** gain
-  **`AssumedRelyingPartyPropagationLag`**, feeding `SigningKeyRotation.HasTooSoonPendingActivation`,
+  **`AssumedJwksPropagationDelay`**, feeding `SigningKeyRotation.HasTooSoonPendingActivation`,
   replacing the old reuse of the rotation-check interval as a proxy for RP-side JWKS cache
   staleness. Defaults to `KeyRotationCheckInterval` when unset, preserving today's behaviour
   exactly. This property lives on the shared `RotatingKeySourceOptions`-derived base that
@@ -742,8 +742,8 @@ shared, anchor-agnostic machinery accommodates both:
   term (every registered certificate is fully visible in the JWKS as of process start; there is no
   "has the store durably recorded this yet" question). The publish-then-activate safety property
   therefore becomes the **operator's** responsibility: a certificate generated for rotation must
-  have its `NotBefore` set at least `AssumedRelyingPartyPropagationLag` in the future (**amended by
-  issue #409**: this family's lead-time input is `AssumedRelyingPartyPropagationLag`, defaulting to
+  have its `NotBefore` set at least `AssumedJwksPropagationDelay` in the future (**amended by
+  issue #409**: this family's lead-time input is `AssumedJwksPropagationDelay`, defaulting to
   `KeyRotationCheckInterval` when unset — see §3.4/§3.5's amendment above; pre-#409 references to
   `KeySourceRefreshInterval` supplying this figure are superseded).
   `SigningKeyRotation.HasTooSoonPendingActivation` surfaces a startup warning when it is not — the
@@ -1170,7 +1170,7 @@ staleness, not Key-Vault activation timing at all), and that collapsing all thre
 was becoming harder to reason about than the misconfiguration the single property prevented. The
 amended design (§3.4/§3.5) splits the properties back out — `KeyRotationCheckInterval` (shared,
 renamed from `KeySourceRefreshInterval`), `SigningKeyActivationDelay` (Key-Vault-only), and
-`AssumedRelyingPartyPropagationLag` (File/cert-store-only) — and preserves the original safety
+`AssumedJwksPropagationDelay` (File/cert-store-only) — and preserves the original safety
 argument by moving the `ActivationDelay >= KeyRotationCheckInterval` invariant into validation
 (enforced in two places: a shared validator helper and inside
 `KeyVaultSigningKeyRotation.BuildActivationTimeline` itself) rather than by refusing to let the
@@ -1434,7 +1434,7 @@ alternatives sections above.
   `HasKeySetChangedAsync` follow-up set opened by issue #334 (all four shipped providers now
   implement the hook).
 - **2026-07-19 — issue #355** — `SigningKeySet` construction reshaped from a single positional `IReadOnlyList<SigningKeyPair>` (first entry = active by unenforced convention) to a named `SigningKeySet(SigningKeyPair activeKey, IEnumerable<SigningKeyPair>? additionalKeys = null)`, so the active signing key can no longer be selected by list order and an out-of-order custom provider can no longer silently sign with a retired/not-yet-active key (§3.2, structural tier-1 fix). `ActiveKey` now derives from the named parameter rather than `Keys[0]`; the empty-set `ArgumentException` disappears (emptiness is unrepresentable); `Keys`/JWKS ordering and the hot-path zero-alloc reuse are unchanged. Second bucket named `additionalKeys` — lifecycle-neutral (covers both pre-published/future and within-retirement-window keys), not `retired`; two buckets, no new third list. Duplicate-`kid` validation stays at the base-class load path (§4.3), not the constructor.
-- **2026-07-20 — issue #409 (design only, no implementation in this PR)** — §3.4/§3.5 amended: the overloaded `KeySourceRefreshInterval` (`TimeSpan?` on `JwtSigningServiceOptions`) is replaced by a three-tier options hierarchy — `JwtSigningServiceOptions` (base, no rotation property), `StaticKeySourceOptions` (load-once-forever, used only by `DevelopmentSigningKeyOptions`, replacing the `null`-sentinel), and `RotatingKeySourceOptions` (used by File, PFX, Windows Certificate Store, *and* Azure Key Vault cached/remote — not Key-Vault-only as the old single-property design implied), carrying the renamed **`KeyRotationCheckInterval`**. Two new properties split out the roles the old property overloaded: **`SigningKeyActivationDelay`** (Key-Vault-only, on `AzureKeyVaultCachedSigningOptions`/`AzureKeyVaultRemoteSigningOptions`, invariant `>= KeyRotationCheckInterval` enforced in a shared validator helper *and* inside `KeyVaultSigningKeyRotation.BuildActivationTimeline`) and **`AssumedRelyingPartyPropagationLag`** (File/cert-store-only, feeding `HasTooSoonPendingActivation`); both default to `KeyRotationCheckInterval` when unset, preserving today's runtime behaviour exactly. A source/signer abstraction split (analogous to ADR 0008's `Stores/`) was considered and rejected — see Rejected Alternatives. Naming/regrouping only; no behaviour change. Property renames, validators, and the docs-site extensibility page (three-tier model, Azure Key Vault worked example) are follow-up implementation work, tracked separately from this ADR amendment.
+- **2026-07-20 — issue #409 (design only, no implementation in this PR)** — §3.4/§3.5 amended: the overloaded `KeySourceRefreshInterval` (`TimeSpan?` on `JwtSigningServiceOptions`) is replaced by a three-tier options hierarchy — `JwtSigningServiceOptions` (base, no rotation property), `StaticKeySourceOptions` (load-once-forever, used only by `DevelopmentSigningKeyOptions`, replacing the `null`-sentinel), and `RotatingKeySourceOptions` (used by File, PFX, Windows Certificate Store, *and* Azure Key Vault cached/remote — not Key-Vault-only as the old single-property design implied), carrying the renamed **`KeyRotationCheckInterval`**. Two new properties split out the roles the old property overloaded: **`SigningKeyActivationDelay`** (Key-Vault-only, on `AzureKeyVaultCachedSigningOptions`/`AzureKeyVaultRemoteSigningOptions`, invariant `>= KeyRotationCheckInterval` enforced in a shared validator helper *and* inside `KeyVaultSigningKeyRotation.BuildActivationTimeline`) and **`AssumedJwksPropagationDelay`** (File/cert-store-only, feeding `HasTooSoonPendingActivation`); both default to `KeyRotationCheckInterval` when unset, preserving today's runtime behaviour exactly. A source/signer abstraction split (analogous to ADR 0008's `Stores/`) was considered and rejected — see Rejected Alternatives. Naming/regrouping only; no behaviour change. Property renames, validators, and the docs-site extensibility page (three-tier model, Azure Key Vault worked example) are follow-up implementation work, tracked separately from this ADR amendment.
 
 ---
 
