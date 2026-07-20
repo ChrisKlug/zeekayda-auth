@@ -90,6 +90,33 @@ public sealed class AzureKeyVaultCachedSigningOptionsValidatorTests
         result.Succeeded.Should().BeTrue();
     }
 
+    // ── SigningKeyActivationDelay ─────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Validate_fails_when_SigningKeyActivationDelay_is_shorter_than_KeyRotationCheckInterval()
+    {
+        var options = ValidOptions();
+        options.KeyRotationCheckInterval = TimeSpan.FromMinutes(5);
+        options.SigningKeyActivationDelay = TimeSpan.FromMinutes(1);
+
+        var result = Validate(options);
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("SigningKeyActivationDelay");
+    }
+
+    [Fact]
+    public void Validate_succeeds_when_SigningKeyActivationDelay_is_at_least_KeyRotationCheckInterval()
+    {
+        var options = ValidOptions();
+        options.KeyRotationCheckInterval = TimeSpan.FromMinutes(5);
+        options.SigningKeyActivationDelay = TimeSpan.FromMinutes(5);
+
+        var result = Validate(options);
+
+        result.Succeeded.Should().BeTrue();
+    }
+
     // ── CertificateIdentifier ─────────────────────────────────────────────────────────────────────
 
     [Fact]
