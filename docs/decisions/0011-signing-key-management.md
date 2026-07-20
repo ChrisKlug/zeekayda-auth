@@ -626,15 +626,21 @@ wall-clock time, with no separate enable/promote gate. The existing Key Vault va
 1-minute floor and its "this is a floor, not a guarantee of safety" caveat are unchanged by this
 amendment. The widened window between an operator disabling a compromised key in the store and
 this library ceasing to sign with/publish it (bounded by `KeyRotationCheckInterval`,
-traffic-gated) grows from 5 minutes to 1 hour; restart forces an immediate cold `LoadKeysAsync`
-and is unaffected by this default, remaining the correct emergency runbook regardless of the
-configured interval — that runbook is remove-and-redeploy, not disable-and-wait, and it stops
-compromised-key tokens from being *newly* trusted, not their acceptance by relying parties that
-already cached the compromised key (bounded by that relying party's own JWKS-cache TTL, not by
-anything this library controls). Applies to all `RotatingKeySourceOptions`
-consumers uniformly — File, PFX, Windows Certificate Store, and Azure Key Vault (cached and
-remote) — not only Key Vault, so rotation pickup, the vanished-`kid` check, and certificate-expiry
-warnings for the File/PFX/cert-store providers also now run on a 1-hour cadence by default.
+traffic-gated) grows from 5 minutes to 1 hour, but the correct emergency runbook is provider-
+specific, but both still rely on a restart forcing an immediate cold `LoadKeysAsync` to make the
+change take effect right away rather than waiting out the poll cadence: File/PFX/Windows
+Certificate Store have no enable/disable flag, so the runbook is remove-the-compromised-key,
+redeploy, and restart; Azure Key Vault's `Enabled` flag is a genuine kill-switch (an unconditional
+exclusion, independent of the retirement window) — no configuration file to edit, but disabling
+the version still only takes effect on Key Vault's side until this library's next poll, so the
+runbook there is disable-the-compromised-version-in-the-vault and restart. Both runbooks stop
+the compromised key from being *newly* trusted, not its acceptance
+by relying parties that already cached it (bounded by that relying party's own JWKS-cache TTL,
+not by anything this library controls). This default's widening applies to all
+`RotatingKeySourceOptions` consumers uniformly — File, PFX, Windows Certificate Store, and Azure
+Key Vault (cached and remote) — not only Key Vault, so rotation pickup, the vanished-`kid` check,
+and certificate-expiry warnings for the File/PFX/cert-store providers also now run on a 1-hour
+cadence by default.
 
 **Extensibility documentation requirement.** Every new/renamed property on these three tiers
 requires XML doc coverage. A dedicated docs-site page is also required, walking a third-party
@@ -1466,7 +1472,26 @@ alternatives sections above.
 - **2026-07-19 — issue #355** — `SigningKeySet` construction reshaped from a single positional `IReadOnlyList<SigningKeyPair>` (first entry = active by unenforced convention) to a named `SigningKeySet(SigningKeyPair activeKey, IEnumerable<SigningKeyPair>? additionalKeys = null)`, so the active signing key can no longer be selected by list order and an out-of-order custom provider can no longer silently sign with a retired/not-yet-active key (§3.2, structural tier-1 fix). `ActiveKey` now derives from the named parameter rather than `Keys[0]`; the empty-set `ArgumentException` disappears (emptiness is unrepresentable); `Keys`/JWKS ordering and the hot-path zero-alloc reuse are unchanged. Second bucket named `additionalKeys` — lifecycle-neutral (covers both pre-published/future and within-retirement-window keys), not `retired`; two buckets, no new third list. Duplicate-`kid` validation stays at the base-class load path (§4.3), not the constructor.
 - **2026-07-20 — issue #409 (design only, no implementation in this PR)** — §3.4/§3.5 amended: the overloaded `KeySourceRefreshInterval` (`TimeSpan?` on `JwtSigningServiceOptions`) is replaced by a three-tier options hierarchy — `JwtSigningServiceOptions` (base, no rotation property), `StaticKeySourceOptions` (load-once-forever, used only by `DevelopmentSigningKeyOptions`, replacing the `null`-sentinel), and `RotatingKeySourceOptions` (used by File, PFX, Windows Certificate Store, *and* Azure Key Vault cached/remote — not Key-Vault-only as the old single-property design implied), carrying the renamed **`KeyRotationCheckInterval`**. Two new properties split out the roles the old property overloaded: **`SigningKeyActivationDelay`** (Key-Vault-only, on `AzureKeyVaultCachedSigningOptions`/`AzureKeyVaultRemoteSigningOptions`, invariant `>= KeyRotationCheckInterval` enforced in a shared validator helper *and* inside `KeyVaultSigningKeyRotation.BuildActivationTimeline`) and **`AssumedJwksPropagationDelay`** (File/cert-store-only, feeding `HasTooSoonPendingActivation`); both default to `KeyRotationCheckInterval` when unset, preserving today's runtime behaviour exactly. A source/signer abstraction split (analogous to ADR 0008's `Stores/`) was considered and rejected — see Rejected Alternatives. Naming/regrouping only; no behaviour change. Property renames, validators, and the docs-site extensibility page (three-tier model, Azure Key Vault worked example) are follow-up implementation work, tracked separately from this ADR amendment.
 - **2026-07-20 — issue #407** — §3.4 amended: `RotatingKeySourceOptions.KeyRotationCheckInterval`'s default raised **5 minutes → 1 hour**, ratified by architect + security review (see §3.4's amendment prose for the full reasoning) and confirmed by @ChrisKlug. Applies uniformly to all four rotating providers, not Key-Vault-only. `SigningKeyActivationDelay` and `AssumedJwksPropagationDelay` are unaffected in mechanism — both still default to `KeyRotationCheckInterval` when unset — but now inherit the 1-hour value by that same default-propagation rule. The Key Vault validators' 1-minute floor is unchanged. Worked examples in the how-to docs updated to stop showing 5–10 minute values as copy-paste-safe production defaults.
-- **2026-07-20 — issue #407 review correction** — §3.4's "operator-maintained published standby key" mitigation claim was factually wrong and has been corrected in place (not just amended below it): activation for every provider (File/PFX/cert-store/Key Vault) is driven solely by `NotBefore`/`ActivatesAt` versus wall-clock time, with no separate enable/promote gate, so a key cannot sit published-but-inactive past its own activation time and be promoted on demand — once eligible, it either already is the active signer or has already been superseded. There is no third, held-in-reserve state. The `rotate-signing-keys.md` "Emergency key rotation" section and its cross-references (including from `configure-azure-key-vault-signing.md`) are corrected to match: the actual emergency procedure is remove-the-compromised-key-and-redeploy (not disable-and-wait, and not stage-a-standby), and that procedure stops the compromised key from being *newly* trusted but does not retroactively invalidate tokens already accepted by a relying party that cached the compromised key before rotation — that residual window is bounded by the relying party's own JWKS-cache TTL, not by anything this library controls. Found and confirmed by @ChrisKlug.
+- **2026-07-20 — issue #407 review correction** — §3.4's "operator-maintained published standby key" mitigation claim was factually wrong and has been corrected in place (not just amended below it): activation for every provider (File/PFX/cert-store/Key Vault) is driven solely by `NotBefore`/`ActivatesAt` versus wall-clock time, with no separate enable/promote gate, so a key cannot sit published-but-inactive past its own activation time and be promoted on demand — once eligible, it either already is the active signer or has already been superseded. There is no third, held-in-reserve state. The `rotate-signing-keys.md` "Emergency key rotation" section and its cross-references (including from `configure-azure-key-vault-signing.md`) are corrected to match: there is no stage-a-standby state for any provider, but the actual emergency procedure is provider-specific — File/PFX/Windows Certificate Store use remove-the-compromised-key-and-redeploy (no enable/disable flag exists), while Azure Key Vault uses disable-the-compromised-version-in-the-vault plus restart (its `Enabled` flag is a genuine kill-switch, but disabling only changes what the vault reports — a restart is still what forces the immediate cold `LoadKeysAsync` that drops the disabled version at once instead of on the next poll; a freshly created replacement version is not exempt from `SigningKeyActivationDelay`, since the bootstrap exemption is keyed on `firstEverVersion`, not "currently the only enabled version"). Both procedures stop the compromised key from being *newly* trusted but do not retroactively invalidate tokens already accepted by a relying party that cached the compromised key before rotation — that residual window is bounded by the relying party's own JWKS-cache TTL, not by anything this library controls. Found and confirmed by @ChrisKlug.
+- **2026-07-20 — issue #407 second review correction** — architect and security review both
+  found the prior correction incomplete on two fronts. First, the debunked standby-key claim
+  still survived verbatim in `RotatingKeySourceOptions.KeyRotationCheckInterval`'s XML doc
+  comment (a separate, consumer-facing spot the prior correction pass had not touched), and both
+  this ADR's §3.4 body and its own 2026-07-20 changelog entry above still asserted
+  "remove-and-redeploy" as the single, provider-agnostic correct emergency runbook — which is
+  wrong for Azure Key Vault, whose `Enabled` flag is a genuine, unconditional kill-switch, and
+  whose bootstrap exemption (keyed on `firstEverVersion`, not "sole enabled version") does not
+  cover a freshly created emergency version. Second, the fixed-up Key Vault runbook then
+  overcorrected into a self-contradiction: it described disabling a version as taking effect "on
+  the next poll (within `KeyRotationCheckInterval`)" in one sentence and "immediately" in the
+  next. Disabling only changes what Key Vault itself reports; ZeeKayDa.Auth does not observe it
+  until its next poll or a restart — a restart forces the same immediate cold `LoadKeysAsync`
+  that the File/PFX/cert-store runbook already relies on, so the Key Vault runbook needs it too.
+  Fixed in place: the XML doc comment, §3.4's body, this changelog's prior entry,
+  `rotate-signing-keys.md`'s "Emergency key rotation" section (split into a File/PFX/cert-store
+  subsection and a Key-Vault-specific subsection, both now ending in restart), and the one
+  cross-reference into it from `configure-azure-key-vault-signing.md`. Found and confirmed by
+  @ChrisKlug.
 
 ---
 

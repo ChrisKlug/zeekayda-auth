@@ -275,28 +275,63 @@ the full registration call.
 
 The procedures above assume you can plan ahead — a new key gets its full publish-then-activate
 lead time before it needs to sign anything. A suspected key compromise doesn't afford you that
-luxury. The emergency procedure is simpler than the planned one, precisely because it skips that
-lead time on purpose:
+luxury. The emergency procedure differs by provider, because the mechanism for taking a key out of
+service immediately is different for Key Vault than for the other two — see the right subsection
+below.
 
-**Remove the compromised key from configuration (don't just add a replacement alongside it), add
-the new key, and redeploy.** Do not leave the compromised key registered "disabled but present" —
-these providers have no enable/disable flag; a registered key with a past `NotBefore` is either
-the active signer or an ordinary retired key, never a suspended one. Removing it entirely and
-restarting forces an immediate cold `LoadKeysAsync`: the compromised key drops out of the trusted
-set and JWKS, and the new key — the sole registered key at that point — activates immediately
-under the single-key bootstrap exemption, regardless of its `NotBefore`. There is no way to
-"pre-stage" a standby key that sits published-but-inactive and is promoted on demand: activation
-is driven purely by `NotBefore`/`ActivatesAt` versus wall-clock time, so a key that has passed its
-own activation time either is already the active signer or has already been superseded — there is
-no third, held-in-reserve state.
+There is no "pre-staged standby key" for any provider: a key that sits published, with a past
+`NotBefore`/`ActivatesAt`, is never in a held-in-reserve state waiting to be promoted on demand.
+Activation is driven purely by comparing `NotBefore`/`ActivatesAt` to wall-clock time, so such a
+key is either already the active signer or has already been superseded.
 
-**What this does and does not fix, immediately after redeploy:**
+### Windows Certificate Store and file-based (PEM/PFX)
+
+These two providers genuinely have no enable/disable flag — a registered certificate with a past
+`NotBefore` is either the active signer or an ordinary retired one. The emergency lever is
+therefore configuration change plus restart:
+
+**Remove the compromised certificate from configuration entirely (don't just add a replacement
+alongside it), add the new one, and redeploy.** Removing it entirely and restarting forces an
+immediate cold `LoadKeysAsync`: the compromised certificate drops out of the trusted set and JWKS,
+and the new certificate — the sole one registered at that point — activates immediately under the
+single-key bootstrap exemption described above, regardless of its `NotBefore`.
+
+### Azure Key Vault
+
+Key Vault *does* have a working kill switch: a version's `Enabled` flag is an unconditional
+exclusion, checked independently of the retirement window
+(`KeyVaultSigningKeyRotation.SelectIncludedVersions`/`IsEligibleAt`). There is no configuration file
+to edit — versions are discovered from the vault itself — but making the disable take effect
+*immediately*, rather than waiting out the poll cadence, still requires a restart, exactly as for
+the other providers.
+
+**Disable the compromised version in Key Vault, restart, and create a new version.** Disabling a
+version only changes what the vault reports; ZeeKayDa.Auth doesn't see it until its next poll
+(bounded by `KeyRotationCheckInterval`, now 1 hour by default). A restart forces an immediate cold
+`LoadKeysAsync`, so the disabled version drops out of the trusted set and JWKS at once instead of
+waiting up to an hour — do this rather than waiting for the next poll. This is *not* the same
+situation as the File/PFX/cert-store single-key bootstrap exemption: Key Vault's immediate-activation
+exemption is keyed on `firstEverVersion` (the chronologically first version this deployment has ever
+used, by `CreatedOn`), not "however many versions are currently enabled." A freshly created emergency
+version is not the first-ever version, so it still needs `SigningKeyActivationDelay` (default: 1
+hour) to elapse — via `Max(CreatedOn + SigningKeyActivationDelay, NotBefore)` — before it becomes the
+active signer, restart or not. The restart is what makes disabling the compromised version
+immediate; the new version's arrival still follows the normal publish-then-activate timeline.
+
+**What this does and does not fix, immediately after the compromised key/version is disabled or
+removed:**
 
 - **Refresh tokens are unaffected.** They're opaque, store-backed handles, not JWTs — validated
   by a hashed lookup against the refresh token store, with no dependency on the signing key.
   Nothing about a key rotation touches them.
-- **New access tokens are safe immediately** — they're signed with the new key from the moment
-  the redeploy completes.
+- **New access tokens are safe immediately, for File/PFX/Windows Certificate Store** — the new
+  key signs from the moment the redeploy-and-restart completes, under the single-key bootstrap
+  exemption. **For Azure Key Vault this is not immediate**: the new version still needs
+  `SigningKeyActivationDelay` (default 1 hour) to elapse before it can sign, so in the meantime
+  tokens keep being signed by whatever other enabled version is active — a prior, still-eligible
+  version if you have one, or a fail-closed error if the compromised version was the sole signer.
+  Keep a known-good prior version enabled in Key Vault when you can, precisely to avoid that
+  outage window during a live incident.
 - **Already-issued access tokens signed by the compromised key are not immediately invalidated
   everywhere.** Removing the key from your own JWKS stops relying parties from *newly* trusting
   it, but it does nothing to a relying party that already cached the compromised key's public

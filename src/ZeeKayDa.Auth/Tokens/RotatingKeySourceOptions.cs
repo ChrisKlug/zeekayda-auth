@@ -30,9 +30,11 @@ public abstract class RotatingKeySourceOptions : JwtSigningServiceOptions
     /// many times over, while still keeping the poll-gated safety behaviors this interval also
     /// governs — emergency key disablement detection, the vanished-<c>kid</c> anomaly check, and
     /// certificate-expiry warnings — reasonably responsive. It is not a guarantee: relying parties
-    /// with a longer fixed JWKS-cache TTL and no retry-on-miss logic are still exposed, and are best
-    /// protected by keeping a published standby key rather than by raising this default further.
-    /// The base class coalesces concurrent requests during a refresh using a single-flight gate so
+    /// with a longer fixed JWKS-cache TTL and no retry-on-miss logic are still exposed. There is no
+    /// mechanism — a "standby key" or otherwise — that lets you skip knowing that TTL: verify it and
+    /// set <c>SigningKeyActivationDelay</c>/<c>AssumedJwksPropagationDelay</c> explicitly longer than
+    /// it, rather than raising this default further (ADR 0011 §3.4). The base class coalesces
+    /// concurrent requests during a refresh using a single-flight gate so
     /// that a burst of signing or JWKS requests never fans out into multiple simultaneous
     /// <c>LoadKeysAsync</c> calls.
     /// </para>
