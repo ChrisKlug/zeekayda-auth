@@ -3,12 +3,8 @@ name: CI
 on:
   pull_request:
     branches: [main]
-    paths-ignore:
-      - 'docs/**'
   push:
     branches: [main]
-    paths-ignore:
-      - 'docs/**'
 
 permissions:
   contents: read
@@ -17,8 +13,46 @@ env:
   NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
 
 jobs:
+  detect-changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      non-docs: ${{ steps.filter.outputs.non-docs }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          # dorny/paths-filter needs git history to diff against: the PR's merge-base for
+          # pull_request events, or the pre-push commit for push events to main. A shallow
+          # (default) checkout may not contain that commit.
+          fetch-depth: 0
+
+      # Required status checks (Build and Test (*), Format Check) must post exactly one check
+      # run per name, always. This workflow used to skip entirely on docs-only changes via
+      # paths-ignore, which required a companion stub workflow (ci-docs-skip.yml) to report the
+      # same check names so branch protection wouldn't block on a missing check. On a PR that
+      # touches both docs/** and non-docs files, GitHub's paths-ignore/paths filters aren't
+      # mutually exclusive — this workflow still triggered (not everything was docs) and so did
+      # the stub workflow (something was docs), so both posted the same check names and raced
+      # (issue #416). Now ci.yml always triggers, ci-docs-skip.yml is gone, and jobs below gate
+      # their expensive steps on this job's output instead — exactly one check run per required
+      # name in every case, whether docs-only, code-only, or mixed.
+      - name: Check for non-docs changes
+        uses: dorny/paths-filter@d1c1ffe0248fe513906c8e24db8ea791d46f8590 # v3.0.3
+        id: filter
+        with:
+          predicate-quantifier: 'every'
+          filters: |
+            non-docs:
+              - '**'
+              - '!docs/**'
+
   build-and-test:
     name: Build and Test
+    needs: detect-changes
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
@@ -29,6 +63,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Cache NuGet packages
+        if: needs.detect-changes.outputs.non-docs == 'true'
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: ${{ env.NUGET_PACKAGES }}
@@ -37,6 +72,7 @@ jobs:
             nuget-${{ runner.os }}-
 
       - name: Setup .NET
+        if: needs.detect-changes.outputs.non-docs == 'true'
         uses: actions/setup-dotnet@9a946fdbd5fb07b82b2f5a4466058b876ab72bb2 # v5.3.0
         with:
           global-json-file: global.json
@@ -49,6 +85,7 @@ jobs:
       # solution *filters* (no duplicated project metadata) selecting which projects apply to each
       # runner OS, so a platform-specific package never gets pulled onto the wrong platform's leg.
       - name: Select solution
+        if: needs.detect-changes.outputs.non-docs == 'true'
         shell: bash
         run: |
           case "${{ runner.os }}" in
@@ -58,29 +95,34 @@ jobs:
           esac
 
       - name: Restore
+        if: needs.detect-changes.outputs.non-docs == 'true'
         run: dotnet restore ${{ env.SOLUTION }}
 
       - name: Build
+        if: needs.detect-changes.outputs.non-docs == 'true'
         run: dotnet build ${{ env.SOLUTION }} --no-restore --configuration Release
 
       - name: Test
+        if: needs.detect-changes.outputs.non-docs == 'true'
         run: dotnet test ${{ env.SOLUTION }} --no-build --configuration Release --collect:"XPlat Code Coverage" --results-directory ./TestResults
 
       - name: Upload coverage-${{ matrix.os }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: always()
+        if: always() && needs.detect-changes.outputs.non-docs == 'true'
         with:
           name: coverage-${{ runner.os }}
           path: ./TestResults/**/coverage.cobertura.xml
           if-no-files-found: ignore
 
       - name: Coverage summary
+        if: needs.detect-changes.outputs.non-docs == 'true'
         run: dotnet run .github/scripts/summarize_coverage.cs -- ./TestResults "${{ runner.os }}"
 
   coverage-regression:
     name: Coverage Regression
+    needs: detect-changes
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && needs.detect-changes.outputs.non-docs == 'true'
     permissions:
       contents: read
       actions: read
@@ -155,7 +197,9 @@ jobs:
 
   coverage-regression-script-tests:
     name: Coverage Regression Script Tests
+    needs: detect-changes
     runs-on: ubuntu-latest
+    if: needs.detect-changes.outputs.non-docs == 'true'
 
     steps:
       - name: Checkout
@@ -185,7 +229,9 @@ jobs:
 
   log-hygiene:
     name: Log Hygiene Check
+    needs: detect-changes
     runs-on: ubuntu-latest
+    if: needs.detect-changes.outputs.non-docs == 'true'
 
     steps:
       - name: Checkout
@@ -196,7 +242,9 @@ jobs:
 
   log-hygiene-script-tests:
     name: Log Hygiene Script Tests
+    needs: detect-changes
     runs-on: ubuntu-latest
+    if: needs.detect-changes.outputs.non-docs == 'true'
     permissions:
       contents: read
 
@@ -209,6 +257,7 @@ jobs:
 
   format-check:
     name: Format Check
+    needs: detect-changes
     runs-on: ubuntu-latest
 
     steps:
@@ -216,14 +265,17 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Setup .NET
+        if: needs.detect-changes.outputs.non-docs == 'true'
         uses: actions/setup-dotnet@9a946fdbd5fb07b82b2f5a4466058b876ab72bb2 # v5.3.0
         with:
           global-json-file: global.json
 
       - name: Restore
+        if: needs.detect-changes.outputs.non-docs == 'true'
         run: dotnet restore
 
       - name: Check formatting
+        if: needs.detect-changes.outputs.non-docs == 'true'
         # Explicit path required: with the per-OS ZeeKayDa.Auth.*.slnf filters alongside
         # ZeeKayDa.Auth.slnx, `dotnet format`'s auto-discovery (unlike restore/build/test, which
         # ignore .slnf files when no path is given) sees multiple candidate solution files and
@@ -234,7 +286,7 @@ jobs:
 
   ci-complete:
     name: CI Complete
-    needs: [build-and-test, coverage-regression, coverage-regression-script-tests, log-hygiene, log-hygiene-script-tests, format-check]
+    needs: [detect-changes, build-and-test, coverage-regression, coverage-regression-script-tests, log-hygiene, log-hygiene-script-tests, format-check]
     runs-on: ubuntu-latest
     if: always()
     steps:
