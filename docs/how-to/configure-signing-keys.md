@@ -42,13 +42,15 @@ full how-to guide.
 A few ideas recur across every production provider's how-to guide. This section only sketches
 their shape — follow the links for the full explanation.
 
-- **`KeySourceRefreshInterval` means something different per provider type.** For Azure Key Vault,
-  it is both the recheck cadence against the vault *and* the publish-then-activate lead time a
-  rotated-in key must be visible for. For the Windows Certificate Store and file-based providers,
-  there is nothing remote to poll, so it instead governs a startup-warning threshold for pending
-  rotations. See the tip under
-  [`JwtSigningServiceOptions`](../reference/signing-keys.md#jwtsigningserviceoptions) for the full
-  explanation.
+- **`KeyRotationCheckInterval` is the poll cadence, and a separate property is the
+  publish-then-activate lead time.** Every rotating provider has `KeyRotationCheckInterval` (how
+  often the base class re-evaluates whether the active/included key set has changed). Azure Key
+  Vault also has `SigningKeyActivationDelay`, and the Windows Certificate Store and file-based
+  providers have `AssumedJwksPropagationDelay` — the lead time a rotated-in key must be visible for
+  before it can become the active signer, defaulting to `KeyRotationCheckInterval` when unset. See
+  the tip under
+  [`JwtSigningServiceOptions` and the three-tier hierarchy](../reference/signing-keys.md#jwtsigningserviceoptions-and-the-three-tier-hierarchy)
+  for the full explanation.
 - **The retirement window.** When a key stops being the active signer, its public half stays
   published in the JWKS for a while longer, so relying parties holding tokens signed with it can
   still validate them — but its private half is destroyed immediately. See

@@ -87,8 +87,8 @@ If `keyIdentifier` includes a specific `Version` component, it is ignored — th
 Rotation is automatic. The provider discovers Key Vault key versions on its own and rotates through them without a restart:
 
 - The very first key version this deployment ever uses activates immediately — there is no prior published JWKS state any relying party could have cached.
-- Every subsequent version requires the new Key Vault key version to exist for at least `KeySourceRefreshInterval` before it is expected to sign anything, so a relying party that cached the previous version's JWKS has had a chance to observe the new one. Create rotated-in key versions with at least that much lead time before they need to go live.
-- `KeySourceRefreshInterval` (inherited from `JwtSigningServiceOptions`, default 5 minutes) doubles as this publish-then-activate delay, so it must exceed your relying parties' actual JWKS cache TTL. ZeeKayDa.Auth rejects values below a one-minute floor as an almost-certain misconfiguration, but cannot verify that a value above the floor is actually long enough for your specific relying parties.
+- Every subsequent version requires the new Key Vault key version to exist for at least `SigningKeyActivationDelay` before it is expected to sign anything, so a relying party that cached the previous version's JWKS has had a chance to observe the new one. Create rotated-in key versions with at least that much lead time before they need to go live.
+- `SigningKeyActivationDelay` (default: `KeyRotationCheckInterval`, itself 5 minutes by default) must exceed your relying parties' actual JWKS cache TTL. ZeeKayDa.Auth rejects a `SigningKeyActivationDelay` shorter than `KeyRotationCheckInterval` as an almost-certain misconfiguration, but cannot verify that a value above that floor is actually long enough for your specific relying parties.
 - If the active (or most recently active) key version reaches its Key Vault `ExpiresOn` with no enabled successor version, key loading **fails closed** — a configuration error, not a silent continuation with an expired key or no key at all. Rotate in a new key version before the active one expires.
 
 > 💡 **Tip:** For the full activation/retirement timing model shared across all signing providers, see [Rotate signing keys](rotate-signing-keys.md).
@@ -140,7 +140,7 @@ Azure Key Vault's `KeyClient.GetKeyAsync` never returns private key material, re
 
 The bootstrap behavior, publish-then-activate lead time, and fail-closed behavior on an expired active certificate with no enabled successor are identical to [remote signing](#option-1--remote-signing) — see that section for the full explanation.
 
-> ⚠️ **Warning:** Every `KeySourceRefreshInterval` tick, the provider checks Key Vault's certificate-version metadata to see whether the included version set has actually changed; key material is only re-downloaded when it has. On a tick where nothing changed, no certificate content — public or private — is re-fetched. When a change is detected, the active certificate's re-download includes the actual **private** key (via the certificate's linked secret); every other in-window version (published-but-not-yet-active, or still inside its retirement window) only has its **public** key material fetched, never its private key, since it's exposed via the JWKS but never used to sign. Even so, an active-version rotation is more sensitive traffic than remote signing's refresh, which only ever fetches public key information for any version. Don't set `KeySourceRefreshInterval` too low purely out of habit; balance rotation responsiveness against how often the active certificate's private key material moves over the network and is re-materialized in process memory.
+> ⚠️ **Warning:** Every `KeyRotationCheckInterval` tick, the provider checks Key Vault's certificate-version metadata to see whether the included version set has actually changed; key material is only re-downloaded when it has. On a tick where nothing changed, no certificate content — public or private — is re-fetched. When a change is detected, the active certificate's re-download includes the actual **private** key (via the certificate's linked secret); every other in-window version (published-but-not-yet-active, or still inside its retirement window) only has its **public** key material fetched, never its private key, since it's exposed via the JWKS but never used to sign. Even so, an active-version rotation is more sensitive traffic than remote signing's refresh, which only ever fetches public key information for any version. Don't set `KeyRotationCheckInterval` too low purely out of habit; balance rotation responsiveness against how often the active certificate's private key material moves over the network and is re-materialized in process memory.
 
 An informational log line, emitted once at startup (not on every refresh), records that the private key has been downloaded and is cached in process memory, including the configured certificate identifier. This is logged at `Information`, not `Warning` — it is a deliberate architectural consequence of choosing this provider, not a misconfiguration.
 
@@ -227,7 +227,7 @@ ZeeKayDa.Auth's own activation timing, because ZeeKayDa.Auth anchors on Key Vaul
 per-version `CreatedOn` timestamp regardless of what triggered the new version's creation — see the
 "Why Key Vault gets an enforced overlap" tip in
 [Rotate signing keys](rotate-signing-keys.md#windows-certificate-store-and-file-based-pempfx--manual-registration)
-for the full explanation of `max(CreatedOn + KeySourceRefreshInterval, NotBefore)`.
+for the full explanation of `max(CreatedOn + SigningKeyActivationDelay, NotBefore)`.
 
 In practice this means: whichever rotation trigger you configure here (`timeAfterCreate`/
 `timeBeforeExpiry` for a bare key, or `lifetimePercentage`/`daysBeforeExpiry` for a certificate)
@@ -235,7 +235,7 @@ only decides *when Key Vault creates the new version*. From that point on, ZeeKa
 publish-then-activate delay — see the "Rotation" section under each option above and
 [The model, in plain language](rotate-signing-keys.md#the-model-in-plain-language) — still applies
 on top: the new version won't actually become the active signer until it has been visible for at
-least `KeySourceRefreshInterval`. Set Key Vault's own rotation trigger with enough lead time
+least `SigningKeyActivationDelay`. Set Key Vault's own rotation trigger with enough lead time
 before the certificate's or key's actual expiry that this additional delay never pushes activation
 past `ExpiresOn`.
 

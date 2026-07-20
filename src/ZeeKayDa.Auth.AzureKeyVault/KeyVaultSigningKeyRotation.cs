@@ -146,10 +146,10 @@ internal static class KeyVaultSigningKeyRotation
     /// </summary>
     /// <remarks>
     /// Comparing only version identifier and <c>Enabled</c> state (without <c>IsActive</c>) misses
-    /// the moment a rotation actually completes: because <c>KeySourceRefreshInterval</c> is both
-    /// the poll cadence and the publish-then-activate lead time, the poll where v2 is published
-    /// (not yet active alongside active v1) and the later poll where v2 becomes active (v1 still
-    /// retiring) both produce the identical <c>{v1, v2}</c> version-identifier/<c>Enabled</c> set —
+    /// the moment a rotation actually completes: <c>SigningKeyActivationDelay</c> defaults to
+    /// <c>KeyRotationCheckInterval</c>, so the poll where v2 is published (not yet active alongside
+    /// active v1) and the later poll where v2 becomes active (v1 still retiring) both produce the
+    /// identical <c>{v1, v2}</c> version-identifier/<c>Enabled</c> set —
     /// so the activation poll would be indistinguishable from "nothing changed" and the reload that
     /// promotes v2 to active would be skipped indefinitely. See each provider's
     /// <c>HasKeySetChangedAsync</c> remarks for the full two-poll failure mode, and ADR 0011 §3.5
