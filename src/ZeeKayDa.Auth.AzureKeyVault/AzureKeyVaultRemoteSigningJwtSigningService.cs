@@ -207,7 +207,8 @@ internal sealed class AzureKeyVaultRemoteSigningJwtSigningService : JwtSigningSe
     /// <para>
     /// Active-version identity has to be part of the comparison, not just membership and
     /// <c>Enabled</c> state, or a normal scheduled rotation silently stalls. Because
-    /// <c>KeySourceRefreshInterval</c> is both the poll cadence and the publish-then-activate lead
+    /// <c>SigningKeyActivationDelay</c> defaults to <c>KeyRotationCheckInterval</c> — making it both
+    /// the poll cadence and the publish-then-activate lead
     /// time (ADR 0011 §3.5), a rotation typically spans two polls: at poll N, v2 is published but
     /// not yet active (included set becomes v1 active + v2 not-active — a membership change, so
     /// this method correctly reports a change and v2's public-only handle gets loaded). At poll
@@ -256,7 +257,7 @@ internal sealed class AzureKeyVaultRemoteSigningJwtSigningService : JwtSigningSe
         // vault runs read-only against an asynchronously-replicated secondary that may be missing
         // very recent writes — a rare, best-effort event that can take hours to occur, not a
         // per-request consistency knob a caller can trigger or race. The only scenario this could
-        // affect is a genuinely brand-new key (created less than KeySourceRefreshInterval ago) whose true
+        // affect is a genuinely brand-new key (created less than KeyRotationCheckInterval ago) whose true
         // first version is transiently missing from the list during such a failover — a narrow
         // window that fails toward a transient relying-party rejection, not toward forging a token
         // with an unauthorized key, and one that self-heals on the next refresh cycle once the
@@ -281,7 +282,10 @@ internal sealed class AzureKeyVaultRemoteSigningJwtSigningService : JwtSigningSe
 
         // AzureKeyVaultRemoteSigningOptionsValidator rejects null (static-source mode is not
         // supported by this provider), so the value is guaranteed non-null by the time this runs.
-        var timeline = KeyVaultSigningKeyRotation.BuildActivationTimeline(allVersions, _options.Value.KeySourceRefreshInterval!.Value);
+        var activationDelay = KeyVaultActivationDelay.Resolve(
+            _options.Value.SigningKeyActivationDelay, _options.Value.KeyRotationCheckInterval);
+        var timeline = KeyVaultSigningKeyRotation.BuildActivationTimeline(
+            allVersions, activationDelay, _options.Value.KeyRotationCheckInterval);
 
         var active = KeyVaultSigningKeyRotation.SelectActiveVersion(timeline, now) ?? throw new ZeeKayDaConfigurationException(
             new ZeeKayDaConfigurationFailure(

@@ -122,15 +122,15 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
 **Implementors must write `LoadKeysAsync`, and may optionally override `HasKeySetChangedAsync`.**
 `LoadKeysAsync` returns a `SigningKeySet` — the current trusted set, in whatever form the provider
 holds its keys. `HasKeySetChangedAsync` is asked once per refresh cycle, after
-`KeySourceRefreshInterval` elapses and only when a previous key set already exists; returning
+`KeyRotationCheckInterval` elapses and only when a previous key set already exists; returning
 `false` lets the provider skip an expensive `LoadKeysAsync` reload when a cheap metadata-only check
 shows nothing has actually rotated. The default implementation always returns `true`, so a provider
 that does not override it keeps the unconditional-reload behavior described below. The base class
 does the rest:
 
 - **Interval-throttled caching**, driven by an injected `TimeProvider` (never wall-clock reads).
-  `LoadKeysAsync` is called at most once per `KeySourceRefreshInterval`, or exactly once ever if
-  `KeySourceRefreshInterval` is `null` (static-source mode).
+  `LoadKeysAsync` is called at most once per `KeyRotationCheckInterval` for a
+  `RotatingKeySourceOptions` provider, or exactly once ever for a `StaticKeySourceOptions` provider.
 - **Single-flight refresh.** When the cache expires, concurrent callers are coalesced into one
   `LoadKeysAsync` call rather than each triggering their own — this applies equally on the signing
   hot path and on JWKS reads (see [The JWKS endpoint](#the-jwks-endpoint) below), so a burst of
@@ -201,35 +201,58 @@ rejected by the constructor; that validation stays at the base class's load path
 
 ---
 
-## `JwtSigningServiceOptions`
+## `JwtSigningServiceOptions` and the three-tier hierarchy
 
 ```csharp
 namespace ZeeKayDa.Auth.Tokens;
 
 public abstract class JwtSigningServiceOptions
 {
-    public TimeSpan? KeySourceRefreshInterval { get; set; } = TimeSpan.FromMinutes(5);
+}
+
+public abstract class StaticKeySourceOptions : JwtSigningServiceOptions
+{
+}
+
+public abstract class RotatingKeySourceOptions : JwtSigningServiceOptions
+{
+    public TimeSpan KeyRotationCheckInterval { get; set; } = TimeSpan.FromMinutes(5);
 }
 ```
 
-`KeySourceRefreshInterval` is the only property on the base options type. Every provider-specific
-options type (`DevelopmentSigningKeyOptions`, `AzureKeyVaultRemoteSigningOptions`,
-`AzureKeyVaultCachedSigningOptions`, `WindowsCertificateStoreSigningOptions`,
-`PemFileSigningOptions`, `PfxFileSigningOptions`) derives from it and may add its own properties.
+`JwtSigningServiceOptions` itself carries no rotation-shaped property at all — every provider's
+options type derives from one of the two tiers below it, never directly from the base type, and
+which tier it derives from is what determines `LoadKeysAsync`'s reload behavior (ADR 0011 §3.4,
+issue #409):
 
-`KeySourceRefreshInterval` is nullable: a non-null value is the finite poll cadence described
-below, and `null` means "load once via `LoadKeysAsync`, never reload" — a named static-source mode
-for an immutable key source, not a sentinel value. `DevelopmentSigningKeyOptions` defaults this to
-`null`, since a locally-generated or file-persisted development key never changes at runtime.
+- **`StaticKeySourceOptions`** — the key source is immutable for the process lifetime.
+  `LoadKeysAsync` is called exactly once, ever. `DevelopmentSigningKeyOptions` is the only provider
+  on this tier, since a locally-generated or file-persisted development key never changes at
+  runtime.
+- **`RotatingKeySourceOptions`** — the key source can change while the process runs.
+  `LoadKeysAsync` is called at most once per `KeyRotationCheckInterval`. Every other built-in
+  provider (`AzureKeyVaultRemoteSigningOptions`, `AzureKeyVaultCachedSigningOptions`,
+  `WindowsCertificateStoreSigningOptions`, `PemFileSigningOptions`, `PfxFileSigningOptions`) derives
+  from this tier and may add its own properties.
 
-> 💡 **Tip:** `KeySourceRefreshInterval` means something different depending on the provider. For a
-> remote provider such as Azure Key Vault, it is the recheck cadence — key material is only
-> actually re-downloaded when that recheck detects a change — *and* the publish-then-activate lead
-> time a rotated-in key must be visible for before it can become the active signer. For a local
-> file or certificate-store provider, there is nothing remote to
-> re-poll; the interval instead governs a startup-warning threshold for pending key rotations (see
-> [Rotate signing keys](../how-to/rotate-signing-keys.md)). This nuance is covered in full, with
-> concrete values, in each provider's how-to guide.
+This replaces an earlier design where the base type carried a single nullable
+`KeySourceRefreshInterval` property, with `null` as a sentinel for "static, load-once" mode. That
+sentinel is now a real type distinction instead of a magic value.
+
+`KeyRotationCheckInterval` is non-nullable — there is no longer a null-means-static-mode case to
+express, since a `StaticKeySourceOptions` provider structurally has no such property to set.
+
+> 💡 **Tip:** `KeyRotationCheckInterval` is purely the poll cadence — how often the base class
+> re-evaluates whether the active/included key set has changed. It is no longer overloaded with the
+> publish-then-activate lead time a rotated-in key must be visible for before it can become the
+> active signer. That's now a separate, provider-specific property: `SigningKeyActivationDelay` on
+> the two Azure Key Vault options types, and `AssumedJwksPropagationDelay` on the File PEM/PFX and
+> Windows Certificate Store options types. Both default to `KeyRotationCheckInterval` when left
+> unset, and the library enforces that neither can be configured shorter than
+> `KeyRotationCheckInterval` — a newly-published key must not be able to activate before the
+> process would even poll and notice it exists. This nuance is covered in full, with concrete
+> values, in each provider's how-to guide (see
+> [Rotate signing keys](../how-to/rotate-signing-keys.md)).
 
 ---
 

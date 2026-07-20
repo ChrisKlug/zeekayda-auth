@@ -7,18 +7,29 @@ namespace ZeeKayDa.Auth.Windows;
 /// Configuration options for <c>AddWindowsCertificateStoreSigning</c>.
 /// </summary>
 /// <remarks>
-/// <see cref="JwtSigningServiceOptions.KeySourceRefreshInterval"/> is inherited from the base class and
-/// defaults to 5 minutes. Every registered certificate is re-read from the local store on a cycle
-/// where the trusted set has actually changed since the last cycle — see
+/// <see cref="RotatingKeySourceOptions.KeyRotationCheckInterval"/> is inherited from the base
+/// class and defaults to 5 minutes. Every registered certificate is re-read from the local store
+/// on a cycle where the trusted set has actually changed since the last cycle — see
 /// <see cref="WindowsCertificateStoreSigningJwtSigningService.HasKeySetChangedAsync"/> for the
-/// cheap, store-access-free check that decides this. It also doubles as the threshold used to
-/// warn when a rotated-in certificate's <see cref="X509Certificate2.NotBefore"/> is scheduled too
-/// soon relative to how often relying parties are expected to have polled the JWKS (ADR 0011
-/// §3.5; see <see cref="SigningKeyRotation.HasTooSoonPendingActivation"/>).
+/// cheap, store-access-free check that decides this.
 /// </remarks>
-public sealed class WindowsCertificateStoreSigningOptions : JwtSigningServiceOptions
+public sealed class WindowsCertificateStoreSigningOptions : RotatingKeySourceOptions
 {
     private readonly List<string> _additionalThumbprints = [];
+
+    /// <summary>
+    /// Gets or sets the assumed worst-case delay before a newly-published key's public material
+    /// has propagated to relying parties' JWKS caches, used as the threshold for warning when a
+    /// rotated-in certificate's <see cref="X509Certificate2.NotBefore"/> is scheduled too soon
+    /// (ADR 0011 §3.5; see <see cref="SigningKeyRotation.HasTooSoonPendingActivation"/>). When
+    /// unset (the default), defaults to <see cref="RotatingKeySourceOptions.KeyRotationCheckInterval"/>.
+    /// </summary>
+    /// <remarks>
+    /// Declared directly on this type rather than hoisted onto <see cref="RotatingKeySourceOptions"/>
+    /// (as the File/PFX providers' equivalent property is): doing so would leak this property into
+    /// Azure Key Vault's options types, which have no use for it (ADR 0011 §3.5).
+    /// </remarks>
+    public TimeSpan? AssumedJwksPropagationDelay { get; set; }
 
     /// <summary>
     /// Gets or sets the thumbprint of the required/primary certificate. Set by

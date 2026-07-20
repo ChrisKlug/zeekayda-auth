@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.FileSystem.Tests;
@@ -7,40 +8,32 @@ public sealed class PemFileSigningOptionsValidatorTests
     private static PemFileSigningOptions ValidOptions() => new()
     {
         Path = "/etc/zeekayda/signing.pem",
-        KeySourceRefreshInterval = TimeSpan.FromMinutes(5),
+        KeyRotationCheckInterval = TimeSpan.FromMinutes(5),
         Algorithm = SigningAlgorithm.RS256,
     };
 
     [Fact]
     public void Validate_succeeds_for_valid_options()
     {
-        var result = new PemFileSigningOptionsValidator().Validate(null, ValidOptions());
+        var result = new PemFileSigningOptionsValidator(NullSanitizingLogger<PemFileSigningOptionsValidator>.Instance).Validate(null, ValidOptions());
 
         result.Succeeded.Should().BeTrue();
     }
 
-    [Fact]
-    public void Validate_fails_when_KeySourceRefreshInterval_is_null()
-    {
-        var options = ValidOptions();
-        options.KeySourceRefreshInterval = null;
-
-        var result = new PemFileSigningOptionsValidator().Validate(null, options);
-
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("KeySourceRefreshInterval");
-    }
+    // The former "KeyRotationCheckInterval is null" test no longer applies: the property is now
+    // non-nullable on RotatingKeySourceOptions (ADR 0011 §3.4, issue #409), so this options type
+    // can no longer even represent that state.
 
     [Fact]
-    public void Validate_fails_when_KeySourceRefreshInterval_is_below_the_one_minute_floor()
+    public void Validate_fails_when_KeyRotationCheckInterval_is_below_the_one_minute_floor()
     {
         var options = ValidOptions();
-        options.KeySourceRefreshInterval = TimeSpan.FromSeconds(30);
+        options.KeyRotationCheckInterval = TimeSpan.FromSeconds(30);
 
-        var result = new PemFileSigningOptionsValidator().Validate(null, options);
+        var result = new PemFileSigningOptionsValidator(NullSanitizingLogger<PemFileSigningOptionsValidator>.Instance).Validate(null, options);
 
         result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("KeySourceRefreshInterval");
+        result.FailureMessage.Should().Contain("KeyRotationCheckInterval");
     }
 
     [Theory]
@@ -52,7 +45,7 @@ public sealed class PemFileSigningOptionsValidatorTests
         var options = ValidOptions();
         options.Path = path!;
 
-        var result = new PemFileSigningOptionsValidator().Validate(null, options);
+        var result = new PemFileSigningOptionsValidator(NullSanitizingLogger<PemFileSigningOptionsValidator>.Instance).Validate(null, options);
 
         result.Failed.Should().BeTrue();
         result.FailureMessage.Should().Contain("Path");
@@ -64,7 +57,7 @@ public sealed class PemFileSigningOptionsValidatorTests
         var options = ValidOptions();
         options.Algorithm = (SigningAlgorithm)999;
 
-        var result = new PemFileSigningOptionsValidator().Validate(null, options);
+        var result = new PemFileSigningOptionsValidator(NullSanitizingLogger<PemFileSigningOptionsValidator>.Instance).Validate(null, options);
 
         result.Failed.Should().BeTrue();
         result.FailureMessage.Should().Contain("Algorithm");
@@ -76,7 +69,7 @@ public sealed class PemFileSigningOptionsValidatorTests
         var options = ValidOptions();
         options.AddFile(options.Path);
 
-        var result = new PemFileSigningOptionsValidator().Validate(null, options);
+        var result = new PemFileSigningOptionsValidator(NullSanitizingLogger<PemFileSigningOptionsValidator>.Instance).Validate(null, options);
 
         result.Failed.Should().BeTrue();
         result.FailureMessage.Should().Contain("duplicates");
@@ -89,7 +82,7 @@ public sealed class PemFileSigningOptionsValidatorTests
         options.AddFile("/etc/zeekayda/rotated-in.pem");
         options.AddFile("/etc/zeekayda/rotated-in.pem");
 
-        var result = new PemFileSigningOptionsValidator().Validate(null, options);
+        var result = new PemFileSigningOptionsValidator(NullSanitizingLogger<PemFileSigningOptionsValidator>.Instance).Validate(null, options);
 
         result.Failed.Should().BeTrue();
         result.FailureMessage.Should().Contain("duplicates");
@@ -102,7 +95,7 @@ public sealed class PemFileSigningOptionsValidatorTests
         options.AddFile("/etc/zeekayda/rotated-in-1.pem");
         options.AddFile("/etc/zeekayda/rotated-in-2.pem");
 
-        var result = new PemFileSigningOptionsValidator().Validate(null, options);
+        var result = new PemFileSigningOptionsValidator(NullSanitizingLogger<PemFileSigningOptionsValidator>.Instance).Validate(null, options);
 
         result.Succeeded.Should().BeTrue();
     }
@@ -115,7 +108,7 @@ public sealed class PemFileSigningOptionsValidatorTests
         var options = ValidOptions();
         options.KeyPath = "/etc/zeekayda/signing.key";
 
-        var result = new PemFileSigningOptionsValidator().Validate(null, options);
+        var result = new PemFileSigningOptionsValidator(NullSanitizingLogger<PemFileSigningOptionsValidator>.Instance).Validate(null, options);
 
         result.Succeeded.Should().BeTrue();
     }
@@ -128,7 +121,7 @@ public sealed class PemFileSigningOptionsValidatorTests
         var options = ValidOptions();
         options.KeyPath = keyPath;
 
-        var result = new PemFileSigningOptionsValidator().Validate(null, options);
+        var result = new PemFileSigningOptionsValidator(NullSanitizingLogger<PemFileSigningOptionsValidator>.Instance).Validate(null, options);
 
         result.Failed.Should().BeTrue();
         result.FailureMessage.Should().Contain("KeyPath");
@@ -140,7 +133,7 @@ public sealed class PemFileSigningOptionsValidatorTests
         var options = ValidOptions();
         options.KeyPath = options.Path;
 
-        var result = new PemFileSigningOptionsValidator().Validate(null, options);
+        var result = new PemFileSigningOptionsValidator(NullSanitizingLogger<PemFileSigningOptionsValidator>.Instance).Validate(null, options);
 
         result.Failed.Should().BeTrue();
         result.FailureMessage.Should().Contain("duplicates");
@@ -153,7 +146,7 @@ public sealed class PemFileSigningOptionsValidatorTests
         options.KeyPath = "/etc/zeekayda/signing.key";
         options.AddFile("/etc/zeekayda/rotated-in.pem", options.KeyPath);
 
-        var result = new PemFileSigningOptionsValidator().Validate(null, options);
+        var result = new PemFileSigningOptionsValidator(NullSanitizingLogger<PemFileSigningOptionsValidator>.Instance).Validate(null, options);
 
         result.Failed.Should().BeTrue();
         result.FailureMessage.Should().Contain("duplicates");
@@ -165,7 +158,7 @@ public sealed class PemFileSigningOptionsValidatorTests
         var options = ValidOptions();
         options.AddFile("/etc/zeekayda/rotated-in.pem", "/etc/zeekayda/rotated-in.key");
 
-        var result = new PemFileSigningOptionsValidator().Validate(null, options);
+        var result = new PemFileSigningOptionsValidator(NullSanitizingLogger<PemFileSigningOptionsValidator>.Instance).Validate(null, options);
 
         result.Succeeded.Should().BeTrue();
     }
@@ -179,7 +172,7 @@ public sealed class PemFileSigningOptionsValidatorTests
         options.Path = "/etc/zeekayda//signing.pem";
         options.AddFile("/etc/zeekayda/signing.pem");
 
-        var result = new PemFileSigningOptionsValidator().Validate(null, options);
+        var result = new PemFileSigningOptionsValidator(NullSanitizingLogger<PemFileSigningOptionsValidator>.Instance).Validate(null, options);
 
         result.Failed.Should().BeTrue();
         result.FailureMessage.Should().Contain("duplicates");
@@ -192,9 +185,52 @@ public sealed class PemFileSigningOptionsValidatorTests
         options.Path = "/etc/zeekayda/signing.pem";
         options.AddFile("/etc/zeekayda/other/../signing.pem");
 
-        var result = new PemFileSigningOptionsValidator().Validate(null, options);
+        var result = new PemFileSigningOptionsValidator(NullSanitizingLogger<PemFileSigningOptionsValidator>.Instance).Validate(null, options);
 
         result.Failed.Should().BeTrue();
         result.FailureMessage.Should().Contain("duplicates");
+    }
+
+    // ── AssumedJwksPropagationDelay validation (security review of PR #414, ADR 0011 §3.5) ───────
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Validate_fails_when_AssumedJwksPropagationDelay_is_zero_or_negative(int seconds)
+    {
+        var options = ValidOptions();
+        options.AssumedJwksPropagationDelay = TimeSpan.FromSeconds(seconds);
+
+        var result = new PemFileSigningOptionsValidator(NullSanitizingLogger<PemFileSigningOptionsValidator>.Instance).Validate(null, options);
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("AssumedJwksPropagationDelay");
+    }
+
+    [Fact]
+    public void Validate_warns_but_succeeds_when_AssumedJwksPropagationDelay_is_shorter_than_KeyRotationCheckInterval()
+    {
+        var options = ValidOptions();
+        options.KeyRotationCheckInterval = TimeSpan.FromMinutes(5);
+        options.AssumedJwksPropagationDelay = TimeSpan.FromMinutes(1);
+        var logger = new CapturingSanitizingLogger<PemFileSigningOptionsValidator>();
+
+        var result = new PemFileSigningOptionsValidator(logger).Validate(null, options);
+
+        result.Succeeded.Should().BeTrue();
+        logger.Entries.Should().ContainSingle(e =>
+            e.Level == LogLevel.Warning && e.Message.Contains("AssumedJwksPropagationDelay"));
+    }
+
+    [Fact]
+    public void Validate_does_not_warn_when_AssumedJwksPropagationDelay_is_unset()
+    {
+        var options = ValidOptions();
+        var logger = new CapturingSanitizingLogger<PemFileSigningOptionsValidator>();
+
+        var result = new PemFileSigningOptionsValidator(logger).Validate(null, options);
+
+        result.Succeeded.Should().BeTrue();
+        logger.Entries.Should().BeEmpty();
     }
 }

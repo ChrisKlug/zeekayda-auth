@@ -169,7 +169,7 @@ public sealed class SigningKeyRotationTests
 
         var hasWarning = SigningKeyRotation.HasTooSoonPendingActivation(timeline, activeEntry, T0, DefaultRefreshInterval, out _);
 
-        hasWarning.Should().BeFalse("exactly KeySourceRefreshInterval away is sufficient lead time, not 'too soon'");
+        hasWarning.Should().BeFalse("exactly KeyRotationCheckInterval away is sufficient lead time, not 'too soon'");
     }
 
     [Fact]

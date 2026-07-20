@@ -176,11 +176,6 @@ public static class ZeeKayDaAuthBuilderSigningExtensions
             // else: PersistToDirectory stays null → ephemeral mode.
         });
 
-        builder.Services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<
-                IValidateOptions<DevelopmentSigningKeyOptions>,
-                DevelopmentSigningKeyOptionsValidator>());
-
         // AllowedDevelopmentJwtSigningKeysEnvironments lives on DevelopmentSigningKeyOptions (a
         // provider-scoped, code-only opt-in, not a server-wide gate — ADR 0011 §2), so this
         // validator targets that type. Registered here (not in AddZeeKayDaAuth()) because it only

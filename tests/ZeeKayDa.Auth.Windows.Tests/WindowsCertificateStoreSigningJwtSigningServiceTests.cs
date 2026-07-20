@@ -32,6 +32,7 @@ public sealed class WindowsCertificateStoreSigningJwtSigningServiceTests
         IReadOnlyList<string>? additionalThumbprints = null,
         TimeSpan? refreshInterval = null,
         TimeSpan? retirementWindow = null,
+        TimeSpan? assumedJwksPropagationDelay = null,
         ISanitizingLogger<WindowsCertificateStoreSigningJwtSigningService>? logger = null)
     {
         var settingsOptions = new WindowsCertificateStoreSigningOptions
@@ -39,7 +40,8 @@ public sealed class WindowsCertificateStoreSigningJwtSigningServiceTests
             Thumbprint = primaryThumbprint,
             StoreLocation = StoreLocation.CurrentUser,
             StoreName = StoreName.My,
-            KeySourceRefreshInterval = refreshInterval ?? TimeSpan.FromMinutes(5),
+            KeyRotationCheckInterval = refreshInterval ?? TimeSpan.FromMinutes(5),
+            AssumedJwksPropagationDelay = assumedJwksPropagationDelay,
         };
         foreach (var additional in additionalThumbprints ?? [])
             settingsOptions.AddCertificate(additional);
@@ -131,6 +133,68 @@ public sealed class WindowsCertificateStoreSigningJwtSigningServiceTests
         await sut.GetSigningKeysAsync(ct);
         logger.Entries.Should().Contain(e => e.Message.Contains(PrimaryThumbprint) && e.Message.Contains("NOT included"),
             "once a registered certificate's retirement window has fully elapsed, the log should say so plainly so an operator knows it can be removed from configuration");
+    }
+
+    // ── AssumedJwksPropagationDelay (issue #413) ─────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetSigningKeysAsync_does_not_warn_when_an_explicit_shorter_AssumedJwksPropagationDelay_is_satisfied()
+    {
+        // The gap between predecessor's activation and successor's NotBefore is 1 minute — shorter
+        // than the 5-minute KeyRotationCheckInterval default, which would trigger the too-soon
+        // warning if AssumedJwksPropagationDelay were left unset. An explicit, shorter
+        // AssumedJwksPropagationDelay (30 seconds) that the 1-minute gap satisfies proves the
+        // explicit value is what actually feeds HasTooSoonPendingActivation.
+        var ct = TestContext.Current.CancellationToken;
+        var refreshInterval = TimeSpan.FromMinutes(5);
+        var reader = new FakeCertificateStoreReader();
+        using var predecessor = TestCertificateFactory.CreateRsaSelfSigned("predecessor", T0 - TimeSpan.FromDays(30), T0 + TimeSpan.FromDays(365));
+        using var successor = TestCertificateFactory.CreateRsaSelfSigned("successor", T0 + TimeSpan.FromMinutes(1), T0 + TimeSpan.FromDays(400));
+        reader.AddCertificate(PrimaryThumbprint, predecessor);
+        reader.AddCertificate(SecondaryThumbprint, successor);
+        var timeProvider = new FakeTimeProvider(T0);
+        var logger = new CapturingSanitizingLogger<WindowsCertificateStoreSigningJwtSigningService>();
+
+        await using var sut = BuildService(
+            reader, timeProvider, PrimaryThumbprint, [SecondaryThumbprint],
+            refreshInterval: refreshInterval, assumedJwksPropagationDelay: TimeSpan.FromSeconds(30), logger: logger);
+
+        await sut.GetSigningKeysAsync(ct);
+
+        logger.Entries.Should().NotContain(e => e.Level == LogLevel.Warning,
+            "the explicit AssumedJwksPropagationDelay (30s) is shorter than the 1-minute activation gap, " +
+            "so no warning should fire even though the 5-minute KeyRotationCheckInterval default would have");
+    }
+
+    [Fact]
+    public async Task GetSigningKeysAsync_warns_when_an_explicit_longer_AssumedJwksPropagationDelay_is_not_satisfied()
+    {
+        // The gap between predecessor's activation and successor's NotBefore is 10 minutes — longer
+        // than the 5-minute KeyRotationCheckInterval default, so the too-soon warning would NOT fire
+        // if AssumedJwksPropagationDelay were left unset. An explicit, longer
+        // AssumedJwksPropagationDelay (15 minutes) that the 10-minute gap violates proves the
+        // explicit value — not the KeyRotationCheckInterval default — is what feeds
+        // HasTooSoonPendingActivation.
+        var ct = TestContext.Current.CancellationToken;
+        var refreshInterval = TimeSpan.FromMinutes(5);
+        var reader = new FakeCertificateStoreReader();
+        using var predecessor = TestCertificateFactory.CreateRsaSelfSigned("predecessor", T0 - TimeSpan.FromDays(30), T0 + TimeSpan.FromDays(365));
+        using var successor = TestCertificateFactory.CreateRsaSelfSigned("successor", T0 + TimeSpan.FromMinutes(10), T0 + TimeSpan.FromDays(400));
+        reader.AddCertificate(PrimaryThumbprint, predecessor);
+        reader.AddCertificate(SecondaryThumbprint, successor);
+        var timeProvider = new FakeTimeProvider(T0);
+        var logger = new CapturingSanitizingLogger<WindowsCertificateStoreSigningJwtSigningService>();
+
+        await using var sut = BuildService(
+            reader, timeProvider, PrimaryThumbprint, [SecondaryThumbprint],
+            refreshInterval: refreshInterval, assumedJwksPropagationDelay: TimeSpan.FromMinutes(15), logger: logger);
+
+        await sut.GetSigningKeysAsync(ct);
+
+        logger.Entries.Should().Contain(e => e.Level == LogLevel.Warning,
+            "the explicit AssumedJwksPropagationDelay (15 minutes) is longer than the 10-minute " +
+            "activation gap, so the warning must fire even though the 5-minute KeyRotationCheckInterval " +
+            "default would not have triggered it");
     }
 
     // ── HasKeySetChangedAsync: elapsed-time-only change detection, zero store access ────────────────
@@ -249,7 +313,7 @@ public sealed class WindowsCertificateStoreSigningJwtSigningServiceTests
         await sut.GetSigningKeysAsync(ct); // predecessor active + successor not-active; both now "previously included".
         reader.Calls.Clear();
 
-        // Poll N+1: one KeySourceRefreshInterval later, with no configuration change whatsoever -
+        // Poll N+1: one KeyRotationCheckInterval later, with no configuration change whatsoever -
         // the successor now activates and the predecessor (still within its retirement window)
         // stays included. Same thumbprints as poll N; only which entry is active differs.
         timeProvider.SetUtcNow(successorNotBefore + refreshInterval);

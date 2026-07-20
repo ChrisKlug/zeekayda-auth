@@ -37,7 +37,7 @@ namespace ZeeKayDa.Auth.FileSystem;
 /// </remarks>
 /// <typeparam name="TOptions">The format-specific options type (PEM or PFX).</typeparam>
 internal abstract class FileSigningJwtSigningService<TOptions> : JwtSigningService<TOptions>
-    where TOptions : JwtSigningServiceOptions
+    where TOptions : FileSigningOptions
 {
     private readonly IOptions<TOptions> _options;
     private readonly TimeProvider _timeProvider;
@@ -106,9 +106,9 @@ internal abstract class FileSigningJwtSigningService<TOptions> : JwtSigningServi
     /// <summary>
     /// Returns the configured JWS algorithm — <c>PemFileSigningOptions.Algorithm</c> or
     /// <c>PfxFileSigningOptions.Algorithm</c>. The base class cannot read this itself: per ADR 0011
-    /// §3.4, the shared <see cref="JwtSigningServiceOptions"/> base carries only
-    /// <see cref="JwtSigningServiceOptions.KeySourceRefreshInterval"/>, so <c>Algorithm</c> exists only on the
-    /// derived, format-specific options types.
+    /// §3.4/§3.5, <see cref="FileSigningOptions"/> carries only <c>KeyRotationCheckInterval</c> and
+    /// <c>AssumedJwksPropagationDelay</c>, so <c>Algorithm</c> exists only on the derived,
+    /// format-specific options types.
     /// </summary>
     protected abstract SigningAlgorithm GetAlgorithm(TOptions options);
 
@@ -190,9 +190,8 @@ internal abstract class FileSigningJwtSigningService<TOptions> : JwtSigningServi
             var retirementWindow = _retirementWindowProvider.GetRetirementWindow();
             var included = SigningKeyRotation.SelectIncludedKeys(timeline, active, now, retirementWindow);
 
-            // PemFileSigningOptionsValidator / PfxFileSigningOptionsValidator reject null
-            // (static-source mode is not supported by this provider), so this is guaranteed non-null.
-            LogCertificateStatuses(timeline, active, included, now, options.KeySourceRefreshInterval!.Value, retirementWindow, certificatesByPath);
+            var assumedJwksPropagationDelay = options.AssumedJwksPropagationDelay ?? options.KeyRotationCheckInterval;
+            LogCertificateStatuses(timeline, active, included, now, assumedJwksPropagationDelay, retirementWindow, certificatesByPath);
             WarnIfActiveCertificateExpiringSoon(active, now);
 
             var keyPairs = new List<SigningKeyPair>(included.Count);
@@ -387,10 +386,10 @@ internal abstract class FileSigningJwtSigningService<TOptions> : JwtSigningServi
         IReadOnlyList<RotationEntry> timeline,
         RotationEntry active,
         IReadOnlyList<RotationEntry> included,
-        DateTimeOffset now, TimeSpan refreshInterval, TimeSpan retirementWindow,
+        DateTimeOffset now, TimeSpan assumedJwksPropagationDelay, TimeSpan retirementWindow,
         IReadOnlyDictionary<string, X509Certificate2> certificatesByPath)
     {
-        // Re-evaluated on every LoadKeysAsync call (at most once per KeySourceRefreshInterval) rather than
+        // Re-evaluated on every LoadKeysAsync call (at most once per KeyRotationCheckInterval) rather than
         // only at first load, since active/included/excluded status is a function of `now` and
         // genuinely changes over the lifetime of a long-running process as a rotation progresses.
         // Every registered file is logged, not just the currently-included ones, so an operator can
@@ -412,15 +411,15 @@ internal abstract class FileSigningJwtSigningService<TOptions> : JwtSigningServi
                 entry.Key.Id, keyType, keySizeBits, entry.Key.ExpiresAt, status);
         }
 
-        if (SigningKeyRotation.HasTooSoonPendingActivation(timeline, active, now, refreshInterval, out var soonestPending))
+        if (SigningKeyRotation.HasTooSoonPendingActivation(timeline, active, now, assumedJwksPropagationDelay, out var soonestPending))
         {
             _logger.LogWarning(
                 "ZeeKayDa.Auth: signing key file '{Path}' activates at {ActivatesAt:O}, which is less " +
-                "than KeySourceRefreshInterval ({KeySourceRefreshInterval}) away from now. A relying party polling the " +
-                "JWKS at KeySourceRefreshInterval cadence may not have observed this key's public material " +
-                "before it starts signing. Set this certificate's NotBefore at least KeySourceRefreshInterval " +
+                "than AssumedJwksPropagationDelay ({AssumedJwksPropagationDelay}) away from now. A relying party polling the " +
+                "JWKS at AssumedJwksPropagationDelay cadence may not have observed this key's public material " +
+                "before it starts signing. Set this certificate's NotBefore at least AssumedJwksPropagationDelay " +
                 "in the future next time (see ADR 0011 §3.5 / issue #282).",
-                soonestPending!.Value.Key.Id, soonestPending.Value.ActivatesAt, refreshInterval);
+                soonestPending!.Value.Key.Id, soonestPending.Value.ActivatesAt, assumedJwksPropagationDelay);
         }
     }
 
@@ -449,7 +448,7 @@ internal abstract class FileSigningJwtSigningService<TOptions> : JwtSigningServi
     {
         // Re-evaluated on every LoadKeysAsync call, exactly like LogCertificateStatuses above: this
         // condition is genuinely time-varying for a long-running process. Repeats at most once per
-        // KeySourceRefreshInterval for as long as the condition holds.
+        // KeyRotationCheckInterval for as long as the condition holds.
         if (active.Key.ExpiresAt - now <= TimeSpan.FromDays(30))
         {
             _logger.LogWarning(

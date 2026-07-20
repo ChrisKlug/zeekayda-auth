@@ -16,11 +16,26 @@ internal static class KeyVaultSigningKeyRotation
     /// Builds the ascending activation timeline for every known version of <typeparamref name="T"/>.
     /// </summary>
     /// <param name="allVersions">Every version Key Vault has ever recorded, including disabled and expired ones.</param>
-    /// <param name="refreshInterval">The publish-then-activate delay applied to every version except the very first ever created.</param>
+    /// <param name="signingKeyActivationDelay">The publish-then-activate delay applied to every version except the very first ever created.</param>
+    /// <param name="keyRotationCheckInterval">
+    /// The poll cadence <paramref name="signingKeyActivationDelay"/> is compared against. Guarded here
+    /// independently of options validation — see ADR 0011 §3.5 and issue #413 — so a caller that builds a
+    /// timeline directly, bypassing <c>IValidateOptions</c>, cannot silently reintroduce the activation race.
+    /// </param>
     public static List<ActivationEntry<T>> BuildActivationTimeline<T>(
-        IReadOnlyList<T> allVersions, TimeSpan refreshInterval)
+        IReadOnlyList<T> allVersions, TimeSpan signingKeyActivationDelay, TimeSpan keyRotationCheckInterval)
         where T : struct, IKeyVaultVersionInfo
     {
+        if (signingKeyActivationDelay < keyRotationCheckInterval)
+        {
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "signing.key_vault.activation_delay_shorter_than_check_interval",
+                    $"SigningKeyActivationDelay ({signingKeyActivationDelay}) must be greater than or equal to " +
+                    $"KeyRotationCheckInterval ({keyRotationCheckInterval}). A newly-published key must not be " +
+                    "able to activate before the process would even poll and notice it exists (ADR 0011 §3.5)."));
+        }
+
         var firstEverVersion = allVersions
             .OrderBy(v => v.CreatedOn)
             .ThenBy(v => v.Version, StringComparer.Ordinal)
@@ -40,7 +55,7 @@ internal static class KeyVaultSigningKeyRotation
             {
                 Version = v,
                 ActivatesAt = Max(
-                    v.Version == firstEverVersion ? v.CreatedOn : v.CreatedOn + refreshInterval,
+                    v.Version == firstEverVersion ? v.CreatedOn : v.CreatedOn + signingKeyActivationDelay,
                     v.NotBefore ?? DateTimeOffset.MinValue),
             })
             .OrderBy(x => x.ActivatesAt)
@@ -131,10 +146,10 @@ internal static class KeyVaultSigningKeyRotation
     /// </summary>
     /// <remarks>
     /// Comparing only version identifier and <c>Enabled</c> state (without <c>IsActive</c>) misses
-    /// the moment a rotation actually completes: because <c>KeySourceRefreshInterval</c> is both
-    /// the poll cadence and the publish-then-activate lead time, the poll where v2 is published
-    /// (not yet active alongside active v1) and the later poll where v2 becomes active (v1 still
-    /// retiring) both produce the identical <c>{v1, v2}</c> version-identifier/<c>Enabled</c> set —
+    /// the moment a rotation actually completes: <c>SigningKeyActivationDelay</c> defaults to
+    /// <c>KeyRotationCheckInterval</c>, so the poll where v2 is published (not yet active alongside
+    /// active v1) and the later poll where v2 becomes active (v1 still retiring) both produce the
+    /// identical <c>{v1, v2}</c> version-identifier/<c>Enabled</c> set —
     /// so the activation poll would be indistinguishable from "nothing changed" and the reload that
     /// promotes v2 to active would be skipped indefinitely. See each provider's
     /// <c>HasKeySetChangedAsync</c> remarks for the full two-poll failure mode, and ADR 0011 §3.5

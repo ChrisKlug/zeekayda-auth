@@ -29,6 +29,7 @@ public sealed class PemFileSigningJwtSigningServiceTests
         TimeSpan? retirementWindow = null,
         SigningAlgorithm algorithm = SigningAlgorithm.RS256,
         string? keyPath = null,
+        TimeSpan? assumedJwksPropagationDelay = null,
         ISanitizingLogger<FileSigningJwtSigningService<PemFileSigningOptions>>? logger = null)
     {
         var options = new PemFileSigningOptions
@@ -36,7 +37,8 @@ public sealed class PemFileSigningJwtSigningServiceTests
             Path = primaryPath,
             KeyPath = keyPath,
             Algorithm = algorithm,
-            KeySourceRefreshInterval = refreshInterval ?? TimeSpan.FromMinutes(5),
+            KeyRotationCheckInterval = refreshInterval ?? TimeSpan.FromMinutes(5),
+            AssumedJwksPropagationDelay = assumedJwksPropagationDelay,
         };
         foreach (var additional in additionalPaths ?? [])
             options.AddFile(additional);
@@ -418,7 +420,7 @@ public sealed class PemFileSigningJwtSigningServiceTests
     // ── Too-soon-NotBefore startup warning (AC #12) ──────────────────────────────────────────────
 
     [Fact]
-    public async Task GetSigningKeysAsync_logs_a_warning_when_the_soonest_pending_NotBefore_is_closer_than_KeySourceRefreshInterval()
+    public async Task GetSigningKeysAsync_logs_a_warning_when_the_soonest_pending_NotBefore_is_closer_than_KeyRotationCheckInterval()
     {
         var ct = TestContext.Current.CancellationToken;
         var refreshInterval = TimeSpan.FromMinutes(5);
@@ -434,6 +436,72 @@ public sealed class PemFileSigningJwtSigningServiceTests
 
         logger.Entries.Should().Contain(e => e.Level == LogLevel.Warning,
             "AC #12: the too-soon-NotBefore misconfiguration must be surfaced");
+    }
+
+    // ── AssumedJwksPropagationDelay (issue #413) ─────────────────────────────────────────────────
+    //
+    // The shared FileSigningJwtSigningService<TOptions> base class resolves the warning threshold as
+    // options.AssumedJwksPropagationDelay ?? options.KeyRotationCheckInterval, then feeds it into
+    // SigningKeyRotation.HasTooSoonPendingActivation. Only PemFileSigningJwtSigningService is
+    // exercised below — that resolution lives entirely on the shared base class, so covering it once
+    // here also covers PfxFileSigningJwtSigningService, mirroring the HasKeySetChangedAsync coverage
+    // convention above.
+
+    [Fact]
+    public async Task GetSigningKeysAsync_does_not_warn_when_an_explicit_shorter_AssumedJwksPropagationDelay_is_satisfied()
+    {
+        // The gap between primary's activation and secondary's NotBefore is 1 minute — shorter than
+        // the 5-minute KeyRotationCheckInterval default, which would trigger the AC #12 warning if
+        // AssumedJwksPropagationDelay were left unset. Setting an explicit, shorter
+        // AssumedJwksPropagationDelay (30 seconds) that the 1-minute gap satisfies proves the
+        // explicit value is actually what feeds HasTooSoonPendingActivation, not merely the
+        // KeyRotationCheckInterval default.
+        var ct = TestContext.Current.CancellationToken;
+        var refreshInterval = TimeSpan.FromMinutes(5);
+        using var tempDir = new TempSigningKeyDirectory();
+        using var primary = TestCertificateFactory.CreateRsaSelfSigned("primary", T0 - TimeSpan.FromDays(30), T0 + TimeSpan.FromDays(365));
+        using var secondary = TestCertificateFactory.CreateRsaSelfSigned("secondary", T0 + TimeSpan.FromMinutes(1), T0 + TimeSpan.FromDays(400));
+        var primaryPath = tempDir.WritePemFile("primary.pem", primary);
+        var secondaryPath = tempDir.WritePemFile("secondary.pem", secondary);
+        var logger = new CapturingSanitizingLogger<FileSigningJwtSigningService<PemFileSigningOptions>>();
+        await using var sut = BuildService(
+            primaryPath, new FakeTimeProvider(T0), [secondaryPath],
+            refreshInterval: refreshInterval, assumedJwksPropagationDelay: TimeSpan.FromSeconds(30), logger: logger);
+
+        await sut.GetSigningKeysAsync(ct);
+
+        logger.Entries.Should().NotContain(e => e.Level == LogLevel.Warning,
+            "the explicit AssumedJwksPropagationDelay (30s) is shorter than the 1-minute activation gap, " +
+            "so no warning should fire even though the 5-minute KeyRotationCheckInterval default would have");
+    }
+
+    [Fact]
+    public async Task GetSigningKeysAsync_warns_when_an_explicit_longer_AssumedJwksPropagationDelay_is_not_satisfied()
+    {
+        // The gap between primary's activation and secondary's NotBefore is 10 minutes — longer than
+        // the 5-minute KeyRotationCheckInterval default, so the AC #12 warning would NOT fire if
+        // AssumedJwksPropagationDelay were left unset. Setting an explicit, longer
+        // AssumedJwksPropagationDelay (15 minutes) that the 10-minute gap violates proves the
+        // explicit value — not the KeyRotationCheckInterval default — is what feeds
+        // HasTooSoonPendingActivation.
+        var ct = TestContext.Current.CancellationToken;
+        var refreshInterval = TimeSpan.FromMinutes(5);
+        using var tempDir = new TempSigningKeyDirectory();
+        using var primary = TestCertificateFactory.CreateRsaSelfSigned("primary", T0 - TimeSpan.FromDays(30), T0 + TimeSpan.FromDays(365));
+        using var secondary = TestCertificateFactory.CreateRsaSelfSigned("secondary", T0 + TimeSpan.FromMinutes(10), T0 + TimeSpan.FromDays(400));
+        var primaryPath = tempDir.WritePemFile("primary.pem", primary);
+        var secondaryPath = tempDir.WritePemFile("secondary.pem", secondary);
+        var logger = new CapturingSanitizingLogger<FileSigningJwtSigningService<PemFileSigningOptions>>();
+        await using var sut = BuildService(
+            primaryPath, new FakeTimeProvider(T0), [secondaryPath],
+            refreshInterval: refreshInterval, assumedJwksPropagationDelay: TimeSpan.FromMinutes(15), logger: logger);
+
+        await sut.GetSigningKeysAsync(ct);
+
+        logger.Entries.Should().Contain(e => e.Level == LogLevel.Warning,
+            "the explicit AssumedJwksPropagationDelay (15 minutes) is longer than the 10-minute " +
+            "activation gap, so the warning must fire even though the 5-minute KeyRotationCheckInterval " +
+            "default would not have triggered it");
     }
 
     // ── kid stability ─────────────────────────────────────────────────────────────────────────────
@@ -602,7 +670,7 @@ public sealed class PemFileSigningJwtSigningServiceTests
         using var secondary = TestCertificateFactory.CreateRsaSelfSigned("secondary", T0 + TimeSpan.FromDays(30), T0 + TimeSpan.FromDays(400));
         var primaryPath = tempDir.WritePemFile("primary.pem", primary);
         var secondaryPath = tempDir.WritePemFile("secondary.pem", secondary);
-        var options = new PemFileSigningOptions { Path = primaryPath, KeySourceRefreshInterval = refreshInterval };
+        var options = new PemFileSigningOptions { Path = primaryPath, KeyRotationCheckInterval = refreshInterval };
         var timeProvider = new FakeTimeProvider(T0);
         await using var sut = new PemFileSigningJwtSigningService(
             Options.Create(options),
@@ -633,7 +701,7 @@ public sealed class PemFileSigningJwtSigningServiceTests
         using var replacement = TestCertificateFactory.CreateRsaSelfSigned("replacement", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
         var originalPath = tempDir.WritePemFile("original.pem", original);
         var replacementPath = tempDir.WritePemFile("replacement.pem", replacement);
-        var options = new PemFileSigningOptions { Path = originalPath, KeySourceRefreshInterval = refreshInterval };
+        var options = new PemFileSigningOptions { Path = originalPath, KeyRotationCheckInterval = refreshInterval };
         var timeProvider = new FakeTimeProvider(T0);
         await using var sut = new PemFileSigningJwtSigningService(
             Options.Create(options),

@@ -1,4 +1,6 @@
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using ZeeKayDa.Auth.Logging;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.FileSystem;
@@ -15,26 +17,38 @@ internal sealed class PfxFileSigningOptionsValidator : IValidateOptions<PfxFileS
     // cadence in this provider.
     private static readonly TimeSpan MinimumRefreshInterval = TimeSpan.FromMinutes(1);
 
+    private readonly ISanitizingLogger<PfxFileSigningOptionsValidator> _logger;
+
+    public PfxFileSigningOptionsValidator(ISanitizingLogger<PfxFileSigningOptionsValidator> logger)
+    {
+        ArgumentNullException.ThrowIfNull(logger);
+        _logger = logger;
+    }
+
     /// <inheritdoc/>
     public ValidateOptionsResult Validate(string? name, PfxFileSigningOptions options)
     {
         var errors = new List<string>();
 
-        if (options.KeySourceRefreshInterval is null)
+        if (options.KeyRotationCheckInterval < MinimumRefreshInterval)
         {
             errors.Add(
-                "PfxFileSigningOptions.KeySourceRefreshInterval must be a positive, finite TimeSpan. " +
-                "null (the local-development provider's 'load once, never reload' static mode) cannot " +
-                "be reused here.");
+                $"PfxFileSigningOptions.KeyRotationCheckInterval must be at least {MinimumRefreshInterval} " +
+                "(it doubles as the too-soon-NotBefore warning threshold per ADR 0011 §3.5, via " +
+                "AssumedJwksPropagationDelay). You are still responsible for ensuring KeyRotationCheckInterval " +
+                "exceeds your actual relying parties' JWKS cache TTL — this floor only rejects values that " +
+                "are almost certainly a mistake.");
         }
-        else if (options.KeySourceRefreshInterval.Value < MinimumRefreshInterval)
-        {
-            errors.Add(
-                $"PfxFileSigningOptions.KeySourceRefreshInterval must be at least {MinimumRefreshInterval} " +
-                "(it doubles as the too-soon-NotBefore warning threshold per ADR 0011 §3.5). You are " +
-                "still responsible for ensuring KeySourceRefreshInterval exceeds your actual relying parties' " +
-                "JWKS cache TTL — this floor only rejects values that are almost certainly a mistake.");
-        }
+
+        var positiveError = JwksPropagationDelay.ValidatePositive(
+            nameof(PfxFileSigningOptions), options.AssumedJwksPropagationDelay);
+        if (positiveError is not null)
+            errors.Add(positiveError);
+
+        var tooShortWarning = JwksPropagationDelay.WarnIfShorterThanCheckInterval(
+            nameof(PfxFileSigningOptions), options.AssumedJwksPropagationDelay, options.KeyRotationCheckInterval);
+        if (tooShortWarning is not null)
+            _logger.LogWarning("ZeeKayDa.Auth: {Warning}", tooShortWarning);
 
         if (string.IsNullOrWhiteSpace(options.Path))
             errors.Add("PfxFileSigningOptions.Path must be set to a non-empty file path.");

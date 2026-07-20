@@ -34,7 +34,7 @@ public sealed class PfxFileSigningJwtSigningServiceTests
             Path = primaryPath,
             PasswordSource = passwordSource,
             Algorithm = algorithm,
-            KeySourceRefreshInterval = refreshInterval ?? TimeSpan.FromMinutes(5),
+            KeyRotationCheckInterval = refreshInterval ?? TimeSpan.FromMinutes(5),
         };
         foreach (var additional in additionalFiles ?? [])
             options.AddFile(additional.Path, additional.PasswordSource);
@@ -269,7 +269,7 @@ public sealed class PfxFileSigningJwtSigningServiceTests
     // ── Too-soon-NotBefore startup warning (AC #12) ──────────────────────────────────────────────
 
     [Fact]
-    public async Task GetSigningKeysAsync_logs_a_warning_when_the_soonest_pending_NotBefore_is_closer_than_KeySourceRefreshInterval()
+    public async Task GetSigningKeysAsync_logs_a_warning_when_the_soonest_pending_NotBefore_is_closer_than_KeyRotationCheckInterval()
     {
         var ct = TestContext.Current.CancellationToken;
         var refreshInterval = TimeSpan.FromMinutes(5);

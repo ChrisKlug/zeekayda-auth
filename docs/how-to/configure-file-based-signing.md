@@ -160,7 +160,7 @@ so callers are not forced into DI-resolution machinery for what is usually a sim
 > secret file, or a secret store at runtime instead.
 
 `PasswordSource` is invoked every time `LoadKeysAsync` actually runs: at startup, and again
-whenever a later `KeySourceRefreshInterval` tick detects that something changed (see
+whenever a later `KeyRotationCheckInterval` tick detects that something changed (see
 [Unchanged files are never re-read on a refresh poll](#unchanged-files-are-never-re-read-on-a-refresh-poll)
 below). An unchanged tick never invokes `LoadKeysAsync` at all, so `PasswordSource` is not called on
 every refresh interval — only when a reload actually happens. If your password source is slow or
@@ -334,7 +334,7 @@ scheduling that lead time against relying parties' JWKS cache TTLs — see
 
 ## Unchanged files are never re-read on a refresh poll
 
-Both providers check for a change on every `KeySourceRefreshInterval` tick, but that check never
+Both providers check for a change on every `KeyRotationCheckInterval` tick, but that check never
 re-reads or re-parses a registered file unless something has actually changed. Three things are
 checked, cheapest first:
 

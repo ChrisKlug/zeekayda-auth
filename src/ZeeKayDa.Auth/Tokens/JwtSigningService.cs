@@ -18,8 +18,9 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
     where TOptions : JwtSigningServiceOptions
 {
     private readonly TimeProvider _timeProvider;
-    // null = static-source mode: LoadKeysAsync is invoked at most once and the cache never expires.
-    private readonly TimeSpan? _keySourceRefreshInterval;
+    // null = static-source mode (TOptions derives from StaticKeySourceOptions): LoadKeysAsync is
+    // invoked at most once and the cache never expires.
+    private readonly TimeSpan? _keyRotationCheckInterval;
 
     // Single-flight refresh gate: null means "no refresh in flight or cache valid".
     private readonly SemaphoreSlim _refreshLock = new(1, 1);
@@ -43,15 +44,18 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
         ArgumentNullException.ThrowIfNull(timeProvider);
 
         _timeProvider = timeProvider;
-        _keySourceRefreshInterval = options.Value.KeySourceRefreshInterval;
+        _keyRotationCheckInterval = options.Value is RotatingKeySourceOptions rotating
+            ? rotating.KeyRotationCheckInterval
+            : null;
     }
 
     /// <summary>
-    /// Loads the current set of trusted signing keys. Called by the base class at most once
-    /// per <see cref="JwtSigningServiceOptions.KeySourceRefreshInterval"/>; concurrent callers after
-    /// the interval elapses are coalesced into a single load via the single-flight gate. When
-    /// <see cref="JwtSigningServiceOptions.KeySourceRefreshInterval"/> is <see langword="null"/>
-    /// (static-source mode), this method is called at most once for the lifetime of the service.
+    /// Loads the current set of trusted signing keys. For rotating-tier providers
+    /// (<see cref="RotatingKeySourceOptions"/>), called by the base class at most once per
+    /// <see cref="RotatingKeySourceOptions.KeyRotationCheckInterval"/>; concurrent callers after
+    /// the interval elapses are coalesced into a single load via the single-flight gate. For
+    /// static-tier providers (<see cref="StaticKeySourceOptions"/>), this method is called at most
+    /// once for the lifetime of the service.
     /// </summary>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>
@@ -97,7 +101,7 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
     protected abstract ValueTask<SigningKeySet> LoadKeysAsync(CancellationToken cancellationToken);
 
     /// <summary>
-    /// Asked once per refresh cycle, after <see cref="JwtSigningServiceOptions.KeySourceRefreshInterval"/>
+    /// Asked once per refresh cycle, after <see cref="RotatingKeySourceOptions.KeyRotationCheckInterval"/>
     /// elapses and only when a previous key set already exists, whether the trusted key set has
     /// actually changed since the last successful <see cref="LoadKeysAsync"/> call.
     /// </summary>
@@ -343,11 +347,11 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
     /// <see cref="LoadKeysAsync"/> result was just installed).
     /// </summary>
     private DateTimeOffset ComputeNextCacheExpiry() =>
-        // null means static-source mode (see JwtSigningServiceOptions.KeySourceRefreshInterval):
-        // the cache never expires. HasKeySetChangedAsync is realistically never reached in this
-        // mode, since the cache never expires and BorrowSetAsync's slow path is therefore never
-        // re-entered after the first load — this branch exists only as a defensive fallback.
-        _keySourceRefreshInterval is { } interval
+        // null means static-source mode (TOptions derives from StaticKeySourceOptions): the cache
+        // never expires. HasKeySetChangedAsync is realistically never reached in this mode, since
+        // the cache never expires and BorrowSetAsync's slow path is therefore never re-entered
+        // after the first load — this branch exists only as a defensive fallback.
+        _keyRotationCheckInterval is { } interval
             ? _timeProvider.GetUtcNow().Add(interval)
             : DateTimeOffset.MaxValue;
 

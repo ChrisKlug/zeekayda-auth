@@ -8,14 +8,24 @@ namespace ZeeKayDa.Auth.AzureKeyVault;
 /// Configuration options for <c>AddAzureKeyVaultCachedSigning</c>.
 /// </summary>
 /// <remarks>
-/// <see cref="JwtSigningServiceOptions.KeySourceRefreshInterval"/> is inherited from the base class and
-/// defaults to 5 minutes. As with the remote-signing provider, this value doubles as both the
-/// publish-then-activate delay applied to every rotated-in certificate version, and the interval
-/// on which certificate versions are rediscovered and their private key material re-downloaded
-/// from Key Vault — see <c>AzureKeyVaultCachedSigningJwtSigningService</c>.
+/// <see cref="RotatingKeySourceOptions.KeyRotationCheckInterval"/> is inherited from the base class
+/// and defaults to 5 minutes. It is the interval on which certificate versions are rediscovered
+/// and their private key material re-downloaded from Key Vault — see
+/// <c>AzureKeyVaultCachedSigningJwtSigningService</c>. <see cref="SigningKeyActivationDelay"/> is
+/// the separate publish-then-activate delay applied to every rotated-in certificate version.
 /// </remarks>
-public sealed class AzureKeyVaultCachedSigningOptions : JwtSigningServiceOptions
+public sealed class AzureKeyVaultCachedSigningOptions : RotatingKeySourceOptions
 {
+    /// <summary>
+    /// Gets or sets the publish-then-activate lead time a newly rotated-in certificate version
+    /// must be visible before it may become the active signer (ADR 0011 §3.5). When unset (the
+    /// default), defaults to <see cref="RotatingKeySourceOptions.KeyRotationCheckInterval"/>. Must
+    /// be greater than or equal to <see cref="RotatingKeySourceOptions.KeyRotationCheckInterval"/> —
+    /// enforced both by <c>AzureKeyVaultCachedSigningOptionsValidator</c> and independently inside
+    /// <c>KeyVaultSigningKeyRotation.BuildActivationTimeline</c>.
+    /// </summary>
+    public TimeSpan? SigningKeyActivationDelay { get; set; }
+
     /// <summary>
     /// Gets or sets the Key Vault certificate to sign with. The certificate must have been created
     /// with an exportable key policy — see <c>AddAzureKeyVaultCachedSigning</c>'s remarks. The

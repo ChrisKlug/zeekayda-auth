@@ -136,7 +136,7 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
             configure: options =>
             {
                 options.AddCertificate(SecondaryThumbprint);
-                options.KeySourceRefreshInterval = refreshInterval;
+                options.KeyRotationCheckInterval = refreshInterval;
             });
 
         await using var provider = services.BuildServiceProvider();
@@ -257,7 +257,7 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
 
         var builder = new ZeeKayDaAuthBuilder(services);
         builder.AddWindowsCertificateStoreSigning(PrimaryThumbprint, SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My,
-            configure: options => options.KeySourceRefreshInterval = refreshInterval);
+            configure: options => options.KeyRotationCheckInterval = refreshInterval);
 
         await using var provider = services.BuildServiceProvider();
         var signingService = provider.GetRequiredService<IJwtSigningService>();
@@ -293,7 +293,7 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
             configure: options =>
             {
                 options.AddCertificate(SecondaryThumbprint);
-                options.KeySourceRefreshInterval = refreshInterval;
+                options.KeyRotationCheckInterval = refreshInterval;
             });
 
         await using var provider = services.BuildServiceProvider();
@@ -320,7 +320,7 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
     }
 
     [Fact]
-    public async Task Full_DI_wiring_logs_startup_warning_when_soonest_pending_NotBefore_is_closer_than_KeySourceRefreshInterval()
+    public async Task Full_DI_wiring_logs_startup_warning_when_soonest_pending_NotBefore_is_closer_than_KeyRotationCheckInterval()
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), RequiresWindowsReason);
 
@@ -339,7 +339,7 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
             configure: options =>
             {
                 options.AddCertificate(SecondaryThumbprint);
-                options.KeySourceRefreshInterval = refreshInterval;
+                options.KeyRotationCheckInterval = refreshInterval;
             });
 
         await using var provider = services.BuildServiceProvider();

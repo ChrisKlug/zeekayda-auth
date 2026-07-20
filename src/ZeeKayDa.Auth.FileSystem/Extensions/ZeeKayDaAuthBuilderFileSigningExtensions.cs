@@ -67,7 +67,7 @@ public static class ZeeKayDaAuthBuilderFileSigningExtensions
     /// </param>
     /// <param name="configure">
     /// An optional callback to further configure <see cref="PemFileSigningOptions"/> (for example,
-    /// <see cref="JwtSigningServiceOptions.KeySourceRefreshInterval"/> or additional files for
+    /// <see cref="ZeeKayDa.Auth.Tokens.RotatingKeySourceOptions.KeyRotationCheckInterval"/> or additional files for
     /// rotation via <see cref="PemFileSigningOptions.AddFile(string, string)"/>).
     /// </param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
@@ -144,7 +144,7 @@ public static class ZeeKayDaAuthBuilderFileSigningExtensions
     /// <param name="passwordSource">The delegate that supplies <paramref name="path"/>'s password.</param>
     /// <param name="configure">
     /// An optional callback to further configure <see cref="PfxFileSigningOptions"/> (for example,
-    /// <see cref="JwtSigningServiceOptions.KeySourceRefreshInterval"/> or additional files for
+    /// <see cref="ZeeKayDa.Auth.Tokens.RotatingKeySourceOptions.KeyRotationCheckInterval"/> or additional files for
     /// rotation via <see cref="PfxFileSigningOptions.AddFile"/>).
     /// </param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>

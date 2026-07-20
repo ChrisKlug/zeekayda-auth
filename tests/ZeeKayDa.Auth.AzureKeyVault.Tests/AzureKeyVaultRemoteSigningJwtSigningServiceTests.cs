@@ -26,7 +26,7 @@ public sealed class AzureKeyVaultRemoteSigningJwtSigningServiceTests
             KeyIdentifier = new KeyVaultKeyIdentifier(KeyIdentifierUri),
             Credential = new FakeTokenCredential(),
             Algorithm = algorithm,
-            KeySourceRefreshInterval = refreshInterval ?? DefaultRefreshInterval,
+            KeyRotationCheckInterval = refreshInterval ?? DefaultRefreshInterval,
         });
 
         return new AzureKeyVaultRemoteSigningJwtSigningService(
@@ -73,7 +73,7 @@ public sealed class AzureKeyVaultRemoteSigningJwtSigningServiceTests
         await sut.GetSigningKeysAsync(ct); // Prime the initial (bootstrap) load.
 
         reader.AddRsaVersion("v2", createdOn: t1);
-        timeProvider.SetUtcNow(t1); // Cache has expired (> KeySourceRefreshInterval since the first load).
+        timeProvider.SetUtcNow(t1); // Cache has expired (> KeyRotationCheckInterval since the first load).
 
         var keys = await sut.GetSigningKeysAsync(ct);
 
@@ -140,7 +140,7 @@ public sealed class AzureKeyVaultRemoteSigningJwtSigningServiceTests
         // become the active signer. v2 here is disabled and never becomes active — v1 stays the true
         // active signer straight through until v3 takes over. If the bug regressed, v1 would be
         // dropped from GetSigningKeysAsync() around v2's phantom would-be-activation time
-        // (t0 + 1 day + KeySourceRefreshInterval + retirementWindow), long before v3 (the real successor) at
+        // (t0 + 1 day + KeyRotationCheckInterval + retirementWindow), long before v3 (the real successor) at
         // t0 + 10 days even exists.
         var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
         var t1 = t0 + TimeSpan.FromDays(1); // v2: created shortly after v1, but disabled.
@@ -159,7 +159,7 @@ public sealed class AzureKeyVaultRemoteSigningJwtSigningServiceTests
         await sut.GetSigningKeysAsync(ct);
 
         // Time now passes well beyond what would have been v2's phantom retirement cutoff
-        // (t1 + KeySourceRefreshInterval + retirementWindow), while v1 is still the only real active signer.
+        // (t1 + KeyRotationCheckInterval + retirementWindow), while v1 is still the only real active signer.
         var stillMidway = t1 + DefaultRefreshInterval + retirementWindow + TimeSpan.FromHours(1);
         timeProvider.SetUtcNow(stillMidway);
         var midwayKeys = await sut.GetSigningKeysAsync(ct);
@@ -193,8 +193,8 @@ public sealed class AzureKeyVaultRemoteSigningJwtSigningServiceTests
         await sut.GetSigningKeysAsync(ct); // v1 and v2 now overlap.
 
         reader.SetEnabled("v1", enabled: false);
-        // Advance past a full KeySourceRefreshInterval so the base class's own cache (also gated by
-        // KeySourceRefreshInterval) actually expires and re-invokes LoadKeysAsync — a shorter advance would
+        // Advance past a full KeyRotationCheckInterval so the base class's own cache (also gated by
+        // KeyRotationCheckInterval) actually expires and re-invokes LoadKeysAsync — a shorter advance would
         // just replay the stale cached set from before v1 was disabled.
         timeProvider.SetUtcNow(t1 + DefaultRefreshInterval + DefaultRefreshInterval + TimeSpan.FromSeconds(1));
         var keys = await sut.GetSigningKeysAsync(ct);
@@ -210,13 +210,13 @@ public sealed class AzureKeyVaultRemoteSigningJwtSigningServiceTests
     public async Task GetSigningKeysAsync_notbefore_delayed_successor_still_grants_predecessor_correct_retirement()
     {
         var ct = TestContext.Current.CancellationToken;
-        // v2's NotBefore opens well after its own CreatedOn + KeySourceRefreshInterval — the fix folds
+        // v2's NotBefore opens well after its own CreatedOn + KeyRotationCheckInterval — the fix folds
         // NotBefore into ActivatesAt itself, so v1's RetiredAt correctly reflects v2's REAL
-        // activation instant (NotBefore), not the raw CreatedOn + KeySourceRefreshInterval value, and not an
+        // activation instant (NotBefore), not the raw CreatedOn + KeyRotationCheckInterval value, and not an
         // undefined/zero-grace result either.
         var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
         var t1 = t0 + TimeSpan.FromDays(1);
-        var notBefore = t1 + TimeSpan.FromDays(5); // Deliberately scheduled well past t1 + KeySourceRefreshInterval.
+        var notBefore = t1 + TimeSpan.FromDays(5); // Deliberately scheduled well past t1 + KeyRotationCheckInterval.
         var retirementWindow = TimeSpan.FromHours(2);
         var reader = new FakeKeyVaultKeyReader();
         reader.AddRsaVersion("v1", createdOn: t0);
@@ -228,7 +228,7 @@ public sealed class AzureKeyVaultRemoteSigningJwtSigningServiceTests
 
         reader.AddRsaVersion("v2", createdOn: t1, notBefore: notBefore);
 
-        // Just after v1 + KeySourceRefreshInterval, but well before v2's NotBefore: v1 must still be active,
+        // Just after v1 + KeyRotationCheckInterval, but well before v2's NotBefore: v1 must still be active,
         // and v2 must still be published (not yet active).
         timeProvider.SetUtcNow(t1 + DefaultRefreshInterval);
         var beforeNotBefore = await sut.GetSigningKeysAsync(ct);
@@ -236,7 +236,7 @@ public sealed class AzureKeyVaultRemoteSigningJwtSigningServiceTests
         beforeNotBefore.Should().HaveCount(2);
 
         // Exactly at v2's NotBefore: v2 takes over, and v1 gets its full retirementWindow of grace
-        // from THIS instant — not zero, and not from the earlier (incorrect) CreatedOn + KeySourceRefreshInterval.
+        // from THIS instant — not zero, and not from the earlier (incorrect) CreatedOn + KeyRotationCheckInterval.
         timeProvider.SetUtcNow(notBefore + TimeSpan.FromMinutes(1));
         var justAfterHandover = await sut.GetSigningKeysAsync(ct);
         justAfterHandover[0].Kid.Should().Be(JwkThumbprint.Compute(reader.GetRsaMaterial("v2")));
@@ -641,7 +641,7 @@ public sealed class AzureKeyVaultRemoteSigningJwtSigningServiceTests
     {
         // Regression test for the same class of bug already found and fixed for the sibling
         // cached-signing provider: ToVersionSet must compare IsActive, not just version identifier
-        // and Enabled state. KeySourceRefreshInterval is both the poll cadence and the
+        // and Enabled state. KeyRotationCheckInterval is both the poll cadence and the
         // publish-then-activate lead time, so a normal rotation spans two polls. At poll N, v2 is
         // published but not yet active — the included set becomes {v1 active, v2 not-active}, a
         // membership change from the single-version bootstrap state, so this poll is correctly
@@ -671,7 +671,7 @@ public sealed class AzureKeyVaultRemoteSigningJwtSigningServiceTests
         await sut.GetSigningKeysAsync(ct); // v1 active + v2 not-active; both now recorded as "previously included".
         reader.KeyMaterialCalls.Clear();
 
-        // Poll N+1: one KeySourceRefreshInterval later, with no Key Vault-side change whatsoever —
+        // Poll N+1: one KeyRotationCheckInterval later, with no Key Vault-side change whatsoever —
         // v2 now activates and v1 (still within its retirement window) stays included. Same version
         // identifiers, same Enabled states as poll N; only which entry is active differs.
         timeProvider.SetUtcNow(t1 + DefaultRefreshInterval);

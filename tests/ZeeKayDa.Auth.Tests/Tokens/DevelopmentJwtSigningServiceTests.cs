@@ -180,45 +180,21 @@ public sealed class DevelopmentJwtSigningServiceTests
 
     // ── Key memoization (no rotation) ────────────────────────────────────────────────────────────
 
-    [Fact]
-    public async Task Kid_is_stable_across_refresh_cycles_because_HasKeySetChangedAsync_always_reports_unchanged()
-    {
-        // DevelopmentJwtSigningService overrides HasKeySetChangedAsync to always return false, so
-        // once a refresh cycle is reached the base class never calls LoadKeysAsync a second time —
-        // it just extends the cache's expiry and keeps serving the existing set. This test sets a
-        // finite KeySourceRefreshInterval so the base class's cache actually expires and re-enters
-        // its slow path, then verifies the kid served afterwards is unchanged (proving the "ask"
-        // step reported "unchanged" rather than a second LoadKeysAsync call regenerating a key).
-        var timeProvider = new FakeTimeProvider();
-        var options = new DevelopmentSigningKeyOptions
-        {
-            PersistToDirectory = null,
-            KeySourceRefreshInterval = TimeSpan.FromMinutes(1), // short interval to force cache expiry
-        };
-        await using var sut = new DevelopmentJwtSigningService(
-            Options.Create(options),
-            timeProvider,
-            new InMemorySigningKeyFileSystem());
-        var ct = TestContext.Current.CancellationToken;
-
-        var firstKeys = await sut.GetSigningKeysAsync(ct);
-        var firstKid = firstKeys[0].Kid;
-
-        // Advance past the refresh interval so the base class re-enters its slow path.
-        timeProvider.Advance(TimeSpan.FromMinutes(2));
-
-        var secondKeys = await sut.GetSigningKeysAsync(ct);
-        var secondKid = secondKeys[0].Kid;
-
-        secondKid.Should().Be(firstKid,
-            "HasKeySetChangedAsync always reports unchanged, so the same key set keeps being served");
-    }
+    // The former "finite KeyRotationCheckInterval forces cache expiry, HasKeySetChangedAsync then
+    // reports unchanged" test no longer applies: DevelopmentSigningKeyOptions now derives from
+    // StaticKeySourceOptions (ADR 0011 §3.4, issue #409/#413), which carries no rotation-cadence
+    // property at all, so that scenario can no longer even be constructed for this options type —
+    // the base class never re-enters its slow path for a static-tier provider regardless of
+    // elapsed time (see JwtSigningService<TOptions>'s remarks). The memoization behavior that test
+    // was ultimately proving is still fully covered below by
+    // Ephemeral_kid_is_unchanged_regardless_of_elapsed_time, using the correct static-tier
+    // semantics.
 
     [Fact]
     public async Task Ephemeral_kid_is_unchanged_regardless_of_elapsed_time()
     {
-        // DevelopmentSigningKeyOptions defaults KeySourceRefreshInterval to null (static-source
-        // mode), so the base class never re-invokes LoadKeysAsync no matter how much time passes.
+        // DevelopmentSigningKeyOptions derives from StaticKeySourceOptions (static-source mode), so
+        // the base class never re-invokes LoadKeysAsync no matter how much time passes.
         var timeProvider = new FakeTimeProvider();
         await using var sut = BuildEphemeral(timeProvider: timeProvider);
         var ct = TestContext.Current.CancellationToken;

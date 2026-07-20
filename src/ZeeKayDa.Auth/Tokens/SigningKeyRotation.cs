@@ -159,13 +159,13 @@ public static class SigningKeyRotation
 
     /// <summary>
     /// True when 2+ keys are registered and the soonest not-yet-active key's
-    /// <see cref="RotationKey.ActivatesAt"/> is less than <paramref name="refreshInterval"/> away
-    /// from <paramref name="now"/> — a relying party polling the JWKS at that cadence may not have
-    /// observed the key's public material before it starts signing.
+    /// <see cref="RotationKey.ActivatesAt"/> is less than <paramref name="assumedJwksPropagationDelay"/>
+    /// away from <paramref name="now"/> — a relying party polling the JWKS at that cadence may not
+    /// have observed the key's public material before it starts signing.
     /// </summary>
     public static bool HasTooSoonPendingActivation(
         IReadOnlyList<RotationEntry> timeline, RotationEntry active, DateTimeOffset now,
-        TimeSpan refreshInterval, out RotationEntry? soonestPending)
+        TimeSpan assumedJwksPropagationDelay, out RotationEntry? soonestPending)
     {
         soonestPending = null;
 
@@ -182,7 +182,7 @@ public static class SigningKeyRotation
             .Select(entry => (RotationEntry?)entry)
             .FirstOrDefault();
 
-        return soonestPending is { } pending && pending.ActivatesAt - now < refreshInterval;
+        return soonestPending is { } pending && pending.ActivatesAt - now < assumedJwksPropagationDelay;
     }
 
     /// <summary>
