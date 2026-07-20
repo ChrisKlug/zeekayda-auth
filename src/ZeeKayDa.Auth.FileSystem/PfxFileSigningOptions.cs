@@ -7,10 +7,12 @@ namespace ZeeKayDa.Auth.FileSystem;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <see cref="JwtSigningServiceOptions.KeySourceRefreshInterval"/> is inherited from the base class and
-/// defaults to 5 minutes; see the remarks on <see cref="PemFileSigningOptions"/> for what it governs
-/// in this provider (a startup-warning threshold, not a re-download cadence) — specifically, it is
-/// the threshold used to warn when a rotated-in file's
+/// <see cref="ZeeKayDa.Auth.Tokens.RotatingKeySourceOptions.KeyRotationCheckInterval"/> and
+/// <see cref="FileSigningOptions.AssumedJwksPropagationDelay"/> are inherited from
+/// <see cref="FileSigningOptions"/> — see that type's remarks and <see cref="PemFileSigningOptions"/>'s
+/// remarks for what each governs in this provider (a startup-warning threshold, not a re-download
+/// cadence) — specifically, <see cref="FileSigningOptions.AssumedJwksPropagationDelay"/> is the
+/// threshold used to warn when a rotated-in file's
 /// <see cref="System.Security.Cryptography.X509Certificates.X509Certificate2.NotBefore"/> is
 /// scheduled too soon relative to how often relying parties are expected to have polled the JWKS
 /// (ADR 0011 §3.5; see <see cref="SigningKeyRotation.HasTooSoonPendingActivation"/>). This applies
@@ -31,7 +33,7 @@ namespace ZeeKayDa.Auth.FileSystem;
 /// that.
 /// </para>
 /// </remarks>
-public sealed class PfxFileSigningOptions : JwtSigningServiceOptions
+public sealed class PfxFileSigningOptions : FileSigningOptions
 {
     private readonly List<(string Path, Func<CancellationToken, ValueTask<string>> PasswordSource)> _additionalFiles = [];
 

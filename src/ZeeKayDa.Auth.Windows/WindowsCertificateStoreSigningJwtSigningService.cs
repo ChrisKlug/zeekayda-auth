@@ -119,9 +119,8 @@ internal sealed class WindowsCertificateStoreSigningJwtSigningService : JwtSigni
             var retirementWindow = _retirementWindowProvider.GetRetirementWindow();
             var included = SigningKeyRotation.SelectIncludedKeys(timeline, active, now, retirementWindow);
 
-            // WindowsCertificateStoreSigningOptionsValidator rejects null (static-source mode is
-            // not supported by this provider), so this is guaranteed non-null.
-            LogCertificateStatuses(timeline, active, included, now, options.KeySourceRefreshInterval!.Value, retirementWindow, certificatesByThumbprint);
+            var assumedJwksPropagationDelay = options.AssumedJwksPropagationDelay ?? options.KeyRotationCheckInterval;
+            LogCertificateStatuses(timeline, active, included, now, assumedJwksPropagationDelay, retirementWindow, certificatesByThumbprint);
 
             // HasKeySetChangedAsync itself repeats this same check on every ask cycle once a
             // previous load exists (see that method's remarks), so only the cold-start call needs
@@ -303,14 +302,14 @@ internal sealed class WindowsCertificateStoreSigningJwtSigningService : JwtSigni
         IReadOnlyList<RotationEntry> timeline,
         RotationEntry active,
         IReadOnlyList<RotationEntry> included,
-        DateTimeOffset now, TimeSpan refreshInterval, TimeSpan retirementWindow,
+        DateTimeOffset now, TimeSpan assumedJwksPropagationDelay, TimeSpan retirementWindow,
         IReadOnlyDictionary<string, X509Certificate2> certificatesByThumbprint)
     {
         // Unlike a purely static config fact (thumbprint/subject/expiry never change once a
         // certificate is loaded), each certificate's active/included/excluded status is a function
         // of `now` and genuinely changes over the lifetime of a long-running process as a rotation
         // progresses — so, unlike a one-shot log, this is re-evaluated and logged on every
-        // LoadKeysAsync call (at most once per KeySourceRefreshInterval) rather than only at first load.
+        // LoadKeysAsync call (at most once per KeyRotationCheckInterval) rather than only at first load.
         // Logging every registered certificate on every cycle — not just the currently-included
         // ones — is deliberate: it lets an operator see exactly what the current configuration
         // resolves to, including a certificate that is configured but has fallen out of the trusted
@@ -329,15 +328,15 @@ internal sealed class WindowsCertificateStoreSigningJwtSigningService : JwtSigni
                 entry.Key.Id, certificate.Subject, entry.Key.ExpiresAt, status);
         }
 
-        if (SigningKeyRotation.HasTooSoonPendingActivation(timeline, active, now, refreshInterval, out var soonestPending))
+        if (SigningKeyRotation.HasTooSoonPendingActivation(timeline, active, now, assumedJwksPropagationDelay, out var soonestPending))
         {
             _logger.LogWarning(
                 "ZeeKayDa.Auth: certificate '{Thumbprint}' activates at {ActivatesAt:O}, which is less " +
-                "than KeySourceRefreshInterval ({KeySourceRefreshInterval}) away from now. A relying party polling the " +
-                "JWKS at KeySourceRefreshInterval cadence may not have observed this certificate's public key " +
-                "before it starts signing. Set this certificate's NotBefore at least KeySourceRefreshInterval in " +
+                "than AssumedJwksPropagationDelay ({AssumedJwksPropagationDelay}) away from now. A relying party polling the " +
+                "JWKS at AssumedJwksPropagationDelay cadence may not have observed this certificate's public key " +
+                "before it starts signing. Set this certificate's NotBefore at least AssumedJwksPropagationDelay in " +
                 "the future next time (see ADR 0011 §3.5 / issue #282).",
-                soonestPending!.Value.Key.Id, soonestPending.Value.ActivatesAt, refreshInterval);
+                soonestPending!.Value.Key.Id, soonestPending.Value.ActivatesAt, assumedJwksPropagationDelay);
         }
     }
 
@@ -371,7 +370,7 @@ internal sealed class WindowsCertificateStoreSigningJwtSigningService : JwtSigni
         // long-running process can cross into that window mid-lifetime — and an unchanged refresh
         // cycle that skips LoadKeysAsync entirely must not also skip this check, or the warning
         // could go unraised for the rest of the process's life. Repeats at most once per
-        // KeySourceRefreshInterval (the ask cadence) for as long as the condition holds, never
+        // KeyRotationCheckInterval (the ask cadence) for as long as the condition holds, never
         // twice for the same cycle — see the two call sites' own remarks for how that is enforced.
         if (active.Key.ExpiresAt - now <= TimeSpan.FromDays(30))
         {

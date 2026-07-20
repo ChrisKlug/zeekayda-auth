@@ -8,14 +8,24 @@ namespace ZeeKayDa.Auth.AzureKeyVault;
 /// Configuration options for <c>AddAzureKeyVaultRemoteSigning</c>.
 /// </summary>
 /// <remarks>
-/// <see cref="JwtSigningServiceOptions.KeySourceRefreshInterval"/> is inherited from the base class and
-/// defaults to 5 minutes. Unlike the local-development provider, this value must remain finite —
-/// real key-version rotation polling requires the base class to periodically re-invoke
-/// <c>LoadKeysAsync</c>, and it is also the publish-then-activate delay applied to every rotated-in
-/// key version (see <c>AzureKeyVaultRemoteSigningJwtSigningService</c>).
+/// <see cref="RotatingKeySourceOptions.KeyRotationCheckInterval"/> is inherited from the base class
+/// and defaults to 5 minutes: real key-version rotation polling requires the base class to
+/// periodically re-invoke <c>LoadKeysAsync</c> (see <c>AzureKeyVaultRemoteSigningJwtSigningService</c>).
+/// <see cref="SigningKeyActivationDelay"/> is the separate publish-then-activate delay applied to
+/// every rotated-in key version.
 /// </remarks>
-public sealed class AzureKeyVaultRemoteSigningOptions : JwtSigningServiceOptions
+public sealed class AzureKeyVaultRemoteSigningOptions : RotatingKeySourceOptions
 {
+    /// <summary>
+    /// Gets or sets the publish-then-activate lead time a newly rotated-in key version must be
+    /// visible before it may become the active signer (ADR 0011 §3.5). When unset (the default),
+    /// defaults to <see cref="RotatingKeySourceOptions.KeyRotationCheckInterval"/>. Must be greater
+    /// than or equal to <see cref="RotatingKeySourceOptions.KeyRotationCheckInterval"/> — enforced
+    /// both by <c>AzureKeyVaultRemoteSigningOptionsValidator</c> and independently inside
+    /// <c>KeyVaultSigningKeyRotation.BuildActivationTimeline</c>.
+    /// </summary>
+    public TimeSpan? SigningKeyActivationDelay { get; set; }
+
     /// <summary>
     /// Gets or sets the Key Vault (or Managed HSM) key to sign with. The <see cref="KeyVaultKeyIdentifier.Version"/>
     /// component, if present, is ignored — the provider always discovers and signs with every

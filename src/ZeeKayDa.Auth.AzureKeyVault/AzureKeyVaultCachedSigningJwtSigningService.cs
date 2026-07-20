@@ -222,8 +222,9 @@ internal sealed class AzureKeyVaultCachedSigningJwtSigningService : JwtSigningSe
     /// <para>
     /// Active-version identity has to be part of the comparison, not just membership and
     /// <c>Enabled</c> state, or a normal scheduled rotation silently stalls. Because
-    /// <c>KeySourceRefreshInterval</c> is both the poll cadence and the publish-then-activate lead
-    /// time (ADR 0011 §3.5), a rotation typically spans two polls: at poll N, v2 is published but
+    /// <c>SigningKeyActivationDelay</c> defaults to <c>KeyRotationCheckInterval</c> — making it both
+    /// the poll cadence and the publish-then-activate lead time by default (ADR 0011 §3.5) — a
+    /// rotation typically spans two polls: at poll N, v2 is published but
     /// not yet active (included set becomes v1 active + v2 not-active — a membership change, so
     /// this method correctly reports a change and v2's public-only handle gets loaded). At poll
     /// N+1, v2 becomes active while v1 (still within its retirement window) remains included — the
@@ -279,9 +280,10 @@ internal sealed class AzureKeyVaultCachedSigningJwtSigningService : JwtSigningSe
 
         var now = _timeProvider.GetUtcNow();
 
-        // AzureKeyVaultCachedSigningOptionsValidator rejects null (static-source mode is not
-        // supported by this provider), so the value is guaranteed non-null by the time this runs.
-        var timeline = KeyVaultSigningKeyRotation.BuildActivationTimeline(allVersions, _options.Value.KeySourceRefreshInterval!.Value);
+        var activationDelay = KeyVaultActivationDelay.Resolve(
+            _options.Value.SigningKeyActivationDelay, _options.Value.KeyRotationCheckInterval);
+        var timeline = KeyVaultSigningKeyRotation.BuildActivationTimeline(
+            allVersions, activationDelay, _options.Value.KeyRotationCheckInterval);
 
         var active = KeyVaultSigningKeyRotation.SelectActiveVersion(timeline, now) ?? throw new ZeeKayDaConfigurationException(
             new ZeeKayDaConfigurationFailure(

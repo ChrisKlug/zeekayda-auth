@@ -6,15 +6,11 @@ namespace ZeeKayDa.Auth.FileSystem;
 /// Configuration options for <c>AddPemFileSigning</c>.
 /// </summary>
 /// <remarks>
-/// <see cref="JwtSigningServiceOptions.KeySourceRefreshInterval"/> is inherited from the base class and
-/// defaults to 5 minutes. Unlike the Azure Key Vault providers, this value does not gate a
-/// re-download of private key material — every registered file is re-read from disk on every
-/// refresh, which has no external cost. Instead it doubles as the threshold used to warn when a
-/// rotated-in file's <see cref="System.Security.Cryptography.X509Certificates.X509Certificate2.NotBefore"/>
-/// is scheduled too soon relative to how often relying parties are expected to have polled the
-/// JWKS (ADR 0011 §3.5; see <see cref="SigningKeyRotation.HasTooSoonPendingActivation"/>).
+/// <see cref="ZeeKayDa.Auth.Tokens.RotatingKeySourceOptions.KeyRotationCheckInterval"/> and
+/// <see cref="FileSigningOptions.AssumedJwksPropagationDelay"/> are inherited from
+/// <see cref="FileSigningOptions"/> — see that type's remarks for what each governs.
 /// </remarks>
-public sealed class PemFileSigningOptions : JwtSigningServiceOptions
+public sealed class PemFileSigningOptions : FileSigningOptions
 {
     private readonly List<PemFileRegistration> _additionalFiles = [];
 

@@ -11,9 +11,9 @@ namespace ZeeKayDa.Auth.Windows;
 /// </remarks>
 internal sealed class WindowsCertificateStoreSigningOptionsValidator : IValidateOptions<WindowsCertificateStoreSigningOptions>
 {
-    // KeySourceRefreshInterval doubles as the too-soon-NotBefore warning threshold (ADR 0011 §3.5) rather
-    // than a re-download cadence — there is no external round trip to throttle here, since every
-    // registered certificate lives in the local store. The same one-minute floor still rejects a
+    // AssumedJwksPropagationDelay doubles as the too-soon-NotBefore warning threshold (ADR 0011
+    // §3.5) — there is no external round trip to throttle here, since every registered certificate
+    // lives in the local store. The same one-minute floor still rejects a KeyRotationCheckInterval
     // value so short it would defeat the publish-then-activate protection against essentially any
     // real-world relying-party JWKS cache TTL.
     private static readonly TimeSpan MinimumRefreshInterval = TimeSpan.FromMinutes(1);
@@ -23,20 +23,14 @@ internal sealed class WindowsCertificateStoreSigningOptionsValidator : IValidate
     {
         var errors = new List<string>();
 
-        if (options.KeySourceRefreshInterval is null)
+        if (options.KeyRotationCheckInterval < MinimumRefreshInterval)
         {
             errors.Add(
-                "WindowsCertificateStoreSigningOptions.KeySourceRefreshInterval must be a positive, finite " +
-                "TimeSpan. null (the local-development provider's 'load once, never reload' static mode) " +
-                "cannot be reused here.");
-        }
-        else if (options.KeySourceRefreshInterval.Value < MinimumRefreshInterval)
-        {
-            errors.Add(
-                $"WindowsCertificateStoreSigningOptions.KeySourceRefreshInterval must be at least {MinimumRefreshInterval} " +
-                "(it doubles as the too-soon-NotBefore warning threshold per ADR 0011 §3.5). You are still " +
-                "responsible for ensuring KeySourceRefreshInterval exceeds your actual relying parties' JWKS cache " +
-                "TTL — this floor only rejects values that are almost certainly a mistake.");
+                $"WindowsCertificateStoreSigningOptions.KeyRotationCheckInterval must be at least {MinimumRefreshInterval} " +
+                "(it doubles as the too-soon-NotBefore warning threshold per ADR 0011 §3.5, via " +
+                "AssumedJwksPropagationDelay). You are still responsible for ensuring KeyRotationCheckInterval " +
+                "exceeds your actual relying parties' JWKS cache TTL — this floor only rejects values that " +
+                "are almost certainly a mistake.");
         }
 
         if (string.IsNullOrWhiteSpace(options.Thumbprint))
