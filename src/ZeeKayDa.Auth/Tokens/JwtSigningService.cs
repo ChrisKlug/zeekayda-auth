@@ -56,29 +56,42 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
     /// from DI or use <c>TimeProvider.System</c> in production and a
     /// <c>FakeTimeProvider</c> in tests.
     /// </param>
+    /// <exception cref="NotSupportedException">
+    /// <c>TOptions</c>'s runtime instance derives from <see cref="KeySetOptions"/> or
+    /// <see cref="KeySourceOptions"/> (the ADR 0015 contract). Use the four-argument overload for
+    /// those instead — constructing this class via this overload for a new-contract
+    /// <c>TOptions</c> would otherwise silently default the retirement window to
+    /// <see cref="TimeSpan.Zero"/> and drop the logger, degrading the ADR 0015 §6
+    /// within-window-vanish <see cref="Microsoft.Extensions.Logging.LogLevel.Warning"/> — a signal
+    /// that MUST NOT be downgraded — into silence.
+    /// </exception>
     /// <remarks>
-    /// Use this overload for a provider on the ADR 0011 contract (deriving <c>TOptions</c> from
-    /// <see cref="StaticKeySourceOptions"/> or <see cref="RotatingKeySourceOptions"/> and overriding
-    /// <see cref="LoadKeysAsync"/>). A provider on the ADR 0015 contract (deriving <c>TOptions</c>
-    /// from <see cref="KeySetOptions"/> or <see cref="KeySourceOptions"/> and overriding
-    /// <see cref="ListKeysAsync"/>/<see cref="CreateSignerAsync"/>) should use the other constructor
-    /// overload instead, which also supplies the retirement-window provider and logger the new
-    /// contract's kill-by-omission and JWKS-inclusion logic needs.
+    /// Use this overload only for a provider on the ADR 0011 contract (deriving <c>TOptions</c>
+    /// from <see cref="StaticKeySourceOptions"/> or <see cref="RotatingKeySourceOptions"/> and
+    /// overriding <see cref="LoadKeysAsync"/>). A provider on the ADR 0015 contract (deriving
+    /// <c>TOptions</c> from <see cref="KeySetOptions"/> or <see cref="KeySourceOptions"/> and
+    /// overriding <see cref="ListKeysAsync"/>/<see cref="CreateSignerAsync"/>) MUST use the other
+    /// constructor overload instead, which also supplies the retirement-window provider and logger
+    /// the new contract's kill-by-omission and JWKS-inclusion logic needs; this overload throws
+    /// rather than silently accepting a new-contract <c>TOptions</c>.
     /// </remarks>
     protected JwtSigningService(IOptions<TOptions> options, TimeProvider timeProvider)
     {
-        ArgumentNullException.ThrowIfNull(options);
-        ArgumentNullException.ThrowIfNull(timeProvider);
+        (_tier, _timeProvider, _keyRotationCheckInterval, _newContractRefreshInterval) =
+            ResolveSharedState(options, timeProvider);
 
-        _timeProvider = timeProvider;
-        _keyRotationCheckInterval = options.Value is RotatingKeySourceOptions rotating
-            ? rotating.KeyRotationCheckInterval
-            : null;
-
-        _tier = ResolveTier(options.Value);
-        _newContractRefreshInterval = options.Value is KeySourceOptions keySource
-            ? keySource.RefreshInterval
-            : null;
+        if (_tier != NewContractTier.Legacy)
+        {
+            throw new NotSupportedException(
+                $"{GetType().Name} derives its options from {nameof(KeySetOptions)}/{nameof(KeySourceOptions)} " +
+                "(the ADR 0015 contract) but was constructed with the two-argument JwtSigningService " +
+                "constructor. Use the four-argument overload instead, which also supplies the " +
+                $"{nameof(ISigningKeyRetirementWindowProvider)} and {nameof(ISanitizingLogger<JwtSigningService<TOptions>>)} " +
+                "the new contract's kill-by-omission and JWKS-inclusion logic needs — constructing this " +
+                "class via the two-argument overload would otherwise silently degrade the ADR 0015 §6 " +
+                "within-window-vanish Warning (a signal that MUST NOT be downgraded) by defaulting the " +
+                "retirement window to TimeSpan.Zero and dropping the logger.");
+        }
     }
 
     /// <summary>
@@ -104,11 +117,12 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
         TimeProvider timeProvider,
         ISigningKeyRetirementWindowProvider retirementWindowProvider,
         ISanitizingLogger<JwtSigningService<TOptions>> logger)
-        : this(options, timeProvider)
     {
         ArgumentNullException.ThrowIfNull(retirementWindowProvider);
         ArgumentNullException.ThrowIfNull(logger);
 
+        (_tier, _timeProvider, _keyRotationCheckInterval, _newContractRefreshInterval) =
+            ResolveSharedState(options, timeProvider);
         _retirementWindowProvider = retirementWindowProvider;
         _newContractLogger = logger;
     }
@@ -674,6 +688,33 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
         KeySetOptions => NewContractTier.KeySet,
         _ => NewContractTier.Legacy,
     };
+
+    /// <summary>
+    /// Computes the state shared by both constructors — tier resolution, the time provider, and
+    /// the ADR 0011 rotation-interval fields — without touching the ADR 0015
+    /// retirement-window-provider/logger fields, which only the four-argument constructor sets.
+    /// Returned rather than assigned directly, because C# forbids assigning a <see langword="readonly"/>
+    /// field from anything other than a constructor body. Deliberately does not itself decide
+    /// whether the resolved tier is legal for the calling constructor; each constructor makes that
+    /// call so the two-argument overload can fail fast for a new-contract <c>TOptions</c> while the
+    /// four-argument overload accepts it.
+    /// </summary>
+    private static (NewContractTier Tier, TimeProvider TimeProvider, TimeSpan? KeyRotationCheckInterval, TimeSpan? NewContractRefreshInterval)
+        ResolveSharedState(IOptions<TOptions> options, TimeProvider timeProvider)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(timeProvider);
+
+        TimeSpan? keyRotationCheckInterval = options.Value is RotatingKeySourceOptions rotating
+            ? rotating.KeyRotationCheckInterval
+            : null;
+
+        TimeSpan? newContractRefreshInterval = options.Value is KeySourceOptions keySource
+            ? keySource.RefreshInterval
+            : null;
+
+        return (ResolveTier(options.Value), timeProvider, keyRotationCheckInterval, newContractRefreshInterval);
+    }
 
     /// <summary>
     /// The immutable snapshot of public key data the ADR 0015 contract computes active-key

@@ -125,23 +125,6 @@ public sealed class JwtSigningServiceNewContractTests
             _signerFactory = signerFactory;
         }
 
-        /// <summary>
-        /// Uses the base class's two-argument constructor (no retirement-window provider, no
-        /// logger) — exercises the base class's null-conditional fallbacks (retirement window
-        /// defaults to <see cref="TimeSpan.Zero"/>; a within-window-vanish Warning is silently
-        /// skipped rather than thrown) for a provider that supplies neither.
-        /// </summary>
-        public KeySourceFakeService(
-            IOptions<FakeKeySourceOptions> options,
-            TimeProvider timeProvider,
-            Func<IReadOnlyList<KeyListing>> listFactory,
-            Func<KeyId, ISigner> signerFactory)
-            : base(options, timeProvider)
-        {
-            _listFactory = listFactory;
-            _signerFactory = signerFactory;
-        }
-
         protected override ValueTask<IReadOnlyList<KeyListing>> ListKeysAsync(CancellationToken cancellationToken)
         {
             ListKeysAsyncCallCount++;
@@ -620,36 +603,64 @@ public sealed class JwtSigningServiceNewContractTests
             .WithMessage("*no_active_key*");
     }
 
-    // ── No retirement-window provider / no logger supplied (base class's two-argument ctor) ────────
+    // ── Two-argument constructor rejects the ADR 0015 contract ─────────────────────────────────────
+
+    /// <summary>
+    /// A <see cref="KeySourceOptions"/> provider that (incorrectly) uses only the base class's
+    /// two-argument constructor, omitting the retirement-window provider and logger the ADR 0015
+    /// contract requires. Used solely to prove that constructing this class throws immediately,
+    /// rather than silently defaulting the retirement window to <see cref="TimeSpan.Zero"/> and
+    /// dropping the ADR 0015 §6 within-window-vanish Warning.
+    /// </summary>
+    private sealed class MisconfiguredKeySourceService(IOptions<FakeKeySourceOptions> options, TimeProvider timeProvider)
+        : JwtSigningService<FakeKeySourceOptions>(options, timeProvider)
+    {
+        protected override ValueTask<IReadOnlyList<KeyListing>> ListKeysAsync(CancellationToken cancellationToken)
+            => new(Array.Empty<KeyListing>());
+
+        protected override ValueTask<ISigner> CreateSignerAsync(KeyId id, CancellationToken cancellationToken)
+            => throw new NotSupportedException();
+    }
+
+    /// <summary>
+    /// A <see cref="KeySetOptions"/> provider that (incorrectly) uses only the base class's
+    /// two-argument constructor. See <see cref="MisconfiguredKeySourceService"/>.
+    /// </summary>
+    private sealed class MisconfiguredKeySetService(IOptions<FakeKeySetOptions> options, TimeProvider timeProvider)
+        : JwtSigningService<FakeKeySetOptions>(options, timeProvider)
+    {
+        protected override ValueTask<IReadOnlyList<KeyListing>> ListKeysAsync(CancellationToken cancellationToken)
+            => new(Array.Empty<KeyListing>());
+
+        protected override ValueTask<ISigner> CreateSignerAsync(KeyId id, CancellationToken cancellationToken)
+            => throw new NotSupportedException();
+    }
 
     [Fact]
-    public async Task KeySource_provider_without_a_retirement_window_provider_or_logger_still_functions_and_never_throws_on_vanish()
+    public void Constructing_a_KeySourceOptions_provider_via_the_two_argument_constructor_throws()
     {
-        using var rsaOld = RSA.Create(2048);
-        using var rsaNew = RSA.Create(2048);
-        var timeProvider = new FakeTimeProvider(Epoch);
-        var vanish = false;
-
-        // "old" here is never superseded by anything with a distinct ActivatesAt before it vanishes,
-        // so its RotationEntry.RetiredAt stays null — exercising the "never legitimately retired"
-        // arm of the within-window disambiguation, in addition to the missing-provider/-logger path.
         var options = Options.Create(new FakeKeySourceOptions { RefreshInterval = TimeSpan.FromMinutes(5) });
-        await using var sut = new KeySourceFakeService(
-            options,
-            timeProvider,
-            () => vanish
-                ? [MakeRsaListing(rsaNew, "new", activateAt: null, expiresAt: Epoch.AddYears(1))]
-                : [MakeRsaListing(rsaOld, "old", activateAt: null, expiresAt: Epoch.AddYears(1))],
-            _ => new FakeSigner());
-        var ct = TestContext.Current.CancellationToken;
+        var timeProvider = new FakeTimeProvider(Epoch);
 
-        await sut.GetSigningKeysAsync(ct);
-        vanish = true;
-        timeProvider.Advance(TimeSpan.FromMinutes(6));
+        var act = () => new MisconfiguredKeySourceService(options, timeProvider);
 
-        var act = () => sut.GetSigningKeysAsync(ct).AsTask();
+        act.Should().Throw<NotSupportedException>(
+            "a KeySourceOptions provider must go through the four-argument constructor so the ADR 0015 " +
+            "§6 within-window-vanish Warning is never silently degraded by a missing retirement-window " +
+            "provider/logger");
+    }
 
-        await act.Should().NotThrowAsync("a missing retirement-window provider/logger must not break the kill-by-omission path");
+    [Fact]
+    public void Constructing_a_KeySetOptions_provider_via_the_two_argument_constructor_throws()
+    {
+        var options = Options.Create(new FakeKeySetOptions());
+        var timeProvider = new FakeTimeProvider(Epoch);
+
+        var act = () => new MisconfiguredKeySetService(options, timeProvider);
+
+        act.Should().Throw<NotSupportedException>(
+            "a KeySetOptions provider must go through the four-argument constructor for the same reason " +
+            "as a KeySourceOptions provider");
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────────────────────────
