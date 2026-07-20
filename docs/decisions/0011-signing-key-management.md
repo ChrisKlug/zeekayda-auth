@@ -548,6 +548,16 @@ configuration the server already owns.
 
 #### 3.4 A three-tier options hierarchy (amended, issue #409)
 
+> **⚠️ Superseded by [ADR 0015](./0015-signing-provider-set-source-tiers.md) (issue #418).** The
+> three-tier hierarchy below (`StaticKeySourceOptions` / `RotatingKeySourceOptions` cut on "does the
+> source reload?", with a shared `KeyRotationCheckInterval`) was **reversed**: it forced two
+> genuinely different models — a fixed set known at config time vs. a re-read remote source — under
+> one poll property that meant two different things, which could only be documented with per-provider
+> caveats. ADR 0015 re-cuts the split on acquisition + activation-driver (`KeySetOptions` vs.
+> `KeySourceOptions`) and reshapes the provider contract from returning live key objects to returning
+> public data. **Do not reattempt the #409 unification without reading ADR 0015's reversal rationale
+> first.** The §3.4/§3.5 text below is retained as the historical record of the superseded design.
+
 > **Supersedes the single-property design below the historical description.** The original
 > `KeySourceRefreshInterval`-on-`JwtSigningServiceOptions` design (kept further down for context)
 > is replaced by a three-tier hierarchy that separates *load-once* sources, *rotating* sources,
@@ -656,6 +666,13 @@ enforced by validation (§3.5) rather than by refusing to separate the propertie
 </details>
 
 #### 3.5 Rotation for external providers — read-only, durable-timestamp-derived, with anomaly surfacing
+
+> **⚠️ Superseded by [ADR 0015](./0015-signing-provider-set-source-tiers.md) (issue #418)** for the
+> provider *contract* and the tier split. The rotation *model* (durable-timestamp-derived,
+> publish-then-activate, anomaly surfacing) carries over, but providers now return public `KeyListing`
+> data via `ListKeysAsync` and lend an `ISigner` via `CreateSignerAsync` rather than returning a live
+> `SigningKeySet`; the `HasKeySetChangedAsync` ask, `SigningKeyActivationDelay`, and
+> `AssumedJwksPropagationDelay` are removed. See ADR 0015. Text below is the historical record.
 
 For provider-owned rotation (KMS, database, OS certificate store), ZeeKayDa reads the trusted set
 via `LoadKeysAsync` and surfaces anomalies rather than driving rotation.
@@ -1435,6 +1452,7 @@ alternatives sections above.
   implement the hook).
 - **2026-07-19 — issue #355** — `SigningKeySet` construction reshaped from a single positional `IReadOnlyList<SigningKeyPair>` (first entry = active by unenforced convention) to a named `SigningKeySet(SigningKeyPair activeKey, IEnumerable<SigningKeyPair>? additionalKeys = null)`, so the active signing key can no longer be selected by list order and an out-of-order custom provider can no longer silently sign with a retired/not-yet-active key (§3.2, structural tier-1 fix). `ActiveKey` now derives from the named parameter rather than `Keys[0]`; the empty-set `ArgumentException` disappears (emptiness is unrepresentable); `Keys`/JWKS ordering and the hot-path zero-alloc reuse are unchanged. Second bucket named `additionalKeys` — lifecycle-neutral (covers both pre-published/future and within-retirement-window keys), not `retired`; two buckets, no new third list. Duplicate-`kid` validation stays at the base-class load path (§4.3), not the constructor.
 - **2026-07-20 — issue #409 (design only, no implementation in this PR)** — §3.4/§3.5 amended: the overloaded `KeySourceRefreshInterval` (`TimeSpan?` on `JwtSigningServiceOptions`) is replaced by a three-tier options hierarchy — `JwtSigningServiceOptions` (base, no rotation property), `StaticKeySourceOptions` (load-once-forever, used only by `DevelopmentSigningKeyOptions`, replacing the `null`-sentinel), and `RotatingKeySourceOptions` (used by File, PFX, Windows Certificate Store, *and* Azure Key Vault cached/remote — not Key-Vault-only as the old single-property design implied), carrying the renamed **`KeyRotationCheckInterval`**. Two new properties split out the roles the old property overloaded: **`SigningKeyActivationDelay`** (Key-Vault-only, on `AzureKeyVaultCachedSigningOptions`/`AzureKeyVaultRemoteSigningOptions`, invariant `>= KeyRotationCheckInterval` enforced in a shared validator helper *and* inside `KeyVaultSigningKeyRotation.BuildActivationTimeline`) and **`AssumedJwksPropagationDelay`** (File/cert-store-only, feeding `HasTooSoonPendingActivation`); both default to `KeyRotationCheckInterval` when unset, preserving today's runtime behaviour exactly. A source/signer abstraction split (analogous to ADR 0008's `Stores/`) was considered and rejected — see Rejected Alternatives. Naming/regrouping only; no behaviour change. Property renames, validators, and the docs-site extensibility page (three-tier model, Azure Key Vault worked example) are follow-up implementation work, tracked separately from this ADR amendment.
+- **2026-07-20 — issue #418 — §3.2 (partial) / §3.3(c) / §3.4 / §3.5 superseded by [ADR 0015](./0015-signing-provider-set-source-tiers.md).** The #409 unified `RotatingKeySourceOptions` split (§3.4/§3.5) is **reversed**: it fused two different models (a fixed set known at config time vs. a re-read remote source) under one `KeyRotationCheckInterval`. ADR 0015 re-cuts the split on acquisition + activation-driver (`KeySetOptions` / `KeySourceOptions`), reshapes the provider contract from returning a live `SigningKeySet` of disposable key objects to `ListKeysAsync` (public `KeyListing` data) + `CreateSignerAsync` (lends an `ISigner`), removes the reuse-guards / `HasKeySetChangedAsync` / `SigningKeyActivationDelay` / `AssumedJwksPropagationDelay` / `Enabled` concept, and relaxes §3.3(c)'s retired-private-key destruction timing (non-active material is never loaded at all). Full reversal rationale and the security sign-off it still requires live in ADR 0015; the superseded sections here are retained as the historical record.
 
 ---
 
