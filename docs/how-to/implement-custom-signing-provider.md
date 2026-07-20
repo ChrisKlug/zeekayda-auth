@@ -49,7 +49,7 @@ public abstract class StaticKeySourceOptions : JwtSigningServiceOptions
 
 public abstract class RotatingKeySourceOptions : JwtSigningServiceOptions
 {
-    public TimeSpan KeyRotationCheckInterval { get; set; } = TimeSpan.FromMinutes(5);
+    public TimeSpan KeyRotationCheckInterval { get; set; } = TimeSpan.FromHours(1);
 }
 ```
 
@@ -112,7 +112,7 @@ public sealed class AcmeSecretsSigningOptions : RotatingKeySourceOptions
 ```
 
 `KeyRotationCheckInterval` is inherited — you did not write it, and you do not need to remember to
-default it, because `RotatingKeySourceOptions` already defaults it to five minutes. Your service
+default it, because `RotatingKeySourceOptions` already defaults it to 1 hour. Your service
 implementation only needs to provide `LoadKeysAsync`:
 
 ```csharp

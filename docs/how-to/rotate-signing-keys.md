@@ -91,10 +91,17 @@ ZeeKayDa.Auth's providers avoid this by requiring a new key to be **published** 
 `GetSigningKeysAsync()` results, and so in the JWKS — for some lead time **before** it is
 promoted to active signer. That lead time is `SigningKeyActivationDelay` on the Azure Key Vault
 options types, or `AssumedJwksPropagationDelay` on the Windows Certificate Store and file-based
-PEM/PFX options types — both default to `KeyRotationCheckInterval` when left unset. Set it to
-something at least as long as your relying parties' JWKS cache TTL, and a relying party that polls
-the JWKS at that interval will always have observed a new key before the first token is signed
-with it.
+PEM/PFX options types — both default to `KeyRotationCheckInterval` when left unset, which
+defaults to **1 hour**. Set it to something at least as long as your relying parties' JWKS cache
+TTL, and a relying party that polls the JWKS at that interval will always have observed a new key
+before the first token is signed with it.
+
+> ⚠️ **Warning:** The 1-hour default is a reasonable starting point, not a guarantee for every
+> relying party. It comfortably clears ASP.NET Core's own JWKS-cache reactive refetch behavior,
+> but a relying party with a longer fixed JWKS-cache TTL and no retry-on-miss logic is still
+> exposed regardless of this default. Verify it against your actual relying parties' cache TTLs,
+> and if you cannot, keep a published standby key on hand — see
+> [Emergency key rotation](#emergency-key-rotation) below.
 
 > ⚠️ **Warning:** For the certificate-backed providers (Windows Certificate Store, file-based
 > PEM/PFX), `AssumedJwksPropagationDelay` is not itself enforced against a rotated-in
@@ -210,13 +217,16 @@ builder.Services
         algorithm: SigningAlgorithm.RS256,
         configure: options =>
         {
-            options.KeyRotationCheckInterval = TimeSpan.FromMinutes(10);
+            // 1 hour matches the built-in default shown here for clarity. Before copying this
+            // value as-is, verify it exceeds your actual relying parties' JWKS-cache TTL — this
+            // default is a reasonable starting point, not a guarantee for every relying party.
+            options.KeyRotationCheckInterval = TimeSpan.FromHours(1);
         });
 ```
 
 During rotation, with the new certificate registered alongside the old one — deploy this and
 restart once the new file exists with its `NotBefore` set at least `AssumedJwksPropagationDelay`
-(10 minutes here, since it defaults to `KeyRotationCheckInterval`) in the future:
+(1 hour here, since it defaults to `KeyRotationCheckInterval`) in the future:
 
 ```csharp
 builder.Services
@@ -229,7 +239,7 @@ builder.Services
         algorithm: SigningAlgorithm.RS256,
         configure: options =>
         {
-            options.KeyRotationCheckInterval = TimeSpan.FromMinutes(10);
+            options.KeyRotationCheckInterval = TimeSpan.FromHours(1);
             options.AddFile("/etc/zeekayda/signing/rotated-in.pem");
         });
 ```
@@ -248,7 +258,7 @@ builder.Services
         algorithm: SigningAlgorithm.RS256,
         configure: options =>
         {
-            options.KeyRotationCheckInterval = TimeSpan.FromMinutes(10);
+            options.KeyRotationCheckInterval = TimeSpan.FromHours(1);
         });
 ```
 
@@ -256,6 +266,34 @@ The Windows Certificate Store provider follows the identical pattern with `optio
 in place of `options.AddFile(path)` — see
 [Configure Windows Certificate Store signing](configure-windows-certificate-store-signing.md) for
 the full registration call.
+
+---
+
+## Emergency key rotation
+
+The procedures above assume you can plan ahead — you know a rotation is coming and can give a
+new key the full publish-then-activate lead time before it needs to sign anything. A suspected
+key compromise doesn't afford you that luxury, so the emergency path is different in two ways.
+
+- **Keep a published standby key.** The fastest way to supersede an active key is to already
+  have a second, unused key sitting in the trusted set (published in the JWKS, past its own
+  activation delay, but not yet the active signer). Promoting a pre-published standby to active
+  is immediate — there's no publish-then-activate wait, because it was published long ago. If you
+  only ever register one key at a time, an emergency rotation has to generate a brand-new key and
+  then wait out its full activation delay before it can safely take over, which is exactly the
+  window an emergency response is trying to avoid. This is also the recommended mitigation for
+  relying parties with a long, fixed JWKS-cache TTL and no retry-on-miss logic — see the warning
+  above — since no `KeyRotationCheckInterval` value can fully compensate for that case.
+- **Disabling a compromised key in the store takes effect immediately; detection of that change
+  does not.** Disabling or deleting a Key Vault key/certificate version, or removing a
+  certificate from the Windows Certificate Store, is instant from the store's point of view. But
+  ZeeKayDa.Auth only notices on its next `KeyRotationCheckInterval` poll, and that poll is
+  **traffic-gated** — it happens lazily, on the next call into the signing service, not on a
+  background timer that fires on a schedule regardless of traffic. On a quiet deployment, the
+  next poll could be well after one interval has nominally elapsed. The reliable emergency lever
+  is not "disable it and wait": it's **disable it in the store, then restart or redeploy the
+  process.** A restart forces an immediate cold `LoadKeysAsync`, which picks up the disabled key
+  immediately regardless of the configured `KeyRotationCheckInterval` value.
 
 ---
 

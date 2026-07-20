@@ -216,7 +216,7 @@ public abstract class StaticKeySourceOptions : JwtSigningServiceOptions
 
 public abstract class RotatingKeySourceOptions : JwtSigningServiceOptions
 {
-    public TimeSpan KeyRotationCheckInterval { get; set; } = TimeSpan.FromMinutes(5);
+    public TimeSpan KeyRotationCheckInterval { get; set; } = TimeSpan.FromHours(1);
 }
 ```
 
@@ -250,8 +250,10 @@ express, since a `StaticKeySourceOptions` provider structurally has no such prop
 > Windows Certificate Store options types. Both default to `KeyRotationCheckInterval` when left
 > unset, and the library enforces that neither can be configured shorter than
 > `KeyRotationCheckInterval` — a newly-published key must not be able to activate before the
-> process would even poll and notice it exists. This nuance is covered in full, with concrete
-> values, in each provider's how-to guide (see
+> process would even poll and notice it exists. `KeyRotationCheckInterval` defaults to **1
+> hour** — a reasonable starting point for common relying-party stacks, not a guarantee for
+> every relying party; verify it against your own relying parties' JWKS-cache TTL. This nuance
+> is covered in full, with concrete values, in each provider's how-to guide (see
 > [Rotate signing keys](../how-to/rotate-signing-keys.md)).
 
 ---

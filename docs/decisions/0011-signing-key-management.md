@@ -606,6 +606,29 @@ re-evaluation for File/PFX/cert-store providers remains load-bearing — there i
 (Key-Vault-only) and `AssumedJwksPropagationDelay` (File/cert-store-only) — are specified in
 §3.5, since both replace roles the single `KeySourceRefreshInterval` property used to overload.
 
+**Amendment (issue #407): default raised 5 minutes → 1 hour.** `KeyRotationCheckInterval`'s
+default (carried over unchanged from `KeySourceRefreshInterval` by the #409 rename above) was
+5 minutes, which — in its publish-then-activate lead-time role (§3.5) — sits well inside the
+range the library's own Key Vault option validators already treat as near-certain
+misconfiguration for a relying party's real-world JWKS-cache TTL. Architect and security review
+converged on raising the default to **1 hour**: it clears ASP.NET Core's
+`Microsoft.IdentityModel` `ConfigurationManager`'s 5-minute reactive refetch-on-unknown-`kid`
+cooldown many times over (so the dominant managed relying-party stack self-heals well inside the
+new interval), while keeping the poll-gated safety behaviors this same property also drives —
+emergency key-disablement detection, the vanished-`kid` anomaly check, and certificate-expiry
+warnings — reasonably responsive. A relying party with a longer fixed JWKS-cache TTL and no
+retry-on-miss logic is still exposed regardless of the default chosen here; the recommended
+mitigation is an operator-maintained published standby key, not a longer default, and the
+existing Key Vault validators' 1-minute floor and its "this is a floor, not a guarantee of
+safety" caveat are unchanged by this amendment. The widened window between an operator disabling
+a compromised key in the store and this library ceasing to sign with/publish it (bounded by
+`KeyRotationCheckInterval`, traffic-gated) grows from 5 minutes to 1 hour; restart forces an
+immediate cold `LoadKeysAsync` and is unaffected by this default, remaining the correct emergency
+runbook regardless of the configured interval. Applies to all `RotatingKeySourceOptions`
+consumers uniformly — File, PFX, Windows Certificate Store, and Azure Key Vault (cached and
+remote) — not only Key Vault, so rotation pickup, the vanished-`kid` check, and certificate-expiry
+warnings for the File/PFX/cert-store providers also now run on a 1-hour cadence by default.
+
 **Extensibility documentation requirement.** Every new/renamed property on these three tiers
 requires XML doc coverage. A dedicated docs-site page is also required, walking a third-party
 implementor through the three-tier model with Azure Key Vault as the worked example of "how to
@@ -1435,6 +1458,7 @@ alternatives sections above.
   implement the hook).
 - **2026-07-19 — issue #355** — `SigningKeySet` construction reshaped from a single positional `IReadOnlyList<SigningKeyPair>` (first entry = active by unenforced convention) to a named `SigningKeySet(SigningKeyPair activeKey, IEnumerable<SigningKeyPair>? additionalKeys = null)`, so the active signing key can no longer be selected by list order and an out-of-order custom provider can no longer silently sign with a retired/not-yet-active key (§3.2, structural tier-1 fix). `ActiveKey` now derives from the named parameter rather than `Keys[0]`; the empty-set `ArgumentException` disappears (emptiness is unrepresentable); `Keys`/JWKS ordering and the hot-path zero-alloc reuse are unchanged. Second bucket named `additionalKeys` — lifecycle-neutral (covers both pre-published/future and within-retirement-window keys), not `retired`; two buckets, no new third list. Duplicate-`kid` validation stays at the base-class load path (§4.3), not the constructor.
 - **2026-07-20 — issue #409 (design only, no implementation in this PR)** — §3.4/§3.5 amended: the overloaded `KeySourceRefreshInterval` (`TimeSpan?` on `JwtSigningServiceOptions`) is replaced by a three-tier options hierarchy — `JwtSigningServiceOptions` (base, no rotation property), `StaticKeySourceOptions` (load-once-forever, used only by `DevelopmentSigningKeyOptions`, replacing the `null`-sentinel), and `RotatingKeySourceOptions` (used by File, PFX, Windows Certificate Store, *and* Azure Key Vault cached/remote — not Key-Vault-only as the old single-property design implied), carrying the renamed **`KeyRotationCheckInterval`**. Two new properties split out the roles the old property overloaded: **`SigningKeyActivationDelay`** (Key-Vault-only, on `AzureKeyVaultCachedSigningOptions`/`AzureKeyVaultRemoteSigningOptions`, invariant `>= KeyRotationCheckInterval` enforced in a shared validator helper *and* inside `KeyVaultSigningKeyRotation.BuildActivationTimeline`) and **`AssumedJwksPropagationDelay`** (File/cert-store-only, feeding `HasTooSoonPendingActivation`); both default to `KeyRotationCheckInterval` when unset, preserving today's runtime behaviour exactly. A source/signer abstraction split (analogous to ADR 0008's `Stores/`) was considered and rejected — see Rejected Alternatives. Naming/regrouping only; no behaviour change. Property renames, validators, and the docs-site extensibility page (three-tier model, Azure Key Vault worked example) are follow-up implementation work, tracked separately from this ADR amendment.
+- **2026-07-20 — issue #407** — §3.4 amended: `RotatingKeySourceOptions.KeyRotationCheckInterval`'s default raised **5 minutes → 1 hour**, ratified by architect + security review (see §3.4's amendment prose for the full reasoning) and confirmed by @ChrisKlug. Applies uniformly to all four rotating providers, not Key-Vault-only. `SigningKeyActivationDelay` and `AssumedJwksPropagationDelay` are unaffected in mechanism — both still default to `KeyRotationCheckInterval` when unset — but now inherit the 1-hour value by that same default-propagation rule. The Key Vault validators' 1-minute floor is unchanged. Worked examples in the how-to docs updated to stop showing 5–10 minute values as copy-paste-safe production defaults.
 
 ---
 
