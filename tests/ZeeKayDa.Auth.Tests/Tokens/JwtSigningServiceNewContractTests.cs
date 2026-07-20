@@ -50,6 +50,30 @@ public sealed class JwtSigningServiceNewContractTests
     }
 
     /// <summary>
+    /// An <see cref="ISigner"/> test double whose <see cref="SignAsync"/> blocks until
+    /// <paramref name="release"/> completes, signalling <see cref="Entered"/> first so a test can
+    /// deterministically know the call is in flight before proceeding.
+    /// </summary>
+    private sealed class GatedSigner(TaskCompletionSource release) : ISigner
+    {
+        private readonly TaskCompletionSource _entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public int DisposeCount { get; private set; }
+
+        public Task Entered => _entered.Task;
+
+        public async ValueTask<ReadOnlyMemory<byte>> SignAsync(
+            ReadOnlyMemory<byte> signingInput, CancellationToken cancellationToken = default)
+        {
+            _entered.TrySetResult();
+            await release.Task.ConfigureAwait(false);
+            return new byte[] { 1, 2, 3, 4 };
+        }
+
+        public void Dispose() => DisposeCount++;
+    }
+
+    /// <summary>
     /// Captures every log call so tests can assert on the ADR 0015 §6 within-window-vanish
     /// <see cref="LogLevel.Warning"/> without depending on the real sanitizing wrapper.
     /// </summary>
@@ -343,6 +367,48 @@ public sealed class JwtSigningServiceNewContractTests
         signersById["k1"].DisposeCount.Should().Be(1, "k1's signer must be superseded and disposed once k2 becomes active");
     }
 
+    [Fact]
+    public async Task Superseded_KeySource_signer_disposal_is_deferred_until_its_in_flight_SignAsync_call_completes()
+    {
+        using var rsa1 = RSA.Create(2048);
+        using var rsa2 = RSA.Create(2048);
+        var timeProvider = new FakeTimeProvider(Epoch);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        GatedSigner? gatedSigner = null;
+        var afterRefresh = false;
+
+        await using var sut = BuildKeySourceService(
+            timeProvider,
+            () => afterRefresh
+                ? [MakeRsaListing(rsa1, "k1", activateAt: null, expiresAt: Epoch.AddYears(1)),
+                   MakeRsaListing(rsa2, "k2", activateAt: Epoch, expiresAt: Epoch.AddYears(1))]
+                : [MakeRsaListing(rsa1, "k1", activateAt: null, expiresAt: Epoch.AddYears(1))],
+            signerFactory: id => id.Value == "k1"
+                ? gatedSigner = new GatedSigner(release)
+                : new FakeSigner(),
+            refreshInterval: TimeSpan.FromMinutes(5));
+        var ct = TestContext.Current.CancellationToken;
+
+        // Start a SignAsync call against k1 and let it block inside GatedSigner.SignAsync — the
+        // in-flight call the SignerHandle refcounting exists to protect.
+        var inFlight = sut.SignAsync(new byte[] { 0 }, ct).AsTask();
+        await gatedSigner!.Entered.WaitAsync(ct);
+
+        // While that call is still in flight, trigger a refresh that swaps the active key to k2.
+        afterRefresh = true;
+        timeProvider.Advance(TimeSpan.FromMinutes(6));
+        await sut.SignAsync(new byte[] { 0 }, ct);
+
+        gatedSigner.DisposeCount.Should().Be(
+            0, "k1's signer must not be disposed while its SignAsync call is still in flight, even after the handoff to k2");
+
+        release.SetResult();
+        await inFlight;
+
+        gatedSigner.DisposeCount.Should().Be(
+            1, "k1's signer must be disposed only once its in-flight SignAsync call has completed and returned its borrow");
+    }
+
     // ── Kill-by-omission: three-state disambiguation ────────────────────────────────────────────────
 
     [Fact]
@@ -354,6 +420,7 @@ public sealed class JwtSigningServiceNewContractTests
         var retirementWindow = TimeSpan.FromHours(1);
         var logger = new CapturingLogger<JwtSigningService<FakeKeySourceOptions>>();
         var vanish = false;
+        var oldKid = JwkThumbprint.Compute(rsaOld.ExportParameters(false));
 
         await using var sut = BuildKeySourceService(
             timeProvider,
@@ -366,13 +433,17 @@ public sealed class JwtSigningServiceNewContractTests
             logger: logger);
         var ct = TestContext.Current.CancellationToken;
 
-        await sut.GetSigningKeysAsync(ct);
+        var before = await sut.GetSigningKeysAsync(ct);
+        before.Should().Contain(k => k.Kid == oldKid, "the old key must still be listed before it vanishes");
+
         vanish = true;
         timeProvider.Advance(TimeSpan.FromMinutes(6)); // well within the 1-hour retirement window
-        await sut.GetSigningKeysAsync(ct);
+        var after = await sut.GetSigningKeysAsync(ct);
 
         logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Warning && e.Message.Contains("old"),
             "an early/within-window vanish must be logged at Warning per ADR 0015 §6");
+        after.Should().NotContain(k => k.Kid == oldKid,
+            "the vanished key must actually be dropped from the JWKS listing, not merely warned about");
     }
 
     [Fact]
@@ -497,6 +568,38 @@ public sealed class JwtSigningServiceNewContractTests
             .Should().ThrowAsync<ArgumentException>("SigningKeyDescriptor's constructor rejects an EC algorithm paired with RSA parameters");
 
         sut.CreateSignerAsyncCalledFor.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task KeySource_refresh_returning_duplicate_kid_throws_before_any_CreateSignerAsync_call()
+    {
+        using var rsa = RSA.Create(2048);
+        var timeProvider = new FakeTimeProvider(Epoch);
+        var afterRefresh = false;
+
+        await using var sut = BuildKeySourceService(
+            timeProvider,
+            () => afterRefresh
+                ? [MakeRsaListing(rsa, "provider-id-1", activateAt: null, expiresAt: Epoch.AddYears(1)),
+                   MakeRsaListing(rsa, "provider-id-2", activateAt: null, expiresAt: Epoch.AddYears(1))]
+                : [MakeRsaListing(rsa, "provider-id-1", activateAt: null, expiresAt: Epoch.AddYears(1))],
+            refreshInterval: TimeSpan.FromMinutes(5));
+        var ct = TestContext.Current.CancellationToken;
+
+        // First refresh is a valid, single-key listing.
+        await sut.GetSigningKeysAsync(ct);
+
+        // Second refresh (not the first ListKeysAsync call) returns a listing whose two entries
+        // derive the same kid from the same public key — this must still be rejected.
+        afterRefresh = true;
+        timeProvider.Advance(TimeSpan.FromMinutes(6));
+
+        await sut.Awaiting(s => s.GetSigningKeysAsync(ct).AsTask())
+            .Should().ThrowAsync<ZeeKayDaConfigurationException>()
+            .WithMessage("*duplicate_kid*");
+
+        sut.CreateSignerAsyncCalledFor.Should().BeEmpty(
+            "validation must fail on the bad refresh before any signer is ever requested for that listing");
     }
 
     // ── ISigner/CreateSignerAsync wiring ────────────────────────────────────────────────────────────

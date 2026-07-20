@@ -27,9 +27,14 @@ public abstract class KeySetOptions : JwtSigningServiceOptions
     /// </summary>
     /// <remarks>
     /// Advisory on this tier: the operator owns activation timing (via each key's <c>ActivateAt</c>
-    /// in the provider's own configuration), and the base class only surfaces a startup-adjacent
-    /// warning (<see cref="SigningKeyRotation.HasTooSoonPendingActivation"/>) when a key's
-    /// <c>ActivateAt</c> is nearer than this. Replaces ADR 0011's <c>AssumedJwksPropagationDelay</c>.
+    /// in the provider's own configuration). Per ADR 0015 §1, this is the operator-facing lead time a
+    /// key's public half must already be published in the JWKS before its <c>ActivateAt</c> — the
+    /// same concept <see cref="KeySourceOptions.PublicationLead"/> carries on Tier B, where the base
+    /// class derives <c>PublishAt</c> from it. On this tier it is currently advisory only:
+    /// <see cref="JwtSigningService{TOptions}"/> does not yet call
+    /// <see cref="SigningKeyRotation.HasTooSoonPendingActivation"/> or otherwise surface a
+    /// too-soon-pending-activation warning from it — that remains unimplemented follow-up work, not a
+    /// guarantee of this type. Replaces ADR 0011's <c>AssumedJwksPropagationDelay</c>.
     /// </remarks>
     public TimeSpan PublicationLead { get; set; } = TimeSpan.FromHours(1);
 }
