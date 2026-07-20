@@ -99,9 +99,11 @@ before the first token is signed with it.
 > ⚠️ **Warning:** The 1-hour default is a reasonable starting point, not a guarantee for every
 > relying party. It comfortably clears ASP.NET Core's own JWKS-cache reactive refetch behavior,
 > but a relying party with a longer fixed JWKS-cache TTL and no retry-on-miss logic is still
-> exposed regardless of this default. Verify it against your actual relying parties' cache TTLs,
-> and if you cannot, keep a published standby key on hand — see
-> [Emergency key rotation](#emergency-key-rotation) below.
+> exposed regardless of this default. Verify it against your actual relying parties' cache TTLs
+> and set `SigningKeyActivationDelay`/`AssumedJwksPropagationDelay` accordingly — there is no
+> mechanism (a "standby key" or otherwise) that lets you skip knowing that number. If you cannot
+> verify it, treat the residual exposure as accepted risk and bound its impact with a short
+> access-token lifetime.
 
 > ⚠️ **Warning:** For the certificate-backed providers (Windows Certificate Store, file-based
 > PEM/PFX), `AssumedJwksPropagationDelay` is not itself enforced against a rotated-in
@@ -271,29 +273,41 @@ the full registration call.
 
 ## Emergency key rotation
 
-The procedures above assume you can plan ahead — you know a rotation is coming and can give a
-new key the full publish-then-activate lead time before it needs to sign anything. A suspected
-key compromise doesn't afford you that luxury, so the emergency path is different in two ways.
+The procedures above assume you can plan ahead — a new key gets its full publish-then-activate
+lead time before it needs to sign anything. A suspected key compromise doesn't afford you that
+luxury. The emergency procedure is simpler than the planned one, precisely because it skips that
+lead time on purpose:
 
-- **Keep a published standby key.** The fastest way to supersede an active key is to already
-  have a second, unused key sitting in the trusted set (published in the JWKS, past its own
-  activation delay, but not yet the active signer). Promoting a pre-published standby to active
-  is immediate — there's no publish-then-activate wait, because it was published long ago. If you
-  only ever register one key at a time, an emergency rotation has to generate a brand-new key and
-  then wait out its full activation delay before it can safely take over, which is exactly the
-  window an emergency response is trying to avoid. This is also the recommended mitigation for
-  relying parties with a long, fixed JWKS-cache TTL and no retry-on-miss logic — see the warning
-  above — since no `KeyRotationCheckInterval` value can fully compensate for that case.
-- **Disabling a compromised key in the store takes effect immediately; detection of that change
-  does not.** Disabling or deleting a Key Vault key/certificate version, or removing a
-  certificate from the Windows Certificate Store, is instant from the store's point of view. But
-  ZeeKayDa.Auth only notices on its next `KeyRotationCheckInterval` poll, and that poll is
-  **traffic-gated** — it happens lazily, on the next call into the signing service, not on a
-  background timer that fires on a schedule regardless of traffic. On a quiet deployment, the
-  next poll could be well after one interval has nominally elapsed. The reliable emergency lever
-  is not "disable it and wait": it's **disable it in the store, then restart or redeploy the
-  process.** A restart forces an immediate cold `LoadKeysAsync`, which picks up the disabled key
-  immediately regardless of the configured `KeyRotationCheckInterval` value.
+**Remove the compromised key from configuration (don't just add a replacement alongside it), add
+the new key, and redeploy.** Do not leave the compromised key registered "disabled but present" —
+these providers have no enable/disable flag; a registered key with a past `NotBefore` is either
+the active signer or an ordinary retired key, never a suspended one. Removing it entirely and
+restarting forces an immediate cold `LoadKeysAsync`: the compromised key drops out of the trusted
+set and JWKS, and the new key — the sole registered key at that point — activates immediately
+under the single-key bootstrap exemption, regardless of its `NotBefore`. There is no way to
+"pre-stage" a standby key that sits published-but-inactive and is promoted on demand: activation
+is driven purely by `NotBefore`/`ActivatesAt` versus wall-clock time, so a key that has passed its
+own activation time either is already the active signer or has already been superseded — there is
+no third, held-in-reserve state.
+
+**What this does and does not fix, immediately after redeploy:**
+
+- **Refresh tokens are unaffected.** They're opaque, store-backed handles, not JWTs — validated
+  by a hashed lookup against the refresh token store, with no dependency on the signing key.
+  Nothing about a key rotation touches them.
+- **New access tokens are safe immediately** — they're signed with the new key from the moment
+  the redeploy completes.
+- **Already-issued access tokens signed by the compromised key are not immediately invalidated
+  everywhere.** Removing the key from your own JWKS stops relying parties from *newly* trusting
+  it, but it does nothing to a relying party that already cached the compromised key's public
+  material. That relying party keeps accepting tokens signed with it until *its own* JWKS cache
+  expires and it refetches — a timeline you don't control and generally can't force. In practice,
+  such a token remains acceptable to that relying party until it hits its own `exp`, exactly as if
+  no rotation had happened. **Rotating the signing key does not achieve instant, guaranteed
+  revocation of already-issued access tokens.** If your threat model requires that guarantee
+  regardless of relying-party caching behavior, it needs to be met with short access-token
+  lifetimes as the primary control (bounding the exposure window on its own) or a
+  revocation/introspection check — not signing-key rotation, which cannot deliver it alone.
 
 ---
 
