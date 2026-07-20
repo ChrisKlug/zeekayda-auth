@@ -119,13 +119,29 @@ internal static class SigningAlgorithms
     /// <param name="signingInput">The bytes to sign (base64url(header) + '.' + base64url(payload)).</param>
     /// <param name="privateKey">The private key to use for signing.</param>
     /// <returns>The raw signature bytes in the format required by the algorithm.</returns>
-    [ExcludeFromCodeCoverage(Justification = "Unreachable default arm — all SigningAlgorithm members are handled above.")]
     internal static ReadOnlyMemory<byte> Sign(
         SigningKeyDescriptor descriptor,
         byte[] signingInput,
         AsymmetricAlgorithm privateKey)
+        => Sign(descriptor.Algorithm, signingInput, privateKey);
+
+    /// <summary>
+    /// Produces the raw signature bytes for <paramref name="signingInput"/> using
+    /// <paramref name="algorithm"/> and <paramref name="privateKey"/> directly, without requiring a
+    /// <see cref="SigningKeyDescriptor"/>. Used by <see cref="LocalSigner"/> (ADR 0015 §2), which
+    /// signs over public <see cref="KeyListing"/> data rather than a descriptor.
+    /// </summary>
+    /// <param name="algorithm">The signing algorithm.</param>
+    /// <param name="signingInput">The bytes to sign (base64url(header) + '.' + base64url(payload)).</param>
+    /// <param name="privateKey">The private key to use for signing.</param>
+    /// <returns>The raw signature bytes in the format required by the algorithm.</returns>
+    [ExcludeFromCodeCoverage(Justification = "Unreachable default arm — all SigningAlgorithm members are handled above.")]
+    internal static ReadOnlyMemory<byte> Sign(
+        SigningAlgorithm algorithm,
+        byte[] signingInput,
+        AsymmetricAlgorithm privateKey)
     {
-        return descriptor.Algorithm switch
+        return algorithm switch
         {
             SigningAlgorithm.RS256 => SignRsa((RSA)privateKey, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1, signingInput),
             SigningAlgorithm.RS384 => SignRsa((RSA)privateKey, HashAlgorithmName.SHA384, RSASignaturePadding.Pkcs1, signingInput),
@@ -136,7 +152,7 @@ internal static class SigningAlgorithms
             SigningAlgorithm.ES256 => SignEc((ECDsa)privateKey, HashAlgorithmName.SHA256, signingInput),
             SigningAlgorithm.ES384 => SignEc((ECDsa)privateKey, HashAlgorithmName.SHA384, signingInput),
             SigningAlgorithm.ES512 => SignEc((ECDsa)privateKey, HashAlgorithmName.SHA512, signingInput),
-            _ => ThrowUnsupportedAlgorithm<ReadOnlyMemory<byte>>(descriptor.Algorithm),
+            _ => ThrowUnsupportedAlgorithm<ReadOnlyMemory<byte>>(algorithm),
         };
     }
 
