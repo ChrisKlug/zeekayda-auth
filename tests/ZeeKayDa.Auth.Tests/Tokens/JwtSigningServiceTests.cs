@@ -12,7 +12,34 @@ public sealed class JwtSigningServiceTests
 {
     // ── Fake implementation ───────────────────────────────────────────────────────────────────────
 
-    private sealed class FakeSigningServiceOptions : JwtSigningServiceOptions { }
+    private sealed class FakeSigningServiceOptions : RotatingKeySourceOptions { }
+
+    // Static-tier options counterpart, used only by BuildStaticService/StaticCountingSigningService
+    // below to exercise the "TOptions derives from StaticKeySourceOptions" mode that
+    // DevelopmentSigningKeyOptions uses (ADR 0011 §3.4, issue #409/#413). This type deliberately
+    // carries no rotation-cadence property at all — that is the point of the static tier.
+    private sealed class FakeStaticSigningServiceOptions : StaticKeySourceOptions { }
+
+    private sealed class StaticCountingSigningService : JwtSigningService<FakeStaticSigningServiceOptions>
+    {
+        private readonly Func<SigningKeySet> _factory;
+        public int LoadCount { get; private set; }
+
+        public StaticCountingSigningService(
+            IOptions<FakeStaticSigningServiceOptions> options,
+            TimeProvider timeProvider,
+            Func<SigningKeySet> factory)
+            : base(options, timeProvider)
+        {
+            _factory = factory;
+        }
+
+        protected override ValueTask<SigningKeySet> LoadKeysAsync(CancellationToken cancellationToken)
+        {
+            LoadCount++;
+            return ValueTask.FromResult(_factory());
+        }
+    }
 
     private sealed class CountingSigningService : JwtSigningService<FakeSigningServiceOptions>
     {
@@ -188,24 +215,25 @@ public sealed class JwtSigningServiceTests
         var tp = timeProvider ?? new FakeTimeProvider();
         var options = new FakeSigningServiceOptions
         {
-            KeySourceRefreshInterval = refreshInterval ?? TimeSpan.FromMinutes(5),
+            KeyRotationCheckInterval = refreshInterval ?? TimeSpan.FromMinutes(5),
         };
         var f = factory ?? (() => MakeRsaSet());
         return new CountingSigningService(Options.Create(options), tp, f);
     }
 
     /// <summary>
-    /// Builds a service in static-source mode (<see cref="JwtSigningServiceOptions.KeySourceRefreshInterval"/>
-    /// is <see langword="null"/>) — the mode <see cref="DevelopmentSigningKeyOptions"/> uses.
+    /// Builds a service in static-source mode (<c>TOptions</c> derives from
+    /// <see cref="StaticKeySourceOptions"/>) — the mode <see cref="DevelopmentSigningKeyOptions"/>
+    /// uses.
     /// </summary>
-    private static CountingSigningService BuildStaticService(
+    private static StaticCountingSigningService BuildStaticService(
         FakeTimeProvider? timeProvider = null,
         Func<SigningKeySet>? factory = null)
     {
         var tp = timeProvider ?? new FakeTimeProvider();
-        var options = new FakeSigningServiceOptions { KeySourceRefreshInterval = null };
+        var options = new FakeStaticSigningServiceOptions();
         var f = factory ?? (() => MakeRsaSet());
-        return new CountingSigningService(Options.Create(options), tp, f);
+        return new StaticCountingSigningService(Options.Create(options), tp, f);
     }
 
     // ── Constructor validation ────────────────────────────────────────────────────────────────────
@@ -322,7 +350,7 @@ public sealed class JwtSigningServiceTests
         // The very first BorrowSetAsync call has no previous set to compare against, so the "ask"
         // step must never be consulted — only LoadKeysAsync runs.
         var timeProvider = new FakeTimeProvider();
-        var options = Options.Create(new FakeSigningServiceOptions { KeySourceRefreshInterval = TimeSpan.FromMinutes(5) });
+        var options = Options.Create(new FakeSigningServiceOptions { KeyRotationCheckInterval = TimeSpan.FromMinutes(5) });
         await using var sut = new ControllableHasChangedSigningService(
             options,
             timeProvider,
@@ -342,7 +370,7 @@ public sealed class JwtSigningServiceTests
     {
         var timeProvider = new FakeTimeProvider();
         var set = MakeRsaSet("unchanged-kid");
-        var options = Options.Create(new FakeSigningServiceOptions { KeySourceRefreshInterval = TimeSpan.FromMinutes(5) });
+        var options = Options.Create(new FakeSigningServiceOptions { KeyRotationCheckInterval = TimeSpan.FromMinutes(5) });
         await using var sut = new ControllableHasChangedSigningService(options, timeProvider, () => set, hasChanged: () => false);
         var ct = TestContext.Current.CancellationToken;
 
@@ -362,7 +390,7 @@ public sealed class JwtSigningServiceTests
         // disposed it anyway, this sign would throw ObjectDisposedException.
         var timeProvider = new FakeTimeProvider();
         var set = MakeRsaSet("unchanged-kid");
-        var options = Options.Create(new FakeSigningServiceOptions { KeySourceRefreshInterval = TimeSpan.FromMinutes(5) });
+        var options = Options.Create(new FakeSigningServiceOptions { KeyRotationCheckInterval = TimeSpan.FromMinutes(5) });
         await using var sut = new ControllableHasChangedSigningService(options, timeProvider, () => set, hasChanged: () => false);
         var payload = Encoding.UTF8.GetBytes(Base64UrlEncodeString("""{"sub":"alice"}"""));
         var ct = TestContext.Current.CancellationToken;
@@ -382,7 +410,7 @@ public sealed class JwtSigningServiceTests
         // Returning true behaves identically to the default: the hook path does not change
         // anything about a normal rebuild.
         var timeProvider = new FakeTimeProvider();
-        var options = Options.Create(new FakeSigningServiceOptions { KeySourceRefreshInterval = TimeSpan.FromMinutes(5) });
+        var options = Options.Create(new FakeSigningServiceOptions { KeyRotationCheckInterval = TimeSpan.FromMinutes(5) });
         await using var sut = new ControllableHasChangedSigningService(options, timeProvider, () => MakeRsaSet(), hasChanged: () => true);
         var ct = TestContext.Current.CancellationToken;
 
@@ -404,7 +432,7 @@ public sealed class JwtSigningServiceTests
         var timeProvider = new FakeTimeProvider();
         var set = MakeRsaSet("cached-kid");
         var callCount = 0;
-        var options = Options.Create(new FakeSigningServiceOptions { KeySourceRefreshInterval = TimeSpan.FromMinutes(5) });
+        var options = Options.Create(new FakeSigningServiceOptions { KeyRotationCheckInterval = TimeSpan.FromMinutes(5) });
         await using var sut = new ControllableHasChangedSigningService(
             options,
             timeProvider,
@@ -687,13 +715,13 @@ public sealed class JwtSigningServiceTests
         keys.Should().ContainSingle().Which.Kid.Should().Be("replacement-kid");
     }
 
-    // ── Static-source mode (KeySourceRefreshInterval is null) ────────────────────────────────────────
+    // ── Static-source mode (TOptions derives from StaticKeySourceOptions) ───────────────────────────
 
     [Fact]
-    public async Task GetSigningKeysAsync_never_reloads_when_KeySourceRefreshInterval_is_null()
+    public async Task GetSigningKeysAsync_never_reloads_when_TOptions_derives_from_StaticKeySourceOptions()
     {
-        // null is a real static-source mode (see JwtSigningServiceOptions.KeySourceRefreshInterval),
-        // not merely "a very long interval" — it must never trigger a second LoadKeysAsync call, no
+        // Deriving from StaticKeySourceOptions is a real static-source mode (ADR 0011 §3.4), not
+        // merely "a very long interval" — it must never trigger a second LoadKeysAsync call, no
         // matter how much time passes. DevelopmentSigningKeyOptions relies on exactly this: its keys
         // are memoized for the process lifetime, and a second LoadKeysAsync call would dispose the
         // key set still referenced by that memoization field, throwing ObjectDisposedException.
@@ -705,11 +733,11 @@ public sealed class JwtSigningServiceTests
         timeProvider.Advance(TimeSpan.FromDays(365 * 100));
         await sut.GetSigningKeysAsync(ct);
 
-        sut.LoadCount.Should().Be(1, "null means load once and never reload, regardless of elapsed time");
+        sut.LoadCount.Should().Be(1, "static-tier options mean load once and never reload, regardless of elapsed time");
     }
 
     [Fact]
-    public async Task SignAsync_succeeds_repeatedly_when_KeySourceRefreshInterval_is_null()
+    public async Task SignAsync_succeeds_repeatedly_when_TOptions_derives_from_StaticKeySourceOptions()
     {
         // Regression test: with a finite interval, the base class would dispose the previous key
         // set on the next reload. If that reload incorrectly happened in static mode against a key
@@ -855,7 +883,7 @@ public sealed class JwtSigningServiceTests
     public async Task SignAsync_invokes_SignInputAsync_override_exactly_once()
     {
         var set = MakeRsaSet("override-kid");
-        var options = Options.Create(new FakeSigningServiceOptions { KeySourceRefreshInterval = TimeSpan.FromMinutes(5) });
+        var options = Options.Create(new FakeSigningServiceOptions { KeyRotationCheckInterval = TimeSpan.FromMinutes(5) });
         var overrideSignature = new byte[] { 1, 2, 3, 4 };
         await using var sut = new OverridingSigningService(options, new FakeTimeProvider(), () => set, overrideSignature);
         var payload = Encoding.UTF8.GetBytes(Base64UrlEncodeString("""{"sub":"alice"}"""));
@@ -870,7 +898,7 @@ public sealed class JwtSigningServiceTests
     public async Task SignAsync_uses_signature_bytes_returned_by_SignInputAsync_override()
     {
         var set = MakeRsaSet("override-kid");
-        var options = Options.Create(new FakeSigningServiceOptions { KeySourceRefreshInterval = TimeSpan.FromMinutes(5) });
+        var options = Options.Create(new FakeSigningServiceOptions { KeyRotationCheckInterval = TimeSpan.FromMinutes(5) });
         var overrideSignature = new byte[] { 9, 8, 7, 6, 5 };
         await using var sut = new OverridingSigningService(options, new FakeTimeProvider(), () => set, overrideSignature);
         var payload = Encoding.UTF8.GetBytes(Base64UrlEncodeString("""{"sub":"alice"}"""));
@@ -886,7 +914,7 @@ public sealed class JwtSigningServiceTests
     public async Task SignAsync_passes_the_active_key_descriptor_to_the_SignInputAsync_override()
     {
         var set = MakeRsaSet("override-kid");
-        var options = Options.Create(new FakeSigningServiceOptions { KeySourceRefreshInterval = TimeSpan.FromMinutes(5) });
+        var options = Options.Create(new FakeSigningServiceOptions { KeyRotationCheckInterval = TimeSpan.FromMinutes(5) });
         await using var sut = new OverridingSigningService(options, new FakeTimeProvider(), () => set, new byte[] { 1 });
         var payload = Encoding.UTF8.GetBytes(Base64UrlEncodeString("""{"sub":"alice"}"""));
         var ct = TestContext.Current.CancellationToken;
@@ -904,7 +932,7 @@ public sealed class JwtSigningServiceTests
         // still receives exactly base64url(header) + '.' + base64url(payload), matching what
         // the default (non-overridden) path signs.
         var set = MakeRsaSet("override-kid");
-        var options = Options.Create(new FakeSigningServiceOptions { KeySourceRefreshInterval = TimeSpan.FromMinutes(5) });
+        var options = Options.Create(new FakeSigningServiceOptions { KeyRotationCheckInterval = TimeSpan.FromMinutes(5) });
         await using var sut = new OverridingSigningService(options, new FakeTimeProvider(), () => set, new byte[] { 1 });
         var payloadStr = Base64UrlEncodeString("""{"sub":"alice"}""");
         var payload = Encoding.UTF8.GetBytes(payloadStr);
@@ -921,7 +949,7 @@ public sealed class JwtSigningServiceTests
     public async Task SignAsync_header_and_kid_are_unaffected_by_SignInputAsync_override()
     {
         var set = MakeRsaSet("override-kid");
-        var options = Options.Create(new FakeSigningServiceOptions { KeySourceRefreshInterval = TimeSpan.FromMinutes(5) });
+        var options = Options.Create(new FakeSigningServiceOptions { KeyRotationCheckInterval = TimeSpan.FromMinutes(5) });
         await using var sut = new OverridingSigningService(options, new FakeTimeProvider(), () => set, new byte[] { 1 });
         var payload = Encoding.UTF8.GetBytes(Base64UrlEncodeString("""{"sub":"alice"}"""));
         var ct = TestContext.Current.CancellationToken;
@@ -1209,7 +1237,7 @@ public sealed class JwtSigningServiceTests
         }
 
         var tp = new FakeTimeProvider();
-        var options = new FakeSigningServiceOptions { KeySourceRefreshInterval = TimeSpan.FromMinutes(5) };
+        var options = new FakeSigningServiceOptions { KeyRotationCheckInterval = TimeSpan.FromMinutes(5) };
         await using var sut = new AsyncCountingSigningService(Options.Create(options), tp, SlowFactory);
         var ct = TestContext.Current.CancellationToken;
 

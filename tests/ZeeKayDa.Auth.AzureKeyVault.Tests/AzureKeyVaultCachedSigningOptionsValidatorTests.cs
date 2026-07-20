@@ -14,7 +14,7 @@ public sealed class AzureKeyVaultCachedSigningOptionsValidatorTests
         CertificateIdentifier = new KeyVaultCertificateIdentifier(CertificateIdentifierUri),
         Credential = new FakeTokenCredential(),
         Algorithm = SigningAlgorithm.RS256,
-        KeySourceRefreshInterval = TimeSpan.FromMinutes(5),
+        KeyRotationCheckInterval = TimeSpan.FromMinutes(5),
     };
 
     private static ValidateOptionsResult Validate(AzureKeyVaultCachedSigningOptions options)
@@ -32,66 +32,58 @@ public sealed class AzureKeyVaultCachedSigningOptionsValidatorTests
         result.Succeeded.Should().BeTrue();
     }
 
-    // ── KeySourceRefreshInterval ───────────────────────────────────────────────────────────────────────────
+    // ── KeyRotationCheckInterval ───────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Validate_fails_when_KeySourceRefreshInterval_is_zero()
+    public void Validate_fails_when_KeyRotationCheckInterval_is_zero()
     {
         var options = ValidOptions();
-        options.KeySourceRefreshInterval = TimeSpan.Zero;
+        options.KeyRotationCheckInterval = TimeSpan.Zero;
 
         var result = Validate(options);
 
         result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("KeySourceRefreshInterval");
+        result.FailureMessage.Should().Contain("KeyRotationCheckInterval");
     }
 
     [Fact]
-    public void Validate_fails_when_KeySourceRefreshInterval_is_negative()
+    public void Validate_fails_when_KeyRotationCheckInterval_is_negative()
     {
         var options = ValidOptions();
-        options.KeySourceRefreshInterval = TimeSpan.FromSeconds(-1);
+        options.KeyRotationCheckInterval = TimeSpan.FromSeconds(-1);
 
         var result = Validate(options);
 
         result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("KeySourceRefreshInterval");
+        result.FailureMessage.Should().Contain("KeyRotationCheckInterval");
     }
 
-    [Fact]
-    public void Validate_fails_when_KeySourceRefreshInterval_is_null()
-    {
-        // null is the local-development provider's static-source ("never refresh") mode — explicitly
-        // rejected here, since real Key Vault certificate rotation polling requires a finite interval.
-        var options = ValidOptions();
-        options.KeySourceRefreshInterval = null;
-
-        var result = Validate(options);
-
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("KeySourceRefreshInterval");
-    }
+    // The former "KeyRotationCheckInterval is null" test no longer applies: the property is now
+    // non-nullable on RotatingKeySourceOptions (ADR 0011 §3.4, issue #409) — the previous "null
+    // means static-source, never refresh" sentinel is now a structural type distinction
+    // (StaticKeySourceOptions vs RotatingKeySourceOptions), so this options type can no longer even
+    // represent that state.
 
     [Fact]
-    public void Validate_fails_when_KeySourceRefreshInterval_is_positive_but_below_the_one_minute_floor()
+    public void Validate_fails_when_KeyRotationCheckInterval_is_positive_but_below_the_one_minute_floor()
     {
-        // KeySourceRefreshInterval doubles as the publish-then-activate delay (ADR 0011 §3.5) and also gates
+        // KeyRotationCheckInterval doubles as the publish-then-activate delay (ADR 0011 §3.5) and also gates
         // how often private key bytes are re-downloaded — a value this short would defeat the
         // publish-then-activate protection and risk Key Vault throttling.
         var options = ValidOptions();
-        options.KeySourceRefreshInterval = TimeSpan.FromSeconds(30);
+        options.KeyRotationCheckInterval = TimeSpan.FromSeconds(30);
 
         var result = Validate(options);
 
         result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("KeySourceRefreshInterval");
+        result.FailureMessage.Should().Contain("KeyRotationCheckInterval");
     }
 
     [Fact]
-    public void Validate_succeeds_when_KeySourceRefreshInterval_is_exactly_the_one_minute_floor()
+    public void Validate_succeeds_when_KeyRotationCheckInterval_is_exactly_the_one_minute_floor()
     {
         var options = ValidOptions();
-        options.KeySourceRefreshInterval = TimeSpan.FromMinutes(1);
+        options.KeyRotationCheckInterval = TimeSpan.FromMinutes(1);
 
         var result = Validate(options);
 
@@ -146,7 +138,7 @@ public sealed class AzureKeyVaultCachedSigningOptionsValidatorTests
     public void Validate_reports_every_violation_simultaneously_rather_than_failing_fast()
     {
         var options = ValidOptions();
-        options.KeySourceRefreshInterval = TimeSpan.Zero;
+        options.KeyRotationCheckInterval = TimeSpan.Zero;
         options.CertificateIdentifier = default;
         options.Credential = null;
         options.Algorithm = (SigningAlgorithm)999;
@@ -155,7 +147,7 @@ public sealed class AzureKeyVaultCachedSigningOptionsValidatorTests
 
         result.Failed.Should().BeTrue();
         result.Failures.Should().HaveCount(4, "all four violations must be reported in a single batch, not one at a time");
-        result.Failures.Should().Contain(f => f.Contains("KeySourceRefreshInterval"));
+        result.Failures.Should().Contain(f => f.Contains("KeyRotationCheckInterval"));
         result.Failures.Should().Contain(f => f.Contains("CertificateIdentifier"));
         result.Failures.Should().Contain(f => f.Contains("Credential"));
         result.Failures.Should().Contain(f => f.Contains("Algorithm"));

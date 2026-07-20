@@ -7,7 +7,7 @@ public sealed class WindowsCertificateStoreSigningOptionsValidatorTests
     private static WindowsCertificateStoreSigningOptions ValidOptions() => new()
     {
         Thumbprint = "AABBCCDDEEFF00112233445566778899AABBCCD",
-        KeySourceRefreshInterval = TimeSpan.FromMinutes(5),
+        KeyRotationCheckInterval = TimeSpan.FromMinutes(5),
         Algorithm = SigningAlgorithm.RS256,
     };
 
@@ -19,28 +19,20 @@ public sealed class WindowsCertificateStoreSigningOptionsValidatorTests
         result.Succeeded.Should().BeTrue();
     }
 
+    // The former "KeyRotationCheckInterval is null" test no longer applies: the property is now
+    // non-nullable on RotatingKeySourceOptions (ADR 0011 §3.4, issue #409), so this options type
+    // can no longer even represent that state.
+
     [Fact]
-    public void Validate_fails_when_KeySourceRefreshInterval_is_null()
+    public void Validate_fails_when_KeyRotationCheckInterval_is_below_the_one_minute_floor()
     {
         var options = ValidOptions();
-        options.KeySourceRefreshInterval = null;
+        options.KeyRotationCheckInterval = TimeSpan.FromSeconds(30);
 
         var result = new WindowsCertificateStoreSigningOptionsValidator().Validate(null, options);
 
         result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("KeySourceRefreshInterval");
-    }
-
-    [Fact]
-    public void Validate_fails_when_KeySourceRefreshInterval_is_below_the_one_minute_floor()
-    {
-        var options = ValidOptions();
-        options.KeySourceRefreshInterval = TimeSpan.FromSeconds(30);
-
-        var result = new WindowsCertificateStoreSigningOptionsValidator().Validate(null, options);
-
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("KeySourceRefreshInterval");
+        result.FailureMessage.Should().Contain("KeyRotationCheckInterval");
     }
 
     [Fact]

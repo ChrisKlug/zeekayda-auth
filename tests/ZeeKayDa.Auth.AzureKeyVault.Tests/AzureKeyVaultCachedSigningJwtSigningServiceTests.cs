@@ -53,7 +53,7 @@ public sealed class AzureKeyVaultCachedSigningJwtSigningServiceTests
             CertificateIdentifier = new KeyVaultCertificateIdentifier(CertificateIdentifierUri),
             Credential = new FakeTokenCredential(),
             Algorithm = algorithm,
-            KeySourceRefreshInterval = refreshInterval ?? DefaultRefreshInterval,
+            KeyRotationCheckInterval = refreshInterval ?? DefaultRefreshInterval,
         });
 
         return new AzureKeyVaultCachedSigningJwtSigningService(
@@ -99,7 +99,7 @@ public sealed class AzureKeyVaultCachedSigningJwtSigningServiceTests
         await sut.GetSigningKeysAsync(ct); // Prime the initial (bootstrap) load.
 
         reader.AddRsaVersion("v2", createdOn: t1);
-        timeProvider.SetUtcNow(t1); // Cache has expired (> KeySourceRefreshInterval since the first load).
+        timeProvider.SetUtcNow(t1); // Cache has expired (> KeyRotationCheckInterval since the first load).
 
         var keys = await sut.GetSigningKeysAsync(ct);
 
@@ -576,7 +576,7 @@ public sealed class AzureKeyVaultCachedSigningJwtSigningServiceTests
 
         await using var sut = BuildService(reader, timeProvider);
         await sut.GetSigningKeysAsync(ct);
-        await sut.GetSigningKeysAsync(ct); // Still within the cache's KeySourceRefreshInterval — no reload.
+        await sut.GetSigningKeysAsync(ct); // Still within the cache's KeyRotationCheckInterval — no reload.
 
         reader.PrivateKeyMaterialCalls.Should().ContainSingle(
             "the private key must be downloaded once at load and cached, not re-downloaded on every call within the refresh interval");
@@ -788,7 +788,7 @@ public sealed class AzureKeyVaultCachedSigningJwtSigningServiceTests
     public async Task HasKeySetChangedAsync_triggers_rebuild_when_the_active_version_changes_with_membership_unchanged()
     {
         // Regression test for the security-review finding on this PR: ToVersionSet must compare
-        // IsActive, not just version identifier and Enabled state. KeySourceRefreshInterval is both
+        // IsActive, not just version identifier and Enabled state. KeyRotationCheckInterval is both
         // the poll cadence and the publish-then-activate lead time, so a normal rotation spans two
         // polls. At poll N, v2 is published but not yet active — the included set becomes
         // {v1 active, v2 not-active}, a membership change from the single-version bootstrap state,
@@ -817,7 +817,7 @@ public sealed class AzureKeyVaultCachedSigningJwtSigningServiceTests
         reader.PrivateKeyMaterialCalls.Clear();
         reader.PublicKeyMaterialCalls.Clear();
 
-        // Poll N+1: one KeySourceRefreshInterval later, with no Key Vault-side change whatsoever —
+        // Poll N+1: one KeyRotationCheckInterval later, with no Key Vault-side change whatsoever —
         // v2 now activates and v1 (still within its retirement window) stays included. Same version
         // identifiers, same Enabled states as poll N; only which entry is active differs.
         timeProvider.SetUtcNow(t1 + DefaultRefreshInterval);

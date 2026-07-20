@@ -178,7 +178,7 @@ public sealed class AzureKeyVaultRemoteSigningIntegrationTests
             KeyIdentifier = KeyIdentifier,
             Credential = new FakeTokenCredential(),
             Algorithm = SigningAlgorithm.RS256,
-            KeySourceRefreshInterval = TimeSpan.FromMinutes(5),
+            KeyRotationCheckInterval = TimeSpan.FromMinutes(5),
         });
 
         await using var signingService = new AzureKeyVaultRemoteSigningJwtSigningService(
@@ -210,7 +210,7 @@ public sealed class AzureKeyVaultRemoteSigningIntegrationTests
             KeyIdentifier = KeyIdentifier,
             Credential = new FakeTokenCredential(),
             Algorithm = SigningAlgorithm.RS256,
-            KeySourceRefreshInterval = TimeSpan.FromMinutes(5),
+            KeyRotationCheckInterval = TimeSpan.FromMinutes(5),
         });
 
         await using var signingService = new AzureKeyVaultRemoteSigningJwtSigningService(
