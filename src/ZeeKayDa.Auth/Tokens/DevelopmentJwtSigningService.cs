@@ -88,15 +88,29 @@ internal sealed class DevelopmentJwtSigningService
             ? await LoadOrGeneratePersistedKeyAsync(persistDir, cancellationToken).ConfigureAwait(false)
             : GenerateEphemeralKey();
 
-        _pendingPrivateKey = rsa;
-
+        // Compute the public key parameters before stashing the private key reference, so that a
+        // failure here leaves _pendingPrivateKey untouched rather than holding a key nothing will
+        // ever claim or dispose.
         var publicKey = PublicKeyParameters.FromRsa(rsa.ExportParameters(false));
+
+        _pendingPrivateKey = rsa;
 
         // ActivateAt = null: the single dev key is active from startup (ADR 0015 §1's degenerate
         // Tier A case). ExpiresAt = MaxValue: a dev key never hard-expires — its lifetime is the
         // process's, not a certificate's.
         var listing = new KeyListing(DevKeyId, SigningAlgorithm.RS256, publicKey, ActivateAt: null, ExpiresAt: DateTimeOffset.MaxValue);
         return [listing];
+    }
+
+    /// <inheritdoc/>
+    protected override ValueTask DisposeAsyncCore()
+    {
+        // If ListKeysAsync generated/loaded a key but CreateSignerAsync never claimed it (e.g. this
+        // instance's lifetime only ever served ListKeysAsync/JWKS listing, never a signing call),
+        // the key would otherwise leak until GC finalization instead of being disposed/zeroized.
+        Interlocked.Exchange(ref _pendingPrivateKey, null)?.Dispose();
+
+        return base.DisposeAsyncCore();
     }
 
     /// <inheritdoc/>

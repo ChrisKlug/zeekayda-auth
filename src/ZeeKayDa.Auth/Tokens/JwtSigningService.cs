@@ -371,6 +371,22 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
     /// <inheritdoc/>
     public async ValueTask DisposeAsync()
     {
+        await DisposeAsyncCore().ConfigureAwait(false);
+        GC.SuppressFinalize(this);
+    }
+
+    /// <summary>
+    /// Performs the actual asynchronous disposal work. Override to release provider-specific
+    /// resources (e.g. a private key stashed between <see cref="ListKeysAsync"/> and
+    /// <see cref="CreateSignerAsync"/> that the base class has no visibility into), then call
+    /// <c>base.DisposeAsyncCore()</c> to release the base class's own resources.
+    /// </summary>
+    /// <remarks>
+    /// Follows the standard .NET async-dispose pattern: <see cref="DisposeAsync"/> itself is
+    /// non-virtual and delegates to this method before calling <see cref="GC.SuppressFinalize"/>.
+    /// </remarks>
+    protected virtual async ValueTask DisposeAsyncCore()
+    {
         if (Interlocked.Exchange(ref _disposeState, 1) != 0)
             return;
 
@@ -406,8 +422,6 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
 
         _newContractSnapshotLock.Dispose();
         _newContractSignerLock.Dispose();
-
-        GC.SuppressFinalize(this);
     }
 
     /// <summary>

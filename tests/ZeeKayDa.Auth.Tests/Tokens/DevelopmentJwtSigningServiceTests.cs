@@ -1,4 +1,5 @@
 using System.Buffers.Text;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Logging;
@@ -359,6 +360,50 @@ public sealed class DevelopmentJwtSigningServiceTests
             var valid = rsa.VerifyData(signingInput, signature, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
             valid.Should().BeTrue("tokens from the first session must validate with keys from the second session");
         }
+    }
+
+    // ── Disposal of an unclaimed pending private key ─────────────────────────────────────────────
+
+    // ListKeysAsync stashes the generated/loaded RSA key in the private _pendingPrivateKey field
+    // until CreateSignerAsync claims it via Interlocked.Exchange. If an instance's lifetime only
+    // ever serves GetSigningKeysAsync (e.g. JWKS listing) and SignAsync/CreateSignerAsync is never
+    // called, DisposeAsync must still dispose that key rather than leaking it to GC finalization.
+
+    [Fact]
+    public async Task DisposeAsync_disposes_pending_private_key_when_CreateSignerAsync_was_never_called()
+    {
+        var sut = BuildEphemeral();
+        var ct = TestContext.Current.CancellationToken;
+
+        // Triggers ListKeysAsync (which stashes the key) without ever calling SignAsync, so
+        // CreateSignerAsync never runs and never claims _pendingPrivateKey.
+        await sut.GetSigningKeysAsync(ct);
+
+        var pendingKeyField = typeof(DevelopmentJwtSigningService)
+            .GetField("_pendingPrivateKey", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        var pendingKey = (RSA)pendingKeyField.GetValue(sut)!;
+        pendingKey.Should().NotBeNull("ListKeysAsync must have stashed the generated key");
+
+        await sut.DisposeAsync();
+
+        var act = () => pendingKey.ExportParameters(true);
+        act.Should().Throw<ObjectDisposedException>(
+            "an unclaimed pending private key must be disposed at shutdown, not leaked until GC finalization");
+    }
+
+    [Fact]
+    public async Task DisposeAsync_does_not_double_dispose_the_signing_key_once_CreateSignerAsync_claimed_it()
+    {
+        var sut = BuildEphemeral();
+        var ct = TestContext.Current.CancellationToken;
+
+        // SignAsync triggers both ListKeysAsync and CreateSignerAsync, so _pendingPrivateKey is
+        // already claimed (and null) by the time DisposeAsync runs.
+        var payload = Encoding.UTF8.GetBytes(Base64UrlEncodeString("""{"sub":"test"}"""));
+        await sut.SignAsync(payload, ct);
+
+        var act = () => sut.DisposeAsync().AsTask();
+        await act.Should().NotThrowAsync("the signer's own disposal path already owns the key by shutdown");
     }
 
     // ── Directory permission enforcement ─────────────────────────────────────────────────────────
