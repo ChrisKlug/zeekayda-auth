@@ -9,15 +9,18 @@ namespace ZeeKayDa.Auth.FileSystem;
 /// <para>
 /// <see cref="ZeeKayDa.Auth.Tokens.RotatingKeySourceOptions.KeyRotationCheckInterval"/> and
 /// <see cref="FileSigningOptions.AssumedJwksPropagationDelay"/> are inherited from
-/// <see cref="FileSigningOptions"/> — see that type's remarks and <see cref="PemFileSigningOptions"/>'s
-/// remarks for what each governs in this provider (a startup-warning threshold, not a re-download
-/// cadence) — specifically, <see cref="FileSigningOptions.AssumedJwksPropagationDelay"/> is the
-/// threshold used to warn when a rotated-in file's
+/// <see cref="FileSigningOptions"/> — see that type's remarks for what each governs in this provider
+/// (a startup-warning threshold, not a re-download cadence) — specifically,
+/// <see cref="FileSigningOptions.AssumedJwksPropagationDelay"/> is the threshold used to warn when a
+/// rotated-in file's
 /// <see cref="System.Security.Cryptography.X509Certificates.X509Certificate2.NotBefore"/> is
 /// scheduled too soon relative to how often relying parties are expected to have polled the JWKS
 /// (ADR 0011 §3.5; see <see cref="SigningKeyRotation.HasTooSoonPendingActivation"/>). This applies
 /// identically to PFX, since <see cref="AdditionalFiles"/> supports the same pre-staged
-/// successor-certificate rotation pattern PEM does.
+/// successor-certificate rotation pattern PEM does. (The PEM provider migrated to ADR 0015's
+/// <see cref="ZeeKayDa.Auth.Tokens.KeySetOptions"/> contract in issue #422 — its equivalent knob is
+/// now <see cref="ZeeKayDa.Auth.Tokens.KeySetOptions.PublicationLead"/>; the PFX provider's own
+/// migration is tracked separately.)
 /// </para>
 /// <para>
 /// <strong>Why <see cref="PasswordSource"/> is <c>Func&lt;CancellationToken, ValueTask&lt;string&gt;&gt;</c>.</strong>

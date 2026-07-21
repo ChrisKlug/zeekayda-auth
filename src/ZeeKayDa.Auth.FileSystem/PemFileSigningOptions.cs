@@ -6,11 +6,23 @@ namespace ZeeKayDa.Auth.FileSystem;
 /// Configuration options for <c>AddPemFileSigning</c>.
 /// </summary>
 /// <remarks>
-/// <see cref="ZeeKayDa.Auth.Tokens.RotatingKeySourceOptions.KeyRotationCheckInterval"/> and
-/// <see cref="FileSigningOptions.AssumedJwksPropagationDelay"/> are inherited from
-/// <see cref="FileSigningOptions"/> — see that type's remarks for what each governs.
+/// <para>
+/// ADR 0015 Tier A (<see cref="KeySetOptions"/>, issue #422): the complete set of registered PEM
+/// files is fixed at configuration time, and the only thing that ever advances is the wall clock
+/// crossing each file's certificate <c>NotBefore</c>/<c>NotAfter</c> — mapped onto each key's
+/// <see cref="ZeeKayDa.Auth.Tokens.KeyListing.ActivateAt"/>/<see cref="ZeeKayDa.Auth.Tokens.KeyListing.ExpiresAt"/>.
+/// <see cref="KeySetOptions.PublicationLead"/> is inherited from <see cref="KeySetOptions"/> — see
+/// that type's remarks for what it governs (an advisory too-soon-activation startup warning, not a
+/// re-download cadence — there is nothing to re-download on this tier).
+/// </para>
+/// <para>
+/// Picking up a rotated-in or replaced file requires a process restart: this provider's
+/// <c>ListKeysAsync</c> runs exactly once, ever, for the lifetime of a service instance (ADR 0015
+/// §1/§4) — register the successor file via <see cref="AddFile(string, string)"/> ahead of its
+/// intended activation time and redeploy, rather than expecting a live reload.
+/// </para>
 /// </remarks>
-public sealed class PemFileSigningOptions : FileSigningOptions
+public sealed class PemFileSigningOptions : KeySetOptions
 {
     private readonly List<PemFileRegistration> _additionalFiles = [];
 
@@ -45,7 +57,7 @@ public sealed class PemFileSigningOptions : FileSigningOptions
 
     /// <summary>
     /// Registers an additional PEM file to support rotation with overlapping validity windows
-    /// (ADR 0011 §3.5; issue #282's multi-key registration shape). When <paramref name="keyPath"/>
+    /// (ADR 0015 §1; issue #282's multi-key registration shape). When <paramref name="keyPath"/>
     /// is <see langword="null"/> (the default), <paramref name="path"/> must be a combined cert+key
     /// file; when supplied, <paramref name="path"/> is a certificate-only file and
     /// <paramref name="keyPath"/> is a separate private-key-only file (issue #405).

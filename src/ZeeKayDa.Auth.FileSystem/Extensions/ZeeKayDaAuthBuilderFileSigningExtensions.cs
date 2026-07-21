@@ -67,7 +67,7 @@ public static class ZeeKayDaAuthBuilderFileSigningExtensions
     /// </param>
     /// <param name="configure">
     /// An optional callback to further configure <see cref="PemFileSigningOptions"/> (for example,
-    /// <see cref="ZeeKayDa.Auth.Tokens.RotatingKeySourceOptions.KeyRotationCheckInterval"/> or additional files for
+    /// <see cref="ZeeKayDa.Auth.Tokens.KeySetOptions.PublicationLead"/> or additional files for
     /// rotation via <see cref="PemFileSigningOptions.AddFile(string, string)"/>).
     /// </param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>

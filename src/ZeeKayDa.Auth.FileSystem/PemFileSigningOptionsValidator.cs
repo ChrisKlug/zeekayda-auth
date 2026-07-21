@@ -1,6 +1,4 @@
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using ZeeKayDa.Auth.Logging;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.FileSystem;
@@ -13,45 +11,13 @@ namespace ZeeKayDa.Auth.FileSystem;
 /// </remarks>
 internal sealed class PemFileSigningOptionsValidator : IValidateOptions<PemFileSigningOptions>
 {
-    // KeyRotationCheckInterval doubles as the too-soon-NotBefore warning threshold (ADR 0011 §3.5) rather
-    // than a re-download cadence — there is no external round trip to throttle here, since every
-    // registered file lives on the local filesystem. The same one-minute floor still rejects a
-    // value so short it would defeat the publish-then-activate protection against essentially any
-    // real-world relying-party JWKS cache TTL.
-    private static readonly TimeSpan MinimumRefreshInterval = TimeSpan.FromMinutes(1);
-
-    private readonly ISanitizingLogger<PemFileSigningOptionsValidator> _logger;
-
-    public PemFileSigningOptionsValidator(ISanitizingLogger<PemFileSigningOptionsValidator> logger)
-    {
-        ArgumentNullException.ThrowIfNull(logger);
-        _logger = logger;
-    }
-
     /// <inheritdoc/>
     public ValidateOptionsResult Validate(string? name, PemFileSigningOptions options)
     {
         var errors = new List<string>();
 
-        if (options.KeyRotationCheckInterval < MinimumRefreshInterval)
-        {
-            errors.Add(
-                $"PemFileSigningOptions.KeyRotationCheckInterval must be at least {MinimumRefreshInterval} " +
-                "(it doubles as the too-soon-NotBefore warning threshold per ADR 0011 §3.5, via " +
-                "AssumedJwksPropagationDelay). You are still responsible for ensuring KeyRotationCheckInterval " +
-                "exceeds your actual relying parties' JWKS cache TTL — this floor only rejects values that " +
-                "are almost certainly a mistake.");
-        }
-
-        var positiveError = JwksPropagationDelay.ValidatePositive(
-            nameof(PemFileSigningOptions), options.AssumedJwksPropagationDelay);
-        if (positiveError is not null)
-            errors.Add(positiveError);
-
-        var tooShortWarning = JwksPropagationDelay.WarnIfShorterThanCheckInterval(
-            nameof(PemFileSigningOptions), options.AssumedJwksPropagationDelay, options.KeyRotationCheckInterval);
-        if (tooShortWarning is not null)
-            _logger.LogWarning("ZeeKayDa.Auth: {Warning}", tooShortWarning);
+        if (KeySourcePublicationLeadValidator.ValidateMinimum(nameof(PemFileSigningOptions), options.PublicationLead) is { } publicationLeadError)
+            errors.Add(publicationLeadError);
 
         if (string.IsNullOrWhiteSpace(options.Path))
             errors.Add("PemFileSigningOptions.Path must be set to a non-empty file path.");
@@ -77,10 +43,8 @@ internal sealed class PemFileSigningOptionsValidator : IValidateOptions<PemFileS
 
     // Every filesystem path this configuration touches — the primary cert path, its optional
     // companion key path, and each additional file's cert/key paths — must be pairwise distinct.
-    // Two entries sharing a path would make FileSigningJwtSigningService<TOptions>'s flattened
-    // path-timestamp tracking ambiguous (issue #405): the same path would back two different
-    // registered entries, so a single stat/mtime cannot unambiguously represent "this entry
-    // changed" for both.
+    // Two entries sharing a path would make the base class's ADR 0015 rotation timeline ambiguous
+    // (issue #405): the same path would back two different registered keys.
     //
     // Each non-empty path is normalized via Path.GetFullPath before comparison, so purely
     // string-level differences (e.g. "tls.pem" vs "./tls.pem", or redundant separators like
