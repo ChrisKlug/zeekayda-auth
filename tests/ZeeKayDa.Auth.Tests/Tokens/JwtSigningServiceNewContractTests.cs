@@ -122,6 +122,8 @@ public sealed class JwtSigningServiceNewContractTests
 
         public List<KeyId> CreateSignerAsyncCalledFor { get; } = [];
 
+        public int OnDisposeAsyncCallCount { get; private set; }
+
         public KeySetFakeService(
             IOptions<FakeKeySetOptions> options,
             TimeProvider timeProvider,
@@ -145,6 +147,12 @@ public sealed class JwtSigningServiceNewContractTests
         {
             CreateSignerAsyncCalledFor.Add(id);
             return new ValueTask<ISigner>(_signerFactory(id));
+        }
+
+        protected override ValueTask OnDisposeAsync()
+        {
+            OnDisposeAsyncCallCount++;
+            return base.OnDisposeAsync();
         }
     }
 
@@ -349,6 +357,28 @@ public sealed class JwtSigningServiceNewContractTests
         await sut.DisposeAsync();
 
         signer.DisposeCount.Should().Be(1, "the sole active signer must be released at shutdown (ADR 0015 §5)");
+    }
+
+    [Fact]
+    public async Task DisposeAsync_calls_OnDisposeAsync_at_most_once_across_concurrent_double_dispose()
+    {
+        using var rsa = RSA.Create(2048);
+        var timeProvider = new FakeTimeProvider(Epoch);
+
+        var sut = BuildKeySetService(
+            timeProvider,
+            () => [MakeRsaListing(rsa, "k1", activateAt: null, expiresAt: Epoch.AddYears(1))]);
+        var ct = TestContext.Current.CancellationToken;
+
+        await sut.SignAsync(new byte[] { 0 }, ct);
+
+        // Dispose concurrently rather than sequentially so the guard is proven to cover the
+        // derived hook itself, not merely the base class's own cleanup — a derived override that
+        // forgot to be self-idempotent would otherwise be exposed to a genuine race here.
+        await Task.WhenAll(sut.DisposeAsync().AsTask(), sut.DisposeAsync().AsTask());
+
+        sut.OnDisposeAsyncCallCount.Should().Be(
+            1, "the idempotency guard in DisposeAsync must cover the derived OnDisposeAsync hook, not just the base class's own cleanup");
     }
 
     [Fact]

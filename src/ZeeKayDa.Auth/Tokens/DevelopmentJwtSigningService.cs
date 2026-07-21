@@ -103,14 +103,17 @@ internal sealed class DevelopmentJwtSigningService
     }
 
     /// <inheritdoc/>
-    protected override ValueTask DisposeAsyncCore()
+    protected override ValueTask OnDisposeAsync()
     {
         // If ListKeysAsync generated/loaded a key but CreateSignerAsync never claimed it (e.g. this
         // instance's lifetime only ever served ListKeysAsync/JWKS listing, never a signing call),
         // the key would otherwise leak until GC finalization instead of being disposed/zeroized.
+        // The base class already guarantees this method is called at most once, but the
+        // Interlocked.Exchange is kept as cheap, self-contained insurance against any future
+        // direct call to this method outside that contract.
         Interlocked.Exchange(ref _pendingPrivateKey, null)?.Dispose();
 
-        return base.DisposeAsyncCore();
+        return ValueTask.CompletedTask;
     }
 
     /// <inheritdoc/>

@@ -371,25 +371,38 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
     /// <inheritdoc/>
     public async ValueTask DisposeAsync()
     {
-        await DisposeAsyncCore().ConfigureAwait(false);
+        if (Interlocked.Exchange(ref _disposeState, 1) != 0)
+            return;
+
+        await OnDisposeAsync().ConfigureAwait(false);
+        await DisposeBaseResourcesAsync().ConfigureAwait(false);
+
         GC.SuppressFinalize(this);
     }
 
     /// <summary>
-    /// Performs the actual asynchronous disposal work. Override to release provider-specific
-    /// resources (e.g. a private key stashed between <see cref="ListKeysAsync"/> and
-    /// <see cref="CreateSignerAsync"/> that the base class has no visibility into), then call
-    /// <c>base.DisposeAsyncCore()</c> to release the base class's own resources.
+    /// Extension point for a derived provider to release resources <b>it</b> introduced (e.g. a
+    /// private key stashed between <see cref="ListKeysAsync"/> and <see cref="CreateSignerAsync"/>
+    /// that the base class has no visibility into). The default implementation does nothing.
     /// </summary>
     /// <remarks>
-    /// Follows the standard .NET async-dispose pattern: <see cref="DisposeAsync"/> itself is
-    /// non-virtual and delegates to this method before calling <see cref="GC.SuppressFinalize"/>.
+    /// Override this to dispose only resources this specific provider introduced. The base
+    /// class's own cleanup always runs regardless of what this override does, or whether it
+    /// exists at all — there is no <c>base.OnDisposeAsync()</c> call to remember, unlike a
+    /// <c>*Core</c>-suffixed hook. This method is called at most once, guarded by the base
+    /// class's own idempotency check in <see cref="DisposeAsync"/>, so an override does not need
+    /// its own idempotency guard to be safe under concurrent or repeated <c>DisposeAsync</c> calls.
     /// </remarks>
-    protected virtual async ValueTask DisposeAsyncCore()
-    {
-        if (Interlocked.Exchange(ref _disposeState, 1) != 0)
-            return;
+    protected virtual ValueTask OnDisposeAsync() => ValueTask.CompletedTask;
 
+    /// <summary>
+    /// Releases the base class's own resources: the cached <see cref="SigningKeySet"/> (ADR 0011
+    /// contract), the ADR 0015 active-signer handle, and the internal locks. Always run by
+    /// <see cref="DisposeAsync"/> exactly once, after <see cref="OnDisposeAsync"/> has already
+    /// completed — never skippable by a derived class.
+    /// </summary>
+    private async ValueTask DisposeBaseResourcesAsync()
+    {
         await _refreshLock.WaitAsync().ConfigureAwait(false);
         try
         {
