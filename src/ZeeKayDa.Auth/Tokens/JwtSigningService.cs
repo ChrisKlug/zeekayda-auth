@@ -1,7 +1,11 @@
 using System.Buffers;
 using System.Buffers.Text;
+using System.Linq;
+using System.Security.Cryptography;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using ZeeKayDa.Auth.Logging;
 
 namespace ZeeKayDa.Auth.Tokens;
 
@@ -29,6 +33,21 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
     // 0 = live, 1 = disposed. int so Interlocked.Exchange makes the transition atomic.
     private int _disposeState;
 
+    // ── ADR 0015 "new contract" (KeySetOptions/KeySourceOptions) state ──────────────────────────────
+    // Lands alongside the ADR 0011 fields above (issue #420 is additive-only). Which set of fields is
+    // actually used is decided once, at construction, from which options tier TOptions's runtime
+    // instance derives from.
+    private readonly NewContractTier _tier;
+    private readonly TimeSpan? _newContractRefreshInterval; // Tier B (KeySourceOptions) only.
+    private readonly ISigningKeyRetirementWindowProvider? _retirementWindowProvider;
+    private readonly ISanitizingLogger<JwtSigningService<TOptions>>? _newContractLogger;
+
+    private readonly SemaphoreSlim _newContractSnapshotLock = new(1, 1);
+    private readonly SemaphoreSlim _newContractSignerLock = new(1, 1);
+    private NewContractSnapshot? _newContractSnapshot;
+    private DateTimeOffset _newContractSnapshotExpiresAt = DateTimeOffset.MinValue;
+    private SignerHandle? _activeSignerHandle;
+
     /// <summary>
     /// Initialises the base class with options and a time provider.
     /// </summary>
@@ -38,15 +57,75 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
     /// from DI or use <c>TimeProvider.System</c> in production and a
     /// <c>FakeTimeProvider</c> in tests.
     /// </param>
+    /// <exception cref="NotSupportedException">
+    /// <c>TOptions</c>'s runtime instance derives from <see cref="KeySetOptions"/> or
+    /// <see cref="KeySourceOptions"/> (the ADR 0015 contract). Use the four-argument overload for
+    /// those instead — constructing this class via this overload for a new-contract
+    /// <c>TOptions</c> would otherwise silently default the retirement window to
+    /// <see cref="TimeSpan.Zero"/> and drop the logger, degrading the ADR 0015 §6
+    /// within-window-vanish <see cref="Microsoft.Extensions.Logging.LogLevel.Warning"/> — a signal
+    /// that MUST NOT be downgraded — into silence.
+    /// </exception>
+    /// <remarks>
+    /// Use this overload only for a provider on the ADR 0011 contract (deriving <c>TOptions</c>
+    /// from <see cref="StaticKeySourceOptions"/> or <see cref="RotatingKeySourceOptions"/> and
+    /// overriding <see cref="LoadKeysAsync"/>). A provider on the ADR 0015 contract (deriving
+    /// <c>TOptions</c> from <see cref="KeySetOptions"/> or <see cref="KeySourceOptions"/> and
+    /// overriding <see cref="ListKeysAsync"/>/<see cref="CreateSignerAsync"/>) MUST use the other
+    /// constructor overload instead, which also supplies the retirement-window provider and logger
+    /// the new contract's kill-by-omission and JWKS-inclusion logic needs; this overload throws
+    /// rather than silently accepting a new-contract <c>TOptions</c>.
+    /// </remarks>
     protected JwtSigningService(IOptions<TOptions> options, TimeProvider timeProvider)
     {
-        ArgumentNullException.ThrowIfNull(options);
-        ArgumentNullException.ThrowIfNull(timeProvider);
+        (_tier, _timeProvider, _keyRotationCheckInterval, _newContractRefreshInterval) =
+            ResolveSharedState(options, timeProvider);
 
-        _timeProvider = timeProvider;
-        _keyRotationCheckInterval = options.Value is RotatingKeySourceOptions rotating
-            ? rotating.KeyRotationCheckInterval
-            : null;
+        if (_tier != NewContractTier.Legacy)
+        {
+            throw new NotSupportedException(
+                $"{GetType().Name} derives its options from {nameof(KeySetOptions)}/{nameof(KeySourceOptions)} " +
+                "(the ADR 0015 contract) but was constructed with the two-argument JwtSigningService " +
+                "constructor. Use the four-argument overload instead, which also supplies the " +
+                $"{nameof(ISigningKeyRetirementWindowProvider)} and {nameof(ISanitizingLogger<JwtSigningService<TOptions>>)} " +
+                "the new contract's kill-by-omission and JWKS-inclusion logic needs — constructing this " +
+                "class via the two-argument overload would otherwise silently degrade the ADR 0015 §6 " +
+                "within-window-vanish Warning (a signal that MUST NOT be downgraded) by defaulting the " +
+                "retirement window to TimeSpan.Zero and dropping the logger.");
+        }
+    }
+
+    /// <summary>
+    /// Initialises the base class for a provider on the ADR 0015 contract (<see cref="KeySetOptions"/>
+    /// or <see cref="KeySourceOptions"/>).
+    /// </summary>
+    /// <param name="options">The provider-specific options.</param>
+    /// <param name="timeProvider">
+    /// The time provider used for cache-expiry and activation-timeline calculations.
+    /// </param>
+    /// <param name="retirementWindowProvider">
+    /// Supplies the derived retirement window (ADR 0011 §3.3) used to compute which keys are
+    /// currently included in the JWKS, and to disambiguate a kill-by-omission vanish as
+    /// within-window versus post-window (ADR 0015 §6).
+    /// </param>
+    /// <param name="logger">
+    /// Used to emit the <see cref="Microsoft.Extensions.Logging.LogLevel.Warning"/> required by
+    /// ADR 0015 §6 when a Tier B provider's key listing drops a key while it is still inside its
+    /// retirement window.
+    /// </param>
+    protected JwtSigningService(
+        IOptions<TOptions> options,
+        TimeProvider timeProvider,
+        ISigningKeyRetirementWindowProvider retirementWindowProvider,
+        ISanitizingLogger<JwtSigningService<TOptions>> logger)
+    {
+        ArgumentNullException.ThrowIfNull(retirementWindowProvider);
+        ArgumentNullException.ThrowIfNull(logger);
+
+        (_tier, _timeProvider, _keyRotationCheckInterval, _newContractRefreshInterval) =
+            ResolveSharedState(options, timeProvider);
+        _retirementWindowProvider = retirementWindowProvider;
+        _newContractLogger = logger;
     }
 
     /// <summary>
@@ -97,8 +176,21 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
     /// installing a freshly loaded set as current, the base class unconditionally <c>Dispose()</c>s
     /// the superseded reference, so returning the same instance (or the same underlying keys via a
     /// new wrapper) would dispose objects still referenced by the current set. See ADR 0011 §3.2.
+    /// <para>
+    /// This is only ever called on a provider whose <c>TOptions</c> derives from
+    /// <see cref="StaticKeySourceOptions"/> or <see cref="RotatingKeySourceOptions"/> (the ADR 0011
+    /// contract). Not abstract — virtual with a default that throws
+    /// <see cref="NotSupportedException"/> — so that a provider on the ADR 0015 contract (deriving
+    /// <c>TOptions</c> from <see cref="KeySetOptions"/>/<see cref="KeySourceOptions"/> and
+    /// overriding <see cref="ListKeysAsync"/>/<see cref="CreateSignerAsync"/> instead) is not forced
+    /// to implement this unused method (issue #420 is additive-only: the two contracts coexist on
+    /// this base class until every provider has migrated — issue #428).
+    /// </para>
     /// </remarks>
-    protected abstract ValueTask<SigningKeySet> LoadKeysAsync(CancellationToken cancellationToken);
+    protected virtual ValueTask<SigningKeySet> LoadKeysAsync(CancellationToken cancellationToken) =>
+        throw new NotSupportedException(
+            $"{GetType().Name} derives its options from {nameof(StaticKeySourceOptions)}/{nameof(RotatingKeySourceOptions)} " +
+            $"but does not override {nameof(LoadKeysAsync)}.");
 
     /// <summary>
     /// Asked once per refresh cycle, after <see cref="RotatingKeySourceOptions.KeyRotationCheckInterval"/>
@@ -145,10 +237,74 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
     /// </remarks>
     protected virtual ValueTask<bool> HasKeySetChangedAsync(CancellationToken cancellationToken) => new(true);
 
+    /// <summary>
+    /// Returns the current listing of trusted signing keys as pure public metadata — never private
+    /// material. Tier A (<see cref="KeySetOptions"/>) providers: called exactly once, ever. Tier B
+    /// (<see cref="KeySourceOptions"/>) providers: called once per <see cref="KeySourceOptions.RefreshInterval"/>.
+    /// </summary>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>Every currently trusted key's public listing. Must never be empty.</returns>
+    /// <remarks>
+    /// <para>
+    /// This method carries a <b>completeness contract</b> (ADR 0015 §6): a provider that cannot
+    /// produce a complete read of its current key set <b>MUST throw</b> rather than return a short
+    /// or partial list. A vanished key is trusted to mean "no longer trusted" (kill-by-omission);
+    /// a failed read must never be indistinguishable from that. The base class never catches or
+    /// downgrades an exception from this method — it always propagates straight to the caller,
+    /// fail-closed, exactly like <see cref="LoadKeysAsync"/> on the ADR 0011 contract.
+    /// </para>
+    /// <para>
+    /// The base class derives each returned listing's JWKS <c>kid</c> from
+    /// <see cref="KeyListing.PublicKey"/> (never from <see cref="KeyListing.Id"/>), rejects a
+    /// listing set that yields duplicate <c>kid</c>s, and runs
+    /// <see cref="SigningAlgorithms.ValidateKeyAlgorithmCompatibility"/>/<see cref="SigningAlgorithms.ValidateKeyStrength"/>
+    /// over every listing — all before <see cref="CreateSignerAsync"/> is ever called for any key
+    /// in the set.
+    /// </para>
+    /// <para>
+    /// This is only ever called on a provider whose <c>TOptions</c> derives from
+    /// <see cref="KeySetOptions"/> or <see cref="KeySourceOptions"/>. The default implementation
+    /// throws <see cref="NotSupportedException"/> so that a provider on the ADR 0015 contract that
+    /// forgets to override this fails loudly rather than silently signing with no keys.
+    /// </para>
+    /// </remarks>
+    protected virtual ValueTask<IReadOnlyList<KeyListing>> ListKeysAsync(CancellationToken cancellationToken)
+        => throw new NotSupportedException(
+            $"{GetType().Name} derives its options from {nameof(KeySetOptions)}/{nameof(KeySourceOptions)} " +
+            $"but does not override {nameof(ListKeysAsync)}.");
+
+    /// <summary>
+    /// Lends a signer for the key the base class has selected as active. Called only for the
+    /// currently active <paramref name="id"/> — never for a non-active, future, or retired key.
+    /// The base class owns the returned <see cref="ISigner"/> and disposes it once it is superseded
+    /// (see <see cref="ISigner"/>'s <c>Dispose</c> contract).
+    /// </summary>
+    /// <param name="id">The provider's own identifier for the key to lend a signer for, exactly as
+    /// it appeared on one of the <see cref="KeyListing"/>s most recently returned by
+    /// <see cref="ListKeysAsync"/>.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>A signer for the key identified by <paramref name="id"/>.</returns>
+    /// <remarks>
+    /// Local providers (development, File/PEM, PFX, Windows Certificate Store) build and return a
+    /// <see cref="LocalSigner"/> here. A remote provider (Azure Key Vault remote signing, a KMS, an
+    /// HSM) returns its own <see cref="ISigner"/> whose <see cref="ISigner.SignAsync"/> makes a
+    /// network call — the private key never becomes local. This is only ever called on a provider
+    /// whose <c>TOptions</c> derives from <see cref="KeySetOptions"/> or <see cref="KeySourceOptions"/>.
+    /// The default implementation throws <see cref="NotSupportedException"/> so that a provider on
+    /// the ADR 0015 contract that forgets to override this fails loudly.
+    /// </remarks>
+    protected virtual ValueTask<ISigner> CreateSignerAsync(KeyId id, CancellationToken cancellationToken)
+        => throw new NotSupportedException(
+            $"{GetType().Name} derives its options from {nameof(KeySetOptions)}/{nameof(KeySourceOptions)} " +
+            $"but does not override {nameof(CreateSignerAsync)}.");
+
     /// <inheritdoc/>
     public async ValueTask<IReadOnlyList<SigningKeyDescriptor>> GetSigningKeysAsync(
         CancellationToken cancellationToken = default)
     {
+        if (_tier != NewContractTier.Legacy)
+            return await GetSigningKeysUsingNewContractAsync(cancellationToken).ConfigureAwait(false);
+
         // Borrow the set for the duration of the read; descriptors are safe to access
         // without holding the lock once we hold a borrow.
         var set = await BorrowSetAsync(cancellationToken).ConfigureAwait(false);
@@ -167,6 +323,9 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
         ReadOnlyMemory<byte> payloadSegment,
         CancellationToken cancellationToken = default)
     {
+        if (_tier != NewContractTier.Legacy)
+            return await SignUsingNewContractAsync(payloadSegment, cancellationToken).ConfigureAwait(false);
+
         // Borrow the set for the duration of the signing operation so that a concurrent
         // DisposeAsync cannot release the private key objects while we are using them.
         var set = await BorrowSetAsync(cancellationToken).ConfigureAwait(false);
@@ -183,7 +342,7 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
     /// <summary>
     /// Produces the signature bytes for <paramref name="signingInput"/> using
     /// <paramref name="activeKey"/>. The default implementation signs locally and synchronously
-    /// via <see cref="SigningAlgorithms.Sign"/>.
+    /// via <see cref="SigningAlgorithms.Sign(SigningKeyDescriptor, byte[], AsymmetricAlgorithm)"/>.
     /// </summary>
     /// <param name="activeKey">
     /// The active signing key, exactly as selected and validated by the base class. Header
@@ -231,6 +390,23 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
         }
 
         _refreshLock.Dispose();
+
+        // ADR 0015 §5: any signer still resident at shutdown (Tier A's opportunistic-disposal
+        // worst case, or a Tier B signer between refreshes) is released here.
+        await _newContractSignerLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            _activeSignerHandle?.Release();
+            _activeSignerHandle = null;
+        }
+        finally
+        {
+            _newContractSignerLock.Release();
+        }
+
+        _newContractSnapshotLock.Dispose();
+        _newContractSignerLock.Dispose();
+
         GC.SuppressFinalize(this);
     }
 
@@ -485,4 +661,424 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
             SigningAlgorithms.ValidateKeyStrength(descriptor);
         }
     }
+
+    // ── ADR 0015 "new contract" implementation ──────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Which options tier <c>TOptions</c>'s runtime instance derives from, decided once at
+    /// construction. Drives which of the two independent state machines in this class
+    /// (ADR 0011's <see cref="SigningKeySet"/>-based cache, or ADR 0015's snapshot-based one) is
+    /// actually exercised by a given instance.
+    /// </summary>
+    private enum NewContractTier
+    {
+        /// <summary>ADR 0011 contract: <c>TOptions</c> derives from <see cref="StaticKeySourceOptions"/>
+        /// or <see cref="RotatingKeySourceOptions"/>; <see cref="LoadKeysAsync"/> is authoritative.</summary>
+        Legacy,
+
+        /// <summary>ADR 0015 Tier A: <c>TOptions</c> derives from <see cref="KeySetOptions"/>.</summary>
+        KeySet,
+
+        /// <summary>ADR 0015 Tier B: <c>TOptions</c> derives from <see cref="KeySourceOptions"/>.</summary>
+        KeySource,
+    }
+
+    private static NewContractTier ResolveTier(TOptions options) => options switch
+    {
+        KeySourceOptions => NewContractTier.KeySource,
+        KeySetOptions => NewContractTier.KeySet,
+        _ => NewContractTier.Legacy,
+    };
+
+    /// <summary>
+    /// Computes the state shared by both constructors — tier resolution, the time provider, and
+    /// the ADR 0011 rotation-interval fields — without touching the ADR 0015
+    /// retirement-window-provider/logger fields, which only the four-argument constructor sets.
+    /// Returned rather than assigned directly, because C# forbids assigning a <see langword="readonly"/>
+    /// field from anything other than a constructor body. Deliberately does not itself decide
+    /// whether the resolved tier is legal for the calling constructor; each constructor makes that
+    /// call so the two-argument overload can fail fast for a new-contract <c>TOptions</c> while the
+    /// four-argument overload accepts it.
+    /// </summary>
+    private static (NewContractTier Tier, TimeProvider TimeProvider, TimeSpan? KeyRotationCheckInterval, TimeSpan? NewContractRefreshInterval)
+        ResolveSharedState(IOptions<TOptions> options, TimeProvider timeProvider)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(timeProvider);
+
+        TimeSpan? keyRotationCheckInterval = options.Value is RotatingKeySourceOptions rotating
+            ? rotating.KeyRotationCheckInterval
+            : null;
+
+        TimeSpan? newContractRefreshInterval = options.Value is KeySourceOptions keySource
+            ? keySource.RefreshInterval
+            : null;
+
+        return (ResolveTier(options.Value), timeProvider, keyRotationCheckInterval, newContractRefreshInterval);
+    }
+
+    /// <summary>
+    /// The immutable snapshot of public key data the ADR 0015 contract computes active-key
+    /// selection and JWKS inclusion from. Rebuilt from scratch by <see cref="ListKeysAsync"/> —
+    /// Tier A once, Tier B once per <see cref="KeySourceOptions.RefreshInterval"/> — and never
+    /// mutated in place.
+    /// </summary>
+    private sealed class NewContractSnapshot
+    {
+        public required IReadOnlyList<KeyListing> Listings { get; init; }
+
+        public required IReadOnlyDictionary<string, KeyListing> ListingsById { get; init; }
+
+        public required IReadOnlyDictionary<string, SigningKeyDescriptor> DescriptorsById { get; init; }
+
+        public required IReadOnlyList<RotationEntry> Timeline { get; init; }
+    }
+
+    /// <summary>
+    /// A refcounted wrapper over one <see cref="ISigner"/> activation, so an in-flight
+    /// <see cref="ISigner.SignAsync"/> call can never race a handoff to a new active key: the
+    /// signer is not disposed until every borrow has been returned (ADR 0011 §3.2's
+    /// ordered-disposal rule, reused here per ADR 0015 §5 for both tiers).
+    /// </summary>
+    private sealed class SignerHandle
+    {
+        // Starts at 1, representing the base class's own persistent reference. Additional borrows
+        // increment this before use and decrement after; the underlying ISigner is disposed once
+        // the count reaches zero.
+        private int _refCount = 1;
+
+        // 0 = live, 1 = released. int so Interlocked.Exchange makes the transition atomic.
+        private int _released;
+
+        public required string Id { get; init; }
+
+        public required SigningKeyDescriptor Descriptor { get; init; }
+
+        public required ISigner Signer { get; init; }
+
+        public bool TryBorrow()
+        {
+            int current;
+            do
+            {
+                current = Volatile.Read(ref _refCount);
+                if (current <= 0)
+                    return false;
+            }
+            while (Interlocked.CompareExchange(ref _refCount, current + 1, current) != current);
+
+            return true;
+        }
+
+        public void Return()
+        {
+            if (Interlocked.Decrement(ref _refCount) == 0)
+                Signer.Dispose();
+        }
+
+        /// <summary>
+        /// Releases the base class's own persistent reference. The underlying <see cref="ISigner"/>
+        /// is disposed only once every in-flight <see cref="TryBorrow"/> has also been returned.
+        /// Safe to call multiple times.
+        /// </summary>
+        public void Release()
+        {
+            if (Interlocked.Exchange(ref _released, 1) != 0)
+                return;
+
+            Return();
+        }
+    }
+
+    private async ValueTask<IReadOnlyList<SigningKeyDescriptor>> GetSigningKeysUsingNewContractAsync(
+        CancellationToken cancellationToken)
+    {
+        var snapshot = await EnsureNewContractSnapshotAsync(cancellationToken).ConfigureAwait(false);
+        var now = _timeProvider.GetUtcNow();
+
+        var active = SigningKeyRotation.SelectActiveKey(snapshot.Timeline, now)
+            ?? throw NoActiveKeyException();
+
+        var retirementWindow = _retirementWindowProvider?.GetRetirementWindow() ?? TimeSpan.Zero;
+        var included = SigningKeyRotation.SelectIncludedKeys(snapshot.Timeline, active, now, retirementWindow);
+
+        return included.Select(entry => snapshot.DescriptorsById[entry.Key.Id]).ToList();
+    }
+
+    private async ValueTask<SigningResult> SignUsingNewContractAsync(
+        ReadOnlyMemory<byte> payloadSegment, CancellationToken cancellationToken)
+    {
+        var snapshot = await EnsureNewContractSnapshotAsync(cancellationToken).ConfigureAwait(false);
+        var handle = await EnsureActiveSignerAsync(snapshot, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var headerBytes = BuildHeaderJsonBytes(handle.Descriptor.Algorithm, handle.Descriptor.Kid);
+            var headerSegment = Base64UrlEncode(headerBytes);
+            var signingInput = AssembleSigningInput(headerSegment, payloadSegment);
+
+            var signatureBytes = await handle.Signer.SignAsync(signingInput, cancellationToken).ConfigureAwait(false);
+            var signatureSegment = Base64UrlEncode(signatureBytes);
+
+            return new SigningResult(headerSegment, signatureSegment, handle.Descriptor.Kid, handle.Descriptor.Algorithm);
+        }
+        finally
+        {
+            handle.Return();
+        }
+    }
+
+    /// <summary>
+    /// Returns the current immutable snapshot, building or refreshing it via
+    /// <see cref="ListKeysAsync"/> when needed. Tier A builds it once and never rebuilds; Tier B
+    /// rebuilds it once per <see cref="KeySourceOptions.RefreshInterval"/>.
+    /// </summary>
+    private async ValueTask<NewContractSnapshot> EnsureNewContractSnapshotAsync(CancellationToken cancellationToken)
+    {
+        var now = _timeProvider.GetUtcNow();
+
+        var current = Volatile.Read(ref _newContractSnapshot);
+        if (current is not null && now < _newContractSnapshotExpiresAt)
+            return current;
+
+        await _newContractSnapshotLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            now = _timeProvider.GetUtcNow();
+            if (_newContractSnapshot is not null && now < _newContractSnapshotExpiresAt)
+                return _newContractSnapshot;
+
+            var previous = _newContractSnapshot;
+            var listings = await ListKeysAsync(cancellationToken).ConfigureAwait(false);
+            var snapshot = BuildNewContractSnapshot(listings);
+
+            if (previous is not null)
+                EvaluateKillByOmission(previous, snapshot, now);
+
+            _newContractSnapshot = snapshot;
+            _newContractSnapshotExpiresAt = _tier == NewContractTier.KeySet
+                ? DateTimeOffset.MaxValue // Tier A: ListKeysAsync is called exactly once, ever.
+                : now.Add(_newContractRefreshInterval!.Value);
+
+            return snapshot;
+        }
+        finally
+        {
+            _newContractSnapshotLock.Release();
+        }
+    }
+
+    /// <summary>
+    /// Recomputes active-key selection from <paramref name="snapshot"/> and <c>now</c>, and — only
+    /// when the computed active <see cref="KeyId"/> has changed — calls <see cref="CreateSignerAsync"/>
+    /// for the new active key and disposes (opportunistically, per ADR 0015 §5) the signer it
+    /// supersedes. Returns a borrowed <see cref="SignerHandle"/> that the caller MUST
+    /// <see cref="SignerHandle.Return"/> exactly once.
+    /// </summary>
+    private async ValueTask<SignerHandle> EnsureActiveSignerAsync(
+        NewContractSnapshot snapshot, CancellationToken cancellationToken)
+    {
+        var now = _timeProvider.GetUtcNow();
+        var active = SigningKeyRotation.SelectActiveKey(snapshot.Timeline, now)
+            ?? throw NoActiveKeyException();
+
+        var current = Volatile.Read(ref _activeSignerHandle);
+        if (current is not null && string.Equals(current.Id, active.Key.Id, StringComparison.Ordinal) && current.TryBorrow())
+            return current;
+
+        await _newContractSignerLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            // Re-check inside the lock: another caller may have already performed the handoff, or
+            // the wall clock may have moved on again since the fast-path check above.
+            now = _timeProvider.GetUtcNow();
+            active = SigningKeyRotation.SelectActiveKey(snapshot.Timeline, now)
+                ?? throw NoActiveKeyException();
+
+            if (_activeSignerHandle is { } existing &&
+                string.Equals(existing.Id, active.Key.Id, StringComparison.Ordinal))
+            {
+                existing.TryBorrow();
+                return existing;
+            }
+
+            var activeId = new KeyId(active.Key.Id);
+            var signer = await CreateSignerAsync(activeId, cancellationToken).ConfigureAwait(false);
+            var descriptor = snapshot.DescriptorsById[active.Key.Id];
+
+            if (signer.Algorithm != descriptor.Algorithm)
+            {
+                signer.Dispose();
+
+                throw new ZeeKayDaConfigurationException(
+                    new ZeeKayDaConfigurationFailure(
+                        "signing.signer_algorithm_mismatch",
+                        $"The signer returned by {nameof(CreateSignerAsync)} for key '{activeId.Value}' " +
+                        $"signs under {signer.Algorithm}, but the key was listed with algorithm " +
+                        $"{descriptor.Algorithm}. The signer's {nameof(ISigner.Algorithm)} must match " +
+                        $"the key's declared algorithm exactly."));
+            }
+
+            var newHandle = new SignerHandle { Id = activeId.Value, Descriptor = descriptor, Signer = signer };
+            var previous = _activeSignerHandle;
+            _activeSignerHandle = newHandle;
+
+            // Releases the base class's own reference on the superseded signer. Per ADR 0015 §5,
+            // the underlying private material is reclaimed once every in-flight SignAsync borrow on
+            // it has also returned — immediately for Tier A's typical idle handoff, or after the
+            // last in-flight signing call completes for a concurrently-borrowed Tier B signer.
+            previous?.Release();
+
+            newHandle.TryBorrow();
+            return newHandle;
+        }
+        finally
+        {
+            _newContractSignerLock.Release();
+        }
+    }
+
+    /// <summary>
+    /// Builds a validated immutable snapshot from a freshly returned <see cref="ListKeysAsync"/>
+    /// result: derives each listing's <c>kid</c>, rejects duplicates, and runs
+    /// algorithm-compatibility/key-strength validation over every listing — all before any
+    /// <see cref="CreateSignerAsync"/> call (ADR 0015 §2/§7).
+    /// </summary>
+    private static NewContractSnapshot BuildNewContractSnapshot(IReadOnlyList<KeyListing> listings)
+    {
+        ArgumentNullException.ThrowIfNull(listings);
+
+        var seenKids = new HashSet<string>(StringComparer.Ordinal);
+        var descriptorsById = new Dictionary<string, SigningKeyDescriptor>(listings.Count, StringComparer.Ordinal);
+        var listingsById = new Dictionary<string, KeyListing>(listings.Count, StringComparer.Ordinal);
+        var rotationKeys = new RotationKey[listings.Count];
+
+        for (var i = 0; i < listings.Count; i++)
+        {
+            var listing = listings[i];
+            var descriptor = BuildDescriptorFromListing(listing);
+
+            if (!seenKids.Add(descriptor.Kid))
+            {
+                throw new ZeeKayDaConfigurationException(
+                    new ZeeKayDaConfigurationFailure(
+                        "signing.duplicate_kid",
+                        $"The signing key listing contains duplicate kid '{descriptor.Kid}'. " +
+                        "Each key must have a unique, stable identifier."));
+            }
+
+            ValidateListing(listing, descriptor);
+
+            descriptorsById[listing.Id.Value] = descriptor;
+            listingsById[listing.Id.Value] = listing;
+            rotationKeys[i] = new RotationKey(listing.Id.Value, listing.ActivateAt ?? DateTimeOffset.MinValue, listing.ExpiresAt);
+        }
+
+        return new NewContractSnapshot
+        {
+            Listings = listings,
+            ListingsById = listingsById,
+            DescriptorsById = descriptorsById,
+            Timeline = SigningKeyRotation.BuildActivationTimeline(rotationKeys),
+        };
+    }
+
+    /// <summary>
+    /// Derives a <see cref="SigningKeyDescriptor"/> — and therefore its <c>kid</c> — from a
+    /// <see cref="KeyListing"/>'s public key material, never from <see cref="KeyListing.Id"/>.
+    /// </summary>
+    private static SigningKeyDescriptor BuildDescriptorFromListing(KeyListing listing)
+    {
+        return listing.PublicKey.KeyType switch
+        {
+            SigningKeyType.Rsa => BuildRsaDescriptor(listing),
+            SigningKeyType.Ec => BuildEcDescriptor(listing),
+            _ => throw new NotSupportedException($"Signing key type {listing.PublicKey.KeyType} is not supported."),
+        };
+
+        static SigningKeyDescriptor BuildRsaDescriptor(KeyListing listing)
+        {
+            var rsaParams = listing.PublicKey.RsaPublicParameters!.Value;
+            var kid = JwkThumbprint.Compute(rsaParams);
+            return new SigningKeyDescriptor(kid, listing.Algorithm, rsaParams);
+        }
+
+        static SigningKeyDescriptor BuildEcDescriptor(KeyListing listing)
+        {
+            var ecParams = listing.PublicKey.EcPublicParameters!.Value;
+            var kid = JwkThumbprint.Compute(ecParams);
+            return new SigningKeyDescriptor(kid, listing.Algorithm, ecParams);
+        }
+    }
+
+    /// <summary>
+    /// Runs the same algorithm-compatibility and key-strength checks the ADR 0011 contract runs at
+    /// load time, over public data only: a public-only <see cref="RSA"/>/<see cref="ECDsa"/> object
+    /// is imported purely so <see cref="SigningAlgorithms.ValidateKeyAlgorithmCompatibility"/> can
+    /// inspect its runtime type and curve — no private material is ever involved.
+    /// </summary>
+    private static void ValidateListing(KeyListing listing, SigningKeyDescriptor descriptor)
+    {
+        if (listing.PublicKey.KeyType == SigningKeyType.Rsa)
+        {
+            using var rsa = RSA.Create();
+            rsa.ImportParameters(listing.PublicKey.RsaPublicParameters!.Value);
+            SigningAlgorithms.ValidateKeyAlgorithmCompatibility(descriptor, rsa);
+        }
+        else
+        {
+            using var ec = ECDsa.Create();
+            ec.ImportParameters(listing.PublicKey.EcPublicParameters!.Value);
+            SigningAlgorithms.ValidateKeyAlgorithmCompatibility(descriptor, ec);
+        }
+
+        SigningAlgorithms.ValidateKeyStrength(descriptor);
+    }
+
+    /// <summary>
+    /// Implements ADR 0015 §6's three-state kill-by-omission disambiguation for every key present
+    /// in <paramref name="previous"/> but missing from <paramref name="current"/>: silent when the
+    /// vanished key's derived retirement window (computed from <paramref name="previous"/>'s own
+    /// timeline) had already closed, or a <see cref="Microsoft.Extensions.Logging.LogLevel.Warning"/>
+    /// when it vanished while still inside that window. A failed or partial read is not this
+    /// method's concern — that is <see cref="ListKeysAsync"/>'s completeness contract, enforced by
+    /// simply never catching what it throws.
+    /// </summary>
+    private void EvaluateKillByOmission(NewContractSnapshot previous, NewContractSnapshot current, DateTimeOffset now)
+    {
+        var retirementWindow = _retirementWindowProvider?.GetRetirementWindow() ?? TimeSpan.Zero;
+
+        foreach (var id in previous.Listings
+                     .Select(previousListing => previousListing.Id.Value)
+                     .Where(id => !current.ListingsById.ContainsKey(id)))
+        {
+            var withinRetirementWindow = true;
+            foreach (var entry in previous.Timeline.Where(entry =>
+                         string.Equals(entry.Key.Id, id, StringComparison.Ordinal)))
+            {
+                // RetiredAt is null when the key had not (yet) been legitimately superseded as of
+                // the previous snapshot — vanishing before that point is unambiguously premature.
+                // Otherwise, "post-window" means the derived retirement window has already elapsed.
+                withinRetirementWindow = entry.RetiredAt is null || now - entry.RetiredAt.Value <= retirementWindow;
+                break;
+            }
+
+            if (withinRetirementWindow)
+            {
+                _newContractLogger?.LogWarning(
+                    "ZeeKayDa.Auth: signing key '{KeyId}' stopped appearing in {ServiceType}.ListKeysAsync " +
+                    "while still inside its retirement window. It has been dropped from the JWKS on this " +
+                    "refresh regardless (the kill switch still fires), but an early vanish while still " +
+                    "trusted usually means an accidental key deletion rather than normal end-of-life " +
+                    "rotation (ADR 0015 §6).",
+                    id, GetType().Name);
+            }
+        }
+    }
+
+    private static ZeeKayDaConfigurationException NoActiveKeyException() =>
+        new(new ZeeKayDaConfigurationFailure(
+            "signing.no_active_key",
+            "No signing key is currently eligible to be the active signer — every configured key " +
+            "has either not yet activated or has already expired. Refusing to sign rather than " +
+            "picking an ineligible key (ADR 0015 §3/Security Considerations item 3)."));
 }
