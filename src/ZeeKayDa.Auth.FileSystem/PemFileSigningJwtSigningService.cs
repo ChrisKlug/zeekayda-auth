@@ -81,7 +81,7 @@ internal sealed class PemFileSigningJwtSigningService : JwtSigningService<PemFil
             listings.Add(new KeyListing(new KeyId(file.Id), options.Algorithm, publicKeyParameters, activateAt, expiresAt));
 
             var (describedKeyType, keySizeBits) = FileSigningKeyExtractor.DescribeKeyForLogging(certificate);
-            _keyMetadataById[file.Id] = $"({describedKeyType}, {keySizeBits}-bit)";
+            _keyMetadataById[file.Id] = $"{describedKeyType}, {keySizeBits}-bit";
         }
 
         return listings;
@@ -107,7 +107,7 @@ internal sealed class PemFileSigningJwtSigningService : JwtSigningService<PemFil
     private static RegisteredSigningFile FindRegisteredFile(IReadOnlyList<RegisteredSigningFile> files, string id)
     {
         var file = files.FirstOrDefault(file => string.Equals(file.Id, id, StringComparison.Ordinal));
-        if (file is not null)
+        if (file.Id is not null)
             return file;
 
         throw new InvalidOperationException(

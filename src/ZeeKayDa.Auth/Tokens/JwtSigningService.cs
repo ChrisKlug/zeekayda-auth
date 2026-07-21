@@ -1134,11 +1134,11 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
         {
             var status = DescribeKeyStatus(entry, active.Value, includedIds, now, retirementWindow);
             var metadata = DescribeKeyMetadata(entry.Key.Id);
-            var metadataSuffix = metadata is null ? string.Empty : $" {metadata}";
+            var details = metadata is null ? $"expires {entry.Key.ExpiresAt:O}" : $"{metadata}, expires {entry.Key.ExpiresAt:O}";
 
             _logger?.LogInformation(
-                "ZeeKayDa.Auth: signing key '{KeyId}'{Metadata} (expires {ExpiresAt:O}) is {Status}.",
-                entry.Key.Id, metadataSuffix, entry.Key.ExpiresAt, status);
+                "ZeeKayDa.Auth: signing key '{KeyId}' ({Details}) is {Status}.",
+                entry.Key.Id, details, status);
         }
 
         if (SigningKeyRotation.HasTooSoonPendingActivation(snapshot.Timeline, active.Value, now, keySetOptions.PublicationLead, out var soonestPending))
