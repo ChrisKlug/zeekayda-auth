@@ -16,13 +16,8 @@ internal sealed class PemFileSigningOptionsValidator : IValidateOptions<PemFileS
     {
         var errors = new List<string>();
 
-        if (options.PublicationLead <= TimeSpan.Zero)
-        {
-            errors.Add(
-                $"PemFileSigningOptions.PublicationLead ({options.PublicationLead}) must be greater " +
-                "than zero. A zero or negative value silently disables the too-soon-activation " +
-                "startup warning this property exists to raise (ADR 0015 §1).");
-        }
+        if (KeySourcePublicationLeadValidator.ValidateMinimum(nameof(PemFileSigningOptions), options.PublicationLead) is { } publicationLeadError)
+            errors.Add(publicationLeadError);
 
         if (string.IsNullOrWhiteSpace(options.Path))
             errors.Add("PemFileSigningOptions.Path must be set to a non-empty file path.");

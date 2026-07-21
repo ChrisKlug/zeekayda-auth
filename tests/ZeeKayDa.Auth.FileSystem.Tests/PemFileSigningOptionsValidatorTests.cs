@@ -18,12 +18,13 @@ public sealed class PemFileSigningOptionsValidatorTests
         result.Succeeded.Should().BeTrue();
     }
 
-    // ── PublicationLead (ADR 0015 §1) ─────────────────────────────────────────────────────────────
+    // ── PublicationLead ────────────────────────────────────────────────────────────────────────────
 
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]
-    public void Validate_fails_when_PublicationLead_is_zero_or_negative(int seconds)
+    [InlineData(30)]
+    public void Validate_fails_when_PublicationLead_is_shorter_than_one_minute(int seconds)
     {
         var options = ValidOptions();
         options.PublicationLead = TimeSpan.FromSeconds(seconds);
@@ -35,7 +36,18 @@ public sealed class PemFileSigningOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_succeeds_with_a_positive_PublicationLead()
+    public void Validate_succeeds_with_a_PublicationLead_of_exactly_one_minute()
+    {
+        var options = ValidOptions();
+        options.PublicationLead = TimeSpan.FromMinutes(1);
+
+        var result = new PemFileSigningOptionsValidator().Validate(null, options);
+
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Validate_succeeds_with_a_PublicationLead_longer_than_one_minute()
     {
         var options = ValidOptions();
         options.PublicationLead = TimeSpan.FromMinutes(30);

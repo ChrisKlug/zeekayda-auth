@@ -201,9 +201,13 @@ public sealed class JwtSigningServiceNewContractTests
         Func<IReadOnlyList<KeyListing>> listFactory,
         Func<KeyId, ISigner>? signerFactory = null,
         TimeSpan? retirementWindow = null,
-        CapturingLogger<JwtSigningService<FakeKeySetOptions>>? logger = null)
+        CapturingLogger<JwtSigningService<FakeKeySetOptions>>? logger = null,
+        TimeSpan? publicationLead = null)
     {
-        var options = Options.Create(new FakeKeySetOptions());
+        var options = Options.Create(new FakeKeySetOptions
+        {
+            PublicationLead = publicationLead ?? TimeSpan.FromHours(1),
+        });
         return new KeySetFakeService(
             options,
             timeProvider,
@@ -561,6 +565,120 @@ public sealed class JwtSigningServiceNewContractTests
 
         second.Select(k => k.Kid).Should().BeEquivalentTo(
             first.Select(k => k.Kid), "a failed read must never be treated as a kill — the previous snapshot must keep serving");
+    }
+
+    // ── Status/expiry logging and the too-soon-pending-activation warning (KeySetOptions only) ────
+
+    [Fact]
+    public async Task GetSigningKeysAsync_logs_a_warning_when_a_pending_keys_activation_is_sooner_than_PublicationLead()
+    {
+        using var rsa1 = RSA.Create(2048);
+        using var rsa2 = RSA.Create(2048);
+        var timeProvider = new FakeTimeProvider(Epoch);
+        var logger = new CapturingLogger<JwtSigningService<FakeKeySetOptions>>();
+
+        await using var sut = BuildKeySetService(
+            timeProvider,
+            () =>
+            [
+                MakeRsaListing(rsa1, "k1", activateAt: null, expiresAt: Epoch.AddYears(1)),
+                MakeRsaListing(rsa2, "k2", activateAt: Epoch.AddMinutes(1), expiresAt: Epoch.AddYears(1)),
+            ],
+            logger: logger,
+            publicationLead: TimeSpan.FromHours(1));
+        var ct = TestContext.Current.CancellationToken;
+
+        await sut.GetSigningKeysAsync(ct);
+
+        logger.Entries.Should().Contain(
+            e => e.Level == LogLevel.Warning && e.Message.Contains("PublicationLead"),
+            "k2 activates in 1 minute, well inside the 1-hour PublicationLead");
+    }
+
+    [Fact]
+    public async Task GetSigningKeysAsync_does_not_warn_when_PublicationLead_is_satisfied()
+    {
+        using var rsa1 = RSA.Create(2048);
+        using var rsa2 = RSA.Create(2048);
+        var timeProvider = new FakeTimeProvider(Epoch);
+        var logger = new CapturingLogger<JwtSigningService<FakeKeySetOptions>>();
+
+        await using var sut = BuildKeySetService(
+            timeProvider,
+            () =>
+            [
+                MakeRsaListing(rsa1, "k1", activateAt: null, expiresAt: Epoch.AddYears(1)),
+                MakeRsaListing(rsa2, "k2", activateAt: Epoch.AddHours(2), expiresAt: Epoch.AddYears(1)),
+            ],
+            logger: logger,
+            publicationLead: TimeSpan.FromHours(1));
+        var ct = TestContext.Current.CancellationToken;
+
+        await sut.GetSigningKeysAsync(ct);
+
+        logger.Entries.Should().NotContain(e => e.Level == LogLevel.Warning && e.Message.Contains("PublicationLead"));
+    }
+
+    [Fact]
+    public async Task GetSigningKeysAsync_warns_when_the_active_key_expires_within_30_days()
+    {
+        using var rsa = RSA.Create(2048);
+        var timeProvider = new FakeTimeProvider(Epoch);
+        var logger = new CapturingLogger<JwtSigningService<FakeKeySetOptions>>();
+
+        await using var sut = BuildKeySetService(
+            timeProvider,
+            () => [MakeRsaListing(rsa, "k1", activateAt: null, expiresAt: Epoch.AddDays(10))],
+            logger: logger);
+        var ct = TestContext.Current.CancellationToken;
+
+        await sut.GetSigningKeysAsync(ct);
+
+        logger.Entries.Should().Contain(e => e.Level == LogLevel.Warning && e.Message.Contains("expires"));
+    }
+
+    [Fact]
+    public async Task GetSigningKeysAsync_logs_an_informational_status_line_for_each_key()
+    {
+        using var rsa = RSA.Create(2048);
+        var timeProvider = new FakeTimeProvider(Epoch);
+        var logger = new CapturingLogger<JwtSigningService<FakeKeySetOptions>>();
+
+        await using var sut = BuildKeySetService(
+            timeProvider,
+            () => [MakeRsaListing(rsa, "k1", activateAt: null, expiresAt: Epoch.AddYears(1))],
+            logger: logger);
+        var ct = TestContext.Current.CancellationToken;
+
+        await sut.GetSigningKeysAsync(ct);
+
+        logger.Entries.Should().Contain(
+            e => e.Level == LogLevel.Information && e.Message.Contains("k1") && e.Message.Contains("active signer"));
+    }
+
+    [Fact]
+    public async Task GetSigningKeysAsync_does_not_log_status_or_warnings_for_a_KeySourceOptions_provider()
+    {
+        // The too-soon-pending-activation warning and per-key status line are specific to
+        // KeySetOptions (Tier A); a KeySourceOptions (Tier B) provider must not gain them.
+        using var rsa1 = RSA.Create(2048);
+        using var rsa2 = RSA.Create(2048);
+        var timeProvider = new FakeTimeProvider(Epoch);
+        var logger = new CapturingLogger<JwtSigningService<FakeKeySourceOptions>>();
+
+        await using var sut = BuildKeySourceService(
+            timeProvider,
+            () =>
+            [
+                MakeRsaListing(rsa1, "k1", activateAt: null, expiresAt: Epoch.AddYears(1)),
+                MakeRsaListing(rsa2, "k2", activateAt: Epoch.AddMinutes(1), expiresAt: Epoch.AddYears(1)),
+            ],
+            logger: logger);
+        var ct = TestContext.Current.CancellationToken;
+
+        await sut.GetSigningKeysAsync(ct);
+
+        logger.Entries.Should().BeEmpty();
     }
 
     // ── Duplicate-kid rejection and algorithm/key-strength validation timing ───────────────────────

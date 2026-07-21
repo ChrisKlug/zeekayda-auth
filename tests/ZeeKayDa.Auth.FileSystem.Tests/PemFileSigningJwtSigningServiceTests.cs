@@ -128,6 +128,28 @@ public sealed class PemFileSigningJwtSigningServiceTests
         exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.invalid_pem");
     }
 
+    [Fact]
+    public async Task SignAsync_throws_ZeeKayDaConfigurationException_when_the_separately_registered_key_file_has_invalid_PEM_content()
+    {
+        // The certificate is valid (so ListKeysAsync/GetSigningKeysAsync succeeds); only the
+        // separately-registered private key file is invalid, which is only ever read/parsed by
+        // CreateSignerAsync.
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+        var certPath = tempDir.WriteCertificateOnlyPemFile("cert.pem", certificate);
+        var keyPath = tempDir.WriteTextFile("key.pem", "this is not a valid PEM key");
+        await using var sut = BuildService(certPath, new FakeTimeProvider(T0), keyPath: keyPath);
+
+        await sut.GetSigningKeysAsync(ct); // succeeds — only the certificate is read for listing
+
+        var act = async () => await sut.SignAsync(SigningTestHelpers.Base64UrlEncode("test"u8.ToArray()), ct);
+
+        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.invalid_pem");
+        exception.Which.Message.Should().Contain(certPath).And.Contain(keyPath);
+    }
+
     // ── Permission enforcement (AC #2) ───────────────────────────────────────────────────────────
 
     [Fact]
@@ -250,7 +272,7 @@ public sealed class PemFileSigningJwtSigningServiceTests
     }
 
     [Fact]
-    public async Task GetSigningKeysAsync_throws_when_the_separately_registered_key_file_is_broader_than_0600_on_Unix()
+    public async Task SignAsync_throws_when_the_separately_registered_key_file_is_broader_than_0600_on_Unix()
     {
         Assert.SkipWhen(OperatingSystem.IsWindows(), "0600-mode enforcement is the Unix permission model.");
 
@@ -262,14 +284,14 @@ public sealed class PemFileSigningJwtSigningServiceTests
         tempDir.MakeTooPermissive(keyPath); // Widen only the separate key file, not the cert file.
         await using var sut = BuildService(certPath, new FakeTimeProvider(T0), keyPath: keyPath);
 
-        var act = async () => await sut.GetSigningKeysAsync(ct);
+        var act = async () => await sut.SignAsync(SigningTestHelpers.Base64UrlEncode("test"u8.ToArray()), ct);
 
         var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
         exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.file_too_permissive");
     }
 
     [Fact]
-    public async Task GetSigningKeysAsync_throws_when_the_separately_registered_key_files_ACL_grants_a_broad_principal_on_Windows()
+    public async Task SignAsync_throws_when_the_separately_registered_key_files_ACL_grants_a_broad_principal_on_Windows()
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), "broad-principal ACL enforcement is the Windows permission model.");
 
@@ -281,15 +303,35 @@ public sealed class PemFileSigningJwtSigningServiceTests
         tempDir.MakeTooPermissive(keyPath); // Widen only the separate key file, not the cert file.
         await using var sut = BuildService(certPath, new FakeTimeProvider(T0), keyPath: keyPath);
 
-        var act = async () => await sut.GetSigningKeysAsync(ct);
+        var act = async () => await sut.SignAsync(SigningTestHelpers.Base64UrlEncode("test"u8.ToArray()), ct);
 
         var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
         exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.file_too_permissive");
     }
 
     [Fact]
-    public async Task GetSigningKeysAsync_throws_when_the_separately_registered_key_file_does_not_exist()
+    public async Task SignAsync_throws_when_the_separately_registered_key_file_does_not_exist()
     {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+        var certPath = tempDir.WriteCertificateOnlyPemFile("cert.pem", certificate);
+        var missingKeyPath = tempDir.GetPath("does-not-exist.key");
+        await using var sut = BuildService(certPath, new FakeTimeProvider(T0), keyPath: missingKeyPath);
+
+        var act = async () => await sut.SignAsync(SigningTestHelpers.Base64UrlEncode("test"u8.ToArray()), ct);
+
+        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.file_not_found");
+    }
+
+    // ── Least-privilege listing: the private key is never read to build the JWKS listing ────────
+
+    [Fact]
+    public async Task GetSigningKeysAsync_succeeds_even_when_the_separately_registered_key_file_is_missing()
+    {
+        // ListKeysAsync must build the listing from the certificate alone; the private key file is
+        // read only by CreateSignerAsync, when actually signing.
         var ct = TestContext.Current.CancellationToken;
         using var tempDir = new TempSigningKeyDirectory();
         using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
@@ -299,8 +341,8 @@ public sealed class PemFileSigningJwtSigningServiceTests
 
         var act = async () => await sut.GetSigningKeysAsync(ct);
 
-        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
-        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.file_not_found");
+        await act.Should().NotThrowAsync(
+            "the missing private key file must not prevent building the public listing");
     }
 
     // ── Multi-file rotation via AddFile (AC #9/#10) ──────────────────────────────────────────────
