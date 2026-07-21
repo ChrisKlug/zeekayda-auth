@@ -39,4 +39,20 @@ public interface ISigner : IDisposable
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>The raw signature bytes in the format required by the key's algorithm.</returns>
     ValueTask<ReadOnlyMemory<byte>> SignAsync(ReadOnlyMemory<byte> signingInput, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The algorithm this signer actually signs under.
+    /// </summary>
+    /// <remarks>
+    /// This MUST be the true algorithm <see cref="SignAsync"/> uses to produce its signature bytes —
+    /// not merely the algorithm the provider intended or was asked for. Immediately after
+    /// <c>CreateSignerAsync</c> returns an <see cref="ISigner"/> for a given key, the base class
+    /// compares this property against that same key's <see cref="KeyListing.Algorithm"/> — already
+    /// validated for algorithm/key-strength compatibility at <c>ListKeysAsync</c> time — and rejects
+    /// the signer on any mismatch. Without this check a provider bug could silently produce a JWS
+    /// whose header names one algorithm while the signature bytes were actually produced under
+    /// another: not a forged signature, but a wrong one, and one that would only surface as an
+    /// opaque signature-verification failure downstream rather than a clear configuration error here.
+    /// </remarks>
+    SigningAlgorithm Algorithm { get; }
 }

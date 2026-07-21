@@ -905,6 +905,19 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
             var signer = await CreateSignerAsync(activeId, cancellationToken).ConfigureAwait(false);
             var descriptor = snapshot.DescriptorsById[active.Key.Id];
 
+            if (signer.Algorithm != descriptor.Algorithm)
+            {
+                signer.Dispose();
+
+                throw new ZeeKayDaConfigurationException(
+                    new ZeeKayDaConfigurationFailure(
+                        "signing.signer_algorithm_mismatch",
+                        $"The signer returned by {nameof(CreateSignerAsync)} for key '{activeId.Value}' " +
+                        $"signs under {signer.Algorithm}, but the key was listed with algorithm " +
+                        $"{descriptor.Algorithm}. The signer's {nameof(ISigner.Algorithm)} must match " +
+                        $"the key's declared algorithm exactly."));
+            }
+
             var newHandle = new SignerHandle { Id = activeId.Value, Descriptor = descriptor, Signer = signer };
             var previous = _activeSignerHandle;
             _activeSignerHandle = newHandle;

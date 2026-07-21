@@ -28,7 +28,7 @@ public sealed class JwtSigningServiceNewContractTests
     }
 
     /// <summary>An <see cref="ISigner"/> test double that counts and never actually signs anything.</summary>
-    private sealed class FakeSigner : ISigner
+    private sealed class FakeSigner(SigningAlgorithm algorithm = SigningAlgorithm.RS256) : ISigner
     {
         public int DisposeCount { get; private set; }
 
@@ -42,6 +42,8 @@ public sealed class JwtSigningServiceNewContractTests
         }
 
         public void Dispose() => DisposeCount++;
+
+        public SigningAlgorithm Algorithm => algorithm;
     }
 
     private sealed class FakeRetirementWindowProvider(TimeSpan window) : ISigningKeyRetirementWindowProvider
@@ -69,6 +71,26 @@ public sealed class JwtSigningServiceNewContractTests
             await release.Task.ConfigureAwait(false);
             return new byte[] { 1, 2, 3, 4 };
         }
+
+        public void Dispose() => DisposeCount++;
+
+        public SigningAlgorithm Algorithm => SigningAlgorithm.RS256;
+    }
+
+    /// <summary>
+    /// An <see cref="ISigner"/> test double whose <see cref="Algorithm"/> deliberately disagrees with
+    /// the algorithm the <see cref="KeyListing"/> it is registered under declared, so tests can prove
+    /// the base class detects and rejects the mismatch (issue #420 follow-up).
+    /// </summary>
+    private sealed class MismatchedAlgorithmSigner(SigningAlgorithm algorithm) : ISigner
+    {
+        public int DisposeCount { get; private set; }
+
+        public SigningAlgorithm Algorithm => algorithm;
+
+        public ValueTask<ReadOnlyMemory<byte>> SignAsync(
+            ReadOnlyMemory<byte> signingInput, CancellationToken cancellationToken = default)
+            => new(new byte[] { 1, 2, 3, 4 });
 
         public void Dispose() => DisposeCount++;
     }
@@ -630,6 +652,29 @@ public sealed class JwtSigningServiceNewContractTests
         public void Dispose()
         {
         }
+
+        public SigningAlgorithm Algorithm => SigningAlgorithm.RS256;
+    }
+
+    [Fact]
+    public async Task SignAsync_throws_and_disposes_the_signer_when_its_Algorithm_disagrees_with_the_listed_algorithm()
+    {
+        using var rsa = RSA.Create(2048);
+        var timeProvider = new FakeTimeProvider(Epoch);
+        var mismatchedSigner = new MismatchedAlgorithmSigner(SigningAlgorithm.ES256);
+
+        await using var sut = BuildKeySetService(
+            timeProvider,
+            () => [MakeRsaListing(rsa, "k1", activateAt: null, expiresAt: Epoch.AddYears(1), algorithm: SigningAlgorithm.RS256)],
+            signerFactory: _ => mismatchedSigner);
+        var ct = TestContext.Current.CancellationToken;
+
+        await sut.Awaiting(s => s.SignAsync(new byte[] { 0 }, ct).AsTask())
+            .Should().ThrowAsync<ZeeKayDaConfigurationException>()
+            .WithMessage("*signer_algorithm_mismatch*");
+
+        mismatchedSigner.DisposeCount.Should().Be(
+            1, "a signer rejected for an algorithm mismatch must not leak — it must be disposed immediately");
     }
 
     // ── EC keys ──────────────────────────────────────────────────────────────────────────────────────
