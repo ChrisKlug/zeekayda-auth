@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Buffers.Text;
+using System.Linq;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
@@ -1040,11 +1041,9 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
                 continue;
 
             var withinRetirementWindow = true;
-            foreach (var entry in previous.Timeline)
+            foreach (var entry in previous.Timeline.Where(entry =>
+                         string.Equals(entry.Key.Id, id, StringComparison.Ordinal)))
             {
-                if (!string.Equals(entry.Key.Id, id, StringComparison.Ordinal))
-                    continue;
-
                 // RetiredAt is null when the key had not (yet) been legitimately superseded as of
                 // the previous snapshot — vanishing before that point is unambiguously premature.
                 // Otherwise, "post-window" means the derived retirement window has already elapsed.
