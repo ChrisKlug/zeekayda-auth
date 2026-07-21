@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using Microsoft.Extensions.Options;
@@ -70,16 +71,9 @@ internal sealed class PemFileSigningJwtSigningService : JwtSigningService<PemFil
         {
             using var certificate = await LoadPublicCertificateAsync(file, cancellationToken).ConfigureAwait(false);
 
-            var (publicKey, keyType) = FileSigningKeyExtractor.ExtractPublicKey(certificate, file.Id);
-            PublicKeyParameters publicKeyParameters;
-            try
-            {
-                publicKeyParameters = BuildValidatedPublicKey(publicKey, keyType, file.Id, options);
-            }
-            finally
-            {
-                publicKey.Dispose();
-            }
+            var (rawPublicKey, keyType) = FileSigningKeyExtractor.ExtractPublicKey(certificate, file.Id);
+            using var publicKey = rawPublicKey;
+            var publicKeyParameters = BuildValidatedPublicKey(publicKey, keyType, file.Id, options);
 
             var activateAt = new DateTimeOffset(certificate.NotBefore);
             var expiresAt = new DateTimeOffset(certificate.NotAfter);
@@ -112,11 +106,9 @@ internal sealed class PemFileSigningJwtSigningService : JwtSigningService<PemFil
 
     private static RegisteredSigningFile FindRegisteredFile(IReadOnlyList<RegisteredSigningFile> files, string id)
     {
-        foreach (var file in files)
-        {
-            if (string.Equals(file.Id, id, StringComparison.Ordinal))
-                return file;
-        }
+        var file = files.FirstOrDefault(file => string.Equals(file.Id, id, StringComparison.Ordinal));
+        if (file is not null)
+            return file;
 
         throw new InvalidOperationException(
             $"{nameof(CreateSignerAsync)} was called for key '{id}', which is no longer a registered " +
