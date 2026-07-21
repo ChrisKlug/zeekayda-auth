@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Security.Cryptography.X509Certificates;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -17,6 +18,14 @@ namespace ZeeKayDa.Auth.FileSystem.Tests;
 /// is real filesystem interaction (permission enforcement, symlink detection), so every test below
 /// exercises the real <see cref="FileSigningKeyReader"/> against real temporary files.
 /// </summary>
+/// <remarks>
+/// This provider is on ADR 0015's Tier A (<see cref="KeySetOptions"/>) contract (issue #422):
+/// <c>ListKeysAsync</c> runs exactly once, ever, for the lifetime of a service instance, so there is
+/// no reload/change-detection surface to test here — unlike the pre-migration ADR 0011 contract, a
+/// changed or newly-added file is never picked up without a restart. Rotation between already-known
+/// files still switches the active signer purely from elapsed wall-clock time, with zero further
+/// file I/O — that behaviour is covered below.
+/// </remarks>
 public sealed class PemFileSigningJwtSigningServiceTests
 {
     private static readonly DateTimeOffset T0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
@@ -25,20 +34,18 @@ public sealed class PemFileSigningJwtSigningServiceTests
         string primaryPath,
         FakeTimeProvider timeProvider,
         IReadOnlyList<string>? additionalPaths = null,
-        TimeSpan? refreshInterval = null,
         TimeSpan? retirementWindow = null,
         SigningAlgorithm algorithm = SigningAlgorithm.RS256,
         string? keyPath = null,
-        TimeSpan? assumedJwksPropagationDelay = null,
-        ISanitizingLogger<FileSigningJwtSigningService<PemFileSigningOptions>>? logger = null)
+        TimeSpan? publicationLead = null,
+        ISanitizingLogger<JwtSigningService<PemFileSigningOptions>>? logger = null)
     {
         var options = new PemFileSigningOptions
         {
             Path = primaryPath,
             KeyPath = keyPath,
             Algorithm = algorithm,
-            KeyRotationCheckInterval = refreshInterval ?? TimeSpan.FromMinutes(5),
-            AssumedJwksPropagationDelay = assumedJwksPropagationDelay,
+            PublicationLead = publicationLead ?? TimeSpan.FromHours(1),
         };
         foreach (var additional in additionalPaths ?? [])
             options.AddFile(additional);
@@ -48,7 +55,7 @@ public sealed class PemFileSigningJwtSigningServiceTests
             timeProvider,
             new FileSigningKeyReader(NullSanitizingLogger<FileSigningKeyReader>.Instance),
             new FakeRetirementWindowProvider(retirementWindow ?? TimeSpan.FromHours(1)),
-            logger ?? NullSanitizingLogger<FileSigningJwtSigningService<PemFileSigningOptions>>.Instance);
+            logger ?? NullSanitizingLogger<JwtSigningService<PemFileSigningOptions>>.Instance);
     }
 
     // ── Happy path (AC #1) ───────────────────────────────────────────────────────────────────────
@@ -296,73 +303,17 @@ public sealed class PemFileSigningJwtSigningServiceTests
         exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.file_not_found");
     }
 
-    [Fact]
-    public async Task GetSigningKeysAsync_reloads_when_only_the_separately_registered_key_files_mtime_changes()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var refreshInterval = TimeSpan.FromMinutes(5);
-        using var tempDir = new TempSigningKeyDirectory();
-        using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
-        var certPath = tempDir.WriteCertificateOnlyPemFile("cert.pem", certificate);
-        var keyPath = tempDir.WriteKeyOnlyPemFile("key.pem", certificate);
-        var timeProvider = new FakeTimeProvider(T0);
-        await using var sut = BuildService(certPath, timeProvider, keyPath: keyPath, refreshInterval: refreshInterval);
-
-        await sut.GetSigningKeysAsync(ct); // Bootstrap load.
-
-        // Corrupts only the separately-registered key file's content (the certificate file's mtime
-        // is untouched) — mirroring cert-manager's "rotate privkey.pem, leave fullchain.pem alone"
-        // pattern. If HasKeySetChangedAsync only tracked the certificate path's mtime (missing the
-        // companion key path), this corruption would go undetected and the stale-but-valid keys
-        // would keep being served instead of the load failing on the corrupted key file.
-        File.WriteAllText(keyPath, "this is not a valid PEM file");
-        timeProvider.SetUtcNow(T0 + refreshInterval);
-
-        var act = async () => await sut.GetSigningKeysAsync(ct);
-
-        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>(
-            "the separately-registered key file's mtime change must be detected and force a reread, " +
-            "which then fails on the now-corrupted content");
-        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.invalid_pem");
-    }
-
-    [Fact]
-    public async Task HasKeySetChangedAsync_reports_a_change_when_only_the_separately_registered_key_files_mtime_changes()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var refreshInterval = TimeSpan.FromMinutes(5);
-        using var tempDir = new TempSigningKeyDirectory();
-        using var original = TestCertificateFactory.CreateRsaSelfSigned("original", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
-        using var replacement = TestCertificateFactory.CreateRsaSelfSigned("replacement", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
-        var certPath = tempDir.WriteCertificateOnlyPemFile("cert.pem", original);
-        var keyPath = tempDir.WriteKeyOnlyPemFile("key.pem", original);
-        var timeProvider = new FakeTimeProvider(T0);
-        await using var sut = BuildService(certPath, timeProvider, keyPath: keyPath, refreshInterval: refreshInterval);
-
-        var first = await sut.GetSigningKeysAsync(ct);
-
-        // Only the certificate file is rewritten (with a different key pair) — the separately
-        // registered key file's mtime is left untouched by this write. A correct implementation must
-        // still detect the certificate path's own mtime change; this test's sibling above proves the
-        // reverse (only the key file's mtime changing is also detected).
-        tempDir.WriteCertificateOnlyPemFile("cert.pem", replacement);
-        tempDir.WriteKeyOnlyPemFile("key.pem", replacement); // A cert file needs its matching key to load successfully.
-        timeProvider.SetUtcNow(T0 + refreshInterval);
-
-        var second = await sut.GetSigningKeysAsync(ct);
-
-        second[0].Kid.Should().NotBe(first[0].Kid,
-            "the certificate file's content (and mtime) changed, so HasKeySetChangedAsync must report " +
-            "a change and LoadKeysAsync must reread and reparse it");
-    }
-
     // ── Multi-file rotation via AddFile (AC #9/#10) ──────────────────────────────────────────────
+    //
+    // ADR 0015 Tier A: ListKeysAsync runs exactly once and builds one immutable snapshot/timeline;
+    // active-key selection is then recomputed lazily against the wall clock on every call, with zero
+    // further file I/O — so a rotation between already-known files still switches the active signer
+    // purely from elapsed time.
 
     [Fact]
     public async Task GetSigningKeysAsync_exposes_both_files_during_a_rotation_overlap()
     {
         var ct = TestContext.Current.CancellationToken;
-        var refreshInterval = TimeSpan.FromMinutes(5);
         using var tempDir = new TempSigningKeyDirectory();
         using var predecessor = TestCertificateFactory.CreateRsaSelfSigned("predecessor", T0 - TimeSpan.FromDays(30), T0 + TimeSpan.FromDays(365));
         var successorNotBefore = T0 + TimeSpan.FromDays(1);
@@ -370,7 +321,7 @@ public sealed class PemFileSigningJwtSigningServiceTests
         var predecessorPath = tempDir.WritePemFile("predecessor.pem", predecessor);
         var successorPath = tempDir.WritePemFile("successor.pem", successor);
         var timeProvider = new FakeTimeProvider(T0);
-        await using var sut = BuildService(predecessorPath, timeProvider, [successorPath], refreshInterval: refreshInterval);
+        await using var sut = BuildService(predecessorPath, timeProvider, [successorPath]);
 
         var keys = await sut.GetSigningKeysAsync(ct);
 
@@ -381,7 +332,6 @@ public sealed class PemFileSigningJwtSigningServiceTests
     public async Task GetSigningKeysAsync_active_signer_switches_when_the_successors_NotBefore_arrives()
     {
         var ct = TestContext.Current.CancellationToken;
-        var refreshInterval = TimeSpan.FromMinutes(5);
         using var tempDir = new TempSigningKeyDirectory();
         using var predecessor = TestCertificateFactory.CreateRsaSelfSigned("predecessor", T0 - TimeSpan.FromDays(30), T0 + TimeSpan.FromDays(365));
         var successorNotBefore = T0 + TimeSpan.FromDays(1);
@@ -389,7 +339,7 @@ public sealed class PemFileSigningJwtSigningServiceTests
         var predecessorPath = tempDir.WritePemFile("predecessor.pem", predecessor);
         var successorPath = tempDir.WritePemFile("successor.pem", successor);
         var timeProvider = new FakeTimeProvider(T0);
-        await using var sut = BuildService(predecessorPath, timeProvider, [successorPath], refreshInterval: refreshInterval);
+        await using var sut = BuildService(predecessorPath, timeProvider, [successorPath]);
 
         var before = await sut.GetSigningKeysAsync(ct);
         before[0].Kid.Should().Be(JwkThumbprint.Compute(predecessor.GetRSAPublicKey()!.ExportParameters(false)),
@@ -398,7 +348,49 @@ public sealed class PemFileSigningJwtSigningServiceTests
         timeProvider.SetUtcNow(successorNotBefore);
         var after = await sut.GetSigningKeysAsync(ct);
         after[0].Kid.Should().Be(JwkThumbprint.Compute(successor.GetRSAPublicKey()!.ExportParameters(false)),
-            "AC #10: successor becomes active once its NotBefore arrives");
+            "AC #10: successor becomes active once its NotBefore arrives, with zero further file I/O " +
+            "(ListKeysAsync already ran exactly once)");
+    }
+
+    // ── Per-file status logging at the single ListKeysAsync evaluation ──────────────────────────
+
+    [Fact]
+    public async Task GetSigningKeysAsync_excludes_a_predecessor_whose_retirement_window_had_already_elapsed_at_startup()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var retirementWindow = TimeSpan.FromHours(1);
+        using var tempDir = new TempSigningKeyDirectory();
+        using var predecessor = TestCertificateFactory.CreateRsaSelfSigned("predecessor", T0 - TimeSpan.FromDays(60), T0 + TimeSpan.FromDays(365));
+        using var successor = TestCertificateFactory.CreateRsaSelfSigned("successor", T0 - TimeSpan.FromDays(10), T0 + TimeSpan.FromDays(400));
+        var predecessorPath = tempDir.WritePemFile("predecessor.pem", predecessor);
+        var successorPath = tempDir.WritePemFile("successor.pem", successor);
+        await using var sut = BuildService(predecessorPath, new FakeTimeProvider(T0), [successorPath], retirementWindow: retirementWindow);
+
+        var keys = await sut.GetSigningKeysAsync(ct);
+
+        keys.Should().ContainSingle(
+            "the predecessor's retirement window (relative to the successor's activation 10 days ago) " +
+            "had already fully elapsed by the single ListKeysAsync evaluation at startup");
+        keys[0].Kid.Should().Be(JwkThumbprint.Compute(successor.GetRSAPublicKey()!.ExportParameters(false)));
+    }
+
+    [Fact]
+    public async Task GetSigningKeysAsync_includes_a_predecessor_still_within_its_retirement_window_at_startup()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var retirementWindow = TimeSpan.FromHours(1);
+        using var tempDir = new TempSigningKeyDirectory();
+        using var predecessor = TestCertificateFactory.CreateRsaSelfSigned("predecessor", T0 - TimeSpan.FromDays(30), T0 + TimeSpan.FromDays(365));
+        using var successor = TestCertificateFactory.CreateRsaSelfSigned("successor", T0 - TimeSpan.FromMinutes(10), T0 + TimeSpan.FromDays(400));
+        var predecessorPath = tempDir.WritePemFile("predecessor.pem", predecessor);
+        var successorPath = tempDir.WritePemFile("successor.pem", successor);
+        await using var sut = BuildService(predecessorPath, new FakeTimeProvider(T0), [successorPath], retirementWindow: retirementWindow);
+
+        var keys = await sut.GetSigningKeysAsync(ct);
+
+        keys.Should().HaveCount(2,
+            "the successor activated 10 minutes ago, so the predecessor is retired but still within " +
+            "its 1-hour retirement window at the single ListKeysAsync evaluation at startup");
     }
 
     // ── Single-file bootstrap exemption (AC #11) ─────────────────────────────────────────────────
@@ -417,111 +409,116 @@ public sealed class PemFileSigningJwtSigningServiceTests
         await act.Should().NotThrowAsync("AC #11: the bootstrap exemption activates the sole file immediately");
     }
 
-    // ── Too-soon-NotBefore startup warning (AC #12) ──────────────────────────────────────────────
+    // ── Every registered certificate already expired at startup ─────────────────────────────────
+    //
+    // ADR 0015 Security Considerations item 6: Tier A never re-reads, so an already-(or
+    // eventually-)expired sole key with no eligible successor drifts to (or starts as)
+    // SelectActiveKey == null and signing fails closed at request time via the base class's own
+    // generic "signing.no_active_key" error — there is no provider-specific "no active certificate"
+    // special case any more, since ListKeysAsync no longer owns "is this configuration currently
+    // usable," only "what keys exist."
 
     [Fact]
-    public async Task GetSigningKeysAsync_logs_a_warning_when_the_soonest_pending_NotBefore_is_closer_than_KeyRotationCheckInterval()
+    public async Task GetSigningKeysAsync_throws_the_base_classes_no_active_key_error_when_every_registered_certificate_has_expired()
     {
         var ct = TestContext.Current.CancellationToken;
-        var refreshInterval = TimeSpan.FromMinutes(5);
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", T0 - TimeSpan.FromDays(30), T0 - TimeSpan.FromDays(1));
+        var path = tempDir.WritePemFile("key.pem", certificate);
+        await using var sut = BuildService(path, new FakeTimeProvider(T0));
+
+        var act = async () => await sut.GetSigningKeysAsync(ct);
+
+        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.no_active_key");
+    }
+
+    // ── Too-soon-NotBefore startup warning (ADR 0015 §1, issue #422) ─────────────────────────────
+
+    [Fact]
+    public async Task GetSigningKeysAsync_logs_a_warning_when_the_soonest_pending_NotBefore_is_closer_than_PublicationLead()
+    {
+        var ct = TestContext.Current.CancellationToken;
         using var tempDir = new TempSigningKeyDirectory();
         using var primary = TestCertificateFactory.CreateRsaSelfSigned("primary", T0 - TimeSpan.FromDays(30), T0 + TimeSpan.FromDays(365));
         using var secondary = TestCertificateFactory.CreateRsaSelfSigned("secondary", T0 + TimeSpan.FromMinutes(1), T0 + TimeSpan.FromDays(400));
         var primaryPath = tempDir.WritePemFile("primary.pem", primary);
         var secondaryPath = tempDir.WritePemFile("secondary.pem", secondary);
-        var logger = new CapturingSanitizingLogger<FileSigningJwtSigningService<PemFileSigningOptions>>();
-        await using var sut = BuildService(primaryPath, new FakeTimeProvider(T0), [secondaryPath], refreshInterval: refreshInterval, logger: logger);
+        var logger = new CapturingSanitizingLogger<JwtSigningService<PemFileSigningOptions>>();
+        await using var sut = BuildService(primaryPath, new FakeTimeProvider(T0), [secondaryPath], logger: logger);
 
         await sut.GetSigningKeysAsync(ct);
 
         logger.Entries.Should().Contain(e => e.Level == LogLevel.Warning,
-            "AC #12: the too-soon-NotBefore misconfiguration must be surfaced");
+            "the too-soon-NotBefore misconfiguration must be surfaced (default PublicationLead is 1 hour)");
     }
 
-    // ── AssumedJwksPropagationDelay (issue #413) ─────────────────────────────────────────────────
-    //
-    // The shared FileSigningJwtSigningService<TOptions> base class resolves the warning threshold as
-    // options.AssumedJwksPropagationDelay ?? options.KeyRotationCheckInterval, then feeds it into
-    // SigningKeyRotation.HasTooSoonPendingActivation. Only PemFileSigningJwtSigningService is
-    // exercised below — that resolution lives entirely on the shared base class, so covering it once
-    // here also covers PfxFileSigningJwtSigningService, mirroring the HasKeySetChangedAsync coverage
-    // convention above.
-
     [Fact]
-    public async Task GetSigningKeysAsync_does_not_warn_when_an_explicit_shorter_AssumedJwksPropagationDelay_is_satisfied()
+    public async Task GetSigningKeysAsync_does_not_warn_when_an_explicit_shorter_PublicationLead_is_satisfied()
     {
         // The gap between primary's activation and secondary's NotBefore is 1 minute — shorter than
-        // the 5-minute KeyRotationCheckInterval default, which would trigger the AC #12 warning if
-        // AssumedJwksPropagationDelay were left unset. Setting an explicit, shorter
-        // AssumedJwksPropagationDelay (30 seconds) that the 1-minute gap satisfies proves the
-        // explicit value is actually what feeds HasTooSoonPendingActivation, not merely the
-        // KeyRotationCheckInterval default.
+        // the default 1-hour PublicationLead, which would trigger the warning if PublicationLead
+        // were left at its default. Setting an explicit, shorter PublicationLead (30 seconds) that
+        // the 1-minute gap satisfies proves the explicit value is actually what feeds
+        // HasTooSoonPendingActivation, not merely the default.
         var ct = TestContext.Current.CancellationToken;
-        var refreshInterval = TimeSpan.FromMinutes(5);
         using var tempDir = new TempSigningKeyDirectory();
         using var primary = TestCertificateFactory.CreateRsaSelfSigned("primary", T0 - TimeSpan.FromDays(30), T0 + TimeSpan.FromDays(365));
         using var secondary = TestCertificateFactory.CreateRsaSelfSigned("secondary", T0 + TimeSpan.FromMinutes(1), T0 + TimeSpan.FromDays(400));
         var primaryPath = tempDir.WritePemFile("primary.pem", primary);
         var secondaryPath = tempDir.WritePemFile("secondary.pem", secondary);
-        var logger = new CapturingSanitizingLogger<FileSigningJwtSigningService<PemFileSigningOptions>>();
+        var logger = new CapturingSanitizingLogger<JwtSigningService<PemFileSigningOptions>>();
         await using var sut = BuildService(
             primaryPath, new FakeTimeProvider(T0), [secondaryPath],
-            refreshInterval: refreshInterval, assumedJwksPropagationDelay: TimeSpan.FromSeconds(30), logger: logger);
+            publicationLead: TimeSpan.FromSeconds(30), logger: logger);
 
         await sut.GetSigningKeysAsync(ct);
 
         logger.Entries.Should().NotContain(e => e.Level == LogLevel.Warning,
-            "the explicit AssumedJwksPropagationDelay (30s) is shorter than the 1-minute activation gap, " +
-            "so no warning should fire even though the 5-minute KeyRotationCheckInterval default would have");
+            "the explicit PublicationLead (30s) is shorter than the 1-minute activation gap, so no " +
+            "warning should fire even though the 1-hour default would have");
     }
 
     [Fact]
-    public async Task GetSigningKeysAsync_warns_when_an_explicit_longer_AssumedJwksPropagationDelay_is_not_satisfied()
+    public async Task GetSigningKeysAsync_warns_when_an_explicit_longer_PublicationLead_is_not_satisfied()
     {
-        // The gap between primary's activation and secondary's NotBefore is 10 minutes — longer than
-        // the 5-minute KeyRotationCheckInterval default, so the AC #12 warning would NOT fire if
-        // AssumedJwksPropagationDelay were left unset. Setting an explicit, longer
-        // AssumedJwksPropagationDelay (15 minutes) that the 10-minute gap violates proves the
-        // explicit value — not the KeyRotationCheckInterval default — is what feeds
-        // HasTooSoonPendingActivation.
         var ct = TestContext.Current.CancellationToken;
-        var refreshInterval = TimeSpan.FromMinutes(5);
         using var tempDir = new TempSigningKeyDirectory();
         using var primary = TestCertificateFactory.CreateRsaSelfSigned("primary", T0 - TimeSpan.FromDays(30), T0 + TimeSpan.FromDays(365));
         using var secondary = TestCertificateFactory.CreateRsaSelfSigned("secondary", T0 + TimeSpan.FromMinutes(10), T0 + TimeSpan.FromDays(400));
         var primaryPath = tempDir.WritePemFile("primary.pem", primary);
         var secondaryPath = tempDir.WritePemFile("secondary.pem", secondary);
-        var logger = new CapturingSanitizingLogger<FileSigningJwtSigningService<PemFileSigningOptions>>();
+        var logger = new CapturingSanitizingLogger<JwtSigningService<PemFileSigningOptions>>();
         await using var sut = BuildService(
             primaryPath, new FakeTimeProvider(T0), [secondaryPath],
-            refreshInterval: refreshInterval, assumedJwksPropagationDelay: TimeSpan.FromMinutes(15), logger: logger);
+            publicationLead: TimeSpan.FromMinutes(15), logger: logger);
 
         await sut.GetSigningKeysAsync(ct);
 
         logger.Entries.Should().Contain(e => e.Level == LogLevel.Warning,
-            "the explicit AssumedJwksPropagationDelay (15 minutes) is longer than the 10-minute " +
-            "activation gap, so the warning must fire even though the 5-minute KeyRotationCheckInterval " +
-            "default would not have triggered it");
+            "the explicit PublicationLead (15 minutes) is longer than the 10-minute activation gap, so " +
+            "the warning must fire");
     }
 
     // ── kid stability ─────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task GetSigningKeysAsync_kid_is_stable_across_reloads_of_the_same_file()
+    public async Task GetSigningKeysAsync_kid_is_stable_across_multiple_calls()
     {
         var ct = TestContext.Current.CancellationToken;
-        var refreshInterval = TimeSpan.FromMinutes(5);
         using var tempDir = new TempSigningKeyDirectory();
         using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
         var path = tempDir.WritePemFile("key.pem", certificate);
         var timeProvider = new FakeTimeProvider(T0);
-        await using var sut = BuildService(path, timeProvider, refreshInterval: refreshInterval);
+        await using var sut = BuildService(path, timeProvider);
 
         var first = await sut.GetSigningKeysAsync(ct);
-        timeProvider.SetUtcNow(T0 + refreshInterval); // Force a reload.
+        timeProvider.Advance(TimeSpan.FromDays(365));
         var second = await sut.GetSigningKeysAsync(ct);
 
-        second[0].Kid.Should().Be(first[0].Kid, "kid must be derived from the key material, not regenerated per load");
+        second[0].Kid.Should().Be(first[0].Kid,
+            "kid must be derived from the key material; ListKeysAsync runs exactly once for this " +
+            "ADR 0015 Tier A provider regardless of elapsed time");
     }
 
     // ── Algorithm/key-type mismatch ───────────────────────────────────────────────────────────────
@@ -557,6 +554,43 @@ public sealed class PemFileSigningJwtSigningServiceTests
         keys[0].EcPublicParameters.Should().NotBeNull();
     }
 
+    [Fact]
+    public async Task SignAsync_signs_with_an_EC_certificates_private_key()
+    {
+        // ADR 0015 §2/§5's least-privilege loading means CreateSignerAsync (and therefore an EC
+        // private-key extraction) is only ever invoked by a real SignAsync call, never by
+        // GetSigningKeysAsync alone — this exercises that path directly.
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = TestCertificateFactory.CreateEcSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+        var path = tempDir.WritePemFile("key.pem", certificate);
+        await using var sut = BuildService(path, new FakeTimeProvider(T0), algorithm: SigningAlgorithm.ES256);
+        var payloadSegment = SigningTestHelpers.Base64UrlEncode("{\"sub\":\"test-subject\"}"u8.ToArray());
+
+        var result = await sut.SignAsync(payloadSegment, ct);
+
+        result.Kid.Should().NotBeNullOrEmpty();
+        result.Algorithm.Should().Be(SigningAlgorithm.ES256);
+    }
+
+    [Fact]
+    public async Task GetSigningKeysAsync_throws_when_Algorithm_is_RSA_but_the_certificate_is_EC()
+    {
+        // The RSA-mismatch direction is covered above; this covers the other half of
+        // BuildValidatedPublicKey's mismatch-message branch.
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = TestCertificateFactory.CreateEcSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+        var path = tempDir.WritePemFile("key.pem", certificate);
+        await using var sut = BuildService(path, new FakeTimeProvider(T0), algorithm: SigningAlgorithm.RS256);
+
+        var act = async () => await sut.GetSigningKeysAsync(ct);
+
+        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.algorithm_key_type_mismatch");
+        exception.Which.Message.Should().Contain("EC certificate");
+    }
+
     // ── Logging: never leaks key material (issue #291's explicit requirement) ───────────────────
 
     [Fact]
@@ -566,7 +600,7 @@ public sealed class PemFileSigningJwtSigningServiceTests
         using var tempDir = new TempSigningKeyDirectory();
         using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365), keySizeBits: 2048);
         var path = tempDir.WritePemFile("key.pem", certificate);
-        var logger = new CapturingSanitizingLogger<FileSigningJwtSigningService<PemFileSigningOptions>>();
+        var logger = new CapturingSanitizingLogger<JwtSigningService<PemFileSigningOptions>>();
         await using var sut = BuildService(path, new FakeTimeProvider(T0), logger: logger);
 
         await sut.GetSigningKeysAsync(ct);
@@ -579,202 +613,50 @@ public sealed class PemFileSigningJwtSigningServiceTests
             "no PEM block or key material may ever reach a log line");
     }
 
-    // ── HasKeySetChangedAsync: metadata-only change detection (ADR 0011 §3.5 / issue #349) ─────────
+    // ── Expiring-soon warning ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetSigningKeysAsync_warns_when_the_active_certificate_expires_within_30_days()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(10));
+        var path = tempDir.WritePemFile("key.pem", certificate);
+        var logger = new CapturingSanitizingLogger<JwtSigningService<PemFileSigningOptions>>();
+        await using var sut = BuildService(path, new FakeTimeProvider(T0), logger: logger);
+
+        await sut.GetSigningKeysAsync(ct);
+
+        logger.Entries.Should().Contain(e => e.Level == LogLevel.Warning && e.Message.Contains("expires"),
+            "the active certificate expiring within 30 days must be surfaced");
+    }
+
+    // ── Defensive invariant: CreateSignerAsync is only ever called for a listed key ─────────────
     //
-    // Only PemFileSigningJwtSigningService is exercised below: the HasKeySetChangedAsync override
-    // lives entirely on the shared FileSigningJwtSigningService<TOptions> base class, so covering it
-    // once here also covers PfxFileSigningJwtSigningService — mirroring how #350/#351 tested each
-    // Key Vault provider once against its own LoadKeysAsync, not by duplicating the same assertions
-    // across every subclass.
+    // Unreachable via the public API in normal operation — the base class only ever calls
+    // CreateSignerAsync with a KeyId it previously observed on a ListKeysAsync-returned KeyListing,
+    // and this ADR 0015 Tier A provider's registered files never change after startup — but invoked
+    // directly via reflection here to prove the defensive check fails loudly rather than silently,
+    // should that invariant ever be violated (e.g. a future base-class bug).
 
     [Fact]
-    public async Task GetSigningKeysAsync_does_not_reread_the_file_when_nothing_has_changed_since_the_last_load()
+    public async Task CreateSignerAsync_throws_when_called_for_a_key_id_that_is_not_a_registered_file()
     {
         var ct = TestContext.Current.CancellationToken;
-        var refreshInterval = TimeSpan.FromMinutes(5);
         using var tempDir = new TempSigningKeyDirectory();
         using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
         var path = tempDir.WritePemFile("key.pem", certificate);
-        var timeProvider = new FakeTimeProvider(T0);
-        await using var sut = BuildService(path, timeProvider, refreshInterval: refreshInterval);
+        await using var sut = BuildService(path, new FakeTimeProvider(T0));
 
-        var first = await sut.GetSigningKeysAsync(ct); // Bootstrap load.
-        var lastWriteTimeUtc = File.GetLastWriteTimeUtc(path);
+        var createSignerAsync = typeof(PemFileSigningJwtSigningService).GetMethod(
+            "CreateSignerAsync", BindingFlags.NonPublic | BindingFlags.Instance)!;
 
-        // Corrupts the file's content while preserving its recorded mtime. If HasKeySetChangedAsync
-        // incorrectly reported a change here, the subsequent LoadKeysAsync would try to reparse this
-        // invalid content and throw — proving a reread happened. A correct "unchanged" report never
-        // touches this corrupted content at all.
-        File.WriteAllText(path, "this is not a valid PEM file");
-        File.SetLastWriteTimeUtc(path, lastWriteTimeUtc);
-        timeProvider.SetUtcNow(T0 + refreshInterval);
+        // An async method's exceptions (even ones thrown before its first await) are captured into
+        // the returned ValueTask by the compiler-generated state machine, not thrown synchronously
+        // from Invoke — so the faulted task is awaited here rather than expecting Invoke itself to throw.
+        var task = (ValueTask<ISigner>)createSignerAsync.Invoke(sut, [new KeyId("/no/such/file.pem"), ct])!;
+        var act = async () => await task;
 
-        var second = await sut.GetSigningKeysAsync(ct);
-
-        second[0].Kid.Should().Be(first[0].Kid,
-            "nothing changed since the last load, so HasKeySetChangedAsync must report no change and " +
-            "LoadKeysAsync must not reread the corrupted file");
-    }
-
-    [Fact]
-    public async Task SignAsync_still_succeeds_after_an_unchanged_poll_skips_the_reload()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var refreshInterval = TimeSpan.FromMinutes(5);
-        using var tempDir = new TempSigningKeyDirectory();
-        using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
-        var path = tempDir.WritePemFile("key.pem", certificate);
-        var timeProvider = new FakeTimeProvider(T0);
-        await using var sut = BuildService(path, timeProvider, refreshInterval: refreshInterval);
-
-        await sut.GetSigningKeysAsync(ct); // Bootstrap load.
-        timeProvider.SetUtcNow(T0 + refreshInterval); // Unchanged poll -> ask reports "no change".
-        var payloadSegment = SigningTestHelpers.Base64UrlEncode("{\"sub\":\"test-subject\"}"u8.ToArray());
-
-        var act = async () => await sut.SignAsync(payloadSegment, ct);
-
-        await act.Should().NotThrowAsync(
-            "the cached SigningKeySet must remain usable (not disposed) when the ask reports no change");
-    }
-
-    [Fact]
-    public async Task GetSigningKeysAsync_reloads_when_a_registered_files_contents_change()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var refreshInterval = TimeSpan.FromMinutes(5);
-        using var tempDir = new TempSigningKeyDirectory();
-        using var original = TestCertificateFactory.CreateRsaSelfSigned("original", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
-        using var replacement = TestCertificateFactory.CreateRsaSelfSigned("replacement", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
-        var path = tempDir.WritePemFile("key.pem", original);
-        var timeProvider = new FakeTimeProvider(T0);
-        await using var sut = BuildService(path, timeProvider, refreshInterval: refreshInterval);
-
-        var first = await sut.GetSigningKeysAsync(ct);
-        tempDir.WritePemFile("key.pem", replacement); // Overwrites both content and mtime.
-        timeProvider.SetUtcNow(T0 + refreshInterval);
-
-        var second = await sut.GetSigningKeysAsync(ct);
-
-        second[0].Kid.Should().NotBe(first[0].Kid,
-            "the file's content (and mtime) changed, so HasKeySetChangedAsync must report a change and " +
-            "LoadKeysAsync must reread and reparse it");
-    }
-
-    [Fact]
-    public async Task GetSigningKeysAsync_reloads_when_a_new_path_is_added_to_configuration()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var refreshInterval = TimeSpan.FromMinutes(5);
-        using var tempDir = new TempSigningKeyDirectory();
-        using var primary = TestCertificateFactory.CreateRsaSelfSigned("primary", T0 - TimeSpan.FromDays(30), T0 + TimeSpan.FromDays(365));
-        using var secondary = TestCertificateFactory.CreateRsaSelfSigned("secondary", T0 + TimeSpan.FromDays(30), T0 + TimeSpan.FromDays(400));
-        var primaryPath = tempDir.WritePemFile("primary.pem", primary);
-        var secondaryPath = tempDir.WritePemFile("secondary.pem", secondary);
-        var options = new PemFileSigningOptions { Path = primaryPath, KeyRotationCheckInterval = refreshInterval };
-        var timeProvider = new FakeTimeProvider(T0);
-        await using var sut = new PemFileSigningJwtSigningService(
-            Options.Create(options),
-            timeProvider,
-            new FileSigningKeyReader(NullSanitizingLogger<FileSigningKeyReader>.Instance),
-            new FakeRetirementWindowProvider(TimeSpan.FromHours(1)),
-            NullSanitizingLogger<FileSigningJwtSigningService<PemFileSigningOptions>>.Instance);
-
-        var first = await sut.GetSigningKeysAsync(ct);
-        first.Should().ContainSingle("only the primary path is registered so far");
-
-        options.AddFile(secondaryPath); // Registered path set changes with zero file I/O.
-        timeProvider.SetUtcNow(T0 + refreshInterval);
-        var second = await sut.GetSigningKeysAsync(ct);
-
-        second.Should().HaveCount(2,
-            "the registered path set changed, so HasKeySetChangedAsync must report a change even " +
-            "though neither file's content changed");
-    }
-
-    [Fact]
-    public async Task GetSigningKeysAsync_reloads_when_the_registered_path_is_replaced_in_configuration()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var refreshInterval = TimeSpan.FromMinutes(5);
-        using var tempDir = new TempSigningKeyDirectory();
-        using var original = TestCertificateFactory.CreateRsaSelfSigned("original", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
-        using var replacement = TestCertificateFactory.CreateRsaSelfSigned("replacement", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
-        var originalPath = tempDir.WritePemFile("original.pem", original);
-        var replacementPath = tempDir.WritePemFile("replacement.pem", replacement);
-        var options = new PemFileSigningOptions { Path = originalPath, KeyRotationCheckInterval = refreshInterval };
-        var timeProvider = new FakeTimeProvider(T0);
-        await using var sut = new PemFileSigningJwtSigningService(
-            Options.Create(options),
-            timeProvider,
-            new FileSigningKeyReader(NullSanitizingLogger<FileSigningKeyReader>.Instance),
-            new FakeRetirementWindowProvider(TimeSpan.FromHours(1)),
-            NullSanitizingLogger<FileSigningJwtSigningService<PemFileSigningOptions>>.Instance);
-
-        var first = await sut.GetSigningKeysAsync(ct);
-
-        options.Path = replacementPath; // The original path is removed from configuration, a new one takes its place.
-        timeProvider.SetUtcNow(T0 + refreshInterval);
-        var second = await sut.GetSigningKeysAsync(ct);
-
-        second[0].Kid.Should().NotBe(first[0].Kid,
-            "the registered path set changed (original path removed, replacement added), so " +
-            "HasKeySetChangedAsync must report a change");
-    }
-
-    [Fact]
-    public async Task HasKeySetChangedAsync_reports_a_change_when_elapsed_time_alone_moves_a_certificate_out_of_its_retirement_window()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var refreshInterval = TimeSpan.FromMinutes(5);
-        var retirementWindow = TimeSpan.FromHours(1);
-        using var tempDir = new TempSigningKeyDirectory();
-        using var predecessor = TestCertificateFactory.CreateRsaSelfSigned("predecessor", T0 - TimeSpan.FromDays(30), T0 + TimeSpan.FromDays(365));
-        var successorNotBefore = T0 + TimeSpan.FromMinutes(10);
-        using var successor = TestCertificateFactory.CreateRsaSelfSigned("successor", successorNotBefore, T0 + TimeSpan.FromDays(400));
-        var predecessorPath = tempDir.WritePemFile("predecessor.pem", predecessor);
-        var successorPath = tempDir.WritePemFile("successor.pem", successor);
-        var timeProvider = new FakeTimeProvider(T0);
-        await using var sut = BuildService(
-            predecessorPath, timeProvider, [successorPath], refreshInterval: refreshInterval, retirementWindow: retirementWindow);
-
-        await sut.GetSigningKeysAsync(ct); // Cold start: predecessor active, successor pending.
-
-        timeProvider.SetUtcNow(successorNotBefore); // Successor activates; predecessor now retiring but still within its window.
-        var duringRetirement = await sut.GetSigningKeysAsync(ct);
-        duringRetirement.Should().HaveCount(2, "the predecessor is still within its retirement window");
-
-        timeProvider.SetUtcNow(successorNotBefore + retirementWindow + TimeSpan.FromSeconds(1)); // Retirement window fully elapsed, with zero file changes.
-        var afterRetirement = await sut.GetSigningKeysAsync(ct);
-
-        afterRetirement.Should().HaveCount(1,
-            "elapsed time alone moved the predecessor out of its retirement window, so " +
-            "HasKeySetChangedAsync must report a change and LoadKeysAsync must rebuild the set even " +
-            "though no file changed");
-    }
-
-    [Fact]
-    public async Task GetSigningKeysAsync_reports_a_change_rather_than_throwing_when_every_registered_certificate_has_since_expired()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var refreshInterval = TimeSpan.FromMinutes(5);
-        using var tempDir = new TempSigningKeyDirectory();
-        using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", T0 - TimeSpan.FromDays(30), T0 + TimeSpan.FromDays(1));
-        var path = tempDir.WritePemFile("key.pem", certificate);
-        var timeProvider = new FakeTimeProvider(T0);
-        await using var sut = BuildService(path, timeProvider, refreshInterval: refreshInterval);
-
-        await sut.GetSigningKeysAsync(ct); // Cold start: the certificate is active.
-
-        // Every registered file's certificate has now expired, with zero file changes. This must not
-        // surface as an unhandled exception from HasKeySetChangedAsync's own ask (its contract is only
-        // ever "did the trusted set change," never "is the configuration currently valid" — see that
-        // method's remarks); the real failure belongs to the subsequent LoadKeysAsync call.
-        timeProvider.SetUtcNow(T0 + TimeSpan.FromDays(2));
-        var act = async () => await sut.GetSigningKeysAsync(ct);
-
-        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
-        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.no_active_certificate",
-            "HasKeySetChangedAsync must report a change (never throw) so LoadKeysAsync runs and fails " +
-            "closed with its own actionable error");
+        await act.Should().ThrowAsync<InvalidOperationException>();
     }
 }

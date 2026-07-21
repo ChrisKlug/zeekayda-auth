@@ -66,7 +66,6 @@ public sealed class FileSigningIntegrationTests
     public async Task Full_DI_wiring_JWKS_output_includes_both_PEM_files_during_a_rotation_overlap()
     {
         var ct = TestContext.Current.CancellationToken;
-        var refreshInterval = TimeSpan.FromMinutes(5);
         using var tempDir = new TempSigningKeyDirectory();
         using var predecessor = TestCertificateFactory.CreateRsaSelfSigned("predecessor", T0 - TimeSpan.FromDays(30), T0 + TimeSpan.FromDays(365));
         var successorNotBefore = T0 + TimeSpan.FromDays(1);
@@ -79,7 +78,6 @@ public sealed class FileSigningIntegrationTests
         builder.AddPemFileSigning(predecessorPath, SigningAlgorithm.RS256, configure: options =>
         {
             options.AddFile(successorPath);
-            options.KeyRotationCheckInterval = refreshInterval;
         });
 
         await using var provider = services.BuildServiceProvider();
@@ -94,7 +92,6 @@ public sealed class FileSigningIntegrationTests
     public async Task Full_DI_wiring_active_signer_switches_when_the_successors_NotBefore_arrives()
     {
         var ct = TestContext.Current.CancellationToken;
-        var refreshInterval = TimeSpan.FromMinutes(5);
         using var tempDir = new TempSigningKeyDirectory();
         using var predecessor = TestCertificateFactory.CreateRsaSelfSigned("predecessor", T0 - TimeSpan.FromDays(30), T0 + TimeSpan.FromDays(365));
         var successorNotBefore = T0 + TimeSpan.FromDays(1);
@@ -107,7 +104,6 @@ public sealed class FileSigningIntegrationTests
         builder.AddPemFileSigning(predecessorPath, SigningAlgorithm.RS256, configure: options =>
         {
             options.AddFile(successorPath);
-            options.KeyRotationCheckInterval = refreshInterval;
         });
 
         await using var provider = services.BuildServiceProvider();
