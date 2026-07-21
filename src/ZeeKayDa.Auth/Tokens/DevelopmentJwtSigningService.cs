@@ -2,6 +2,7 @@ using System.Buffers;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Options;
+using ZeeKayDa.Auth.Logging;
 
 namespace ZeeKayDa.Auth.Tokens;
 
@@ -26,11 +27,12 @@ namespace ZeeKayDa.Auth.Tokens;
 /// provider-scoped, code-only opt-in, not a server-wide setting (ADR 0011 §2).
 /// </para>
 /// <para>
-/// Dev keys are generated once, and <see cref="HasKeySetChangedAsync"/> is hardcoded to report
-/// "unchanged" so that <see cref="LoadKeysAsync"/> is never invoked a second time for the
-/// lifetime of the service instance. Unlike production providers, there is no rotation
+/// This is a degenerate ADR 0015 Tier A (<see cref="KeySetOptions"/>) provider: exactly one key,
+/// with no <see cref="KeyListing.ActivateAt"/>, active from startup. <see cref="ListKeysAsync"/>
+/// is called exactly once for the lifetime of the service instance (per the base class's Tier A
+/// contract), which is also where the dev key is generated or loaded — there is no rotation
 /// use-case for dev keys; rotating an ephemeral key would silently invalidate all tokens issued
-/// within the first refresh interval of the process lifetime.
+/// during the process's lifetime so far.
 /// </para>
 /// </remarks>
 internal sealed class DevelopmentJwtSigningService
@@ -42,14 +44,26 @@ internal sealed class DevelopmentJwtSigningService
     // Key file name within the persistence directory.
     private const string KeyFileName = "dev-signing-key.pem";
 
+    // Stable provider-internal identifier for the single dev key. Never the JWKS/JWS kid — the
+    // base class derives that from the public key material (ADR 0015 §2).
+    private static readonly KeyId DevKeyId = new("development");
+
     private readonly IOptions<DevelopmentSigningKeyOptions> _devOptions;
     private readonly IDevelopmentSigningKeyFileSystem _fileSystem;
+
+    // Holds the RSA key generated/loaded by ListKeysAsync until CreateSignerAsync claims it.
+    // ListKeysAsync runs exactly once for a Tier A provider (JwtSigningService<TOptions>'s
+    // contract), so this is populated at most once; CreateSignerAsync consumes it exactly once
+    // via Interlocked.Exchange, transferring ownership to the LocalSigner it returns.
+    private RSA? _pendingPrivateKey;
 
     public DevelopmentJwtSigningService(
         IOptions<DevelopmentSigningKeyOptions> devOptions,
         TimeProvider timeProvider,
-        IDevelopmentSigningKeyFileSystem fileSystem)
-        : base(devOptions, timeProvider)
+        IDevelopmentSigningKeyFileSystem fileSystem,
+        ISigningKeyRetirementWindowProvider retirementWindowProvider,
+        ISanitizingLogger<JwtSigningService<DevelopmentSigningKeyOptions>> logger)
+        : base(devOptions, timeProvider, retirementWindowProvider, logger)
     {
         ArgumentNullException.ThrowIfNull(fileSystem);
         _devOptions = devOptions;
@@ -57,7 +71,7 @@ internal sealed class DevelopmentJwtSigningService
     }
 
     /// <inheritdoc/>
-    protected override async ValueTask<SigningKeySet> LoadKeysAsync(CancellationToken cancellationToken)
+    protected override async ValueTask<IReadOnlyList<KeyListing>> ListKeysAsync(CancellationToken cancellationToken)
     {
         // CancellationToken is propagated to all file I/O calls below.
         // RSA.Create is CPU-bound and has no async variant, so key generation cannot be cancelled.
@@ -74,26 +88,46 @@ internal sealed class DevelopmentJwtSigningService
             ? await LoadOrGeneratePersistedKeyAsync(persistDir, cancellationToken).ConfigureAwait(false)
             : GenerateEphemeralKey();
 
-        var rsaParams = rsa.ExportParameters(false);
-        var kid = JwkThumbprint.Compute(rsaParams);
-        var descriptor = new SigningKeyDescriptor(kid, SigningAlgorithm.RS256, rsaParams);
-        return new SigningKeySet(new SigningKeyPair { Descriptor = descriptor, PrivateKey = rsa });
+        // Compute the public key parameters before stashing the private key reference, so that a
+        // failure here leaves _pendingPrivateKey untouched rather than holding a key nothing will
+        // ever claim or dispose.
+        var publicKey = PublicKeyParameters.FromRsa(rsa.ExportParameters(false));
+
+        _pendingPrivateKey = rsa;
+
+        // ActivateAt = null: the single dev key is active from startup (ADR 0015 §1's degenerate
+        // Tier A case). ExpiresAt = MaxValue: a dev key never hard-expires — its lifetime is the
+        // process's, not a certificate's.
+        var listing = new KeyListing(DevKeyId, SigningAlgorithm.RS256, publicKey, ActivateAt: null, ExpiresAt: DateTimeOffset.MaxValue);
+        return [listing];
     }
 
-    /// <summary>
-    /// Always reports "unchanged" so that <see cref="LoadKeysAsync"/> is invoked at most once for
-    /// the lifetime of this service instance.
-    /// </summary>
-    /// <remarks>
-    /// This is a hardcoded <see langword="false"/>, not a check against a memoized field, because
-    /// the base class only ever calls this method once a previous <see cref="SigningKeySet"/>
-    /// already exists — which itself implies <see cref="LoadKeysAsync"/> already ran successfully
-    /// once. A conditional check here would be unreachable defensive code: there is no state in
-    /// which this method is consulted before the first load has already happened. Dev keys are
-    /// never rotated within a process lifetime (see the class-level remarks), so "unchanged" is
-    /// always the correct answer once reached.
-    /// </remarks>
-    protected override ValueTask<bool> HasKeySetChangedAsync(CancellationToken cancellationToken) => new(false);
+    /// <inheritdoc/>
+    protected override ValueTask OnDisposeAsync()
+    {
+        // If ListKeysAsync generated/loaded a key but CreateSignerAsync never claimed it (e.g. this
+        // instance's lifetime only ever served ListKeysAsync/JWKS listing, never a signing call),
+        // the key would otherwise leak until GC finalization instead of being disposed/zeroized.
+        // The base class already guarantees this method is called at most once, but the
+        // Interlocked.Exchange is kept as cheap, self-contained insurance against any future
+        // direct call to this method outside that contract.
+        Interlocked.Exchange(ref _pendingPrivateKey, null)?.Dispose();
+
+        return ValueTask.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    protected override ValueTask<ISigner> CreateSignerAsync(KeyId id, CancellationToken cancellationToken)
+    {
+        var rsa = Interlocked.Exchange(ref _pendingPrivateKey, null)
+            ?? throw new InvalidOperationException(
+                $"{nameof(CreateSignerAsync)} was called for key '{id.Value}' but no pending private " +
+                $"key is available. This dev-only provider expects {nameof(CreateSignerAsync)} to be " +
+                $"called at most once, immediately after {nameof(ListKeysAsync)} generated or loaded " +
+                "the single dev key.");
+
+        return new ValueTask<ISigner>(new LocalSigner(SigningAlgorithm.RS256, rsa));
+    }
 
     private static RSA GenerateEphemeralKey() => RSA.Create(MinimumRsaKeySize);
 

@@ -3,6 +3,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.AspNetCore;
+using ZeeKayDa.Auth.Extensions;
 using ZeeKayDa.Auth.Tokens;
 
 namespace Microsoft.Extensions.DependencyInjection;
@@ -154,6 +155,13 @@ public static class ZeeKayDaAuthBuilderSigningExtensions
         bool persist)
     {
         builder.ThrowIfAlreadyRegistered(typeof(IJwtSigningService));
+
+        // Idempotent (TryAdd-based): ensures ISigningKeyRetirementWindowProvider and the open-generic
+        // ISanitizingLogger<> — which DevelopmentJwtSigningService's ADR 0015 contract now depends on
+        // — are resolvable even if this method is called without AddZeeKayDaAuth() having run first
+        // (e.g. a provider-package test that constructs ZeeKayDaAuthBuilder directly). Matches the
+        // pattern used by the File/Windows/Azure Key Vault signing-provider packages.
+        builder.Services.AddZeeKayDaAuthCore();
 
         builder.Services.AddOptions<DevelopmentSigningKeyOptions>()
             .ValidateOnStart();
