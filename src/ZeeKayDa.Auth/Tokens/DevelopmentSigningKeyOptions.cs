@@ -20,7 +20,7 @@ namespace ZeeKayDa.Auth.Tokens;
 /// turned into a persisted one through its configure callback.
 /// </para>
 /// </remarks>
-public sealed class DevelopmentSigningKeyOptions : StaticKeySourceOptions
+public sealed class DevelopmentSigningKeyOptions : KeySetOptions
 {
     /// <summary>
     /// Gets or sets the name of the host environment in which the service is running.

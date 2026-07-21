@@ -1,14 +1,44 @@
 using System.Buffers.Text;
 using System.Security.Cryptography;
 using System.Text;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
+using ZeeKayDa.Auth.Logging;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.Tests.Tokens;
 
 public sealed class DevelopmentJwtSigningServiceTests
 {
+    // ── ADR 0015 new-contract dependencies (four-arg JwtSigningService<TOptions> constructor) ──────
+
+    /// <summary>A no-op <see cref="ISigningKeyRetirementWindowProvider"/> — irrelevant for a
+    /// single, never-retiring dev key.</summary>
+    private sealed class FakeRetirementWindowProvider : ISigningKeyRetirementWindowProvider
+    {
+        public TimeSpan GetRetirementWindow() => TimeSpan.Zero;
+    }
+
+    /// <summary>A no-op <see cref="ISanitizingLogger{T}"/> — the dev provider's single key never
+    /// vanishes, so the ADR 0015 §6 within-window-vanish Warning is never expected here.</summary>
+    private sealed class NullSanitizingLogger<T> : ISanitizingLogger<T>
+    {
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+        }
+    }
+
+    private static ISigningKeyRetirementWindowProvider RetirementWindowProvider { get; } = new FakeRetirementWindowProvider();
+
+    private static ISanitizingLogger<JwtSigningService<DevelopmentSigningKeyOptions>> Logger { get; } =
+        new NullSanitizingLogger<JwtSigningService<DevelopmentSigningKeyOptions>>();
+
     // ── In-memory fake file system ────────────────────────────────────────────────────────────────
 
     private sealed class InMemorySigningKeyFileSystem : IDevelopmentSigningKeyFileSystem
@@ -77,7 +107,9 @@ public sealed class DevelopmentJwtSigningServiceTests
         return new DevelopmentJwtSigningService(
             Options.Create(options),
             timeProvider ?? new FakeTimeProvider(),
-            fs ?? new InMemorySigningKeyFileSystem());
+            fs ?? new InMemorySigningKeyFileSystem(),
+            RetirementWindowProvider,
+            Logger);
     }
 
     private static DevelopmentJwtSigningService BuildPersisted(
@@ -93,7 +125,9 @@ public sealed class DevelopmentJwtSigningServiceTests
         return new DevelopmentJwtSigningService(
             Options.Create(options),
             timeProvider ?? new FakeTimeProvider(),
-            fs ?? new InMemorySigningKeyFileSystem());
+            fs ?? new InMemorySigningKeyFileSystem(),
+            RetirementWindowProvider,
+            Logger);
     }
 
     // ── Constructor validation ────────────────────────────────────────────────────────────────────
@@ -104,7 +138,9 @@ public sealed class DevelopmentJwtSigningServiceTests
         var act = () => new DevelopmentJwtSigningService(
             null!,
             new FakeTimeProvider(),
-            new InMemorySigningKeyFileSystem());
+            new InMemorySigningKeyFileSystem(),
+            RetirementWindowProvider,
+            Logger);
 
         // The base class JwtSigningService<TOptions> checks "options" before our guard fires.
         act.Should().Throw<ArgumentNullException>().WithParameterName("options");
@@ -118,7 +154,9 @@ public sealed class DevelopmentJwtSigningServiceTests
         var act = () => new DevelopmentJwtSigningService(
             options,
             new FakeTimeProvider(),
-            null!);
+            null!,
+            RetirementWindowProvider,
+            Logger);
 
         act.Should().Throw<ArgumentNullException>().WithParameterName("fileSystem");
     }
@@ -180,21 +218,17 @@ public sealed class DevelopmentJwtSigningServiceTests
 
     // ── Key memoization (no rotation) ────────────────────────────────────────────────────────────
 
-    // The former "finite KeyRotationCheckInterval forces cache expiry, HasKeySetChangedAsync then
-    // reports unchanged" test no longer applies: DevelopmentSigningKeyOptions now derives from
-    // StaticKeySourceOptions (ADR 0011 §3.4, issue #409/#413), which carries no rotation-cadence
-    // property at all, so that scenario can no longer even be constructed for this options type —
-    // the base class never re-enters its slow path for a static-tier provider regardless of
-    // elapsed time (see JwtSigningService<TOptions>'s remarks). The memoization behavior that test
-    // was ultimately proving is still fully covered below by
-    // Ephemeral_kid_is_unchanged_regardless_of_elapsed_time, using the correct static-tier
-    // semantics.
+    // DevelopmentSigningKeyOptions derives from KeySetOptions (ADR 0015 §1, issue #421): a
+    // degenerate Tier A provider whose ListKeysAsync is called exactly once, ever, for the
+    // lifetime of the service instance. There is no rotation-cadence property to force a reload,
+    // so the base class never re-enters ListKeysAsync regardless of elapsed time — the test below
+    // proves that memoization directly.
 
     [Fact]
     public async Task Ephemeral_kid_is_unchanged_regardless_of_elapsed_time()
     {
-        // DevelopmentSigningKeyOptions derives from StaticKeySourceOptions (static-source mode), so
-        // the base class never re-invokes LoadKeysAsync no matter how much time passes.
+        // DevelopmentSigningKeyOptions derives from KeySetOptions (Tier A), so the base class
+        // never re-invokes ListKeysAsync no matter how much time passes.
         var timeProvider = new FakeTimeProvider();
         await using var sut = BuildEphemeral(timeProvider: timeProvider);
         var ct = TestContext.Current.CancellationToken;
@@ -437,7 +471,9 @@ public sealed class DevelopmentJwtSigningServiceTests
         await using var sut = new DevelopmentJwtSigningService(
             Options.Create(devOptions),
             new FakeTimeProvider(),
-            new InMemorySigningKeyFileSystem());
+            new InMemorySigningKeyFileSystem(),
+            RetirementWindowProvider,
+            Logger);
 
         await sut.Awaiting(s => s.GetSigningKeysAsync(TestContext.Current.CancellationToken).AsTask())
             .Should().ThrowAsync<ZeeKayDaConfigurationException>()
@@ -454,7 +490,9 @@ public sealed class DevelopmentJwtSigningServiceTests
         await using var sut = new DevelopmentJwtSigningService(
             Options.Create(devOptions),
             new FakeTimeProvider(),
-            new InMemorySigningKeyFileSystem());
+            new InMemorySigningKeyFileSystem(),
+            RetirementWindowProvider,
+            Logger);
 
         await sut.Awaiting(s => s.GetSigningKeysAsync(TestContext.Current.CancellationToken).AsTask())
             .Should().ThrowAsync<ZeeKayDaConfigurationException>()
@@ -474,7 +512,9 @@ public sealed class DevelopmentJwtSigningServiceTests
         await using var sut = new DevelopmentJwtSigningService(
             Options.Create(devOptions),
             new FakeTimeProvider(),
-            new InMemorySigningKeyFileSystem());
+            new InMemorySigningKeyFileSystem(),
+            RetirementWindowProvider,
+            Logger);
 
         var keys = await sut.GetSigningKeysAsync(TestContext.Current.CancellationToken);
         keys.Should().NotBeEmpty();
@@ -491,7 +531,9 @@ public sealed class DevelopmentJwtSigningServiceTests
         await using var sut = new DevelopmentJwtSigningService(
             Options.Create(devOptions),
             new FakeTimeProvider(),
-            new InMemorySigningKeyFileSystem());
+            new InMemorySigningKeyFileSystem(),
+            RetirementWindowProvider,
+            Logger);
 
         var keys = await sut.GetSigningKeysAsync(TestContext.Current.CancellationToken);
         keys.Should().NotBeEmpty();
@@ -504,7 +546,9 @@ public sealed class DevelopmentJwtSigningServiceTests
         await using var sut = new DevelopmentJwtSigningService(
             Options.Create(new DevelopmentSigningKeyOptions()),
             new FakeTimeProvider(),
-            new InMemorySigningKeyFileSystem());
+            new InMemorySigningKeyFileSystem(),
+            RetirementWindowProvider,
+            Logger);
 
         var keys = await sut.GetSigningKeysAsync(TestContext.Current.CancellationToken);
         keys.Should().NotBeEmpty();

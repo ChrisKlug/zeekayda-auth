@@ -72,6 +72,7 @@ public sealed class ZeeKayDaAuthBuilderSigningExtensionsTests
     public async Task AddInMemoryDevelopmentJwtSigningKeys_registers_IJwtSigningService()
     {
         var services = new ServiceCollection();
+        services.AddLogging();
         services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment { ContentRootPath = "/app" });
         var builder = new ZeeKayDaAuthBuilder(services);
 
