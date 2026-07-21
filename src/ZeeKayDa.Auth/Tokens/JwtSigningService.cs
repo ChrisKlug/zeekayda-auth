@@ -1047,9 +1047,8 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
     {
         var retirementWindow = _retirementWindowProvider?.GetRetirementWindow() ?? TimeSpan.Zero;
 
-        foreach (var previousListing in previous.Listings)
+        foreach (var id in previous.Listings.Select(previousListing => previousListing.Id.Value))
         {
-            var id = previousListing.Id.Value;
             if (current.ListingsById.ContainsKey(id))
                 continue;
 
