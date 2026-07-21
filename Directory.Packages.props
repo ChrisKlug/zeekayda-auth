@@ -4,19 +4,19 @@
   </PropertyGroup>
   <ItemGroup>
     <!-- Source Link -->
-    <PackageVersion Include="Microsoft.Extensions.Caching.Abstractions" Version="10.0.9" />
+    <PackageVersion Include="Microsoft.Extensions.Caching.Abstractions" Version="10.0.10" />
     <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="8.0.0" />
   </ItemGroup>
   <ItemGroup>
     <!-- Core abstractions -->
-    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.9" />
-    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.9" />
-    <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.9" />
-    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.9" />
-    <PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.9" />
-    <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="10.0.9" />
-    <PackageVersion Include="Microsoft.AspNetCore.DataProtection.Abstractions" Version="10.0.9" />
-    <PackageVersion Include="Microsoft.AspNetCore.DataProtection" Version="10.0.9" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.10" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.10" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.10" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.10" />
+    <PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.10" />
+    <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="10.0.10" />
+    <PackageVersion Include="Microsoft.AspNetCore.DataProtection.Abstractions" Version="10.0.10" />
+    <PackageVersion Include="Microsoft.AspNetCore.DataProtection" Version="10.0.10" />
     <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.1.0" />
   </ItemGroup>
   <ItemGroup>
@@ -36,7 +36,7 @@
     <!-- Confirmed not redundant with the net10.0 shared framework: Pkcs12Info and friends are not
          present in Microsoft.NETCore.App's runtime or reference assemblies, so this explicit
          package reference is required for KeyVaultCertificateReader's managed PKCS#12 parsing. -->
-    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.9" />
+    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.10" />
   </ItemGroup>
   <ItemGroup>
     <!-- xUnit v3 -->
