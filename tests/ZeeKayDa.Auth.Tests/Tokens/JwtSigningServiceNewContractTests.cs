@@ -152,7 +152,7 @@ public sealed class JwtSigningServiceNewContractTests
         protected override ValueTask OnDisposeAsync()
         {
             OnDisposeAsyncCallCount++;
-            return base.OnDisposeAsync();
+            return ValueTask.CompletedTask;
         }
     }
 
