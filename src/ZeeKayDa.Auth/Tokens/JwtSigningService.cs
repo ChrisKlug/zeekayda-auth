@@ -1047,11 +1047,10 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
     {
         var retirementWindow = _retirementWindowProvider?.GetRetirementWindow() ?? TimeSpan.Zero;
 
-        foreach (var id in previous.Listings.Select(previousListing => previousListing.Id.Value))
+        foreach (var id in previous.Listings
+                     .Select(previousListing => previousListing.Id.Value)
+                     .Where(id => !current.ListingsById.ContainsKey(id)))
         {
-            if (current.ListingsById.ContainsKey(id))
-                continue;
-
             var withinRetirementWindow = true;
             foreach (var entry in previous.Timeline.Where(entry =>
                          string.Equals(entry.Key.Id, id, StringComparison.Ordinal)))
