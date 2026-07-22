@@ -6,10 +6,9 @@ namespace ZeeKayDa.Auth.FileSystem;
 /// <remarks>
 /// <para>
 /// <see cref="Id"/> is the path used as this entry's <c>RotationKey.Id</c> — it determines the
-/// entry's position in the rotation timeline, is passed to
-/// <c>FileSigningJwtSigningService{TOptions}.LoadCertificateAsync</c>, and appears in diagnostics.
-/// For the PFX provider, and for a PEM provider's combined cert+key file, <see cref="Id"/> is the
-/// entry's only backing file.
+/// entry's position in the rotation timeline, is the provider's own <c>KeyId</c> passed to
+/// <c>CreateSignerAsync</c>, and appears in diagnostics. For the PFX provider, and for a PEM
+/// provider's combined cert+key file, <see cref="Id"/> is the entry's only backing file.
 /// </para>
 /// <para>
 /// <see cref="AdditionalPaths"/> lists any other filesystem paths that back this same entry without

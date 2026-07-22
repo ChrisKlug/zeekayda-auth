@@ -230,10 +230,21 @@ issue #409):
   on this tier, since a locally-generated or file-persisted development key never changes at
   runtime.
 - **`RotatingKeySourceOptions`** — the key source can change while the process runs.
-  `LoadKeysAsync` is called at most once per `KeyRotationCheckInterval`. Every other built-in
-  provider (`AzureKeyVaultRemoteSigningOptions`, `AzureKeyVaultCachedSigningOptions`,
-  `WindowsCertificateStoreSigningOptions`, `PemFileSigningOptions`, `PfxFileSigningOptions`) derives
-  from this tier and may add its own properties.
+  `LoadKeysAsync` is called at most once per `KeyRotationCheckInterval`. `AzureKeyVaultRemoteSigningOptions`,
+  `AzureKeyVaultCachedSigningOptions`, and `WindowsCertificateStoreSigningOptions` derive from this
+  tier and may add their own properties.
+
+> ⚠️ **Warning:** `PemFileSigningOptions` and `PfxFileSigningOptions` no longer derive from either
+> tier described above. Both now derive from ADR 0015's `KeySetOptions` (Tier A) instead — the
+> complete set of registered files is fixed at configuration time, every file is read exactly once
+> at startup rather than on a `LoadKeysAsync`/`KeyRotationCheckInterval` cadence, and the provider
+> implements `ListKeysAsync`/`CreateSignerAsync` rather than `LoadKeysAsync`. See
+> [Configure file-based signing](../how-to/configure-file-based-signing.md) for the current model,
+> and [ADR 0015](https://github.com/ChrisKlug/zeekayda-auth/blob/main/docs/decisions/0015-signing-provider-set-source-tiers.md)
+> for the full contract. This page's narrative below (`LoadKeysAsync`, `SigningKeySet`/`SigningKeyPair`,
+> `HasKeySetChangedAsync`) still describes the contract the other listed providers implement; a
+> full rewrite of this reference page for ADR 0015's `KeySetOptions`/`KeySourceOptions` split is
+> pending the remaining providers' migration.
 
 This replaces an earlier design where the base type carried a single nullable
 `KeySourceRefreshInterval` property, with `null` as a sentinel for "static, load-once" mode. That
@@ -246,11 +257,13 @@ express, since a `StaticKeySourceOptions` provider structurally has no such prop
 > re-evaluates whether the active/included key set has changed. It is no longer overloaded with the
 > publish-then-activate lead time a rotated-in key must be visible for before it can become the
 > active signer. That's now a separate, provider-specific property: `SigningKeyActivationDelay` on
-> the two Azure Key Vault options types, and `AssumedJwksPropagationDelay` on the File PEM/PFX and
-> Windows Certificate Store options types. Both default to `KeyRotationCheckInterval` when left
-> unset, and the library enforces that neither can be configured shorter than
-> `KeyRotationCheckInterval` — a newly-published key must not be able to activate before the
-> process would even poll and notice it exists. This nuance is covered in full, with concrete
+> the two Azure Key Vault options types, and `AssumedJwksPropagationDelay` on the Windows
+> Certificate Store options type. Both default to `KeyRotationCheckInterval` when left unset, and
+> the library enforces that neither can be configured shorter than `KeyRotationCheckInterval` — a
+> newly-published key must not be able to activate before the process would even poll and notice it
+> exists. (As noted above, `PemFileSigningOptions`/`PfxFileSigningOptions` have already moved off
+> this tier entirely — their equivalent property is `KeySetOptions.PublicationLead`, advisory only,
+> with no poll-interval floor to enforce it against.) This nuance is covered in full, with concrete
 > values, in each provider's how-to guide (see
 > [Rotate signing keys](../how-to/rotate-signing-keys.md)).
 

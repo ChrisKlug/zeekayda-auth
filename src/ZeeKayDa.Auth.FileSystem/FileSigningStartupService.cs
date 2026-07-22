@@ -14,9 +14,9 @@ namespace ZeeKayDa.Auth.FileSystem;
 /// class depends only on <see cref="IJwtSigningService"/> and is entirely format-agnostic, unlike
 /// <c>PemFileSigningJwtSigningService</c>/<c>PfxFileSigningJwtSigningService</c> which need to know
 /// how to parse their respective file formats. Pre-warm only — all logging (per-file load lines, the
-/// too-soon-NotBefore warning, the expiring-soon warning) already lives in
-/// <c>FileSigningJwtSigningService{TOptions}.LoadKeysAsync</c>, mirroring
-/// <c>WindowsCertificateStoreSigningStartupService</c>.
+/// too-soon-NotBefore warning, the expiring-soon warning) already lives in the base
+/// <c>JwtSigningService{TOptions}</c>'s snapshot build, driven off each provider's
+/// <c>ListKeysAsync</c>, mirroring <c>WindowsCertificateStoreSigningStartupService</c>.
 /// </remarks>
 internal sealed class FileSigningStartupService : IHostedService
 {
