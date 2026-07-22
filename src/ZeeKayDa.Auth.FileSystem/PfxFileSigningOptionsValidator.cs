@@ -1,6 +1,4 @@
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using ZeeKayDa.Auth.Logging;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.FileSystem;
@@ -13,42 +11,13 @@ namespace ZeeKayDa.Auth.FileSystem;
 /// </remarks>
 internal sealed class PfxFileSigningOptionsValidator : IValidateOptions<PfxFileSigningOptions>
 {
-    // See PemFileSigningOptionsValidator for why this floor exists and why it is not a re-download
-    // cadence in this provider.
-    private static readonly TimeSpan MinimumRefreshInterval = TimeSpan.FromMinutes(1);
-
-    private readonly ISanitizingLogger<PfxFileSigningOptionsValidator> _logger;
-
-    public PfxFileSigningOptionsValidator(ISanitizingLogger<PfxFileSigningOptionsValidator> logger)
-    {
-        ArgumentNullException.ThrowIfNull(logger);
-        _logger = logger;
-    }
-
     /// <inheritdoc/>
     public ValidateOptionsResult Validate(string? name, PfxFileSigningOptions options)
     {
         var errors = new List<string>();
 
-        if (options.KeyRotationCheckInterval < MinimumRefreshInterval)
-        {
-            errors.Add(
-                $"PfxFileSigningOptions.KeyRotationCheckInterval must be at least {MinimumRefreshInterval} " +
-                "(it doubles as the too-soon-NotBefore warning threshold per ADR 0011 §3.5, via " +
-                "AssumedJwksPropagationDelay). You are still responsible for ensuring KeyRotationCheckInterval " +
-                "exceeds your actual relying parties' JWKS cache TTL — this floor only rejects values that " +
-                "are almost certainly a mistake.");
-        }
-
-        var positiveError = JwksPropagationDelay.ValidatePositive(
-            nameof(PfxFileSigningOptions), options.AssumedJwksPropagationDelay);
-        if (positiveError is not null)
-            errors.Add(positiveError);
-
-        var tooShortWarning = JwksPropagationDelay.WarnIfShorterThanCheckInterval(
-            nameof(PfxFileSigningOptions), options.AssumedJwksPropagationDelay, options.KeyRotationCheckInterval);
-        if (tooShortWarning is not null)
-            _logger.LogWarning("ZeeKayDa.Auth: {Warning}", tooShortWarning);
+        if (KeySourcePublicationLeadValidator.ValidateMinimum(nameof(PfxFileSigningOptions), options.PublicationLead) is { } publicationLeadError)
+            errors.Add(publicationLeadError);
 
         if (string.IsNullOrWhiteSpace(options.Path))
             errors.Add("PfxFileSigningOptions.Path must be set to a non-empty file path.");
