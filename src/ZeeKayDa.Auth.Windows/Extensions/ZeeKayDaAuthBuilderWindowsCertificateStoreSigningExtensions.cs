@@ -110,6 +110,7 @@ public static class ZeeKayDaAuthBuilderWindowsCertificateStoreSigningExtensions
 
         builder.Services.TryAddSingleton<TimeProvider>(TimeProvider.System);
         builder.Services.TryAddSingleton<ICertificateStoreReader, CertificateStoreReader>();
+        builder.Services.TryAddSingleton<ICertificateKeyExtractor, CertificateKeyExtractor>();
         builder.Services.AddSingleton<IJwtSigningService, WindowsCertificateStoreSigningJwtSigningService>();
         builder.Services.AddHostedService<WindowsCertificateStoreSigningStartupService>();
 

@@ -66,23 +66,33 @@ internal sealed class WindowsCertificateStoreSigningJwtSigningService : JwtSigni
 {
     private readonly IOptions<WindowsCertificateStoreSigningOptions> _options;
     private readonly ICertificateStoreReader _storeReader;
+    private readonly ICertificateKeyExtractor _keyExtractor;
 
     // Populated by ListKeysAsync (Tier A: runs exactly once) so DescribeKeyMetadata can supply it
     // later, when the base class logs each key's status.
     private readonly Dictionary<string, string> _keyMetadataById = new(StringComparer.Ordinal);
 
+    // Populated by ListKeysAsync (Tier A: runs exactly once) alongside _keyMetadataById, so
+    // CreateSignerAsync can verify — at handoff — that the private key it just re-read from the
+    // store still pairs with the public key that was captured (and whose kid the base class is
+    // signing under) for that same thumbprint (L-3/M-1, PR #436 security review).
+    private readonly Dictionary<string, PublicKeyParameters> _publicKeysByThumbprint = new(StringComparer.Ordinal);
+
     public WindowsCertificateStoreSigningJwtSigningService(
         IOptions<WindowsCertificateStoreSigningOptions> options,
         TimeProvider timeProvider,
         ICertificateStoreReader storeReader,
+        ICertificateKeyExtractor keyExtractor,
         ISigningKeyRetirementWindowProvider retirementWindowProvider,
         ISanitizingLogger<JwtSigningService<WindowsCertificateStoreSigningOptions>> logger)
         : base(options, timeProvider, retirementWindowProvider, logger)
     {
         ArgumentNullException.ThrowIfNull(storeReader);
+        ArgumentNullException.ThrowIfNull(keyExtractor);
 
         _options = options;
         _storeReader = storeReader;
+        _keyExtractor = keyExtractor;
     }
 
     /// <inheritdoc/>
@@ -102,7 +112,7 @@ internal sealed class WindowsCertificateStoreSigningJwtSigningService : JwtSigni
             // returned listing.
             using var certificate = _storeReader.GetCertificate(thumbprint, options.StoreLocation, options.StoreName);
 
-            var (publicKey, keyType) = WindowsCertificateKeyExtractor.ExtractPublicKey(certificate, thumbprint);
+            var (publicKey, keyType) = _keyExtractor.ExtractPublicKey(certificate, thumbprint);
             using var publicKeyHandle = publicKey;
             var publicKeyParameters = BuildValidatedPublicKey(publicKeyHandle, keyType, thumbprint, options);
 
@@ -112,6 +122,7 @@ internal sealed class WindowsCertificateStoreSigningJwtSigningService : JwtSigni
             listings.Add(new KeyListing(new KeyId(thumbprint), options.Algorithm, publicKeyParameters, activateAt, expiresAt));
 
             _keyMetadataById[thumbprint] = DescribeCertificateForLogging(certificate);
+            _publicKeysByThumbprint[thumbprint] = publicKeyParameters;
         }
 
         return new ValueTask<IReadOnlyList<KeyListing>>(listings);
@@ -121,13 +132,14 @@ internal sealed class WindowsCertificateStoreSigningJwtSigningService : JwtSigni
     /// <remarks>
     /// Not declared <see langword="async"/>: every step here (the store read and key extraction) is
     /// synchronous, and an <see langword="async"/> method with no <c>await</c> would be a compiler
-    /// warning (elevated to an error by this repository's <c>TreatWarningsAsErrors</c>). The
-    /// defensive <see cref="FindRegisteredThumbprint"/> failure is therefore deliberately captured
-    /// into the returned <see cref="ValueTask{TResult}"/> via <see cref="ValueTask.FromException{TResult}"/>
-    /// rather than left to throw synchronously from this method — matching the base class's calling
-    /// convention (every override's failure surfaces through the awaited task, never synchronously
-    /// from the call site) exactly as an <see langword="async"/> override's compiler-generated state
-    /// machine would.
+    /// warning (elevated to an error by this repository's <c>TreatWarningsAsErrors</c>). Both the
+    /// defensive <see cref="FindRegisteredThumbprint"/> failure and the
+    /// <see cref="VerifySigningKeyMatchesListing"/> mismatch failure are therefore deliberately
+    /// captured into the returned <see cref="ValueTask{TResult}"/> via
+    /// <see cref="ValueTask.FromException{TResult}"/> rather than left to throw synchronously from
+    /// this method — matching the base class's calling convention (every override's failure surfaces
+    /// through the awaited task, never synchronously from the call site) exactly as an
+    /// <see langword="async"/> override's compiler-generated state machine would.
     /// </remarks>
     protected override ValueTask<ISigner> CreateSignerAsync(KeyId id, CancellationToken cancellationToken)
     {
@@ -145,7 +157,29 @@ internal sealed class WindowsCertificateStoreSigningJwtSigningService : JwtSigni
         }
 
         using var certificate = _storeReader.GetCertificate(thumbprint, options.StoreLocation, options.StoreName);
-        var (privateKey, _) = WindowsCertificateKeyExtractor.ExtractPrivateKey(certificate, thumbprint);
+
+        var (privateKey, keyType) = _keyExtractor.ExtractPrivateKey(certificate, thumbprint);
+
+        try
+        {
+            VerifySigningKeyMatchesListing(privateKey, keyType, thumbprint, options);
+        }
+        catch (Exception ex) when (ex is ZeeKayDaConfigurationException or CryptographicException
+            or NotSupportedException or InvalidCastException)
+        {
+            // VerifySigningKeyMatchesListing's call chain (BuildValidatedPublicKey ->
+            // SigningKeyDescriptorFactory.BuildDescriptor) can surface a ZeeKayDaConfigurationException
+            // (algorithm/key-type mismatch or the pairing check itself), a CryptographicException (an
+            // exotic KSP/HSM that refuses even public export), a NotSupportedException (an unsupported
+            // SigningKeyType), or an InvalidCastException (publicKey/keyType disagreement) — every one
+            // of those must still surface through the returned ValueTask, per this method's
+            // <remarks>, not synchronously from this call site (L-7, PR #436 security review). The
+            // private key handle is about to be handed to LocalSigner on the success path, which takes
+            // ownership of disposing it; on every one of these failure paths nothing else owns it, so
+            // it must be disposed here to avoid leaking the underlying CNG/CAPI handle.
+            privateKey.Dispose();
+            return ValueTask.FromException<ISigner>(ex);
+        }
 
         return new ValueTask<ISigner>(new LocalSigner(options.Algorithm, privateKey));
     }
@@ -202,4 +236,95 @@ internal sealed class WindowsCertificateStoreSigningJwtSigningService : JwtSigni
 
     private static string DescribeCertificateForLogging(X509Certificate2 certificate) =>
         $"subject '{certificate.Subject}'";
+
+    /// <summary>
+    /// Defence-in-depth check (L-3/M-1, PR #436 security review): derives the public half of
+    /// <paramref name="privateKey"/> — the actual private key handle <see cref="CreateSignerAsync"/>
+    /// is about to hand to <see cref="LocalSigner"/> — via <c>RSA.ExportParameters</c>/
+    /// <c>ECDsa.ExportParameters</c> with <c>includePrivateParameters: false</c>, and compares that
+    /// derived public half against the
+    /// public key that <see cref="ListKeysAsync"/> captured for the same <paramref name="thumbprint"/>
+    /// — the public key whose derived <c>kid</c> the base class is signing under.
+    /// </summary>
+    /// <remarks>
+    /// This is deliberately <em>not</em> a comparison against the certificate's own
+    /// <c>SubjectPublicKeyInfo</c> (re-reading a store entry by thumbprint, a hash of the whole
+    /// certificate, always yields the same SPKI, making such a comparison a tautology that can never
+    /// fire): the export above reads the public component the private key <em>container</em> actually
+    /// holds, independently of the certificate's own advertised public key, so it can detect the case
+    /// where the two have drifted apart. A mismatch means the store entry's key-container association
+    /// changed after startup without the certificate's thumbprint changing (e.g. a botched
+    /// <c>certutil -repairstore</c>); left uncaught, tokens would be signed under a <c>kid</c> that no
+    /// longer matches the actual signing key — fail-closed for relying parties, but confusing to
+    /// diagnose. <paramref name="privateKey"/> is never exported with its private components
+    /// (<c>ExportParameters(true)</c>) — only the public half, which <see cref="RSA"/>/<see cref="ECDsa"/>
+    /// permit exporting even for a non-exportable CNG-backed key, since only exporting the private
+    /// components requires export permission on the key.
+    /// </remarks>
+    private void VerifySigningKeyMatchesListing(
+        AsymmetricAlgorithm privateKey, SigningKeyType keyType, string thumbprint, WindowsCertificateStoreSigningOptions options)
+    {
+        var currentPublicKey = BuildValidatedPublicKey(privateKey, keyType, thumbprint, options);
+
+        if (!_publicKeysByThumbprint.TryGetValue(thumbprint, out var listedPublicKey) ||
+            !PublicKeysMatch(listedPublicKey, currentPublicKey))
+        {
+            throw new ZeeKayDaConfigurationException(new ZeeKayDaConfigurationFailure(
+                "signing.windows_certificate_store.signing_key_mismatch",
+                $"Certificate '{thumbprint}': the public key derived from the private key currently " +
+                "backing this store entry does not match the public key captured for this thumbprint " +
+                "during startup listing. This indicates the store entry's key-container association " +
+                "changed after startup (for example, via 'certutil -repairstore') without the " +
+                "certificate's thumbprint changing. Restart the process so the active signer is " +
+                "re-selected against the current key pairing."));
+        }
+    }
+
+    /// <summary>
+    /// Structurally compares two sets of public key parameters (modulus/exponent for RSA,
+    /// curve/point for EC) — never a reference or default record comparison, since
+    /// <see cref="RSAParameters"/>/<see cref="ECParameters"/> carry <c>byte[]</c> fields that
+    /// default equality would compare by reference, not content.
+    /// </summary>
+    private static bool PublicKeysMatch(PublicKeyParameters listed, PublicKeyParameters current)
+    {
+        if (listed.KeyType != current.KeyType)
+            return false;
+
+        return listed.KeyType == SigningKeyType.Rsa
+            ? RsaParametersMatch(listed.RsaPublicParameters!.Value, current.RsaPublicParameters!.Value)
+            : EcParametersMatch(listed.EcPublicParameters!.Value, current.EcPublicParameters!.Value);
+    }
+
+    private static bool RsaParametersMatch(RSAParameters listed, RSAParameters current) =>
+        listed.Modulus.AsSpan().SequenceEqual(current.Modulus) &&
+        listed.Exponent.AsSpan().SequenceEqual(current.Exponent);
+
+    private static bool EcParametersMatch(ECParameters listed, ECParameters current) =>
+        CurveIdentifiersMatch(listed.Curve, current.Curve) &&
+        listed.Q.X.AsSpan().SequenceEqual(current.Q.X) &&
+        listed.Q.Y.AsSpan().SequenceEqual(current.Q.Y);
+
+    /// <summary>
+    /// Compares two <see cref="ECCurve"/>s' identities via <see cref="Oid.Value"/>, falling back to
+    /// <see cref="Oid.FriendlyName"/> when either curve's <see cref="Oid.Value"/> is unset (a known,
+    /// platform-dependent possibility when a curve was resolved by friendly name rather than OID).
+    /// Never treats a "both null or empty" pairing as a match on either property — doing so (e.g. a
+    /// plain <see cref="string.Equals(string?, string?)"/> comparison of <see cref="Oid.Value"/>
+    /// alone, where both <see langword="null"/> == <see langword="null"/> and <c>"" == ""</c> are
+    /// <see langword="true"/>) would let two differently identified curves compare equal without
+    /// actually validating that they are the same curve (L-6/L-8, PR #436 security review) — an empty
+    /// string is exactly as invalid an identity signal as <see langword="null"/>, so both legs are
+    /// guarded with <see cref="string.IsNullOrEmpty(string?)"/>, not a bare null check.
+    /// </summary>
+    private static bool CurveIdentifiersMatch(ECCurve listed, ECCurve current)
+    {
+        if (!string.IsNullOrEmpty(listed.Oid?.Value) && !string.IsNullOrEmpty(current.Oid?.Value))
+            return string.Equals(listed.Oid.Value, current.Oid.Value, StringComparison.Ordinal);
+
+        if (!string.IsNullOrEmpty(listed.Oid?.FriendlyName) && !string.IsNullOrEmpty(current.Oid?.FriendlyName))
+            return string.Equals(listed.Oid.FriendlyName, current.Oid.FriendlyName, StringComparison.OrdinalIgnoreCase);
+
+        return false;
+    }
 }
