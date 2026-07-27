@@ -92,7 +92,7 @@ public sealed class CertificateStoreReaderTests
     // Windows Certificate Store, read back via CertificateStoreReader (which returns an independent
     // copy per GetCertificate's own contract), with its private key extracted and the returned
     // certificate then disposed before the extracted handle is used to sign — exactly the sequence
-    // WindowsCertificateStoreSigningJwtSigningService.LoadKeysAsync performs. Running this on the
+    // WindowsCertificateStoreSigningJwtSigningService.ListKeysAsync/CreateSignerAsync perform. Running this on the
     // windows-latest CI runner automates the security-critical part of what would otherwise be a
     // manual smoke test.
     [Fact]

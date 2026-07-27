@@ -94,9 +94,28 @@ To grant access:
 - **Using the Certificates MMC snap-in:** locate the certificate under **Personal > Certificates**, right-click it, choose **All Tasks > Manage Private Keys...**, and grant the service account or App Pool identity **Read** permission.
 - **Scripted deployments:** grant access to the underlying CNG key container using `icacls` or PowerShell's `Set-Acl` against the key's file under `%ProgramData%\Microsoft\Crypto\Keys` (CNG) or the legacy CAPI key store, or use `certutil -repairstore` to repair key ACLs after an import.
 
-If the private key exists but cannot be accessed by the current process identity, ZeeKayDa.Auth surfaces a configuration error identifying the certificate by thumbprint, the resolved process identity (when it can be determined), and pointing back at "Manage Private Keys" / `certutil -repairstore` — so if you see that error at startup, this permission step is the first thing to check, and the identity named in the message is exactly the one to grant access to.
+If the private key exists but cannot be accessed by the current process identity, ZeeKayDa.Auth surfaces a configuration error identifying the certificate by thumbprint, the resolved process identity (when it can be determined), and pointing back at "Manage Private Keys" / `certutil -repairstore`. Under this provider's Tier A contract that error surfaces the first time the affected certificate becomes the *active* signer and a token needs signing — at startup if it's already active, or later, at the rotation handoff, if it isn't yet — so this permission step is the first thing to check whenever you see it, and the identity named in the message is exactly the one to grant access to.
 
-## Rotation is fixed at startup, not live
+## Rotation and restart-to-reload semantics
+
+This provider implements ADR 0015's Tier A `KeySetOptions` contract: the complete set of
+registered thumbprints is fixed at configuration time, and the only thing that ever advances
+afterward is the wall clock crossing each certificate's `NotBefore`/`NotAfter`.
+
+Concretely, that means:
+
+- Every registered thumbprint is read from the store **exactly once, ever**, at startup. A
+  certificate added to, removed from, or replaced in the store is **not** picked up live —
+  adding, removing, or replacing a registered thumbprint always requires a configuration change
+  and a restart, exactly as with the file-based PEM/PFX providers. There is no background polling
+  for new certificates, and no `KeyRotationCheckInterval`-style property to configure one.
+- Rotation **between already-registered thumbprints** still switches the active signer purely from
+  elapsed wall-clock time — each certificate's `NotBefore`/`NotAfter` is compared against `now` on
+  every request, with **zero further store access to list keys**. The store *is* read once more at
+  that point: the incoming active certificate's entry is re-read transiently to obtain its private
+  key for signing (see "Least-privilege reads" below). If that certificate's private key is missing
+  or inaccessible, the failure surfaces at that handoff — potentially well after the startup check
+  described above, if the certificate wasn't yet active when the process started.
 
 Register additional certificates for a planned rotation with `AddCertificate`, from the *same* `StoreLocation`/`StoreName` as the primary:
 
@@ -113,6 +132,7 @@ builder.Services
         storeName: StoreName.My,
         configure: options =>
         {
+            options.PublicationLead = TimeSpan.FromHours(2);
             // The incoming certificate for a planned rotation. Its NotBefore should be set far
             // enough in the future that relying parties have had time to poll the updated JWKS
             // before it becomes the active signer.
@@ -122,7 +142,42 @@ builder.Services
 
 With exactly one registered certificate, it is the active signer immediately. With two or more registered, the certificate whose `NotBefore` has arrived and is most recent becomes the active signer — the operator's responsibility is to set the new certificate's `NotBefore` far enough in the future to give relying parties time to fetch the updated JWKS before it activates.
 
-> ⚠️ **Warning:** The set of registered thumbprints is fixed at process start — it does not discover new certificates that were added to the store after startup, and it does not notice a certificate that was removed. Adding, removing, or replacing a registered thumbprint requires a host restart. Every `KeyRotationCheckInterval` tick re-evaluates which of those *already-registered* certificates is currently active, based on each one's `NotBefore` and the retirement window — this is pure timestamp comparison against the certificates read at startup, not a re-read of the store. The store itself is only re-read when that evaluation detects the active/included set has actually changed (i.e. around a rotation boundary), not on every tick.
+> ⚠️ **Warning:** The set of registered thumbprints is fixed at process start — it does not discover new certificates that were added to the store after startup, and it does not notice a certificate that was removed. Adding, removing, or replacing a registered thumbprint requires a host restart.
+
+> 💡 **Tip:** Because every registered thumbprint is read only once, at startup, staging a
+> rotated-in certificate ahead of its intended activation time means deploying and restarting
+> *before* that time, not after. Register it via `AddCertificate` well ahead of the `NotBefore` on
+> the certificate itself — see [Rotate signing keys](rotate-signing-keys.md) for exactly how much
+> lead time that needs.
+
+### `PublicationLead`
+
+`WindowsCertificateStoreSigningOptions` inherits `PublicationLead` (default: 1 hour) from
+`KeySetOptions`. On this provider `PublicationLead` is **advisory only**, not enforced: you, the
+operator, own each certificate's activation timing directly via its `NotBefore`, and
+`PublicationLead` is used only to decide whether to log a startup warning that a registered
+certificate's `NotBefore` is nearer than `PublicationLead` away — a signal that the certificate may
+not have had enough lead time in the JWKS before it activates. There is no
+`KeyRotationCheckInterval`-style poll floor to enforce it against on this tier — there is no poll
+at all, since every thumbprint is read once, at startup.
+
+## Least-privilege reads: public metadata once, private key only for the active certificate
+
+A Windows Certificate Store entry is a bundled format exactly like a PFX file: opening it for a
+thumbprint that has a private key installed alongside it hands back a handle to both halves
+together — there is no way to open the store for a certificate's public half alone. This provider
+reads every registered thumbprint transiently at startup, extracts and retains *only* the public
+key parameters for its listing, and releases the certificate handle (and, with it, any private-key
+access) immediately afterward — no private material for any thumbprint, not even the active one,
+is retained past that transient read. When the base class needs to sign, it re-reads only the
+single thumbprint currently selected as active; every other registered certificate's private key
+is never loaded a second time.
+
+> ⚠️ **Warning:** This is a provider-level obligation, not a structural guarantee of the underlying
+> contract — a bundled store entry necessarily grants access to its private key the moment it is
+> opened at all. This provider is written to defer extracting that private key until the
+> certificate is actually selected as active, and to never retain it otherwise, but a hand-written
+> custom provider over a bundled certificate store must apply the same discipline itself.
 
 For the full activation and retirement timing model — including how `NotBefore` anchors publish-then-activate rotation — see [Rotate signing keys](rotate-signing-keys.md).
 

@@ -11,6 +11,12 @@
 // KNOWN GAP: a real ACL-denied X509Store.Open() (the store_inaccessible failure) is not practically
 // provokable in CI, so it is only simulated here via the fake's ExceptionToThrow. The genuinely
 // Windows-only real-store round trip is covered separately by Integration/CertificateStoreReaderTests.cs.
+//
+// ADR 0015 Tier A (issue #424): ListKeysAsync runs exactly once, ever, for the lifetime of a service
+// instance, and its per-certificate status logging fires only on that one evaluation — there is no
+// reload/change-detection surface, and no repeated logging cycle, left to exercise here. Rotation
+// between already-registered certificates still switches the active signer purely from elapsed wall
+// clock time, with zero further store access.
 
 using System.Security.Cryptography.X509Certificates;
 using Microsoft.Extensions.DependencyInjection;
@@ -123,7 +129,6 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
         Assert.SkipUnless(OperatingSystem.IsWindows(), RequiresWindowsReason);
 
         var ct = TestContext.Current.CancellationToken;
-        var refreshInterval = TimeSpan.FromMinutes(5);
         var (services, reader, timeProvider) = BuildServices(T0);
         using var predecessor = TestCertificateFactory.CreateRsaSelfSigned("predecessor", T0 - TimeSpan.FromDays(30), T0 + TimeSpan.FromDays(365));
         var successorNotBefore = T0 + TimeSpan.FromDays(1);
@@ -133,11 +138,7 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
 
         var builder = new ZeeKayDaAuthBuilder(services);
         builder.AddWindowsCertificateStoreSigning(PrimaryThumbprint, SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My,
-            configure: options =>
-            {
-                options.AddCertificate(SecondaryThumbprint);
-                options.KeyRotationCheckInterval = refreshInterval;
-            });
+            configure: options => options.AddCertificate(SecondaryThumbprint));
 
         await using var provider = services.BuildServiceProvider();
         var signingService = provider.GetRequiredService<IJwtSigningService>();
@@ -147,7 +148,7 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
 
         timeProvider.SetUtcNow(successorNotBefore);
         var after = await signingService.GetSigningKeysAsync(ct);
-        after[0].Kid.Should().Be(JwkThumbprint.Compute(successor.GetRSAPublicKey()!.ExportParameters(false)), "successor becomes active once its NotBefore arrives");
+        after[0].Kid.Should().Be(JwkThumbprint.Compute(successor.GetRSAPublicKey()!.ExportParameters(false)), "successor becomes active once its NotBefore arrives, with zero further store access");
     }
 
     // ── Startup failure propagation ──────────────────────────────────────────────────────────────
@@ -188,7 +189,9 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
         await using var provider = services.BuildServiceProvider();
         var signingService = provider.GetRequiredService<IJwtSigningService>();
 
-        var act = async () => await signingService.GetSigningKeysAsync(ct);
+        // ListKeysAsync alone never needs a private key (ADR 0015 §2/§5) — the failure only
+        // surfaces once a real SignAsync call needs to extract the active certificate's private key.
+        var act = async () => await signingService.SignAsync("payload"u8.ToArray(), ct);
 
         (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>()).WithMessage("*private_key_not_found*");
     }
@@ -225,8 +228,8 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
         var (services, reader, _) = BuildServices(T0);
         using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
         reader.AddCertificate(PrimaryThumbprint, certificate);
-        var logger = new CapturingSanitizingLogger<WindowsCertificateStoreSigningJwtSigningService>();
-        services.AddSingleton<ISanitizingLogger<WindowsCertificateStoreSigningJwtSigningService>>(logger);
+        var logger = new CapturingSanitizingLogger<JwtSigningService<WindowsCertificateStoreSigningOptions>>();
+        services.AddSingleton<ISanitizingLogger<JwtSigningService<WindowsCertificateStoreSigningOptions>>>(logger);
 
         var builder = new ZeeKayDaAuthBuilder(services);
         builder.AddWindowsCertificateStoreSigning(PrimaryThumbprint, SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My);
@@ -241,106 +244,50 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
     }
 
     [Fact]
-    public async Task Full_DI_wiring_does_not_log_again_when_an_unchanged_cycle_skips_the_reload()
-    {
-        Assert.SkipUnless(OperatingSystem.IsWindows(), RequiresWindowsReason);
-
-        // HasKeySetChangedAsync reports "no change" here (nothing has rotated), so LoadKeysAsync —
-        // and the LogCertificateStatuses call inside it — must not run a second time (issue #348).
-        var ct = TestContext.Current.CancellationToken;
-        var refreshInterval = TimeSpan.FromMinutes(5);
-        var (services, reader, timeProvider) = BuildServices(T0);
-        using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
-        reader.AddCertificate(PrimaryThumbprint, certificate);
-        var logger = new CapturingSanitizingLogger<WindowsCertificateStoreSigningJwtSigningService>();
-        services.AddSingleton<ISanitizingLogger<WindowsCertificateStoreSigningJwtSigningService>>(logger);
-
-        var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddWindowsCertificateStoreSigning(PrimaryThumbprint, SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My,
-            configure: options => options.KeyRotationCheckInterval = refreshInterval);
-
-        await using var provider = services.BuildServiceProvider();
-        var signingService = provider.GetRequiredService<IJwtSigningService>();
-        await signingService.GetSigningKeysAsync(ct); // Bootstrap load.
-
-        timeProvider.SetUtcNow(T0 + refreshInterval); // Cache expires -> triggers the "ask" step.
-        await signingService.GetSigningKeysAsync(ct);
-
-        logger.Entries.Count(e => e.Level == LogLevel.Information).Should().Be(1,
-            "with only one registered certificate and no elapsed-time boundary crossed, nothing has " +
-            "changed, so the per-certificate status line must not repeat");
-    }
-
-    [Fact]
-    public async Task Full_DI_wiring_per_certificate_log_reflects_active_included_and_excluded_status_as_rotation_progresses()
+    public async Task Full_DI_wiring_logs_the_pending_and_active_status_of_both_certificates_on_the_one_time_load()
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), RequiresWindowsReason);
 
         var ct = TestContext.Current.CancellationToken;
-        var refreshInterval = TimeSpan.FromMinutes(5);
-        var retirementWindow = TimeSpan.FromHours(1);
-        var (services, reader, timeProvider) = BuildServices(T0, retirementWindow);
+        var (services, reader, _) = BuildServices(T0);
         using var predecessor = TestCertificateFactory.CreateRsaSelfSigned("predecessor", T0 - TimeSpan.FromDays(30), T0 + TimeSpan.FromDays(365));
         var successorNotBefore = T0 + TimeSpan.FromDays(1);
         using var successor = TestCertificateFactory.CreateRsaSelfSigned("successor", successorNotBefore, T0 + TimeSpan.FromDays(400));
         reader.AddCertificate(PrimaryThumbprint, predecessor);
         reader.AddCertificate(SecondaryThumbprint, successor);
-        var logger = new CapturingSanitizingLogger<WindowsCertificateStoreSigningJwtSigningService>();
-        services.AddSingleton<ISanitizingLogger<WindowsCertificateStoreSigningJwtSigningService>>(logger);
+        var logger = new CapturingSanitizingLogger<JwtSigningService<WindowsCertificateStoreSigningOptions>>();
+        services.AddSingleton<ISanitizingLogger<JwtSigningService<WindowsCertificateStoreSigningOptions>>>(logger);
 
         var builder = new ZeeKayDaAuthBuilder(services);
         builder.AddWindowsCertificateStoreSigning(PrimaryThumbprint, SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My,
-            configure: options =>
-            {
-                options.AddCertificate(SecondaryThumbprint);
-                options.KeyRotationCheckInterval = refreshInterval;
-            });
+            configure: options => options.AddCertificate(SecondaryThumbprint));
 
         await using var provider = services.BuildServiceProvider();
         var signingService = provider.GetRequiredService<IJwtSigningService>();
 
-        // Before the successor's NotBefore: predecessor is active, successor is pending.
         await signingService.GetSigningKeysAsync(ct);
+
         logger.Entries.Should().Contain(e => e.Message.Contains(PrimaryThumbprint) && e.Message.Contains("the active signer"));
         logger.Entries.Should().Contain(e => e.Message.Contains(SecondaryThumbprint) && e.Message.Contains("not yet active"));
-        logger.Entries.Clear();
-
-        // After the successor activates but within the predecessor's retirement window.
-        timeProvider.SetUtcNow(successorNotBefore);
-        await signingService.GetSigningKeysAsync(ct);
-        logger.Entries.Should().Contain(e => e.Message.Contains(SecondaryThumbprint) && e.Message.Contains("the active signer"));
-        logger.Entries.Should().Contain(e => e.Message.Contains(PrimaryThumbprint) && e.Message.Contains("retirement window"));
-        logger.Entries.Clear();
-
-        // After the predecessor's retirement window has fully elapsed - no longer trusted at all.
-        timeProvider.SetUtcNow(successorNotBefore + retirementWindow + TimeSpan.FromMinutes(1));
-        await signingService.GetSigningKeysAsync(ct);
-        logger.Entries.Should().Contain(e => e.Message.Contains(PrimaryThumbprint) && e.Message.Contains("NOT included"),
-            "once a registered certificate's retirement window has fully elapsed, the log should say so plainly so an operator knows it can be removed from configuration");
     }
 
     [Fact]
-    public async Task Full_DI_wiring_logs_startup_warning_when_soonest_pending_NotBefore_is_closer_than_KeyRotationCheckInterval()
+    public async Task Full_DI_wiring_logs_startup_warning_when_soonest_pending_NotBefore_is_closer_than_PublicationLead()
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), RequiresWindowsReason);
 
         var ct = TestContext.Current.CancellationToken;
-        var refreshInterval = TimeSpan.FromMinutes(5);
         var (services, reader, _) = BuildServices(T0);
         using var primary = TestCertificateFactory.CreateRsaSelfSigned("primary", T0 - TimeSpan.FromDays(30), T0 + TimeSpan.FromDays(365));
         using var secondary = TestCertificateFactory.CreateRsaSelfSigned("secondary", T0 + TimeSpan.FromMinutes(1), T0 + TimeSpan.FromDays(400));
         reader.AddCertificate(PrimaryThumbprint, primary);
         reader.AddCertificate(SecondaryThumbprint, secondary);
-        var logger = new CapturingSanitizingLogger<WindowsCertificateStoreSigningJwtSigningService>();
-        services.AddSingleton<ISanitizingLogger<WindowsCertificateStoreSigningJwtSigningService>>(logger);
+        var logger = new CapturingSanitizingLogger<JwtSigningService<WindowsCertificateStoreSigningOptions>>();
+        services.AddSingleton<ISanitizingLogger<JwtSigningService<WindowsCertificateStoreSigningOptions>>>(logger);
 
         var builder = new ZeeKayDaAuthBuilder(services);
         builder.AddWindowsCertificateStoreSigning(PrimaryThumbprint, SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My,
-            configure: options =>
-            {
-                options.AddCertificate(SecondaryThumbprint);
-                options.KeyRotationCheckInterval = refreshInterval;
-            });
+            configure: options => options.AddCertificate(SecondaryThumbprint));
 
         await using var provider = services.BuildServiceProvider();
         var signingService = provider.GetRequiredService<IJwtSigningService>();
@@ -358,8 +305,8 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
         var (services, reader, _) = BuildServices(T0);
         using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", T0 - TimeSpan.FromDays(300), T0 + TimeSpan.FromDays(10));
         reader.AddCertificate(PrimaryThumbprint, certificate);
-        var logger = new CapturingSanitizingLogger<WindowsCertificateStoreSigningJwtSigningService>();
-        services.AddSingleton<ISanitizingLogger<WindowsCertificateStoreSigningJwtSigningService>>(logger);
+        var logger = new CapturingSanitizingLogger<JwtSigningService<WindowsCertificateStoreSigningOptions>>();
+        services.AddSingleton<ISanitizingLogger<JwtSigningService<WindowsCertificateStoreSigningOptions>>>(logger);
 
         var builder = new ZeeKayDaAuthBuilder(services);
         builder.AddWindowsCertificateStoreSigning(PrimaryThumbprint, SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My);

@@ -90,14 +90,13 @@ otherwise-valid token signed with a `kid` it has simply never seen.
 ZeeKayDa.Auth's providers avoid this by requiring a new key to be **published** — visible in
 `GetSigningKeysAsync()` results, and so in the JWKS — for some lead time **before** it is
 promoted to active signer. That lead time is called `SigningKeyActivationDelay` on the Azure Key
-Vault options types (default: `KeyRotationCheckInterval`) and `AssumedJwksPropagationDelay` on the
-Windows Certificate Store options type (also default: `KeyRotationCheckInterval`) — both providers
-still on ADR 0011's polling contract. The file-based PEM/PFX options types instead inherit
-`PublicationLead` (default: 1 hour) from ADR 0015's `KeySetOptions`, since neither provider polls
-at all — see [Windows Certificate Store and file-based (PEM/PFX)](#windows-certificate-store-and-file-based-pempfx--manual-registration)
-below for what each property actually does on its own provider. In every case, set it to something
-at least as long as your relying parties' JWKS cache TTL, so a relying party that polls the JWKS at
-that interval will always have observed a new key before the first token is signed with it.
+Vault options types (default: `KeyRotationCheckInterval`), and `PublicationLead` (default: 1 hour)
+on the Windows Certificate Store and file-based PEM/PFX options types, inherited from ADR 0015's
+`KeySetOptions` — see
+[Windows Certificate Store and file-based (PEM/PFX)](#windows-certificate-store-and-file-based-pempfx--manual-registration)
+below for what it governs on those providers. In every case, set it to something at least as long
+as your relying parties' JWKS cache TTL, so a relying party that polls the JWKS at that interval
+will always have observed a new key before the first token is signed with it.
 
 > ⚠️ **Warning:** For all of the certificate-backed providers (Windows Certificate Store,
 > file-based PEM/PFX), the lead-time property is not itself enforced against a rotated-in
@@ -155,14 +154,12 @@ provider-recorded creation timestamp. Unlike Key Vault, their configuration is f
 start — adding, removing, or replacing a certificate always requires a config change and a
 restart.
 
-> 💡 **Tip:** The file-based PEM/PFX provider and the Windows Certificate Store provider are on two
-> different ADR tiers today: PEM/PFX implement ADR 0015's Tier A `KeySetOptions` contract (property
-> `PublicationLead`, every registered file read exactly once at startup); Windows Certificate Store
-> still implements ADR 0011's polling contract (property `AssumedJwksPropagationDelay`, defaulting
-> to `KeyRotationCheckInterval`, re-evaluated on a poll). The activation *behavior* described in
-> this section — `NotBefore` is the only signal, with no library-enforced floor under it — is
-> identical for both regardless of which property name applies; the difference is purely which
-> options type and property you configure it through.
+> 💡 **Tip:** The file-based PEM/PFX provider and the Windows Certificate Store provider both
+> implement ADR 0015's Tier A `KeySetOptions` contract (property `PublicationLead`): the complete
+> set of registered files/thumbprints is fixed at configuration time, and every one of them is
+> read exactly once, at startup, rather than on a `KeyRotationCheckInterval`-style poll. The
+> activation *behavior* described in this section — `NotBefore` is the only signal, with no
+> library-enforced floor under it — is identical for both.
 
 > 💡 **Tip:** Why Key Vault gets an enforced overlap and these certificate-backed providers don't.
 > Key Vault stamps every key/certificate version with its own immutable `CreatedOn` timestamp the
@@ -181,12 +178,11 @@ restart.
 
 The rotation procedure is the same for both:
 
-1. **Generate the new certificate or file**, setting its `NotBefore` at least `PublicationLead`
-   (PEM/PFX) or `AssumedJwksPropagationDelay` (Windows Certificate Store) in the future. This is
-   the step that satisfies publish-then-activate for these two providers: because every registered
-   certificate is already fully visible in the JWKS from process start, there is no separate
-   "has this been published yet" delay the library can add on top — the `NotBefore` date *is* the
-   activation time. You are responsible for setting it far enough ahead.
+1. **Generate the new certificate or file**, setting its `NotBefore` at least `PublicationLead` in
+   the future. This is the step that satisfies publish-then-activate for these two providers:
+   because every registered certificate is already fully visible in the JWKS from process start,
+   there is no separate "has this been published yet" delay the library can add on top — the
+   `NotBefore` date *is* the activation time. You are responsible for setting it far enough ahead.
 
    > ⚠️ **Warning:** Most certificate tooling — `openssl`, PowerShell's
    > `New-SelfSignedCertificate` — defaults `NotBefore` to "now" unless you say otherwise. If you
@@ -266,9 +262,8 @@ builder.Services
 The PFX provider follows the identical pattern via `AddPfxFileSigning`/`options.AddFile(path, passwordSource)`
 — see [Configure file-based signing](configure-file-based-signing.md#pfx-rotation).
 
-The Windows Certificate Store provider follows the identical pattern with `options.AddCertificate(thumbprint)`
-in place of `options.AddFile(path)`, but is still on `AssumedJwksPropagationDelay`/
-`KeyRotationCheckInterval` rather than `PublicationLead` — see
+The Windows Certificate Store provider follows the identical `PublicationLead` pattern, with
+`options.AddCertificate(thumbprint)` in place of `options.AddFile(path)` — see
 [Configure Windows Certificate Store signing](configure-windows-certificate-store-signing.md) for
 the full registration call.
 
@@ -282,12 +277,11 @@ had elapsed. Restore the old key if you still have it, and wait the full retirem
 time before removing it.
 
 **Relying parties reject tokens signed by the newly-active key, immediately after rotation.** You
-most likely set the new certificate's `NotBefore` to "now" instead of at least `PublicationLead`
-(PEM/PFX) or `AssumedJwksPropagationDelay` (Windows Certificate Store) in the future — or, for Key
-Vault, created the new version and let it activate without waiting `SigningKeyActivationDelay` for
-it to be observed. A relying party with a cached JWKS from before the new key existed has no way to
-know about it yet. There is no way to undo an early activation retroactively; the fix is to make
-sure the *next* rotation gives the new key enough lead time.
+most likely set the new certificate's `NotBefore` to "now" instead of at least `PublicationLead` in
+the future — or, for Key Vault, created the new version and let it activate without waiting
+`SigningKeyActivationDelay` for it to be observed. A relying party with a cached JWKS from before
+the new key existed has no way to know about it yet. There is no way to undo an early activation
+retroactively; the fix is to make sure the *next* rotation gives the new key enough lead time.
 
 ---
 

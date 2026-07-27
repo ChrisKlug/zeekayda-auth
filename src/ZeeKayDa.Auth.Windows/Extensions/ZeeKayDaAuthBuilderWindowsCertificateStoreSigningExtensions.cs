@@ -30,12 +30,14 @@ public static class ZeeKayDaAuthBuilderWindowsCertificateStoreSigningExtensions
     /// in <paramref name="configure"/>. With exactly one registered certificate it is the active
     /// signer immediately; with two or more, the certificate whose <c>NotBefore</c> has arrived and
     /// is most recent is the active signer. See <see cref="SigningKeyRotation"/> and
-    /// ADR 0011 §3.3/§3.5 for the full rotation/retirement model.
+    /// ADR 0015 §1 for the full rotation/retirement model.
     /// </para>
     /// <para>
-    /// Adding, removing, or updating a certificate registered with this method requires a host
-    /// restart — the store is read at startup and on each <see cref="ZeeKayDa.Auth.Tokens.RotatingKeySourceOptions.KeyRotationCheckInterval"/>
-    /// tick thereafter, but the set of registered thumbprints itself is fixed at process start.
+    /// ADR 0015 Tier A (issue #424): the store is read exactly once, at startup — adding, removing,
+    /// or updating a certificate registered with this method requires a host restart to be picked
+    /// up. The set of registered thumbprints is fixed at process start; rotation between
+    /// already-registered certificates still switches the active signer purely from elapsed wall
+    /// clock time, with zero further store access.
     /// </para>
     /// </remarks>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
@@ -45,7 +47,7 @@ public static class ZeeKayDaAuthBuilderWindowsCertificateStoreSigningExtensions
     /// <param name="storeName">The store name to search.</param>
     /// <param name="configure">
     /// An optional callback to further configure <see cref="WindowsCertificateStoreSigningOptions"/>
-    /// (for example, <see cref="ZeeKayDa.Auth.Tokens.RotatingKeySourceOptions.KeyRotationCheckInterval"/> or additional
+    /// (for example, <see cref="ZeeKayDa.Auth.Tokens.KeySetOptions.PublicationLead"/> or additional
     /// certificates for rotation via <see cref="WindowsCertificateStoreSigningOptions.AddCertificate"/>).
     /// </param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
