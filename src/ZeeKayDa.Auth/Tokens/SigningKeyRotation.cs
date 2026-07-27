@@ -113,22 +113,50 @@ public static class SigningKeyRotation
     /// misconfiguration this <see langword="null"/> exists to surface.
     /// </para>
     /// <para>
-    /// <strong>Single-key bootstrap exemption:</strong> with exactly one registered key it is active
-    /// immediately regardless of its <see cref="RotationKey.ActivatesAt"/> — there is no prior
-    /// published JWKS state any relying party could have cached. This also covers the steady state
-    /// after a rotation completes and the retiring key is removed from configuration, since that key
-    /// was already active and published well before the cleanup redeploy. The exemption applies only
+    /// <strong>Single-key bootstrap exemption:</strong> with exactly one registered key, when the
+    /// caller reports <paramref name="supportsBootstrapExemption"/> as <see langword="true"/>, that
+    /// key is active immediately regardless of its <see cref="RotationKey.ActivatesAt"/> — there is
+    /// no prior published JWKS state any relying party could have cached. The exemption applies only
     /// to activation timing, not to expiry: an already-expired sole key still fails closed (returns
     /// <see langword="null"/>) rather than being silently used to sign.
     /// </para>
+    /// <para>
+    /// <strong>Why this is gated by the caller's tier, not by "is this the first snapshot this
+    /// instance has ever built":</strong> a naive "first snapshot ever" gate is not restart-safe. For
+    /// a Tier B (<c>KeySourceOptions</c>) provider the listing that produces this timeline can shrink
+    /// to one key live, at runtime, via operator revocation (ADR 0015 §6's kill-by-omission) — and if
+    /// the process also restarts or a new instance is scaled out while that revocation is in effect
+    /// (exactly when an incident tends to prompt exactly that), the new instance's very first snapshot
+    /// would again look like a bootstrap even though the listing shrank via revocation, not genuine
+    /// first-ever provisioning — reinstating the same early-promotion bug just gated on process
+    /// lifetime instead of listing size. Tier A (<c>KeySetOptions</c>) has no such live-shrink
+    /// exposure — its key set is fixed for the process lifetime — so callers pass
+    /// <see langword="true"/> for <paramref name="supportsBootstrapExemption"/> only when selecting
+    /// for a Tier A provider. Tier B callers always pass <see langword="false"/>: a genuine
+    /// first-ever-provisioned Tier B key does not need this exemption anyway, because Tier B encodes
+    /// "eligible from startup" durably in the key's own data — its provider computes
+    /// <c>ActivateAt = null</c> for the chronologically-first version, over the full version history
+    /// including disabled versions, which is stable across restarts and revocations alike and already
+    /// activates immediately without help from this exemption.
+    /// </para>
     /// </remarks>
+    /// <param name="timeline">The activation timeline, as built by <see cref="BuildActivationTimeline"/>.</param>
+    /// <param name="now">The current instant to select against.</param>
+    /// <param name="supportsBootstrapExemption">
+    /// <see langword="true"/> only when the calling provider is on the Tier A (<c>KeySetOptions</c>)
+    /// contract, whose fixed-for-the-process-lifetime key set has no live-shrink-via-revocation
+    /// exposure. Tier B (<c>KeySourceOptions</c>) callers must always pass <see langword="false"/> —
+    /// see remarks for why gating on process/snapshot lifetime instead would re-open the exact bypass
+    /// this parameter exists to close.
+    /// </param>
     /// <returns>
     /// The active entry, or <see langword="null"/> if no key is currently eligible to sign (the
     /// caller must fail closed in this case — see remarks).
     /// </returns>
-    public static RotationEntry? SelectActiveKey(IReadOnlyList<RotationEntry> timeline, DateTimeOffset now)
+    public static RotationEntry? SelectActiveKey(
+        IReadOnlyList<RotationEntry> timeline, DateTimeOffset now, bool supportsBootstrapExemption)
     {
-        if (timeline.Count == 1)
+        if (supportsBootstrapExemption && timeline.Count == 1)
             return IsEligibleAt(timeline[0].Key, now) ? timeline[0] : null;
 
         // The timeline is sorted ascending by ActivatesAt (BuildActivationTimeline's contract), so

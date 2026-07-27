@@ -8,18 +8,28 @@ namespace ZeeKayDa.Auth.AzureKeyVault;
 
 /// <summary>
 /// Pre-warms the registered <see cref="IJwtSigningService"/> at host startup so a Key Vault
-/// misconfiguration (missing certificate, non-exportable policy, denied access) aborts startup
+/// misconfiguration (missing certificate, denied access, no enabled/eligible version) aborts startup
 /// with a clear <see cref="ZeeKayDaConfigurationException"/> instead of surfacing as the first
-/// request's failure, and emits an informational log line recording that the private key has been
-/// downloaded and is cached in process memory.
+/// request's failure, and emits an informational log line recording that this deployment will cache
+/// the private key in process memory for local signing.
 /// </summary>
 /// <remarks>
 /// <para>
 /// Combines the two behaviors that <c>AzureKeyVaultRemoteSigningStartupService</c> (pre-warm only) and
 /// <c>DevelopmentSigningKeyWarningService</c> (startup log only) each provide separately for the
 /// other two signing providers, because this provider needs both: pre-warming (common to every
-/// Key Vault provider) and a visible log line recording where the private key now lives (specific
+/// Key Vault provider) and a visible log line recording where the private key will live (specific
 /// to this provider's memory-residency tradeoff).
+/// </para>
+/// <para>
+/// <b>What pre-warming catches, and what it does not (ADR 0015 Tier B):</b> this only forces
+/// <see cref="IJwtSigningService.GetSigningKeysAsync"/> — the version-listing path
+/// (<c>ListKeysAsync</c>) — to run, so a listing-time failure (certificate not found, access denied,
+/// no enabled/eligible version) aborts startup. Real private key material is fetched lazily by
+/// <c>CreateSignerAsync</c>, only once the active key actually needs to sign something (the first
+/// <see cref="IJwtSigningService.SignAsync"/> call) — the same lazy-signer pattern every other ADR
+/// 0015 provider follows. A private-key-specific failure (e.g. a non-exportable certificate policy)
+/// therefore still surfaces on the first sign, not at startup.
 /// </para>
 /// <para>
 /// The log is emitted at <see cref="LogLevel.Information"/>, not <see cref="LogLevel.Warning"/> or
@@ -27,7 +37,7 @@ namespace ZeeKayDa.Auth.AzureKeyVault;
 /// deliberate architectural choice for this provider (unlike the local-development provider's
 /// ephemeral/file-backed key, which is never appropriate outside development), so it does not
 /// warrant a warning-level signal. It must still be visible in logs so operators can see, at a
-/// glance, that this deployment holds a permanent copy of the signing key in memory.
+/// glance, that this deployment will hold a permanent copy of the signing key in memory.
 /// </para>
 /// </remarks>
 internal sealed class AzureKeyVaultCachedSigningStartupService : IHostedService
@@ -53,15 +63,17 @@ internal sealed class AzureKeyVaultCachedSigningStartupService : IHostedService
     /// <inheritdoc/>
     public async Task StartAsync(CancellationToken cancellationToken)
     {
-        // Resolving the key set triggers LoadKeysAsync: the certificate is downloaded and its
-        // private key extracted here. Any ZeeKayDaConfigurationException propagates and aborts
-        // startup before Kestrel accepts connections.
+        // Resolving the key listing triggers ListKeysAsync: the certificate's version history is
+        // discovered and validated here. Any ZeeKayDaConfigurationException propagates and aborts
+        // startup before Kestrel accepts connections. Real private key material is not fetched here
+        // — see the class remarks — so a non-exportable-policy failure is not caught until the first
+        // SignAsync call.
         await _signingService.GetSigningKeysAsync(cancellationToken).ConfigureAwait(false);
 
         var certificateIdentifier = _options.Value.CertificateIdentifier;
         _logger.LogInformation(
             "ZeeKayDa.Auth: the Azure Key Vault signing certificate '{CertificateName}' in vault " +
-            "'{VaultUri}' has been downloaded and its private key is now cached in process memory for local " +
+            "'{VaultUri}' will have its private key downloaded and cached in process memory for local " +
             "signing (AddAzureKeyVaultCachedSigning). This is a deliberate architectural choice, not a " +
             "misconfiguration — but it means an attacker who achieves process memory read gets a permanent " +
             "copy of the signing key.",

@@ -37,7 +37,8 @@ public sealed class KeyVaultCertificateReaderTests
             CertificateIdentifier = new KeyVaultCertificateIdentifier(new Uri(VaultUri, "certificates/fake-cert")),
             Credential = new FakeTokenCredential(),
             Algorithm = SigningAlgorithm.RS256,
-            KeyRotationCheckInterval = TimeSpan.FromMinutes(5),
+            RefreshInterval = TimeSpan.FromMinutes(5),
+            PublicationLead = TimeSpan.FromMinutes(5),
         }));
 
     private static (AsymmetricAlgorithm PrivateKey, SigningKeyType KeyType) InvokeExtractPrivateKey(

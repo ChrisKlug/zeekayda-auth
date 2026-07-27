@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Logging;
 using ZeeKayDa.Auth.Tokens;
@@ -12,73 +11,59 @@ namespace ZeeKayDa.Auth.AzureKeyVault;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <see cref="LoadKeysAsync"/> derives the currently trusted key set entirely from Key Vault's own
-/// durable per-version <c>CreatedOn</c> timestamps, rather than tracking "when did this kid first
-/// appear" in local, in-memory state. That in-memory-history approach breaks on every process
-/// restart and is inconsistent across load-balanced replicas; deriving from <c>CreatedOn</c>
-/// instead is stateless, restart-safe, and identical across every replica. See ADR 0011 §3.5 and
-/// the accompanying design notes for the full derivation.
+/// ADR 0015 Tier B (<see cref="KeySourceOptions"/>, issue #425): <see cref="ListKeysAsync"/> re-asks
+/// Key Vault for the key's current version list once per <see cref="KeySourceOptions.RefreshInterval"/>
+/// — Key Vault, not this provider, owns the key's version history. Every returned
+/// <see cref="KeyListing.ActivateAt"/> is derived entirely from Key Vault's own durable per-version
+/// <c>CreatedOn</c> timestamp (<c>ActivateAt = CreatedOn + PublicationLead</c>), never from when this
+/// process first observed the version — stateless, restart-safe, and identical across every replica.
+/// The key version that was created first of all (by <c>CreatedOn</c>, tie-broken by version
+/// identifier) is eligible from startup (<c>ActivateAt = null</c>), so the base class's ordinary
+/// activation-timeline logic covers the "first ever version" bootstrap case with no special-case
+/// code here.
 /// </para>
 /// <para>
-/// <c>kid</c> is the RFC 7638 JWK thumbprint of each version's public key (via
-/// <see cref="JwkThumbprint.Compute(System.Security.Cryptography.RSAParameters)"/> /
-/// <see cref="JwkThumbprint.Compute(System.Security.Cryptography.ECParameters)"/>),
-/// not the raw Key Vault version URI — a kid is always public (every issued token header, and the
-/// public JWKS), so embedding the vault/key name in it would leak real Azure resource identifiers
-/// for no functional benefit.
+/// Kill-by-omission (ADR 0015 §6) is entirely the base class's concern: this provider's only
+/// obligation is to list currently-enabled versions and let a version silently drop out of the
+/// returned list once Key Vault stops reporting it as enabled. There is no separate <c>Enabled</c>
+/// flag anywhere in this contract.
+/// </para>
+/// <para>
+/// <c>kid</c> is the RFC 7638 JWK thumbprint of each version's public key, derived by the base class
+/// from each <see cref="KeyListing.PublicKey"/> — never the raw Key Vault version identifier, which
+/// is only this provider's own internal <see cref="KeyId"/> (ADR 0015 §2).
+/// </para>
+/// <para>
+/// <see cref="CreateSignerAsync"/> returns a small <see cref="ISigner"/> wrapper
+/// (<see cref="KeyVaultRemoteSigner"/>) whose <see cref="ISigner.SignAsync"/> dispatches to the
+/// shared, DI-owned <see cref="IKeyVaultSigner"/> seam. <see cref="IDisposable.Dispose"/> on that
+/// wrapper is a deliberate no-op: it never disposes <see cref="IKeyVaultSigner"/> or any pooled
+/// <c>CryptographyClient</c> it may hold, since those are shared across every activation and every
+/// other <see cref="ISigner"/> instance (ADR 0015 §2/Security Considerations item 5).
 /// </para>
 /// </remarks>
 internal sealed class AzureKeyVaultRemoteSigningJwtSigningService : JwtSigningService<AzureKeyVaultRemoteSigningOptions>
 {
     private readonly IOptions<AzureKeyVaultRemoteSigningOptions> _options;
-    private readonly TimeProvider _timeProvider;
     private readonly IKeyVaultKeyReader _keyReader;
     private readonly IKeyVaultSigner _signer;
-    private readonly ISigningKeyRetirementWindowProvider _retirementWindowProvider;
-    private readonly ISanitizingLogger<AzureKeyVaultRemoteSigningJwtSigningService> _logger;
 
-    // Kid -> Key Vault versioned key URI. Rebuilt wholesale on every LoadKeysAsync call and
-    // assigned atomically (a single field write) right before the new SigningKeySet is returned
-    // to the base class. LoadKeysAsync is single-flighted by the base class's own refresh lock, so
-    // this field's generation is always the one that produced whichever SigningKeySet is "current"
-    // by the time any SignAsync call observes it.
-    //
-    // There is a narrow, deliberately-accepted theoretical window: a SignAsync call that borrowed
-    // the OLD SigningKeySet an instant before a concurrent refresh both computes a new mapping and
-    // replaces this field would look up its kid in the NEW mapping. This is harmless because (a) a
-    // kid is a thumbprint of immutable public key material, so the same kid always resolves to the
-    // same underlying Key Vault key version for as long as that kid exists in either mapping, and
-    // (b) a kid is only ever removed from the mapping once its SigningKeySet generation has been
-    // fully retired and disposed, at which point it can no longer be borrowed for signing anyway.
-    // An alternative that avoids this side-channel field entirely — e.g. wrapping the Key Vault URI
-    // inside a custom AsymmetricAlgorithm-derived handle passed as SigningKeyPair.PrivateKey — was
-    // considered and rejected: it would require subclassing RSA/ECDsa (a large, brittle surface to
-    // fake convincingly) or inventing a sentinel type, either of which would need special-casing in
-    // the base class's ValidateKeyAlgorithmCompatibility/ValidateKeyStrength checks, which only ever
-    // call ExportParameters(false) against a real RSA/ECDsa today.
-    private volatile IReadOnlyDictionary<string, Uri>? _kidToKeyVersionUri;
-
-    // Kid -> Key Vault version, as of the previous successful LoadKeysAsync call. Kept purely to
-    // log ADR 0011 §3.5's "kid vanished early" anomaly warning when a previously-published kid's
-    // underlying key version disappears from Key Vault entirely (not merely disabled, and not a
-    // normal retirement-window expiry) before it should have. Losing this across a process restart
-    // only means possibly missing one log line — it never gates a trust decision.
-    private IReadOnlyDictionary<string, string> _previouslyPublishedKidVersions =
-        new Dictionary<string, string>(StringComparer.Ordinal);
-
-    // The included version set (by version identifier, Enabled state, and whether the entry was
-    // the active version) as of the previous successful LoadKeysAsync call. IsActive has to be
-    // part of the comparison, not just membership and Enabled — see
-    // KeyVaultSigningKeyRotation.ToChangeDetectionSet's remarks. Null
-    // means "no successful LoadKeysAsync has run yet" — a state HasKeySetChangedAsync never
-    // actually observes, since the base class only calls it once a previous SigningKeySet already
-    // exists (ADR 0011 §3.2), which itself implies at least one successful LoadKeysAsync already
-    // populated this field.
-    private IReadOnlySet<(string Version, bool Enabled, bool IsActive)>? _previouslyIncludedVersions;
+    // Populated wholesale on every ListKeysAsync call. CreateSignerAsync is only ever invoked for a
+    // KeyId that appeared on a KeyListing this same ListKeysAsync call most recently returned (per
+    // JwtSigningService{TOptions}.CreateSignerAsync's own contract), so looking up the corresponding
+    // versioned key URI and kid here is always safe. Replaced entirely (never mutated in place) on
+    // each refresh — never mutated in place, mirroring the base class's own snapshot replacement.
+    // volatile: ListKeysAsync writes this field under the base class's snapshot lock
+    // (JwtSigningService{TOptions}.EnsureSnapshotAsync), while CreateSignerAsync reads it under the
+    // base class's separate signer lock (EnsureActiveSignerAsync). Those are two different monitors
+    // with no happens-before edge between them, so without volatile a reader thread could observe a
+    // stale (possibly pre-initialization-complete) reference to the dictionary object itself.
+    private volatile IReadOnlyDictionary<string, (Uri KeyVersionUri, string Kid)> _versionMetadataById =
+        new Dictionary<string, (Uri, string)>(StringComparer.Ordinal);
 
     /// <summary>
-    /// Initialises the service with its options, time source, and the Key Vault seams it signs
-    /// and reads key metadata through.
+    /// Initialises the service with its options, time source, and the Key Vault seams it signs and
+    /// reads key metadata through.
     /// </summary>
     public AzureKeyVaultRemoteSigningJwtSigningService(
         IOptions<AzureKeyVaultRemoteSigningOptions> options,
@@ -86,185 +71,23 @@ internal sealed class AzureKeyVaultRemoteSigningJwtSigningService : JwtSigningSe
         IKeyVaultKeyReader keyReader,
         IKeyVaultSigner signer,
         ISigningKeyRetirementWindowProvider retirementWindowProvider,
-        ISanitizingLogger<AzureKeyVaultRemoteSigningJwtSigningService> logger)
-        : base(options, timeProvider)
+        ISanitizingLogger<JwtSigningService<AzureKeyVaultRemoteSigningOptions>> logger)
+        : base(options, timeProvider, retirementWindowProvider, logger)
     {
-        ArgumentNullException.ThrowIfNull(options);
-        ArgumentNullException.ThrowIfNull(timeProvider);
         ArgumentNullException.ThrowIfNull(keyReader);
         ArgumentNullException.ThrowIfNull(signer);
-        ArgumentNullException.ThrowIfNull(retirementWindowProvider);
-        ArgumentNullException.ThrowIfNull(logger);
 
         _options = options;
-        _timeProvider = timeProvider;
         _keyReader = keyReader;
         _signer = signer;
-        _retirementWindowProvider = retirementWindowProvider;
-        _logger = logger;
     }
 
     /// <inheritdoc/>
-    protected override async ValueTask<SigningKeySet> LoadKeysAsync(CancellationToken cancellationToken)
+    protected override async ValueTask<IReadOnlyList<KeyListing>> ListKeysAsync(CancellationToken cancellationToken)
     {
-        var (allVersions, included) = await ComputeIncludedVersionsAsync(cancellationToken).ConfigureAwait(false);
+        var options = _options.Value;
+        var keyIdentifier = options.KeyIdentifier;
 
-        var keyPairs = new List<SigningKeyPair>(included.Count);
-        var kidToUri = new Dictionary<string, Uri>(included.Count, StringComparer.Ordinal);
-        var newKidVersions = new Dictionary<string, string>(included.Count, StringComparer.Ordinal);
-
-        try
-        {
-            foreach (var entry in included)
-            {
-                var (publicKey, keyType) = await _keyReader
-                    .GetKeyMaterialAsync(entry.Version.Version, cancellationToken)
-                    .ConfigureAwait(false);
-
-                SigningKeyDescriptor descriptor;
-                try
-                {
-                    descriptor = KeyVaultSigningKeyDescriptorFactory.BuildDescriptor(
-                        publicKey,
-                        keyType,
-                        _options.Value.Algorithm,
-                        nameof(AzureKeyVaultRemoteSigningOptions),
-                        "Key Vault key");
-                }
-                catch
-                {
-                    // The key handle just obtained above was never added to keyPairs, so the outer
-                    // catch below would not dispose it — do so here before rethrowing, otherwise a
-                    // descriptor-build failure (e.g. an algorithm/key-type mismatch or an
-                    // unsupported curve) would leak a live key handle.
-                    publicKey.Dispose();
-                    throw;
-                }
-
-                keyPairs.Add(new SigningKeyPair { Descriptor = descriptor, PrivateKey = publicKey });
-                kidToUri[descriptor.Kid] = entry.Version.Id;
-                newKidVersions[descriptor.Kid] = entry.Version.Version;
-            }
-        }
-        catch
-        {
-            // Every key handle obtained for a version processed before the failure — this provider
-            // only ever holds public-only handles, never real private key material — has already
-            // been added to keyPairs. Leaving these undisposed on a partial failure would leak live
-            // key handles until GC finalization.
-            foreach (var pair in keyPairs)
-                pair.PrivateKey.Dispose();
-            throw;
-        }
-
-        WarnIfPreviouslyPublishedKidVanished(kidToUri.Keys, allVersions);
-        _previouslyPublishedKidVersions = newKidVersions;
-        _previouslyIncludedVersions = KeyVaultSigningKeyRotation.ToChangeDetectionSet(included);
-
-        // `included` (and therefore `keyPairs`, built from it above) is active-first, so
-        // splitting off the first entry as the named active key is safe.
-        var set = new SigningKeySet(keyPairs[0], keyPairs.Skip(1));
-
-        // Atomic wholesale replacement, deliberately assigned only right before returning the new
-        // set — see the field's own doc comment above for the consistency trade-off this implies.
-        _kidToKeyVersionUri = kidToUri;
-
-        return set;
-    }
-
-    /// <inheritdoc/>
-    protected override async ValueTask<ReadOnlyMemory<byte>> SignInputAsync(
-        SigningKeyPair activeKey, byte[] signingInput, CancellationToken cancellationToken)
-    {
-        var mapping = _kidToKeyVersionUri;
-        if (mapping is null || !mapping.TryGetValue(activeKey.Descriptor.Kid, out var keyVersionUri))
-        {
-            throw new AzureKeyVaultSigningException(
-                $"No Key Vault key version is registered for kid '{activeKey.Descriptor.Kid}'. This should not " +
-                "happen under normal operation; retrying the request should self-heal once the next key refresh " +
-                "completes.");
-        }
-
-        return await _signer
-            .SignAsync(keyVersionUri, activeKey.Descriptor.Kid, activeKey.Descriptor.Algorithm, signingInput, cancellationToken)
-            .ConfigureAwait(false);
-    }
-
-    /// <inheritdoc/>
-    /// <remarks>
-    /// <para>
-    /// Recomputes the included version set from the same cheap, metadata-only enumeration
-    /// (<see cref="IKeyVaultKeyReader.GetKeyVersionsAsync"/> — no key material download) and
-    /// rotation-timeline derivation that <see cref="LoadKeysAsync"/> itself performs
-    /// (<see cref="ComputeIncludedVersionsAsync"/>), and compares it — by version identifier,
-    /// <see cref="KeyVaultKeyVersionInfo.Enabled"/> state, and which entry is active — against what
-    /// was included as of the last successful <see cref="LoadKeysAsync"/> cycle. The comparison
-    /// covers the whole included set, not merely the active version: a non-active version's
-    /// <c>Enabled</c> flag flipping, or a version entering or leaving its retirement window purely
-    /// from elapsed time, must still be reported as a change even when the active version is
-    /// unchanged.
-    /// </para>
-    /// <para>
-    /// Active-version identity has to be part of the comparison, not just membership and
-    /// <c>Enabled</c> state, or a normal scheduled rotation silently stalls. Because
-    /// <c>SigningKeyActivationDelay</c> defaults to <c>KeyRotationCheckInterval</c> — making it both
-    /// the poll cadence and the publish-then-activate lead
-    /// time (ADR 0011 §3.5), a rotation typically spans two polls: at poll N, v2 is published but
-    /// not yet active (included set becomes v1 active + v2 not-active — a membership change, so
-    /// this method correctly reports a change and v2's public-only handle gets loaded). At poll
-    /// N+1, v2 becomes active while v1 (still within its retirement window) remains included — the
-    /// same two version identifiers and <c>Enabled</c> states as poll N, just with the active slot
-    /// swapped. Comparing only version identifier and <c>Enabled</c> state would see no change and
-    /// skip the reload, leaving the service signing with v1 indefinitely — past the intended
-    /// handoff, and potentially past v1's own expiry. See ADR 0011 §3.5 "Metadata-only change
-    /// detection for cached-key providers."
-    /// </para>
-    /// </remarks>
-    protected override async ValueTask<bool> HasKeySetChangedAsync(CancellationToken cancellationToken)
-    {
-        var (_, included) = await ComputeIncludedVersionsAsync(cancellationToken).ConfigureAwait(false);
-        var currentVersions = KeyVaultSigningKeyRotation.ToChangeDetectionSet(included);
-
-        // The base class only ever calls this once a previous SigningKeySet already exists (ADR
-        // 0011 §3.2), which itself implies at least one successful LoadKeysAsync already ran and
-        // populated _previouslyIncludedVersions — the null-forgiving operator relies on that
-        // guarantee rather than re-checking it.
-        return !currentVersions.SetEquals(_previouslyIncludedVersions!);
-    }
-
-    /// <summary>
-    /// Enumerates every key version Key Vault has ever recorded and derives the currently included
-    /// version set (active version first, per <see cref="KeyVaultSigningKeyRotation.SelectIncludedVersions{T}"/>)
-    /// from it. Shared by <see cref="LoadKeysAsync"/> and <see cref="HasKeySetChangedAsync"/> so the
-    /// metadata-only "ask" step in front of a reload uses the exact same rotation-timeline
-    /// derivation as the reload itself.
-    /// </summary>
-    private async ValueTask<(
-        List<KeyVaultKeyVersionInfo> AllVersions,
-        List<KeyVaultSigningKeyRotation.ActivationEntry<KeyVaultKeyVersionInfo>> Included)>
-        ComputeIncludedVersionsAsync(CancellationToken cancellationToken)
-    {
-        var keyIdentifier = _options.Value.KeyIdentifier;
-
-        // Confirmed, not assumed (issue #300; see ADR 0011 Amendment 3 for the full research and
-        // rationale): GetKeyVersionsAsync returns a complete, consistent view of every version Key
-        // Vault has ever recorded for this key name during normal operation — this is what makes
-        // the FirstEverVersion immediate-activation exemption in BuildActivationTimeline safe. Per
-        // Microsoft's documented Key Vault reliability model, all reads and writes are served from
-        // a single active region with synchronous zone-redundant replication, so under steady
-        // state there is no lagging read replica that a list call could observe. The only
-        // documented staleness window is a Microsoft-triggered regional failover, during which the
-        // vault runs read-only against an asynchronously-replicated secondary that may be missing
-        // very recent writes — a rare, best-effort event that can take hours to occur, not a
-        // per-request consistency knob a caller can trigger or race. The only scenario this could
-        // affect is a genuinely brand-new key (created less than KeyRotationCheckInterval ago) whose true
-        // first version is transiently missing from the list during such a failover — a narrow
-        // window that fails toward a transient relying-party rejection, not toward forging a token
-        // with an unauthorized key, and one that self-heals on the next refresh cycle once the
-        // primary region recovers. Accepted as-is rather than mitigated: mitigating it would
-        // require reintroducing exactly the kind of process-local "have I seen this before" state
-        // that was deliberately eliminated elsewhere in this method for restart/multi-replica
-        // correctness, to guard against an outage-recovery mode that already self-heals.
         var allVersions = new List<KeyVaultKeyVersionInfo>();
         await foreach (var version in _keyReader.GetKeyVersionsAsync(cancellationToken).ConfigureAwait(false))
             allVersions.Add(version);
@@ -278,40 +101,130 @@ internal sealed class AzureKeyVaultRemoteSigningJwtSigningService : JwtSigningSe
                     "Create at least one key version before starting the host."));
         }
 
-        var now = _timeProvider.GetUtcNow();
+        // Computed over allVersions — every version this key has ever recorded, including disabled
+        // ones — never over enabledVersions below. This is deliberate, not an oversight: Key
+        // Vault's list-key-versions read is only eventually consistent during a rare
+        // Microsoft-initiated regional failover, and a stale/incomplete read during exactly that
+        // window could transiently omit the true first-ever version. Computing "first ever" only
+        // over whatever subset happened to come back would then let version #2 masquerade as the
+        // first-ever version and activate immediately (ActivateAt = null), bypassing
+        // PublicationLead entirely and exposing relying parties to a key they never had a chance to
+        // observe in the JWKS first. Computing over the full, unfiltered history instead means a
+        // stale read can only affect this derivation by omitting every version outright, which
+        // already fails closed via the "no key versions" check above rather than silently promoting
+        // the wrong version. This mirrors the risk analysis accepted for issue #300 (see ADR 0011,
+        // Changelog, 2026-07-04 entry) for the original Key Vault provider.
+        var firstEverVersion = allVersions
+            .OrderBy(v => v.CreatedOn)
+            .ThenBy(v => v.Version, StringComparer.Ordinal)
+            .First()
+            .Version;
 
-        // AzureKeyVaultRemoteSigningOptionsValidator rejects null (static-source mode is not
-        // supported by this provider), so the value is guaranteed non-null by the time this runs.
-        var activationDelay = KeyVaultActivationDelay.Resolve(
-            _options.Value.SigningKeyActivationDelay, _options.Value.KeyRotationCheckInterval);
-        var timeline = KeyVaultSigningKeyRotation.BuildActivationTimeline(
-            allVersions, activationDelay, _options.Value.KeyRotationCheckInterval);
+        // Enabled is a Key Vault-side concept only — folded into "list enabled versions only" here
+        // (ADR 0015 §6/§10) rather than surfaced as a flag anywhere in the KeyListing/options
+        // contract. The base class's own kill-by-omission logic takes it from there.
+        var enabledVersions = allVersions.Where(v => v.Enabled).ToList();
+        if (enabledVersions.Count == 0)
+        {
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "signing.azure_key_vault.no_active_key",
+                    $"No enabled version of Key Vault key '{keyIdentifier.Name}' in vault '{keyIdentifier.VaultUri}' " +
+                    "exists. Verify the key has at least one enabled version."));
+        }
 
-        var active = KeyVaultSigningKeyRotation.SelectActiveVersion(timeline, now) ?? throw new ZeeKayDaConfigurationException(
-            new ZeeKayDaConfigurationFailure(
-                "signing.azure_key_vault.no_active_key",
-                $"No enabled, time-eligible version of Key Vault key '{keyIdentifier.Name}' in vault " +
-                $"'{keyIdentifier.VaultUri}' has activated yet. Verify the key has at least one enabled " +
-                "version whose NotBefore/ExpiresOn window includes the current time."));
+        var listings = new List<KeyListing>(enabledVersions.Count);
+        var versionMetadata = new Dictionary<string, (Uri, string)>(enabledVersions.Count, StringComparer.Ordinal);
 
-        var retirementWindow = _retirementWindowProvider.GetRetirementWindow();
-        var included = KeyVaultSigningKeyRotation.SelectIncludedVersions(timeline, active, now, retirementWindow);
+        foreach (var version in enabledVersions)
+        {
+            var (publicKey, keyType) = await _keyReader
+                .GetKeyMaterialAsync(version.Version, cancellationToken).ConfigureAwait(false);
 
-        return (allVersions, included);
+            SigningKeyDescriptor descriptor;
+            try
+            {
+                descriptor = KeyVaultSigningKeyDescriptorFactory.BuildDescriptor(
+                    publicKey, keyType, options.Algorithm, nameof(AzureKeyVaultRemoteSigningOptions), "Key Vault key");
+            }
+            finally
+            {
+                publicKey.Dispose();
+            }
+
+            var publicKeyParameters = descriptor.KeyType == SigningKeyType.Rsa
+                ? PublicKeyParameters.FromRsa(descriptor.RsaPublicParameters!.Value)
+                : PublicKeyParameters.FromEc(descriptor.EcPublicParameters!.Value);
+
+            var activateAt = ComputeActivateAt(version, firstEverVersion, options.PublicationLead);
+            var expiresAt = version.ExpiresOn ?? DateTimeOffset.MaxValue;
+
+            listings.Add(new KeyListing(new KeyId(version.Version), options.Algorithm, publicKeyParameters, activateAt, expiresAt));
+            versionMetadata[version.Version] = (version.Id, descriptor.Kid);
+        }
+
+        _versionMetadataById = versionMetadata;
+        return listings;
     }
 
-    private void WarnIfPreviouslyPublishedKidVanished(
-        IEnumerable<string> newKids, IReadOnlyList<KeyVaultKeyVersionInfo> currentRawVersions)
+    /// <inheritdoc/>
+    protected override ValueTask<ISigner> CreateSignerAsync(KeyId id, CancellationToken cancellationToken)
     {
-        foreach (var (kid, version) in KeyVaultSigningKeyRotation.FindVanishedKids(
-            _previouslyPublishedKidVersions, newKids, currentRawVersions))
+        if (!_versionMetadataById.TryGetValue(id.Value, out var metadata))
         {
-            _logger.LogWarning(
-                "Azure Key Vault signing key with kid {Kid} (Key Vault version {Version}) is no longer present " +
-                "in Key Vault at all. It was previously published and may still be cached in a relying party's " +
-                "JWKS; an unexpected disappearance (as opposed to a normal retirement-window expiry) may cause " +
-                "token validation failures. See ADR 0011 §3.5.",
-                kid, version);
+            throw new AzureKeyVaultSigningException(
+                $"No Key Vault key version is registered for id '{id.Value}'. This should not happen under " +
+                "normal operation; retrying the request should self-heal once the next key refresh completes.");
         }
+
+        return new ValueTask<ISigner>(
+            new KeyVaultRemoteSigner(_signer, metadata.KeyVersionUri, metadata.Kid, _options.Value.Algorithm));
+    }
+
+    /// <summary>
+    /// Derives a version's <see cref="KeyListing.ActivateAt"/> from Key Vault's own durable
+    /// <c>CreatedOn</c> timestamp (never observed/first-seen time — ADR 0015 §3/Security
+    /// Considerations item 4): <c>CreatedOn + publicationLead</c> for every version except the
+    /// chronologically-first version ever recorded, which is eligible from startup. An explicit
+    /// <c>NotBefore</c> floors the result when it schedules the version's go-live later than that.
+    /// </summary>
+    private static DateTimeOffset? ComputeActivateAt(
+        KeyVaultKeyVersionInfo version, string firstEverVersion, TimeSpan publicationLead)
+    {
+        if (version.Version == firstEverVersion && version.NotBefore is null)
+            return null;
+
+        var baseline = version.Version == firstEverVersion
+            ? version.CreatedOn
+            : version.CreatedOn + publicationLead;
+
+        return version.NotBefore is { } notBefore && notBefore > baseline ? notBefore : baseline;
+    }
+
+    /// <summary>
+    /// <see cref="ISigner"/> wrapper over the shared, DI-owned <see cref="IKeyVaultSigner"/> seam for
+    /// one activation of one Key Vault key version. The private key never leaves Key Vault — every
+    /// <see cref="SignAsync"/> call is a network round trip.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="Dispose"/> is deliberately a no-op: this wrapper introduces no per-activation
+    /// resource of its own to release, and <paramref name="signer"/> is a shared seam over pooled
+    /// <c>CryptographyClient</c> instances that every other activation also depends on — disposing
+    /// it here would break them all (ADR 0015 §2/Security Considerations item 5; see
+    /// <see cref="ISigner"/>'s own Dispose contract).
+    /// </remarks>
+    private sealed class KeyVaultRemoteSigner(IKeyVaultSigner signer, Uri keyVersionUri, string kid, SigningAlgorithm algorithm)
+        : ISigner
+    {
+        public ValueTask<ReadOnlyMemory<byte>> SignAsync(
+            ReadOnlyMemory<byte> signingInput, CancellationToken cancellationToken = default) =>
+            signer.SignAsync(keyVersionUri, kid, algorithm, signingInput.ToArray(), cancellationToken);
+
+        public void Dispose()
+        {
+            // Intentionally empty — see the class remarks.
+        }
+
+        public SigningAlgorithm Algorithm => algorithm;
     }
 }

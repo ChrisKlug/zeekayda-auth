@@ -8,24 +8,21 @@ namespace ZeeKayDa.Auth.AzureKeyVault;
 /// Configuration options for <c>AddAzureKeyVaultRemoteSigning</c>.
 /// </summary>
 /// <remarks>
-/// <see cref="RotatingKeySourceOptions.KeyRotationCheckInterval"/> is inherited from the base class
-/// and defaults to 5 minutes: real key-version rotation polling requires the base class to
-/// periodically re-invoke <c>LoadKeysAsync</c> (see <c>AzureKeyVaultRemoteSigningJwtSigningService</c>).
-/// <see cref="SigningKeyActivationDelay"/> is the separate publish-then-activate delay applied to
-/// every rotated-in key version.
+/// <para>
+/// ADR 0015 Tier B (<see cref="KeySourceOptions"/>, issue #425): Key Vault owns the key's version
+/// history, so <c>AzureKeyVaultRemoteSigningJwtSigningService.ListKeysAsync</c> re-asks Key Vault
+/// for the current version list once per <see cref="KeySourceOptions.RefreshInterval"/>.
+/// </para>
+/// <para>
+/// <see cref="KeySourceOptions.PublicationLead"/> is inherited from <see cref="KeySourceOptions"/>
+/// and, unlike Tier A, is not merely advisory here: every rotated-in key version's <c>ActivateAt</c>
+/// is derived as <c>CreatedOn + PublicationLead</c> (never from when this process first observed the
+/// version), so <see cref="KeySourceOptions.PublicationLead"/> is the actual publish-then-activate
+/// delay a newly rotated-in version must wait out before it may become the active signer.
+/// </para>
 /// </remarks>
-public sealed class AzureKeyVaultRemoteSigningOptions : RotatingKeySourceOptions
+public sealed class AzureKeyVaultRemoteSigningOptions : KeySourceOptions
 {
-    /// <summary>
-    /// Gets or sets the publish-then-activate lead time a newly rotated-in key version must be
-    /// visible before it may become the active signer (ADR 0011 §3.5). When unset (the default),
-    /// defaults to <see cref="RotatingKeySourceOptions.KeyRotationCheckInterval"/>. Must be greater
-    /// than or equal to <see cref="RotatingKeySourceOptions.KeyRotationCheckInterval"/> — enforced
-    /// both by <c>AzureKeyVaultRemoteSigningOptionsValidator</c> and independently inside
-    /// <c>KeyVaultSigningKeyRotation.BuildActivationTimeline</c>.
-    /// </summary>
-    public TimeSpan? SigningKeyActivationDelay { get; set; }
-
     /// <summary>
     /// Gets or sets the Key Vault (or Managed HSM) key to sign with. The <see cref="KeyVaultKeyIdentifier.Version"/>
     /// component, if present, is ignored — the provider always discovers and signs with every

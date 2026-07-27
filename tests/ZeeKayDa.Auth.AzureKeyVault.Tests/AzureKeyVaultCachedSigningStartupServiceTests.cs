@@ -61,7 +61,8 @@ public sealed class AzureKeyVaultCachedSigningStartupServiceTests
                 new Uri($"https://fake-vault.vault.azure.net/certificates/{certificateName}")),
             Credential = new FakeTokenCredential(),
             Algorithm = SigningAlgorithm.RS256,
-            KeyRotationCheckInterval = TimeSpan.FromMinutes(5),
+            RefreshInterval = TimeSpan.FromMinutes(5),
+            PublicationLead = TimeSpan.FromMinutes(5),
         });
 
         return new AzureKeyVaultCachedSigningStartupService(
@@ -76,7 +77,8 @@ public sealed class AzureKeyVaultCachedSigningStartupServiceTests
             CertificateIdentifier = new KeyVaultCertificateIdentifier(CertificateIdentifierUri),
             Credential = new FakeTokenCredential(),
             Algorithm = SigningAlgorithm.RS256,
-            KeyRotationCheckInterval = TimeSpan.FromMinutes(5),
+            RefreshInterval = TimeSpan.FromMinutes(5),
+            PublicationLead = TimeSpan.FromMinutes(5),
         });
 
     // ── Constructor: argument validation ─────────────────────────────────────────────────────────

@@ -23,6 +23,8 @@ internal sealed class FakeKeyVaultCertificateReader : IKeyVaultCertificateReader
     private readonly Dictionary<string, ECParameters> _ecMaterial = new(StringComparer.Ordinal);
     private readonly Dictionary<string, Exception> _privateKeyExceptions = new(StringComparer.Ordinal);
     private readonly Dictionary<string, Exception> _publicKeyExceptions = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, RSAParameters> _mismatchedRsaPrivateMaterial = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, ECParameters> _mismatchedEcPrivateMaterial = new(StringComparer.Ordinal);
 
     public List<KeyVaultCertificateVersionInfo> Versions { get; } = [];
 
@@ -34,6 +36,14 @@ internal sealed class FakeKeyVaultCertificateReader : IKeyVaultCertificateReader
 
     /// <summary>When set, <see cref="GetCertificateVersionsAsync"/> throws this instead of yielding versions.</summary>
     public Exception? VersionsException { get; set; }
+
+    /// <summary>
+    /// When set, cancelled as soon as <see cref="GetCertificateVersionsAsync"/> is invoked (before it
+    /// yields anything) — lets a test deterministically simulate the caller's own request being
+    /// cancelled mid-refresh, after the base class has already acquired its internal snapshot lock,
+    /// without racing a real timer against the enumeration's <c>await Task.Yield()</c>.
+    /// </summary>
+    public CancellationTokenSource? CancelDuringVersionEnumeration { get; set; }
 
     /// <summary>
     /// The number of times <see cref="GetCertificateVersionsAsync"/> has been invoked (once per
@@ -142,6 +152,21 @@ internal sealed class FakeKeyVaultCertificateReader : IKeyVaultCertificateReader
     /// </summary>
     public void SetPublicKeyException(string version, Exception exception) => _publicKeyExceptions[version] = exception;
 
+    /// <summary>
+    /// Makes <see cref="GetPrivateKeyMaterialAsync"/> return a genuinely different RSA key for
+    /// <paramref name="version"/> than the one <see cref="GetPublicKeyMaterialAsync"/> reports for
+    /// it — simulating the certificate's linked secret and its <c>Cer</c> having diverged (issue
+    /// #425 security review, finding F3). <see cref="GetPublicKeyMaterialAsync"/> keeps reporting
+    /// the version's originally registered public key, exactly as it would if only the secret (not
+    /// the certificate record itself) had been tampered with or corrupted.
+    /// </summary>
+    public void SetMismatchedPrivateKeyMaterial(string version, RSAParameters mismatchedPrivateParameters) =>
+        _mismatchedRsaPrivateMaterial[version] = mismatchedPrivateParameters;
+
+    /// <summary>EC counterpart of <see cref="SetMismatchedPrivateKeyMaterial(string, RSAParameters)"/>.</summary>
+    public void SetMismatchedPrivateKeyMaterial(string version, ECParameters mismatchedPrivateParameters) =>
+        _mismatchedEcPrivateMaterial[version] = mismatchedPrivateParameters;
+
     /// <summary>Returns the public-only RSA parameters registered for <paramref name="version"/>, for kid assertions.</summary>
     public RSAParameters GetRsaMaterial(string version)
     {
@@ -161,6 +186,9 @@ internal sealed class FakeKeyVaultCertificateReader : IKeyVaultCertificateReader
     {
         GetCertificateVersionsCallCount++;
 
+        if (CancelDuringVersionEnumeration is { } cts)
+            await cts.CancelAsync();
+
         if (VersionsException is not null)
             throw VersionsException;
 
@@ -179,6 +207,38 @@ internal sealed class FakeKeyVaultCertificateReader : IKeyVaultCertificateReader
 
         if (_privateKeyExceptions.TryGetValue(version, out var exception))
             throw exception;
+
+        if (_mismatchedRsaPrivateMaterial.TryGetValue(version, out var mismatchedRsaParams))
+        {
+            var mismatchedRsa = RSA.Create();
+            try
+            {
+                mismatchedRsa.ImportParameters(mismatchedRsaParams);
+                OnPrivateKeyExtracted?.Invoke(version, mismatchedRsa);
+                return ValueTask.FromResult<(AsymmetricAlgorithm, SigningKeyType)>((mismatchedRsa, SigningKeyType.Rsa));
+            }
+            catch
+            {
+                mismatchedRsa.Dispose();
+                throw;
+            }
+        }
+
+        if (_mismatchedEcPrivateMaterial.TryGetValue(version, out var mismatchedEcParams))
+        {
+            var mismatchedEc = ECDsa.Create();
+            try
+            {
+                mismatchedEc.ImportParameters(mismatchedEcParams);
+                OnPrivateKeyExtracted?.Invoke(version, mismatchedEc);
+                return ValueTask.FromResult<(AsymmetricAlgorithm, SigningKeyType)>((mismatchedEc, SigningKeyType.Ec));
+            }
+            catch
+            {
+                mismatchedEc.Dispose();
+                throw;
+            }
+        }
 
         if (_rsaMaterial.TryGetValue(version, out var rsaParams))
         {

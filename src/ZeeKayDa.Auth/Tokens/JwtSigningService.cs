@@ -695,6 +695,17 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
     // ── KeySetOptions/KeySourceOptions implementation ───────────────────────────────────────────────
 
     /// <summary>
+    /// <see langword="true"/> only for a Tier A (<see cref="KeySetOptions"/>) provider — passed as
+    /// <c>supportsBootstrapExemption</c> to every <see cref="SigningKeyRotation.SelectActiveKey"/>
+    /// call this class makes. See that method's remarks for why this must be gated on the provider's
+    /// tier rather than on whether the current snapshot happens to be the first one this instance has
+    /// built: gating on snapshot/process lifetime instead would let a Tier B (<see cref="KeySourceOptions"/>)
+    /// listing that has shrunk to one key via operator revocation re-arm the exemption on every
+    /// process restart or scale-out during the incident (issue #425 security review, finding F1-2).
+    /// </summary>
+    private bool SupportsBootstrapExemption => _retrievalMode == KeyRetrievalMode.KeySet;
+
+    /// <summary>
     /// Which options tier <c>TOptions</c>'s runtime instance derives from, decided once at
     /// construction. Drives which of the two independent state machines in this class
     /// (ADR 0011's <see cref="SigningKeySet"/>-based cache, or ADR 0015's snapshot-based one) is
@@ -826,7 +837,7 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
         var snapshot = await EnsureSnapshotAsync(cancellationToken).ConfigureAwait(false);
         var now = _timeProvider.GetUtcNow();
 
-        var active = SigningKeyRotation.SelectActiveKey(snapshot.Timeline, now)
+        var active = SigningKeyRotation.SelectActiveKey(snapshot.Timeline, now, SupportsBootstrapExemption)
             ?? throw NoActiveKeyException();
 
         var retirementWindow = _retirementWindowProvider?.GetRetirementWindow() ?? TimeSpan.Zero;
@@ -878,7 +889,42 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
                 return _snapshot;
 
             var previous = _snapshot;
-            var listings = await ListKeysAsync(cancellationToken).ConfigureAwait(false);
+            IReadOnlyList<KeyListing> listings;
+            try
+            {
+                listings = await ListKeysAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+            {
+                // ListKeysAsync failing here — including a Tier B provider's own configuration
+                // exception for "zero enabled versions remain" (e.g. every version was disabled as
+                // part of an emergency revocation) — must not leave a previously cached active
+                // signer, and any private key material it holds, resident in process memory
+                // indefinitely. The base class cannot distinguish a genuine revocation from a
+                // transient failure (a network blip, throttling) at this layer, so this release runs
+                // unconditionally on any failure here: signing is already unavailable for the
+                // duration of the failure regardless (this call rethrows before installing a new
+                // snapshot, so every subsequent SignAsync/GetSigningKeysAsync call re-attempts and
+                // re-fails the same way until ListKeysAsync next succeeds), so the only cost of
+                // releasing eagerly is one extra CreateSignerAsync call once a later refresh
+                // eventually succeeds again — a worthwhile trade for closing the exposure window
+                // immediately once Key Vault confirms the key is gone.
+                //
+                // The filter above excludes the caller's own cancellationToken firing
+                // (OperationCanceledException raised because the caller's request was cancelled, e.g.
+                // a client disconnect mid-refresh): that is not a signal about the signer's health,
+                // and releasing on it would let a client repeatedly cancel requests to force a
+                // perfectly healthy cached signer to be torn down and its private key re-downloaded
+                // from Key Vault on every subsequent call — a remotely triggerable amplification
+                // vector against Key Vault (cost/throttling/latency) that requires no actual key
+                // compromise or elevated access, only the ability to drop a request (issue #425
+                // security review, finding F2-1). An OperationCanceledException raised for any other
+                // reason (e.g. an SDK-surfaced timeout using its own, unrelated token) still matches
+                // this catch and still releases the signer, exactly as before.
+                await ReleaseActiveSignerAsync().ConfigureAwait(false);
+                throw;
+            }
+
             var snapshot = BuildSnapshot(listings);
 
             if (previous is not null)
@@ -900,6 +946,26 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
     }
 
     /// <summary>
+    /// Releases (opportunistically, per ADR 0015 §5) the currently cached active signer, if any,
+    /// so any private key material it holds is not left resident in process memory. Called from
+    /// <see cref="EnsureSnapshotAsync"/> when <see cref="ListKeysAsync"/> throws — see that call
+    /// site for the rationale (issue #425 security review, finding F2).
+    /// </summary>
+    private async ValueTask ReleaseActiveSignerAsync()
+    {
+        await _signerLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            _activeSignerHandle?.Release();
+            _activeSignerHandle = null;
+        }
+        finally
+        {
+            _signerLock.Release();
+        }
+    }
+
+    /// <summary>
     /// Recomputes active-key selection from <paramref name="snapshot"/> and <c>now</c>, and — only
     /// when the computed active <see cref="KeyId"/> has changed — calls <see cref="CreateSignerAsync"/>
     /// for the new active key and disposes (opportunistically, per ADR 0015 §5) the signer it
@@ -910,7 +976,7 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
         SigningKeySnapshot snapshot, CancellationToken cancellationToken)
     {
         var now = _timeProvider.GetUtcNow();
-        var active = SigningKeyRotation.SelectActiveKey(snapshot.Timeline, now)
+        var active = SigningKeyRotation.SelectActiveKey(snapshot.Timeline, now, SupportsBootstrapExemption)
             ?? throw NoActiveKeyException();
 
         var current = Volatile.Read(ref _activeSignerHandle);
@@ -923,7 +989,7 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
             // Re-check inside the lock: another caller may have already performed the handoff, or
             // the wall clock may have moved on again since the fast-path check above.
             now = _timeProvider.GetUtcNow();
-            active = SigningKeyRotation.SelectActiveKey(snapshot.Timeline, now)
+            active = SigningKeyRotation.SelectActiveKey(snapshot.Timeline, now, SupportsBootstrapExemption)
                 ?? throw NoActiveKeyException();
 
             if (_activeSignerHandle is { } existing &&
@@ -1117,7 +1183,7 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
         if (_options.Value is not KeySetOptions keySetOptions)
             return;
 
-        var active = SigningKeyRotation.SelectActiveKey(snapshot.Timeline, now);
+        var active = SigningKeyRotation.SelectActiveKey(snapshot.Timeline, now, SupportsBootstrapExemption);
         if (active is null)
         {
             // No key is currently eligible to sign. The base class fails closed with its own

@@ -10,7 +10,7 @@ namespace ZeeKayDa.Auth.AzureKeyVault;
 /// shared <see cref="SigningKeyDescriptorFactory"/> in core, supplying only Key-Vault-specific
 /// failure code and exception message text so that text continues to render exactly as it did
 /// before the shared factory existed. Not generic over the version-info types in
-/// <see cref="KeyVaultSigningKeyRotation"/>: this class only ever operates on
+/// <see cref="IKeyVaultVersionInfo"/>: this class only ever operates on
 /// <see cref="AsymmetricAlgorithm"/>, <see cref="SigningKeyType"/>, and
 /// <see cref="SigningAlgorithm"/>, none of which is version-info-shaped.
 /// </summary>

@@ -6,6 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING (behavioral default change): Azure Key Vault signing providers migrated to ADR 0015 Tier B (`KeySourceOptions`)** (#425)
+
+  `AzureKeyVaultRemoteSigningOptions` and `AzureKeyVaultCachedSigningOptions` now derive from
+  `KeySourceOptions` instead of the older `RotatingKeySourceOptions`. `KeyRotationCheckInterval`
+  is replaced by `RefreshInterval`, and `SigningKeyActivationDelay` is replaced by
+  `PublicationLead` (defaulting to `RefreshInterval` when left unset).
+
+  **The default poll cadence changes from 5 minutes to 1 hour.** This is also the default
+  cadence at which the provider notices an emergency revocation — disabling a compromised key
+  version in Key Vault. If your incident-response plan assumes a revoked key stops signing
+  within minutes, set `RefreshInterval` explicitly to a shorter value; do not rely on the new
+  default. See [Configure Azure Key Vault signing](docs/how-to/configure-azure-key-vault-signing.md)
+  and [Rotate signing keys](docs/how-to/rotate-signing-keys.md).
+
+  The single-key bootstrap exemption (a lone registered key activates immediately, bypassing
+  `PublicationLead`) no longer applies to this provider at all, on any refresh — including its
+  very first one after a process restart. It remains scoped to Tier A (`KeySetOptions`) providers,
+  whose key set is fixed for the process lifetime and so has no equivalent exposure. This closes a
+  bypass where an operator disabling every other version as part of an emergency revocation (e.g.
+  down to one surviving key still inside its `PublicationLead` window) could have that key
+  promoted immediately regardless of `PublicationLead` — including if the process also restarted
+  or a new instance scaled out while the revocation was still in effect, which a cold-start-only
+  gate would not have caught. A genuinely first-ever-provisioned key on this provider does not
+  need the exemption anyway: it is already eligible from startup via its own durable
+  `ActivateAt = null` encoding for the chronologically-first version.
+
 ### Added
 
 - **`ZeeKayDa.Auth.AzureKeyVault` package — Azure Key Vault remote signing** (#287)

@@ -89,10 +89,11 @@ otherwise-valid token signed with a `kid` it has simply never seen.
 
 ZeeKayDa.Auth's providers avoid this by requiring a new key to be **published** — visible in
 `GetSigningKeysAsync()` results, and so in the JWKS — for some lead time **before** it is
-promoted to active signer. That lead time is called `SigningKeyActivationDelay` on the Azure Key
-Vault options types (default: `KeyRotationCheckInterval`), and `PublicationLead` (default: 1 hour)
-on the Windows Certificate Store and file-based PEM/PFX options types, inherited from ADR 0015's
-`KeySetOptions` — see
+promoted to active signer. That lead time is called `PublicationLead` on every production
+provider's options type: on the Azure Key Vault options types (ADR 0015 Tier B's
+`KeySourceOptions`) it defaults to `RefreshInterval` (itself 1 hour by default); on the Windows
+Certificate Store and file-based PEM/PFX options types (ADR 0015 Tier A's `KeySetOptions`) it also
+defaults to 1 hour. See
 [Windows Certificate Store and file-based (PEM/PFX)](#windows-certificate-store-and-file-based-pempfx--manual-registration)
 below for what it governs on those providers. In every case, set it to something at least as long
 as your relying parties' JWKS cache TTL, so a relying party that polls the JWKS at that interval
@@ -130,7 +131,7 @@ versions in application configuration at all.
 Your job as the operator is:
 
 1. **Create the new key or certificate version in Key Vault** with enough lead time before it
-   needs to be live — at least `SigningKeyActivationDelay`, so it has been visible to the provider
+   needs to be live — at least `PublicationLead`, so it has been visible to the provider
    (and therefore published in the JWKS) for at least that long before it becomes the active
    signer.
 2. **Do not disable or delete the old version** until its retirement window has elapsed. The
@@ -140,6 +141,21 @@ Your job as the operator is:
 If the active version's Key Vault `ExpiresOn` is reached with no enabled successor version, key
 loading fails closed with a configuration error rather than silently continuing with an expired
 key — rotate in the new version before the active one expires, not after.
+
+> ⚠️ **Warning:** Emergency revocation (disabling a compromised version in Key Vault) is only
+> noticed on the provider's next `RefreshInterval` poll, not instantly. `RefreshInterval` defaults
+> to 1 hour — this is a behavior change from the pre-ADR-0015-Tier-B default of 5 minutes. If your
+> incident-response plan assumes a revoked key stops signing within minutes, set `RefreshInterval`
+> explicitly to a shorter value; see [Configure Azure Key Vault signing](configure-azure-key-vault-signing.md).
+>
+> If you disable a version while it is still inside its retirement window (i.e. it was disabled
+> before its natural end-of-life, as an emergency revocation typically is), the next refresh logs
+> a `Warning` — something like *"stopped appearing in ListKeysAsync while still inside its
+> retirement window"* — alongside dropping it from the JWKS. This is expected, by-design
+> kill-switch behavior, not an error to chase: it exists to flag an *accidental* early deletion as
+> distinct from normal end-of-life rotation, so seeing it during a legitimate emergency revocation
+> is not a sign anything is broken. By contrast, a version that vanishes normally — after its
+> retirement window has already elapsed — drops out silently, with no warning at all.
 
 ---
 
@@ -165,8 +181,8 @@ restart.
 > Key Vault stamps every key/certificate version with its own immutable `CreatedOn` timestamp the
 > instant the version is created — a fact Key Vault itself remembers forever, independent of
 > anything the operator supplies. ZeeKayDa.Auth uses that to compute each version's real activation
-> time as `max(CreatedOn + SigningKeyActivationDelay, NotBefore)`, so a rotated-in Key Vault version
-> can never activate sooner than one full `SigningKeyActivationDelay` after it was actually created
+> time as `max(CreatedOn + PublicationLead, NotBefore)`, so a rotated-in Key Vault version
+> can never activate sooner than one full `PublicationLead` after it was actually created
 > — regardless of what `NotBefore` ends up being, including versions Key Vault's own automatic
 > rotation policies create with no meaningfully-future `NotBefore` at all. A plain file or a
 > Windows Certificate Store entry has no equivalent durable, tamper-proof "when was this actually
@@ -279,7 +295,7 @@ time before removing it.
 **Relying parties reject tokens signed by the newly-active key, immediately after rotation.** You
 most likely set the new certificate's `NotBefore` to "now" instead of at least `PublicationLead` in
 the future — or, for Key Vault, created the new version and let it activate without waiting
-`SigningKeyActivationDelay` for it to be observed. A relying party with a cached JWKS from before
+`PublicationLead` for it to be observed. A relying party with a cached JWKS from before
 the new key existed has no way to know about it yet. There is no way to undo an early activation
 retroactively; the fix is to make sure the *next* rotation gives the new key enough lead time.
 

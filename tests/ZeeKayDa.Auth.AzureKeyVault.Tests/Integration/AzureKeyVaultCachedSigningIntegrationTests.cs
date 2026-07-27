@@ -76,7 +76,11 @@ public sealed class AzureKeyVaultCachedSigningIntegrationTests
 
         var builder = new ZeeKayDaAuthBuilder(services);
         builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential(),
-            configure: options => options.KeyRotationCheckInterval = refreshInterval);
+            configure: options =>
+            {
+                options.RefreshInterval = refreshInterval;
+                options.PublicationLead = refreshInterval;
+            });
 
         await using var provider = services.BuildServiceProvider();
         var signingService = provider.GetRequiredService<IJwtSigningService>();
@@ -145,7 +149,9 @@ public sealed class AzureKeyVaultCachedSigningIntegrationTests
         await using var provider = services.BuildServiceProvider();
         var signingService = provider.GetRequiredService<IJwtSigningService>();
 
-        var act = async () => await signingService.GetSigningKeysAsync(ct);
+        // The active version's private key is only requested lazily, by CreateSignerAsync on the
+        // first sign — not by GetSigningKeysAsync/ListKeysAsync.
+        var act = async () => await signingService.SignAsync("payload"u8.ToArray(), ct);
 
         (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
             .WithMessage("*certificate_not_exportable*");

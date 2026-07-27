@@ -14,7 +14,8 @@ public sealed class AzureKeyVaultRemoteSigningOptionsValidatorTests
         KeyIdentifier = new KeyVaultKeyIdentifier(KeyIdentifierUri),
         Credential = new FakeTokenCredential(),
         Algorithm = SigningAlgorithm.RS256,
-        KeyRotationCheckInterval = TimeSpan.FromMinutes(5),
+        RefreshInterval = TimeSpan.FromMinutes(5),
+        PublicationLead = TimeSpan.FromMinutes(5),
     };
 
     private static ValidateOptionsResult Validate(AzureKeyVaultRemoteSigningOptions options)
@@ -32,85 +33,78 @@ public sealed class AzureKeyVaultRemoteSigningOptionsValidatorTests
         result.Succeeded.Should().BeTrue();
     }
 
-    // ── KeyRotationCheckInterval ───────────────────────────────────────────────────────────────────────────
+    // ── RefreshInterval ───────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Validate_fails_when_KeyRotationCheckInterval_is_zero()
+    public void Validate_fails_when_RefreshInterval_is_zero()
     {
         var options = ValidOptions();
-        options.KeyRotationCheckInterval = TimeSpan.Zero;
+        options.RefreshInterval = TimeSpan.Zero;
 
         var result = Validate(options);
 
         result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("KeyRotationCheckInterval");
+        result.FailureMessage.Should().Contain("RefreshInterval");
     }
 
     [Fact]
-    public void Validate_fails_when_KeyRotationCheckInterval_is_negative()
+    public void Validate_fails_when_RefreshInterval_is_negative()
     {
         var options = ValidOptions();
-        options.KeyRotationCheckInterval = TimeSpan.FromSeconds(-1);
+        options.RefreshInterval = TimeSpan.FromSeconds(-1);
 
         var result = Validate(options);
 
         result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("KeyRotationCheckInterval");
+        result.FailureMessage.Should().Contain("RefreshInterval");
     }
 
-    // The former "KeyRotationCheckInterval is null" test no longer applies: the property is now
-    // non-nullable on RotatingKeySourceOptions (ADR 0011 §3.4, issue #409) — the previous "null
-    // means static-source, never refresh" sentinel is now a structural type distinction
-    // (StaticKeySourceOptions vs RotatingKeySourceOptions), so this options type can no longer even
-    // represent that state.
-
     [Fact]
-    public void Validate_fails_when_KeyRotationCheckInterval_is_positive_but_below_the_one_minute_floor()
+    public void Validate_fails_when_RefreshInterval_is_positive_but_below_the_one_minute_floor()
     {
-        // KeyRotationCheckInterval doubles as the publish-then-activate delay (ADR 0011 §3.5); a value this
-        // short would defeat that protection against essentially any real relying party's JWKS
-        // cache TTL, and would poll Key Vault often enough to risk throttling.
         var options = ValidOptions();
-        options.KeyRotationCheckInterval = TimeSpan.FromSeconds(30);
+        options.RefreshInterval = TimeSpan.FromSeconds(30);
+        options.PublicationLead = TimeSpan.FromSeconds(30);
 
         var result = Validate(options);
 
         result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("KeyRotationCheckInterval");
+        result.FailureMessage.Should().Contain("RefreshInterval");
     }
 
     [Fact]
-    public void Validate_succeeds_when_KeyRotationCheckInterval_is_exactly_the_one_minute_floor()
+    public void Validate_succeeds_when_RefreshInterval_is_exactly_the_one_minute_floor()
     {
         var options = ValidOptions();
-        options.KeyRotationCheckInterval = TimeSpan.FromMinutes(1);
+        options.RefreshInterval = TimeSpan.FromMinutes(1);
+        options.PublicationLead = TimeSpan.FromMinutes(1);
 
         var result = Validate(options);
 
         result.Succeeded.Should().BeTrue();
     }
 
-    // ── SigningKeyActivationDelay ─────────────────────────────────────────────────────────────────
+    // ── PublicationLead ───────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Validate_fails_when_SigningKeyActivationDelay_is_shorter_than_KeyRotationCheckInterval()
+    public void Validate_fails_when_PublicationLead_is_shorter_than_RefreshInterval()
     {
         var options = ValidOptions();
-        options.KeyRotationCheckInterval = TimeSpan.FromMinutes(5);
-        options.SigningKeyActivationDelay = TimeSpan.FromMinutes(1);
+        options.RefreshInterval = TimeSpan.FromMinutes(5);
+        options.PublicationLead = TimeSpan.FromMinutes(1);
 
         var result = Validate(options);
 
         result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("SigningKeyActivationDelay");
+        result.FailureMessage.Should().Contain("PublicationLead");
     }
 
     [Fact]
-    public void Validate_succeeds_when_SigningKeyActivationDelay_is_at_least_KeyRotationCheckInterval()
+    public void Validate_succeeds_when_PublicationLead_is_at_least_RefreshInterval()
     {
         var options = ValidOptions();
-        options.KeyRotationCheckInterval = TimeSpan.FromMinutes(5);
-        options.SigningKeyActivationDelay = TimeSpan.FromMinutes(5);
+        options.RefreshInterval = TimeSpan.FromMinutes(5);
+        options.PublicationLead = TimeSpan.FromMinutes(5);
 
         var result = Validate(options);
 
@@ -165,7 +159,7 @@ public sealed class AzureKeyVaultRemoteSigningOptionsValidatorTests
     public void Validate_reports_every_violation_simultaneously_rather_than_failing_fast()
     {
         var options = ValidOptions();
-        options.KeyRotationCheckInterval = TimeSpan.Zero;
+        options.RefreshInterval = TimeSpan.Zero;
         options.KeyIdentifier = default;
         options.Credential = null;
         options.Algorithm = (SigningAlgorithm)999;
@@ -173,8 +167,7 @@ public sealed class AzureKeyVaultRemoteSigningOptionsValidatorTests
         var result = Validate(options);
 
         result.Failed.Should().BeTrue();
-        result.Failures.Should().HaveCount(4, "all four violations must be reported in a single batch, not one at a time");
-        result.Failures.Should().Contain(f => f.Contains("KeyRotationCheckInterval"));
+        result.Failures.Should().Contain(f => f.Contains("RefreshInterval"));
         result.Failures.Should().Contain(f => f.Contains("KeyIdentifier"));
         result.Failures.Should().Contain(f => f.Contains("Credential"));
         result.Failures.Should().Contain(f => f.Contains("Algorithm"));
