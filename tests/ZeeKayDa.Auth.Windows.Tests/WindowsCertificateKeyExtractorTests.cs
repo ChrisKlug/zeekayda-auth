@@ -35,7 +35,7 @@ public sealed class WindowsCertificateKeyExtractorTests
     }
 
     // ── Handle-outlives-certificate contract ─────────────────────────────────────────────────────
-    // LoadKeysAsync disposes every fetched X509Certificate2 in a `finally` block immediately after
+    // ListKeysAsync/CreateSignerAsync dispose every fetched X509Certificate2 in a `finally` block immediately after
     // extracting the handles it needs (see WindowsCertificateStoreSigningJwtSigningService), relying
     // on the documented .NET Core 3.0+ guarantee that GetRSAPrivateKey()/GetECDsaPrivateKey() return
     // a duplicated handle that remains valid and usable after the parent certificate is disposed.
@@ -64,7 +64,7 @@ public sealed class WindowsCertificateKeyExtractorTests
         {
             var act = () => ((RSA)privateKey).SignData("payload"u8.ToArray(), HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
 
-            act.Should().NotThrow("the extracted handle must remain usable after its parent certificate is disposed - LoadKeysAsync's disposal ordering depends on this");
+            act.Should().NotThrow("the extracted handle must remain usable after its parent certificate is disposed - ListKeysAsync/CreateSignerAsync's disposal ordering depends on this");
         }
         finally
         {
@@ -90,7 +90,7 @@ public sealed class WindowsCertificateKeyExtractorTests
         {
             var act = () => ((ECDsa)privateKey).SignData("payload"u8.ToArray(), HashAlgorithmName.SHA256);
 
-            act.Should().NotThrow("the extracted handle must remain usable after its parent certificate is disposed - LoadKeysAsync's disposal ordering depends on this");
+            act.Should().NotThrow("the extracted handle must remain usable after its parent certificate is disposed - ListKeysAsync/CreateSignerAsync's disposal ordering depends on this");
         }
         finally
         {

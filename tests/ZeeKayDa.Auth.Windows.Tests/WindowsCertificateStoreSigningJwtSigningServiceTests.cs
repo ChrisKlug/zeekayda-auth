@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using Microsoft.Extensions.Logging;
@@ -12,13 +13,22 @@ namespace ZeeKayDa.Auth.Windows.Tests;
 
 /// <summary>
 /// Direct-construction tests for <see cref="WindowsCertificateStoreSigningJwtSigningService"/>,
-/// bypassing DI and the platform-gated <c>AddWindowsCertificateStoreSigning</c> extension method
-/// entirely. The service class itself has no Windows-specific code (it depends only on
-/// <see cref="ICertificateStoreReader"/>), so — mirroring
+/// mirroring <c>PfxFileSigningJwtSigningServiceTests</c>'s shape and adding the Windows Certificate
+/// Store-specific concern: the bundled-format least-privilege obligation (issue #424's security
+/// ask) over <see cref="ICertificateStoreReader"/> rather than the filesystem.
+/// </summary>
+/// <remarks>
+/// This provider is on ADR 0015's Tier A (<see cref="KeySetOptions"/>) contract (issue #424):
+/// <c>ListKeysAsync</c> runs exactly once, ever, for the lifetime of a service instance, so there is
+/// no reload/change-detection surface to test here — a rotated-in, removed, or replaced certificate
+/// is never picked up without a restart. Rotation between already-registered certificates still
+/// switches the active signer purely from elapsed wall-clock time, with zero further store access —
+/// that behaviour is covered below. The service class itself has no Windows-specific code (it
+/// depends only on <see cref="ICertificateStoreReader"/>), so — mirroring
 /// <c>AzureKeyVaultCachedSigningJwtSigningServiceTests</c>'s pattern for its sibling provider —
 /// these tests run on any OS, unlike <c>Integration/WindowsCertificateStoreSigningIntegrationTests</c>,
 /// which goes through the real, Windows-only extension method.
-/// </summary>
+/// </remarks>
 public sealed class WindowsCertificateStoreSigningJwtSigningServiceTests
 {
     private static readonly DateTimeOffset T0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
@@ -30,226 +40,151 @@ public sealed class WindowsCertificateStoreSigningJwtSigningServiceTests
         FakeTimeProvider timeProvider,
         string primaryThumbprint,
         IReadOnlyList<string>? additionalThumbprints = null,
-        TimeSpan? refreshInterval = null,
         TimeSpan? retirementWindow = null,
-        TimeSpan? assumedJwksPropagationDelay = null,
-        ISanitizingLogger<WindowsCertificateStoreSigningJwtSigningService>? logger = null)
+        SigningAlgorithm algorithm = SigningAlgorithm.RS256,
+        TimeSpan? publicationLead = null,
+        ISanitizingLogger<JwtSigningService<WindowsCertificateStoreSigningOptions>>? logger = null,
+        ICertificateKeyExtractor? keyExtractor = null)
     {
-        var settingsOptions = new WindowsCertificateStoreSigningOptions
+        var options = new WindowsCertificateStoreSigningOptions
         {
             Thumbprint = primaryThumbprint,
             StoreLocation = StoreLocation.CurrentUser,
             StoreName = StoreName.My,
-            KeyRotationCheckInterval = refreshInterval ?? TimeSpan.FromMinutes(5),
-            AssumedJwksPropagationDelay = assumedJwksPropagationDelay,
+            Algorithm = algorithm,
+            PublicationLead = publicationLead ?? TimeSpan.FromHours(1),
         };
         foreach (var additional in additionalThumbprints ?? [])
-            settingsOptions.AddCertificate(additional);
+            options.AddCertificate(additional);
 
         return new WindowsCertificateStoreSigningJwtSigningService(
-            Options.Create(settingsOptions),
+            Options.Create(options),
             timeProvider,
             reader,
+            keyExtractor ?? new FakeCertificateKeyExtractor(),
             new FakeRetirementWindowProvider(retirementWindow ?? TimeSpan.FromHours(1)),
-            logger ?? NullSanitizingLogger<WindowsCertificateStoreSigningJwtSigningService>.Instance);
+            logger ?? NullSanitizingLogger<JwtSigningService<WindowsCertificateStoreSigningOptions>>.Instance);
     }
 
+    // ── Happy path ───────────────────────────────────────────────────────────────────────────────
+
     [Fact]
-    public async Task GetSigningKeysAsync_logs_one_informational_line_per_registered_certificate_on_first_load()
+    public async Task GetSigningKeysAsync_returns_the_registered_certificates_public_key()
     {
         var ct = TestContext.Current.CancellationToken;
         var reader = new FakeCertificateStoreReader();
         using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
         reader.AddCertificate(PrimaryThumbprint, certificate);
-        var timeProvider = new FakeTimeProvider(T0);
-        var logger = new CapturingSanitizingLogger<WindowsCertificateStoreSigningJwtSigningService>();
+        await using var sut = BuildService(reader, new FakeTimeProvider(T0), PrimaryThumbprint);
 
-        await using var sut = BuildService(reader, timeProvider, PrimaryThumbprint, logger: logger);
-
-        await sut.GetSigningKeysAsync(ct);
-
-        logger.Entries.Count(e => e.Level == LogLevel.Information).Should().Be(1,
-            "AC #2: one informational line for the one registered certificate");
-    }
-
-    [Fact]
-    public async Task GetSigningKeysAsync_does_not_log_again_when_an_unchanged_cycle_skips_the_reload()
-    {
-        // HasKeySetChangedAsync reports "no change" here (nothing has rotated), so LoadKeysAsync —
-        // and the LogCertificateStatuses call inside it — must not run a second time.
-        var ct = TestContext.Current.CancellationToken;
-        var refreshInterval = TimeSpan.FromMinutes(5);
-        var reader = new FakeCertificateStoreReader();
-        using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
-        reader.AddCertificate(PrimaryThumbprint, certificate);
-        var timeProvider = new FakeTimeProvider(T0);
-        var logger = new CapturingSanitizingLogger<WindowsCertificateStoreSigningJwtSigningService>();
-
-        await using var sut = BuildService(reader, timeProvider, PrimaryThumbprint, refreshInterval: refreshInterval, logger: logger);
-        await sut.GetSigningKeysAsync(ct); // Bootstrap load.
-
-        timeProvider.SetUtcNow(T0 + refreshInterval); // Cache expires -> triggers the "ask" step.
-        await sut.GetSigningKeysAsync(ct);
-
-        logger.Entries.Count(e => e.Level == LogLevel.Information).Should().Be(1,
-            "with only one registered certificate and no elapsed-time boundary crossed, nothing has " +
-            "changed, so the per-certificate status line must not repeat");
-    }
-
-    [Fact]
-    public async Task GetSigningKeysAsync_per_certificate_log_reflects_active_included_and_excluded_status_as_rotation_progresses()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var refreshInterval = TimeSpan.FromMinutes(5);
-        var retirementWindow = TimeSpan.FromHours(1);
-        var reader = new FakeCertificateStoreReader();
-        using var predecessor = TestCertificateFactory.CreateRsaSelfSigned("predecessor", T0 - TimeSpan.FromDays(30), T0 + TimeSpan.FromDays(365));
-        var successorNotBefore = T0 + TimeSpan.FromDays(1);
-        using var successor = TestCertificateFactory.CreateRsaSelfSigned("successor", successorNotBefore, T0 + TimeSpan.FromDays(400));
-        reader.AddCertificate(PrimaryThumbprint, predecessor);
-        reader.AddCertificate(SecondaryThumbprint, successor);
-        var timeProvider = new FakeTimeProvider(T0);
-        var logger = new CapturingSanitizingLogger<WindowsCertificateStoreSigningJwtSigningService>();
-
-        await using var sut = BuildService(
-            reader, timeProvider, PrimaryThumbprint, [SecondaryThumbprint],
-            refreshInterval: refreshInterval, retirementWindow: retirementWindow, logger: logger);
-
-        // Before the successor's NotBefore: predecessor is active, successor is pending.
-        await sut.GetSigningKeysAsync(ct);
-        logger.Entries.Should().Contain(e => e.Message.Contains(PrimaryThumbprint) && e.Message.Contains("the active signer"));
-        logger.Entries.Should().Contain(e => e.Message.Contains(SecondaryThumbprint) && e.Message.Contains("not yet active"));
-        logger.Entries.Clear();
-
-        // After the successor activates but within the predecessor's retirement window.
-        timeProvider.SetUtcNow(successorNotBefore);
-        await sut.GetSigningKeysAsync(ct);
-        logger.Entries.Should().Contain(e => e.Message.Contains(SecondaryThumbprint) && e.Message.Contains("the active signer"));
-        logger.Entries.Should().Contain(e => e.Message.Contains(PrimaryThumbprint) && e.Message.Contains("retirement window"));
-        logger.Entries.Clear();
-
-        // After the predecessor's retirement window has fully elapsed - no longer trusted at all.
-        timeProvider.SetUtcNow(successorNotBefore + retirementWindow + TimeSpan.FromMinutes(1));
-        await sut.GetSigningKeysAsync(ct);
-        logger.Entries.Should().Contain(e => e.Message.Contains(PrimaryThumbprint) && e.Message.Contains("NOT included"),
-            "once a registered certificate's retirement window has fully elapsed, the log should say so plainly so an operator knows it can be removed from configuration");
-    }
-
-    // ── AssumedJwksPropagationDelay (issue #413) ─────────────────────────────────────────────────
-
-    [Fact]
-    public async Task GetSigningKeysAsync_does_not_warn_when_an_explicit_shorter_AssumedJwksPropagationDelay_is_satisfied()
-    {
-        // The gap between predecessor's activation and successor's NotBefore is 1 minute — shorter
-        // than the 5-minute KeyRotationCheckInterval default, which would trigger the too-soon
-        // warning if AssumedJwksPropagationDelay were left unset. An explicit, shorter
-        // AssumedJwksPropagationDelay (30 seconds) that the 1-minute gap satisfies proves the
-        // explicit value is what actually feeds HasTooSoonPendingActivation.
-        var ct = TestContext.Current.CancellationToken;
-        var refreshInterval = TimeSpan.FromMinutes(5);
-        var reader = new FakeCertificateStoreReader();
-        using var predecessor = TestCertificateFactory.CreateRsaSelfSigned("predecessor", T0 - TimeSpan.FromDays(30), T0 + TimeSpan.FromDays(365));
-        using var successor = TestCertificateFactory.CreateRsaSelfSigned("successor", T0 + TimeSpan.FromMinutes(1), T0 + TimeSpan.FromDays(400));
-        reader.AddCertificate(PrimaryThumbprint, predecessor);
-        reader.AddCertificate(SecondaryThumbprint, successor);
-        var timeProvider = new FakeTimeProvider(T0);
-        var logger = new CapturingSanitizingLogger<WindowsCertificateStoreSigningJwtSigningService>();
-
-        await using var sut = BuildService(
-            reader, timeProvider, PrimaryThumbprint, [SecondaryThumbprint],
-            refreshInterval: refreshInterval, assumedJwksPropagationDelay: TimeSpan.FromSeconds(30), logger: logger);
-
-        await sut.GetSigningKeysAsync(ct);
-
-        logger.Entries.Should().NotContain(e => e.Level == LogLevel.Warning,
-            "the explicit AssumedJwksPropagationDelay (30s) is shorter than the 1-minute activation gap, " +
-            "so no warning should fire even though the 5-minute KeyRotationCheckInterval default would have");
-    }
-
-    [Fact]
-    public async Task GetSigningKeysAsync_warns_when_an_explicit_longer_AssumedJwksPropagationDelay_is_not_satisfied()
-    {
-        // The gap between predecessor's activation and successor's NotBefore is 10 minutes — longer
-        // than the 5-minute KeyRotationCheckInterval default, so the too-soon warning would NOT fire
-        // if AssumedJwksPropagationDelay were left unset. An explicit, longer
-        // AssumedJwksPropagationDelay (15 minutes) that the 10-minute gap violates proves the
-        // explicit value — not the KeyRotationCheckInterval default — is what feeds
-        // HasTooSoonPendingActivation.
-        var ct = TestContext.Current.CancellationToken;
-        var refreshInterval = TimeSpan.FromMinutes(5);
-        var reader = new FakeCertificateStoreReader();
-        using var predecessor = TestCertificateFactory.CreateRsaSelfSigned("predecessor", T0 - TimeSpan.FromDays(30), T0 + TimeSpan.FromDays(365));
-        using var successor = TestCertificateFactory.CreateRsaSelfSigned("successor", T0 + TimeSpan.FromMinutes(10), T0 + TimeSpan.FromDays(400));
-        reader.AddCertificate(PrimaryThumbprint, predecessor);
-        reader.AddCertificate(SecondaryThumbprint, successor);
-        var timeProvider = new FakeTimeProvider(T0);
-        var logger = new CapturingSanitizingLogger<WindowsCertificateStoreSigningJwtSigningService>();
-
-        await using var sut = BuildService(
-            reader, timeProvider, PrimaryThumbprint, [SecondaryThumbprint],
-            refreshInterval: refreshInterval, assumedJwksPropagationDelay: TimeSpan.FromMinutes(15), logger: logger);
-
-        await sut.GetSigningKeysAsync(ct);
-
-        logger.Entries.Should().Contain(e => e.Level == LogLevel.Warning,
-            "the explicit AssumedJwksPropagationDelay (15 minutes) is longer than the 10-minute " +
-            "activation gap, so the warning must fire even though the 5-minute KeyRotationCheckInterval " +
-            "default would not have triggered it");
-    }
-
-    // ── HasKeySetChangedAsync: elapsed-time-only change detection, zero store access ────────────────
-
-    [Fact]
-    public async Task GetSigningKeysAsync_does_not_reopen_any_certificate_store_handle_when_unchanged_between_polls()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var refreshInterval = TimeSpan.FromMinutes(5);
-        var reader = new FakeCertificateStoreReader();
-        using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
-        reader.AddCertificate(PrimaryThumbprint, certificate);
-        var timeProvider = new FakeTimeProvider(T0);
-
-        await using var sut = BuildService(reader, timeProvider, PrimaryThumbprint, refreshInterval: refreshInterval);
-        await sut.GetSigningKeysAsync(ct); // Bootstrap load.
-        reader.Calls.Clear();
-
-        timeProvider.SetUtcNow(T0 + refreshInterval); // Cache expires -> triggers the "ask" step.
         var keys = await sut.GetSigningKeysAsync(ct);
 
-        keys.Should().HaveCount(1);
-        reader.Calls.Should().BeEmpty(
-            "nothing has rotated, so HasKeySetChangedAsync must report no change without ever calling " +
-            "ICertificateStoreReader.GetCertificate, and LoadKeysAsync must not run");
+        keys.Should().ContainSingle();
+        keys[0].KeyType.Should().Be(SigningKeyType.Rsa);
+        keys[0].RsaPublicParameters.Should().NotBeNull("only the public key may ever be exposed via the descriptor");
+        keys[0].Algorithm.Should().Be(SigningAlgorithm.RS256);
     }
 
     [Fact]
-    public async Task SignAsync_still_succeeds_after_an_unchanged_poll_skips_the_reload()
+    public async Task SignAsync_signs_with_the_registered_certificates_private_key()
     {
         var ct = TestContext.Current.CancellationToken;
-        var refreshInterval = TimeSpan.FromMinutes(5);
         var reader = new FakeCertificateStoreReader();
         using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
         reader.AddCertificate(PrimaryThumbprint, certificate);
-        var timeProvider = new FakeTimeProvider(T0);
+        await using var sut = BuildService(reader, new FakeTimeProvider(T0), PrimaryThumbprint);
+        var payloadSegment = SigningTestHelpers.Base64UrlEncode("{\"sub\":\"test-subject\"}"u8.ToArray());
 
-        await using var sut = BuildService(reader, timeProvider, PrimaryThumbprint, refreshInterval: refreshInterval);
-        await sut.GetSigningKeysAsync(ct); // Bootstrap load.
+        var result = await sut.SignAsync(payloadSegment, ct);
+        var keys = await sut.GetSigningKeysAsync(ct);
+        var descriptor = keys.Single(k => k.Kid == result.Kid);
 
-        timeProvider.SetUtcNow(T0 + refreshInterval); // Unchanged poll -> ask reports "no change".
+        SigningTestHelpers.VerifyRsaSignature(descriptor, result, payloadSegment).Should().BeTrue(
+            "the signature must verify against the same certificate's public key");
+    }
+
+    // ── Missing certificate ──────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetSigningKeysAsync_throws_ZeeKayDaConfigurationException_when_the_certificate_is_not_found()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var reader = new FakeCertificateStoreReader(); // No certificate registered.
+        await using var sut = BuildService(reader, new FakeTimeProvider(T0), PrimaryThumbprint);
+
+        var act = async () => await sut.GetSigningKeysAsync(ct);
+
+        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.windows_certificate_store.certificate_not_found");
+    }
+
+    // ── Missing/inaccessible private key surfaces only when signing ─────────────────────────────
+    //
+    // ADR 0015 §2/§5's least-privilege loading means ListKeysAsync never needs a private key — only
+    // CreateSignerAsync does, and only for the active certificate. A certificate with no private key
+    // installed alongside it is therefore perfectly listable; the failure surfaces only once a real
+    // SignAsync call actually needs to extract the private key.
+
+    [Fact]
+    public async Task GetSigningKeysAsync_succeeds_for_a_certificate_with_no_private_key()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var reader = new FakeCertificateStoreReader();
+        using var certificate = TestCertificateFactory.CreateRsaSelfSigned(
+            "test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365), withPrivateKey: false);
+        reader.AddCertificate(PrimaryThumbprint, certificate);
+        await using var sut = BuildService(reader, new FakeTimeProvider(T0), PrimaryThumbprint);
+
+        var act = async () => await sut.GetSigningKeysAsync(ct);
+
+        await act.Should().NotThrowAsync("listing a key never needs its private half");
+    }
+
+    [Fact]
+    public async Task SignAsync_throws_ZeeKayDaConfigurationException_when_the_active_certificate_has_no_private_key()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var reader = new FakeCertificateStoreReader();
+        using var certificate = TestCertificateFactory.CreateRsaSelfSigned(
+            "test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365), withPrivateKey: false);
+        reader.AddCertificate(PrimaryThumbprint, certificate);
+        await using var sut = BuildService(reader, new FakeTimeProvider(T0), PrimaryThumbprint);
         var payload = "payload"u8.ToArray();
 
         var act = async () => await sut.SignAsync(payload, ct);
 
-        await act.Should().NotThrowAsync(
-            "the cached SigningKeySet must remain usable (not disposed) when the ask reports no change");
+        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.windows_certificate_store.private_key_not_found");
+    }
+
+    // ── Multi-certificate rotation via AddCertificate ────────────────────────────────────────────
+    //
+    // ADR 0015 Tier A: ListKeysAsync runs exactly once and builds one immutable snapshot/timeline;
+    // active-key selection is then recomputed lazily against the wall clock on every call, with zero
+    // further store access — so a rotation between already-known certificates still switches the
+    // active signer purely from elapsed time.
+
+    [Fact]
+    public async Task GetSigningKeysAsync_exposes_both_certificates_during_a_rotation_overlap()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var reader = new FakeCertificateStoreReader();
+        using var predecessor = TestCertificateFactory.CreateRsaSelfSigned("predecessor", T0 - TimeSpan.FromDays(30), T0 + TimeSpan.FromDays(365));
+        var successorNotBefore = T0 + TimeSpan.FromDays(1);
+        using var successor = TestCertificateFactory.CreateRsaSelfSigned("successor", successorNotBefore, T0 + TimeSpan.FromDays(400));
+        reader.AddCertificate(PrimaryThumbprint, predecessor);
+        reader.AddCertificate(SecondaryThumbprint, successor);
+        await using var sut = BuildService(reader, new FakeTimeProvider(T0), PrimaryThumbprint, [SecondaryThumbprint]);
+
+        var keys = await sut.GetSigningKeysAsync(ct);
+
+        keys.Should().HaveCount(2, "both certificates must be exposed during the overlap window");
     }
 
     [Fact]
-    public async Task HasKeySetChangedAsync_triggers_rebuild_when_elapsed_time_alone_moves_a_certificate_out_of_its_retirement_window()
+    public async Task GetSigningKeysAsync_active_signer_switches_when_the_successors_NotBefore_arrives()
     {
         var ct = TestContext.Current.CancellationToken;
-        var refreshInterval = TimeSpan.FromMinutes(5);
-        var retirementWindow = TimeSpan.FromHours(1);
         var reader = new FakeCertificateStoreReader();
         using var predecessor = TestCertificateFactory.CreateRsaSelfSigned("predecessor", T0 - TimeSpan.FromDays(30), T0 + TimeSpan.FromDays(365));
         var successorNotBefore = T0 + TimeSpan.FromDays(1);
@@ -257,186 +192,459 @@ public sealed class WindowsCertificateStoreSigningJwtSigningServiceTests
         reader.AddCertificate(PrimaryThumbprint, predecessor);
         reader.AddCertificate(SecondaryThumbprint, successor);
         var timeProvider = new FakeTimeProvider(T0);
+        await using var sut = BuildService(reader, timeProvider, PrimaryThumbprint, [SecondaryThumbprint]);
 
+        var before = await sut.GetSigningKeysAsync(ct);
+        before[0].Kid.Should().Be(JwkThumbprint.Compute(predecessor.GetRSAPublicKey()!.ExportParameters(false)),
+            "predecessor is active before the successor's NotBefore arrives");
+
+        timeProvider.SetUtcNow(successorNotBefore);
+        var after = await sut.GetSigningKeysAsync(ct);
+        after[0].Kid.Should().Be(JwkThumbprint.Compute(successor.GetRSAPublicKey()!.ExportParameters(false)),
+            "successor becomes active once its NotBefore arrives, with zero further store access " +
+            "(ListKeysAsync already ran exactly once)");
+    }
+
+    // ── Per-certificate status inclusion at the single ListKeysAsync evaluation ──────────────────
+
+    [Fact]
+    public async Task GetSigningKeysAsync_excludes_a_predecessor_whose_retirement_window_had_already_elapsed_at_startup()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var retirementWindow = TimeSpan.FromHours(1);
+        var reader = new FakeCertificateStoreReader();
+        using var predecessor = TestCertificateFactory.CreateRsaSelfSigned("predecessor", T0 - TimeSpan.FromDays(60), T0 + TimeSpan.FromDays(365));
+        using var successor = TestCertificateFactory.CreateRsaSelfSigned("successor", T0 - TimeSpan.FromDays(10), T0 + TimeSpan.FromDays(400));
+        reader.AddCertificate(PrimaryThumbprint, predecessor);
+        reader.AddCertificate(SecondaryThumbprint, successor);
         await using var sut = BuildService(
-            reader, timeProvider, PrimaryThumbprint, [SecondaryThumbprint],
-            refreshInterval: refreshInterval, retirementWindow: retirementWindow);
-        await sut.GetSigningKeysAsync(ct); // Bootstrap: predecessor active, successor pending.
+            reader, new FakeTimeProvider(T0), PrimaryThumbprint, [SecondaryThumbprint], retirementWindow: retirementWindow);
 
-        timeProvider.SetUtcNow(successorNotBefore); // Successor activates; predecessor retires but stays in-window.
-        await sut.GetSigningKeysAsync(ct); // Both still included.
-        reader.Calls.Clear();
-
-        // No store-side change at all - just elapsed time pushing the predecessor past its retirement window.
-        timeProvider.SetUtcNow(successorNotBefore + retirementWindow + TimeSpan.FromMinutes(1));
         var keys = await sut.GetSigningKeysAsync(ct);
 
-        keys.Should().ContainSingle("the predecessor's retirement window has now fully elapsed");
-        reader.Calls.Should().NotBeEmpty(
-            "a certificate leaving its retirement window purely from elapsed time must still trigger a " +
-            "rebuild, even with no store-side change");
+        keys.Should().ContainSingle(
+            "the predecessor's retirement window (relative to the successor's activation 10 days ago) " +
+            "had already fully elapsed by the single ListKeysAsync evaluation at startup");
+        keys[0].Kid.Should().Be(JwkThumbprint.Compute(successor.GetRSAPublicKey()!.ExportParameters(false)));
     }
 
     [Fact]
-    public async Task HasKeySetChangedAsync_triggers_rebuild_when_the_active_certificate_changes_with_membership_unchanged()
+    public async Task GetSigningKeysAsync_includes_a_predecessor_still_within_its_retirement_window_at_startup()
     {
-        // Regression test for the lesson from #350/#351's review: the comparison MUST include
-        // which entry is active, not just thumbprint membership. A rotation between two
-        // overlapping certificates typically spans two polls: at poll N, the successor is
-        // published but not yet active - the included set becomes {predecessor active, successor
-        // not-active}, a membership change from the single-certificate bootstrap state, so this
-        // poll is correctly reported as a change regardless of whether IsActive is compared. The
-        // poll under test here is the *next* one (N+1): no configuration change at all happens
-        // between the two polls - same two thumbprints, both still registered - but the successor
-        // has now crossed into its activation window and becomes the active signer while the
-        // predecessor (still within its retirement window) remains included. Comparing only
-        // thumbprint membership would see the same {predecessor, successor} set on both polls and
-        // report "no change," silently skipping the reload that promotes the successor and leaving
-        // the service signing with the predecessor past the intended handoff.
         var ct = TestContext.Current.CancellationToken;
-        var refreshInterval = TimeSpan.FromMinutes(5);
         var retirementWindow = TimeSpan.FromHours(1);
         var reader = new FakeCertificateStoreReader();
         using var predecessor = TestCertificateFactory.CreateRsaSelfSigned("predecessor", T0 - TimeSpan.FromDays(30), T0 + TimeSpan.FromDays(365));
-        var successorNotBefore = T0 + TimeSpan.FromMinutes(1);
-        using var successor = TestCertificateFactory.CreateRsaSelfSigned("successor", successorNotBefore, T0 + TimeSpan.FromDays(400));
+        using var successor = TestCertificateFactory.CreateRsaSelfSigned("successor", T0 - TimeSpan.FromMinutes(10), T0 + TimeSpan.FromDays(400));
         reader.AddCertificate(PrimaryThumbprint, predecessor);
         reader.AddCertificate(SecondaryThumbprint, successor);
-        var timeProvider = new FakeTimeProvider(T0);
-
         await using var sut = BuildService(
-            reader, timeProvider, PrimaryThumbprint, [SecondaryThumbprint],
-            refreshInterval: refreshInterval, retirementWindow: retirementWindow);
-        await sut.GetSigningKeysAsync(ct); // Bootstrap: predecessor active.
+            reader, new FakeTimeProvider(T0), PrimaryThumbprint, [SecondaryThumbprint], retirementWindow: retirementWindow);
 
-        timeProvider.SetUtcNow(successorNotBefore); // Poll N: successor published but not yet active (membership change).
-        await sut.GetSigningKeysAsync(ct); // predecessor active + successor not-active; both now "previously included".
-        reader.Calls.Clear();
-
-        // Poll N+1: one KeyRotationCheckInterval later, with no configuration change whatsoever -
-        // the successor now activates and the predecessor (still within its retirement window)
-        // stays included. Same thumbprints as poll N; only which entry is active differs.
-        timeProvider.SetUtcNow(successorNotBefore + refreshInterval);
         var keys = await sut.GetSigningKeysAsync(ct);
 
-        keys.Should().HaveCount(2, "the predecessor is still within its retirement window and the successor is now active");
-        using var successorPublicKey = successor.GetRSAPublicKey()!;
-        keys[0].Kid.Should().Be(JwkThumbprint.Compute(successorPublicKey.ExportParameters(false)),
-            "the handoff must actually happen: the successor must become the active (index 0) signing key at this poll");
-        reader.Calls.Should().NotBeEmpty(
-            "the active-slot handoff alone must be enough to trigger a real reload, even with thumbprint " +
-            "membership unchanged since the previous poll");
+        keys.Should().HaveCount(2,
+            "the successor activated 10 minutes ago, so the predecessor is retired but still within " +
+            "its 1-hour retirement window at the single ListKeysAsync evaluation at startup");
     }
 
+    // ── Single-certificate bootstrap exemption ───────────────────────────────────────────────────
+
     [Fact]
-    public async Task HasKeySetChangedAsync_reports_a_change_when_every_registered_certificate_has_expired_since_the_last_load()
+    public async Task GetSigningKeysAsync_the_sole_registered_certificate_is_active_immediately_despite_a_future_NotBefore()
     {
-        // HasKeySetChangedAsync must never itself decide "configuration is now invalid" - it only
-        // ever reports "did the trusted set change," and defers the actual fail-closed behaviour
-        // to the subsequent LoadKeysAsync call.
         var ct = TestContext.Current.CancellationToken;
-        var refreshInterval = TimeSpan.FromMinutes(5);
         var reader = new FakeCertificateStoreReader();
-        using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", T0 - TimeSpan.FromDays(2), T0 + TimeSpan.FromDays(1));
+        using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", T0 + TimeSpan.FromDays(30), T0 + TimeSpan.FromDays(365));
         reader.AddCertificate(PrimaryThumbprint, certificate);
-        var timeProvider = new FakeTimeProvider(T0);
+        await using var sut = BuildService(reader, new FakeTimeProvider(T0), PrimaryThumbprint);
 
-        await using var sut = BuildService(reader, timeProvider, PrimaryThumbprint, refreshInterval: refreshInterval);
-        await sut.GetSigningKeysAsync(ct); // Bootstrap load.
-
-        timeProvider.SetUtcNow(T0 + TimeSpan.FromDays(2)); // Past the only certificate's NotAfter.
         var act = async () => await sut.GetSigningKeysAsync(ct);
 
-        await act.Should().ThrowAsync<ZeeKayDaConfigurationException>()
-            .WithMessage("*no_active_certificate*",
-                "the ask must report a change (never silently keep serving the expired certificate), " +
-                "and the real LoadKeysAsync reload is what actually fails closed");
+        await act.Should().NotThrowAsync("the bootstrap exemption activates the sole certificate immediately");
     }
 
-    // ── Near-expiry warning: relocated into HasKeySetChangedAsync's ask (issue #348 follow-up) ─────
+    // ── Every registered certificate already expired at startup ─────────────────────────────────
+    //
+    // ADR 0015: Tier A never re-reads, so an already-expired sole key with no eligible successor has
+    // SelectActiveKey == null and signing fails closed via the base class's own generic
+    // "signing.no_active_key" error — there is no provider-specific "no active certificate" special
+    // case any more, since ListKeysAsync no longer owns "is this configuration currently usable."
 
     [Fact]
-    public async Task GetSigningKeysAsync_warns_when_the_active_certificate_is_within_30_days_of_expiry_on_cold_start()
+    public async Task GetSigningKeysAsync_throws_the_base_classes_no_active_key_error_when_every_registered_certificate_has_expired()
     {
         var ct = TestContext.Current.CancellationToken;
         var reader = new FakeCertificateStoreReader();
-        using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(10));
+        using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", T0 - TimeSpan.FromDays(30), T0 - TimeSpan.FromDays(1));
         reader.AddCertificate(PrimaryThumbprint, certificate);
-        var timeProvider = new FakeTimeProvider(T0);
-        var logger = new CapturingSanitizingLogger<WindowsCertificateStoreSigningJwtSigningService>();
+        await using var sut = BuildService(reader, new FakeTimeProvider(T0), PrimaryThumbprint);
 
-        await using var sut = BuildService(reader, timeProvider, PrimaryThumbprint, logger: logger);
+        var act = async () => await sut.GetSigningKeysAsync(ct);
 
-        await sut.GetSigningKeysAsync(ct); // Cold start: no ask has ever run yet.
-
-        logger.Entries.Should().ContainSingle(e =>
-                e.Level == LogLevel.Warning && e.Message.Contains(PrimaryThumbprint) && e.Message.Contains("within 30 days"),
-            "the cold-start LoadKeysAsync call must still perform the expiry check, since no ask has ever run to cover it");
+        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.no_active_key");
     }
 
+    // ── Too-soon-NotBefore startup warning (ADR 0015 §1, issue #424) ─────────────────────────────
+
     [Fact]
-    public async Task GetSigningKeysAsync_warns_again_on_a_later_unchanged_cycle_once_the_expiry_threshold_is_crossed()
+    public async Task GetSigningKeysAsync_logs_a_warning_when_the_soonest_pending_NotBefore_is_closer_than_PublicationLead()
     {
-        // Regression test for the follow-up finding on issue #348: an unchanged refresh cycle now
-        // skips LoadKeysAsync entirely, so the warning must be re-evaluated inside
-        // HasKeySetChangedAsync itself, or a long-running process could cross into the 30-day
-        // expiry window with zero signal until signing actually starts failing.
         var ct = TestContext.Current.CancellationToken;
-        var refreshInterval = TimeSpan.FromMinutes(5);
         var reader = new FakeCertificateStoreReader();
-        using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(40));
-        reader.AddCertificate(PrimaryThumbprint, certificate);
-        var timeProvider = new FakeTimeProvider(T0);
-        var logger = new CapturingSanitizingLogger<WindowsCertificateStoreSigningJwtSigningService>();
+        using var primary = TestCertificateFactory.CreateRsaSelfSigned("primary", T0 - TimeSpan.FromDays(30), T0 + TimeSpan.FromDays(365));
+        using var secondary = TestCertificateFactory.CreateRsaSelfSigned("secondary", T0 + TimeSpan.FromMinutes(1), T0 + TimeSpan.FromDays(400));
+        reader.AddCertificate(PrimaryThumbprint, primary);
+        reader.AddCertificate(SecondaryThumbprint, secondary);
+        var logger = new CapturingSanitizingLogger<JwtSigningService<WindowsCertificateStoreSigningOptions>>();
+        await using var sut = BuildService(
+            reader, new FakeTimeProvider(T0), PrimaryThumbprint, [SecondaryThumbprint], logger: logger);
 
-        await using var sut = BuildService(reader, timeProvider, PrimaryThumbprint, refreshInterval: refreshInterval, logger: logger);
-        await sut.GetSigningKeysAsync(ct); // Bootstrap load: 40 days to expiry, no warning yet.
-
-        logger.Entries.Should().NotContain(e => e.Level == LogLevel.Warning && e.Message.Contains("within 30 days"));
-
-        timeProvider.SetUtcNow(T0 + TimeSpan.FromDays(25)); // 15 days from expiry now; also past refreshInterval -> triggers the ask.
-        reader.Calls.Clear();
         await sut.GetSigningKeysAsync(ct);
 
-        logger.Entries.Should().ContainSingle(e =>
-                e.Level == LogLevel.Warning && e.Message.Contains(PrimaryThumbprint) && e.Message.Contains("within 30 days"),
-            "the ask itself must re-evaluate the expiry check on every cycle, even one that reports no change and skips LoadKeysAsync entirely");
-        reader.Calls.Should().BeEmpty(
-            "the relocated expiry check must not reintroduce store access - it only needs the cached active entry's ExpiresAt");
+        logger.Entries.Should().Contain(e => e.Level == LogLevel.Warning,
+            "the too-soon-NotBefore misconfiguration must be surfaced (default PublicationLead is 1 hour)");
     }
 
     [Fact]
-    public async Task GetSigningKeysAsync_does_not_double_log_the_expiry_warning_on_a_cycle_where_a_reload_also_happens()
+    public async Task GetSigningKeysAsync_does_not_warn_when_an_explicit_shorter_PublicationLead_is_satisfied()
     {
-        // The ask fires the expiry warning on every cycle, including ones that go on to report a
-        // change and trigger LoadKeysAsync. LoadKeysAsync must not also fire it for that same cycle.
         var ct = TestContext.Current.CancellationToken;
-        var refreshInterval = TimeSpan.FromMinutes(5);
         var reader = new FakeCertificateStoreReader();
-        using var predecessor = TestCertificateFactory.CreateRsaSelfSigned("predecessor", T0 - TimeSpan.FromDays(30), T0 + TimeSpan.FromDays(40));
-        var successorNotBefore = T0 + TimeSpan.FromMinutes(1);
-        using var successor = TestCertificateFactory.CreateRsaSelfSigned("successor", successorNotBefore, T0 + TimeSpan.FromDays(20));
-        reader.AddCertificate(PrimaryThumbprint, predecessor);
-        reader.AddCertificate(SecondaryThumbprint, successor);
-        var timeProvider = new FakeTimeProvider(T0);
-        var logger = new CapturingSanitizingLogger<WindowsCertificateStoreSigningJwtSigningService>();
-
+        using var primary = TestCertificateFactory.CreateRsaSelfSigned("primary", T0 - TimeSpan.FromDays(30), T0 + TimeSpan.FromDays(365));
+        using var secondary = TestCertificateFactory.CreateRsaSelfSigned("secondary", T0 + TimeSpan.FromMinutes(1), T0 + TimeSpan.FromDays(400));
+        reader.AddCertificate(PrimaryThumbprint, primary);
+        reader.AddCertificate(SecondaryThumbprint, secondary);
+        var logger = new CapturingSanitizingLogger<JwtSigningService<WindowsCertificateStoreSigningOptions>>();
         await using var sut = BuildService(
-            reader, timeProvider, PrimaryThumbprint, [SecondaryThumbprint],
-            refreshInterval: refreshInterval, logger: logger);
-        await sut.GetSigningKeysAsync(ct); // Bootstrap: predecessor active (40 days to expiry - no warning).
-        logger.Entries.Clear();
+            reader, new FakeTimeProvider(T0), PrimaryThumbprint, [SecondaryThumbprint],
+            publicationLead: TimeSpan.FromSeconds(30), logger: logger);
 
-        // One refreshInterval later, the cache expires and the ask runs. The successor already
-        // crossed its own activation window (at successorNotBefore, well before this poll) and is
-        // now the active signer - membership unchanged (predecessor still within its retirement
-        // window) but the active slot flips, which alone is enough to trigger a real reload. The
-        // successor's own ~20-day expiry crosses the warning threshold at this same poll.
-        timeProvider.SetUtcNow(T0 + refreshInterval);
+        await sut.GetSigningKeysAsync(ct);
+
+        logger.Entries.Should().NotContain(e => e.Level == LogLevel.Warning,
+            "the explicit PublicationLead (30s) is shorter than the 1-minute activation gap, so no " +
+            "warning should fire even though the 1-hour default would have");
+    }
+
+    [Fact]
+    public async Task GetSigningKeysAsync_warns_when_an_explicit_longer_PublicationLead_is_not_satisfied()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var reader = new FakeCertificateStoreReader();
+        using var primary = TestCertificateFactory.CreateRsaSelfSigned("primary", T0 - TimeSpan.FromDays(30), T0 + TimeSpan.FromDays(365));
+        using var secondary = TestCertificateFactory.CreateRsaSelfSigned("secondary", T0 + TimeSpan.FromMinutes(10), T0 + TimeSpan.FromDays(400));
+        reader.AddCertificate(PrimaryThumbprint, primary);
+        reader.AddCertificate(SecondaryThumbprint, secondary);
+        var logger = new CapturingSanitizingLogger<JwtSigningService<WindowsCertificateStoreSigningOptions>>();
+        await using var sut = BuildService(
+            reader, new FakeTimeProvider(T0), PrimaryThumbprint, [SecondaryThumbprint],
+            publicationLead: TimeSpan.FromMinutes(15), logger: logger);
+
+        await sut.GetSigningKeysAsync(ct);
+
+        logger.Entries.Should().Contain(e => e.Level == LogLevel.Warning,
+            "the explicit PublicationLead (15 minutes) is longer than the 10-minute activation gap, so " +
+            "the warning must fire");
+    }
+
+    // ── kid stability ─────────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetSigningKeysAsync_kid_is_stable_across_multiple_calls()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var reader = new FakeCertificateStoreReader();
+        using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+        reader.AddCertificate(PrimaryThumbprint, certificate);
+        var timeProvider = new FakeTimeProvider(T0);
+        await using var sut = BuildService(reader, timeProvider, PrimaryThumbprint);
+
+        var first = await sut.GetSigningKeysAsync(ct);
+        timeProvider.Advance(TimeSpan.FromDays(365));
+        var second = await sut.GetSigningKeysAsync(ct);
+
+        second[0].Kid.Should().Be(first[0].Kid,
+            "kid must be derived from the key material; ListKeysAsync runs exactly once for this " +
+            "ADR 0015 Tier A provider regardless of elapsed time");
+    }
+
+    // ── Algorithm/key-type mismatch ───────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetSigningKeysAsync_throws_when_Algorithm_does_not_match_the_certificates_key_type()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var reader = new FakeCertificateStoreReader();
+        using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+        reader.AddCertificate(PrimaryThumbprint, certificate);
+        await using var sut = BuildService(reader, new FakeTimeProvider(T0), PrimaryThumbprint, algorithm: SigningAlgorithm.ES256);
+
+        var act = async () => await sut.GetSigningKeysAsync(ct);
+
+        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.windows_certificate_store.algorithm_key_type_mismatch");
+    }
+
+    [Fact]
+    public async Task GetSigningKeysAsync_throws_when_Algorithm_is_RSA_but_the_certificate_is_EC()
+    {
+        // The RSA-mismatch direction is covered above; this covers the other half of
+        // BuildValidatedPublicKey's mismatch-message branch.
+        var ct = TestContext.Current.CancellationToken;
+        var reader = new FakeCertificateStoreReader();
+        using var certificate = TestCertificateFactory.CreateEcSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+        reader.AddCertificate(PrimaryThumbprint, certificate);
+        await using var sut = BuildService(reader, new FakeTimeProvider(T0), PrimaryThumbprint, algorithm: SigningAlgorithm.RS256);
+
+        var act = async () => await sut.GetSigningKeysAsync(ct);
+
+        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.windows_certificate_store.algorithm_key_type_mismatch");
+        exception.Which.Message.Should().Contain("EC certificate");
+    }
+
+    // ── EC certificates ───────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetSigningKeysAsync_supports_EC_certificates_with_a_matching_EC_algorithm()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var reader = new FakeCertificateStoreReader();
+        using var certificate = TestCertificateFactory.CreateEcSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+        reader.AddCertificate(PrimaryThumbprint, certificate);
+        await using var sut = BuildService(reader, new FakeTimeProvider(T0), PrimaryThumbprint, algorithm: SigningAlgorithm.ES256);
+
         var keys = await sut.GetSigningKeysAsync(ct);
 
-        keys.Should().HaveCount(2, "the predecessor is still within its retirement window");
-        logger.Entries.Count(e => e.Level == LogLevel.Warning && e.Message.Contains("within 30 days")).Should().Be(1,
-            "the ask already performed the expiry check this cycle, so LoadKeysAsync's own cold-start-only call must not repeat it");
+        keys.Should().ContainSingle();
+        keys[0].KeyType.Should().Be(SigningKeyType.Ec);
+        keys[0].EcPublicParameters.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task SignAsync_signs_with_an_EC_certificates_private_key()
+    {
+        // ADR 0015 §2/§5's least-privilege loading means CreateSignerAsync (and therefore an EC
+        // private-key extraction) is only ever invoked by a real SignAsync call, never by
+        // GetSigningKeysAsync alone — this exercises that path directly.
+        var ct = TestContext.Current.CancellationToken;
+        var reader = new FakeCertificateStoreReader();
+        using var certificate = TestCertificateFactory.CreateEcSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+        reader.AddCertificate(PrimaryThumbprint, certificate);
+        await using var sut = BuildService(reader, new FakeTimeProvider(T0), PrimaryThumbprint, algorithm: SigningAlgorithm.ES256);
+        var payloadSegment = SigningTestHelpers.Base64UrlEncode("{\"sub\":\"test-subject\"}"u8.ToArray());
+
+        var result = await sut.SignAsync(payloadSegment, ct);
+
+        result.Kid.Should().NotBeNullOrEmpty();
+        result.Algorithm.Should().Be(SigningAlgorithm.ES256);
+    }
+
+    // ── Bundled-format least-privilege (issue #424 security ask) ─────────────────────────────────
+    //
+    // A Windows Certificate Store entry bundles cert+key exactly like PFX, so ListKeysAsync has no
+    // choice but to read the whole certificate (including the private half, when installed) to
+    // obtain each public certificate. The obligation ADR 0015 §2/§5 places on this provider is that
+    // non-active private material is only read *transiently* and never retained: after the one-time
+    // listing, a non-active certificate must never be re-read, while the active certificate is
+    // re-read afresh by CreateSignerAsync rather than a private handle being kept alive from
+    // listing. Counting ICertificateStoreReader.GetCertificate calls per thumbprint proves both halves.
+
+    [Fact]
+    public async Task Non_active_certificates_store_entry_is_read_exactly_once_transiently_and_never_reopened_for_signing()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var reader = new FakeCertificateStoreReader();
+        using var active = TestCertificateFactory.CreateRsaSelfSigned("active", T0 - TimeSpan.FromDays(30), T0 + TimeSpan.FromDays(365));
+        var pendingNotBefore = T0 + TimeSpan.FromDays(1);
+        using var pending = TestCertificateFactory.CreateRsaSelfSigned("pending", pendingNotBefore, T0 + TimeSpan.FromDays(400));
+        reader.AddCertificate(PrimaryThumbprint, active);
+        reader.AddCertificate(SecondaryThumbprint, pending);
+
+        await using var sut = BuildService(reader, new FakeTimeProvider(T0), PrimaryThumbprint, [SecondaryThumbprint]);
+        var payloadSegment = SigningTestHelpers.Base64UrlEncode("{\"sub\":\"test-subject\"}"u8.ToArray());
+
+        await sut.GetSigningKeysAsync(ct); // one-time listing over both certificates
+        await sut.SignAsync(payloadSegment, ct); // signs with the active certificate only
+
+        reader.Calls.Count(t => string.Equals(t, SecondaryThumbprint, StringComparison.Ordinal)).Should().Be(1,
+            "the non-active (pending) certificate must be read only once — transiently, to build the " +
+            "public listing — and never re-read to sign");
+        reader.Calls.Count(t => string.Equals(t, PrimaryThumbprint, StringComparison.Ordinal)).Should().BeGreaterThan(1,
+            "the active certificate is read once for the listing and re-read afresh by CreateSignerAsync " +
+            "to sign, proving no private handle is retained from the listing");
+    }
+
+    // ── Defensive invariant: CreateSignerAsync is only ever called for a listed key ─────────────
+    //
+    // Unreachable via the public API in normal operation — the base class only ever calls
+    // CreateSignerAsync with a KeyId it previously observed on a ListKeysAsync-returned KeyListing,
+    // and this ADR 0015 Tier A provider's registered thumbprints never change after startup — but
+    // invoked directly via reflection here to prove the defensive check fails loudly rather than
+    // silently.
+
+    [Fact]
+    public async Task CreateSignerAsync_throws_when_called_for_a_key_id_that_is_not_a_registered_thumbprint()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var reader = new FakeCertificateStoreReader();
+        using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+        reader.AddCertificate(PrimaryThumbprint, certificate);
+        await using var sut = BuildService(reader, new FakeTimeProvider(T0), PrimaryThumbprint);
+
+        var createSignerAsync = typeof(WindowsCertificateStoreSigningJwtSigningService).GetMethod(
+            "CreateSignerAsync", BindingFlags.NonPublic | BindingFlags.Instance)!;
+
+        // An async method's exceptions (even ones thrown before its first await) are captured into
+        // the returned ValueTask by the compiler-generated state machine, not thrown synchronously
+        // from Invoke — so the faulted task is awaited here rather than expecting Invoke itself to throw.
+        var task = (ValueTask<ISigner>)createSignerAsync.Invoke(sut, [new KeyId("0000000000000000000000000000000000000A"), ct])!;
+        var act = async () => await task;
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    // ── kid/key consistency (L-3/M-1/M-2, PR #436 security review) ──────────────────────────────
+    //
+    // Defence-in-depth: CreateSignerAsync re-reads the active certificate's store entry
+    // independently of ListKeysAsync's one-time snapshot. If a store entry's key-container
+    // association changed after startup without its thumbprint changing (e.g. a botched
+    // 'certutil -repairstore'), the private key it hands back at signing time would no longer pair
+    // with the public key whose kid the base class is signing under. This must fail closed with a
+    // clear configuration error rather than silently producing tokens signed under a mismatched kid.
+    //
+    // A real X509Store lookup is content-addressed by thumbprint (a hash of the whole DER-encoded
+    // certificate), so it can never hand back a different certificate under an unchanged thumbprint —
+    // and any X509Certificate2 obtainable through a public .NET API has its private key
+    // cryptographically validated against its own public key at load/association time, so there is no
+    // way to construct one whose private and public halves disagree. The only place the modelled
+    // attack (private key container swapped, certificate/thumbprint unchanged) can be represented in
+    // a portable test is at the ICertificateKeyExtractor seam: FakeCertificateKeyExtractor below
+    // substitutes the private key handle CreateSignerAsync receives for PrimaryThumbprint, while the
+    // certificate returned by the store reader — and hence its own public key and thumbprint — never
+    // changes, matching exactly what CERT_KEY_PROV_INFO_PROP_ID repointing does on a real store.
+
+    [Fact]
+    public async Task SignAsync_throws_ZeeKayDaConfigurationException_when_the_private_key_no_longer_matches_the_listed_public_key()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var reader = new FakeCertificateStoreReader();
+        using var certificate = TestCertificateFactory.CreateRsaSelfSigned(
+            "listed", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+        reader.AddCertificate(PrimaryThumbprint, certificate);
+        var keyExtractor = new FakeCertificateKeyExtractor();
+        await using var sut = BuildService(reader, new FakeTimeProvider(T0), PrimaryThumbprint, keyExtractor: keyExtractor);
+
+        // The one-time ListKeysAsync snapshot captures certificate's public key under
+        // PrimaryThumbprint. The store entry (same certificate, same thumbprint) is left entirely
+        // unchanged; only the private key handle CreateSignerAsync receives for it is substituted —
+        // simulating the store entry's key-container association having been repointed at an
+        // unrelated key pair without the certificate itself changing.
+        await sut.GetSigningKeysAsync(ct);
+        using var mismatchedPrivateKey = RSA.Create(2048);
+        keyExtractor.OverridePrivateKey(PrimaryThumbprint, mismatchedPrivateKey, SigningKeyType.Rsa);
+        var payload = "payload"u8.ToArray();
+
+        var act = async () => await sut.SignAsync(payload, ct);
+
+        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        exception.Which.AggregatedFailures.Should().ContainSingle(
+            f => f.Code == "signing.windows_certificate_store.signing_key_mismatch");
+        exception.Which.Message.Should().Contain(PrimaryThumbprint);
+    }
+
+    // ── EC curve identity: a "both unset" OID must not vacuously match (L-6, PR #436 security
+    // review) ─────────────────────────────────────────────────────────────────────────────────────
+    //
+    // ECCurve.Oid.Value is legitimately null for a curve built from explicit domain parameters (no
+    // named-curve OID at all) rather than resolved by OID/friendly name — a real, platform-dependent
+    // state, not a contrived one. Comparing only Oid.Value with plain string.Equals would let two
+    // such curves compare equal (null == null) without validating curve identity at all, leaving only
+    // the point coordinates to (coincidentally) disagree. This invokes the private
+    // CurveIdentifiersMatch helper directly via reflection, exactly as the existing
+    // CreateSignerAsync_throws_when_called_for_a_key_id_that_is_not_a_registered_thumbprint test above
+    // reaches another private member — there is no public seam for this pure comparison helper.
+
+    [Fact]
+    public void CurveIdentifiersMatch_returns_false_when_both_curves_have_no_oid_value_or_friendly_name()
+    {
+        var curveWithNoOid = new ECCurve(); // default struct: Oid.Value and Oid.FriendlyName are both null
+        var otherCurveWithNoOid = new ECCurve();
+
+        var curveIdentifiersMatch = typeof(WindowsCertificateStoreSigningJwtSigningService).GetMethod(
+            "CurveIdentifiersMatch", BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        var result = (bool)curveIdentifiersMatch.Invoke(null, [curveWithNoOid, otherCurveWithNoOid])!;
+
+        result.Should().BeFalse(
+            "two curves that both carry no OID identity information at all must not be treated as " +
+            "the same curve merely because their (absent) identifiers compare equal");
+    }
+
+    // ── EC curve identity: a "both empty" OID must not vacuously match either (L-8, PR #436
+    // security review) ────────────────────────────────────────────────────────────────────────────
+    //
+    // An empty string is exactly as invalid an identity signal as null: Oid never normalises "" to
+    // null, so a guard that only checked "is not null" would let two curves with empty-string OID
+    // values compare "" == "" as a match — reopening the same vacuous-pass bug L-6 fixed for the null
+    // case. There is no *public* way to construct an ECCurve carrying an empty (as opposed to null)
+    // Oid.Value/FriendlyName — ECCurve.CreateFromOid/CreateFromValue/CreateFromFriendlyName all reject
+    // an Oid with neither a value nor a friendly name (ArgumentException: "The specified Oid () is not
+    // valid"), and ExportParameters never produces one either — which is exactly why the security
+    // review calls this "unreachable today". The guard is still worth having defensively (the helper
+    // is a private, reusable comparison with no guarantee every future caller goes through
+    // ExportParameters), so this test reaches past the public factories via reflection on ECCurve's
+    // private backing field to construct the otherwise-unreachable state directly, then invokes the
+    // private CurveIdentifiersMatch helper the same way the null-OID test above does.
+
+    [Fact]
+    public void CurveIdentifiersMatch_returns_false_when_both_curves_have_empty_oid_value_and_friendly_name()
+    {
+        var curveWithEmptyOid = CreateCurveWithEmptyOid();
+        var otherCurveWithEmptyOid = CreateCurveWithEmptyOid();
+
+        var curveIdentifiersMatch = typeof(WindowsCertificateStoreSigningJwtSigningService).GetMethod(
+            "CurveIdentifiersMatch", BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        var result = (bool)curveIdentifiersMatch.Invoke(null, [curveWithEmptyOid, otherCurveWithEmptyOid])!;
+
+        result.Should().BeFalse(
+            "two curves that both carry an empty-string OID value and friendly name must not be " +
+            "treated as the same curve merely because their (meaningless) identifiers compare equal");
+    }
+
+    /// <summary>
+    /// Builds an <see cref="ECCurve"/> whose <see cref="Oid"/> has an empty (not <see langword="null"/>)
+    /// <see cref="Oid.Value"/> and <see cref="Oid.FriendlyName"/> — a state <see cref="ECCurve"/>'s own
+    /// public factories refuse to produce, reached here only via reflection on the private backing
+    /// field so the defensive guard in <c>CurveIdentifiersMatch</c> can still be exercised directly.
+    /// </summary>
+    private static ECCurve CreateCurveWithEmptyOid()
+    {
+        object boxedCurve = new ECCurve();
+        var oidField = typeof(ECCurve).GetField("_oid", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        oidField.SetValue(boxedCurve, new Oid(string.Empty, string.Empty));
+        return (ECCurve)boxedCurve;
+    }
+
+    // ── Logging: never leaks key material (issue #291's explicit requirement) ───────────────────
+
+    [Fact]
+    public async Task GetSigningKeysAsync_logs_thumbprint_and_subject_but_never_key_material()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var reader = new FakeCertificateStoreReader();
+        using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test-subject-marker", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+        reader.AddCertificate(PrimaryThumbprint, certificate);
+        var logger = new CapturingSanitizingLogger<JwtSigningService<WindowsCertificateStoreSigningOptions>>();
+        await using var sut = BuildService(reader, new FakeTimeProvider(T0), PrimaryThumbprint, logger: logger);
+
+        await sut.GetSigningKeysAsync(ct);
+
+        logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Information
+            && e.Message.Contains(PrimaryThumbprint)
+            && e.Message.Contains("test-subject-marker"));
     }
 }

@@ -7,29 +7,25 @@ namespace ZeeKayDa.Auth.Windows;
 /// Configuration options for <c>AddWindowsCertificateStoreSigning</c>.
 /// </summary>
 /// <remarks>
-/// <see cref="RotatingKeySourceOptions.KeyRotationCheckInterval"/> is inherited from the base
-/// class and defaults to 5 minutes. Every registered certificate is re-read from the local store
-/// on a cycle where the trusted set has actually changed since the last cycle — see
-/// <see cref="WindowsCertificateStoreSigningJwtSigningService.HasKeySetChangedAsync"/> for the
-/// cheap, store-access-free check that decides this.
+/// <para>
+/// ADR 0015 Tier A (<see cref="KeySetOptions"/>, issue #424): the complete set of registered
+/// thumbprints is fixed at configuration time, and the only thing that ever advances is the wall
+/// clock crossing each certificate's <c>NotBefore</c>/<c>NotAfter</c> — mapped onto each key's
+/// <see cref="ZeeKayDa.Auth.Tokens.KeyListing.ActivateAt"/>/<see cref="ZeeKayDa.Auth.Tokens.KeyListing.ExpiresAt"/>.
+/// <see cref="KeySetOptions.PublicationLead"/> is inherited from <see cref="KeySetOptions"/> — see
+/// that type's remarks for what it governs (an advisory too-soon-activation startup warning, not a
+/// re-download cadence — there is nothing to re-download on this tier).
+/// </para>
+/// <para>
+/// Picking up a rotated-in, removed, or replaced certificate requires a process restart: this
+/// provider's <c>ListKeysAsync</c> runs exactly once, ever, for the lifetime of a service instance
+/// (ADR 0015 §1/§4) — register the successor certificate via <see cref="AddCertificate"/> ahead of
+/// its intended activation time and redeploy, rather than expecting a live reload.
+/// </para>
 /// </remarks>
-public sealed class WindowsCertificateStoreSigningOptions : RotatingKeySourceOptions
+public sealed class WindowsCertificateStoreSigningOptions : KeySetOptions
 {
     private readonly List<string> _additionalThumbprints = [];
-
-    /// <summary>
-    /// Gets or sets the assumed worst-case delay before a newly-published key's public material
-    /// has propagated to relying parties' JWKS caches, used as the threshold for warning when a
-    /// rotated-in certificate's <see cref="X509Certificate2.NotBefore"/> is scheduled too soon
-    /// (ADR 0011 §3.5; see <see cref="SigningKeyRotation.HasTooSoonPendingActivation"/>). When
-    /// unset (the default), defaults to <see cref="RotatingKeySourceOptions.KeyRotationCheckInterval"/>.
-    /// </summary>
-    /// <remarks>
-    /// Declared directly on this type rather than hoisted onto <see cref="RotatingKeySourceOptions"/>
-    /// (as the File/PFX providers' equivalent property is): doing so would leak this property into
-    /// Azure Key Vault's options types, which have no use for it (ADR 0011 §3.5).
-    /// </remarks>
-    public TimeSpan? AssumedJwksPropagationDelay { get; set; }
 
     /// <summary>
     /// Gets or sets the thumbprint of the required/primary certificate. Set by
@@ -65,7 +61,7 @@ public sealed class WindowsCertificateStoreSigningOptions : RotatingKeySourceOpt
     /// Registers an additional certificate — by thumbprint, from the same
     /// <see cref="StoreLocation"/> and <see cref="StoreName"/> configured on
     /// <c>AddWindowsCertificateStoreSigning</c> — to support rotation with overlapping validity
-    /// windows (ADR 0011 §3.5; issue #282's multi-key registration shape).
+    /// windows (ADR 0015 §1; issue #282's multi-key registration shape).
     /// </summary>
     /// <param name="thumbprint">The additional certificate's thumbprint.</param>
     /// <returns>This instance, so calls can be chained.</returns>

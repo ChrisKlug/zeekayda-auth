@@ -1,6 +1,5 @@
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Logging;
 using ZeeKayDa.Auth.Tokens;
@@ -14,371 +13,318 @@ namespace ZeeKayDa.Auth.Windows;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <see cref="LoadKeysAsync"/> derives the currently trusted certificate set from the certificates'
-/// own <c>NotBefore</c>/<c>NotAfter</c> fields, mapped onto <see cref="RotationKey.ActivatesAt"/>/
-/// <see cref="RotationKey.ExpiresAt"/> and passed to the shared, anchor-agnostic
-/// <see cref="SigningKeyRotation"/> component — see that type's remarks for the full rationale (why
-/// the anchor differs from the Key Vault providers' <c>CreatedOn</c>-based derivation). Only the
-/// active certificate's private key is ever held: every other included certificate
-/// (published-but-not-yet-active, or still within its retirement window) gets only a public-only
-/// handle, since it is never used to sign — only exposed via the JWKS (ADR 0011 §3.3(c)).
+/// ADR 0015 Tier A (<see cref="KeySetOptions"/>, issue #424): the complete set of registered
+/// thumbprints is fixed at configuration time, so <see cref="ListKeysAsync"/> runs exactly once,
+/// ever, for the lifetime of this service instance. Only the wall clock crossing each certificate's
+/// <c>NotBefore</c>/<c>NotAfter</c> — mapped onto each returned <see cref="KeyListing"/>'s
+/// <see cref="KeyListing.ActivateAt"/>/<see cref="KeyListing.ExpiresAt"/> — drives which registered
+/// certificate is the active signer; the base class recomputes that selection lazily on every call
+/// from the one-time snapshot, so multi-certificate rotation (issue #282) still switches the active
+/// signer over time with zero further store access to <em>list</em> keys; the incoming active
+/// certificate's entry is re-read once, transiently, by <see cref="CreateSignerAsync"/> at the
+/// handoff. Picking up a rotated-in, removed, or replaced certificate otherwise requires a restart
+/// (ADR 0015 §1/§4).
+/// </para>
+/// <para>
+/// <strong>Least-privilege loading for a bundled format (ADR 0015 §2/§5).</strong> A Windows
+/// Certificate Store entry is a bundled format exactly like PFX: <see cref="X509Store.Certificates"/>
+/// hands back a certificate that carries its private key when one is installed alongside it — there
+/// is no way to open the store for a certificate's public half alone. This provider therefore reads
+/// every registered thumbprint transiently in <see cref="ListKeysAsync"/>, extracts and retains
+/// <em>only</em> the public <see cref="PublicKeyParameters"/> in the returned <see cref="KeyListing"/>,
+/// and disposes the certificate (releasing its private-key handle) immediately — no private
+/// material for any thumbprint, not even the active one, is retained past that transient read. When
+/// the base class needs to sign, it calls <see cref="CreateSignerAsync"/>, which re-reads only the
+/// single thumbprint currently selected as active; every other registered certificate's private key
+/// is never loaded a second time. This is the concrete proof-point for ADR 0015 §2/§5's "provider
+/// obligation, not structural guarantee" caveat: the base structurally requests private material
+/// only for the active key, but keeping non-active private material out of the long-lived snapshot
+/// is this provider's own doing.
+/// </para>
+/// <para>
+/// Uses only <see cref="WindowsCertificateKeyExtractor.ExtractPublicKey"/>/
+/// <see cref="WindowsCertificateKeyExtractor.ExtractPrivateKey"/> — never <c>.PrivateKey</c>, never
+/// <c>ExportParameters(true)</c> — per the issue's security requirement to prefer CNG/CAPI-backed
+/// handles over exporting raw key bytes into managed memory.
 /// </para>
 /// <para>
 /// This class does not override <see cref="JwtSigningService{TOptions}.SignInputAsync"/> — per ADR
 /// 0011 Amendment 2(a), this provider signs with local key handles exactly like the development
 /// provider and the Azure Key Vault *cached* signing provider, so the base class's default
-/// local-crypto implementation is exactly what it needs. There is also no
+/// local-crypto signer (<see cref="LocalSigner"/>) is exactly what it needs. There is also no
 /// <c>WindowsCertificateStoreSigningException</c> transport type: unlike Key Vault, there is no
 /// network round trip at sign time, so there is no transient-fault surface to wrap.
 /// </para>
 /// <para>
-/// <c>kid</c> is the RFC 7638 JWK thumbprint of each certificate's public key (via the shared
-/// <see cref="SigningKeyDescriptorFactory"/>), never the certificate's own X.509 thumbprint — a
-/// <c>kid</c> is always public, so using the store thumbprint directly would be exactly the kind of
-/// external-identifier leak <see cref="JwkThumbprint"/> exists to avoid.
+/// <c>kid</c> is the RFC 7638 JWK thumbprint of each certificate's public key, derived by the base
+/// class from each <see cref="KeyListing.PublicKey"/> — never the certificate's own X.509
+/// thumbprint, which is only this provider's own internal <see cref="KeyId"/> (ADR 0015 §2), since a
+/// <c>kid</c> is always public and the store thumbprint could leak external identifier information.
 /// </para>
 /// </remarks>
 internal sealed class WindowsCertificateStoreSigningJwtSigningService : JwtSigningService<WindowsCertificateStoreSigningOptions>
 {
-    // Bound once (IOptions<T>, not IOptionsMonitor<T>) — HasKeySetChangedAsync's zero-store-access
-    // shortcut relies on the registered thumbprint set being fixed for the process lifetime.
-    // Revisit that override if the thumbprint set ever becomes hot-reloadable.
     private readonly IOptions<WindowsCertificateStoreSigningOptions> _options;
-    private readonly TimeProvider _timeProvider;
     private readonly ICertificateStoreReader _storeReader;
-    private readonly ISigningKeyRetirementWindowProvider _retirementWindowProvider;
-    private readonly ISanitizingLogger<WindowsCertificateStoreSigningJwtSigningService> _logger;
+    private readonly ICertificateKeyExtractor _keyExtractor;
 
-    // The registered RotationKeys (thumbprint + NotBefore/NotAfter) as of the last successful
-    // LoadKeysAsync call. An X.509 thumbprint is a SHA-1 hash of the certificate's DER encoding —
-    // content-addressed — so a fixed thumbprint's NotBefore/NotAfter cannot change without the
-    // thumbprint itself changing, and the configured thumbprint set is fixed for the lifetime of
-    // the process (IOptions<T>, not IOptionsMonitor<T> — see AddWindowsCertificateStoreSigning's
-    // remarks: adding, removing, or replacing a registered certificate requires a host restart).
-    // Caching this list therefore lets HasKeySetChangedAsync recompute the rotation timeline with
-    // zero store access — see that method's remarks. Null means "no successful LoadKeysAsync has
-    // run yet," a state HasKeySetChangedAsync never actually observes (ADR 0011 §3.2: the base
-    // class only calls it once a previous SigningKeySet already exists).
-    private IReadOnlyList<RotationKey>? _rotationKeys;
+    // Populated by ListKeysAsync (Tier A: runs exactly once) so DescribeKeyMetadata can supply it
+    // later, when the base class logs each key's status.
+    private readonly Dictionary<string, string> _keyMetadataById = new(StringComparer.Ordinal);
 
-    // The included key set (by thumbprint and whether the entry was active) as of the last
-    // successful LoadKeysAsync call. IsActive has to be part of the comparison, not just
-    // membership — see SigningKeyRotation.ToChangeDetectionSet's remarks.
-    private IReadOnlySet<(string Id, bool IsActive)>? _previouslyIncludedKeys;
+    // Populated by ListKeysAsync (Tier A: runs exactly once) alongside _keyMetadataById, so
+    // CreateSignerAsync can verify — at handoff — that the private key it just re-read from the
+    // store still pairs with the public key that was captured (and whose kid the base class is
+    // signing under) for that same thumbprint (L-3/M-1, PR #436 security review).
+    private readonly Dictionary<string, PublicKeyParameters> _publicKeysByThumbprint = new(StringComparer.Ordinal);
 
     public WindowsCertificateStoreSigningJwtSigningService(
         IOptions<WindowsCertificateStoreSigningOptions> options,
         TimeProvider timeProvider,
         ICertificateStoreReader storeReader,
+        ICertificateKeyExtractor keyExtractor,
         ISigningKeyRetirementWindowProvider retirementWindowProvider,
-        ISanitizingLogger<WindowsCertificateStoreSigningJwtSigningService> logger)
-        : base(options, timeProvider)
+        ISanitizingLogger<JwtSigningService<WindowsCertificateStoreSigningOptions>> logger)
+        : base(options, timeProvider, retirementWindowProvider, logger)
     {
-        ArgumentNullException.ThrowIfNull(options);
-        ArgumentNullException.ThrowIfNull(timeProvider);
         ArgumentNullException.ThrowIfNull(storeReader);
-        ArgumentNullException.ThrowIfNull(retirementWindowProvider);
-        ArgumentNullException.ThrowIfNull(logger);
+        ArgumentNullException.ThrowIfNull(keyExtractor);
 
         _options = options;
-        _timeProvider = timeProvider;
         _storeReader = storeReader;
-        _retirementWindowProvider = retirementWindowProvider;
-        _logger = logger;
+        _keyExtractor = keyExtractor;
     }
 
     /// <inheritdoc/>
-    protected override ValueTask<SigningKeySet> LoadKeysAsync(CancellationToken cancellationToken)
+    protected override ValueTask<IReadOnlyList<KeyListing>> ListKeysAsync(CancellationToken cancellationToken)
     {
         var options = _options.Value;
-        var thumbprints = new List<string>(1 + options.AdditionalThumbprints.Count) { options.Thumbprint };
-        thumbprints.AddRange(options.AdditionalThumbprints);
+        var thumbprints = GetRegisteredThumbprints(options);
 
-        // Fetch every registered certificate up front — the timeline needs every registered
-        // certificate's NotBefore/NotAfter, not just the ones that end up "included", to correctly
-        // compute retirement anchors.
-        var certificatesByThumbprint = new Dictionary<string, X509Certificate2>(thumbprints.Count, StringComparer.Ordinal);
-        try
+        var listings = new List<KeyListing>(thumbprints.Count);
+
+        foreach (var thumbprint in thumbprints)
         {
-            foreach (var thumbprint in thumbprints)
-                certificatesByThumbprint[thumbprint] = _storeReader.GetCertificate(thumbprint, options.StoreLocation, options.StoreName);
+            // A Windows Certificate Store entry is a bundled format exactly like PFX — reading it
+            // yields the whole certificate (private half included, when installed) — but the
+            // private material is released the moment this certificate is disposed at the end of
+            // the iteration, and only the exported public parameters below survive into the
+            // returned listing.
+            using var certificate = _storeReader.GetCertificate(thumbprint, options.StoreLocation, options.StoreName);
 
-            var now = _timeProvider.GetUtcNow();
-            var rotationKeys = certificatesByThumbprint
-                .Select(kvp => new RotationKey(
-                    kvp.Key, new DateTimeOffset(kvp.Value.NotBefore), new DateTimeOffset(kvp.Value.NotAfter)))
-                .ToList();
+            var (publicKey, keyType) = _keyExtractor.ExtractPublicKey(certificate, thumbprint);
+            using var publicKeyHandle = publicKey;
+            var publicKeyParameters = BuildValidatedPublicKey(publicKeyHandle, keyType, thumbprint, options);
 
-            var timeline = SigningKeyRotation.BuildActivationTimeline(rotationKeys);
-            var active = SigningKeyRotation.SelectActiveKey(timeline, now)
-                ?? throw new ZeeKayDaConfigurationException(new ZeeKayDaConfigurationFailure(
-                    "signing.windows_certificate_store.no_active_certificate",
-                    "No registered certificate is currently eligible to sign. Verify at least one " +
-                    "registered certificate's NotBefore has arrived and its NotAfter has not yet passed."));
+            var activateAt = new DateTimeOffset(certificate.NotBefore);
+            var expiresAt = new DateTimeOffset(certificate.NotAfter);
 
-            var retirementWindow = _retirementWindowProvider.GetRetirementWindow();
-            var included = SigningKeyRotation.SelectIncludedKeys(timeline, active, now, retirementWindow);
+            listings.Add(new KeyListing(new KeyId(thumbprint), options.Algorithm, publicKeyParameters, activateAt, expiresAt));
 
-            var assumedJwksPropagationDelay = options.AssumedJwksPropagationDelay ?? options.KeyRotationCheckInterval;
-            LogCertificateStatuses(timeline, active, included, now, assumedJwksPropagationDelay, retirementWindow, certificatesByThumbprint);
-
-            // HasKeySetChangedAsync itself repeats this same check on every ask cycle once a
-            // previous load exists (see that method's remarks), so only the cold-start call needs
-            // it here too: the very first LoadKeysAsync call, before any ask has ever run against
-            // this instance. _rotationKeys is still null only on that first call — every other
-            // call to LoadKeysAsync was preceded, in the same cycle, by an ask that already
-            // performed this check, so repeating it here would double-log.
-            if (_rotationKeys is null)
-                WarnIfActiveCertificateExpiringSoon(active, now);
-
-            var keyPairs = new List<SigningKeyPair>(included.Count);
-            try
-            {
-                foreach (var thumbprint in included.Select(entry => entry.Key.Id))
-                {
-                    var certificate = certificatesByThumbprint[thumbprint];
-                    var isActive = string.Equals(thumbprint, active.Key.Id, StringComparison.Ordinal);
-
-                    var (publicKey, keyType) = WindowsCertificateKeyExtractor.ExtractPublicKey(certificate, thumbprint);
-                    SigningKeyDescriptor descriptor;
-                    try
-                    {
-                        descriptor = SigningKeyDescriptorFactory.BuildDescriptor(
-                            publicKey,
-                            keyType,
-                            options.Algorithm,
-                            "signing.windows_certificate_store.algorithm_key_type_mismatch",
-                            mismatchedKeyType => mismatchedKeyType == SigningKeyType.Rsa
-                                ? $"WindowsCertificateStoreSigningOptions.Algorithm is {options.Algorithm}, but certificate " +
-                                  $"'{thumbprint}' is an RSA certificate. Use an RSA algorithm (RS256, RS384, RS512, PS256, PS384, or PS512)."
-                                : $"WindowsCertificateStoreSigningOptions.Algorithm is {options.Algorithm}, but certificate " +
-                                  $"'{thumbprint}' is an EC certificate. Use an EC algorithm (ES256, ES384, or ES512).");
-                    }
-                    catch
-                    {
-                        // The key handle just obtained above was never added to keyPairs, so the
-                        // outer catch below would not dispose it — do so here before rethrowing.
-                        publicKey.Dispose();
-                        throw;
-                    }
-
-                    AsymmetricAlgorithm signingKey;
-                    if (isActive)
-                    {
-                        try
-                        {
-                            (signingKey, _) = WindowsCertificateKeyExtractor.ExtractPrivateKey(certificate, thumbprint);
-                        }
-                        catch
-                        {
-                            publicKey.Dispose();
-                            throw;
-                        }
-
-                        // The public-only handle is now redundant: the private key just extracted
-                        // carries the same public component.
-                        publicKey.Dispose();
-                    }
-                    else
-                    {
-                        signingKey = publicKey;
-                    }
-
-                    keyPairs.Add(new SigningKeyPair { Descriptor = descriptor, PrivateKey = signingKey });
-                }
-            }
-            catch
-            {
-                // Key material for any certificate already processed before the failure would
-                // otherwise leak live handles.
-                foreach (var pair in keyPairs)
-                    pair.PrivateKey.Dispose();
-                throw;
-            }
-
-            // Recorded only now — after the SigningKeySet has actually been built successfully —
-            // never from HasKeySetChangedAsync's ask itself. See that method's remarks and ADR
-            // 0011 §3.5's "change-detection baseline is captured only on a successful load" rule.
-            _rotationKeys = rotationKeys;
-            _previouslyIncludedKeys = SigningKeyRotation.ToChangeDetectionSet(included);
-
-            // `included` (and therefore `keyPairs`, built from it above) is active-first, so
-            // splitting off the first entry as the named active key is safe.
-            return new ValueTask<SigningKeySet>(new SigningKeySet(keyPairs[0], keyPairs.Skip(1)));
+            _keyMetadataById[thumbprint] = DescribeCertificateForLogging(certificate);
+            _publicKeysByThumbprint[thumbprint] = publicKeyParameters;
         }
-        finally
-        {
-            // GetRSAPrivateKey()/GetECDsaPrivateKey()/GetRSAPublicKey()/GetECDsaPublicKey() return
-            // handle objects that remain valid after the parent X509Certificate2 is disposed
-            // (CNG/CAPI key handle duplication, .NET Core 3.0+) — safe to dispose every fetched
-            // certificate here, after all needed handles have already been extracted above.
-            foreach (var certificate in certificatesByThumbprint.Values)
-                certificate.Dispose();
-        }
+
+        return new ValueTask<IReadOnlyList<KeyListing>>(listings);
     }
 
     /// <inheritdoc/>
     /// <remarks>
-    /// <para>
-    /// Unlike the Azure Key Vault providers' <c>HasKeySetChangedAsync</c> overrides, this override
-    /// never re-opens a certificate store handle — it needs none. An X.509 thumbprint is a SHA-1
-    /// hash of the certificate's own DER encoding: for a fixed thumbprint, <c>NotBefore</c>/
-    /// <c>NotAfter</c> cannot change without the thumbprint itself changing, and the configured
-    /// thumbprint set (<see cref="WindowsCertificateStoreSigningOptions.Thumbprint"/>/
-    /// <see cref="WindowsCertificateStoreSigningOptions.AdditionalThumbprints"/>) is fixed for the
-    /// lifetime of the process — it is bound once from <see cref="IOptions{TOptions}"/>, not
-    /// <c>IOptionsMonitor&lt;TOptions&gt;</c>, and <c>AddWindowsCertificateStoreSigning</c>'s own
-    /// remarks already document that adding, removing, or replacing a registered certificate
-    /// requires a host restart. A restart is a cold start, and a cold start always calls
-    /// <see cref="LoadKeysAsync"/> directly — this method is never consulted then (ADR 0011 §3.2).
-    /// So, for a thumbprint that remains present and accessible in the store, the only input that
-    /// can genuinely change between two calls to this method, within the same process, is elapsed
-    /// time moving a certificate in or out of its active/included/retirement window — see this
-    /// class's own remarks (and ADR 0011 §3.5) for the accepted, deliberate consequence that
-    /// follows: an out-of-band deletion of a registered certificate from the store is not one of
-    /// the things this method can ever notice. This override therefore recomputes
-    /// <see cref="SigningKeyRotation.BuildActivationTimeline"/> purely from the
-    /// <see cref="RotationKey"/> list recorded at the last successful <see cref="LoadKeysAsync"/>
-    /// call, re-evaluated against the current time — no store access at all, which is cheaper than
-    /// even the Key Vault providers' still-necessary metadata-only network call (a Key Vault
-    /// version's <c>Enabled</c> flag or expiry can mutate independently of its identity between
-    /// polls, so Key Vault must re-poll; a certificate's thumbprint-keyed facts cannot).
-    /// </para>
-    /// <para>
-    /// The comparison covers the whole included set, keyed by thumbprint and which entry is
-    /// active — not merely "did the active thumbprint change" — via
-    /// <see cref="SigningKeyRotation.ToChangeDetectionSet"/>, exactly mirroring the Key Vault
-    /// providers' comparison shape and the lesson behind it (ADR 0011 §3.5): a normal rotation
-    /// between two overlapping certificates can cross a poll boundary where the included
-    /// thumbprint set does not change but which entry is active does, and comparing membership
-    /// alone would silently skip the reload that promotes the new active certificate.
-    /// </para>
-    /// <para>
-    /// This method also re-evaluates <see cref="WarnIfActiveCertificateExpiringSoon"/> against the
-    /// cached active entry, on every call — not only when it goes on to report a change. The base
-    /// class only calls <see cref="LoadKeysAsync"/> when this method reports a change, so a
-    /// long-running process with a single, stable certificate can otherwise go the rest of the
-    /// process lifetime without a single reload once bootstrapped, and the warning would never
-    /// re-fire even after the certificate crosses into its 30-day expiry window.
-    /// <see cref="LoadKeysAsync"/> only repeats the same check for the cold-start call, before any
-    /// previous load exists for this method to have run against; every other call to
-    /// <see cref="LoadKeysAsync"/> was preceded, in the same cycle, by a call to this method that
-    /// already performed the check, so the warning never double-logs for the same cycle.
-    /// </para>
-    /// <para>
-    /// If no registered certificate is currently eligible to sign (every one has expired since the
-    /// last load), this method reports a change rather than failing itself — the subsequent
-    /// <see cref="LoadKeysAsync"/> call is what fails closed with its usual, actionable
-    /// <c>signing.windows_certificate_store.no_active_certificate</c> error; this method's own
-    /// contract is only ever "did the trusted set change," never "is the configuration currently
-    /// valid."
-    /// </para>
+    /// Not declared <see langword="async"/>: every step here (the store read and key extraction) is
+    /// synchronous, and an <see langword="async"/> method with no <c>await</c> would be a compiler
+    /// warning (elevated to an error by this repository's <c>TreatWarningsAsErrors</c>). Both the
+    /// defensive <see cref="FindRegisteredThumbprint"/> failure and the
+    /// <see cref="VerifySigningKeyMatchesListing"/> mismatch failure are therefore deliberately
+    /// captured into the returned <see cref="ValueTask{TResult}"/> via
+    /// <see cref="ValueTask.FromException{TResult}"/> rather than left to throw synchronously from
+    /// this method — matching the base class's calling convention (every override's failure surfaces
+    /// through the awaited task, never synchronously from the call site) exactly as an
+    /// <see langword="async"/> override's compiler-generated state machine would.
     /// </remarks>
-    protected override ValueTask<bool> HasKeySetChangedAsync(CancellationToken cancellationToken)
+    protected override ValueTask<ISigner> CreateSignerAsync(KeyId id, CancellationToken cancellationToken)
     {
-        // The base class only calls this once a previous SigningKeySet already exists (ADR 0011
-        // §3.2), which itself implies at least one successful LoadKeysAsync already ran and
-        // populated these fields — the null-forgiving operators rely on that guarantee rather than
-        // re-checking it.
-        var timeline = SigningKeyRotation.BuildActivationTimeline(_rotationKeys!);
-        var now = _timeProvider.GetUtcNow();
+        var options = _options.Value;
+        var thumbprints = GetRegisteredThumbprints(options);
 
-        var active = SigningKeyRotation.SelectActiveKey(timeline, now);
-        if (active is null)
-            return new ValueTask<bool>(true);
+        string thumbprint;
+        try
+        {
+            thumbprint = FindRegisteredThumbprint(thumbprints, id.Value);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return ValueTask.FromException<ISigner>(ex);
+        }
 
-        // Fired on every ask cycle, whether or not this cycle goes on to report a change — see
-        // this method's remarks and WarnIfActiveCertificateExpiringSoon's own remarks.
-        WarnIfActiveCertificateExpiringSoon(active.Value, now);
+        using var certificate = _storeReader.GetCertificate(thumbprint, options.StoreLocation, options.StoreName);
 
-        var retirementWindow = _retirementWindowProvider.GetRetirementWindow();
-        var included = SigningKeyRotation.SelectIncludedKeys(timeline, active.Value, now, retirementWindow);
-        var currentIncludedKeys = SigningKeyRotation.ToChangeDetectionSet(included);
+        var (privateKey, keyType) = _keyExtractor.ExtractPrivateKey(certificate, thumbprint);
 
-        return new ValueTask<bool>(!currentIncludedKeys.SetEquals(_previouslyIncludedKeys!));
+        try
+        {
+            VerifySigningKeyMatchesListing(privateKey, keyType, thumbprint, options);
+        }
+        catch (Exception ex) when (ex is ZeeKayDaConfigurationException or CryptographicException
+            or NotSupportedException or InvalidCastException)
+        {
+            // VerifySigningKeyMatchesListing's call chain (BuildValidatedPublicKey ->
+            // SigningKeyDescriptorFactory.BuildDescriptor) can surface a ZeeKayDaConfigurationException
+            // (algorithm/key-type mismatch or the pairing check itself), a CryptographicException (an
+            // exotic KSP/HSM that refuses even public export), a NotSupportedException (an unsupported
+            // SigningKeyType), or an InvalidCastException (publicKey/keyType disagreement) — every one
+            // of those must still surface through the returned ValueTask, per this method's
+            // <remarks>, not synchronously from this call site (L-7, PR #436 security review). The
+            // private key handle is about to be handed to LocalSigner on the success path, which takes
+            // ownership of disposing it; on every one of these failure paths nothing else owns it, so
+            // it must be disposed here to avoid leaking the underlying CNG/CAPI handle.
+            privateKey.Dispose();
+            return ValueTask.FromException<ISigner>(ex);
+        }
+
+        return new ValueTask<ISigner>(new LocalSigner(options.Algorithm, privateKey));
     }
 
-    private void LogCertificateStatuses(
-        IReadOnlyList<RotationEntry> timeline,
-        RotationEntry active,
-        IReadOnlyList<RotationEntry> included,
-        DateTimeOffset now, TimeSpan assumedJwksPropagationDelay, TimeSpan retirementWindow,
-        IReadOnlyDictionary<string, X509Certificate2> certificatesByThumbprint)
+    /// <inheritdoc/>
+    protected override string? DescribeKeyMetadata(string id) =>
+        _keyMetadataById.GetValueOrDefault(id);
+
+    private static string FindRegisteredThumbprint(IReadOnlyList<string> thumbprints, string id)
     {
-        // Unlike a purely static config fact (thumbprint/subject/expiry never change once a
-        // certificate is loaded), each certificate's active/included/excluded status is a function
-        // of `now` and genuinely changes over the lifetime of a long-running process as a rotation
-        // progresses — so, unlike a one-shot log, this is re-evaluated and logged on every
-        // LoadKeysAsync call (at most once per KeyRotationCheckInterval) rather than only at first load.
-        // Logging every registered certificate on every cycle — not just the currently-included
-        // ones — is deliberate: it lets an operator see exactly what the current configuration
-        // resolves to, including a certificate that is configured but has fallen out of the trusted
-        // set entirely (its retirement window has elapsed) and can now safely be removed.
-        var includedThumbprints = new HashSet<string>(
-            included.Select(e => e.Key.Id), StringComparer.Ordinal);
+        var thumbprint = thumbprints.FirstOrDefault(candidate => string.Equals(candidate, id, StringComparison.Ordinal));
+        if (thumbprint is not null)
+            return thumbprint;
 
-        foreach (var entry in timeline)
+        throw new InvalidOperationException(
+            $"{nameof(CreateSignerAsync)} was called for key '{id}', which is no longer a registered " +
+            $"certificate thumbprint. {nameof(ListKeysAsync)} runs exactly once for this ADR 0015 Tier A " +
+            "provider, so its registered thumbprints must not change after startup.");
+    }
+
+    private static IReadOnlyList<string> GetRegisteredThumbprints(WindowsCertificateStoreSigningOptions options)
+    {
+        var thumbprints = new List<string>(1 + options.AdditionalThumbprints.Count) { options.Thumbprint };
+        thumbprints.AddRange(options.AdditionalThumbprints);
+        return thumbprints;
+    }
+
+    /// <summary>
+    /// Validates that <see cref="WindowsCertificateStoreSigningOptions.Algorithm"/>'s family matches
+    /// the loaded certificate's actual key type, and returns the corresponding public-only key
+    /// parameters — reusing the descriptor's already-exported parameters rather than exporting them
+    /// a second time.
+    /// </summary>
+    private static PublicKeyParameters BuildValidatedPublicKey(
+        AsymmetricAlgorithm publicKey, SigningKeyType keyType, string thumbprint, WindowsCertificateStoreSigningOptions options)
+    {
+        var algorithm = options.Algorithm;
+
+        var descriptor = SigningKeyDescriptorFactory.BuildDescriptor(
+            publicKey,
+            keyType,
+            algorithm,
+            "signing.windows_certificate_store.algorithm_key_type_mismatch",
+            mismatchedKeyType => mismatchedKeyType == SigningKeyType.Rsa
+                ? $"WindowsCertificateStoreSigningOptions.Algorithm is {algorithm}, but certificate " +
+                  $"'{thumbprint}' is an RSA certificate. Use an RSA algorithm (RS256, RS384, RS512, PS256, PS384, or PS512)."
+                : $"WindowsCertificateStoreSigningOptions.Algorithm is {algorithm}, but certificate " +
+                  $"'{thumbprint}' is an EC certificate. Use an EC algorithm (ES256, ES384, or ES512).");
+
+        return descriptor.KeyType == SigningKeyType.Rsa
+            ? PublicKeyParameters.FromRsa(descriptor.RsaPublicParameters!.Value)
+            : PublicKeyParameters.FromEc(descriptor.EcPublicParameters!.Value);
+    }
+
+    private static string DescribeCertificateForLogging(X509Certificate2 certificate) =>
+        $"subject '{certificate.Subject}'";
+
+    /// <summary>
+    /// Defence-in-depth check (L-3/M-1, PR #436 security review): derives the public half of
+    /// <paramref name="privateKey"/> — the actual private key handle <see cref="CreateSignerAsync"/>
+    /// is about to hand to <see cref="LocalSigner"/> — via <c>RSA.ExportParameters</c>/
+    /// <c>ECDsa.ExportParameters</c> with <c>includePrivateParameters: false</c>, and compares that
+    /// derived public half against the
+    /// public key that <see cref="ListKeysAsync"/> captured for the same <paramref name="thumbprint"/>
+    /// — the public key whose derived <c>kid</c> the base class is signing under.
+    /// </summary>
+    /// <remarks>
+    /// This is deliberately <em>not</em> a comparison against the certificate's own
+    /// <c>SubjectPublicKeyInfo</c> (re-reading a store entry by thumbprint, a hash of the whole
+    /// certificate, always yields the same SPKI, making such a comparison a tautology that can never
+    /// fire): the export above reads the public component the private key <em>container</em> actually
+    /// holds, independently of the certificate's own advertised public key, so it can detect the case
+    /// where the two have drifted apart. A mismatch means the store entry's key-container association
+    /// changed after startup without the certificate's thumbprint changing (e.g. a botched
+    /// <c>certutil -repairstore</c>); left uncaught, tokens would be signed under a <c>kid</c> that no
+    /// longer matches the actual signing key — fail-closed for relying parties, but confusing to
+    /// diagnose. <paramref name="privateKey"/> is never exported with its private components
+    /// (<c>ExportParameters(true)</c>) — only the public half, which <see cref="RSA"/>/<see cref="ECDsa"/>
+    /// permit exporting even for a non-exportable CNG-backed key, since only exporting the private
+    /// components requires export permission on the key.
+    /// </remarks>
+    private void VerifySigningKeyMatchesListing(
+        AsymmetricAlgorithm privateKey, SigningKeyType keyType, string thumbprint, WindowsCertificateStoreSigningOptions options)
+    {
+        var currentPublicKey = BuildValidatedPublicKey(privateKey, keyType, thumbprint, options);
+
+        if (!_publicKeysByThumbprint.TryGetValue(thumbprint, out var listedPublicKey) ||
+            !PublicKeysMatch(listedPublicKey, currentPublicKey))
         {
-            var certificate = certificatesByThumbprint[entry.Key.Id];
-            var status = DescribeStatus(entry, active, includedThumbprints, now, retirementWindow);
-
-            _logger.LogInformation(
-                "ZeeKayDa.Auth: Windows Certificate Store signing certificate '{Thumbprint}' " +
-                "(subject '{Subject}', expires {NotAfter:O}) is {Status}.",
-                entry.Key.Id, certificate.Subject, entry.Key.ExpiresAt, status);
-        }
-
-        if (SigningKeyRotation.HasTooSoonPendingActivation(timeline, active, now, assumedJwksPropagationDelay, out var soonestPending))
-        {
-            _logger.LogWarning(
-                "ZeeKayDa.Auth: certificate '{Thumbprint}' activates at {ActivatesAt:O}, which is less " +
-                "than AssumedJwksPropagationDelay ({AssumedJwksPropagationDelay}) away from now. A relying party polling the " +
-                "JWKS at AssumedJwksPropagationDelay cadence may not have observed this certificate's public key " +
-                "before it starts signing. Set this certificate's NotBefore at least AssumedJwksPropagationDelay in " +
-                "the future next time (see ADR 0011 §3.5 / issue #282).",
-                soonestPending!.Value.Key.Id, soonestPending.Value.ActivatesAt, assumedJwksPropagationDelay);
+            throw new ZeeKayDaConfigurationException(new ZeeKayDaConfigurationFailure(
+                "signing.windows_certificate_store.signing_key_mismatch",
+                $"Certificate '{thumbprint}': the public key derived from the private key currently " +
+                "backing this store entry does not match the public key captured for this thumbprint " +
+                "during startup listing. This indicates the store entry's key-container association " +
+                "changed after startup (for example, via 'certutil -repairstore') without the " +
+                "certificate's thumbprint changing. Restart the process so the active signer is " +
+                "re-selected against the current key pairing."));
         }
     }
 
-    private static string DescribeStatus(
-        RotationEntry entry,
-        RotationEntry active,
-        HashSet<string> includedThumbprints, DateTimeOffset now, TimeSpan retirementWindow)
+    /// <summary>
+    /// Structurally compares two sets of public key parameters (modulus/exponent for RSA,
+    /// curve/point for EC) — never a reference or default record comparison, since
+    /// <see cref="RSAParameters"/>/<see cref="ECParameters"/> carry <c>byte[]</c> fields that
+    /// default equality would compare by reference, not content.
+    /// </summary>
+    private static bool PublicKeysMatch(PublicKeyParameters listed, PublicKeyParameters current)
     {
-        if (string.Equals(entry.Key.Id, active.Key.Id, StringComparison.Ordinal))
-            return "the active signer";
+        if (listed.KeyType != current.KeyType)
+            return false;
 
-        if (!includedThumbprints.Contains(entry.Key.Id))
-        {
-            return "NOT included in the JWKS - its retirement window has fully elapsed; safe to remove " +
-                "from configuration";
-        }
-
-        if (entry.ActivatesAt > now)
-            return $"included in the JWKS, not yet active (activates at {entry.ActivatesAt:O})";
-
-        return "included in the JWKS, retired but still within its retirement window (until " +
-            $"{entry.RetiredAt!.Value + retirementWindow:O})";
+        return listed.KeyType == SigningKeyType.Rsa
+            ? RsaParametersMatch(listed.RsaPublicParameters!.Value, current.RsaPublicParameters!.Value)
+            : EcParametersMatch(listed.EcPublicParameters!.Value, current.EcPublicParameters!.Value);
     }
 
-    private void WarnIfActiveCertificateExpiringSoon(RotationEntry active, DateTimeOffset now)
+    private static bool RsaParametersMatch(RSAParameters listed, RSAParameters current) =>
+        listed.Modulus.AsSpan().SequenceEqual(current.Modulus) &&
+        listed.Exponent.AsSpan().SequenceEqual(current.Exponent);
+
+    private static bool EcParametersMatch(ECParameters listed, ECParameters current) =>
+        CurveIdentifiersMatch(listed.Curve, current.Curve) &&
+        listed.Q.X.AsSpan().SequenceEqual(current.Q.X) &&
+        listed.Q.Y.AsSpan().SequenceEqual(current.Q.Y);
+
+    /// <summary>
+    /// Compares two <see cref="ECCurve"/>s' identities via <see cref="Oid.Value"/>, falling back to
+    /// <see cref="Oid.FriendlyName"/> when either curve's <see cref="Oid.Value"/> is unset (a known,
+    /// platform-dependent possibility when a curve was resolved by friendly name rather than OID).
+    /// Never treats a "both null or empty" pairing as a match on either property — doing so (e.g. a
+    /// plain <see cref="string.Equals(string?, string?)"/> comparison of <see cref="Oid.Value"/>
+    /// alone, where both <see langword="null"/> == <see langword="null"/> and <c>"" == ""</c> are
+    /// <see langword="true"/>) would let two differently identified curves compare equal without
+    /// actually validating that they are the same curve (L-6/L-8, PR #436 security review) — an empty
+    /// string is exactly as invalid an identity signal as <see langword="null"/>, so both legs are
+    /// guarded with <see cref="string.IsNullOrEmpty(string?)"/>, not a bare null check.
+    /// </summary>
+    private static bool CurveIdentifiersMatch(ECCurve listed, ECCurve current)
     {
-        // Called from HasKeySetChangedAsync on every ask cycle once a previous load exists — not
-        // only LogCertificateStatuses's more limited "on every LoadKeysAsync call" cadence — plus
-        // once directly from LoadKeysAsync for the cold-start case, before any ask has ever run.
-        // Whether the active certificate is within 30 days of expiry is genuinely time-varying — a
-        // long-running process can cross into that window mid-lifetime — and an unchanged refresh
-        // cycle that skips LoadKeysAsync entirely must not also skip this check, or the warning
-        // could go unraised for the rest of the process's life. Repeats at most once per
-        // KeyRotationCheckInterval (the ask cadence) for as long as the condition holds, never
-        // twice for the same cycle — see the two call sites' own remarks for how that is enforced.
-        if (active.Key.ExpiresAt - now <= TimeSpan.FromDays(30))
-        {
-            _logger.LogWarning(
-                "ZeeKayDa.Auth: the active Windows Certificate Store signing certificate '{Thumbprint}' " +
-                "expires at {NotAfter:O}, within 30 days. Rotate in a new certificate (via AddCertificate) " +
-                "before it expires.",
-                active.Key.Id, active.Key.ExpiresAt);
-        }
+        if (!string.IsNullOrEmpty(listed.Oid?.Value) && !string.IsNullOrEmpty(current.Oid?.Value))
+            return string.Equals(listed.Oid.Value, current.Oid.Value, StringComparison.Ordinal);
+
+        if (!string.IsNullOrEmpty(listed.Oid?.FriendlyName) && !string.IsNullOrEmpty(current.Oid?.FriendlyName))
+            return string.Equals(listed.Oid.FriendlyName, current.Oid.FriendlyName, StringComparison.OrdinalIgnoreCase);
+
+        return false;
     }
 }

@@ -43,17 +43,17 @@ A few ideas recur across every production provider's how-to guide. This section 
 their shape — follow the links for the full explanation.
 
 - **A lead-time property governs the publish-then-activate delay, but which one — and how it's
-  enforced — depends on the provider.** Azure Key Vault and Windows Certificate Store still poll on
-  `KeyRotationCheckInterval` and add `SigningKeyActivationDelay` (Key Vault) or
-  `AssumedJwksPropagationDelay` (Windows Certificate Store) as the lead time a rotated-in key must
-  be visible for before it can become the active signer, both defaulting to
-  `KeyRotationCheckInterval` when unset. The file-based PEM/PFX providers instead read every
-  registered file exactly once, at startup, and use `PublicationLead` (default: 1 hour) purely as
+  enforced — depends on the provider.** Azure Key Vault still polls on `KeyRotationCheckInterval`
+  and adds `SigningKeyActivationDelay` as the lead time a rotated-in version must be visible for
+  before it can become the active signer, defaulting to `KeyRotationCheckInterval` when unset. The
+  Windows Certificate Store and file-based PEM/PFX providers instead read every registered
+  certificate/file exactly once, at startup, and use `PublicationLead` (default: 1 hour) purely as
   an advisory too-soon-activation warning threshold — there is no poll to default against. See
-  [Configure file-based signing](configure-file-based-signing.md#publicationlead) for the file-based
-  provider's version, and the tip under
+  [Configure file-based signing](configure-file-based-signing.md#publicationlead) and
+  [Configure Windows Certificate Store signing](configure-windows-certificate-store-signing.md)
+  for each provider's version, and the tip under
   [`JwtSigningServiceOptions` and the three-tier hierarchy](../reference/signing-keys.md#jwtsigningserviceoptions-and-the-three-tier-hierarchy)
-  for the older, still-current-for-Key-Vault-and-cert-store explanation.
+  for the older, still-current-for-Key-Vault explanation.
 - **The retirement window.** When a key stops being the active signer, its public half stays
   published in the JWKS for a while longer, so relying parties holding tokens signed with it can
   still validate them — but its private half is destroyed immediately. See
