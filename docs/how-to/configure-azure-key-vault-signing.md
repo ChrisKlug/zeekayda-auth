@@ -91,13 +91,6 @@ Rotation is automatic. The provider discovers Key Vault key versions on its own 
 - `PublicationLead` (default: `RefreshInterval`, itself 1 hour by default) must exceed your relying parties' actual JWKS cache TTL. ZeeKayDa.Auth rejects a `PublicationLead` shorter than `RefreshInterval` as an almost-certain misconfiguration, but cannot verify that a value above that floor is actually long enough for your specific relying parties.
 - If the active (or most recently active) key version reaches its Key Vault `ExpiresOn` with no enabled successor version, key loading **fails closed** — a configuration error, not a silent continuation with an expired key or no key at all. Rotate in a new key version before the active one expires.
 
-> ⚠️ **Warning:** `RefreshInterval` (default: 1 hour) is also how often the provider re-asks Key
-> Vault for the current version list — and therefore how quickly it notices an emergency
-> revocation (a version you disabled in Key Vault). Before this migration to ADR 0015 Tier B, the
-> equivalent setting (`KeyRotationCheckInterval`) defaulted to 5 minutes; the new default is 1
-> hour. If your incident-response plan assumes a revoked key stops signing within minutes, set
-> `RefreshInterval` explicitly rather than relying on the new default.
-
 > 💡 **Tip:** For the full activation/retirement timing model shared across all signing providers, see [Rotate signing keys](rotate-signing-keys.md).
 
 ---

@@ -144,9 +144,8 @@ key — rotate in the new version before the active one expires, not after.
 
 > ⚠️ **Warning:** Emergency revocation (disabling a compromised version in Key Vault) is only
 > noticed on the provider's next `RefreshInterval` poll, not instantly. `RefreshInterval` defaults
-> to 1 hour — this is a behavior change from the pre-ADR-0015-Tier-B default of 5 minutes. If your
-> incident-response plan assumes a revoked key stops signing within minutes, set `RefreshInterval`
-> explicitly to a shorter value; see [Configure Azure Key Vault signing](configure-azure-key-vault-signing.md).
+> to 1 hour. If your incident-response plan assumes a revoked key stops signing within minutes, set
+> `RefreshInterval` explicitly to a shorter value; see [Configure Azure Key Vault signing](configure-azure-key-vault-signing.md).
 >
 > If you disable a version while it is still inside its retirement window (i.e. it was disabled
 > before its natural end-of-life, as an emergency revocation typically is), the next refresh logs
@@ -172,10 +171,9 @@ restart.
 
 > 💡 **Tip:** The file-based PEM/PFX provider and the Windows Certificate Store provider both
 > implement ADR 0015's Tier A `KeySetOptions` contract (property `PublicationLead`): the complete
-> set of registered files/thumbprints is fixed at configuration time, and every one of them is
-> read exactly once, at startup, rather than on a `KeyRotationCheckInterval`-style poll. The
-> activation *behavior* described in this section — `NotBefore` is the only signal, with no
-> library-enforced floor under it — is identical for both.
+> set of registered files/thumbprints is fixed at configuration time, and every one of them is read
+> exactly once, at startup. The activation *behavior* described in this section — `NotBefore` is
+> the only signal, with no library-enforced floor under it — is identical for both.
 
 > 💡 **Tip:** Why Key Vault gets an enforced overlap and these certificate-backed providers don't.
 > Key Vault stamps every key/certificate version with its own immutable `CreatedOn` timestamp the
