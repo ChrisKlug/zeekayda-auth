@@ -141,16 +141,10 @@ internal sealed class AzureKeyVaultRemoteSigningJwtSigningService : JwtSigningSe
             var (publicKey, keyType) = await _keyReader
                 .GetKeyMaterialAsync(version.Version, cancellationToken).ConfigureAwait(false);
 
-            SigningKeyDescriptor descriptor;
-            try
-            {
-                descriptor = KeyVaultSigningKeyDescriptorFactory.BuildDescriptor(
-                    publicKey, keyType, options.Algorithm, nameof(AzureKeyVaultRemoteSigningOptions), "Key Vault key");
-            }
-            finally
-            {
-                publicKey.Dispose();
-            }
+            using var _ = publicKey;
+
+            var descriptor = KeyVaultSigningKeyDescriptorFactory.BuildDescriptor(
+                publicKey, keyType, options.Algorithm, nameof(AzureKeyVaultRemoteSigningOptions), "Key Vault key");
 
             var publicKeyParameters = descriptor.KeyType == SigningKeyType.Rsa
                 ? PublicKeyParameters.FromRsa(descriptor.RsaPublicParameters!.Value)

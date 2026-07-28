@@ -146,18 +146,12 @@ internal sealed class AzureKeyVaultCachedSigningJwtSigningService : JwtSigningSe
             var (publicKey, keyType) = await _certificateReader
                 .GetPublicKeyMaterialAsync(version.Version, cancellationToken).ConfigureAwait(false);
 
-            PublicKeyParameters publicKeyParameters;
-            try
-            {
-                publicKeyParameters = BuildValidatedPublicKey(publicKey, keyType, options);
-            }
-            finally
-            {
-                // The parameters above are always exported before this handle is released — nothing
-                // downstream ever needs the live AsymmetricAlgorithm itself, only its exported public
-                // parameters (ADR 0015 §2/§5).
-                publicKey.Dispose();
-            }
+            // The parameters below are always exported before this handle goes out of scope — nothing
+            // downstream ever needs the live AsymmetricAlgorithm itself, only its exported public
+            // parameters (ADR 0015 §2/§5).
+            using var _ = publicKey;
+
+            var publicKeyParameters = BuildValidatedPublicKey(publicKey, keyType, options);
 
             var activateAt = ComputeActivateAt(version, firstEverVersion, options.PublicationLead);
             var expiresAt = version.ExpiresOn ?? DateTimeOffset.MaxValue;
