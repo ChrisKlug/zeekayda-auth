@@ -42,8 +42,16 @@ public sealed record PublicKeyParameters
     /// <param name="rsaPublicParameters">
     /// The RSA public parameters (exponent and modulus only — no private components).
     /// </param>
-    public static PublicKeyParameters FromRsa(RSAParameters rsaPublicParameters) =>
-        new(SigningKeyType.Rsa, rsaPublicParameters, ecPublicParameters: null);
+    public static PublicKeyParameters FromRsa(RSAParameters rsaPublicParameters)
+    {
+        var publicOnly = new RSAParameters
+        {
+            Modulus = rsaPublicParameters.Modulus,
+            Exponent = rsaPublicParameters.Exponent,
+        };
+
+        return new(SigningKeyType.Rsa, publicOnly, ecPublicParameters: null);
+    }
 
     /// <summary>
     /// Builds an EC <see cref="PublicKeyParameters"/> from the curve and Q point only.
@@ -51,6 +59,14 @@ public sealed record PublicKeyParameters
     /// <param name="ecPublicParameters">
     /// The EC public parameters (curve and Q point — no private D component).
     /// </param>
-    public static PublicKeyParameters FromEc(ECParameters ecPublicParameters) =>
-        new(SigningKeyType.Ec, rsaPublicParameters: null, ecPublicParameters);
+    public static PublicKeyParameters FromEc(ECParameters ecPublicParameters)
+    {
+        var publicOnly = new ECParameters
+        {
+            Curve = ecPublicParameters.Curve,
+            Q = ecPublicParameters.Q,
+        };
+
+        return new(SigningKeyType.Ec, rsaPublicParameters: null, publicOnly);
+    }
 }

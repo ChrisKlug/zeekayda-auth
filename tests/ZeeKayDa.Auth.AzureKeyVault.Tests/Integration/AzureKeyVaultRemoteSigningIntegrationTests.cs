@@ -93,7 +93,7 @@ public sealed class AzureKeyVaultRemoteSigningIntegrationTests
         // The fake IKeyVaultKeyReader does NOT perform its own status-code-to-exception-code
         // mapping — only the real KeyVaultKeyReader does that (see the known-gap note in
         // KeyVaultKeyReader.cs). This test verifies that a failure from the reader seam propagates
-        // through LoadKeysAsync/GetSigningKeysAsync as a ZeeKayDaConfigurationException (wiring),
+        // through ListKeysAsync/GetSigningKeysAsync as a ZeeKayDaConfigurationException (wiring),
         // not that any particular status code maps to any particular failure code.
         var ct = TestContext.Current.CancellationToken;
         var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
@@ -126,7 +126,7 @@ public sealed class AzureKeyVaultRemoteSigningIntegrationTests
     {
         // Simulates a bad-credentials/missing-key condition surfacing from the reader seam. Since
         // the fake does not do its own exception mapping, we configure it to throw the SAME
-        // exception type LoadKeysAsync itself would throw for a real configuration problem, to
+        // exception type ListKeysAsync itself would throw for a real configuration problem, to
         // prove the failure reaches the caller unmodified through the full DI-resolved service —
         // not to assert on a mapped error code the fake cannot produce.
         var ct = TestContext.Current.CancellationToken;

@@ -108,35 +108,23 @@ namespace ZeeKayDa.Auth.Tokens;
 public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDisposable
     where TOptions : JwtSigningServiceOptions
 {
-    // ADR 0015 (KeySetOptions/KeySourceOptions) — every built-in provider today.
     protected JwtSigningService(
         IOptions<TOptions> options,
         TimeProvider timeProvider,
         ISigningKeyRetirementWindowProvider retirementWindowProvider,
         ISanitizingLogger<JwtSigningService<TOptions>> logger) { }
 
-    protected virtual ValueTask<IReadOnlyList<KeyListing>> ListKeysAsync(CancellationToken cancellationToken);
+    protected abstract ValueTask<IReadOnlyList<KeyListing>> ListKeysAsync(CancellationToken cancellationToken);
 
-    protected virtual ValueTask<ISigner> CreateSignerAsync(KeyId id, CancellationToken cancellationToken);
-
-    // ADR 0011 (StaticKeySourceOptions/RotatingKeySourceOptions) — no built-in provider left; see the tip below.
-    protected JwtSigningService(IOptions<TOptions> options, TimeProvider timeProvider) { }
-
-    protected virtual ValueTask<SigningKeySet> LoadKeysAsync(CancellationToken cancellationToken);
-
-    protected virtual ValueTask<bool> HasKeySetChangedAsync(CancellationToken cancellationToken);
-
-    protected virtual ValueTask<ReadOnlyMemory<byte>> SignInputAsync(
-        SigningKeyPair activeKey, byte[] signingInput, CancellationToken cancellationToken);
+    protected abstract ValueTask<ISigner> CreateSignerAsync(KeyId id, CancellationToken cancellationToken);
 }
 ```
 
-**Every built-in provider today implements `ListKeysAsync`/`CreateSignerAsync` (ADR 0015's
-`KeySetOptions`/`KeySourceOptions` contract) rather than the older `LoadKeysAsync`/`SigningKeySet`
-contract described further below.** `ListKeysAsync` returns the currently trusted set as
-`KeyListing`s — descriptor material plus an activation/expiry window — and `CreateSignerAsync` is
-called lazily, only for the `KeyId` the base class has determined is currently active, to obtain
-an `ISigner` capable of producing that one key's signatures. The base class does the rest:
+A provider implements exactly two methods (ADR 0015): **`ListKeysAsync`** returns the currently
+trusted set as `KeyListing`s — pure public metadata plus an activation/expiry window, never private
+material — and **`CreateSignerAsync`** is called lazily, only for the `KeyId` the base class has
+determined is currently active, to obtain an `ISigner` capable of producing that one key's
+signatures. The base class does the rest:
 
 - **Interval-throttled caching**, driven by an injected `TimeProvider` (never wall-clock reads).
   `ListKeysAsync` is called at most once per `KeySourceOptions.RefreshInterval` for a
@@ -162,69 +150,99 @@ an `ISigner` capable of producing that one key's signatures. The base class does
 - **Deterministic disposal of superseded signer resources.** When the active key changes, the base
   class disposes the superseded `ISigner` once every in-flight `SignAsync` call that still
   references it has completed — it never leaves a signer (or the private key material it may hold)
-  to the garbage collector. See [`ISigner`'s own `Dispose` contract](#signingkeyset-and-signingkeypair)
+  to the garbage collector. See [`ISigner`'s own `Dispose` contract](#keylisting-isigner-and-localsigner)
   for what this means for a *shared* signer seam (e.g. Key Vault remote signing's pooled
   `CryptographyClient`), which must remain a deliberate no-op instead.
 
-> 💡 **Tip:** An older `LoadKeysAsync`/`SigningKeySet`/`HasKeySetChangedAsync` contract still exists
-> on the base class (see [`SigningKeySet` and `SigningKeyPair`](#signingkeyset-and-signingkeypair)
-> and [`JwtSigningServiceOptions` and the tier hierarchy](#jwtsigningserviceoptions-and-the-tier-hierarchy)
-> below) but is no longer implemented by any built-in provider — the two Azure Key Vault providers
-> were the last consumers, and both migrated to `ListKeysAsync`/`CreateSignerAsync` as part of
-> issue #425. It is retained for now rather than removed outright; issue #428 tracks its eventual
-> deletion once nothing depends on it.
-
 ---
 
-## `SigningKeySet` and `SigningKeyPair`
+## `KeyListing`, `ISigner`, and `LocalSigner`
 
-`SigningKeySet` (`ZeeKayDa.Auth.Tokens`) is the type `LoadKeysAsync` returns: the currently trusted
-set of keys, together with the private key material needed to sign.
+`KeyListing` (`ZeeKayDa.Auth.Tokens`) is the type `ListKeysAsync` returns one of, per trusted key —
+pure public data, never private material:
 
 ```csharp
 namespace ZeeKayDa.Auth.Tokens;
 
-public readonly struct SigningKeyPair
-{
-    public SigningKeyDescriptor Descriptor { get; init; }
-    public AsymmetricAlgorithm PrivateKey { get; init; }
-}
+public sealed record KeyListing(
+    KeyId Id,
+    SigningAlgorithm Algorithm,
+    PublicKeyParameters PublicKey,
+    DateTimeOffset? ActivateAt,
+    DateTimeOffset ExpiresAt);
 
-public sealed class SigningKeySet : IDisposable
-{
-    public SigningKeySet(SigningKeyPair activeKey, IEnumerable<SigningKeyPair>? additionalKeys = null);
+public readonly record struct KeyId(string Value);
 
-    public IReadOnlyList<SigningKeyDescriptor> Keys { get; }
-    public SigningKeyDescriptor ActiveKey { get; }
+public sealed record PublicKeyParameters
+{
+    public SigningKeyType KeyType { get; }
+    public RSAParameters? RsaPublicParameters { get; }
+    public ECParameters? EcPublicParameters { get; }
+
+    public static PublicKeyParameters FromRsa(RSAParameters rsaPublicParameters);
+    public static PublicKeyParameters FromEc(ECParameters ecPublicParameters);
 }
 ```
 
-The active signing key is a **mandatory named parameter**, not inferred from list position — a
-custom `LoadKeysAsync` override can never silently sign with a retired or not-yet-active key by
-assembling its key list in the wrong order. Construct a set like this:
+| Member | Description |
+|---|---|
+| `Id` | The provider's own stable identifier for this key — a certificate thumbprint, a Key Vault key-version id, a database row key, and so on. **Not** the JWKS/JWS `kid`: the base class always derives the `kid` itself from `PublicKey` via [`JwkThumbprint`](#kid-derivation--jwkthumbprint), so a provider can never leak a raw external identifier into a token header or the JWKS. |
+| `Algorithm` | The `SigningAlgorithm` this key signs with. |
+| `PublicKey` | The public-only RSA/EC key material — never the private half. |
+| `ActivateAt` | The instant this key becomes eligible to be the active signer, or `null` (or a past instant) when it is eligible from startup/bootstrap. |
+| `ExpiresAt` | The hard expiry instant (e.g. a certificate's `NotAfter`) — distinct from the derived retirement window, which the base class computes separately. |
+
+`ListKeysAsync` must never return an empty list, and carries a **completeness contract**: a
+provider that cannot produce a *complete* read of its current key set **must throw** rather than
+return a short or partial list — see [Kill-by-omission](#kill-by-omission-no-enabled-flag) below
+for why a partial read must never be mistaken for a revocation.
+
+`ISigner` (`ZeeKayDa.Auth.Tokens`) is what `CreateSignerAsync` returns — a signer bound to exactly
+one key activation:
 
 ```csharp
-var activeKey = new SigningKeyPair { Descriptor = activeDescriptor, PrivateKey = activeRsa };
-var retiredKey = new SigningKeyPair { Descriptor = retiredDescriptor, PrivateKey = retiredRsa };
+namespace ZeeKayDa.Auth.Tokens;
 
-var keySet = new SigningKeySet(activeKey, additionalKeys: [retiredKey]);
+public interface ISigner : IDisposable
+{
+    ValueTask<ReadOnlyMemory<byte>> SignAsync(
+        ReadOnlyMemory<byte> signingInput, CancellationToken cancellationToken = default);
+
+    SigningAlgorithm Algorithm { get; }
+}
 ```
 
-`additionalKeys` is deliberately a single, lifecycle-neutral bucket — it covers both
-not-yet-activated keys and keys still inside their retirement window, not two separate "future" and
-"retired" lists. May be `null` or empty. `Keys` (and therefore the JWKS) still happens to list the
-active key first, for a zero-allocation hot path and stable output order, but that ordering is an
-implementation detail: `ActiveKey` always derives from the constructor's `activeKey` parameter,
-never from `Keys[0]`. Duplicate `kid` values between `activeKey` and `additionalKeys` are not
-rejected by the constructor; that validation stays at the base class's load path.
+`CreateSignerAsync` is called **only** for the `KeyId` the base class has already selected as
+active — never for a non-active, future, or retired key. Immediately after `CreateSignerAsync`
+returns, the base class checks `ISigner.Algorithm` against that same key's `KeyListing.Algorithm`
+and rejects the signer on any mismatch, so a provider bug can never produce a JWS whose header
+names one algorithm while the signature bytes were actually produced under another.
 
-> ⚠️ **Warning:** `SigningKeyPair.PrivateKey` is not guaranteed to hold genuine private key
-> material. A remote-signing provider (Azure Key Vault, for example) never releases a key's private
-> half at all — `PrivateKey` instead holds a public-only key handle, used only to validate
-> algorithm/key-type compatibility at load time. That kind of provider's `SignInputAsync` override
-> signs via the remote API using the key's descriptor and never reads `PrivateKey`. If you write a
-> custom provider, do not assume `PrivateKey` is safe to sign with directly unless you know your own
-> provider populated it with genuine private key material.
+> ⚠️ **Warning:** `ISigner.Dispose` is a normative contract, not advisory prose. The base class
+> calls `Dispose` on the previously active `ISigner` every time the active key changes (or at
+> shutdown). `Dispose` **must** release only the per-activation handle or resource that specific
+> instance introduced. A remote implementation whose `SignAsync` uses a shared, DI-owned SDK client
+> (an Azure Key Vault client, say) **must not** tear that shared client down on `Dispose` — doing so
+> would break every other `ISigner` instance, and every future caller, that also depends on the same
+> shared client.
+
+`LocalSigner` (`ZeeKayDa.Auth.Tokens`) is the shipped `ISigner` implementation over a local,
+in-process RSA or ECDsa private key:
+
+```csharp
+namespace ZeeKayDa.Auth.Tokens;
+
+public sealed class LocalSigner : ISigner
+{
+    public LocalSigner(SigningAlgorithm algorithm, AsymmetricAlgorithm privateKey);
+}
+```
+
+Local providers (development, PEM, PFX, Windows Certificate Store) construct a `LocalSigner` in
+`CreateSignerAsync` and never implement `ISigner` themselves — `LocalSigner` takes ownership of
+`privateKey` and disposes it unconditionally, which is safe because nothing else ever references
+it. Only a genuinely remote provider (Azure Key Vault remote signing, a KMS, an HSM) implements
+`ISigner` directly, because the private key never becomes local for those.
 
 ---
 
@@ -282,13 +300,30 @@ values per provider.
 > dropped within minutes, set `RefreshInterval` explicitly to a shorter value rather than relying
 > on the default.
 
-An earlier design (ADR 0011 §3.4, issue #409) used a different two-tier split — `StaticKeySourceOptions`/
-`RotatingKeySourceOptions`, distinguished by whether `LoadKeysAsync`'s result could change at all,
-with a `KeyRotationCheckInterval` property (default: 5 minutes) that conflated poll cadence with
-publish-then-activate lead time. No built-in provider derives from either of those types any more —
-both Azure Key Vault providers were the last consumers and migrated to `KeySourceOptions` as part
-of issue #425 — but the base class still supports that older contract for now; issue #428 tracks
-its eventual removal.
+---
+
+## Kill-by-omission: no `Enabled` flag
+
+There is no `Enabled`/disabled flag anywhere in the options or the provider contract. A key stops
+being trusted the moment a `KeySourceOptions` (Tier B) provider's `ListKeysAsync` stops returning
+it — omission itself is the kill switch:
+
+- Revoke, disable, or delete the key in the backing store (Key Vault, a database row, …) and the
+  provider's next `ListKeysAsync` simply stops listing it; it is gone from the JWKS on the next
+  refresh.
+- A key vanishing *after* its derived retirement window has already closed is the normal end of
+  life and is logged only routinely.
+- A key vanishing *while still inside* its retirement window is still dropped immediately (the kill
+  switch still fires), but the base class emits a `Warning` — this is the accidental-omission
+  detector, and it is never downgraded.
+- A provider that cannot produce a complete read of its current key set must throw rather than
+  return a short list — `ListKeysAsync`'s completeness contract exists precisely so a transient
+  read failure is never misinterpreted as "these keys were revoked."
+
+`KeySetOptions` (Tier A) providers have no equivalent concept: the key set is fixed at
+configuration time, so there is nothing to revoke by omission — remove the compromised key from
+configuration and redeploy instead. See [Rotate signing keys](../how-to/rotate-signing-keys.md) for
+the emergency-rotation procedure for each tier.
 
 ---
 
@@ -362,7 +397,7 @@ By design (ADR 0011 §4.3), the endpoint maps every descriptor returned by the r
 ([RFC 7517](https://www.rfc-editor.org/rfc/rfc7517)), and every emitted JWK carries `"use": "sig"`
 so a relying party never mistakes a signing key for an encryption key. The read path shares the
 same single-flight cache as the signing path described above: an anonymous burst of requests to
-`connect/jwks` cannot trigger an uncoalesced `LoadKeysAsync` call against a remote key source, even
+`connect/jwks` cannot trigger an uncoalesced `ListKeysAsync` call against a remote key source, even
 against a cold cache.
 
 > ⚠️ **Warning:** The full JWKS document provider described above is still in progress.
@@ -405,9 +440,12 @@ See the how-to guide for each provider's exact method signature and required set
 
 A third-party signing provider — for a KMS or HSM ZeeKayDa.Auth does not ship support for — should
 subclass `JwtSigningService<TOptions>` rather than implement `IJwtSigningService` directly. Define a
-`TOptions : JwtSigningServiceOptions` for provider-specific settings, implement `LoadKeysAsync` to
-return the currently trusted `SigningKeySet`, and override `SignInputAsync` only if producing a
-signature requires network I/O.
+`TOptions` deriving from `KeySetOptions` (Tier A — you own the full list of keys up front) or
+`KeySourceOptions` (Tier B — something else owns the keys and you re-read them), implement
+`ListKeysAsync` to return the currently trusted `KeyListing`s, and implement `CreateSignerAsync` to
+lend an `ISigner` for the active key only. See
+[Implement a custom signing key provider](../how-to/implement-custom-signing-provider.md) for a full
+worked example and a decision guide for choosing between the two tiers.
 
 Use the shared public core utilities rather than reimplementing their logic:
 
@@ -429,31 +467,22 @@ package and cannot use `InternalsVisibleTo` to share ZeeKayDa's internal logic �
 that keeps `IJwtSigningService` itself free of any Microsoft.IdentityModel or provider-specific
 type.
 
-> ⚠️ **Warning:** `LoadKeysAsync` is responsible for its own filtering — nothing above it does.
-> `GetSigningKeysAsync` (and the JWKS endpoint behind it) returns whatever `SigningKeySet` your
-> `LoadKeysAsync` most recently produced, verbatim: the base class does not re-check which keys are
-> still within their retirement window, and does not prune a fully-retired key out for you. If your
-> `LoadKeysAsync` naively returns every key it has ever seen instead of applying
-> `SigningKeyRotation`'s inclusion logic, retired keys accumulate in the JWKS forever rather than
-> aging out — silently widening the set of keys a relying party is told to trust, with no error or
-> warning to indicate anything is wrong.
+> ⚠️ **Warning:** `ListKeysAsync` carries a **completeness contract**: it must never return a short
+> or partial list. The base class trusts an omission to mean "this key is no longer trusted" (see
+> [Kill-by-omission](#kill-by-omission-no-enabled-flag) above) — a provider that cannot enumerate its
+> current key set completely (a transient network error, a store outage) **must throw** rather than
+> return whatever subset it managed to read. A partial read that is silently treated as a full one
+> would look identical to an emergency revocation and could drop keys a relying party still needs to
+> validate an already-issued token.
 
-> ⚠️ **Warning:** Every call to `LoadKeysAsync` must return a genuinely new `SigningKeySet`
-> wrapping genuinely new private-key objects. Neither of the following is permitted, and both are
-> enforced at runtime immediately after `LoadKeysAsync` returns, before the previous set is disposed
-> or the new one installed:
->
-> - Returning the **same `SigningKeySet` instance** twice.
-> - Returning a **genuinely new** `SigningKeySet` that nonetheless wraps one of the previous set's
->   private-key objects under a shared `kid` — for example, memoising a private key object across
->   calls to avoid re-creating it.
->
-> Both mistakes throw an `InvalidOperationException` right away, with a message distinguishing
-> which case was hit. Without either guard, the base class would go on to dispose the superseded
-> set's private-key objects as normal, and the next signing/JWKS call against the still-current set
-> would fail with a confusing, disconnected `ObjectDisposedException` instead. If nothing has
-> actually changed since the last refresh cycle, override `HasKeySetChangedAsync` to report that —
-> don't try to signal "unchanged" by returning the same (or an equivalent) `SigningKeySet`.
+> ⚠️ **Warning:** Keep private material out of `ListKeysAsync` entirely — it returns pure public
+> `KeyListing` data, never a key object. This is what makes the base class's least-privilege
+> guarantee hold: it only ever asks `CreateSignerAsync` for the one `KeyId` it has selected as
+> active, never for a non-active, future, or retired key. For a **bundled format** (a PFX, a
+> Windows Certificate Store entry) that yields the whole key when you read it at all, keeping
+> non-active private material out of process memory until `CreateSignerAsync` actually asks for the
+> active key is a **provider obligation** — extract only the public parameters in `ListKeysAsync`
+> and defer opening the private half until `CreateSignerAsync` is called for that specific key.
 
 ---
 
@@ -468,3 +497,4 @@ type.
 - [AuthorizationServerOptions reference](configuration.md) — including `JwksEndpoint.Uri`
 - [Discovery endpoint](discovery-endpoint.md) — publishes `jwks_uri` and `id_token_signing_alg_values_supported`
 - [ADR 0011 — Signing Key Management](https://github.com/ChrisKlug/zeekayda-auth/blob/main/docs/decisions/0011-signing-key-management.md) (design rationale, `RetirementWindow` derivation, rotation model)
+- [ADR 0015 — Signing-Key Provider: KeySet/KeySource Tiers](https://github.com/ChrisKlug/zeekayda-auth/blob/main/docs/decisions/0015-signing-provider-set-source-tiers.md) (the current `KeySetOptions`/`KeySourceOptions` contract this page documents)

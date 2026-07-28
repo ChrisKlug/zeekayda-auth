@@ -108,7 +108,8 @@ Concretely, that means:
   certificate added to, removed from, or replaced in the store is **not** picked up live —
   adding, removing, or replacing a registered thumbprint always requires a configuration change
   and a restart, exactly as with the file-based PEM/PFX providers. There is no background polling
-  for new certificates, and no `KeyRotationCheckInterval`-style property to configure one.
+  for new certificates, and no `RefreshInterval`-style property to configure one — that property
+  only exists on the `KeySourceOptions` tier this provider does not derive from.
 - Rotation **between already-registered thumbprints** still switches the active signer purely from
   elapsed wall-clock time — each certificate's `NotBefore`/`NotAfter` is compared against `now` on
   every request, with **zero further store access to list keys**. The store *is* read once more at
@@ -157,9 +158,9 @@ With exactly one registered certificate, it is the active signer immediately. Wi
 operator, own each certificate's activation timing directly via its `NotBefore`, and
 `PublicationLead` is used only to decide whether to log a startup warning that a registered
 certificate's `NotBefore` is nearer than `PublicationLead` away — a signal that the certificate may
-not have had enough lead time in the JWKS before it activates. There is no
-`KeyRotationCheckInterval`-style poll floor to enforce it against on this tier — there is no poll
-at all, since every thumbprint is read once, at startup.
+not have had enough lead time in the JWKS before it activates. Unlike `KeySourceOptions`'s
+`RefreshInterval`, there is no poll floor to enforce `PublicationLead` against on this tier — there
+is no poll at all, since every thumbprint is read once, at startup.
 
 ## Least-privilege reads: public metadata once, private key only for the active certificate
 

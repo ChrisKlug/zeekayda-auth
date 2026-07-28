@@ -8,6 +8,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- **BREAKING: legacy ADR 0011 signing-provider contract removed** (#428)
+
+  `SigningKeySet`, `SigningKeyPair`, `RotatingKeySourceOptions`, and `StaticKeySourceOptions` are
+  deleted, along with `JwtSigningService<TOptions>.LoadKeysAsync`, `HasKeySetChangedAsync`,
+  `SignInputAsync`, and the two-argument `JwtSigningService(IOptions<TOptions>, TimeProvider)`
+  constructor. `ListKeysAsync` and `CreateSignerAsync` (ADR 0015) are now `abstract` — every
+  provider must implement the `KeySetOptions`/`KeySourceOptions` contract; there is no longer a
+  throwing default for providers still on the old shape. All in-box providers (development,
+  file/PEM, PFX, Windows Certificate Store, Azure Key Vault) already migrated in #421-#425 and are
+  unaffected. A custom `IJwtSigningService` implementation still on the old contract will not
+  compile against this version — see [Implement a custom signing
+  provider](docs/how-to/implement-custom-signing-provider.md) for the current contract.
+
+  `KeyRotationCheckInterval`, `SigningKeyActivationDelay`, and `AssumedJwksPropagationDelay` are
+  also removed; use `KeySourceOptions.RefreshInterval` and `PublicationLead` instead (already the
+  case for every in-box provider since #421-#425).
+
+  A `KeySetOptions`/`KeySourceOptions` provider that registers two `KeyListing`s sharing the same
+  `Id.Value` now fails fast with `signing.duplicate_key_id` at snapshot-build time, matching the
+  existing duplicate-derived-`kid` rejection.
+
 - **BREAKING (behavioral default change): Azure Key Vault signing providers migrated to ADR 0015 Tier B (`KeySourceOptions`)** (#425)
 
   `AzureKeyVaultRemoteSigningOptions` and `AzureKeyVaultCachedSigningOptions` now derive from

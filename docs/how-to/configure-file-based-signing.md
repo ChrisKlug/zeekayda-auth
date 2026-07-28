@@ -275,8 +275,9 @@ Concretely, that means:
 - Every registered file is read **exactly once, ever**, at startup. A changed or newly-added file
   is **not** picked up live — adding, removing, or replacing a registered file always requires a
   configuration change and a restart, exactly as with the Windows Certificate Store provider.
-  There is no background polling for new files, and no `KeyRotationCheckInterval`-style property
-  to configure one.
+  There is no background polling for new files, and no `RefreshInterval`-style property to
+  configure one — that property only exists on the `KeySourceOptions` tier this provider does not
+  derive from.
 - Rotation **between already-registered files** still switches the active signer purely from
   elapsed wall-clock time — each file's certificate `NotBefore`/`NotAfter` is compared against
   `now` on every request, with **zero further file I/O** once startup has completed.
@@ -310,12 +311,10 @@ before it activates.
     });
 ```
 
-> 💡 **Tip:** `PublicationLead` on this tier replaces what an earlier design called
-> `AssumedJwksPropagationDelay`. Unlike that earlier design (and unlike Azure Key Vault's
-> `SigningKeyActivationDelay`), there is no `KeyRotationCheckInterval`-style poll floor to enforce
-> `PublicationLead` against on this tier — there is no poll at all, since every file is read once,
-> at startup. See [Rotate signing keys](rotate-signing-keys.md) for the full activation/retirement
-> timing model.
+> 💡 **Tip:** Unlike `KeySourceOptions`'s `RefreshInterval` (used by Azure Key Vault), there is no
+> poll floor to enforce `PublicationLead` against on this tier — there is no poll at all, since
+> every file is read once, at startup. See [Rotate signing keys](rotate-signing-keys.md) for the
+> full activation/retirement timing model.
 
 ### PEM rotation
 
@@ -402,7 +401,7 @@ requires a restart (anything about which files are registered).
 
 ## Related pages
 
-- [Signing keys reference](../reference/signing-keys.md) — `IJwtSigningService`, `SigningKeySet`, and how keys are exposed as a JWKS document
+- [Signing keys reference](../reference/signing-keys.md) — `IJwtSigningService`, `KeyListing`, and how keys are exposed as a JWKS document
 - [Rotate signing keys](rotate-signing-keys.md) — the activation/retirement timing model and lead-time responsibilities
 - [Configure Windows Certificate Store signing](configure-windows-certificate-store-signing.md) — the Windows-native alternative
 - [Configure Azure Key Vault signing](configure-azure-key-vault-signing.md) — the cloud-managed alternative

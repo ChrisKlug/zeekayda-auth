@@ -4,21 +4,13 @@ namespace ZeeKayDa.Auth.Tokens;
 /// Base options type for <see cref="JwtSigningService{TOptions}"/> implementations.
 /// </summary>
 /// <remarks>
-/// <para>
 /// Provider-specific options classes derive from one of the two tiers below —
-/// <see cref="StaticKeySourceOptions"/> for a key source that is immutable for the process
-/// lifetime, or <see cref="RotatingKeySourceOptions"/> for a key source that can change while the
-/// process runs — never directly from this type. This base type deliberately carries no
-/// rotation-shaped property at all: every rotation-related knob lives on exactly one of the two
-/// tiers (ADR 0011 §3.4, issue #409).
-/// </para>
-/// <para>
-/// This three-tier hierarchy replaces an earlier design in which this type carried a single
-/// nullable <c>KeySourceRefreshInterval</c> property, with <see langword="null"/> as a sentinel
-/// for "static, load-once" mode. That sentinel is now a real type distinction: which tier a
-/// provider's options type derives from determines whether <c>LoadKeysAsync</c> is invoked once,
-/// ever, or on a recurring poll cadence.
-/// </para>
+/// <see cref="KeySetOptions"/> (Tier A) for a key source whose complete, fixed set of keys is
+/// supplied at configuration time and never changes at runtime, or <see cref="KeySourceOptions"/>
+/// (Tier B) for a key source the base class re-reads on a cadence because something else owns the
+/// keys — never directly from this type. This base type deliberately carries no
+/// acquisition-shaped property at all: every such knob lives on exactly one of the two tiers
+/// (ADR 0015).
 /// </remarks>
 public abstract class JwtSigningServiceOptions
 {

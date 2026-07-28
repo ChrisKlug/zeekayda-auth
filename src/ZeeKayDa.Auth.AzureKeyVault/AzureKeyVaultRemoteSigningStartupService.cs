@@ -13,9 +13,9 @@ namespace ZeeKayDa.Auth.AzureKeyVault;
 /// <see cref="IJwtSigningService"/> is safe to constructor-inject directly here: it is always
 /// registered as a singleton, unlike scoped services such as <c>IClientRepository</c> that must be
 /// resolved from a short-lived scope to avoid capturing a scoped implementation as a root-scope
-/// singleton (see <c>ClientRepositoryStartupActivator</c> for that case). <c>LoadKeysAsync</c>
-/// on <see cref="JwtSigningService{TOptions}"/> is otherwise entirely lazy — nothing else forces it
-/// to run before the first signing or JWKS request.
+/// singleton (see <c>ClientRepositoryStartupActivator</c> for that case). Key listing and signer
+/// creation on <see cref="JwtSigningService{TOptions}"/> are otherwise entirely lazy — nothing else
+/// forces them to run before the first signing or JWKS request.
 /// </remarks>
 internal sealed class AzureKeyVaultRemoteSigningStartupService : IHostedService
 {
@@ -30,7 +30,7 @@ internal sealed class AzureKeyVaultRemoteSigningStartupService : IHostedService
     /// <inheritdoc/>
     public async Task StartAsync(CancellationToken cancellationToken)
     {
-        // Resolving the key set triggers LoadKeysAsync (key-version discovery and validation).
+        // Resolving the signing keys triggers ListKeysAsync (key-version discovery and validation).
         // Any ZeeKayDaConfigurationException propagates and aborts startup before Kestrel accepts
         // connections.
         await _signingService.GetSigningKeysAsync(cancellationToken).ConfigureAwait(false);
