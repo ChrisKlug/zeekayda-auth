@@ -13,47 +13,40 @@ public sealed class AzureKeyVaultCachedSigningJwtSigningServiceTests
 {
     private static readonly Uri CertificateIdentifierUri = new("https://fake-vault.vault.azure.net/certificates/fake-cert");
     private static readonly TimeSpan DefaultRefreshInterval = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan DefaultPublicationLead = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan DefaultRetirementWindow = TimeSpan.FromHours(1);
 
     // ── Fake infrastructure ───────────────────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Captures every log call, including the raw structured <c>state</c> passed to
-    /// <see cref="ILogger.Log{TState}"/> — needed (unlike <see cref="NullSanitizingLogger{T}"/>) to
-    /// assert both on the rendered message and on exactly which named values were logged, per
-    /// <see cref="WarnIfPreviouslyPublishedKidVanished"/>'s no-key-material contract.
-    /// </summary>
     private sealed class CapturingLogger<T> : ISanitizingLogger<T>
     {
-        public List<(LogLevel Level, string Message, object? State)> Entries { get; } = [];
+        public List<(LogLevel Level, string Message)> Entries { get; } = [];
 
         public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
 
         public bool IsEnabled(LogLevel logLevel) => true;
 
         public void Log<TState>(
-            LogLevel logLevel,
-            EventId eventId,
-            TState state,
-            Exception? exception,
-            Func<TState, Exception?, string> formatter)
-            => Entries.Add((logLevel, formatter(state, exception), state));
+            LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+            => Entries.Add((logLevel, formatter(state, exception)));
     }
 
     private static AzureKeyVaultCachedSigningJwtSigningService BuildService(
         FakeKeyVaultCertificateReader reader,
         FakeTimeProvider timeProvider,
         TimeSpan? refreshInterval = null,
+        TimeSpan? publicationLead = null,
         TimeSpan? retirementWindow = null,
         SigningAlgorithm algorithm = SigningAlgorithm.RS256,
-        ISanitizingLogger<AzureKeyVaultCachedSigningJwtSigningService>? logger = null)
+        ISanitizingLogger<JwtSigningService<AzureKeyVaultCachedSigningOptions>>? logger = null)
     {
         var options = Options.Create(new AzureKeyVaultCachedSigningOptions
         {
             CertificateIdentifier = new KeyVaultCertificateIdentifier(CertificateIdentifierUri),
             Credential = new FakeTokenCredential(),
             Algorithm = algorithm,
-            KeyRotationCheckInterval = refreshInterval ?? DefaultRefreshInterval,
+            RefreshInterval = refreshInterval ?? DefaultRefreshInterval,
+            PublicationLead = publicationLead ?? DefaultPublicationLead,
         });
 
         return new AzureKeyVaultCachedSigningJwtSigningService(
@@ -61,7 +54,7 @@ public sealed class AzureKeyVaultCachedSigningJwtSigningServiceTests
             timeProvider,
             reader,
             new FakeRetirementWindowProvider(retirementWindow ?? DefaultRetirementWindow),
-            logger ?? NullSanitizingLogger<AzureKeyVaultCachedSigningJwtSigningService>.Instance);
+            logger ?? NullSanitizingLogger<JwtSigningService<AzureKeyVaultCachedSigningOptions>>.Instance);
     }
 
     // ── Bootstrap ────────────────────────────────────────────────────────────────────────────────
@@ -75,7 +68,7 @@ public sealed class AzureKeyVaultCachedSigningJwtSigningServiceTests
         var v1 = reader.AddRsaVersion("v1", createdOn: t0);
         var timeProvider = new FakeTimeProvider(t0);
 
-        await using var sut = BuildService(reader, timeProvider, refreshInterval: DefaultRefreshInterval);
+        await using var sut = BuildService(reader, timeProvider);
 
         var keys = await sut.GetSigningKeysAsync(ct);
 
@@ -95,20 +88,20 @@ public sealed class AzureKeyVaultCachedSigningJwtSigningServiceTests
         reader.AddRsaVersion("v1", createdOn: t0);
         var timeProvider = new FakeTimeProvider(t0);
 
-        await using var sut = BuildService(reader, timeProvider, refreshInterval: DefaultRefreshInterval);
+        await using var sut = BuildService(reader, timeProvider, refreshInterval: DefaultRefreshInterval, publicationLead: DefaultPublicationLead);
         await sut.GetSigningKeysAsync(ct); // Prime the initial (bootstrap) load.
 
         reader.AddRsaVersion("v2", createdOn: t1);
-        timeProvider.SetUtcNow(t1); // Cache has expired (> KeyRotationCheckInterval since the first load).
+        timeProvider.SetUtcNow(t1); // Cache has expired (> RefreshInterval since the first load).
 
         var keys = await sut.GetSigningKeysAsync(ct);
 
-        keys.Should().HaveCount(2, "v2 must be published (AC #4) even though it is not yet active");
+        keys.Should().HaveCount(2, "v2 must be published even though it is not yet active");
         keys[0].Kid.Should().Be(JwkThumbprint.Compute(reader.GetRsaMaterial("v1")), "v1 is still the active signer");
     }
 
     [Fact]
-    public async Task GetSigningKeysAsync_rotated_in_version_becomes_active_after_refresh_interval_and_predecessor_overlaps()
+    public async Task GetSigningKeysAsync_rotated_in_version_becomes_active_after_publication_lead_and_predecessor_overlaps()
     {
         var ct = TestContext.Current.CancellationToken;
         var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
@@ -118,15 +111,16 @@ public sealed class AzureKeyVaultCachedSigningJwtSigningServiceTests
         var timeProvider = new FakeTimeProvider(t0);
 
         await using var sut = BuildService(
-            reader, timeProvider, refreshInterval: DefaultRefreshInterval, retirementWindow: DefaultRetirementWindow);
+            reader, timeProvider, refreshInterval: DefaultRefreshInterval, publicationLead: DefaultPublicationLead,
+            retirementWindow: DefaultRetirementWindow);
         await sut.GetSigningKeysAsync(ct); // Bootstrap load.
 
         reader.AddRsaVersion("v2", createdOn: t1);
-        timeProvider.SetUtcNow(t1 + DefaultRefreshInterval); // v2's ActivatesAt, exactly.
+        timeProvider.SetUtcNow(t1 + DefaultPublicationLead); // v2's ActivateAt, exactly.
 
         var keys = await sut.GetSigningKeysAsync(ct);
 
-        keys.Should().HaveCount(2, "both versions must appear in JWKS during the overlap window (AC #4)");
+        keys.Should().HaveCount(2, "both versions must appear in JWKS during the overlap window");
         keys[0].Kid.Should().Be(JwkThumbprint.Compute(reader.GetRsaMaterial("v2")), "v2 has now activated");
         keys.Should().Contain(k => k.Kid == JwkThumbprint.Compute(reader.GetRsaMaterial("v1")), "v1 is retired but still within its retirement window");
     }
@@ -143,11 +137,12 @@ public sealed class AzureKeyVaultCachedSigningJwtSigningServiceTests
         var timeProvider = new FakeTimeProvider(t0);
 
         await using var sut = BuildService(
-            reader, timeProvider, refreshInterval: DefaultRefreshInterval, retirementWindow: retirementWindow);
+            reader, timeProvider, refreshInterval: DefaultRefreshInterval, publicationLead: DefaultPublicationLead,
+            retirementWindow: retirementWindow);
         await sut.GetSigningKeysAsync(ct);
 
         reader.AddRsaVersion("v2", createdOn: t1);
-        timeProvider.SetUtcNow(t1 + DefaultRefreshInterval + retirementWindow + TimeSpan.FromMinutes(1));
+        timeProvider.SetUtcNow(t1 + DefaultPublicationLead + retirementWindow + TimeSpan.FromMinutes(1));
 
         var keys = await sut.GetSigningKeysAsync(ct);
 
@@ -165,13 +160,13 @@ public sealed class AzureKeyVaultCachedSigningJwtSigningServiceTests
         reader.AddRsaVersion("v1", createdOn: t0);
         var timeProvider = new FakeTimeProvider(t0);
 
-        await using var sut = BuildService(reader, timeProvider, refreshInterval: DefaultRefreshInterval);
+        await using var sut = BuildService(reader, timeProvider, refreshInterval: DefaultRefreshInterval, publicationLead: DefaultPublicationLead);
         reader.AddRsaVersion("v2", createdOn: t1);
-        timeProvider.SetUtcNow(t1 + DefaultRefreshInterval);
+        timeProvider.SetUtcNow(t1 + DefaultPublicationLead);
         await sut.GetSigningKeysAsync(ct); // v1 and v2 now overlap.
 
         reader.SetEnabled("v1", enabled: false);
-        timeProvider.SetUtcNow(t1 + DefaultRefreshInterval + DefaultRefreshInterval + TimeSpan.FromSeconds(1));
+        timeProvider.SetUtcNow(t1 + DefaultPublicationLead + DefaultRefreshInterval + TimeSpan.FromSeconds(1));
         var keys = await sut.GetSigningKeysAsync(ct);
 
         keys.Should().ContainSingle();
@@ -179,7 +174,7 @@ public sealed class AzureKeyVaultCachedSigningJwtSigningServiceTests
             "a disabled certificate version is excluded at once, bypassing the retirement window entirely");
     }
 
-    // ── Kid derivation (AC #3): thumbprint, never a Key Vault URI ────────────────────────────────
+    // ── Kid derivation: thumbprint, never a Key Vault URI ────────────────────────────────────────
 
     [Fact]
     public async Task GetSigningKeysAsync_kid_is_thumbprint_and_never_contains_vault_or_certificate_identifiers()
@@ -196,8 +191,7 @@ public sealed class AzureKeyVaultCachedSigningJwtSigningServiceTests
         keys[0].Kid.Should().NotContain("fake-vault");
         keys[0].Kid.Should().NotContain("fake-cert");
         keys[0].Kid.Should().NotContain("super-secret-version-guid-1234");
-        keys[0].Kid.Should().Be(JwkThumbprint.Compute(reader.GetRsaMaterial("super-secret-version-guid-1234")),
-            "kid must be the RFC 7638 thumbprint (via JwkThumbprint.Compute), per AC #3");
+        keys[0].Kid.Should().Be(JwkThumbprint.Compute(reader.GetRsaMaterial("super-secret-version-guid-1234")));
     }
 
     [Fact]
@@ -288,7 +282,7 @@ public sealed class AzureKeyVaultCachedSigningJwtSigningServiceTests
             .WithMessage("*algorithm_key_type_mismatch*");
     }
 
-    // ── No certificate versions / no active version ─────────────────────────────────────────────
+    // ── No certificate versions / no enabled version ─────────────────────────────────────────────
 
     [Fact]
     public async Task GetSigningKeysAsync_throws_clear_exception_when_certificate_has_no_versions()
@@ -306,12 +300,12 @@ public sealed class AzureKeyVaultCachedSigningJwtSigningServiceTests
     }
 
     [Fact]
-    public async Task GetSigningKeysAsync_throws_clear_exception_when_no_version_has_activated_yet()
+    public async Task GetSigningKeysAsync_throws_clear_exception_when_no_version_is_enabled()
     {
         var ct = TestContext.Current.CancellationToken;
         var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
         var reader = new FakeKeyVaultCertificateReader();
-        reader.AddRsaVersion("v1", createdOn: t0, notBefore: t0 + TimeSpan.FromDays(1));
+        reader.AddRsaVersion("v1", createdOn: t0, enabled: false);
         var timeProvider = new FakeTimeProvider(t0);
 
         await using var sut = BuildService(reader, timeProvider);
@@ -322,7 +316,147 @@ public sealed class AzureKeyVaultCachedSigningJwtSigningServiceTests
             .WithMessage("*no_active_key*");
     }
 
-    // ── Startup failure propagation: non-exportable / bad credentials / not found (AC #5, #6, #7) ──
+    [Fact]
+    public async Task GetSigningKeysAsync_throws_clear_exception_when_no_version_has_activated_yet()
+    {
+        // The sole-ever-version bootstrap exemption (base SigningKeyRotation.SelectActiveKey) only
+        // applies when exactly one version has ever existed — with two versions on the timeline, a
+        // NotBefore-delayed second version is genuinely not yet eligible, and the first version's own
+        // NotBefore (also in the future) means neither can be selected as active.
+        var ct = TestContext.Current.CancellationToken;
+        var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
+        var reader = new FakeKeyVaultCertificateReader();
+        reader.AddRsaVersion("v1", createdOn: t0, notBefore: t0 + TimeSpan.FromDays(1));
+        reader.AddRsaVersion("v2", createdOn: t0 + TimeSpan.FromHours(1), notBefore: t0 + TimeSpan.FromDays(2));
+        var timeProvider = new FakeTimeProvider(t0);
+
+        await using var sut = BuildService(reader, timeProvider);
+
+        var act = async () => await sut.GetSigningKeysAsync(ct);
+
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .WithMessage("*no_active_key*");
+    }
+
+    [Fact]
+    public async Task SignAsync_releases_the_previously_cached_private_key_once_every_version_becomes_disabled()
+    {
+        // Regression test (issue #425 security review, finding F2): once Key Vault reports zero
+        // enabled versions — e.g. an operator disabling every version as part of an emergency
+        // revocation — the previously cached active signer's private key material must not be left
+        // resident in process memory indefinitely. ListKeysAsync throwing "no_active_key" on the next
+        // refresh must release it immediately rather than waiting for a later successful refresh or
+        // process shutdown to clean it up.
+        var ct = TestContext.Current.CancellationToken;
+        var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
+        var reader = new FakeKeyVaultCertificateReader();
+        reader.AddRsaVersion("v1", createdOn: t0);
+        AsymmetricAlgorithm? capturedPrivateKey = null;
+        reader.OnPrivateKeyExtracted = (_, key) => capturedPrivateKey = key;
+        var timeProvider = new FakeTimeProvider(t0);
+
+        await using var sut = BuildService(reader, timeProvider, refreshInterval: DefaultRefreshInterval, publicationLead: DefaultPublicationLead);
+        await sut.SignAsync("payload"u8.ToArray(), ct); // Downloads and caches v1's private key.
+        capturedPrivateKey.Should().NotBeNull();
+
+        reader.SetEnabled("v1", enabled: false);
+        timeProvider.SetUtcNow(t0 + DefaultRefreshInterval + TimeSpan.FromSeconds(1));
+
+        var act = async () => await sut.SignAsync("payload"u8.ToArray(), ct);
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .WithMessage("*no_active_key*");
+
+        var useAfterRevocation = () => ((RSA)capturedPrivateKey!).ExportParameters(includePrivateParameters: true);
+        useAfterRevocation.Should().Throw<ObjectDisposedException>(
+            "the cached private key must be released as soon as Key Vault reports zero enabled versions, " +
+            "not left resident in process memory until a later successful refresh or shutdown");
+    }
+
+    [Fact]
+    public async Task SignAsync_does_not_promote_a_not_yet_active_successor_early_after_predecessor_is_revoked_on_a_live_refresh()
+    {
+        // Regression test (issue #425 security review, findings F1 and F1-2): the single-key
+        // bootstrap exemption must never fire for this (Tier B) provider, on any refresh - including
+        // a *live* refresh that merely happens to shrink the listing down to one key via operator
+        // revocation, not a genuine cold start. Without the fix (gating the exemption on
+        // "isBootstrapSnapshot" - true on every process's first-ever snapshot, restart included -
+        // rather than on the provider's tier), disabling every key but a not-yet-due successor would
+        // instantly promote that successor, bypassing PublicationLead - and, unlike the version of
+        // this bug the original F1 fix closed, this replay would re-occur on every fresh instance
+        // (a restart or a scaled-out replica) started while the revocation is still in effect.
+        var ct = TestContext.Current.CancellationToken;
+        var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
+        var refreshInterval = TimeSpan.FromMinutes(5);
+        var publicationLead = TimeSpan.FromHours(1);
+        var reader = new FakeKeyVaultCertificateReader();
+        reader.AddRsaVersion("v1", createdOn: t0);
+        var timeProvider = new FakeTimeProvider(t0);
+
+        await using var sut = BuildService(reader, timeProvider, refreshInterval: refreshInterval, publicationLead: publicationLead);
+        await sut.SignAsync("payload"u8.ToArray(), ct); // Bootstrap load: v1 active.
+
+        reader.AddRsaVersion("v2", createdOn: t0); // v2's ActivateAt is t0 + publicationLead - still an hour away.
+        timeProvider.SetUtcNow(t0 + refreshInterval + TimeSpan.FromSeconds(1)); // Cache expired: a live (non-bootstrap) refresh.
+        await sut.SignAsync("payload"u8.ToArray(), ct); // v1 still active; v2 published but not yet active.
+
+        reader.SetEnabled("v1", enabled: false);
+        // Another live refresh; well before v2's ActivateAt (t0 + 1 hour). The listing now contains
+        // only v2, so timeline.Count == 1 - exactly the shape the bootstrap exemption keys off.
+        timeProvider.SetUtcNow(t0 + (2 * refreshInterval) + TimeSpan.FromSeconds(2));
+
+        var act = async () => await sut.SignAsync("payload"u8.ToArray(), ct);
+
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .WithMessage(
+                "*no_active_key*",
+                "v2 has not yet reached its own ActivateAt and must fail closed rather than being " +
+                "promoted early just because a live revocation happened to leave it as the sole listed key");
+    }
+
+    [Fact]
+    public async Task SignAsync_does_not_release_the_active_signer_when_the_callers_own_cancellation_token_fires_mid_refresh()
+    {
+        // Regression test (issue #425 security review, finding F2-1): a caller's own cancellation
+        // (e.g. a client disconnect) firing mid-refresh is not a signal about the cached signer's
+        // health, and must not release it. Without the fix, a client could repeatedly cancel requests
+        // to force a perfectly healthy cached signer to be torn down and its private key
+        // re-downloaded from Key Vault on every subsequent call - a remotely triggerable
+        // amplification vector against Key Vault requiring no actual key compromise.
+        var ct = TestContext.Current.CancellationToken;
+        var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
+        var reader = new FakeKeyVaultCertificateReader();
+        reader.AddRsaVersion("v1", createdOn: t0);
+        AsymmetricAlgorithm? capturedPrivateKey = null;
+        reader.OnPrivateKeyExtracted = (_, key) => capturedPrivateKey = key;
+        var timeProvider = new FakeTimeProvider(t0);
+
+        await using var sut = BuildService(reader, timeProvider, refreshInterval: DefaultRefreshInterval, publicationLead: DefaultPublicationLead);
+        await sut.SignAsync("payload"u8.ToArray(), ct); // Downloads and caches v1's private key.
+        capturedPrivateKey.Should().NotBeNull();
+        reader.PrivateKeyMaterialCalls.Should().ContainSingle();
+
+        timeProvider.SetUtcNow(t0 + DefaultRefreshInterval + TimeSpan.FromSeconds(1)); // Cache expired: next call refreshes.
+        using var cts = new CancellationTokenSource();
+        // Cancelled deterministically once the refresh has already acquired the base class's internal
+        // snapshot lock and started enumerating versions - simulating the caller's own request being
+        // cancelled mid-refresh (e.g. a client disconnect), not before the refresh even begins.
+        reader.CancelDuringVersionEnumeration = cts;
+
+        var act = async () => await sut.SignAsync("payload"u8.ToArray(), cts.Token);
+        await act.Should().ThrowAsync<OperationCanceledException>();
+
+        var stillUsable = () => ((RSA)capturedPrivateKey!).ExportParameters(includePrivateParameters: true);
+        stillUsable.Should().NotThrow(
+            "a caller-driven cancellation must not release the previously cached, still-healthy signer");
+
+        var afterCancellation = await sut.SignAsync("payload"u8.ToArray(), ct);
+        afterCancellation.Should().NotBeNull();
+        reader.PrivateKeyMaterialCalls.Should().ContainSingle(
+            "the signer must be reused, not re-created (and its private key re-downloaded), once the " +
+            "caller's cancellation has passed and a normal call succeeds");
+    }
+
+    // ── Startup failure propagation ──────────────────────────────────────────────────────────────
 
     [Fact]
     public async Task GetSigningKeysAsync_propagates_non_exportable_certificate_failure_from_the_reader_seam()
@@ -339,7 +473,9 @@ public sealed class AzureKeyVaultCachedSigningJwtSigningServiceTests
 
         await using var sut = BuildService(reader, timeProvider);
 
-        var act = async () => await sut.GetSigningKeysAsync(ct);
+        // The active version's private key is only requested by CreateSignerAsync (called lazily on
+        // first sign, not by GetSigningKeysAsync/ListKeysAsync).
+        var act = async () => await sut.SignAsync("payload"u8.ToArray(), ct);
 
         (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
             .WithMessage("*certificate_not_exportable*");
@@ -389,50 +525,31 @@ public sealed class AzureKeyVaultCachedSigningJwtSigningServiceTests
             .WithMessage("*certificate_not_found*");
     }
 
+    // ── Completeness contract: a failed read must throw, not return a partial list ───────────────
+
     [Fact]
-    public async Task GetSigningKeysAsync_disposes_already_downloaded_active_private_key_when_a_later_version_fails_to_load()
+    public async Task GetSigningKeysAsync_throws_rather_than_returning_a_partial_list_when_a_later_version_fails_to_load()
     {
-        // v0 is the active version, so real private key material has already been downloaded and
-        // extracted for it (via GetPrivateKeyMaterialAsync) by the time v1's public-key-only
-        // download (via GetPublicKeyMaterialAsync — v1 is published but not yet active) fails. The
-        // base class must not leak v0's live private key handle.
         var ct = TestContext.Current.CancellationToken;
         var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
         var reader = new FakeKeyVaultCertificateReader();
-        reader.AddRsaVersion("v1", createdOn: t0, notBefore: t0 + TimeSpan.FromDays(2)); // Not yet active -> published alongside the active v0.
         reader.AddRsaVersion("v0", createdOn: t0 - TimeSpan.FromDays(1));
+        reader.AddRsaVersion("v1", createdOn: t0, notBefore: t0 + TimeSpan.FromDays(2)); // Published, not yet active.
         reader.SetPublicKeyException("v1", new ZeeKayDaConfigurationException(
             new ZeeKayDaConfigurationFailure("signing.azure_key_vault.access_denied", "Simulated failure for v1.")));
-        AsymmetricAlgorithm? capturedKey = null;
-        reader.OnPrivateKeyExtracted = (version, key) =>
-        {
-            if (version == "v0")
-                capturedKey = key;
-        };
         var timeProvider = new FakeTimeProvider(t0);
 
         await using var sut = BuildService(reader, timeProvider);
 
         var act = async () => await sut.GetSigningKeysAsync(ct);
+
         (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
             .WithMessage("*access_denied*");
-
-        capturedKey.Should().NotBeNull();
-        var useAfterFailure = () => ((RSA)capturedKey!).ExportParameters(includePrivateParameters: false);
-        useAfterFailure.Should().Throw<ObjectDisposedException>(
-            "v0's already-downloaded active private key handle must not be leaked when v1's later load fails");
     }
 
     [Fact]
     public async Task GetSigningKeysAsync_disposes_active_public_only_handle_when_BuildDescriptor_throws_for_it()
     {
-        // Regression test for the mid-load key-handle leak: ValidateAlgorithmFamilyMatchesKeyType
-        // throws inside BuildDescriptor for an ES256/RSA mismatch. Since every included version's
-        // descriptor — including the active version's — is now built from the public-only handle
-        // (fix for #312's kid-derivation unification finding), it is that public-only handle, not
-        // a private key, which must not be leaked; GetPrivateKeyMaterialAsync is never even called
-        // in this scenario, since the descriptor build fails before the active-only private-key
-        // download step is reached.
         var ct = TestContext.Current.CancellationToken;
         var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
         var reader = new FakeKeyVaultCertificateReader();
@@ -448,125 +565,15 @@ public sealed class AzureKeyVaultCachedSigningJwtSigningServiceTests
             .WithMessage("*algorithm_key_type_mismatch*");
 
         capturedKey.Should().NotBeNull();
-        reader.PrivateKeyMaterialCalls.Should().BeEmpty(
-            "the descriptor build fails before the active-only private-key download step is ever reached");
         var useAfterFailure = () => ((RSA)capturedKey!).ExportParameters(includePrivateParameters: false);
         useAfterFailure.Should().Throw<ObjectDisposedException>(
             "the public-only key handle extracted before BuildDescriptor's failure must not be leaked");
     }
 
-    // ── Fix for #312 (medium finding): only the active key holds real private key material ──────
+    // ── Private key material: only downloaded (and only via CreateSignerAsync) for the active key ──
 
     [Fact]
-    public async Task GetSigningKeysAsync_only_downloads_real_private_key_material_for_the_active_version()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
-        var t1 = t0 + TimeSpan.FromDays(1);
-        var reader = new FakeKeyVaultCertificateReader();
-        reader.AddRsaVersion("v1", createdOn: t0);
-        var timeProvider = new FakeTimeProvider(t0);
-
-        await using var sut = BuildService(reader, timeProvider, refreshInterval: DefaultRefreshInterval);
-        await sut.GetSigningKeysAsync(ct); // Bootstrap: v1 is the (only, active) version.
-
-        reader.AddRsaVersion("v2", createdOn: t1);
-        timeProvider.SetUtcNow(t1); // Cache expired -> reload; v2 is published but not yet active.
-        var keys = await sut.GetSigningKeysAsync(ct);
-
-        keys.Should().HaveCount(2, "v1 is still active and v2 is published-but-not-yet-active");
-        reader.PrivateKeyMaterialCalls.Should().OnlyContain(v => v == "v1",
-            "real private key material must only ever be downloaded for the active version, per ADR 0011 §3.3(c)");
-        reader.PublicKeyMaterialCalls.Should().Contain("v2",
-            "a published-but-not-yet-active version is only ever exposed via JWKS, so it needs only a public key");
-        reader.PublicKeyMaterialCalls.Should().Contain("v1",
-            "every included version's descriptor — including the active one's — is now built from the same " +
-            "public-only source (fix for #312's kid-derivation unification finding), so the active version " +
-            "calls both GetPublicKeyMaterialAsync (for its descriptor) and GetPrivateKeyMaterialAsync (for signing)");
-    }
-
-    [Fact]
-    public async Task GetSigningKeysAsync_only_downloads_public_key_material_for_a_retired_version_still_in_its_retirement_window()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
-        var t1 = t0 + TimeSpan.FromDays(1);
-        var reader = new FakeKeyVaultCertificateReader();
-        reader.AddRsaVersion("v1", createdOn: t0);
-        var timeProvider = new FakeTimeProvider(t0);
-
-        await using var sut = BuildService(
-            reader, timeProvider, refreshInterval: DefaultRefreshInterval, retirementWindow: DefaultRetirementWindow);
-        await sut.GetSigningKeysAsync(ct); // Bootstrap: v1 active.
-        reader.PrivateKeyMaterialCalls.Clear(); // Only the second load (below) is under test.
-
-        reader.AddRsaVersion("v2", createdOn: t1);
-        timeProvider.SetUtcNow(t1 + DefaultRefreshInterval); // v2 activates; v1 retires but stays in-window.
-        var keys = await sut.GetSigningKeysAsync(ct);
-
-        keys.Should().HaveCount(2, "v1 is retired but still within its retirement window");
-        reader.PrivateKeyMaterialCalls.Should().OnlyContain(v => v == "v2",
-            "v2 is now the active version, so only it needs real private key material");
-        reader.PublicKeyMaterialCalls.Should().Contain("v1",
-            "a retired-but-still-in-window version is only exposed via JWKS, so it needs only a public key");
-        reader.PublicKeyMaterialCalls.Should().Contain("v2",
-            "v2's descriptor, like every other included version's, is built from the public-only source " +
-            "even though v2 is also the active signer");
-    }
-
-    // ── Fix for #312 (kid-derivation unification): descriptor always built from the public-only ──
-    // source, for every included version including the active one, with no leaked handles on any
-    // partial failure of the now-two-step active-version path.
-
-    [Fact]
-    public async Task GetSigningKeysAsync_active_kid_matches_thumbprint_of_the_public_only_material()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
-        var reader = new FakeKeyVaultCertificateReader();
-        var v1 = reader.AddRsaVersion("v1", createdOn: t0);
-        var timeProvider = new FakeTimeProvider(t0);
-
-        await using var sut = BuildService(reader, timeProvider);
-        var keys = await sut.GetSigningKeysAsync(ct);
-
-        keys[0].Kid.Should().Be(JwkThumbprint.Compute(reader.GetRsaMaterial(v1.Version)),
-            "the active version's kid must be derived from the public-only material, the same source used for every other included version");
-    }
-
-    [Fact]
-    public async Task GetSigningKeysAsync_disposes_active_public_only_handle_when_private_key_download_fails()
-    {
-        // Regression test for the now-two-step active-version path: the public-only handle is
-        // fetched and used to build the descriptor successfully, but the subsequent private-key
-        // download for signing then fails — the public-only handle must not leak.
-        var ct = TestContext.Current.CancellationToken;
-        var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
-        var reader = new FakeKeyVaultCertificateReader();
-        reader.AddRsaVersion("v1", createdOn: t0);
-        reader.SetPrivateKeyException("v1", new ZeeKayDaConfigurationException(
-            new ZeeKayDaConfigurationFailure(
-                "signing.azure_key_vault.access_denied", "Simulated private-key download failure for v1.")));
-        AsymmetricAlgorithm? capturedKey = null;
-        reader.OnPublicKeyExtracted = (_, key) => capturedKey = key;
-        var timeProvider = new FakeTimeProvider(t0);
-
-        await using var sut = BuildService(reader, timeProvider);
-
-        var act = async () => await sut.GetSigningKeysAsync(ct);
-        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
-            .WithMessage("*access_denied*");
-
-        capturedKey.Should().NotBeNull();
-        var useAfterFailure = () => ((RSA)capturedKey!).ExportParameters(includePrivateParameters: false);
-        useAfterFailure.Should().Throw<ObjectDisposedException>(
-            "the public-only key handle used to build the active version's descriptor must not be leaked when the subsequent private-key download fails");
-    }
-
-    // ── AC #1: private key downloaded once and cached — no reader call per sign ─────────────────
-
-    [Fact]
-    public async Task GetPrivateKeyMaterialAsync_is_called_exactly_once_per_included_version_per_load()
+    public async Task ListKeysAsync_never_downloads_real_private_key_material_only_public_key_material()
     {
         var ct = TestContext.Current.CancellationToken;
         var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
@@ -576,20 +583,39 @@ public sealed class AzureKeyVaultCachedSigningJwtSigningServiceTests
 
         await using var sut = BuildService(reader, timeProvider);
         await sut.GetSigningKeysAsync(ct);
-        await sut.GetSigningKeysAsync(ct); // Still within the cache's KeyRotationCheckInterval — no reload.
 
-        reader.PrivateKeyMaterialCalls.Should().ContainSingle(
-            "the private key must be downloaded once at load and cached, not re-downloaded on every call within the refresh interval");
+        reader.PrivateKeyMaterialCalls.Should().BeEmpty(
+            "ListKeysAsync must only ever build public-only listings; real private key material is only " +
+            "fetched lazily by CreateSignerAsync for the active key");
+        reader.PublicKeyMaterialCalls.Should().Contain("v1");
     }
 
     [Fact]
-    public async Task SignAsync_does_not_call_the_key_vault_certificate_reader_no_network_round_trip_per_sign()
+    public async Task CreateSignerAsync_downloads_real_private_key_material_only_for_the_active_version()
     {
-        // The crux of AC #1: once cached, signing must be entirely local. Since
-        // AzureKeyVaultCachedSigningJwtSigningService never overrides SignInputAsync, signing goes
-        // through JwtSigningService<TOptions>'s default local-signing path — this test proves that
-        // choice holds in practice by asserting the reader is never touched again after the initial
-        // load, no matter how many times SignAsync is subsequently called.
+        var ct = TestContext.Current.CancellationToken;
+        var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
+        var t1 = t0 + TimeSpan.FromDays(1);
+        var reader = new FakeKeyVaultCertificateReader();
+        reader.AddRsaVersion("v1", createdOn: t0);
+        var timeProvider = new FakeTimeProvider(t0);
+
+        await using var sut = BuildService(reader, timeProvider, refreshInterval: DefaultRefreshInterval, publicationLead: DefaultPublicationLead);
+        reader.AddRsaVersion("v2", createdOn: t1);
+        timeProvider.SetUtcNow(t1); // v2 published but not yet active.
+
+        var keys = await sut.GetSigningKeysAsync(ct);
+        keys.Should().HaveCount(2);
+
+        await sut.SignAsync("payload"u8.ToArray(), ct);
+
+        reader.PrivateKeyMaterialCalls.Should().OnlyContain(v => v == "v1",
+            "real private key material must only ever be downloaded for the active version");
+    }
+
+    [Fact]
+    public async Task SignAsync_does_not_re_download_private_key_material_across_multiple_signs()
+    {
         var ct = TestContext.Current.CancellationToken;
         var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
         var reader = new FakeKeyVaultCertificateReader();
@@ -597,23 +623,19 @@ public sealed class AzureKeyVaultCachedSigningJwtSigningServiceTests
         var timeProvider = new FakeTimeProvider(t0);
 
         await using var sut = BuildService(reader, timeProvider);
-        await sut.GetSigningKeysAsync(ct); // Bootstrap load: exactly one reader call expected.
-        var callsAfterLoad = reader.PrivateKeyMaterialCalls.Count;
+        await sut.SignAsync("payload-1"u8.ToArray(), ct); // First sign: creates and caches the signer.
+        var callsAfterFirstSign = reader.PrivateKeyMaterialCalls.Count;
 
-        await sut.SignAsync("payload-1"u8.ToArray(), ct);
         await sut.SignAsync("payload-2"u8.ToArray(), ct);
         await sut.SignAsync("payload-3"u8.ToArray(), ct);
 
-        reader.PrivateKeyMaterialCalls.Should().HaveCount(callsAfterLoad,
-            "signing must use the already-cached local private key — no Key Vault round trip per sign");
+        reader.PrivateKeyMaterialCalls.Should().HaveCount(callsAfterFirstSign,
+            "signing must reuse the already-created local signer — no Key Vault round trip per sign");
     }
 
     [Fact]
     public async Task SignAsync_produces_a_signature_verifiable_with_the_certificate_s_public_key()
     {
-        // Proves signing is genuinely local: the produced signature is verifiable offline against
-        // the exact public key material the fake registered for the active version, with no
-        // involvement from the (fake) Key Vault signer seam — there is none for this provider.
         var ct = TestContext.Current.CancellationToken;
         var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
         var reader = new FakeKeyVaultCertificateReader();
@@ -623,18 +645,12 @@ public sealed class AzureKeyVaultCachedSigningJwtSigningServiceTests
         await using var sut = BuildService(reader, timeProvider, algorithm: SigningAlgorithm.RS256);
         await sut.GetSigningKeysAsync(ct);
 
-        // SignAsync's payloadSegment parameter is passed through verbatim, unmodified, into the
-        // signing input (see IJwtSigningService.SignAsync's doc: the caller is expected to have
-        // already base64url-encoded it) — the base class never re-encodes it. These raw ASCII bytes
-        // are therefore the exact payload segment bytes used to build the real signing input below.
         var payloadSegment = "payload"u8.ToArray();
         var result = await sut.SignAsync(payloadSegment, ct);
 
         using var rsa = RSA.Create();
         rsa.ImportParameters(reader.GetRsaMaterial("v1"));
 
-        // Reconstruct the exact JWS signing input the base class built: base64url(header) + '.' +
-        // payloadSegment (HeaderSegment is already the base64url-encoded header bytes).
         var actualSigningInput = new byte[result.HeaderSegment.Length + 1 + payloadSegment.Length];
         result.HeaderSegment.Span.CopyTo(actualSigningInput);
         actualSigningInput[result.HeaderSegment.Length] = (byte)'.';
@@ -647,196 +663,10 @@ public sealed class AzureKeyVaultCachedSigningJwtSigningServiceTests
         isValid.Should().BeTrue("the signature must be verifiable against the certificate's own public key");
     }
 
-    // ── HasKeySetChangedAsync: metadata-only change detection (ADR 0011 §3.5) ───────────────────────
+    // ── Refresh cadence (Tier B / ADR 0015) ──────────────────────────────────────────────────────
 
     [Fact]
-    public async Task GetSigningKeysAsync_skips_key_material_download_when_versions_are_unchanged_between_polls()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
-        var reader = new FakeKeyVaultCertificateReader();
-        reader.AddRsaVersion("v1", createdOn: t0);
-        var timeProvider = new FakeTimeProvider(t0);
-
-        await using var sut = BuildService(reader, timeProvider, refreshInterval: DefaultRefreshInterval);
-        await sut.GetSigningKeysAsync(ct); // Bootstrap load.
-        reader.PrivateKeyMaterialCalls.Clear();
-        reader.PublicKeyMaterialCalls.Clear();
-
-        timeProvider.SetUtcNow(t0 + DefaultRefreshInterval); // Cache expires -> triggers the "ask" step.
-        var keys = await sut.GetSigningKeysAsync(ct);
-
-        keys.Should().HaveCount(1);
-        reader.PrivateKeyMaterialCalls.Should().BeEmpty(
-            "no version changed since the last load, so HasKeySetChangedAsync must report no change and LoadKeysAsync must not run");
-        reader.PublicKeyMaterialCalls.Should().BeEmpty();
-    }
-
-    [Fact]
-    public async Task SignAsync_still_succeeds_after_an_unchanged_poll_skips_the_reload()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
-        var reader = new FakeKeyVaultCertificateReader();
-        reader.AddRsaVersion("v1", createdOn: t0);
-        var timeProvider = new FakeTimeProvider(t0);
-
-        await using var sut = BuildService(reader, timeProvider, refreshInterval: DefaultRefreshInterval);
-        await sut.GetSigningKeysAsync(ct); // Bootstrap load.
-
-        timeProvider.SetUtcNow(t0 + DefaultRefreshInterval); // Unchanged poll -> ask reports "no change".
-        var payload = "payload"u8.ToArray();
-
-        var act = async () => await sut.SignAsync(payload, ct);
-
-        await act.Should().NotThrowAsync(
-            "the cached SigningKeySet must remain usable (not disposed) when the ask reports no change");
-    }
-
-    [Fact]
-    public async Task HasKeySetChangedAsync_triggers_rebuild_when_a_new_certificate_version_appears()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
-        var reader = new FakeKeyVaultCertificateReader();
-        reader.AddRsaVersion("v1", createdOn: t0);
-        var timeProvider = new FakeTimeProvider(t0);
-
-        await using var sut = BuildService(reader, timeProvider, refreshInterval: DefaultRefreshInterval);
-        await sut.GetSigningKeysAsync(ct); // Bootstrap load.
-        reader.PrivateKeyMaterialCalls.Clear();
-        reader.PublicKeyMaterialCalls.Clear();
-
-        reader.AddRsaVersion("v2", createdOn: t0 + DefaultRefreshInterval);
-        timeProvider.SetUtcNow(t0 + DefaultRefreshInterval);
-        var keys = await sut.GetSigningKeysAsync(ct);
-
-        keys.Should().HaveCount(2, "v2 must be published as soon as it appears, per publish-then-activate");
-        reader.PublicKeyMaterialCalls.Should().NotBeEmpty(
-            "a new certificate version appearing must trigger a real reload, downloading key material again");
-    }
-
-    [Fact]
-    public async Task HasKeySetChangedAsync_triggers_rebuild_when_a_non_active_versions_enabled_flag_flips()
-    {
-        // ADR 0011 Amendment 2's revocation case: disabling a version that is not the active
-        // signer must still be reported as a change, even though the active version's identifier
-        // is unchanged.
-        var ct = TestContext.Current.CancellationToken;
-        var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
-        var t1 = t0 + TimeSpan.FromDays(1);
-        var retirementWindow = TimeSpan.FromHours(2);
-        var reader = new FakeKeyVaultCertificateReader();
-        reader.AddRsaVersion("v1", createdOn: t0);
-        var timeProvider = new FakeTimeProvider(t0);
-
-        await using var sut = BuildService(
-            reader, timeProvider, refreshInterval: DefaultRefreshInterval, retirementWindow: retirementWindow);
-        await sut.GetSigningKeysAsync(ct); // Bootstrap: v1 active.
-
-        reader.AddRsaVersion("v2", createdOn: t1);
-        timeProvider.SetUtcNow(t1 + DefaultRefreshInterval); // v2 activates; v1 retires but stays in-window.
-        await sut.GetSigningKeysAsync(ct); // v1 + v2 both included.
-        reader.PrivateKeyMaterialCalls.Clear();
-        reader.PublicKeyMaterialCalls.Clear();
-
-        // Disable v1 (the non-active, retired-but-in-window version). Only a small amount of time
-        // passes (well inside the 2-hour retirement window if v1 were still enabled) so the change
-        // is attributable solely to the Enabled flag flip, not to elapsed time.
-        reader.SetEnabled("v1", enabled: false);
-        timeProvider.SetUtcNow(t1 + DefaultRefreshInterval + DefaultRefreshInterval);
-        var keys = await sut.GetSigningKeysAsync(ct);
-
-        keys.Should().ContainSingle(
-            "v1's disabled flag must exclude it immediately, even though the active version (v2) is unchanged");
-        reader.PublicKeyMaterialCalls.Should().NotBeEmpty(
-            "a non-active version's Enabled flag flipping must still trigger a rebuild");
-    }
-
-    [Fact]
-    public async Task HasKeySetChangedAsync_triggers_rebuild_when_elapsed_time_alone_moves_a_version_out_of_its_retirement_window()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
-        var t1 = t0 + TimeSpan.FromDays(1);
-        var retirementWindow = TimeSpan.FromHours(1);
-        var reader = new FakeKeyVaultCertificateReader();
-        reader.AddRsaVersion("v1", createdOn: t0);
-        var timeProvider = new FakeTimeProvider(t0);
-
-        await using var sut = BuildService(
-            reader, timeProvider, refreshInterval: DefaultRefreshInterval, retirementWindow: retirementWindow);
-        await sut.GetSigningKeysAsync(ct); // Bootstrap: v1 active.
-
-        reader.AddRsaVersion("v2", createdOn: t1);
-        timeProvider.SetUtcNow(t1 + DefaultRefreshInterval); // v2 activates; v1 retired but still in-window.
-        await sut.GetSigningKeysAsync(ct); // v1 + v2 both included.
-        reader.PrivateKeyMaterialCalls.Clear();
-        reader.PublicKeyMaterialCalls.Clear();
-
-        // No Key Vault-side change at all — just elapsed time pushing v1 past its retirement window.
-        timeProvider.SetUtcNow(t1 + DefaultRefreshInterval + retirementWindow + TimeSpan.FromMinutes(1));
-        var keys = await sut.GetSigningKeysAsync(ct);
-
-        keys.Should().ContainSingle("v1's retirement window has now fully elapsed");
-        reader.PublicKeyMaterialCalls.Should().NotBeEmpty(
-            "a version leaving its retirement window purely from elapsed time must still trigger a rebuild, " +
-            "even with no Key Vault-side change");
-    }
-
-    [Fact]
-    public async Task HasKeySetChangedAsync_triggers_rebuild_when_the_active_version_changes_with_membership_unchanged()
-    {
-        // Regression test for the security-review finding on this PR: ToVersionSet must compare
-        // IsActive, not just version identifier and Enabled state. KeyRotationCheckInterval is both
-        // the poll cadence and the publish-then-activate lead time, so a normal rotation spans two
-        // polls. At poll N, v2 is published but not yet active — the included set becomes
-        // {v1 active, v2 not-active}, a membership change from the single-version bootstrap state,
-        // so this poll is correctly reported as a change regardless of the fix (see
-        // GetSigningKeysAsync_rotated_in_version_is_published_but_not_yet_active). The poll under
-        // test here is the *next* one (N+1): no Key Vault-side change at all happens between the two
-        // polls — same two versions, same Enabled states — but v2 has now crossed into its
-        // activation window and becomes the active signer while v1 (still within its retirement
-        // window) remains included. Comparing only version identifier and Enabled state would see
-        // {v1, v2} on both polls and report "no change," silently skipping the reload and leaving the
-        // service signing with v1 past its intended rotation point.
-        var ct = TestContext.Current.CancellationToken;
-        var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
-        var t1 = t0 + TimeSpan.FromDays(1);
-        var reader = new FakeKeyVaultCertificateReader();
-        reader.AddRsaVersion("v1", createdOn: t0);
-        var timeProvider = new FakeTimeProvider(t0);
-
-        await using var sut = BuildService(
-            reader, timeProvider, refreshInterval: DefaultRefreshInterval, retirementWindow: DefaultRetirementWindow);
-        await sut.GetSigningKeysAsync(ct); // Bootstrap: v1 active.
-
-        reader.AddRsaVersion("v2", createdOn: t1);
-        timeProvider.SetUtcNow(t1); // Poll N: v2 published but not yet active (membership change).
-        await sut.GetSigningKeysAsync(ct); // v1 active + v2 not-active; both now recorded as "previously included".
-        reader.PrivateKeyMaterialCalls.Clear();
-        reader.PublicKeyMaterialCalls.Clear();
-
-        // Poll N+1: one KeyRotationCheckInterval later, with no Key Vault-side change whatsoever —
-        // v2 now activates and v1 (still within its retirement window) stays included. Same version
-        // identifiers, same Enabled states as poll N; only which entry is active differs.
-        timeProvider.SetUtcNow(t1 + DefaultRefreshInterval);
-        var keys = await sut.GetSigningKeysAsync(ct);
-
-        keys.Should().HaveCount(2, "v1 is still within its retirement window and v2 is now active");
-        keys[0].Kid.Should().Be(JwkThumbprint.Compute(reader.GetRsaMaterial("v2")),
-            "the handoff must actually happen: v2 must become the active (index 0) signing key at this poll");
-        reader.PublicKeyMaterialCalls.Should().NotBeEmpty(
-            "the active-slot handoff alone must be enough to trigger a real reload, even with membership and " +
-            "Enabled states unchanged since the previous poll");
-        reader.PrivateKeyMaterialCalls.Should().Contain("v2",
-            "v2 is now the active version and must have its real private key downloaded so it can actually sign");
-        reader.PrivateKeyMaterialCalls.Should().NotContain("v1",
-            "v1 is no longer active, so only its public key is needed even though it is still included");
-    }
-
-    [Fact]
-    public async Task HasKeySetChangedAsync_only_enumerates_certificate_versions_and_never_downloads_key_material_when_reporting_no_change()
+    public async Task ListKeysAsync_is_called_once_per_RefreshInterval()
     {
         var ct = TestContext.Current.CancellationToken;
         var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
@@ -847,68 +677,19 @@ public sealed class AzureKeyVaultCachedSigningJwtSigningServiceTests
         await using var sut = BuildService(reader, timeProvider, refreshInterval: DefaultRefreshInterval);
         await sut.GetSigningKeysAsync(ct); // Bootstrap load.
         var enumerationCallsAfterBootstrap = reader.GetCertificateVersionsCallCount;
-        reader.PrivateKeyMaterialCalls.Clear();
-        reader.PublicKeyMaterialCalls.Clear();
 
-        timeProvider.SetUtcNow(t0 + DefaultRefreshInterval); // Unchanged poll.
+        await sut.GetSigningKeysAsync(ct); // Still within the refresh window — no re-enumeration.
+
+        reader.GetCertificateVersionsCallCount.Should().Be(enumerationCallsAfterBootstrap);
+
+        timeProvider.SetUtcNow(t0 + DefaultRefreshInterval);
         await sut.GetSigningKeysAsync(ct);
 
         reader.GetCertificateVersionsCallCount.Should().Be(enumerationCallsAfterBootstrap + 1,
-            "the ask step must enumerate certificate versions exactly once per cycle");
-        reader.PrivateKeyMaterialCalls.Should().BeEmpty("the ask's metadata-only check must never download key material");
-        reader.PublicKeyMaterialCalls.Should().BeEmpty();
+            "once RefreshInterval has elapsed, ListKeysAsync must re-enumerate Key Vault's version list");
     }
 
-    [Fact]
-    public async Task HasKeySetChangedAsync_only_enumerates_certificate_versions_before_a_real_reload_downloads_key_material()
-    {
-        // Proves the "ask" itself is metadata-only even on a cycle that ends up rebuilding: the
-        // ask's own enumeration call never touches key material — only the subsequent, separate
-        // LoadKeysAsync reload (which shares the same ComputeIncludedVersionsAsync helper and so
-        // enumerates a second time) ever calls the key-material endpoints.
-        var ct = TestContext.Current.CancellationToken;
-        var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
-        var reader = new FakeKeyVaultCertificateReader();
-        reader.AddRsaVersion("v1", createdOn: t0);
-        var timeProvider = new FakeTimeProvider(t0);
-
-        await using var sut = BuildService(reader, timeProvider, refreshInterval: DefaultRefreshInterval);
-        await sut.GetSigningKeysAsync(ct); // Bootstrap load.
-        var enumerationCallsAfterBootstrap = reader.GetCertificateVersionsCallCount;
-        reader.PrivateKeyMaterialCalls.Clear();
-        reader.PublicKeyMaterialCalls.Clear();
-
-        reader.AddRsaVersion("v2", createdOn: t0 + DefaultRefreshInterval); // A genuine change.
-        timeProvider.SetUtcNow(t0 + DefaultRefreshInterval);
-        await sut.GetSigningKeysAsync(ct);
-
-        reader.GetCertificateVersionsCallCount.Should().Be(enumerationCallsAfterBootstrap + 2,
-            "one enumeration for the ask (HasKeySetChangedAsync) and a second, separate one for the real reload " +
-            "(LoadKeysAsync) that the \"true\" answer then triggers");
-        reader.PublicKeyMaterialCalls.Should().NotBeEmpty("the real reload — not the ask — is what downloads key material");
-    }
-
-    // ── WarnIfPreviouslyPublishedKidVanished (ADR 0011 §3.5 anomaly surfacing) ──────────────────────
-
-    [Fact]
-    public async Task GetSigningKeysAsync_does_not_warn_when_a_previously_published_kid_is_still_present_next_cycle()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
-        var reader = new FakeKeyVaultCertificateReader();
-        reader.AddRsaVersion("v1", createdOn: t0);
-        var timeProvider = new FakeTimeProvider(t0);
-        var logger = new CapturingLogger<AzureKeyVaultCachedSigningJwtSigningService>();
-
-        await using var sut = BuildService(reader, timeProvider, refreshInterval: DefaultRefreshInterval, logger: logger);
-        await sut.GetSigningKeysAsync(ct); // Bootstrap load: v1 published, kid recorded.
-
-        timeProvider.SetUtcNow(t0 + DefaultRefreshInterval); // Cache expires -> forces a second LoadKeysAsync.
-        await sut.GetSigningKeysAsync(ct); // v1 is still the only, still-active version.
-
-        logger.Entries.Should().BeEmpty(
-            "a kid that is still present in the next refresh cycle is not an anomaly and must not be warned about");
-    }
+    // ── Vanished-kid / within-window-vanish Warning (shared base, ADR 0015 §6) ──────────────────
 
     [Fact]
     public async Task GetSigningKeysAsync_does_not_warn_when_a_previously_published_kid_retires_normally_and_the_version_stays_in_key_vault()
@@ -920,26 +701,25 @@ public sealed class AzureKeyVaultCachedSigningJwtSigningServiceTests
         var reader = new FakeKeyVaultCertificateReader();
         reader.AddRsaVersion("v1", createdOn: t0);
         var timeProvider = new FakeTimeProvider(t0);
-        var logger = new CapturingLogger<AzureKeyVaultCachedSigningJwtSigningService>();
+        var logger = new CapturingLogger<JwtSigningService<AzureKeyVaultCachedSigningOptions>>();
 
         await using var sut = BuildService(
-            reader, timeProvider, refreshInterval: DefaultRefreshInterval, retirementWindow: retirementWindow, logger: logger);
-        await sut.GetSigningKeysAsync(ct); // Bootstrap: v1 active, kid recorded.
+            reader, timeProvider, refreshInterval: DefaultRefreshInterval, publicationLead: DefaultPublicationLead,
+            retirementWindow: retirementWindow, logger: logger);
+        await sut.GetSigningKeysAsync(ct); // Bootstrap: v1 active.
 
         reader.AddRsaVersion("v2", createdOn: t1);
-        // Past v1's full retirement window: v1 is excluded from the included set, but its Key Vault
-        // certificate version is never removed from Versions - a normal, expected retirement.
-        timeProvider.SetUtcNow(t1 + DefaultRefreshInterval + retirementWindow + TimeSpan.FromMinutes(1));
+        timeProvider.SetUtcNow(t1 + DefaultPublicationLead + retirementWindow + TimeSpan.FromMinutes(1));
         var keys = await sut.GetSigningKeysAsync(ct);
 
         keys.Should().ContainSingle("v1's retirement window has fully elapsed");
-        logger.Entries.Should().BeEmpty(
-            "v1's certificate version is still present in Key Vault (merely excluded for having aged past its " +
-            "retirement window), so this is an expected exclusion, not the anomaly ADR 0011 §3.5 warns about");
+        logger.Entries.Should().NotContain(e => e.Level == LogLevel.Warning,
+            "v1's certificate version is still present in Key Vault, merely excluded for having aged past " +
+            "its retirement window — an expected exclusion, not the anomaly ADR 0015 §6 warns about");
     }
 
     [Fact]
-    public async Task GetSigningKeysAsync_warns_when_a_previously_published_kid_s_certificate_version_disappears_from_key_vault_entirely()
+    public async Task GetSigningKeysAsync_warns_when_a_previously_published_kid_s_certificate_version_disappears_from_key_vault_entirely_within_the_retirement_window()
     {
         var ct = TestContext.Current.CancellationToken;
         var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
@@ -947,67 +727,200 @@ public sealed class AzureKeyVaultCachedSigningJwtSigningServiceTests
         var retirementWindow = TimeSpan.FromHours(1);
         var reader = new FakeKeyVaultCertificateReader();
         var v1 = reader.AddRsaVersion("v1", createdOn: t0);
-        var v1Kid = JwkThumbprint.Compute(reader.GetRsaMaterial("v1"));
         var timeProvider = new FakeTimeProvider(t0);
-        var logger = new CapturingLogger<AzureKeyVaultCachedSigningJwtSigningService>();
+        var logger = new CapturingLogger<JwtSigningService<AzureKeyVaultCachedSigningOptions>>();
 
         await using var sut = BuildService(
-            reader, timeProvider, refreshInterval: DefaultRefreshInterval, retirementWindow: retirementWindow, logger: logger);
-        await sut.GetSigningKeysAsync(ct); // Bootstrap: v1 active, kid recorded as previously published.
+            reader, timeProvider, refreshInterval: DefaultRefreshInterval, publicationLead: DefaultPublicationLead,
+            retirementWindow: retirementWindow, logger: logger);
+        await sut.GetSigningKeysAsync(ct); // Bootstrap: v1 active, published.
 
         reader.AddRsaVersion("v2", createdOn: t1);
-        timeProvider.SetUtcNow(t1 + DefaultRefreshInterval); // v2 activates; v1 would normally still be in its retirement window.
+        timeProvider.SetUtcNow(t1 + DefaultPublicationLead); // v2 activates; v1 would normally still be in its retirement window.
 
-        // Simulate an operator (or a misbehaving external rotation process) deleting v1's certificate
-        // version from Key Vault outright, well before its retirement window (1 hour) has elapsed -
-        // exactly the anomaly ADR 0011 §3.5 exists to surface.
+        // Simulate an operator (or a misbehaving external process) deleting v1's certificate version
+        // from Key Vault outright, well before its retirement window has elapsed.
         reader.Versions.RemoveAll(version => version.Version == v1.Version);
 
         var keys = await sut.GetSigningKeysAsync(ct);
 
         keys.Should().ContainSingle("v1 is gone from Key Vault entirely, so it cannot be included any more");
-        var entry = logger.Entries.Should().ContainSingle(
-            "a previously-published kid whose certificate version has vanished from Key Vault entirely, before " +
-            "its retirement window elapsed, must be surfaced as a loud warning per ADR 0011 §3.5").Which;
-        entry.Level.Should().Be(LogLevel.Warning);
-        entry.Message.Should().Contain(v1Kid, "the vanished kid must be identifiable in the log line");
-        entry.Message.Should().Contain("v1", "the vanished Key Vault certificate version must be identifiable in the log line");
+        logger.Entries.Should().Contain(e => e.Level == LogLevel.Warning,
+            "a previously-published key vanishing from Key Vault entirely, before its retirement window " +
+            "elapsed, must be surfaced as a Warning per ADR 0015 §6");
     }
 
     [Fact]
-    public async Task GetSigningKeysAsync_vanished_kid_warning_log_state_carries_only_the_kid_and_version_strings_never_key_material()
+    public async Task GetSigningKeysAsync_warns_when_a_previously_published_kid_s_certificate_version_is_disabled_within_the_retirement_window()
     {
-        // Proves the warning cannot leak key material even in principle: the structured log state
-        // passed to ILogger.Log (as opposed to just the rendered message) must contain only string
-        // values (the kid and the Key Vault version identifier), never an AsymmetricAlgorithm handle
-        // or any RSA/EC parameter material.
+        // Regression test (issue #425 security review, finding F9b): the actual emergency-revocation
+        // path an operator uses is disabling a version in Key Vault, not deleting it outright. The
+        // version stays present in the vault's version list, merely no longer enabled/returned by
+        // ListKeysAsync — the same within-window-vanish Warning must fire for this path too, not only
+        // for outright deletion.
         var ct = TestContext.Current.CancellationToken;
         var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
         var t1 = t0 + TimeSpan.FromDays(1);
+        var retirementWindow = TimeSpan.FromHours(1);
         var reader = new FakeKeyVaultCertificateReader();
-        var v1 = reader.AddRsaVersion("v1", createdOn: t0);
+        reader.AddRsaVersion("v1", createdOn: t0);
         var timeProvider = new FakeTimeProvider(t0);
-        var logger = new CapturingLogger<AzureKeyVaultCachedSigningJwtSigningService>();
+        var logger = new CapturingLogger<JwtSigningService<AzureKeyVaultCachedSigningOptions>>();
 
         await using var sut = BuildService(
-            reader, timeProvider, refreshInterval: DefaultRefreshInterval, logger: logger);
-        await sut.GetSigningKeysAsync(ct);
+            reader, timeProvider, refreshInterval: DefaultRefreshInterval, publicationLead: DefaultPublicationLead,
+            retirementWindow: retirementWindow, logger: logger);
+        await sut.GetSigningKeysAsync(ct); // Bootstrap: v1 active, published.
 
         reader.AddRsaVersion("v2", createdOn: t1);
-        timeProvider.SetUtcNow(t1 + DefaultRefreshInterval);
-        reader.Versions.RemoveAll(version => version.Version == v1.Version);
+        timeProvider.SetUtcNow(t1 + DefaultPublicationLead); // v2 activates; v1 would normally still be in its retirement window.
+
+        // Emergency revocation: disable v1 in Key Vault (still present in the version list) rather
+        // than deleting it.
+        reader.SetEnabled("v1", enabled: false);
+
+        var keys = await sut.GetSigningKeysAsync(ct);
+
+        keys.Should().ContainSingle("v1 is disabled, so the kill switch drops it immediately");
+        logger.Entries.Should().Contain(e => e.Level == LogLevel.Warning,
+            "disabling a previously-published key while still inside its retirement window is the real " +
+            "emergency-revocation procedure, and must be surfaced as a Warning per ADR 0015 §6 exactly " +
+            "like outright deletion");
+    }
+
+    // ── Private/public key cross-check (issue #425 security review, finding F3) ────────────────────
+
+    [Fact]
+    public async Task SignAsync_throws_AzureKeyVaultSigningException_when_the_downloaded_private_key_does_not_match_the_listed_public_key()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
+        var reader = new FakeKeyVaultCertificateReader();
+        reader.AddRsaVersion("v1", createdOn: t0);
+        var timeProvider = new FakeTimeProvider(t0);
+
+        // Simulate the certificate's linked secret (private key material) having diverged from its
+        // Cer (public key material published in the JWKS) — two separate Key Vault reads that
+        // should always agree, but which this cross-check exists to verify rather than assume.
+        using var divergentRsa = RSA.Create(2048);
+        reader.SetMismatchedPrivateKeyMaterial("v1", divergentRsa.ExportParameters(includePrivateParameters: true));
+
+        await using var sut = BuildService(reader, timeProvider);
+        await sut.GetSigningKeysAsync(ct); // Publishes v1's (unmodified) public key in the JWKS.
+
+        var act = async () => await sut.SignAsync("payload"u8.ToArray(), ct);
+
+        (await act.Should().ThrowAsync<AzureKeyVaultSigningException>())
+            .WithMessage("*does not match*");
+    }
+
+    [Fact]
+    public async Task SignAsync_disposes_the_mismatched_private_key_before_throwing()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
+        var reader = new FakeKeyVaultCertificateReader();
+        reader.AddRsaVersion("v1", createdOn: t0);
+        using var divergentRsa = RSA.Create(2048);
+        reader.SetMismatchedPrivateKeyMaterial("v1", divergentRsa.ExportParameters(includePrivateParameters: true));
+
+        AsymmetricAlgorithm? capturedPrivateKey = null;
+        reader.OnPrivateKeyExtracted = (_, key) => capturedPrivateKey = key;
+
+        var timeProvider = new FakeTimeProvider(t0);
+        await using var sut = BuildService(reader, timeProvider);
         await sut.GetSigningKeysAsync(ct);
 
-        var entry = logger.Entries.Should().ContainSingle().Which;
-        var state = entry.State.Should().BeAssignableTo<IReadOnlyList<KeyValuePair<string, object>>>().Subject;
+        var act = async () => await sut.SignAsync("payload"u8.ToArray(), ct);
+        await act.Should().ThrowAsync<AzureKeyVaultSigningException>();
 
-        state.Should().NotBeEmpty();
-        state.Should().OnlyContain(
-            kv => kv.Value == null || kv.Value is string,
-            "the only structured values ever logged for this warning are the public kid, the Key Vault version " +
-            "string, and the format template itself - never a key handle or raw key parameter material");
-        state.Should().NotContain(
-            kv => kv.Value is AsymmetricAlgorithm || kv.Value is RSAParameters || kv.Value is ECParameters);
+        capturedPrivateKey.Should().NotBeNull();
+        var useAfterFailure = () => ((RSA)capturedPrivateKey!).ExportParameters(includePrivateParameters: true);
+        useAfterFailure.Should().Throw<ObjectDisposedException>(
+            "the downloaded private key must not be leaked once the cross-check against the listed " +
+            "public key fails");
+    }
+
+    [Fact]
+    public async Task SignAsync_succeeds_when_the_downloaded_private_key_matches_the_listed_public_key()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
+        var reader = new FakeKeyVaultCertificateReader();
+        reader.AddRsaVersion("v1", createdOn: t0);
+        var timeProvider = new FakeTimeProvider(t0);
+
+        await using var sut = BuildService(reader, timeProvider);
+        await sut.GetSigningKeysAsync(ct);
+
+        var act = async () => await sut.SignAsync("payload"u8.ToArray(), ct);
+
+        await act.Should().NotThrowAsync(
+            "the private and public halves of the same version, read normally, must always match");
+    }
+
+    [Fact]
+    public async Task SignAsync_succeeds_for_an_EC_version_when_the_downloaded_private_key_matches_the_listed_public_key()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
+        var reader = new FakeKeyVaultCertificateReader();
+        reader.AddEcVersion("v1", createdOn: t0);
+        var timeProvider = new FakeTimeProvider(t0);
+
+        await using var sut = BuildService(reader, timeProvider, algorithm: SigningAlgorithm.ES256);
+        await sut.GetSigningKeysAsync(ct);
+
+        var act = async () => await sut.SignAsync("payload"u8.ToArray(), ct);
+
+        await act.Should().NotThrowAsync(
+            "the private and public halves of the same EC version, read normally, must always match");
+    }
+
+    [Fact]
+    public async Task SignAsync_throws_AzureKeyVaultSigningException_when_the_downloaded_EC_private_key_does_not_match_the_listed_public_key()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
+        var reader = new FakeKeyVaultCertificateReader();
+        reader.AddEcVersion("v1", createdOn: t0);
+        var timeProvider = new FakeTimeProvider(t0);
+
+        using var divergentEc = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        reader.SetMismatchedPrivateKeyMaterial("v1", divergentEc.ExportParameters(includePrivateParameters: true));
+
+        await using var sut = BuildService(reader, timeProvider, algorithm: SigningAlgorithm.ES256);
+        await sut.GetSigningKeysAsync(ct);
+
+        var act = async () => await sut.SignAsync("payload"u8.ToArray(), ct);
+
+        (await act.Should().ThrowAsync<AzureKeyVaultSigningException>())
+            .WithMessage("*does not match*");
+    }
+
+    [Fact]
+    public async Task SignAsync_throws_AzureKeyVaultSigningException_when_the_downloaded_private_key_type_disagrees_with_the_listed_public_key_type()
+    {
+        // A different flavor of divergence than a same-type key mismatch: here the certificate's
+        // linked secret disagrees with its Cer not just on the key values but on the key *type*
+        // itself (RSA vs EC) — neither switch arm in VerifyPrivateKeyMatchesListedPublicKey matches,
+        // so it must still fail closed via the default (false) arm rather than silently accepting it.
+        var ct = TestContext.Current.CancellationToken;
+        var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
+        var reader = new FakeKeyVaultCertificateReader();
+        reader.AddRsaVersion("v1", createdOn: t0); // Listed publicly as RSA.
+        var timeProvider = new FakeTimeProvider(t0);
+
+        using var ecKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        reader.SetMismatchedPrivateKeyMaterial("v1", ecKey.ExportParameters(includePrivateParameters: true)); // Downloads as EC.
+
+        await using var sut = BuildService(reader, timeProvider);
+        await sut.GetSigningKeysAsync(ct);
+
+        var act = async () => await sut.SignAsync("payload"u8.ToArray(), ct);
+
+        (await act.Should().ThrowAsync<AzureKeyVaultSigningException>())
+            .WithMessage("*does not match*");
     }
 
     private static byte[] Base64UrlDecode(byte[] base64UrlBytes)

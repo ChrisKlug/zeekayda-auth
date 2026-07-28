@@ -178,7 +178,8 @@ public sealed class AzureKeyVaultRemoteSigningIntegrationTests
             KeyIdentifier = KeyIdentifier,
             Credential = new FakeTokenCredential(),
             Algorithm = SigningAlgorithm.RS256,
-            KeyRotationCheckInterval = TimeSpan.FromMinutes(5),
+            RefreshInterval = TimeSpan.FromMinutes(5),
+            PublicationLead = TimeSpan.FromMinutes(5),
         });
 
         await using var signingService = new AzureKeyVaultRemoteSigningJwtSigningService(
@@ -187,7 +188,7 @@ public sealed class AzureKeyVaultRemoteSigningIntegrationTests
             reader,
             new FakeKeyVaultSigner(),
             new FakeRetirementWindowProvider(TimeSpan.FromHours(1)),
-            NullSanitizingLogger<AzureKeyVaultRemoteSigningJwtSigningService>.Instance);
+            NullSanitizingLogger<JwtSigningService<AzureKeyVaultRemoteSigningOptions>>.Instance);
 
         var startupService = new AzureKeyVaultRemoteSigningStartupService(signingService);
 
@@ -210,7 +211,8 @@ public sealed class AzureKeyVaultRemoteSigningIntegrationTests
             KeyIdentifier = KeyIdentifier,
             Credential = new FakeTokenCredential(),
             Algorithm = SigningAlgorithm.RS256,
-            KeyRotationCheckInterval = TimeSpan.FromMinutes(5),
+            RefreshInterval = TimeSpan.FromMinutes(5),
+            PublicationLead = TimeSpan.FromMinutes(5),
         });
 
         await using var signingService = new AzureKeyVaultRemoteSigningJwtSigningService(
@@ -219,7 +221,7 @@ public sealed class AzureKeyVaultRemoteSigningIntegrationTests
             reader,
             new FakeKeyVaultSigner(),
             new FakeRetirementWindowProvider(TimeSpan.FromHours(1)),
-            NullSanitizingLogger<AzureKeyVaultRemoteSigningJwtSigningService>.Instance);
+            NullSanitizingLogger<JwtSigningService<AzureKeyVaultRemoteSigningOptions>>.Instance);
 
         var startupService = new AzureKeyVaultRemoteSigningStartupService(signingService);
 

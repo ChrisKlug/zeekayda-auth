@@ -9,13 +9,23 @@ namespace ZeeKayDa.Auth.AzureKeyVault.Tests.Fakes;
 /// simulating a real <c>CryptographyClient</c> failure (e.g. throttling) without any network
 /// access.
 /// </summary>
-internal sealed class FakeKeyVaultSigner : IKeyVaultSigner
+internal sealed class FakeKeyVaultSigner : IKeyVaultSigner, IDisposable
 {
     public List<(Uri KeyVersionUri, string Kid, SigningAlgorithm Algorithm, byte[] SigningInput)> Calls { get; } = [];
 
     public Func<Uri, string, SigningAlgorithm, byte[], ReadOnlyMemory<byte>>? SignFunc { get; set; }
 
     public Exception? ThrowException { get; set; }
+
+    /// <summary>
+    /// Number of times <see cref="Dispose"/> has been called. This test double is a stand-in for
+    /// the shared, DI-owned <see cref="IKeyVaultSigner"/>/pooled <c>CryptographyClient</c> seam that
+    /// every <c>KeyVaultRemoteSigner</c> activation depends on — <see cref="IKeyVaultSigner"/> itself
+    /// carries no <see cref="IDisposable"/> contract, so this member only exists so a test can prove
+    /// nothing in the production code path ever attempts to tear this seam down across an
+    /// active-key handoff (ADR 0015 §2/Security Considerations item 5).
+    /// </summary>
+    public int DisposeCallCount { get; private set; }
 
     public ValueTask<ReadOnlyMemory<byte>> SignAsync(
         Uri keyVersionUri, string kid, SigningAlgorithm algorithm, byte[] signingInput, CancellationToken cancellationToken)
@@ -28,4 +38,6 @@ internal sealed class FakeKeyVaultSigner : IKeyVaultSigner
         var result = SignFunc?.Invoke(keyVersionUri, kid, algorithm, signingInput) ?? new byte[] { 1, 2, 3, 4 };
         return ValueTask.FromResult(result);
     }
+
+    public void Dispose() => DisposeCallCount++;
 }

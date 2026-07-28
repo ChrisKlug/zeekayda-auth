@@ -108,9 +108,21 @@ namespace ZeeKayDa.Auth.Tokens;
 public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDisposable
     where TOptions : JwtSigningServiceOptions
 {
+    // ADR 0015 (KeySetOptions/KeySourceOptions) — every built-in provider today.
+    protected JwtSigningService(
+        IOptions<TOptions> options,
+        TimeProvider timeProvider,
+        ISigningKeyRetirementWindowProvider retirementWindowProvider,
+        ISanitizingLogger<JwtSigningService<TOptions>> logger) { }
+
+    protected virtual ValueTask<IReadOnlyList<KeyListing>> ListKeysAsync(CancellationToken cancellationToken);
+
+    protected virtual ValueTask<ISigner> CreateSignerAsync(KeyId id, CancellationToken cancellationToken);
+
+    // ADR 0011 (StaticKeySourceOptions/RotatingKeySourceOptions) — no built-in provider left; see the tip below.
     protected JwtSigningService(IOptions<TOptions> options, TimeProvider timeProvider) { }
 
-    protected abstract ValueTask<SigningKeySet> LoadKeysAsync(CancellationToken cancellationToken);
+    protected virtual ValueTask<SigningKeySet> LoadKeysAsync(CancellationToken cancellationToken);
 
     protected virtual ValueTask<bool> HasKeySetChangedAsync(CancellationToken cancellationToken);
 
@@ -119,33 +131,48 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
 }
 ```
 
-**Implementors must write `LoadKeysAsync`, and may optionally override `HasKeySetChangedAsync`.**
-`LoadKeysAsync` returns a `SigningKeySet` — the current trusted set, in whatever form the provider
-holds its keys. `HasKeySetChangedAsync` is asked once per refresh cycle, after
-`KeyRotationCheckInterval` elapses and only when a previous key set already exists; returning
-`false` lets the provider skip an expensive `LoadKeysAsync` reload when a cheap metadata-only check
-shows nothing has actually rotated. The default implementation always returns `true`, so a provider
-that does not override it keeps the unconditional-reload behavior described below. The base class
-does the rest:
+**Every built-in provider today implements `ListKeysAsync`/`CreateSignerAsync` (ADR 0015's
+`KeySetOptions`/`KeySourceOptions` contract) rather than the older `LoadKeysAsync`/`SigningKeySet`
+contract described further below.** `ListKeysAsync` returns the currently trusted set as
+`KeyListing`s — descriptor material plus an activation/expiry window — and `CreateSignerAsync` is
+called lazily, only for the `KeyId` the base class has determined is currently active, to obtain
+an `ISigner` capable of producing that one key's signatures. The base class does the rest:
 
 - **Interval-throttled caching**, driven by an injected `TimeProvider` (never wall-clock reads).
-  `LoadKeysAsync` is called at most once per `KeyRotationCheckInterval` for a
-  `RotatingKeySourceOptions` provider, or exactly once ever for a `StaticKeySourceOptions` provider.
+  `ListKeysAsync` is called at most once per `KeySourceOptions.RefreshInterval` for a
+  `KeySourceOptions` (Tier B) provider — Azure Key Vault, remote or cached, is the only production
+  consumer today — or exactly once ever for a `KeySetOptions` (Tier A) provider (Windows
+  Certificate Store, file-based PEM/PFX).
 - **Single-flight refresh.** When the cache expires, concurrent callers are coalesced into one
-  `LoadKeysAsync` call rather than each triggering their own — this applies equally on the signing
+  `ListKeysAsync` call rather than each triggering their own — this applies equally on the signing
   hot path and on JWKS reads (see [The JWKS endpoint](#the-jwks-endpoint) below), so a burst of
   requests against a cold cache can never thunder-herd a remote key source.
+- **Activation-timeline selection and kill-by-omission.** Which `KeyId` is the active signer, which
+  others still belong in the JWKS, and whether a previously-published key vanishing from a fresh
+  `ListKeysAsync` result early (before its retirement window elapsed) must be logged as a
+  `Warning` are all decided by the base class from the listings alone — a provider never computes
+  any of this itself. See [Rotate signing keys](../how-to/rotate-signing-keys.md) for the full
+  activation/retirement timing model, and ADR 0015 §6 for kill-by-omission specifically.
 - **The crypto call itself.** Header construction, active-key selection, and `kid`/`alg` assignment
   always happen in a non-overridable path, so they can never drift out of sync with the actual
-  signature. The one overridable step is `SignInputAsync` — a `protected virtual` hook whose
-  default body signs locally and synchronously with the active key's `RSA`/`ECDsa` instance.
-  Override it only if producing the signature requires network I/O, such as a call to a remote
-  KMS or HSM; local file/store-backed providers get correct behavior from the default body and
-  never need to override it.
-- **Deterministic disposal of superseded private key material.** When the cache refreshes, the
-  base class disposes the previous `SigningKeySet`'s private-key objects once every in-flight
-  `SignAsync` call that still references them has completed — it never leaves private key handles
-  to the garbage collector.
+  signature. `CreateSignerAsync`'s returned `ISigner.SignAsync` is the one overridable step that
+  actually produces bytes — a remote-signing provider (Azure Key Vault remote signing) implements
+  it as a network round trip that never materializes the private key locally; a cached/local
+  provider implements it by signing synchronously against an in-process private key.
+- **Deterministic disposal of superseded signer resources.** When the active key changes, the base
+  class disposes the superseded `ISigner` once every in-flight `SignAsync` call that still
+  references it has completed — it never leaves a signer (or the private key material it may hold)
+  to the garbage collector. See [`ISigner`'s own `Dispose` contract](#signingkeyset-and-signingkeypair)
+  for what this means for a *shared* signer seam (e.g. Key Vault remote signing's pooled
+  `CryptographyClient`), which must remain a deliberate no-op instead.
+
+> 💡 **Tip:** An older `LoadKeysAsync`/`SigningKeySet`/`HasKeySetChangedAsync` contract still exists
+> on the base class (see [`SigningKeySet` and `SigningKeyPair`](#signingkeyset-and-signingkeypair)
+> and [`JwtSigningServiceOptions` and the tier hierarchy](#jwtsigningserviceoptions-and-the-tier-hierarchy)
+> below) but is no longer implemented by any built-in provider — the two Azure Key Vault providers
+> were the last consumers, and both migrated to `ListKeysAsync`/`CreateSignerAsync` as part of
+> issue #425. It is retained for now rather than removed outright; issue #428 tracks its eventual
+> deletion once nothing depends on it.
 
 ---
 
@@ -201,7 +228,7 @@ rejected by the constructor; that validation stays at the base class's load path
 
 ---
 
-## `JwtSigningServiceOptions` and the three-tier hierarchy
+## `JwtSigningServiceOptions` and the tier hierarchy
 
 ```csharp
 namespace ZeeKayDa.Auth.Tokens;
@@ -210,63 +237,58 @@ public abstract class JwtSigningServiceOptions
 {
 }
 
-public abstract class StaticKeySourceOptions : JwtSigningServiceOptions
+public abstract class KeySetOptions : JwtSigningServiceOptions
 {
+    public TimeSpan PublicationLead { get; set; } = TimeSpan.FromHours(1);
 }
 
-public abstract class RotatingKeySourceOptions : JwtSigningServiceOptions
+public abstract class KeySourceOptions : JwtSigningServiceOptions
 {
-    public TimeSpan KeyRotationCheckInterval { get; set; } = TimeSpan.FromMinutes(5);
+    public TimeSpan RefreshInterval { get; set; } = TimeSpan.FromHours(1);
+    public TimeSpan PublicationLead { get; set; } // Defaults to RefreshInterval when unset.
 }
 ```
 
 `JwtSigningServiceOptions` itself carries no rotation-shaped property at all — every provider's
-options type derives from one of the two tiers below it, never directly from the base type, and
-which tier it derives from is what determines `LoadKeysAsync`'s reload behavior (ADR 0011 §3.4,
-issue #409):
+options type derives from one of the two ADR 0015 tiers below it, never directly from the base
+type, and which tier it derives from is what determines `ListKeysAsync`'s reload behavior:
 
-- **`StaticKeySourceOptions`** — the key source is immutable for the process lifetime.
-  `LoadKeysAsync` is called exactly once, ever. `DevelopmentSigningKeyOptions` is the only provider
-  on this tier, since a locally-generated or file-persisted development key never changes at
-  runtime.
-- **`RotatingKeySourceOptions`** — the key source can change while the process runs.
-  `LoadKeysAsync` is called at most once per `KeyRotationCheckInterval`. `AzureKeyVaultRemoteSigningOptions`
-  and `AzureKeyVaultCachedSigningOptions` derive from this tier and may add their own properties.
+- **`KeySetOptions` (Tier A)** — the complete set of registered keys/certificates is fixed at
+  configuration time; `ListKeysAsync` is called exactly once, ever. `PemFileSigningOptions`,
+  `PfxFileSigningOptions`, and `WindowsCertificateStoreSigningOptions` derive from this tier —
+  see [Configure file-based signing](../how-to/configure-file-based-signing.md) and
+  [Configure Windows Certificate Store signing](../how-to/configure-windows-certificate-store-signing.md).
+- **`KeySourceOptions` (Tier B)** — something else (Key Vault, a database table, a remote store)
+  owns the key list and it can genuinely change between calls; `ListKeysAsync` is called at most
+  once per `RefreshInterval`. `AzureKeyVaultRemoteSigningOptions` and
+  `AzureKeyVaultCachedSigningOptions` derive from this tier — see
+  [Configure Azure Key Vault signing](../how-to/configure-azure-key-vault-signing.md).
 
-> ⚠️ **Warning:** `PemFileSigningOptions`, `PfxFileSigningOptions`, and
-> `WindowsCertificateStoreSigningOptions` no longer derive from either tier described above. All
-> three now derive from ADR 0015's `KeySetOptions` (Tier A) instead — the complete set of
-> registered files/certificates is fixed at configuration time, every one is read exactly once at
-> startup rather than on a `LoadKeysAsync`/`KeyRotationCheckInterval` cadence, and the provider
-> implements `ListKeysAsync`/`CreateSignerAsync` rather than `LoadKeysAsync`. See
-> [Configure file-based signing](../how-to/configure-file-based-signing.md) and
-> [Configure Windows Certificate Store signing](../how-to/configure-windows-certificate-store-signing.md)
-> for the current model, and [ADR 0015](https://github.com/ChrisKlug/zeekayda-auth/blob/main/docs/decisions/0015-signing-provider-set-source-tiers.md)
-> for the full contract. This page's narrative below (`LoadKeysAsync`, `SigningKeySet`/`SigningKeyPair`,
-> `HasKeySetChangedAsync`) still describes the contract only the two remaining Azure Key Vault
-> providers implement; a full rewrite of this reference page for ADR 0015's
-> `KeySetOptions`/`KeySourceOptions` split is pending those providers' migration.
+Both tiers share the same `PublicationLead` meaning — how long before a key's `ActivateAt` its
+public half must already have been published, defaulting to one hour either way (on Tier B,
+defaulting specifically to `RefreshInterval` if that has been changed from its own default) — but
+resolve it differently: Tier A has no poll at all, so `PublicationLead` there is advisory only,
+entirely under the operator's control via each certificate's own `NotBefore`; Tier B enforces
+`PublicationLead >= RefreshInterval`, since a newly-published key must not be able to activate
+before the process would even poll and notice it exists. See
+[ADR 0015](https://github.com/ChrisKlug/zeekayda-auth/blob/main/docs/decisions/0015-signing-provider-set-source-tiers.md)
+for the full contract and [Rotate signing keys](../how-to/rotate-signing-keys.md) for concrete
+values per provider.
 
-This replaces an earlier design where the base type carried a single nullable
-`KeySourceRefreshInterval` property, with `null` as a sentinel for "static, load-once" mode. That
-sentinel is now a real type distinction instead of a magic value.
+> ⚠️ **Warning:** For a `KeySourceOptions` (Tier B) provider, `RefreshInterval` is also how quickly
+> an emergency revocation (e.g. disabling a compromised Key Vault key version) is noticed — a
+> revoked key stops being listed, and therefore stops being trusted, only on the next poll.
+> `RefreshInterval` defaults to one hour. If your incident-response plan assumes a revoked key is
+> dropped within minutes, set `RefreshInterval` explicitly to a shorter value rather than relying
+> on the default.
 
-`KeyRotationCheckInterval` is non-nullable — there is no longer a null-means-static-mode case to
-express, since a `StaticKeySourceOptions` provider structurally has no such property to set.
-
-> 💡 **Tip:** `KeyRotationCheckInterval` is purely the poll cadence — how often the base class
-> re-evaluates whether the active/included key set has changed. It is no longer overloaded with the
-> publish-then-activate lead time a rotated-in key must be visible for before it can become the
-> active signer. That's now a separate, provider-specific property: `SigningKeyActivationDelay` on
-> the two remaining `RotatingKeySourceOptions` providers (the Azure Key Vault options types),
-> defaulting to `KeyRotationCheckInterval` when left unset, with the library enforcing that it
-> cannot be configured shorter than `KeyRotationCheckInterval` — a newly-published key must not be
-> able to activate before the process would even poll and notice it exists. (As noted above,
-> `PemFileSigningOptions`, `PfxFileSigningOptions`, and `WindowsCertificateStoreSigningOptions` have
-> all moved off this tier entirely — their equivalent property is `KeySetOptions.PublicationLead`,
-> advisory only, with no poll-interval floor to enforce it against, since there is no poll at all.)
-> This nuance is covered in full, with concrete values, in each provider's how-to guide (see
-> [Rotate signing keys](../how-to/rotate-signing-keys.md)).
+An earlier design (ADR 0011 §3.4, issue #409) used a different two-tier split — `StaticKeySourceOptions`/
+`RotatingKeySourceOptions`, distinguished by whether `LoadKeysAsync`'s result could change at all,
+with a `KeyRotationCheckInterval` property (default: 5 minutes) that conflated poll cadence with
+publish-then-activate lead time. No built-in provider derives from either of those types any more —
+both Azure Key Vault providers were the last consumers and migrated to `KeySourceOptions` as part
+of issue #425 — but the base class still supports that older contract for now; issue #428 tracks
+its eventual removal.
 
 ---
 

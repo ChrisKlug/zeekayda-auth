@@ -11,11 +11,11 @@ namespace ZeeKayDa.Auth.AzureKeyVault;
 /// </remarks>
 internal sealed class AzureKeyVaultCachedSigningOptionsValidator : IValidateOptions<AzureKeyVaultCachedSigningOptions>
 {
-    // KeyRotationCheckInterval gates how often the *private key bytes* of every in-window
-    // certificate version are re-downloaded from Key Vault's secret endpoint, which is more
-    // sensitive traffic than the remote provider's public-key-only refresh. The same one-minute
-    // floor rejects a value so short it would drive that private-key re-download often enough to
-    // risk Key Vault throttling under any real load.
+    // RefreshInterval gates how often the *private key bytes* of every in-window certificate
+    // version are re-downloaded from Key Vault's secret endpoint, which is more sensitive traffic
+    // than the remote provider's public-key-only refresh. The same one-minute floor rejects a value
+    // so short it would drive that private-key re-download often enough to risk Key Vault
+    // throttling under any real load.
     private static readonly TimeSpan MinimumRefreshInterval = TimeSpan.FromMinutes(1);
 
     /// <inheritdoc/>
@@ -23,22 +23,30 @@ internal sealed class AzureKeyVaultCachedSigningOptionsValidator : IValidateOpti
     {
         var errors = new List<string>();
 
-        if (options.KeyRotationCheckInterval < MinimumRefreshInterval)
+        if (options.RefreshInterval < MinimumRefreshInterval)
         {
             errors.Add(
-                $"AzureKeyVaultCachedSigningOptions.KeyRotationCheckInterval must be at least {MinimumRefreshInterval} " +
+                $"AzureKeyVaultCachedSigningOptions.RefreshInterval must be at least {MinimumRefreshInterval} " +
                 "(a shorter value both risks Key Vault throttling and is shorter than most relying parties' " +
-                "JWKS cache TTL). You are still responsible for ensuring KeyRotationCheckInterval exceeds your " +
-                "actual relying parties' JWKS cache TTL — this floor only rejects values that are almost " +
-                "certainly a mistake.");
+                "JWKS cache TTL). You are still responsible for ensuring RefreshInterval exceeds your actual " +
+                "relying parties' JWKS cache TTL — this floor only rejects values that are almost certainly a " +
+                "mistake.");
         }
 
-        if (KeyVaultActivationDelay.ValidateNotShorterThanCheckInterval(
-                nameof(AzureKeyVaultCachedSigningOptions),
-                options.SigningKeyActivationDelay,
-                options.KeyRotationCheckInterval) is { } activationDelayError)
+        // Passes options itself, not options.PublicationLead: the KeySourceOptions overload reads
+        // the raw, possibly-invalid value directly, so PublicationLead's own defensive invariant
+        // check (KeySourceOptions.PublicationLead) cannot throw out from under this validator before
+        // it gets the chance to turn an invalid value into its own friendly, aggregated error below.
+        if (KeySourcePublicationLeadValidator.ValidateMinimum(
+                nameof(AzureKeyVaultCachedSigningOptions), options) is { } minimumLeadError)
         {
-            errors.Add(activationDelayError);
+            errors.Add(minimumLeadError);
+        }
+
+        if (KeySourcePublicationLeadValidator.ValidateAtLeastRefreshInterval(
+                nameof(AzureKeyVaultCachedSigningOptions), options) is { } leadVsRefreshError)
+        {
+            errors.Add(leadVsRefreshError);
         }
 
         if (options.CertificateIdentifier.VaultUri is null)
