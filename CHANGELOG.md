@@ -12,8 +12,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
   `SigningKeySet`, `SigningKeyPair`, `RotatingKeySourceOptions`, and `StaticKeySourceOptions` are
   deleted, along with `JwtSigningService<TOptions>.LoadKeysAsync`, `HasKeySetChangedAsync`,
-  `SignInputAsync`, and the two-argument `JwtSigningService(IOptions<TOptions>, TimeProvider)`
-  constructor. `ListKeysAsync` and `CreateSignerAsync` (ADR 0015) are now `abstract` — every
+  `SignInputAsync`, `SigningKeyRotation.ToChangeDetectionSet`, and the two-argument
+  `JwtSigningService(IOptions<TOptions>, TimeProvider)` constructor. `ListKeysAsync` and
+  `CreateSignerAsync` (ADR 0015) are now `abstract` — every
   provider must implement the `KeySetOptions`/`KeySourceOptions` contract; there is no longer a
   throwing default for providers still on the old shape. All in-box providers (development,
   file/PEM, PFX, Windows Certificate Store, Azure Key Vault) already migrated in #421-#425 and are

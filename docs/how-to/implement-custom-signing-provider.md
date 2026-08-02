@@ -20,9 +20,10 @@ provider needs to enforce a timing invariant of its own.
 
 - You are implementing `IJwtSigningService` by deriving from `JwtSigningService<TOptions>` — not
   implementing `IJwtSigningService` directly. The base class supplies interval-throttled caching
-  (Tier B only), single-flight refresh coalescing, activation-timeline selection, kill-by-omission
-  handling, key/algorithm compatibility validation, and deterministic disposal of superseded
-  signers; you implement only `ListKeysAsync` and `CreateSignerAsync`.
+  (Tier B only) or a one-time build (Tier A), single-flight coalescing of that build/refresh for
+  both tiers, activation-timeline selection, kill-by-omission handling, key/algorithm compatibility
+  validation, and deterministic disposal of superseded signers; you implement only `ListKeysAsync`
+  and `CreateSignerAsync`.
 - You understand the retirement-window and publish-then-activate model shared by every provider —
   see [Rotate signing keys](rotate-signing-keys.md) first if you haven't already. This guide covers
   the *options shapes* and *methods* a provider implements, not the rotation model itself.
@@ -127,10 +128,18 @@ protected abstract ValueTask<ISigner> CreateSignerAsync(KeyId id, CancellationTo
   never becomes local for that kind of provider.
 
 The base class does everything else: it derives each key's `kid` from `PublicKeyParameters` via
-`JwkThumbprint` (never from your `KeyId`), rejects duplicate `kid`s, runs algorithm-compatibility
-and key-strength validation over every listing before ever calling `CreateSignerAsync`, computes
-which key is active and which others still belong in the JWKS, and disposes a superseded `ISigner`
-once every in-flight `SignAsync` call against it has completed.
+`JwkThumbprint` (never from your `KeyId`), rejects a listing set with duplicate derived `kid`s
+(`signing.duplicate_kid`) or duplicate `KeyId`s (`signing.duplicate_key_id`), runs
+algorithm-compatibility and key-strength validation over every listing before ever calling
+`CreateSignerAsync`, computes which key is active and which others still belong in the JWKS, and
+disposes a superseded `ISigner` once every in-flight `SignAsync` call against it has completed.
+
+**`CreateSignerAsync` must return a freshly created, exclusively owned `ISigner` on every call** —
+never a cached or previously-returned instance, even for the same `KeyId`. The base class owns the
+returned signer from that point on and disposes it once it is superseded; an instance you hand back
+a second time is disposed (or still live and in use) out from under you, and the base class detects
+and rejects an exact re-lend of the currently active signer with `signing.signer_reused`. See
+[`ISigner`](../reference/signing-keys.md)'s `Dispose` contract.
 
 ## Worked example: a minimal Tier B provider
 
@@ -356,6 +365,10 @@ between the two calls.
 - **Retaining private key material for a non-active key across a bundled-format read.** See
   [Least-privilege private material](#least-privilege-private-material-what-provider-obligation-means-for-a-bundled-format)
   above.
+- **Caching an `ISigner` and re-lending it from a later `CreateSignerAsync` call.** The base class
+  owns and disposes the signer it is handed; returning the same instance again — even for the same
+  `KeyId` — either throws `signing.signer_reused` or hands back an already-disposed object.
+  `CreateSignerAsync` must construct a fresh, exclusively owned `ISigner` every time it is called.
 
 ## See also
 

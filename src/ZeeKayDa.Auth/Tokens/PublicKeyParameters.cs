@@ -46,8 +46,8 @@ public sealed record PublicKeyParameters
     {
         var publicOnly = new RSAParameters
         {
-            Modulus = rsaPublicParameters.Modulus,
-            Exponent = rsaPublicParameters.Exponent,
+            Modulus = rsaPublicParameters.Modulus!.ToArray(),
+            Exponent = rsaPublicParameters.Exponent!.ToArray(),
         };
 
         return new(SigningKeyType.Rsa, publicOnly, ecPublicParameters: null);
@@ -64,7 +64,11 @@ public sealed record PublicKeyParameters
         var publicOnly = new ECParameters
         {
             Curve = ecPublicParameters.Curve,
-            Q = ecPublicParameters.Q,
+            Q = new ECPoint
+            {
+                X = ecPublicParameters.Q.X!.ToArray(),
+                Y = ecPublicParameters.Q.Y!.ToArray(),
+            },
         };
 
         return new(SigningKeyType.Ec, rsaPublicParameters: null, publicOnly);

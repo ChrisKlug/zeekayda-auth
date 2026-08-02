@@ -1,6 +1,5 @@
 using System.Buffers;
 using System.Buffers.Text;
-using System.Linq;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
@@ -484,10 +483,16 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
         var now = _timeProvider.GetUtcNow();
         var active = SigningKeyRotation.SelectActiveKey(snapshot.Timeline, now, SupportsBootstrapExemption)
             ?? throw NoActiveKeyException();
+        var activeDescriptor = snapshot.DescriptorsById[active.Key.Id];
 
         var current = Volatile.Read(ref _activeSignerHandle);
-        if (current is not null && string.Equals(current.Id, active.Key.Id, StringComparison.Ordinal) && current.TryBorrow())
+        if (current is not null &&
+            string.Equals(current.Id, active.Key.Id, StringComparison.Ordinal) &&
+            string.Equals(current.Descriptor.Kid, activeDescriptor.Kid, StringComparison.Ordinal) &&
+            current.TryBorrow())
+        {
             return current;
+        }
 
         await _signerLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -497,9 +502,11 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
             now = _timeProvider.GetUtcNow();
             active = SigningKeyRotation.SelectActiveKey(snapshot.Timeline, now, SupportsBootstrapExemption)
                 ?? throw NoActiveKeyException();
+            activeDescriptor = snapshot.DescriptorsById[active.Key.Id];
 
             if (_activeSignerHandle is { } existing &&
                 string.Equals(existing.Id, active.Key.Id, StringComparison.Ordinal) &&
+                string.Equals(existing.Descriptor.Kid, activeDescriptor.Kid, StringComparison.Ordinal) &&
                 existing.TryBorrow())
             {
                 return existing;
@@ -507,7 +514,19 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
 
             var activeId = new KeyId(active.Key.Id);
             var signer = await CreateSignerAsync(activeId, cancellationToken).ConfigureAwait(false);
-            var descriptor = snapshot.DescriptorsById[active.Key.Id];
+            var descriptor = activeDescriptor;
+
+            if (_activeSignerHandle is { } stale && ReferenceEquals(signer, stale.Signer))
+            {
+                // Do not dispose `signer` here — it is the same instance as the currently installed
+                // handle's own signer, and that handle is still live and in use.
+                throw new ZeeKayDaConfigurationException(
+                    new ZeeKayDaConfigurationFailure(
+                        "signing.signer_reused",
+                        $"{GetType().Name}.{nameof(CreateSignerAsync)} returned the same {nameof(ISigner)} " +
+                        "instance as the currently active signer. Every call must return a freshly " +
+                        $"created, exclusively owned signer — see {nameof(ISigner)}'s Dispose contract."));
+            }
 
             if (signer.Algorithm != descriptor.Algorithm)
             {
@@ -532,6 +551,9 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
             // last in-flight signing call completes for a concurrently-borrowed Tier B signer.
             previous?.Release();
 
+            // Cannot fail: newHandle was just constructed at refcount 1 and has not yet been
+            // published to _activeSignerHandle for any other caller to see, and we are still
+            // holding _signerLock, so no concurrent Return()/Release() can have run against it.
             newHandle.TryBorrow();
             return newHandle;
         }

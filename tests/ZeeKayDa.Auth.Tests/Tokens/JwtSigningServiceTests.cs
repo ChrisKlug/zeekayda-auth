@@ -957,6 +957,80 @@ public sealed class JwtSigningServiceTests
         act.Should().Throw<ArgumentNullException>().WithParameterName("logger");
     }
 
+    // ── Active-signer handle invalidation on material rotation under a stable Id ────────────────────
+
+    [Fact]
+    public async Task SignAsync_creates_a_fresh_signer_when_key_material_rotates_under_a_stable_KeyId()
+    {
+        // A provider (e.g. a DB-backed "current key" pointer) can keep KeyId.Value stable across a
+        // material rotation. The cached SignerHandle must not be reused once the derived kid no
+        // longer matches, or the base class would keep signing with superseded key material while
+        // the JWKS publishes the new key's kid (security review finding F1 / issue #440).
+        using var rsa1 = RSA.Create(2048);
+        using var rsa2 = RSA.Create(2048);
+        var timeProvider = new FakeTimeProvider(Epoch);
+        var afterRotation = false;
+        var signersCreated = new List<FakeSigner>();
+
+        await using var sut = BuildKeySourceService(
+            timeProvider,
+            () => [MakeRsaListing(afterRotation ? rsa2 : rsa1, "stable-id", activateAt: null, expiresAt: Epoch.AddYears(1))],
+            signerFactory: _ =>
+            {
+                var signer = new FakeSigner();
+                signersCreated.Add(signer);
+                return signer;
+            },
+            refreshInterval: TimeSpan.FromMinutes(5));
+        var ct = TestContext.Current.CancellationToken;
+
+        var before = await sut.SignAsync(new byte[] { 0 }, ct);
+
+        afterRotation = true;
+        timeProvider.Advance(TimeSpan.FromMinutes(6));
+
+        var after = await sut.SignAsync(new byte[] { 0 }, ct);
+
+        before.Kid.Should().NotBe(after.Kid, "the derived kid must change once the public key material changes");
+        sut.CreateSignerAsyncCalledFor.Should().HaveCount(
+            2, "a stable Id with rotated material must force a fresh CreateSignerAsync call rather than reusing the stale handle");
+        signersCreated.Should().HaveCount(2);
+        signersCreated[0].DisposeCount.Should().Be(1, "the superseded signer for the old material must be disposed");
+        signersCreated[1].SignAsyncCallCount.Should().Be(1, "the second SignAsync call must use the freshly created signer");
+    }
+
+    [Fact]
+    public async Task EnsureActiveSignerAsync_throws_signing_signer_reused_when_CreateSignerAsync_returns_the_currently_active_signer()
+    {
+        // A provider that caches and re-lends one ISigner instance across calls must be rejected
+        // with a diagnosable error rather than silently disposing the still-live active signer out
+        // from under itself (security review finding F2 / issue #440).
+        using var rsa1 = RSA.Create(2048);
+        using var rsa2 = RSA.Create(2048);
+        var timeProvider = new FakeTimeProvider(Epoch);
+        var afterRotation = false;
+        var sharedSigner = new FakeSigner();
+
+        await using var sut = BuildKeySourceService(
+            timeProvider,
+            () => [MakeRsaListing(afterRotation ? rsa2 : rsa1, "stable-id", activateAt: null, expiresAt: Epoch.AddYears(1))],
+            signerFactory: _ => sharedSigner,
+            refreshInterval: TimeSpan.FromMinutes(5));
+        var ct = TestContext.Current.CancellationToken;
+
+        await sut.SignAsync(new byte[] { 0 }, ct);
+
+        afterRotation = true;
+        timeProvider.Advance(TimeSpan.FromMinutes(6));
+
+        await sut.Awaiting(s => s.SignAsync(new byte[] { 0 }, ct).AsTask())
+            .Should().ThrowAsync<ZeeKayDaConfigurationException>()
+            .WithMessage("*signer_reused*");
+
+        sharedSigner.DisposeCount.Should().Be(
+            0, "the reused signer is still the live active instance and must not be disposed");
+    }
+
     // ── Duplicate KeyListing.Id.Value rejection ─────────────────────────────────────────────────────
 
     [Fact]
