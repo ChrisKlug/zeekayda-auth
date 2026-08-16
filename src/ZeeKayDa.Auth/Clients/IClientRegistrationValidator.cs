@@ -6,13 +6,12 @@ namespace ZeeKayDa.Auth.Clients;
 /// <remarks>
 /// <para>
 /// The default implementation (<c>ClientRegistrationValidator</c>) enforces all redirect URI
-/// rules (ADR 0007 §5), the <c>IsPublic</c> trinity (§6), <c>ClientId</c> format (§6), the
-/// empty-secret probe (§6), the two-credential cap (§6), and the
-/// <c>AllowedTokenEndpointAuthMethods</c> subset check (§6).
+/// rules, the <c>IsPublic</c> trinity, <c>ClientId</c> format, the empty-secret probe, the
+/// two-credential cap, and the <c>AllowedTokenEndpointAuthMethods</c> subset check.
 /// </para>
 /// <para>
 /// Custom <c>IClientRepository</c> implementations MUST resolve this service from DI and
-/// invoke it before persisting a new or updated client — see ADR 0007 §6.1.
+/// invoke it before persisting a new or updated client.
 /// </para>
 /// </remarks>
 public interface IClientRegistrationValidator

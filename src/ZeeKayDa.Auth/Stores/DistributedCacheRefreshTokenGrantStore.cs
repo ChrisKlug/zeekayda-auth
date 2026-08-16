@@ -11,25 +11,22 @@ namespace ZeeKayDa.Auth.Stores;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <strong>This is NOT the "framework-owned Redis adapter that owns the secondary-index maintenance
-/// correctly, once" ADR 0014 §8 anticipates as the sanctioned production path for a non-queryable
-/// backend.</strong> <see cref="IDistributedCache"/> has no atomic multi-key primitive (no
-/// transactional read-modify-write, no native compare-and-set across a grant row and its indexes),
-/// so this adapter cannot structurally close the TOCTOU/index-drift gap §8 describes — it can only
-/// document it, which the remarks below do. A correct, production-grade Redis adapter (Lua scripting
-/// or hash-tagged <c>WATCH-MULTI-EXEC</c>) remains unbuilt; the sanctioned production path today is a
-/// natively queryable backend (relational SQL or Cosmos) implementing <see cref="IRefreshTokenGrantStore"/>
-/// directly. Treat this class as the dev/test convenience slot only.
+/// <strong>This is NOT a fully production-grade Redis adapter.</strong> <see cref="IDistributedCache"/>
+/// has no atomic multi-key primitive (no transactional read-modify-write, no native compare-and-set
+/// across a grant row and its indexes), so this adapter cannot structurally close the TOCTOU/index-drift
+/// gap described below — it can only document it. A correct, production-grade Redis adapter (Lua
+/// scripting or hash-tagged <c>WATCH-MULTI-EXEC</c>) remains unbuilt; the sanctioned production path
+/// today is a natively queryable backend (relational SQL or Cosmos) implementing
+/// <see cref="IRefreshTokenGrantStore"/> directly. Treat this class as the dev/test convenience slot
+/// only.
 /// </para>
 /// <para>
-/// <strong>Not a queryable backend (ADR 0014 §8).</strong> <see cref="IDistributedCache"/> has no
+/// <strong>Not a queryable backend.</strong> <see cref="IDistributedCache"/> has no
 /// native <c>WHERE</c>, so this store maintains its own secondary indexes — a
 /// <c>zkd:rtg:family:{familyId}</c> entry and a <c>zkd:rtg:subject:{subject}</c> entry, each a
 /// JSON <see cref="RefreshTokenGrantIndexEnvelope"/> listing the handle-hash keys that belong to
 /// that family/subject — so that <see cref="RevokeFamilyAsync"/> and
-/// <see cref="RevokeBySubjectAsync"/> can locate every grant to revoke. This is exactly the
-/// framework-owned index-maintenance burden ADR 0014 §8 says a hand-rolled Redis backend must
-/// not be left to a newcomer to re-derive.
+/// <see cref="RevokeBySubjectAsync"/> can locate every grant to revoke.
 /// </para>
 /// <para>
 /// <strong>Non-atomic consumption and index maintenance (TOCTOU, dev/test only).</strong> Neither
@@ -40,7 +37,7 @@ namespace ZeeKayDa.Auth.Stores;
 /// <see cref="RefreshGrantStatus.Consumed"/>, and a crash between a grant insert and its index
 /// update can leave an <see cref="RefreshGrantStatus.Active"/> grant that a subsequent
 /// <see cref="RevokeFamilyAsync"/>/<see cref="RevokeBySubjectAsync"/> call cannot find via the
-/// index — the exact drift ADR 0014 §8 warns a non-transactional dual-write produces. This store
+/// index. This store
 /// is positioned for development, testing, and low-traffic single-process scenarios only. For
 /// production, use a natively queryable backend (relational SQL or Cosmos) implementing
 /// <see cref="IRefreshTokenGrantStore"/> directly.
@@ -195,7 +192,7 @@ internal sealed class DistributedCacheRefreshTokenGrantStore : IRefreshTokenGran
         catch (Exception ex) when (ex is not ZeeKayDaStoreException)
         {
             // Deserialization failure is data corruption, not "confirmed absent" — the
-            // fail-closed contract (ADR 0014 §3) requires this to propagate, not become null.
+            // fail-closed contract requires this to propagate, not become null.
             throw new ZeeKayDaStoreException("Failed to parse the refresh token grant read from the distributed cache.", ex);
         }
     }

@@ -9,18 +9,10 @@ namespace ZeeKayDa.Auth.AspNetCore;
 /// <see cref="IRefreshTokenStore"/> have been registered in the dependency injection container.
 /// </summary>
 /// <remarks>
-/// <para>
-/// Missing store registrations are a configuration error that should fail loudly at startup
-/// rather than producing a confusing "service not registered" DI exception at the first request.
-/// </para>
-/// <para>
-/// The check uses <see cref="IServiceProviderIsService"/> to inspect the DI container without
-/// resolving the services themselves, consistent with
-/// <see cref="ZeeKayDa.Auth.Configuration.ClientRepositoryPresenceValidator"/>. If
-/// <see cref="IServiceProviderIsService"/> is absent (e.g. when a third-party DI container
-/// replaces the default provider), the check is skipped rather than failing with a confusing
-/// resolution error.
-/// </para>
+/// Uses <see cref="IServiceProviderIsService"/> to inspect the DI container without resolving the
+/// services themselves. If <see cref="IServiceProviderIsService"/> is absent (e.g. a third-party
+/// DI container replacing the default provider), the check is skipped rather than failing with a
+/// confusing resolution error.
 /// </remarks>
 internal sealed class TokenStorePresenceValidator : IHostedService
 {

@@ -6,13 +6,9 @@ namespace ZeeKayDa.Auth.AzureKeyVault;
 /// <summary>
 /// Builds <see cref="SigningKeyDescriptor"/>s — and validates that the configured
 /// <see cref="SigningAlgorithm"/> matches the actual Key Vault key/certificate type — for every
-/// Key Vault signing provider. Delegates the actual descriptor-building and validation logic to the
-/// shared <see cref="SigningKeyDescriptorFactory"/> in core, supplying only Key-Vault-specific
-/// failure code and exception message text so that text continues to render exactly as it did
-/// before the shared factory existed. Not generic over the version-info types in
-/// <see cref="IKeyVaultVersionInfo"/>: this class only ever operates on
-/// <see cref="AsymmetricAlgorithm"/>, <see cref="SigningKeyType"/>, and
-/// <see cref="SigningAlgorithm"/>, none of which is version-info-shaped.
+/// Key Vault signing provider. Delegates the actual work to the shared
+/// <see cref="SigningKeyDescriptorFactory"/> in core, supplying only Key-Vault-specific failure
+/// code and exception message text.
 /// </summary>
 internal static class KeyVaultSigningKeyDescriptorFactory
 {

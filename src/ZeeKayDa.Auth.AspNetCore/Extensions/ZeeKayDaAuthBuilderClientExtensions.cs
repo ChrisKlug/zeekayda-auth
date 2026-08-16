@@ -38,8 +38,7 @@ public static class ZeeKayDaAuthBuilderClientExtensions
         ArgumentNullException.ThrowIfNull(configure);
 
         // A custom IClientRepository registered before this call would silently win the
-        // TryAddSingleton below, leaving the configured in-memory clients unreachable. Detect that
-        // and fail loudly rather than no-op.
+        // TryAddSingleton below, leaving the configured clients unreachable.
         var existing = builder.Services.FirstOrDefault(sd =>
             sd.ServiceType == typeof(IClientRepository) &&
             sd.ImplementationType != typeof(InMemoryClientRepository));
@@ -52,17 +51,14 @@ public static class ZeeKayDaAuthBuilderClientExtensions
                 "the custom repository directly rather than using AddInMemoryClients.");
         }
 
-        // Obtain or create the concrete options object. Multiple AddInMemoryClients calls share the
-        // same instance so registrations accumulate. Registering the concrete type as a singleton
-        // avoids capturing closures: the builder adds specs directly to the list, and when the
-        // repository clears the list at startup the specs become GC-eligible immediately.
+        // Multiple AddInMemoryClients calls share the same options instance so registrations
+        // accumulate; the repository clears the list at startup once consumed.
         var optionsDescriptor = builder.Services
             .FirstOrDefault(sd => sd.ServiceType == typeof(InMemoryClientRegistrationOptions));
 
         InMemoryClientRegistrationOptions opts;
         if (optionsDescriptor is not null)
         {
-            // A previous AddInMemoryClients call already registered the singleton — reuse it.
             opts = (InMemoryClientRegistrationOptions)optionsDescriptor.ImplementationInstance!;
         }
         else

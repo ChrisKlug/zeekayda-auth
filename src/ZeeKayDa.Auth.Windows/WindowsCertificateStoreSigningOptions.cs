@@ -7,21 +7,12 @@ namespace ZeeKayDa.Auth.Windows;
 /// Configuration options for <c>AddWindowsCertificateStoreSigning</c>.
 /// </summary>
 /// <remarks>
-/// <para>
-/// ADR 0015 Tier A (<see cref="KeySetOptions"/>, issue #424): the complete set of registered
-/// thumbprints is fixed at configuration time, and the only thing that ever advances is the wall
-/// clock crossing each certificate's <c>NotBefore</c>/<c>NotAfter</c> — mapped onto each key's
-/// <see cref="ZeeKayDa.Auth.Tokens.KeyListing.ActivateAt"/>/<see cref="ZeeKayDa.Auth.Tokens.KeyListing.ExpiresAt"/>.
-/// <see cref="KeySetOptions.PublicationLead"/> is inherited from <see cref="KeySetOptions"/> — see
-/// that type's remarks for what it governs (an advisory too-soon-activation startup warning, not a
-/// re-download cadence — there is nothing to re-download on this tier).
-/// </para>
-/// <para>
-/// Picking up a rotated-in, removed, or replaced certificate requires a process restart: this
-/// provider's <c>ListKeysAsync</c> runs exactly once, ever, for the lifetime of a service instance
-/// (ADR 0015 §1/§4) — register the successor certificate via <see cref="AddCertificate"/> ahead of
-/// its intended activation time and redeploy, rather than expecting a live reload.
-/// </para>
+/// The set of registered thumbprints is fixed at configuration time; only the wall clock crossing
+/// each certificate's <c>NotBefore</c>/<c>NotAfter</c> advances which one is active.
+/// <see cref="KeySetOptions.PublicationLead"/> here is only an advisory too-soon-activation
+/// startup warning — there is nothing to re-download here. Picking up a rotated-in,
+/// removed, or replaced certificate requires a process restart: register the successor via
+/// <see cref="AddCertificate"/> ahead of its intended activation time and redeploy.
 /// </remarks>
 public sealed class WindowsCertificateStoreSigningOptions : KeySetOptions
 {
@@ -61,7 +52,7 @@ public sealed class WindowsCertificateStoreSigningOptions : KeySetOptions
     /// Registers an additional certificate — by thumbprint, from the same
     /// <see cref="StoreLocation"/> and <see cref="StoreName"/> configured on
     /// <c>AddWindowsCertificateStoreSigning</c> — to support rotation with overlapping validity
-    /// windows (ADR 0015 §1; issue #282's multi-key registration shape).
+    /// windows.
     /// </summary>
     /// <param name="thumbprint">The additional certificate's thumbprint.</param>
     /// <returns>This instance, so calls can be chained.</returns>

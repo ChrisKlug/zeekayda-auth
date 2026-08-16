@@ -6,14 +6,14 @@ using ZeeKayDa.Auth.Logging;
 namespace ZeeKayDa.Auth.Tokens;
 
 /// <summary>
-/// Framework-owned <see cref="IHostedService"/> that runs the ADR 0015 startup self-test
+/// Framework-owned <see cref="IHostedService"/> that runs the startup self-test
 /// (<see cref="ISigningStartupSelfTest"/>) against whatever <see cref="IJwtSigningService"/> is
 /// registered, once per host startup. Registered once by
 /// <c>ZeeKayDaAuthCoreServiceCollectionExtensions.AddZeeKayDaAuthCore</c>, so every signing-provider
 /// package (development, File/PEM, PFX, Windows Certificate Store, Azure Key Vault) gets this for
 /// free — a provider no longer needs its own hand-rolled self-test or startup pre-warm to catch a
 /// private-key-materialization failure at deployment time rather than on the first real
-/// <see cref="IJwtSigningService.SignAsync"/> call (issue #437).
+/// <see cref="IJwtSigningService.SignAsync"/> call.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -90,7 +90,7 @@ internal sealed class SigningStartupSelfTestHostedService : IHostedService
 
         _logger.LogWarning(
             "ZeeKayDa.Auth: the registered IJwtSigningService ({Type}) does not implement " +
-            "ISigningStartupSelfTest; the ADR 0015 self-test was skipped.",
+            "ISigningStartupSelfTest; the startup self-test was skipped.",
             signingService.GetType());
     }
 

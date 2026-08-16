@@ -266,7 +266,7 @@ though startup will still succeed.
 
 ## Rotation and restart-to-reload semantics
 
-Both providers implement ADR 0015's Tier A `KeySetOptions` contract: the complete set of
+Both providers implement ADR 0015's `KeySetOptions` contract: the complete set of
 registered files is fixed at configuration time, and the only thing that ever advances afterward
 is the wall clock crossing each certificate's `NotBefore`/`NotAfter`.
 
@@ -276,7 +276,7 @@ Concretely, that means:
   is **not** picked up live — adding, removing, or replacing a registered file always requires a
   configuration change and a restart, exactly as with the Windows Certificate Store provider.
   There is no background polling for new files, and no `RefreshInterval`-style property to
-  configure one — that property only exists on the `KeySourceOptions` tier this provider does not
+  configure one — that property only exists on `KeySourceOptions`, which this provider does not
   derive from.
 - Rotation **between already-registered files** still switches the active signer purely from
   elapsed wall-clock time — each file's certificate `NotBefore`/`NotAfter` is compared against
@@ -294,7 +294,7 @@ has arrived and is most recent becomes the active signer.
 ### `PublicationLead`
 
 Both options types inherit `PublicationLead` (default: 1 hour) from `KeySetOptions`. On this
-provider tier `PublicationLead` is **advisory only**, not enforced: you, the operator, own each
+provider `PublicationLead` is **advisory only**, not enforced: you, the operator, own each
 file's activation timing directly via its certificate's `NotBefore`, and `PublicationLead` is used
 only to decide whether to log a startup warning that a registered file's `NotBefore` is nearer than
 `PublicationLead` away — a signal that the file may not have had enough lead time in the JWKS
@@ -312,7 +312,7 @@ before it activates.
 ```
 
 > 💡 **Tip:** Unlike `KeySourceOptions`'s `RefreshInterval` (used by Azure Key Vault), there is no
-> poll floor to enforce `PublicationLead` against on this tier — there is no poll at all, since
+> poll floor to enforce `PublicationLead` against here — there is no poll at all, since
 > every file is read once, at startup. See [Rotate signing keys](rotate-signing-keys.md) for the
 > full activation/retirement timing model.
 

@@ -4,20 +4,11 @@ namespace ZeeKayDa.Auth.FileSystem;
 /// One certificate registered with a file-based signing provider (PEM or PFX).
 /// </summary>
 /// <remarks>
-/// <para>
-/// <see cref="Id"/> is the path used as this entry's <c>RotationKey.Id</c> — it determines the
-/// entry's position in the rotation timeline, is the provider's own <c>KeyId</c> passed to
-/// <c>CreateSignerAsync</c>, and appears in diagnostics. For the PFX provider, and for a PEM
-/// provider's combined cert+key file, <see cref="Id"/> is the entry's only backing file.
-/// </para>
-/// <para>
-/// <see cref="AdditionalPaths"/> lists any other filesystem paths that back this same entry without
-/// being a rotation entry of their own — currently only the PEM provider's optional
-/// separately-registered private-key file (issue #405). A path listed here must receive the same
-/// mtime-change tracking and permission hardening as <see cref="Id"/> (so that either file changing
-/// is treated as this entry changing), but never participates in <c>kid</c> derivation, rotation
-/// ordering, or diagnostics keyed by entry identity — only <see cref="Id"/> does.
-/// </para>
+/// <see cref="Id"/> is the path used as this entry's identity — its rotation ordering, the
+/// provider's <c>KeyId</c>, and diagnostics. <see cref="AdditionalPaths"/> lists other filesystem
+/// paths backing this same entry without being a rotation entry of their own (currently only the
+/// PEM provider's optional separate private-key file): they get the same permission hardening as
+/// <see cref="Id"/>, but never participate in rotation ordering or diagnostics.
 /// </remarks>
 internal readonly record struct RegisteredSigningFile
 {

@@ -19,7 +19,7 @@ namespace ZeeKayDa.Auth.FileSystem.Tests;
 /// exercises the real <see cref="FileSigningKeyReader"/> against real temporary files.
 /// </summary>
 /// <remarks>
-/// This provider is on ADR 0015's Tier A (<see cref="KeySetOptions"/>) contract (issue #422):
+/// This provider is on ADR 0015's <see cref="KeySetOptions"/> contract (issue #422):
 /// <c>ListKeysAsync</c> runs exactly once, ever, for the lifetime of a service instance, so there is
 /// no reload/change-detection surface to test here — unlike the pre-migration ADR 0011 contract, a
 /// changed or newly-added file is never picked up without a restart. Rotation between already-known
@@ -347,7 +347,7 @@ public sealed class PemFileSigningJwtSigningServiceTests
 
     // ── Multi-file rotation via AddFile (AC #9/#10) ──────────────────────────────────────────────
     //
-    // ADR 0015 Tier A: ListKeysAsync runs exactly once and builds one immutable snapshot/timeline;
+    // ADR 0015: ListKeysAsync runs exactly once and builds one immutable snapshot/timeline;
     // active-key selection is then recomputed lazily against the wall clock on every call, with zero
     // further file I/O — so a rotation between already-known files still switches the active signer
     // purely from elapsed time.
@@ -453,7 +453,7 @@ public sealed class PemFileSigningJwtSigningServiceTests
 
     // ── Every registered certificate already expired at startup ─────────────────────────────────
     //
-    // ADR 0015 Security Considerations item 6: Tier A never re-reads, so an already-(or
+    // ADR 0015 Security Considerations item 6: a KeySetOptions provider never re-reads, so an already-(or
     // eventually-)expired sole key with no eligible successor drifts to (or starts as)
     // SelectActiveKey == null and signing fails closed at request time via the base class's own
     // generic "signing.no_active_key" error — there is no provider-specific "no active certificate"
@@ -560,7 +560,7 @@ public sealed class PemFileSigningJwtSigningServiceTests
 
         second[0].Kid.Should().Be(first[0].Kid,
             "kid must be derived from the key material; ListKeysAsync runs exactly once for this " +
-            "ADR 0015 Tier A provider regardless of elapsed time");
+            "an ADR 0015 KeySetOptions provider regardless of elapsed time");
     }
 
     // ── Algorithm/key-type mismatch ───────────────────────────────────────────────────────────────
@@ -677,7 +677,7 @@ public sealed class PemFileSigningJwtSigningServiceTests
     //
     // Unreachable via the public API in normal operation — the base class only ever calls
     // CreateSignerAsync with a KeyId it previously observed on a ListKeysAsync-returned KeyListing,
-    // and this ADR 0015 Tier A provider's registered files never change after startup — but invoked
+    // and this ADR 0015 KeySetOptions provider's registered files never change after startup — but invoked
     // directly via reflection here to prove the defensive check fails loudly rather than silently,
     // should that invariant ever be violated (e.g. a future base-class bug).
 

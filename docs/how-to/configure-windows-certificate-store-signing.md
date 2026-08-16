@@ -94,11 +94,11 @@ To grant access:
 - **Using the Certificates MMC snap-in:** locate the certificate under **Personal > Certificates**, right-click it, choose **All Tasks > Manage Private Keys...**, and grant the service account or App Pool identity **Read** permission.
 - **Scripted deployments:** grant access to the underlying CNG key container using `icacls` or PowerShell's `Set-Acl` against the key's file under `%ProgramData%\Microsoft\Crypto\Keys` (CNG) or the legacy CAPI key store, or use `certutil -repairstore` to repair key ACLs after an import.
 
-If the private key exists but cannot be accessed by the current process identity, ZeeKayDa.Auth surfaces a configuration error identifying the certificate by thumbprint, the resolved process identity (when it can be determined), and pointing back at "Manage Private Keys" / `certutil -repairstore`. Under this provider's Tier A contract that error surfaces the first time the affected certificate becomes the *active* signer and a token needs signing — at startup if it's already active, or later, at the rotation handoff, if it isn't yet — so this permission step is the first thing to check whenever you see it, and the identity named in the message is exactly the one to grant access to.
+If the private key exists but cannot be accessed by the current process identity, ZeeKayDa.Auth surfaces a configuration error identifying the certificate by thumbprint, the resolved process identity (when it can be determined), and pointing back at "Manage Private Keys" / `certutil -repairstore`. Under this provider's `KeySetOptions` contract that error surfaces the first time the affected certificate becomes the *active* signer and a token needs signing — at startup if it's already active, or later, at the rotation handoff, if it isn't yet — so this permission step is the first thing to check whenever you see it, and the identity named in the message is exactly the one to grant access to.
 
 ## Rotation and restart-to-reload semantics
 
-This provider implements ADR 0015's Tier A `KeySetOptions` contract: the complete set of
+This provider implements ADR 0015's `KeySetOptions` contract: the complete set of
 registered thumbprints is fixed at configuration time, and the only thing that ever advances
 afterward is the wall clock crossing each certificate's `NotBefore`/`NotAfter`.
 
@@ -109,7 +109,7 @@ Concretely, that means:
   adding, removing, or replacing a registered thumbprint always requires a configuration change
   and a restart, exactly as with the file-based PEM/PFX providers. There is no background polling
   for new certificates, and no `RefreshInterval`-style property to configure one — that property
-  only exists on the `KeySourceOptions` tier this provider does not derive from.
+  only exists on `KeySourceOptions`, which this provider does not derive from.
 - Rotation **between already-registered thumbprints** still switches the active signer purely from
   elapsed wall-clock time — each certificate's `NotBefore`/`NotAfter` is compared against `now` on
   every request, with **zero further store access to list keys**. The store *is* read once more at
@@ -159,7 +159,7 @@ operator, own each certificate's activation timing directly via its `NotBefore`,
 `PublicationLead` is used only to decide whether to log a startup warning that a registered
 certificate's `NotBefore` is nearer than `PublicationLead` away — a signal that the certificate may
 not have had enough lead time in the JWKS before it activates. Unlike `KeySourceOptions`'s
-`RefreshInterval`, there is no poll floor to enforce `PublicationLead` against on this tier — there
+`RefreshInterval`, there is no poll floor to enforce `PublicationLead` against here — there
 is no poll at all, since every thumbprint is read once, at startup.
 
 ## Least-privilege reads: public metadata once, private key only for the active certificate

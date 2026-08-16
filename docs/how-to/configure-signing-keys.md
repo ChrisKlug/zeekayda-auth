@@ -43,10 +43,10 @@ A few ideas recur across every production provider's how-to guide. This section 
 their shape — follow the links for the full explanation.
 
 - **A lead-time property governs the publish-then-activate delay, but which one — and how it's
-  enforced — depends on the tier.** Azure Key Vault (Tier B, `KeySourceOptions`) polls on
+  enforced — depends on the provider's options type.** Azure Key Vault (`KeySourceOptions`) polls on
   `RefreshInterval` and enforces `PublicationLead >= RefreshInterval`, deriving each version's real
   activation time as `CreatedOn + PublicationLead` (floored by an explicit `NotBefore` when later).
-  The Windows Certificate Store and file-based PEM/PFX providers (Tier A, `KeySetOptions`) instead
+  The Windows Certificate Store and file-based PEM/PFX providers (`KeySetOptions`) instead
   read every registered certificate/file exactly once, at startup, and use `PublicationLead`
   (default: 1 hour) purely as an advisory too-soon-activation warning threshold — there is no poll
   to enforce it against. See
@@ -54,7 +54,7 @@ their shape — follow the links for the full explanation.
   [Configure Windows Certificate Store signing](configure-windows-certificate-store-signing.md),
   and [Configure Azure Key Vault signing](configure-azure-key-vault-signing.md#rotation) for each
   provider's version, and [Signing keys reference](../reference/signing-keys.md) for the full
-  Tier A/Tier B contract.
+  `KeySetOptions`/`KeySourceOptions` contract.
 - **The retirement window.** When a key stops being the active signer, its public half stays
   published in the JWKS for a while longer, so relying parties holding tokens signed with it can
   still validate them — but its private half is destroyed immediately. See

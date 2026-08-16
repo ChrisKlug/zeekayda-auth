@@ -11,8 +11,7 @@ namespace ZeeKayDa.Auth.Tokens;
 /// KMS, an HSM) can make a network round trip. Local providers (development, File/PEM, PFX, Windows
 /// Certificate Store) construct <see cref="LocalSigner"/> in <c>CreateSignerAsync</c> rather than
 /// implementing this interface themselves; only genuinely remote providers implement
-/// <see cref="ISigner"/> directly. This is ADR 0011 §1's <c>SignInputAsync</c> default/override
-/// split re-expressed as an object (ADR 0015 §2).
+/// <see cref="ISigner"/> directly.
 /// </para>
 /// <para>
 /// <b><see cref="IDisposable.Dispose"/> is a normative contract, not advisory prose.</b> The base
@@ -24,17 +23,14 @@ namespace ZeeKayDa.Auth.Tokens;
 /// <c>Dispose</c> — doing so would break every other <see cref="ISigner"/> instance, and every
 /// future caller, that also depends on the same shared client. Only <see cref="LocalSigner"/>'s own
 /// wrapped <see cref="System.Security.Cryptography.AsymmetricAlgorithm"/> is safe to dispose
-/// unconditionally, because it is never shared with anything else (ADR 0015 §2/Security
-/// Considerations item 5).
+/// unconditionally, because it is never shared with anything else.
 /// </para>
 /// <para>
 /// <b>Ownership direction is the other half of this contract.</b> Every call to
-/// <c>CreateSignerAsync</c> <b>MUST</b> return a freshly created <see cref="ISigner"/> instance that
-/// is exclusively owned by the caller; it <b>MUST NOT</b> cache a previously returned instance and
-/// re-lend it from a second call. The base class's borrow/refcount machinery assumes that the
-/// instance handed back by each <c>CreateSignerAsync</c> call has no other live holder — the deleted
-/// legacy signing contract's reuse guards used to catch a violation of this at runtime, and this
-/// interface's contract must state it explicitly now that those guards are gone.
+/// <c>CreateSignerAsync</c> <b>MUST</b> return a freshly created <see cref="ISigner"/> instance
+/// that is exclusively owned by the caller; it <b>MUST NOT</b> cache a previously returned
+/// instance and re-lend it from a second call. The base class's borrow/refcount machinery assumes
+/// the instance handed back by each <c>CreateSignerAsync</c> call has no other live holder.
 /// </para>
 /// </remarks>
 public interface ISigner : IDisposable

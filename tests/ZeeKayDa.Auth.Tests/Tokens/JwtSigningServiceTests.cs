@@ -153,7 +153,7 @@ public sealed class JwtSigningServiceTests
             => Entries.Add((logLevel, formatter(state, exception)));
     }
 
-    /// <summary>Tier A (<see cref="KeySetOptions"/>) test double.</summary>
+    /// <summary><see cref="KeySetOptions"/> test double.</summary>
     private sealed class KeySetFakeService : JwtSigningService<FakeKeySetOptions>
     {
         private readonly Func<IReadOnlyList<KeyListing>> _listFactory;
@@ -197,7 +197,7 @@ public sealed class JwtSigningServiceTests
         }
     }
 
-    /// <summary>Tier B (<see cref="KeySourceOptions"/>) test double.</summary>
+    /// <summary><see cref="KeySourceOptions"/> test double.</summary>
     private sealed class KeySourceFakeService : JwtSigningService<FakeKeySourceOptions>
     {
         private readonly Func<IReadOnlyList<KeyListing>> _listFactory;
@@ -276,7 +276,7 @@ public sealed class JwtSigningServiceTests
             signerFactory ?? (_ => new FakeSigner()));
     }
 
-    // ── Snapshot build: Tier A once, Tier B per refresh ─────────────────────────────────────────────
+    // ── Snapshot build: KeySetOptions once, KeySourceOptions per refresh ────────────────────────────
 
     [Fact]
     public async Task ListKeysAsync_is_called_exactly_once_for_KeySetOptions_regardless_of_calls_or_elapsed_time()
@@ -294,7 +294,7 @@ public sealed class JwtSigningServiceTests
         await sut.GetSigningKeysAsync(ct);
         await sut.SignAsync(new byte[] { 0 }, ct);
 
-        sut.ListKeysAsyncCallCount.Should().Be(1, "Tier A calls ListKeysAsync exactly once, ever");
+        sut.ListKeysAsyncCallCount.Should().Be(1, "a KeySetOptions provider calls ListKeysAsync exactly once, ever");
     }
 
     [Fact]
@@ -705,7 +705,7 @@ public sealed class JwtSigningServiceTests
     public async Task GetSigningKeysAsync_does_not_log_status_or_warnings_for_a_KeySourceOptions_provider()
     {
         // The too-soon-pending-activation warning and per-key status line are specific to
-        // KeySetOptions (Tier A); a KeySourceOptions (Tier B) provider must not gain them.
+        // KeySetOptions; a KeySourceOptions provider must not gain them.
         using var rsa1 = RSA.Create(2048);
         using var rsa2 = RSA.Create(2048);
         var timeProvider = new FakeTimeProvider(Epoch);
@@ -1290,7 +1290,7 @@ public sealed class JwtSigningServiceTests
     public async Task SignAsync_throws_when_a_signer_materialized_on_a_later_rotation_handoff_fails_the_self_test()
     {
         // The self-test must not only run once, at the very first handoff — a key rotated in later
-        // (via a Tier A ActivateAt crossing, exactly as any multi-key Tier A provider rotates) must be
+        // (via an ActivateAt crossing, exactly as any multi-key KeySetOptions provider rotates) must be
         // proven exactly as thoroughly as the key that was active at startup (issue #437 security
         // review, finding F1). k1 gets a real signer whose signature genuinely verifies against its
         // own listed public key, so the first handoff passes; k2 gets a FakeSigner, which never

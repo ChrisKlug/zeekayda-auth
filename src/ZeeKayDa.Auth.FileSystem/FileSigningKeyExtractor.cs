@@ -9,12 +9,9 @@ namespace ZeeKayDa.Auth.FileSystem;
 /// </summary>
 /// <remarks>
 /// Uses only <c>GetRSAPublicKey()</c> / <c>GetRSAPrivateKey()</c> / <c>GetECDsaPublicKey()</c> /
-/// <c>GetECDsaPrivateKey()</c> — never <c>.PrivateKey</c>, never <c>ExportParameters(true)</c> — the
-/// same discipline <c>WindowsCertificateKeyExtractor</c> applies, preferring CNG/CAPI-backed handles
-/// over exporting raw key bytes into managed memory. These accessors return handle objects that
-/// remain valid and usable independently after the parent <see cref="X509Certificate2"/> is
-/// disposed, which is what lets the caller dispose every loaded certificate once all needed handles
-/// have been extracted.
+/// <c>GetECDsaPrivateKey()</c> — never <c>.PrivateKey</c> or <c>ExportParameters(true)</c>. These
+/// accessors return handles that remain valid after the parent <see cref="X509Certificate2"/> is
+/// disposed, which is what lets the caller dispose the certificate once handles are extracted.
 /// </remarks>
 internal static class FileSigningKeyExtractor
 {
@@ -54,9 +51,8 @@ internal static class FileSigningKeyExtractor
         if (ec is not null)
             return (ec, SigningKeyType.Ec);
 
-        // HasPrivateKey was true but neither accessor returned a handle: the key exists but could
-        // not be reconstructed from the loaded certificate — a distinct root cause from "no private
-        // key at all", still surfaced under the same failure code with a tailored message.
+        // HasPrivateKey was true but neither accessor returned a handle: a distinct root cause from
+        // "no private key at all", still surfaced under the same failure code.
         throw new ZeeKayDaConfigurationException(new ZeeKayDaConfigurationFailure(
             "signing.file_signing.private_key_not_found",
             $"The signing key file '{path}' has a private key, but it could not be accessed. " +

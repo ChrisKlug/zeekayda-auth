@@ -16,12 +16,11 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
     /// <summary>
     /// Registers <typeparamref name="T"/> as the singleton <see cref="IAuthorizationCodeBackingStore"/>
     /// implementation, wired underneath the framework's sealed coordinator. This is the
-    /// recommended registration path for production use (ADR 0013 §4).
+    /// recommended registration path for production use.
     /// </summary>
     /// <typeparam name="T">
-    /// The concrete type that implements <see cref="IAuthorizationCodeBackingStore"/>. Must be a
-    /// reference type with a publicly accessible constructor so that the DI container can
-    /// instantiate it.
+    /// The concrete type implementing <see cref="IAuthorizationCodeBackingStore"/>. Must have a
+    /// publicly accessible constructor so the DI container can instantiate it.
     /// </typeparam>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
@@ -47,12 +46,11 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
     /// <summary>
     /// Registers <typeparamref name="T"/> as the singleton <see cref="IRefreshTokenGrantStore"/>
     /// implementation, wired underneath the framework's sealed coordinator. This is the
-    /// recommended registration path for production use (ADR 0014 §4/§10).
+    /// recommended registration path for production use.
     /// </summary>
     /// <typeparam name="T">
-    /// The concrete type that implements <see cref="IRefreshTokenGrantStore"/>. Must be a
-    /// reference type with a publicly accessible constructor so that the DI container can
-    /// instantiate it.
+    /// The concrete type implementing <see cref="IRefreshTokenGrantStore"/>. Must have a
+    /// publicly accessible constructor so the DI container can instantiate it.
     /// </typeparam>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
@@ -76,24 +74,19 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
     }
 
     /// <summary>
-    /// Registers an in-memory token store for development and testing only. All tokens are
-    /// lost on process restart, and single-use enforcement and reuse detection are disabled
-    /// across multiple instances. A startup warning is emitted before the first request.
-    /// Do not use in production.
+    /// Registers an in-memory authorization code store for development and testing only. Tokens
+    /// are lost on process restart and reuse detection does not span multiple instances. Do not
+    /// use in production.
     /// </summary>
     /// <remarks>
     /// Outside a Development environment, startup fails with <see cref="ZeeKayDaConfigurationException"/>
-    /// unless <paramref name="allowOutsideDevelopment"/> is <see langword="true"/>. This gate is
-    /// enforced independently of any other in-memory store registration on the same builder — see
-    /// ADR 0008 §5.
+    /// unless <paramref name="allowOutsideDevelopment"/> is <see langword="true"/>.
     /// </remarks>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
     /// <param name="allowOutsideDevelopment">
-    /// Set to <see langword="true"/> only in test hosts that intentionally run under a
-    /// non-Development environment name (e.g. integration test hosts configured as
-    /// <c>Production</c>). A <see cref="Microsoft.Extensions.Logging.LogLevel.Critical"/> entry is
-    /// still emitted on every startup so the override is always visible in logs. Defaults to
-    /// <see langword="false"/>.
+    /// Set to <see langword="true"/> only for test hosts that intentionally run under a
+    /// non-Development environment name. A critical log entry is still emitted on every startup
+    /// so the override remains visible. Defaults to <see langword="false"/>.
     /// </param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
     /// <exception cref="ArgumentNullException">
@@ -122,24 +115,19 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
     }
 
     /// <summary>
-    /// Registers an in-memory token store for development and testing only. All tokens are
-    /// lost on process restart, and single-use enforcement and reuse detection are disabled
-    /// across multiple instances. A startup warning is emitted before the first request.
-    /// Do not use in production.
+    /// Registers an in-memory refresh token store for development and testing only. Tokens are
+    /// lost on process restart and reuse detection does not span multiple instances. Do not use
+    /// in production.
     /// </summary>
     /// <remarks>
     /// Outside a Development environment, startup fails with <see cref="ZeeKayDaConfigurationException"/>
-    /// unless <paramref name="allowOutsideDevelopment"/> is <see langword="true"/>. This gate is
-    /// enforced independently of any other in-memory store registration on the same builder — see
-    /// ADR 0008 §5.
+    /// unless <paramref name="allowOutsideDevelopment"/> is <see langword="true"/>.
     /// </remarks>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
     /// <param name="allowOutsideDevelopment">
-    /// Set to <see langword="true"/> only in test hosts that intentionally run under a
-    /// non-Development environment name (e.g. integration test hosts configured as
-    /// <c>Production</c>). A <see cref="Microsoft.Extensions.Logging.LogLevel.Critical"/> entry is
-    /// still emitted on every startup so the override is always visible in logs. Defaults to
-    /// <see langword="false"/>.
+    /// Set to <see langword="true"/> only for test hosts that intentionally run under a
+    /// non-Development environment name. A critical log entry is still emitted on every startup
+    /// so the override remains visible. Defaults to <see langword="false"/>.
     /// </param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
     /// <exception cref="ArgumentNullException">
@@ -168,25 +156,18 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
     }
 
     /// <summary>
-    /// Registers an in-memory token store for development and testing only. All tokens are
-    /// lost on process restart, and single-use enforcement and reuse detection are disabled
-    /// across multiple instances. A startup warning is emitted before the first request.
-    /// Do not use in production.
+    /// Registers in-memory authorization code and refresh token stores for development and
+    /// testing only. Do not use in production.
     /// </summary>
     /// <remarks>
-    /// Outside a Development environment, startup fails with <see cref="ZeeKayDaConfigurationException"/>
-    /// unless <paramref name="allowOutsideDevelopment"/> is <see langword="true"/>. The value is
-    /// passed through to both <see cref="AddInMemoryAuthorizationCodeStore"/> and
-    /// <see cref="AddInMemoryRefreshTokenStore"/>, each of which gates on it independently — see
-    /// ADR 0008 §5.
+    /// Combines <see cref="AddInMemoryAuthorizationCodeStore"/> and
+    /// <see cref="AddInMemoryRefreshTokenStore"/>, passing <paramref name="allowOutsideDevelopment"/>
+    /// through to both.
     /// </remarks>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
     /// <param name="allowOutsideDevelopment">
-    /// Set to <see langword="true"/> only in test hosts that intentionally run under a
-    /// non-Development environment name (e.g. integration test hosts configured as
-    /// <c>Production</c>). A <see cref="Microsoft.Extensions.Logging.LogLevel.Critical"/> entry is
-    /// still emitted on every startup so the override is always visible in logs. Defaults to
-    /// <see langword="false"/>.
+    /// Set to <see langword="true"/> only for test hosts that intentionally run under a
+    /// non-Development environment name. Defaults to <see langword="false"/>.
     /// </param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
     /// <exception cref="ArgumentNullException">
@@ -210,8 +191,7 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
 
     /// <summary>
     /// Registers a non-atomic <see cref="IDistributedCache"/>-backed default suitable for dev/test only.
-    /// Multi-instance production deployments MUST replace these stores with an atomic implementation;
-    /// see ADR 0008 §8.
+    /// Multi-instance production deployments MUST replace these stores with an atomic implementation.
     /// </summary>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
@@ -237,8 +217,7 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
 
     /// <summary>
     /// Registers a non-atomic <see cref="IDistributedCache"/>-backed default suitable for dev/test only.
-    /// Multi-instance production deployments MUST replace these stores with an atomic implementation;
-    /// see ADR 0008 §8.
+    /// Multi-instance production deployments MUST replace these stores with an atomic implementation.
     /// </summary>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
@@ -264,8 +243,7 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
 
     /// <summary>
     /// Registers a non-atomic <see cref="IDistributedCache"/>-backed default suitable for dev/test only.
-    /// Multi-instance production deployments MUST replace these stores with an atomic implementation;
-    /// see ADR 0008 §8.
+    /// Multi-instance production deployments MUST replace these stores with an atomic implementation.
     /// </summary>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>

@@ -10,10 +10,8 @@ namespace ZeeKayDa.Auth.Tokens;
 /// </param>
 /// <param name="ActivatesAt">
 /// The instant this key becomes eligible to be the active signer, already fully resolved by the
-/// caller (e.g. an X.509 certificate's <c>NotBefore</c>, converted to UTC, or an explicit
-/// operator-supplied activation time for a bare, certificate-less key). <see cref="SigningKeyRotation"/>
-/// treats this as an opaque, precomputed fact and applies no further delay or flooring logic of its
-/// own.
+/// caller. <see cref="SigningKeyRotation"/> treats this as an opaque, precomputed fact and applies
+/// no further delay or flooring logic of its own.
 /// </param>
 /// <param name="ExpiresAt">
 /// The instant this key stops being eligible to sign or be trusted (e.g. an X.509 certificate's
@@ -34,9 +32,7 @@ public readonly record struct RotationEntry(RotationKey Key, DateTimeOffset? Ret
     /// <summary>
     /// Gets the earliest instant this key could ever legitimately win
     /// <see cref="SigningKeyRotation.SelectActiveKey"/>'s selection. Always equal to
-    /// <see cref="RotationKey.ActivatesAt"/> — anchor-agnostic rotation applies no additional delay
-    /// or flooring on top of the caller-supplied activation time, so this is a computed accessor
-    /// over <see cref="Key"/> rather than a separately stored (and potentially divergent) field.
+    /// <see cref="RotationKey.ActivatesAt"/>.
     /// </summary>
     public DateTimeOffset ActivatesAt => Key.ActivatesAt;
 }
@@ -48,25 +44,10 @@ public readonly record struct RotationEntry(RotationKey Key, DateTimeOffset? Ret
 /// retirement window), and whether a rotated-in key's activation is scheduled too soon.
 /// </summary>
 /// <remarks>
-/// <para>
-/// This component operates purely on <see cref="RotationKey"/>'s already-resolved
-/// <see cref="RotationKey.ActivatesAt"/>/<see cref="RotationKey.ExpiresAt"/> pair — it has no
-/// dependency on <see cref="System.Security.Cryptography.X509Certificates.X509Certificate2"/> or any
-/// other provider-specific type. Each provider maps its own durable per-key timestamp (an X.509
-/// certificate's <c>NotBefore</c>/<c>NotAfter</c>, or an explicit activation time for a bare,
-/// certificate-less key) onto <see cref="RotationKey"/> before calling in. This is what lets a
-/// certificate-backed provider (the Windows Certificate Store provider) and a potential future
-/// bare-key provider share the exact same rotation logic.
-/// </para>
-/// <para>
-/// Structurally analogous to the Azure Key Vault providers' internal rotation-timeline derivation,
-/// but anchored differently and simpler: Key Vault anchors on each version's durable,
-/// service-stamped <c>CreatedOn</c> timestamp, applies a publish-then-activate delay on top, tracks
-/// an <c>Enabled</c> flag, and detects "previously-published kid vanished early" anomalies via live
-/// polling. None of that applies here — every key eligible for this component is already fully
-/// resolved and visible as of process start, with no live external state to poll. That Key Vault
-/// logic is intentionally not part of this type and stays where it already lives.
-/// </para>
+/// Operates purely on <see cref="RotationKey"/>'s already-resolved
+/// <see cref="RotationKey.ActivatesAt"/>/<see cref="RotationKey.ExpiresAt"/> pair, with no dependency
+/// on any provider-specific key type. Each provider maps its own durable per-key timestamp onto
+/// <see cref="RotationKey"/> before calling in, letting multiple providers share this same logic.
 /// </remarks>
 public static class SigningKeyRotation
 {
@@ -81,11 +62,9 @@ public static class SigningKeyRotation
             .ThenBy(k => k.Id, StringComparer.Ordinal)
             .ToList();
 
-        // RetiredAt(k) must be the ActivatesAt of whichever key *actually* superseded k as the
-        // active signer — i.e. the next entry, in ActivatesAt order, that could ever legitimately
-        // win SelectActiveKey's selection. A key that is already past its own ExpiresAt by the time
-        // it would activate can never win that selection, so it must be skipped when looking for a
-        // predecessor's real successor — it is simply never anyone's successor.
+        // RetiredAt(k) is the ActivatesAt of whichever key actually superseded k — the next entry,
+        // in order, that could legitimately win SelectActiveKey's selection. A key already past its
+        // own ExpiresAt by the time it would activate is skipped: it can never be anyone's successor.
         var entries = new RotationEntry[ordered.Count];
         DateTimeOffset? nextEligibleSuccessorActivatesAt = null;
 
@@ -104,50 +83,28 @@ public static class SigningKeyRotation
     /// Picks the currently active signing key out of an ascending activation timeline.
     /// </summary>
     /// <remarks>
+    /// <strong>Callers must fail closed on a <see langword="null"/> return</strong> — refuse to sign
+    /// rather than falling back to an arbitrary key, since signing with an expired or
+    /// not-yet-activated key would issue tokens relying parties are entitled to reject.
     /// <para>
-    /// <strong>Callers must fail closed on a <see langword="null"/> return.</strong> A
-    /// <see langword="null"/> result means no key is currently eligible to sign; the caller must
-    /// refuse to sign (e.g. by throwing a configuration exception), never fall back to an arbitrary
-    /// key from the timeline — signing with an expired or not-yet-activated key would issue tokens
-    /// relying parties are entitled to reject, and silently picking one would mask the very
-    /// misconfiguration this <see langword="null"/> exists to surface.
+    /// <strong>Single-key bootstrap exemption:</strong> with exactly one registered key, when
+    /// <paramref name="supportsBootstrapExemption"/> is <see langword="true"/>, that key is active
+    /// immediately regardless of its <see cref="RotationKey.ActivatesAt"/> — there is no prior
+    /// published JWKS state any relying party could have cached. This applies only to activation
+    /// timing, not expiry: an already-expired sole key still fails closed.
     /// </para>
     /// <para>
-    /// <strong>Single-key bootstrap exemption:</strong> with exactly one registered key, when the
-    /// caller reports <paramref name="supportsBootstrapExemption"/> as <see langword="true"/>, that
-    /// key is active immediately regardless of its <see cref="RotationKey.ActivatesAt"/> — there is
-    /// no prior published JWKS state any relying party could have cached. The exemption applies only
-    /// to activation timing, not to expiry: an already-expired sole key still fails closed (returns
-    /// <see langword="null"/>) rather than being silently used to sign.
-    /// </para>
-    /// <para>
-    /// <strong>Why this is gated by the caller's tier, not by "is this the first snapshot this
-    /// instance has ever built":</strong> a naive "first snapshot ever" gate is not restart-safe. For
-    /// a Tier B (<c>KeySourceOptions</c>) provider the listing that produces this timeline can shrink
-    /// to one key live, at runtime, via operator revocation (ADR 0015 §6's kill-by-omission) — and if
-    /// the process also restarts or a new instance is scaled out while that revocation is in effect
-    /// (exactly when an incident tends to prompt exactly that), the new instance's very first snapshot
-    /// would again look like a bootstrap even though the listing shrank via revocation, not genuine
-    /// first-ever provisioning — reinstating the same early-promotion bug just gated on process
-    /// lifetime instead of listing size. Tier A (<c>KeySetOptions</c>) has no such live-shrink
-    /// exposure — its key set is fixed for the process lifetime — so callers pass
-    /// <see langword="true"/> for <paramref name="supportsBootstrapExemption"/> only when selecting
-    /// for a Tier A provider. Tier B callers always pass <see langword="false"/>: a genuine
-    /// first-ever-provisioned Tier B key does not need this exemption anyway, because Tier B encodes
-    /// "eligible from startup" durably in the key's own data — its provider computes
-    /// <c>ActivateAt = null</c> for the chronologically-first version, over the full version history
-    /// including disabled versions, which is stable across restarts and revocations alike and already
-    /// activates immediately without help from this exemption.
+    /// Only a <c>KeySetOptions</c> provider — whose key set is fixed for the process lifetime — may
+    /// pass <see langword="true"/> for the exemption. A <c>KeySourceOptions</c> provider's listing
+    /// can shrink to one key at runtime via revocation, so a restart during that revocation must not
+    /// be allowed to look like a fresh bootstrap; those callers always pass <see langword="false"/>.
     /// </para>
     /// </remarks>
     /// <param name="timeline">The activation timeline, as built by <see cref="BuildActivationTimeline"/>.</param>
     /// <param name="now">The current instant to select against.</param>
     /// <param name="supportsBootstrapExemption">
-    /// <see langword="true"/> only when the calling provider is on the Tier A (<c>KeySetOptions</c>)
-    /// contract, whose fixed-for-the-process-lifetime key set has no live-shrink-via-revocation
-    /// exposure. Tier B (<c>KeySourceOptions</c>) callers must always pass <see langword="false"/> —
-    /// see remarks for why gating on process/snapshot lifetime instead would re-open the exact bypass
-    /// this parameter exists to close.
+    /// <see langword="true"/> only when the calling provider is on the <c>KeySetOptions</c>
+    /// contract. <c>KeySourceOptions</c> callers must always pass <see langword="false"/>.
     /// </param>
     /// <returns>
     /// The active entry, or <see langword="null"/> if no key is currently eligible to sign (the
@@ -159,9 +116,8 @@ public static class SigningKeyRotation
         if (supportsBootstrapExemption && timeline.Count == 1)
             return IsEligibleAt(timeline[0].Key, now) ? timeline[0] : null;
 
-        // The timeline is sorted ascending by ActivatesAt (BuildActivationTimeline's contract), so
-        // the last eligible match is always the one with the greatest ActivatesAt <= now. Projected
-        // to RotationEntry? so LastOrDefault() on an empty filtered sequence yields null rather than
+        // Timeline is sorted ascending by ActivatesAt, so the last eligible match has the greatest
+        // ActivatesAt <= now. Projected to RotationEntry? so an empty result yields null, not
         // default(RotationEntry).
         return timeline
             .Where(entry => entry.ActivatesAt <= now && IsEligibleAt(entry.Key, now))
@@ -200,10 +156,8 @@ public static class SigningKeyRotation
         if (timeline.Count < 2)
             return false;
 
-        // Projected to RotationEntry? (not a plain .OrderBy().FirstOrDefault<RotationEntry>()):
-        // RotationEntry is a readonly record struct, so FirstOrDefault() on an empty filtered
-        // sequence would otherwise return default(RotationEntry) rather than null, wrongly making
-        // `soonestPending` non-null when nothing is actually pending.
+        // Projected to RotationEntry? so an empty result yields null rather than
+        // default(RotationEntry), which would wrongly make `soonestPending` non-null.
         soonestPending = timeline
             .Where(entry => !string.Equals(entry.Key.Id, active.Key.Id, StringComparison.Ordinal) && entry.ActivatesAt > now)
             .OrderBy(entry => entry.ActivatesAt)
@@ -213,11 +167,8 @@ public static class SigningKeyRotation
         return soonestPending is { } pending && pending.ActivatesAt - now < assumedJwksPropagationDelay;
     }
 
-    // Named generically ("At", not "Now") because this same ExpiresAt check is evaluated at two
-    // different kinds of point in time: the current wall-clock time (from SelectActiveKey, to pick
-    // today's active signer) and each candidate's own ActivatesAt (from BuildActivationTimeline, to
-    // decide whether that candidate could ever legitimately have won that same selection once it
-    // activated).
+    // Named generically ("At", not "Now") because this ExpiresAt check is evaluated both at the
+    // current wall-clock time and at a candidate's own ActivatesAt.
     private static bool IsEligibleAt(RotationKey key, DateTimeOffset pointInTime) =>
         pointInTime <= key.ExpiresAt;
 

@@ -6,17 +6,10 @@ namespace ZeeKayDa.Auth.Tokens;
 /// them.
 /// </summary>
 /// <remarks>
-/// <para>
-/// This is Tier B of the two-tier signing-provider split introduced by ADR 0015 (issue #418): the
-/// list genuinely changes between calls (a remote store, a database table, a file glob that
+/// The list genuinely changes between calls (a remote store, a database table, a file glob that
 /// discovers new members at runtime). Azure Key Vault (cached and remote) is the intended
-/// production consumer of this tier.
-/// </para>
-/// <para>
-/// This tier, together with <see cref="KeySetOptions"/>, is the sole signing-provider contract —
-/// the earlier ADR 0011 §3.4 two-tier split it replaced was retired entirely once every provider
-/// migrated (issue #428).
-/// </para>
+/// production consumer. Together with <see cref="KeySetOptions"/>, this is the sole
+/// signing-provider contract.
 /// </remarks>
 public abstract class KeySourceOptions : JwtSigningServiceOptions
 {
@@ -27,9 +20,9 @@ public abstract class KeySourceOptions : JwtSigningServiceOptions
     /// Defaults to one hour.
     /// </summary>
     /// <remarks>
-    /// One meaning only: re-ask cadence. Replaces ADR 0011's <c>KeyRotationCheckInterval</c>, which
-    /// conflated this with Tier A's internal clock-tick-over-a-fixed-timeline meaning — the reason
-    /// ADR 0015 re-splits the tiers on acquisition rather than on "does it reload."
+    /// One meaning only: re-ask cadence. This is distinct from <see cref="KeySetOptions"/>'s internal
+    /// clock-tick-over-a-fixed-timeline meaning — the two option types split on acquisition shape
+    /// rather than on "does it reload."
     /// </remarks>
     public TimeSpan RefreshInterval { get; set; } = TimeSpan.FromHours(1);
 
@@ -38,19 +31,12 @@ public abstract class KeySourceOptions : JwtSigningServiceOptions
     /// been published. Defaults to <see cref="RefreshInterval"/> when left unset.
     /// </summary>
     /// <remarks>
-    /// <para>
     /// Enforced entirely through durable, <c>ActivateAt</c>-derived timing: the base treats
     /// <c>PublishAt = ActivateAt − PublicationLead</c> as the instant the key's public half must
-    /// already be in the JWKS, and the provider maps its store's durable timestamp onto
-    /// <c>ActivateAt</c> so that lead is satisfied (e.g. Key Vault: <c>ActivateAt = CreatedOn +
-    /// PublicationLead</c>). It is NEVER derived from observed/first-seen time.
-    /// </para>
-    /// <para>
-    /// <b>Invariant:</b> <c>PublicationLead &gt;= RefreshInterval</c> — a config-level relationship
-    /// (the lead is at least one poll cycle), not per-key state. A provider's
-    /// <c>IValidateOptions</c> implementation should enforce this via
+    /// already be in the JWKS. It is never derived from observed/first-seen time.
+    /// <b>Invariant:</b> <c>PublicationLead &gt;= RefreshInterval</c> (the lead is at least one poll
+    /// cycle) — a provider's <c>IValidateOptions</c> implementation should enforce this via
     /// <see cref="KeySourcePublicationLeadValidator"/>.
-    /// </para>
     /// </remarks>
     public TimeSpan PublicationLead
     {
@@ -58,16 +44,10 @@ public abstract class KeySourceOptions : JwtSigningServiceOptions
         {
             var effective = _publicationLead ?? RefreshInterval;
 
-            // Defense-in-depth (issue #425 security review, finding F6): the primary enforcement of
-            // PublicationLead >= RefreshInterval is KeySourcePublicationLeadValidator.ValidateAtLeastRefreshInterval,
-            // run by each provider's IValidateOptions at options-bind time. That only fires when the
-            // options pipeline's validation actually runs (e.g. ValidateOnStart()) — it would not catch
-            // an options instance built directly (a test, a bespoke host) or mutated afterwards without
-            // going through that pipeline. Re-checking here, at the point where the effective value is
-            // actually read (every ListKeysAsync call, via each Tier B provider's ComputeActivateAt),
-            // closes that gap cheaply: a plain TimeSpan comparison on every read, no store access, no
-            // base-class surgery. Only applies when PublicationLead was explicitly set — the derived
-            // default (falling back to RefreshInterval) can never violate this invariant.
+            // Defense-in-depth: KeySourcePublicationLeadValidator is the primary enforcement of
+            // PublicationLead >= RefreshInterval, but it only fires when the options pipeline's
+            // validation actually runs. Re-checking here, at the point of actual use, catches an
+            // options instance built or mutated without going through that pipeline.
             if (_publicationLead is { } explicitLead && explicitLead < RefreshInterval)
             {
                 throw new ZeeKayDaConfigurationException(
@@ -85,13 +65,9 @@ public abstract class KeySourceOptions : JwtSigningServiceOptions
     }
 
     /// <summary>
-    /// The same effective value as <see cref="PublicationLead"/> (the explicitly set value, or
-    /// <see cref="RefreshInterval"/> when unset), but without <see cref="PublicationLead"/>'s own
-    /// defensive invariant check. Exists solely so <see cref="KeySourcePublicationLeadValidator.ValidateAtLeastRefreshInterval"/>
-    /// can read the raw, possibly-invalid value it is in the middle of validating without
-    /// triggering that same check itself — a validator whose job is to produce a friendly,
-    /// aggregated <see cref="Microsoft.Extensions.Options.ValidateOptionsResult.Fail(string)"/> must
-    /// not have the value it is inspecting throw out from under it before it can do so.
+    /// The same effective value as <see cref="PublicationLead"/>, but without its defensive
+    /// invariant check, so <see cref="KeySourcePublicationLeadValidator.ValidateAtLeastRefreshInterval"/>
+    /// can read the raw, possibly-invalid value without that check throwing out from under it.
     /// </summary>
     internal TimeSpan RawPublicationLead => _publicationLead ?? RefreshInterval;
 }

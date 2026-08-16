@@ -10,26 +10,11 @@ namespace ZeeKayDa.Auth.AspNetCore;
 /// are disabled across multiple instances.
 /// </summary>
 /// <remarks>
-/// <para>
-/// One instance of this service is registered per in-memory store registration call
-/// (<c>AddInMemoryAuthorizationCodeStore()</c>, <c>AddInMemoryRefreshTokenStore()</c>, or both
-/// via <c>AddInMemoryStores()</c>), each capturing the <c>allowOutsideDevelopment</c> value and
-/// the <c>storeName</c> supplied to its own registration call. Naming the store in the log text
-/// means <c>AddInMemoryStores()</c>, which registers two instances of this service, emits two
-/// distinctly-worded log lines rather than the same line twice. This also means the gate is
-/// enforced independently per store: a consumer who calls
-/// <c>AddInMemoryAuthorizationCodeStore(allowOutsideDevelopment: true)</c> and
-/// <c>AddInMemoryRefreshTokenStore()</c> (defaulting to <see langword="false"/>) on the same
-/// builder still fails startup outside <c>Development</c>, because the refresh token store's
-/// instance of this service was never granted the override.
-/// </para>
-/// <para>
-/// When the host environment is not <c>Development</c> and the captured
-/// <c>allowOutsideDevelopment</c> value is <see langword="false"/>, startup fails with a
-/// <see cref="ZeeKayDaConfigurationException"/> so that accidental in-memory configurations are
-/// never silently deployed to non-development hosts. Pass <see langword="true"/> only in test
-/// hosts that intentionally run outside Development.
-/// </para>
+/// One instance is registered per in-memory store registration call, each capturing its own
+/// <c>storeName</c> and <c>allowOutsideDevelopment</c> value, so the gate is enforced
+/// independently per store. Outside <c>Development</c>, startup fails with a
+/// <see cref="ZeeKayDaConfigurationException"/> unless the captured
+/// <c>allowOutsideDevelopment</c> is <see langword="true"/>.
 /// </remarks>
 internal sealed class InMemoryStoreWarningService : IHostedService
 {
@@ -39,12 +24,7 @@ internal sealed class InMemoryStoreWarningService : IHostedService
     /// <summary>The store name passed for the refresh token store registration.</summary>
     internal const string RefreshTokenStoreName = "refresh token store";
 
-    /// <summary>
-    /// Composite format string for the mandatory startup warning. ADR 0008 §5 requires the
-    /// message to include a specific block of text verbatim; that text is everything up to and
-    /// including "...must not be used in production." — the trailing "Store: {0}." sentence is
-    /// additive and distinguishes one registration's log line from another's.
-    /// </summary>
+    /// <summary>Format string for the mandatory startup warning; <c>{0}</c> is the store name.</summary>
     internal const string WarningMessageFormat =
         "ZeeKayDa.Auth: in-memory token stores are active. All issued tokens will be lost on " +
         "process restart, and single-use enforcement and reuse detection are disabled across " +

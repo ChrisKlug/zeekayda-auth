@@ -13,29 +13,15 @@ namespace ZeeKayDa.Auth.FileSystem;
 /// handed to the caller for parsing.
 /// </summary>
 /// <remarks>
-/// <para>
-/// This is the one genuinely new piece of I/O this provider needs: unlike the Windows Certificate
-/// Store provider (which reads a certificate the OS store already vouches for) or the local
-/// development provider (which creates and owns the files it later reads), this provider reads
-/// files it did not create, supplied by the operator. The techniques below are adapted from
-/// <c>LocalSigningKeyFileSystem</c>'s symlink walk and Unix-mode/Windows-ACL checks, but applied as
-/// **read-only validation of a pre-existing file** — this type never writes, creates a directory,
-/// or narrows an ACL. Narrowing an operator's existing ACL would silently change file ownership
-/// semantics the operator did not ask this library to touch.
-/// </para>
-/// <para>
-/// Each path is opened <strong>exactly once</strong> per read call, and every check below runs
-/// against that single open handle rather than the original path string, closing the TOCTOU window
-/// between validation and read — the same discipline
-/// <see cref="ZeeKayDa.Auth.Tokens.SigningKeyRotation"/>'s callers rely on elsewhere in the
-/// signing-provider family.
-/// </para>
+/// This provider reads files it did not create, supplied by the operator, so unlike the Windows
+/// Certificate Store or local-development providers it validates rather than trusts them:
+/// read-only, never writing, creating a directory, or narrowing an ACL. Each path is opened
+/// <strong>exactly once</strong> per read call and every check runs against that single open
+/// handle rather than the path string, closing the TOCTOU window between validation and read.
 /// </remarks>
 internal sealed class FileSigningKeyReader
 {
-    // Broader than 0600 (owner read/write only) is a hard failure — matches the local-development
-    // provider's key-file requirement (ADR 0011 §2), applied here to a file this provider does not
-    // own but must still trust before extracting private key material from it.
+    // Broader than 0600 (owner read/write only) is a hard failure.
     private const UnixFileMode DisallowedUnixModeBits =
         UnixFileMode.GroupRead | UnixFileMode.GroupWrite | UnixFileMode.GroupExecute
         | UnixFileMode.OtherRead | UnixFileMode.OtherWrite | UnixFileMode.OtherExecute;
@@ -156,9 +142,9 @@ internal sealed class FileSigningKeyReader
     private static void ValidateNoSymlinkedAncestorWindows(string originalPath, string resolvedPath)
     {
         // A symlinked ancestor directory is just as dangerous as a symlinked leaf: an attacker with
-        // write access to a parent directory could redirect it to an attacker-controlled location.
-        // Windows has no equivalent of the macOS/Linux OS-owned-symlink convention handled below, so
-        // every ancestor is checked unconditionally.
+        // write access to a parent directory could redirect it elsewhere. Every ancestor is checked
+        // unconditionally — Windows has no OS-owned-symlink convention to carve out (see the Unix
+        // check below).
         var directory = Path.GetDirectoryName(resolvedPath);
         while (!string.IsNullOrEmpty(directory))
         {
@@ -172,30 +158,18 @@ internal sealed class FileSigningKeyReader
     [UnsupportedOSPlatform("windows")]
     private static void ValidateNoUntrustedSymlinkedAncestorUnix(string originalPath, string resolvedPath)
     {
-        // Unlike the Windows walk above, a blanket "any symlinked ancestor is a redirect attack" rule
-        // does not hold on Unix: several mainstream OSes ship root-owned symlinks as a normal part of
-        // their standard layout — most notably macOS, where /tmp, /var, and /etc are themselves
-        // symlinks to /private/tmp, /private/var, /private/etc. Since this provider is the sole
-        // recommended signing provider for macOS deployments (ADR 0011 Amendment 7), rejecting every
-        // file placed under those conventional paths would make the provider unusable for a large
-        // share of its primary target platform.
+        // Unlike the Windows walk above, "any symlinked ancestor is a redirect attack" does not hold
+        // on Unix: macOS ships /tmp, /var, and /etc as symlinks to /private/..., and this provider
+        // is the recommended one for macOS, so rejecting those paths would make it unusable there.
+        // The trust signal is ownership of the directory entry itself, not symlink-ness: an attacker
+        // without root cannot plant or replace a root-owned entry, so a root-owned symlinked
+        // ancestor is as trustworthy as a non-symlinked one. The walk stops at the first root-owned
+        // directory, since everything above it is equally OS-managed.
         //
-        // The distinguishing trust signal is ownership of the *directory entry itself* — not
-        // symlink-ness, and not the ownership of whatever a symlink points at: an attacker who does
-        // not already have root cannot plant or replace a root-owned directory entry, so a root-owned
-        // symlinked ancestor is exactly as trustworthy as a root-owned non-symlinked one. This mirrors
-        // the same root-owned trust anchor LocalSigningKeyFileSystem.ValidateDirectoryChainOwnershipUnix
-        // already uses for its ownership-chain walk. Once the walk reaches a root-owned directory,
-        // everything above it is equally OS-managed, so the walk stops there instead of continuing to
-        // flag OS-standard symlinks (macOS's /tmp, /var, /etc) further up the chain.
-        //
-        // This MUST use PosixInterop.GetLinkOwnerUid (lstat), never GetOwnerUid (stat): stat() follows
-        // a symlink and reports the *target's* owner, which an attacker fully controls by choosing
-        // where their own symlink points — e.g. a non-root attacker's symlink pointed at root-owned
-        // /tmp would wrongly read as root-owned and short-circuit this very check. lstat() reports the
-        // link entry's own owner, which is exactly the "who could have created/replaced this entry"
-        // signal this check needs, reused here via InternalsVisibleTo rather than duplicating the
-        // per-platform stat()/lstat() P/Invoke a second time.
+        // This MUST use PosixInterop.GetLinkOwnerUid (lstat), never GetOwnerUid (stat): stat()
+        // follows the symlink and reports the target's owner, which an attacker controls by
+        // choosing where their symlink points — e.g. pointing at root-owned /tmp would wrongly read
+        // as root-owned and short-circuit this check. lstat() reports the link entry's own owner.
         var directory = Path.GetDirectoryName(resolvedPath);
         while (!string.IsNullOrEmpty(directory))
         {
@@ -274,11 +248,9 @@ internal sealed class FileSigningKeyReader
         "0" + Convert.ToString((int)mode & 0x1FF, 8).PadLeft(3, '0');
 
     /// <summary>
-    /// Best-effort, log-only checks for two conditions the issue's security considerations call out
-    /// as a SHOULD, not a MUST: a network-filesystem volume, and a world-writable parent directory.
-    /// Neither check fails startup — an inconclusive or unsupported check degrades to "no warning"
-    /// rather than a hard failure, since neither the BCL nor every OS exposes a fully reliable way
-    /// to answer either question.
+    /// Best-effort, log-only checks for a network-filesystem volume and a world-writable parent
+    /// directory. Neither check fails startup: an inconclusive or unsupported check degrades to
+    /// "no warning" rather than a hard failure.
     /// </summary>
     private void WarnIfPotentiallyUnsafeEnvironment(string path)
     {

@@ -43,18 +43,11 @@ public interface IClientRegistration
     /// endpoint).
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// This property is declared (non-default interface member) because a silent default value
-    /// would convert a configuration omission into a security-relevant runtime behaviour change.
-    /// </para>
-    /// <para>
-    /// Three-way consistency rule (enforced at registration time):
-    /// <c>IsPublic ⟺ Credentials.Count == 0 ⟺ AllowedTokenEndpointAuthMethods == { "none" }</c>.
-    /// </para>
-    /// <para>
-    /// See <see href="https://www.rfc-editor.org/rfc/rfc6749#section-2.1">RFC 6749 §2.1</see>
-    /// and <see href="https://www.rfc-editor.org/rfc/rfc9700#section-2.1">RFC 9700 §2.1</see>.
-    /// </para>
+    /// Declared (non-default interface member) because a silent default value would convert a
+    /// configuration omission into a security-relevant runtime behaviour change. Enforced
+    /// three-way consistency rule: <c>IsPublic ⟺ Credentials.Count == 0 ⟺
+    /// AllowedTokenEndpointAuthMethods == { "none" }</c>.
+    /// See <see href="https://www.rfc-editor.org/rfc/rfc6749#section-2.1">RFC 6749 §2.1</see>.
     /// </remarks>
     bool IsPublic { get; }
 
@@ -71,19 +64,13 @@ public interface IClientRegistration
     /// <summary>
     /// Permitted post-logout redirect URIs. May be empty.
     /// </summary>
-    /// <remarks>
-    /// Membership checks MUST use <see cref="System.StringComparer.Ordinal"/> — do NOT trust the
-    /// set's own comparer.
-    /// </remarks>
+    /// <remarks>See <see cref="IClientRegistration"/>'s string-set comparison invariant.</remarks>
     IReadOnlySet<string> PostLogoutRedirectUris { get; }
 
     /// <summary>
     /// Scopes this client is permitted to request.
     /// </summary>
-    /// <remarks>
-    /// Membership checks MUST use <see cref="System.StringComparer.Ordinal"/> — do NOT trust the
-    /// set's own comparer.
-    /// </remarks>
+    /// <remarks>See <see cref="IClientRegistration"/>'s string-set comparison invariant.</remarks>
     IReadOnlySet<string> AllowedScopes { get; }
 
     /// <summary>OAuth 2.0 grant types this client is permitted to use.</summary>
@@ -99,14 +86,9 @@ public interface IClientRegistration
     /// Token endpoint authentication methods this client is permitted to use.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// Membership checks MUST use <see cref="System.StringComparer.Ordinal"/> — do NOT trust the
-    /// set's own comparer.
-    /// </para>
-    /// <para>
-    /// The value <c>"none"</c> (see <see cref="TokenEndpointAuthMethods.None"/>) is only valid
-    /// for public clients (<see cref="IsPublic"/> == <see langword="true"/>).
-    /// </para>
+    /// See <see cref="IClientRegistration"/>'s string-set comparison invariant. The value
+    /// <c>"none"</c> (see <see cref="TokenEndpointAuthMethods.None"/>) is only valid for public
+    /// clients (<see cref="IsPublic"/> == <see langword="true"/>).
     /// </remarks>
     IReadOnlySet<string> AllowedTokenEndpointAuthMethods { get; }
 

@@ -128,8 +128,8 @@ signatures. The base class does the rest:
 
 - **Interval-throttled caching**, driven by an injected `TimeProvider` (never wall-clock reads).
   `ListKeysAsync` is called at most once per `KeySourceOptions.RefreshInterval` for a
-  `KeySourceOptions` (Tier B) provider — Azure Key Vault, remote or cached, is the only production
-  consumer today — or exactly once ever for a `KeySetOptions` (Tier A) provider (Windows
+  `KeySourceOptions` provider — Azure Key Vault, remote or cached, is the only production
+  consumer today — or exactly once ever for a `KeySetOptions` provider (Windows
   Certificate Store, file-based PEM/PFX).
 - **Single-flight refresh.** When the cache expires, concurrent callers are coalesced into one
   `ListKeysAsync` call rather than each triggering their own — this applies equally on the signing
@@ -246,7 +246,7 @@ it. Only a genuinely remote provider (Azure Key Vault remote signing, a KMS, an 
 
 ---
 
-## `JwtSigningServiceOptions` and the tier hierarchy
+## `JwtSigningServiceOptions` and the options hierarchy
 
 ```csharp
 namespace ZeeKayDa.Auth.Tokens;
@@ -268,32 +268,33 @@ public abstract class KeySourceOptions : JwtSigningServiceOptions
 ```
 
 `JwtSigningServiceOptions` itself carries no rotation-shaped property at all — every provider's
-options type derives from one of the two ADR 0015 tiers below it, never directly from the base
-type, and which tier it derives from is what determines `ListKeysAsync`'s reload behavior:
+options type derives from one of the two ADR 0015 option types below it, never directly from the
+base type, and which one it derives from is what determines `ListKeysAsync`'s reload behavior:
 
-- **`KeySetOptions` (Tier A)** — the complete set of registered keys/certificates is fixed at
+- **`KeySetOptions`** — the complete set of registered keys/certificates is fixed at
   configuration time; `ListKeysAsync` is called exactly once, ever. `PemFileSigningOptions`,
-  `PfxFileSigningOptions`, and `WindowsCertificateStoreSigningOptions` derive from this tier —
+  `PfxFileSigningOptions`, and `WindowsCertificateStoreSigningOptions` derive from this —
   see [Configure file-based signing](../how-to/configure-file-based-signing.md) and
   [Configure Windows Certificate Store signing](../how-to/configure-windows-certificate-store-signing.md).
-- **`KeySourceOptions` (Tier B)** — something else (Key Vault, a database table, a remote store)
+- **`KeySourceOptions`** — something else (Key Vault, a database table, a remote store)
   owns the key list and it can genuinely change between calls; `ListKeysAsync` is called at most
   once per `RefreshInterval`. `AzureKeyVaultRemoteSigningOptions` and
-  `AzureKeyVaultCachedSigningOptions` derive from this tier — see
+  `AzureKeyVaultCachedSigningOptions` derive from this — see
   [Configure Azure Key Vault signing](../how-to/configure-azure-key-vault-signing.md).
 
-Both tiers share the same `PublicationLead` meaning — how long before a key's `ActivateAt` its
-public half must already have been published, defaulting to one hour either way (on Tier B,
-defaulting specifically to `RefreshInterval` if that has been changed from its own default) — but
-resolve it differently: Tier A has no poll at all, so `PublicationLead` there is advisory only,
-entirely under the operator's control via each certificate's own `NotBefore`; Tier B enforces
-`PublicationLead >= RefreshInterval`, since a newly-published key must not be able to activate
-before the process would even poll and notice it exists. See
+Both option types share the same `PublicationLead` meaning — how long before a key's `ActivateAt`
+its public half must already have been published, defaulting to one hour either way (on
+`KeySourceOptions`, defaulting specifically to `RefreshInterval` if that has been changed from its
+own default) — but resolve it differently: `KeySetOptions` has no poll at all, so
+`PublicationLead` there is advisory only, entirely under the operator's control via each
+certificate's own `NotBefore`; `KeySourceOptions` enforces `PublicationLead >= RefreshInterval`,
+since a newly-published key must not be able to activate before the process would even poll and
+notice it exists. See
 [ADR 0015](https://github.com/ChrisKlug/zeekayda-auth/blob/main/docs/decisions/0015-signing-provider-set-source-tiers.md)
 for the full contract and [Rotate signing keys](../how-to/rotate-signing-keys.md) for concrete
 values per provider.
 
-> ⚠️ **Warning:** For a `KeySourceOptions` (Tier B) provider, `RefreshInterval` is also how quickly
+> ⚠️ **Warning:** For a `KeySourceOptions` provider, `RefreshInterval` is also how quickly
 > an emergency revocation (e.g. disabling a compromised Key Vault key version) is noticed — a
 > revoked key stops being listed, and therefore stops being trusted, only on the next poll.
 > `RefreshInterval` defaults to one hour. If your incident-response plan assumes a revoked key is
@@ -305,7 +306,7 @@ values per provider.
 ## Kill-by-omission: no `Enabled` flag
 
 There is no `Enabled`/disabled flag anywhere in the options or the provider contract. A key stops
-being trusted the moment a `KeySourceOptions` (Tier B) provider's `ListKeysAsync` stops returning
+being trusted the moment a `KeySourceOptions` provider's `ListKeysAsync` stops returning
 it — omission itself is the kill switch:
 
 - Revoke, disable, or delete the key in the backing store (Key Vault, a database row, …) and the
@@ -320,10 +321,10 @@ it — omission itself is the kill switch:
   return a short list — `ListKeysAsync`'s completeness contract exists precisely so a transient
   read failure is never misinterpreted as "these keys were revoked."
 
-`KeySetOptions` (Tier A) providers have no equivalent concept: the key set is fixed at
+`KeySetOptions` providers have no equivalent concept: the key set is fixed at
 configuration time, so there is nothing to revoke by omission — remove the compromised key from
 configuration and redeploy instead. See [Rotate signing keys](../how-to/rotate-signing-keys.md) for
-the emergency-rotation procedure for each tier.
+the emergency-rotation procedure for each options type.
 
 ---
 
@@ -440,8 +441,8 @@ See the how-to guide for each provider's exact method signature and required set
 
 A third-party signing provider — for a KMS or HSM ZeeKayDa.Auth does not ship support for — should
 subclass `JwtSigningService<TOptions>` rather than implement `IJwtSigningService` directly. Define a
-`TOptions` deriving from `KeySetOptions` (Tier A — you own the full list of keys up front) or
-`KeySourceOptions` (Tier B — something else owns the keys and you re-read them), implement
+`TOptions` deriving from `KeySetOptions` (you own the full list of keys up front) or
+`KeySourceOptions` (something else owns the keys and you re-read them), implement
 `ListKeysAsync` to return the currently trusted `KeyListing`s, and implement `CreateSignerAsync` to
 lend an `ISigner` for the active key only. See
 [Implement a custom signing key provider](../how-to/implement-custom-signing-provider.md) for a full

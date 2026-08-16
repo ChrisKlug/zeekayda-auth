@@ -23,7 +23,7 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
         "See OAuth 2.0 Security BCP §2.6 (RFC 9700).";
 
     /// <summary>
-    /// Startup validation error for the ADR 0002 §4 Rule 2 cross-group constraint that forbids
+    /// Startup validation error for the cross-group constraint that forbids
     /// advertising the <c>client_credentials</c> grant with only <c>none</c> token endpoint auth.
     /// </summary>
     /// <remarks>
@@ -178,7 +178,7 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
                 }
             }
 
-            // ADR 0002 §4: If client_credentials grant is supported, must have at least one non-None auth method
+            // If client_credentials grant is supported, must have at least one non-None auth method
             if (options.GrantTypesSupported is not null &&
                 options.GrantTypesSupported.Contains(GrantType.ClientCredentials) &&
                 options.TokenEndpoint.AuthMethodsSupported.All(m => string.Equals(m, TokenEndpointAuthMethods.None, StringComparison.Ordinal)))
@@ -187,18 +187,16 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
             }
         }
 
-        // AC-4c: A zero or negative refresh token lifetime is nonsensical and must be rejected at startup.
+        // A zero or negative refresh token lifetime is nonsensical and must be rejected at startup.
         if (options.TokenEndpoint.RefreshTokenLifetime <= TimeSpan.Zero)
         {
             errors.Add(
                 "AuthorizationServerOptions.TokenEndpoint.RefreshTokenLifetime must be greater than zero.");
         }
 
-        // AC-4d: RefreshTokenLifetime must be >= AuthorizationCodeLifetime so that the authorization
-        // code tombstone retention window (set to RefreshTokenLifetime by default) covers the full
-        // authorization code validity window. If RefreshTokenLifetime < AuthorizationCodeLifetime,
-        // the tombstone could expire before a delayed code replay is detected, allowing an attacker
-        // to escape the RFC 9700 §2.1.1 family-revocation mandate.
+        // RefreshTokenLifetime must be >= AuthorizationCodeLifetime so the authorization code
+        // tombstone retention window covers the full code validity window — otherwise a delayed
+        // code replay could escape the RFC 9700 §2.1.1 family-revocation mandate.
         if (options.TokenEndpoint.RefreshTokenLifetime > TimeSpan.Zero &&
             options.AuthorizationEndpoint.AuthorizationCodeLifetime > TimeSpan.Zero &&
             options.TokenEndpoint.RefreshTokenLifetime < options.AuthorizationEndpoint.AuthorizationCodeLifetime)
@@ -209,9 +207,9 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
                 "retention covers the authorization code validity window.");
         }
 
-        // ADR 0014 §5: a zero or negative absolute family lifetime is nonsensical and must be
-        // rejected at startup. TimeSpan.MaxValue is the explicit, warned "unbounded" sentinel and
-        // remains valid here.
+        // A zero or negative absolute family lifetime is nonsensical and must be rejected at
+        // startup. TimeSpan.MaxValue is the explicit, warned "unbounded" sentinel and remains
+        // valid here.
         if (options.TokenEndpoint.AbsoluteFamilyLifetime <= TimeSpan.Zero)
         {
             errors.Add(
@@ -339,7 +337,7 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
                 "See RFC 7636 §4.3 and RFC 8414 §2.");
         }
 
-        // AC-4a: RFC 9700 §2.1.1 requires authorization codes to be short-lived (max 10 minutes).
+        // RFC 9700 §2.1.1 requires authorization codes to be short-lived (max 10 minutes).
         if (options.AuthorizationEndpoint.AuthorizationCodeLifetime > TimeSpan.FromSeconds(600))
         {
             errors.Add(
@@ -348,14 +346,14 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
                 "of RFC 9700 §2.1.1.");
         }
 
-        // AC-4b: A zero or negative lifetime is nonsensical and must be rejected at startup.
+        // A zero or negative lifetime is nonsensical and must be rejected at startup.
         if (options.AuthorizationEndpoint.AuthorizationCodeLifetime <= TimeSpan.Zero)
         {
             errors.Add(
                 "AuthorizationServerOptions.AuthorizationEndpoint.AuthorizationCodeLifetime must be greater than zero.");
         }
 
-        // ADR 0008: A negative ClockSkewTolerance silently rejects tokens before their stated
+        // A negative ClockSkewTolerance silently rejects tokens before their stated
         // expiry, producing false rejections with no surfaced error.
         if (options.ClockSkewTolerance < TimeSpan.Zero)
         {
@@ -364,9 +362,9 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
                 "A negative value causes expiry checks to reject tokens before their stated expiry time.");
         }
 
-        // ADR 0008 §Security Considerations — Clock skew tolerance: a tolerance >= half the
-        // authorization code lifetime effectively extends the acceptance window past the code's
-        // intended expiry, undermining the short-lived code guarantee of RFC 9700 §2.1.1.
+        // A tolerance >= half the authorization code lifetime effectively extends the acceptance
+        // window past the code's intended expiry, undermining the short-lived code guarantee of
+        // RFC 9700 §2.1.1.
         var halfCodeLifetime = options.AuthorizationEndpoint.AuthorizationCodeLifetime / 2;
         if (options.ClockSkewTolerance >= TimeSpan.Zero &&
             options.AuthorizationEndpoint.AuthorizationCodeLifetime > TimeSpan.Zero &&
@@ -375,8 +373,7 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
             errors.Add(
                 $"AuthorizationServerOptions.ClockSkewTolerance ({options.ClockSkewTolerance}) is greater than or " +
                 $"equal to half of AuthorizationCodeLifetime ({halfCodeLifetime}). A tolerance this large effectively " +
-                "extends the authorization code acceptance window past its intended expiry. " +
-                "See ADR 0008 §Security Considerations — Clock skew tolerance.");
+                "extends the authorization code acceptance window past its intended expiry.");
         }
 
         // Validate endpoint URI overrides — RFC 8414 §2 requires all metadata URLs to use HTTPS.

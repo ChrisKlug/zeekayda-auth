@@ -5,46 +5,20 @@ namespace ZeeKayDa.Auth.Stores;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <strong>Framework-sealed (ADR 0013 §1).</strong> This interface is the protocol surface the
-/// token and authorization endpoints depend on, but it is no longer a third-party extension
-/// point: the framework ships one sealed coordinator, <c>AuthorizationCodeStore</c>, that
-/// implements it. The interface stays <see langword="public"/> so it can be injected and
-/// consumed across assemblies, but an internal member (see below) means only assemblies named in
-/// <c>[InternalsVisibleTo]</c> can implement it — a third-party <c>class MyStore :
-/// IAuthorizationCodeStore</c> fails to compile. To back a new persistence technology, implement
-/// <see cref="IAuthorizationCodeBackingStore"/> instead.
+/// <strong>Framework-sealed.</strong> The framework ships one sealed coordinator,
+/// <c>AuthorizationCodeStore</c>, that implements this interface. It stays
+/// <see langword="public"/> so it can be injected and consumed across assemblies, but an internal
+/// member means only assemblies named in <c>[InternalsVisibleTo]</c> can implement it. To back a
+/// new persistence technology, implement <see cref="IAuthorizationCodeBackingStore"/> instead.
 /// </para>
-/// <para>
-/// Implementations are responsible for distinguishing four states when a code is presented
-/// at the token endpoint:
-/// </para>
-/// <list type="number">
-/// <item><description>
-///   Present, unredeemed, and bound to the presenting client — code is valid and may be
-///   exchanged for tokens.
-/// </description></item>
-/// <item><description>
-///   Present and unredeemed, but bound to a different client — the presenting client is not
-///   the intended recipient; the code MUST NOT be consumed.
-/// </description></item>
-/// <item><description>
-///   Already redeemed (tombstone exists) — a replay attack is likely in progress; the
-///   associated refresh token family MUST be revoked.
-/// </description></item>
-/// <item><description>
-///   Never issued or already expired and purged — code is entirely unknown to the store.
-/// </description></item>
-/// </list>
 /// <para>
 /// <strong>Multi-tenancy:</strong> The framework is not tenant-aware. Custom multi-tenant
-/// stores must namespace authorization code keys by tenant (e.g. prefix the store key with a
-/// tenant identifier) and validate tenant binding at consume time. Failure to do so can allow
-/// cross-tenant code redemption.
+/// stores must namespace authorization code keys by tenant and validate tenant binding at consume
+/// time — failure to do so can allow cross-tenant code redemption.
 /// </para>
 /// <para>
-/// <strong>Failure semantics:</strong> Implementations MUST fail closed. Any I/O failure
-/// (cache unavailable, database timeout, network error) MUST surface as
-/// <see cref="ZeeKayDaStoreException"/> and MUST NOT be swallowed or converted to a
+/// <strong>Failure semantics:</strong> Implementations MUST fail closed. Any I/O failure MUST
+/// surface as <see cref="ZeeKayDaStoreException"/> and MUST NOT be swallowed or converted to a
 /// <see cref="AuthorizationCodeRedemptionResult.NotFound"/> outcome.
 /// </para>
 /// </remarks>
@@ -67,13 +41,9 @@ public interface IAuthorizationCodeStore
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A task that completes when the entry has been durably stored.</returns>
     /// <remarks>
-    /// Called by the authorization endpoint immediately after code generation, before the
-    /// code is returned to the client. Implementations MUST fail closed: any I/O failure MUST
-    /// surface as <see cref="ZeeKayDaStoreException"/>. Silently swallowing errors here would
-    /// allow a code to be delivered to the client that can never be redeemed, which is a
-    /// confusing but non-exploitable failure mode — however, silently returning success while
-    /// the entry was not actually stored would allow token issuance without a stored record,
-    /// which undermines replay detection.
+    /// Called by the authorization endpoint immediately after code generation, before the code is
+    /// returned to the client. Silently returning success while the entry was not actually stored
+    /// would allow token issuance without a stored record, undermining replay detection.
     /// </remarks>
     /// <exception cref="ZeeKayDaStoreException">
     /// Thrown when the underlying store cannot complete the write due to an infrastructure
@@ -128,19 +98,10 @@ public interface IAuthorizationCodeStore
     /// </list>
     /// </returns>
     /// <remarks>
-    /// <para>
-    /// Implementations MUST perform the check-and-consume atomically (e.g. using a Redis
-    /// compare-and-swap or a database transaction with appropriate isolation). Non-atomic
-    /// backends are vulnerable to a time-of-check/time-of-use (TOCTOU) race where concurrent
-    /// requests can both read the entry as unredeemed before either marks it as consumed.
-    /// If true atomicity is not achievable, document the limitation clearly and consider
-    /// accepting the risk only in single-instance deployments.
-    /// </para>
-    /// <para>
-    /// Implementations MUST fail closed: any I/O failure MUST surface as
-    /// <see cref="ZeeKayDaStoreException"/> and MUST NOT be converted to
-    /// <see cref="AuthorizationCodeRedemptionResult.NotFound"/>.
-    /// </para>
+    /// Implementations MUST perform the check-and-consume atomically (e.g. a Redis
+    /// compare-and-swap or a database transaction with appropriate isolation). Non-atomic backends
+    /// are vulnerable to a time-of-check/time-of-use race where concurrent requests can both read
+    /// the entry as unredeemed before either marks it consumed.
     /// </remarks>
     /// <exception cref="ZeeKayDaStoreException">
     /// Thrown when the underlying store cannot complete the operation due to an infrastructure
@@ -153,6 +114,6 @@ public interface IAuthorizationCodeStore
         CancellationToken cancellationToken);
 
     // Reserved: satisfying this member requires internal access, so only assemblies named in
-    // [InternalsVisibleTo] can implement IAuthorizationCodeStore (ADR 0013 §1).
+    // [InternalsVisibleTo] can implement IAuthorizationCodeStore.
     internal void SealAsFrameworkOwnedProtocol();
 }

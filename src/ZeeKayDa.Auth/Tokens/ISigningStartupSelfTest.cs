@@ -12,13 +12,12 @@ namespace ZeeKayDa.Auth.Tokens;
 /// <para>
 /// <see cref="JwtSigningService{TOptions}"/> implements this interface <b>explicitly</b> and does not
 /// mark the implementation <see langword="virtual"/>, so no derived provider can override or weaken
-/// it — the self-test is a base-class-owned invariant, not a per-provider extension point (issue
-/// #437).
+/// it — the self-test is a base-class-owned invariant, not a per-provider extension point.
 /// </para>
 /// <para>
 /// The sign-and-verify check itself is not unique to startup: it runs on every active-signer
 /// handoff (initial materialization <em>and</em> every subsequent rotation) inside
-/// <see cref="JwtSigningService{TOptions}"/>'s own handoff logic (ADR 0015 §11). This interface's
+/// <see cref="JwtSigningService{TOptions}"/>'s own handoff logic. This interface's
 /// sole purpose is to let the framework force that first handoff to happen eagerly, at host
 /// startup, rather than lazily on the first real token-issuing request.
 /// </para>

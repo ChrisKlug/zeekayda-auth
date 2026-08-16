@@ -2,8 +2,7 @@ namespace ZeeKayDa.Auth.Stores;
 
 /// <summary>
 /// A secondary-index entry maintained by <see cref="DistributedCacheRefreshTokenGrantStore"/> to
-/// make family/subject revocation possible over a backend that has no native <c>WHERE</c>
-/// (ADR 0014 §8).
+/// make family/subject revocation possible over a backend that has no native <c>WHERE</c>.
 /// </summary>
 /// <remarks>
 /// <see cref="ExpiresAt"/> tracks the furthest-out <see cref="RefreshTokenGrant.FamilyAbsoluteExpiry"/>

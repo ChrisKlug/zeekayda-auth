@@ -13,12 +13,8 @@ namespace Microsoft.Extensions.DependencyInjection;
 /// </summary>
 /// <remarks>
 /// Unlike the Windows Certificate Store provider, neither method here is gated to a specific
-/// operating system: PEM/PFX loading in .NET
-/// (<see cref="System.Security.Cryptography.X509Certificates.X509Certificate2.CreateFromPem(ReadOnlySpan{char}, ReadOnlySpan{char})"/>,
-/// <see cref="System.Security.Cryptography.X509Certificates.X509CertificateLoader"/>'s <c>LoadPkcs12</c>)
-/// is portable BCL functionality with no platform interop — this is the sole recommended signing
-/// provider for macOS deployments (ADR 0011 Amendment 7; ADR 0012 Amendments 1/2), and is also the
-/// standard fallback for containers, headless CI, and Linux hosts generally.
+/// operating system — PEM/PFX loading is portable BCL functionality with no platform interop.
+/// This is the recommended provider for macOS, containers, headless CI, and Linux generally.
 /// </remarks>
 public static class ZeeKayDaAuthBuilderFileSigningExtensions
 {
@@ -31,27 +27,23 @@ public static class ZeeKayDaAuthBuilderFileSigningExtensions
     /// <remarks>
     /// <para>
     /// When <paramref name="keyPath"/> is <see langword="null"/> (the default), <paramref name="path"/>
-    /// must contain both the certificate and its private key (RFC 7468 PEM blocks) — a single
-    /// combined cert+key file. When <paramref name="keyPath"/> is supplied, <paramref name="path"/>
-    /// is a certificate-only file and <paramref name="keyPath"/> is a separate private-key-only
-    /// file — the convention used by Let's Encrypt/certbot (<c>fullchain.pem</c> + <c>privkey.pem</c>),
-    /// cert-manager in Kubernetes, and most corporate PKI tooling (issue #405).
+    /// must contain both the certificate and its private key (RFC 7468 PEM blocks). When
+    /// <paramref name="keyPath"/> is supplied, <paramref name="path"/> is certificate-only and
+    /// <paramref name="keyPath"/> holds the private key — the convention used by Let's
+    /// Encrypt/certbot (<c>fullchain.pem</c> + <c>privkey.pem</c>) and cert-manager.
     /// </para>
     /// <para>
-    /// Filesystem permissions are enforced fail-closed on every file actually loaded: on Unix the
-    /// file must be no more permissive than <c>0600</c>; on Windows its ACL must not grant access to
-    /// <c>Everyone</c>, <c>Users</c>, or <c>Authenticated Users</c>. A broader-than-expected
-    /// permission is a hard startup failure, not a warning (ADR 0011 §2). This applies equally to
-    /// <paramref name="keyPath"/> when supplied, since it is the file that actually carries the
-    /// sensitive private key material.
+    /// Filesystem permissions are enforced fail-closed on every loaded file, including
+    /// <paramref name="keyPath"/>: no more permissive than <c>0600</c> on Unix, and on Windows no
+    /// ACL access for <c>Everyone</c>, <c>Users</c>, or <c>Authenticated Users</c>. A
+    /// broader-than-expected permission is a hard startup failure, not a warning.
     /// </para>
     /// <para>
-    /// Rotation: register additional PEM files (combined or split) via
+    /// Rotation: register additional PEM files via
     /// <see cref="PemFileSigningOptions.AddFile(string, string)"/> in <paramref name="configure"/>.
-    /// With exactly one registered file it is the active signer immediately; with two or more, the
-    /// file whose certificate <c>NotBefore</c> has arrived and is most recent is the active signer.
-    /// See <see cref="SigningKeyRotation"/> and ADR 0011 §3.3/§3.5 for the full rotation/retirement
-    /// model.
+    /// With one registered file it is the active signer immediately; with two or more, the file
+    /// whose certificate <c>NotBefore</c> has arrived and is most recent wins. See
+    /// <see cref="SigningKeyRotation"/> for the full model.
     /// </para>
     /// </remarks>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
@@ -128,14 +120,14 @@ public static class ZeeKayDaAuthBuilderFileSigningExtensions
     /// <remarks>
     /// <para>
     /// Filesystem permissions are enforced fail-closed exactly as for <see cref="AddPemFileSigning(ZeeKayDaAuthBuilder,string,SigningAlgorithm,string,Action{PemFileSigningOptions})"/>.
-    /// The PFX password adds a layer of defense in depth on top of filesystem permissions — see
-    /// <see cref="PfxFileSigningOptions.PasswordSource"/>'s remarks for why it is an async delegate
-    /// rather than a plain <see langword="string"/>.
+    /// The PFX password adds defense in depth on top of that — see
+    /// <see cref="PfxFileSigningOptions.PasswordSource"/> for why it is an async delegate rather
+    /// than a plain <see langword="string"/>.
     /// </para>
     /// <para>
     /// Rotation: register additional PFX files (each with its own password source) via
-    /// <see cref="PfxFileSigningOptions.AddFile"/> in <paramref name="configure"/>. See
-    /// <see cref="AddPemFileSigning(ZeeKayDaAuthBuilder,string,SigningAlgorithm,string,Action{PemFileSigningOptions})"/>'s remarks for the shared rotation/retirement model.
+    /// <see cref="PfxFileSigningOptions.AddFile"/> in <paramref name="configure"/>. Shares the
+    /// rotation/retirement model described on <see cref="AddPemFileSigning(ZeeKayDaAuthBuilder,string,SigningAlgorithm,string,Action{PemFileSigningOptions})"/>.
     /// </para>
     /// </remarks>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>

@@ -1,8 +1,8 @@
 namespace ZeeKayDa.Auth.Stores;
 
 /// <summary>
-/// The single extension point for durable storage behind the authorization-code store
-/// (ADR 0013 §3). Implement this to put records in Redis, SQL, Cosmos, etc.
+/// The single extension point for durable storage behind the authorization-code store.
+/// Implement this to put records in Redis, SQL, Cosmos, etc.
 /// </summary>
 /// <remarks>
 /// This interface has NO knowledge of OAuth, tombstones, encryption, or expiry semantics — it
@@ -10,7 +10,7 @@ namespace ZeeKayDa.Auth.Stores;
 /// redemption protocol does not depend on this implementation beyond the ONE atomicity
 /// invariant on <see cref="TryInsertAsync"/>. Implementations MAY throw their native exceptions
 /// freely; the framework's <c>AuthorizationCodeStore</c> coordinator wraps them as
-/// <see cref="ZeeKayDaStoreException"/> (ADR 0013 §8).
+/// <see cref="ZeeKayDaStoreException"/>.
 /// </remarks>
 public interface IAuthorizationCodeBackingStore
 {

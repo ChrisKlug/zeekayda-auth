@@ -1,7 +1,7 @@
 namespace ZeeKayDa.Auth.Stores;
 
 /// <summary>
-/// An opaque, already-hashed persistence key for the authorization-code store (ADR 0013 §2).
+/// An opaque, already-hashed persistence key for the authorization-code store.
 /// </summary>
 /// <remarks>
 /// Constructed ONLY by the framework, from a raw code handle, via SHA-256. A backing-store
@@ -14,7 +14,7 @@ public readonly struct StoreKey : IEquatable<StoreKey>
     private readonly string _value;
 
     // Framework-only constructor — a backing store cannot fabricate a StoreKey from a raw
-    // handle, making "hash the handle" (ADR 0013 §2) structurally unrepresentable to get wrong.
+    // handle, making "hash the handle" structurally unrepresentable to get wrong.
     internal StoreKey(string value) => _value = value;
 
     /// <summary>

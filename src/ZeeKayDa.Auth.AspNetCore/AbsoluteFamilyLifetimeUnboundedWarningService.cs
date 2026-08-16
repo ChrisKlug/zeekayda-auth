@@ -8,7 +8,7 @@ namespace ZeeKayDa.Auth.AspNetCore;
 /// <summary>
 /// Emits a startup warning when <c>AuthorizationServerOptions.TokenEndpoint.AbsoluteFamilyLifetime</c>
 /// is set to the <see cref="TimeSpan.MaxValue"/> escape-hatch sentinel, so that an unbounded
-/// refresh-token-family lifetime is never a silent configuration accident (ADR 0014 §5).
+/// refresh-token-family lifetime is never a silent configuration accident.
 /// </summary>
 internal sealed class AbsoluteFamilyLifetimeUnboundedWarningService : IHostedService
 {

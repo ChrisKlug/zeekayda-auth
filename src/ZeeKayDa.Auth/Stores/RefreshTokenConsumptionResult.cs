@@ -6,20 +6,10 @@ namespace ZeeKayDa.Auth.Stores;
 /// Represents the outcome of a <see cref="IRefreshTokenStore.TryConsumeAsync"/> call.
 /// </summary>
 /// <remarks>
-/// <para>
-/// This is a closed hierarchy — exhaustive pattern matching over its nested subtypes is
-/// both safe and encouraged. No further subtypes will be added without a major version bump.
-/// </para>
-/// <para>
-/// The subtypes are:
-/// <list type="bullet">
-///   <item><description><see cref="Consumed"/> — the token was valid and has been consumed.</description></item>
-///   <item><description><see cref="ClientMismatch"/> — the token exists but belongs to a different client.</description></item>
-///   <item><description><see cref="AlreadyConsumed"/> — reuse detected; the entire family should be revoked.</description></item>
-///   <item><description><see cref="Revoked"/> — the token's family was revoked (e.g. due to an earlier reuse detection).</description></item>
-///   <item><description><see cref="NotFound"/> — no token matching the given handle was found.</description></item>
-/// </list>
-/// </para>
+/// A closed hierarchy — exhaustive pattern matching over its nested subtypes
+/// (<see cref="Consumed"/>, <see cref="ClientMismatch"/>, <see cref="AlreadyConsumed"/>,
+/// <see cref="Revoked"/>, <see cref="NotFound"/>) is both safe and encouraged. No further
+/// subtypes will be added without a major version bump.
 /// </remarks>
 public abstract class RefreshTokenConsumptionResult
 {
@@ -41,16 +31,10 @@ public abstract class RefreshTokenConsumptionResult
     /// that presented the token. The request MUST be rejected.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// This outcome indicates a possible confused-deputy or token mix-up scenario.
-    /// The store MUST NOT consume the token and MUST NOT trigger family revocation.
-    /// </para>
-    /// <para>
-    /// Triggering family revocation on a client mismatch would allow an attacker who
-    /// captured a token handle but not the <c>client_id</c> to force-revoke the legitimate
-    /// user's session, constituting a denial-of-service against the session. The request
-    /// MUST be rejected with <c>invalid_grant</c> only.
-    /// </para>
+    /// Indicates a possible confused-deputy or token mix-up scenario. The store MUST NOT consume
+    /// the token and MUST NOT trigger family revocation — doing so would let an attacker who
+    /// captured a token handle but not the <c>client_id</c> force-revoke the legitimate user's
+    /// session. Reject with <c>invalid_grant</c> only.
     /// </remarks>
     public sealed class ClientMismatch : RefreshTokenConsumptionResult { }
 
@@ -58,14 +42,9 @@ public abstract class RefreshTokenConsumptionResult
     /// The token handle was found but had already been consumed — reuse detected.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// On receiving this outcome, the caller MUST revoke the entire token family by calling
+    /// The primary signal for refresh token reuse detection. On receiving this outcome, the
+    /// caller MUST revoke the entire token family by calling
     /// <see cref="IRefreshTokenStore.RevokeFamilyAsync"/> with <see cref="FamilyId"/>.
-    /// </para>
-    /// <para>
-    /// This is the primary signal for the refresh token reuse detection mechanism described
-    /// in ADR 0008 §4.
-    /// </para>
     /// </remarks>
     public sealed class AlreadyConsumed : RefreshTokenConsumptionResult
     {
@@ -77,12 +56,8 @@ public abstract class RefreshTokenConsumptionResult
     /// The token's family has been revoked, for example due to a prior reuse detection.
     /// </summary>
     /// <remarks>
-    /// When this outcome is returned, the family is already in a revoked state — a defensive
-    /// call to <see cref="IRefreshTokenStore.RevokeFamilyAsync"/> is safe and idempotent but
-    /// not required. Authors of exhaustive <see langword="switch"/> expressions may choose to
-    /// call <see cref="IRefreshTokenStore.RevokeFamilyAsync"/> for uniformity, relying on the
-    /// idempotency guarantee, or may skip the call knowing the revocation is already in effect.
-    /// Either approach is correct.
+    /// The family is already revoked when this outcome is returned — a defensive call to
+    /// <see cref="IRefreshTokenStore.RevokeFamilyAsync"/> is safe and idempotent but not required.
     /// </remarks>
     public sealed class Revoked : RefreshTokenConsumptionResult
     {

@@ -220,7 +220,7 @@ public sealed class DevelopmentJwtSigningServiceTests
     // ── Key memoization (no rotation) ────────────────────────────────────────────────────────────
 
     // DevelopmentSigningKeyOptions derives from KeySetOptions (ADR 0015 §1, issue #421): a
-    // degenerate Tier A provider whose ListKeysAsync is called exactly once, ever, for the
+    // degenerate KeySetOptions provider whose ListKeysAsync is called exactly once, ever, for the
     // lifetime of the service instance. There is no rotation-cadence property to force a reload,
     // so the base class never re-enters ListKeysAsync regardless of elapsed time — the test below
     // proves that memoization directly.
@@ -228,7 +228,7 @@ public sealed class DevelopmentJwtSigningServiceTests
     [Fact]
     public async Task Ephemeral_kid_is_unchanged_regardless_of_elapsed_time()
     {
-        // DevelopmentSigningKeyOptions derives from KeySetOptions (Tier A), so the base class
+        // DevelopmentSigningKeyOptions derives from KeySetOptions, so the base class
         // never re-invokes ListKeysAsync no matter how much time passes.
         var timeProvider = new FakeTimeProvider();
         await using var sut = BuildEphemeral(timeProvider: timeProvider);

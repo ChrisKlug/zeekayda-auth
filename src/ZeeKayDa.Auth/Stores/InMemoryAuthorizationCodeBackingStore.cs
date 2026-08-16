@@ -11,7 +11,7 @@ namespace ZeeKayDa.Auth.Stores;
 /// <strong>Atomicity.</strong> <see cref="TryInsertAsync"/> uses
 /// <see cref="ConcurrentDictionary{TKey,TValue}.TryAdd"/>, which is natively atomic — this
 /// satisfies the one hard invariant <see cref="IAuthorizationCodeBackingStore"/> requires
-/// (ADR 0013 §3, §10) without any locking of its own.
+/// without any locking of its own.
 /// </para>
 /// <para>
 /// <strong>Single-instance is a deployment invariant, not a recommendation.</strong>
@@ -22,8 +22,8 @@ namespace ZeeKayDa.Auth.Stores;
 /// </para>
 /// <para>
 /// This type has no knowledge of OAuth, tombstones, encryption, or expiry — the framework's
-/// <c>AuthorizationCodeStore</c> coordinator owns all of that (ADR 0013 §1); this store just
-/// holds opaque bytes under already-hashed keys.
+/// <c>AuthorizationCodeStore</c> coordinator owns all of that; this store just holds opaque
+/// bytes under already-hashed keys.
 /// </para>
 /// </remarks>
 internal sealed class InMemoryAuthorizationCodeBackingStore : IAuthorizationCodeBackingStore

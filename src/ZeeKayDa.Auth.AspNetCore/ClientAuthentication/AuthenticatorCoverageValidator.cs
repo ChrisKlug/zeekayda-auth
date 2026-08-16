@@ -63,10 +63,9 @@ internal sealed class AuthenticatorCoverageValidator : IValidateOptions<Authoriz
                     continue;
                 }
 
-                // Reject non-canonical casing for well-known methods. A custom authenticator that
-                // declares "Client_Secret_Basic" instead of "client_secret_basic" passes the ordinal
-                // overlap check, but its CanHandle will still fire for the same requests as the
-                // built-in authenticator, producing matches.Count > 1 and a silent invalid_client.
+                // Non-canonical casing (e.g. "Client_Secret_Basic") passes the ordinal overlap
+                // check below but still collides at runtime with the built-in authenticator's
+                // CanHandle, producing a silent invalid_client.
                 if (_canonicalMethodNames.TryGetValue(method, out var canonical) &&
                     !string.Equals(method, canonical, StringComparison.Ordinal))
                 {
@@ -119,8 +118,6 @@ internal sealed class AuthenticatorCoverageValidator : IValidateOptions<Authoriz
     }
 
     // Case-insensitive map of framework-handled method strings to their canonical form.
-    // Guards against a custom authenticator declaring "Client_Secret_Basic" instead of
-    // "client_secret_basic" — passes ordinal overlap checks but causes runtime mismatches.
     private static readonly IReadOnlyDictionary<string, string> _canonicalMethodNames =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {

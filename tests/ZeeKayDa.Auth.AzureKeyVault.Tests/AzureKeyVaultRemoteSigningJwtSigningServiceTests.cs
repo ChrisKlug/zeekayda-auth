@@ -542,7 +542,7 @@ public sealed class AzureKeyVaultRemoteSigningJwtSigningServiceTests
         signer.DisposeCallCount.Should().Be(0, "disposing the service itself must not tear down the shared IKeyVaultSigner seam either");
     }
 
-    // ── Refresh cadence (Tier B / ADR 0015) ──────────────────────────────────────────────────────
+    // ── Refresh cadence (KeySourceOptions / ADR 0015) ────────────────────────────────────────────
 
     [Fact]
     public async Task ListKeysAsync_is_called_once_per_RefreshInterval()

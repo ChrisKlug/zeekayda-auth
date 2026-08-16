@@ -8,7 +8,7 @@ namespace ZeeKayDa.Auth.Stores;
 /// </summary>
 /// <remarks>
 /// <para>
-/// This is a thin storage adapter (ADR 0014 §1/§3): it has no knowledge of hashing, encryption,
+/// This is a thin storage adapter: it has no knowledge of hashing, encryption,
 /// expiry, or outcome selection — that protocol all lives in the sealed <c>RefreshTokenStore</c>
 /// coordinator. This class stores and queries <see cref="RefreshTokenGrant"/> rows exactly as
 /// received.
@@ -18,7 +18,7 @@ namespace ZeeKayDa.Auth.Stores;
 /// Running multiple instances of this host with the in-memory default silently disables
 /// single-use enforcement and refresh token reuse detection (RFC 9700 §4.14.2): grants inserted
 /// by instance A are invisible to instance B. Multi-instance deployments MUST replace this
-/// store with one backed by a shared, atomic, queryable backend (see ADR 0014 §8).
+/// store with one backed by a shared, atomic, queryable backend.
 /// </para>
 /// <para>
 /// <strong>Atomicity.</strong> <see cref="TryMarkConsumedAsync"/> uses
@@ -29,7 +29,7 @@ namespace ZeeKayDa.Auth.Stores;
 /// <strong>Revocation scans.</strong> <see cref="RevokeFamilyAsync"/> and
 /// <see cref="RevokeBySubjectAsync"/> enumerate the whole dictionary under <see cref="_revokeLock"/>,
 /// held for the duration of the scan, and <see cref="InsertAsync"/> takes the same lock's read side
-/// before adding a row. This closes the ADR 0014 §9 mid-revoke-insert race: without it, a grant
+/// before adding a row. This closes a mid-revoke-insert race: without it, a grant
 /// inserted concurrently with a revoke scan could be missed by the enumeration and left
 /// <c>Active</c> in an already-"revoked" family, silently breaking the completeness guarantee
 /// (RFC 9700 §4.13) the interface promises. This is correct (complete by construction — every
@@ -113,11 +113,11 @@ internal sealed class InMemoryRefreshTokenGrantStore : IRefreshTokenGrantStore
         cancellationToken.ThrowIfCancellationRequested();
 
         // Plain read of already-committed state: no lock needed. _revokeLock only needs to
-        // exclude a concurrent InsertAsync from being missed by a RevokeWhere *scan* (ADR 0014
-        // §9); a single-row-per-family membership read has nothing to race against that would
+        // exclude a concurrent InsertAsync from being missed by a RevokeWhere *scan*; a
+        // single-row-per-family membership read has nothing to race against that would
         // change the answer's correctness — either the revoke has committed and is visible on
         // the dictionary already (ConcurrentDictionary read-your-writes), or it hasn't yet, which
-        // is the same bounded, accepted race ADR 0014 §11 calls out for every backend.
+        // is the same bounded, accepted race every backend must tolerate.
         var revoked = _grants.Values.Any(grant =>
             grant.Status == RefreshGrantStatus.Revoked && string.Equals(grant.FamilyId, familyId, StringComparison.Ordinal));
 

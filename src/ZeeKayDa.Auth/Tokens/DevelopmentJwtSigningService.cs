@@ -11,28 +11,16 @@ namespace ZeeKayDa.Auth.Tokens;
 /// startup, with optional persistence to a local file so that tokens survive application restarts.
 /// </summary>
 /// <remarks>
+/// Not suitable for production; registered via <c>AddInMemoryDevelopmentJwtSigningKeys()</c> or
+/// <c>AddPersistedDevelopmentJwtSigningKeys()</c>. The environment gate is enforced here via
+/// <see cref="DevelopmentSigningKeyGate.Enforce"/> so the hard fail holds even when
+/// <c>DevelopmentSigningKeyWarningService</c> is not running (e.g. direct construction in unit
+/// tests); the gate is skipped when <see cref="DevelopmentSigningKeyOptions.EnvironmentName"/> is
+/// <see langword="null"/> (no host).
 /// <para>
-/// This provider is not suitable for production. It is registered via
-/// <c>AddInMemoryDevelopmentJwtSigningKeys()</c> or <c>AddPersistedDevelopmentJwtSigningKeys()</c>.
-/// </para>
-/// <para>
-/// The environment gate is enforced here via <see cref="DevelopmentSigningKeyGate.Enforce"/>
-/// so that the hard fail holds even if <c>DevelopmentSigningKeyWarningService</c> is not running
-/// (e.g. direct construction in unit tests). <c>DevelopmentSigningKeyWarningService</c> also
-/// calls the same gate helper, so the logic is not duplicated.
-/// The environment name is read from <see cref="DevelopmentSigningKeyOptions.EnvironmentName"/>;
-/// when <see langword="null"/> (no host, unit-test scenario), the gate is skipped. The allowed
-/// environments list is read from
-/// <see cref="DevelopmentSigningKeyOptions.AllowedDevelopmentJwtSigningKeysEnvironments"/> — a
-/// provider-scoped, code-only opt-in, not a server-wide setting (ADR 0011 §2).
-/// </para>
-/// <para>
-/// This is a degenerate ADR 0015 Tier A (<see cref="KeySetOptions"/>) provider: exactly one key,
-/// with no <see cref="KeyListing.ActivateAt"/>, active from startup. <see cref="ListKeysAsync"/>
-/// is called exactly once for the lifetime of the service instance (per the base class's Tier A
-/// contract), which is also where the dev key is generated or loaded — there is no rotation
-/// use-case for dev keys; rotating an ephemeral key would silently invalidate all tokens issued
-/// during the process's lifetime so far.
+/// This is a degenerate <see cref="KeySetOptions"/> provider: exactly one key, active from startup,
+/// with no rotation use-case — rotating an ephemeral key would silently invalidate all tokens
+/// issued during the process's lifetime so far.
 /// </para>
 /// </remarks>
 internal sealed class DevelopmentJwtSigningService
@@ -45,16 +33,14 @@ internal sealed class DevelopmentJwtSigningService
     private const string KeyFileName = "dev-signing-key.pem";
 
     // Stable provider-internal identifier for the single dev key. Never the JWKS/JWS kid — the
-    // base class derives that from the public key material (ADR 0015 §2).
+    // base class derives that from the public key material.
     private static readonly KeyId DevKeyId = new("development");
 
     private readonly IOptions<DevelopmentSigningKeyOptions> _devOptions;
     private readonly IDevelopmentSigningKeyFileSystem _fileSystem;
 
-    // Holds the RSA key generated/loaded by ListKeysAsync until CreateSignerAsync claims it.
-    // ListKeysAsync runs exactly once for a Tier A provider (JwtSigningService<TOptions>'s
-    // contract), so this is populated at most once; CreateSignerAsync consumes it exactly once
-    // via Interlocked.Exchange, transferring ownership to the LocalSigner it returns.
+    // Holds the RSA key generated/loaded by ListKeysAsync until CreateSignerAsync claims it via
+    // Interlocked.Exchange, transferring ownership to the LocalSigner it returns.
     private RSA? _pendingPrivateKey;
 
     public DevelopmentJwtSigningService(
@@ -73,12 +59,7 @@ internal sealed class DevelopmentJwtSigningService
     /// <inheritdoc/>
     protected override async ValueTask<IReadOnlyList<KeyListing>> ListKeysAsync(CancellationToken cancellationToken)
     {
-        // CancellationToken is propagated to all file I/O calls below.
-        // RSA.Create is CPU-bound and has no async variant, so key generation cannot be cancelled.
-
-        // Environment gate — enforced here so the check holds even when DevelopmentSigningKeyWarningService
-        // is not running (e.g. direct construction in unit tests). EnvironmentName is null when the
-        // service is constructed directly without a host; the gate is intentionally skipped in that case.
+        // RSA.Create is CPU-bound with no async variant, so key generation cannot be cancelled.
         DevelopmentSigningKeyGate.Enforce(
             _devOptions.Value.EnvironmentName,
             _devOptions.Value.AllowedDevelopmentJwtSigningKeysEnvironments);
@@ -95,8 +76,8 @@ internal sealed class DevelopmentJwtSigningService
 
         _pendingPrivateKey = rsa;
 
-        // ActivateAt = null: the single dev key is active from startup (ADR 0015 §1's degenerate
-        // Tier A case). ExpiresAt = MaxValue: a dev key never hard-expires — its lifetime is the
+        // ActivateAt = null: the single dev key is active from startup (the degenerate KeySetOptions
+        // case). ExpiresAt = MaxValue: a dev key never hard-expires — its lifetime is the
         // process's, not a certificate's.
         var listing = new KeyListing(DevKeyId, SigningAlgorithm.RS256, publicKey, ActivateAt: null, ExpiresAt: DateTimeOffset.MaxValue);
         return [listing];
@@ -105,12 +86,8 @@ internal sealed class DevelopmentJwtSigningService
     /// <inheritdoc/>
     protected override ValueTask OnDisposeAsync()
     {
-        // If ListKeysAsync generated/loaded a key but CreateSignerAsync never claimed it (e.g. this
-        // instance's lifetime only ever served ListKeysAsync/JWKS listing, never a signing call),
-        // the key would otherwise leak until GC finalization instead of being disposed/zeroized.
-        // The base class already guarantees this method is called at most once, but the
-        // Interlocked.Exchange is kept as cheap, self-contained insurance against any future
-        // direct call to this method outside that contract.
+        // If ListKeysAsync generated/loaded a key but CreateSignerAsync never claimed it, the key
+        // would otherwise leak until GC finalization instead of being disposed/zeroized.
         Interlocked.Exchange(ref _pendingPrivateKey, null)?.Dispose();
 
         return ValueTask.CompletedTask;

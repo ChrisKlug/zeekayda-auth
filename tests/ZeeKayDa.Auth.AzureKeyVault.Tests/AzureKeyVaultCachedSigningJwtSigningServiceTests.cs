@@ -376,11 +376,11 @@ public sealed class AzureKeyVaultCachedSigningJwtSigningServiceTests
     public async Task SignAsync_does_not_promote_a_not_yet_active_successor_early_after_predecessor_is_revoked_on_a_live_refresh()
     {
         // Regression test (issue #425 security review, findings F1 and F1-2): the single-key
-        // bootstrap exemption must never fire for this (Tier B) provider, on any refresh - including
+        // bootstrap exemption must never fire for this KeySourceOptions provider, on any refresh - including
         // a *live* refresh that merely happens to shrink the listing down to one key via operator
         // revocation, not a genuine cold start. Without the fix (gating the exemption on
         // "isBootstrapSnapshot" - true on every process's first-ever snapshot, restart included -
-        // rather than on the provider's tier), disabling every key but a not-yet-due successor would
+        // rather than on the provider's options type), disabling every key but a not-yet-due successor would
         // instantly promote that successor, bypassing PublicationLead - and, unlike the version of
         // this bug the original F1 fix closed, this replay would re-occur on every fresh instance
         // (a restart or a scaled-out replica) started while the revocation is still in effect.
@@ -663,7 +663,7 @@ public sealed class AzureKeyVaultCachedSigningJwtSigningServiceTests
         isValid.Should().BeTrue("the signature must be verifiable against the certificate's own public key");
     }
 
-    // ── Refresh cadence (Tier B / ADR 0015) ──────────────────────────────────────────────────────
+    // ── Refresh cadence (KeySourceOptions / ADR 0015) ────────────────────────────────────────────
 
     [Fact]
     public async Task ListKeysAsync_is_called_once_per_RefreshInterval()

@@ -2,7 +2,7 @@ namespace ZeeKayDa.Auth.Tokens;
 
 /// <summary>
 /// Computes how long a signing key that is no longer the active signer remains published in the
-/// JWKS (and therefore trusted by relying parties), per ADR 0011 §3.3.
+/// JWKS (and therefore trusted by relying parties).
 /// </summary>
 public interface ISigningKeyRetirementWindowProvider
 {

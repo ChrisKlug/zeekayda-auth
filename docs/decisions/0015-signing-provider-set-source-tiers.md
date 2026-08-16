@@ -19,6 +19,15 @@ notes folded in — see "Security Considerations" and the changelog)
 > packaging model (ADR 0012). Where ADR 0011 §3.2/§3.4/§3.5 and this ADR disagree about *what a
 > provider implements*, this ADR governs.
 
+> **Terminology note (added after this ADR's acceptance).** This document uses "Tier A" and
+> "Tier B" throughout to name the two provider shapes it defines. Later feedback was that "tier"
+> reads as a ranking rather than a description of how each provider acquires its keys. Code,
+> tests, and docs written after this note refer to the two shapes by their option types instead —
+> `KeySetOptions` (this ADR's Tier A: a fixed key set known at configuration time) and
+> `KeySourceOptions` (Tier B: a source the base class re-reads on a cadence). This ADR's own text
+> is left as originally accepted; treat "Tier A" = `KeySetOptions` and "Tier B" = `KeySourceOptions`
+> when reading it.
+
 ---
 
 ## Context

@@ -9,12 +9,9 @@ namespace ZeeKayDa.Auth.Windows;
 /// </summary>
 /// <remarks>
 /// Uses only <c>GetRSAPublicKey()</c> / <c>GetRSAPrivateKey()</c> / <c>GetECDsaPublicKey()</c> /
-/// <c>GetECDsaPrivateKey()</c> — never <c>.PrivateKey</c>, never <c>ExportParameters(true)</c> — per the issue's security
-/// requirement to prefer CNG/CAPI-backed handles over exporting raw key bytes into managed memory.
-/// These accessors return handle objects that remain valid and usable independently after the
-/// parent <see cref="X509Certificate2"/> is disposed (documented .NET Core 3.0+ behavior: the
-/// returned handle duplicates the underlying key handle), which is what lets the caller dispose
-/// every fetched certificate once all needed handles have been extracted.
+/// <c>GetECDsaPrivateKey()</c> — never <c>.PrivateKey</c> or <c>ExportParameters(true)</c>. These
+/// accessors return handles that remain valid after the parent <see cref="X509Certificate2"/> is
+/// disposed, which is what lets the caller dispose the certificate once handles are extracted.
 /// </remarks>
 internal static class WindowsCertificateKeyExtractor
 {
@@ -54,10 +51,9 @@ internal static class WindowsCertificateKeyExtractor
         if (ec is not null)
             return (ec, SigningKeyType.Ec);
 
-        // HasPrivateKey was true but neither accessor returned a handle: the key exists but the
-        // current process identity cannot access it (e.g. a restrictive CNG key ACL) — a distinct
-        // root cause from "no private key at all", still surfaced under the same failure code with
-        // a message tailored to this case.
+        // HasPrivateKey was true but neither accessor returned a handle: the process identity
+        // likely lacks access to it (e.g. a restrictive CNG key ACL) — a distinct root cause from
+        // "no private key at all", surfaced under the same failure code with a tailored message.
         throw new ZeeKayDaConfigurationException(new ZeeKayDaConfigurationFailure(
             "signing.windows_certificate_store.private_key_not_found",
             $"Certificate '{thumbprint}' has a private key, but it could not be accessed by this " +

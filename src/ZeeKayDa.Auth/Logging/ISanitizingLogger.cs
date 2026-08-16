@@ -14,8 +14,7 @@ namespace ZeeKayDa.Auth.Logging;
 /// such as <c>ZeeKayDa.Auth.AzureKeyVault</c> that reference only core <c>ZeeKayDa.Auth</c>, not
 /// <c>ZeeKayDa.Auth.AspNetCore</c> — can constructor-inject the framework's sanitizing logger
 /// without requiring <c>InternalsVisibleTo</c>, which can only ever name first-party assemblies
-/// at build time. This mirrors why <see cref="ZeeKayDa.Auth.Tokens.JwkThumbprint"/> is public
-/// (see ADR 0011 Amendment 2(c)/(d)).
+/// at build time. This mirrors why <see cref="ZeeKayDa.Auth.Tokens.JwkThumbprint"/> is public.
 /// </para>
 /// <para>
 /// <strong>Do not implement this interface directly.</strong> Obtain an instance only via
@@ -24,7 +23,7 @@ namespace ZeeKayDa.Auth.Logging;
 /// <c>TryAddSingleton(typeof(ISanitizingLogger&lt;&gt;), typeof(SecretSanitizingLogger&lt;&gt;))</c>.
 /// A host that registers its own <c>ISanitizingLogger&lt;&gt;</c> implementation before calling
 /// <c>AddZeeKayDaAuth()</c> shadows the framework's redaction wrapper for every ZeeKayDa service,
-/// silently disabling the credential-redaction guarantee described in ADR 0007 §7. A hosted
+/// silently disabling the framework's credential-redaction guarantee. A hosted
 /// startup validator detects this and fails fast — see
 /// <c>SanitizingLoggerRegistrationStartupValidator</c> in <c>ZeeKayDa.Auth.AspNetCore</c>.
 /// </para>

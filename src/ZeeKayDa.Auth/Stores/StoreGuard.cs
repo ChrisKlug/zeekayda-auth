@@ -1,13 +1,13 @@
 namespace ZeeKayDa.Auth.Stores;
 
 /// <summary>
-/// Shared fail-closed wrapper for coordinator-to-backend calls (ADR 0013 §8). Maps any thrown
+/// Shared fail-closed wrapper for coordinator-to-backend calls. Maps any thrown
 /// exception into <see cref="ZeeKayDaStoreException"/>, while rethrowing
 /// <see cref="OperationCanceledException"/> unwrapped because cancellation is not a store fault.
 /// </summary>
 /// <remarks>
 /// Shared between <c>AuthorizationCodeStore</c> and <c>RefreshTokenStore</c> so the two sealed
-/// coordinators do not duplicate this logic (ADR 0014 §4 mirrors ADR 0013 §8 verbatim).
+/// coordinators do not duplicate this logic.
 /// </remarks>
 internal static class StoreGuard
 {
