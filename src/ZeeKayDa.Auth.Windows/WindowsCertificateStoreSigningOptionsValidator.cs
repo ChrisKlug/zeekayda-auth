@@ -38,11 +38,9 @@ internal sealed class WindowsCertificateStoreSigningOptionsValidator : IValidate
         var hasDuplicateAdditionalThumbprint = false;
         foreach (var additional in options.AdditionalThumbprints)
         {
-            // AddCertificate already normalizes its argument (ThumbprintFormat.Normalize), so a
-            // thumbprint made up entirely of non-hex characters (e.g. copy-paste garbage) normalizes
-            // to "" here rather than throwing at registration time. Left uncaught, it would only
-            // surface later as a confusing "certificate not found: ''" configuration error at load
-            // time instead of a clear validation failure.
+            // A thumbprint made up entirely of non-hex characters normalizes to "" here rather
+            // than throwing at registration time; left uncaught it would surface later as a
+            // confusing "certificate not found: ''" error instead of a clear validation failure.
             if (additional.Length == 0)
                 hasEmptyAdditionalThumbprint = true;
             else if (!seen.Add(additional))

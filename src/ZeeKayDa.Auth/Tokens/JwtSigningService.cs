@@ -24,9 +24,8 @@ namespace ZeeKayDa.Auth.Tokens;
 public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigningStartupSelfTest, IAsyncDisposable
     where TOptions : JwtSigningServiceOptions
 {
-    // RFC 7518 JWS compact serialization never contains a space, and always contains at least one
-    // '.' separator — this constant contains a space and no '.', so it can never be mistaken for, or
-    // lifted into, a valid JWS even if a self-test signature were somehow leaked.
+    // Never a valid JWS (no '.' separator, contains a space), so it can't be mistaken for one even
+    // if a self-test signature were somehow leaked.
     private static readonly ReadOnlyMemory<byte> SelfTestPayload = "zeekayda-auth signing self-test"u8.ToArray();
 
     private readonly TimeProvider _timeProvider;
@@ -90,20 +89,11 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>Every currently trusted key's public listing. Must never be empty.</returns>
     /// <remarks>
-    /// This method carries a <b>completeness contract</b>: a provider that cannot
-    /// produce a complete read of its current key set <b>MUST throw</b> rather than return a short
-    /// or partial list. A vanished key is trusted to mean "no longer trusted" (kill-by-omission);
-    /// a failed read must never be indistinguishable from that. The base class never catches or
-    /// downgrades an exception from this method — it always propagates straight to the caller,
-    /// fail-closed.
-    /// <para>
-    /// The base class derives each returned listing's JWKS <c>kid</c> from
-    /// <see cref="KeyListing.PublicKey"/> (never from <see cref="KeyListing.Id"/>), rejects a
-    /// listing set that yields duplicate <c>kid</c>s or duplicate <see cref="KeyId.Value"/>s, and
-    /// runs <see cref="SigningAlgorithms.ValidateKeyAlgorithmCompatibility"/>/<see cref="SigningAlgorithms.ValidateKeyStrength"/>
-    /// over every listing — all before <see cref="CreateSignerAsync"/> is ever called for any key
-    /// in the set.
-    /// </para>
+    /// Carries a <b>completeness contract</b>: a provider that cannot produce a complete read of
+    /// its current key set <b>MUST throw</b> rather than return a short or partial list. A vanished
+    /// key is trusted to mean "no longer trusted" (kill-by-omission); a failed read must never be
+    /// indistinguishable from that. The base class never catches or downgrades an exception from
+    /// this method — it always propagates straight to the caller, fail-closed.
     /// </remarks>
     protected abstract ValueTask<IReadOnlyList<KeyListing>> ListKeysAsync(CancellationToken cancellationToken);
 
@@ -119,8 +109,7 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A signer for the key identified by <paramref name="id"/>.</returns>
     /// <remarks>
-    /// Local providers (development, File/PEM, PFX, Windows Certificate Store) build and return a
-    /// <see cref="LocalSigner"/> here. A remote provider (Azure Key Vault remote signing, a KMS, an
+    /// A local provider returns a <see cref="LocalSigner"/>; a remote provider (Key Vault, a KMS, an
     /// HSM) returns its own <see cref="ISigner"/> whose <see cref="ISigner.SignAsync"/> makes a
     /// network call — the private key never becomes local.
     /// </remarks>
@@ -168,19 +157,12 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
 
     /// <summary>
     /// Forces materialization of the currently active signer exactly as <see cref="SignAsync"/>
-    /// would. The sign-and-verify self-test itself lives in
-    /// <see cref="EnsureActiveSignerAsync"/>, so it runs on <em>every</em> handoff — initial
-    /// materialization and every subsequent rotation — not only when this method happens to be
-    /// called. This method exists purely so the framework-owned
-    /// <c>SigningStartupSelfTestHostedService</c> can force that first handoff to happen eagerly at
-    /// host startup, surfacing a failure at deployment time rather than on the first real
-    /// token-issuing request.
+    /// would, so <c>SigningStartupSelfTestHostedService</c> can surface a signing failure at host
+    /// startup rather than on the first real token-issuing request.
     /// </summary>
     /// <remarks>
-    /// Deliberately explicit-interface-implemented rather than <see langword="virtual"/>: no derived
-    /// provider can override or weaken this self-test. It is invoked once, at host startup, by the
-    /// framework-owned <c>SigningStartupSelfTestHostedService</c> — never by application code
-    /// directly.
+    /// Explicit-interface-implemented rather than <see langword="virtual"/> so no derived provider
+    /// can override or weaken the self-test.
     /// </remarks>
     async ValueTask ISigningStartupSelfTest.VerifyActiveSignerAsync(CancellationToken cancellationToken)
     {
@@ -207,12 +189,9 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
     /// that the base class has no visibility into). The default implementation does nothing.
     /// </summary>
     /// <remarks>
-    /// Override this to dispose only resources this specific provider introduced. The base
-    /// class's own cleanup always runs regardless of what this override does, or whether it
-    /// exists at all — there is no <c>base.OnDisposeAsync()</c> call to remember, unlike a
-    /// <c>*Core</c>-suffixed hook. This method is called at most once, guarded by the base
-    /// class's own idempotency check in <see cref="DisposeAsync"/>, so an override does not need
-    /// its own idempotency guard to be safe under concurrent or repeated <c>DisposeAsync</c> calls.
+    /// There is no <c>base.OnDisposeAsync()</c> call to remember — the base class's own cleanup
+    /// always runs regardless of what this override does. Called at most once, guarded by
+    /// <see cref="DisposeAsync"/>'s own idempotency check.
     /// </remarks>
     protected virtual ValueTask OnDisposeAsync() => ValueTask.CompletedTask;
 
@@ -226,14 +205,10 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
     protected virtual string? DescribeKeyMetadata(string id) => null;
 
     /// <summary>
-    /// Releases the base class's own resources: the active-signer handle and the internal
-    /// locks. Always run by <see cref="DisposeAsync"/> exactly once, after <see cref="OnDisposeAsync"/>
-    /// has already completed — never skippable by a derived class.
+    /// Releases the base class's own resources: the active-signer handle and the internal locks.
     /// </summary>
     private async ValueTask DisposeBaseResourcesAsync()
     {
-        // Any signer still resident at shutdown (Tier A's opportunistic-disposal
-        // worst case, or a Tier B signer between refreshes) is released here.
         await _signerLock.WaitAsync().ConfigureAwait(false);
         try
         {
@@ -254,16 +229,8 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
     /// as UTF-8 bytes using <see cref="Utf8JsonWriter"/> — no intermediate string allocation.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// <see cref="SigningAlgorithm"/> enum member names match the RFC 7518 string identifiers
-    /// exactly (RS256, ES256, etc.), so <c>algorithm.ToString()</c> produces the correct
-    /// <c>alg</c> header value without a switch statement.
-    /// </para>
-    /// <para>
-    /// <c>typ</c> is always set to <c>"JWT"</c> per RFC 7519 §5.1 and RFC 8725 §3.11. It is
-    /// written here rather than by the caller so that every token produced by this service
-    /// carries it automatically — a caller that omits it would produce a non-compliant token.
-    /// </para>
+    /// <see cref="SigningAlgorithm"/> member names match the RFC 7518 string identifiers exactly, so
+    /// <c>algorithm.ToString()</c> produces the correct <c>alg</c> value directly.
     /// </remarks>
     private static ReadOnlyMemory<byte> BuildHeaderJsonBytes(SigningAlgorithm algorithm, string kid)
     {
@@ -288,7 +255,6 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
         ReadOnlyMemory<byte> headerSegment,
         ReadOnlyMemory<byte> payloadSegment)
     {
-        // header.Length + 1 (for '.') + payload.Length
         var result = new byte[headerSegment.Length + 1 + payloadSegment.Length];
         headerSegment.Span.CopyTo(result);
         result[headerSegment.Length] = (byte)'.';
@@ -309,28 +275,21 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
     /// <summary>
     /// <see langword="true"/> only for a Tier A (<see cref="KeySetOptions"/>) provider — passed as
     /// <c>supportsBootstrapExemption</c> to every <see cref="SigningKeyRotation.SelectActiveKey"/>
-    /// call this class makes. See that method's remarks for why this must be gated on the provider's
-    /// tier rather than on whether the current snapshot happens to be the first one this instance has
-    /// built: gating on snapshot/process lifetime instead would let a Tier B (<see cref="KeySourceOptions"/>)
-    /// listing that has shrunk to one key via operator revocation re-arm the exemption on every
-    /// process restart or scale-out during the incident.
+    /// call. Gated on the provider's tier rather than snapshot/process lifetime, so a Tier B
+    /// (<see cref="KeySourceOptions"/>) listing that has shrunk to one key via revocation cannot
+    /// re-arm the exemption on process restart.
     /// </summary>
     private bool SupportsBootstrapExemption => _isKeySet;
 
     /// <summary>
     /// The immutable snapshot of public key data active-key selection and JWKS inclusion are
-    /// computed from. Rebuilt from scratch by <see cref="ListKeysAsync"/> —
-    /// Tier A once, Tier B once per <see cref="KeySourceOptions.RefreshInterval"/> — and never
-    /// mutated in place.
+    /// computed from. Rebuilt from scratch by <see cref="ListKeysAsync"/> — Tier A once, Tier B once
+    /// per <see cref="KeySourceOptions.RefreshInterval"/> — and never mutated in place.
     /// </summary>
     /// <remarks>
-    /// <c>ExpiresAt</c> is carried on this immutable record — rather than in a separate mutable
-    /// field alongside <see cref="_snapshot"/> — so that <see cref="EnsureSnapshotAsync"/>'s
-    /// lock-free fast path can read both the snapshot reference and its expiry atomically via a
-    /// single <see cref="System.Threading.Volatile"/> read of the snapshot reference itself, rather
-    /// than reading a separately-written <see cref="DateTimeOffset"/> field lock-free while it is
-    /// written under <see cref="_snapshotLock"/> elsewhere — a torn read of a multi-word value that
-    /// could cause a Tier B refresh to be skipped for one cycle.
+    /// <c>ExpiresAt</c> lives on this record rather than a separate field so
+    /// <see cref="EnsureSnapshotAsync"/>'s lock-free fast path can read the snapshot reference and
+    /// its expiry atomically via a single <see cref="System.Threading.Volatile"/> read.
     /// </remarks>
     private sealed class SigningKeySnapshot
     {
@@ -428,31 +387,15 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
             }
             catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
             {
-                // ListKeysAsync failing here — including a Tier B provider's own configuration
-                // exception for "zero enabled versions remain" (e.g. every version was disabled as
-                // part of an emergency revocation) — must not leave a previously cached active
-                // signer, and any private key material it holds, resident in process memory
-                // indefinitely. The base class cannot distinguish a genuine revocation from a
-                // transient failure (a network blip, throttling) at this layer, so this release runs
-                // unconditionally on any failure here: signing is already unavailable for the
-                // duration of the failure regardless (this call rethrows before installing a new
-                // snapshot, so every subsequent SignAsync/GetSigningKeysAsync call re-attempts and
-                // re-fails the same way until ListKeysAsync next succeeds), so the only cost of
-                // releasing eagerly is one extra CreateSignerAsync call once a later refresh
-                // eventually succeeds again — a worthwhile trade for closing the exposure window
-                // immediately once Key Vault confirms the key is gone.
+                // A ListKeysAsync failure here (including a revocation that leaves zero enabled
+                // keys) must not leave a previously cached active signer's private key resident
+                // indefinitely, so it is released unconditionally rather than trying to distinguish
+                // a genuine revocation from a transient failure at this layer.
                 //
-                // The filter above excludes the caller's own cancellationToken firing
-                // (OperationCanceledException raised because the caller's request was cancelled, e.g.
-                // a client disconnect mid-refresh): that is not a signal about the signer's health,
-                // and releasing on it would let a client repeatedly cancel requests to force a
-                // perfectly healthy cached signer to be torn down and its private key re-downloaded
-                // from Key Vault on every subsequent call — a remotely triggerable amplification
-                // vector against Key Vault (cost/throttling/latency) that requires no actual key
-                // compromise or elevated access, only the ability to drop a request. An
-                // OperationCanceledException raised for any other reason (e.g. an SDK-surfaced
-                // timeout using its own, unrelated token) still matches this catch and still
-                // releases the signer, exactly as before.
+                // The filter excludes the caller's own cancellationToken firing: releasing on that
+                // would let a client repeatedly cancel requests to force a healthy signer's private
+                // key to be re-downloaded from a remote provider on every call — an amplification
+                // vector that needs no actual key compromise, only the ability to drop a request.
                 await ReleaseActiveSignerAsync().ConfigureAwait(false);
                 throw;
             }
@@ -478,10 +421,8 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
     }
 
     /// <summary>
-    /// Releases (opportunistically) the currently cached active signer, if any,
-    /// so any private key material it holds is not left resident in process memory. Called from
-    /// <see cref="EnsureSnapshotAsync"/> when <see cref="ListKeysAsync"/> throws — see that call
-    /// site for the rationale.
+    /// Releases the currently cached active signer, if any, so its private key material is not
+    /// left resident in process memory.
     /// </summary>
     private async ValueTask ReleaseActiveSignerAsync()
     {
@@ -499,14 +440,11 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
 
     /// <summary>
     /// Recomputes active-key selection from <paramref name="snapshot"/> and <c>now</c>, and — only
-    /// when the computed active <see cref="KeyId"/> has changed — calls <see cref="CreateSignerAsync"/>
-    /// for the new active key, self-tests it (signs <see cref="SelfTestPayload"/> and verifies the
-    /// signature against the key's own listed public key via <see cref="SigningAlgorithms.Verify"/>,
-    /// structurally proving the signer actually pairs with the public key whose <c>kid</c> this base
-    /// class is publishing), and disposes (opportunistically) the signer it supersedes. Because
-    /// this runs on every handoff — not only the first one — a rotated-in signer is proven exactly
-    /// as thoroughly as the one materialized at startup. Returns a borrowed <see cref="SignerHandle"/> that the caller
-    /// MUST <see cref="SignerHandle.Return"/> exactly once.
+    /// when the active <see cref="KeyId"/> has changed — calls <see cref="CreateSignerAsync"/> for
+    /// the new active key, self-tests it (signs <see cref="SelfTestPayload"/> and verifies against
+    /// the key's own listed public key via <see cref="SigningAlgorithms.Verify"/>), and disposes the
+    /// signer it supersedes. Returns a borrowed <see cref="SignerHandle"/> that the caller MUST
+    /// <see cref="SignerHandle.Return"/> exactly once.
     /// </summary>
     private async ValueTask<SignerHandle> EnsureActiveSignerAsync(
         SigningKeySnapshot snapshot, CancellationToken cancellationToken)
@@ -572,16 +510,9 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
                         $"the key's declared algorithm exactly."));
             }
 
-            // Sign a fixed, non-JWS-shaped constant and verify the
-            // resulting signature against this same key's own listed public key before this signer
-            // is ever handed out for real signing. This runs on every handoff — initial
-            // materialization and every subsequent rotation — not only once at process start, so a
-            // rotated-in key gets exactly the same structural proof as the very first active key.
-            // One extra sign per handoff (a remote call per rotation for a remote signer such as Key
-            // Vault, not per token issuance) is the accepted cost of catching a signer whose private
-            // key does not actually pair with the public key it publishes a kid for (a non-exportable
-            // KV certificate policy, an inaccessible CNG key container, a missing sign permission)
-            // before it is ever used to produce a token.
+            // Proves the signer's private key actually pairs with the public key it publishes a kid
+            // for, before it is ever used to produce a real token. Runs on every handoff, not only
+            // at process start.
             bool selfTestVerified;
             try
             {
@@ -614,15 +545,12 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
             var previous = _activeSignerHandle;
             _activeSignerHandle = newHandle;
 
-            // Releases the base class's own reference on the superseded signer. The underlying
-            // private material is reclaimed once every in-flight SignAsync borrow on
-            // it has also returned — immediately for Tier A's typical idle handoff, or after the
-            // last in-flight signing call completes for a concurrently-borrowed Tier B signer.
+            // Releases the base class's own reference; the superseded signer's private material is
+            // reclaimed once every in-flight SignAsync borrow on it has also returned.
             previous?.Release();
 
-            // Cannot fail: newHandle was just constructed at refcount 1 and has not yet been
-            // published to _activeSignerHandle for any other caller to see, and we are still
-            // holding _signerLock, so no concurrent Return()/Release() can have run against it.
+            // Cannot fail: newHandle was just constructed at refcount 1, not yet published, and we
+            // are still holding _signerLock.
             newHandle.TryBorrow();
             return newHandle;
         }
@@ -742,13 +670,9 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
     }
 
     /// <summary>
-    /// Implements a three-state kill-by-omission disambiguation for every key present
-    /// in <paramref name="previous"/> but missing from <paramref name="current"/>: silent when the
-    /// vanished key's derived retirement window (computed from <paramref name="previous"/>'s own
-    /// timeline) had already closed, or a <see cref="Microsoft.Extensions.Logging.LogLevel.Warning"/>
-    /// when it vanished while still inside that window. A failed or partial read is not this
-    /// method's concern — that is <see cref="ListKeysAsync"/>'s completeness contract, enforced by
-    /// simply never catching what it throws.
+    /// Logs a <see cref="Microsoft.Extensions.Logging.LogLevel.Warning"/> for every key present in
+    /// <paramref name="previous"/> but missing from <paramref name="current"/> while its derived
+    /// retirement window was still open — silent once that window has closed.
     /// </summary>
     private void EvaluateKillByOmission(SigningKeySnapshot previous, SigningKeySnapshot current, DateTimeOffset now)
     {

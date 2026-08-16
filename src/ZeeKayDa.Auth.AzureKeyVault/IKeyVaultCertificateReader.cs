@@ -13,8 +13,7 @@ internal interface IKeyVaultCertificateReader
 {
     /// <summary>
     /// Enumerates every version Key Vault has ever recorded for the configured certificate,
-    /// including disabled and expired ones — the rotation algorithm needs the full history to
-    /// durably derive which version was created first.
+    /// including disabled and expired ones — the rotation algorithm needs the full history.
     /// </summary>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     IAsyncEnumerable<KeyVaultCertificateVersionInfo> GetCertificateVersionsAsync(CancellationToken cancellationToken);
@@ -26,9 +25,8 @@ internal interface IKeyVaultCertificateReader
     /// <param name="version">The Key Vault certificate version identifier.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>
-    /// The extracted private key — real private key material, unlike the remote-signing reader's
-    /// public-only result — and its <see cref="SigningKeyType"/>. The caller takes ownership of
-    /// the returned <see cref="AsymmetricAlgorithm"/> and is responsible for disposing it.
+    /// The extracted private key and its <see cref="SigningKeyType"/>. The caller takes ownership
+    /// of the returned <see cref="AsymmetricAlgorithm"/> and is responsible for disposing it.
     /// </returns>
     /// <exception cref="ZeeKayDaConfigurationException">
     /// Thrown when the certificate version does not exist, the credential lacks the required
@@ -39,14 +37,9 @@ internal interface IKeyVaultCertificateReader
         string version, CancellationToken cancellationToken);
 
     /// <summary>
-    /// Fetches only the public key for a specific certificate version, without ever downloading
-    /// the linked secret (and so without ever requiring the <c>secrets/get</c> permission or
-    /// extracting real private key material). Called for every included version, including the
-    /// active signing key — its <see cref="SigningKeyDescriptor"/> is always built from this
-    /// public-only source, never from <see cref="GetPrivateKeyMaterialAsync"/>'s result — see
-    /// <c>AzureKeyVaultCachedSigningJwtSigningService.ListKeysAsync</c>'s remarks for the full
-    /// rationale and for why only the active version's actual private key material additionally
-    /// comes from <see cref="GetPrivateKeyMaterialAsync"/>.
+    /// Fetches only the public key for a specific certificate version, without downloading the
+    /// linked secret, so this never requires the <c>secrets/get</c> permission. Called for every
+    /// included version, including the active signing key.
     /// </summary>
     /// <param name="version">The Key Vault certificate version identifier.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>

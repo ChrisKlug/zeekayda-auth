@@ -16,11 +16,9 @@ namespace ZeeKayDa.Auth.Clients;
 /// <c>ClientSecretHasher&lt;TSecret&gt;</c>. Register it with <c>AddSecretsHasher&lt;T&gt;()</c>.
 /// </para>
 /// <para>
-/// <see cref="Create(System.ReadOnlySpan{char})"/> is the memory-safe primary overload:
-/// callers who hold the plaintext in a mutable <c>char[]</c> can zero the buffer immediately
-/// after the call, before the GC has a chance to observe it.
-/// <see cref="Create(string)"/> is a convenience overload for callers who already have a
-/// managed string and accept that its contents may remain in memory until the next GC cycle.
+/// <see cref="Create(System.ReadOnlySpan{char})"/> is the memory-safe primary overload — see its
+/// own remarks. <see cref="Create(string)"/> is a convenience overload for callers who already
+/// have a managed string.
 /// </para>
 /// </remarks>
 public interface IClientSecretHasher
@@ -52,12 +50,10 @@ public interface IClientSecretHasher
     /// try { stored = hasher.Create(secret.AsSpan()); }
     /// finally { Array.Clear(secret); }
     /// </code>
-    /// <para>
     /// This guarantee holds only when the registered hasher overrides
-    /// <c>CreateCore(ReadOnlySpan&lt;char&gt;)</c>. The built-in PBKDF2 hasher does.
-    /// Custom hashers that only override <c>CreateCore(string)</c> will still allocate an
-    /// intermediate managed string via the base-class fallback, defeating the zeroing benefit.
-    /// </para>
+    /// <c>CreateCore(ReadOnlySpan&lt;char&gt;)</c> (the built-in PBKDF2 hasher does). A hasher that
+    /// only overrides <c>CreateCore(string)</c> will allocate an intermediate managed string via
+    /// the base-class fallback, defeating the zeroing benefit.
     /// </remarks>
     /// <param name="plaintext">The plaintext secret to hash.</param>
     /// <exception cref="ArgumentException">

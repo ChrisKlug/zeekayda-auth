@@ -8,34 +8,14 @@ namespace ZeeKayDa.Auth.AspNetCore;
 /// registration, at either the open-generic or a closed-generic level.
 /// </summary>
 /// <remarks>
-/// <para>
-/// <c>AddZeeKayDaAuthCore()</c> registers only the open-generic <c>ISanitizingLogger&lt;&gt;</c>
-/// singleton, via <c>TryAddSingleton</c>. Two distinct host misconfigurations can shadow it, and
-/// this validator catches both:
-/// </para>
-/// <list type="number">
-/// <item>A host registration for the same open-generic <c>ISanitizingLogger&lt;&gt;</c> — whether
-/// added before <c>AddZeeKayDaAuth()</c> (wins the <c>TryAdd</c> race) or after via a plain
-/// <c>Add</c> (wins .NET DI's "last open-generic registration wins" resolution rule) — shadows
-/// every ZeeKayDa service at once, including ones the host never touches directly.</item>
-/// <item>A host registration for one specific closed <c>ISanitizingLogger&lt;SomeType&gt;</c>
-/// shadows redaction only for that type, regardless of registration order — .NET DI always
-/// prefers an exact closed-generic match over an open-generic fallback. The framework itself never
-/// registers a closed generic for this interface (see <see cref="SanitizingLoggerClosedOverrideScanner"/>),
-/// so finding one is sufficient evidence of a shadow.</item>
-/// </list>
-/// <para>
-/// Because <see cref="ISanitizingLogger{T}"/> is a public extensibility surface (so packages such
-/// as <c>ZeeKayDa.Auth.AzureKeyVault</c>, and genuine third-party providers, can accept it via
-/// constructor injection without <c>InternalsVisibleTo</c>), neither case can be ruled out at
-/// compile time.
-/// </para>
-/// <para>
-/// This is a hard failure, not a warning. Unlike a shadowed <c>IClientRepository</c> (see
-/// <see cref="ClientRepositoryStartupActivator"/>), a shadowed sanitizing logger silently
-/// disables the credential-redaction guarantee, so it must stop the host from starting rather
-/// than merely being logged.
-/// </para>
+/// Two host misconfigurations can shadow the framework's open-generic
+/// <c>ISanitizingLogger&lt;&gt;</c> registration: a competing open-generic registration (shadows
+/// every ZeeKayDa service at once), or a closed-generic <c>ISanitizingLogger&lt;SomeType&gt;</c>
+/// registration (shadows redaction only for that type — the framework never registers a closed
+/// generic itself, so finding one is sufficient evidence of a shadow). Because
+/// <see cref="ISanitizingLogger{T}"/> is a public extensibility surface, neither case can be ruled
+/// out at compile time, so this is a hard startup failure rather than a warning: a shadowed
+/// sanitizing logger silently disables the credential-redaction guarantee.
 /// </remarks>
 internal sealed class SanitizingLoggerRegistrationStartupValidator : IHostedService
 {

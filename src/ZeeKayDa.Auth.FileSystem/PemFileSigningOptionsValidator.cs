@@ -41,19 +41,12 @@ internal sealed class PemFileSigningOptionsValidator : IValidateOptions<PemFileS
         return errors.Count > 0 ? ValidateOptionsResult.Fail(errors) : ValidateOptionsResult.Success;
     }
 
-    // Every filesystem path this configuration touches — the primary cert path, its optional
-    // companion key path, and each additional file's cert/key paths — must be pairwise distinct.
-    // Two entries sharing a path would make the rotation timeline ambiguous: the same path would
-    // back two different registered keys.
-    //
-    // Each non-empty path is normalized via Path.GetFullPath before comparison, so purely
-    // string-level differences (e.g. "tls.pem" vs "./tls.pem", or redundant separators like
-    // "/etc/zeekayda//tls.pem" vs "/etc/zeekayda/tls.pem") are still caught as duplicates. This
-    // is pure string canonicalization — no filesystem access. It deliberately does NOT resolve
-    // symlink targets or perform case-insensitive-filesystem comparison; that would require
-    // filesystem I/O inside an options validator and platform-dependent guessing, which was
-    // assessed as disproportionate to a non-exploitable correctness gap (it degrades to a load
-    // failure, not key confusion).
+    // Every filesystem path this configuration touches must be pairwise distinct — two entries
+    // sharing a path would make the rotation timeline ambiguous. Each non-empty path is normalized
+    // via Path.GetFullPath before comparison (pure string canonicalization, no filesystem access),
+    // so differences like "tls.pem" vs "./tls.pem" are still caught. Symlink resolution and
+    // case-insensitive-filesystem comparison are deliberately out of scope: this degrades to a
+    // load failure, not key confusion, if two paths are equivalent but not caught here.
     private static void AppendDuplicatePathErrors(PemFileSigningOptions options, List<string> errors)
     {
         var seen = new HashSet<string>(StringComparer.Ordinal);

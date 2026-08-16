@@ -52,16 +52,10 @@ public static class ZeeKayDaAuthBuilderHasherExtensions
     /// </typeparam>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
     /// <param name="isDefault">
-    /// <para>
-    /// When <see langword="true"/>, this hasher is used when creating new hashed secrets and
-    /// when generating the timing-pad dummy credential at startup.
-    /// </para>
-    /// <para>
-    /// When only one hasher is registered, it is automatically the default regardless of this
-    /// value. When multiple hashers are registered, exactly one must have
-    /// <paramref name="isDefault"/> set to <see langword="true"/>; zero or multiple defaults
-    /// cause a startup failure.
-    /// </para>
+    /// When <see langword="true"/>, this hasher is used for creating new hashed secrets and for
+    /// the timing-pad dummy credential. A single registered hasher is always the default
+    /// regardless of this value; with multiple hashers, exactly one must set it to
+    /// <see langword="true"/> or startup fails.
     /// </param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
     /// <exception cref="ArgumentNullException">

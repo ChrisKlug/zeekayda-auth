@@ -11,11 +11,8 @@ namespace ZeeKayDa.Auth.AzureKeyVault;
 /// </remarks>
 internal sealed class AzureKeyVaultCachedSigningOptionsValidator : IValidateOptions<AzureKeyVaultCachedSigningOptions>
 {
-    // RefreshInterval gates how often the *private key bytes* of every in-window certificate
-    // version are re-downloaded from Key Vault's secret endpoint, which is more sensitive traffic
-    // than the remote provider's public-key-only refresh. The same one-minute floor rejects a value
-    // so short it would drive that private-key re-download often enough to risk Key Vault
-    // throttling under any real load.
+    // RefreshInterval gates how often private key bytes are re-downloaded from Key Vault's secret
+    // endpoint; this floor rejects a value short enough to risk Key Vault throttling.
     private static readonly TimeSpan MinimumRefreshInterval = TimeSpan.FromMinutes(1);
 
     /// <inheritdoc/>
@@ -33,10 +30,8 @@ internal sealed class AzureKeyVaultCachedSigningOptionsValidator : IValidateOpti
                 "mistake.");
         }
 
-        // Passes options itself, not options.PublicationLead: the KeySourceOptions overload reads
-        // the raw, possibly-invalid value directly, so PublicationLead's own defensive invariant
-        // check (KeySourceOptions.PublicationLead) cannot throw out from under this validator before
-        // it gets the chance to turn an invalid value into its own friendly, aggregated error below.
+        // Passes options itself, not options.PublicationLead, so an invalid raw value is turned
+        // into a friendly aggregated error here rather than throwing before validation completes.
         if (KeySourcePublicationLeadValidator.ValidateMinimum(
                 nameof(AzureKeyVaultCachedSigningOptions), options) is { } minimumLeadError)
         {

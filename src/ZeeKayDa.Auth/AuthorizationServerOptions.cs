@@ -32,17 +32,10 @@ public sealed class AuthorizationServerOptions
     /// Gets or sets a value indicating whether an HTTP (non-HTTPS) loopback issuer URI is permitted.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// This is a <strong>development-only</strong> setting. It must never be set to
-    /// <see langword="true"/> in production environments. A warning is emitted at startup
-    /// whenever this flag is enabled to make the risk visible and intentional.
-    /// </para>
-    /// <para>
-    /// When <see langword="false"/> (the default), an HTTP issuer causes a startup failure via
-    /// the fail-fast validator registered by <c>AddZeeKayDaAuth()</c>. When
-    /// <see langword="true"/>, only loopback HTTP issuers such as <c>http://localhost:5000</c>
-    /// are accepted.
-    /// </para>
+    /// <strong>Development-only</strong> — must never be <see langword="true"/> in production. A
+    /// warning is emitted at startup whenever this flag is enabled. When <see langword="false"/>
+    /// (the default), an HTTP issuer fails startup validation; when <see langword="true"/>, only
+    /// loopback HTTP issuers such as <c>http://localhost:5000</c> are accepted.
     /// </remarks>
     public bool AllowInsecureIssuer { get; set; }
 
@@ -51,24 +44,13 @@ public sealed class AuthorizationServerOptions
     /// store implementations.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// In load-balanced deployments, node clocks can drift. Store implementations that operate
-    /// across multiple nodes apply this value as a grace window on <c>ExpiresAt</c> liveness
-    /// checks: <c>entry.ExpiresAt + ClockSkewTolerance &gt; now</c>. The in-memory store
-    /// (single-instance; one clock; inter-node skew is structurally impossible) and tombstone
-    /// TTLs are unaffected.
-    /// </para>
-    /// <para>
-    /// Must be greater than or equal to <see cref="TimeSpan.Zero"/>. A negative value is rejected
-    /// at startup by <c>AuthorizationServerOptionsValidator</c> because it would cause expiry
-    /// checks to reject tokens before their stated expiry time.
-    /// </para>
-    /// <para>
-    /// The default of 5 seconds is intentionally small. A <c>ClockSkewTolerance</c> approaching
-    /// half the authorization code lifetime effectively nullifies the code expiry guarantee. Values
-    /// equal to or exceeding half of <c>AuthorizationEndpoint.AuthorizationCodeLifetime</c> are
-    /// rejected at startup.
-    /// </para>
+    /// In load-balanced deployments, node clocks can drift. Multi-node store implementations apply
+    /// this value as a grace window on <c>ExpiresAt</c> liveness checks:
+    /// <c>entry.ExpiresAt + ClockSkewTolerance &gt; now</c>. Must be greater than or equal to
+    /// <see cref="TimeSpan.Zero"/>, and must be less than half of
+    /// <c>AuthorizationEndpoint.AuthorizationCodeLifetime</c> — otherwise it would effectively
+    /// nullify the code expiry guarantee. Both are enforced at startup by
+    /// <c>AuthorizationServerOptionsValidator</c>.
     /// </remarks>
     public TimeSpan ClockSkewTolerance { get; set; } = TimeSpan.FromSeconds(5);
 

@@ -59,10 +59,8 @@ internal sealed class CompositeClientAuthenticator
         ArgumentNullException.ThrowIfNull(clientId);
         ArgumentNullException.ThrowIfNull(httpContext);
 
-        // Read the form body once, asynchronously, before any authenticator is invoked.
-        // HttpRequest.Form is synchronous and throws on non-form content types — both are
-        // attacker-controllable. Non-form requests get an empty collection so CanHandle
-        // implementations can safely check for form fields without special-casing.
+        // HttpRequest.Form is synchronous and throws on non-form content types, both of which are
+        // attacker-controllable, so read it asynchronously up front.
         var form = httpContext.Request.HasFormContentType
             ? await httpContext.Request.ReadFormAsync(cancellationToken)
             : FormCollection.Empty;
@@ -73,9 +71,8 @@ internal sealed class CompositeClientAuthenticator
         if (headers.Authorization.Count > 1)
             return ClientAuthenticationResult.NotValid();
 
-        // CanHandle is a shape check — build a context without the client so the repository is
-        // not consulted for requests that will be rejected early.
-        // Authenticators MUST NOT access context.Client inside CanHandle.
+        // CanHandle is a shape check; built without the client so the repository isn't consulted
+        // for requests rejected early. Authenticators MUST NOT access context.Client here.
         var canHandleContext = new TokenRequestContext
         {
             HttpContext = httpContext,
@@ -201,11 +198,8 @@ internal sealed class CompositeClientAuthenticator
             return ClientAuthenticationResult.NotValid();
         }
 
-        // Failure branches are padded to equalise timing across all rejection reasons, preventing
-        // an attacker from distinguishing "client_id not found" from "client exists but is not public".
-        // The success branch intentionally skips padding: success vs. failure is already visible in
-        // the HTTP response, client_id is not a secret in OAuth, and padding would add PBKDF2 cost
-        // to every legitimate public-client authentication with no meaningful security gain.
+        // Success intentionally skips padding: it's already visible in the HTTP response, and
+        // client_id is not a secret in OAuth.
         return ClientAuthenticationResult.Valid();
     }
 

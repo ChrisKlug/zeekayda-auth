@@ -33,15 +33,10 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
     /// <see langword="null"/>.
     /// </exception>
     /// <remarks>
-    /// <para>
-    /// Validation of <see cref="AuthorizationServerOptions"/> is activated with
-    /// <c>ValidateOnStart()</c>, so a misconfigured server (for example, a missing or HTTP
-    /// issuer) fails loudly at startup rather than silently at the first request.
-    /// </para>
-    /// <para>
-    /// Call <c>app.UseRouting()</c> followed by <c>app.MapZeeKayDaAuth()</c> after building the
+    /// <see cref="AuthorizationServerOptions"/> validation runs with <c>ValidateOnStart()</c>, so
+    /// a misconfigured server fails loudly at startup rather than at the first request. Call
+    /// <c>app.UseRouting()</c> followed by <c>app.MapZeeKayDaAuth()</c> after building the
     /// application to register the OIDC protocol endpoints.
-    /// </para>
     /// </remarks>
     public static ZeeKayDaAuthBuilder AddZeeKayDaAuth(
         this IServiceCollection services,
@@ -55,28 +50,23 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
             .Configure(configure)
             .ValidateOnStart();
 
-        // Post-configurer runs before validation: canonicalizes and freezes CorsOrigins so the
-        // validator is a pure read-only check.
+        // Canonicalizes and freezes CorsOrigins before validation runs.
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<
                 IPostConfigureOptions<AuthorizationServerOptions>,
                 AuthorizationServerOptionsPostConfigurer>());
 
-        // Validator lives in ZeeKayDa.Auth (core) so it can be tested without a web host.
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<
                 IValidateOptions<AuthorizationServerOptions>,
                 AuthorizationServerOptionsValidator>());
 
-        // Register core infrastructure (SecretSanitizingLogger<T> open-generic singleton).
-        // Idempotent: TryAdd inside AddZeeKayDaAuthCore is a no-op on repeated calls.
         services.AddZeeKayDaAuthCore();
 
         services.TryAddSingleton<IScopeRepository>(new InMemoryScopeRepository(StandardScopes.All));
         services.TryAddSingleton<IDiscoveryDocumentProvider, DiscoveryDocumentProvider>();
 
-        // Each endpoint is registered exactly once even if AddZeeKayDaAuth() is called multiple
-        // times, because TryAddEnumerable checks the implementation type for uniqueness.
+        // TryAddEnumerable keeps each endpoint registered exactly once across repeated calls.
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IZeeKayDaEndpoint, DiscoveryEndpoint>());
         services.TryAddEnumerable(
@@ -86,74 +76,48 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IZeeKayDaEndpoint, PreAlphaJwksEndpoint>());
 
-        // Always register the composite hasher so that attempting to use it without registering
-        // any IClientSecretHasher implementations produces a clear error rather than a generic
-        // "service not registered" DI failure.
+        // Registered unconditionally so using it without any IClientSecretHasher gives a clear
+        // error instead of a generic "service not registered" DI failure.
         services.TryAddSingleton<CompositeClientSecretHasher>();
 
-        // Register IClientSecretFactory as an alias for the already-constructed
-        // CompositeClientSecretHasher singleton so custom repository authors can inject it
-        // without knowing about the composite's internal structure.
+        // Alias so repository authors can inject IClientSecretFactory without knowing about the
+        // composite's internal structure.
         services.TryAddSingleton<IClientSecretFactory>(sp =>
             sp.GetRequiredService<CompositeClientSecretHasher>());
 
-        // Register the client registration validator so custom repositories can resolve it.
         services.TryAddSingleton<IClientRegistrationValidator, ClientRegistrationValidator>();
 
-        // Startup validation: fails if no IClientRepository has been registered. Runs as part of
-        // the existing AuthorizationServerOptions ValidateOnStart() hook.
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<
                 IValidateOptions<AuthorizationServerOptions>,
                 ClientRepositoryPresenceValidator>());
 
-        // Captures the IServiceCollection reference so SanitizingLoggerRegistrationStartupValidator
-        // can detect closed-generic ISanitizingLogger<T> overrides once the container is built.
         services.AddSingleton(new SanitizingLoggerClosedOverrideScanner(services));
 
-        // Fails fast if a host registration has shadowed ISanitizingLogger<>, at the open-generic
-        // or a closed-generic level, with something other than the framework's own
-        // SecretSanitizingLogger<>, which would silently disable credential redaction. Registered
-        // first among this method's hosted services — hosted services start in registration order —
-        // so no other hosted service below can log through a shadowed sanitizer before this check
-        // has a chance to abort startup.
+        // Registered first among hosted services (they start in registration order) so nothing
+        // below can log through a shadowed sanitizer before this check can abort startup.
         services.AddHostedService<SanitizingLoggerRegistrationStartupValidator>();
 
-        // Emits a startup warning when AllowInsecureIssuer is enabled.
         services.AddHostedService<InsecureIssuerWarningService>();
-
-        // Emits a startup warning when exception message sanitization is disabled via
-        // AuthorizationServerOptions.Logging.DisableExceptionSanitizing.
         services.AddHostedService<ExceptionSanitizingDisabledWarningService>();
-
-        // Emits a startup warning when AuthorizationServerOptions.TokenEndpoint.AbsoluteFamilyLifetime
-        // is set to the TimeSpan.MaxValue unbounded escape-hatch sentinel.
         services.AddHostedService<AbsoluteFamilyLifetimeUnboundedWarningService>();
 
-        // Validates that IScopeRepository exposes the 'openid' scope. Done in a hosted service
-        // so the check is awaitable — IValidateOptions<T>.Validate is synchronous and blocking
-        // on async I/O risks deadlocks in certain hosting configurations.
+        // A hosted service rather than IValidateOptions so the openid-scope check can be awaited
+        // without risking a deadlock on synchronous, blocking async I/O.
         services.AddHostedService<ScopePresenceStartupValidator>();
 
-        // Startup validation: fails if no IAuthorizationCodeStore or IRefreshTokenStore has
-        // been registered. Uses IServiceProviderIsService to inspect the container without
-        // resolving the services, so it fires before any store is constructed.
         services.AddHostedService<TokenStorePresenceValidator>();
 
-        // Resolves IClientRepository at startup so construction-time validation (duplicate
-        // detection, per-client validation, secret hashing) fails fast rather than at first request.
+        // Resolves IClientRepository at startup so its construction-time validation fails fast
+        // rather than at first request.
         services.AddHostedService<ClientRepositoryStartupActivator>();
 
-        // Register the built-in client secret authenticator and composite dispatcher. Both are
-        // registered as singletons. The composite is registered as its concrete type (not as
-        // IClientAuthenticator) so it is excluded from the IEnumerable<IClientAuthenticator>
-        // injection and cannot dispatch recursively.
+        // The composite is registered as its concrete type, not IClientAuthenticator, so it is
+        // excluded from IEnumerable<IClientAuthenticator> and cannot dispatch recursively.
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IClientAuthenticator, ClientSecretAuthenticator>());
         services.TryAddSingleton<CompositeClientAuthenticator>();
 
-        // Startup validation: every method in AuthMethodsSupported must be covered by exactly
-        // one registered IClientAuthenticator; none may overlap or declare "none".
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<
                 IValidateOptions<AuthorizationServerOptions>,

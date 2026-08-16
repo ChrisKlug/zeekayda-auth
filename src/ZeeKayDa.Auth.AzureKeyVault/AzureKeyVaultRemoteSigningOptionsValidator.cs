@@ -11,11 +11,8 @@ namespace ZeeKayDa.Auth.AzureKeyVault;
 /// </remarks>
 internal sealed class AzureKeyVaultRemoteSigningOptionsValidator : IValidateOptions<AzureKeyVaultRemoteSigningOptions>
 {
-    // RefreshInterval — the library cannot know a relying party's actual JWKS-cache TTL, so it
-    // cannot enforce the "long enough" half of that requirement, but it CAN reject a value so short
-    // it would drive ListKeysAsync (a KeyClient list + per-key get call) often enough to risk Key
-    // Vault throttling under any real load. This is a floor against near-certain misconfiguration,
-    // not a claim that any value above it is automatically safe for a given deployment's RPs.
+    // The library cannot enforce that RefreshInterval exceeds a relying party's actual JWKS-cache
+    // TTL, but it can reject a value short enough to risk Key Vault throttling under real load.
     private static readonly TimeSpan MinimumRefreshInterval = TimeSpan.FromMinutes(1);
 
     /// <inheritdoc/>
@@ -33,10 +30,8 @@ internal sealed class AzureKeyVaultRemoteSigningOptionsValidator : IValidateOpti
                 "mistake.");
         }
 
-        // Passes options itself, not options.PublicationLead: the KeySourceOptions overload reads
-        // the raw, possibly-invalid value directly, so PublicationLead's own defensive invariant
-        // check (KeySourceOptions.PublicationLead) cannot throw out from under this validator before
-        // it gets the chance to turn an invalid value into its own friendly, aggregated error below.
+        // Passes options itself, not options.PublicationLead, so an invalid raw value is turned
+        // into a friendly aggregated error here rather than throwing before validation completes.
         if (KeySourcePublicationLeadValidator.ValidateMinimum(
                 nameof(AzureKeyVaultRemoteSigningOptions), options) is { } minimumLeadError)
         {

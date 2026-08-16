@@ -10,35 +10,14 @@ namespace ZeeKayDa.Auth.AzureKeyVault;
 /// call is a network round trip to Key Vault's <c>CryptographyClient</c>.
 /// </summary>
 /// <remarks>
-/// <para>
 /// <see cref="ListKeysAsync"/> re-asks Key Vault for the key's current version list once per
-/// <see cref="KeySourceOptions.RefreshInterval"/> — Key Vault, not this provider, owns the key's
-/// version history. Every returned <see cref="KeyListing.ActivateAt"/> is derived entirely from Key
-/// Vault's own durable per-version <c>CreatedOn</c> timestamp
-/// (<c>ActivateAt = CreatedOn + PublicationLead</c>), never from when this process first observed the
-/// version — stateless, restart-safe, and identical across every replica. The key version that was
-/// created first of all (by <c>CreatedOn</c>, tie-broken by version identifier) is eligible from
-/// startup (<c>ActivateAt = null</c>), so the base class's ordinary activation-timeline logic covers
-/// the "first ever version" bootstrap case with no special-case code here.
-/// </para>
-/// <para>
-/// Kill-by-omission is entirely the base class's concern: this provider's only obligation is to list
-/// currently-enabled versions and let a version silently drop out of the returned list once Key Vault
-/// stops reporting it as enabled. There is no separate <c>Enabled</c> flag anywhere in this contract.
-/// </para>
-/// <para>
-/// <c>kid</c> is the RFC 7638 JWK thumbprint of each version's public key, derived by the base class
-/// from each <see cref="KeyListing.PublicKey"/> — never the raw Key Vault version identifier, which
-/// is only this provider's own internal <see cref="KeyId"/>.
-/// </para>
-/// <para>
-/// <see cref="CreateSignerAsync"/> returns a small <see cref="ISigner"/> wrapper
-/// (<see cref="KeyVaultRemoteSigner"/>) whose <see cref="ISigner.SignAsync"/> dispatches to the
-/// shared, DI-owned <see cref="IKeyVaultSigner"/> seam. <see cref="IDisposable.Dispose"/> on that
-/// wrapper is a deliberate no-op: it never disposes <see cref="IKeyVaultSigner"/> or any pooled
-/// <c>CryptographyClient</c> it may hold, since those are shared across every activation and every
-/// other <see cref="ISigner"/> instance.
-/// </para>
+/// <see cref="KeySourceOptions.RefreshInterval"/>. Each <see cref="KeyListing.ActivateAt"/> is
+/// derived from Key Vault's durable per-version <c>CreatedOn</c>, never from when this process
+/// first observed the version, so activation timing is stateless and identical across replicas. A
+/// disabled version simply stops appearing in the list; the base class handles kill-by-omission
+/// from there. <see cref="CreateSignerAsync"/> returns a thin <see cref="ISigner"/> wrapper whose
+/// <see cref="IDisposable.Dispose"/> is a deliberate no-op, since the shared
+/// <see cref="IKeyVaultSigner"/> seam it dispatches to is used by every other activation too.
 /// </remarks>
 internal sealed class AzureKeyVaultRemoteSigningJwtSigningService : JwtSigningService<AzureKeyVaultRemoteSigningOptions>
 {
@@ -46,16 +25,11 @@ internal sealed class AzureKeyVaultRemoteSigningJwtSigningService : JwtSigningSe
     private readonly IKeyVaultKeyReader _keyReader;
     private readonly IKeyVaultSigner _signer;
 
-    // Populated wholesale on every ListKeysAsync call. CreateSignerAsync is only ever invoked for a
-    // KeyId that appeared on a KeyListing this same ListKeysAsync call most recently returned (per
-    // JwtSigningService{TOptions}.CreateSignerAsync's own contract), so looking up the corresponding
-    // versioned key URI and kid here is always safe. Replaced entirely (never mutated in place) on
-    // each refresh — never mutated in place, mirroring the base class's own snapshot replacement.
-    // volatile: ListKeysAsync writes this field under the base class's snapshot lock
-    // (JwtSigningService{TOptions}.EnsureSnapshotAsync), while CreateSignerAsync reads it under the
-    // base class's separate signer lock (EnsureActiveSignerAsync). Those are two different monitors
-    // with no happens-before edge between them, so without volatile a reader thread could observe a
-    // stale (possibly pre-initialization-complete) reference to the dictionary object itself.
+    // Snapshot of each version's key URI and kid, replaced wholesale on every ListKeysAsync call.
+    // CreateSignerAsync is only ever invoked for a KeyId this same call most recently returned, so
+    // the lookup is always safe.
+    // volatile: written under the base class's snapshot lock, read under its separate signer lock —
+    // no happens-before edge otherwise connects the two.
     private volatile IReadOnlyDictionary<string, (Uri KeyVersionUri, string Kid)> _versionMetadataById =
         new Dictionary<string, (Uri, string)>(StringComparer.Ordinal);
 
@@ -99,28 +73,19 @@ internal sealed class AzureKeyVaultRemoteSigningJwtSigningService : JwtSigningSe
                     "Create at least one key version before starting the host."));
         }
 
-        // Computed over allVersions — every version this key has ever recorded, including disabled
-        // ones — never over enabledVersions below. This is deliberate, not an oversight: Key
-        // Vault's list-key-versions read is only eventually consistent during a rare
-        // Microsoft-initiated regional failover, and a stale/incomplete read during exactly that
-        // window could transiently omit the true first-ever version. Computing "first ever" only
-        // over whatever subset happened to come back would then let version #2 masquerade as the
-        // first-ever version and activate immediately (ActivateAt = null), bypassing
-        // PublicationLead entirely and exposing relying parties to a key they never had a chance to
-        // observe in the JWKS first. Computing over the full, unfiltered history instead means a
-        // stale read can only affect this derivation by omitting every version outright, which
-        // already fails closed via the "no key versions" check above rather than silently promoting
-        // the wrong version. This mirrors the risk analysis accepted for the original Key Vault
-        // provider.
+        // Computed over allVersions, including disabled ones, never over enabledVersions below.
+        // Key Vault's list-versions read is only eventually consistent during a regional failover;
+        // if computed over a partial read, a stale response could let version #2 masquerade as
+        // "first ever" and activate immediately, bypassing PublicationLead. Over the full history,
+        // a stale read can only omit every version outright, which already fails closed above.
         var firstEverVersion = allVersions
             .OrderBy(v => v.CreatedOn)
             .ThenBy(v => v.Version, StringComparer.Ordinal)
             .First()
             .Version;
 
-        // Enabled is a Key Vault-side concept only — folded into "list enabled versions only" here
-        // rather than surfaced as a flag anywhere in the KeyListing/options contract. The base
-        // class's own kill-by-omission logic takes it from there.
+        // "Enabled" is a Key Vault-side concept only; the base class's kill-by-omission logic
+        // handles a version dropping out of this list.
         var enabledVersions = allVersions.Where(v => v.Enabled).ToList();
         if (enabledVersions.Count == 0)
         {
@@ -174,11 +139,10 @@ internal sealed class AzureKeyVaultRemoteSigningJwtSigningService : JwtSigningSe
     }
 
     /// <summary>
-    /// Derives a version's <see cref="KeyListing.ActivateAt"/> from Key Vault's own durable
-    /// <c>CreatedOn</c> timestamp (never observed/first-seen time):
-    /// <c>CreatedOn + publicationLead</c> for every version except the
+    /// Derives a version's <see cref="KeyListing.ActivateAt"/> from Key Vault's durable
+    /// <c>CreatedOn</c> timestamp: <c>CreatedOn + publicationLead</c>, except for the
     /// chronologically-first version ever recorded, which is eligible from startup. An explicit
-    /// <c>NotBefore</c> floors the result when it schedules the version's go-live later than that.
+    /// <c>NotBefore</c> pushes the result later when it is later than that baseline.
     /// </summary>
     private static DateTimeOffset? ComputeActivateAt(
         KeyVaultKeyVersionInfo version, string firstEverVersion, TimeSpan publicationLead)
@@ -199,10 +163,8 @@ internal sealed class AzureKeyVaultRemoteSigningJwtSigningService : JwtSigningSe
     /// <see cref="SignAsync"/> call is a network round trip.
     /// </summary>
     /// <remarks>
-    /// <see cref="Dispose"/> is deliberately a no-op: this wrapper introduces no per-activation
-    /// resource of its own to release, and <paramref name="signer"/> is a shared seam over pooled
-    /// <c>CryptographyClient</c> instances that every other activation also depends on — disposing
-    /// it here would break them all (see <see cref="ISigner"/>'s own Dispose contract).
+    /// <see cref="Dispose"/> is deliberately a no-op: <paramref name="signer"/> is a shared seam
+    /// that every other activation also depends on, so disposing it here would break them all.
     /// </remarks>
     private sealed class KeyVaultRemoteSigner(IKeyVaultSigner signer, Uri keyVersionUri, string kid, SigningAlgorithm algorithm)
         : ISigner

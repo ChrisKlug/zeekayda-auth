@@ -48,12 +48,9 @@ namespace ZeeKayDa.Auth.Logging;
 /// to <see langword="true"/> to opt out (development environments only).
 /// </para>
 /// <para>
-/// This is a defence-in-depth backstop. The Roslyn analyzer
-/// (<c>ZEEKAYDA0001</c>) is the primary preventive control: it enforces at compile time that
-/// every ZeeKayDa service injects <see cref="ISanitizingLogger{T}"/> rather than
-/// <see cref="ILogger{T}"/> directly. The CI log-hygiene grep
-/// (<c>.github/scripts/check_log_hygiene.sh</c>) and this runtime wrapper are defence-in-depth
-/// layers that remain in place regardless.
+/// This is a defence-in-depth backstop. The Roslyn analyzer (<c>ZEEKAYDA0001</c>) is the primary
+/// preventive control, enforcing at compile time that every ZeeKayDa service injects
+/// <see cref="ISanitizingLogger{T}"/> rather than <see cref="ILogger{T}"/> directly.
 /// </para>
 /// </remarks>
 internal sealed class SecretSanitizingLogger<T>(
@@ -131,11 +128,8 @@ internal sealed class SecretSanitizingLogger<T>(
         }
         else if (state is not string)
         {
-            // Non-string, non-IEnumerable<KVP> state cannot be inspected for sensitive key-value
-            // pairs. LoggerMessage.Define<T> and [LoggerMessage] source-generated states both
-            // implement IReadOnlyList<KVP> and are handled by the branch above; this guard exists
-            // for truly opaque custom state types passed directly to Log<TState>. Substitute a
-            // safe placeholder rather than risk leaking structured parameter values to sinks.
+            // Truly opaque custom state (not string, not IEnumerable<KVP>) cannot be inspected for
+            // sensitive key-value pairs, so substitute a safe placeholder rather than risk leaking it.
             const string blocked = "[ZeeKayDa: unscrubbable log state blocked]";
             inner.Log(logLevel, eventId, blocked, wrappedException, static (s, _) => s);
             return;
@@ -172,11 +166,8 @@ internal sealed class SecretSanitizingLogger<T>(
         }
 
         // Converts a structured-logging named template (e.g. "Count={Count:N0}") to an indexed
-        // string.Format template ("Count={0:N0}") and delegates to string.Format so that alignment
-        // specifiers, format specifiers, escaped braces ({{/}}), and duplicate placeholders are all
-        // handled correctly by the framework rather than re-implemented here.
-        // FormattedLogValues (which does this authoritatively) is internal, so this is the best
-        // available approach without reflection.
+        // string.Format template and delegates to string.Format, so alignment/format specifiers,
+        // escaped braces, and duplicate placeholders are all handled by the framework.
         private static string FormatTemplate(string template, Dictionary<string, object?> values)
         {
             var args = new List<object?>();

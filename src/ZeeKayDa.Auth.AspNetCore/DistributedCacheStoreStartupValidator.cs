@@ -13,21 +13,11 @@ namespace ZeeKayDa.Auth.AspNetCore;
 /// a warning when a non-<see cref="MemoryDistributedCache"/> implementation is detected.
 /// </summary>
 /// <remarks>
-/// <para>
-/// When no <see cref="IDistributedCache"/> is registered at all, the framework fails closed by
-/// throwing a <see cref="ZeeKayDaConfigurationException"/> — an absent cache is always a
-/// configuration error.
-/// </para>
-/// <para>
-/// When the resolved implementation is <see cref="MemoryDistributedCache"/> (the default
-/// in-process cache added by <c>AddDistributedMemoryCache()</c>), no warning is emitted
-/// because a single-node dev/test setup is the expected use-case for that type.
-/// </para>
-/// <para>
-/// Any other implementation is assumed to be a shared distributed cache. In that case a warning
-/// is emitted reminding operators that the built-in stores are non-atomic and must be replaced
-/// with an atomic implementation before going to production.
-/// </para>
+/// An absent <see cref="IDistributedCache"/> is always a configuration error and fails startup
+/// with <see cref="ZeeKayDaConfigurationException"/>. <see cref="MemoryDistributedCache"/> (the
+/// dev/test default) is expected and emits no warning; any other implementation is assumed to be
+/// a shared distributed cache, and a warning reminds operators that the built-in stores are
+/// non-atomic and must be replaced before production.
 /// </remarks>
 internal sealed class DistributedCacheStoreStartupValidator : IHostedService
 {

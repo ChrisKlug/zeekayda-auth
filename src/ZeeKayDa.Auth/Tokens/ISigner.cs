@@ -27,12 +27,10 @@ namespace ZeeKayDa.Auth.Tokens;
 /// </para>
 /// <para>
 /// <b>Ownership direction is the other half of this contract.</b> Every call to
-/// <c>CreateSignerAsync</c> <b>MUST</b> return a freshly created <see cref="ISigner"/> instance that
-/// is exclusively owned by the caller; it <b>MUST NOT</b> cache a previously returned instance and
-/// re-lend it from a second call. The base class's borrow/refcount machinery assumes that the
-/// instance handed back by each <c>CreateSignerAsync</c> call has no other live holder — the deleted
-/// legacy signing contract's reuse guards used to catch a violation of this at runtime, and this
-/// interface's contract must state it explicitly now that those guards are gone.
+/// <c>CreateSignerAsync</c> <b>MUST</b> return a freshly created <see cref="ISigner"/> instance
+/// that is exclusively owned by the caller; it <b>MUST NOT</b> cache a previously returned
+/// instance and re-lend it from a second call. The base class's borrow/refcount machinery assumes
+/// the instance handed back by each <c>CreateSignerAsync</c> call has no other live holder.
 /// </para>
 /// </remarks>
 public interface ISigner : IDisposable

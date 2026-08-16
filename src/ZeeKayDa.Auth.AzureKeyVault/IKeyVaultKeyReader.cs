@@ -12,8 +12,7 @@ internal interface IKeyVaultKeyReader
 {
     /// <summary>
     /// Enumerates every version Key Vault has ever recorded for the configured key, including
-    /// disabled and expired ones — the rotation algorithm needs the full history to durably
-    /// derive which version was created first.
+    /// disabled and expired ones — the rotation algorithm needs the full history.
     /// </summary>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     IAsyncEnumerable<KeyVaultKeyVersionInfo> GetKeyVersionsAsync(CancellationToken cancellationToken);

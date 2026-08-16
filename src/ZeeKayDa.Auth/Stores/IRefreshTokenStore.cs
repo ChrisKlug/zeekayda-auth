@@ -5,45 +5,29 @@ namespace ZeeKayDa.Auth.Stores;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <strong>Framework-sealed.</strong> This interface is the
-/// protocol surface the token endpoint depends on, but it is no longer a third-party extension
-/// point: the framework ships one sealed coordinator, <c>RefreshTokenStore</c>, that implements
-/// it. The interface stays <see langword="public"/> so it can be injected and consumed across
-/// assemblies, but an internal member (see below) means only assemblies named in
-/// <c>[InternalsVisibleTo]</c> can implement it — a third-party <c>class MyStore :
-/// IRefreshTokenStore</c> fails to compile. To back a new persistence technology, implement
-/// <see cref="IRefreshTokenGrantStore"/> instead.
+/// <strong>Framework-sealed.</strong> The framework ships one sealed coordinator,
+/// <c>RefreshTokenStore</c>, that implements this interface. It stays <see langword="public"/> so
+/// it can be injected and consumed across assemblies, but an internal member means only assemblies
+/// named in <c>[InternalsVisibleTo]</c> can implement it. To back a new persistence technology,
+/// implement <see cref="IRefreshTokenGrantStore"/> instead.
 /// </para>
 /// <para>
-/// <strong>Restart behaviour.</strong>
-/// The default in-memory store loses all refresh tokens on process restart. For a
-/// single-instance deployment where occasional deployment-triggered re-authentication is
-/// acceptable, this is fine. For continuous availability across restarts or rolling
-/// deployments, replace the underlying <see cref="IRefreshTokenGrantStore"/> with an
-/// implementation backed by a persistent store (e.g. a relational database or Cosmos).
+/// <strong>Restart and multi-instance behaviour.</strong> The default in-memory store loses all
+/// refresh tokens on process restart and is single-instance only — running multiple instances
+/// with it silently disables reuse detection, since each instance holds an independent view of
+/// consumed tokens. Replace the underlying <see cref="IRefreshTokenGrantStore"/> with a shared,
+/// atomic, persistent backend for continuous availability or multi-instance deployment.
 /// </para>
 /// <para>
-/// <strong>Single-instance only.</strong>
-/// The default in-memory store is single-instance only. Running multiple instances of the
-/// identity provider with the default store silently disables reuse detection — each
-/// instance holds an independent view of consumed tokens, so a replayed token presented to
-/// a different instance appears valid. Multi-instance deployments MUST replace the default
-/// with a shared, atomic backend.
-/// </para>
-/// <para>
-/// <strong>Multi-tenant limitation.</strong>
-/// This interface does not carry a <c>TenantId</c> parameter. Multi-tenant key-space
-/// isolation is the responsibility of the custom grant store implementation. A naive
-/// multi-tenant store that does not namespace grants or check tenant binding creates a
-/// confused-deputy risk — a token issued in one tenant could be replayed in another.
-/// Isolation requires a custom <see cref="IRefreshTokenGrantStore"/> that encodes tenant
-/// context in its storage and validates tenant binding on every lookup.
+/// <strong>Multi-tenant limitation.</strong> This interface does not carry a <c>TenantId</c>
+/// parameter. A custom <see cref="IRefreshTokenGrantStore"/> handling multiple tenants must
+/// namespace grants and validate tenant binding on every lookup, or a token issued in one tenant
+/// could be replayed in another.
 /// </para>
 /// <para>
 /// Implementations MUST throw <see cref="ZeeKayDaStoreException"/> (not raw infrastructure
-/// exceptions) when an underlying transport (cache, database, network) fails. Semantic
-/// outcomes such as <see cref="RefreshTokenConsumptionResult.NotFound"/> or
-/// <see cref="RefreshTokenConsumptionResult.AlreadyConsumed"/> are returned, not thrown.
+/// exceptions) when an underlying transport fails. Semantic outcomes such as
+/// <see cref="RefreshTokenConsumptionResult.NotFound"/> are returned, not thrown.
 /// </para>
 /// </remarks>
 public interface IRefreshTokenStore
@@ -97,18 +81,15 @@ public interface IRefreshTokenStore
     /// </returns>
     /// <remarks>
     /// <para>
-    /// The consume operation MUST be atomic. This is guaranteed by the sealed coordinator's use
-    /// of the single atomic invariant on <see cref="IRefreshTokenGrantStore.TryMarkConsumedAsync"/>:
-    /// two concurrent requests for the same handle produce exactly one
-    /// <see cref="RefreshTokenConsumptionResult.Consumed"/> and one
+    /// The consume operation MUST be atomic: two concurrent requests for the same handle produce
+    /// exactly one <see cref="RefreshTokenConsumptionResult.Consumed"/> and one
     /// <see cref="RefreshTokenConsumptionResult.AlreadyConsumed"/> outcome.
     /// </para>
     /// <para>
     /// On backend unavailability, implementations MUST throw <see cref="ZeeKayDaStoreException"/>;
-    /// they MUST NOT return <see cref="RefreshTokenConsumptionResult.NotFound"/>. Returning
-    /// <c>NotFound</c> on a transport failure silently suppresses reuse detection — the caller
-    /// cannot distinguish a genuine missing token from a store outage, so the reuse signal
-    /// would be swallowed rather than surfaced.
+    /// they MUST NOT return <see cref="RefreshTokenConsumptionResult.NotFound"/> — that would
+    /// silently suppress reuse detection, since the caller cannot distinguish a genuine missing
+    /// token from a store outage.
     /// </para>
     /// </remarks>
     /// <exception cref="ZeeKayDaStoreException">

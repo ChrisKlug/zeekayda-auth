@@ -31,27 +31,17 @@ public static class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensions
     /// if Key Vault latency or throttling limits are a concern.
     /// </para>
     /// <para>
-    /// Rotation bootstrap behavior: the very first key version this deployment ever uses activates
-    /// immediately (there is no prior published JWKS state any relying party could have cached).
-    /// Every subsequent rotation requires the new Key Vault key version to have existed for at
-    /// least <see cref="ZeeKayDa.Auth.Tokens.KeySourceOptions.PublicationLead"/> (its <c>ActivateAt</c>
-    /// is derived as <c>CreatedOn + PublicationLead</c>) before it is expected to sign anything — a
-    /// relying party could plausibly have cached a JWKS containing only the previous version.
-    /// Operators should create rotated-in key versions with that much lead time before they need to
-    /// become active.
+    /// The first key version a deployment ever uses activates immediately. Every subsequent
+    /// rotation requires the new version to have existed for at least
+    /// <see cref="ZeeKayDa.Auth.Tokens.KeySourceOptions.PublicationLead"/> before it signs anything,
+    /// so relying parties have had a chance to see it in a published JWKS — create rotated-in
+    /// versions with that much lead time. <c>PublicationLead</c> must exceed your relying parties'
+    /// actual JWKS cache TTL.
     /// </para>
     /// <para>
-    /// <see cref="ZeeKayDa.Auth.Tokens.KeySourceOptions.PublicationLead"/> defaults to
-    /// <see cref="ZeeKayDa.Auth.Tokens.KeySourceOptions.RefreshInterval"/> and must exceed your
-    /// relying parties' actual JWKS cache TTL — the library rejects values below a one-minute floor
-    /// as an almost-certain misconfiguration, but cannot verify a value above that floor is actually
-    /// long enough for your specific relying parties.
-    /// </para>
-    /// <para>
-    /// If the sole (or most recently active) key version reaches its Key Vault <c>ExpiresOn</c>
-    /// with no enabled successor version, key loading fails closed with a configuration error
-    /// rather than silently continuing to sign with an expired key or with none at all. This is
-    /// expected behavior, not a defect — rotate in a new key version before the active one expires.
+    /// If the active key version reaches its Key Vault <c>ExpiresOn</c> with no enabled successor,
+    /// key loading fails closed with a configuration error rather than signing with an expired or
+    /// absent key — rotate in a new version before the active one expires.
     /// </para>
     /// </remarks>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
@@ -119,33 +109,24 @@ public static class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensions
     /// <remarks>
     /// <para>
     /// The private key is downloaded from Azure Key Vault at startup and cached in process
-    /// memory. Signing is performed locally. An attacker who achieves process memory read gets a
-    /// permanent copy of the signing key. Use <c>AddAzureKeyVaultRemoteSigning</c> if the
+    /// memory. Signing is performed locally. An attacker who achieves process memory read gets
+    /// a permanent copy of the signing key. Use <c>AddAzureKeyVaultRemoteSigning</c> if the
     /// private key must never leave the vault.
     /// </para>
     /// <para>
     /// <paramref name="certificateIdentifier"/> must name a Key Vault <b>certificate</b> created
-    /// with an exportable key policy — Azure Key Vault's key-only <c>KeyClient.GetKeyAsync</c>
-    /// never returns private key material, regardless of a key's exportable flag, so this
-    /// provider instead downloads the certificate's linked secret (which carries the full PFX
-    /// only when the certificate's key policy is exportable). If the certificate was created with
-    /// a non-exportable policy, startup fails with a <see cref="ZeeKayDaConfigurationException"/>
-    /// explaining that <see cref="AddAzureKeyVaultRemoteSigning"/> should be used instead.
+    /// with an exportable key policy. Key-only <c>KeyClient.GetKeyAsync</c> never returns private
+    /// key material, so this provider downloads the certificate's linked secret instead, which
+    /// only carries the full PFX when the key policy is exportable. A non-exportable certificate
+    /// fails startup with a <see cref="ZeeKayDaConfigurationException"/> pointing at
+    /// <see cref="AddAzureKeyVaultRemoteSigning"/> as the alternative.
     /// </para>
     /// <para>
-    /// Rotation bootstrap behavior, the publish-then-activate delay, and the fail-closed behavior
-    /// on an expired active certificate with no enabled successor are identical to
-    /// <see cref="AddAzureKeyVaultRemoteSigning"/> — see that method's remarks for the full
-    /// explanation. <see cref="ZeeKayDa.Auth.Tokens.KeySourceOptions.RefreshInterval"/> also governs
-    /// how often this provider re-downloads private key material for every in-window certificate
-    /// version, which is more sensitive traffic than the remote-signing provider's public-key-only
-    /// refresh.
-    /// </para>
-    /// <para>
-    /// At startup, an informational log line records that the private key has been downloaded and
-    /// is cached in process memory, including the configured certificate identifier — this is a
-    /// deliberate architectural choice, not a misconfiguration, so it is logged at
-    /// <see cref="Microsoft.Extensions.Logging.LogLevel.Information"/>, not a warning level.
+    /// Rotation bootstrap, the publish-then-activate delay, and fail-closed behavior on expiry are
+    /// identical to <see cref="AddAzureKeyVaultRemoteSigning"/> — see its remarks. Because this
+    /// provider re-downloads private key material on every
+    /// <see cref="ZeeKayDa.Auth.Tokens.KeySourceOptions.RefreshInterval"/>, that traffic is more
+    /// sensitive than the remote-signing provider's public-key-only refresh.
     /// </para>
     /// </remarks>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>

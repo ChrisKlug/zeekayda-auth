@@ -12,27 +12,15 @@ namespace ZeeKayDa.Auth.FileSystem;
 /// filesystem and signs locally, in process, using each certificate's private-key handle.
 /// </summary>
 /// <remarks>
+/// The set of registered PEM files is fixed at configuration time, so <see cref="ListKeysAsync"/>
+/// runs exactly once for the lifetime of this service instance; the wall clock crossing each
+/// certificate's <c>NotBefore</c>/<c>NotAfter</c> is what drives which file becomes the active
+/// signer over time, with no further filesystem I/O. Picking up a rotated-in or replaced file
+/// requires a restart.
 /// <para>
-/// The complete set of registered PEM files is fixed at configuration time, so
-/// <see cref="ListKeysAsync"/> runs exactly once, ever, for the lifetime of this service instance.
-/// Only the wall clock crossing each file's certificate <c>NotBefore</c>/<c>NotAfter</c> — mapped onto
-/// each returned <see cref="KeyListing"/>'s
-/// <see cref="KeyListing.ActivateAt"/>/<see cref="KeyListing.ExpiresAt"/> — drives which registered
-/// file is the active signer; the base class recomputes that selection lazily on every call from the
-/// one-time snapshot, so multi-file rotation still switches the active signer over time with zero
-/// further filesystem I/O. Picking up a rotated-in or replaced file otherwise requires a restart.
-/// </para>
-/// <para>
-/// Least-privilege key loading: <see cref="ListKeysAsync"/> extracts only each file's public key and
-/// disposes the certificate immediately afterward, never retaining a private handle.
-/// <see cref="CreateSignerAsync"/> re-reads and re-parses only the single file the base class has
-/// selected as active, and only when that selection changes — every other registered file's private
-/// key material is never loaded a second time.
-/// </para>
-/// <para>
-/// <c>kid</c> is the RFC 7638 JWK thumbprint of each certificate's public key, derived by the base
-/// class from each <see cref="KeyListing.PublicKey"/> — never the file path, which is only this
-/// provider's own internal <see cref="KeyId"/>.
+/// <see cref="ListKeysAsync"/> extracts only each file's public key and disposes the certificate
+/// immediately afterward. <see cref="CreateSignerAsync"/> re-reads and re-parses only the file
+/// currently selected as active.
 /// </para>
 /// </remarks>
 internal sealed class PemFileSigningJwtSigningService : JwtSigningService<PemFileSigningOptions>

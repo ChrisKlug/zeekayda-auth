@@ -16,19 +16,15 @@ public class TokenRequestContext
     public required string ClientId { get; init; }
 
     /// <summary>
-    /// The parsed form body of the request, pre-read asynchronously by the token endpoint before
-    /// any authenticator is invoked. Required as an <c>init</c> property rather than delegating
-    /// to <see cref="Microsoft.AspNetCore.Http.HttpRequest.Form"/> because that getter is
-    /// synchronous: it blocks when <c>AllowSynchronousIO</c> is <see langword="false"/> (the
-    /// ASP.NET Core default since 3.0) and throws <see cref="System.InvalidOperationException"/>
-    /// on non-form content types — both conditions are attacker-controllable.
+    /// The parsed form body, pre-read asynchronously by the token endpoint before any
+    /// authenticator is invoked. Use this instead of <see cref="Microsoft.AspNetCore.Http.HttpRequest.Form"/>,
+    /// which is synchronous and can throw on non-form content types.
     /// </summary>
     public required IFormCollection Form { get; init; }
 
     /// <summary>
-    /// The HTTP request headers. Captured at context-construction time so all authenticators
-    /// see a consistent snapshot. Prefer this over <c>HttpContext.Request.Headers</c> inside
-    /// <see cref="IClientAuthenticator"/> implementations.
+    /// The HTTP request headers, captured at context-construction time so all authenticators see
+    /// a consistent snapshot. Prefer this over <c>HttpContext.Request.Headers</c>.
     /// </summary>
     public required IHeaderDictionary Headers { get; init; }
 }

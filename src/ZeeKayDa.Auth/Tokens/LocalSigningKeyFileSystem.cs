@@ -11,27 +11,13 @@ namespace ZeeKayDa.Auth.Tokens;
 /// ownership validation on Unix platforms.
 /// </summary>
 /// <remarks>
-/// <para>
-/// The current process UID from <c>getuid()</c> is compared against the directory owner UID
-/// obtained from <c>stat()</c> (<see cref="GetOwnerUid"/>) to detect attacker-controlled
-/// directories that pass the <c>0700</c> permission check but are owned by a different user.
-/// <see cref="GetLinkOwnerUid"/> uses <c>lstat()</c> instead wherever a path component might
-/// itself be a symlink and the owner of the *link entry*, not whatever it points at, is the
-/// signal needed — see its own remarks for why the distinction is security-critical.
-/// </para>
-/// <para>
-/// Two native stat structs are declared — one for macOS/BSD and one for Linux 64-bit — because
-/// the kernel ABI differs between platforms. Only the fields up to <c>st_uid</c> are bound;
-/// the remainder of each struct is covered by blittable scalar padding sized to the full struct
-/// on each OS. The same structs back both the <c>stat()</c> and <c>lstat()</c> bindings, since
-/// both syscalls fill an identical <c>struct stat</c> layout — they differ only in whether the
-/// kernel dereferences a trailing symlink before populating it.
-/// </para>
-/// <para>
-/// <c>[LibraryImport]</c> is used in preference to <c>[DllImport]</c> because the source
-/// generator produces fully managed marshaling code at build time, which is the .NET 7+
-/// recommended pattern for new interop.
-/// </para>
+/// The current process UID from <c>getuid()</c> is compared against a directory's owner UID
+/// (<see cref="GetOwnerUid"/>, via <c>stat()</c>) to detect attacker-controlled directories that
+/// pass the <c>0700</c> permission check but are owned by a different user.
+/// <see cref="GetLinkOwnerUid"/> uses <c>lstat()</c> instead wherever the owner of the *link
+/// entry* itself, not whatever it points at, is the signal needed. Separate native stat structs
+/// are declared for macOS/BSD and Linux 64-bit because the kernel ABI differs between platforms;
+/// only the fields up to <c>st_uid</c> are bound, with the rest covered by blittable padding.
 /// </remarks>
 [ExcludeFromCodeCoverage(Justification = "Platform-specific OS APIs cannot all be exercised on a single OS. Tests inject a fake IDevelopmentSigningKeyFileSystem instead.")]
 internal static partial class PosixInterop
@@ -85,15 +71,10 @@ internal static partial class PosixInterop
     /// </summary>
     /// <remarks>
     /// Deliberately distinct from <see cref="GetOwnerUid"/>, which calls <c>stat()</c> and therefore
-    /// follows a symlink to report the *target's* owner. That distinction matters wherever a caller
-    /// uses ownership as a trust signal for a path component that might itself be a symlink (e.g.
-    /// <c>FileSigningKeyReader.ValidateNoUntrustedSymlinkedAncestorUnix</c> in
-    /// <c>ZeeKayDa.Auth.FileSystem</c>, via <c>InternalsVisibleTo</c>): an unprivileged attacker can
-    /// create a symlink that *points at* a root-owned directory, and <c>stat()</c> on that link would
-    /// then wrongly report the target's root ownership rather than the attacker's own ownership of
-    /// the link they just created. <c>lstat()</c> reports the link entry's own owner regardless of
-    /// what it points at, which is the only sound signal for "could an unprivileged local attacker
-    /// have created or replaced this specific directory entry."
+    /// follows a symlink to report the *target's* owner. An unprivileged attacker can create a
+    /// symlink that points at a root-owned directory, and <c>stat()</c> on that link would wrongly
+    /// report root ownership rather than the attacker's own ownership of the link they created.
+    /// <c>lstat()</c> reports the link entry's own owner regardless of what it points at.
     /// </remarks>
     [UnsupportedOSPlatform("windows")]
     internal static uint? GetLinkOwnerUid(string path)
@@ -182,11 +163,6 @@ internal static partial class PosixInterop
 /// Default <see cref="IDevelopmentSigningKeyFileSystem"/> implementation that delegates to real OS APIs.
 /// On Unix, uses POSIX file-mode bits. On Windows, uses ACL-based access control.
 /// </summary>
-/// <remarks>
-/// This class is excluded from code coverage because its platform-specific branches cannot
-/// all be exercised on a single OS. Tests inject a fake <see cref="IDevelopmentSigningKeyFileSystem"/>
-/// instead.
-/// </remarks>
 [ExcludeFromCodeCoverage(Justification = "Platform-specific OS APIs cannot all be exercised on a single OS. Tests inject a fake instead.")]
 internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSystem
 {
@@ -211,12 +187,9 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
     /// <inheritdoc/>
     public async ValueTask<KeyFileContent> ReadKeyFileAsync(string keyPath, CancellationToken cancellationToken)
     {
-        // Open the file first, then validate and read from the same handle to close the
-        // TOCTOU window. ValidateNoSymlink walks parent directories by path string after the
-        // handle is open — an extremely narrow race exists there, but the open handle prevents
-        // the leaf file from being swapped, which is the highest-impact attack vector.
-        // Eliminating the residual parent-directory risk entirely would require openat/fstatat,
-        // which are not available via the .NET BCL.
+        // Open first, then validate and read from the same handle, closing the TOCTOU window for
+        // the leaf file. A narrow residual race remains for parent-directory swaps, which would
+        // require openat/fstatat (not available via the .NET BCL) to close entirely.
         using var stream = File.Open(keyPath, FileMode.Open, FileAccess.Read, FileShare.Read);
 
         ValidateNoSymlink(stream);
@@ -224,7 +197,6 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
         if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             ValidateFilePermissionsUnix(stream, keyPath);
 
-        // Read from the already-open handle so validation and read are on the same file descriptor.
         var bytes = new byte[stream.Length];
         await stream.ReadExactlyAsync(bytes, cancellationToken).ConfigureAwait(false);
         return new KeyFileContent(bytes);
@@ -252,18 +224,16 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
             return;
         }
 
-        // Note: Directory.CreateDirectory uses the process umask (typically 0755), so there is a
-        // narrow window between creation and SetUnixFileMode where the directory exists with looser
-        // permissions. Eliminating this would require a P/Invoke to mkdir(2) with mode 0700.
-        // For this dev-only provider the window is acceptable; the key file itself is created with
-        // atomic 0600 via FileStreamOptions.UnixCreateMode and is the true security boundary.
+        // Directory.CreateDirectory uses the process umask, leaving a narrow window before
+        // SetUnixFileMode where the directory has looser permissions. Acceptable for this dev-only
+        // provider since the key file itself is the true security boundary (atomic 0600 below).
         Directory.CreateDirectory(fullPath);
 
         var mode = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
         File.SetUnixFileMode(fullPath, mode);
 
-        // The leaf was just created by this process so we own it. Validate ancestor directories
-        // that pre-existed — an attacker who owns an ancestor can rename or replace the subtree.
+        // The leaf was just created by this process, so validate ancestors that pre-existed —
+        // an attacker who owns an ancestor can rename or replace the subtree.
         var parent = Path.GetDirectoryName(fullPath);
         if (parent is not null)
             ValidateDirectoryChainOwnershipUnix(parent);
@@ -292,11 +262,9 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
     [UnsupportedOSPlatform("windows")]
     private static void ValidateDirectoryChainOwnershipUnix(string startDirectory)
     {
-        // Every component of the directory chain the provider creates or writes into
-        // MUST be owned by the current user. Walk from startDirectory upward, checking ownership
-        // on every component that exists. Stop at root-owned (uid 0) directories — those are
-        // OS-managed and trusted. This prevents an attacker who owns an ancestor directory from
-        // renaming or replacing the signing-key subtree even if the leaf passes all checks.
+        // Walks from startDirectory upward, checking ownership on every existing component, so an
+        // attacker who owns an ancestor cannot rename or replace the signing-key subtree even if
+        // the leaf passes all checks. Stops at root-owned (uid 0) directories, which are trusted.
         var currentUid = PosixInterop.GetCurrentUid();
         var current = startDirectory;
 
@@ -339,7 +307,7 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
     [UnsupportedOSPlatform("windows")]
     private static async ValueTask WriteKeyFileUnixAsync(string keyPath, ReadOnlyMemory<char> pem, CancellationToken cancellationToken)
     {
-        // Create with 0600 atomically — no create-then-chmod window.
+        // 0600 applied atomically at creation — no create-then-chmod window.
         var options = new FileStreamOptions
         {
             Mode = FileMode.CreateNew,
@@ -357,8 +325,7 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
     [UnsupportedOSPlatform("windows")]
     private static void ValidateFilePermissionsUnix(FileStream stream, string keyPath)
     {
-        // Validate permissions on the already-open handle to eliminate the TOCTOU window
-        // between permission check and file read.
+        // Validated on the already-open handle to eliminate the TOCTOU window.
         var mode = File.GetUnixFileMode(stream.SafeFileHandle);
 
         var groupOrOtherBits =
@@ -378,12 +345,10 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
 
     private static void ValidateNoSymlink(FileStream stream)
     {
-        // Inspect the open handle's path rather than the original string path.
-        // On Windows, SafeFileHandle.IsInvalid would catch a broken symlink, but
-        // FileSystemInfo.LinkTarget on the resolved name is the clearest cross-platform check.
+        // Inspects the open handle's resolved path — FileSystemInfo.LinkTarget is the clearest
+        // cross-platform check.
         var resolvedPath = stream.Name;
 
-        // Check the leaf file itself.
         var info = new FileInfo(resolvedPath);
         if (info.LinkTarget is not null)
         {
@@ -395,9 +360,8 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
                     "Remove the symlink and restart the application."));
         }
 
-        // Walk every parent directory component to catch symlinks in the path hierarchy.
-        // An attacker with directory write access could redirect a parent directory to
-        // an attacker-controlled location even when the leaf file itself is not a symlink.
+        // Walks every parent directory to catch a symlink an attacker with directory-write access
+        // could use to redirect a parent even when the leaf itself is not a symlink.
         var directory = Path.GetDirectoryName(resolvedPath);
         while (!string.IsNullOrEmpty(directory))
         {

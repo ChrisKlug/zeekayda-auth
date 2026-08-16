@@ -14,23 +14,15 @@ namespace ZeeKayDa.Auth.Stores;
 /// The framework's sealed <see cref="IRefreshTokenStore"/> coordinator.
 /// </summary>
 /// <remarks>
-/// <para>
 /// Owns everything protocol-critical: handle hashing into <see cref="StoreKey"/>, Data
 /// Protection encryption, the single-use compare-and-set pivot and its atomicity, fail-closed
-/// I/O (<see cref="StoreGuard.Guarded{T}(Func{ValueTask{T}}, string)"/>), logical expiry / clock
-/// skew, and outcome selection. Persists cleartext queryable columns plus one encrypted payload
-/// through an injected <see cref="IRefreshTokenGrantStore"/>, which has no knowledge of any of
-/// the above.
-/// </para>
-/// <para>
-/// <strong>One <c>Unprotect</c> catch site.</strong> Unlike the authorization-code
-/// coordinator, reuse (<c>Consumed</c> status), revocation, expiry, and client mismatch are all
-/// decided from cleartext columns on <see cref="RefreshTokenGrant"/> before anything is
-/// decrypted. The only <c>Unprotect</c> call is on the happy path, after the atomic
-/// consume-pivot has already committed, and its sole failure mode degrades to
-/// <see cref="RefreshTokenConsumptionResult.NotFound"/> — fail-closed, because the token is
-/// already dead and no successor is issued.
-/// </para>
+/// I/O, logical expiry/clock skew, and outcome selection — persisting cleartext queryable columns
+/// plus one encrypted payload through an injected <see cref="IRefreshTokenGrantStore"/>, which has
+/// no knowledge of any of the above. Reuse, revocation, expiry, and client mismatch are all
+/// decided from cleartext columns before anything is decrypted; the only <c>Unprotect</c> call is
+/// on the happy path, after the atomic consume-pivot has already committed, and its sole failure
+/// mode degrades to <see cref="RefreshTokenConsumptionResult.NotFound"/> — fail-closed, since the
+/// token is already dead and no successor is issued.
 /// </remarks>
 internal sealed class RefreshTokenStore : IRefreshTokenStore
 {
@@ -87,9 +79,9 @@ internal sealed class RefreshTokenStore : IRefreshTokenStore
         var key = BuildHandleKey(tokenHandle);
         var now = _timeProvider.GetUtcNow();
 
-        // §5: clamp — the whole family shares one absolute ceiling; a token never outlives it.
-        // Applied to the encrypted entry too, so a caller reading Consumed.Entry.ExpiresAt never
-        // sees a value larger than what the cleartext column actually enforces.
+        // The whole family shares one absolute ceiling, applied here to the encrypted entry too, so
+        // a caller reading Consumed.Entry.ExpiresAt never sees a value larger than what the
+        // cleartext column actually enforces.
         var expiresAt = Min(now + _refreshTokenLifetime, entry.FamilyAbsoluteExpiry);
         var clampedEntry = entry with { ExpiresAt = expiresAt };
 
@@ -165,7 +157,7 @@ internal sealed class RefreshTokenStore : IRefreshTokenStore
         if (grant is null)
             return new RefreshTokenConsumptionResult.NotFound();
 
-        // §4: cleartext decisions, in order, before anything is decrypted.
+        // Cleartext decisions, in order, before anything is decrypted.
         if (grant.Status == RefreshGrantStatus.Revoked)
             return new RefreshTokenConsumptionResult.Revoked { FamilyId = grant.FamilyId };
 
@@ -200,8 +192,8 @@ internal sealed class RefreshTokenStore : IRefreshTokenStore
         }
         catch (Exception ex) when (ex is CryptographicException or JsonException)
         {
-            // §7: the single catch site. The token is already dead (marked Consumed above), so
-            // no successor is issued and no reuse is enabled — fail-closed.
+            // The single catch site. The token is already dead (marked Consumed above), so no
+            // successor is issued and no reuse is enabled — fail-closed.
             _ = ex;
             return new RefreshTokenConsumptionResult.NotFound();
         }
@@ -213,12 +205,9 @@ internal sealed class RefreshTokenStore : IRefreshTokenStore
         ArgumentNullException.ThrowIfNull(familyId);
         cancellationToken.ThrowIfCancellationRequested();
 
-        // Unconditionally insert a durable revocation sentinel FIRST. This closes the case where
-        // the family has zero rows at revoke time (e.g. an authorization-code replay racing ahead
-        // of its own first StoreAsync) — without it, the bulk mark below would match nothing and
-        // leave no trace for the IsFamilyRevokedAsync gate to find. The sentinel alone is self-sufficient: it arms the
-        // gate for the whole family regardless of whether any real row exists yet, and regardless
-        // of a crash between this step and the bulk mark below.
+        // Unconditionally insert a durable revocation sentinel first. This closes the case where
+        // the family has zero rows at revoke time — without it, the bulk mark below would match
+        // nothing and leave no trace for the IsFamilyRevokedAsync gate to find.
         await InsertRevocationSentinelAsync(familyId, cancellationToken).ConfigureAwait(false);
 
         await Guarded(
@@ -266,27 +255,14 @@ internal sealed class RefreshTokenStore : IRefreshTokenStore
     /// a confirmed collision on the sentinel's own deterministic key as an idempotent no-op.
     /// </summary>
     /// <remarks>
-    /// <para>
     /// The sentinel's <see cref="RefreshTokenGrant.HandleHash"/> is derived solely from
-    /// <paramref name="familyId"/> (never a random handle), so it is the same on every call for
-    /// the same family. <see cref="IRefreshTokenGrantStore.InsertAsync"/>'s contract still throws
-    /// on any handle collision — that stays correct for the 256-bit random handles every real
-    /// grant uses.
-    /// </para>
-    /// <para>
-    /// <see cref="StoreGuard.Guarded{T}(Func{ValueTask{T}}, string)"/> wraps every non-cancellation
-    /// backend fault into the same <see cref="ZeeKayDaStoreException"/> type, so a genuine
-    /// self-collision with our own prior sentinel and a genuine transport/database fault look
-    /// identical at the exception site — the exception type/message must never be used to infer
-    /// which one occurred. Instead, an <see cref="IRefreshTokenGrantStore.InsertAsync"/> failure is
-    /// only ever treated as benign after a confirming <see cref="IRefreshTokenGrantStore.FindByHandleAsync"/>
-    /// read shows the sentinel's exact <see cref="RefreshTokenGrant.HandleHash"/> durably present
-    /// with <see cref="RefreshGrantStatus.Revoked"/>. If that read shows the row absent (or present
-    /// but not <c>Revoked</c>), the original failure was a genuine fault and is rethrown — this
-    /// method never lets <see cref="RevokeFamilyAsync"/> return successfully while the sentinel is
-    /// not confirmed durable. If the confirming read itself throws, that propagates unchanged
-    /// (fail-closed, per <see cref="IRefreshTokenGrantStore.FindByHandleAsync"/>'s own contract).
-    /// </para>
+    /// <paramref name="familyId"/>, so it is the same on every call for the same family.
+    /// <see cref="StoreGuard.Guarded{T}(Func{ValueTask{T}}, string)"/> wraps every backend fault
+    /// into the same <see cref="ZeeKayDaStoreException"/> type, so a genuine self-collision and a
+    /// genuine transport fault look identical at the exception site — the exception type/message
+    /// must never be used to infer which occurred. An insert failure is only ever treated as
+    /// benign after a confirming read shows the sentinel durably present with
+    /// <see cref="RefreshGrantStatus.Revoked"/>; otherwise the original failure is rethrown.
     /// </remarks>
     private async Task InsertRevocationSentinelAsync(string familyId, CancellationToken cancellationToken)
     {

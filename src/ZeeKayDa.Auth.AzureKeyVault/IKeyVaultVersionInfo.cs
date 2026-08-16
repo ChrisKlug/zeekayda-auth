@@ -2,12 +2,8 @@ namespace ZeeKayDa.Auth.AzureKeyVault;
 
 /// <summary>
 /// The rotation-relevant metadata shared by every Key Vault "version-of-something" this package
-/// signs with — currently <see cref="KeyVaultKeyVersionInfo"/> (a Key Vault key version) and
-/// <see cref="KeyVaultCertificateVersionInfo"/> (a Key Vault certificate version). Each provider's
-/// own <c>ListKeysAsync</c> override derives every included version's <see cref="ZeeKayDa.Auth.Tokens.KeyListing"/>
-/// from this shared shape — the base <see cref="ZeeKayDa.Auth.Tokens.JwtSigningService{TOptions}"/>
-/// engine derives the actual activation/retirement timeline from the returned
-/// <see cref="ZeeKayDa.Auth.Tokens.KeyListing"/>s.
+/// signs with — currently <see cref="KeyVaultKeyVersionInfo"/> and
+/// <see cref="KeyVaultCertificateVersionInfo"/>.
 /// </summary>
 internal interface IKeyVaultVersionInfo
 {

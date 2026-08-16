@@ -8,22 +8,13 @@ namespace ZeeKayDa.Auth.Clients;
 /// <see cref="IClientSecretHasher"/> implementations and enforces timing-oracle mitigations.
 /// </summary>
 /// <remarks>
-/// <para>
 /// Registered as the concrete type <see cref="CompositeClientSecretHasher"/> — NOT as
 /// <see cref="IClientSecretHasher"/> — to prevent self-injection through
 /// <see cref="IEnumerable{T}"/>, which would cause infinite recursion on first verify.
-/// </para>
-/// <para>
-/// <strong>Timing oracle defence.</strong>
-/// <c>PadTiming()</c> fires on failure when the matched hasher is NOT the default hasher.
-/// In a standard single-PBKDF2 deployment this adds no work; custom faster hashers cannot
-/// reopen a timing oracle.
-/// </para>
-/// <para>
-/// <strong>Startup cost.</strong> The constructor pre-computes <c>_dummySecret</c> via the
-/// default hasher. For PBKDF2 at 600,000 iterations this takes roughly 600 ms — intentional,
-/// not a bug. The cost is paid once at host startup.
-/// </para>
+/// <c>PadTiming()</c> fires on failure when the matched hasher is not the default hasher, so a
+/// faster custom hasher cannot reopen a timing oracle. The constructor's ~600 ms cost to
+/// pre-compute <c>_dummySecret</c> via PBKDF2 at 600,000 iterations is intentional, paid once at
+/// host startup.
 /// </remarks>
 internal sealed class CompositeClientSecretHasher : IClientSecretFactory
 {
@@ -35,9 +26,7 @@ internal sealed class CompositeClientSecretHasher : IClientSecretFactory
     /// </summary>
     internal const int MaxActiveSharedSecretsPerClient = 2;
 
-    // Fixed-length non-empty dummy presented value. Length matches a typical client secret so
-    // PBKDF2 timing is identical to a real verification (cost is dominated by iteration count,
-    // not input length, but explicit is better than implicit).
+    // Fixed-length non-empty dummy presented value, matching a typical client secret's length.
     private const string DummyPresented = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"; // 32 chars
 
     private readonly IReadOnlyList<IClientSecretHasher> _hashers;
@@ -55,9 +44,7 @@ internal sealed class CompositeClientSecretHasher : IClientSecretFactory
         _hashers = hasherList;
         _default = ResolveDefault(hasherList, registrationOptions.Value);
 
-        // Pre-computed via the default hasher's Create path so its parameters (iterations,
-        // salt, hash size) match exactly what VerifyUnknownClientForTimingOnly and PadTiming
-        // will encounter on a real verification.
+        // Pre-computed via the default hasher so its parameters match a real verification.
         _dummySecret = _default.Create(DummyPresented);
     }
 
@@ -73,8 +60,6 @@ internal sealed class CompositeClientSecretHasher : IClientSecretFactory
 
         var result = matched.Verify(stored, presented);
 
-        // Pad timing on failure for non-default hashers to prevent a faster
-        // custom hasher from reopening a timing oracle.
         if (!result && !ReferenceEquals(matched, _default))
             PadTiming();
 

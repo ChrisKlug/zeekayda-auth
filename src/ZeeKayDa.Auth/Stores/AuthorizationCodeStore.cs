@@ -105,8 +105,8 @@ internal sealed class AuthorizationCodeStore : IAuthorizationCodeStore
         }
         catch (Exception ex) when (ex is CryptographicException or JsonException)
         {
-            // §7: the entry is unusable — there is nothing to hand back — so the redeem path
-            // returns NotFound. Distinct from the tombstone catch site below.
+            // The entry is unusable — there is nothing to hand back — so the redeem path returns
+            // NotFound. Distinct from the tombstone catch site below.
             return new AuthorizationCodeRedemptionResult.NotFound();
         }
 
@@ -160,9 +160,9 @@ internal sealed class AuthorizationCodeStore : IAuthorizationCodeStore
                 "Failed to parse the authorization code redemption tombstone.", ex);
         }
 
-        // §7: FamilyId is plaintext and recoverable independently of ProtectedSecret. Attempting
-        // the unprotect here (and discarding the result either way) pins the two-catch-site
-        // asymmetry: a rotated Data Protection key must not degrade this outcome to NotFound.
+        // FamilyId is plaintext and recoverable independently of ProtectedSecret. Attempting the
+        // unprotect here (and discarding the result either way) pins the two-catch-site asymmetry:
+        // a rotated Data Protection key must not degrade this outcome to NotFound.
         try
         {
             _protector.Unprotect(envelope.ProtectedSecret);

@@ -187,18 +187,16 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
             }
         }
 
-        // AC-4c: A zero or negative refresh token lifetime is nonsensical and must be rejected at startup.
+        // A zero or negative refresh token lifetime is nonsensical and must be rejected at startup.
         if (options.TokenEndpoint.RefreshTokenLifetime <= TimeSpan.Zero)
         {
             errors.Add(
                 "AuthorizationServerOptions.TokenEndpoint.RefreshTokenLifetime must be greater than zero.");
         }
 
-        // AC-4d: RefreshTokenLifetime must be >= AuthorizationCodeLifetime so that the authorization
-        // code tombstone retention window (set to RefreshTokenLifetime by default) covers the full
-        // authorization code validity window. If RefreshTokenLifetime < AuthorizationCodeLifetime,
-        // the tombstone could expire before a delayed code replay is detected, allowing an attacker
-        // to escape the RFC 9700 §2.1.1 family-revocation mandate.
+        // RefreshTokenLifetime must be >= AuthorizationCodeLifetime so the authorization code
+        // tombstone retention window covers the full code validity window — otherwise a delayed
+        // code replay could escape the RFC 9700 §2.1.1 family-revocation mandate.
         if (options.TokenEndpoint.RefreshTokenLifetime > TimeSpan.Zero &&
             options.AuthorizationEndpoint.AuthorizationCodeLifetime > TimeSpan.Zero &&
             options.TokenEndpoint.RefreshTokenLifetime < options.AuthorizationEndpoint.AuthorizationCodeLifetime)
@@ -339,7 +337,7 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
                 "See RFC 7636 §4.3 and RFC 8414 §2.");
         }
 
-        // AC-4a: RFC 9700 §2.1.1 requires authorization codes to be short-lived (max 10 minutes).
+        // RFC 9700 §2.1.1 requires authorization codes to be short-lived (max 10 minutes).
         if (options.AuthorizationEndpoint.AuthorizationCodeLifetime > TimeSpan.FromSeconds(600))
         {
             errors.Add(
@@ -348,7 +346,7 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
                 "of RFC 9700 §2.1.1.");
         }
 
-        // AC-4b: A zero or negative lifetime is nonsensical and must be rejected at startup.
+        // A zero or negative lifetime is nonsensical and must be rejected at startup.
         if (options.AuthorizationEndpoint.AuthorizationCodeLifetime <= TimeSpan.Zero)
         {
             errors.Add(

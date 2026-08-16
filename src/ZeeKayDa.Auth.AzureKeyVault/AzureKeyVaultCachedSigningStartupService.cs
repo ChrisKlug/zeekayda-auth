@@ -11,21 +11,13 @@ namespace ZeeKayDa.Auth.AzureKeyVault;
 /// signing private key in process memory for local signing.
 /// </summary>
 /// <remarks>
-/// <para>
-/// Pre-warming (forcing <see cref="IJwtSigningService.GetSigningKeysAsync"/> to run) and full
-/// materialize-and-verify of the active signer are now handled once, generically, for every signing
-/// provider by the framework-owned <c>SigningStartupSelfTestHostedService</c> — this class keeps
-/// only the one genuinely provider-specific behavior: the memory-residency log line below, which no
-/// other provider needs.
-/// </para>
-/// <para>
-/// The log is emitted at <see cref="LogLevel.Information"/>, not <see cref="LogLevel.Warning"/> or
-/// <see cref="LogLevel.Critical"/> — caching the private key in process memory is a legitimate,
-/// deliberate architectural choice for this provider (unlike the local-development provider's
-/// ephemeral/file-backed key, which is never appropriate outside development), so it does not
-/// warrant a warning-level signal. It must still be visible in logs so operators can see, at a
-/// glance, that this deployment will hold a permanent copy of the signing key in memory.
-/// </para>
+/// Pre-warming and materialize-and-verify of the active signer are handled generically for every
+/// provider by the framework-owned <c>SigningStartupSelfTestHostedService</c>; this class keeps
+/// only the one provider-specific behavior: the memory-residency log line below. It is logged at
+/// <see cref="LogLevel.Information"/>, not a warning level, since caching the private key in
+/// process memory is a deliberate architectural choice for this provider, not a misconfiguration
+/// — but it must still be visible so operators can see this deployment holds a permanent copy of
+/// the signing key in memory.
 /// </remarks>
 internal sealed class AzureKeyVaultCachedSigningStartupService : IHostedService
 {

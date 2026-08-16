@@ -9,14 +9,9 @@ namespace ZeeKayDa.Auth.TestKit.Stores;
 /// is a genuine atomic insert-if-absent, not a read-then-write with a TOCTOU window.
 /// </summary>
 /// <remarks>
-/// Ships in the <c>ZeeKayDa.Auth.TestKit</c> package, not <c>ZeeKayDa.Auth</c> itself. Reference
-/// <c>ZeeKayDa.Auth.TestKit</c> from your own test project, derive this class, and implement
-/// <see cref="CreateStore"/> to return your <see cref="IAuthorizationCodeBackingStore"/>. You do
-/// not need to construct a <see cref="StoreKey"/> yourself — <see cref="StoreKey"/>'s constructor
-/// stays <c>internal</c> to <c>ZeeKayDa.Auth</c>, and this kit constructs the
-/// <see cref="StoreKey"/> values it needs internally via the friend-assembly access granted to
-/// <c>ZeeKayDa.Auth.TestKit</c>. This is what lets a genuine third-party backing-store author
-/// derive and run the kit from their own external test project.
+/// Reference <c>ZeeKayDa.Auth.TestKit</c> from your own test project, derive this class, and
+/// implement <see cref="CreateStore"/> to return your <see cref="IAuthorizationCodeBackingStore"/>.
+/// You do not need to construct a <see cref="StoreKey"/> yourself — this kit builds one internally.
 /// </remarks>
 public abstract class AuthorizationCodeBackingStoreConformanceTests
 {
@@ -26,22 +21,17 @@ public abstract class AuthorizationCodeBackingStoreConformanceTests
     protected abstract IAuthorizationCodeBackingStore CreateStore();
 
     /// <summary>
-    /// Override to <see langword="false"/> for backends that do not support atomic
-    /// insert-if-absent (e.g. the first-party <c>DistributedCacheAuthorizationCodeBackingStore</c>,
-    /// which is documented dev/test-only and explicitly non-atomic). Production backends MUST
-    /// support this and MUST NOT override it to <see langword="false"/>.
+    /// Override to <see langword="false"/> only for a non-atomic dev/test backend (e.g. the
+    /// first-party <c>DistributedCacheAuthorizationCodeBackingStore</c>). Production backends
+    /// MUST support atomic insert-if-absent.
     /// </summary>
     protected virtual bool SupportsAtomicInsert => true;
 
     /// <summary>
-    /// Override to provide a store instance whose underlying transport always throws
-    /// <paramref name="fault"/> on any operation, to prove <c>GetAsync</c>/<c>TryInsertAsync</c>/
-    /// <c>RemoveAsync</c> do not swallow transport faults. Return
-    /// <see langword="null"/> if this backend has no injectable transport-failure point (e.g. a
-    /// pure in-process data structure with nothing to fail) — the fault-injection tests will then
-    /// be skipped for that subclass, and the subclass MUST say so explicitly by overriding and
-    /// returning <see langword="null"/> (don't leave the method un-overridden/abstract if there's
-    /// truly nothing to inject).
+    /// Override to provide a store whose underlying transport always throws
+    /// <paramref name="fault"/>, proving fault propagation is not swallowed. Return
+    /// <see langword="null"/> if the backend has no injectable failure point — the
+    /// fault-injection tests are then skipped for that subclass.
     /// </summary>
     protected virtual IAuthorizationCodeBackingStore? CreateFaultInjectedStore(Exception fault) => null;
 
@@ -133,10 +123,8 @@ public abstract class AuthorizationCodeBackingStoreConformanceTests
     }
 
     /// <summary>
-    /// The dangerous one: if <c>GetAsync</c> swallows a transport fault and returns
-    /// <see langword="null"/>, the coordinator reads that as "confirmed absent" — on the replay
-    /// path this reads as "code not yet redeemed," silently reopening the replay window
-    /// (RFC 9700 §2.1.1).
+    /// If <c>GetAsync</c> swallows a transport fault and returns <see langword="null"/>, the
+    /// coordinator reads that as "confirmed absent", silently reopening the replay window.
     /// </summary>
     [Fact]
     public async Task GetAsync_propagates_a_transport_fault_instead_of_swallowing_it()

@@ -16,38 +16,24 @@ namespace ZeeKayDa.Auth.AzureKeyVault;
 /// <see cref="Azure.Security.KeyVault.Secrets.SecretClient"/> instances.
 /// </summary>
 /// <remarks>
-/// <para>
-/// Azure Key Vault's <c>KeyClient.GetKeyAsync</c> never returns private key material, regardless
-/// of a key's exportable flag — that is the mechanism the remote-signing provider uses, and it is
-/// public-key-only by design (see <see cref="KeyVaultKeyReader"/>). True private key export
-/// requires downloading the certificate's linked secret instead: every Key Vault certificate has
-/// an addressable secret sharing its name, and — only when the certificate's key policy is
-/// exportable — that secret's value contains the full PFX (certificate plus private key).
-/// </para>
-/// <para>
-/// Every <see cref="Azure.RequestFailedException"/> and other transport fault raised by the
-/// underlying SDK is mapped here to a <see cref="ZeeKayDaConfigurationException"/> carrying a
-/// stable failure code and enough context (vault, certificate name, HTTP status, SDK error code)
+/// True private key export requires downloading the certificate's linked secret, since
+/// <c>KeyClient.GetKeyAsync</c> never returns private key material regardless of a key's
+/// exportable flag; the secret's value contains the full PFX only when the key policy is
+/// exportable. Every transport fault from the SDK is mapped to a
+/// <see cref="ZeeKayDaConfigurationException"/> carrying a stable failure code and enough context
 /// to be actionable, without ever including key material.
-/// </para>
 /// <para>
-/// The downloaded PFX is parsed with <see cref="Pkcs12Info"/> — a pure managed ASN.1/PKCS#12
-/// parser — rather than <c>X509CertificateLoader.LoadPkcs12</c>. The latter always constructs an
-/// OS-backed <c>X509Certificate2</c>, and on macOS there is no way to do that without writing the
-/// private key to a transient keychain on disk: <c>X509KeyStorageFlags.EphemeralKeySet</c> throws
-/// <see cref="PlatformNotSupportedException"/> there rather than honoring the "never touch disk"
-/// contract. Parsing the PKCS#12 structure directly and importing the key bag straight into an
-/// <see cref="RSA"/>/<see cref="ECDsa"/> instance keeps the private key in managed memory only, on
-/// every platform, with no OS keystore involved at all.
+/// The downloaded PFX is parsed with <see cref="Pkcs12Info"/>, a pure managed ASN.1/PKCS#12
+/// parser, rather than <c>X509CertificateLoader.LoadPkcs12</c> — the latter always constructs an
+/// OS-backed <c>X509Certificate2</c>, and on macOS that requires writing the private key to a
+/// transient keychain on disk. Parsing directly and importing the key bag into an
+/// <see cref="RSA"/>/<see cref="ECDsa"/> instance keeps the private key in managed memory only.
 /// </para>
 /// </remarks>
 internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
 {
-    // Key Vault's default (and, in practice, only realistic) content type for a managed
-    // certificate's secret value. PEM-formatted secrets are a documented possibility for
-    // certificates imported with a PEM policy, but supporting that format would require parsing
-    // and re-assembling a PEM certificate/key chain locally — out of scope here; such a
-    // certificate fails fast below with an actionable message rather than being silently mishandled.
+    // Key Vault's default content type for a managed certificate's secret value. PEM-formatted
+    // secrets are out of scope here; such a certificate fails fast below instead.
     private const string Pkcs12ContentType = "application/x-pkcs12";
 
     private readonly CertificateClient _certificateClient;
@@ -120,10 +106,8 @@ internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
     {
         ArgumentException.ThrowIfNullOrEmpty(version);
 
-        // Deliberately does not touch _secretClient at all: CertificateClient's own response
-        // already carries the public certificate (Cer) without requiring the secrets/get
-        // permission or downloading the PFX — see the class remarks for why that matters for
-        // every included version except the active signer.
+        // Deliberately does not touch _secretClient: CertificateClient's response already carries
+        // the public certificate (Cer) without requiring secrets/get or downloading the PFX.
         var certificate = await GetCertificateVersionAsync(version, cancellationToken).ConfigureAwait(false);
         return ExtractPublicKey(certificate.Cer, version);
     }
@@ -179,9 +163,8 @@ internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
     }
 
     /// <summary>
-    /// Extracts the public key from a certificate version's CER-formatted public certificate
-    /// (<see cref="KeyVaultCertificate.Cer"/>) — never the linked secret/PFX, so this never
-    /// requires the <c>secrets/get</c> permission and never touches private key material.
+    /// Extracts the public key from a certificate version's CER-formatted public certificate,
+    /// never the linked secret/PFX, so this never requires <c>secrets/get</c>.
     /// </summary>
     private (AsymmetricAlgorithm, SigningKeyType) ExtractPublicKey(byte[] cerBytes, string version)
     {
@@ -265,9 +248,8 @@ internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
     }
 
     /// <summary>
-    /// Parses a PKCS#12 payload purely in managed memory (see the class remarks for why this is
-    /// used instead of <c>X509CertificateLoader.LoadPkcs12</c>) and imports the first private key
-    /// bag found into an <see cref="RSA"/> or <see cref="ECDsa"/> instance.
+    /// Parses a PKCS#12 payload purely in managed memory and imports the first private key bag
+    /// found into an <see cref="RSA"/> or <see cref="ECDsa"/> instance.
     /// </summary>
     private (AsymmetricAlgorithm, SigningKeyType) ExtractPrivateKeyFromPkcs12(byte[] pfxBytes, string version)
     {
@@ -275,10 +257,8 @@ internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
 
         foreach (var safeContents in pkcs12.AuthenticatedSafe)
         {
-            // A Key Vault-exported PFX has no real password, but PKCS#12 treats a null password
-            // and an empty-string password as distinct — Decrypt(ReadOnlySpan<char>.Empty) is the
-            // "no password" case in practice for tooling that still wraps SafeContents in a
-            // password-confidentiality envelope even when the caller supplied none.
+            // A Key Vault-exported PFX has no real password; Decrypt(ReadOnlySpan<char>.Empty) is
+            // the "no password" case here.
             if (safeContents.ConfidentialityMode == Pkcs12ConfidentialityMode.Password)
                 safeContents.Decrypt(ReadOnlySpan<char>.Empty);
 
@@ -294,13 +274,9 @@ internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
             }
         }
 
-        // Confirmed Key Vault behavior: when a certificate's key policy is exportable: false, Key
-        // Vault's secret endpoint still returns HTTP 200 with a PKCS#12 payload — it simply omits
-        // the private key bag from it entirely.
-        // There is no dedicated "forbidden" error for this case, so "no key bag was found" is the
-        // only reliable signal, and must be checked after every download, not assumed from policy
-        // metadata (which reflects the certificate's *current* policy, not necessarily the policy a
-        // specific already-issued version was created under).
+        // When a certificate's key policy is non-exportable, Key Vault's secret endpoint still
+        // returns HTTP 200 with a PKCS#12 payload that simply omits the private key bag — "no key
+        // bag was found" is the only reliable signal for this case.
         throw new ZeeKayDaConfigurationException(
             new ZeeKayDaConfigurationFailure(
                 "signing.azure_key_vault.certificate_not_exportable",
@@ -325,9 +301,7 @@ internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
         }
         catch
         {
-            // .NET's documented contract is that ImportPkcs8PrivateKey only ever throws
-            // CryptographicException for bad key data, but this handle must never leak
-            // regardless of what actually gets thrown in practice.
+            // This handle must never leak regardless of what gets thrown.
             rsa.Dispose();
             throw;
         }
@@ -365,9 +339,7 @@ internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
         }
         catch
         {
-            // .NET's documented contract is that ImportEncryptedPkcs8PrivateKey only ever throws
-            // CryptographicException for bad key data, but this handle must never leak
-            // regardless of what actually gets thrown in practice.
+            // This handle must never leak regardless of what gets thrown.
             rsa.Dispose();
             throw;
         }
