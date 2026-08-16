@@ -276,9 +276,14 @@ public sealed class FileSigningIntegrationTests
             "the real PEM-backed LocalSigner's signature must verify against its own listed public key");
     }
 
-    private static IHostedService FindSigningStartupSelfTestHostedService(ServiceProvider provider) =>
-        provider.GetServices<IHostedService>().Single(
-            s => s.GetType().FullName == "ZeeKayDa.Auth.Tokens.SigningStartupSelfTestHostedService");
+    private static IHostedService FindSigningStartupSelfTestHostedService(ServiceProvider provider)
+    {
+        var startupServiceType = typeof(IJwtSigningService).Assembly.GetType(
+            "ZeeKayDa.Auth.Tokens.SigningStartupSelfTestHostedService",
+            throwOnError: true)!;
+
+        return provider.GetServices<IHostedService>().Single(startupServiceType.IsInstanceOfType);
+    }
 
     // ── Helpers ───────────────────────────────────────────────────────────────────────────────────
 

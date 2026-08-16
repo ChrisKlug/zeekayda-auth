@@ -246,9 +246,14 @@ public sealed class ZeeKayDaAuthBuilderFileSigningExtensionsTests
 
         builder.AddPemFileSigning(PemPath, SigningAlgorithm.RS256);
 
+        var targetType = Type.GetType(
+            "ZeeKayDa.Auth.Tokens.SigningStartupSelfTestHostedService, ZeeKayDa.Auth.Tokens",
+            throwOnError: false);
+        targetType.Should().NotBeNull();
+
         await using var provider = builder.Services.BuildServiceProvider();
         provider.GetServices<IHostedService>().Should().Contain(
-            s => s.GetType().FullName == "ZeeKayDa.Auth.Tokens.SigningStartupSelfTestHostedService");
+            s => targetType!.IsAssignableFrom(s.GetType()));
     }
 
     [Fact]
@@ -258,9 +263,14 @@ public sealed class ZeeKayDaAuthBuilderFileSigningExtensionsTests
 
         builder.AddPfxFileSigning(PfxPath, SigningAlgorithm.RS256, AnyPassword());
 
+        var targetType = Type.GetType(
+            "ZeeKayDa.Auth.Tokens.SigningStartupSelfTestHostedService, ZeeKayDa.Auth.Tokens",
+            throwOnError: false);
+        targetType.Should().NotBeNull();
+
         await using var provider = builder.Services.BuildServiceProvider();
         provider.GetServices<IHostedService>().Should().Contain(
-            s => s.GetType().FullName == "ZeeKayDa.Auth.Tokens.SigningStartupSelfTestHostedService");
+            s => targetType!.IsAssignableFrom(s.GetType()));
     }
 
     [Fact]

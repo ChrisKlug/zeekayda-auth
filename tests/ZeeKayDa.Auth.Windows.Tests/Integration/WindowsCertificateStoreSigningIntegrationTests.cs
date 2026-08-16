@@ -371,7 +371,18 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
             "the real certificate-backed LocalSigner's signature must verify against its own listed public key");
     }
 
-    private static IHostedService FindSigningStartupSelfTestHostedService(ServiceProvider provider) =>
-        provider.GetServices<IHostedService>().Single(
-            s => s.GetType().FullName == "ZeeKayDa.Auth.Tokens.SigningStartupSelfTestHostedService");
+    private static IHostedService FindSigningStartupSelfTestHostedService(ServiceProvider provider)
+    {
+        var expectedType = Type.GetType(
+            "ZeeKayDa.Auth.Tokens.SigningStartupSelfTestHostedService, ZeeKayDa.Auth",
+            throwOnError: false);
+
+        if (expectedType is null)
+        {
+            throw new InvalidOperationException(
+                "Could not resolve type ZeeKayDa.Auth.Tokens.SigningStartupSelfTestHostedService from assembly ZeeKayDa.Auth.");
+        }
+
+        return provider.GetServices<IHostedService>().Single(s => expectedType.IsInstanceOfType(s));
+    }
 }
