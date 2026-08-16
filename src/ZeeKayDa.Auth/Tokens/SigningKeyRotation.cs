@@ -124,9 +124,9 @@ public static class SigningKeyRotation
     /// activation timing, not expiry: an already-expired sole key still fails closed.
     /// </para>
     /// <para>
-    /// Only a fixed <c>KeySetOptions</c> tier ever gets this exemption — it is not available via
-    /// <see cref="SelectActiveKey"/> at all, so a <c>KeySourceOptions</c> caller cannot be made to
-    /// grant it by passing the wrong flag.
+    /// Only a fixed <c>KeySetOptions</c> tier ever gets this exemption — <see cref="SelectActiveKey"/>
+    /// itself never grants it, so a <c>KeySourceOptions</c> caller cannot obtain it no matter which
+    /// method it calls.
     /// </para>
     /// </remarks>
     /// <param name="timeline">The activation timeline, as built by <see cref="BuildActivationTimeline"/>.</param>

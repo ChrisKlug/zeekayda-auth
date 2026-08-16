@@ -281,8 +281,8 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
     /// otherwise. Dispatched from <see cref="_isKeySet"/> (the provider's options type) rather than
     /// snapshot/process lifetime, so a <see cref="KeySourceOptions"/> listing that has shrunk to one
     /// key at runtime cannot re-arm the single-key bootstrap exemption on a restart or scale-out —
-    /// and, because the exemption is not reachable through this method's <see cref="KeySourceOptions"/>
-    /// branch at all, no caller here can grant it by passing the wrong flag.
+    /// and, because the exemption is only reachable through <see cref="SigningKeyRotation.SelectActiveKeyForFixedKeySet"/>,
+    /// there is no argument this dispatch could pass to grant it on the <see cref="KeySourceOptions"/> branch.
     /// </summary>
     private RotationEntry? SelectActiveKey(IReadOnlyList<RotationEntry> timeline, DateTimeOffset now) =>
         _isKeySet

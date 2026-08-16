@@ -55,10 +55,12 @@ public sealed class SigningKeyRotationTests
     }
 
     [Fact]
-    public void SelectActiveKey_single_key_still_exempt_when_the_calling_tier_does_not_support_the_exemption_but_already_eligible()
+    public void SelectActiveKey_single_already_activated_key_is_selected_normally_without_the_exemption()
     {
-        // tier only changes behaviour for a key that has not yet reached its ActivatesAt - an
-        // already-eligible sole key is selected exactly as before either way.
+        // The bootstrap exemption only changes the outcome for a key that has not yet reached its
+        // ActivatesAt. An already-eligible sole key is selected by ordinary per-entry selection
+        // regardless of which SelectActiveKey* method is called — this is not exercising the
+        // exemption at all, just confirming it isn't needed here.
         var key = Key("AAA", activatesAt: T0 - TimeSpan.FromDays(1));
         var timeline = SigningKeyRotation.BuildActivationTimeline([key]);
 
