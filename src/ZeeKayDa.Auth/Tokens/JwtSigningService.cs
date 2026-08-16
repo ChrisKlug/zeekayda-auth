@@ -123,7 +123,7 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
         var snapshot = await EnsureSnapshotAsync(cancellationToken).ConfigureAwait(false);
         var now = _timeProvider.GetUtcNow();
 
-        var active = SigningKeyRotation.SelectActiveKey(snapshot.Timeline, now, BootstrapTier)
+        var active = SigningKeyRotation.SelectActiveKey(snapshot.Timeline, now, IsKeySetTier)
             ?? throw NoActiveKeyException();
 
         var retirementWindow = _retirementWindowProvider.GetRetirementWindow();
@@ -274,12 +274,13 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
     // ── KeySetOptions/KeySourceOptions state ────────────────────────────────────────────────────────
 
     /// <summary>
-    /// This provider's tier, passed to every <see cref="SigningKeyRotation.SelectActiveKey"/> call
-    /// to gate the single-key bootstrap exemption. See <see cref="BootstrapExemptionTier"/> for why
-    /// this is derived from the provider's options type rather than snapshot/process lifetime.
+    /// Whether this provider is on the <see cref="KeySetOptions"/> contract, passed as
+    /// <c>isKeySetTier</c> to every <see cref="SigningKeyRotation.SelectActiveKey"/> call to gate
+    /// the single-key bootstrap exemption. Derived from the provider's options type rather than
+    /// snapshot/process lifetime, so a <see cref="KeySourceOptions"/> listing that has shrunk to one
+    /// key at runtime cannot re-arm the exemption on a restart or scale-out.
     /// </summary>
-    private BootstrapExemptionTier BootstrapTier =>
-        _isKeySet ? BootstrapExemptionTier.KeySet : BootstrapExemptionTier.KeySource;
+    private bool IsKeySetTier => _isKeySet;
 
     /// <summary>
     /// The immutable snapshot of public key data active-key selection and JWKS inclusion are
@@ -520,7 +521,7 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
     private (RotationEntry Active, SigningKeyDescriptor Descriptor) SelectActiveEntryOrThrow(
         SigningKeySnapshot snapshot, DateTimeOffset now)
     {
-        var active = SigningKeyRotation.SelectActiveKey(snapshot.Timeline, now, BootstrapTier)
+        var active = SigningKeyRotation.SelectActiveKey(snapshot.Timeline, now, IsKeySetTier)
             ?? throw NoActiveKeyException();
 
         return (active, snapshot.DescriptorsById[active.Key.Id]);
@@ -797,7 +798,7 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
         if (_options.Value is not KeySetOptions keySetOptions)
             return;
 
-        var active = SigningKeyRotation.SelectActiveKey(snapshot.Timeline, now, BootstrapTier);
+        var active = SigningKeyRotation.SelectActiveKey(snapshot.Timeline, now, IsKeySetTier);
         if (active is null)
         {
             // No key is currently eligible to sign. The base class fails closed with its own

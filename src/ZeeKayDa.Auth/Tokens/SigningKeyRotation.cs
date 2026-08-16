@@ -38,33 +38,6 @@ public readonly record struct RotationEntry(RotationKey Key, DateTimeOffset? Ret
 }
 
 /// <summary>
-/// Which provider tier is calling <see cref="SigningKeyRotation.SelectActiveKey"/>, controlling
-/// whether the single-key bootstrap exemption can apply.
-/// </summary>
-/// <remarks>
-/// Gated on the calling provider's fixed tier rather than on whether the current timeline happens
-/// to be the first one built, so a <see cref="KeySource"/> provider's listing that has shrunk to
-/// one key at runtime via operator revocation cannot re-arm the exemption on a process restart or
-/// scale-out mid-incident.
-/// </remarks>
-internal enum BootstrapExemptionTier
-{
-    /// <summary>
-    /// A <c>KeySetOptions</c> provider — a fixed key set known at configuration time. Always
-    /// eligible for the exemption: with exactly one registered key, there is no prior published
-    /// JWKS state any relying party could have cached.
-    /// </summary>
-    KeySet,
-
-    /// <summary>
-    /// A <c>KeySourceOptions</c> provider — a source the base class re-reads on a cadence. Never
-    /// eligible for the exemption, regardless of how the current listing came to contain only one
-    /// key.
-    /// </summary>
-    KeySource,
-}
-
-/// <summary>
 /// The stateless, anchor-agnostic rotation-timeline derivation shared by every signing provider that
 /// derives its trusted-key set from a precomputed per-key activation/expiry window: which key is the
 /// currently active signer, which others are still trusted (not-yet-active, or still within their
@@ -115,26 +88,35 @@ public static class SigningKeyRotation
     /// not-yet-activated key would issue tokens relying parties are entitled to reject.
     /// <para>
     /// <strong>Single-key bootstrap exemption:</strong> with exactly one registered key, when
-    /// <paramref name="tier"/> is <see cref="BootstrapExemptionTier.KeySet"/>, that key is active
-    /// immediately regardless of its <see cref="RotationKey.ActivatesAt"/> — there is no prior
-    /// published JWKS state any relying party could have cached. This applies only to activation
-    /// timing, not expiry: an already-expired sole key still fails closed. See
-    /// <see cref="BootstrapExemptionTier"/> for why this is gated on tier rather than on process
-    /// lifetime.
+    /// <paramref name="isKeySetTier"/> is <see langword="true"/>, that key is active immediately
+    /// regardless of its <see cref="RotationKey.ActivatesAt"/> — there is no prior published JWKS
+    /// state any relying party could have cached. This applies only to activation timing, not
+    /// expiry: an already-expired sole key still fails closed.
+    /// </para>
+    /// <para>
+    /// Gated on the calling provider's fixed tier rather than on whether the current timeline
+    /// happens to be the first one built, so a <c>KeySourceOptions</c> provider's listing that has
+    /// shrunk to one key at runtime via operator revocation cannot re-arm the exemption on a
+    /// process restart or scale-out mid-incident.
     /// </para>
     /// </remarks>
     /// <param name="timeline">The activation timeline, as built by <see cref="BuildActivationTimeline"/>.</param>
     /// <param name="now">The current instant to select against.</param>
-    /// <param name="tier">The calling provider's tier.</param>
+    /// <param name="isKeySetTier">
+    /// <see langword="true"/> only when the calling provider is on the <c>KeySetOptions</c>
+    /// contract — a fixed key set known at configuration time. <see langword="false"/> for a
+    /// <c>KeySourceOptions</c> provider, which is never eligible for the exemption regardless of
+    /// how its current listing came to contain only one key.
+    /// </param>
     /// <returns>
     /// The active entry, or <see langword="null"/> if no key is currently eligible to sign (the
     /// caller must fail closed in this case — see remarks).
     /// </returns>
-    internal static RotationEntry? SelectActiveKey(
-        IReadOnlyList<RotationEntry> timeline, DateTimeOffset now, BootstrapExemptionTier tier)
+    public static RotationEntry? SelectActiveKey(
+        IReadOnlyList<RotationEntry> timeline, DateTimeOffset now, bool isKeySetTier)
     {
-        if (tier == BootstrapExemptionTier.KeySet && timeline.Count == 1)
-            return IsEligibleAt(timeline[0].Key, now) ? timeline[0] : null;
+        if (TryGetBootstrapExemptKey(timeline, now, isKeySetTier, out var exemptKey))
+            return exemptKey;
 
         // Timeline is sorted ascending by ActivatesAt, so the last eligible match has the greatest
         // ActivatesAt <= now. Projected to RotationEntry? so an empty result yields null, not
@@ -191,6 +173,35 @@ public static class SigningKeyRotation
     // current wall-clock time and at a candidate's own ActivatesAt.
     private static bool IsEligibleAt(RotationKey key, DateTimeOffset pointInTime) =>
         pointInTime <= key.ExpiresAt;
+
+    /// <summary>
+    /// Resolves the single-key bootstrap exemption, if it applies to this call.
+    /// </summary>
+    /// <param name="timeline">The activation timeline, as built by <see cref="BuildActivationTimeline"/>.</param>
+    /// <param name="now">The current instant to select against.</param>
+    /// <param name="isKeySetTier">See <see cref="SelectActiveKey"/>'s parameter of the same name.</param>
+    /// <param name="exemptKey">
+    /// When this method returns <see langword="true"/>, the sole key if still eligible, or
+    /// <see langword="null"/> if it has already expired. Undefined when this method returns
+    /// <see langword="false"/>.
+    /// </param>
+    /// <returns>
+    /// <see langword="true"/> if the exemption applies to this call (a <c>KeySetOptions</c> tier
+    /// with exactly one registered key) and <paramref name="exemptKey"/> is the final answer;
+    /// <see langword="false"/> if the exemption does not apply and normal selection should proceed.
+    /// </returns>
+    private static bool TryGetBootstrapExemptKey(
+        IReadOnlyList<RotationEntry> timeline, DateTimeOffset now, bool isKeySetTier, out RotationEntry? exemptKey)
+    {
+        if (isKeySetTier && timeline.Count == 1)
+        {
+            exemptKey = IsEligibleAt(timeline[0].Key, now) ? timeline[0] : null;
+            return true;
+        }
+
+        exemptKey = null;
+        return false;
+    }
 
     private static bool IsNotYetActiveOrStillWithinRetirementWindow(
         RotationEntry entry, DateTimeOffset now, TimeSpan retirementWindow)
