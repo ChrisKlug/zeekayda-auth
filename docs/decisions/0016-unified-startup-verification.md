@@ -887,14 +887,19 @@ without a composite result type. The pit of success is deeper with the accumulat
 
 ### Verifier-owned logging (each verifier injects its own `ISanitizingLogger<T>`)
 
-**Rejected.** It preserves per-type log categories, which is a real loss in the chosen design, but
-it costs three things worth more: consistent message formatting and verifier attribution across
-every startup warning in the framework; a declarative warning level as data rather than a branch
-over two logger call sites; and — the security point — a single chokepoint through which every
-startup warning provably passes the sanitizing logger. A verifier that holds no logger cannot
-accidentally log through a raw `ILogger<T>` and bypass redaction. The `Code` on
-`StartupVerificationWarning` recovers most of the diagnostic value that the per-type category
-provided, as a stable string rather than a type name.
+**Rejected — the design achieves its category-preserving advantage without its downside.** The
+obvious appeal of letting each verifier hold its own `ISanitizingLogger<T>` is per-type log
+categories; the chosen design gets that too, by having the runner resolve `ISanitizingLogger<T>`
+reflectively over the verifier's own runtime type (§3) rather than giving up categorization for
+centralization. What verifier-owned logging still loses to the chosen design: a declarative warning
+level as data rather than a branch over two logger call sites (`InMemoryStoreWarningService`'s
+`Warning`-vs-`Critical` today); consistent message-template conventions enforced in one place instead
+of per-class discipline; and — the security point — a single chokepoint through which every startup
+warning provably passes, and which resolves each logger only *after* the gate phase (§7). A verifier
+that holds no logger reference cannot log before that point even if its own constructor runs early;
+a verifier that held its own `ISanitizingLogger<T>` via constructor injection could not be stopped
+that way. `StartupVerificationWarning.Code` remains the stable, type-independent discriminator for
+alerting that a bare log category never provided.
 
 ### Fail-fast aggregation for phase 2
 
@@ -944,7 +949,8 @@ via an additional opt-in interface (§11).
   `scopedServices`" is now the shape of the interface rather than a remark on two classes.
 - **Operators fix N misconfigurations per restart instead of one.**
 - **One logging chokepoint**, through the sanitizing logger, for every startup warning in the
-  framework — with the level declared as data.
+  framework — with the level declared as data and the log category still the producing verifier's
+  own type, resolved dynamically rather than sacrificed for centralization (§3).
 - **Verifiers get easier to test**, not harder: assert on `context.Failures` / `context.Warnings`
   instead of catching an exception or capturing a log sink.
 - **Twelve hosted services become one**, and a new check becomes a class with one method rather than
