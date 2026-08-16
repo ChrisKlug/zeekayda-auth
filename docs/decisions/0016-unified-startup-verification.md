@@ -204,11 +204,12 @@ their category — `MyPackage.InMemoryStoreVerifier`, not `StartupVerificationHo
 as if the verifier had constructor-injected `ISanitizingLogger<InMemoryStoreVerifier>` and logged
 through it directly, except the verifier never holds the reference.
 
-The runner logs each warning as `logger.Log(warning.Level, "[{Verifier}] " + warning.MessageTemplate,
-verifier.Name, .. warning.Args)` — `{Verifier}` (the instance `Name`, disambiguating same-type
-instances such as the two `InMemoryStoreVerifier` registrations) plus every argument the verifier
+The runner logs each warning as `verifierLogger.Log(warning.Level, "[{Verifier}] {Code}: " +
+warning.MessageTemplate, [verifier.Name, warning.Code, .. warning.Args])` — `{Verifier}` (the
+instance `Name`, disambiguating same-type instances such as the two `InMemoryStoreVerifier`
+registrations), `{Code}`, and every argument the verifier
 supplied, passed through to the sink **unformatted**. This is full structured logging: a backend that
-indexes structured fields sees `{Verifier}`, `{Code}` (via the message template), and every
+indexes structured fields sees `{Verifier}`, `{Code}`, and every
 verifier-supplied placeholder as queryable fields, exactly as it would for any other `LogWarning`
 call site in the framework — and because the arguments stay structured rather than being flattened
 into a string before they reach the logger, `SecretSanitizingLogger`'s by-key redaction can act on
