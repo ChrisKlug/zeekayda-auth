@@ -9,9 +9,9 @@ namespace ZeeKayDa.Auth.AzureKeyVault;
 /// </summary>
 /// <remarks>
 /// <para>
-/// ADR 0015 Tier B (<see cref="KeySourceOptions"/>, issue #425): Key Vault owns the certificate's
-/// version history, so <c>AzureKeyVaultCachedSigningJwtSigningService.ListKeysAsync</c> re-asks Key
-/// Vault for the current version list once per <see cref="KeySourceOptions.RefreshInterval"/>.
+/// Key Vault owns the certificate's version history, so
+/// <c>AzureKeyVaultCachedSigningJwtSigningService.ListKeysAsync</c> re-asks Key Vault for the current
+/// version list once per <see cref="KeySourceOptions.RefreshInterval"/>.
 /// </para>
 /// <para>
 /// <see cref="KeySourceOptions.PublicationLead"/> is inherited from <see cref="KeySourceOptions"/>

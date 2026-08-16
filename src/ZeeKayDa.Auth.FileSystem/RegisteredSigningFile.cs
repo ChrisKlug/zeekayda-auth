@@ -13,7 +13,7 @@ namespace ZeeKayDa.Auth.FileSystem;
 /// <para>
 /// <see cref="AdditionalPaths"/> lists any other filesystem paths that back this same entry without
 /// being a rotation entry of their own — currently only the PEM provider's optional
-/// separately-registered private-key file (issue #405). A path listed here must receive the same
+/// separately-registered private-key file. A path listed here must receive the same
 /// mtime-change tracking and permission hardening as <see cref="Id"/> (so that either file changing
 /// is treated as this entry changing), but never participates in <c>kid</c> derivation, rotation
 /// ordering, or diagnostics keyed by entry identity — only <see cref="Id"/> does.

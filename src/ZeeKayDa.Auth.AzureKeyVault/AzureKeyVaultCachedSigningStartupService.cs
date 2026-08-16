@@ -14,9 +14,9 @@ namespace ZeeKayDa.Auth.AzureKeyVault;
 /// <para>
 /// Pre-warming (forcing <see cref="IJwtSigningService.GetSigningKeysAsync"/> to run) and full
 /// materialize-and-verify of the active signer are now handled once, generically, for every signing
-/// provider by the framework-owned <c>SigningStartupSelfTestHostedService</c> (issue #437) — this
-/// class keeps only the one genuinely provider-specific behavior: the memory-residency log line
-/// below, which no other provider needs.
+/// provider by the framework-owned <c>SigningStartupSelfTestHostedService</c> — this class keeps
+/// only the one genuinely provider-specific behavior: the memory-residency log line below, which no
+/// other provider needs.
 /// </para>
 /// <para>
 /// The log is emitted at <see cref="LogLevel.Information"/>, not <see cref="LogLevel.Warning"/> or

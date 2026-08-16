@@ -5,7 +5,7 @@ namespace ZeeKayDa.Auth.Stores;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <strong>Framework-sealed (ADR 0014 §4, mirroring ADR 0013 §1).</strong> This interface is the
+/// <strong>Framework-sealed.</strong> This interface is the
 /// protocol surface the token endpoint depends on, but it is no longer a third-party extension
 /// point: the framework ships one sealed coordinator, <c>RefreshTokenStore</c>, that implements
 /// it. The interface stays <see langword="public"/> so it can be injected and consumed across
@@ -98,8 +98,8 @@ public interface IRefreshTokenStore
     /// <remarks>
     /// <para>
     /// The consume operation MUST be atomic. This is guaranteed by the sealed coordinator's use
-    /// of the single atomic invariant on <see cref="IRefreshTokenGrantStore.TryMarkConsumedAsync"/>
-    /// (ADR 0014 §3/§4): two concurrent requests for the same handle produce exactly one
+    /// of the single atomic invariant on <see cref="IRefreshTokenGrantStore.TryMarkConsumedAsync"/>:
+    /// two concurrent requests for the same handle produce exactly one
     /// <see cref="RefreshTokenConsumptionResult.Consumed"/> and one
     /// <see cref="RefreshTokenConsumptionResult.AlreadyConsumed"/> outcome.
     /// </para>
@@ -143,6 +143,6 @@ public interface IRefreshTokenStore
     Task RevokeFamilyAsync(string familyId, CancellationToken cancellationToken);
 
     // Reserved: satisfying this member requires internal access, so only assemblies named in
-    // [InternalsVisibleTo] can implement IRefreshTokenStore (ADR 0014 §4, ADR 0013 §1).
+    // [InternalsVisibleTo] can implement IRefreshTokenStore.
     internal void SealAsFrameworkOwnedProtocol();
 }

@@ -157,10 +157,10 @@ public static class ZeeKayDaAuthBuilderSigningExtensions
         builder.ThrowIfAlreadyRegistered(typeof(IJwtSigningService));
 
         // Idempotent (TryAdd-based): ensures ISigningKeyRetirementWindowProvider and the open-generic
-        // ISanitizingLogger<> — which DevelopmentJwtSigningService's ADR 0015 contract now depends on
-        // — are resolvable even if this method is called without AddZeeKayDaAuth() having run first
-        // (e.g. a provider-package test that constructs ZeeKayDaAuthBuilder directly). Matches the
-        // pattern used by the File/Windows/Azure Key Vault signing-provider packages.
+        // ISanitizingLogger<>, which DevelopmentJwtSigningService depends on, are resolvable even
+        // if this method is called without AddZeeKayDaAuth() having run first (e.g. a
+        // provider-package test that constructs ZeeKayDaAuthBuilder directly). Matches the pattern
+        // used by the File/Windows/Azure Key Vault signing-provider packages.
         builder.Services.AddZeeKayDaAuthCore();
 
         builder.Services.AddOptions<DevelopmentSigningKeyOptions>()
@@ -185,9 +185,9 @@ public static class ZeeKayDaAuthBuilderSigningExtensions
         });
 
         // AllowedDevelopmentJwtSigningKeysEnvironments lives on DevelopmentSigningKeyOptions (a
-        // provider-scoped, code-only opt-in, not a server-wide gate — ADR 0011 §2), so this
-        // validator targets that type. Registered here (not in AddZeeKayDaAuth()) because it only
-        // makes sense when a development-key registration method is actually in use.
+        // provider-scoped, code-only opt-in, not a server-wide gate), so this validator targets
+        // that type. Registered here (not in AddZeeKayDaAuth()) because it only makes sense when a
+        // development-key registration method is actually in use.
         builder.Services.TryAddEnumerable(
             ServiceDescriptor.Singleton<
                 IValidateOptions<DevelopmentSigningKeyOptions>,

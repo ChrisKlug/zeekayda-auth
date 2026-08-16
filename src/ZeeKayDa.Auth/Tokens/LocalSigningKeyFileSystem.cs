@@ -292,7 +292,7 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
     [UnsupportedOSPlatform("windows")]
     private static void ValidateDirectoryChainOwnershipUnix(string startDirectory)
     {
-        // ADR 0011 §2: every component of the directory chain the provider creates or writes into
+        // Every component of the directory chain the provider creates or writes into
         // MUST be owned by the current user. Walk from startDirectory upward, checking ownership
         // on every component that exists. Stop at root-owned (uid 0) directories — those are
         // OS-managed and trusted. This prevents an attacker who owns an ancestor directory from

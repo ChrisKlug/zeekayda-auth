@@ -21,7 +21,7 @@ namespace ZeeKayDa.Auth.Stores;
 /// </para>
 /// <para>
 /// This type has no knowledge of OAuth, tombstones, encryption, or expiry — the framework's
-/// <c>AuthorizationCodeStore</c> coordinator owns all of that (ADR 0013 §1); this store just
+/// <c>AuthorizationCodeStore</c> coordinator owns all of that; this store just
 /// holds opaque bytes under already-hashed keys, using the supplied expiry as the cache's
 /// native TTL.
 /// </para>

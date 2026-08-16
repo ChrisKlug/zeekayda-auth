@@ -13,27 +13,26 @@ namespace ZeeKayDa.Auth.FileSystem;
 /// </summary>
 /// <remarks>
 /// <para>
-/// ADR 0015 Tier A (<see cref="KeySetOptions"/>, issue #422): the complete set of registered PEM
-/// files is fixed at configuration time, so <see cref="ListKeysAsync"/> runs exactly once, ever, for
-/// the lifetime of this service instance. Only the wall clock crossing each file's certificate
-/// <c>NotBefore</c>/<c>NotAfter</c> — mapped onto each returned <see cref="KeyListing"/>'s
+/// The complete set of registered PEM files is fixed at configuration time, so
+/// <see cref="ListKeysAsync"/> runs exactly once, ever, for the lifetime of this service instance.
+/// Only the wall clock crossing each file's certificate <c>NotBefore</c>/<c>NotAfter</c> — mapped onto
+/// each returned <see cref="KeyListing"/>'s
 /// <see cref="KeyListing.ActivateAt"/>/<see cref="KeyListing.ExpiresAt"/> — drives which registered
 /// file is the active signer; the base class recomputes that selection lazily on every call from the
-/// one-time snapshot, so multi-file rotation (issue #282) still switches the active signer over time
-/// with zero further filesystem I/O. Picking up a rotated-in or replaced file otherwise requires a
-/// restart (ADR 0015 §10).
+/// one-time snapshot, so multi-file rotation still switches the active signer over time with zero
+/// further filesystem I/O. Picking up a rotated-in or replaced file otherwise requires a restart.
 /// </para>
 /// <para>
-/// Least-privilege key loading (ADR 0015 §2/§5): <see cref="ListKeysAsync"/> extracts only each
-/// file's public key and disposes the certificate immediately afterward, never retaining a private
-/// handle. <see cref="CreateSignerAsync"/> re-reads and re-parses only the single file the base class
-/// has selected as active, and only when that selection changes — every other registered file's
-/// private key material is never loaded a second time.
+/// Least-privilege key loading: <see cref="ListKeysAsync"/> extracts only each file's public key and
+/// disposes the certificate immediately afterward, never retaining a private handle.
+/// <see cref="CreateSignerAsync"/> re-reads and re-parses only the single file the base class has
+/// selected as active, and only when that selection changes — every other registered file's private
+/// key material is never loaded a second time.
 /// </para>
 /// <para>
 /// <c>kid</c> is the RFC 7638 JWK thumbprint of each certificate's public key, derived by the base
 /// class from each <see cref="KeyListing.PublicKey"/> — never the file path, which is only this
-/// provider's own internal <see cref="KeyId"/> (ADR 0015 §2).
+/// provider's own internal <see cref="KeyId"/>.
 /// </para>
 /// </remarks>
 internal sealed class PemFileSigningJwtSigningService : JwtSigningService<PemFileSigningOptions>
@@ -112,7 +111,7 @@ internal sealed class PemFileSigningJwtSigningService : JwtSigningService<PemFil
 
         throw new InvalidOperationException(
             $"{nameof(CreateSignerAsync)} was called for key '{id}', which is no longer a registered " +
-            $"PEM file. {nameof(ListKeysAsync)} runs exactly once for this ADR 0015 Tier A provider, so " +
+            $"PEM file. {nameof(ListKeysAsync)} runs exactly once for this provider, so " +
             "its registered files must not change after startup.");
     }
 

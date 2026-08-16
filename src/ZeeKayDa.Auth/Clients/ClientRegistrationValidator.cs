@@ -10,7 +10,7 @@ namespace ZeeKayDa.Auth.Clients;
 
 /// <summary>
 /// Default implementation of <see cref="IClientRegistrationValidator"/> that enforces all
-/// ADR 0007 client registration rules.
+/// client registration rules.
 /// </summary>
 /// <remarks>
 /// Aggregates all violations before throwing so operators see every problem in one pass.

@@ -124,7 +124,7 @@ public static class SigningKeyRotation
     /// <strong>Why this is gated by the caller's tier, not by "is this the first snapshot this
     /// instance has ever built":</strong> a naive "first snapshot ever" gate is not restart-safe. For
     /// a Tier B (<c>KeySourceOptions</c>) provider the listing that produces this timeline can shrink
-    /// to one key live, at runtime, via operator revocation (ADR 0015 §6's kill-by-omission) — and if
+    /// to one key live, at runtime, via operator revocation (kill-by-omission) — and if
     /// the process also restarts or a new instance is scaled out while that revocation is in effect
     /// (exactly when an incident tends to prompt exactly that), the new instance's very first snapshot
     /// would again look like a bootstrap even though the listing shrank via revocation, not genuine

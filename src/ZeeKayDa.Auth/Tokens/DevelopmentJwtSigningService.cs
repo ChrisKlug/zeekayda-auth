@@ -24,10 +24,10 @@ namespace ZeeKayDa.Auth.Tokens;
 /// when <see langword="null"/> (no host, unit-test scenario), the gate is skipped. The allowed
 /// environments list is read from
 /// <see cref="DevelopmentSigningKeyOptions.AllowedDevelopmentJwtSigningKeysEnvironments"/> — a
-/// provider-scoped, code-only opt-in, not a server-wide setting (ADR 0011 §2).
+/// provider-scoped, code-only opt-in, not a server-wide setting.
 /// </para>
 /// <para>
-/// This is a degenerate ADR 0015 Tier A (<see cref="KeySetOptions"/>) provider: exactly one key,
+/// This is a degenerate Tier A (<see cref="KeySetOptions"/>) provider: exactly one key,
 /// with no <see cref="KeyListing.ActivateAt"/>, active from startup. <see cref="ListKeysAsync"/>
 /// is called exactly once for the lifetime of the service instance (per the base class's Tier A
 /// contract), which is also where the dev key is generated or loaded — there is no rotation
@@ -45,7 +45,7 @@ internal sealed class DevelopmentJwtSigningService
     private const string KeyFileName = "dev-signing-key.pem";
 
     // Stable provider-internal identifier for the single dev key. Never the JWKS/JWS kid — the
-    // base class derives that from the public key material (ADR 0015 §2).
+    // base class derives that from the public key material.
     private static readonly KeyId DevKeyId = new("development");
 
     private readonly IOptions<DevelopmentSigningKeyOptions> _devOptions;
@@ -95,8 +95,8 @@ internal sealed class DevelopmentJwtSigningService
 
         _pendingPrivateKey = rsa;
 
-        // ActivateAt = null: the single dev key is active from startup (ADR 0015 §1's degenerate
-        // Tier A case). ExpiresAt = MaxValue: a dev key never hard-expires — its lifetime is the
+        // ActivateAt = null: the single dev key is active from startup (the degenerate Tier A
+        // case). ExpiresAt = MaxValue: a dev key never hard-expires — its lifetime is the
         // process's, not a certificate's.
         var listing = new KeyListing(DevKeyId, SigningAlgorithm.RS256, publicKey, ActivateAt: null, ExpiresAt: DateTimeOffset.MaxValue);
         return [listing];

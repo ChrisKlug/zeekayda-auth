@@ -40,10 +40,9 @@ internal sealed class InMemoryStoreWarningService : IHostedService
     internal const string RefreshTokenStoreName = "refresh token store";
 
     /// <summary>
-    /// Composite format string for the mandatory startup warning. ADR 0008 §5 requires the
-    /// message to include a specific block of text verbatim; that text is everything up to and
-    /// including "...must not be used in production." — the trailing "Store: {0}." sentence is
-    /// additive and distinguishes one registration's log line from another's.
+    /// Composite format string for the mandatory startup warning. The text up to and including
+    /// "...must not be used in production." must match verbatim; the trailing "Store: {0}."
+    /// sentence is additive and distinguishes one registration's log line from another's.
     /// </summary>
     internal const string WarningMessageFormat =
         "ZeeKayDa.Auth: in-memory token stores are active. All issued tokens will be lost on " +

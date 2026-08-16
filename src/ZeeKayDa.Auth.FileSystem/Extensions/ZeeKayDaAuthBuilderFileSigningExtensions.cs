@@ -17,8 +17,8 @@ namespace Microsoft.Extensions.DependencyInjection;
 /// (<see cref="System.Security.Cryptography.X509Certificates.X509Certificate2.CreateFromPem(ReadOnlySpan{char}, ReadOnlySpan{char})"/>,
 /// <see cref="System.Security.Cryptography.X509Certificates.X509CertificateLoader"/>'s <c>LoadPkcs12</c>)
 /// is portable BCL functionality with no platform interop — this is the sole recommended signing
-/// provider for macOS deployments (ADR 0011 Amendment 7; ADR 0012 Amendments 1/2), and is also the
-/// standard fallback for containers, headless CI, and Linux hosts generally.
+/// provider for macOS deployments, and is also the standard fallback for containers, headless CI,
+/// and Linux hosts generally.
 /// </remarks>
 public static class ZeeKayDaAuthBuilderFileSigningExtensions
 {
@@ -35,13 +35,13 @@ public static class ZeeKayDaAuthBuilderFileSigningExtensions
     /// combined cert+key file. When <paramref name="keyPath"/> is supplied, <paramref name="path"/>
     /// is a certificate-only file and <paramref name="keyPath"/> is a separate private-key-only
     /// file — the convention used by Let's Encrypt/certbot (<c>fullchain.pem</c> + <c>privkey.pem</c>),
-    /// cert-manager in Kubernetes, and most corporate PKI tooling (issue #405).
+    /// cert-manager in Kubernetes, and most corporate PKI tooling.
     /// </para>
     /// <para>
     /// Filesystem permissions are enforced fail-closed on every file actually loaded: on Unix the
     /// file must be no more permissive than <c>0600</c>; on Windows its ACL must not grant access to
     /// <c>Everyone</c>, <c>Users</c>, or <c>Authenticated Users</c>. A broader-than-expected
-    /// permission is a hard startup failure, not a warning (ADR 0011 §2). This applies equally to
+    /// permission is a hard startup failure, not a warning. This applies equally to
     /// <paramref name="keyPath"/> when supplied, since it is the file that actually carries the
     /// sensitive private key material.
     /// </para>
@@ -50,8 +50,7 @@ public static class ZeeKayDaAuthBuilderFileSigningExtensions
     /// <see cref="PemFileSigningOptions.AddFile(string, string)"/> in <paramref name="configure"/>.
     /// With exactly one registered file it is the active signer immediately; with two or more, the
     /// file whose certificate <c>NotBefore</c> has arrived and is most recent is the active signer.
-    /// See <see cref="SigningKeyRotation"/> and ADR 0011 §3.3/§3.5 for the full rotation/retirement
-    /// model.
+    /// See <see cref="SigningKeyRotation"/> for the full rotation/retirement model.
     /// </para>
     /// </remarks>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>

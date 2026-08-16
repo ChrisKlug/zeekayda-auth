@@ -1,7 +1,7 @@
 namespace ZeeKayDa.Auth.Stores;
 
 /// <summary>
-/// The redemption tombstone envelope written by <c>AuthorizationCodeStore</c> (ADR 0013 §7).
+/// The redemption tombstone envelope written by <c>AuthorizationCodeStore</c>.
 /// </summary>
 /// <remarks>
 /// <see cref="FamilyId"/> is deliberately plaintext — a non-secret random GUID — so that replay
@@ -18,7 +18,7 @@ internal sealed record AuthorizationCodeTombstoneEnvelope
 
     /// <summary>
     /// Data-Protection ciphertext of this store's (currently empty) secret payload. Present so a
-    /// well-meaning refactor cannot silently collapse the two-catch-site decrypt asymmetry (§7)
+    /// well-meaning refactor cannot silently collapse the two-catch-site decrypt asymmetry
     /// into treating the whole envelope as one opaque blob.
     /// </summary>
     public required byte[] ProtectedSecret { get; init; }

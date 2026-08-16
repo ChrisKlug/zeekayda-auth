@@ -46,8 +46,8 @@ internal sealed class DiscoveryEndpoint : IZeeKayDaEndpoint
         IDiscoveryDocumentProvider provider,
         HttpContext context)
     {
-        // Cache-Control set directly in the handler per ADR §8 so that the behaviour is
-        // co-located with the endpoint and trivially verifiable in tests without a pipeline.
+        // Cache-Control set directly in the handler so that the behaviour is co-located with the
+        // endpoint and trivially verifiable in tests without a pipeline.
         // The discovery document is intentionally public (OIDC Discovery 1.0 §4); must-revalidate
         // is used rather than proxy-revalidate so that browser caches (not just CDN/proxy caches)
         // are required to revalidate after the TTL expires.

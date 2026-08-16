@@ -6,11 +6,11 @@ namespace ZeeKayDa.Auth.Stores;
 /// no encryption (payloads arrive as ciphertext), no single-use state machine beyond the ONE atomic
 /// invariant on <see cref="TryMarkConsumedAsync"/>, no expiry logic, no outcome selection. It stores
 /// rows and runs equality queries over their non-secret columns. Native exceptions may propagate
-/// freely; the coordinator's Guarded wrapper (ADR 0013 §8) maps them to <see cref="ZeeKayDaStoreException"/>.
+/// freely; the coordinator's Guarded wrapper maps them to <see cref="ZeeKayDaStoreException"/>.
 /// </summary>
 /// <remarks>
-/// See ADR 0014 §3 for why the interface is deliberately limited to exactly these six methods —
-/// in particular, why there is no bulk remove/cleanup method and no bulk-read-by-family/subject.
+/// The interface is deliberately limited to exactly these six methods — there is no bulk
+/// remove/cleanup method and no bulk-read-by-family/subject.
 /// </remarks>
 public interface IRefreshTokenGrantStore
 {
@@ -27,7 +27,7 @@ public interface IRefreshTokenGrantStore
     /// confirmed absent. Read-only. Fail-closed: on ANY transport/backend fault you MUST let the
     /// exception propagate — you MUST NOT catch it and return <see langword="null"/> (a fault
     /// masked as null is read as "no such token" and silently defeats reuse detection). Same
-    /// fail-closed contract as ADR 0013 §3's <c>GetAsync</c>.
+    /// fail-closed contract as the equivalent read path on <see cref="IAuthorizationCodeBackingStore"/>.
     /// </summary>
     /// <param name="handleHash">The already-hashed token handle.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
@@ -69,9 +69,9 @@ public interface IRefreshTokenGrantStore
     /// equals <paramref name="subject"/> AND that already exists at the moment this call evaluates
     /// its predicate. Same completeness bar as <see cref="RevokeFamilyAsync"/>. Present so a FUTURE
     /// subject-level logout-all is possible; the endpoint is deferred and no coordinator method calls
-    /// this yet (ADR 0014 §6). The subject arrives as cleartext (it is a plain equality predicate, not
+    /// this yet. The subject arrives as cleartext (it is a plain equality predicate, not
     /// a keyed lookup) — this control must never fail to match, which is why the subject is not
-    /// peppered/keyed (see ADR 0014 sign-off item 1).
+    /// peppered/keyed.
     /// </summary>
     /// <param name="subject">The subject identifier to revoke all grants for.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
@@ -80,7 +80,7 @@ public interface IRefreshTokenGrantStore
     /// <summary>
     /// Return <see langword="true"/> iff ANY grant whose <see cref="RefreshTokenGrant.FamilyId"/>
     /// equals <paramref name="familyId"/> currently reads <see cref="RefreshGrantStatus.Revoked"/>.
-    /// Read-only, no side effects (issue #386, ADR 0014 §11). The coordinator calls this before
+    /// Read-only, no side effects. The coordinator calls this before
     /// honouring a grant's own <see cref="RefreshGrantStatus.Active"/> status, so a successor
     /// inserted after <see cref="RevokeFamilyAsync"/> is caught at consume time.
     /// </summary>

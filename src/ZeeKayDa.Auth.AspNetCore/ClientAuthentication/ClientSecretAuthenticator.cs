@@ -13,7 +13,7 @@ namespace ZeeKayDa.Auth.AspNetCore.ClientAuthentication;
 /// <remarks>
 /// Delegates stored-secret verification to <see cref="CompositeClientSecretHasher"/> — never
 /// compares secret strings directly. Tries all <see cref="IClientSecret"/> credentials before
-/// returning a failure to support credential rotation (ADR 0007 §3.1).
+/// returning a failure to support credential rotation.
 /// </remarks>
 internal sealed class ClientSecretAuthenticator : IClientAuthenticator
 {
@@ -130,7 +130,7 @@ internal sealed class ClientSecretAuthenticator : IClientAuthenticator
         }
 
         // Pad timing to the credential budget so a client with fewer active secrets is not
-        // distinguishable from one with the maximum by timing (ADR 0007 §3.4).
+        // distinguishable from one with the maximum by timing.
         _hasher.PadFailureToCredentialBudget(attempted);
         return ValueTask.FromResult(ClientAuthenticationResult.NotValid());
     }

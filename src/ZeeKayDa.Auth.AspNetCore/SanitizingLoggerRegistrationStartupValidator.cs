@@ -25,16 +25,16 @@ namespace ZeeKayDa.Auth.AspNetCore;
 /// so finding one is sufficient evidence of a shadow.</item>
 /// </list>
 /// <para>
-/// Now that <see cref="ISanitizingLogger{T}"/> is a public extensibility surface (so packages such
+/// Because <see cref="ISanitizingLogger{T}"/> is a public extensibility surface (so packages such
 /// as <c>ZeeKayDa.Auth.AzureKeyVault</c>, and genuine third-party providers, can accept it via
-/// constructor injection without <c>InternalsVisibleTo</c> — see ADR 0011 Amendment 2(d)), neither
-/// case can be ruled out at compile time.
+/// constructor injection without <c>InternalsVisibleTo</c>), neither case can be ruled out at
+/// compile time.
 /// </para>
 /// <para>
 /// This is a hard failure, not a warning. Unlike a shadowed <c>IClientRepository</c> (see
 /// <see cref="ClientRepositoryStartupActivator"/>), a shadowed sanitizing logger silently
-/// disables the credential-redaction guarantee described in ADR 0007 §7, so it must stop the host
-/// from starting rather than merely being logged.
+/// disables the credential-redaction guarantee, so it must stop the host from starting rather
+/// than merely being logged.
 /// </para>
 /// </remarks>
 internal sealed class SanitizingLoggerRegistrationStartupValidator : IHostedService

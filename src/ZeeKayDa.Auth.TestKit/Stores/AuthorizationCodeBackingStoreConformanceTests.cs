@@ -3,9 +3,9 @@ using ZeeKayDa.Auth.Stores;
 namespace ZeeKayDa.Auth.TestKit.Stores;
 
 /// <summary>
-/// Ready-to-derive conformance kit for <see cref="IAuthorizationCodeBackingStore"/> implementers
-/// (ADR 0013 §10). Running this against a production backend is a MUST: it exercises the one
-/// invariant the CLR cannot verify structurally — that <see cref="IAuthorizationCodeBackingStore.TryInsertAsync"/>
+/// Ready-to-derive conformance kit for <see cref="IAuthorizationCodeBackingStore"/> implementers.
+/// Running this against a production backend is a MUST: it exercises the one invariant the CLR
+/// cannot verify structurally — that <see cref="IAuthorizationCodeBackingStore.TryInsertAsync"/>
 /// is a genuine atomic insert-if-absent, not a read-then-write with a TOCTOU window.
 /// </summary>
 /// <remarks>
@@ -13,7 +13,7 @@ namespace ZeeKayDa.Auth.TestKit.Stores;
 /// <c>ZeeKayDa.Auth.TestKit</c> from your own test project, derive this class, and implement
 /// <see cref="CreateStore"/> to return your <see cref="IAuthorizationCodeBackingStore"/>. You do
 /// not need to construct a <see cref="StoreKey"/> yourself — <see cref="StoreKey"/>'s constructor
-/// stays <c>internal</c> to <c>ZeeKayDa.Auth</c> (ADR 0013 §2), and this kit constructs the
+/// stays <c>internal</c> to <c>ZeeKayDa.Auth</c>, and this kit constructs the
 /// <see cref="StoreKey"/> values it needs internally via the friend-assembly access granted to
 /// <c>ZeeKayDa.Auth.TestKit</c>. This is what lets a genuine third-party backing-store author
 /// derive and run the kit from their own external test project.
@@ -36,7 +36,7 @@ public abstract class AuthorizationCodeBackingStoreConformanceTests
     /// <summary>
     /// Override to provide a store instance whose underlying transport always throws
     /// <paramref name="fault"/> on any operation, to prove <c>GetAsync</c>/<c>TryInsertAsync</c>/
-    /// <c>RemoveAsync</c> do not swallow transport faults (ADR 0013 §3/§8/§10). Return
+    /// <c>RemoveAsync</c> do not swallow transport faults. Return
     /// <see langword="null"/> if this backend has no injectable transport-failure point (e.g. a
     /// pure in-process data structure with nothing to fail) — the fault-injection tests will then
     /// be skipped for that subclass, and the subclass MUST say so explicitly by overriding and
@@ -69,7 +69,7 @@ public abstract class AuthorizationCodeBackingStoreConformanceTests
         gate.Release(concurrency);
         var results = await Task.WhenAll(tasks);
 
-        // The backend's TryInsertAsync MUST be a genuine atomic insert-if-absent (ADR 0013 §3, §10).
+        // The backend's TryInsertAsync MUST be a genuine atomic insert-if-absent.
         Assert.Equal(1, results.Count(r => r));
     }
 
@@ -117,7 +117,7 @@ public abstract class AuthorizationCodeBackingStoreConformanceTests
         Assert.Null(await store.GetAsync(key, CancellationToken.None));
     }
 
-    // ── §3/§8 fail-closed: transport faults must propagate, never be swallowed ─────────────────
+    // ── Fail-closed: transport faults must propagate, never be swallowed ───────────────────────
 
     [Fact]
     public async Task TryInsertAsync_propagates_a_transport_fault_instead_of_swallowing_it()
@@ -127,15 +127,15 @@ public abstract class AuthorizationCodeBackingStoreConformanceTests
         if (store is null)
             return;
 
-        // A backing store MUST let a transport fault propagate rather than swallow it (ADR 0013 §3/§8).
+        // A backing store MUST let a transport fault propagate rather than swallow it.
         await Assert.ThrowsAsync<TransportFaultException>(
             () => store.TryInsertAsync(NewKey(), new byte[] { 1 }, FarFuture, CancellationToken.None).AsTask());
     }
 
     /// <summary>
-    /// The dangerous one (ADR 0013 §3/§8): if <c>GetAsync</c> swallows a transport fault and
-    /// returns <see langword="null"/>, the coordinator reads that as "confirmed absent" — on the
-    /// replay path this reads as "code not yet redeemed," silently reopening the replay window
+    /// The dangerous one: if <c>GetAsync</c> swallows a transport fault and returns
+    /// <see langword="null"/>, the coordinator reads that as "confirmed absent" — on the replay
+    /// path this reads as "code not yet redeemed," silently reopening the replay window
     /// (RFC 9700 §2.1.1).
     /// </summary>
     [Fact]
@@ -158,7 +158,7 @@ public abstract class AuthorizationCodeBackingStoreConformanceTests
         if (store is null)
             return;
 
-        // A backing store MUST let a transport fault propagate rather than swallow it (ADR 0013 §3/§8).
+        // A backing store MUST let a transport fault propagate rather than swallow it.
         await Assert.ThrowsAsync<TransportFaultException>(
             () => store.RemoveAsync(NewKey(), CancellationToken.None).AsTask());
     }

@@ -3,13 +3,12 @@ using Microsoft.Extensions.Options;
 namespace ZeeKayDa.Auth.Tokens;
 
 /// <summary>
-/// Default <see cref="ISigningKeyRetirementWindowProvider"/> implementation, deriving the
-/// retirement window per ADR 0011 §3.3(a′).
+/// Default <see cref="ISigningKeyRetirementWindowProvider"/> implementation.
 /// </summary>
 internal sealed class SigningKeyRetirementWindowProvider : ISigningKeyRetirementWindowProvider
 {
-    // Per ADR 0011 §3.3(a'): RetirementWindow = max(access-token lifetime, ID-token lifetime,
-    // 1-hour floor) + ClockSkewTolerance. Today NEITHER token-lifetime term is configurable yet
+    // RetirementWindow = max(access-token lifetime, ID-token lifetime, 1-hour floor) +
+    // ClockSkewTolerance. Today NEITHER token-lifetime term is configurable yet
     // (no ID-token lifetime property, no JWT-access-token lifetime property exists), so the
     // 1-hour floor is currently the only real term. When configurable per-token lifetimes are
     // added to AuthorizationServerOptions, THIS derivation must be extended to take the max with

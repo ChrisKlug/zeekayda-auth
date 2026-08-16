@@ -63,8 +63,7 @@ public abstract class RefreshTokenConsumptionResult
     /// <see cref="IRefreshTokenStore.RevokeFamilyAsync"/> with <see cref="FamilyId"/>.
     /// </para>
     /// <para>
-    /// This is the primary signal for the refresh token reuse detection mechanism described
-    /// in ADR 0008 §4.
+    /// This is the primary signal for the refresh token reuse detection mechanism.
     /// </para>
     /// </remarks>
     public sealed class AlreadyConsumed : RefreshTokenConsumptionResult

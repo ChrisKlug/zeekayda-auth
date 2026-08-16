@@ -7,7 +7,7 @@ namespace ZeeKayDa.Auth.AzureKeyVault;
 /// own <c>ListKeysAsync</c> override derives every included version's <see cref="ZeeKayDa.Auth.Tokens.KeyListing"/>
 /// from this shared shape — the base <see cref="ZeeKayDa.Auth.Tokens.JwtSigningService{TOptions}"/>
 /// engine derives the actual activation/retirement timeline from the returned
-/// <see cref="ZeeKayDa.Auth.Tokens.KeyListing"/>s (ADR 0015 §6).
+/// <see cref="ZeeKayDa.Auth.Tokens.KeyListing"/>s.
 /// </summary>
 internal interface IKeyVaultVersionInfo
 {

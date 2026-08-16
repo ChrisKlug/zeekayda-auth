@@ -1284,7 +1284,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
 
         result.Failed.Should().BeTrue();
         result.FailureMessage.Should().Contain("ClockSkewTolerance");
-        result.FailureMessage.Should().Contain("ADR 0008");
+        result.FailureMessage.Should().Contain("half of AuthorizationCodeLifetime");
     }
 
     [Fact]

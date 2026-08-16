@@ -34,8 +34,8 @@ namespace ZeeKayDa.Auth.FileSystem;
 internal sealed class FileSigningKeyReader
 {
     // Broader than 0600 (owner read/write only) is a hard failure — matches the local-development
-    // provider's key-file requirement (ADR 0011 §2), applied here to a file this provider does not
-    // own but must still trust before extracting private key material from it.
+    // provider's key-file requirement, applied here to a file this provider does not own but must
+    // still trust before extracting private key material from it.
     private const UnixFileMode DisallowedUnixModeBits =
         UnixFileMode.GroupRead | UnixFileMode.GroupWrite | UnixFileMode.GroupExecute
         | UnixFileMode.OtherRead | UnixFileMode.OtherWrite | UnixFileMode.OtherExecute;
@@ -176,9 +176,9 @@ internal sealed class FileSigningKeyReader
         // does not hold on Unix: several mainstream OSes ship root-owned symlinks as a normal part of
         // their standard layout — most notably macOS, where /tmp, /var, and /etc are themselves
         // symlinks to /private/tmp, /private/var, /private/etc. Since this provider is the sole
-        // recommended signing provider for macOS deployments (ADR 0011 Amendment 7), rejecting every
-        // file placed under those conventional paths would make the provider unusable for a large
-        // share of its primary target platform.
+        // recommended signing provider for macOS deployments, rejecting every file placed under
+        // those conventional paths would make the provider unusable for a large share of its
+        // primary target platform.
         //
         // The distinguishing trust signal is ownership of the *directory entry itself* — not
         // symlink-ness, and not the ownership of whatever a symlink points at: an attacker who does

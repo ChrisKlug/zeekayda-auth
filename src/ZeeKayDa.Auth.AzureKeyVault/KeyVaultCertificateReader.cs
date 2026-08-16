@@ -294,9 +294,9 @@ internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
             }
         }
 
-        // Confirmed behavior (see ADR 0011 and the readiness review for this issue): when a
-        // certificate's key policy is exportable: false, Key Vault's secret endpoint still returns
-        // HTTP 200 with a PKCS#12 payload — it simply omits the private key bag from it entirely.
+        // Confirmed Key Vault behavior: when a certificate's key policy is exportable: false, Key
+        // Vault's secret endpoint still returns HTTP 200 with a PKCS#12 payload — it simply omits
+        // the private key bag from it entirely.
         // There is no dedicated "forbidden" error for this case, so "no key bag was found" is the
         // only reliable signal, and must be checked after every download, not assumed from policy
         // metadata (which reflects the certificate's *current* policy, not necessarily the policy a

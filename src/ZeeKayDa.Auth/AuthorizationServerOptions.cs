@@ -67,7 +67,7 @@ public sealed class AuthorizationServerOptions
     /// The default of 5 seconds is intentionally small. A <c>ClockSkewTolerance</c> approaching
     /// half the authorization code lifetime effectively nullifies the code expiry guarantee. Values
     /// equal to or exceeding half of <c>AuthorizationEndpoint.AuthorizationCodeLifetime</c> are
-    /// rejected at startup. See ADR 0008 §Security Considerations — Clock skew tolerance.
+    /// rejected at startup.
     /// </para>
     /// </remarks>
     public TimeSpan ClockSkewTolerance { get; set; } = TimeSpan.FromSeconds(5);

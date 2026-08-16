@@ -10,7 +10,7 @@ namespace ZeeKayDa.Auth.Tokens;
 /// This is <b>not</b> the JWKS/JWS <c>kid</c>. The base class derives the public <c>kid</c> from
 /// <see cref="KeyListing.PublicKey"/> via <see cref="JwkThumbprint.Compute(System.Security.Cryptography.RSAParameters)"/>
 /// (or the EC overload) — a provider never supplies the <c>kid</c> directly, which structurally
-/// rules out a raw external identifier leaking into a token header or the public JWKS (ADR 0015 §2).
+/// rules out a raw external identifier leaking into a token header or the public JWKS.
 /// </para>
 /// <para>
 /// If a key's material can change while this identifier stays the same (for example, a

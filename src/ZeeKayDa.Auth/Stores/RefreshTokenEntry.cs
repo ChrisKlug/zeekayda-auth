@@ -11,7 +11,7 @@ namespace ZeeKayDa.Auth.Stores;
 /// </para>
 /// <para>
 /// <see cref="FamilyId"/> is shared across all rotations in a token chain, enabling
-/// whole-family revocation on reuse detection (see ADR 0008 §4).
+/// whole-family revocation on reuse detection.
 /// </para>
 /// <para>
 /// <see cref="PreviousTokenHandleHash"/> is forensic metadata only — it is never used for
@@ -69,8 +69,8 @@ public sealed record RefreshTokenEntry
     /// <remarks>
     /// Baked at family birth (the first token of the family) from
     /// <c>AuthorizationServerOptions.TokenEndpoint.AbsoluteFamilyLifetime</c> and propagated
-    /// unchanged through every rotation, so the whole chain shares one absolute cap (ADR 0014
-    /// §5). Each token's own <see cref="ExpiresAt"/> is clamped to
+    /// unchanged through every rotation, so the whole chain shares one absolute cap. Each token's
+    /// own <see cref="ExpiresAt"/> is clamped to
     /// <c>min(now + RefreshTokenLifetime, FamilyAbsoluteExpiry)</c>.
     /// </remarks>
     public required DateTimeOffset FamilyAbsoluteExpiry { get; init; }

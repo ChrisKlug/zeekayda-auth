@@ -7,9 +7,9 @@ namespace ZeeKayDa.Auth.FileSystem;
 /// </summary>
 /// <remarks>
 /// <para>
-/// ADR 0015 Tier A (<see cref="KeySetOptions"/>, issue #422): the complete set of registered PEM
-/// files is fixed at configuration time, and the only thing that ever advances is the wall clock
-/// crossing each file's certificate <c>NotBefore</c>/<c>NotAfter</c> — mapped onto each key's
+/// The complete set of registered PEM files is fixed at configuration time, and the only thing that
+/// ever advances is the wall clock crossing each file's certificate <c>NotBefore</c>/<c>NotAfter</c> —
+/// mapped onto each key's
 /// <see cref="ZeeKayDa.Auth.Tokens.KeyListing.ActivateAt"/>/<see cref="ZeeKayDa.Auth.Tokens.KeyListing.ExpiresAt"/>.
 /// <see cref="KeySetOptions.PublicationLead"/> is inherited from <see cref="KeySetOptions"/> — see
 /// that type's remarks for what it governs (an advisory too-soon-activation startup warning, not a
@@ -17,9 +17,9 @@ namespace ZeeKayDa.Auth.FileSystem;
 /// </para>
 /// <para>
 /// Picking up a rotated-in or replaced file requires a process restart: this provider's
-/// <c>ListKeysAsync</c> runs exactly once, ever, for the lifetime of a service instance (ADR 0015
-/// §1/§4) — register the successor file via <see cref="AddFile(string, string)"/> ahead of its
-/// intended activation time and redeploy, rather than expecting a live reload.
+/// <c>ListKeysAsync</c> runs exactly once, ever, for the lifetime of a service instance — register the
+/// successor file via <see cref="AddFile(string, string)"/> ahead of its intended activation time and
+/// redeploy, rather than expecting a live reload.
 /// </para>
 /// </remarks>
 public sealed class PemFileSigningOptions : KeySetOptions
@@ -37,7 +37,7 @@ public sealed class PemFileSigningOptions : KeySetOptions
     /// Gets or sets the path to a separate private-key PEM file for <see cref="Path"/>, set by
     /// <c>AddPemFileSigning</c>'s <c>keyPath</c> parameter. When <see langword="null"/> (the
     /// default), <see cref="Path"/> is a combined cert+key file, exactly as this provider has
-    /// always required (issue #405).
+    /// always required.
     /// </summary>
     public string? KeyPath { get; set; }
 
@@ -56,11 +56,10 @@ public sealed class PemFileSigningOptions : KeySetOptions
     public IReadOnlyList<PemFileRegistration> AdditionalFiles => _additionalFiles;
 
     /// <summary>
-    /// Registers an additional PEM file to support rotation with overlapping validity windows
-    /// (ADR 0015 §1; issue #282's multi-key registration shape). When <paramref name="keyPath"/>
-    /// is <see langword="null"/> (the default), <paramref name="path"/> must be a combined cert+key
-    /// file; when supplied, <paramref name="path"/> is a certificate-only file and
-    /// <paramref name="keyPath"/> is a separate private-key-only file (issue #405).
+    /// Registers an additional PEM file to support rotation with overlapping validity windows.
+    /// When <paramref name="keyPath"/> is <see langword="null"/> (the default), <paramref name="path"/>
+    /// must be a combined cert+key file; when supplied, <paramref name="path"/> is a certificate-only
+    /// file and <paramref name="keyPath"/> is a separate private-key-only file.
     /// </summary>
     /// <param name="path">
     /// The additional PEM file's path — a combined cert+key file when <paramref name="keyPath"/> is

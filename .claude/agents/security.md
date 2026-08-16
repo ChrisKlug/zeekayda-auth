@@ -38,6 +38,15 @@ The human maintainer reviews and merges from the PR page — a verdict that exis
 
 The same applies to design-phase threat-model sign-offs on ADR PRs.
 
+## Comments and XML Docs
+
+When you write or request changes to code comments and XML docs, keep them lean and citation-free:
+
+- Never add (or ask for) a comment that just cites an ADR number/section, an issue/PR number, or an acceptance criterion. State the security-relevant *why* in plain English instead — that is what a reader needs
+- `<summary>`/`<remarks>` cover what a consumer needs to use the member safely, not the history of how the design got here
+- `<exception>` elements are exempt and are never trimmed
+- A comment is not a mitigation. If a control's correctness depends on the next developer reading a paragraph, raise it as a design finding (see the architect's "docs are not a mitigation" tiers), not as a request for a longer comment
+
 ## How You Work
 
 - **Never approve a security issue in a public GitHub issue** — direct to the private security advisory process

@@ -48,7 +48,7 @@ namespace ZeeKayDa.Auth.Logging;
 /// to <see langword="true"/> to opt out (development environments only).
 /// </para>
 /// <para>
-/// This is a defence-in-depth backstop for ADR 0007 §7. The Roslyn analyzer
+/// This is a defence-in-depth backstop. The Roslyn analyzer
 /// (<c>ZEEKAYDA0001</c>) is the primary preventive control: it enforces at compile time that
 /// every ZeeKayDa service injects <see cref="ISanitizingLogger{T}"/> rather than
 /// <see cref="ILogger{T}"/> directly. The CI log-hygiene grep

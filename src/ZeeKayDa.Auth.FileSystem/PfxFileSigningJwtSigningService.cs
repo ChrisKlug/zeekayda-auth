@@ -12,35 +12,32 @@ namespace ZeeKayDa.Auth.FileSystem;
 /// </summary>
 /// <remarks>
 /// <para>
-/// ADR 0015 Tier A (<see cref="KeySetOptions"/>, issue #423): the complete set of registered PFX
-/// files is fixed at configuration time, so <see cref="ListKeysAsync"/> runs exactly once, ever, for
-/// the lifetime of this service instance. Only the wall clock crossing each file's certificate
-/// <c>NotBefore</c>/<c>NotAfter</c> — mapped onto each returned <see cref="KeyListing"/>'s
-/// <see cref="KeyListing.ActivateAt"/>/<see cref="KeyListing.ExpiresAt"/> — drives which registered
-/// file is the active signer; the base class recomputes that selection lazily on every call from the
-/// one-time snapshot, so multi-file rotation (issue #282) still switches the active signer over time
-/// with zero further filesystem I/O. Picking up a rotated-in or replaced file otherwise requires a
-/// restart (ADR 0015 §10).
+/// The set of registered PFX files is fixed at configuration time, so <see cref="ListKeysAsync"/> runs
+/// exactly once, ever, for the lifetime of this service instance. Only the wall clock crossing each
+/// file's certificate <c>NotBefore</c>/<c>NotAfter</c> — mapped onto each returned
+/// <see cref="KeyListing"/>'s <see cref="KeyListing.ActivateAt"/>/<see cref="KeyListing.ExpiresAt"/> —
+/// drives which registered file is the active signer; the base class recomputes that selection lazily
+/// on every call from the one-time snapshot, so multi-file rotation still switches the active signer
+/// over time with zero further filesystem I/O. Picking up a rotated-in or replaced file otherwise
+/// requires a restart.
 /// </para>
 /// <para>
-/// <strong>Least-privilege loading for a bundled format (ADR 0015 §2/§5).</strong> PFX is a bundled
-/// format: reading it yields the whole certificate, private half included — there is no way to open
-/// the bundle for its public certificate alone. This provider therefore reads each bundle transiently
-/// in <see cref="ListKeysAsync"/>, extracts and retains <em>only</em> the public
+/// <strong>Least-privilege loading for a bundled format.</strong> PFX is a bundled format: reading it
+/// yields the whole certificate, private half included — there is no way to open the bundle for its
+/// public certificate alone. This provider therefore reads each bundle transiently in
+/// <see cref="ListKeysAsync"/>, extracts and retains <em>only</em> the public
 /// <see cref="PublicKeyParameters"/> in the returned <see cref="KeyListing"/>, and disposes the
 /// certificate (releasing its private-key handle) immediately — no private material for any file, not
 /// even the active one, is retained past that transient read. When the base class needs to sign, it
 /// calls <see cref="CreateSignerAsync"/>, which re-reads and re-parses <em>only</em> the single file
 /// currently selected as active; every other registered file's private key is never loaded a second
-/// time. This is the concrete proof-point for ADR 0015 §2/§5's "provider obligation, not structural
-/// guarantee" caveat: the base structurally requests private material only for the active key, but
-/// keeping non-active private material out of the long-lived snapshot is this provider's own doing.
+/// time.
 /// </para>
 /// <para>
 /// <c>kid</c> is the RFC 7638 JWK thumbprint of each certificate's public key, derived by the base
 /// class from each <see cref="KeyListing.PublicKey"/> — never the file path, which is only this
-/// provider's own internal <see cref="KeyId"/> (ADR 0015 §2), since a <c>kid</c> is always public and
-/// the path could leak local filesystem layout.
+/// provider's own internal <see cref="KeyId"/>, since a <c>kid</c> is always public and the path could
+/// leak local filesystem layout.
 /// </para>
 /// </remarks>
 internal sealed class PfxFileSigningJwtSigningService : JwtSigningService<PfxFileSigningOptions>
@@ -123,14 +120,14 @@ internal sealed class PfxFileSigningJwtSigningService : JwtSigningService<PfxFil
 
         throw new InvalidOperationException(
             $"{nameof(CreateSignerAsync)} was called for key '{id}', which is no longer a registered " +
-            $"PFX file. {nameof(ListKeysAsync)} runs exactly once for this ADR 0015 Tier A provider, so " +
-            "its registered files must not change after startup.");
+            $"PFX file. {nameof(ListKeysAsync)} runs exactly once for this provider, so its registered " +
+            "files must not change after startup.");
     }
 
     private static IReadOnlyList<RegisteredSigningFile> GetRegisteredFiles(PfxFileSigningOptions options)
     {
         // The PFX format inherently bundles cert+key+chain in one file, so every entry here has only
-        // a single backing path — issue #405's optional companion key path is PEM-only and does not
+        // a single backing path — an optional companion key path is a PEM-only concept and does not
         // apply to this provider.
         var files = new List<RegisteredSigningFile>(1 + options.AdditionalFiles.Count) { new(options.Path) };
         files.AddRange(options.AdditionalFiles.Select(file => new RegisteredSigningFile(file.Path)));
@@ -148,10 +145,9 @@ internal sealed class PfxFileSigningJwtSigningService : JwtSigningService<PfxFil
     /// Loads with <see cref="X509KeyStorageFlags.DefaultKeySet"/>. Adopting
     /// <see cref="X509KeyStorageFlags.EphemeralKeySet"/> for the public-only <see cref="ListKeysAsync"/>
     /// read (so a non-active bundle's private half is never even transiently written to the Windows
-    /// on-disk key store) is tracked as a follow-up — it is not portable (macOS, this provider's
-    /// primary target per ADR 0011 Amendment 7, throws <see cref="PlatformNotSupportedException"/> for
-    /// that flag) and needs platform-conditional handling plus Windows CI validation, out of scope for
-    /// this contract migration.
+    /// on-disk key store) is tracked as a follow-up: <see cref="X509KeyStorageFlags.EphemeralKeySet"/>
+    /// is not portable to macOS, which throws <see cref="PlatformNotSupportedException"/> for that
+    /// flag, so it needs platform-conditional handling plus Windows CI validation.
     /// </remarks>
     /// <exception cref="ZeeKayDaConfigurationException">
     /// The file is not a valid PKCS#12 bundle, or the configured password is incorrect.

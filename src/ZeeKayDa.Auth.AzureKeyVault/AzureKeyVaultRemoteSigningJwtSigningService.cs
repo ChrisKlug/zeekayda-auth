@@ -11,27 +11,25 @@ namespace ZeeKayDa.Auth.AzureKeyVault;
 /// </summary>
 /// <remarks>
 /// <para>
-/// ADR 0015 Tier B (<see cref="KeySourceOptions"/>, issue #425): <see cref="ListKeysAsync"/> re-asks
-/// Key Vault for the key's current version list once per <see cref="KeySourceOptions.RefreshInterval"/>
-/// — Key Vault, not this provider, owns the key's version history. Every returned
-/// <see cref="KeyListing.ActivateAt"/> is derived entirely from Key Vault's own durable per-version
-/// <c>CreatedOn</c> timestamp (<c>ActivateAt = CreatedOn + PublicationLead</c>), never from when this
-/// process first observed the version — stateless, restart-safe, and identical across every replica.
-/// The key version that was created first of all (by <c>CreatedOn</c>, tie-broken by version
-/// identifier) is eligible from startup (<c>ActivateAt = null</c>), so the base class's ordinary
-/// activation-timeline logic covers the "first ever version" bootstrap case with no special-case
-/// code here.
+/// <see cref="ListKeysAsync"/> re-asks Key Vault for the key's current version list once per
+/// <see cref="KeySourceOptions.RefreshInterval"/> — Key Vault, not this provider, owns the key's
+/// version history. Every returned <see cref="KeyListing.ActivateAt"/> is derived entirely from Key
+/// Vault's own durable per-version <c>CreatedOn</c> timestamp
+/// (<c>ActivateAt = CreatedOn + PublicationLead</c>), never from when this process first observed the
+/// version — stateless, restart-safe, and identical across every replica. The key version that was
+/// created first of all (by <c>CreatedOn</c>, tie-broken by version identifier) is eligible from
+/// startup (<c>ActivateAt = null</c>), so the base class's ordinary activation-timeline logic covers
+/// the "first ever version" bootstrap case with no special-case code here.
 /// </para>
 /// <para>
-/// Kill-by-omission (ADR 0015 §6) is entirely the base class's concern: this provider's only
-/// obligation is to list currently-enabled versions and let a version silently drop out of the
-/// returned list once Key Vault stops reporting it as enabled. There is no separate <c>Enabled</c>
-/// flag anywhere in this contract.
+/// Kill-by-omission is entirely the base class's concern: this provider's only obligation is to list
+/// currently-enabled versions and let a version silently drop out of the returned list once Key Vault
+/// stops reporting it as enabled. There is no separate <c>Enabled</c> flag anywhere in this contract.
 /// </para>
 /// <para>
 /// <c>kid</c> is the RFC 7638 JWK thumbprint of each version's public key, derived by the base class
 /// from each <see cref="KeyListing.PublicKey"/> — never the raw Key Vault version identifier, which
-/// is only this provider's own internal <see cref="KeyId"/> (ADR 0015 §2).
+/// is only this provider's own internal <see cref="KeyId"/>.
 /// </para>
 /// <para>
 /// <see cref="CreateSignerAsync"/> returns a small <see cref="ISigner"/> wrapper
@@ -39,7 +37,7 @@ namespace ZeeKayDa.Auth.AzureKeyVault;
 /// shared, DI-owned <see cref="IKeyVaultSigner"/> seam. <see cref="IDisposable.Dispose"/> on that
 /// wrapper is a deliberate no-op: it never disposes <see cref="IKeyVaultSigner"/> or any pooled
 /// <c>CryptographyClient</c> it may hold, since those are shared across every activation and every
-/// other <see cref="ISigner"/> instance (ADR 0015 §2/Security Considerations item 5).
+/// other <see cref="ISigner"/> instance.
 /// </para>
 /// </remarks>
 internal sealed class AzureKeyVaultRemoteSigningJwtSigningService : JwtSigningService<AzureKeyVaultRemoteSigningOptions>
@@ -112,8 +110,8 @@ internal sealed class AzureKeyVaultRemoteSigningJwtSigningService : JwtSigningSe
         // observe in the JWKS first. Computing over the full, unfiltered history instead means a
         // stale read can only affect this derivation by omitting every version outright, which
         // already fails closed via the "no key versions" check above rather than silently promoting
-        // the wrong version. This mirrors the risk analysis accepted for issue #300 (see ADR 0011,
-        // Changelog, 2026-07-04 entry) for the original Key Vault provider.
+        // the wrong version. This mirrors the risk analysis accepted for the original Key Vault
+        // provider.
         var firstEverVersion = allVersions
             .OrderBy(v => v.CreatedOn)
             .ThenBy(v => v.Version, StringComparer.Ordinal)
@@ -121,8 +119,8 @@ internal sealed class AzureKeyVaultRemoteSigningJwtSigningService : JwtSigningSe
             .Version;
 
         // Enabled is a Key Vault-side concept only — folded into "list enabled versions only" here
-        // (ADR 0015 §6/§10) rather than surfaced as a flag anywhere in the KeyListing/options
-        // contract. The base class's own kill-by-omission logic takes it from there.
+        // rather than surfaced as a flag anywhere in the KeyListing/options contract. The base
+        // class's own kill-by-omission logic takes it from there.
         var enabledVersions = allVersions.Where(v => v.Enabled).ToList();
         if (enabledVersions.Count == 0)
         {
@@ -177,8 +175,8 @@ internal sealed class AzureKeyVaultRemoteSigningJwtSigningService : JwtSigningSe
 
     /// <summary>
     /// Derives a version's <see cref="KeyListing.ActivateAt"/> from Key Vault's own durable
-    /// <c>CreatedOn</c> timestamp (never observed/first-seen time — ADR 0015 §3/Security
-    /// Considerations item 4): <c>CreatedOn + publicationLead</c> for every version except the
+    /// <c>CreatedOn</c> timestamp (never observed/first-seen time):
+    /// <c>CreatedOn + publicationLead</c> for every version except the
     /// chronologically-first version ever recorded, which is eligible from startup. An explicit
     /// <c>NotBefore</c> floors the result when it schedules the version's go-live later than that.
     /// </summary>
@@ -204,8 +202,7 @@ internal sealed class AzureKeyVaultRemoteSigningJwtSigningService : JwtSigningSe
     /// <see cref="Dispose"/> is deliberately a no-op: this wrapper introduces no per-activation
     /// resource of its own to release, and <paramref name="signer"/> is a shared seam over pooled
     /// <c>CryptographyClient</c> instances that every other activation also depends on — disposing
-    /// it here would break them all (ADR 0015 §2/Security Considerations item 5; see
-    /// <see cref="ISigner"/>'s own Dispose contract).
+    /// it here would break them all (see <see cref="ISigner"/>'s own Dispose contract).
     /// </remarks>
     private sealed class KeyVaultRemoteSigner(IKeyVaultSigner signer, Uri keyVersionUri, string kid, SigningAlgorithm algorithm)
         : ISigner

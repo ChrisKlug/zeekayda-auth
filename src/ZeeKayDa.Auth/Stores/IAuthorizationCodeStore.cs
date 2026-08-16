@@ -5,7 +5,7 @@ namespace ZeeKayDa.Auth.Stores;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <strong>Framework-sealed (ADR 0013 §1).</strong> This interface is the protocol surface the
+/// <strong>Framework-sealed.</strong> This interface is the protocol surface the
 /// token and authorization endpoints depend on, but it is no longer a third-party extension
 /// point: the framework ships one sealed coordinator, <c>AuthorizationCodeStore</c>, that
 /// implements it. The interface stays <see langword="public"/> so it can be injected and
@@ -153,6 +153,6 @@ public interface IAuthorizationCodeStore
         CancellationToken cancellationToken);
 
     // Reserved: satisfying this member requires internal access, so only assemblies named in
-    // [InternalsVisibleTo] can implement IAuthorizationCodeStore (ADR 0013 §1).
+    // [InternalsVisibleTo] can implement IAuthorizationCodeStore.
     internal void SealAsFrameworkOwnedProtocol();
 }

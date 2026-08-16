@@ -6,13 +6,12 @@ namespace ZeeKayDa.Auth.Windows;
 
 /// <summary>
 /// Extracts public and private key handles from an already-obtained <see cref="X509Certificate2"/>.
-/// The seam that lets <see cref="WindowsCertificateStoreSigningJwtSigningService"/>'s key-container
-/// consistency check (L-3/M-1, PR #436 security review) be exercised with a private key handle that
-/// does not pair with the certificate's own public key — a state a real
-/// <see cref="X509Certificate2"/> loaded through any public .NET API cannot be made to represent,
-/// since certificate/private-key association is cryptographically validated at load time, but which
-/// a genuine Windows Certificate Store entry can reach after its key-container association is
-/// repointed post-startup (for example, via <c>certutil -repairstore</c>).
+/// This seam exists so tests can exercise a private key handle that does not pair with the
+/// certificate's own public key — a state a real <see cref="X509Certificate2"/> loaded through any
+/// public .NET API cannot be made to represent, since certificate/private-key association is
+/// cryptographically validated at load time, but which a genuine Windows Certificate Store entry can
+/// reach after its key-container association is repointed post-startup (for example, via
+/// <c>certutil -repairstore</c>).
 /// </summary>
 internal interface ICertificateKeyExtractor
 {

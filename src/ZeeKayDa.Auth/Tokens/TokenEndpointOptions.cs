@@ -59,7 +59,7 @@ public sealed class TokenEndpointOptions
     /// <para>
     /// Baked into <c>FamilyAbsoluteExpiry</c> at family birth (<c>now + AbsoluteFamilyLifetime</c>)
     /// and propagated verbatim through every rotation in the family, so the whole chain shares one
-    /// absolute ceiling (ADR 0014 §5). Each token's own expiry is clamped to
+    /// absolute ceiling. Each token's own expiry is clamped to
     /// <c>min(now + RefreshTokenLifetime, FamilyAbsoluteExpiry)</c> — <see cref="RefreshTokenLifetime"/>
     /// is the per-token idle window; this option is the whole-family hard cap. There is no
     /// separate idle-timeout option.

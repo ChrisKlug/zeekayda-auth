@@ -11,7 +11,7 @@ using static ZeeKayDa.Auth.Stores.StoreGuard;
 namespace ZeeKayDa.Auth.Stores;
 
 /// <summary>
-/// The framework's sealed <see cref="IRefreshTokenStore"/> coordinator (ADR 0014 §4).
+/// The framework's sealed <see cref="IRefreshTokenStore"/> coordinator.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -23,7 +23,7 @@ namespace ZeeKayDa.Auth.Stores;
 /// the above.
 /// </para>
 /// <para>
-/// <strong>One <c>Unprotect</c> catch site (ADR 0014 §7).</strong> Unlike the authorization-code
+/// <strong>One <c>Unprotect</c> catch site.</strong> Unlike the authorization-code
 /// coordinator, reuse (<c>Consumed</c> status), revocation, expiry, and client mismatch are all
 /// decided from cleartext columns on <see cref="RefreshTokenGrant"/> before anything is
 /// decrypted. The only <c>Unprotect</c> call is on the happy path, after the atomic
@@ -38,7 +38,7 @@ internal sealed class RefreshTokenStore : IRefreshTokenStore
 
     /// <summary>
     /// Reserved sentinel value for a revocation-sentinel row's <see cref="RefreshTokenGrant.Subject"/>
-    /// and <see cref="RefreshTokenGrant.ClientId"/> (ADR 0014 §12). Never a real subject or
+    /// and <see cref="RefreshTokenGrant.ClientId"/>. Never a real subject or
     /// client_id — a real grant's own values can never equal this constant.
     /// </summary>
     private const string RevocationSentinelReservedValue = "__zeekayda-revocation-sentinel__";
@@ -125,8 +125,8 @@ internal sealed class RefreshTokenStore : IRefreshTokenStore
         if (grant is null || grant.Status != RefreshGrantStatus.Active)
             return null;
 
-        // #386 gate (ADR 0014 §11): a successor inserted after RevokeFamilyAsync still reads
-        // Active on its own row, so introspection must not report it as a live grant either.
+        // A successor inserted after RevokeFamilyAsync still reads Active on its own row, so
+        // introspection must not report it as a live grant either.
         if (await Guarded(
                 () => _grantStore.IsFamilyRevokedAsync(grant.FamilyId, cancellationToken),
                 "check whether the refresh token family is revoked").ConfigureAwait(false))
@@ -172,8 +172,8 @@ internal sealed class RefreshTokenStore : IRefreshTokenStore
         if (grant.Status == RefreshGrantStatus.Consumed)
             return new RefreshTokenConsumptionResult.AlreadyConsumed { FamilyId = grant.FamilyId };
 
-        // #386 gate (ADR 0014 §11): the family may have been revoked after this grant was
-        // inserted, so its own still-Active status is not the last word — re-check the family.
+        // The family may have been revoked after this grant was inserted, so its own
+        // still-Active status is not the last word — re-check the family.
         if (await Guarded(
                 () => _grantStore.IsFamilyRevokedAsync(grant.FamilyId, cancellationToken),
                 "check whether the refresh token family is revoked").ConfigureAwait(false))
@@ -213,11 +213,10 @@ internal sealed class RefreshTokenStore : IRefreshTokenStore
         ArgumentNullException.ThrowIfNull(familyId);
         cancellationToken.ThrowIfCancellationRequested();
 
-        // ADR 0014 §12 (issue #388): unconditionally insert a durable revocation sentinel FIRST.
-        // This closes the case where the family has zero rows at revoke time (e.g. an
-        // authorization-code replay racing ahead of its own first StoreAsync) — without it, the
-        // bulk mark below would match nothing and leave no trace for the §11
-        // IsFamilyRevokedAsync gate to find. The sentinel alone is self-sufficient: it arms the
+        // Unconditionally insert a durable revocation sentinel FIRST. This closes the case where
+        // the family has zero rows at revoke time (e.g. an authorization-code replay racing ahead
+        // of its own first StoreAsync) — without it, the bulk mark below would match nothing and
+        // leave no trace for the IsFamilyRevokedAsync gate to find. The sentinel alone is self-sufficient: it arms the
         // gate for the whole family regardless of whether any real row exists yet, and regardless
         // of a crash between this step and the bulk mark below.
         await InsertRevocationSentinelAsync(familyId, cancellationToken).ConfigureAwait(false);
@@ -263,7 +262,7 @@ internal sealed class RefreshTokenStore : IRefreshTokenStore
     }
 
     /// <summary>
-    /// Inserts the ADR 0014 §12 revocation-sentinel row for <paramref name="familyId"/>, treating
+    /// Inserts the revocation-sentinel row for <paramref name="familyId"/>, treating
     /// a confirmed collision on the sentinel's own deterministic key as an idempotent no-op.
     /// </summary>
     /// <remarks>
@@ -327,12 +326,12 @@ internal sealed class RefreshTokenStore : IRefreshTokenStore
 
     private static StoreKey BuildHandleKey(string tokenHandle) => new(HashBase64Url(tokenHandle));
 
-    // The sentinel key is deterministic in familyId alone, reusing the same H(x) construction
-    // (ADR 0014 §12) so repeated RevokeFamilyAsync calls for the same family always target the
-    // same row, preserving idempotency without unbounded row growth.
+    // The sentinel key is deterministic in familyId alone, reusing the same H(x) construction so
+    // repeated RevokeFamilyAsync calls for the same family always target the same row, preserving
+    // idempotency without unbounded row growth.
     private static StoreKey BuildRevocationSentinelKey(string familyId) => new(HashBase64Url($"revocation-sentinel:{familyId}"));
 
-    // H(x) = Base64Url(SHA-256(UTF8(x))) (ADR 0014 §4).
+    // H(x) = Base64Url(SHA-256(UTF8(x))).
     private static string HashBase64Url(string handle) => Base64Url.EncodeToString(SHA256.HashData(Encoding.UTF8.GetBytes(handle)));
 
     private static DateTimeOffset Min(DateTimeOffset a, DateTimeOffset b) => a < b ? a : b;

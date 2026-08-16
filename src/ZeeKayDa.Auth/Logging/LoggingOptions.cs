@@ -4,10 +4,9 @@ namespace ZeeKayDa.Auth.Logging;
 /// Framework-behavior options that control how ZeeKayDa.Auth emits log entries.
 /// </summary>
 /// <remarks>
-/// This is a framework-behavior group on <see cref="ZeeKayDa.Auth.AuthorizationServerOptions"/>,
-/// following the convention established in ADR 0002 §5 and the 2026-06-13 framework-behavior-groups
-/// amendment. Settings here govern the framework's own runtime logging behavior and have no
-/// OIDC Discovery document analogue.
+/// This is a framework-behavior group on <see cref="ZeeKayDa.Auth.AuthorizationServerOptions"/>.
+/// Settings here govern the framework's own runtime logging behavior and have no OIDC Discovery
+/// document analogue.
 /// </remarks>
 public sealed class LoggingOptions
 {

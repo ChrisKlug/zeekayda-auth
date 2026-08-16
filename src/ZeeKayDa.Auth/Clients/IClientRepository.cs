@@ -7,7 +7,7 @@ namespace ZeeKayDa.Auth.Clients;
 /// <para>
 /// Custom implementations must return <see langword="null"/> (never throw) for unknown or
 /// malformed <c>client_id</c> values — throwing changes timing and undermines enumeration
-/// defence. See ADR 0007 §6 and RFC 9700 §2.1.
+/// defence. See RFC 9700 §2.1.
 /// </para>
 /// <para>
 /// Custom implementations MUST resolve <see cref="IClientRegistrationValidator"/> from DI and
@@ -29,7 +29,7 @@ public interface IClientRepository
     /// <remarks>
     /// Implementations MUST return <see langword="null"/> for unknown or malformed
     /// <c>client_id</c> values — never throw. Throwing from this method changes response
-    /// timing and enables client enumeration attacks. See ADR 0007 §6.
+    /// timing and enables client enumeration attacks.
     /// </remarks>
     ValueTask<IClientRegistration?> FindByClientIdAsync(
         string clientId,

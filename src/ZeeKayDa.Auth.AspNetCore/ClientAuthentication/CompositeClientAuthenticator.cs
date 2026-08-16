@@ -10,7 +10,7 @@ namespace ZeeKayDa.Auth.AspNetCore.ClientAuthentication;
 
 /// <summary>
 /// Coordinates all registered <see cref="IClientAuthenticator"/> implementations for token
-/// endpoint client authentication, implementing the dispatch rules from ADR 0007 §4.
+/// endpoint client authentication, implementing the documented dispatch rules.
 /// </summary>
 /// <remarks>
 /// Registered as the concrete type — not as <see cref="IClientAuthenticator"/> — so it is
@@ -73,8 +73,8 @@ internal sealed class CompositeClientAuthenticator
         if (headers.Authorization.Count > 1)
             return ClientAuthenticationResult.NotValid();
 
-        // ADR 0007 §4 step 1: CanHandle is a shape check — build a context without the client
-        // so the repository is not consulted for requests that will be rejected early.
+        // CanHandle is a shape check — build a context without the client so the repository is
+        // not consulted for requests that will be rejected early.
         // Authenticators MUST NOT access context.Client inside CanHandle.
         var canHandleContext = new TokenRequestContext
         {
@@ -94,7 +94,7 @@ internal sealed class CompositeClientAuthenticator
             .Select(x => (Authenticator: x.authenticator, Method: x.method!))
             .ToList();
 
-        // ADR 0007 §4 step 3: multiple mechanisms → invalid_client (RFC 6749 §2.3).
+        // Multiple mechanisms → invalid_client (RFC 6749 §2.3).
         if (matches.Count > 1)
             return ClientAuthenticationResult.NotValid();
 
@@ -102,11 +102,11 @@ internal sealed class CompositeClientAuthenticator
         // conflicting requests never incur unnecessary I/O.
         var client = await _clientRepository.FindByClientIdAsync(clientId, cancellationToken);
 
-        // ADR 0007 §4 step 4: no mechanism → none fallback.
+        // No mechanism → none fallback.
         if (matches.Count == 0)
             return AuthenticateNone(client);
 
-        // ADR 0007 §4 step 5: exactly one mechanism.
+        // Exactly one mechanism.
         var (matchedAuthenticator, matchedMethod) = matches[0];
 
         // Returned method must be in the authenticator's own declared set (defends against a
@@ -118,7 +118,7 @@ internal sealed class CompositeClientAuthenticator
         if (!IsMethodAllowedByServer(matchedMethod))
             return ClientAuthenticationResult.NotValid();
 
-        // Unknown client → invalid_client with timing padding (ADR 0007 §3.4).
+        // Unknown client → invalid_client with timing padding.
         if (client is null)
         {
             _secretHasher.PadToCredentialBudget();
@@ -127,14 +127,14 @@ internal sealed class CompositeClientAuthenticator
 
         // Method must be in the per-client allowlist (ordinal). Pad timing to match the
         // unknown-client path so "client exists but wrong method" is not timing-distinguishable
-        // from "client does not exist" (ADR 0007 §3.4).
+        // from "client does not exist".
         if (!client.AllowedTokenEndpointAuthMethods.ContainsOrdinal(matchedMethod))
         {
             _secretHasher.PadToCredentialBudget();
             return ClientAuthenticationResult.NotValid();
         }
 
-        // ADR 0007 §4 step 6: delegate to the authenticator. Client is guaranteed non-null here.
+        // Delegate to the authenticator. Client is guaranteed non-null here.
         var context = new ClientAuthenticationContext
         {
             HttpContext = httpContext,
@@ -165,7 +165,7 @@ internal sealed class CompositeClientAuthenticator
     private ClientAuthenticationResult AuthenticateNone(IClientRegistration? client)
     {
         // Server must advertise "none". Routed through IsMethodAllowedByServer so there is one
-        // server-allowlist code path, consistent with ADR 0007 §1a amendment.
+        // server-allowlist code path.
         if (!IsMethodAllowedByServer(TokenEndpointAuthMethods.None))
         {
             PadNoneRejection();
@@ -186,7 +186,7 @@ internal sealed class CompositeClientAuthenticator
             return ClientAuthenticationResult.NotValid();
         }
 
-        // Client must have no credentials (three-way consistency rule, ADR 0007 §1).
+        // Client must have no credentials (three-way consistency rule).
         if (client.Credentials.Count != 0)
         {
             PadNoneRejection();

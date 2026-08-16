@@ -14,7 +14,7 @@ namespace ZeeKayDa.Auth.Clients;
 /// <see cref="IEnumerable{T}"/>, which would cause infinite recursion on first verify.
 /// </para>
 /// <para>
-/// <strong>Timing oracle defence (ADR 0007 §3.4).</strong>
+/// <strong>Timing oracle defence.</strong>
 /// <c>PadTiming()</c> fires on failure when the matched hasher is NOT the default hasher.
 /// In a standard single-PBKDF2 deployment this adds no work; custom faster hashers cannot
 /// reopen a timing oracle.
@@ -31,7 +31,7 @@ internal sealed class CompositeClientSecretHasher : IClientSecretFactory
     /// Maximum number of active shared-secret credentials a client may have simultaneously
     /// (credential rotation window). Failure paths pad to this many verification-equivalent
     /// operations so a client in a rotation window is not distinguishable from an unknown
-    /// client by timing. See ADR 0007 §3.4.
+    /// client by timing.
     /// </summary>
     internal const int MaxActiveSharedSecretsPerClient = 2;
 
@@ -73,7 +73,7 @@ internal sealed class CompositeClientSecretHasher : IClientSecretFactory
 
         var result = matched.Verify(stored, presented);
 
-        // ADR 0007 §3.4: pad timing on failure for non-default hashers to prevent a faster
+        // Pad timing on failure for non-default hashers to prevent a faster
         // custom hasher from reopening a timing oracle.
         if (!result && !ReferenceEquals(matched, _default))
             PadTiming();

@@ -14,7 +14,7 @@ namespace ZeeKayDa.Auth.Tokens;
 /// recurring cadence for a Tier B <see cref="KeySourceOptions"/> provider), lazy active-key
 /// selection, key-algorithm compatibility validation, deterministic disposal of superseded signers,
 /// and the JWS signing operation. Implementors provide only <see cref="ListKeysAsync"/> and
-/// <see cref="CreateSignerAsync"/> (ADR 0015).
+/// <see cref="CreateSignerAsync"/>.
 /// </summary>
 /// <typeparam name="TOptions">
 /// The provider-specific options type. Must derive from <see cref="KeySetOptions"/> (Tier A, a fixed
@@ -26,7 +26,7 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
 {
     // RFC 7518 JWS compact serialization never contains a space, and always contains at least one
     // '.' separator — this constant contains a space and no '.', so it can never be mistaken for, or
-    // lifted into, a valid JWS even if a self-test signature were somehow leaked (issue #437).
+    // lifted into, a valid JWS even if a self-test signature were somehow leaked.
     private static readonly ReadOnlyMemory<byte> SelfTestPayload = "zeekayda-auth signing self-test"u8.ToArray();
 
     private readonly TimeProvider _timeProvider;
@@ -54,14 +54,13 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
     /// <c>FakeTimeProvider</c> in tests.
     /// </param>
     /// <param name="retirementWindowProvider">
-    /// Supplies the derived retirement window (ADR 0011 §3.3) used to compute which keys are
+    /// Supplies the derived retirement window used to compute which keys are
     /// currently included in the JWKS, and to disambiguate a kill-by-omission vanish as
-    /// within-window versus post-window (ADR 0015 §6).
+    /// within-window versus post-window.
     /// </param>
     /// <param name="logger">
-    /// Used to emit the <see cref="Microsoft.Extensions.Logging.LogLevel.Warning"/> required by
-    /// ADR 0015 §6 when a Tier B provider's key listing drops a key while it is still inside its
-    /// retirement window.
+    /// Used to emit a <see cref="Microsoft.Extensions.Logging.LogLevel.Warning"/> when a Tier B
+    /// provider's key listing drops a key while it is still inside its retirement window.
     /// </param>
     protected JwtSigningService(
         IOptions<TOptions> options,
@@ -91,7 +90,7 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>Every currently trusted key's public listing. Must never be empty.</returns>
     /// <remarks>
-    /// This method carries a <b>completeness contract</b> (ADR 0015 §6): a provider that cannot
+    /// This method carries a <b>completeness contract</b>: a provider that cannot
     /// produce a complete read of its current key set <b>MUST throw</b> rather than return a short
     /// or partial list. A vanished key is trusted to mean "no longer trusted" (kill-by-omission);
     /// a failed read must never be indistinguishable from that. The base class never catches or
@@ -169,7 +168,7 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
 
     /// <summary>
     /// Forces materialization of the currently active signer exactly as <see cref="SignAsync"/>
-    /// would (issue #437). The sign-and-verify self-test itself (ADR 0015 §11) lives in
+    /// would. The sign-and-verify self-test itself lives in
     /// <see cref="EnsureActiveSignerAsync"/>, so it runs on <em>every</em> handoff — initial
     /// materialization and every subsequent rotation — not only when this method happens to be
     /// called. This method exists purely so the framework-owned
@@ -227,13 +226,13 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
     protected virtual string? DescribeKeyMetadata(string id) => null;
 
     /// <summary>
-    /// Releases the base class's own resources: the ADR 0015 active-signer handle and the internal
+    /// Releases the base class's own resources: the active-signer handle and the internal
     /// locks. Always run by <see cref="DisposeAsync"/> exactly once, after <see cref="OnDisposeAsync"/>
     /// has already completed — never skippable by a derived class.
     /// </summary>
     private async ValueTask DisposeBaseResourcesAsync()
     {
-        // ADR 0015 §5: any signer still resident at shutdown (Tier A's opportunistic-disposal
+        // Any signer still resident at shutdown (Tier A's opportunistic-disposal
         // worst case, or a Tier B signer between refreshes) is released here.
         await _signerLock.WaitAsync().ConfigureAwait(false);
         try
@@ -314,13 +313,13 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
     /// tier rather than on whether the current snapshot happens to be the first one this instance has
     /// built: gating on snapshot/process lifetime instead would let a Tier B (<see cref="KeySourceOptions"/>)
     /// listing that has shrunk to one key via operator revocation re-arm the exemption on every
-    /// process restart or scale-out during the incident (issue #425 security review, finding F1-2).
+    /// process restart or scale-out during the incident.
     /// </summary>
     private bool SupportsBootstrapExemption => _isKeySet;
 
     /// <summary>
-    /// The immutable snapshot of public key data the ADR 0015 contract computes active-key
-    /// selection and JWKS inclusion from. Rebuilt from scratch by <see cref="ListKeysAsync"/> —
+    /// The immutable snapshot of public key data active-key selection and JWKS inclusion are
+    /// computed from. Rebuilt from scratch by <see cref="ListKeysAsync"/> —
     /// Tier A once, Tier B once per <see cref="KeySourceOptions.RefreshInterval"/> — and never
     /// mutated in place.
     /// </summary>
@@ -349,7 +348,7 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
     /// <summary>
     /// A refcounted wrapper over one <see cref="ISigner"/> activation, so an in-flight
     /// <see cref="ISigner.SignAsync"/> call can never race a handoff to a new active key: the
-    /// signer is not disposed until every borrow has been returned (ADR 0015 §5).
+    /// signer is not disposed until every borrow has been returned.
     /// </summary>
     private sealed class SignerHandle
     {
@@ -450,10 +449,10 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
                 // perfectly healthy cached signer to be torn down and its private key re-downloaded
                 // from Key Vault on every subsequent call — a remotely triggerable amplification
                 // vector against Key Vault (cost/throttling/latency) that requires no actual key
-                // compromise or elevated access, only the ability to drop a request (issue #425
-                // security review, finding F2-1). An OperationCanceledException raised for any other
-                // reason (e.g. an SDK-surfaced timeout using its own, unrelated token) still matches
-                // this catch and still releases the signer, exactly as before.
+                // compromise or elevated access, only the ability to drop a request. An
+                // OperationCanceledException raised for any other reason (e.g. an SDK-surfaced
+                // timeout using its own, unrelated token) still matches this catch and still
+                // releases the signer, exactly as before.
                 await ReleaseActiveSignerAsync().ConfigureAwait(false);
                 throw;
             }
@@ -479,10 +478,10 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
     }
 
     /// <summary>
-    /// Releases (opportunistically, per ADR 0015 §5) the currently cached active signer, if any,
+    /// Releases (opportunistically) the currently cached active signer, if any,
     /// so any private key material it holds is not left resident in process memory. Called from
     /// <see cref="EnsureSnapshotAsync"/> when <see cref="ListKeysAsync"/> throws — see that call
-    /// site for the rationale (issue #425 security review, finding F2).
+    /// site for the rationale.
     /// </summary>
     private async ValueTask ReleaseActiveSignerAsync()
     {
@@ -501,13 +500,12 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
     /// <summary>
     /// Recomputes active-key selection from <paramref name="snapshot"/> and <c>now</c>, and — only
     /// when the computed active <see cref="KeyId"/> has changed — calls <see cref="CreateSignerAsync"/>
-    /// for the new active key, self-tests it (ADR 0015 §11, issue #437: signs
-    /// <see cref="SelfTestPayload"/> and verifies the signature against the key's own listed public
-    /// key via <see cref="SigningAlgorithms.Verify"/>, structurally proving the signer actually pairs
-    /// with the public key whose <c>kid</c> this base class is publishing), and disposes
-    /// (opportunistically, per ADR 0015 §5) the signer it supersedes. Because this runs on every
-    /// handoff — not only the first one — a rotated-in signer is proven exactly as thoroughly as the
-    /// one materialized at startup. Returns a borrowed <see cref="SignerHandle"/> that the caller
+    /// for the new active key, self-tests it (signs <see cref="SelfTestPayload"/> and verifies the
+    /// signature against the key's own listed public key via <see cref="SigningAlgorithms.Verify"/>,
+    /// structurally proving the signer actually pairs with the public key whose <c>kid</c> this base
+    /// class is publishing), and disposes (opportunistically) the signer it supersedes. Because
+    /// this runs on every handoff — not only the first one — a rotated-in signer is proven exactly
+    /// as thoroughly as the one materialized at startup. Returns a borrowed <see cref="SignerHandle"/> that the caller
     /// MUST <see cref="SignerHandle.Return"/> exactly once.
     /// </summary>
     private async ValueTask<SignerHandle> EnsureActiveSignerAsync(
@@ -574,7 +572,7 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
                         $"the key's declared algorithm exactly."));
             }
 
-            // ADR 0015 §11 (issue #437): sign a fixed, non-JWS-shaped constant and verify the
+            // Sign a fixed, non-JWS-shaped constant and verify the
             // resulting signature against this same key's own listed public key before this signer
             // is ever handed out for real signing. This runs on every handoff — initial
             // materialization and every subsequent rotation — not only once at process start, so a
@@ -609,16 +607,15 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
                         $"The signer {nameof(CreateSignerAsync)} returned for key '{descriptor.Kid}' " +
                         "produced a signature that does not verify against that key's own listed public " +
                         "key. The private key materialized for signing does not match the public key " +
-                        $"published under this kid — refusing to serve tokens under '{descriptor.Kid}' " +
-                        "(ADR 0015 §11 self-test, issue #437)."));
+                        $"published under this kid — refusing to serve tokens under '{descriptor.Kid}'."));
             }
 
             var newHandle = new SignerHandle { Id = activeId.Value, Descriptor = descriptor, Signer = signer };
             var previous = _activeSignerHandle;
             _activeSignerHandle = newHandle;
 
-            // Releases the base class's own reference on the superseded signer. Per ADR 0015 §5,
-            // the underlying private material is reclaimed once every in-flight SignAsync borrow on
+            // Releases the base class's own reference on the superseded signer. The underlying
+            // private material is reclaimed once every in-flight SignAsync borrow on
             // it has also returned — immediately for Tier A's typical idle handoff, or after the
             // last in-flight signing call completes for a concurrently-borrowed Tier B signer.
             previous?.Release();
@@ -639,7 +636,7 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
     /// Builds a validated immutable snapshot from a freshly returned <see cref="ListKeysAsync"/>
     /// result: derives each listing's <c>kid</c>, rejects duplicate <c>kid</c>s and duplicate
     /// <see cref="KeyId.Value"/>s, and runs algorithm-compatibility/key-strength validation over
-    /// every listing — all before any <see cref="CreateSignerAsync"/> call (ADR 0015 §2/§7).
+    /// every listing — all before any <see cref="CreateSignerAsync"/> call.
     /// </summary>
     private static SigningKeySnapshot BuildSnapshot(IReadOnlyList<KeyListing> listings, DateTimeOffset expiresAt)
     {
@@ -745,7 +742,7 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
     }
 
     /// <summary>
-    /// Implements ADR 0015 §6's three-state kill-by-omission disambiguation for every key present
+    /// Implements a three-state kill-by-omission disambiguation for every key present
     /// in <paramref name="previous"/> but missing from <paramref name="current"/>: silent when the
     /// vanished key's derived retirement window (computed from <paramref name="previous"/>'s own
     /// timeline) had already closed, or a <see cref="Microsoft.Extensions.Logging.LogLevel.Warning"/>
@@ -779,7 +776,7 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
                     "while still inside its retirement window. It has been dropped from the JWKS on this " +
                     "refresh regardless (the kill switch still fires), but an early vanish while still " +
                     "trusted usually means an accidental key deletion rather than normal end-of-life " +
-                    "rotation (ADR 0015 §6).",
+                    "rotation.",
                     id, GetType().Name);
             }
         }
@@ -861,5 +858,5 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
             "signing.no_active_key",
             "No signing key is currently eligible to be the active signer — every configured key " +
             "has either not yet activated or has already expired. Refusing to sign rather than " +
-            "picking an ineligible key (ADR 0015 §3/Security Considerations item 3)."));
+            "picking an ineligible key."));
 }

@@ -7,9 +7,9 @@ namespace ZeeKayDa.Auth.Stores;
 /// is opaque Data-Protection ciphertext a backend MUST store verbatim and never interpret.
 /// </summary>
 /// <remarks>
-/// See ADR 0014 §2 for the reasoning behind each column's cleartext-vs-encrypted treatment,
-/// including why <see cref="Subject"/> is deliberately cleartext (not a <see cref="StoreKey"/>)
-/// and why <see cref="FamilyId"/> stays a plain <see cref="string"/> rather than an opaque hash.
+/// <see cref="Subject"/> is deliberately cleartext (not a <see cref="StoreKey"/>) so it remains a
+/// plain equality predicate, and <see cref="FamilyId"/> stays a plain <see cref="string"/> rather
+/// than an opaque hash for the same reason — both must support direct queries.
 /// </remarks>
 public sealed record RefreshTokenGrant
 {
@@ -22,8 +22,7 @@ public sealed record RefreshTokenGrant
     /// <summary>
     /// Queryable. Cleartext subject identifier (PII, not a bearer credential). NOT a
     /// <see cref="StoreKey"/>: it is honest cleartext, not opaque-already-hashed. Protected by
-    /// DB access control + encryption at rest, the Duende/OpenIddict posture (see ADR 0014
-    /// Security Considerations). Index this.
+    /// DB access control + encryption at rest. Index this.
     /// </summary>
     public required string Subject { get; init; }
 

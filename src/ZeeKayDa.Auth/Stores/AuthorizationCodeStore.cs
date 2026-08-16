@@ -9,7 +9,7 @@ using static ZeeKayDa.Auth.Stores.StoreGuard;
 namespace ZeeKayDa.Auth.Stores;
 
 /// <summary>
-/// The framework's sealed <see cref="IAuthorizationCodeStore"/> coordinator (ADR 0013 §1).
+/// The framework's sealed <see cref="IAuthorizationCodeStore"/> coordinator.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -20,7 +20,7 @@ namespace ZeeKayDa.Auth.Stores;
 /// knowledge of any of the above.
 /// </para>
 /// <para>
-/// Key layout (ADR 0013 §9): entries are keyed <c>zkd:code:e:{hex(sha256(handle))}</c>,
+/// Key layout: entries are keyed <c>zkd:code:e:{hex(sha256(handle))}</c>,
 /// tombstones <c>zkd:code:t:{hex(sha256(handle))}</c>. Raw handles are never persisted as keys
 /// or embedded in stored values.
 /// </para>

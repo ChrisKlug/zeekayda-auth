@@ -19,7 +19,7 @@ internal interface IKeyVaultSigner
     /// The public, non-leaking JWK thumbprint identifying the key — used in any exception message
     /// this call raises, so a sign-time fault never discloses <paramref name="keyVersionUri"/>'s
     /// vault/key name to a caller (the same reason <c>kid</c> is a thumbprint and not the raw URI
-    /// in the first place; see ADR 0011 Amendment 2(c)).
+    /// in the first place).
     /// </param>
     /// <param name="algorithm">The JWS algorithm to use.</param>
     /// <param name="signingInput">The exact bytes to sign — Key Vault computes the digest itself.</param>

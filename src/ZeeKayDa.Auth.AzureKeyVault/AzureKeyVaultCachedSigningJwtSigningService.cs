@@ -14,8 +14,7 @@ namespace ZeeKayDa.Auth.AzureKeyVault;
 /// </summary>
 /// <remarks>
 /// <para>
-/// ADR 0015 Tier B (<see cref="KeySourceOptions"/>, issue #425): <see cref="ListKeysAsync"/> re-asks
-/// Key Vault for the certificate's current version list once per
+/// <see cref="ListKeysAsync"/> re-asks Key Vault for the certificate's current version list once per
 /// <see cref="KeySourceOptions.RefreshInterval"/> — Key Vault, not this provider, owns the
 /// certificate's version history. Every returned <see cref="KeyListing.ActivateAt"/> is derived
 /// entirely from Key Vault's own durable per-version <c>CreatedOn</c> timestamp
@@ -26,16 +25,16 @@ namespace ZeeKayDa.Auth.AzureKeyVault;
 /// covers the "first ever version" bootstrap case with no special-case code here.
 /// </para>
 /// <para>
-/// Kill-by-omission (ADR 0015 §6) is entirely the base class's concern: this provider's only
-/// obligation is to list currently-enabled versions and let a version silently drop out of the
-/// returned list once Key Vault stops reporting it as enabled. There is no separate <c>Enabled</c>
-/// flag anywhere in this contract — an operator disabling a version in Key Vault simply causes it to
-/// stop appearing in the next <see cref="ListKeysAsync"/> result.
+/// Kill-by-omission is entirely the base class's concern: this provider's only obligation is to list
+/// currently-enabled versions and let a version silently drop out of the returned list once Key Vault
+/// stops reporting it as enabled. There is no separate <c>Enabled</c> flag anywhere in this contract
+/// — an operator disabling a version in Key Vault simply causes it to stop appearing in the next
+/// <see cref="ListKeysAsync"/> result.
 /// </para>
 /// <para>
 /// <c>kid</c> is the RFC 7638 JWK thumbprint of each version's public key, derived by the base class
 /// from each <see cref="KeyListing.PublicKey"/> — never the raw Key Vault certificate/secret version
-/// identifier, which is only this provider's own internal <see cref="KeyId"/> (ADR 0015 §2).
+/// identifier, which is only this provider's own internal <see cref="KeyId"/>.
 /// </para>
 /// <para>
 /// Every included version's <see cref="KeyListing.PublicKey"/> is built from
@@ -44,7 +43,7 @@ namespace ZeeKayDa.Auth.AzureKeyVault;
 /// requires the <c>secrets/get</c> permission. Only when <see cref="CreateSignerAsync"/> is called
 /// for the currently active version does this provider additionally download real private key
 /// material via <see cref="IKeyVaultCertificateReader.GetPrivateKeyMaterialAsync"/>, and only for
-/// that one version — see ADR 0015 §2/§5.
+/// that one version.
 /// </para>
 /// </remarks>
 internal sealed class AzureKeyVaultCachedSigningJwtSigningService : JwtSigningService<AzureKeyVaultCachedSigningOptions>
@@ -53,8 +52,8 @@ internal sealed class AzureKeyVaultCachedSigningJwtSigningService : JwtSigningSe
     private readonly IKeyVaultCertificateReader _certificateReader;
 
     // Populated wholesale on every ListKeysAsync call. CreateSignerAsync uses this as a
-    // defense-in-depth cross-check (issue #425 security review, finding F3) that the private key
-    // it downloads via GetPrivateKeyMaterialAsync still matches the public key most recently
+    // defense-in-depth cross-check that the private key it downloads via GetPrivateKeyMaterialAsync
+    // still matches the public key most recently
     // published for that same version via GetPublicKeyMaterialAsync — those are two separate Key
     // Vault reads (the certificate's linked secret versus its Cer) that could in principle diverge.
     // Replaced entirely on each refresh, never mutated in place, mirroring the base class's own
@@ -115,8 +114,8 @@ internal sealed class AzureKeyVaultCachedSigningJwtSigningService : JwtSigningSe
         // observe in the JWKS first. Computing over the full, unfiltered history instead means a
         // stale read can only affect this derivation by omitting every version outright, which
         // already fails closed via the "no certificate versions" check above rather than silently
-        // promoting the wrong version. This mirrors the risk analysis accepted for issue #300 (see
-        // ADR 0011, Changelog, 2026-07-04 entry) for the original Key Vault provider.
+        // promoting the wrong version. This mirrors the risk analysis accepted for the original Key
+        // Vault provider.
         var firstEverVersion = allVersions
             .OrderBy(v => v.CreatedOn)
             .ThenBy(v => v.Version, StringComparer.Ordinal)
@@ -124,8 +123,8 @@ internal sealed class AzureKeyVaultCachedSigningJwtSigningService : JwtSigningSe
             .Version;
 
         // Enabled is a Key Vault-side concept only — it is folded into "list enabled versions only"
-        // here (ADR 0015 §6/§10) rather than surfaced as a flag anywhere in the KeyListing/options
-        // contract. A disabled version simply never appears below, and the base class's own
+        // here rather than surfaced as a flag anywhere in the KeyListing/options contract. A
+        // disabled version simply never appears below, and the base class's own
         // kill-by-omission logic (EvaluateKillByOmission) takes it from there.
         var enabledVersions = allVersions.Where(v => v.Enabled).ToList();
         if (enabledVersions.Count == 0)
@@ -148,7 +147,7 @@ internal sealed class AzureKeyVaultCachedSigningJwtSigningService : JwtSigningSe
 
             // The parameters below are always exported before this handle goes out of scope — nothing
             // downstream ever needs the live AsymmetricAlgorithm itself, only its exported public
-            // parameters (ADR 0015 §2/§5).
+            // parameters.
             using var _ = publicKey;
 
             var publicKeyParameters = BuildValidatedPublicKey(publicKey, keyType, options);
@@ -168,8 +167,8 @@ internal sealed class AzureKeyVaultCachedSigningJwtSigningService : JwtSigningSe
     /// <remarks>
     /// After downloading the private key, cross-checks its public component against the
     /// <see cref="PublicKeyParameters"/> most recently published for <paramref name="id"/> in
-    /// <see cref="ListKeysAsync"/> — a defense-in-depth tamper-evidence check (issue #425 security
-    /// review, finding F3), since the private key comes from the certificate's linked secret while
+    /// <see cref="ListKeysAsync"/> — a defense-in-depth tamper-evidence check, since the private key
+    /// comes from the certificate's linked secret while
     /// the listed public key comes from its <c>Cer</c>, two separate Key Vault reads that could in
     /// principle diverge. This is not a substitute for <see cref="ListKeysAsync"/>'s own
     /// algorithm-compatibility validation over the public data it was given — that check is
@@ -199,8 +198,8 @@ internal sealed class AzureKeyVaultCachedSigningJwtSigningService : JwtSigningSe
 
     /// <summary>
     /// Derives a version's <see cref="KeyListing.ActivateAt"/> from Key Vault's own durable
-    /// <c>CreatedOn</c> timestamp (never observed/first-seen time — ADR 0015 §3/Security
-    /// Considerations item 4): <c>CreatedOn + publicationLead</c> for every version except the
+    /// <c>CreatedOn</c> timestamp (never observed/first-seen time):
+    /// <c>CreatedOn + publicationLead</c> for every version except the
     /// chronologically-first version ever recorded, which is eligible from startup (there is no
     /// prior published JWKS state any relying party could have cached). An explicit <c>NotBefore</c>
     /// floors the result when it schedules the version's go-live later than that.
@@ -232,8 +231,8 @@ internal sealed class AzureKeyVaultCachedSigningJwtSigningService : JwtSigningSe
     /// <summary>
     /// Verifies that <paramref name="privateKey"/>'s public component matches
     /// <paramref name="listedPublicKey"/> — the public key most recently published for
-    /// <paramref name="version"/> in the JWKS via <see cref="ListKeysAsync"/> (issue #425 security
-    /// review, finding F3). A cheap public-parameter comparison, not a full re-derivation: it
+    /// <paramref name="version"/> in the JWKS via <see cref="ListKeysAsync"/>. A cheap
+    /// public-parameter comparison, not a full re-derivation: it
     /// exists to catch the two independent Key Vault reads (the linked secret versus the <c>Cer</c>)
     /// disagreeing, not to re-validate anything <see cref="ListKeysAsync"/> already validated.
     /// </summary>

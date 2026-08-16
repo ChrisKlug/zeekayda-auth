@@ -29,15 +29,15 @@ public static class ZeeKayDaAuthBuilderWindowsCertificateStoreSigningExtensions
     /// <paramref name="storeName"/> via <see cref="WindowsCertificateStoreSigningOptions.AddCertificate"/>
     /// in <paramref name="configure"/>. With exactly one registered certificate it is the active
     /// signer immediately; with two or more, the certificate whose <c>NotBefore</c> has arrived and
-    /// is most recent is the active signer. See <see cref="SigningKeyRotation"/> and
-    /// ADR 0015 §1 for the full rotation/retirement model.
+    /// is most recent is the active signer. See <see cref="SigningKeyRotation"/> for the full
+    /// rotation/retirement model.
     /// </para>
     /// <para>
-    /// ADR 0015 Tier A (issue #424): the store is read exactly once, at startup — adding, removing,
-    /// or updating a certificate registered with this method requires a host restart to be picked
-    /// up. The set of registered thumbprints is fixed at process start; rotation between
-    /// already-registered certificates still switches the active signer purely from elapsed wall
-    /// clock time, with zero further store access.
+    /// The store is read exactly once, at startup — adding, removing, or updating a certificate
+    /// registered with this method requires a host restart to be picked up. The set of registered
+    /// thumbprints is fixed at process start; rotation between already-registered certificates still
+    /// switches the active signer purely from elapsed wall clock time, with zero further store
+    /// access.
     /// </para>
     /// </remarks>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>

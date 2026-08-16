@@ -13,39 +13,35 @@ namespace ZeeKayDa.Auth.Windows;
 /// </summary>
 /// <remarks>
 /// <para>
-/// ADR 0015 Tier A (<see cref="KeySetOptions"/>, issue #424): the complete set of registered
-/// thumbprints is fixed at configuration time, so <see cref="ListKeysAsync"/> runs exactly once,
-/// ever, for the lifetime of this service instance. Only the wall clock crossing each certificate's
-/// <c>NotBefore</c>/<c>NotAfter</c> — mapped onto each returned <see cref="KeyListing"/>'s
+/// The complete set of registered thumbprints is fixed at configuration time, so
+/// <see cref="ListKeysAsync"/> runs exactly once, ever, for the lifetime of this service instance.
+/// Only the wall clock crossing each certificate's <c>NotBefore</c>/<c>NotAfter</c> — mapped onto each
+/// returned <see cref="KeyListing"/>'s
 /// <see cref="KeyListing.ActivateAt"/>/<see cref="KeyListing.ExpiresAt"/> — drives which registered
 /// certificate is the active signer; the base class recomputes that selection lazily on every call
-/// from the one-time snapshot, so multi-certificate rotation (issue #282) still switches the active
-/// signer over time with zero further store access to <em>list</em> keys; the incoming active
-/// certificate's entry is re-read once, transiently, by <see cref="CreateSignerAsync"/> at the
-/// handoff. Picking up a rotated-in, removed, or replaced certificate otherwise requires a restart
-/// (ADR 0015 §1/§4).
+/// from the one-time snapshot, so multi-certificate rotation still switches the active signer over
+/// time with zero further store access to <em>list</em> keys; the incoming active certificate's entry
+/// is re-read once, transiently, by <see cref="CreateSignerAsync"/> at the handoff. Picking up a
+/// rotated-in, removed, or replaced certificate otherwise requires a restart.
 /// </para>
 /// <para>
-/// <strong>Least-privilege loading for a bundled format (ADR 0015 §2/§5).</strong> A Windows
-/// Certificate Store entry is a bundled format exactly like PFX: <see cref="X509Store.Certificates"/>
-/// hands back a certificate that carries its private key when one is installed alongside it — there
-/// is no way to open the store for a certificate's public half alone. This provider therefore reads
-/// every registered thumbprint transiently in <see cref="ListKeysAsync"/>, extracts and retains
-/// <em>only</em> the public <see cref="PublicKeyParameters"/> in the returned <see cref="KeyListing"/>,
-/// and disposes the certificate (releasing its private-key handle) immediately — no private
-/// material for any thumbprint, not even the active one, is retained past that transient read. When
-/// the base class needs to sign, it calls <see cref="CreateSignerAsync"/>, which re-reads only the
-/// single thumbprint currently selected as active; every other registered certificate's private key
-/// is never loaded a second time. This is the concrete proof-point for ADR 0015 §2/§5's "provider
-/// obligation, not structural guarantee" caveat: the base structurally requests private material
-/// only for the active key, but keeping non-active private material out of the long-lived snapshot
-/// is this provider's own doing.
+/// <strong>Least-privilege loading for a bundled format.</strong> A Windows Certificate Store entry is
+/// a bundled format exactly like PFX: <see cref="X509Store.Certificates"/> hands back a certificate
+/// that carries its private key when one is installed alongside it — there is no way to open the
+/// store for a certificate's public half alone. This provider therefore reads every registered
+/// thumbprint transiently in <see cref="ListKeysAsync"/>, extracts and retains <em>only</em> the
+/// public <see cref="PublicKeyParameters"/> in the returned <see cref="KeyListing"/>, and disposes the
+/// certificate (releasing its private-key handle) immediately — no private material for any
+/// thumbprint, not even the active one, is retained past that transient read. When the base class
+/// needs to sign, it calls <see cref="CreateSignerAsync"/>, which re-reads only the single thumbprint
+/// currently selected as active; every other registered certificate's private key is never loaded a
+/// second time.
 /// </para>
 /// <para>
 /// Uses only <see cref="WindowsCertificateKeyExtractor.ExtractPublicKey"/>/
 /// <see cref="WindowsCertificateKeyExtractor.ExtractPrivateKey"/> — never <c>.PrivateKey</c>, never
-/// <c>ExportParameters(true)</c> — per the issue's security requirement to prefer CNG/CAPI-backed
-/// handles over exporting raw key bytes into managed memory.
+/// <c>ExportParameters(true)</c> — preferring CNG/CAPI-backed handles over exporting raw key bytes
+/// into managed memory.
 /// </para>
 /// <para>
 /// <see cref="CreateSignerAsync"/> builds and returns a <see cref="LocalSigner"/> — this provider
@@ -56,9 +52,9 @@ namespace ZeeKayDa.Auth.Windows;
 /// </para>
 /// <para>
 /// <c>kid</c> is the RFC 7638 JWK thumbprint of each certificate's public key, derived by the base
-/// class from each <see cref="KeyListing.PublicKey"/> — never the certificate's own X.509
-/// thumbprint, which is only this provider's own internal <see cref="KeyId"/> (ADR 0015 §2), since a
-/// <c>kid</c> is always public and the store thumbprint could leak external identifier information.
+/// class from each <see cref="KeyListing.PublicKey"/> — never the certificate's own X.509 thumbprint,
+/// which is only this provider's own internal <see cref="KeyId"/>, since a <c>kid</c> is always
+/// public and the store thumbprint could leak external identifier information.
 /// </para>
 /// </remarks>
 internal sealed class WindowsCertificateStoreSigningJwtSigningService : JwtSigningService<WindowsCertificateStoreSigningOptions>
@@ -149,13 +145,12 @@ internal sealed class WindowsCertificateStoreSigningJwtSigningService : JwtSigni
 
         using var certificate = _storeReader.GetCertificate(thumbprint, options.StoreLocation, options.StoreName);
 
-        // The private-key/public-key pairing check that used to live here (VerifySigningKeyMatchesListing,
-        // PR #436 security review) is superseded by the framework-owned ADR 0015 §11 self-test
-        // (issue #437): JwtSigningService<TOptions>'s own handoff logic signs with the signer this
-        // method returns and verifies the signature against the same key's listed public key on
-        // every handoff (initial materialization and every rotation, not only at process start),
-        // which structurally proves the same pairing invariant for every provider, not just this
-        // one.
+        // The private-key/public-key pairing check that used to live here is superseded by the
+        // framework-owned self-test: JwtSigningService<TOptions>'s own handoff logic signs with the
+        // signer this method returns and verifies the signature against the same key's listed public
+        // key on every handoff (initial materialization and every rotation, not only at process
+        // start), which structurally proves the same pairing invariant for every provider, not just
+        // this one.
         var (privateKey, _) = _keyExtractor.ExtractPrivateKey(certificate, thumbprint);
 
         return new ValueTask<ISigner>(new LocalSigner(options.Algorithm, privateKey));
@@ -173,8 +168,8 @@ internal sealed class WindowsCertificateStoreSigningJwtSigningService : JwtSigni
 
         throw new InvalidOperationException(
             $"{nameof(CreateSignerAsync)} was called for key '{id}', which is no longer a registered " +
-            $"certificate thumbprint. {nameof(ListKeysAsync)} runs exactly once for this ADR 0015 Tier A " +
-            "provider, so its registered thumbprints must not change after startup.");
+            $"certificate thumbprint. {nameof(ListKeysAsync)} runs exactly once for this provider, so " +
+            "its registered thumbprints must not change after startup.");
     }
 
     private static IReadOnlyList<string> GetRegisteredThumbprints(WindowsCertificateStoreSigningOptions options)

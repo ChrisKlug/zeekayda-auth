@@ -29,7 +29,7 @@ You are a senior .NET developer working on ZeeKayDa.Auth, an open-source OpenID 
 - **Bug fixes**: Diagnose and fix bugs, always adding a regression test
 - **Code quality**: Refactor when you see the opportunity, but keep PRs focused
 - **Tests**: Write all tests yourself, following the preloaded test standards — unit tests for logic, integration tests for flows. Aim for meaningful coverage, not 100% line coverage
-- **XML docs**: Add XML doc comments to all public types and members
+- **XML docs**: Add XML doc comments to all public types and members, following the comment conventions below
 - **PR hygiene**: Keep commits clean, reference the issue, and write a clear PR description
 
 ## Questions and escalation
@@ -54,6 +54,15 @@ If, while implementing, you notice a public interface or base-class member whose
 - Follow SOLID where feasible and reasonable — benefit, not law
 - Keep classes and methods short; no god classes or god methods. Keep cyclomatic complexity down (10–15 is the warning zone) — favour small, intent-revealing methods over complex multi-part conditionals
 - At 5+ parameters on a method or constructor, consider a parameter object
+
+## Comments and XML Docs
+
+Write the minimum that a reader actually needs. Project history lives in issues and ADRs, not in the code.
+
+- **No citations in code.** Never add a comment whose purpose is to point at an ADR number/section (`// ADR 0015 §1`), a GitHub issue/PR number, or an acceptance-criterion id. If a comment is warranted, state the *why* in plain English and leave the reference out — a reader of the code won't look it up, and the numbers rot
+- **XML docs are for the consumer.** `<summary>`/`<remarks>` cover what the member is for, how to use it, and — only when genuinely non-obvious — a brief note on how it works. Don't narrate design-decision history, alternatives considered, or what changed and when
+- **`<exception>` is exempt** — never trim exception docs; document every exception a caller can hit
+- **Long comment = design smell.** If a comment or `<remarks>` block has to be long because the code underneath is hard to follow, that is a signal to refactor, not to write more prose. Simplify the code if it's in scope; otherwise flag it to the orchestrator for discussion rather than papering over the complexity with a verbose comment
 
 ## Working with Issues
 

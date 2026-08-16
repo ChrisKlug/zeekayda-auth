@@ -128,7 +128,7 @@ internal static class SigningAlgorithms
     /// <summary>
     /// Produces the raw signature bytes for <paramref name="signingInput"/> using
     /// <paramref name="algorithm"/> and <paramref name="privateKey"/> directly, without requiring a
-    /// <see cref="SigningKeyDescriptor"/>. Used by <see cref="LocalSigner"/> (ADR 0015 §2), which
+    /// <see cref="SigningKeyDescriptor"/>. Used by <see cref="LocalSigner"/>, which
     /// signs over public <see cref="KeyListing"/> data rather than a descriptor.
     /// </summary>
     /// <param name="algorithm">The signing algorithm.</param>
@@ -159,7 +159,7 @@ internal static class SigningAlgorithms
     /// <summary>
     /// Verifies <paramref name="signature"/> over <paramref name="signingInput"/> against
     /// <paramref name="descriptor"/>'s own public key, using the algorithm <paramref name="descriptor"/>
-    /// declares. Used exclusively by the ADR 0015 startup self-test
+    /// declares. Used exclusively by the startup self-test
     /// (<see cref="ISigningStartupSelfTest"/>) to structurally prove that the private key a provider's
     /// <c>CreateSignerAsync</c> materialized actually pairs with the public key listed for the same
     /// <c>kid</c> — never used on real token signatures, which relying parties verify independently.

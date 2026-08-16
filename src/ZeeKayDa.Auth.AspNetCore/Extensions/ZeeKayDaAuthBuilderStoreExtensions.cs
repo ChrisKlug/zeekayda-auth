@@ -16,7 +16,7 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
     /// <summary>
     /// Registers <typeparamref name="T"/> as the singleton <see cref="IAuthorizationCodeBackingStore"/>
     /// implementation, wired underneath the framework's sealed coordinator. This is the
-    /// recommended registration path for production use (ADR 0013 §4).
+    /// recommended registration path for production use.
     /// </summary>
     /// <typeparam name="T">
     /// The concrete type that implements <see cref="IAuthorizationCodeBackingStore"/>. Must be a
@@ -47,7 +47,7 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
     /// <summary>
     /// Registers <typeparamref name="T"/> as the singleton <see cref="IRefreshTokenGrantStore"/>
     /// implementation, wired underneath the framework's sealed coordinator. This is the
-    /// recommended registration path for production use (ADR 0014 §4/§10).
+    /// recommended registration path for production use.
     /// </summary>
     /// <typeparam name="T">
     /// The concrete type that implements <see cref="IRefreshTokenGrantStore"/>. Must be a
@@ -84,8 +84,7 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
     /// <remarks>
     /// Outside a Development environment, startup fails with <see cref="ZeeKayDaConfigurationException"/>
     /// unless <paramref name="allowOutsideDevelopment"/> is <see langword="true"/>. This gate is
-    /// enforced independently of any other in-memory store registration on the same builder — see
-    /// ADR 0008 §5.
+    /// enforced independently of any other in-memory store registration on the same builder.
     /// </remarks>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
     /// <param name="allowOutsideDevelopment">
@@ -130,8 +129,7 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
     /// <remarks>
     /// Outside a Development environment, startup fails with <see cref="ZeeKayDaConfigurationException"/>
     /// unless <paramref name="allowOutsideDevelopment"/> is <see langword="true"/>. This gate is
-    /// enforced independently of any other in-memory store registration on the same builder — see
-    /// ADR 0008 §5.
+    /// enforced independently of any other in-memory store registration on the same builder.
     /// </remarks>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
     /// <param name="allowOutsideDevelopment">
@@ -177,8 +175,7 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
     /// Outside a Development environment, startup fails with <see cref="ZeeKayDaConfigurationException"/>
     /// unless <paramref name="allowOutsideDevelopment"/> is <see langword="true"/>. The value is
     /// passed through to both <see cref="AddInMemoryAuthorizationCodeStore"/> and
-    /// <see cref="AddInMemoryRefreshTokenStore"/>, each of which gates on it independently — see
-    /// ADR 0008 §5.
+    /// <see cref="AddInMemoryRefreshTokenStore"/>, each of which gates on it independently.
     /// </remarks>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
     /// <param name="allowOutsideDevelopment">
@@ -210,8 +207,7 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
 
     /// <summary>
     /// Registers a non-atomic <see cref="IDistributedCache"/>-backed default suitable for dev/test only.
-    /// Multi-instance production deployments MUST replace these stores with an atomic implementation;
-    /// see ADR 0008 §8.
+    /// Multi-instance production deployments MUST replace these stores with an atomic implementation.
     /// </summary>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
@@ -237,8 +233,7 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
 
     /// <summary>
     /// Registers a non-atomic <see cref="IDistributedCache"/>-backed default suitable for dev/test only.
-    /// Multi-instance production deployments MUST replace these stores with an atomic implementation;
-    /// see ADR 0008 §8.
+    /// Multi-instance production deployments MUST replace these stores with an atomic implementation.
     /// </summary>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
@@ -264,8 +259,7 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
 
     /// <summary>
     /// Registers a non-atomic <see cref="IDistributedCache"/>-backed default suitable for dev/test only.
-    /// Multi-instance production deployments MUST replace these stores with an atomic implementation;
-    /// see ADR 0008 §8.
+    /// Multi-instance production deployments MUST replace these stores with an atomic implementation.
     /// </summary>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>

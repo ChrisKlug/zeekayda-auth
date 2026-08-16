@@ -9,8 +9,8 @@ namespace ZeeKayDa.Auth.Windows;
 /// </summary>
 /// <remarks>
 /// Uses only <c>GetRSAPublicKey()</c> / <c>GetRSAPrivateKey()</c> / <c>GetECDsaPublicKey()</c> /
-/// <c>GetECDsaPrivateKey()</c> — never <c>.PrivateKey</c>, never <c>ExportParameters(true)</c> — per the issue's security
-/// requirement to prefer CNG/CAPI-backed handles over exporting raw key bytes into managed memory.
+/// <c>GetECDsaPrivateKey()</c> — never <c>.PrivateKey</c>, never <c>ExportParameters(true)</c> —
+/// preferring CNG/CAPI-backed handles over exporting raw key bytes into managed memory.
 /// These accessors return handle objects that remain valid and usable independently after the
 /// parent <see cref="X509Certificate2"/> is disposed (documented .NET Core 3.0+ behavior: the
 /// returned handle duplicates the underlying key handle), which is what lets the caller dispose

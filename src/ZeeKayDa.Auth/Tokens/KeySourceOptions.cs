@@ -7,15 +7,12 @@ namespace ZeeKayDa.Auth.Tokens;
 /// </summary>
 /// <remarks>
 /// <para>
-/// This is Tier B of the two-tier signing-provider split introduced by ADR 0015 (issue #418): the
-/// list genuinely changes between calls (a remote store, a database table, a file glob that
-/// discovers new members at runtime). Azure Key Vault (cached and remote) is the intended
-/// production consumer of this tier.
+/// This is Tier B of the two-tier signing-provider split: the list genuinely changes between calls
+/// (a remote store, a database table, a file glob that discovers new members at runtime). Azure Key
+/// Vault (cached and remote) is the intended production consumer of this tier.
 /// </para>
 /// <para>
-/// This tier, together with <see cref="KeySetOptions"/>, is the sole signing-provider contract —
-/// the earlier ADR 0011 §3.4 two-tier split it replaced was retired entirely once every provider
-/// migrated (issue #428).
+/// This tier, together with <see cref="KeySetOptions"/>, is the sole signing-provider contract.
 /// </para>
 /// </remarks>
 public abstract class KeySourceOptions : JwtSigningServiceOptions
@@ -27,9 +24,9 @@ public abstract class KeySourceOptions : JwtSigningServiceOptions
     /// Defaults to one hour.
     /// </summary>
     /// <remarks>
-    /// One meaning only: re-ask cadence. Replaces ADR 0011's <c>KeyRotationCheckInterval</c>, which
-    /// conflated this with Tier A's internal clock-tick-over-a-fixed-timeline meaning — the reason
-    /// ADR 0015 re-splits the tiers on acquisition rather than on "does it reload."
+    /// One meaning only: re-ask cadence. This is distinct from Tier A's internal
+    /// clock-tick-over-a-fixed-timeline meaning — the two tiers split on acquisition shape rather
+    /// than on "does it reload."
     /// </remarks>
     public TimeSpan RefreshInterval { get; set; } = TimeSpan.FromHours(1);
 
@@ -58,7 +55,7 @@ public abstract class KeySourceOptions : JwtSigningServiceOptions
         {
             var effective = _publicationLead ?? RefreshInterval;
 
-            // Defense-in-depth (issue #425 security review, finding F6): the primary enforcement of
+            // Defense-in-depth: the primary enforcement of
             // PublicationLead >= RefreshInterval is KeySourcePublicationLeadValidator.ValidateAtLeastRefreshInterval,
             // run by each provider's IValidateOptions at options-bind time. That only fires when the
             // options pipeline's validation actually runs (e.g. ValidateOnStart()) — it would not catch
