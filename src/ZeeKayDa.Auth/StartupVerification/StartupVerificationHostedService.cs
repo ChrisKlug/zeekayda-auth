@@ -39,7 +39,7 @@ internal sealed class StartupVerificationHostedService(
 
             // Gate warnings are held until every gate has passed, because the sanitizing logger
             // is not yet known to be trustworthy.
-            pendingGateWarnings.AddRange(gateContext.Warnings.Select(w => ((object)gate, gate.Name, w)));
+            pendingGateWarnings.AddRange(gateContext.Warnings.Select(w => (gate, gate.Name, w)));
         }
 
         foreach (var (source, name, warning) in pendingGateWarnings)
