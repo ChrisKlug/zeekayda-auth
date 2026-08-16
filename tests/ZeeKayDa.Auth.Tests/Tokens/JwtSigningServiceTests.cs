@@ -66,6 +66,25 @@ public sealed class JwtSigningServiceTests
     }
 
     /// <summary>
+    /// An <see cref="ISigner"/> test double whose <see cref="SignAsync"/> always throws, modelling a
+    /// missing Key Vault "sign" permission or an inaccessible CNG key container — a failure the ADR
+    /// 0015 §11 self-test (issue #437) surfaces as an exception from the sign call itself, not as a
+    /// verification mismatch (security review finding F4).
+    /// </summary>
+    private sealed class ThrowingSigner : ISigner
+    {
+        public int DisposeCount { get; private set; }
+
+        public ValueTask<ReadOnlyMemory<byte>> SignAsync(
+            ReadOnlyMemory<byte> signingInput, CancellationToken cancellationToken = default)
+            => throw new CryptographicException("simulated inaccessible key container");
+
+        public void Dispose() => DisposeCount++;
+
+        public SigningAlgorithm Algorithm => SigningAlgorithm.RS256;
+    }
+
+    /// <summary>
     /// An <see cref="ISigner"/> test double whose <see cref="SignAsync"/> blocks until
     /// <paramref name="release"/> completes, signalling <see cref="Entered"/> first so a test can
     /// deterministically know the call is in flight before proceeding. The ADR 0015 §11 self-test
@@ -1237,6 +1256,34 @@ public sealed class JwtSigningServiceTests
         await sut.DisposeAsync();
 
         signer!.DisposeCount.Should().Be(1, "the self-test's borrow must be returned even when verification fails");
+    }
+
+    [Fact]
+    public async Task VerifyActiveSignerAsync_disposes_the_signer_when_the_self_test_sign_call_itself_throws()
+    {
+        // Security review finding F4 (issue #437): a missing Key Vault "sign" permission or an
+        // inaccessible CNG key container surfaces as an exception from the self-test's sign call
+        // itself, not as a verification mismatch — the signer must still be disposed rather than
+        // leaked before that failure propagates, exactly as the verification-mismatch path already
+        // disposes it.
+        using var rsa = RSA.Create(2048);
+        var timeProvider = new FakeTimeProvider(Epoch);
+        ThrowingSigner? signer = null;
+
+        var sut = BuildKeySetService(
+            timeProvider,
+            () => [MakeRsaListing(rsa, "k1", activateAt: null, expiresAt: Epoch.AddYears(1))],
+            signerFactory: _ => signer = new ThrowingSigner());
+        var ct = TestContext.Current.CancellationToken;
+
+        var selfTest = (ISigningStartupSelfTest)sut;
+        await selfTest.Awaiting(s => s.VerifyActiveSignerAsync(ct).AsTask())
+            .Should().ThrowAsync<CryptographicException>();
+
+        signer!.DisposeCount.Should().Be(
+            1, "the signer must be disposed even when the self-test's sign call throws, not only on a verification mismatch");
+
+        await sut.DisposeAsync();
     }
 
     [Fact]
