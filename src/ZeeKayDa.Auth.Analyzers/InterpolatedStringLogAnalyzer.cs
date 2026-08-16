@@ -11,7 +11,7 @@ namespace ZeeKayDa.Auth.Analyzers;
 /// <summary>
 /// Catches non-constant string arguments passed to <c>Log*</c> methods inside <c>ZeeKayDa.*</c>
 /// namespaces, and non-constant <c>messageTemplate</c> arguments passed to
-/// <see cref="StartupVerificationContext.AddWarning"/>. The message template must be a
+/// <c>StartupVerificationContext.AddWarning</c>. The message template must be a
 /// compile-time constant so that <c>SecretSanitizingLogger</c> can inspect the template and its
 /// structured arguments — a non-constant string (interpolated, concatenated with a variable, or a
 /// local variable) is already fully expanded and cannot be redacted. <c>AddWarning</c> needs its

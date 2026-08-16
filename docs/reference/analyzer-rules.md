@@ -183,7 +183,7 @@ _logger.LogDebug($"Diagnostic — raw key material: {keyMaterial}");
 
 ```ini
 [src/ZeeKayDa.Auth/**/*.cs]
-dotnet_diagnostic.ZEEKAYDA0002.severity = none  // Non-constant string in log call
+dotnet_diagnostic.ZEEKAYDA0002.severity = none  ; Non-constant string in log call
 ```
 
 > ⚠️ **Warning:** Suppressing this rule disables the compile-time check for the affected call
@@ -289,7 +289,7 @@ public sealed class MyClientRepository : IClientRepository
 
 ```ini
 [**/*.cs]
-dotnet_diagnostic.ZEEKAYDA0003.severity = none  // IClientRepository does not reference IClientRegistrationValidator
+dotnet_diagnostic.ZEEKAYDA0003.severity = none  ; IClientRepository does not reference IClientRegistrationValidator
 ```
 
 > ⚠️ **Warning:** Suppressing this rule removes the reminder for the affected type. Any suppression
