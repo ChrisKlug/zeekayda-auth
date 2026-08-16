@@ -84,8 +84,11 @@ internal sealed class StartupVerificationHostedService(
     /// <inheritdoc/>
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
-    // A gate warning failing to log is treated the same as a gate failure: gates run before the
-    // sanitizing logger is trusted, so there is no aggregation phase left to defer to.
+    // A gate warning failing to log throws immediately rather than aggregating, unlike a
+    // verifier's warning-log failure below — by the time this runs, every gate has already passed
+    // and the logger is exactly as trusted as it ever is. The difference is that phase 1 (gates)
+    // has no failures list to defer to: each gate already aborts startup immediately on its own
+    // failure, so there is no aggregation model here for a warning-log failure to join either.
     private void LogWarningOrThrow(object source, string name, StartupVerificationWarning warning)
     {
         if (!TryLogWarning(source, name, warning, out var ex))

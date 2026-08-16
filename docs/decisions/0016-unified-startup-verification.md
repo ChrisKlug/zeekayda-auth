@@ -117,7 +117,7 @@ public sealed class StartupVerificationContext
         => AddWarning(code, messageTemplate, LogLevel.Warning, args);
 }
 
-public sealed record StartupVerificationWarning(string Code, string MessageTemplate, LogLevel Level, object?[] Args);
+public sealed record StartupVerificationWarning(string Code, string MessageTemplate, LogLevel Level, IReadOnlyList<object?> Args);
 
 public interface IStartupVerifier
 {
@@ -228,6 +228,13 @@ they would with a raw `ILogger` call — structured logging makes correct usage 
 not make incorrect usage impossible. The `Code` on `StartupVerificationWarning` remains the stable,
 type-independent discriminator for log-based alerting.
 
+The runner's own placeholder for it is named `{ErrorCode}`, not `{Code}` — `{Code}` would
+case-insensitively collide with `SecretSanitizingLogger.SensitiveKeys`' `"code"` entry (present to
+redact OAuth authorization `code` values elsewhere in the framework), which would silently redact
+every startup warning's discriminator to `[REDACTED]` in production and defeat the log-based
+alerting this section relies on. The `Code` property on `StartupVerificationWarning` itself keeps
+its name — only the runner's log-template placeholder text changed.
+
 ### 4. Aggregation semantics
 
 - **Phase 1 (gates): abort immediately.** The runner throws as soon as a gate reports a failure or
@@ -324,6 +331,18 @@ that code every time a deployment is cancelled mid-start. The runner therefore r
 then; a verifier that throws `OperationCanceledException` while the token is *not* signalled is a
 verifier bug and is wrapped like any other unexpected exception. Either way the host does not start,
 so fail-closed is unaffected — only the reported cause differs.
+
+**A warning that fails to log is reported as `startup.warning_log_failed`, not swallowed or left to
+crash unattributed.** §9's `verifierLogger.Log(...)` call can itself throw — most notably when a
+verifier's `MessageTemplate` and `Args` are mismatched in arity, which throws from inside the
+logging framework's own state formatter rather than from `VerifyAsync`, so it is outside
+`InvokeAsync`'s `try`/`catch` entirely. Without handling this separately, one verifier's malformed
+warning would crash `StartAsync` with an unattributed exception and discard every already-aggregated
+genuine `ZeeKayDaConfigurationFailure` from the same run. The runner instead wraps a warning-logging
+failure the same way it wraps an unexpected verifier exception — naming only the exception type,
+never its message, for the same redaction reason as `startup.verifier_failed` above — and folds it
+into the same failure list: aggregated in phase 2 alongside the verifier's own failures, or thrown
+immediately in phase 1, where there is no aggregation phase left to defer to.
 
 **No per-verifier timeout is introduced.** A verifier that hangs forever hangs startup. That is
 accepted for now: every in-tree verifier is either microsecond-scale in-memory work or a call whose
@@ -1246,6 +1265,12 @@ via an additional opt-in interface (§11).
   `StartupVerificationContext.AddWarning`, closing the gap Security Consideration 6 previously
   recorded as open. Security Consideration 6 and this section are updated to reflect that the
   extension has shipped rather than being tracked separately.
+- **2026-08-16 — issue #444, PR #450 review follow-ups** — §3 gains the rationale for naming the
+  runner's placeholder `{ErrorCode}` rather than `{Code}` (a redaction-key collision, not a stylistic
+  choice); §5 documents `startup.warning_log_failed`, the failure code a warning-logging failure
+  (most notably a `MessageTemplate`/`Args` arity mismatch) is wrapped as, since it was implemented
+  but never recorded here; and `StartupVerificationWarning.Args` changes from `object?[]` to
+  `IReadOnlyList<object?>` so the record does not expose a mutable array through public API surface.
 
 ---
 

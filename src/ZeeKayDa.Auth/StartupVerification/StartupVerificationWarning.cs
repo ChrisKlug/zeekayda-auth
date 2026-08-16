@@ -17,4 +17,4 @@ namespace ZeeKayDa.Auth;
 /// <param name="Args">
 /// The structured arguments matching <paramref name="MessageTemplate"/>'s placeholders, in order.
 /// </param>
-public sealed record StartupVerificationWarning(string Code, string MessageTemplate, LogLevel Level, object?[] Args);
+public sealed record StartupVerificationWarning(string Code, string MessageTemplate, LogLevel Level, IReadOnlyList<object?> Args);
