@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- **`SigningKeyRotation.SelectActiveKey`'s bootstrap-exemption parameter renamed** (#449)
+
+  The `bool supportsBootstrapExemption` parameter is renamed to `isKeySetTier` for clarity.
+  Behavior, parameter order, and accessibility (`public`) are unchanged — this only affects
+  callers passing the argument by name; positional callers are unaffected.
+
 - **BREAKING: legacy ADR 0011 signing-provider contract removed** (#428)
 
   `SigningKeySet`, `SigningKeyPair`, `RotatingKeySourceOptions`, and `StaticKeySourceOptions` are
