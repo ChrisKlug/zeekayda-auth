@@ -1,5 +1,3 @@
-using ZeeKayDa.Auth.AzureKeyVault;
-
 namespace ZeeKayDa.Auth.AzureKeyVault.Tests;
 
 public sealed class KeyVaultVersionSelectorTests
@@ -53,5 +51,13 @@ public sealed class KeyVaultVersionSelectorTests
         var firstEver = KeyVaultVersionSelector.DetermineFirstEverVersion([a, b]);
 
         firstEver.Should().Be("aaa", "identical CreatedOn falls back to an ordinal comparison of the version string");
+    }
+
+    [Fact]
+    public void DetermineFirstEverVersion_throws_on_an_empty_list()
+    {
+        var act = () => KeyVaultVersionSelector.DetermineFirstEverVersion<KeyVaultKeyVersionInfo>([]);
+
+        act.Should().Throw<ArgumentException>().WithParameterName("allVersions");
     }
 }

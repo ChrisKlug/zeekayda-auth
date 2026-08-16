@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
-- **`SigningKeyRotation.SelectActiveKey`'s bootstrap-exemption flag replaced by two entry points** (#449)
+- **BREAKING: `SigningKeyRotation.SelectActiveKey`'s bootstrap-exemption flag replaced by two entry points** (#449)
 
   The `bool supportsBootstrapExemption` parameter is removed. `SelectActiveKey(timeline, now)`
   now always applies `KeySourceOptions` (Tier B) semantics — never grants the single-key

@@ -98,8 +98,16 @@ public static class SigningKeyRotation
     /// The active entry, or <see langword="null"/> if no key is currently eligible to sign (the
     /// caller must fail closed in this case — see remarks).
     /// </returns>
-    public static RotationEntry? SelectActiveKey(IReadOnlyList<RotationEntry> timeline, DateTimeOffset now) =>
-        SelectActiveKeyCore(timeline, now, isKeySetTier: false);
+    public static RotationEntry? SelectActiveKey(IReadOnlyList<RotationEntry> timeline, DateTimeOffset now)
+    {
+        // Timeline is sorted ascending by ActivatesAt, so the last eligible match has the greatest
+        // ActivatesAt <= now. Projected to RotationEntry? so an empty result yields null, not
+        // default(RotationEntry).
+        return timeline
+            .Where(entry => entry.ActivatesAt <= now && IsEligibleAt(entry.Key, now))
+            .Select(entry => (RotationEntry?)entry)
+            .LastOrDefault();
+    }
 
     /// <summary>
     /// Picks the currently active signing key for a <c>KeySetOptions</c> (Tier A) provider — a
@@ -128,22 +136,7 @@ public static class SigningKeyRotation
     /// caller must fail closed in this case — see remarks).
     /// </returns>
     public static RotationEntry? SelectActiveKeyForFixedKeySet(IReadOnlyList<RotationEntry> timeline, DateTimeOffset now) =>
-        SelectActiveKeyCore(timeline, now, isKeySetTier: true);
-
-    private static RotationEntry? SelectActiveKeyCore(
-        IReadOnlyList<RotationEntry> timeline, DateTimeOffset now, bool isKeySetTier)
-    {
-        if (SelectSoleBootstrapKey(timeline, now, isKeySetTier) is { } soleKey)
-            return soleKey;
-
-        // Timeline is sorted ascending by ActivatesAt, so the last eligible match has the greatest
-        // ActivatesAt <= now. Projected to RotationEntry? so an empty result yields null, not
-        // default(RotationEntry).
-        return timeline
-            .Where(entry => entry.ActivatesAt <= now && IsEligibleAt(entry.Key, now))
-            .Select(entry => (RotationEntry?)entry)
-            .LastOrDefault();
-    }
+        SelectSoleEligibleKey(timeline, now) ?? SelectActiveKey(timeline, now);
 
     /// <summary>
     /// Selects every key that should currently be exposed via the JWKS: the active key (first), plus
@@ -192,13 +185,14 @@ public static class SigningKeyRotation
     private static bool IsEligibleAt(RotationKey key, DateTimeOffset pointInTime) =>
         pointInTime <= key.ExpiresAt;
 
-    // The single-key bootstrap exemption, or null if it doesn't grant a key. A still-expired sole
-    // key correctly falls through to null here too — the caller's normal per-entry selection would
-    // reject it on IsEligibleAt anyway, so this never needs to distinguish "exemption doesn't
-    // apply" from "exemption applies but the key already expired": both are equally "keep going."
-    private static RotationEntry? SelectSoleBootstrapKey(
-        IReadOnlyList<RotationEntry> timeline, DateTimeOffset now, bool isKeySetTier) =>
-        isKeySetTier && timeline.Count == 1 && IsEligibleAt(timeline[0].Key, now) ? timeline[0] : null;
+    // The single-key bootstrap exemption: the sole registered key, bypassing its own ActivatesAt,
+    // as long as it hasn't already expired — or null if there isn't exactly one key, or there is
+    // but it's expired. Both null cases are deliberately not distinguished: SelectActiveKey's
+    // normal per-entry selection (SelectActiveKeyForFixedKeySet's fallback) rejects an expired sole
+    // key identically via IsEligibleAt, so "no exemption to give" and "exemption doesn't apply
+    // here" are equally just "fall through."
+    private static RotationEntry? SelectSoleEligibleKey(IReadOnlyList<RotationEntry> timeline, DateTimeOffset now) =>
+        timeline.Count == 1 && IsEligibleAt(timeline[0].Key, now) ? timeline[0] : null;
 
     private static bool IsNotYetActiveOrStillWithinRetirementWindow(
         RotationEntry entry, DateTimeOffset now, TimeSpan retirementWindow)

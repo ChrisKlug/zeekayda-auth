@@ -275,7 +275,7 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
     // ── KeySetOptions/KeySourceOptions state ────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Selects the active key using the <see cref="SigningKeyRotation"/> overload matching this
+    /// Selects the active key using the <see cref="SigningKeyRotation"/> method matching this
     /// provider's fixed tier: <see cref="SigningKeyRotation.SelectActiveKeyForFixedKeySet"/> for a
     /// <see cref="KeySetOptions"/> provider, <see cref="SigningKeyRotation.SelectActiveKey"/>
     /// otherwise. Dispatched from <see cref="_isKeySet"/> (the provider's options type) rather than
