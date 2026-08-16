@@ -73,16 +73,9 @@ internal sealed class AzureKeyVaultRemoteSigningJwtSigningService : JwtSigningSe
                     "Create at least one key version before starting the host."));
         }
 
-        // Computed over allVersions, including disabled ones, never over enabledVersions below.
-        // Key Vault's list-versions read is only eventually consistent during a regional failover;
-        // if computed over a partial read, a stale response could let version #2 masquerade as
-        // "first ever" and activate immediately, bypassing PublicationLead. Over the full history,
-        // a stale read can only omit every version outright, which already fails closed above.
-        var firstEverVersion = allVersions
-            .OrderBy(v => v.CreatedOn)
-            .ThenBy(v => v.Version, StringComparer.Ordinal)
-            .First()
-            .Version;
+        // See KeyVaultVersionSelector.DetermineFirstEverVersion for why this is computed over
+        // every version, including disabled ones, rather than over enabledVersions below.
+        var firstEverVersion = KeyVaultVersionSelector.DetermineFirstEverVersion(allVersions);
 
         // "Enabled" is a Key Vault-side concept only; the base class's kill-by-omission logic
         // handles a version dropping out of this list.

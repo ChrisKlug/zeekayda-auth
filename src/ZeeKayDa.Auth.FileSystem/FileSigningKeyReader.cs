@@ -148,41 +148,56 @@ internal sealed class FileSigningKeyReader
         var directory = Path.GetDirectoryName(resolvedPath);
         while (!string.IsNullOrEmpty(directory))
         {
-            if (new DirectoryInfo(directory).LinkTarget is not null)
+            if (IsSymlinkedDirectory(directory))
                 throw SymlinkDetected(originalPath, resolvedPath, directory);
 
             directory = Path.GetDirectoryName(directory);
         }
     }
 
+    /// <summary>
+    /// Walks <paramref name="resolvedPath"/>'s ancestor directories, rejecting the first
+    /// non-root-owned symlinked one — a root-owned ancestor is trusted regardless of whether it is
+    /// itself a symlink, since an attacker without root cannot plant or replace a root-owned
+    /// directory entry (macOS ships <c>/tmp</c>, <c>/var</c>, and <c>/etc</c> as symlinks to
+    /// <c>/private/...</c>, and this provider is the recommended one for macOS, so a blanket
+    /// "any symlinked ancestor is unsafe" rule — the Windows walk above — would make it unusable
+    /// there). The walk stops at the first root-owned entry, since everything above it is equally
+    /// OS-managed.
+    /// </summary>
     [UnsupportedOSPlatform("windows")]
     private static void ValidateNoUntrustedSymlinkedAncestorUnix(string originalPath, string resolvedPath)
     {
-        // Unlike the Windows walk above, "any symlinked ancestor is a redirect attack" does not hold
-        // on Unix: macOS ships /tmp, /var, and /etc as symlinks to /private/..., and this provider
-        // is the recommended one for macOS, so rejecting those paths would make it unusable there.
-        // The trust signal is ownership of the directory entry itself, not symlink-ness: an attacker
-        // without root cannot plant or replace a root-owned entry, so a root-owned symlinked
-        // ancestor is as trustworthy as a non-symlinked one. The walk stops at the first root-owned
-        // directory, since everything above it is equally OS-managed.
-        //
-        // This MUST use PosixInterop.GetLinkOwnerUid (lstat), never GetOwnerUid (stat): stat()
-        // follows the symlink and reports the target's owner, which an attacker controls by
-        // choosing where their symlink points — e.g. pointing at root-owned /tmp would wrongly read
-        // as root-owned and short-circuit this check. lstat() reports the link entry's own owner.
         var directory = Path.GetDirectoryName(resolvedPath);
         while (!string.IsNullOrEmpty(directory))
         {
-            var ownerUid = PosixInterop.GetLinkOwnerUid(directory);
-            if (ownerUid == 0)
+            if (IsRootOwnedDirectoryEntry(directory))
                 break;
 
-            if (new DirectoryInfo(directory).LinkTarget is not null)
+            if (IsSymlinkedDirectory(directory))
                 throw SymlinkDetected(originalPath, resolvedPath, directory);
 
             directory = Path.GetDirectoryName(directory);
         }
     }
+
+    /// <summary>
+    /// Whether <paramref name="directoryPath"/>'s own directory entry — not the target it
+    /// resolves to, if it is itself a symlink — is owned by root (uid 0).
+    /// </summary>
+    /// <remarks>
+    /// Uses <see cref="PosixInterop.GetLinkOwnerUid"/> (<c>lstat</c>), never a <c>stat</c>-based
+    /// owner lookup: <c>stat()</c> follows a symlink and reports the target's owner, which an
+    /// attacker controls by choosing where their symlink points — e.g. pointing at root-owned
+    /// <c>/tmp</c> would wrongly read as root-owned and short-circuit this check. <c>lstat()</c>
+    /// reports the link entry's own owner.
+    /// </remarks>
+    [UnsupportedOSPlatform("windows")]
+    private static bool IsRootOwnedDirectoryEntry(string directoryPath) =>
+        PosixInterop.GetLinkOwnerUid(directoryPath) == 0;
+
+    private static bool IsSymlinkedDirectory(string directoryPath) =>
+        new DirectoryInfo(directoryPath).LinkTarget is not null;
 
     private static ZeeKayDaConfigurationException SymlinkDetected(
         string originalPath, string resolvedPath, string? symlinkedDirectory = null)

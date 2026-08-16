@@ -20,7 +20,7 @@ public sealed class SigningKeyRotationTests
         var key = Key("AAA", activatesAt: T0 + TimeSpan.FromDays(30));
         var timeline = SigningKeyRotation.BuildActivationTimeline([key]);
 
-        var active = SigningKeyRotation.SelectActiveKey(timeline, now: T0, supportsBootstrapExemption: true);
+        var active = SigningKeyRotation.SelectActiveKey(timeline, now: T0, tier: BootstrapExemptionTier.KeySet);
 
         active.Should().NotBeNull();
         active!.Value.Key.Id.Should().Be("AAA");
@@ -32,7 +32,7 @@ public sealed class SigningKeyRotationTests
         var key = Key("AAA", activatesAt: T0 - TimeSpan.FromDays(400), expiresAt: T0 - TimeSpan.FromDays(1));
         var timeline = SigningKeyRotation.BuildActivationTimeline([key]);
 
-        var active = SigningKeyRotation.SelectActiveKey(timeline, now: T0, supportsBootstrapExemption: true);
+        var active = SigningKeyRotation.SelectActiveKey(timeline, now: T0, tier: BootstrapExemptionTier.KeySet);
 
         active.Should().BeNull("the bootstrap exemption covers activation timing only, not expiry");
     }
@@ -45,12 +45,12 @@ public sealed class SigningKeyRotationTests
         // other key — not only at cold start, and this can recur across a process restart during the
         // same incident (finding F1-2: gating on "first snapshot this instance ever built" alone is
         // not restart-safe, since a fresh instance's first snapshot always looks like a bootstrap).
-        // Gating on the calling provider's options type instead (KeySourceOptions always passes
-        // supportsBootstrapExemption: false) keeps this closed regardless of process lifetime.
+        // Gating on the calling provider's tier instead (KeySourceOptions always passes
+        // BootstrapExemptionTier.KeySource) keeps this closed regardless of process lifetime.
         var key = Key("AAA", activatesAt: T0 + TimeSpan.FromHours(1));
         var timeline = SigningKeyRotation.BuildActivationTimeline([key]);
 
-        var active = SigningKeyRotation.SelectActiveKey(timeline, now: T0, supportsBootstrapExemption: false);
+        var active = SigningKeyRotation.SelectActiveKey(timeline, now: T0, tier: BootstrapExemptionTier.KeySource);
 
         active.Should().BeNull(
             "a KeySourceOptions provider must never bypass the key's own ActivatesAt, regardless of whether this happens to be its first snapshot");
@@ -59,12 +59,12 @@ public sealed class SigningKeyRotationTests
     [Fact]
     public void SelectActiveKey_single_key_still_exempt_when_the_calling_tier_does_not_support_the_exemption_but_already_eligible()
     {
-        // supportsBootstrapExemption only changes behaviour for a key that has not yet reached its
-        // ActivatesAt - an already-eligible sole key is selected exactly as before either way.
+        // tier only changes behaviour for a key that has not yet reached its ActivatesAt - an
+        // already-eligible sole key is selected exactly as before either way.
         var key = Key("AAA", activatesAt: T0 - TimeSpan.FromDays(1));
         var timeline = SigningKeyRotation.BuildActivationTimeline([key]);
 
-        var active = SigningKeyRotation.SelectActiveKey(timeline, now: T0, supportsBootstrapExemption: false);
+        var active = SigningKeyRotation.SelectActiveKey(timeline, now: T0, tier: BootstrapExemptionTier.KeySource);
 
         active.Should().NotBeNull();
         active!.Value.Key.Id.Should().Be("AAA");
@@ -79,7 +79,7 @@ public sealed class SigningKeyRotationTests
         var successor = Key("BBB", activatesAt: T0 - TimeSpan.FromDays(1));
         var timeline = SigningKeyRotation.BuildActivationTimeline([predecessor, successor]);
 
-        var active = SigningKeyRotation.SelectActiveKey(timeline, now: T0, supportsBootstrapExemption: true);
+        var active = SigningKeyRotation.SelectActiveKey(timeline, now: T0, tier: BootstrapExemptionTier.KeySet);
 
         active!.Value.Key.Id.Should().Be("BBB");
     }
@@ -92,8 +92,8 @@ public sealed class SigningKeyRotationTests
         var successor = Key("BBB", activatesAt: successorActivatesAt);
         var timeline = SigningKeyRotation.BuildActivationTimeline([predecessor, successor]);
 
-        SigningKeyRotation.SelectActiveKey(timeline, now: T0, supportsBootstrapExemption: true)!.Value.Key.Id.Should().Be("AAA", "successor has not activated yet");
-        SigningKeyRotation.SelectActiveKey(timeline, now: successorActivatesAt, supportsBootstrapExemption: true)!.Value.Key.Id.Should().Be("BBB", "successor's ActivatesAt has now arrived");
+        SigningKeyRotation.SelectActiveKey(timeline, now: T0, tier: BootstrapExemptionTier.KeySet)!.Value.Key.Id.Should().Be("AAA", "successor has not activated yet");
+        SigningKeyRotation.SelectActiveKey(timeline, now: successorActivatesAt, tier: BootstrapExemptionTier.KeySet)!.Value.Key.Id.Should().Be("BBB", "successor's ActivatesAt has now arrived");
     }
 
     [Fact]
@@ -102,7 +102,7 @@ public sealed class SigningKeyRotationTests
         var predecessor = Key("AAA", activatesAt: T0 - TimeSpan.FromDays(30));
         var successor = Key("BBB", activatesAt: T0 + TimeSpan.FromDays(1));
         var timeline = SigningKeyRotation.BuildActivationTimeline([predecessor, successor]);
-        var active = SigningKeyRotation.SelectActiveKey(timeline, now: T0, supportsBootstrapExemption: true)!.Value;
+        var active = SigningKeyRotation.SelectActiveKey(timeline, now: T0, tier: BootstrapExemptionTier.KeySet)!.Value;
 
         var included = SigningKeyRotation.SelectIncludedKeys(timeline, active, now: T0, DefaultRetirementWindow);
 
@@ -118,7 +118,7 @@ public sealed class SigningKeyRotationTests
         var successorActivatesAt = T0 - TimeSpan.FromMinutes(30);
         var successor = Key("BBB", activatesAt: successorActivatesAt);
         var timeline = SigningKeyRotation.BuildActivationTimeline([predecessor, successor]);
-        var active = SigningKeyRotation.SelectActiveKey(timeline, now: T0, supportsBootstrapExemption: true)!.Value;
+        var active = SigningKeyRotation.SelectActiveKey(timeline, now: T0, tier: BootstrapExemptionTier.KeySet)!.Value;
         active.Key.Id.Should().Be("BBB");
 
         // Predecessor's retirement clock started at successor's ActivatesAt (30 min ago), not at
@@ -137,7 +137,7 @@ public sealed class SigningKeyRotationTests
         var predecessor = Key("AAA", activatesAt: T0 - TimeSpan.FromDays(30));
         var successor = Key("BBB", activatesAt: successorActivatesAt);
         var timeline = SigningKeyRotation.BuildActivationTimeline([predecessor, successor]);
-        var active = SigningKeyRotation.SelectActiveKey(timeline, now: T0, supportsBootstrapExemption: true)!.Value;
+        var active = SigningKeyRotation.SelectActiveKey(timeline, now: T0, tier: BootstrapExemptionTier.KeySet)!.Value;
 
         var included = SigningKeyRotation.SelectIncludedKeys(timeline, active, now: T0, retirementWindow: TimeSpan.FromHours(1));
 
@@ -156,7 +156,7 @@ public sealed class SigningKeyRotationTests
         var realSuccessor = Key("CCC", activatesAt: T0 - TimeSpan.FromDays(1));
         var timeline = SigningKeyRotation.BuildActivationTimeline([predecessor, neverReallyActive, realSuccessor]);
 
-        var active = SigningKeyRotation.SelectActiveKey(timeline, now: T0, supportsBootstrapExemption: true)!.Value;
+        var active = SigningKeyRotation.SelectActiveKey(timeline, now: T0, tier: BootstrapExemptionTier.KeySet)!.Value;
         active.Key.Id.Should().Be("CCC");
 
         var aaaEntry = timeline.Single(e => e.Key.Id == "AAA");
@@ -171,7 +171,7 @@ public sealed class SigningKeyRotationTests
         var b = Key("BBB", activatesAt: T0 + TimeSpan.FromDays(2));
         var timeline = SigningKeyRotation.BuildActivationTimeline([a, b]);
 
-        var active = SigningKeyRotation.SelectActiveKey(timeline, now: T0, supportsBootstrapExemption: true);
+        var active = SigningKeyRotation.SelectActiveKey(timeline, now: T0, tier: BootstrapExemptionTier.KeySet);
 
         active.Should().BeNull("2+ keys with none yet activated must fail closed, not silently pick one");
     }
