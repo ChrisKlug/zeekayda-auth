@@ -21,9 +21,14 @@ namespace ZeeKayDa.Auth.Tokens;
 /// key set known at configuration time) or <see cref="KeySourceOptions"/> (Tier B, a source the base
 /// class re-reads on a cadence).
 /// </typeparam>
-public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDisposable
+public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigningStartupSelfTest, IAsyncDisposable
     where TOptions : JwtSigningServiceOptions
 {
+    // RFC 7518 JWS compact serialization never contains a space, and always contains at least one
+    // '.' separator — this constant contains a space and no '.', so it can never be mistaken for, or
+    // lifted into, a valid JWS even if a self-test signature were somehow leaked (issue #437).
+    private static readonly ReadOnlyMemory<byte> SelfTestPayload = "zeekayda-auth signing self-test"u8.ToArray();
+
     private readonly TimeProvider _timeProvider;
     private readonly bool _isKeySet; // true = Tier A (KeySetOptions); false = Tier B (KeySourceOptions).
     private readonly IOptions<TOptions> _options;
@@ -160,6 +165,29 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
         {
             handle.Return();
         }
+    }
+
+    /// <summary>
+    /// Forces materialization of the currently active signer exactly as <see cref="SignAsync"/>
+    /// would (issue #437). The sign-and-verify self-test itself (ADR 0015 §11) lives in
+    /// <see cref="EnsureActiveSignerAsync"/>, so it runs on <em>every</em> handoff — initial
+    /// materialization and every subsequent rotation — not only when this method happens to be
+    /// called. This method exists purely so the framework-owned
+    /// <c>SigningStartupSelfTestHostedService</c> can force that first handoff to happen eagerly at
+    /// host startup, surfacing a failure at deployment time rather than on the first real
+    /// token-issuing request.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately explicit-interface-implemented rather than <see langword="virtual"/>: no derived
+    /// provider can override or weaken this self-test. It is invoked once, at host startup, by the
+    /// framework-owned <c>SigningStartupSelfTestHostedService</c> — never by application code
+    /// directly.
+    /// </remarks>
+    async ValueTask ISigningStartupSelfTest.VerifyActiveSignerAsync(CancellationToken cancellationToken)
+    {
+        var snapshot = await EnsureSnapshotAsync(cancellationToken).ConfigureAwait(false);
+        var handle = await EnsureActiveSignerAsync(snapshot, cancellationToken).ConfigureAwait(false);
+        handle.Return();
     }
 
     /// <inheritdoc/>
@@ -473,9 +501,14 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
     /// <summary>
     /// Recomputes active-key selection from <paramref name="snapshot"/> and <c>now</c>, and — only
     /// when the computed active <see cref="KeyId"/> has changed — calls <see cref="CreateSignerAsync"/>
-    /// for the new active key and disposes (opportunistically, per ADR 0015 §5) the signer it
-    /// supersedes. Returns a borrowed <see cref="SignerHandle"/> that the caller MUST
-    /// <see cref="SignerHandle.Return"/> exactly once.
+    /// for the new active key, self-tests it (ADR 0015 §11, issue #437: signs
+    /// <see cref="SelfTestPayload"/> and verifies the signature against the key's own listed public
+    /// key via <see cref="SigningAlgorithms.Verify"/>, structurally proving the signer actually pairs
+    /// with the public key whose <c>kid</c> this base class is publishing), and disposes
+    /// (opportunistically, per ADR 0015 §5) the signer it supersedes. Because this runs on every
+    /// handoff — not only the first one — a rotated-in signer is proven exactly as thoroughly as the
+    /// one materialized at startup. Returns a borrowed <see cref="SignerHandle"/> that the caller
+    /// MUST <see cref="SignerHandle.Return"/> exactly once.
     /// </summary>
     private async ValueTask<SignerHandle> EnsureActiveSignerAsync(
         SigningKeySnapshot snapshot, CancellationToken cancellationToken)
@@ -539,6 +572,45 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
                         $"signs under {signer.Algorithm}, but the key was listed with algorithm " +
                         $"{descriptor.Algorithm}. The signer's {nameof(ISigner.Algorithm)} must match " +
                         $"the key's declared algorithm exactly."));
+            }
+
+            // ADR 0015 §11 (issue #437): sign a fixed, non-JWS-shaped constant and verify the
+            // resulting signature against this same key's own listed public key before this signer
+            // is ever handed out for real signing. This runs on every handoff — initial
+            // materialization and every subsequent rotation — not only once at process start, so a
+            // rotated-in key gets exactly the same structural proof as the very first active key.
+            // One extra sign per handoff (a remote call per rotation for a remote signer such as Key
+            // Vault, not per token issuance) is the accepted cost of catching a signer whose private
+            // key does not actually pair with the public key it publishes a kid for (a non-exportable
+            // KV certificate policy, an inaccessible CNG key container, a missing sign permission)
+            // before it is ever used to produce a token.
+            bool selfTestVerified;
+            try
+            {
+                var selfTestSignature = await signer.SignAsync(SelfTestPayload, cancellationToken).ConfigureAwait(false);
+                selfTestVerified = SigningAlgorithms.Verify(descriptor, SelfTestPayload.Span, selfTestSignature.Span);
+            }
+            catch
+            {
+                // A missing Key Vault "sign" permission or an inaccessible CNG key container
+                // surfaces as an exception here, not as a verification mismatch below — the signer
+                // must still be disposed rather than leaked before the failure propagates.
+                signer.Dispose();
+                throw;
+            }
+
+            if (!selfTestVerified)
+            {
+                signer.Dispose();
+
+                throw new ZeeKayDaConfigurationException(
+                    new ZeeKayDaConfigurationFailure(
+                        "signing.self_test_failed",
+                        $"The signer {nameof(CreateSignerAsync)} returned for key '{descriptor.Kid}' " +
+                        "produced a signature that does not verify against that key's own listed public " +
+                        "key. The private key materialized for signing does not match the public key " +
+                        $"published under this kid — refusing to serve tokens under '{descriptor.Kid}' " +
+                        "(ADR 0015 §11 self-test, issue #437)."));
             }
 
             var newHandle = new SignerHandle { Id = activeId.Value, Descriptor = descriptor, Signer = signer };

@@ -228,26 +228,39 @@ public sealed class ZeeKayDaAuthBuilderFileSigningExtensionsTests
         service.Should().BeOfType<PfxFileSigningJwtSigningService>();
     }
 
+    // FileSigningStartupService was deleted in issue #437: it had no genuinely file-format-specific
+    // behavior of its own (only the pre-warm every provider used to hand-roll), so it is fully
+    // superseded by the framework-owned SigningStartupSelfTestHostedService registered once by
+    // AddZeeKayDaAuthCore() for every signing provider. These tests now prove that hosted service is
+    // reachable through this package's registration path instead.
+
+    // SigningStartupSelfTestHostedService is internal to ZeeKayDa.Auth (core), which does not grant
+    // this test project [InternalsVisibleTo] access — only ZeeKayDa.Auth.FileSystem itself has that.
+    // Its full type name is therefore matched by reflection rather than referenced directly, exactly
+    // as the DI-registration proof this test replaces would look from any out-of-assembly test.
+
     [Fact]
-    public async Task AddPemFileSigning_registers_FileSigningStartupService_as_a_hosted_service()
+    public async Task AddPemFileSigning_registers_the_framework_owned_signing_startup_self_test_as_a_hosted_service()
     {
         var builder = NewBuilder();
 
         builder.AddPemFileSigning(PemPath, SigningAlgorithm.RS256);
 
         await using var provider = builder.Services.BuildServiceProvider();
-        provider.GetServices<IHostedService>().OfType<FileSigningStartupService>().Should().ContainSingle();
+        provider.GetServices<IHostedService>().Should().Contain(
+            s => s.GetType().FullName == "ZeeKayDa.Auth.Tokens.SigningStartupSelfTestHostedService");
     }
 
     [Fact]
-    public async Task AddPfxFileSigning_registers_FileSigningStartupService_as_a_hosted_service()
+    public async Task AddPfxFileSigning_registers_the_framework_owned_signing_startup_self_test_as_a_hosted_service()
     {
         var builder = NewBuilder();
 
         builder.AddPfxFileSigning(PfxPath, SigningAlgorithm.RS256, AnyPassword());
 
         await using var provider = builder.Services.BuildServiceProvider();
-        provider.GetServices<IHostedService>().OfType<FileSigningStartupService>().Should().ContainSingle();
+        provider.GetServices<IHostedService>().Should().Contain(
+            s => s.GetType().FullName == "ZeeKayDa.Auth.Tokens.SigningStartupSelfTestHostedService");
     }
 
     [Fact]

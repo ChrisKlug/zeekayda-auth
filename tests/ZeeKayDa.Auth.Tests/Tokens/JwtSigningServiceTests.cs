@@ -17,6 +17,11 @@ public sealed class JwtSigningServiceTests
 {
     private static readonly DateTimeOffset Epoch = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
+    // Mirrors JwtSigningService<TOptions>'s private SelfTestPayload constant — the ADR 0015 §11
+    // self-test (issue #437) always signs exactly this payload, so a signer test double that needs
+    // to distinguish the self-test call from a real signing call compares against this.
+    private static readonly byte[] SelfTestPayloadBytes = "zeekayda-auth signing self-test"u8.ToArray();
+
     // ── Fake infrastructure ───────────────────────────────────────────────────────────────────────
 
     private sealed class FakeKeySetOptions : KeySetOptions
@@ -27,8 +32,14 @@ public sealed class JwtSigningServiceTests
     {
     }
 
-    /// <summary>An <see cref="ISigner"/> test double that counts and never actually signs anything.</summary>
-    private sealed class FakeSigner(SigningAlgorithm algorithm = SigningAlgorithm.RS256) : ISigner
+    /// <summary>
+    /// An <see cref="ISigner"/> test double that counts every call. When <paramref name="privateKey"/>
+    /// is supplied, it signs for real (so the ADR 0015 §11 self-test — issue #437 — which every
+    /// active-key handoff now runs, sees a genuinely verifiable signature); otherwise it returns a
+    /// fixed, non-verifying placeholder, for tests that never exercise a real handoff or that
+    /// deliberately want the self-test to fail.
+    /// </summary>
+    private sealed class FakeSigner(SigningAlgorithm algorithm = SigningAlgorithm.RS256, AsymmetricAlgorithm? privateKey = null) : ISigner
     {
         public int DisposeCount { get; private set; }
 
@@ -38,6 +49,9 @@ public sealed class JwtSigningServiceTests
             ReadOnlyMemory<byte> signingInput, CancellationToken cancellationToken = default)
         {
             SignAsyncCallCount++;
+            if (privateKey is not null)
+                return new ValueTask<ReadOnlyMemory<byte>>(SigningAlgorithms.Sign(algorithm, signingInput.ToArray(), privateKey));
+
             return new ValueTask<ReadOnlyMemory<byte>>(new byte[] { 1, 2, 3, 4 });
         }
 
@@ -54,9 +68,14 @@ public sealed class JwtSigningServiceTests
     /// <summary>
     /// An <see cref="ISigner"/> test double whose <see cref="SignAsync"/> blocks until
     /// <paramref name="release"/> completes, signalling <see cref="Entered"/> first so a test can
-    /// deterministically know the call is in flight before proceeding.
+    /// deterministically know the call is in flight before proceeding. The ADR 0015 §11 self-test
+    /// (issue #437) signs <see cref="SelfTestPayloadBytes"/> synchronously while the base class
+    /// still holds its signer lock, so that specific call is answered immediately with a real,
+    /// verifiable signature over <paramref name="privateKey"/> rather than gated — gating it too
+    /// would deadlock every handoff against the base class's own lock, since nothing outside this
+    /// call can ever release it.
     /// </summary>
-    private sealed class GatedSigner(TaskCompletionSource release) : ISigner
+    private sealed class GatedSigner(TaskCompletionSource release, AsymmetricAlgorithm privateKey) : ISigner
     {
         private readonly TaskCompletionSource _entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -67,6 +86,9 @@ public sealed class JwtSigningServiceTests
         public async ValueTask<ReadOnlyMemory<byte>> SignAsync(
             ReadOnlyMemory<byte> signingInput, CancellationToken cancellationToken = default)
         {
+            if (signingInput.Span.SequenceEqual(SelfTestPayloadBytes))
+                return SigningAlgorithms.Sign(SigningAlgorithm.RS256, signingInput.ToArray(), privateKey);
+
             _entered.TrySetResult();
             await release.Task.ConfigureAwait(false);
             return new byte[] { 1, 2, 3, 4 };
@@ -243,7 +265,9 @@ public sealed class JwtSigningServiceTests
         using var rsa = RSA.Create(2048);
         var timeProvider = new FakeTimeProvider(Epoch);
         await using var sut = BuildKeySetService(
-            timeProvider, () => [MakeRsaListing(rsa, "k1", activateAt: null, expiresAt: Epoch.AddYears(100))]);
+            timeProvider,
+            () => [MakeRsaListing(rsa, "k1", activateAt: null, expiresAt: Epoch.AddYears(100))],
+            signerFactory: _ => new FakeSigner(privateKey: rsa));
         var ct = TestContext.Current.CancellationToken;
 
         await sut.GetSigningKeysAsync(ct);
@@ -293,7 +317,8 @@ public sealed class JwtSigningServiceTests
             [
                 MakeRsaListing(rsa1, "k1", activateAt: null, expiresAt: Epoch.AddYears(1)),
                 MakeRsaListing(rsa2, "k2", activateAt: successorActivatesAt, expiresAt: Epoch.AddYears(1)),
-            ]);
+            ],
+            signerFactory: id => new FakeSigner(privateKey: id.Value == "k1" ? rsa1 : rsa2));
         var ct = TestContext.Current.CancellationToken;
 
         var before = await sut.SignAsync(new byte[] { 0 }, ct);
@@ -325,7 +350,7 @@ public sealed class JwtSigningServiceTests
             ],
             signerFactory: id =>
             {
-                var signer = new FakeSigner();
+                var signer = new FakeSigner(privateKey: id.Value == "k1" ? rsa1 : rsa2);
                 signersById[id.Value] = signer;
                 return signer;
             });
@@ -352,7 +377,7 @@ public sealed class JwtSigningServiceTests
         var sut = BuildKeySetService(
             timeProvider,
             () => [MakeRsaListing(rsa, "k1", activateAt: null, expiresAt: Epoch.AddYears(1))],
-            signerFactory: _ => signer = new FakeSigner());
+            signerFactory: _ => signer = new FakeSigner(privateKey: rsa));
         var ct = TestContext.Current.CancellationToken;
 
         await sut.SignAsync(new byte[] { 0 }, ct);
@@ -371,7 +396,8 @@ public sealed class JwtSigningServiceTests
 
         var sut = BuildKeySetService(
             timeProvider,
-            () => [MakeRsaListing(rsa, "k1", activateAt: null, expiresAt: Epoch.AddYears(1))]);
+            () => [MakeRsaListing(rsa, "k1", activateAt: null, expiresAt: Epoch.AddYears(1))],
+            signerFactory: _ => new FakeSigner(privateKey: rsa));
         var ct = TestContext.Current.CancellationToken;
 
         await sut.SignAsync(new byte[] { 0 }, ct);
@@ -402,7 +428,7 @@ public sealed class JwtSigningServiceTests
                 : [MakeRsaListing(rsa1, "k1", activateAt: null, expiresAt: Epoch.AddYears(1))],
             signerFactory: id =>
             {
-                var signer = new FakeSigner();
+                var signer = new FakeSigner(privateKey: id.Value == "k1" ? rsa1 : rsa2);
                 signersById[id.Value] = signer;
                 return signer;
             },
@@ -440,8 +466,8 @@ public sealed class JwtSigningServiceTests
                    MakeRsaListing(rsa2, "k2", activateAt: Epoch, expiresAt: Epoch.AddYears(1))]
                 : [MakeRsaListing(rsa1, "k1", activateAt: null, expiresAt: Epoch.AddYears(1))],
             signerFactory: id => id.Value == "k1"
-                ? gatedSigner = new GatedSigner(release)
-                : new FakeSigner(),
+                ? gatedSigner = new GatedSigner(release, rsa1)
+                : new FakeSigner(privateKey: rsa2),
             refreshInterval: TimeSpan.FromMinutes(5));
         var ct = TestContext.Current.CancellationToken;
 
@@ -784,7 +810,7 @@ public sealed class JwtSigningServiceTests
         await using var sut = BuildKeySetService(
             timeProvider,
             () => [MakeRsaListing(rsa, "k1", activateAt: null, expiresAt: Epoch.AddYears(1))],
-            signerFactory: _ => new StubSigner(expectedSignature));
+            signerFactory: _ => new StubSigner(expectedSignature, selfTestKey: rsa));
         var ct = TestContext.Current.CancellationToken;
 
         var result = await sut.SignAsync(new byte[] { 0 }, ct);
@@ -792,10 +818,22 @@ public sealed class JwtSigningServiceTests
         DecodeBase64Url(result.SignatureSegment).Should().Equal(expectedSignature);
     }
 
-    private sealed class StubSigner(ReadOnlyMemory<byte> signature) : ISigner
+    /// <summary>
+    /// An <see cref="ISigner"/> test double that always returns <paramref name="signature"/> for a
+    /// real signing call — but, when <paramref name="selfTestKey"/> is supplied, signs
+    /// <see cref="SelfTestPayloadBytes"/> for real instead, so the ADR 0015 §11 self-test (issue
+    /// #437) passes without disturbing the fixed <paramref name="signature"/> this double's callers
+    /// assert on for the actual token signature.
+    /// </summary>
+    private sealed class StubSigner(ReadOnlyMemory<byte> signature, AsymmetricAlgorithm? selfTestKey = null) : ISigner
     {
         public ValueTask<ReadOnlyMemory<byte>> SignAsync(ReadOnlyMemory<byte> signingInput, CancellationToken cancellationToken = default)
-            => new(signature);
+        {
+            if (selfTestKey is not null && signingInput.Span.SequenceEqual(SelfTestPayloadBytes))
+                return new ValueTask<ReadOnlyMemory<byte>>(SigningAlgorithms.Sign(SigningAlgorithm.RS256, signingInput.ToArray(), selfTestKey));
+
+            return new(signature);
+        }
 
         public void Dispose()
         {
@@ -977,7 +1015,7 @@ public sealed class JwtSigningServiceTests
             () => [MakeRsaListing(afterRotation ? rsa2 : rsa1, "stable-id", activateAt: null, expiresAt: Epoch.AddYears(1))],
             signerFactory: _ =>
             {
-                var signer = new FakeSigner();
+                var signer = new FakeSigner(privateKey: afterRotation ? rsa2 : rsa1);
                 signersCreated.Add(signer);
                 return signer;
             },
@@ -996,7 +1034,9 @@ public sealed class JwtSigningServiceTests
             2, "a stable Id with rotated material must force a fresh CreateSignerAsync call rather than reusing the stale handle");
         signersCreated.Should().HaveCount(2);
         signersCreated[0].DisposeCount.Should().Be(1, "the superseded signer for the old material must be disposed");
-        signersCreated[1].SignAsyncCallCount.Should().Be(1, "the second SignAsync call must use the freshly created signer");
+        signersCreated[1].SignAsyncCallCount.Should().Be(
+            2, "the second SignAsync call must use the freshly created signer — one call is the ADR 0015 §11 self-test " +
+               "(issue #437) for the new handoff, and one is the real signature");
     }
 
     [Fact]
@@ -1009,7 +1049,7 @@ public sealed class JwtSigningServiceTests
         using var rsa2 = RSA.Create(2048);
         var timeProvider = new FakeTimeProvider(Epoch);
         var afterRotation = false;
-        var sharedSigner = new FakeSigner();
+        var sharedSigner = new FakeSigner(privateKey: rsa1);
 
         await using var sut = BuildKeySourceService(
             timeProvider,
@@ -1087,6 +1127,154 @@ public sealed class JwtSigningServiceTests
 
         sut.CreateSignerAsyncCalledFor.Should().BeEmpty(
             "validation must fail on the bad refresh before any signer is ever requested for that listing");
+    }
+
+    // ── ADR 0015 startup self-test (ISigningStartupSelfTest, issue #437) ───────────────────────────
+
+    [Theory]
+    [InlineData(SigningAlgorithm.RS256)]
+    [InlineData(SigningAlgorithm.RS384)]
+    [InlineData(SigningAlgorithm.RS512)]
+    [InlineData(SigningAlgorithm.PS256)]
+    [InlineData(SigningAlgorithm.PS384)]
+    [InlineData(SigningAlgorithm.PS512)]
+    public async Task VerifyActiveSignerAsync_passes_for_an_RSA_signer_whose_signature_verifies_against_the_listed_public_key(
+        SigningAlgorithm algorithm)
+    {
+        using var rsa = RSA.Create(2048);
+        var timeProvider = new FakeTimeProvider(Epoch);
+
+        // A real LocalSigner over the same RSA key pair whose public half is listed: the self-test
+        // must actually sign and verify with real cryptography, not merely call through a fake —
+        // parameterised over every RSA algorithm so SigningAlgorithms.Verify's dispatch is exercised
+        // for each one, not just RS256.
+        await using var sut = BuildKeySetService(
+            timeProvider,
+            () => [MakeRsaListing(rsa, "k1", activateAt: null, expiresAt: Epoch.AddYears(1), algorithm: algorithm)],
+            signerFactory: _ => new LocalSigner(algorithm, RSA.Create(rsa.ExportParameters(true))));
+        var ct = TestContext.Current.CancellationToken;
+
+        var selfTest = (ISigningStartupSelfTest)sut;
+        var act = async () => await selfTest.VerifyActiveSignerAsync(ct);
+
+        await act.Should().NotThrowAsync(
+            "a signer whose signature verifies against its own listed public key must pass the self-test");
+    }
+
+    [Theory]
+    [InlineData(SigningAlgorithm.ES256)]
+    [InlineData(SigningAlgorithm.ES384)]
+    [InlineData(SigningAlgorithm.ES512)]
+    public async Task VerifyActiveSignerAsync_passes_for_an_EC_signer_whose_signature_verifies_against_the_listed_public_key(
+        SigningAlgorithm algorithm)
+    {
+        var curve = algorithm switch
+        {
+            SigningAlgorithm.ES256 => ECCurve.NamedCurves.nistP256,
+            SigningAlgorithm.ES384 => ECCurve.NamedCurves.nistP384,
+            _ => ECCurve.NamedCurves.nistP521,
+        };
+        using var ec = ECDsa.Create(curve);
+        var timeProvider = new FakeTimeProvider(Epoch);
+        var listing = new KeyListing(
+            new KeyId("ec-1"), algorithm, PublicKeyParameters.FromEc(ec.ExportParameters(false)),
+            ActivateAt: null, ExpiresAt: Epoch.AddYears(1));
+
+        // Parameterised over every EC algorithm/curve pairing so SigningAlgorithms.Verify's EC
+        // dispatch is exercised for each one, not just ES256.
+        await using var sut = BuildKeySetService(timeProvider, () => [listing], signerFactory: _ => new LocalSigner(algorithm, ECDsa.Create(ec.ExportParameters(true))));
+        var ct = TestContext.Current.CancellationToken;
+
+        var selfTest = (ISigningStartupSelfTest)sut;
+        var act = async () => await selfTest.VerifyActiveSignerAsync(ct);
+
+        await act.Should().NotThrowAsync(
+            "an EC signer whose signature verifies against its own listed public key must pass the self-test");
+    }
+
+    [Fact]
+    public async Task VerifyActiveSignerAsync_throws_when_the_signature_does_not_verify_against_the_listed_public_key()
+    {
+        using var rsa = RSA.Create(2048);
+        var timeProvider = new FakeTimeProvider(Epoch);
+
+        // FakeSigner never actually signs — it always returns the fixed bytes { 1, 2, 3, 4 }, which
+        // cannot verify against the real RSA public key listed for "k1". This models a signer that
+        // materializes private key material which does not pair with the public key it publishes a
+        // kid for (a non-exportable KV certificate policy, an inaccessible CNG key container, etc.).
+        await using var sut = BuildKeySetService(
+            timeProvider,
+            () => [MakeRsaListing(rsa, "k1", activateAt: null, expiresAt: Epoch.AddYears(1))],
+            signerFactory: _ => new FakeSigner());
+        var ct = TestContext.Current.CancellationToken;
+
+        var selfTest = (ISigningStartupSelfTest)sut;
+        var act = async () => await selfTest.VerifyActiveSignerAsync(ct);
+
+        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.self_test_failed");
+    }
+
+    [Fact]
+    public async Task VerifyActiveSignerAsync_returns_the_borrowed_signer_handle_even_on_failure()
+    {
+        // The self-test must not leak the SignerHandle's borrow: if it did, DisposeAsync's shutdown
+        // release could never actually dispose the underlying signer (ADR 0015 §5).
+        using var rsa = RSA.Create(2048);
+        var timeProvider = new FakeTimeProvider(Epoch);
+        FakeSigner? signer = null;
+
+        var sut = BuildKeySetService(
+            timeProvider,
+            () => [MakeRsaListing(rsa, "k1", activateAt: null, expiresAt: Epoch.AddYears(1))],
+            signerFactory: _ => signer = new FakeSigner());
+        var ct = TestContext.Current.CancellationToken;
+
+        var selfTest = (ISigningStartupSelfTest)sut;
+        await selfTest.Awaiting(s => s.VerifyActiveSignerAsync(ct).AsTask())
+            .Should().ThrowAsync<ZeeKayDaConfigurationException>();
+
+        await sut.DisposeAsync();
+
+        signer!.DisposeCount.Should().Be(1, "the self-test's borrow must be returned even when verification fails");
+    }
+
+    [Fact]
+    public async Task SignAsync_throws_when_a_signer_materialized_on_a_later_rotation_handoff_fails_the_self_test()
+    {
+        // The self-test must not only run once, at the very first handoff — a key rotated in later
+        // (via a Tier A ActivateAt crossing, exactly as any multi-key Tier A provider rotates) must be
+        // proven exactly as thoroughly as the key that was active at startup (issue #437 security
+        // review, finding F1). k1 gets a real signer whose signature genuinely verifies against its
+        // own listed public key, so the first handoff passes; k2 gets a FakeSigner, which never
+        // actually signs and so cannot verify against k2's real listed public key, modelling a
+        // rotated-in key whose private material does not pair with what was published.
+        using var rsa1 = RSA.Create(2048);
+        using var rsa2 = RSA.Create(2048);
+        var timeProvider = new FakeTimeProvider(Epoch);
+        var successorActivatesAt = Epoch.AddHours(1);
+
+        await using var sut = BuildKeySetService(
+            timeProvider,
+            () =>
+            [
+                MakeRsaListing(rsa1, "k1", activateAt: null, expiresAt: Epoch.AddYears(1)),
+                MakeRsaListing(rsa2, "k2", activateAt: successorActivatesAt, expiresAt: Epoch.AddYears(1)),
+            ],
+            signerFactory: id => id.Value == "k1"
+                ? new LocalSigner(SigningAlgorithm.RS256, RSA.Create(rsa1.ExportParameters(true)))
+                : new FakeSigner());
+        var ct = TestContext.Current.CancellationToken;
+
+        var first = await sut.SignAsync(new byte[] { 0 }, ct);
+        first.Kid.Should().NotBeNullOrEmpty("the first (k1) handoff must succeed its own self-test");
+
+        timeProvider.Advance(TimeSpan.FromHours(2));
+        var act = async () => await sut.SignAsync(new byte[] { 0 }, ct);
+
+        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>(
+            "the rotation handoff to k2 must be self-tested exactly like the initial handoff to k1 was");
+        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.self_test_failed");
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────────────────────────

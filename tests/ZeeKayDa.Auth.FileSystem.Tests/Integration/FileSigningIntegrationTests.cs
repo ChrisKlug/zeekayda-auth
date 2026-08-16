@@ -229,9 +229,15 @@ public sealed class FileSigningIntegrationTests
     }
 
     // ── Startup service ───────────────────────────────────────────────────────────────────────────
+    // FileSigningStartupService was deleted in issue #437 — it had no genuinely file-format-specific
+    // behavior of its own, only the pre-warm every provider used to hand-roll. The framework-owned
+    // SigningStartupSelfTestHostedService (internal to ZeeKayDa.Auth, which does not grant this test
+    // project [InternalsVisibleTo]) now provides that pre-warm, plus the materialize-and-verify
+    // self-test, generically for every provider. It is located here by reflection on its full type
+    // name rather than a direct reference, exactly as any out-of-assembly caller would have to.
 
     [Fact]
-    public async Task StartupService_StartAsync_forces_key_loading_and_propagates_configuration_failure()
+    public async Task Startup_self_test_forces_key_loading_and_propagates_configuration_failure()
     {
         var ct = TestContext.Current.CancellationToken;
         using var tempDir = new TempSigningKeyDirectory();
@@ -242,7 +248,7 @@ public sealed class FileSigningIntegrationTests
         builder.AddPemFileSigning(missingPath, SigningAlgorithm.RS256);
 
         await using var provider = services.BuildServiceProvider();
-        var startupService = provider.GetServices<IHostedService>().OfType<FileSigningStartupService>().Single();
+        var startupService = FindSigningStartupSelfTestHostedService(provider);
 
         var act = async () => await startupService.StartAsync(ct);
 
@@ -250,7 +256,7 @@ public sealed class FileSigningIntegrationTests
     }
 
     [Fact]
-    public async Task StartupService_StartAsync_succeeds_when_the_key_loads_without_error()
+    public async Task Startup_self_test_succeeds_when_the_key_loads_and_signs_and_verifies_without_error()
     {
         var ct = TestContext.Current.CancellationToken;
         using var tempDir = new TempSigningKeyDirectory();
@@ -262,12 +268,17 @@ public sealed class FileSigningIntegrationTests
         builder.AddPemFileSigning(path, SigningAlgorithm.RS256);
 
         await using var provider = services.BuildServiceProvider();
-        var startupService = provider.GetServices<IHostedService>().OfType<FileSigningStartupService>().Single();
+        var startupService = FindSigningStartupSelfTestHostedService(provider);
 
         var act = async () => await startupService.StartAsync(ct);
 
-        await act.Should().NotThrowAsync();
+        await act.Should().NotThrowAsync(
+            "the real PEM-backed LocalSigner's signature must verify against its own listed public key");
     }
+
+    private static IHostedService FindSigningStartupSelfTestHostedService(ServiceProvider provider) =>
+        provider.GetServices<IHostedService>().Single(
+            s => s.GetType().FullName == "ZeeKayDa.Auth.Tokens.SigningStartupSelfTestHostedService");
 
     // ── Helpers ───────────────────────────────────────────────────────────────────────────────────
 

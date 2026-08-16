@@ -320,9 +320,18 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
     }
 
     // ── Startup service ───────────────────────────────────────────────────────────────────────────
+    // WindowsCertificateStoreSigningStartupService was deleted in issue #437 — it had no genuinely
+    // Windows-Certificate-Store-specific behavior of its own, only the pre-warm every provider used
+    // to hand-roll. The framework-owned SigningStartupSelfTestHostedService (internal to
+    // ZeeKayDa.Auth, which does not grant this test project [InternalsVisibleTo]) now provides that
+    // pre-warm, plus the materialize-and-verify self-test, generically for every provider — it also
+    // now supersedes this provider's own hand-rolled VerifySigningKeyMatchesListing check (deleted in
+    // the same issue; see the key/kid-consistency test below for its replacement coverage). Located
+    // here by reflection on its full type name rather than a direct reference, exactly as any
+    // out-of-assembly caller would have to.
 
     [Fact]
-    public async Task StartupService_StartAsync_forces_key_loading_and_propagates_configuration_failure()
+    public async Task Startup_self_test_forces_key_loading_and_propagates_configuration_failure()
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), RequiresWindowsReason);
 
@@ -333,7 +342,7 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
         builder.AddWindowsCertificateStoreSigning(PrimaryThumbprint, SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My);
 
         await using var provider = services.BuildServiceProvider();
-        var startupService = provider.GetServices<IHostedService>().OfType<WindowsCertificateStoreSigningStartupService>().Single();
+        var startupService = FindSigningStartupSelfTestHostedService(provider);
 
         var act = async () => await startupService.StartAsync(ct);
 
@@ -341,7 +350,7 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
     }
 
     [Fact]
-    public async Task StartupService_StartAsync_succeeds_when_certificate_loads_without_error()
+    public async Task Startup_self_test_succeeds_when_certificate_loads_and_signs_and_verifies_without_error()
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), RequiresWindowsReason);
 
@@ -354,10 +363,15 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
         builder.AddWindowsCertificateStoreSigning(PrimaryThumbprint, SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My);
 
         await using var provider = services.BuildServiceProvider();
-        var startupService = provider.GetServices<IHostedService>().OfType<WindowsCertificateStoreSigningStartupService>().Single();
+        var startupService = FindSigningStartupSelfTestHostedService(provider);
 
         var act = async () => await startupService.StartAsync(ct);
 
-        await act.Should().NotThrowAsync();
+        await act.Should().NotThrowAsync(
+            "the real certificate-backed LocalSigner's signature must verify against its own listed public key");
     }
+
+    private static IHostedService FindSigningStartupSelfTestHostedService(ServiceProvider provider) =>
+        provider.GetServices<IHostedService>().Single(
+            s => s.GetType().FullName == "ZeeKayDa.Auth.Tokens.SigningStartupSelfTestHostedService");
 }

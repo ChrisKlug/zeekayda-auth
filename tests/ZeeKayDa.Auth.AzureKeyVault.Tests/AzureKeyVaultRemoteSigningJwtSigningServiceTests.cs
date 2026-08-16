@@ -29,6 +29,21 @@ public sealed class AzureKeyVaultRemoteSigningJwtSigningServiceTests
             => Entries.Add((logLevel, formatter(state, exception)));
     }
 
+    /// <summary>
+    /// A <see cref="FakeKeyVaultSigner.SignFunc"/> that signs with the real private key material
+    /// <paramref name="reader"/> retained for whichever key version <paramref name="uri"/> targets,
+    /// so the ADR 0015 §11 self-test (issue #437) — which every active-key handoff now runs, not
+    /// just real token signing — sees a genuinely verifiable signature. RS256 only, matching every
+    /// test in this file that exercises <c>SignAsync</c>.
+    /// </summary>
+    private static Func<Uri, string, SigningAlgorithm, byte[], ReadOnlyMemory<byte>> RealRsaSignFunc(FakeKeyVaultKeyReader reader) =>
+        (uri, _, _, signingInput) =>
+        {
+            var version = uri.Segments[^1];
+            using var rsa = reader.CreateRsaPrivateKey(version);
+            return rsa.SignData(signingInput, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        };
+
     private static AzureKeyVaultRemoteSigningJwtSigningService BuildService(
         FakeKeyVaultKeyReader reader,
         FakeTimeProvider timeProvider,
@@ -430,14 +445,14 @@ public sealed class AzureKeyVaultRemoteSigningJwtSigningServiceTests
         var reader = new FakeKeyVaultKeyReader();
         var v1 = reader.AddRsaVersion("v1", createdOn: t0);
         var timeProvider = new FakeTimeProvider(t0);
-        var signer = new FakeKeyVaultSigner { SignFunc = (_, _, _, _) => new byte[] { 9, 9, 9 } };
+        var signer = new FakeKeyVaultSigner { SignFunc = RealRsaSignFunc(reader) };
 
         await using var sut = BuildService(reader, timeProvider, signer: signer, algorithm: SigningAlgorithm.RS256);
 
         var payload = "payload"u8.ToArray();
         var result = await sut.SignAsync(payload, ct);
 
-        signer.Calls.Should().ContainSingle();
+        signer.Calls.Should().HaveCount(2, "one call is the ADR 0015 §11 self-test (issue #437) and one is the real signature");
         signer.Calls[0].Algorithm.Should().Be(SigningAlgorithm.RS256);
         signer.Calls[0].KeyVersionUri.Should().Be(v1.Id, "signing must target the exact key version that produced the active descriptor");
         signer.Calls[0].Kid.Should().Be(JwkThumbprint.Compute(reader.GetRsaMaterial("v1")),
@@ -453,8 +468,9 @@ public sealed class AzureKeyVaultRemoteSigningJwtSigningServiceTests
         var reader = new FakeKeyVaultKeyReader();
         reader.AddRsaVersion("v1", createdOn: t0);
         var timeProvider = new FakeTimeProvider(t0);
+        var signer = new FakeKeyVaultSigner { SignFunc = RealRsaSignFunc(reader) };
 
-        await using var sut = BuildService(reader, timeProvider);
+        await using var sut = BuildService(reader, timeProvider, signer: signer);
         var keys = await sut.GetSigningKeysAsync(ct);
 
         var result = await sut.SignAsync("payload"u8.ToArray(), ct);
@@ -472,7 +488,7 @@ public sealed class AzureKeyVaultRemoteSigningJwtSigningServiceTests
         var reader = new FakeKeyVaultKeyReader();
         reader.AddRsaVersion("v1", createdOn: t0);
         var timeProvider = new FakeTimeProvider(t0);
-        var signer = new FakeKeyVaultSigner();
+        var signer = new FakeKeyVaultSigner { SignFunc = RealRsaSignFunc(reader) };
 
         await using var sut = BuildService(
             reader, timeProvider, refreshInterval: DefaultRefreshInterval, publicationLead: DefaultPublicationLead,
@@ -487,7 +503,7 @@ public sealed class AzureKeyVaultRemoteSigningJwtSigningServiceTests
 
         await sut.SignAsync("payload"u8.ToArray(), ct);
 
-        signer.Calls.Should().ContainSingle();
+        signer.Calls.Should().HaveCount(2, "one call is the ADR 0015 §11 self-test (issue #437) and one is the real signature");
         signer.Calls[0].KeyVersionUri.Should().Be(v2.Id, "signing after the handoff must target v2's Key Vault key version, not v1's");
         signer.Calls[0].Kid.Should().Be(JwkThumbprint.Compute(reader.GetRsaMaterial("v2")));
     }
@@ -506,7 +522,7 @@ public sealed class AzureKeyVaultRemoteSigningJwtSigningServiceTests
         var reader = new FakeKeyVaultKeyReader();
         reader.AddRsaVersion("v1", createdOn: t0);
         var timeProvider = new FakeTimeProvider(t0);
-        var signer = new FakeKeyVaultSigner();
+        var signer = new FakeKeyVaultSigner { SignFunc = RealRsaSignFunc(reader) };
 
         var sut = BuildService(
             reader, timeProvider, refreshInterval: DefaultRefreshInterval, publicationLead: DefaultPublicationLead,

@@ -219,11 +219,43 @@ public sealed class AzureKeyVaultCachedSigningIntegrationTests
             .WithMessage("*certificate_not_found*");
     }
 
-    // ── Startup service: pre-warm + informational log (AC #1, #2) ───────────────────────────────
+    // ── Startup service: informational log only (AC #2) ─────────────────────────────────────────
+    // Pre-warming (AC #1) is no longer this class's job: since issue #437, the framework-owned
+    // SigningStartupSelfTestHostedService materializes and verifies the active signer for every
+    // registered IJwtSigningService, including this one. AzureKeyVaultCachedSigningStartupService
+    // keeps only its own memory-residency log line — see AzureKeyVaultCachedSigningStartupServiceTests
+    // for that behavior, and JwtSigningServiceTests (ZeeKayDa.Auth.Tests) for the generic self-test
+    // pass/fail coverage.
 
     [Fact]
-    public async Task StartupService_StartAsync_forces_key_loading_and_propagates_configuration_failure()
+    public void AddAzureKeyVaultCachedSigning_registers_AzureKeyVaultCachedSigningStartupService_as_a_hosted_service()
     {
+        var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
+        var reader = new FakeKeyVaultCertificateReader();
+        reader.AddRsaVersion("v1", createdOn: t0);
+
+        var services = new ServiceCollection();
+        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
+        services.AddSingleton<IKeyVaultCertificateReader>(reader);
+        services.AddSingleton<ISigningKeyRetirementWindowProvider>(new FakeRetirementWindowProvider(TimeSpan.FromHours(1)));
+        services.AddSingleton<TimeProvider>(new FakeTimeProvider(t0));
+
+        var builder = new ZeeKayDaAuthBuilder(services);
+        builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
+
+        using var provider = services.BuildServiceProvider();
+        var hostedServices = provider.GetServices<Microsoft.Extensions.Hosting.IHostedService>().ToList();
+
+        hostedServices.OfType<AzureKeyVaultCachedSigningStartupService>().Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task GetSigningKeysAsync_still_propagates_a_configuration_failure_with_no_registered_certificate_versions()
+    {
+        // AddAzureKeyVaultCachedSigning no longer registers a pre-warming call in its own startup
+        // service (issue #437) — this proves the underlying failure this provider's ListKeysAsync
+        // surfaces is unchanged, since the framework-owned self-test now depends on exactly this
+        // behavior.
         var ct = TestContext.Current.CancellationToken;
         var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
         var reader = new FakeKeyVaultCertificateReader(); // No versions registered -> no_certificate_versions.
@@ -238,38 +270,11 @@ public sealed class AzureKeyVaultCachedSigningIntegrationTests
         builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
         await using var provider = services.BuildServiceProvider();
-        var hostedServices = provider.GetServices<Microsoft.Extensions.Hosting.IHostedService>().ToList();
-        var startupService = hostedServices.OfType<AzureKeyVaultCachedSigningStartupService>().Single();
+        var signingService = provider.GetRequiredService<IJwtSigningService>();
 
-        var act = async () => await startupService.StartAsync(ct);
+        var act = async () => await signingService.GetSigningKeysAsync(ct);
 
         (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
             .WithMessage("*no_certificate_versions*");
-    }
-
-    [Fact]
-    public async Task StartupService_StartAsync_succeeds_when_certificate_loads_without_error()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
-        var reader = new FakeKeyVaultCertificateReader();
-        reader.AddRsaVersion("v1", createdOn: t0);
-
-        var services = new ServiceCollection();
-        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
-        services.AddSingleton<IKeyVaultCertificateReader>(reader);
-        services.AddSingleton<ISigningKeyRetirementWindowProvider>(new FakeRetirementWindowProvider(TimeSpan.FromHours(1)));
-        services.AddSingleton<TimeProvider>(new FakeTimeProvider(t0));
-
-        var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
-
-        await using var provider = services.BuildServiceProvider();
-        var hostedServices = provider.GetServices<Microsoft.Extensions.Hosting.IHostedService>().ToList();
-        var startupService = hostedServices.OfType<AzureKeyVaultCachedSigningStartupService>().Single();
-
-        var act = async () => await startupService.StartAsync(ct);
-
-        await act.Should().NotThrowAsync();
     }
 }
