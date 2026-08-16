@@ -104,12 +104,20 @@ public sealed class StartupVerificationContext
     /// <summary>Records a configuration failure. Startup will abort once all verifiers have run.</summary>
     public void AddFailure(string code, string message) => _failures.Add(new(code, message));
 
-    /// <summary>Records a warning for the runner to log. Does not abort startup.</summary>
-    public void AddWarning(string code, string message, LogLevel level = LogLevel.Warning)
-        => _warnings.Add(new(code, message, level));
+    /// <summary>Records a structured warning for the runner to log. Does not abort startup.
+    /// <paramref name="messageTemplate"/> uses standard <see cref="ILogger"/> named-placeholder
+    /// syntax (e.g. <c>"{StoreName}"</c>) — it is passed through to the sink unformatted, exactly
+    /// like any other <c>LogWarning</c> call site, so structured backends can index the fields and
+    /// <c>SecretSanitizingLogger</c>'s by-key redaction can act on them.</summary>
+    public void AddWarning(string code, string messageTemplate, LogLevel level, params object?[] args)
+        => _warnings.Add(new(code, messageTemplate, level, args));
+
+    /// <summary>Overload defaulting to <see cref="LogLevel.Warning"/>.</summary>
+    public void AddWarning(string code, string messageTemplate, params object?[] args)
+        => AddWarning(code, messageTemplate, LogLevel.Warning, args);
 }
 
-public sealed record StartupVerificationWarning(string Code, string Message, LogLevel Level);
+public sealed record StartupVerificationWarning(string Code, string MessageTemplate, LogLevel Level, object?[] Args);
 
 public interface IStartupVerifier
 {
@@ -173,31 +181,51 @@ split by behaviour (validate / warn / activate) because real checks do not split
 stay silent depending on a branch taken **after** a single resolution. Splitting the interface would
 force them to resolve the same scoped dependency twice or stash state between two calls.
 
-### 3. The runner owns all logging
+### 3. The runner owns all logging — through a logger scoped to the verifier's own type
 
 A verifier never logs. It records warnings as data; the runner reads `context.Warnings` after
-`VerifyAsync` returns and logs each one through a single shared
-`ISanitizingLogger<StartupVerificationHostedService>`, at the warning's own `Level`, tagged with the
-producing verifier's `Name`.
+`VerifyAsync` returns and logs each one, but it does **not** log everything through its own
+`ISanitizingLogger<StartupVerificationHostedService>`. Instead, for each verifier it resolves a
+logger closed over that verifier's own runtime type, reusing the framework's existing open-generic
+registration rather than introducing a new factory abstraction:
 
-This turns `InMemoryStoreWarningService`'s existing dev-vs-non-dev distinction into data — the same
-verifier calls `AddWarning(..., LogLevel.Warning)` in Development and `AddWarning(...,
-LogLevel.Critical)` for the non-Development override — instead of branching over two logger calls.
-Centralising it also means every startup warning in the framework goes through the sanitizing logger
-by construction; a verifier cannot accidentally bypass redaction because it never holds a logger.
+```csharp
+var loggerType = typeof(ISanitizingLogger<>).MakeGenericType(verifier.GetType());
+var verifierLogger = (ILogger)services.GetRequiredService(loggerType);
+```
 
-The trade-off is real and accepted: **per-verifier logger categorisation is lost** (every startup
-warning is logged under the runner's category, not the check's own type), and warnings carry a
-pre-formatted message string rather than structured logging placeholders. Note carefully what the
-second half of that costs: `SecretSanitizingLogger` redacts structured values *by key*, so a message
-that has already been flattened into a string is beyond its reach. The chokepoint guarantees that
-every startup warning passes **through** the sanitizing logger and that no verifier holds a raw
-`ILogger<T>`; it does not guarantee that the warning's own text is redacted. Verifier authors must
-therefore keep secret material out of `AddWarning` / `AddFailure` messages — see Security
-Considerations 6. The `Code` on
-`StartupVerificationWarning` is the structured discriminator that replaces both — it is a stable
-string in the same family as `ZeeKayDaConfigurationFailure.Code`, and it is what log-based alerting
-should match on.
+`AddZeeKayDaAuthCore()` already registers `ISanitizingLogger<>` as an **open generic**
+(`TryAddSingleton(typeof(ISanitizingLogger<>), typeof(SecretSanitizingLogger<>))`), which is exactly
+what lets the container close it over an arbitrary `Type` picked at runtime — the same mechanism
+`ILogger<T>` itself relies on, just invoked reflectively instead of through a compile-time type
+parameter. This costs nothing new: no `ISanitizingLoggerFactory`, no extra registration, no change to
+how a verifier author consumes the type. The resulting log entries carry the verifier's own type as
+their category — `MyPackage.InMemoryStoreVerifier`, not `StartupVerificationHostedService` — exactly
+as if the verifier had constructor-injected `ISanitizingLogger<InMemoryStoreVerifier>` and logged
+through it directly, except the verifier never holds the reference.
+
+The runner logs each warning as `logger.Log(warning.Level, "[{Verifier}] " + warning.MessageTemplate,
+verifier.Name, .. warning.Args)` — `{Verifier}` (the instance `Name`, disambiguating same-type
+instances such as the two `InMemoryStoreVerifier` registrations) plus every argument the verifier
+supplied, passed through to the sink **unformatted**. This is full structured logging: a backend that
+indexes structured fields sees `{Verifier}`, `{Code}` (via the message template), and every
+verifier-supplied placeholder as queryable fields, exactly as it would for any other `LogWarning`
+call site in the framework — and because the arguments stay structured rather than being flattened
+into a string before they reach the logger, `SecretSanitizingLogger`'s by-key redaction can act on
+them the same way it already does for every other framework log call. This also turns
+`InMemoryStoreWarningService`'s existing dev-vs-non-dev distinction into data — the same verifier
+calls `AddWarning(..., LogLevel.Warning, ...)` in Development and `AddWarning(..., LogLevel.Critical,
+...)` for the non-Development override — instead of branching over two logger calls.
+
+Centralising *who calls `Log`* — not *which category it logs under* — is what preserves the security
+property: a verifier still never holds a logger reference and cannot accidentally bypass redaction
+or log before the gate has passed (§7), because the runner resolves the type-scoped logger on the
+verifier's behalf, after the gate phase has already run. See Security Considerations 6 for the
+residual limit this does **not** remove: an author who ignores the `{Placeholder}` convention and
+interpolates a secret directly into the message-template string bypasses by-key redaction exactly as
+they would with a raw `ILogger` call — structured logging makes correct usage the easy path, it does
+not make incorrect usage impossible. The `Code` on `StartupVerificationWarning` remains the stable,
+type-independent discriminator for log-based alerting.
 
 ### 4. Aggregation semantics
 
@@ -307,8 +335,8 @@ Leaving the gate behind in `.AspNetCore` while the runner ships from `AddZeeKayD
 real hole: `AddZeeKayDaAuthCore()` is public and is called directly by every provider package, and
 `ZeeKayDaAuthBuilder` has a public constructor, so a host can reach a fully-wired signing
 configuration without ever calling `AddZeeKayDaAuth()`. In that configuration the gate collection is
-**empty**, phase 1 passes vacuously, and phase 2 begins logging through an
-`ISanitizingLogger<StartupVerificationHostedService>` that nothing has verified. Registering the
+**empty**, phase 1 passes vacuously, and phase 2 begins resolving and logging through
+`ISanitizingLogger<T>` instances that nothing has verified. Registering the
 gate and the runner from the same call is what makes "there is always a gate" true by construction
 rather than by which entry point the host happened to call. Its logic is otherwise unchanged.
 
@@ -320,12 +348,13 @@ completion, before it resolves `IEnumerable<IStartupVerifier>` at all**. There i
 order a host or third party can choose that puts an `IStartupVerifier` ahead of a gate, because they
 are not in the same list.
 
-Four supporting rules make the guarantee hold within the verification subsystem:
+Five supporting rules make the guarantee hold within the verification subsystem:
 
 - **The runner logs nothing before the gate phase completes.** All logging happens inside the
-  phase-2 loop, after the last gate has passed. The runner's own
-  `ISanitizingLogger<StartupVerificationHostedService>` may itself be a shadowed instance — that is
-  exactly what the gate detects — and it is never used until the gate has ruled that out.
+  phase-2 loop, after the last gate has passed — including logging that goes through a
+  per-verifier-type `ISanitizingLogger<T>` (§3), not just the runner's own. Every such `T` may itself
+  be shadowed — that is exactly what the gate detects — and none is resolved or used until the gate
+  has ruled that out.
 - **A gate does not log.** It inspects (`_logger is not SecretSanitizingLogger<...>`) and reports
   through the context. Gate warnings are structurally possible but there are none today, and the
   runner defers logging any gate warning until after all gates have passed.
@@ -339,6 +368,15 @@ Four supporting rules make the guarantee hold within the verification subsystem:
   provably do not log.
 - **The gate ships from the same registration call as the runner** (`AddZeeKayDaAuthCore()`), so
   there is no supported configuration in which a runner exists without a gate.
+- **Resolving `ISanitizingLogger<T>` for an arbitrary verifier type `T` after the gate has passed is
+  safe precisely because the gate's scan is not per-`T`.**
+  `SanitizingLoggerClosedOverrideScanner.FindClosedGenericOverrides()` scans the whole
+  `IServiceCollection` for *any* closed-generic `ISanitizingLogger<>` override, of any `T`, not just
+  the runner's own. If the gate passes, no closed-generic override exists for *any* type in the
+  container — including every verifier's type — so `MakeGenericType(verifier.GetType())` cannot
+  resolve a shadowed instance the gate would have missed. This is what makes the dynamic-type
+  resolution in §3 a legitimate use of the gate's result, rather than a new gap the gate does not
+  cover.
 
 **Scope of the guarantee.** It covers the verification subsystem: no `IStartupVerifier`, and no
 runner log call, can precede the gate. It does **not** extend to arbitrary host or third-party
@@ -400,9 +438,10 @@ internal sealed class InsecureIssuerVerifier(IOptions<AuthorizationServerOptions
         {
             context.AddWarning(
                 "issuer.insecure_allowed",
-                $"AllowInsecureIssuer is enabled for issuer '{options.Value.Issuer}'. " +
-                "This is a LOOPBACK DEVELOPMENT-ONLY setting and must NEVER be used in production. " +
-                "Remove AllowInsecureIssuer = true before deploying to any non-development environment.");
+                "AllowInsecureIssuer is enabled for issuer '{Issuer}'. This is a LOOPBACK " +
+                "DEVELOPMENT-ONLY setting and must NEVER be used in production. Remove " +
+                "AllowInsecureIssuer = true before deploying to any non-development environment.",
+                options.Value.Issuer);
         }
 
         return ValueTask.CompletedTask;
@@ -410,8 +449,10 @@ internal sealed class InsecureIssuerVerifier(IOptions<AuthorizationServerOptions
 }
 ```
 
-`IOptions<T>` is a singleton, so it stays constructor-injected; `ISanitizingLogger<T>` is gone
-because the runner logs. `ExceptionSanitizingDisabledWarningService` and
+`IOptions<T>` is a singleton, so it stays constructor-injected; `ISanitizingLogger<T>` is gone from
+the constructor because the runner logs — but the log entry this produces still carries the category
+`InsecureIssuerVerifier` and a structured `{Issuer}` field, not a flattened string under the runner's
+own category (§3). `ExceptionSanitizingDisabledWarningService` and
 `AbsoluteFamilyLifetimeUnboundedWarningService` migrate identically.
 
 **(3) Warns *and* fails depending on branch — migrated `DistributedCacheStoreStartupValidator`:**
@@ -466,9 +507,7 @@ internal sealed class InMemoryStoreVerifier(
     {
         if (environment.IsDevelopment())
         {
-            context.AddWarning(
-                "stores.inmemory.active",
-                string.Format(CultureInfo.InvariantCulture, WarningMessageFormat, storeName));
+            context.AddWarning("stores.inmemory.active", WarningMessageFormat, storeName);
         }
         else if (!allowOutsideDevelopment)
         {
@@ -478,8 +517,9 @@ internal sealed class InMemoryStoreVerifier(
         {
             context.AddWarning(
                 "stores.inmemory.non_development_override",
-                string.Format(CultureInfo.InvariantCulture, NonDevelopmentOverrideWarningMessageFormat, storeName),
-                LogLevel.Critical);
+                NonDevelopmentOverrideWarningMessageFormat,
+                LogLevel.Critical,
+                storeName);
         }
 
         return ValueTask.CompletedTask;
@@ -502,7 +542,14 @@ Note `AddSingleton<IStartupVerifier>` rather than `TryAddEnumerable` here: two r
 deduplicates away, so this registration deliberately uses plain `AddSingleton`, as it does today.
 Both the `Warning`-vs-`Critical` distinction and the per-store independence of the
 `allowOutsideDevelopment` gate survive unchanged; the level is now data on the warning rather than a
-second logging call site.
+second logging call site. `WarningMessageFormat` and `NonDevelopmentOverrideWarningMessageFormat`
+change from `string.Format` composite-format strings (`"{0}"`) to `ILogger` named-placeholder
+templates (`"{StoreName}"`) — the same rewording every migrated message needs, and the only one:
+`storeName` now reaches the sink as a structured field instead of being flattened in before
+`AddWarning` is even called. Note both verifier instances share the category `InMemoryStoreVerifier`
+(the *type* is what a dynamically-resolved `ISanitizingLogger<T>` keys on, per §3) — the `{Verifier}`
+field the runner prepends (this instance's `Name`, e.g. `InMemoryStore(AuthorizationCodeStore)`) is
+what still lets an operator or log query tell the two registrations apart.
 
 **(5) Side-effecting activation — migrated `ClientRepositoryStartupActivator`:**
 
@@ -583,13 +630,13 @@ resolved instance's type, never to log through it.
 internal sealed class StartupVerificationHostedService(
     IEnumerable<IStartupVerificationGate> gates,
     IServiceProvider rootServices,
-    IServiceScopeFactory scopeFactory,
-    ISanitizingLogger<StartupVerificationHostedService> logger) : IHostedService
+    IServiceScopeFactory scopeFactory) : IHostedService
 {
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         // ---- Phase 1: gates. Sequential. Abort on the first failure. Nothing is logged yet. ----
-        var pendingGateWarnings = new List<(string Name, StartupVerificationWarning Warning)>();
+        var pendingGateWarnings =
+            new List<(object Source, string Name, StartupVerificationWarning Warning)>();
 
         foreach (var gate in gates)
         {
@@ -607,11 +654,12 @@ internal sealed class StartupVerificationHostedService(
 
             // Gate warnings (none today) are held until every gate has passed, because the
             // sanitizing logger is not yet known to be trustworthy.
-            pendingGateWarnings.AddRange(gateContext.Warnings.Select(w => (gate.Name, w)));
+            pendingGateWarnings.AddRange(
+                gateContext.Warnings.Select(w => ((object)gate, gate.Name, w)));
         }
 
-        foreach (var (name, warning) in pendingGateWarnings)
-            logger.Log(warning.Level, "[{Verifier}] {Code}: {Message}", name, warning.Code, warning.Message);
+        foreach (var (source, name, warning) in pendingGateWarnings)
+            LogWarning(source, name, warning);
 
         // ---- Phase 2: verifiers. Sequential. Run all, aggregate, throw once. ----
         // IEnumerable<IStartupVerifier> is resolved HERE rather than constructor-injected.
@@ -635,13 +683,29 @@ internal sealed class StartupVerificationHostedService(
                 cancellationToken);
 
             foreach (var warning in context.Warnings)
-                logger.Log(warning.Level, "[{Verifier}] {Code}: {Message}", verifier.Name, warning.Code, warning.Message);
+                LogWarning(verifier, verifier.Name, warning);
 
             failures.AddRange(context.Failures);
         }
 
         if (failures.Count > 0)
             throw new ZeeKayDaConfigurationException([.. failures]);
+    }
+
+    // Resolves ISanitizingLogger<TSource> reflectively so the entry carries the producing check's
+    // own category (§3), then forwards the verifier's template and args to the sink UNFORMATTED —
+    // the args stay structured, so SecretSanitizingLogger's by-key redaction applies to them
+    // exactly as it does at any other framework log call site. Only ever reached after the gate
+    // phase has passed, for both phases.
+    private void LogWarning(object source, string name, StartupVerificationWarning warning)
+    {
+        var sourceLogger = (ILogger)rootServices.GetRequiredService(
+            typeof(ISanitizingLogger<>).MakeGenericType(source.GetType()));
+
+        sourceLogger.Log(
+            warning.Level,
+            "[{Verifier}] {Code}: " + warning.MessageTemplate,
+            [name, warning.Code, .. warning.Args]);
     }
 
     // Shared unexpected-exception handling for both phases (§5). Never swallows.
@@ -893,13 +957,10 @@ via an additional opt-in interface (§11).
 - **A shared failure mode.** A bug in the runner now affects all twelve checks, where today a bug in
   one check affects one check. This is the honest cost of the "do nothing" alternative being
   rejected.
-- **Per-verifier log categories are lost.** Every startup warning is logged under
-  `StartupVerificationHostedService`. `StartupVerificationWarning.Code` is the replacement
-  discriminator; any log-based alerting keyed on the old per-type categories must be re-keyed.
-- **Structured-logging placeholders collapse to a pre-formatted message string** at the
-  `AddWarning` call. The `Code` carries the machine-readable part instead. This is also a redaction
-  cost, not only a diagnostics one: key-based sanitization cannot act on an already-flattened
-  string (Security Considerations 6).
+- **A verifier's warning template and args are only as safe as its author makes them.** Structured
+  placeholders survive to the sink, so by-key redaction still applies — but an author who
+  interpolates a secret into the template string itself bypasses it, exactly as they would with a
+  raw `ILogger` call (Security Considerations 6).
 - **A misconfigured host performs every side effect on every restart** rather than short-circuiting
   at the first failure — PBKDF2 over all client secrets and a live Key Vault sign operation, once
   per restart of a crash-looping deployment (Security Considerations 7).
@@ -919,9 +980,10 @@ via an additional opt-in interface (§11).
    `ServicesStartConcurrently`. After this ADR it rests on `IStartupVerificationGate` being a
    different collection from `IStartupVerifier`, drained to completion first, inside a single
    `StartAsync` that the host's concurrency setting cannot reach into. Four supporting rules close
-   the remaining gaps (§7): the runner emits **no** log output at all before the last gate has passed
-   (its own `ISanitizingLogger<StartupVerificationHostedService>` might itself be the shadowed
-   instance under test); gate warnings are buffered rather than logged inline for the same reason;
+   the remaining gaps (§7): the runner emits **no** log output at all before the last gate has passed,
+   and holds no logger of its own to emit it with — every `ISanitizingLogger<T>` it uses is resolved
+   on demand *after* the gate phase, because any of them might be the shadowed instance under test;
+   gate warnings are buffered rather than logged inline for the same reason;
    verifiers are **resolved** after the gate phase rather than constructor-injected, so a verifier's
    constructor cannot log first either; and the gate is registered by the same
    `AddZeeKayDaAuthCore()` call as the runner, so no entry point yields a runner with an empty gate
@@ -982,24 +1044,31 @@ via an additional opt-in interface (§11).
    silently. It can still hang startup (§5, accepted) and it can still do anything a DI-resolved
    singleton can do.
 
-6. **The logging chokepoint gives format consistency and exception redaction — not message
-   redaction.** This is the one place where the chosen design is *weaker* than verifier-owned
-   logging, and it must be stated plainly. `SecretSanitizingLogger` redacts structured log values
-   **by key** (`client_secret`, `code_verifier`, `access_token`, …) and replaces exception messages
-   with `RedactedExceptionWrapper`. `AddWarning` takes a **pre-formatted message string**, so any
-   credential material interpolated into it has already lost the key that redaction keys on and will
-   reach sinks verbatim. Consequences: (a) the binding rule for every verifier author, first- and
-   third-party, is that `AddWarning` / `AddFailure` messages must never interpolate secret material
-   or a caught exception's `Message` (§5) — the framework's own checks already satisfy this, since
-   every migrated message is a fixed string plus non-secret values such as a store name, a type
-   name, or an issuer; (b) a third-party verifier's warning text is author-controlled and is logged
-   as-is, including any newlines, so log-forging via a verifier message is possible for anyone who
-   can already register a verifier (a low bar to add to §5's "not a sandbox" list, but a real one);
-   (c) the loss of structured placeholders is therefore recorded in `Consequences` as a redaction
-   cost as well as a diagnostics one. The implementation issue should carry an
-   explicit XML-doc warning on `AddWarning` / `AddFailure` to that effect, and the existing CI
-   log-hygiene grep should be extended to cover `AddWarning` / `AddFailure` call sites, not only
-   `ILogger` ones.
+6. **The logging chokepoint preserves by-key redaction, but cannot save an author who defeats it.**
+   `SecretSanitizingLogger` redacts structured log values **by key** (`client_secret`,
+   `code_verifier`, `access_token`, …) and replaces exception messages with
+   `RedactedExceptionWrapper`. Because `AddWarning` takes a **message template plus args** (§2, §3)
+   rather than a pre-formatted string, both mechanisms still apply end to end: the args reach the
+   sink structured and keyed, so a value recorded under a sensitive placeholder name is redacted
+   exactly as it would be at any other framework log call site. An earlier draft of this ADR
+   flattened the message at the `AddWarning` call, which would have stripped the keys that redaction
+   keys on and quietly downgraded the guarantee — that is why the structured shape is load-bearing
+   and not a stylistic preference.
+
+   The residual limits are worth naming, because the chokepoint guarantees *routing*, not
+   *content*: (a) an author who interpolates a secret directly into the template string bypasses
+   by-key redaction exactly as they would with a raw `ILogger` call — so the binding rule for
+   verifier authors, first- and third-party, is that secret material and a caught exception's
+   `Message` (§5) belong in neither the template nor a non-sensitive-keyed arg; (b) the same applies
+   to `AddFailure`, which has no template/args form at all because its message lands in a
+   `ZeeKayDaConfigurationFailure` on public API surface rather than in a log record; (c) a
+   third-party verifier's template is author-controlled and is logged as-is, newlines included, so
+   log forging via a verifier message is available to anyone who can already register a verifier — a
+   low bar, and one more entry on §5's "not a sandbox" list. The implementation issue should carry
+   an explicit XML-doc warning on `AddWarning` / `AddFailure` to that effect, extend the CI
+   log-hygiene grep to cover those call sites and not only `ILogger` ones, and — since the runner now
+   passes a template through `ILogger.Log` — confirm the `ZEEKAYDA0001` interpolated-string analyzer
+   still fires on an interpolated `AddWarning` template.
 
 7. **Aggregation makes a doomed host pay for every side effect on every restart.** Today the first
    throwing check aborts and later checks never run. Under phase-2 aggregation, a host that is
