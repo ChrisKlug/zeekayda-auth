@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using ZeeKayDa.Auth.Logging;
 using ZeeKayDa.Auth.Tokens;
 
@@ -46,6 +47,13 @@ public static class ZeeKayDaAuthCoreServiceCollectionExtensions
         // ADR 0011 §3.3: the retirement window derivation is central and never a per-provider
         // option, so it is registered here in core rather than in any individual provider package.
         services.TryAddSingleton<ISigningKeyRetirementWindowProvider, SigningKeyRetirementWindowProvider>();
+
+        // Issue #437: the ADR 0015 startup self-test runs against whatever IJwtSigningService is
+        // registered, regardless of which signing-provider package registered it. TryAddEnumerable
+        // keeps this idempotent across repeated AddZeeKayDaAuthCore() calls (e.g. a provider package
+        // calling it defensively alongside AddZeeKayDaAuth()'s own call).
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IHostedService, SigningStartupSelfTestHostedService>());
 
         return services;
     }

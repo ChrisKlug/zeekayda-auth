@@ -156,6 +156,59 @@ internal static class SigningAlgorithms
         };
     }
 
+    /// <summary>
+    /// Verifies <paramref name="signature"/> over <paramref name="signingInput"/> against
+    /// <paramref name="descriptor"/>'s own public key, using the algorithm <paramref name="descriptor"/>
+    /// declares. Used exclusively by the ADR 0015 startup self-test
+    /// (<see cref="ISigningStartupSelfTest"/>) to structurally prove that the private key a provider's
+    /// <c>CreateSignerAsync</c> materialized actually pairs with the public key listed for the same
+    /// <c>kid</c> — never used on real token signatures, which relying parties verify independently.
+    /// </summary>
+    /// <param name="descriptor">The key descriptor carrying the declared algorithm and public key.</param>
+    /// <param name="signingInput">The exact bytes that were signed.</param>
+    /// <param name="signature">The signature bytes to verify.</param>
+    /// <returns><see langword="true"/> when the signature verifies; otherwise <see langword="false"/>.</returns>
+    internal static bool Verify(SigningKeyDescriptor descriptor, ReadOnlySpan<byte> signingInput, ReadOnlySpan<byte> signature)
+    {
+        if (descriptor.KeyType == SigningKeyType.Rsa)
+        {
+            using var rsa = RSA.Create();
+            rsa.ImportParameters(descriptor.RsaPublicParameters!.Value);
+            return VerifyRsa(descriptor.Algorithm, rsa, signingInput, signature);
+        }
+
+        using var ec = ECDsa.Create();
+        ec.ImportParameters(descriptor.EcPublicParameters!.Value);
+        return VerifyEc(descriptor.Algorithm, ec, signingInput, signature);
+    }
+
+    private static bool VerifyRsa(
+        SigningAlgorithm algorithm, RSA rsa, ReadOnlySpan<byte> signingInput, ReadOnlySpan<byte> signature)
+    {
+        return algorithm switch
+        {
+            SigningAlgorithm.RS256 => rsa.VerifyData(signingInput, signature, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1),
+            SigningAlgorithm.RS384 => rsa.VerifyData(signingInput, signature, HashAlgorithmName.SHA384, RSASignaturePadding.Pkcs1),
+            SigningAlgorithm.RS512 => rsa.VerifyData(signingInput, signature, HashAlgorithmName.SHA512, RSASignaturePadding.Pkcs1),
+            SigningAlgorithm.PS256 => rsa.VerifyData(signingInput, signature, HashAlgorithmName.SHA256, RSASignaturePadding.Pss),
+            SigningAlgorithm.PS384 => rsa.VerifyData(signingInput, signature, HashAlgorithmName.SHA384, RSASignaturePadding.Pss),
+            SigningAlgorithm.PS512 => rsa.VerifyData(signingInput, signature, HashAlgorithmName.SHA512, RSASignaturePadding.Pss),
+            _ => ThrowUnsupportedAlgorithm<bool>(algorithm),
+        };
+    }
+
+    private static bool VerifyEc(
+        SigningAlgorithm algorithm, ECDsa ec, ReadOnlySpan<byte> signingInput, ReadOnlySpan<byte> signature)
+    {
+        return algorithm switch
+        {
+            SigningAlgorithm.ES256 => ec.VerifyData(signingInput, signature, HashAlgorithmName.SHA256, DSASignatureFormat.IeeeP1363FixedFieldConcatenation),
+            SigningAlgorithm.ES384 => ec.VerifyData(signingInput, signature, HashAlgorithmName.SHA384, DSASignatureFormat.IeeeP1363FixedFieldConcatenation),
+            SigningAlgorithm.ES512 => ec.VerifyData(signingInput, signature, HashAlgorithmName.SHA512, DSASignatureFormat.IeeeP1363FixedFieldConcatenation),
+            _ => ThrowUnsupportedAlgorithm<bool>(algorithm),
+        };
+    }
+
     private static void ValidateEcCurveAlgorithmPairing(SigningKeyDescriptor descriptor, ECDsa ecKey)
     {
         // AlgorithmCurveOids contains entries for all EC algorithms (ES256/384/512), and

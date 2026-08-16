@@ -506,128 +506,18 @@ public sealed class WindowsCertificateStoreSigningJwtSigningServiceTests
         await act.Should().ThrowAsync<InvalidOperationException>();
     }
 
-    // ── kid/key consistency (L-3/M-1/M-2, PR #436 security review) ──────────────────────────────
+    // ── kid/key consistency: superseded by the framework-owned per-handoff self-test ────────────
     //
-    // Defence-in-depth: CreateSignerAsync re-reads the active certificate's store entry
-    // independently of ListKeysAsync's one-time snapshot. If a store entry's key-container
-    // association changed after startup without its thumbprint changing (e.g. a botched
-    // 'certutil -repairstore'), the private key it hands back at signing time would no longer pair
-    // with the public key whose kid the base class is signing under. This must fail closed with a
-    // clear configuration error rather than silently producing tokens signed under a mismatched kid.
-    //
-    // A real X509Store lookup is content-addressed by thumbprint (a hash of the whole DER-encoded
-    // certificate), so it can never hand back a different certificate under an unchanged thumbprint —
-    // and any X509Certificate2 obtainable through a public .NET API has its private key
-    // cryptographically validated against its own public key at load/association time, so there is no
-    // way to construct one whose private and public halves disagree. The only place the modelled
-    // attack (private key container swapped, certificate/thumbprint unchanged) can be represented in
-    // a portable test is at the ICertificateKeyExtractor seam: FakeCertificateKeyExtractor below
-    // substitutes the private key handle CreateSignerAsync receives for PrimaryThumbprint, while the
-    // certificate returned by the store reader — and hence its own public key and thumbprint — never
-    // changes, matching exactly what CERT_KEY_PROV_INFO_PROP_ID repointing does on a real store.
-
-    [Fact]
-    public async Task SignAsync_throws_ZeeKayDaConfigurationException_when_the_private_key_no_longer_matches_the_listed_public_key()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var reader = new FakeCertificateStoreReader();
-        using var certificate = TestCertificateFactory.CreateRsaSelfSigned(
-            "listed", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
-        reader.AddCertificate(PrimaryThumbprint, certificate);
-        var keyExtractor = new FakeCertificateKeyExtractor();
-        await using var sut = BuildService(reader, new FakeTimeProvider(T0), PrimaryThumbprint, keyExtractor: keyExtractor);
-
-        // The one-time ListKeysAsync snapshot captures certificate's public key under
-        // PrimaryThumbprint. The store entry (same certificate, same thumbprint) is left entirely
-        // unchanged; only the private key handle CreateSignerAsync receives for it is substituted —
-        // simulating the store entry's key-container association having been repointed at an
-        // unrelated key pair without the certificate itself changing.
-        await sut.GetSigningKeysAsync(ct);
-        using var mismatchedPrivateKey = RSA.Create(2048);
-        keyExtractor.OverridePrivateKey(PrimaryThumbprint, mismatchedPrivateKey, SigningKeyType.Rsa);
-        var payload = "payload"u8.ToArray();
-
-        var act = async () => await sut.SignAsync(payload, ct);
-
-        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
-        exception.Which.AggregatedFailures.Should().ContainSingle(
-            f => f.Code == "signing.windows_certificate_store.signing_key_mismatch");
-        exception.Which.Message.Should().Contain(PrimaryThumbprint);
-    }
-
-    // ── EC curve identity: a "both unset" OID must not vacuously match (L-6, PR #436 security
-    // review) ─────────────────────────────────────────────────────────────────────────────────────
-    //
-    // ECCurve.Oid.Value is legitimately null for a curve built from explicit domain parameters (no
-    // named-curve OID at all) rather than resolved by OID/friendly name — a real, platform-dependent
-    // state, not a contrived one. Comparing only Oid.Value with plain string.Equals would let two
-    // such curves compare equal (null == null) without validating curve identity at all, leaving only
-    // the point coordinates to (coincidentally) disagree. This invokes the private
-    // CurveIdentifiersMatch helper directly via reflection, exactly as the existing
-    // CreateSignerAsync_throws_when_called_for_a_key_id_that_is_not_a_registered_thumbprint test above
-    // reaches another private member — there is no public seam for this pure comparison helper.
-
-    [Fact]
-    public void CurveIdentifiersMatch_returns_false_when_both_curves_have_no_oid_value_or_friendly_name()
-    {
-        var curveWithNoOid = new ECCurve(); // default struct: Oid.Value and Oid.FriendlyName are both null
-        var otherCurveWithNoOid = new ECCurve();
-
-        var curveIdentifiersMatch = typeof(WindowsCertificateStoreSigningJwtSigningService).GetMethod(
-            "CurveIdentifiersMatch", BindingFlags.NonPublic | BindingFlags.Static)!;
-
-        var result = (bool)curveIdentifiersMatch.Invoke(null, [curveWithNoOid, otherCurveWithNoOid])!;
-
-        result.Should().BeFalse(
-            "two curves that both carry no OID identity information at all must not be treated as " +
-            "the same curve merely because their (absent) identifiers compare equal");
-    }
-
-    // ── EC curve identity: a "both empty" OID must not vacuously match either (L-8, PR #436
-    // security review) ────────────────────────────────────────────────────────────────────────────
-    //
-    // An empty string is exactly as invalid an identity signal as null: Oid never normalises "" to
-    // null, so a guard that only checked "is not null" would let two curves with empty-string OID
-    // values compare "" == "" as a match — reopening the same vacuous-pass bug L-6 fixed for the null
-    // case. There is no *public* way to construct an ECCurve carrying an empty (as opposed to null)
-    // Oid.Value/FriendlyName — ECCurve.CreateFromOid/CreateFromValue/CreateFromFriendlyName all reject
-    // an Oid with neither a value nor a friendly name (ArgumentException: "The specified Oid () is not
-    // valid"), and ExportParameters never produces one either — which is exactly why the security
-    // review calls this "unreachable today". The guard is still worth having defensively (the helper
-    // is a private, reusable comparison with no guarantee every future caller goes through
-    // ExportParameters), so this test reaches past the public factories via reflection on ECCurve's
-    // private backing field to construct the otherwise-unreachable state directly, then invokes the
-    // private CurveIdentifiersMatch helper the same way the null-OID test above does.
-
-    [Fact]
-    public void CurveIdentifiersMatch_returns_false_when_both_curves_have_empty_oid_value_and_friendly_name()
-    {
-        var curveWithEmptyOid = CreateCurveWithEmptyOid();
-        var otherCurveWithEmptyOid = CreateCurveWithEmptyOid();
-
-        var curveIdentifiersMatch = typeof(WindowsCertificateStoreSigningJwtSigningService).GetMethod(
-            "CurveIdentifiersMatch", BindingFlags.NonPublic | BindingFlags.Static)!;
-
-        var result = (bool)curveIdentifiersMatch.Invoke(null, [curveWithEmptyOid, otherCurveWithEmptyOid])!;
-
-        result.Should().BeFalse(
-            "two curves that both carry an empty-string OID value and friendly name must not be " +
-            "treated as the same curve merely because their (meaningless) identifiers compare equal");
-    }
-
-    /// <summary>
-    /// Builds an <see cref="ECCurve"/> whose <see cref="Oid"/> has an empty (not <see langword="null"/>)
-    /// <see cref="Oid.Value"/> and <see cref="Oid.FriendlyName"/> — a state <see cref="ECCurve"/>'s own
-    /// public factories refuse to produce, reached here only via reflection on the private backing
-    /// field so the defensive guard in <c>CurveIdentifiersMatch</c> can still be exercised directly.
-    /// </summary>
-    private static ECCurve CreateCurveWithEmptyOid()
-    {
-        object boxedCurve = new ECCurve();
-        var oidField = typeof(ECCurve).GetField("_oid", BindingFlags.NonPublic | BindingFlags.Instance)!;
-        oidField.SetValue(boxedCurve, new Oid(string.Empty, string.Empty));
-        return (ECCurve)boxedCurve;
-    }
+    // VerifySigningKeyMatchesListing (added in response to PR #436 security review, alongside
+    // PublicKeysMatch/RsaParametersMatch/EcParametersMatch/CurveIdentifiersMatch) was this provider's
+    // own hand-rolled proof that the private key CreateSignerAsync hands back still pairs with the
+    // public key ListKeysAsync captured for the same thumbprint. Issue #437 deleted all of it: the
+    // framework-owned ADR 0015 §11 self-test — run by JwtSigningService<TOptions>'s own
+    // EnsureActiveSignerAsync on every handoff, initial materialization and every rotation alike, and
+    // exercised generically by JwtSigningServiceTests in ZeeKayDa.Auth.Tests — now proves the
+    // equivalent invariant (sign with the returned signer, verify against the listed public key) for
+    // every provider on every handoff, not just this one and not just at startup, so this provider no
+    // longer needs (or has) its own copy of that check.
 
     // ── Logging: never leaks key material (issue #291's explicit requirement) ───────────────────
 

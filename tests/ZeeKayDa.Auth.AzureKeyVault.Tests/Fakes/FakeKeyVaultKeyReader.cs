@@ -17,6 +17,7 @@ namespace ZeeKayDa.Auth.AzureKeyVault.Tests.Fakes;
 internal sealed class FakeKeyVaultKeyReader : IKeyVaultKeyReader
 {
     private readonly Dictionary<string, RSAParameters> _rsaMaterial = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, RSAParameters> _rsaPrivateMaterial = new(StringComparer.Ordinal);
     private readonly Dictionary<string, ECParameters> _ecMaterial = new(StringComparer.Ordinal);
     private readonly Dictionary<string, Exception> _materialExceptions = new(StringComparer.Ordinal);
 
@@ -58,6 +59,12 @@ internal sealed class FakeKeyVaultKeyReader : IKeyVaultKeyReader
         using var rsa = keyMaterial is null ? RSA.Create(2048) : null;
         var parameters = keyMaterial ?? rsa!.ExportParameters(false);
         _rsaMaterial[version] = parameters;
+
+        // Retained purely so a test double signer (FakeKeyVaultSigner) can produce a genuinely
+        // verifiable signature for the ADR 0015 §11 self-test (issue #437) — the real Key
+        // Vault-backed reader never retains private key material; this is a test-only convenience.
+        if (rsa is not null)
+            _rsaPrivateMaterial[version] = rsa.ExportParameters(true);
 
         var info = new KeyVaultKeyVersionInfo(
             MakeVersionUri(version), version, enabled, createdOn, notBefore, expiresOn);
@@ -106,6 +113,19 @@ internal sealed class FakeKeyVaultKeyReader : IKeyVaultKeyReader
 
     /// <summary>Returns the public RSA parameters registered for <paramref name="version"/>, for assertions.</summary>
     public RSAParameters GetRsaMaterial(string version) => _rsaMaterial[version];
+
+    /// <summary>
+    /// Returns a fresh <see cref="RSA"/> instance holding the full key pair (public and private)
+    /// generated for <paramref name="version"/> — used exclusively by a test double signer
+    /// (<c>FakeKeyVaultSigner</c>) so it can produce a real, verifiable signature for the ADR 0015
+    /// §11 self-test (issue #437). The caller owns and must dispose the returned instance.
+    /// </summary>
+    public RSA CreateRsaPrivateKey(string version)
+    {
+        var rsa = RSA.Create();
+        rsa.ImportParameters(_rsaPrivateMaterial[version]);
+        return rsa;
+    }
 
     /// <summary>Returns the public EC parameters registered for <paramref name="version"/>, for assertions.</summary>
     public ECParameters GetEcMaterial(string version) => _ecMaterial[version];

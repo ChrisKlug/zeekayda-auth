@@ -361,6 +361,88 @@ provider mid-paragraph, because the two abstractions finally match two real proc
 Neither procedure retroactively invalidates tokens a relying party already accepted before rotation —
 that residual window is bounded by the relying party's own JWKS-cache TTL, unchanged from ADR 0011.
 
+### 11. Startup self-test — pairing lazy `CreateSignerAsync` with materialize-and-verify (issue #437)
+
+§4/§5's lazy `CreateSignerAsync` — called only when the active `KeyId` changes, not eagerly at
+startup — reopened a gap the pre-ADR-0015 eager `LoadKeysAsync` pre-warm used to close: a private-key
+acquisition or use failure that only surfaces when the active key is actually *used* to sign, not
+when it is merely *listed*. Concretely:
+
+- a Key Vault certificate policy marking the private key non-exportable;
+- an inaccessible CNG key container (a repointed or corrupted key-container association);
+- a missing `sign` permission on a remote-signing key.
+
+None of these fail `ListKeysAsync` (`GetSigningKeysAsync`'s pre-warm, which every provider's startup
+service already forced) — they only fail once a signer is materialized and asked to sign. Left
+uncaught, they surface on the first token-issuing request, in production, on an unclear error path,
+rather than at deployment time.
+
+**Resolution:** the sign-and-verify check lives directly in `JwtSigningService<TOptions>`'s own
+`EnsureActiveSignerAsync` — the single choke point every active-signer handoff already goes through,
+whether that handoff is the very first materialization or a later rotation. Immediately after
+`CreateSignerAsync` returns and its `Algorithm` is checked against the key's declared algorithm, the
+new signer signs a fixed, non-JWS-shaped constant (`"zeekayda-auth signing self-test"` — contains a
+space and no `.`, so it can never be mistaken for or lifted into a valid JWS) and the resulting
+signature is verified against that same key's own listed public key before the signer is ever
+installed as active or handed out for real signing. Verification (not just materialization) is what
+structurally proves the signer `CreateSignerAsync` returned is the key the base class is publishing a
+`kid` for — mere materialization (calling `CreateSignerAsync` and getting an `ISigner` back without
+error) is not enough, since a signer can be successfully constructed over key material that does not
+actually pair with the published public key.
+
+Because this check runs inside `EnsureActiveSignerAsync` itself, it is not a startup-only guarantee:
+**every** handoff is self-tested, not just the one that happens to occur first. A key rotated in hours
+or days after process start is proven exactly as thoroughly as the key that was active at boot. The
+cost is one extra sign operation per handoff (for a remote signer such as Azure Key Vault, one extra
+network call per rotation — not per token issued), which is negligible next to rotation's own
+low-frequency cadence.
+
+A small, explicitly-implemented `ISigningStartupSelfTest` interface on `JwtSigningService<TOptions>` —
+deliberately not a member on `IJwtSigningService` itself, which would be a breaking change for an
+external implementer — exists solely so a framework-owned `IHostedService`
+(`SigningStartupSelfTestHostedService`, registered once by `AddZeeKayDaAuthCore()`) can force the
+*first* handoff to happen eagerly, at host startup, rather than lazily on the first real
+token-issuing request: its one method simply forces active-signer materialization, and the self-test
+above runs as a side effect of that materialization exactly as it would for any other handoff. Every
+provider gets this eager-at-startup behavior for free, and provider-specific startup services shrink
+to only genuinely provider-specific behavior (the Azure Key Vault *cached* provider's memory-residency
+log line is the one example; the Windows Certificate Store and File/PEM/PFX providers had no
+provider-specific behavior left at all once their shared pre-warm moved here, so their startup
+services were deleted outright). This also supersedes the Windows Certificate Store provider's own
+hand-rolled `VerifySigningKeyMatchesListing` (added in response to PR #436 security review) — the same
+pairing invariant, now proven on every handoff, generically, for every provider, rather than as a
+per-provider, startup-only obligation.
+
+**Unconditional, no HSM opt-out.** The one open question this ADR update resolves: whether the
+self-test should be unconditional or carry an opt-out for HSM per-operation-cost/audit-noise concerns.
+Unconditional wins as the secure-by-default choice — the cost (one extra `CreateSignerAsync` and one
+sign operation per handoff; the active private key becoming resident from the moment of handoff rather
+than from first use, which follows milliseconds later regardless per §5) is small and fixed, while a
+signer/public-key mismatch passing a handoff silently is exactly the failure mode this ADR's lazy
+`CreateSignerAsync` reopened. Since `AddZeeKayDaAuthCore()` is also reachable from a host that has not
+(yet) configured any signing provider, the hosted service resolves `IJwtSigningService` lazily and
+no-ops when nothing is registered, rather than taking it as a hard constructor dependency — the
+self-test being unconditional for every *configured* signing provider does not mean signing
+configuration itself becomes mandatory. The hosted service also logs a `Warning` (naming the resolved
+type) when the registered `IJwtSigningService` does not implement `ISigningStartupSelfTest` at all, so
+a decorator or wrapper that silently drops the interface does not disable this control without a
+trace.
+
+**Accepted failure class: a transient error aborts the handoff exactly like the pre-existing
+`ListKeysAsync` pre-warm already does.** A *definitive* mismatch — `SigningAlgorithms.Verify` returning
+`false` — must fail closed; that is the entire point of this self-test. But the self-test can also fail
+to even run to completion for a reason that has nothing to do with key pairing: a transient network
+blip or throttling response from a remote signer (e.g. Azure Key Vault returning a 429 or timing out)
+while signing the self-test payload. That failure currently aborts the handoff — and, at startup, the
+host's startup — indistinguishably from every other unhandled exception `CreateSignerAsync` or
+`ISigner.SignAsync` can already throw. This is not a new failure class introduced by this self-test: it
+is the same accepted tradeoff `EnsureSnapshotAsync`'s `ListKeysAsync` pre-warm already makes (see that
+method's remarks) — the base class cannot distinguish "the key is genuinely gone" from "the remote
+signer is temporarily unavailable" at this layer, so both fail closed the same way. No retry/backoff
+logic is implemented for the self-test call itself; a host that wants resilience against transient
+Key Vault throttling at startup or rotation time should apply it at the transport layer (e.g. the Key
+Vault SDK's own retry policy), not by weakening this self-test.
+
 ---
 
 ## Considered and Rejected Alternatives
@@ -556,6 +638,25 @@ being unrepresentable — remains governed by ADR 0011 and its existing sign-off
   formats (§2/§5); duplicate-`kid` rejection restated as running on derived thumbprints at
   `ListKeysAsync` time (§2/§7); `ISigner.Dispose`-must-not-dispose-shared-client raised to a contract
   MUST (§2).
+- **2026-08-16 — issue #437** — Pairs §4/§5's lazy `CreateSignerAsync` with a per-handoff self-test
+  (§11): `EnsureActiveSignerAsync` itself now signs a fixed non-JWS-shaped constant with every newly
+  materialized signer and verifies the signature against that key's own listed public key, on *every*
+  handoff — initial materialization and every subsequent rotation — structurally proving materialization
+  alone (the pre-existing `GetSigningKeysAsync` pre-warm) is insufficient for remote signers, since a
+  non-exportable KV certificate policy, an inaccessible CNG key container, or a missing `sign` permission
+  all only surface on actual use, not on listing. A small `ISigningStartupSelfTest`
+  (explicit-interface-implemented on `JwtSigningService<TOptions>`, non-virtual so no provider can
+  weaken it) exists only to force that first handoff eagerly at host startup; a single framework-owned
+  `SigningStartupSelfTestHostedService`, registered once by `AddZeeKayDaAuthCore()`, invokes it for
+  every provider (and logs a `Warning`, naming the resolved type, when the registered
+  `IJwtSigningService` does not implement it) — `FileSigningStartupService` and
+  `WindowsCertificateStoreSigningStartupService` are deleted outright (no provider-specific behavior
+  left), `AzureKeyVaultRemoteSigningStartupService` likewise, and `AzureKeyVaultCachedSigningStartupService`
+  keeps only its memory-residency log line. Also deletes the Windows Certificate Store provider's own
+  `VerifySigningKeyMatchesListing` (PR #436), now superseded on every handoff, not just at startup.
+  Unconditional — no HSM opt-out (secure-by-default). A transient failure to complete the self-test
+  (e.g. Key Vault throttling) aborts the handoff exactly like the pre-existing `ListKeysAsync` pre-warm
+  already does — an accepted, pre-existing failure class, not a new one; no retry/backoff added.
 
 ---
 

@@ -7,6 +7,11 @@ using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.AzureKeyVault.Tests;
 
+/// <summary>
+/// Exercises <see cref="AzureKeyVaultCachedSigningStartupService"/> — since issue #437, this class
+/// keeps only the memory-residency log line; pre-warming and the materialize-and-verify self-test
+/// are now the framework-owned <c>SigningStartupSelfTestHostedService</c>'s job.
+/// </summary>
 public sealed class AzureKeyVaultCachedSigningStartupServiceTests
 {
     private static readonly Uri CertificateIdentifierUri = new("https://fake-vault.vault.azure.net/certificates/fake-cert");
@@ -30,28 +35,7 @@ public sealed class AzureKeyVaultCachedSigningStartupServiceTests
             => Entries.Add((logLevel, formatter(state, exception)));
     }
 
-    private sealed class FakeSigningService : IJwtSigningService
-    {
-        public int GetSigningKeysCallCount { get; private set; }
-
-        public Exception? ThrowOnGetSigningKeys { get; set; }
-
-        public ValueTask<IReadOnlyList<SigningKeyDescriptor>> GetSigningKeysAsync(
-            CancellationToken cancellationToken = default)
-        {
-            GetSigningKeysCallCount++;
-            if (ThrowOnGetSigningKeys is not null)
-                throw ThrowOnGetSigningKeys;
-            return ValueTask.FromResult<IReadOnlyList<SigningKeyDescriptor>>([]);
-        }
-
-        public ValueTask<SigningResult> SignAsync(
-            ReadOnlyMemory<byte> payloadSegment, CancellationToken cancellationToken = default)
-            => throw new NotImplementedException();
-    }
-
     private static AzureKeyVaultCachedSigningStartupService BuildSut(
-        FakeSigningService? signingService = null,
         CapturingLogger<AzureKeyVaultCachedSigningStartupService>? logger = null,
         string certificateName = "fake-cert")
     {
@@ -67,7 +51,6 @@ public sealed class AzureKeyVaultCachedSigningStartupServiceTests
 
         return new AzureKeyVaultCachedSigningStartupService(
             options,
-            signingService ?? new FakeSigningService(),
             logger ?? new CapturingLogger<AzureKeyVaultCachedSigningStartupService>());
     }
 
@@ -88,43 +71,17 @@ public sealed class AzureKeyVaultCachedSigningStartupServiceTests
     {
         var act = () => new AzureKeyVaultCachedSigningStartupService(
             null!,
-            new FakeSigningService(),
             NullSanitizingLogger<AzureKeyVaultCachedSigningStartupService>.Instance);
 
         act.Should().Throw<ArgumentNullException>().WithParameterName("options");
     }
 
     [Fact]
-    public void Constructor_throws_ArgumentNullException_when_signingService_is_null()
-    {
-        var act = () => new AzureKeyVaultCachedSigningStartupService(
-            DefaultOptions(),
-            null!,
-            NullSanitizingLogger<AzureKeyVaultCachedSigningStartupService>.Instance);
-
-        act.Should().Throw<ArgumentNullException>().WithParameterName("signingService");
-    }
-
-    [Fact]
     public void Constructor_throws_ArgumentNullException_when_logger_is_null()
     {
-        var act = () => new AzureKeyVaultCachedSigningStartupService(DefaultOptions(), new FakeSigningService(), null!);
+        var act = () => new AzureKeyVaultCachedSigningStartupService(DefaultOptions(), null!);
 
         act.Should().Throw<ArgumentNullException>().WithParameterName("logger");
-    }
-
-    // ── StartAsync: pre-warms the signing key cache (AC #1) ──────────────────────────────────────
-
-    [Fact]
-    public async Task StartAsync_calls_GetSigningKeysAsync_to_pre_warm_the_cache()
-    {
-        var signingService = new FakeSigningService();
-        var sut = BuildSut(signingService: signingService);
-
-        await sut.StartAsync(CancellationToken.None);
-
-        signingService.GetSigningKeysCallCount.Should().Be(1,
-            "the private key must be downloaded and cached at startup, not lazily on the first request");
     }
 
     // ── StartAsync: informational log line, not Warning/Critical (AC #2) ────────────────────────
@@ -165,43 +122,6 @@ public sealed class AzureKeyVaultCachedSigningStartupServiceTests
 
         var message = logger.Entries.Should().ContainSingle().Which.Message;
         message.Should().Contain("cached in process memory");
-    }
-
-    // ── StartAsync: startup failure aborts before any log line, and propagates unmodified ───────
-
-    [Fact]
-    public async Task StartAsync_propagates_configuration_exception_from_signing_service_and_aborts_startup()
-    {
-        var signingService = new FakeSigningService
-        {
-            ThrowOnGetSigningKeys = new ZeeKayDaConfigurationException(
-                new ZeeKayDaConfigurationFailure(
-                    "signing.azure_key_vault.certificate_not_exportable", "Simulated failure.")),
-        };
-        var sut = BuildSut(signingService: signingService);
-
-        var act = async () => await sut.StartAsync(CancellationToken.None);
-
-        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
-            .WithMessage("*certificate_not_exportable*");
-    }
-
-    [Fact]
-    public async Task StartAsync_does_not_log_when_key_loading_fails()
-    {
-        var logger = new CapturingLogger<AzureKeyVaultCachedSigningStartupService>();
-        var signingService = new FakeSigningService
-        {
-            ThrowOnGetSigningKeys = new ZeeKayDaConfigurationException(
-                new ZeeKayDaConfigurationFailure("signing.azure_key_vault.access_denied", "Simulated failure.")),
-        };
-        var sut = BuildSut(signingService: signingService, logger: logger);
-
-        await sut.Awaiting(s => s.StartAsync(CancellationToken.None))
-            .Should().ThrowAsync<ZeeKayDaConfigurationException>();
-
-        logger.Entries.Should().BeEmpty(
-            "the informational log line must only be emitted after the key has actually loaded successfully");
     }
 
     // ── StopAsync: no side effects ────────────────────────────────────────────────────────────────
