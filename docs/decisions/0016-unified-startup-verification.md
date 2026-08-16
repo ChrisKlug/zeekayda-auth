@@ -299,6 +299,32 @@ makes the migration of an existing check mechanical: a check can be moved to `IS
 before its `throw` is converted to an `AddFailure`, and its externally observable failure code does
 not change at either step.
 
+Unwrapping cannot degrade into a silent swallow, and that is a structural property rather than a
+convention: **`ZeeKayDaConfigurationException.AggregatedFailures` is guaranteed non-empty by the
+type itself.** Both public constructors populate it — the `params` one throws `ArgumentException`
+on an empty array (`ComposeMessage`), the other takes a single failure — and the property is
+get-only, so no subclass can produce an instance carrying zero failures. Absorbing therefore always
+contributes at least one failure to `context.Failures`, which always aborts startup (immediately in
+phase 1, after the loop in phase 2). There is no input for which the `catch` observes a
+`ZeeKayDaConfigurationException` and the host still starts.
+
+What absorbing gives up is the verifier attribution that the `startup.verifier_failed` wrapper
+carries in its message. This is accepted: the codes and messages absorbed are the framework's own
+published ones, which are self-identifying, and preserving them is the whole point of the
+special case. It is not extended to any other exception type — a `ZeeKayDaConfigurationException` is
+the only exception in the framework that carries a structured, published `Code`, so it is the only
+one whose flattening would lose externally observable information.
+
+**`OperationCanceledException` is rethrown, not wrapped.** If `cancellationToken` is signalled —
+the host is shutting down while startup verification is still running — a verifier that honours the
+token throws `OperationCanceledException`. Wrapping that as `startup.verifier_failed` would report a
+*configuration* fault for what is an orderly shutdown, and would fire operator alerting keyed on
+that code every time a deployment is cancelled mid-start. The runner therefore rethrows an
+`OperationCanceledException` unchanged when `cancellationToken.IsCancellationRequested`, and only
+then; a verifier that throws `OperationCanceledException` while the token is *not* signalled is a
+verifier bug and is wrapped like any other unexpected exception. Either way the host does not start,
+so fail-closed is unaffected — only the reported cause differs.
+
 **No per-verifier timeout is introduced.** A verifier that hangs forever hangs startup. That is
 accepted for now: every in-tree verifier is either microsecond-scale in-memory work or a call whose
 transport already has its own timeout (the Key Vault SDK's, the repository's). `CancellationToken`
@@ -332,6 +358,13 @@ The gate must not stay in `.AspNetCore`. Nothing about it is AspNetCore-specific
 depends only on `IServiceCollection` (`Microsoft.Extensions.DependencyInjection.Abstractions`) and
 `ISanitizingLogger<>`, both of which core already has — core defines `ISanitizingLogger<>`, registers
 the open-generic `SecretSanitizingLogger<>`, and exposes `IServiceCollection` extension methods.
+**The move adds no `PackageReference` to `ZeeKayDa.Auth`**: `DependencyInjection.Abstractions`,
+`Logging.Abstractions` and `Hosting.Abstractions` (the last already required by #437's hosted
+service) are all present today, and neither type touches `Microsoft.AspNetCore.*`. Both types are
+`internal`, so relocating them from the `ZeeKayDa.Auth.AspNetCore` namespace into `ZeeKayDa.Auth` is
+not a public-API change; their existing tests continue to compile under the
+`InternalsVisibleTo("ZeeKayDa.Auth.AspNetCore.Tests")` core already declares, and should move to
+`ZeeKayDa.Auth.Tests` alongside the types.
 Leaving the gate behind in `.AspNetCore` while the runner ships from `AddZeeKayDaAuthCore()` opens a
 real hole: `AddZeeKayDaAuthCore()` is public and is called directly by every provider package, and
 `ZeeKayDaAuthBuilder` has a public constructor, so a host can reach a fully-wired signing
@@ -565,9 +598,10 @@ internal sealed class ClientRepositoryActivationVerifier : IStartupVerifier
         CancellationToken cancellationToken)
     {
         // Resolving triggers construction-time validation: duplicate detection, per-client checks,
-        // PBKDF2 secret hashing. Any exception — including a ZeeKayDaConfigurationException from the
-        // repository's constructor, or a DI resolution failure — flows out to the runner, which
-        // wraps it as startup.verifier_failed and aborts. Nothing is caught here.
+        // PBKDF2 secret hashing. Any exception flows out to the runner and aborts startup; nothing
+        // is caught here. A ZeeKayDaConfigurationException from the repository's constructor has its
+        // AggregatedFailures absorbed with their codes intact; any other exception (a DI resolution
+        // failure, say) is wrapped as startup.verifier_failed (§5).
         var repository = scopedServices.GetRequiredService<IClientRepository>();
 
         var inMemoryOptions = scopedServices.GetService<InMemoryClientRegistrationOptions>();
@@ -720,12 +754,21 @@ internal sealed class StartupVerificationHostedService(
         {
             await invoke(cancellationToken);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Orderly host shutdown during startup, not a misconfiguration. Reporting it as
+            // startup.verifier_failed would fire configuration alerting on every cancelled
+            // deployment. The host still does not start, so this is not a swallow.
+            throw;
+        }
         catch (ZeeKayDaConfigurationException ex)
         {
             // A check that throws the framework's own configuration exception already carries
             // stable, published Codes. Absorb them verbatim instead of flattening them into
-            // startup.verifier_failed. Phase 1 still aborts on the first gate to produce a
-            // failure; phase 2 still aggregates. Fail-closed either way.
+            // startup.verifier_failed. AggregatedFailures is non-empty by construction (both
+            // constructors of the exception guarantee it), so this always contributes at least one
+            // failure. Phase 1 still aborts on the first gate to produce a failure; phase 2 still
+            // aggregates. Fail-closed either way.
             foreach (var failure in ex.AggregatedFailures)
                 context.AddFailure(failure.Code, failure.Message);
         }
@@ -1123,6 +1166,14 @@ via an additional opt-in interface (§11).
   implementation issue rather than a later step (§10); §4 acknowledges the ADR 0008 §5 ordering
   statement that aggregation changes; and Security Considerations gain the message-redaction limit of
   the logging chokepoint and the restart-loop side-effect cost of aggregation.
+- **2026-08-16 — PR #443 — issue #441** — Architect confirmation of both security amendments, with
+  three follow-on corrections: the gate move is recorded as adding no `PackageReference` to core and
+  as a namespace-only relocation of two `internal` types (§7); the unwrap rule gains the structural
+  argument that `AggregatedFailures` is non-empty by construction, so absorbing can never become a
+  silent swallow, plus an `OperationCanceledException` rethrow so an orderly host shutdown is not
+  reported as `startup.verifier_failed` (§5, §9); and §8's `ClientRepositoryActivationVerifier`
+  comment, which still described a `ZeeKayDaConfigurationException` from the repository constructor
+  being flattened, is corrected to match §5.
 
 ---
 
