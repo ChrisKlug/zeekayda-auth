@@ -64,8 +64,11 @@ fi
 
 # Second check: any #pragma warning disable naming ZEEKAYDA0001/ZEEKAYDA0002 must carry the
 # same structured "// log-hygiene-ok: <reason> (#N)" comment on the same line, so a future
-# self-served suppression needs security-owner review (this script is CODEOWNERS-owned) rather
-# than a quiet commit.
+# self-served suppression is visible in the diff rather than a quiet commit. Today every source
+# file falls under CODEOWNERS' repo-wide "* @ChrisKlug" entry, so any such suppression already
+# requires maintainer review; that default-owner coverage, not this script's own CODEOWNERS entry,
+# is what makes the review requirement hold at a suppression's actual call site. If narrower,
+# per-directory CODEOWNERS entries are ever introduced, revisit whether src/ still needs one too.
 PRAGMA_PATTERN='#pragma[[:space:]]+warning[[:space:]]+disable.*\b(ZEEKAYDA0001|ZEEKAYDA0002)\b'
 pragma_found=0
 

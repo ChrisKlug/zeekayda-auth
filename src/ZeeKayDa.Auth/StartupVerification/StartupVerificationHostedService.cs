@@ -39,11 +39,12 @@ internal sealed class StartupVerificationHostedService(
 
             // Gate warnings are held until every gate has passed, because the sanitizing logger
             // is not yet known to be trustworthy.
-            pendingGateWarnings.AddRange(gateContext.Warnings.Select(w => (gate, gate.Name, w)));
+            foreach (var warning in gateContext.Warnings)
+                pendingGateWarnings.Add((gate, gate.Name, warning));
         }
 
         foreach (var (source, name, warning) in pendingGateWarnings)
-            LogWarning(source, name, warning);
+            LogWarningOrThrow(source, name, warning);
 
         // IEnumerable<IStartupVerifier> is resolved here rather than constructor-injected.
         // Resolving it runs every verifier's constructor, including third-party ones, and a
@@ -66,7 +67,12 @@ internal sealed class StartupVerificationHostedService(
                 cancellationToken);
 
             foreach (var warning in context.Warnings)
-                LogWarning(verifier, verifier.Name, warning);
+            {
+                if (TryLogWarning(verifier, verifier.Name, warning, out var logFailureException))
+                    continue;
+
+                failures.Add(WrapWarningLogFailure(verifier.Name, logFailureException!));
+            }
 
             failures.AddRange(context.Failures);
         }
@@ -77,6 +83,43 @@ internal sealed class StartupVerificationHostedService(
 
     /// <inheritdoc/>
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    // A gate warning failing to log is treated the same as a gate failure: gates run before the
+    // sanitizing logger is trusted, so there is no aggregation phase left to defer to.
+    private void LogWarningOrThrow(object source, string name, StartupVerificationWarning warning)
+    {
+        if (!TryLogWarning(source, name, warning, out var ex))
+            throw new ZeeKayDaConfigurationException(WrapWarningLogFailure(name, ex!), ex!);
+    }
+
+    // A verifier's warning.Args not matching its own MessageTemplate's placeholder count throws
+    // from inside the logging framework's formatter, not from the verifier's VerifyAsync call —
+    // InvokeAsync's try/catch cannot see it. Without this, one verifier's malformed warning would
+    // crash startup unattributed and discard every already-aggregated genuine configuration
+    // failure.
+    private bool TryLogWarning(
+        object source, string name, StartupVerificationWarning warning, out Exception? exception)
+    {
+        try
+        {
+            LogWarning(source, name, warning);
+            exception = null;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            exception = ex;
+            return false;
+        }
+    }
+
+    // The exception TYPE is named, never ex.Message — same redaction rationale as InvokeAsync's
+    // unexpected-exception branch below.
+    private static ZeeKayDaConfigurationFailure WrapWarningLogFailure(string name, Exception ex) =>
+        new(
+            "startup.warning_log_failed",
+            $"A warning produced by '{name}' could not be logged: {ex.GetType().FullName}. See " +
+            "the inner exception for the root cause.");
 
     // Resolves ISanitizingLogger<TSource> reflectively so the entry carries the producing check's
     // own category, then forwards the template and args to the sink unformatted, so the args stay

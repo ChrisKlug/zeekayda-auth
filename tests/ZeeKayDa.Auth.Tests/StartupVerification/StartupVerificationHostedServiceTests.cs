@@ -120,6 +120,41 @@ public sealed class StartupVerificationHostedServiceTests
         entry.Pairs.Should().Contain(kv => kv.Key == "ErrorCode" && (string?)kv.Value == "x.code");
     }
 
+    [Fact]
+    public async Task StartAsync_reports_a_verifier_warning_that_fails_to_log_as_an_aggregated_failure()
+    {
+        // A template placeholder with no matching arg throws from inside the logging framework's
+        // own state formatter, not from VerifyAsync — this must not crash StartAsync unattributed
+        // or discard an already-aggregated genuine configuration failure.
+        var badVerifier = new DelegatingVerifier("BadWarningVerifier", context =>
+        {
+            context.AddWarning("bad.warning", "value {missing}");
+            return ValueTask.CompletedTask;
+        });
+        var goodVerifier = new DelegatingVerifier("GoodVerifier", context =>
+        {
+            context.AddFailure("real.failure", "a genuine configuration problem");
+            return ValueTask.CompletedTask;
+        });
+        using var provider = BuildProviderWithSanitizingLogging(
+            out _,
+            services =>
+            {
+                services.AddSingleton<IStartupVerifier>(badVerifier);
+                services.AddSingleton<IStartupVerifier>(goodVerifier);
+            });
+
+        var sut = new StartupVerificationHostedService([], provider, provider.GetRequiredService<IServiceScopeFactory>());
+
+        var act = async () => await sut.StartAsync(TestContext.Current.CancellationToken);
+
+        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        exception.Which.AggregatedFailures.Should().Contain(f => f.Code == "startup.warning_log_failed");
+        exception.Which.AggregatedFailures.Should().Contain(
+            f => f.Code == "real.failure",
+            "a warning that fails to log must not discard an already-aggregated genuine configuration failure");
+    }
+
     // ── Phase 1 (gates): no logging until the gate phase has completed ─────────────────────────────
 
     [Fact]

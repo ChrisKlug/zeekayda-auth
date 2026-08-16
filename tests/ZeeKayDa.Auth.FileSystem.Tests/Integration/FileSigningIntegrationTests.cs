@@ -280,7 +280,7 @@ public sealed class FileSigningIntegrationTests
 
     private static IStartupVerifier FindSigningStartupSelfTestVerifier(ServiceProvider provider) =>
         provider.GetServices<IStartupVerifier>()
-            .Single(v => v.GetType().FullName == "ZeeKayDa.Auth.Tokens.SigningStartupSelfTestVerifier");
+            .Single(v => v.Name == "SigningStartupSelfTest");
 
     // ── Helpers ───────────────────────────────────────────────────────────────────────────────────
 
