@@ -6,14 +6,10 @@ namespace ZeeKayDa.Auth.Tokens;
 /// them.
 /// </summary>
 /// <remarks>
-/// <para>
-/// This is Tier B of the two-tier signing-provider split: the list genuinely changes between calls
-/// (a remote store, a database table, a file glob that discovers new members at runtime). Azure Key
-/// Vault (cached and remote) is the intended production consumer of this tier.
-/// </para>
-/// <para>
-/// This tier, together with <see cref="KeySetOptions"/>, is the sole signing-provider contract.
-/// </para>
+/// The list genuinely changes between calls (a remote store, a database table, a file glob that
+/// discovers new members at runtime). Azure Key Vault (cached and remote) is the intended
+/// production consumer. Together with <see cref="KeySetOptions"/>, this is the sole
+/// signing-provider contract.
 /// </remarks>
 public abstract class KeySourceOptions : JwtSigningServiceOptions
 {
@@ -24,9 +20,9 @@ public abstract class KeySourceOptions : JwtSigningServiceOptions
     /// Defaults to one hour.
     /// </summary>
     /// <remarks>
-    /// One meaning only: re-ask cadence. This is distinct from Tier A's internal
-    /// clock-tick-over-a-fixed-timeline meaning — the two tiers split on acquisition shape rather
-    /// than on "does it reload."
+    /// One meaning only: re-ask cadence. This is distinct from <see cref="KeySetOptions"/>'s internal
+    /// clock-tick-over-a-fixed-timeline meaning — the two option types split on acquisition shape
+    /// rather than on "does it reload."
     /// </remarks>
     public TimeSpan RefreshInterval { get; set; } = TimeSpan.FromHours(1);
 

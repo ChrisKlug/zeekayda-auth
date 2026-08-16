@@ -36,7 +36,7 @@ internal sealed class WindowsCertificateStoreSigningJwtSigningService : JwtSigni
     private readonly ICertificateStoreReader _storeReader;
     private readonly ICertificateKeyExtractor _keyExtractor;
 
-    // Populated by ListKeysAsync (Tier A: runs exactly once) so DescribeKeyMetadata can supply it
+    // Populated by ListKeysAsync (KeySetOptions: runs exactly once) so DescribeKeyMetadata can supply it
     // later, when the base class logs each key's status.
     private readonly Dictionary<string, string> _keyMetadataById = new(StringComparer.Ordinal);
 

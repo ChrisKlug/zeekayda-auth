@@ -94,18 +94,17 @@ public static class SigningKeyRotation
     /// timing, not expiry: an already-expired sole key still fails closed.
     /// </para>
     /// <para>
-    /// Only a Tier A (<c>KeySetOptions</c>) provider — whose key set is fixed for the process
-    /// lifetime — may pass <see langword="true"/> for the exemption. A Tier B (<c>KeySourceOptions</c>)
-    /// provider's listing can shrink to one key at runtime via revocation, so a restart during that
-    /// revocation must not be allowed to look like a fresh bootstrap; Tier B callers always pass
-    /// <see langword="false"/>.
+    /// Only a <c>KeySetOptions</c> provider — whose key set is fixed for the process lifetime — may
+    /// pass <see langword="true"/> for the exemption. A <c>KeySourceOptions</c> provider's listing
+    /// can shrink to one key at runtime via revocation, so a restart during that revocation must not
+    /// be allowed to look like a fresh bootstrap; those callers always pass <see langword="false"/>.
     /// </para>
     /// </remarks>
     /// <param name="timeline">The activation timeline, as built by <see cref="BuildActivationTimeline"/>.</param>
     /// <param name="now">The current instant to select against.</param>
     /// <param name="supportsBootstrapExemption">
-    /// <see langword="true"/> only when the calling provider is on the Tier A (<c>KeySetOptions</c>)
-    /// contract. Tier B (<c>KeySourceOptions</c>) callers must always pass <see langword="false"/>.
+    /// <see langword="true"/> only when the calling provider is on the <c>KeySetOptions</c>
+    /// contract. <c>KeySourceOptions</c> callers must always pass <see langword="false"/>.
     /// </param>
     /// <returns>
     /// The active entry, or <see langword="null"/> if no key is currently eligible to sign (the

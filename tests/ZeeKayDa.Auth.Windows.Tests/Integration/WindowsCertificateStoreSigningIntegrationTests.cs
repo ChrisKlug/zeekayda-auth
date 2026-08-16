@@ -12,7 +12,7 @@
 // provokable in CI, so it is only simulated here via the fake's ExceptionToThrow. The genuinely
 // Windows-only real-store round trip is covered separately by Integration/CertificateStoreReaderTests.cs.
 //
-// ADR 0015 Tier A (issue #424): ListKeysAsync runs exactly once, ever, for the lifetime of a service
+// ADR 0015 (issue #424): as a KeySetOptions provider, ListKeysAsync runs exactly once, ever, for the lifetime of a service
 // instance, and its per-certificate status logging fires only on that one evaluation — there is no
 // reload/change-detection surface, and no repeated logging cycle, left to exercise here. Rotation
 // between already-registered certificates still switches the active signer purely from elapsed wall

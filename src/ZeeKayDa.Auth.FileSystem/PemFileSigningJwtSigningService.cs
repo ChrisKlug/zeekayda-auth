@@ -28,7 +28,7 @@ internal sealed class PemFileSigningJwtSigningService : JwtSigningService<PemFil
     private readonly IOptions<PemFileSigningOptions> _options;
     private readonly FileSigningKeyReader _reader;
 
-    // Populated by ListKeysAsync (Tier A: runs exactly once) so DescribeKeyMetadata can supply it
+    // Populated by ListKeysAsync (KeySetOptions: runs exactly once) so DescribeKeyMetadata can supply it
     // later, when the base class logs each key's status.
     private readonly Dictionary<string, string> _keyMetadataById = new(StringComparer.Ordinal);
 

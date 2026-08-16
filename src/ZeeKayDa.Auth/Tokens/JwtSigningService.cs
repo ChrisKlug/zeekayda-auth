@@ -10,15 +10,15 @@ namespace ZeeKayDa.Auth.Tokens;
 
 /// <summary>
 /// Abstract base class for <see cref="IJwtSigningService"/> implementations. Provides immutable-
-/// snapshot key-listing caching (once for a Tier A <see cref="KeySetOptions"/> provider, or on a
-/// recurring cadence for a Tier B <see cref="KeySourceOptions"/> provider), lazy active-key
+/// snapshot key-listing caching (once for a <see cref="KeySetOptions"/> provider, or on a
+/// recurring cadence for a <see cref="KeySourceOptions"/> provider), lazy active-key
 /// selection, key-algorithm compatibility validation, deterministic disposal of superseded signers,
 /// and the JWS signing operation. Implementors provide only <see cref="ListKeysAsync"/> and
 /// <see cref="CreateSignerAsync"/>.
 /// </summary>
 /// <typeparam name="TOptions">
-/// The provider-specific options type. Must derive from <see cref="KeySetOptions"/> (Tier A, a fixed
-/// key set known at configuration time) or <see cref="KeySourceOptions"/> (Tier B, a source the base
+/// The provider-specific options type. Must derive from <see cref="KeySetOptions"/> (a fixed
+/// key set known at configuration time) or <see cref="KeySourceOptions"/> (a source the base
 /// class re-reads on a cadence).
 /// </typeparam>
 public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigningStartupSelfTest, IAsyncDisposable
@@ -29,9 +29,9 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
     private static readonly ReadOnlyMemory<byte> SelfTestPayload = "zeekayda-auth signing self-test"u8.ToArray();
 
     private readonly TimeProvider _timeProvider;
-    private readonly bool _isKeySet; // true = Tier A (KeySetOptions); false = Tier B (KeySourceOptions).
+    private readonly bool _isKeySet; // true = KeySetOptions; false = KeySourceOptions.
     private readonly IOptions<TOptions> _options;
-    private readonly TimeSpan? _refreshInterval; // Tier B (KeySourceOptions) only.
+    private readonly TimeSpan? _refreshInterval; // KeySourceOptions only.
     private readonly ISigningKeyRetirementWindowProvider _retirementWindowProvider;
     private readonly ISanitizingLogger<JwtSigningService<TOptions>> _logger;
 
@@ -58,8 +58,9 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
     /// within-window versus post-window.
     /// </param>
     /// <param name="logger">
-    /// Used to emit a <see cref="Microsoft.Extensions.Logging.LogLevel.Warning"/> when a Tier B
-    /// provider's key listing drops a key while it is still inside its retirement window.
+    /// Used to emit a <see cref="Microsoft.Extensions.Logging.LogLevel.Warning"/> when a
+    /// <see cref="KeySourceOptions"/> provider's key listing drops a key while it is still inside
+    /// its retirement window.
     /// </param>
     protected JwtSigningService(
         IOptions<TOptions> options,
@@ -83,8 +84,8 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
 
     /// <summary>
     /// Returns the current listing of trusted signing keys as pure public metadata — never private
-    /// material. Tier A (<see cref="KeySetOptions"/>) providers: called exactly once, ever. Tier B
-    /// (<see cref="KeySourceOptions"/>) providers: called once per <see cref="KeySourceOptions.RefreshInterval"/>.
+    /// material. A <see cref="KeySetOptions"/> provider: called exactly once, ever. A
+    /// <see cref="KeySourceOptions"/> provider: called once per <see cref="KeySourceOptions.RefreshInterval"/>.
     /// </summary>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>Every currently trusted key's public listing. Must never be empty.</returns>
@@ -273,18 +274,19 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
     // ── KeySetOptions/KeySourceOptions state ────────────────────────────────────────────────────────
 
     /// <summary>
-    /// <see langword="true"/> only for a Tier A (<see cref="KeySetOptions"/>) provider — passed as
+    /// <see langword="true"/> only for a <see cref="KeySetOptions"/> provider — passed as
     /// <c>supportsBootstrapExemption</c> to every <see cref="SigningKeyRotation.SelectActiveKey"/>
-    /// call. Gated on the provider's tier rather than snapshot/process lifetime, so a Tier B
-    /// (<see cref="KeySourceOptions"/>) listing that has shrunk to one key via revocation cannot
+    /// call. Gated on the provider's options type rather than snapshot/process lifetime, so a
+    /// <see cref="KeySourceOptions"/> listing that has shrunk to one key via revocation cannot
     /// re-arm the exemption on process restart.
     /// </summary>
     private bool SupportsBootstrapExemption => _isKeySet;
 
     /// <summary>
     /// The immutable snapshot of public key data active-key selection and JWKS inclusion are
-    /// computed from. Rebuilt from scratch by <see cref="ListKeysAsync"/> — Tier A once, Tier B once
-    /// per <see cref="KeySourceOptions.RefreshInterval"/> — and never mutated in place.
+    /// computed from. Rebuilt from scratch by <see cref="ListKeysAsync"/> — once for a
+    /// <see cref="KeySetOptions"/> provider, or once per <see cref="KeySourceOptions.RefreshInterval"/>
+    /// for a <see cref="KeySourceOptions"/> provider — and never mutated in place.
     /// </summary>
     /// <remarks>
     /// <c>ExpiresAt</c> lives on this record rather than a separate field so
@@ -361,8 +363,9 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
 
     /// <summary>
     /// Returns the current immutable snapshot, building or refreshing it via
-    /// <see cref="ListKeysAsync"/> when needed. Tier A builds it once and never rebuilds; Tier B
-    /// rebuilds it once per <see cref="KeySourceOptions.RefreshInterval"/>.
+    /// <see cref="ListKeysAsync"/> when needed. A <see cref="KeySetOptions"/> provider builds it
+    /// once and never rebuilds; a <see cref="KeySourceOptions"/> provider rebuilds it once per
+    /// <see cref="KeySourceOptions.RefreshInterval"/>.
     /// </summary>
     private async ValueTask<SigningKeySnapshot> EnsureSnapshotAsync(CancellationToken cancellationToken)
     {
@@ -401,7 +404,7 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
             }
 
             var expiresAt = _isKeySet
-                ? DateTimeOffset.MaxValue // Tier A: ListKeysAsync is called exactly once, ever.
+                ? DateTimeOffset.MaxValue // KeySetOptions: ListKeysAsync is called exactly once, ever.
                 : now.Add(_refreshInterval!.Value);
             var snapshot = BuildSnapshot(listings, expiresAt);
 
@@ -707,8 +710,8 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
     }
 
     /// <summary>
-    /// Logs a per-key status line for every key in <paramref name="snapshot"/>, and — for a Tier A
-    /// (<see cref="KeySetOptions"/>) provider only — the too-soon-pending-activation warning derived
+    /// Logs a per-key status line for every key in <paramref name="snapshot"/>, and — for a
+    /// <see cref="KeySetOptions"/> provider only — the too-soon-pending-activation warning derived
     /// from <see cref="KeySetOptions.PublicationLead"/>.
     /// </summary>
     private void LogStatusesAndWarnings(SigningKeySnapshot snapshot, DateTimeOffset now)

@@ -40,20 +40,20 @@ public sealed class SigningKeyRotationTests
     [Fact]
     public void SelectActiveKey_single_key_fails_closed_when_the_calling_tier_does_not_support_the_exemption_and_ActivatesAt_has_not_arrived()
     {
-        // Regression test (issue #425 security review, findings F1 and F1-2): a Tier B provider's
-        // listing can shrink to one key live, at runtime, via operator revocation of every other key —
-        // not only at cold start, and this can recur across a process restart during the same
-        // incident (finding F1-2: gating on "first snapshot this instance ever built" alone is not
-        // restart-safe, since a fresh instance's first snapshot always looks like a bootstrap). Gating
-        // on the calling provider's tier instead (Tier B always passes supportsBootstrapExemption:
-        // false) keeps this closed regardless of process lifetime.
+        // Regression test (issue #425 security review, findings F1 and F1-2): a KeySourceOptions
+        // provider's listing can shrink to one key live, at runtime, via operator revocation of every
+        // other key — not only at cold start, and this can recur across a process restart during the
+        // same incident (finding F1-2: gating on "first snapshot this instance ever built" alone is
+        // not restart-safe, since a fresh instance's first snapshot always looks like a bootstrap).
+        // Gating on the calling provider's options type instead (KeySourceOptions always passes
+        // supportsBootstrapExemption: false) keeps this closed regardless of process lifetime.
         var key = Key("AAA", activatesAt: T0 + TimeSpan.FromHours(1));
         var timeline = SigningKeyRotation.BuildActivationTimeline([key]);
 
         var active = SigningKeyRotation.SelectActiveKey(timeline, now: T0, supportsBootstrapExemption: false);
 
         active.Should().BeNull(
-            "a Tier B provider must never bypass the key's own ActivatesAt, regardless of whether this happens to be its first snapshot");
+            "a KeySourceOptions provider must never bypass the key's own ActivatesAt, regardless of whether this happens to be its first snapshot");
     }
 
     [Fact]

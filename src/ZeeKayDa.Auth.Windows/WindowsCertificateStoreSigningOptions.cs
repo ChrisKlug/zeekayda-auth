@@ -10,7 +10,7 @@ namespace ZeeKayDa.Auth.Windows;
 /// The set of registered thumbprints is fixed at configuration time; only the wall clock crossing
 /// each certificate's <c>NotBefore</c>/<c>NotAfter</c> advances which one is active.
 /// <see cref="KeySetOptions.PublicationLead"/> here is only an advisory too-soon-activation
-/// startup warning — there is nothing to re-download on this tier. Picking up a rotated-in,
+/// startup warning — there is nothing to re-download here. Picking up a rotated-in,
 /// removed, or replaced certificate requires a process restart: register the successor via
 /// <see cref="AddCertificate"/> ahead of its intended activation time and redeploy.
 /// </remarks>

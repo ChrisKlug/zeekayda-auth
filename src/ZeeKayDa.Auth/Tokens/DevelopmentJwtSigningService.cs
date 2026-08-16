@@ -18,9 +18,9 @@ namespace ZeeKayDa.Auth.Tokens;
 /// tests); the gate is skipped when <see cref="DevelopmentSigningKeyOptions.EnvironmentName"/> is
 /// <see langword="null"/> (no host).
 /// <para>
-/// This is a degenerate Tier A (<see cref="KeySetOptions"/>) provider: exactly one key, active
-/// from startup, with no rotation use-case — rotating an ephemeral key would silently invalidate
-/// all tokens issued during the process's lifetime so far.
+/// This is a degenerate <see cref="KeySetOptions"/> provider: exactly one key, active from startup,
+/// with no rotation use-case — rotating an ephemeral key would silently invalidate all tokens
+/// issued during the process's lifetime so far.
 /// </para>
 /// </remarks>
 internal sealed class DevelopmentJwtSigningService
@@ -76,7 +76,7 @@ internal sealed class DevelopmentJwtSigningService
 
         _pendingPrivateKey = rsa;
 
-        // ActivateAt = null: the single dev key is active from startup (the degenerate Tier A
+        // ActivateAt = null: the single dev key is active from startup (the degenerate KeySetOptions
         // case). ExpiresAt = MaxValue: a dev key never hard-expires — its lifetime is the
         // process's, not a certificate's.
         var listing = new KeyListing(DevKeyId, SigningAlgorithm.RS256, publicKey, ActivateAt: null, ExpiresAt: DateTimeOffset.MaxValue);

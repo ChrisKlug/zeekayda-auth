@@ -5,16 +5,11 @@ namespace ZeeKayDa.Auth.Tokens;
 /// fixed set of keys is supplied at configuration time and never changes at runtime.
 /// </summary>
 /// <remarks>
-/// <para>
-/// This is Tier A of the two-tier signing-provider split: the provider owns the full list of keys
-/// up front, and the only thing that ever advances is the wall clock crossing each key's
-/// <c>ActivateAt</c>. File (PEM), PFX, and Windows Certificate Store are the intended production
-/// consumers of this tier; development/in-memory signing is a trivial degenerate case (one key, no
-/// <c>ActivateAt</c>, active from startup).
-/// </para>
-/// <para>
-/// This tier, together with <see cref="KeySourceOptions"/>, is the sole signing-provider contract.
-/// </para>
+/// The provider owns the full list of keys up front, and the only thing that ever advances is the
+/// wall clock crossing each key's <c>ActivateAt</c>. File (PEM), PFX, and Windows Certificate Store
+/// are the intended production consumers; development/in-memory signing is a trivial degenerate
+/// case (one key, no <c>ActivateAt</c>, active from startup). Together with
+/// <see cref="KeySourceOptions"/>, this is the sole signing-provider contract.
 /// </remarks>
 public abstract class KeySetOptions : JwtSigningServiceOptions
 {

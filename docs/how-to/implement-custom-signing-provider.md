@@ -1,6 +1,6 @@
 ---
 title: "Implement a custom signing key provider"
-description: "How to build a custom signing-key provider on the KeySetOptions/KeySourceOptions tiers, using Azure Key Vault as the worked example."
+description: "How to build a custom signing-key provider on the KeySetOptions/KeySourceOptions options types, using Azure Key Vault as the worked example."
 parent: "How-to Guides"
 nav_order: 13
 ---
@@ -9,51 +9,52 @@ nav_order: 13
 
 The five shipped signing-key providers (development, PEM, PFX, Windows Certificate Store, Azure
 Key Vault) all derive from the same abstract base class, `JwtSigningService<TOptions>`, and the
-same two-tier options hierarchy. If your organisation needs a signing provider these don't cover —
-a different KMS, an HSM, an internal secrets service — you build it the same way.
+same `KeySetOptions`/`KeySourceOptions` hierarchy. If your organisation needs a signing provider
+these don't cover — a different KMS, an HSM, an internal secrets service — you build it the same
+way.
 
-This guide walks through the two-tier options hierarchy, shows a minimal worked example for each
-tier, and then walks through Azure Key Vault's own implementation as the pattern to copy if your
+This guide walks through that options hierarchy, shows a minimal worked example for each options
+type, and then walks through Azure Key Vault's own implementation as the pattern to copy if your
 provider needs to enforce a timing invariant of its own.
 
 ## Before you start
 
 - You are implementing `IJwtSigningService` by deriving from `JwtSigningService<TOptions>` — not
   implementing `IJwtSigningService` directly. The base class supplies interval-throttled caching
-  (Tier B only) or a one-time build (Tier A), single-flight coalescing of that build/refresh for
-  both tiers, activation-timeline selection, kill-by-omission handling, key/algorithm compatibility
-  validation, and deterministic disposal of superseded signers; you implement only `ListKeysAsync`
-  and `CreateSignerAsync`.
+  (`KeySourceOptions` only) or a one-time build (`KeySetOptions`), single-flight coalescing of that
+  build/refresh for both, activation-timeline selection, kill-by-omission handling, key/algorithm
+  compatibility validation, and deterministic disposal of superseded signers; you implement only
+  `ListKeysAsync` and `CreateSignerAsync`.
 - You understand the retirement-window and publish-then-activate model shared by every provider —
   see [Rotate signing keys](rotate-signing-keys.md) first if you haven't already. This guide covers
   the *options shapes* and *methods* a provider implements, not the rotation model itself.
-- For the full contract and rationale behind the hierarchy below, see
+- For the full contract and rationale behind the split below, see
   [ADR 0015](../decisions/0015-signing-provider-set-source-tiers.md). This guide is deliberately
   practical — it shows you what to derive from and what to copy, not why each invariant exists.
 
-## Which tier do I implement?
+## Which options type do I implement?
 
 Ask one question:
 
 > **Do you own the full list of keys up front? Derive from `KeySetOptions`.**
 > **Does something else own the keys and you re-read them? Derive from `KeySourceOptions`.**
 
-| Your key source | Tier | Why |
+| Your key source | Options type | Why |
 |---|---|---|
-| Generated once at startup, held in memory | `KeySetOptions` (Tier A) | Nothing to poll — the key set is fixed for the process lifetime, and the only thing that ever advances is the wall clock crossing each key's `ActivateAt`. |
-| A file, PFX, or certificate-store registration that is only ever replaced via a redeploy/restart | `KeySetOptions` (Tier A) | Same reasoning — the set is fixed at configuration time; there is nothing to re-read at runtime. |
-| A KMS/HSM/secrets service with its own rotation schedule | `KeySourceOptions` (Tier B) | The key list can genuinely change between calls; you need to re-ask on a cadence. |
-| A database table, or a directory of files an operator can add to live (a file-glob that discovers new files at runtime) | `KeySourceOptions` (Tier B) | Same — an external actor can change the trusted set without restarting your process. |
+| Generated once at startup, held in memory | `KeySetOptions` | Nothing to poll — the key set is fixed for the process lifetime, and the only thing that ever advances is the wall clock crossing each key's `ActivateAt`. |
+| A file, PFX, or certificate-store registration that is only ever replaced via a redeploy/restart | `KeySetOptions` | Same reasoning — the set is fixed at configuration time; there is nothing to re-read at runtime. |
+| A KMS/HSM/secrets service with its own rotation schedule | `KeySourceOptions` | The key list can genuinely change between calls; you need to re-ask on a cadence. |
+| A database table, or a directory of files an operator can add to live (a file-glob that discovers new files at runtime) | `KeySourceOptions` | Same — an external actor can change the trusted set without restarting your process. |
 
-Picking the wrong tier is not a silent bug: `JwtSigningService<TOptions>`'s constructor inspects
-the runtime type of your options instance (`options.Value is KeySetOptions` vs
+Picking the wrong options type is not a silent bug: `JwtSigningService<TOptions>`'s constructor
+inspects the runtime type of your options instance (`options.Value is KeySetOptions` vs
 `options.Value is KeySourceOptions`) to decide whether to ever re-invoke `ListKeysAsync` at all —
-deriving from the wrong tier changes *whether reload ever happens*, not just a default value.
+deriving from the wrong one changes *whether reload ever happens*, not just a default value.
 
-## The two-tier options hierarchy
+## The options hierarchy
 
-Every provider's options type derives from one of two tiers, both of which in turn derive from a
-common, effectively empty base:
+Every provider's options type derives from one of two base classes, both of which in turn derive
+from a common, effectively empty base:
 
 ```csharp
 namespace ZeeKayDa.Auth.Tokens;
@@ -61,13 +62,13 @@ namespace ZeeKayDa.Auth.Tokens;
 public abstract class JwtSigningServiceOptions
 {
     // No rotation-shaped property at all. Deliberately empty — every rotation-related
-    // knob lives on exactly one of the two tiers below, never on the shared base.
+    // knob lives on exactly one of the two option types below, never on the shared base.
 }
 
 public abstract class KeySetOptions : JwtSigningServiceOptions
 {
     // The operator owns activation timing via each key's ActivateAt; PublicationLead is
-    // advisory only on this tier — the base class only logs a startup warning if it's violated.
+    // advisory only here — the base class only logs a startup warning if it's violated.
     public TimeSpan PublicationLead { get; set; } = TimeSpan.FromHours(1);
 }
 
@@ -84,29 +85,29 @@ public abstract class KeySourceOptions : JwtSigningServiceOptions
 
 You never derive from this directly. It exists purely so `JwtSigningService<TOptions>` can be
 written once against a single constraint (`where TOptions : JwtSigningServiceOptions`) and still
-treat Tier A and Tier B providers differently at construction time — see
-[Which tier do I implement?](#which-tier-do-i-implement) above.
+treat `KeySetOptions` and `KeySourceOptions` providers differently at construction time — see
+[Which options type do I implement?](#which-options-type-do-i-implement) above.
 
-### `KeySetOptions` — Tier A, a fixed set known up front
+### `KeySetOptions` — a fixed set known up front
 
-Derive from this tier when your key source's complete, fixed set is supplied at configuration time
+Derive from this when your key source's complete, fixed set is supplied at configuration time
 and never changes at runtime — the only thing that ever advances is the wall clock crossing each
 key's `ActivateAt`. `ListKeysAsync` is called **exactly once, ever**; the base class builds one
 immutable snapshot and never rebuilds it. `PemFileSigningOptions`, `PfxFileSigningOptions`, and
 `WindowsCertificateStoreSigningOptions` are the shipped examples; development/in-memory signing is
-a trivial degenerate Tier A case (one key, no `ActivateAt`, active from startup).
+a trivial degenerate case (one key, no `ActivateAt`, active from startup).
 
-### `KeySourceOptions` — Tier B, a source you re-read on a cadence
+### `KeySourceOptions` — a source you re-read on a cadence
 
-Derive from this tier when something else owns the key list and it can genuinely change between
+Derive from this when something else owns the key list and it can genuinely change between
 calls — a KMS, an HSM, a database table, or a file-glob that discovers new files at runtime.
 `ListKeysAsync` is re-invoked once per `RefreshInterval`, coalescing concurrent callers behind a
 single-flight gate so a burst of signing or JWKS requests never fans out into multiple simultaneous
-reads. Both Azure Key Vault providers (remote and cached) derive from this tier.
+reads. Both Azure Key Vault providers (remote and cached) derive from this options type.
 
 ## Implementing the base class's two abstract methods
 
-Regardless of tier, you implement exactly two methods:
+Regardless of options type, you implement exactly two methods:
 
 ```csharp
 protected abstract ValueTask<IReadOnlyList<KeyListing>> ListKeysAsync(CancellationToken cancellationToken);
@@ -141,7 +142,7 @@ a second time is disposed (or still live and in use) out from under you, and the
 and rejects an exact re-lend of the currently active signer with `signing.signer_reused`. See
 [`ISigner`](../reference/signing-keys.md)'s `Dispose` contract.
 
-## Worked example: a minimal Tier B provider
+## Worked example: a minimal KeySourceOptions provider
 
 A provider whose key source is a remote HTTP-backed secrets service, with no timing invariant of
 its own beyond the shared poll cadence, needs almost no options code:
@@ -243,7 +244,7 @@ when it restarted.
 
 ### Where `PublicationLead >= RefreshInterval` is enforced, and why in two places
 
-For a `KeySourceOptions` (Tier B) provider, the invariant `PublicationLead >= RefreshInterval` is
+For a `KeySourceOptions` provider, the invariant `PublicationLead >= RefreshInterval` is
 checked in exactly two independent places, and a custom provider should rely on both rather than
 just one:
 
@@ -378,8 +379,8 @@ between the two calls.
   this guide's worked examples are drawn from.
 - [Configure file-based signing](configure-file-based-signing.md) and
   [Configure Windows Certificate Store signing](configure-windows-certificate-store-signing.md) —
-  the shipped `KeySetOptions` (Tier A) examples.
+  the shipped `KeySetOptions` examples.
 - [Signing keys reference](../reference/signing-keys.md) — the full `IJwtSigningService` /
   `JwtSigningService<TOptions>` / `KeyListing` / `ISigner` contract this guide builds on.
 - [ADR 0015: Signing-key provider — KeySet/KeySource tiers](../decisions/0015-signing-provider-set-source-tiers.md) —
-  the full design rationale for the two-tier hierarchy and the data-not-objects provider contract.
+  the full design rationale for the options hierarchy and the data-not-objects provider contract.

@@ -9,7 +9,7 @@ namespace ZeeKayDa.Auth.FileSystem;
 /// The set of registered PFX files is fixed at configuration time; only the wall clock crossing
 /// each file's certificate <c>NotBefore</c>/<c>NotAfter</c> advances which one is active.
 /// <see cref="KeySetOptions.PublicationLead"/> here is only an advisory too-soon-activation
-/// startup warning — there is nothing to re-download on this tier. Picking up a rotated-in or
+/// startup warning — there is nothing to re-download here. Picking up a rotated-in or
 /// replaced file requires a process restart: register the successor via <see cref="AddFile"/>
 /// ahead of its intended activation time and redeploy.
 /// <para>

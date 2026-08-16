@@ -5,7 +5,7 @@ namespace ZeeKayDa.Auth.Tokens;
 /// <see cref="KeySourceOptions"/>. A concrete provider's own <c>IValidateOptions&lt;TOptions&gt;</c>
 /// implementation should call <see cref="ValidateMinimum(string, TimeSpan)"/> (or, for a
 /// <see cref="KeySourceOptions"/> caller, the <see cref="ValidateMinimum(string, KeySourceOptions)"/>
-/// overload) — and, for a Tier B provider, also <see cref="ValidateAtLeastRefreshInterval"/> —
+/// overload) — and, for a <see cref="KeySourceOptions"/> caller, also <see cref="ValidateAtLeastRefreshInterval"/> —
 /// alongside its own provider-specific checks.
 /// </summary>
 public static class KeySourcePublicationLeadValidator
