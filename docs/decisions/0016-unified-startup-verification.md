@@ -1,6 +1,6 @@
 # ADR 0016 — Unified Startup Verification: One Runner, One Public Verifier, One Internal Gate
 
-**Status:** Proposed (issue #441; awaiting security sign-off)
+**Status:** Approved
 **Date:** 2026-08-16
 
 > **Relationship to `IValidateOptions<T>`.** This ADR does **not** replace options validation.
