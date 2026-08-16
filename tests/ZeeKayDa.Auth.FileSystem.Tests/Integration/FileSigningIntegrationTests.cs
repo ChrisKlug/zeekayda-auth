@@ -15,6 +15,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
+using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.FileSystem;
 using ZeeKayDa.Auth.FileSystem.Tests.Fixtures;
 using ZeeKayDa.Auth.Tokens;
@@ -228,13 +229,14 @@ public sealed class FileSigningIntegrationTests
             "a relying party fetching this key from the JWKS must be able to validate a token this service signs");
     }
 
-    // ── Startup service ───────────────────────────────────────────────────────────────────────────
+    // ── Startup verifier ──────────────────────────────────────────────────────────────────────────
     // FileSigningStartupService was deleted in issue #437 — it had no genuinely file-format-specific
     // behavior of its own, only the pre-warm every provider used to hand-roll. The framework-owned
-    // SigningStartupSelfTestHostedService (internal to ZeeKayDa.Auth, which does not grant this test
+    // SigningStartupSelfTestVerifier (internal to ZeeKayDa.Auth, which does not grant this test
     // project [InternalsVisibleTo]) now provides that pre-warm, plus the materialize-and-verify
-    // self-test, generically for every provider. It is located here by reflection on its full type
-    // name rather than a direct reference, exactly as any out-of-assembly caller would have to.
+    // self-test, generically for every provider. It implements the public IStartupVerifier
+    // interface, so it can be resolved and invoked directly without a host, exactly as any
+    // out-of-assembly caller would.
 
     [Fact]
     public async Task Startup_self_test_forces_key_loading_and_propagates_configuration_failure()
@@ -248,9 +250,9 @@ public sealed class FileSigningIntegrationTests
         builder.AddPemFileSigning(missingPath, SigningAlgorithm.RS256);
 
         await using var provider = services.BuildServiceProvider();
-        var startupService = FindSigningStartupSelfTestHostedService(provider);
+        var verifier = FindSigningStartupSelfTestVerifier(provider);
 
-        var act = async () => await startupService.StartAsync(ct);
+        var act = async () => await verifier.VerifyAsync(new StartupVerificationContext(), provider, ct);
 
         (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>()).WithMessage("*file_not_found*");
     }
@@ -268,22 +270,17 @@ public sealed class FileSigningIntegrationTests
         builder.AddPemFileSigning(path, SigningAlgorithm.RS256);
 
         await using var provider = services.BuildServiceProvider();
-        var startupService = FindSigningStartupSelfTestHostedService(provider);
+        var verifier = FindSigningStartupSelfTestVerifier(provider);
 
-        var act = async () => await startupService.StartAsync(ct);
+        var act = async () => await verifier.VerifyAsync(new StartupVerificationContext(), provider, ct);
 
         await act.Should().NotThrowAsync(
             "the real PEM-backed LocalSigner's signature must verify against its own listed public key");
     }
 
-    private static IHostedService FindSigningStartupSelfTestHostedService(ServiceProvider provider)
-    {
-        var startupServiceType = typeof(IJwtSigningService).Assembly.GetType(
-            "ZeeKayDa.Auth.Tokens.SigningStartupSelfTestHostedService",
-            throwOnError: true)!;
-
-        return provider.GetServices<IHostedService>().Single(startupServiceType.IsInstanceOfType);
-    }
+    private static IStartupVerifier FindSigningStartupSelfTestVerifier(ServiceProvider provider) =>
+        provider.GetServices<IStartupVerifier>()
+            .Single(v => v.GetType().FullName == "ZeeKayDa.Auth.Tokens.SigningStartupSelfTestVerifier");
 
     // ── Helpers ───────────────────────────────────────────────────────────────────────────────────
 

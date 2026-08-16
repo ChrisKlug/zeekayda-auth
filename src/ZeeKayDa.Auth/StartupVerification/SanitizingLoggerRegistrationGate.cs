@@ -1,7 +1,6 @@
-using Microsoft.Extensions.Hosting;
 using ZeeKayDa.Auth.Logging;
 
-namespace ZeeKayDa.Auth.AspNetCore;
+namespace ZeeKayDa.Auth;
 
 /// <summary>
 /// Verifies at startup that <see cref="ISanitizingLogger{T}"/> has not been shadowed by a host
@@ -16,62 +15,50 @@ namespace ZeeKayDa.Auth.AspNetCore;
 /// <see cref="ISanitizingLogger{T}"/> is a public extensibility surface, neither case can be ruled
 /// out at compile time, so this is a hard startup failure rather than a warning: a shadowed
 /// sanitizing logger silently disables the credential-redaction guarantee.
+/// This is the single permanent <see cref="IStartupVerificationGate"/> — it is never migrated to
+/// an <see cref="IStartupVerifier"/>, because nothing may be resolved or logged through a
+/// possibly-shadowed <see cref="ISanitizingLogger{T}"/> before this check has passed.
 /// </remarks>
-internal sealed class SanitizingLoggerRegistrationStartupValidator : IHostedService
+internal sealed class SanitizingLoggerRegistrationGate(
+    ISanitizingLogger<SanitizingLoggerRegistrationGate> logger,
+    SanitizingLoggerClosedOverrideScanner closedOverrideScanner) : IStartupVerificationGate
 {
-    private readonly ISanitizingLogger<SanitizingLoggerRegistrationStartupValidator> _logger;
-    private readonly SanitizingLoggerClosedOverrideScanner _closedOverrideScanner;
-
-    public SanitizingLoggerRegistrationStartupValidator(
-        ISanitizingLogger<SanitizingLoggerRegistrationStartupValidator> logger,
-        SanitizingLoggerClosedOverrideScanner closedOverrideScanner)
+    public ValueTask VerifyAsync(
+        StartupVerificationContext context,
+        IServiceProvider scopedServices,
+        CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(logger);
-        ArgumentNullException.ThrowIfNull(closedOverrideScanner);
-        _logger = logger;
-        _closedOverrideScanner = closedOverrideScanner;
-    }
-
-    /// <inheritdoc/>
-    public Task StartAsync(CancellationToken cancellationToken)
-    {
-        var failures = new List<ZeeKayDaConfigurationFailure>();
-
-        if (_logger is not SecretSanitizingLogger<SanitizingLoggerRegistrationStartupValidator>)
+        if (logger is not SecretSanitizingLogger<SanitizingLoggerRegistrationGate>)
         {
-            failures.Add(new ZeeKayDaConfigurationFailure(
+            context.AddFailure(
                 "logging.sanitizing_logger_shadowed",
-                $"ISanitizingLogger<> resolved to {_logger.GetType().FullName}, not the " +
+                $"ISanitizingLogger<> resolved to {logger.GetType().FullName}, not the " +
                 "framework's own SecretSanitizingLogger<>. A registration has shadowed the " +
                 "open-generic credential-redaction wrapper for every ZeeKayDa service in this " +
                 "application. Remove the custom ISanitizingLogger<> registration, or register a " +
-                "decorator that still forwards to the framework's own implementation."));
+                "decorator that still forwards to the framework's own implementation.");
         }
 
-        var closedOverrides = _closedOverrideScanner.FindClosedGenericOverrides();
+        var closedOverrides = closedOverrideScanner.FindClosedGenericOverrides();
         if (closedOverrides.Count > 0)
         {
             var offendingTypes = string.Join(", ", closedOverrides.Select(DescribeClosedGenericArgument));
-            failures.Add(new ZeeKayDaConfigurationFailure(
+            context.AddFailure(
                 "logging.sanitizing_logger_closed_override",
                 $"A closed-generic ISanitizingLogger<T> registration was found for: {offendingTypes}. " +
                 "The framework only ever registers the open-generic ISanitizingLogger<>, so this can " +
                 "only be a host registration that bypasses the credential-redaction wrapper for that " +
-                "specific type. Remove the closed-generic registration(s)."));
+                "specific type. Remove the closed-generic registration(s).");
         }
 
-        if (failures.Count > 0)
-            throw new ZeeKayDaConfigurationException([.. failures]);
-
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
-
-    /// <inheritdoc/>
-    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
     private static string DescribeClosedGenericArgument(Type closedSanitizingLoggerType)
     {
         var typeArgument = closedSanitizingLoggerType.GetGenericArguments()[0];
         return typeArgument.FullName ?? typeArgument.Name;
     }
+
+    public string Name => "SanitizingLoggerRegistration";
 }

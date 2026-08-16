@@ -6,7 +6,7 @@ namespace ZeeKayDa.Auth.Tokens;
 /// — adding a member there would be a breaking change for any external, out-of-tree implementation
 /// of that interface. A registered <see cref="IJwtSigningService"/> that does not implement this
 /// interface simply does not receive the framework-owned startup self-test
-/// (see <c>SigningStartupSelfTestHostedService</c>).
+/// (see <c>SigningStartupSelfTestVerifier</c>).
 /// </summary>
 /// <remarks>
 /// <para>

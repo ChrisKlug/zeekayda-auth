@@ -12,7 +12,7 @@ namespace ZeeKayDa.Auth.AzureKeyVault;
 /// </summary>
 /// <remarks>
 /// Pre-warming and materialize-and-verify of the active signer are handled generically for every
-/// provider by the framework-owned <c>SigningStartupSelfTestHostedService</c>; this class keeps
+/// provider by the framework-owned <c>SigningStartupSelfTestVerifier</c>; this class keeps
 /// only the one provider-specific behavior: the memory-residency log line below. It is logged at
 /// <see cref="LogLevel.Information"/>, not a warning level, since caching the private key in
 /// process memory is a deliberate architectural choice for this provider, not a misconfiguration

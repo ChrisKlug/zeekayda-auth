@@ -10,7 +10,7 @@ namespace ZeeKayDa.Auth.AzureKeyVault.Tests;
 /// <summary>
 /// Exercises <see cref="AzureKeyVaultCachedSigningStartupService"/> — since issue #437, this class
 /// keeps only the memory-residency log line; pre-warming and the materialize-and-verify self-test
-/// are now the framework-owned <c>SigningStartupSelfTestHostedService</c>'s job.
+/// are now the framework-owned <c>SigningStartupSelfTestVerifier</c>'s job.
 /// </summary>
 public sealed class AzureKeyVaultCachedSigningStartupServiceTests
 {

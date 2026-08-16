@@ -1,12 +1,9 @@
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
-using ZeeKayDa.Auth.Logging;
 
 namespace ZeeKayDa.Auth.Tokens;
 
 /// <summary>
-/// Framework-owned <see cref="IHostedService"/> that runs the startup self-test
+/// Framework-owned <see cref="IStartupVerifier"/> that runs the startup self-test
 /// (<see cref="ISigningStartupSelfTest"/>) against whatever <see cref="IJwtSigningService"/> is
 /// registered, once per host startup. Registered once by
 /// <c>ZeeKayDaAuthCoreServiceCollectionExtensions.AddZeeKayDaAuthCore</c>, so every signing-provider
@@ -24,43 +21,16 @@ namespace ZeeKayDa.Auth.Tokens;
 /// silently pass startup.
 /// </para>
 /// <para>
-/// Resolves <see cref="IJwtSigningService"/> lazily from <see cref="IServiceProvider"/> at
-/// <see cref="StartAsync"/> time, rather than taking it as a constructor dependency, because
+/// Resolves <see cref="IJwtSigningService"/> lazily from <c>scopedServices</c> at
+/// <see cref="VerifyAsync"/> time, rather than taking it as a constructor dependency, because
 /// <c>AddZeeKayDaAuthCore()</c> is called by hosts that never register a signing key provider at
-/// all (for example, a test host that only exercises the discovery endpoint). A constructor
-/// dependency on <see cref="IJwtSigningService"/> would make every such host fail to start with a
-/// DI resolution error; resolving it lazily and no-op'ing when it is absent keeps this hosted
-/// service's registration in <c>AddZeeKayDaAuthCore()</c> harmless for hosts that have not (yet)
-/// configured signing.
+/// all (for example, a test host that only exercises the discovery endpoint). Resolving it lazily
+/// and no-op'ing when it is absent keeps this verifier's registration in
+/// <c>AddZeeKayDaAuthCore()</c> harmless for hosts that have not (yet) configured signing.
 /// </para>
 /// </remarks>
-internal sealed class SigningStartupSelfTestHostedService : IHostedService
+internal sealed class SigningStartupSelfTestVerifier : IStartupVerifier
 {
-    private readonly IServiceProvider _serviceProvider;
-    private readonly ISanitizingLogger<SigningStartupSelfTestHostedService> _logger;
-
-    /// <summary>
-    /// Initialises the hosted service.
-    /// </summary>
-    /// <param name="serviceProvider">
-    /// The root service provider, used to resolve <see cref="IJwtSigningService"/> lazily at
-    /// <see cref="StartAsync"/> time.
-    /// </param>
-    /// <param name="logger">
-    /// Used to emit a <see cref="Microsoft.Extensions.Logging.LogLevel.Warning"/> when a registered
-    /// <see cref="IJwtSigningService"/> does not implement <see cref="ISigningStartupSelfTest"/>, so
-    /// that case is never silent — see <see cref="StartAsync"/>'s remarks.
-    /// </param>
-    public SigningStartupSelfTestHostedService(
-        IServiceProvider serviceProvider, ISanitizingLogger<SigningStartupSelfTestHostedService> logger)
-    {
-        ArgumentNullException.ThrowIfNull(serviceProvider);
-        ArgumentNullException.ThrowIfNull(logger);
-
-        _serviceProvider = serviceProvider;
-        _logger = logger;
-    }
-
     /// <inheritdoc/>
     /// <remarks>
     /// A silent no-op when no <see cref="IJwtSigningService"/> is registered at all — that is the
@@ -68,7 +38,7 @@ internal sealed class SigningStartupSelfTestHostedService : IHostedService
     /// <see cref="IJwtSigningService"/> <em>is</em> registered and does not implement
     /// <see cref="ISigningStartupSelfTest"/> — for example, an external, out-of-tree implementation
     /// written before this interface existed, or a decorator/wrapper registered over a real provider
-    /// that only forwards <see cref="IJwtSigningService"/> — this logs a
+    /// that only forwards <see cref="IJwtSigningService"/> — this records a
     /// <see cref="Microsoft.Extensions.Logging.LogLevel.Warning"/> naming the concrete resolved type
     /// rather than silently skipping the self-test: <see cref="IJwtSigningService"/> is registered
     /// with a plain <c>AddSingleton</c> (not <c>TryAdd</c>), so a later registration can shadow the
@@ -76,9 +46,12 @@ internal sealed class SigningStartupSelfTestHostedService : IHostedService
     /// shipped in this repository implements <see cref="ISigningStartupSelfTest"/> via
     /// <see cref="JwtSigningService{TOptions}"/>.
     /// </remarks>
-    public async Task StartAsync(CancellationToken cancellationToken)
+    public async ValueTask VerifyAsync(
+        StartupVerificationContext context,
+        IServiceProvider scopedServices,
+        CancellationToken cancellationToken)
     {
-        var signingService = _serviceProvider.GetService<IJwtSigningService>();
+        var signingService = scopedServices.GetService<IJwtSigningService>();
         if (signingService is null)
             return;
 
@@ -88,12 +61,12 @@ internal sealed class SigningStartupSelfTestHostedService : IHostedService
             return;
         }
 
-        _logger.LogWarning(
+        context.AddWarning(
+            "signing.self_test_skipped",
             "ZeeKayDa.Auth: the registered IJwtSigningService ({Type}) does not implement " +
             "ISigningStartupSelfTest; the startup self-test was skipped.",
             signingService.GetType());
     }
 
-    /// <inheritdoc/>
-    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    public string Name => "SigningStartupSelfTest";
 }

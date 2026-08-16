@@ -1,7 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using ZeeKayDa.Auth.Logging;
 
-namespace ZeeKayDa.Auth.AspNetCore;
+namespace ZeeKayDa.Auth;
 
 /// <summary>
 /// Scans a <see cref="IServiceCollection"/> for closed-generic <see cref="ISanitizingLogger{T}"/>
