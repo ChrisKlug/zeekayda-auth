@@ -188,7 +188,13 @@ by construction; a verifier cannot accidentally bypass redaction because it neve
 
 The trade-off is real and accepted: **per-verifier logger categorisation is lost** (every startup
 warning is logged under the runner's category, not the check's own type), and warnings carry a
-pre-formatted message string rather than structured logging placeholders. The `Code` on
+pre-formatted message string rather than structured logging placeholders. Note carefully what the
+second half of that costs: `SecretSanitizingLogger` redacts structured values *by key*, so a message
+that has already been flattened into a string is beyond its reach. The chokepoint guarantees that
+every startup warning passes **through** the sanitizing logger and that no verifier holds a raw
+`ILogger<T>`; it does not guarantee that the warning's own text is redacted. Verifier authors must
+therefore keep secret material out of `AddWarning` / `AddFailure` messages — see Security
+Considerations 6. The `Code` on
 `StartupVerificationWarning` is the structured discriminator that replaces both — it is a stable
 string in the same family as `ZeeKayDaConfigurationFailure.Code`, and it is what log-based alerting
 should match on.
@@ -207,8 +213,20 @@ scope, a missing refresh-token store, and no `IDistributedCache` registered surf
 those per restart. After this change it surfaces all three in one `AggregatedFailures` list, in one
 exception, in one restart. That is strictly better for the operator, and it is safe precisely
 *because* the gate is split out: once the sanitizing-logger check is in phase 1, no phase-2 verifier
-depends on any other phase-2 verifier having succeeded. `TokenStorePresenceValidator`'s existing
-internal two-failure aggregation becomes a special case of the general mechanism.
+depends on any other phase-2 verifier having succeeded **for its own correctness**.
+`TokenStorePresenceValidator`'s existing internal two-failure aggregation becomes a special case of
+the general mechanism.
+
+One documented ordering expectation does change, and it is a diagnostics one, not a safety one. ADR
+0008 §5 states that the store presence validator "runs before the in-memory warning emitter … so a
+half-registered configuration fails fast rather than emitting a misleading warning." Under phase-2
+aggregation both run: the operator sees the `stores.*` presence failure *and* the in-memory store
+warning in the same startup, and the host still refuses to start. Nothing is weakened — the failure
+that aborts startup is identical — but the warning ADR 0008 wanted suppressed now appears alongside
+it. That is the accepted cost of aggregation, and **ADR 0008 §5 must be amended in the
+implementation PR** so the two ADRs do not disagree. Ordering the presence verifier before the
+in-memory verifier (which DI registration order does anyway) keeps the failure first in the
+operator's log.
 
 ### 5. Unexpected exceptions from a verifier
 
@@ -219,17 +237,38 @@ bug, or a `GetRequiredService` failure inside `VerifyAsync` — the runner catch
 throw new ZeeKayDaConfigurationException(
     new ZeeKayDaConfigurationFailure(
         "startup.verifier_failed",
-        $"Verifier '{name}' threw: {ex.Message}"),
+        $"Verifier '{name}' threw {ex.GetType().FullName}. See the inner exception for the root cause."),
     ex);
 ```
 
 The existing two-argument `ZeeKayDaConfigurationException(failure, innerException)` constructor
 preserves the root cause. Startup still aborts — there is no silent swallow — but the operator gets
 an attributed, legible failure naming the offending verifier rather than a bare stack trace from
-inside the host's startup pipeline. A verifier that throws a `ZeeKayDaConfigurationException`
-directly (the pattern every check uses today) still works and is still wrapped the same way, which
-means the migration of an existing check can be mechanical even before its throw is converted to an
-`AddFailure`.
+inside the host's startup pipeline.
+
+**The wrapper names the exception type, never `ex.Message`.** The message of an arbitrary
+underlying exception is untrusted text: a repository connection failure, a Key Vault
+`RequestFailedException` carrying a SAS-bearing URI, or a third-party verifier that interpolated a
+secret into its own exception all end up there. `ZeeKayDaConfigurationFailure.Message` is a plain
+string on public API surface that the framework itself encourages hosts to surface, and
+`SecretSanitizingLogger` cannot redact it — that wrapper redacts structured log values *by key* and
+exception messages via `RedactedExceptionWrapper`, and neither mechanism can reach credential text
+already flattened into a failure message string. Copying `ex.Message` into a failure would therefore
+launder it past both of the framework's redaction controls (ADR 0007 §7, ADR 0009). The root cause
+remains fully available as `InnerException`, where `RedactedExceptionWrapper` *does* apply if it is
+ever logged through `ISanitizingLogger<T>`. The same rule binds verifier authors: never interpolate
+a caught exception's message into `AddFailure` / `AddWarning`.
+
+A verifier that throws a `ZeeKayDaConfigurationException`
+directly (the pattern every check uses today) is a special case: the runner **unwraps** it and
+appends its `AggregatedFailures` to the running list rather than re-wrapping it as
+`startup.verifier_failed`. Re-wrapping would replace a stable, published `Code` — for example
+`signing.self_test_failed` (ADR 0015 §11) or `logging.sanitizing_logger_shadowed` — with the generic
+`startup.verifier_failed`, silently breaking any operator alerting keyed on those codes and
+contradicting §10's commitment that codes survive the migration verbatim. Unwrapping is also what
+makes the migration of an existing check mechanical: a check can be moved to `IStartupVerifier`
+before its `throw` is converted to an `AddFailure`, and its externally observable failure code does
+not change at either step.
 
 **No per-verifier timeout is introduced.** A verifier that hangs forever hangs startup. That is
 accepted for now: every in-tree verifier is either microsecond-scale in-memory work or a call whose
@@ -256,19 +295,32 @@ order is DI registration order and nothing a verifier declares can change it.
 ### 7. The gate: how the sanitizing-logger guarantee becomes structural
 
 `SanitizingLoggerRegistrationStartupValidator` becomes `SanitizingLoggerRegistrationGate`, the sole
-implementation of `IStartupVerificationGate`. It stays in `ZeeKayDa.Auth.AspNetCore`, because it
-depends on `SanitizingLoggerClosedOverrideScanner` — an `IServiceCollection`-scanning type that is
-AspNetCore-specific — and is registered by `AddZeeKayDaAuth()` via `TryAddEnumerable`.
+implementation of `IStartupVerificationGate`. **It moves to `ZeeKayDa.Auth` (core), together with
+`SanitizingLoggerClosedOverrideScanner`, and is registered by `AddZeeKayDaAuthCore()` via
+`TryAddEnumerable` — the same method that registers the runner.**
 
-Its logic is unchanged: it aggregates `logging.sanitizing_logger_shadowed` and
-`logging.sanitizing_logger_closed_override` and both abort startup. What changes is *why* it runs
+The gate must not stay in `.AspNetCore`. Nothing about it is AspNetCore-specific: the scanner
+depends only on `IServiceCollection` (`Microsoft.Extensions.DependencyInjection.Abstractions`) and
+`ISanitizingLogger<>`, both of which core already has — core defines `ISanitizingLogger<>`, registers
+the open-generic `SecretSanitizingLogger<>`, and exposes `IServiceCollection` extension methods.
+Leaving the gate behind in `.AspNetCore` while the runner ships from `AddZeeKayDaAuthCore()` opens a
+real hole: `AddZeeKayDaAuthCore()` is public and is called directly by every provider package, and
+`ZeeKayDaAuthBuilder` has a public constructor, so a host can reach a fully-wired signing
+configuration without ever calling `AddZeeKayDaAuth()`. In that configuration the gate collection is
+**empty**, phase 1 passes vacuously, and phase 2 begins logging through an
+`ISanitizingLogger<StartupVerificationHostedService>` that nothing has verified. Registering the
+gate and the runner from the same call is what makes "there is always a gate" true by construction
+rather than by which entry point the host happened to call. Its logic is otherwise unchanged.
+
+It still aggregates `logging.sanitizing_logger_shadowed` and
+`logging.sanitizing_logger_closed_override`, and both still abort startup. What changes is *why* it runs
 first. Today: because it is registered first and hosted services start in registration order.
 After this ADR: because it is in a **different collection**, which the single runner drains **to
 completion, before it resolves `IEnumerable<IStartupVerifier>` at all**. There is no registration
 order a host or third party can choose that puts an `IStartupVerifier` ahead of a gate, because they
 are not in the same list.
 
-Two supporting rules make the guarantee airtight:
+Four supporting rules make the guarantee hold within the verification subsystem:
 
 - **The runner logs nothing before the gate phase completes.** All logging happens inside the
   phase-2 loop, after the last gate has passed. The runner's own
@@ -277,6 +329,24 @@ Two supporting rules make the guarantee airtight:
 - **A gate does not log.** It inspects (`_logger is not SecretSanitizingLogger<...>`) and reports
   through the context. Gate warnings are structurally possible but there are none today, and the
   runner defers logging any gate warning until after all gates have passed.
+- **The runner does not *construct* a verifier before the gate phase completes.**
+  `IEnumerable<IStartupVerifier>` is resolved inside `StartAsync`, after the gate loop — not
+  constructor-injected (§9). Constructor injection would run every verifier's constructor, including
+  a third party's, at runner-construction time, and a constructor can log: `ISanitizingLogger<T>` is
+  deliberately public so that out-of-package providers can inject it (ADR 0011 Amendment 2(d)), so
+  "log from a constructor through a shadowed sanitizer" is a reachable path, not a theoretical one.
+  Gates are still constructor-injected; the gate collection is closed to framework types that
+  provably do not log.
+- **The gate ships from the same registration call as the runner** (`AddZeeKayDaAuthCore()`), so
+  there is no supported configuration in which a runner exists without a gate.
+
+**Scope of the guarantee.** It covers the verification subsystem: no `IStartupVerifier`, and no
+runner log call, can precede the gate. It does **not** extend to arbitrary host or third-party
+`IHostedService` registrations, which the host may register before the runner and which
+`HostOptions.ServicesStartConcurrently = true` may run concurrently with it. That limit is
+unchanged from today's design and is out of scope here — but it is the reason the sign-off criterion
+is read as "structurally guaranteed *for the framework's own startup checks*", which this design
+does achieve and the registration-order convention did not.
 
 `SanitizingLoggerRegistrationGate` is a **permanent, deliberate exception** to the migration below.
 It is never an `IStartupVerifier`.
@@ -512,13 +582,15 @@ resolved instance's type, never to log through it.
 ```csharp
 internal sealed class StartupVerificationHostedService(
     IEnumerable<IStartupVerificationGate> gates,
-    IEnumerable<IStartupVerifier> verifiers,
+    IServiceProvider rootServices,
     IServiceScopeFactory scopeFactory,
     ISanitizingLogger<StartupVerificationHostedService> logger) : IHostedService
 {
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         // ---- Phase 1: gates. Sequential. Abort on the first failure. Nothing is logged yet. ----
+        var pendingGateWarnings = new List<(string Name, StartupVerificationWarning Warning)>();
+
         foreach (var gate in gates)
         {
             await using var gateScope = scopeFactory.CreateAsyncScope();
@@ -526,6 +598,7 @@ internal sealed class StartupVerificationHostedService(
 
             await InvokeAsync(
                 gate.Name,
+                gateContext,
                 ct => gate.VerifyAsync(gateContext, gateScope.ServiceProvider, ct),
                 cancellationToken);
 
@@ -541,6 +614,13 @@ internal sealed class StartupVerificationHostedService(
             logger.Log(warning.Level, "[{Verifier}] {Code}: {Message}", name, warning.Code, warning.Message);
 
         // ---- Phase 2: verifiers. Sequential. Run all, aggregate, throw once. ----
+        // IEnumerable<IStartupVerifier> is resolved HERE rather than constructor-injected.
+        // Resolving it runs every verifier's *constructor*, including third-party ones, and a
+        // constructor is free to log. Deferring the resolution until after the gate phase is what
+        // makes §7's "nothing logs before the gate has passed" true of verifier construction and
+        // not merely of verifier execution.
+        var verifiers = rootServices.GetServices<IStartupVerifier>();
+
         var failures = new List<ZeeKayDaConfigurationFailure>();
 
         foreach (var verifier in verifiers)
@@ -550,6 +630,7 @@ internal sealed class StartupVerificationHostedService(
 
             await InvokeAsync(
                 verifier.Name,
+                context,
                 ct => verifier.VerifyAsync(context, scope.ServiceProvider, ct),
                 cancellationToken);
 
@@ -563,20 +644,41 @@ internal sealed class StartupVerificationHostedService(
             throw new ZeeKayDaConfigurationException([.. failures]);
     }
 
-    // Shared unexpected-exception wrapping for both phases (§5). Never swallows.
+    // Shared unexpected-exception handling for both phases (§5). Never swallows.
     private static async ValueTask InvokeAsync(
-        string name, Func<CancellationToken, ValueTask> invoke, CancellationToken cancellationToken)
+        string name,
+        StartupVerificationContext context,
+        Func<CancellationToken, ValueTask> invoke,
+        CancellationToken cancellationToken)
     {
         try
         {
             await invoke(cancellationToken);
         }
+        catch (ZeeKayDaConfigurationException ex)
+        {
+            // A check that throws the framework's own configuration exception already carries
+            // stable, published Codes. Absorb them verbatim instead of flattening them into
+            // startup.verifier_failed. Phase 1 still aborts on the first gate to produce a
+            // failure; phase 2 still aggregates. Fail-closed either way.
+            foreach (var failure in ex.AggregatedFailures)
+                context.AddFailure(failure.Code, failure.Message);
+        }
         catch (Exception ex)
         {
+            // The exception TYPE is named, never ex.Message. An arbitrary underlying exception
+            // message may carry credential material (a connection string, a SAS-bearing vault URI,
+            // a third-party verifier that interpolated a secret), and ZeeKayDaConfigurationFailure
+            // .Message is a plain string on public API surface that SecretSanitizingLogger cannot
+            // redact — it redacts structured values by key and exception messages via
+            // RedactedExceptionWrapper, neither of which reaches text already flattened into a
+            // failure message. The root cause stays available to operators as InnerException,
+            // where the redaction wrapper does apply. See ADR 0007 §7 and ADR 0009.
             throw new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure(
                     "startup.verifier_failed",
-                    $"Verifier '{name}' threw: {ex.Message}"),
+                    $"Verifier '{name}' threw {ex.GetType().FullName}. See the inner exception " +
+                    "for the root cause."),
                 ex);
         }
     }
@@ -606,11 +708,25 @@ part of the ADR PR):
 
 1. **Core** — `IStartupVerifier`, `StartupVerificationContext`, `StartupVerificationWarning`,
    `IStartupVerificationGate`, `StartupVerificationHostedService`, its `AddZeeKayDaAuthCore()`
-   registration, and migrating `SigningStartupSelfTestHostedService` (#437) to a verifier.
-2. **`ZeeKayDa.Auth.AspNetCore`** — the gate plus the ~9 remaining checks, including the two
+   registration, **the move of `SanitizingLoggerRegistrationGate` and
+   `SanitizingLoggerClosedOverrideScanner` from `.AspNetCore` into core and their registration in
+   the same `AddZeeKayDaAuthCore()` call**, and migrating `SigningStartupSelfTestHostedService`
+   (#437) to a verifier.
+2. **`ZeeKayDa.Auth.AspNetCore`** — the ~9 remaining checks, including the two
    `InMemoryStoreVerifier` factory registrations with captured state.
 3. **`ZeeKayDa.Auth.AzureKeyVault`** — `AzureKeyVaultCachedSigningStartupService`'s memory-residency
    `Information` log line, if not already subsumed by (1)'s signing-self-test migration.
+
+**Sequencing constraint (security-binding).** The gate must land in the *same* change as the
+runner — issue (1) — and never later. `AddZeeKayDaAuth()` calls `AddZeeKayDaAuthCore()` near the top
+of its body, well before it registers today's `AddHostedService<SanitizingLoggerRegistrationStartup
+Validator>()`. If issue (1) shipped the runner and a first migrated verifier while the
+sanitizing-logger check was still an old-style hosted service registered later in `AddZeeKayDaAuth()`,
+the runner's phase-2 logging would execute **before** the shadow check for the whole duration of the
+migration — reintroducing exactly the leak this ADR exists to close, in the window where nobody is
+looking for it. Issues (2) and (3) may follow at any pace: once the gate is in phase 1, every
+still-unmigrated old-style hosted service is registered after the runner and therefore still runs
+after the gate.
 
 Verifiers remain independently testable without a host, which was a hard constraint: a test
 constructs the verifier, hands it a `new StartupVerificationContext()` and an
@@ -645,8 +761,8 @@ smallest surface that covers every check in the table.
 | 3 | Warnings inside or outside | Inside. Warnings are a data kind on the same interface; the runner owns all logging through the sanitizing logger; level is declared per warning | §2, §3 |
 | 4 | Ordering and parallelism | Strictly sequential, DI registration order, no parallelism, no priority field. Immune to `HostOptions.ServicesStartConcurrently` because everything happens inside one `StartAsync` | §1, §6 |
 | 5 | Migration scope | All ~11 remaining checks, side-effecting ones included; three follow-up implementation issues; `SanitizingLoggerRegistrationGate` is the single permanent exception | §10 |
-| 6 | Naming and package placement | `IStartupVerifier` / `StartupVerificationContext` / `StartupVerificationWarning` / `StartupVerificationHostedService` in `ZeeKayDa.Auth`; `IStartupVerificationGate` internal in core; the gate implementation in `.AspNetCore`. Avoids collision with `Microsoft.Extensions.Options`' `IStartupValidator` | §1, §2, §7 |
-| 7 | Extensibility posture | `IStartupVerifier` genuinely public; `IStartupVerificationGate` `internal` + `InternalsVisibleTo`. A misbehaving third-party verifier is handled by contract shape (it reports, it does not throw) plus a runtime guard (unexpected exceptions wrapped as `startup.verifier_failed`, never swallowed). Hangs are accepted for now, with a timeout addable later | §1, §5, §11 |
+| 6 | Naming and package placement | `IStartupVerifier` / `StartupVerificationContext` / `StartupVerificationWarning` / `StartupVerificationHostedService` in `ZeeKayDa.Auth`; `IStartupVerificationGate` internal in core; the gate implementation and its scanner move into core too, registered by the same `AddZeeKayDaAuthCore()` call as the runner. Avoids collision with `Microsoft.Extensions.Options`' `IStartupValidator` | §1, §2, §7 |
+| 7 | Extensibility posture | `IStartupVerifier` genuinely public; `IStartupVerificationGate` `internal` + `InternalsVisibleTo`. A misbehaving third-party verifier is handled by contract shape (it reports, it does not throw) plus a runtime guard (a thrown `ZeeKayDaConfigurationException` is absorbed with its codes intact, anything else is wrapped as `startup.verifier_failed` naming the exception type but never its message; never swallowed). Hangs are accepted for now, with a timeout addable later | §1, §5, §11 |
 
 ---
 
@@ -781,7 +897,12 @@ via an additional opt-in interface (§11).
   `StartupVerificationHostedService`. `StartupVerificationWarning.Code` is the replacement
   discriminator; any log-based alerting keyed on the old per-type categories must be re-keyed.
 - **Structured-logging placeholders collapse to a pre-formatted message string** at the
-  `AddWarning` call. The `Code` carries the machine-readable part instead.
+  `AddWarning` call. The `Code` carries the machine-readable part instead. This is also a redaction
+  cost, not only a diagnostics one: key-based sanitization cannot act on an already-flattened
+  string (Security Considerations 6).
+- **A misconfigured host performs every side effect on every restart** rather than short-circuiting
+  at the first failure — PBKDF2 over all client secrets and a live Key Vault sign operation, once
+  per restart of a crash-looping deployment (Security Considerations 7).
 - **A hanging verifier hangs startup**, with no timeout guard today.
 - **Migration churn across ~11 tested classes** whose tests assert on specific messages and codes.
   Mitigated by preserving every code and message string verbatim.
@@ -797,10 +918,16 @@ via an additional opt-in interface (§11).
    StartupValidator>()` being the first such call plus the host not enabling
    `ServicesStartConcurrently`. After this ADR it rests on `IStartupVerificationGate` being a
    different collection from `IStartupVerifier`, drained to completion first, inside a single
-   `StartAsync` that the host's concurrency setting cannot reach into. Two supporting rules close the
-   remaining gaps: the runner emits **no** log output at all before the last gate has passed (its own
-   `ISanitizingLogger<StartupVerificationHostedService>` might itself be the shadowed instance under
-   test), and gate warnings are buffered rather than logged inline for the same reason.
+   `StartAsync` that the host's concurrency setting cannot reach into. Four supporting rules close
+   the remaining gaps (§7): the runner emits **no** log output at all before the last gate has passed
+   (its own `ISanitizingLogger<StartupVerificationHostedService>` might itself be the shadowed
+   instance under test); gate warnings are buffered rather than logged inline for the same reason;
+   verifiers are **resolved** after the gate phase rather than constructor-injected, so a verifier's
+   constructor cannot log first either; and the gate is registered by the same
+   `AddZeeKayDaAuthCore()` call as the runner, so no entry point yields a runner with an empty gate
+   collection. The guarantee is scoped to the verification subsystem — an unrelated host
+   `IHostedService` registered ahead of the runner, or started concurrently with it, is outside it,
+   as it is today.
 
 2. **`internal` + `InternalsVisibleTo` closes the priority-gaming risk a public ordering knob would
    leave open.** If ordering were expressible — a `Priority` property, an `Order` int, an
@@ -811,14 +938,34 @@ via an additional opt-in interface (§11).
    This is the tier-1 fix from the "docs are not a mitigation" ladder: reshape the extension point so
    the violation is unrepresentable, rather than documenting an ordering rule and hoping.
 
-3. **No silent swallow of a verifier's failure.** A verifier that throws instead of reporting is
-   wrapped as `startup.verifier_failed` with the original exception preserved as `InnerException`,
-   and startup still aborts. There is deliberately no `catch`-and-continue path and no "log the
-   exception and carry on" mode: a check that could not complete is indistinguishable from a check
-   that failed, and both must fail closed. This matters most for the side-effecting verifiers — a
-   signing self-test or a client-repository activation that throws must never be interpreted as
-   "passed." It follows ADR 0015 §11's precedent, where a self-test that cannot complete aborts the
-   handoff exactly as a definitive mismatch does.
+   The residual limit is worth recording: these assemblies are not strong-named, so
+   `InternalsVisibleTo` matches on simple assembly name alone. An assembly that names itself
+   `ZeeKayDa.Auth.AspNetCore` would receive gate access. That requires an attacker who can already
+   place an assembly in the host's load path — at which point the host is compromised regardless —
+   so it is not a reason to adopt strong naming, but it is why `internal` is treated here as a
+   correctness boundary against accidental misuse and API-surface creep, not as a security boundary
+   against a hostile assembly.
+
+3. **No silent swallow, and no laundering of an untrusted exception message.** A verifier that
+   throws instead of reporting still aborts startup: a `ZeeKayDaConfigurationException` has its
+   `AggregatedFailures` absorbed verbatim, and anything else becomes `startup.verifier_failed` with
+   the original exception preserved as `InnerException`. There is deliberately no `catch`-and-continue
+   path and no "log the exception and carry on" mode: a check that could not complete is
+   indistinguishable from a check that failed, and both must fail closed. This matters most for the
+   side-effecting verifiers — a signing self-test or a client-repository activation that throws must
+   never be interpreted as "passed." It follows ADR 0015 §11's precedent, where a self-test that
+   cannot complete aborts the handoff exactly as a definitive mismatch does.
+
+   Two details of that wrapping are security-relevant. First, the wrapper embeds `ex.GetType()
+   .FullName`, **never `ex.Message`** (§5): an arbitrary exception message is untrusted text that may
+   carry credential material, and `ZeeKayDaConfigurationFailure.Message` is a plain public-API string
+   that neither `SecretSanitizingLogger`'s key-based redaction nor `RedactedExceptionWrapper` can
+   reach, while the host's own unhandled-startup-exception logger is not a sanitizing logger at all.
+   Copying the message in would route credential material around both controls (ADR 0007 §7, ADR
+   0009). Second, absorbing a `ZeeKayDaConfigurationException`'s failures rather than re-wrapping
+   them preserves stable published `Code` values such as `signing.self_test_failed` and
+   `logging.sanitizing_logger_shadowed`; flattening every throw to `startup.verifier_failed` would
+   silently break operator alerting keyed on the code of a security control.
 
 4. **Aggregation does not weaken any individual check.** Phase 2 aggregation changes *when* the
    exception is thrown, never *whether* it is. Every failure that aborts startup today still aborts
@@ -835,7 +982,42 @@ via an additional opt-in interface (§11).
    silently. It can still hang startup (§5, accepted) and it can still do anything a DI-resolved
    singleton can do.
 
-6. **Warning levels as data do not permit downgrading a mandatory warning.** ADR 0008 §5's
+6. **The logging chokepoint gives format consistency and exception redaction — not message
+   redaction.** This is the one place where the chosen design is *weaker* than verifier-owned
+   logging, and it must be stated plainly. `SecretSanitizingLogger` redacts structured log values
+   **by key** (`client_secret`, `code_verifier`, `access_token`, …) and replaces exception messages
+   with `RedactedExceptionWrapper`. `AddWarning` takes a **pre-formatted message string**, so any
+   credential material interpolated into it has already lost the key that redaction keys on and will
+   reach sinks verbatim. Consequences: (a) the binding rule for every verifier author, first- and
+   third-party, is that `AddWarning` / `AddFailure` messages must never interpolate secret material
+   or a caught exception's `Message` (§5) — the framework's own checks already satisfy this, since
+   every migrated message is a fixed string plus non-secret values such as a store name, a type
+   name, or an issuer; (b) a third-party verifier's warning text is author-controlled and is logged
+   as-is, including any newlines, so log-forging via a verifier message is possible for anyone who
+   can already register a verifier (a low bar to add to §5's "not a sandbox" list, but a real one);
+   (c) the loss of structured placeholders is therefore recorded in `Consequences` as a redaction
+   cost as well as a diagnostics one. The implementation issue should carry an
+   explicit XML-doc warning on `AddWarning` / `AddFailure` to that effect, and the existing CI
+   log-hygiene grep should be extended to cover `AddWarning` / `AddFailure` call sites, not only
+   `ILogger` ones.
+
+7. **Aggregation makes a doomed host pay for every side effect on every restart.** Today the first
+   throwing check aborts and later checks never run. Under phase-2 aggregation, a host that is
+   already known to be misconfigured still executes `ClientRepositoryActivationVerifier` (PBKDF2 over
+   every configured client secret — cost linear in client count and deliberately expensive per
+   secret) and the signing self-test (a real Key Vault sign operation, plus key reads). In a
+   restart-loop deployment — a Kubernetes `CrashLoopBackOff` is the ordinary shape of a misconfigured
+   rollout — that is repeated indefinitely: sustained CPU burn and sustained request volume against a
+   vault that enforces per-vault throttling limits. It is self-inflicted rather than attacker-driven,
+   and bounded by the host's own restart backoff, which is why it is accepted rather than mitigated
+   with a "skip side effects once failures exist" rule (that rule would reintroduce exactly the
+   inter-verifier dependency §4 removes). Two things keep it small and should be treated as binding:
+   side-effecting verifiers are registered **last**, after the cheap configuration checks, so a
+   configuration failure is discovered before the expensive work in the common case; and no verifier
+   retries internally. The sequential, no-timeout decision (§5, §6) does not add a DoS surface of its
+   own — a hanging verifier hangs a host that is not yet serving traffic, which fails closed.
+
+8. **Warning levels as data do not permit downgrading a mandatory warning.** ADR 0008 §5's
    in-memory-store warning text and ADR 0015 §6's within-window-vanish `Warning` are emitted by
    framework-owned verifiers that pass their own level; the `level` parameter is a per-call-site
    choice by the check's author, not a runtime knob an operator or third party can turn down. The
@@ -854,6 +1036,17 @@ via an additional opt-in interface (§11).
   invocation DI scope; the runner owns all logging. Makes the
   `SanitizingLoggerRegistrationStartupValidator` ordering guarantee structural rather than
   registration-order convention.
+- **2026-08-16 — PR #443 — issue #441** — Security review amendments before merge: verifiers are
+  resolved after the gate phase instead of being constructor-injected, so no verifier *constructor*
+  can log first (§7, §9); the gate and its scanner move into core and register from the same
+  `AddZeeKayDaAuthCore()` call as the runner, closing the empty-gate-collection gap for hosts that
+  never call `AddZeeKayDaAuth()` (§7, §10); the exception wrapper names the exception type instead of
+  embedding `ex.Message` in a public failure message, and absorbs a thrown
+  `ZeeKayDaConfigurationException`'s failures rather than flattening its stable `Code`s to
+  `startup.verifier_failed` (§5, §9); the gate is made a same-change requirement of the runner's
+  implementation issue rather than a later step (§10); §4 acknowledges the ADR 0008 §5 ordering
+  statement that aggregation changes; and Security Considerations gain the message-redaction limit of
+  the logging chokepoint and the restart-loop side-effect cost of aggregation.
 
 ---
 
@@ -861,6 +1054,8 @@ via an additional opt-in interface (§11).
 
 - **Issue #441** — this design.
 - **ADR 0007 §7** — credential redaction (the guarantee the sanitizing-logger gate protects).
+- **ADR 0009** — exception-message sanitization in `SecretSanitizingLogger` (`RedactedExceptionWrapper`);
+  the reason `ex.Message` is never copied into a `ZeeKayDaConfigurationFailure` (§5).
 - **ADR 0008 §5 / §8** — in-memory store warning text; non-atomic distributed-cache stores.
 - **ADR 0011 / 0015** — signing provider tiers; **ADR 0015 §11** — the `SigningStartupSelfTest
   HostedService` that established core's hosting dependency, and the "a check that cannot complete
