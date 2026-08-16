@@ -6,7 +6,9 @@ namespace ZeeKayDa.Auth.Tokens;
 /// </summary>
 /// <param name="Id">
 /// The provider's own stable identifier for this key (a certificate thumbprint, a Key Vault
-/// key-version id, …). Not the JWKS/JWS <c>kid</c> — see <see cref="KeyId"/>.
+/// key-version id, …). Not the JWKS/JWS <c>kid</c> — see <see cref="KeyId"/>. If this key's
+/// material can change, this identifier <b>must</b> change with it — see <see cref="KeyId"/>'s
+/// remarks.
 /// </param>
 /// <param name="Algorithm">The signing algorithm this key is used with.</param>
 /// <param name="PublicKey">The public-only RSA/EC key material.</param>

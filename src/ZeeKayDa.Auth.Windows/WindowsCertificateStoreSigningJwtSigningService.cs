@@ -48,10 +48,9 @@ namespace ZeeKayDa.Auth.Windows;
 /// handles over exporting raw key bytes into managed memory.
 /// </para>
 /// <para>
-/// This class does not override <see cref="JwtSigningService{TOptions}.SignInputAsync"/> — per ADR
-/// 0011 Amendment 2(a), this provider signs with local key handles exactly like the development
-/// provider and the Azure Key Vault *cached* signing provider, so the base class's default
-/// local-crypto signer (<see cref="LocalSigner"/>) is exactly what it needs. There is also no
+/// <see cref="CreateSignerAsync"/> builds and returns a <see cref="LocalSigner"/> — this provider
+/// signs with local key handles exactly like the development provider and the Azure Key Vault
+/// *cached* signing provider, never implementing <see cref="ISigner"/> itself. There is also no
 /// <c>WindowsCertificateStoreSigningException</c> transport type: unlike Key Vault, there is no
 /// network round trip at sign time, so there is no transient-fault surface to wrap.
 /// </para>

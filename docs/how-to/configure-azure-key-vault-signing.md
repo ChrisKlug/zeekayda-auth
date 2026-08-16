@@ -260,7 +260,7 @@ credential: new DefaultAzureCredential()
 
 ## Related pages
 
-- [Signing keys reference](../reference/signing-keys.md) — `IJwtSigningService`, `SigningKeySet`, and how keys are exposed as a JWKS document
+- [Signing keys reference](../reference/signing-keys.md) — `IJwtSigningService`, `KeyListing`, and how keys are exposed as a JWKS document
 - [Rotate signing keys](rotate-signing-keys.md) — the activation/retirement timing model shared across all signing providers
 - [Configure Windows Certificate Store signing](configure-windows-certificate-store-signing.md) — an alternative when you want no cloud dependency and already manage certificates on Windows hosts
 - [Configure file-based signing](configure-file-based-signing.md) — a cross-platform PEM/PFX alternative when Key Vault isn't the right fit

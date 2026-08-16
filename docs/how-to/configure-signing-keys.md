@@ -80,5 +80,5 @@ For the full model that ties these three ideas together, see
 - [Configure file-based signing](configure-file-based-signing.md)
 - [Rotate signing keys](rotate-signing-keys.md) — the activation/retirement timing model shared
   across all production providers
-- [Signing keys reference](../reference/signing-keys.md) — `IJwtSigningService`, `SigningKeySet`,
+- [Signing keys reference](../reference/signing-keys.md) — `IJwtSigningService`, `KeyListing`,
   and how keys are exposed as a JWKS document

@@ -236,7 +236,7 @@ for how key rotation works across providers.
 
 ## Related pages
 
-- [Signing keys reference](../reference/signing-keys.md) — `IJwtSigningService`, `SigningKeySet`, and how keys are exposed as a JWKS document
+- [Signing keys reference](../reference/signing-keys.md) — `IJwtSigningService`, `KeyListing`, and how keys are exposed as a JWKS document
 - [Configure Azure Key Vault signing](configure-azure-key-vault-signing.md)
 - [Configure Windows Certificate Store signing](configure-windows-certificate-store-signing.md)
 - [Configure file-based signing](configure-file-based-signing.md) (PEM/PFX)

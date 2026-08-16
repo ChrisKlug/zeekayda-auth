@@ -13,10 +13,9 @@ namespace ZeeKayDa.Auth.Tokens;
 /// production consumer of this tier.
 /// </para>
 /// <para>
-/// This tier lands alongside the existing <see cref="StaticKeySourceOptions"/>/
-/// <see cref="RotatingKeySourceOptions"/> split (ADR 0011 §3.4) rather than replacing it — issue
-/// #420 is additive-only. The old tiers retire only once every provider has migrated to this new
-/// contract (issue #428).
+/// This tier, together with <see cref="KeySetOptions"/>, is the sole signing-provider contract —
+/// the earlier ADR 0011 §3.4 two-tier split it replaced was retired entirely once every provider
+/// migrated (issue #428).
 /// </para>
 /// </remarks>
 public abstract class KeySourceOptions : JwtSigningServiceOptions

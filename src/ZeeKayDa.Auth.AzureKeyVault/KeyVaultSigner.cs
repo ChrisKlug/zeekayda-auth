@@ -15,9 +15,9 @@ namespace ZeeKayDa.Auth.AzureKeyVault;
 /// One <see cref="CryptographyClient"/> is cached per versioned key URI in a
 /// <see cref="ConcurrentDictionary{TKey,TValue}"/>. This is safe with no eviction: a versioned key
 /// URI's underlying key material never changes once minted, so a cached client for a given URI
-/// never goes stale. This cache is independent of the base class's refcounted
-/// <see cref="SigningKeySet"/> — it is keyed by immutable URIs, not by the mutable "current key
-/// set" generation, so it never needs to participate in that disposal path.
+/// never goes stale. This cache is independent of the base class's refcounted active-signer
+/// handle — it is keyed by immutable URIs, not by the mutable "current active key" generation, so
+/// it never needs to participate in that disposal path.
 /// </remarks>
 internal sealed class KeyVaultSigner : IKeyVaultSigner
 {
