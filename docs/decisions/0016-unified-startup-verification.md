@@ -845,7 +845,7 @@ via an additional opt-in interface (§11).
 
 ## Changelog
 
-- **2026-08-16 — PR #TBD — issue #441** — Initial ADR. Replaces ~12 hand-rolled startup-check
+- **2026-08-16 — PR #443 — issue #441** — Initial ADR. Replaces ~12 hand-rolled startup-check
   `IHostedService` classes with one `StartupVerificationHostedService` running two disjoint
   collections: an `internal` `IStartupVerificationGate` phase (fail-fast, nothing logged) and a
   public `IStartupVerifier` phase (sequential, all run, failures aggregated into one
