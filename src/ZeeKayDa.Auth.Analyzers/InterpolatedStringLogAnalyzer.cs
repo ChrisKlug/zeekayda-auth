@@ -9,22 +9,27 @@ namespace ZeeKayDa.Auth.Analyzers;
 
 /// <summary>
 /// Catches non-constant string arguments passed to <c>Log*</c> methods inside <c>ZeeKayDa.*</c>
-/// namespaces. The message template must be a compile-time constant so that
-/// <c>SecretSanitizingLogger</c> can inspect the template and its structured arguments — a
-/// non-constant string (interpolated, concatenated with a variable, or a local variable) is
-/// already fully expanded and cannot be redacted.
+/// namespaces, and non-constant <c>messageTemplate</c> arguments passed to
+/// <see cref="StartupVerificationContext.AddWarning"/>. The message template must be a
+/// compile-time constant so that <c>SecretSanitizingLogger</c> can inspect the template and its
+/// structured arguments — a non-constant string (interpolated, concatenated with a variable, or a
+/// local variable) is already fully expanded and cannot be redacted. <c>AddWarning</c> needs its
+/// own symbol-based check rather than the <c>Log*</c>-name-plus-<c>ILogger</c>-receiver heuristic:
+/// it is not itself a <c>Log*</c> call, and its first parameter (<c>code</c>) is also a string, so
+/// the "first string argument is the template" rule the <c>Log*</c> path relies on would pick the
+/// wrong argument.
 /// Diagnostic ID: ZEEKAYDA0002, category: LogHygiene, severity: Error.
 /// </summary>
 [DiagnosticAnalyzer(LanguageNames.CSharp)]
 public sealed class InterpolatedStringLogAnalyzer : DiagnosticAnalyzer
 {
-    /// <summary>Diagnostic ID emitted when a non-constant string is passed to a <c>Log*</c> method.</summary>
+    /// <summary>Diagnostic ID emitted when a non-constant string is passed as a message template.</summary>
     public const string DiagnosticId = "ZEEKAYDA0002";
 
     private static readonly DiagnosticDescriptor Rule = new(
         DiagnosticId,
-        title: "Non-constant string passed as Log* message template",
-        messageFormat: "Log* message templates must be compile-time constant strings; use a string literal and pass values as structured-logging arguments",
+        title: "Non-constant string passed as a message template",
+        messageFormat: "Message templates must be compile-time constant strings; use a string literal and pass values as structured-logging arguments",
         category: "LogHygiene",
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true);
@@ -47,11 +52,23 @@ public sealed class InterpolatedStringLogAnalyzer : DiagnosticAnalyzer
         var invocation = (InvocationExpressionSyntax)context.Node;
 
         if (invocation.Expression is not MemberAccessExpressionSyntax memberAccess) return;
+        if (!IsInZeeKayDaNamespace(invocation)) return;
 
         var methodName = memberAccess.Name.Identifier.Text;
-        if (!methodName.StartsWith("Log", System.StringComparison.Ordinal)) return;
 
-        if (!IsInZeeKayDaNamespace(invocation)) return;
+        if (methodName.StartsWith("Log", System.StringComparison.Ordinal))
+        {
+            AnalyzeLogInvocation(context, invocation, memberAccess);
+            return;
+        }
+
+        if (methodName == "AddWarning")
+            AnalyzeAddWarningInvocation(context, invocation);
+    }
+
+    private static void AnalyzeLogInvocation(
+        SyntaxNodeAnalysisContext context, InvocationExpressionSyntax invocation, MemberAccessExpressionSyntax memberAccess)
+    {
         if (IsInLoggerImplementation(context, invocation)) return;
 
         var receiverType = context.SemanticModel.GetTypeInfo(memberAccess.Expression).Type;
@@ -72,6 +89,47 @@ public sealed class InterpolatedStringLogAnalyzer : DiagnosticAnalyzer
             // Stop after the first string argument — it is the template.
             break;
         }
+    }
+
+    // Unlike Log*, AddWarning is identified by symbol (containing type + name), not by a
+    // name-prefix-plus-receiver-type heuristic, and its template argument is found by matching
+    // the "messageTemplate" parameter's ordinal — not "the first string argument" — because
+    // AddWarning's own first parameter, "code", is also a string.
+    private static void AnalyzeAddWarningInvocation(SyntaxNodeAnalysisContext context, InvocationExpressionSyntax invocation)
+    {
+        if (context.SemanticModel.GetSymbolInfo(invocation).Symbol is not IMethodSymbol method) return;
+        if (method.ContainingType is not { Name: "StartupVerificationContext" } containingType) return;
+        if (containingType.ContainingNamespace?.ToDisplayString() != "ZeeKayDa.Auth") return;
+
+        var templateParameter = method.Parameters.FirstOrDefault(p => p.Name == "messageTemplate");
+        if (templateParameter is null) return;
+
+        var templateArgument = FindArgumentForParameter(invocation, templateParameter);
+        if (templateArgument is null) return;
+
+        if (!context.SemanticModel.GetConstantValue(templateArgument.Expression).HasValue)
+            context.ReportDiagnostic(Diagnostic.Create(Rule, templateArgument.GetLocation()));
+    }
+
+    private static ArgumentSyntax? FindArgumentForParameter(InvocationExpressionSyntax invocation, IParameterSymbol parameter)
+    {
+        var positionalIndex = 0;
+        foreach (var argument in invocation.ArgumentList.Arguments)
+        {
+            if (argument.NameColon is { } nameColon)
+            {
+                if (nameColon.Name.Identifier.Text == parameter.Name)
+                    return argument;
+                continue;
+            }
+
+            if (positionalIndex == parameter.Ordinal)
+                return argument;
+
+            positionalIndex++;
+        }
+
+        return null;
     }
 
     private static bool ImplementsILogger(ITypeSymbol type)

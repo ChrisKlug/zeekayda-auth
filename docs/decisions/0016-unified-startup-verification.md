@@ -1165,17 +1165,18 @@ via an additional opt-in interface (§11).
    Three follow-ons fall out of that, and the state of each is now known. The CI log-hygiene grep
    already covers `AddWarning`: it matches sensitive placeholder names as plain text in any `.cs`
    file under `src/`, so a `{client_secret}` in an `AddWarning` template fails the build with no
-   change needed. The interpolated-string analyzer does **not** — the relevant rule is
-   `ZEEKAYDA0002`, not `ZEEKAYDA0001` as an earlier revision of this section said, and it fires only
-   on methods named `Log*` whose receiver implements `ILogger`, so `context.AddWarning($"...{secret}
-   ...")` compiles clean today. Extending `ZEEKAYDA0002` to treat the `messageTemplate` parameter of
-   `StartupVerificationContext.AddWarning` as a template is tracked separately; it needs a
-   symbol-based branch rather than the `Log*` heuristic, because `AddWarning`'s first string
-   argument is `code`. Because the analyzer project is `IsPackable=false` and reaches the framework
-   only by `ProjectReference`, that extension binds first-party verifiers only — the third-party
-   limit above is unchanged by it. `AddFailure` is deliberately left uncovered: its message is not a
-   log template, by-key redaction never applies to it, and it is already governed by the §5 rule
-   that a caught exception's `Message` never reaches it.
+   change needed. The interpolated-string analyzer initially did **not** — the relevant rule is
+   `ZEEKAYDA0002`, not `ZEEKAYDA0001` as an earlier revision of this section said, and it originally
+   fired only on methods named `Log*` whose receiver implements `ILogger`, so `context.AddWarning(
+   $"...{secret}...")` compiled clean. `ZEEKAYDA0002` has since been extended with a symbol-based
+   branch (matching `StartupVerificationContext.AddWarning` by containing type, then its
+   `messageTemplate` parameter by name/ordinal, since `AddWarning`'s first string argument is `code`,
+   not the template) so this now fails to compile like any other non-constant template. Because the
+   analyzer project is `IsPackable=false` and reaches the framework only by `ProjectReference`, this
+   extension binds first-party verifiers only — the third-party limit above is unchanged by it.
+   `AddFailure` is deliberately left uncovered: its message is not a log template, by-key redaction
+   never applies to it, and it is already governed by the §5 rule that a caught exception's
+   `Message` never reaches it.
 
 7. **Aggregation makes a doomed host pay for every side effect on every restart.** Today the first
    throwing check aborts and later checks never run. Under phase-2 aggregation, a host that is
@@ -1237,9 +1238,14 @@ via an additional opt-in interface (§11).
   same rule, flattens the template (the downgrade Security Consideration 6 exists to prevent), or
   hand-rolls the BCL's template parser on the redaction path. §9 gains the reasoning and the
   rejected alternatives; Security Consideration 6 is corrected — the interpolated-string analyzer is
-  `ZEEKAYDA0002`, not `ZEEKAYDA0001`, and it does not cover `AddWarning` today, though the CI
-  hygiene grep does. §8 example (5) is corrected to pass the repository type as a structured arg
+  `ZEEKAYDA0002`, not `ZEEKAYDA0001`, and it did not cover `AddWarning` at the time, though the CI
+  hygiene grep did. §8 example (5) is corrected to pass the repository type as a structured arg
   instead of interpolating it into the template.
+- **2026-08-16 — issue #444, PR #450 security review** — `ZEEKAYDA0002` is extended with a
+  symbol-based branch so it now also rejects a non-constant `messageTemplate` passed to
+  `StartupVerificationContext.AddWarning`, closing the gap Security Consideration 6 previously
+  recorded as open. Security Consideration 6 and this section are updated to reflect that the
+  extension has shipped rather than being tracked separately.
 
 ---
 

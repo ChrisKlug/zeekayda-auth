@@ -399,6 +399,194 @@ public sealed class InterpolatedStringLogAnalyzerTests
             .Which.Id.Should().Be(InterpolatedStringLogAnalyzer.DiagnosticId);
     }
 
+    // ── AddWarning's messageTemplate (issue #444 follow-up) ──────────────────────────────────────────
+
+    [Fact]
+    public async Task Diagnostic_fires_on_interpolated_AddWarning_messageTemplate()
+    {
+        var source = """
+            using Microsoft.Extensions.Logging;
+            namespace ZeeKayDa.Auth
+            {
+                public sealed class StartupVerificationContext
+                {
+                    public void AddWarning(string code, string messageTemplate, LogLevel level, params object?[] args) { }
+                    public void AddWarning(string code, string messageTemplate, params object?[] args) { }
+                }
+            }
+            namespace ZeeKayDa.Auth.Services
+            {
+                class MyVerifier
+                {
+                    void DoWork(ZeeKayDa.Auth.StartupVerificationContext context)
+                    {
+                        string secret = "s3cr3t";
+                        context.AddWarning("x.code", $"leaked {secret}");
+                    }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnosticsAsync(source);
+
+        diagnostics.Should().ContainSingle()
+            .Which.Id.Should().Be(InterpolatedStringLogAnalyzer.DiagnosticId);
+    }
+
+    [Fact]
+    public async Task Diagnostic_fires_on_AddWarning_messageTemplate_with_LogLevel_overload()
+    {
+        var source = """
+            using Microsoft.Extensions.Logging;
+            namespace ZeeKayDa.Auth
+            {
+                public sealed class StartupVerificationContext
+                {
+                    public void AddWarning(string code, string messageTemplate, LogLevel level, params object?[] args) { }
+                    public void AddWarning(string code, string messageTemplate, params object?[] args) { }
+                }
+            }
+            namespace ZeeKayDa.Auth.Services
+            {
+                class MyVerifier
+                {
+                    void DoWork(ZeeKayDa.Auth.StartupVerificationContext context)
+                    {
+                        string secret = "s3cr3t";
+                        context.AddWarning("x.code", $"leaked {secret}", LogLevel.Warning);
+                    }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnosticsAsync(source);
+
+        diagnostics.Should().ContainSingle()
+            .Which.Id.Should().Be(InterpolatedStringLogAnalyzer.DiagnosticId);
+    }
+
+    [Fact]
+    public async Task No_diagnostic_for_constant_AddWarning_messageTemplate_with_structured_args()
+    {
+        var source = """
+            using Microsoft.Extensions.Logging;
+            namespace ZeeKayDa.Auth
+            {
+                public sealed class StartupVerificationContext
+                {
+                    public void AddWarning(string code, string messageTemplate, LogLevel level, params object?[] args) { }
+                    public void AddWarning(string code, string messageTemplate, params object?[] args) { }
+                }
+            }
+            namespace ZeeKayDa.Auth.Services
+            {
+                class MyVerifier
+                {
+                    void DoWork(ZeeKayDa.Auth.StartupVerificationContext context)
+                    {
+                        string secret = "s3cr3t";
+                        context.AddWarning("x.code", "leaked {Secret}", secret);
+                    }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnosticsAsync(source);
+
+        diagnostics.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task No_diagnostic_for_non_constant_AddWarning_code_argument_when_template_is_constant()
+    {
+        // Documents that "code" (AddWarning's first string parameter) is intentionally NOT the
+        // parameter this analyzer constrains — only "messageTemplate" is checked by name/ordinal.
+        var source = """
+            using Microsoft.Extensions.Logging;
+            namespace ZeeKayDa.Auth
+            {
+                public sealed class StartupVerificationContext
+                {
+                    public void AddWarning(string code, string messageTemplate, LogLevel level, params object?[] args) { }
+                    public void AddWarning(string code, string messageTemplate, params object?[] args) { }
+                }
+            }
+            namespace ZeeKayDa.Auth.Services
+            {
+                class MyVerifier
+                {
+                    void DoWork(ZeeKayDa.Auth.StartupVerificationContext context, string dynamicCode)
+                    {
+                        context.AddWarning(dynamicCode, "a constant template");
+                    }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnosticsAsync(source);
+
+        diagnostics.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task No_diagnostic_for_AddWarning_on_an_unrelated_type_with_the_same_method_name()
+    {
+        // The check is symbol-based (containing type + namespace), not name-based — a same-named
+        // AddWarning on some other type must not be constrained.
+        var source = """
+            namespace ZeeKayDa.Auth.Services
+            {
+                class SomeOtherAccumulator
+                {
+                    public void AddWarning(string code, string messageTemplate, params object?[] args) { }
+                }
+                class MyVerifier
+                {
+                    void DoWork(SomeOtherAccumulator accumulator)
+                    {
+                        string secret = "s3cr3t";
+                        accumulator.AddWarning("x.code", $"leaked {secret}");
+                    }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnosticsAsync(source);
+
+        diagnostics.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task No_diagnostic_for_AddWarning_outside_ZeeKayDa_namespace()
+    {
+        var source = """
+            using Microsoft.Extensions.Logging;
+            namespace ZeeKayDa.Auth
+            {
+                public sealed class StartupVerificationContext
+                {
+                    public void AddWarning(string code, string messageTemplate, LogLevel level, params object?[] args) { }
+                    public void AddWarning(string code, string messageTemplate, params object?[] args) { }
+                }
+            }
+            namespace MyApp.Services
+            {
+                class MyVerifier
+                {
+                    void DoWork(ZeeKayDa.Auth.StartupVerificationContext context)
+                    {
+                        string secret = "s3cr3t";
+                        context.AddWarning("x.code", $"leaked {secret}");
+                    }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnosticsAsync(source);
+
+        diagnostics.Should().BeEmpty();
+    }
+
     // ── No diagnostic ─────────────────────────────────────────────────────────────────────────────
 
     [Fact]
