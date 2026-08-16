@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Buffers.Text;
+using System.Diagnostics.CodeAnalysis;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
@@ -123,7 +124,7 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
         var snapshot = await EnsureSnapshotAsync(cancellationToken).ConfigureAwait(false);
         var now = _timeProvider.GetUtcNow();
 
-        var active = SigningKeyRotation.SelectActiveKey(snapshot.Timeline, now, IsKeySetTier)
+        var active = SelectActiveKey(snapshot.Timeline, now)
             ?? throw NoActiveKeyException();
 
         var retirementWindow = _retirementWindowProvider.GetRetirementWindow();
@@ -274,13 +275,19 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
     // ── KeySetOptions/KeySourceOptions state ────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Whether this provider is on the <see cref="KeySetOptions"/> contract, passed as
-    /// <c>isKeySetTier</c> to every <see cref="SigningKeyRotation.SelectActiveKey"/> call to gate
-    /// the single-key bootstrap exemption. Derived from the provider's options type rather than
+    /// Selects the active key using the <see cref="SigningKeyRotation"/> overload matching this
+    /// provider's fixed tier: <see cref="SigningKeyRotation.SelectActiveKeyForFixedKeySet"/> for a
+    /// <see cref="KeySetOptions"/> provider, <see cref="SigningKeyRotation.SelectActiveKey"/>
+    /// otherwise. Dispatched from <see cref="_isKeySet"/> (the provider's options type) rather than
     /// snapshot/process lifetime, so a <see cref="KeySourceOptions"/> listing that has shrunk to one
-    /// key at runtime cannot re-arm the exemption on a restart or scale-out.
+    /// key at runtime cannot re-arm the single-key bootstrap exemption on a restart or scale-out —
+    /// and, because the exemption is not reachable through this method's <see cref="KeySourceOptions"/>
+    /// branch at all, no caller here can grant it by passing the wrong flag.
     /// </summary>
-    private bool IsKeySetTier => _isKeySet;
+    private RotationEntry? SelectActiveKey(IReadOnlyList<RotationEntry> timeline, DateTimeOffset now) =>
+        _isKeySet
+            ? SigningKeyRotation.SelectActiveKeyForFixedKeySet(timeline, now)
+            : SigningKeyRotation.SelectActiveKey(timeline, now);
 
     /// <summary>
     /// The immutable snapshot of public key data active-key selection and JWKS inclusion are
@@ -373,7 +380,7 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
 
         var current = Volatile.Read(ref _snapshot);
         if (IsFresh(current, now))
-            return current!;
+            return current;
 
         await _snapshotLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -382,7 +389,7 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
             // this call was waiting for the lock.
             now = _timeProvider.GetUtcNow();
             if (IsFresh(_snapshot, now))
-                return _snapshot!;
+                return _snapshot;
 
             return await RebuildSnapshotAsync(now, cancellationToken).ConfigureAwait(false);
         }
@@ -392,7 +399,7 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
         }
     }
 
-    private static bool IsFresh(SigningKeySnapshot? snapshot, DateTimeOffset now) =>
+    private static bool IsFresh([NotNullWhen(true)] SigningKeySnapshot? snapshot, DateTimeOffset now) =>
         snapshot is not null && now < snapshot.ExpiresAt;
 
     /// <summary>
@@ -521,7 +528,7 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
     private (RotationEntry Active, SigningKeyDescriptor Descriptor) SelectActiveEntryOrThrow(
         SigningKeySnapshot snapshot, DateTimeOffset now)
     {
-        var active = SigningKeyRotation.SelectActiveKey(snapshot.Timeline, now, IsKeySetTier)
+        var active = SelectActiveKey(snapshot.Timeline, now)
             ?? throw NoActiveKeyException();
 
         return (active, snapshot.DescriptorsById[active.Key.Id]);
@@ -545,9 +552,17 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
     /// ever used to produce a real token: rejects a signer instance reused from the currently
     /// installed handle, rejects an algorithm mismatch, and self-tests it (signs
     /// <see cref="SelfTestPayload"/> and verifies against the key's own listed public key via
-    /// <see cref="SigningAlgorithms.Verify"/>). Disposes the signer on any validation failure. Must
-    /// be called while holding <c>_signerLock</c>.
+    /// <see cref="SigningAlgorithms.Verify"/>). Disposes the signer on any validation failure except
+    /// the reused-instance case (see remarks). Must be called while holding <c>_signerLock</c>.
     /// </summary>
+    /// <remarks>
+    /// Every failure path below the reuse check owns <c>signer</c> and disposes it through one
+    /// shared <c>catch</c>, so "every failure path disposes" holds structurally rather than being
+    /// re-established at each call site. The reuse check must run first and outside that
+    /// <c>catch</c>: that signer instance is the currently installed handle's own, still live and
+    /// in use, and disposing it there would tear down the active signer out from under the handle
+    /// that owns it.
+    /// </remarks>
     private async ValueTask<ISigner> CreateVerifiedSignerAsync(
         KeyId activeId, SigningKeyDescriptor descriptor, CancellationToken cancellationToken)
     {
@@ -555,8 +570,6 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
 
         if (_activeSignerHandle is { } stale && ReferenceEquals(signer, stale.Signer))
         {
-            // Do not dispose `signer` here — it is the same instance as the currently installed
-            // handle's own signer, and that handle is still live and in use.
             throw new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure(
                     "signing.signer_reused",
@@ -565,20 +578,30 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
                     $"created, exclusively owned signer — see {nameof(ISigner)}'s Dispose contract."));
         }
 
-        if (signer.Algorithm != descriptor.Algorithm)
+        try
         {
-            signer.Dispose();
+            if (signer.Algorithm != descriptor.Algorithm)
+            {
+                throw new ZeeKayDaConfigurationException(
+                    new ZeeKayDaConfigurationFailure(
+                        "signing.signer_algorithm_mismatch",
+                        $"The signer returned by {nameof(CreateSignerAsync)} for key '{activeId.Value}' " +
+                        $"signs under {signer.Algorithm}, but the key was listed with algorithm " +
+                        $"{descriptor.Algorithm}. The signer's {nameof(ISigner.Algorithm)} must match " +
+                        $"the key's declared algorithm exactly."));
+            }
 
-            throw new ZeeKayDaConfigurationException(
-                new ZeeKayDaConfigurationFailure(
-                    "signing.signer_algorithm_mismatch",
-                    $"The signer returned by {nameof(CreateSignerAsync)} for key '{activeId.Value}' " +
-                    $"signs under {signer.Algorithm}, but the key was listed with algorithm " +
-                    $"{descriptor.Algorithm}. The signer's {nameof(ISigner.Algorithm)} must match " +
-                    $"the key's declared algorithm exactly."));
+            await SelfTestSignerAsync(signer, descriptor, cancellationToken).ConfigureAwait(false);
         }
-
-        await SelfTestSignerAsync(signer, descriptor, cancellationToken).ConfigureAwait(false);
+        catch
+        {
+            // Covers the algorithm mismatch above, a missing Key Vault "sign" permission or
+            // inaccessible CNG key container surfacing as an exception from the self-test's own
+            // SignAsync call, and a failed/unverified self-test — the signer must not be leaked
+            // before any of these failures propagates.
+            signer.Dispose();
+            throw;
+        }
 
         return signer;
     }
@@ -586,31 +609,18 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
     /// <summary>
     /// Proves <paramref name="signer"/>'s private key actually pairs with the public key
     /// <paramref name="descriptor"/> publishes a kid for, before it is ever used to produce a real
-    /// token. Runs on every handoff, not only at process start. Disposes <paramref name="signer"/>
-    /// and throws on a failed or unverified self-test.
+    /// token. Runs on every handoff, not only at process start. Throws on a failed or unverified
+    /// self-test; disposal of <paramref name="signer"/> on failure is the caller's responsibility
+    /// (see <see cref="CreateVerifiedSignerAsync"/>).
     /// </summary>
     private static async ValueTask SelfTestSignerAsync(
         ISigner signer, SigningKeyDescriptor descriptor, CancellationToken cancellationToken)
     {
-        bool selfTestVerified;
-        try
-        {
-            var selfTestSignature = await signer.SignAsync(SelfTestPayload, cancellationToken).ConfigureAwait(false);
-            selfTestVerified = SigningAlgorithms.Verify(descriptor, SelfTestPayload.Span, selfTestSignature.Span);
-        }
-        catch
-        {
-            // A missing Key Vault "sign" permission or an inaccessible CNG key container surfaces
-            // as an exception here, not as a verification mismatch below — the signer must still
-            // be disposed rather than leaked before the failure propagates.
-            signer.Dispose();
-            throw;
-        }
+        var selfTestSignature = await signer.SignAsync(SelfTestPayload, cancellationToken).ConfigureAwait(false);
+        var selfTestVerified = SigningAlgorithms.Verify(descriptor, SelfTestPayload.Span, selfTestSignature.Span);
 
         if (!selfTestVerified)
         {
-            signer.Dispose();
-
             throw new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure(
                     "signing.self_test_failed",
@@ -798,7 +808,7 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
         if (_options.Value is not KeySetOptions keySetOptions)
             return;
 
-        var active = SigningKeyRotation.SelectActiveKey(snapshot.Timeline, now, IsKeySetTier);
+        var active = SelectActiveKey(snapshot.Timeline, now);
         if (active is null)
         {
             // No key is currently eligible to sign. The base class fails closed with its own
