@@ -557,6 +557,72 @@ public sealed class InterpolatedStringLogAnalyzerTests
     }
 
     [Fact]
+    public async Task Diagnostic_fires_on_AddWarning_with_a_leading_named_code_argument()
+    {
+        // A syntax-order-based argument mapping can be fooled by a named "code" argument followed
+        // by a positional messageTemplate — the operation-based lookup used here must not be.
+        var source = """
+            using Microsoft.Extensions.Logging;
+            namespace ZeeKayDa.Auth
+            {
+                public sealed class StartupVerificationContext
+                {
+                    public void AddWarning(string code, string messageTemplate, LogLevel level, params object?[] args) { }
+                    public void AddWarning(string code, string messageTemplate, params object?[] args) { }
+                }
+            }
+            namespace ZeeKayDa.Auth.Services
+            {
+                class MyVerifier
+                {
+                    void DoWork(ZeeKayDa.Auth.StartupVerificationContext context)
+                    {
+                        string secret = "s3cr3t";
+                        context.AddWarning(code: "x.code", $"leaked {secret}");
+                    }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnosticsAsync(source);
+
+        diagnostics.Should().ContainSingle()
+            .Which.Id.Should().Be(InterpolatedStringLogAnalyzer.DiagnosticId);
+    }
+
+    [Fact]
+    public async Task Diagnostic_fires_on_AddWarning_with_messageTemplate_passed_by_name_out_of_order()
+    {
+        var source = """
+            using Microsoft.Extensions.Logging;
+            namespace ZeeKayDa.Auth
+            {
+                public sealed class StartupVerificationContext
+                {
+                    public void AddWarning(string code, string messageTemplate, LogLevel level, params object?[] args) { }
+                    public void AddWarning(string code, string messageTemplate, params object?[] args) { }
+                }
+            }
+            namespace ZeeKayDa.Auth.Services
+            {
+                class MyVerifier
+                {
+                    void DoWork(ZeeKayDa.Auth.StartupVerificationContext context)
+                    {
+                        string secret = "s3cr3t";
+                        context.AddWarning(messageTemplate: $"leaked {secret}", code: "x.code");
+                    }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnosticsAsync(source);
+
+        diagnostics.Should().ContainSingle()
+            .Which.Id.Should().Be(InterpolatedStringLogAnalyzer.DiagnosticId);
+    }
+
+    [Fact]
     public async Task No_diagnostic_for_AddWarning_outside_ZeeKayDa_namespace()
     {
         var source = """

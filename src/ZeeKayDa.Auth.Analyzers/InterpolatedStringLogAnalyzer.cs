@@ -4,6 +4,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Diagnostics;
+using Microsoft.CodeAnalysis.Operations;
 
 namespace ZeeKayDa.Auth.Analyzers;
 
@@ -92,44 +93,24 @@ public sealed class InterpolatedStringLogAnalyzer : DiagnosticAnalyzer
     }
 
     // Unlike Log*, AddWarning is identified by symbol (containing type + name), not by a
-    // name-prefix-plus-receiver-type heuristic, and its template argument is found by matching
-    // the "messageTemplate" parameter's ordinal — not "the first string argument" — because
-    // AddWarning's own first parameter, "code", is also a string.
+    // name-prefix-plus-receiver-type heuristic, and its template argument is found via the
+    // bound IInvocationOperation's already-resolved parameter mapping — not by re-deriving
+    // positional/named argument order from syntax — because that re-derivation previously got the
+    // C# named-argument rules wrong for a leading named argument followed by a positional one
+    // (e.g. `AddWarning(code: "x", $"leaked {secret}")`), silently skipping the check.
     private static void AnalyzeAddWarningInvocation(SyntaxNodeAnalysisContext context, InvocationExpressionSyntax invocation)
     {
-        if (context.SemanticModel.GetSymbolInfo(invocation).Symbol is not IMethodSymbol method) return;
+        if (context.SemanticModel.GetOperation(invocation) is not IInvocationOperation operation) return;
+
+        var method = operation.TargetMethod;
         if (method.ContainingType is not { Name: "StartupVerificationContext" } containingType) return;
         if (containingType.ContainingNamespace?.ToDisplayString() != "ZeeKayDa.Auth") return;
 
-        var templateParameter = method.Parameters.FirstOrDefault(p => p.Name == "messageTemplate");
-        if (templateParameter is null) return;
-
-        var templateArgument = FindArgumentForParameter(invocation, templateParameter);
+        var templateArgument = operation.Arguments.FirstOrDefault(a => a.Parameter?.Name == "messageTemplate");
         if (templateArgument is null) return;
 
-        if (!context.SemanticModel.GetConstantValue(templateArgument.Expression).HasValue)
-            context.ReportDiagnostic(Diagnostic.Create(Rule, templateArgument.GetLocation()));
-    }
-
-    private static ArgumentSyntax? FindArgumentForParameter(InvocationExpressionSyntax invocation, IParameterSymbol parameter)
-    {
-        var positionalIndex = 0;
-        foreach (var argument in invocation.ArgumentList.Arguments)
-        {
-            if (argument.NameColon is { } nameColon)
-            {
-                if (nameColon.Name.Identifier.Text == parameter.Name)
-                    return argument;
-                continue;
-            }
-
-            if (positionalIndex == parameter.Ordinal)
-                return argument;
-
-            positionalIndex++;
-        }
-
-        return null;
+        if (!templateArgument.Value.ConstantValue.HasValue)
+            context.ReportDiagnostic(Diagnostic.Create(Rule, templateArgument.Value.Syntax.GetLocation()));
     }
 
     private static bool ImplementsILogger(ITypeSymbol type)
