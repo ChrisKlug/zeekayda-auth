@@ -1,7 +1,6 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/ZeeKayDa.Auth.AspNetCore/ZeeKayDa.Auth.AspNetCore.csproj" />
-    <Project Path="src/ZeeKayDa.Auth.Analyzers/ZeeKayDa.Auth.Analyzers.csproj" />
     <Project Path="src/ZeeKayDa.Auth.AzureKeyVault/ZeeKayDa.Auth.AzureKeyVault.csproj" />
     <Project Path="src/ZeeKayDa.Auth.FileSystem/ZeeKayDa.Auth.FileSystem.csproj" />
     <Project Path="src/ZeeKayDa.Auth.TestKit/ZeeKayDa.Auth.TestKit.csproj" />
@@ -10,7 +9,6 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/ZeeKayDa.Auth.AspNetCore.Tests/ZeeKayDa.Auth.AspNetCore.Tests.csproj" />
-    <Project Path="tests/ZeeKayDa.Auth.Analyzers.Tests/ZeeKayDa.Auth.Analyzers.Tests.csproj" />
     <Project Path="tests/ZeeKayDa.Auth.AzureKeyVault.Tests/ZeeKayDa.Auth.AzureKeyVault.Tests.csproj" />
     <Project Path="tests/ZeeKayDa.Auth.FileSystem.Tests/ZeeKayDa.Auth.FileSystem.Tests.csproj" />
     <Project Path="tests/ZeeKayDa.Auth.Windows.Tests/ZeeKayDa.Auth.Windows.Tests.csproj" />

@@ -653,6 +653,26 @@ public sealed class InterpolatedStringLogAnalyzerTests
         diagnostics.Should().BeEmpty();
     }
 
+    [Fact]
+    public void The_real_StartupVerificationContext_AddWarning_still_matches_the_analyzer_s_hardcoded_names()
+    {
+        // AnalyzeAddWarningInvocation matches by hardcoded strings ("StartupVerificationContext",
+        // "ZeeKayDa.Auth", "messageTemplate") against a FAKE type declared in this test file's own
+        // source above — not against the real production type. A rename of the real type/method/
+        // parameter would silently disable the rule while every test above stayed green. This test
+        // is the tripwire: it fails the moment the real symbol and the analyzer's hardcoded match
+        // drift apart, forcing both to be updated together.
+        var contextType = typeof(ZeeKayDa.Auth.StartupVerificationContext);
+        contextType.Namespace.Should().Be("ZeeKayDa.Auth");
+
+        var addWarningMethods = contextType.GetMethods().Where(m => m.Name == "AddWarning").ToList();
+        addWarningMethods.Should().NotBeEmpty("the analyzer matches ZeeKayDa.Auth.StartupVerificationContext.AddWarning by name");
+
+        addWarningMethods.Should().OnlyContain(
+            m => m.GetParameters().Any(p => p.Name == "messageTemplate"),
+            "the analyzer locates its constant-template check via a parameter literally named messageTemplate");
+    }
+
     // ── No diagnostic ─────────────────────────────────────────────────────────────────────────────
 
     [Fact]

@@ -10,9 +10,7 @@
       "tests/ZeeKayDa.Auth.Tests/ZeeKayDa.Auth.Tests.csproj",
       "tests/ZeeKayDa.Auth.AspNetCore.Tests/ZeeKayDa.Auth.AspNetCore.Tests.csproj",
       "tests/ZeeKayDa.Auth.AzureKeyVault.Tests/ZeeKayDa.Auth.AzureKeyVault.Tests.csproj",
-      "tests/ZeeKayDa.Auth.FileSystem.Tests/ZeeKayDa.Auth.FileSystem.Tests.csproj",
-      "src/ZeeKayDa.Auth.Analyzers/ZeeKayDa.Auth.Analyzers.csproj",
-      "tests/ZeeKayDa.Auth.Analyzers.Tests/ZeeKayDa.Auth.Analyzers.Tests.csproj"
+      "tests/ZeeKayDa.Auth.FileSystem.Tests/ZeeKayDa.Auth.FileSystem.Tests.csproj"
     ]
   }
 }

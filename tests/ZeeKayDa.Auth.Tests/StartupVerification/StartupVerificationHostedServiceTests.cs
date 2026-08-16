@@ -175,6 +175,23 @@ public sealed class StartupVerificationHostedServiceTests
             "nothing may be resolved or logged through ISanitizingLogger<> until every gate has passed");
     }
 
+    [Fact]
+    public async Task StartAsync_throws_immediately_when_a_gate_warning_fails_to_log()
+    {
+        // Phase 1 has no failures list to aggregate into — a gate warning that fails to log must
+        // still fail closed, but by throwing directly rather than joining an aggregation phase
+        // that doesn't exist here (contrast with the verifier-phase case above, which aggregates).
+        using var provider = BuildProviderWithSanitizingLogging(out _);
+        var gate = new DelegatingGate("BadWarningGate", context => context.AddWarning("bad.warning", "value {missing}"));
+
+        var sut = new StartupVerificationHostedService([gate], provider, provider.GetRequiredService<IServiceScopeFactory>());
+
+        var act = async () => await sut.StartAsync(TestContext.Current.CancellationToken);
+
+        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        exception.Which.AggregatedFailures.Should().ContainSingle().Which.Code.Should().Be("startup.warning_log_failed");
+    }
+
     // ── Phase 2 (verifiers): resolved lazily inside StartAsync, not constructor-injected ────────────
 
     [Fact]
