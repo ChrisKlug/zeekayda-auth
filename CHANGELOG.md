@@ -8,11 +8,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
-- **`SigningKeyRotation.SelectActiveKey`'s bootstrap-exemption parameter renamed** (#449)
+- **`SigningKeyRotation.SelectActiveKey`'s bootstrap-exemption flag replaced by two entry points** (#449)
 
-  The `bool supportsBootstrapExemption` parameter is renamed to `isKeySetTier` for clarity.
-  Behavior, parameter order, and accessibility (`public`) are unchanged — this only affects
-  callers passing the argument by name; positional callers are unaffected.
+  The `bool supportsBootstrapExemption` parameter is removed. `SelectActiveKey(timeline, now)`
+  now always applies `KeySourceOptions` (Tier B) semantics — never grants the single-key
+  bootstrap exemption — and a new `SelectActiveKeyForFixedKeySet(timeline, now)` applies
+  `KeySetOptions` (Tier A) semantics — always exempts a lone registered key. A caller
+  previously passing `true`/`false` should call `SelectActiveKeyForFixedKeySet`/`SelectActiveKey`
+  respectively; behavior for each tier is unchanged, only the call shape.
 
 - **BREAKING: legacy ADR 0011 signing-provider contract removed** (#428)
 
