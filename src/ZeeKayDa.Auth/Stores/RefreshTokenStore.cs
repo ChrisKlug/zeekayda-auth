@@ -289,15 +289,28 @@ internal sealed class RefreshTokenStore : IRefreshTokenStore
         }
         catch (ZeeKayDaStoreException)
         {
-            // Do not infer meaning from the exception type/message — verify the actual persisted
-            // state before treating this as the benign self-collision case (see remarks above).
-            var existing = await Guarded(
-                () => _grantStore.FindByHandleAsync(sentinelKey, cancellationToken),
-                "confirm the refresh token family revocation sentinel after an insert failure").ConfigureAwait(false);
-
-            if (existing is null || existing.Status != RefreshGrantStatus.Revoked)
+            if (!await IsIdempotentSentinelInsertAsync(sentinelKey, cancellationToken).ConfigureAwait(false))
                 throw;
         }
+    }
+
+    /// <summary>
+    /// Confirms whether an <see cref="InsertRevocationSentinelAsync"/> failure was actually a benign
+    /// self-collision: re-reads <paramref name="sentinelKey"/> and checks whether the sentinel row is
+    /// already durably present with <see cref="RefreshGrantStatus.Revoked"/>.
+    /// </summary>
+    /// <remarks>
+    /// Never infers meaning from the insert failure's exception type or message — those look
+    /// identical for a genuine self-collision and a genuine transport fault (see
+    /// <see cref="InsertRevocationSentinelAsync"/>'s remarks). Only this confirming read decides.
+    /// </remarks>
+    private async ValueTask<bool> IsIdempotentSentinelInsertAsync(StoreKey sentinelKey, CancellationToken cancellationToken)
+    {
+        var existing = await Guarded(
+            () => _grantStore.FindByHandleAsync(sentinelKey, cancellationToken),
+            "confirm the refresh token family revocation sentinel after an insert failure").ConfigureAwait(false);
+
+        return existing is not null && existing.Status == RefreshGrantStatus.Revoked;
     }
 
     private static StoreKey BuildHandleKey(string tokenHandle) => new(HashBase64Url(tokenHandle));
