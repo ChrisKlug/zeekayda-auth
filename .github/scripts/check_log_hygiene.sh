@@ -96,7 +96,7 @@ fi
 # Third check: a [SuppressMessage("...", "ZEEKAYDA0001"/"ZEEKAYDA0002")] attribute is a second
 # code-level way to silence the analyzer and must carry the same structured comment as a
 # #pragma suppression.
-SUPPRESS_PATTERN='\[SuppressMessage\(.*\b(ZEEKAYDA0001|ZEEKAYDA0002)\b'
+SUPPRESS_PATTERN='\bSuppressMessage[[:space:]]*\(.*\b(ZEEKAYDA0001|ZEEKAYDA0002)\b'
 suppress_found=0
 
 for path in "${SEARCH_PATHS[@]}"; do
@@ -126,7 +126,7 @@ fi
 # Fourth check: a project-wide <NoWarn>ZEEKAYDA0001/ZEEKAYDA0002</NoWarn> in any .csproj or
 # Directory.Build.props silences the analyzer for every file the project compiles, so it needs
 # the same visible, structured justification as a single-line suppression.
-NOWARN_PATTERN='<NoWarn>[^<]*\b(ZEEKAYDA0001|ZEEKAYDA0002)\b'
+NOWARN_PATTERN='<NoWarn[^>]*>[^<]*\b(ZEEKAYDA0001|ZEEKAYDA0002)\b'
 nowarn_found=0
 
 for path in "${CONFIG_SEARCH_PATHS[@]}"; do

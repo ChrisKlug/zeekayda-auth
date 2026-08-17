@@ -247,6 +247,17 @@ assert_exit "SuppressMessage without a suppression comment fails" 1 \
     run_hygiene_check "${DIR}"
 
 # ---------------------------------------------------------------------------
+# Case 17b: fully-qualified [System.Diagnostics.CodeAnalysis.SuppressMessage]
+# attribute with no suppression comment → exit 1 (a bare "[SuppressMessage("
+# anchor would miss this)
+# ---------------------------------------------------------------------------
+DIR="${WORK_DIR}/case17b"
+write_cs_file "${DIR}" "Service.cs" \
+    '[System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "ZEEKAYDA0002")]'
+assert_exit "fully-qualified SuppressMessage without a suppression comment fails" 1 \
+    run_hygiene_check "${DIR}"
+
+# ---------------------------------------------------------------------------
 # Case 18: <NoWarn> entry for ZEEKAYDA0001 in a .csproj with a valid structured
 # XML comment on the same line → exit 0
 # ---------------------------------------------------------------------------
@@ -266,6 +277,17 @@ mkdir -p "${DIR}"
 printf '%s\n' '<Project><PropertyGroup><NoWarn>ZEEKAYDA0001</NoWarn></PropertyGroup></Project>' \
     > "${DIR}/Sample.csproj"
 assert_exit "NoWarn without a justification comment fails" 1 \
+    run_hygiene_check_config "${DIR}"
+
+# ---------------------------------------------------------------------------
+# Case 19b: <NoWarn Condition="..."> with an attribute on the element (a bare
+# "<NoWarn>" anchor would miss this) and no justification comment → exit 1
+# ---------------------------------------------------------------------------
+DIR="${WORK_DIR}/case19b"
+mkdir -p "${DIR}"
+printf '%s\n' "<Project><PropertyGroup><NoWarn Condition=\"'\$(Configuration)'=='Debug'\">ZEEKAYDA0001</NoWarn></PropertyGroup></Project>" \
+    > "${DIR}/Sample.csproj"
+assert_exit "NoWarn with an XML attribute and no justification fails" 1 \
     run_hygiene_check_config "${DIR}"
 
 # ---------------------------------------------------------------------------
