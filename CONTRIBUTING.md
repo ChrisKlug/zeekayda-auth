@@ -219,6 +219,14 @@ By signing off you are agreeing to the [Developer Certificate of Origin v1.1](ht
 
 If you are unsure about a style decision, check how the surrounding code is written and follow the same pattern. When in doubt, ask in the issue before writing the code.
 
+### Public API tracking
+
+`ZeeKayDa.Auth`, `ZeeKayDa.Auth.AspNetCore`, `ZeeKayDa.Auth.AzureKeyVault`, `ZeeKayDa.Auth.FileSystem`, and `ZeeKayDa.Auth.Windows` each carry a `PublicAPI.Shipped.txt` and `PublicAPI.Unshipped.txt`, enforced by [`Microsoft.CodeAnalysis.PublicApiAnalyzers`](https://github.com/dotnet/roslyn-analyzers/blob/main/src/PublicApiAnalyzers/PublicApiAnalyzers.Help.md). The build fails if a public member is added, removed, or changes shape without a matching entry — for example, an accidental narrowing from `public` to `internal`.
+
+- **Adding, removing, or changing** a public member: add/update the corresponding entry in that project's `PublicAPI.Unshipped.txt`. The compiler error (`RS0016`/`RS0017`/`RS0025`/`RS0036`) names the exact line to add — copy it verbatim.
+- **On release**: move every entry from `PublicAPI.Unshipped.txt` to `PublicAPI.Shipped.txt` as part of the [release process](#release-process).
+- `ZeeKayDa.Auth.Analyzers` and `ZeeKayDa.Auth.TestKit` are not covered — they have no public surface of the kind this guards.
+
 ---
 
 ## Building Locally
