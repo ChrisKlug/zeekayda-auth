@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Buffers.Text;
+using System.Diagnostics.CodeAnalysis;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
@@ -123,7 +124,7 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
         var snapshot = await EnsureSnapshotAsync(cancellationToken).ConfigureAwait(false);
         var now = _timeProvider.GetUtcNow();
 
-        var active = SigningKeyRotation.SelectActiveKey(snapshot.Timeline, now, SupportsBootstrapExemption)
+        var active = SelectActiveKey(snapshot.Timeline, now)
             ?? throw NoActiveKeyException();
 
         var retirementWindow = _retirementWindowProvider.GetRetirementWindow();
@@ -274,13 +275,19 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
     // ── KeySetOptions/KeySourceOptions state ────────────────────────────────────────────────────────
 
     /// <summary>
-    /// <see langword="true"/> only for a <see cref="KeySetOptions"/> provider — passed as
-    /// <c>supportsBootstrapExemption</c> to every <see cref="SigningKeyRotation.SelectActiveKey"/>
-    /// call. Gated on the provider's options type rather than snapshot/process lifetime, so a
-    /// <see cref="KeySourceOptions"/> listing that has shrunk to one key via revocation cannot
-    /// re-arm the exemption on process restart.
+    /// Selects the active key using the <see cref="SigningKeyRotation"/> method matching this
+    /// provider's fixed tier: <see cref="SigningKeyRotation.SelectActiveKeyForFixedKeySet"/> for a
+    /// <see cref="KeySetOptions"/> provider, <see cref="SigningKeyRotation.SelectActiveKey"/>
+    /// otherwise. Dispatched from <see cref="_isKeySet"/> (the provider's options type) rather than
+    /// snapshot/process lifetime, so a <see cref="KeySourceOptions"/> listing that has shrunk to one
+    /// key at runtime cannot re-arm the single-key bootstrap exemption on a restart or scale-out —
+    /// and, because the exemption is only reachable through <see cref="SigningKeyRotation.SelectActiveKeyForFixedKeySet"/>,
+    /// there is no argument this dispatch could pass to grant it on the <see cref="KeySourceOptions"/> branch.
     /// </summary>
-    private bool SupportsBootstrapExemption => _isKeySet;
+    private RotationEntry? SelectActiveKey(IReadOnlyList<RotationEntry> timeline, DateTimeOffset now) =>
+        _isKeySet
+            ? SigningKeyRotation.SelectActiveKeyForFixedKeySet(timeline, now)
+            : SigningKeyRotation.SelectActiveKey(timeline, now);
 
     /// <summary>
     /// The immutable snapshot of public key data active-key selection and JWKS inclusion are
@@ -372,56 +379,90 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
         var now = _timeProvider.GetUtcNow();
 
         var current = Volatile.Read(ref _snapshot);
-        if (current is not null && now < current.ExpiresAt)
+        if (IsFresh(current, now))
             return current;
 
         await _snapshotLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            // Re-check inside the lock: another caller may have already rebuilt the snapshot while
+            // this call was waiting for the lock.
             now = _timeProvider.GetUtcNow();
-            if (_snapshot is not null && now < _snapshot.ExpiresAt)
+            if (IsFresh(_snapshot, now))
                 return _snapshot;
 
-            var previous = _snapshot;
-            IReadOnlyList<KeyListing> listings;
-            try
-            {
-                listings = await ListKeysAsync(cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
-            {
-                // A ListKeysAsync failure here (including a revocation that leaves zero enabled
-                // keys) must not leave a previously cached active signer's private key resident
-                // indefinitely, so it is released unconditionally rather than trying to distinguish
-                // a genuine revocation from a transient failure at this layer.
-                //
-                // The filter excludes the caller's own cancellationToken firing: releasing on that
-                // would let a client repeatedly cancel requests to force a healthy signer's private
-                // key to be re-downloaded from a remote provider on every call — an amplification
-                // vector that needs no actual key compromise, only the ability to drop a request.
-                await ReleaseActiveSignerAsync().ConfigureAwait(false);
-                throw;
-            }
-
-            var expiresAt = _isKeySet
-                ? DateTimeOffset.MaxValue // KeySetOptions: ListKeysAsync is called exactly once, ever.
-                : now.Add(_refreshInterval!.Value);
-            var snapshot = BuildSnapshot(listings, expiresAt);
-
-            if (previous is not null)
-                EvaluateKillByOmission(previous, snapshot, now);
-
-            LogStatusesAndWarnings(snapshot, now);
-
-            _snapshot = snapshot;
-
-            return snapshot;
+            return await RebuildSnapshotAsync(now, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
             _snapshotLock.Release();
         }
     }
+
+    private static bool IsFresh([NotNullWhen(true)] SigningKeySnapshot? snapshot, DateTimeOffset now) =>
+        snapshot is not null && now < snapshot.ExpiresAt;
+
+    /// <summary>
+    /// Rebuilds the snapshot from a fresh <see cref="ListKeysAsync"/> call, evaluates kill-by-omission
+    /// against the snapshot it replaces, and logs the resulting per-key statuses. Must be called while
+    /// holding <c>_snapshotLock</c>.
+    /// </summary>
+    private async ValueTask<SigningKeySnapshot> RebuildSnapshotAsync(DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var previous = _snapshot;
+        var listings = await ListKeysOrReleaseActiveSignerAsync(cancellationToken).ConfigureAwait(false);
+
+        var expiresAt = _isKeySet
+            ? DateTimeOffset.MaxValue // KeySetOptions: ListKeysAsync is called exactly once, ever.
+            : now.Add(_refreshInterval!.Value);
+        var snapshot = BuildSnapshot(listings, expiresAt);
+
+        if (previous is not null)
+            EvaluateKillByOmission(previous, snapshot, now);
+
+        LogStatusesAndWarnings(snapshot, now);
+
+        _snapshot = snapshot;
+
+        return snapshot;
+    }
+
+    /// <summary>
+    /// Calls <see cref="ListKeysAsync"/>, releasing the currently cached active signer before
+    /// propagating any genuine failure.
+    /// </summary>
+    /// <remarks>
+    /// A <see cref="ListKeysAsync"/> failure here (including a revocation that leaves zero enabled
+    /// keys) must not leave a previously cached active signer's private key resident indefinitely,
+    /// so it is released unconditionally rather than trying to distinguish a genuine revocation from
+    /// a transient failure at this layer. The caller's own <paramref name="cancellationToken"/>
+    /// firing is excluded from that release — see <see cref="IsGenuineListKeysFailure"/>.
+    /// </remarks>
+    private async ValueTask<IReadOnlyList<KeyListing>> ListKeysOrReleaseActiveSignerAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await ListKeysAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (IsGenuineListKeysFailure(ex, cancellationToken))
+        {
+            await ReleaseActiveSignerAsync().ConfigureAwait(false);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Distinguishes a genuine <see cref="ListKeysAsync"/> failure from the caller's own
+    /// <paramref name="cancellationToken"/> firing.
+    /// </summary>
+    /// <remarks>
+    /// Releasing the active signer on the caller's own cancellation would let a client repeatedly
+    /// cancel requests to force a healthy signer's private key to be re-downloaded from a remote
+    /// provider on every call — an amplification vector that needs no actual key compromise, only
+    /// the ability to drop a request.
+    /// </remarks>
+    private static bool IsGenuineListKeysFailure(Exception ex, CancellationToken cancellationToken) =>
+        ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested;
 
     /// <summary>
     /// Releases the currently cached active signer, if any, so its private key material is not
@@ -453,18 +494,10 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
         SigningKeySnapshot snapshot, CancellationToken cancellationToken)
     {
         var now = _timeProvider.GetUtcNow();
-        var active = SigningKeyRotation.SelectActiveKey(snapshot.Timeline, now, SupportsBootstrapExemption)
-            ?? throw NoActiveKeyException();
-        var activeDescriptor = snapshot.DescriptorsById[active.Key.Id];
+        var (active, descriptor) = SelectActiveEntryOrThrow(snapshot, now);
 
-        var current = Volatile.Read(ref _activeSignerHandle);
-        if (current is not null &&
-            string.Equals(current.Id, active.Key.Id, StringComparison.Ordinal) &&
-            string.Equals(current.Descriptor.Kid, activeDescriptor.Kid, StringComparison.Ordinal) &&
-            current.TryBorrow())
-        {
-            return current;
-        }
+        if (TryBorrowMatchingHandle(Volatile.Read(ref _activeSignerHandle), active.Key.Id, descriptor.Kid) is { } fastPathHandle)
+            return fastPathHandle;
 
         await _signerLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -472,38 +505,83 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
             // Re-check inside the lock: another caller may have already performed the handoff, or
             // the wall clock may have moved on again since the fast-path check above.
             now = _timeProvider.GetUtcNow();
-            active = SigningKeyRotation.SelectActiveKey(snapshot.Timeline, now, SupportsBootstrapExemption)
-                ?? throw NoActiveKeyException();
-            activeDescriptor = snapshot.DescriptorsById[active.Key.Id];
+            (active, descriptor) = SelectActiveEntryOrThrow(snapshot, now);
 
-            if (_activeSignerHandle is { } existing &&
-                string.Equals(existing.Id, active.Key.Id, StringComparison.Ordinal) &&
-                string.Equals(existing.Descriptor.Kid, activeDescriptor.Kid, StringComparison.Ordinal) &&
-                existing.TryBorrow())
-            {
-                return existing;
-            }
+            if (TryBorrowMatchingHandle(_activeSignerHandle, active.Key.Id, descriptor.Kid) is { } lockedPathHandle)
+                return lockedPathHandle;
 
             var activeId = new KeyId(active.Key.Id);
-            var signer = await CreateSignerAsync(activeId, cancellationToken).ConfigureAwait(false);
-            var descriptor = activeDescriptor;
+            var signer = await CreateVerifiedSignerAsync(activeId, descriptor, cancellationToken).ConfigureAwait(false);
 
-            if (_activeSignerHandle is { } stale && ReferenceEquals(signer, stale.Signer))
-            {
-                // Do not dispose `signer` here — it is the same instance as the currently installed
-                // handle's own signer, and that handle is still live and in use.
-                throw new ZeeKayDaConfigurationException(
-                    new ZeeKayDaConfigurationFailure(
-                        "signing.signer_reused",
-                        $"{GetType().Name}.{nameof(CreateSignerAsync)} returned the same {nameof(ISigner)} " +
-                        "instance as the currently active signer. Every call must return a freshly " +
-                        $"created, exclusively owned signer — see {nameof(ISigner)}'s Dispose contract."));
-            }
+            return InstallSigner(activeId.Value, descriptor, signer);
+        }
+        finally
+        {
+            _signerLock.Release();
+        }
+    }
 
+    /// <summary>
+    /// Selects the active key from <paramref name="snapshot"/> and returns it alongside its
+    /// descriptor, or throws if none is currently eligible to sign.
+    /// </summary>
+    private (RotationEntry Active, SigningKeyDescriptor Descriptor) SelectActiveEntryOrThrow(
+        SigningKeySnapshot snapshot, DateTimeOffset now)
+    {
+        var active = SelectActiveKey(snapshot.Timeline, now)
+            ?? throw NoActiveKeyException();
+
+        return (active, snapshot.DescriptorsById[active.Key.Id]);
+    }
+
+    /// <summary>
+    /// Borrows <paramref name="handle"/> if it is installed and still matches the currently active
+    /// key id and kid, returning <see langword="null"/> otherwise so the caller creates a fresh
+    /// signer.
+    /// </summary>
+    private static SignerHandle? TryBorrowMatchingHandle(SignerHandle? handle, string activeKeyId, string activeKid) =>
+        handle is not null
+        && string.Equals(handle.Id, activeKeyId, StringComparison.Ordinal)
+        && string.Equals(handle.Descriptor.Kid, activeKid, StringComparison.Ordinal)
+        && handle.TryBorrow()
+            ? handle
+            : null;
+
+    /// <summary>
+    /// Calls <see cref="CreateSignerAsync"/> for the active key and validates the result before it is
+    /// ever used to produce a real token: rejects a signer instance reused from the currently
+    /// installed handle, rejects an algorithm mismatch, and self-tests it (signs
+    /// <see cref="SelfTestPayload"/> and verifies against the key's own listed public key via
+    /// <see cref="SigningAlgorithms.Verify"/>). Disposes the signer on any validation failure except
+    /// the reused-instance case (see remarks). Must be called while holding <c>_signerLock</c>.
+    /// </summary>
+    /// <remarks>
+    /// Every failure path below the reuse check owns <c>signer</c> and disposes it through one
+    /// shared <c>catch</c>, so "every failure path disposes" holds structurally rather than being
+    /// re-established at each call site. The reuse check must run first and outside that
+    /// <c>catch</c>: that signer instance is the currently installed handle's own, still live and
+    /// in use, and disposing it there would tear down the active signer out from under the handle
+    /// that owns it.
+    /// </remarks>
+    private async ValueTask<ISigner> CreateVerifiedSignerAsync(
+        KeyId activeId, SigningKeyDescriptor descriptor, CancellationToken cancellationToken)
+    {
+        var signer = await CreateSignerAsync(activeId, cancellationToken).ConfigureAwait(false);
+
+        if (_activeSignerHandle is { } stale && ReferenceEquals(signer, stale.Signer))
+        {
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "signing.signer_reused",
+                    $"{GetType().Name}.{nameof(CreateSignerAsync)} returned the same {nameof(ISigner)} " +
+                    "instance as the currently active signer. Every call must return a freshly " +
+                    $"created, exclusively owned signer — see {nameof(ISigner)}'s Dispose contract."));
+        }
+
+        try
+        {
             if (signer.Algorithm != descriptor.Algorithm)
             {
-                signer.Dispose();
-
                 throw new ZeeKayDaConfigurationException(
                     new ZeeKayDaConfigurationFailure(
                         "signing.signer_algorithm_mismatch",
@@ -513,54 +591,65 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
                         $"the key's declared algorithm exactly."));
             }
 
-            // Proves the signer's private key actually pairs with the public key it publishes a kid
-            // for, before it is ever used to produce a real token. Runs on every handoff, not only
-            // at process start.
-            bool selfTestVerified;
-            try
-            {
-                var selfTestSignature = await signer.SignAsync(SelfTestPayload, cancellationToken).ConfigureAwait(false);
-                selfTestVerified = SigningAlgorithms.Verify(descriptor, SelfTestPayload.Span, selfTestSignature.Span);
-            }
-            catch
-            {
-                // A missing Key Vault "sign" permission or an inaccessible CNG key container
-                // surfaces as an exception here, not as a verification mismatch below — the signer
-                // must still be disposed rather than leaked before the failure propagates.
-                signer.Dispose();
-                throw;
-            }
-
-            if (!selfTestVerified)
-            {
-                signer.Dispose();
-
-                throw new ZeeKayDaConfigurationException(
-                    new ZeeKayDaConfigurationFailure(
-                        "signing.self_test_failed",
-                        $"The signer {nameof(CreateSignerAsync)} returned for key '{descriptor.Kid}' " +
-                        "produced a signature that does not verify against that key's own listed public " +
-                        "key. The private key materialized for signing does not match the public key " +
-                        $"published under this kid — refusing to serve tokens under '{descriptor.Kid}'."));
-            }
-
-            var newHandle = new SignerHandle { Id = activeId.Value, Descriptor = descriptor, Signer = signer };
-            var previous = _activeSignerHandle;
-            _activeSignerHandle = newHandle;
-
-            // Releases the base class's own reference; the superseded signer's private material is
-            // reclaimed once every in-flight SignAsync borrow on it has also returned.
-            previous?.Release();
-
-            // Cannot fail: newHandle was just constructed at refcount 1, not yet published, and we
-            // are still holding _signerLock.
-            newHandle.TryBorrow();
-            return newHandle;
+            await SelfTestSignerAsync(signer, descriptor, cancellationToken).ConfigureAwait(false);
         }
-        finally
+        catch
         {
-            _signerLock.Release();
+            // Covers the algorithm mismatch above, a missing Key Vault "sign" permission or
+            // inaccessible CNG key container surfacing as an exception from the self-test's own
+            // SignAsync call, and a failed/unverified self-test — the signer must not be leaked
+            // before any of these failures propagates.
+            signer.Dispose();
+            throw;
         }
+
+        return signer;
+    }
+
+    /// <summary>
+    /// Proves <paramref name="signer"/>'s private key actually pairs with the public key
+    /// <paramref name="descriptor"/> publishes a kid for, before it is ever used to produce a real
+    /// token. Runs on every handoff, not only at process start. Throws on a failed or unverified
+    /// self-test; disposal of <paramref name="signer"/> on failure is the caller's responsibility
+    /// (see <see cref="CreateVerifiedSignerAsync"/>).
+    /// </summary>
+    private static async ValueTask SelfTestSignerAsync(
+        ISigner signer, SigningKeyDescriptor descriptor, CancellationToken cancellationToken)
+    {
+        var selfTestSignature = await signer.SignAsync(SelfTestPayload, cancellationToken).ConfigureAwait(false);
+        var selfTestVerified = SigningAlgorithms.Verify(descriptor, SelfTestPayload.Span, selfTestSignature.Span);
+
+        if (!selfTestVerified)
+        {
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "signing.self_test_failed",
+                    $"The signer {nameof(CreateSignerAsync)} returned for key '{descriptor.Kid}' " +
+                    "produced a signature that does not verify against that key's own listed public " +
+                    "key. The private key materialized for signing does not match the public key " +
+                    $"published under this kid — refusing to serve tokens under '{descriptor.Kid}'."));
+        }
+    }
+
+    /// <summary>
+    /// Installs a freshly validated signer as the active <see cref="SignerHandle"/>, releasing
+    /// whatever handle it supersedes, and returns a borrowed reference for the caller to
+    /// <see cref="SignerHandle.Return"/>. Must be called while holding <c>_signerLock</c>.
+    /// </summary>
+    private SignerHandle InstallSigner(string id, SigningKeyDescriptor descriptor, ISigner signer)
+    {
+        var newHandle = new SignerHandle { Id = id, Descriptor = descriptor, Signer = signer };
+        var previous = _activeSignerHandle;
+        _activeSignerHandle = newHandle;
+
+        // Releases the base class's own reference; the superseded signer's private material is
+        // reclaimed once every in-flight SignAsync borrow on it has also returned.
+        previous?.Release();
+
+        // Cannot fail: newHandle was just constructed at refcount 1, not yet published, and we are
+        // still holding _signerLock.
+        newHandle.TryBorrow();
+        return newHandle;
     }
 
     /// <summary>
@@ -719,7 +808,7 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
         if (_options.Value is not KeySetOptions keySetOptions)
             return;
 
-        var active = SigningKeyRotation.SelectActiveKey(snapshot.Timeline, now, SupportsBootstrapExemption);
+        var active = SelectActiveKey(snapshot.Timeline, now);
         if (active is null)
         {
             // No key is currently eligible to sign. The base class fails closed with its own
