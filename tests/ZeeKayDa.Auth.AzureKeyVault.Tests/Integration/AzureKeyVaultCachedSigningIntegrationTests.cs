@@ -221,7 +221,7 @@ public sealed class AzureKeyVaultCachedSigningIntegrationTests
 
     // ── Startup service: informational log only (AC #2) ─────────────────────────────────────────
     // Pre-warming (AC #1) is no longer this class's job: since issue #437, the framework-owned
-    // SigningStartupSelfTestHostedService materializes and verifies the active signer for every
+    // SigningStartupSelfTestVerifier materializes and verifies the active signer for every
     // registered IJwtSigningService, including this one. AzureKeyVaultCachedSigningStartupService
     // keeps only its own memory-residency log line — see AzureKeyVaultCachedSigningStartupServiceTests
     // for that behavior, and JwtSigningServiceTests (ZeeKayDa.Auth.Tests) for the generic self-test

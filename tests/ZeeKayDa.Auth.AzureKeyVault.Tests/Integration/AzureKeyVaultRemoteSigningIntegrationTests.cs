@@ -172,7 +172,7 @@ public sealed class AzureKeyVaultRemoteSigningIntegrationTests
     // ── Startup service ────────────────────────────────────────────────────────────────────────────
     // AzureKeyVaultRemoteSigningStartupService (a pre-warm-only IHostedService with no genuinely
     // provider-specific behavior of its own) was deleted in issue #437: the framework-owned
-    // SigningStartupSelfTestHostedService now materializes and verifies the active signer for every
+    // SigningStartupSelfTestVerifier now materializes and verifies the active signer for every
     // registered IJwtSigningService, superseding this provider's pre-warm entirely. That generic
     // self-test behavior (pass/fail) is covered once, at the base-class level, by
     // JwtSigningServiceTests in ZeeKayDa.Auth.Tests — it is not re-tested per provider.

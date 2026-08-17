@@ -73,10 +73,13 @@ public sealed class TokenEndpointHandler
 
 ### Suppression
 
-Suppressions require justification and team review.
+Suppressions require justification and team review. A CI check
+(`.github/scripts/check_log_hygiene.sh`) enforces this for `#pragma` suppressions specifically: any
+`#pragma warning disable` naming `ZEEKAYDA0001` or `ZEEKAYDA0002` must carry a structured
+`// log-hygiene-ok: <reason> (#<issue-or-pr-number>)` comment on the same line, or the build fails.
 
 ```csharp
-#pragma warning disable ZEEKAYDA0001 // Direct ILogger<T> use
+#pragma warning disable ZEEKAYDA0001 // log-hygiene-ok: legacy adapter predates ISanitizingLogger<T>, migration tracked (#123)
 private readonly ILogger<TokenEndpointHandler> _logger;
 #pragma warning restore ZEEKAYDA0001
 ```
@@ -90,7 +93,9 @@ dotnet_diagnostic.ZEEKAYDA0001.severity = none
 
 > ⚠️ **Warning:** Suppressing this rule removes the compile-time safety net for the affected
 > type. Any suppression must be reviewed and justified in a code comment explaining why the
-> `ISanitizingLogger<T>` wrapper is not applicable.
+> `ISanitizingLogger<T>` wrapper is not applicable. Note that `check_log_hygiene.sh`'s structured-
+> comment requirement currently applies only to `#pragma` suppressions, not to an `.editorconfig`
+> severity override — an `.editorconfig`-based suppression is not caught by that check.
 
 ---
 
@@ -108,6 +113,14 @@ dotnet_diagnostic.ZEEKAYDA0001.severity = none
 Interpolated strings, variable references, string concatenation with non-literal operands,
 `string.Format`, and any other non-constant expression are all flagged regardless of the
 identifier names involved.
+
+The rule also constrains one specific non-`Log*` method by symbol rather than by name/receiver
+heuristic: `StartupVerificationContext.AddWarning`'s `messageTemplate` parameter. `AddWarning` is
+how an `IStartupVerifier`/`IStartupVerificationGate` implementation reports a warning for the
+startup-verification runner to log on its behalf (see [ADR
+0016](../decisions/0016-unified-startup-verification.md) §3, §9) — its template flows into the same
+redaction-sensitive log call the `Log*` branch above protects, so it needs the same constant-string
+guarantee even though it isn't itself a call to `ILogger`.
 
 ### Rationale
 
@@ -154,10 +167,14 @@ _logger.LogDebug("Processing request for client {ClientId}", clientId);
 
 ### Suppression
 
-Suppressions require justification and team review.
+Suppressions require justification and team review. A CI check
+(`.github/scripts/check_log_hygiene.sh`) enforces this for `#pragma` suppressions specifically: any
+`#pragma warning disable` naming `ZEEKAYDA0001` or `ZEEKAYDA0002` must carry a structured
+`// log-hygiene-ok: <reason> (#<issue-or-pr-number>)` comment on the same line, or the build fails.
+See `StartupVerificationHostedService.LogWarning` for a real example of the required form.
 
 ```csharp
-#pragma warning disable ZEEKAYDA0002 // Non-constant string in log call
+#pragma warning disable ZEEKAYDA0002 // log-hygiene-ok: diagnostic-only, key material never leaves this dev-only build config (#123)
 _logger.LogDebug($"Diagnostic — raw key material: {keyMaterial}");
 #pragma warning restore ZEEKAYDA0002
 ```
@@ -166,13 +183,15 @@ _logger.LogDebug($"Diagnostic — raw key material: {keyMaterial}");
 
 ```ini
 [src/ZeeKayDa.Auth/**/*.cs]
-dotnet_diagnostic.ZEEKAYDA0002.severity = none  // Non-constant string in log call
+dotnet_diagnostic.ZEEKAYDA0002.severity = none  ; Non-constant string in log call
 ```
 
 > ⚠️ **Warning:** Suppressing this rule disables the compile-time check for the affected call
 > sites. Any suppression must be accompanied by a code comment explaining why the non-constant
 > string is safe at that specific location and confirming that no sensitive value can reach
-> the log sink through the suppressed call.
+> the log sink through the suppressed call. As with ZEEKAYDA0001, `check_log_hygiene.sh`'s
+> structured-comment requirement applies only to `#pragma` suppressions, not to an
+> `.editorconfig` severity override.
 
 ---
 
@@ -270,7 +289,7 @@ public sealed class MyClientRepository : IClientRepository
 
 ```ini
 [**/*.cs]
-dotnet_diagnostic.ZEEKAYDA0003.severity = none  // IClientRepository does not reference IClientRegistrationValidator
+dotnet_diagnostic.ZEEKAYDA0003.severity = none  ; IClientRepository does not reference IClientRegistrationValidator
 ```
 
 > ⚠️ **Warning:** Suppressing this rule removes the reminder for the affected type. Any suppression

@@ -1,7 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using ZeeKayDa.Auth.Logging;
 
-namespace ZeeKayDa.Auth.AspNetCore.Tests;
+namespace ZeeKayDa.Auth.Tests.StartupVerification;
 
 public sealed class SanitizingLoggerClosedOverrideScannerTests
 {

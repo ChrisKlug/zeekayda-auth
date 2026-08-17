@@ -24,6 +24,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
+using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.Logging;
 using ZeeKayDa.Auth.Tokens;
 using ZeeKayDa.Auth.Windows.Tests.Fakes;
@@ -319,16 +320,17 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
             "the active certificate expiring within 30 days must be surfaced");
     }
 
-    // ── Startup service ───────────────────────────────────────────────────────────────────────────
+    // ── Startup verifier ──────────────────────────────────────────────────────────────────────────
     // WindowsCertificateStoreSigningStartupService was deleted in issue #437 — it had no genuinely
     // Windows-Certificate-Store-specific behavior of its own, only the pre-warm every provider used
-    // to hand-roll. The framework-owned SigningStartupSelfTestHostedService (internal to
+    // to hand-roll. The framework-owned SigningStartupSelfTestVerifier (internal to
     // ZeeKayDa.Auth, which does not grant this test project [InternalsVisibleTo]) now provides that
     // pre-warm, plus the materialize-and-verify self-test, generically for every provider — it also
     // now supersedes this provider's own hand-rolled VerifySigningKeyMatchesListing check (deleted in
     // the same issue; see the key/kid-consistency test below for its replacement coverage). Located
     // here by reflection on its full type name rather than a direct reference, exactly as any
-    // out-of-assembly caller would have to.
+    // out-of-assembly caller would have to. It implements the public IStartupVerifier interface, so
+    // it can be invoked directly without a host once located.
 
     [Fact]
     public async Task Startup_self_test_forces_key_loading_and_propagates_configuration_failure()
@@ -342,9 +344,9 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
         builder.AddWindowsCertificateStoreSigning(PrimaryThumbprint, SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My);
 
         await using var provider = services.BuildServiceProvider();
-        var startupService = FindSigningStartupSelfTestHostedService(provider);
+        var verifier = FindSigningStartupSelfTestVerifier(provider);
 
-        var act = async () => await startupService.StartAsync(ct);
+        var act = async () => await verifier.VerifyAsync(new StartupVerificationContext(), provider, ct);
 
         (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>()).WithMessage("*certificate_not_found*");
     }
@@ -363,26 +365,26 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
         builder.AddWindowsCertificateStoreSigning(PrimaryThumbprint, SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My);
 
         await using var provider = services.BuildServiceProvider();
-        var startupService = FindSigningStartupSelfTestHostedService(provider);
+        var verifier = FindSigningStartupSelfTestVerifier(provider);
 
-        var act = async () => await startupService.StartAsync(ct);
+        var act = async () => await verifier.VerifyAsync(new StartupVerificationContext(), provider, ct);
 
         await act.Should().NotThrowAsync(
             "the real certificate-backed LocalSigner's signature must verify against its own listed public key");
     }
 
-    private static IHostedService FindSigningStartupSelfTestHostedService(ServiceProvider provider)
+    private static IStartupVerifier FindSigningStartupSelfTestVerifier(ServiceProvider provider)
     {
         var expectedType = Type.GetType(
-            "ZeeKayDa.Auth.Tokens.SigningStartupSelfTestHostedService, ZeeKayDa.Auth",
+            "ZeeKayDa.Auth.Tokens.SigningStartupSelfTestVerifier, ZeeKayDa.Auth",
             throwOnError: false);
 
         if (expectedType is null)
         {
             throw new InvalidOperationException(
-                "Could not resolve type ZeeKayDa.Auth.Tokens.SigningStartupSelfTestHostedService from assembly ZeeKayDa.Auth.");
+                "Could not resolve type ZeeKayDa.Auth.Tokens.SigningStartupSelfTestVerifier from assembly ZeeKayDa.Auth.");
         }
 
-        return provider.GetServices<IHostedService>().Single(s => expectedType.IsInstanceOfType(s));
+        return provider.GetServices<IStartupVerifier>().Single(s => expectedType.IsInstanceOfType(s));
     }
 }

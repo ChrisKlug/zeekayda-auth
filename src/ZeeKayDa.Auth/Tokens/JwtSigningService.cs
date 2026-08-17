@@ -159,7 +159,7 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
 
     /// <summary>
     /// Forces materialization of the currently active signer exactly as <see cref="SignAsync"/>
-    /// would, so <c>SigningStartupSelfTestHostedService</c> can surface a signing failure at host
+    /// would, so <c>SigningStartupSelfTestVerifier</c> can surface a signing failure at host
     /// startup rather than on the first real token-issuing request.
     /// </summary>
     /// <remarks>

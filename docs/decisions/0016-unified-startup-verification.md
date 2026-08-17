@@ -117,7 +117,7 @@ public sealed class StartupVerificationContext
         => AddWarning(code, messageTemplate, LogLevel.Warning, args);
 }
 
-public sealed record StartupVerificationWarning(string Code, string MessageTemplate, LogLevel Level, object?[] Args);
+public sealed record StartupVerificationWarning(string Code, string MessageTemplate, LogLevel Level, IReadOnlyList<object?> Args);
 
 public interface IStartupVerifier
 {
@@ -204,12 +204,12 @@ their category — `MyPackage.InMemoryStoreVerifier`, not `StartupVerificationHo
 as if the verifier had constructor-injected `ISanitizingLogger<InMemoryStoreVerifier>` and logged
 through it directly, except the verifier never holds the reference.
 
-The runner logs each warning as `verifierLogger.Log(warning.Level, "[{Verifier}] {Code}: " +
+The runner logs each warning as `verifierLogger.Log(warning.Level, "[{Verifier}] {ErrorCode}: " +
 warning.MessageTemplate, [verifier.Name, warning.Code, .. warning.Args])` — `{Verifier}` (the
 instance `Name`, disambiguating same-type instances such as the two `InMemoryStoreVerifier`
-registrations), `{Code}`, and every argument the verifier
+registrations), `{ErrorCode}`, and every argument the verifier
 supplied, passed through to the sink **unformatted**. This is full structured logging: a backend that
-indexes structured fields sees `{Verifier}`, `{Code}`, and every
+indexes structured fields sees `{Verifier}`, `{ErrorCode}`, and every
 verifier-supplied placeholder as queryable fields, exactly as it would for any other `LogWarning`
 call site in the framework — and because the arguments stay structured rather than being flattened
 into a string before they reach the logger, `SecretSanitizingLogger`'s by-key redaction can act on
@@ -227,6 +227,13 @@ interpolates a secret directly into the message-template string bypasses by-key 
 they would with a raw `ILogger` call — structured logging makes correct usage the easy path, it does
 not make incorrect usage impossible. The `Code` on `StartupVerificationWarning` remains the stable,
 type-independent discriminator for log-based alerting.
+
+The runner's own placeholder for it is named `{ErrorCode}`, not `{Code}` — `{Code}` would
+case-insensitively collide with `SecretSanitizingLogger.SensitiveKeys`' `"code"` entry (present to
+redact OAuth authorization `code` values elsewhere in the framework), which would silently redact
+every startup warning's discriminator to `[REDACTED]` in production and defeat the log-based
+alerting this section relies on. The `Code` property on `StartupVerificationWarning` itself keeps
+its name — only the runner's log-template placeholder text changed.
 
 ### 4. Aggregation semantics
 
@@ -324,6 +331,18 @@ that code every time a deployment is cancelled mid-start. The runner therefore r
 then; a verifier that throws `OperationCanceledException` while the token is *not* signalled is a
 verifier bug and is wrapped like any other unexpected exception. Either way the host does not start,
 so fail-closed is unaffected — only the reported cause differs.
+
+**A warning that fails to log is reported as `startup.warning_log_failed`, not swallowed or left to
+crash unattributed.** §9's `verifierLogger.Log(...)` call can itself throw — most notably when a
+verifier's `MessageTemplate` and `Args` are mismatched in arity, which throws from inside the
+logging framework's own state formatter rather than from `VerifyAsync`, so it is outside
+`InvokeAsync`'s `try`/`catch` entirely. Without handling this separately, one verifier's malformed
+warning would crash `StartAsync` with an unattributed exception and discard every already-aggregated
+genuine `ZeeKayDaConfigurationFailure` from the same run. The runner instead wraps a warning-logging
+failure the same way it wraps an unexpected verifier exception — naming only the exception type,
+never its message, for the same redaction reason as `startup.verifier_failed` above — and folds it
+into the same failure list: aggregated in phase 2 alongside the verifier's own failures, or thrown
+immediately in phase 1, where there is no aggregation phase left to defer to.
 
 **No per-verifier timeout is introduced.** A verifier that hangs forever hangs startup. That is
 accepted for now: every in-tree verifier is either microsecond-scale in-memory work or a call whose
@@ -609,10 +628,11 @@ internal sealed class ClientRepositoryActivationVerifier : IStartupVerifier
         {
             context.AddWarning(
                 "clients.inmemory_shadowed",
-                $"AddInMemoryClients was called but the resolved IClientRepository is " +
-                $"{repository.GetType().FullName}, not InMemoryClientRepository. The configured " +
-                "in-memory clients are unreachable. Register a custom IClientRepository before " +
-                "calling AddInMemoryClients, or remove AddInMemoryClients entirely.");
+                "AddInMemoryClients was called but the resolved IClientRepository is " +
+                "{RepositoryType}, not InMemoryClientRepository. The configured in-memory clients " +
+                "are unreachable. Register a custom IClientRepository before calling " +
+                "AddInMemoryClients, or remove AddInMemoryClients entirely.",
+                repository.GetType().FullName);
         }
 
         return ValueTask.CompletedTask;
@@ -737,10 +757,17 @@ internal sealed class StartupVerificationHostedService(
         var sourceLogger = (ILogger)rootServices.GetRequiredService(
             typeof(ISanitizingLogger<>).MakeGenericType(source.GetType()));
 
+        // ZEEKAYDA0002 requires a compile-time-constant message template, because a runtime-built
+        // template normally means a value has already been formatted into the string and is past
+        // by-key redaction. This is the one call site where that inference does not hold: the
+        // non-constant operand is another *template*, and every value still travels as a
+        // structured arg. See "Suppressing ZEEKAYDA0002 at the runner's one call site" below.
+#pragma warning disable ZEEKAYDA0002 // log-hygiene-ok: composes a constant prefix with another unformatted template; all values stay structured args (#444)
         sourceLogger.Log(
             warning.Level,
-            "[{Verifier}] {Code}: " + warning.MessageTemplate,
+            "[{Verifier}] {ErrorCode}: " + warning.MessageTemplate,
             [name, warning.Code, .. warning.Args]);
+#pragma warning restore ZEEKAYDA0002
     }
 
     // Shared unexpected-exception handling for both phases (§5). Never swallows.
@@ -794,6 +821,44 @@ internal sealed class StartupVerificationHostedService(
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }
 ```
+
+**Suppressing `ZEEKAYDA0002` at the runner's one call site.** `InterpolatedStringLogAnalyzer`
+(`ZEEKAYDA0002`, severity `Error`) requires the message template passed to any `Log*` method to be a
+compile-time constant. Its target is a template with a runtime *value* already baked into it, which
+`SecretSanitizingLogger` can no longer redact because the key it redacts by no longer exists. The
+runner's composition is the one case in the framework where that inference is wrong: the
+non-constant operand is `warning.MessageTemplate`, itself an unformatted template, and every value —
+the verifier's own args plus the runner's `name` and `Code` — is passed separately as a structured
+arg. `LoggerExtensions.Log` parses the composed template and zips the args into named
+key/value pairs plus `{OriginalFormat}`, which is exactly the state shape
+`SecretSanitizingLogger.Log` inspects, so by-key redaction applies identically to how it does at a
+literal call site.
+
+The analyzer cannot distinguish the two cases: "is this string a template or a formatted message?"
+is not decidable from syntax. So the suppression is a `#pragma` scoped to the single statement —
+not a type-level exemption inside the analyzer next to `SecretSanitizingLogger`'s. Type-level would
+silently cover every future `Log` call added to the runner; statement-level leaves the rest of the
+type protected and puts the justification where a reviewer reads the risky line. It carries the same
+structured `log-hygiene-ok: <reason> (#<issue>)` form the CI hygiene grep already requires, and CI
+rejects any `ZEEKAYDA0001`/`ZEEKAYDA0002` pragma that omits it, so a future self-served suppression
+needs security-owner review rather than a quiet commit.
+
+The rejected alternative was reshaping the call to satisfy the analyzer. It does not work. Splitting
+into two `Log` calls leaves the second one passing `warning.MessageTemplate` as its template — still
+non-constant, still `ZEEKAYDA0002`, plus one warning now spans two records with attribution on only
+one. Pre-formatting the verifier's template into a `{Message}` arg under a constant template is the
+flattening that Security Consideration 6 exists to forbid: it strips the placeholder keys redaction
+keys on. Building the `IEnumerable<KeyValuePair<string, object?>>` state by hand and calling the
+low-level `ILogger.Log<TState>` overload does silence the analyzer, but only by re-implementing the
+BCL's template parser — placeholder names, `{{` escapes, `,alignment`/`:format` specifiers,
+duplicate placeholders — on the credential-redaction path, where an off-by-one puts a value under
+the wrong key and a mis-keyed value is an unredacted one. Trading a proven parser for a hand-rolled
+one to satisfy a lint rule whose purpose is protecting that same path is a net loss.
+
+One consequence of prepending rather than appending: the verifier's args are offset by two. That is
+invisible to named placeholders (redaction and rendering both key by name) but would mis-render a
+legacy positional `{0}` template. Positional templates are already ruled out by §8's migration rule
+that every message moves from `string.Format` composite syntax to named placeholders.
 
 ### 10. Migration scope — all of them
 
@@ -1114,11 +1179,23 @@ via an additional opt-in interface (§11).
    `ZeeKayDaConfigurationFailure` on public API surface rather than in a log record; (c) a
    third-party verifier's template is author-controlled and is logged as-is, newlines included, so
    log forging via a verifier message is available to anyone who can already register a verifier — a
-   low bar, and one more entry on §5's "not a sandbox" list. The implementation issue should carry
-   an explicit XML-doc warning on `AddWarning` / `AddFailure` to that effect, extend the CI
-   log-hygiene grep to cover those call sites and not only `ILogger` ones, and — since the runner now
-   passes a template through `ILogger.Log` — confirm the `ZEEKAYDA0001` interpolated-string analyzer
-   still fires on an interpolated `AddWarning` template.
+   low bar, and one more entry on §5's "not a sandbox" list.
+
+   Three follow-ons fall out of that, and the state of each is now known. The CI log-hygiene grep
+   already covers `AddWarning`: it matches sensitive placeholder names as plain text in any `.cs`
+   file under `src/`, so a `{client_secret}` in an `AddWarning` template fails the build with no
+   change needed. The interpolated-string analyzer initially did **not** — the relevant rule is
+   `ZEEKAYDA0002`, not `ZEEKAYDA0001` as an earlier revision of this section said, and it originally
+   fired only on methods named `Log*` whose receiver implements `ILogger`, so `context.AddWarning(
+   $"...{secret}...")` compiled clean. `ZEEKAYDA0002` has since been extended with a symbol-based
+   branch (matching `StartupVerificationContext.AddWarning` by containing type, then its
+   `messageTemplate` parameter by name/ordinal, since `AddWarning`'s first string argument is `code`,
+   not the template) so this now fails to compile like any other non-constant template. Because the
+   analyzer project is `IsPackable=false` and reaches the framework only by `ProjectReference`, this
+   extension binds first-party verifiers only — the third-party limit above is unchanged by it.
+   `AddFailure` is deliberately left uncovered: its message is not a log template, by-key redaction
+   never applies to it, and it is already governed by the §5 rule that a caught exception's
+   `Message` never reaches it.
 
 7. **Aggregation makes a doomed host pay for every side effect on every restart.** Today the first
    throwing check aborts and later checks never run. Under phase-2 aggregation, a host that is
@@ -1174,6 +1251,26 @@ via an additional opt-in interface (§11).
   reported as `startup.verifier_failed` (§5, §9); and §8's `ClientRepositoryActivationVerifier`
   comment, which still described a `ZeeKayDaConfigurationException` from the repository constructor
   being flattened, is corrected to match §5.
+- **2026-08-16 — issue #444** — §9's `LogWarning` composes a constant prefix with the verifier's own
+  template, which `ZEEKAYDA0002` rejects as a non-constant template. Resolved by a statement-scoped
+  `#pragma` suppression rather than by reshaping the call: every alternative shape either fails the
+  same rule, flattens the template (the downgrade Security Consideration 6 exists to prevent), or
+  hand-rolls the BCL's template parser on the redaction path. §9 gains the reasoning and the
+  rejected alternatives; Security Consideration 6 is corrected — the interpolated-string analyzer is
+  `ZEEKAYDA0002`, not `ZEEKAYDA0001`, and it did not cover `AddWarning` at the time, though the CI
+  hygiene grep did. §8 example (5) is corrected to pass the repository type as a structured arg
+  instead of interpolating it into the template.
+- **2026-08-16 — issue #444, PR #450 security review** — `ZEEKAYDA0002` is extended with a
+  symbol-based branch so it now also rejects a non-constant `messageTemplate` passed to
+  `StartupVerificationContext.AddWarning`, closing the gap Security Consideration 6 previously
+  recorded as open. Security Consideration 6 and this section are updated to reflect that the
+  extension has shipped rather than being tracked separately.
+- **2026-08-16 — issue #444, PR #450 review follow-ups** — §3 gains the rationale for naming the
+  runner's placeholder `{ErrorCode}` rather than `{Code}` (a redaction-key collision, not a stylistic
+  choice); §5 documents `startup.warning_log_failed`, the failure code a warning-logging failure
+  (most notably a `MessageTemplate`/`Args` arity mismatch) is wrapped as, since it was implemented
+  but never recorded here; and `StartupVerificationWarning.Args` changes from `object?[]` to
+  `IReadOnlyList<object?>` so the record does not expose a mutable array through public API surface.
 
 ---
 

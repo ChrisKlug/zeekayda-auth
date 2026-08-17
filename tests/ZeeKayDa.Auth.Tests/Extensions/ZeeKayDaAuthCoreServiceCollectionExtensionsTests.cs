@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.Extensions;
 using ZeeKayDa.Auth.Logging;
 using ZeeKayDa.Auth.Tokens;
@@ -47,7 +48,7 @@ public sealed class ZeeKayDaAuthCoreServiceCollectionExtensionsTests
     // ── Issue #437: framework-owned startup self-test wiring ───────────────────────────────────────
 
     [Fact]
-    public void AddZeeKayDaAuthCore_registers_SigningStartupSelfTestHostedService_as_a_hosted_service()
+    public void AddZeeKayDaAuthCore_registers_SigningStartupSelfTestVerifier_as_an_IStartupVerifier()
     {
         var services = new ServiceCollection();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
@@ -55,11 +56,11 @@ public sealed class ZeeKayDaAuthCoreServiceCollectionExtensionsTests
         services.AddZeeKayDaAuthCore();
 
         using var provider = services.BuildServiceProvider();
-        provider.GetServices<IHostedService>().OfType<SigningStartupSelfTestHostedService>().Should().ContainSingle();
+        provider.GetServices<IStartupVerifier>().OfType<SigningStartupSelfTestVerifier>().Should().ContainSingle();
     }
 
     [Fact]
-    public void AddZeeKayDaAuthCore_registers_the_signing_startup_self_test_hosted_service_exactly_once_across_repeated_calls()
+    public void AddZeeKayDaAuthCore_registers_the_signing_startup_self_test_verifier_exactly_once_across_repeated_calls()
     {
         var services = new ServiceCollection();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
@@ -68,23 +69,35 @@ public sealed class ZeeKayDaAuthCoreServiceCollectionExtensionsTests
         services.AddZeeKayDaAuthCore();
 
         using var provider = services.BuildServiceProvider();
-        provider.GetServices<IHostedService>().OfType<SigningStartupSelfTestHostedService>().Should().ContainSingle();
+        provider.GetServices<IStartupVerifier>().OfType<SigningStartupSelfTestVerifier>().Should().ContainSingle();
+    }
+
+    // ── Issue #444: unified startup verification wiring ─────────────────────────────────────────────
+
+    [Fact]
+    public void AddZeeKayDaAuthCore_registers_StartupVerificationHostedService_as_a_hosted_service()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
+
+        services.AddZeeKayDaAuthCore();
+
+        using var provider = services.BuildServiceProvider();
+        provider.GetServices<IHostedService>().OfType<StartupVerificationHostedService>().Should().ContainSingle();
     }
 
     [Fact]
-    public async Task Registered_hosted_service_does_not_throw_when_no_IJwtSigningService_is_registered()
+    public void AddZeeKayDaAuthCore_registers_a_non_empty_gate_collection_even_without_AddZeeKayDaAuth()
     {
-        // A host that has not (yet) configured any signing key provider must still be able to start
-        // — the self-test is a no-op, not a hard DI-resolution failure, when nothing is registered.
+        // A host wiring only AddZeeKayDaAuthCore() (e.g. a signing-provider package such as
+        // .AzureKeyVault/.FileSystem/.Windows without AddZeeKayDaAuth()) must still get the
+        // sanitizing-logger shadow gate — otherwise the runner's gate phase passes vacuously.
         var services = new ServiceCollection();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
+
         services.AddZeeKayDaAuthCore();
 
-        await using var provider = services.BuildServiceProvider();
-        var hostedService = provider.GetServices<IHostedService>().OfType<SigningStartupSelfTestHostedService>().Single();
-
-        var act = async () => await hostedService.StartAsync(TestContext.Current.CancellationToken);
-
-        await act.Should().NotThrowAsync();
+        using var provider = services.BuildServiceProvider();
+        provider.GetServices<IStartupVerificationGate>().Should().NotBeEmpty();
     }
 }

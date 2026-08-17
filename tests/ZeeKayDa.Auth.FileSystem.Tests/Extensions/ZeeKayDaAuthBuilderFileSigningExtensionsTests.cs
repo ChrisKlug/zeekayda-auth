@@ -9,6 +9,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.FileSystem;
 using ZeeKayDa.Auth.Tokens;
 
@@ -230,42 +231,42 @@ public sealed class ZeeKayDaAuthBuilderFileSigningExtensionsTests
 
     // FileSigningStartupService was deleted in issue #437: it had no genuinely file-format-specific
     // behavior of its own (only the pre-warm every provider used to hand-roll), so it is fully
-    // superseded by the framework-owned SigningStartupSelfTestHostedService registered once by
-    // AddZeeKayDaAuthCore() for every signing provider. These tests now prove that hosted service is
+    // superseded by the framework-owned SigningStartupSelfTestVerifier registered once by
+    // AddZeeKayDaAuthCore() for every signing provider. These tests now prove that verifier is
     // reachable through this package's registration path instead.
 
-    // SigningStartupSelfTestHostedService is internal to ZeeKayDa.Auth (core), which does not grant
+    // SigningStartupSelfTestVerifier is internal to ZeeKayDa.Auth (core), which does not grant
     // this test project [InternalsVisibleTo] access — only ZeeKayDa.Auth.FileSystem itself has that.
     // Its full type name is therefore matched by reflection rather than referenced directly, exactly
     // as the DI-registration proof this test replaces would look from any out-of-assembly test.
 
     [Fact]
-    public async Task AddPemFileSigning_registers_the_framework_owned_signing_startup_self_test_as_a_hosted_service()
+    public async Task AddPemFileSigning_registers_the_framework_owned_signing_startup_self_test_as_an_IStartupVerifier()
     {
         var builder = NewBuilder();
 
         builder.AddPemFileSigning(PemPath, SigningAlgorithm.RS256);
 
         var targetType = typeof(IJwtSigningService).Assembly.GetType(
-            "ZeeKayDa.Auth.Tokens.SigningStartupSelfTestHostedService", throwOnError: true)!;
+            "ZeeKayDa.Auth.Tokens.SigningStartupSelfTestVerifier", throwOnError: true)!;
 
         await using var provider = builder.Services.BuildServiceProvider();
-        provider.GetServices<IHostedService>().Should().Contain(
+        provider.GetServices<IStartupVerifier>().Should().Contain(
             s => targetType.IsAssignableFrom(s.GetType()));
     }
 
     [Fact]
-    public async Task AddPfxFileSigning_registers_the_framework_owned_signing_startup_self_test_as_a_hosted_service()
+    public async Task AddPfxFileSigning_registers_the_framework_owned_signing_startup_self_test_as_an_IStartupVerifier()
     {
         var builder = NewBuilder();
 
         builder.AddPfxFileSigning(PfxPath, SigningAlgorithm.RS256, AnyPassword());
 
         var targetType = typeof(IJwtSigningService).Assembly.GetType(
-            "ZeeKayDa.Auth.Tokens.SigningStartupSelfTestHostedService", throwOnError: true)!;
+            "ZeeKayDa.Auth.Tokens.SigningStartupSelfTestVerifier", throwOnError: true)!;
 
         await using var provider = builder.Services.BuildServiceProvider();
-        provider.GetServices<IHostedService>().Should().Contain(
+        provider.GetServices<IStartupVerifier>().Should().Contain(
             s => targetType.IsAssignableFrom(s.GetType()));
     }
 

@@ -400,6 +400,16 @@ _logger.LogDebug("Verifier: {code_verifier}", verifier); // log-hygiene-ok: test
 _logger.LogDebug("Verifier: {code_verifier}", verifier); // log-hygiene-ok: (#179)
 ```
 
+**A second, independent check in the same script**: any `#pragma warning disable` naming `ZEEKAYDA0001` or `ZEEKAYDA0002` (the analyzer rules — see [Analyzer rules](docs/reference/analyzer-rules.md)) must carry the same structured `// log-hygiene-ok: <reason> (#N)` comment on the same line, or the build fails. This closes a self-served-suppression gap the placeholder-name grep above doesn't cover: a developer disabling one of those two analyzer rules outright, rather than working around a specific flagged placeholder.
+
+```csharp
+// Accepted:
+#pragma warning disable ZEEKAYDA0002 // log-hygiene-ok: composes a constant prefix with another unformatted template; all values stay structured args (#444)
+
+// Rejected — no structured comment at all:
+#pragma warning disable ZEEKAYDA0002
+```
+
 **Review requirement:**
 
 The hygiene script (`.github/scripts/check_log_hygiene.sh`) and its smoke tests are listed in CODEOWNERS. Any PR that modifies either file requires approval from a security owner. This ensures that suppression format rules cannot be silently relaxed.

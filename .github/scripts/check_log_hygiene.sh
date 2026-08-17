@@ -62,4 +62,30 @@ if [ "$found" -ne 0 ]; then
     exit 1
 fi
 
+# Second check: any #pragma warning disable naming ZEEKAYDA0001/ZEEKAYDA0002 must carry the
+# same structured "// log-hygiene-ok: <reason> (#N)" comment on the same line, so a future
+# self-served suppression is visible in the diff rather than a quiet commit. Today every source
+# file falls under CODEOWNERS' repo-wide "* @ChrisKlug" entry, so any such suppression already
+# requires maintainer review; that default-owner coverage, not this script's own CODEOWNERS entry,
+# is what makes the review requirement hold at a suppression's actual call site. If narrower,
+# per-directory CODEOWNERS entries are ever introduced, revisit whether src/ still needs one too.
+PRAGMA_PATTERN='#pragma[[:space:]]+warning[[:space:]]+disable.*\b(ZEEKAYDA0001|ZEEKAYDA0002)\b'
+pragma_found=0
+
+for path in "${SEARCH_PATHS[@]}"; do
+    [ -d "$path" ] || continue
+    while IFS= read -r line; do
+        [[ "$line" =~ //[[:space:]]*log-hygiene-ok:[[:space:]]+[^[:space:]].*\(#[0-9]+\)[[:space:]]*$ ]] && continue
+        echo "$line"
+        pragma_found=1
+    done < <(grep -rn --include="*.cs" -E "$PRAGMA_PATTERN" "$path" 2>/dev/null || true)
+done
+
+if [ "$pragma_found" -ne 0 ]; then
+    printf '\nLOG HYGIENE FAILURE: a #pragma warning disable for ZEEKAYDA0001/ZEEKAYDA0002 must\n'
+    printf 'carry a structured suppression comment on the same line:\n'
+    printf '  // log-hygiene-ok: <non-empty reason> (#<issue-or-pr-number>)\n'
+    exit 1
+fi
+
 echo "Log hygiene check passed."

@@ -197,6 +197,26 @@ assert_exit "suppression with trailing code after issue ref fails ($ end-anchor 
     run_hygiene_check "${DIR}"
 
 # ---------------------------------------------------------------------------
+# Case 14: #pragma warning disable ZEEKAYDA0002 with a valid structured
+# suppression comment on the same line → exit 0
+# ---------------------------------------------------------------------------
+DIR="${WORK_DIR}/case14"
+write_cs_file "${DIR}" "Service.cs" \
+    '#pragma warning disable ZEEKAYDA0002 // log-hygiene-ok: composes a constant prefix with another unformatted template (#444)'
+assert_exit "pragma disable with valid structured suppression passes" 0 \
+    run_hygiene_check "${DIR}"
+
+# ---------------------------------------------------------------------------
+# Case 15: #pragma warning disable ZEEKAYDA0002 with no suppression comment
+# → exit 1
+# ---------------------------------------------------------------------------
+DIR="${WORK_DIR}/case15"
+write_cs_file "${DIR}" "Service.cs" \
+    '#pragma warning disable ZEEKAYDA0002'
+assert_exit "pragma disable without a suppression comment fails" 1 \
+    run_hygiene_check "${DIR}"
+
+# ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
 echo

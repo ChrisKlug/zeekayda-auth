@@ -92,12 +92,8 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
                 IValidateOptions<AuthorizationServerOptions>,
                 ClientRepositoryPresenceValidator>());
 
-        services.AddSingleton(new SanitizingLoggerClosedOverrideScanner(services));
-
-        // Registered first among hosted services (they start in registration order) so nothing
-        // below can log through a shadowed sanitizer before this check can abort startup.
-        services.AddHostedService<SanitizingLoggerRegistrationStartupValidator>();
-
+        // The sanitizing-logger shadow check and the runner that drives it are registered by
+        // AddZeeKayDaAuthCore() above, so no ordering dependency exists here.
         services.AddHostedService<InsecureIssuerWarningService>();
         services.AddHostedService<ExceptionSanitizingDisabledWarningService>();
         services.AddHostedService<AbsoluteFamilyLifetimeUnboundedWarningService>();

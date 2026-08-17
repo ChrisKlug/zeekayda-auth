@@ -23,9 +23,9 @@ namespace ZeeKayDa.Auth.Logging;
 /// <c>TryAddSingleton(typeof(ISanitizingLogger&lt;&gt;), typeof(SecretSanitizingLogger&lt;&gt;))</c>.
 /// A host that registers its own <c>ISanitizingLogger&lt;&gt;</c> implementation before calling
 /// <c>AddZeeKayDaAuth()</c> shadows the framework's redaction wrapper for every ZeeKayDa service,
-/// silently disabling the framework's credential-redaction guarantee. A hosted
-/// startup validator detects this and fails fast — see
-/// <c>SanitizingLoggerRegistrationStartupValidator</c> in <c>ZeeKayDa.Auth.AspNetCore</c>.
+/// silently disabling the framework's credential-redaction guarantee. An internal startup gate
+/// detects this and fails fast, before any other startup check can run — see
+/// <c>SanitizingLoggerRegistrationGate</c>.
 /// </para>
 /// </remarks>
 public interface ISanitizingLogger<T> : ILogger<T>

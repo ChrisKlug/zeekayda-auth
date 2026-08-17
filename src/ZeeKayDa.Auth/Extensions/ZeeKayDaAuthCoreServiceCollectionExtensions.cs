@@ -48,12 +48,24 @@ public static class ZeeKayDaAuthCoreServiceCollectionExtensions
         // registered here in core rather than in any individual provider package.
         services.TryAddSingleton<ISigningKeyRetirementWindowProvider, SigningKeyRetirementWindowProvider>();
 
-        // The startup self-test runs against whatever IJwtSigningService is registered, regardless
-        // of which signing-provider package registered it. TryAddEnumerable keeps this idempotent
-        // across repeated AddZeeKayDaAuthCore() calls (e.g. a provider package calling it
-        // defensively alongside AddZeeKayDaAuth()'s own call).
+        // The single runner for every framework startup check. TryAddEnumerable keeps this
+        // idempotent across repeated AddZeeKayDaAuthCore() calls (e.g. a provider package calling
+        // it defensively alongside AddZeeKayDaAuth()'s own call).
         services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IHostedService, SigningStartupSelfTestHostedService>());
+            ServiceDescriptor.Singleton<IHostedService, StartupVerificationHostedService>());
+
+        // The sanitizing-logger shadow check must ship from the same registration call as the
+        // runner, so that a host calling only AddZeeKayDaAuthCore() (e.g. a signing-provider
+        // package wired without AddZeeKayDaAuth()) never gets a runner with an empty, vacuously
+        // passing gate collection.
+        services.TryAddSingleton(_ => new SanitizingLoggerClosedOverrideScanner(services));
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IStartupVerificationGate, SanitizingLoggerRegistrationGate>());
+
+        // The startup self-test runs against whatever IJwtSigningService is registered, regardless
+        // of which signing-provider package registered it.
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IStartupVerifier, SigningStartupSelfTestVerifier>());
 
         return services;
     }
