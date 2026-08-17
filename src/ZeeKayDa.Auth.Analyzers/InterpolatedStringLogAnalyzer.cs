@@ -52,14 +52,31 @@ public sealed class InterpolatedStringLogAnalyzer : DiagnosticAnalyzer
     {
         var invocation = (InvocationExpressionSyntax)context.Node;
 
-        if (invocation.Expression is not MemberAccessExpressionSyntax memberAccess) return;
-        if (!IsInZeeKayDaNamespace(invocation)) return;
+        // Plain `logger.LogX(...)` uses MemberAccessExpressionSyntax; conditional-access
+        // `logger?.LogX(...)` uses MemberBindingExpressionSyntax, whose receiver lives on the
+        // enclosing ConditionalAccessExpressionSyntax rather than on the member node itself.
+        ExpressionSyntax? receiverExpression;
+        string methodName;
+        switch (invocation.Expression)
+        {
+            case MemberAccessExpressionSyntax memberAccess:
+                receiverExpression = memberAccess.Expression;
+                methodName = memberAccess.Name.Identifier.Text;
+                break;
+            case MemberBindingExpressionSyntax memberBinding:
+                receiverExpression = GetConditionalAccessReceiver(invocation);
+                methodName = memberBinding.Name.Identifier.Text;
+                break;
+            default:
+                return;
+        }
 
-        var methodName = memberAccess.Name.Identifier.Text;
+        if (receiverExpression is null) return;
+        if (!IsInZeeKayDaNamespace(invocation)) return;
 
         if (methodName.StartsWith("Log", System.StringComparison.Ordinal))
         {
-            AnalyzeLogInvocation(context, invocation, memberAccess);
+            AnalyzeLogInvocation(context, invocation, receiverExpression);
             return;
         }
 
@@ -67,12 +84,20 @@ public sealed class InterpolatedStringLogAnalyzer : DiagnosticAnalyzer
             AnalyzeAddWarningInvocation(context, invocation);
     }
 
+    private static ExpressionSyntax? GetConditionalAccessReceiver(InvocationExpressionSyntax invocation)
+    {
+        return invocation.Parent is ConditionalAccessExpressionSyntax { WhenNotNull: var whenNotNull } conditional
+            && whenNotNull == invocation
+            ? conditional.Expression
+            : null;
+    }
+
     private static void AnalyzeLogInvocation(
-        SyntaxNodeAnalysisContext context, InvocationExpressionSyntax invocation, MemberAccessExpressionSyntax memberAccess)
+        SyntaxNodeAnalysisContext context, InvocationExpressionSyntax invocation, ExpressionSyntax receiverExpression)
     {
         if (IsInLoggerImplementation(context, invocation)) return;
 
-        var receiverType = context.SemanticModel.GetTypeInfo(memberAccess.Expression).Type;
+        var receiverType = context.SemanticModel.GetTypeInfo(receiverExpression).Type;
         if (receiverType is null) return;
 
         if (!ImplementsILogger(receiverType)) return;
