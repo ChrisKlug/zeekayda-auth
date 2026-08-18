@@ -206,10 +206,11 @@ escalation of risk in configuration review, not a neutral toggle.
 ### 6. Startup warning when exception sanitization is disabled
 
 `ExceptionSanitizingDisabledWarningService` is always registered by `AddZeeKayDaAuth()` as an
-`IHostedService`. In `StartAsync`, it reads `AuthorizationServerOptions.Logging.DisableExceptionSanitizing`
-and emits a single `LogLevel.Warning` if the flag is set, using
-`ISanitizingLogger<ExceptionSanitizingDisabledWarningService>` as the log category. The warning
-message:
+`IStartupVerifier` (migrated from `IHostedService` by issue #445; see ADR 0016). In `VerifyAsync`,
+it reads `AuthorizationServerOptions.Logging.DisableExceptionSanitizing` and calls
+`context.AddWarning` with a single `LogLevel.Warning` if the flag is set. The runner logs the
+warning through `ISanitizingLogger<ExceptionSanitizingDisabledWarningService>` as the log
+category. The warning message:
 
 > Exception message sanitization is disabled via AuthorizationServerOptions.Logging.DisableExceptionSanitizing.
 > Exception messages logged by ZeeKayDa.Auth services may contain credential material and will reach
@@ -217,7 +218,7 @@ message:
 
 This follows the exact pattern established by `InsecureIssuerWarningService`, which emits an
 equivalent startup warning when `AllowInsecureIssuer` is set: an `internal sealed class`
-implementing `IHostedService`, checking the condition in `StartAsync`, emitting the warning at
+implementing `IStartupVerifier`, checking the condition in `VerifyAsync`, reporting the warning at
 `LogLevel.Warning` if the flag is active.
 
 `LogLevel.Warning` is used unconditionally regardless of environment. Escalating to `LogLevel.Error`

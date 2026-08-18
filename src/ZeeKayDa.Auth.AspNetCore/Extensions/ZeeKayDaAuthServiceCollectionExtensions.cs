@@ -92,21 +92,27 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
                 IValidateOptions<AuthorizationServerOptions>,
                 ClientRepositoryPresenceValidator>());
 
-        // The sanitizing-logger shadow check and the runner that drives it are registered by
+        // The sanitizing-logger shadow gate and the runner that drives it are registered by
         // AddZeeKayDaAuthCore() above, so no ordering dependency exists here.
-        services.AddHostedService<InsecureIssuerWarningService>();
-        services.AddHostedService<ExceptionSanitizingDisabledWarningService>();
-        services.AddHostedService<AbsoluteFamilyLifetimeUnboundedWarningService>();
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IStartupVerifier, InsecureIssuerWarningService>());
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IStartupVerifier, ExceptionSanitizingDisabledWarningService>());
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IStartupVerifier, AbsoluteFamilyLifetimeUnboundedWarningService>());
 
-        // A hosted service rather than IValidateOptions so the openid-scope check can be awaited
-        // without risking a deadlock on synchronous, blocking async I/O.
-        services.AddHostedService<ScopePresenceStartupValidator>();
+        // An IStartupVerifier rather than IValidateOptions so the openid-scope check can be
+        // awaited without risking a deadlock on synchronous, blocking async I/O.
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IStartupVerifier, ScopePresenceStartupValidator>());
 
-        services.AddHostedService<TokenStorePresenceValidator>();
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IStartupVerifier, TokenStorePresenceValidator>());
 
         // Resolves IClientRepository at startup so its construction-time validation fails fast
         // rather than at first request.
-        services.AddHostedService<ClientRepositoryStartupActivator>();
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IStartupVerifier, ClientRepositoryStartupActivator>());
 
         // The composite is registered as its concrete type, not IClientAuthenticator, so it is
         // excluded from IEnumerable<IClientAuthenticator> and cannot dispatch recursively.

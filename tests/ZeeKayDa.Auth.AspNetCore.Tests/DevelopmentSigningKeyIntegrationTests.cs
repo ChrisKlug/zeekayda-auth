@@ -81,9 +81,9 @@ public sealed class DevelopmentSigningKeyIntegrationTests
         using var factory = new DevSigningKeyFactory("Production");
         var act = () => factory.CreateClient();
 
-        // The ZeeKayDaConfigurationException is thrown from DevelopmentSigningKeyWarningService.StartAsync
-        // during host startup and propagates out of CreateClient as the inner exception of a
-        // HostAbortedException or AggregateException.
+        // The ZeeKayDaConfigurationException is thrown from DevelopmentSigningKeyWarningService.VerifyAsync,
+        // absorbed and re-aggregated by the startup verification runner, and propagates out of
+        // CreateClient as the inner exception of a HostAbortedException or AggregateException.
         act.Should().Throw<Exception>()
             .Where(ex => HasFailureCode(ex, DevelopmentSigningKeyGate.ProductionFailureCode));
     }

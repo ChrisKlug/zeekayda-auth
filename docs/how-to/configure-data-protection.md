@@ -427,9 +427,10 @@ temporary sticky sessions while you fix the key ring will stop the re-prompts.
 
 If the host uses `AddInMemoryStores()` (or either granular `AddInMemoryAuthorizationCodeStore()` /
 `AddInMemoryRefreshTokenStore()` call) with `allowOutsideDevelopment: true` and is running outside
-a Development environment, ZeeKayDa.Auth emits a startup message via `InMemoryStoreWarningService`
-to alert operators that in-memory stores are active. The log level differs by environment. Each
-registration method gates independently on its own `allowOutsideDevelopment` value, so a host that
+a Development environment, ZeeKayDa.Auth emits a startup message via the `InMemoryStoreVerifier`
+startup verifier to alert operators that in-memory stores are active. The log level differs by
+environment. Each registration method gates independently on its own `allowOutsideDevelopment`
+value, so a host that
 mixes granular calls with different values gets one outcome per store:
 
 | Environment | `allowOutsideDevelopment` | Log level |

@@ -198,13 +198,15 @@ consumer takes on is the extension method signature and any options type it expo
   changes (new non-abstract methods, new types, new extension methods) are safe. When a core release
   includes a binary-impacting change to the base class, all provider packages must be updated and
   re-released against the new version before consumers can upgrade core.
-- **The development provider's environment gate requires a hosted service runner.** The fail-closed
-  environment check (`DevelopmentSigningKeyWarningService`) is an `IHostedService` and only runs
-  under a host that starts hosted services. In worker or console hosts the gate never fires.
+- **The development provider's environment gate requires a startup-verification runner.** The
+  fail-closed environment check (`DevelopmentSigningKeyWarningService`) is an `IStartupVerifier`
+  (migrated from `IHostedService` by issue #445; see ADR 0016) and only runs under a host that
+  runs `StartupVerificationHostedService`. In worker or console hosts the gate never fires.
   `DevelopmentJwtSigningService` mitigates this by enforcing the gate in `LoadKeysAsync` from
   `DevelopmentSigningKeyOptions.EnvironmentName`, which the AspNetCore registration layer populates
-  from `IHostEnvironment` via `Configure<IHostEnvironment>`. The hosted service remains as the startup-warning UX layer; the hard fail-closed
-  travels with the key material and is independent of host model.
+  from `IHostEnvironment` via `Configure<IHostEnvironment>`. The startup verifier remains as the
+  startup-warning UX layer; the hard fail-closed travels with the key material and is independent
+  of host model.
 - **Six package identities require NuGet signing and provenance attestations.** Six separately-
   published package identities create six typosquat targets. All packages must be published with
   NuGet repository signing and GitHub Actions provenance attestations so consumers can verify

@@ -215,16 +215,16 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public void AddZeeKayDaAuth_always_registers_ExceptionSanitizingDisabledWarningService_as_IHostedService()
+    public void AddZeeKayDaAuth_always_registers_ExceptionSanitizingDisabledWarningService_as_IStartupVerifier()
     {
-        // The warning service reads the flag at startup and emits a warning only when the flag
+        // The warning verifier reads the flag at startup and emits a warning only when the flag
         // is set. It is always registered (unconditionally) so no additional method call is needed.
         var services = new ServiceCollection();
 
         services.AddZeeKayDaAuth(options => options.Issuer = "https://auth.example.com");
 
         services.Should().Contain(sd =>
-            sd.ServiceType == typeof(IHostedService) &&
+            sd.ServiceType == typeof(IStartupVerifier) &&
             sd.ImplementationType == typeof(ExceptionSanitizingDisabledWarningService));
     }
 

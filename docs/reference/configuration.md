@@ -75,7 +75,7 @@ Intended for local development and automated testing only.
 
 > Warning: Never set `AllowInsecureIssuer = true` in production. An HTTP issuer allows token
 > responses to be intercepted and identity documents to be forged. When this flag is enabled,
-> `InsecureIssuerWarningService` emits a warning via `ILogger` at every startup.
+> the `InsecureIssuer` startup verifier emits a warning at every startup.
 >
 > Request-time enforcement also applies: ZeeKayDa.Auth protocol endpoints reject non-HTTPS
 > non-loopback requests with `421 Misdirected Request`. Loopback is determined from the TCP-level

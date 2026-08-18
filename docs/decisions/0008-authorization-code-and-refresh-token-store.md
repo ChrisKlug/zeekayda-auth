@@ -785,12 +785,21 @@ benefit, increases versioning surface, and the abstractions are genuinely host-a
 **Registration.** `AddZeeKayDaAuth` does **not** register either store. Both
 `IAuthorizationCodeStore` and `IRefreshTokenStore` are left unregistered after the call.
 Consumers must explicitly opt in to one of the provided implementations or register a custom
-one via the builder. At startup, an `IHostedService` presence validator
-(following the `ScopePresenceStartupValidator` precedent already in the codebase) checks that
-both interfaces are registered. If either is missing it throws `ZeeKayDaConfigurationException`
-(per ADR 0006), naming the missing interface and pointing to this ADR for the registration
-options. The presence validator runs before the in-memory warning emitter (see below), so a
-half-registered configuration fails fast rather than emitting a misleading warning.
+one via the builder. At startup, `TokenStorePresenceValidator` — an `IStartupVerifier` per
+ADR 0016 — checks that both interfaces are registered. If either is missing it calls
+`context.AddFailure` (per ADR 0006's `ZeeKayDaConfigurationException`/`ZeeKayDaConfigurationFailure`
+shape) naming the missing interface and pointing to this ADR for the registration options.
+
+Under ADR 0016's phase-2 aggregation, `TokenStorePresenceValidator` and the in-memory warning
+verifier (`InMemoryStoreVerifier`, see below) both run and both report in the same startup: a
+half-registered configuration together with an active in-memory store surfaces the presence
+failure *and* the in-memory warning side by side, rather than the presence failure alone
+suppressing the warning as an earlier registration-order convention did. This is a deliberate,
+accepted change from that convention — the host still refuses to start either way, so
+fail-closed is unaffected. The diagnostic ordering also changed: per ADR 0016 §9, the runner
+logs each verifier's warnings inline during the phase-2 loop but only surfaces failures in the
+aggregated exception thrown after the loop completes, so the in-memory warning now appears in
+the operator's log *before* the presence failure, not after it.
 
 **Builder registration API.** All store registration happens through the `ZeeKayDaAuthBuilder`
 returned by `AddZeeKayDaAuth`. The full API surface is:
@@ -888,7 +897,7 @@ check. The granular in-memory methods exist precisely to make this natural.
 **Mandatory startup warning when any in-memory registration method is used.** Because the
 in-memory stores lose all tokens on process restart and disable single-use enforcement and
 reuse detection across multiple instances, the framework emits a warning before the first
-request is served via a registered `IHostedService`. The warning MUST be at `LogLevel.Warning`
+request is served via a registered `IStartupVerifier` (per ADR 0016). The warning MUST be at `LogLevel.Warning`
 and MUST include the following text verbatim:
 
 > "ZeeKayDa.Auth: in-memory token stores are active. All issued tokens will be lost on
@@ -901,7 +910,7 @@ This warning fires unconditionally whenever `.AddInMemoryStores()`,
 there is no suppression mechanism. In-memory stores are development and testing only,
 regardless of instance count.
 
-Each registration's `IHostedService` instance appends a trailing sentence naming its own store
+Each registration's `IStartupVerifier` instance appends a trailing sentence naming its own store
 (e.g. `"Store: authorization code store."` / `"Store: refresh token store."`) after the verbatim
 text above. This keeps `.AddInMemoryStores()` — which registers one instance per store — from
 emitting the identical line twice; the verbatim requirement governs the leading text, not the
@@ -917,7 +926,7 @@ and each is enforced separately. The escape hatch lives on the registration meth
 meaningless unless one of those methods was called, and a single flag does not justify a dedicated
 options type (per this ADR's own empty-`DistributedCacheTokenStoreOptions` precedent; see
 Considered and Rejected Alternatives). When `allowOutsideDevelopment` is `true` and the host
-environment is not `Development`, the same `IHostedService` logs at `Critical`, not `Warning`, on
+environment is not `Development`, the same `IStartupVerifier` logs at `Critical`, not `Warning`, on
 every startup — not once, not only on first detection — naming the override explicitly ("in-memory
 token stores are active outside a Development environment... ensure this is intentional"). This
 mirrors ADR 0011 §2's treatment of `AllowedDevelopmentJwtSigningKeysEnvironments`: both gates emit
@@ -1028,7 +1037,7 @@ states this expectation; we do not (and cannot) enforce it through the type syst
 
 **Configuration faults at startup** surface as `ZeeKayDaConfigurationException` (per ADR
 0006), not as `InvalidOperationException`. Two categories exist: (1) a missing store
-registration — detected by the `IHostedService` presence validator described in §5, which
+registration — detected by the `IStartupVerifier` presence validator described in §5, which
 follows the `ScopePresenceStartupValidator` precedent already in the codebase; (2) a
 missing infrastructure dependency (e.g. `AddDistributedCacheTokenStores` called without
 `IDistributedCache` registered) — detected at startup by the options-validation path
@@ -1785,3 +1794,4 @@ considered-and-rejected, and security-considerations sections above.
 - **2026-06-22** — `ClockSkewTolerance` applied in `DistributedCacheAuthorizationCodeStore.TryRedeemAsync` and both `ExpiresAt` checks in `DistributedCacheRefreshTokenStore`; the marker's 5-min grace kept independent of `ClockSkewTolerance`. See §4d.
 - **2026-07-11 — issue #337 (this PR), impl #339** — `AllowInMemoryStoresOutsideDevelopment` moved off `AuthorizationServerOptions` onto a `bool allowOutsideDevelopment = false` parameter on the three in-memory registration methods (reverses PR #333's root placement — see Considered-and-Rejected). In-memory-outside-`Development` startup log corrected to `Critical`, not `Warning` (§5), matching ADR 0011 §2. ADR migrated to the three-part format ([README](./README.md)). **Invariants unchanged:** fail-closed outside `Development` unless opted in; mandatory startup warning whenever an in-memory store is registered.
 - **2026-07-11 — PR #345 review follow-up** — Each in-memory registration's warning/critical log line now names its own store (§5), so `.AddInMemoryStores()` emits two distinctly-worded lines instead of the same line twice. The §5 verbatim requirement governs only the leading sentence block; per-store text is appended after it.
+- **2026-08-18 — issue #445 (ADR 0016 migration)** — The store-presence check (`TokenStorePresenceValidator`) and the in-memory warning check (`InMemoryStoreVerifier`) both migrated from hand-rolled `IHostedService`s to `IStartupVerifier` (ADR 0016). Under ADR 0016's phase-2 aggregation both now run and report together in the same startup, so the presence failure no longer suppresses the in-memory warning the way the old registration-order convention did; the host still fails closed either way. See §5.

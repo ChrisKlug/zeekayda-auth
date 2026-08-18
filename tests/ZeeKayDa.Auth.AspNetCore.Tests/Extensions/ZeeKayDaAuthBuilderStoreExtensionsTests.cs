@@ -1,15 +1,14 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
-using ZeeKayDa.Auth.Logging;
+using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.Stores;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests.Extensions;
 
 public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
 {
-    // ── Fake infrastructure for InMemoryStoreWarningService resolution ───────────────────────────
+    // ── Fake infrastructure for InMemoryStoreVerifier resolution ─────────────────────────────────
 
     private sealed class FakeHostEnvironment(string environmentName) : IHostEnvironment
     {
@@ -19,34 +18,11 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
         public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
     }
 
-    private sealed class CapturingLogger<T> : ISanitizingLogger<T>
-    {
-        public List<(LogLevel Level, string Message)> Entries { get; } = [];
-
-        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
-
-        public bool IsEnabled(LogLevel logLevel) => true;
-
-        public void Log<TState>(
-            LogLevel logLevel,
-            EventId eventId,
-            TState state,
-            Exception? exception,
-            Func<TState, Exception?, string> formatter)
-        {
-            Entries.Add((logLevel, formatter(state, exception)));
-        }
-    }
-
     private static ServiceCollection CreateServicesWithWarningServiceDependencies(
-        string environmentName = "Development",
-        CapturingLogger<InMemoryStoreWarningService>? capturingLogger = null)
+        string environmentName = "Development")
     {
         var services = new ServiceCollection();
         services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment(environmentName));
-        services.AddSingleton<ISanitizingLogger<InMemoryStoreWarningService>>(
-            (ISanitizingLogger<InMemoryStoreWarningService>?)capturingLogger
-                ?? NullSanitizingLogger<InMemoryStoreWarningService>.Instance);
         return services;
     }
 
@@ -311,7 +287,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     }
 
     [Fact]
-    public void AddInMemoryAuthorizationCodeStore_registers_InMemoryStoreWarningService_as_IHostedService()
+    public void AddInMemoryAuthorizationCodeStore_registers_InMemoryStoreVerifier_as_IStartupVerifier()
     {
         var services = CreateServicesWithWarningServiceDependencies();
         var builder = new ZeeKayDaAuthBuilder(services);
@@ -319,8 +295,8 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
         builder.AddInMemoryAuthorizationCodeStore();
 
         using var provider = services.BuildServiceProvider();
-        provider.GetServices<IHostedService>().Should().ContainSingle()
-            .Which.Should().BeOfType<InMemoryStoreWarningService>();
+        provider.GetServices<IStartupVerifier>().Should().ContainSingle()
+            .Which.Should().BeOfType<InMemoryStoreVerifier>();
     }
 
     // ── AddInMemoryAuthorizationCodeStore: double-registration guard ──────────────────────────────
@@ -393,7 +369,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     }
 
     [Fact]
-    public void AddInMemoryRefreshTokenStore_registers_InMemoryStoreWarningService_as_IHostedService()
+    public void AddInMemoryRefreshTokenStore_registers_InMemoryStoreVerifier_as_IStartupVerifier()
     {
         var services = CreateServicesWithWarningServiceDependencies();
         var builder = new ZeeKayDaAuthBuilder(services);
@@ -401,8 +377,8 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
         builder.AddInMemoryRefreshTokenStore();
 
         using var provider = services.BuildServiceProvider();
-        provider.GetServices<IHostedService>().Should().ContainSingle()
-            .Which.Should().BeOfType<InMemoryStoreWarningService>();
+        provider.GetServices<IStartupVerifier>().Should().ContainSingle()
+            .Which.Should().BeOfType<InMemoryStoreVerifier>();
     }
 
     // ── AddInMemoryRefreshTokenStore: double-registration guard ───────────────────────────────────
@@ -477,7 +453,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     }
 
     [Fact]
-    public void AddInMemoryStores_registers_InMemoryStoreWarningService_once_per_store()
+    public void AddInMemoryStores_registers_InMemoryStoreVerifier_once_per_store()
     {
         var services = CreateServicesWithWarningServiceDependencies();
         var builder = new ZeeKayDaAuthBuilder(services);
@@ -485,12 +461,12 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
         builder.AddInMemoryStores();
 
         using var provider = services.BuildServiceProvider();
-        provider.GetServices<IHostedService>().OfType<InMemoryStoreWarningService>()
-            .Should().HaveCount(2, "each of the two stores registers its own independently-gated warning service");
+        provider.GetServices<IStartupVerifier>().OfType<InMemoryStoreVerifier>()
+            .Should().HaveCount(2, "each of the two stores registers its own independently-gated verifier");
     }
 
     [Fact]
-    public void Calling_AddInMemoryAuthorizationCodeStore_and_AddInMemoryRefreshTokenStore_separately_registers_InMemoryStoreWarningService_once_per_store()
+    public void Calling_AddInMemoryAuthorizationCodeStore_and_AddInMemoryRefreshTokenStore_separately_registers_InMemoryStoreVerifier_once_per_store()
     {
         var services = CreateServicesWithWarningServiceDependencies();
         var builder = new ZeeKayDaAuthBuilder(services);
@@ -499,30 +475,32 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
         builder.AddInMemoryRefreshTokenStore();
 
         using var provider = services.BuildServiceProvider();
-        provider.GetServices<IHostedService>().OfType<InMemoryStoreWarningService>()
+        provider.GetServices<IStartupVerifier>().OfType<InMemoryStoreVerifier>()
             .Should().HaveCount(2, "each store registration captures and enforces its own allowOutsideDevelopment value");
     }
 
     [Fact]
-    public async Task AddInMemoryStores_logs_two_distinctly_worded_lines_not_the_same_line_twice()
+    public async Task AddInMemoryStores_produces_two_distinctly_worded_warnings_not_the_same_warning_twice()
     {
-        var capturingLogger = new CapturingLogger<InMemoryStoreWarningService>();
-        var services = CreateServicesWithWarningServiceDependencies(capturingLogger: capturingLogger);
+        var services = CreateServicesWithWarningServiceDependencies();
         var builder = new ZeeKayDaAuthBuilder(services);
 
         builder.AddInMemoryStores();
 
         using var provider = services.BuildServiceProvider();
-        foreach (var warningService in provider.GetServices<IHostedService>().OfType<InMemoryStoreWarningService>())
-            await warningService.StartAsync(CancellationToken.None);
+        var contexts = new List<StartupVerificationContext>();
+        foreach (var verifier in provider.GetServices<IStartupVerifier>().OfType<InMemoryStoreVerifier>())
+        {
+            var context = new StartupVerificationContext();
+            await verifier.VerifyAsync(context, provider, CancellationToken.None);
+            contexts.Add(context);
+        }
 
-        capturingLogger.Entries.Should().HaveCount(2);
-        capturingLogger.Entries.Select(entry => entry.Message).Distinct()
-            .Should().HaveCount(2, "each store's log line must name its own store, not repeat an identical message");
-        capturingLogger.Entries.Should().Contain(entry =>
-            entry.Message.Contains(InMemoryStoreWarningService.AuthorizationCodeStoreName));
-        capturingLogger.Entries.Should().Contain(entry =>
-            entry.Message.Contains(InMemoryStoreWarningService.RefreshTokenStoreName));
+        var allArgs = contexts.SelectMany(c => c.Warnings).SelectMany(w => w.Args).ToList();
+        allArgs.Distinct().Should().HaveCount(2,
+            "each store's warning must name its own store, not repeat an identical value");
+        allArgs.Should().Contain(InMemoryStoreVerifier.AuthorizationCodeStoreName);
+        allArgs.Should().Contain(InMemoryStoreVerifier.RefreshTokenStoreName);
     }
 
     // ── AddInMemoryStores: allowOutsideDevelopment parameter ──────────────────────────────────────
@@ -536,10 +514,14 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
         builder.AddInMemoryStores(allowOutsideDevelopment: true);
 
         using var provider = services.BuildServiceProvider();
-        var warningServices = provider.GetServices<IHostedService>().OfType<InMemoryStoreWarningService>();
+        var verifiers = provider.GetServices<IStartupVerifier>().OfType<InMemoryStoreVerifier>();
 
-        foreach (var warningService in warningServices)
-            await warningService.Awaiting(s => s.StartAsync(CancellationToken.None)).Should().NotThrowAsync();
+        foreach (var verifier in verifiers)
+        {
+            var context = new StartupVerificationContext();
+            await verifier.VerifyAsync(context, provider, CancellationToken.None);
+            context.Failures.Should().BeEmpty();
+        }
     }
 
     [Fact]
@@ -555,30 +537,24 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
         builder.AddInMemoryRefreshTokenStore(allowOutsideDevelopment: false);
 
         using var provider = services.BuildServiceProvider();
-        var warningServices = provider.GetServices<IHostedService>()
-            .OfType<InMemoryStoreWarningService>()
+        var verifiers = provider.GetServices<IStartupVerifier>()
+            .OfType<InMemoryStoreVerifier>()
             .ToList();
 
-        warningServices.Should().HaveCount(2);
+        verifiers.Should().HaveCount(2);
 
         var outcomes = new List<bool>();
-        foreach (var warningService in warningServices)
+        foreach (var verifier in verifiers)
         {
-            try
-            {
-                await warningService.StartAsync(CancellationToken.None);
-                outcomes.Add(false);
-            }
-            catch (ZeeKayDaConfigurationException)
-            {
-                outcomes.Add(true);
-            }
+            var context = new StartupVerificationContext();
+            await verifier.VerifyAsync(context, provider, CancellationToken.None);
+            outcomes.Add(context.Failures.Count > 0);
         }
 
-        outcomes.Should().ContainSingle(threw => threw,
+        outcomes.Should().ContainSingle(failed => failed,
             "the refresh-token-store registration (allowOutsideDevelopment: false) must still fail " +
             "closed outside Development even though the auth-code-store registration allowed it");
-        outcomes.Should().ContainSingle(threw => !threw,
+        outcomes.Should().ContainSingle(failed => !failed,
             "the auth-code-store registration (allowOutsideDevelopment: true) must not fail");
     }
 
@@ -664,7 +640,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     }
 
     [Fact]
-    public void AddDistributedCacheAuthorizationCodeStore_registers_DistributedCacheStoreStartupValidator_as_IHostedService()
+    public void AddDistributedCacheAuthorizationCodeStore_registers_DistributedCacheStoreStartupValidator_as_IStartupVerifier()
     {
         var services = new ServiceCollection();
         var builder = new ZeeKayDaAuthBuilder(services);
@@ -672,7 +648,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
         builder.AddDistributedCacheAuthorizationCodeStore();
 
         services.Should().Contain(sd =>
-            sd.ServiceType == typeof(IHostedService) &&
+            sd.ServiceType == typeof(IStartupVerifier) &&
             sd.ImplementationType == typeof(DistributedCacheStoreStartupValidator));
     }
 
@@ -759,7 +735,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     }
 
     [Fact]
-    public void AddDistributedCacheRefreshTokenStore_registers_DistributedCacheStoreStartupValidator_as_IHostedService()
+    public void AddDistributedCacheRefreshTokenStore_registers_DistributedCacheStoreStartupValidator_as_IStartupVerifier()
     {
         var services = new ServiceCollection();
         var builder = new ZeeKayDaAuthBuilder(services);
@@ -767,7 +743,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
         builder.AddDistributedCacheRefreshTokenStore();
 
         services.Should().Contain(sd =>
-            sd.ServiceType == typeof(IHostedService) &&
+            sd.ServiceType == typeof(IStartupVerifier) &&
             sd.ImplementationType == typeof(DistributedCacheStoreStartupValidator));
     }
 
@@ -864,7 +840,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
         builder.AddDistributedCacheTokenStores();
 
         services.Count(sd =>
-            sd.ServiceType == typeof(IHostedService) &&
+            sd.ServiceType == typeof(IStartupVerifier) &&
             sd.ImplementationType == typeof(DistributedCacheStoreStartupValidator))
             .Should().Be(1, "TryAddEnumerable ensures idempotent registration across both calls");
     }
@@ -879,7 +855,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
         builder.AddDistributedCacheRefreshTokenStore();
 
         services.Count(sd =>
-            sd.ServiceType == typeof(IHostedService) &&
+            sd.ServiceType == typeof(IStartupVerifier) &&
             sd.ImplementationType == typeof(DistributedCacheStoreStartupValidator))
             .Should().Be(1, "TryAddEnumerable ensures idempotent registration when called independently");
     }

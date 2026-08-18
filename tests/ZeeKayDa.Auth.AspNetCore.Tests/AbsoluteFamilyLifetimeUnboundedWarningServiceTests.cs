@@ -1,6 +1,7 @@
-using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
-using ZeeKayDa.Auth.Logging;
+using ZeeKayDa.Auth;
+using ZeeKayDa.Auth.AspNetCore;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests;
 
@@ -11,30 +12,9 @@ namespace ZeeKayDa.Auth.AspNetCore.Tests;
 /// </summary>
 public sealed class AbsoluteFamilyLifetimeUnboundedWarningServiceTests
 {
-    // ── Fake infrastructure ───────────────────────────────────────────────────────────────────────
+    private static readonly IServiceProvider EmptyProvider = new ServiceCollection().BuildServiceProvider();
 
-    private sealed class CapturingLogger<T> : ISanitizingLogger<T>
-    {
-        public List<(LogLevel Level, string Message)> Entries { get; } = [];
-
-        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
-
-        public bool IsEnabled(LogLevel logLevel) => true;
-
-        public void Log<TState>(
-            LogLevel logLevel,
-            EventId eventId,
-            TState state,
-            Exception? exception,
-            Func<TState, Exception?, string> formatter)
-        {
-            Entries.Add((logLevel, formatter(state, exception)));
-        }
-    }
-
-    private static AbsoluteFamilyLifetimeUnboundedWarningService BuildSut(
-        TimeSpan absoluteFamilyLifetime,
-        CapturingLogger<AbsoluteFamilyLifetimeUnboundedWarningService>? logger = null)
+    private static AbsoluteFamilyLifetimeUnboundedWarningService BuildSut(TimeSpan absoluteFamilyLifetime)
     {
         var options = new AuthorizationServerOptions
         {
@@ -42,8 +22,7 @@ public sealed class AbsoluteFamilyLifetimeUnboundedWarningServiceTests
         };
 
         return new AbsoluteFamilyLifetimeUnboundedWarningService(
-            new OptionsWrapper<AuthorizationServerOptions>(options),
-            logger ?? new CapturingLogger<AbsoluteFamilyLifetimeUnboundedWarningService>());
+            new OptionsWrapper<AuthorizationServerOptions>(options));
     }
 
     // ── Constructor: argument validation ─────────────────────────────────────────────────────────
@@ -51,110 +30,69 @@ public sealed class AbsoluteFamilyLifetimeUnboundedWarningServiceTests
     [Fact]
     public void Constructor_throws_ArgumentNullException_when_options_is_null()
     {
-        var act = () => new AbsoluteFamilyLifetimeUnboundedWarningService(
-            null!,
-            NullSanitizingLogger<AbsoluteFamilyLifetimeUnboundedWarningService>.Instance);
+        var act = () => new AbsoluteFamilyLifetimeUnboundedWarningService(null!);
 
         act.Should().Throw<ArgumentNullException>().WithParameterName("options");
     }
 
-    [Fact]
-    public void Constructor_throws_ArgumentNullException_when_logger_is_null()
-    {
-        var act = () => new AbsoluteFamilyLifetimeUnboundedWarningService(
-            new OptionsWrapper<AuthorizationServerOptions>(new AuthorizationServerOptions()),
-            null!);
-
-        act.Should().Throw<ArgumentNullException>().WithParameterName("logger");
-    }
-
-    // ── StartAsync: unbounded sentinel — warns ────────────────────────────────────────────────────
+    // ── VerifyAsync: unbounded sentinel — warns ───────────────────────────────────────────────────
 
     [Fact]
-    public async Task StartAsync_logs_a_Warning_when_AbsoluteFamilyLifetime_is_TimeSpanMaxValue()
-    {
-        var logger = new CapturingLogger<AbsoluteFamilyLifetimeUnboundedWarningService>();
-        var sut = BuildSut(TimeSpan.MaxValue, logger);
-
-        await sut.StartAsync(CancellationToken.None);
-
-        logger.Entries.Should().ContainSingle()
-            .Which.Level.Should().Be(LogLevel.Warning);
-    }
-
-    [Fact]
-    public async Task StartAsync_logs_exactly_once_when_AbsoluteFamilyLifetime_is_TimeSpanMaxValue()
-    {
-        var logger = new CapturingLogger<AbsoluteFamilyLifetimeUnboundedWarningService>();
-        var sut = BuildSut(TimeSpan.MaxValue, logger);
-
-        await sut.StartAsync(CancellationToken.None);
-
-        logger.Entries.Should().HaveCount(1);
-    }
-
-    [Fact]
-    public async Task StartAsync_warning_message_mentions_AbsoluteFamilyLifetime_when_unbounded()
-    {
-        var logger = new CapturingLogger<AbsoluteFamilyLifetimeUnboundedWarningService>();
-        var sut = BuildSut(TimeSpan.MaxValue, logger);
-
-        await sut.StartAsync(CancellationToken.None);
-
-        logger.Entries.Should().ContainSingle()
-            .Which.Message.Should().Contain("AbsoluteFamilyLifetime");
-    }
-
-    [Fact]
-    public async Task StartAsync_does_not_throw_when_AbsoluteFamilyLifetime_is_TimeSpanMaxValue()
+    public async Task VerifyAsync_adds_a_warning_when_AbsoluteFamilyLifetime_is_TimeSpanMaxValue()
     {
         var sut = BuildSut(TimeSpan.MaxValue);
+        var context = new StartupVerificationContext();
 
-        await sut.Awaiting(s => s.StartAsync(CancellationToken.None)).Should().NotThrowAsync();
+        await sut.VerifyAsync(context, EmptyProvider, TestContext.Current.CancellationToken);
+
+        context.Warnings.Should().ContainSingle();
     }
 
-    // ── StartAsync: finite lifetime — no-op ───────────────────────────────────────────────────────
+    [Fact]
+    public async Task VerifyAsync_warning_code_is_tokens_absolute_family_lifetime_unbounded()
+    {
+        var sut = BuildSut(TimeSpan.MaxValue);
+        var context = new StartupVerificationContext();
+
+        await sut.VerifyAsync(context, EmptyProvider, TestContext.Current.CancellationToken);
+
+        context.Warnings.Should().ContainSingle()
+            .Which.Code.Should().Be("tokens.absolute_family_lifetime_unbounded");
+    }
+
+    [Fact]
+    public async Task VerifyAsync_warning_message_mentions_AbsoluteFamilyLifetime_when_unbounded()
+    {
+        var sut = BuildSut(TimeSpan.MaxValue);
+        var context = new StartupVerificationContext();
+
+        await sut.VerifyAsync(context, EmptyProvider, TestContext.Current.CancellationToken);
+
+        context.Warnings.Should().ContainSingle()
+            .Which.MessageTemplate.Should().Contain("AbsoluteFamilyLifetime");
+    }
+
+    // ── VerifyAsync: finite lifetime — no-op ──────────────────────────────────────────────────────
 
     [Theory]
     [InlineData(90)]
     [InlineData(1)]
     [InlineData(3650)]
-    public async Task StartAsync_does_not_log_when_AbsoluteFamilyLifetime_is_finite(int days)
+    public async Task VerifyAsync_does_not_add_a_warning_when_AbsoluteFamilyLifetime_is_finite(int days)
     {
-        var logger = new CapturingLogger<AbsoluteFamilyLifetimeUnboundedWarningService>();
-        var sut = BuildSut(TimeSpan.FromDays(days), logger);
+        var sut = BuildSut(TimeSpan.FromDays(days));
+        var context = new StartupVerificationContext();
 
-        await sut.StartAsync(CancellationToken.None);
+        await sut.VerifyAsync(context, EmptyProvider, TestContext.Current.CancellationToken);
 
-        logger.Entries.Should().BeEmpty();
+        context.Warnings.Should().BeEmpty();
     }
 
     [Fact]
-    public async Task StartAsync_does_not_throw_when_AbsoluteFamilyLifetime_is_finite()
+    public void Name_is_AbsoluteFamilyLifetimeUnbounded()
     {
         var sut = BuildSut(TimeSpan.FromDays(90));
 
-        await sut.Awaiting(s => s.StartAsync(CancellationToken.None)).Should().NotThrowAsync();
-    }
-
-    // ── StopAsync: no side effects ────────────────────────────────────────────────────────────────
-
-    [Fact]
-    public async Task StopAsync_completes_without_logging()
-    {
-        var logger = new CapturingLogger<AbsoluteFamilyLifetimeUnboundedWarningService>();
-        var sut = BuildSut(TimeSpan.MaxValue, logger);
-
-        await sut.StopAsync(CancellationToken.None);
-
-        logger.Entries.Should().BeEmpty("StopAsync must not emit any log entries");
-    }
-
-    [Fact]
-    public async Task StopAsync_does_not_throw()
-    {
-        var sut = BuildSut(TimeSpan.MaxValue);
-
-        await sut.Awaiting(s => s.StopAsync(CancellationToken.None)).Should().NotThrowAsync();
+        sut.Name.Should().Be("AbsoluteFamilyLifetimeUnbounded");
     }
 }
