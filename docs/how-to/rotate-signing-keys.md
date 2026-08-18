@@ -90,9 +90,9 @@ otherwise-valid token signed with a `kid` it has simply never seen.
 ZeeKayDa.Auth's providers avoid this by requiring a new key to be **published** — visible in
 `GetSigningKeysAsync()` results, and so in the JWKS — for some lead time **before** it is
 promoted to active signer. That lead time is called `PublicationLead` on every production
-provider's options type: on the Azure Key Vault options types (ADR 0015's
+provider's options type: on the Azure Key Vault options types (ADR 0011's
 `KeySourceOptions`) it defaults to `RefreshInterval` (itself 1 hour by default); on the Windows
-Certificate Store and file-based PEM/PFX options types (ADR 0015's `KeySetOptions`) it also
+Certificate Store and file-based PEM/PFX options types (ADR 0011's `KeySetOptions`) it also
 defaults to 1 hour. See
 [Windows Certificate Store and file-based (PEM/PFX)](#windows-certificate-store-and-file-based-pempfx--manual-registration)
 below for what it governs on those providers. In every case, set it to something at least as long
@@ -170,7 +170,7 @@ start — adding, removing, or replacing a certificate always requires a config 
 restart.
 
 > 💡 **Tip:** The file-based PEM/PFX provider and the Windows Certificate Store provider both
-> implement ADR 0015's `KeySetOptions` contract (property `PublicationLead`): the complete
+> implement ADR 0011's `KeySetOptions` contract (property `PublicationLead`): the complete
 > set of registered files/thumbprints is fixed at configuration time, and every one of them is read
 > exactly once, at startup. The activation *behavior* described in this section — `NotBefore` is
 > the only signal, with no library-enforced floor under it — is identical for both.

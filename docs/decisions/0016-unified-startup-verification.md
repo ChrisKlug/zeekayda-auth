@@ -301,7 +301,8 @@ A verifier that throws a `ZeeKayDaConfigurationException`
 directly (the pattern every check uses today) is a special case: the runner **unwraps** it and
 appends its `AggregatedFailures` to the running list rather than re-wrapping it as
 `startup.verifier_failed`. Re-wrapping would replace a stable, published `Code` — for example
-`signing.self_test_failed` (ADR 0015 §11) or `logging.sanitizing_logger_shadowed` — with the generic
+`signing.self_test_failed` (ADR 0011's per-handoff signing self-test) or
+`logging.sanitizing_logger_shadowed` — with the generic
 `startup.verifier_failed`, silently breaking any operator alerting keyed on those codes and
 contradicting §10's commitment that codes survive the migration verbatim. Unwrapping is also what
 makes the migration of an existing check mechanical: a check can be moved to `IStartupVerifier`
@@ -417,7 +418,8 @@ Five supporting rules make the guarantee hold within the verification subsystem:
   `IEnumerable<IStartupVerifier>` is resolved inside `StartAsync`, after the gate loop — not
   constructor-injected (§9). Constructor injection would run every verifier's constructor, including
   a third party's, at runner-construction time, and a constructor can log: `ISanitizingLogger<T>` is
-  deliberately public so that out-of-package providers can inject it (ADR 0011 Amendment 2(d)), so
+  deliberately public so that out-of-package providers can inject it (ADR 0011's public extension
+  surface decision), so
   "log from a constructor through a shadowed sanitizer" is a reachable path, not a theoretical one.
   Gates are still constructor-injected; the gate collection is closed to framework types that
   provably do not log.
@@ -920,7 +922,7 @@ Every question the issue raises about future evolution is answerable without a s
 - **A per-verifier timeout** — the runner enforces it around the existing `CancellationToken`
   parameter, no interface change.
 - **Contributing a health-check entry, or re-running post-start** — a new optional interface a
-  verifier may *also* implement (the `ISigningStartupSelfTest` precedent from ADR 0015 §11), never a
+  verifier may *also* implement (the `ISigningStartupSelfTest` precedent from ADR 0011), never a
   new required member on `IStartupVerifier`.
 
 The one thing that is genuinely fixed by this ADR is the `VerifyAsync` signature itself. It is one
@@ -1026,7 +1028,8 @@ the clear* — is served by phase 1, which is fail-fast by construction.
 
 **Rejected for now, explicitly addable later.** No in-tree verifier is at risk: they are either
 in-memory work, or calls whose transport already imposes a timeout (the Key Vault SDK's retry and
-timeout policy, per ADR 0015 §11's "apply resilience at the transport layer" position). Adding a
+timeout policy, per ADR 0011's per-handoff signing self-test "apply resilience at the transport
+layer" position). Adding a
 timeout would mean choosing a default that is either too short for a slow cold-start repository or
 too long to be useful, and getting that wrong turns a working deployment into a failing one. Because
 `CancellationToken` is already a parameter on `VerifyAsync`, the runner can start enforcing a
@@ -1132,7 +1135,7 @@ via an additional opt-in interface (§11).
    path and no "log the exception and carry on" mode: a check that could not complete is
    indistinguishable from a check that failed, and both must fail closed. This matters most for the
    side-effecting verifiers — a signing self-test or a client-repository activation that throws must
-   never be interpreted as "passed." It follows ADR 0015 §11's precedent, where a self-test that
+   never be interpreted as "passed." It follows ADR 0011's per-handoff signing self-test precedent, where a self-test that
    cannot complete aborts the handoff exactly as a definitive mismatch does.
 
    Two details of that wrapping are security-relevant. First, the wrapper embeds `ex.GetType()
@@ -1216,7 +1219,7 @@ via an additional opt-in interface (§11).
    own — a hanging verifier hangs a host that is not yet serving traffic, which fails closed.
 
 8. **Warning levels as data do not permit downgrading a mandatory warning.** ADR 0008 §5's
-   in-memory-store warning text and ADR 0015 §6's within-window-vanish `Warning` are emitted by
+   in-memory-store warning text and ADR 0011's within-window-vanish `Warning` are emitted by
    framework-owned verifiers that pass their own level; the `level` parameter is a per-call-site
    choice by the check's author, not a runtime knob an operator or third party can turn down. The
    runner logs each warning at the level it was recorded with and has no suppression path.
@@ -1283,9 +1286,9 @@ via an additional opt-in interface (§11).
 - **ADR 0009** — exception-message sanitization in `SecretSanitizingLogger` (`RedactedExceptionWrapper`);
   the reason `ex.Message` is never copied into a `ZeeKayDaConfigurationFailure` (§5).
 - **ADR 0008 §5 / §8** — in-memory store warning text; non-atomic distributed-cache stores.
-- **ADR 0011 / 0015** — signing provider tiers; **ADR 0015 §11** — the `SigningStartupSelfTest
-  HostedService` that established core's hosting dependency, and the "a check that cannot complete
-  fails closed" precedent.
+- **ADR 0011** — signing provider tiers and the per-handoff signing self-test; the
+  `SigningStartupSelfTestVerifier` that established core's hosting dependency, and the "a check that
+  cannot complete fails closed" precedent.
 - **ADR 0014 §5** — unbounded absolute family lifetime (the escape-hatch warning).
 - **Issue #437** — signing startup self-test; independent of this ADR, a natural migration target.
 - **Prior art** — OpenIddict's options-validation approach; Duende IdentityServer's

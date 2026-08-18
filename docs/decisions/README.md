@@ -51,8 +51,15 @@ only restated spec text, narration, and ceremony get cut.
 Existing ADRs are being rewritten into this lean shape in small batches (see the tracking issue
 for the rewrite effort) rather than left to migrate opportunistically — the earlier three-part
 "current state / considered-and-rejected alternatives / changelog appendix" shape is being phased
-out in favor of this one; ADRs not yet migrated (currently 0005–0016) still use it until their
+out in favor of this one; ADRs not yet migrated (currently 0014, 0016) still use it until their
 batch comes up.
+
+## Retired numbers
+
+Once an ADR number is retired, it is never reused for a new decision — a retired file becomes a
+short stub pointing at whichever ADR absorbed its content, so an existing citation by number still
+resolves to something. **ADR 0015** is retired: its content was merged into
+[ADR 0011](./0011-signing-key-management.md); see [the stub](./0015-signing-provider-set-source-tiers.md).
 
 ## Why amendments are avoidable right now
 
