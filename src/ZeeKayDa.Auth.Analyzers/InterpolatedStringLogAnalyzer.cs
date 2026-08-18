@@ -52,14 +52,33 @@ public sealed class InterpolatedStringLogAnalyzer : DiagnosticAnalyzer
     {
         var invocation = (InvocationExpressionSyntax)context.Node;
 
-        if (invocation.Expression is not MemberAccessExpressionSyntax memberAccess) return;
-        if (!IsInZeeKayDaNamespace(invocation)) return;
+        // Plain `logger.LogX(...)` uses MemberAccessExpressionSyntax; conditional-access
+        // `logger?.LogX(...)` uses MemberBindingExpressionSyntax, whose receiver lives on the
+        // enclosing ConditionalAccessExpressionSyntax rather than on the member node itself.
+        ExpressionSyntax? receiverExpression;
+        string methodName;
+        switch (invocation.Expression)
+        {
+            case MemberAccessExpressionSyntax memberAccess:
+                receiverExpression = memberAccess.Expression;
+                methodName = memberAccess.Name.Identifier.Text;
+                break;
+            case MemberBindingExpressionSyntax memberBinding:
+                receiverExpression = GetConditionalAccessReceiver(invocation);
+                methodName = memberBinding.Name.Identifier.Text;
+                break;
+            default:
+                return;
+        }
 
-        var methodName = memberAccess.Name.Identifier.Text;
+        if (!IsInZeeKayDaNamespace(invocation)) return;
 
         if (methodName.StartsWith("Log", System.StringComparison.Ordinal))
         {
-            AnalyzeLogInvocation(context, invocation, memberAccess);
+            // Only the Log* branch needs the resolved receiver; AddWarning is matched by
+            // symbol (containing type + name) and never looks at it.
+            if (receiverExpression is null) return;
+            AnalyzeLogInvocation(context, invocation, receiverExpression);
             return;
         }
 
@@ -67,12 +86,43 @@ public sealed class InterpolatedStringLogAnalyzer : DiagnosticAnalyzer
             AnalyzeAddWarningInvocation(context, invocation);
     }
 
+    // Walks up through the fluent chain (member accesses and invocations) that the target
+    // invocation is the root of, to find the ConditionalAccessExpressionSyntax it ultimately
+    // belongs to — not just an immediate `x?.Y(...)` parent. This matters for a chain like
+    // `logger?.LogChain(...).LogChain(...)`, where the first call's direct parent is a
+    // MemberAccessExpressionSyntax for the next link, not the ConditionalAccessExpressionSyntax
+    // itself.
+    private static ExpressionSyntax? GetConditionalAccessReceiver(InvocationExpressionSyntax invocation)
+    {
+        SyntaxNode current = invocation;
+        while (true)
+        {
+            switch (current.Parent)
+            {
+                case ConditionalAccessExpressionSyntax { WhenNotNull: var whenNotNull } conditional
+                    when whenNotNull == current:
+                    return conditional.Expression;
+
+                case MemberAccessExpressionSyntax memberAccess when memberAccess.Expression == current:
+                    current = memberAccess;
+                    continue;
+
+                case InvocationExpressionSyntax outerInvocation when outerInvocation.Expression == current:
+                    current = outerInvocation;
+                    continue;
+
+                default:
+                    return null;
+            }
+        }
+    }
+
     private static void AnalyzeLogInvocation(
-        SyntaxNodeAnalysisContext context, InvocationExpressionSyntax invocation, MemberAccessExpressionSyntax memberAccess)
+        SyntaxNodeAnalysisContext context, InvocationExpressionSyntax invocation, ExpressionSyntax receiverExpression)
     {
         if (IsInLoggerImplementation(context, invocation)) return;
 
-        var receiverType = context.SemanticModel.GetTypeInfo(memberAccess.Expression).Type;
+        var receiverType = context.SemanticModel.GetTypeInfo(receiverExpression).Type;
         if (receiverType is null) return;
 
         if (!ImplementsILogger(receiverType)) return;
