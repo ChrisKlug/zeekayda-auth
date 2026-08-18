@@ -34,6 +34,10 @@ public sealed class ClientRepositoryValidatorAnalyzer : DiagnosticAnalyzer
     /// <inheritdoc/>
     public override void Initialize(AnalysisContext context)
     {
+        // Deliberately left as None, unlike ZEEKAYDA0001/0002: this is a Warning-severity
+        // extensibility heuristic ("references, not proves-called", per ADR 0007 §6.1), not a
+        // security control, so the standard "don't nag about generated code" reasoning still
+        // applies. Revisit only if this rule is ever promoted to a security control.
         context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);
         context.EnableConcurrentExecution();
 
