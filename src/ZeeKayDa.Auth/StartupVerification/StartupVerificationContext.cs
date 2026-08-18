@@ -33,7 +33,7 @@ public sealed class StartupVerificationContext
     /// <param name="level">The <see cref="LogLevel"/> the runner logs this warning at.</param>
     /// <param name="args">The structured arguments matching <paramref name="messageTemplate"/>'s placeholders, in order.</param>
     public void AddWarning(string code, string messageTemplate, LogLevel level, params object?[] args)
-        => _warnings.Add(new StartupVerificationWarning(code, messageTemplate, level, args));
+        => AddWarningCore(code, messageTemplate, level, args);
 
     /// <summary>
     /// Records a structured warning for the runner to log at <see cref="LogLevel.Warning"/>. Does
@@ -48,11 +48,18 @@ public sealed class StartupVerificationContext
     /// </param>
     /// <param name="args">The structured arguments matching <paramref name="messageTemplate"/>'s placeholders, in order.</param>
     public void AddWarning(string code, string messageTemplate, params object?[] args)
-        => AddWarning(code, messageTemplate, LogLevel.Warning, args);
+        => AddWarningCore(code, messageTemplate, LogLevel.Warning, args);
 
     /// <summary>The failures recorded so far by this invocation.</summary>
     public IReadOnlyList<ZeeKayDaConfigurationFailure> Failures => _failures;
 
     /// <summary>The warnings recorded so far by this invocation.</summary>
     public IReadOnlyList<StartupVerificationWarning> Warnings => _warnings;
+
+    // Only ever called from the two public AddWarning overloads above, each of which passes its
+    // own already-validated messageTemplate parameter straight through unchanged. Being private
+    // is the actual safety guarantee: it cannot be invoked from outside this type, so no other
+    // call site can launder an arbitrary string through a parameter named "messageTemplate".
+    private void AddWarningCore(string code, string messageTemplate, LogLevel level, object?[] args)
+        => _warnings.Add(new StartupVerificationWarning(code, messageTemplate, level, args));
 }

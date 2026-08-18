@@ -8,12 +8,17 @@ nav_order: 4
 *Added in Unreleased.*
 
 ZeeKayDa.Auth ships a Roslyn analyzer package that enforces compile-time log-hygiene requirements
-for code inside the `ZeeKayDa.*` namespace. Violations are reported as build errors so that
-credential-leak paths are caught during development rather than in production.
+for code compiled into one of ZeeKayDa.Auth's own assemblies. Violations are reported as build
+errors so that credential-leak paths are caught during development rather than in production.
 
 The analyzer targets code written inside the library itself, not application code that consumes
 ZeeKayDa.Auth. Consumer-side log hygiene is covered in
 [Configure host-level log hygiene](../how-to/configure-host-log-hygiene.md).
+
+ZEEKAYDA0001 and ZEEKAYDA0002 key on the compiled assembly's name (any assembly named
+`ZeeKayDa.Auth` or prefixed `ZeeKayDa.Auth.`, excluding the analyzer package itself), not on the
+declared C# namespace of the code being analyzed — a ZeeKayDa.Auth extension-method class declared
+under a `Microsoft.*` namespace for discoverability is still in scope.
 
 ---
 
@@ -129,14 +134,18 @@ dotnet_diagnostic.ZEEKAYDA0001.severity = none
 
 ### What it enforces
 
-`Log*` message templates inside `ZeeKayDa.*` namespaces must be compile-time constant strings.
-Interpolated strings, variable references, string concatenation with non-literal operands,
-`string.Format`, and any other non-constant expression are all flagged regardless of the
-identifier names involved.
+`Log*`/`BeginScope` message templates in code compiled into a ZeeKayDa.Auth assembly must be
+compile-time constant strings. Interpolated strings, variable references, string concatenation
+with non-literal operands, `string.Format`, and any other non-constant expression are all flagged
+regardless of the identifier names involved. This applies to instance calls
+(`logger.LogInformation(...)`), conditional-access calls (`logger?.LogInformation(...)`), and the
+static-method call form (`LoggerExtensions.LogInformation(logger, ...)`) alike, including when
+arguments are passed by name or out of declaration order.
 
 The rule also constrains one specific non-`Log*` method by symbol rather than by name/receiver
-heuristic: `StartupVerificationContext.AddWarning`'s `messageTemplate` parameter. `AddWarning` is
-how an `IStartupVerifier`/`IStartupVerificationGate` implementation reports a warning for the
+heuristic: `StartupVerificationContext.AddWarning`'s `messageTemplate` parameter, whether the call
+is receiver-qualified or (from inside `StartupVerificationContext` itself) unqualified. `AddWarning`
+is how an `IStartupVerifier`/`IStartupVerificationGate` implementation reports a warning for the
 startup-verification runner to log on its behalf (see [ADR
 0016](../decisions/0016-unified-startup-verification.md) §3, §9) — its template flows into the same
 redaction-sensitive log call the `Log*` branch above protects, so it needs the same constant-string

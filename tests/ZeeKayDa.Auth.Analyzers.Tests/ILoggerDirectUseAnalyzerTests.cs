@@ -74,7 +74,7 @@ public sealed class ILoggerDirectUseAnalyzerTests
     }
 
     [Fact]
-    public async Task No_diagnostic_for_ILoggerT_parameter_in_ZeeKayDa_Auth_Analyzers_namespace()
+    public async Task No_diagnostic_for_ILoggerT_parameter_in_ZeeKayDa_Auth_Analyzers_assembly()
     {
         // The analyzer project itself lives in ZeeKayDa.Auth.Analyzers and must be exempt so
         // that adding logging to analyzer code does not create a circular dependency.
@@ -87,13 +87,13 @@ public sealed class ILoggerDirectUseAnalyzerTests
             }
             """;
 
-        var diagnostics = await GetDiagnosticsAsync(source);
+        var diagnostics = await GetDiagnosticsAsync(source, assemblyName: "ZeeKayDa.Auth.Analyzers");
 
         diagnostics.Should().BeEmpty();
     }
 
     [Fact]
-    public async Task No_diagnostic_for_ILoggerT_parameter_in_non_ZeeKayDa_namespace()
+    public async Task No_diagnostic_for_ILoggerT_parameter_outside_the_ZeeKayDa_Auth_assembly()
     {
         var source = """
             using Microsoft.Extensions.Logging;
@@ -104,9 +104,31 @@ public sealed class ILoggerDirectUseAnalyzerTests
             }
             """;
 
-        var diagnostics = await GetDiagnosticsAsync(source);
+        var diagnostics = await GetDiagnosticsAsync(source, assemblyName: "MyApp");
 
         diagnostics.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Diagnostic_fires_for_ZeeKayDa_Auth_assembly_code_declared_in_a_Microsoft_namespace()
+    {
+        // Regression coverage for security finding F1: the gate must key off the compilation's
+        // assembly, not the syntactic namespace text — ZeeKayDa.Auth's own extension-method
+        // classes commonly declare themselves under a Microsoft.* namespace for discoverability,
+        // and must not thereby escape analysis.
+        var source = """
+            using Microsoft.Extensions.Logging;
+            namespace Microsoft.Extensions.DependencyInjection;
+            class ServiceCollectionExtensions
+            {
+                public ServiceCollectionExtensions(ILogger<ServiceCollectionExtensions> logger) { }
+            }
+            """;
+
+        var diagnostics = await GetDiagnosticsAsync(source, assemblyName: "ZeeKayDa.Auth.AspNetCore");
+
+        diagnostics.Should().ContainSingle()
+            .Which.Id.Should().Be(ILoggerDirectUseAnalyzer.DiagnosticId);
     }
 
     [Fact]
@@ -157,7 +179,8 @@ public sealed class ILoggerDirectUseAnalyzerTests
 
     // ── Infrastructure ────────────────────────────────────────────────────────────────────────────
 
-    private static async Task<ImmutableArray<Diagnostic>> GetDiagnosticsAsync(string source)
+    private static async Task<ImmutableArray<Diagnostic>> GetDiagnosticsAsync(
+        string source, string assemblyName = "ZeeKayDa.Auth")
     {
         var references = new MetadataReference[]
         {
@@ -166,7 +189,7 @@ public sealed class ILoggerDirectUseAnalyzerTests
         };
 
         var compilation = CSharpCompilation.Create(
-            "TestAssembly",
+            assemblyName,
             new[] { CSharpSyntaxTree.ParseText(source) },
             references,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));

@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Immutable;
+using System.IO;
 using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -320,7 +322,9 @@ public sealed class InterpolatedStringLogAnalyzerTests
         // A type in a friend assembly (InternalsVisibleTo) that implements ISanitizingLogger<T>
         // must NOT be exempt — only types defined in ZeeKayDa.Auth itself are trusted.
         var coreSource = """
+            using System.Runtime.CompilerServices;
             using Microsoft.Extensions.Logging;
+            [assembly: InternalsVisibleTo("ZeeKayDa.Auth.AspNetCore")]
             namespace ZeeKayDa.Auth.Logging
             {
                 internal interface ISanitizingLogger<T> : ILogger<T> { }
@@ -563,6 +567,464 @@ public sealed class InterpolatedStringLogAnalyzerTests
             .Which.Id.Should().Be(InterpolatedStringLogAnalyzer.DiagnosticId);
     }
 
+    [Fact]
+    public async Task Diagnostic_fires_on_unqualified_AddWarning_call_with_implicit_this()
+    {
+        // AddWarning called from inside StartupVerificationContext itself, with an implicit
+        // `this` receiver, uses IdentifierNameSyntax rather than MemberAccessExpressionSyntax —
+        // it must still be caught.
+        var source = """
+            using Microsoft.Extensions.Logging;
+            namespace ZeeKayDa.Auth
+            {
+                public sealed class StartupVerificationContext
+                {
+                    public void AddWarning(string code, string messageTemplate, LogLevel level, params object?[] args) { }
+                    public void DoWork()
+                    {
+                        string secret = "s3cr3t";
+                        AddWarning("x.code", $"leaked {secret}", LogLevel.Warning);
+                    }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnosticsAsync(source);
+
+        diagnostics.Should().ContainSingle()
+            .Which.Id.Should().Be(InterpolatedStringLogAnalyzer.DiagnosticId);
+    }
+
+    [Fact]
+    public async Task Diagnostic_fires_when_one_AddWarning_overload_forwards_to_another_by_name()
+    {
+        // There is no longer any exemption for AddWarning-calling-AddWarning: forwarding a
+        // non-constant messageTemplate parameter into a same-named sibling overload is flagged
+        // exactly like any other non-constant template. The real StartupVerificationContext
+        // avoids this by forwarding into a private AddWarningCore helper instead (see
+        // No_diagnostic_for_AddWarning_overloads_that_forward_into_a_private_AddWarningCore_helper).
+        var source = """
+            using Microsoft.Extensions.Logging;
+            namespace ZeeKayDa.Auth
+            {
+                public sealed class StartupVerificationContext
+                {
+                    public void AddWarning(string code, string messageTemplate, LogLevel level, params object?[] args) { }
+
+                    public void AddWarning(string code, string messageTemplate, params object?[] args)
+                        => AddWarning(code, messageTemplate, LogLevel.Warning, args);
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnosticsAsync(source);
+
+        diagnostics.Should().ContainSingle()
+            .Which.Id.Should().Be(InterpolatedStringLogAnalyzer.DiagnosticId);
+    }
+
+    [Fact]
+    public async Task Diagnostic_fires_when_a_static_AddWarning_overload_forwards_to_another_by_name()
+    {
+        // Regression coverage for architect finding A1(a): MethodKind.Ordinary is also true for
+        // static methods, so a static AddWarning overload forwarding to a sibling overload must
+        // be flagged the same as an instance one — there is no longer any AddWarning-specific
+        // forwarding exemption at all.
+        var source = """
+            using Microsoft.Extensions.Logging;
+            namespace ZeeKayDa.Auth
+            {
+                public sealed class StartupVerificationContext
+                {
+                    public static void AddWarning(string code, string messageTemplate, LogLevel level, params object?[] args) { }
+
+                    public static void AddWarning(string code, string messageTemplate, params object?[] args)
+                        => AddWarning(code, messageTemplate, LogLevel.Warning, args);
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnosticsAsync(source);
+
+        diagnostics.Should().ContainSingle()
+            .Which.Id.Should().Be(InterpolatedStringLogAnalyzer.DiagnosticId);
+    }
+
+    [Fact]
+    public async Task Diagnostic_fires_when_messageTemplate_is_reassigned_before_forwarding_to_another_AddWarning()
+    {
+        // Regression coverage for architect finding A1(b): reassigning messageTemplate before the
+        // forwarding call previously still passed the exemption, because the reference at the call
+        // site was still an IParameterReferenceOperation even though its value had been mutated.
+        // With the exemption removed entirely this is moot, but the case is kept as a tripwire.
+        var source = """
+            using Microsoft.Extensions.Logging;
+            namespace ZeeKayDa.Auth
+            {
+                public sealed class StartupVerificationContext
+                {
+                    public void AddWarning(string code, string messageTemplate, LogLevel level, params object?[] args) { }
+
+                    public void AddWarning(string code, string messageTemplate, params object?[] args)
+                    {
+                        messageTemplate = messageTemplate;
+                        AddWarning(code, messageTemplate, LogLevel.Warning, args);
+                    }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnosticsAsync(source);
+
+        diagnostics.Should().ContainSingle()
+            .Which.Id.Should().Be(InterpolatedStringLogAnalyzer.DiagnosticId);
+    }
+
+    [Fact]
+    public async Task No_diagnostic_for_AddWarning_overloads_that_forward_into_a_private_AddWarningCore_helper()
+    {
+        // Mirrors the real StartupVerificationContext structure: both public AddWarning overloads
+        // forward into a private AddWarningCore helper rather than calling each other. The
+        // analyzer's AddWarning dispatch is name-based (methodName == "AddWarning"), so a call to
+        // AddWarningCore is never routed into AnalyzeAddWarningInvocation in the first place — the
+        // safety guarantee is that AddWarningCore is private and therefore unreachable from
+        // anywhere outside these two overloads.
+        var source = """
+            using Microsoft.Extensions.Logging;
+            namespace ZeeKayDa.Auth
+            {
+                public sealed class StartupVerificationContext
+                {
+                    public void AddWarning(string code, string messageTemplate, LogLevel level, params object?[] args)
+                        => AddWarningCore(code, messageTemplate, level, args);
+
+                    public void AddWarning(string code, string messageTemplate, params object?[] args)
+                        => AddWarningCore(code, messageTemplate, LogLevel.Warning, args);
+
+                    private void AddWarningCore(string code, string messageTemplate, LogLevel level, object?[] args) { }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnosticsAsync(source);
+
+        diagnostics.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Diagnostic_fires_for_unrelated_type_forwarding_a_variable_named_messageTemplate()
+    {
+        // The check is scoped to StartupVerificationContext itself (matched by symbol) — an
+        // unrelated type that happens to declare a parameter also named "messageTemplate" and
+        // forwards it into AddWarning must still be flagged.
+        var source = """
+            using Microsoft.Extensions.Logging;
+            namespace ZeeKayDa.Auth
+            {
+                public sealed class StartupVerificationContext
+                {
+                    public void AddWarning(string code, string messageTemplate, LogLevel level, params object?[] args) { }
+                    public void AddWarning(string code, string messageTemplate, params object?[] args) { }
+                }
+            }
+            namespace ZeeKayDa.Auth.Services
+            {
+                class MyVerifier
+                {
+                    void Forward(ZeeKayDa.Auth.StartupVerificationContext context, string messageTemplate)
+                        => context.AddWarning("x.code", messageTemplate);
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnosticsAsync(source);
+
+        diagnostics.Should().ContainSingle()
+            .Which.Id.Should().Be(InterpolatedStringLogAnalyzer.DiagnosticId);
+    }
+
+    [Fact]
+    public async Task Diagnostic_fires_for_messageTemplate_parameter_forwarded_from_StartupVerificationContext_constructor()
+    {
+        // Regression coverage for architect finding 3 / security F2: the forwarding exemption
+        // previously accepted a "messageTemplate" parameter declared on ANY member of
+        // StartupVerificationContext, not just an AddWarning overload — a constructor parameter of
+        // that name could launder an interpolated string through unflagged.
+        var source = """
+            using Microsoft.Extensions.Logging;
+            namespace ZeeKayDa.Auth
+            {
+                public sealed class StartupVerificationContext
+                {
+                    public void AddWarning(string code, string messageTemplate, params object?[] args) { }
+
+                    public StartupVerificationContext(string messageTemplate)
+                        => AddWarning("x.code", messageTemplate);
+                }
+            }
+            namespace ZeeKayDa.Auth.Services
+            {
+                class MyVerifier
+                {
+                    void DoWork()
+                    {
+                        string secret = "s3cr3t";
+                        _ = new ZeeKayDa.Auth.StartupVerificationContext($"leaked {secret}");
+                    }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnosticsAsync(source);
+
+        diagnostics.Should().ContainSingle()
+            .Which.Id.Should().Be(InterpolatedStringLogAnalyzer.DiagnosticId);
+    }
+
+    [Fact]
+    public async Task Diagnostic_fires_for_messageTemplate_parameter_forwarded_from_a_private_helper_on_StartupVerificationContext()
+    {
+        var source = """
+            using Microsoft.Extensions.Logging;
+            namespace ZeeKayDa.Auth
+            {
+                public sealed class StartupVerificationContext
+                {
+                    public void AddWarning(string code, string messageTemplate, params object?[] args) { }
+
+                    private void Forward(string messageTemplate) => AddWarning("x.code", messageTemplate);
+
+                    public void DoWork()
+                    {
+                        string secret = "s3cr3t";
+                        Forward($"leaked {secret}");
+                    }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnosticsAsync(source);
+
+        diagnostics.Should().ContainSingle()
+            .Which.Id.Should().Be(InterpolatedStringLogAnalyzer.DiagnosticId);
+    }
+
+    [Fact]
+    public async Task Diagnostic_fires_for_messageTemplate_parameter_forwarded_from_a_lambda_on_StartupVerificationContext()
+    {
+        var source = """
+            using System;
+            using Microsoft.Extensions.Logging;
+            namespace ZeeKayDa.Auth
+            {
+                public sealed class StartupVerificationContext
+                {
+                    public void AddWarning(string code, string messageTemplate, params object?[] args) { }
+
+                    public void DoWork()
+                    {
+                        Action<string> forward = messageTemplate => AddWarning("x.code", messageTemplate);
+                        string secret = "s3cr3t";
+                        forward($"leaked {secret}");
+                    }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnosticsAsync(source);
+
+        diagnostics.Should().ContainSingle()
+            .Which.Id.Should().Be(InterpolatedStringLogAnalyzer.DiagnosticId);
+    }
+
+    [Fact]
+    public async Task Diagnostic_fires_on_static_extension_method_call_form()
+    {
+        // LoggerExtensions.LogInformation(logger, "...") is the static-method call form of the
+        // same extension method `logger.LogInformation(...)` binds to — the receiver expression
+        // names the declaring type, not a logger value, and must be resolved via the first
+        // argument instead.
+        var source = """
+            using Microsoft.Extensions.Logging;
+            namespace ZeeKayDa.Auth.Logging
+            {
+                internal interface ISanitizingLogger<T> : ILogger<T> { }
+            }
+            namespace ZeeKayDa.Auth.Services
+            {
+                using ZeeKayDa.Auth.Logging;
+                class MyService
+                {
+                    void DoWork()
+                    {
+                        ISanitizingLogger<object> logger = null!;
+                        string secret = "s3cr3t";
+                        LoggerExtensions.LogInformation(logger, $"leak {secret}");
+                    }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnosticsAsync(source);
+
+        diagnostics.Should().ContainSingle()
+            .Which.Id.Should().Be(InterpolatedStringLogAnalyzer.DiagnosticId);
+    }
+
+    [Fact]
+    public async Task No_diagnostic_for_static_extension_method_call_form_with_constant_template()
+    {
+        var source = """
+            using Microsoft.Extensions.Logging;
+            namespace ZeeKayDa.Auth.Logging
+            {
+                internal interface ISanitizingLogger<T> : ILogger<T> { }
+            }
+            namespace ZeeKayDa.Auth.Services
+            {
+                using ZeeKayDa.Auth.Logging;
+                class MyService
+                {
+                    void DoWork()
+                    {
+                        ISanitizingLogger<object> logger = null!;
+                        string value = "x";
+                        LoggerExtensions.LogInformation(logger, "Value: {Value}", value);
+                    }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnosticsAsync(source);
+
+        diagnostics.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task No_diagnostic_for_unrelated_extension_method_with_an_ILogger_typed_first_argument()
+    {
+        // Regression coverage for the architect-reported false positive: an unrelated Log*-named
+        // extension method's real receiver ("this") is not an ILogger — the fact that its first
+        // explicit argument happens to be ILogger-typed must not make ResolveLoggerReceiverType
+        // mistake that argument for the receiver.
+        var source = """
+            using Microsoft.Extensions.Logging;
+            namespace ZeeKayDa.Auth.Services
+            {
+                class AuditTrail { }
+                static class AuditTrailExtensions
+                {
+                    public static void LogAudit(this AuditTrail trail, ILogger logger, string userId) { }
+                }
+                class MyService
+                {
+                    void DoWork(AuditTrail trail, ILogger logger)
+                    {
+                        string userId = "u1";
+                        trail.LogAudit(logger, userId);
+                    }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnosticsAsync(source);
+
+        diagnostics.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Diagnostic_fires_on_static_extension_method_call_with_named_reordered_arguments()
+    {
+        // Regression coverage for the architect-reported bypass: the static-method call form's
+        // receiver must be resolved via the operation's argument-to-parameter binding
+        // (Parameter.Ordinal == 0), not by assuming the first *syntax* argument is the receiver —
+        // otherwise a named/reordered call slips the check entirely.
+        var source = """
+            using Microsoft.Extensions.Logging;
+            namespace ZeeKayDa.Auth.Logging
+            {
+                internal interface ISanitizingLogger<T> : ILogger<T> { }
+            }
+            namespace ZeeKayDa.Auth.Services
+            {
+                using ZeeKayDa.Auth.Logging;
+                class MyService
+                {
+                    void DoWork()
+                    {
+                        ISanitizingLogger<object> logger = null!;
+                        string secret = "s3cr3t";
+                        LoggerExtensions.LogInformation(message: $"leak {secret}", logger: logger);
+                    }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnosticsAsync(source);
+
+        diagnostics.Should().ContainSingle()
+            .Which.Id.Should().Be(InterpolatedStringLogAnalyzer.DiagnosticId);
+    }
+
+    [Fact]
+    public async Task Diagnostic_fires_on_BeginScope_with_interpolated_string()
+    {
+        var source = """
+            using Microsoft.Extensions.Logging;
+            namespace ZeeKayDa.Auth.Logging
+            {
+                internal interface ISanitizingLogger<T> : ILogger<T> { }
+            }
+            namespace ZeeKayDa.Auth.Services
+            {
+                using ZeeKayDa.Auth.Logging;
+                class MyService
+                {
+                    void DoWork()
+                    {
+                        ISanitizingLogger<object> logger = null!;
+                        string secret = "s3cr3t";
+                        using var scope = logger.BeginScope($"leak {secret}");
+                    }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnosticsAsync(source);
+
+        diagnostics.Should().ContainSingle()
+            .Which.Id.Should().Be(InterpolatedStringLogAnalyzer.DiagnosticId);
+    }
+
+    [Fact]
+    public async Task No_diagnostic_for_BeginScope_with_constant_template()
+    {
+        var source = """
+            using Microsoft.Extensions.Logging;
+            namespace ZeeKayDa.Auth.Logging
+            {
+                internal interface ISanitizingLogger<T> : ILogger<T> { }
+            }
+            namespace ZeeKayDa.Auth.Services
+            {
+                using ZeeKayDa.Auth.Logging;
+                class MyService
+                {
+                    void DoWork()
+                    {
+                        ISanitizingLogger<object> logger = null!;
+                        string value = "x";
+                        using var scope = logger.BeginScope("Value: {Value}", value);
+                    }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnosticsAsync(source);
+
+        diagnostics.Should().BeEmpty();
+    }
+
     // ── AddWarning's messageTemplate (issue #444 follow-up) ──────────────────────────────────────────
 
     [Fact]
@@ -787,8 +1249,11 @@ public sealed class InterpolatedStringLogAnalyzerTests
     }
 
     [Fact]
-    public async Task No_diagnostic_for_AddWarning_outside_ZeeKayDa_namespace()
+    public async Task No_diagnostic_for_AddWarning_outside_ZeeKayDa_assembly()
     {
+        // The gate is on the CALLER's assembly (per ADR/security fix for #460's F1), not the
+        // caller's declared namespace — a caller compiled into an unrelated assembly must not be
+        // analyzed even though the target type still lives in a "ZeeKayDa.Auth"-named namespace.
         var source = """
             using Microsoft.Extensions.Logging;
             namespace ZeeKayDa.Auth
@@ -812,7 +1277,7 @@ public sealed class InterpolatedStringLogAnalyzerTests
             }
             """;
 
-        var diagnostics = await GetDiagnosticsAsync(source);
+        var diagnostics = await GetDiagnosticsAsync(source, assemblyName: "MyApp");
 
         diagnostics.Should().BeEmpty();
     }
@@ -899,7 +1364,7 @@ public sealed class InterpolatedStringLogAnalyzerTests
     }
 
     [Fact]
-    public async Task No_diagnostic_outside_ZeeKayDa_namespace()
+    public async Task No_diagnostic_outside_ZeeKayDa_assembly()
     {
         var source = """
             using Microsoft.Extensions.Logging;
@@ -917,9 +1382,39 @@ public sealed class InterpolatedStringLogAnalyzerTests
             }
             """;
 
-        var diagnostics = await GetDiagnosticsAsync(source);
+        var diagnostics = await GetDiagnosticsAsync(source, assemblyName: "MyApp");
 
         diagnostics.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Diagnostic_fires_for_ZeeKayDa_assembly_code_declared_in_a_Microsoft_namespace()
+    {
+        // Regression coverage for security finding F1: the gate must key off the compilation's
+        // assembly, not the syntactic namespace text — ZeeKayDa.Auth's own extension-method
+        // classes commonly declare themselves under a Microsoft.* namespace (e.g.
+        // Microsoft.Extensions.DependencyInjection) for discoverability, and must not thereby
+        // escape analysis.
+        var source = """
+            using Microsoft.Extensions.Logging;
+            namespace Microsoft.Extensions.DependencyInjection
+            {
+                internal interface ISanitizingLogger<T> : ILogger<T> { }
+                static class ServiceCollectionExtensions
+                {
+                    static void Configure(ISanitizingLogger<object> logger)
+                    {
+                        string secret = "s3cr3t";
+                        logger.LogInformation($"leak {secret}");
+                    }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnosticsAsync(source, assemblyName: "ZeeKayDa.Auth.AspNetCore");
+
+        diagnostics.Should().ContainSingle()
+            .Which.Id.Should().Be(InterpolatedStringLogAnalyzer.DiagnosticId);
     }
 
     [Fact]
@@ -1005,9 +1500,9 @@ public sealed class InterpolatedStringLogAnalyzerTests
     }
 
     [Fact]
-    public async Task No_diagnostic_inside_ZeeKayDa_Auth_Analyzers_namespace()
+    public async Task No_diagnostic_inside_ZeeKayDa_Auth_Analyzers_assembly()
     {
-        // Exercises the namespace-exclusion branch: ZeeKayDa.Auth.Analyzers is exempt
+        // Exercises the assembly-exclusion branch: ZeeKayDa.Auth.Analyzers is exempt
         var source = """
             using Microsoft.Extensions.Logging;
             namespace ZeeKayDa.Auth.Analyzers
@@ -1024,7 +1519,7 @@ public sealed class InterpolatedStringLogAnalyzerTests
             }
             """;
 
-        var diagnostics = await GetDiagnosticsAsync(source);
+        var diagnostics = await GetDiagnosticsAsync(source, assemblyName: "ZeeKayDa.Auth.Analyzers");
 
         diagnostics.Should().BeEmpty();
     }
@@ -1088,19 +1583,18 @@ public sealed class InterpolatedStringLogAnalyzerTests
 
     // ── Infrastructure ────────────────────────────────────────────────────────────────────────────
 
-    private static async Task<ImmutableArray<Diagnostic>> GetDiagnosticsAsync(string source)
+    private static async Task<ImmutableArray<Diagnostic>> GetDiagnosticsAsync(
+        string source, string assemblyName = "ZeeKayDa.Auth")
     {
-        var references = new MetadataReference[]
-        {
-            MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
-            MetadataReference.CreateFromFile(typeof(Microsoft.Extensions.Logging.ILogger<>).Assembly.Location),
-        };
+        var references = BuildFullReferences();
 
         var compilation = CSharpCompilation.Create(
-            "ZeeKayDa.Auth",
+            assemblyName,
             new[] { CSharpSyntaxTree.ParseText(source) },
             references,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        await AssertNoCompilerErrorsAsync(compilation);
 
         var analyzers = ImmutableArray.Create<DiagnosticAnalyzer>(new InterpolatedStringLogAnalyzer());
         var compilationWithAnalyzers = compilation.WithAnalyzers(analyzers);
@@ -1110,11 +1604,7 @@ public sealed class InterpolatedStringLogAnalyzerTests
     private static async Task<ImmutableArray<Diagnostic>> GetDiagnosticsFromFriendAssemblyAsync(
         string coreSource, string friendSource)
     {
-        var sharedReferences = new MetadataReference[]
-        {
-            MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
-            MetadataReference.CreateFromFile(typeof(Microsoft.Extensions.Logging.ILogger<>).Assembly.Location),
-        };
+        var sharedReferences = BuildFullReferences();
 
         // Compile the core assembly (ZeeKayDa.Auth) that defines ISanitizingLogger<T>
         var coreCompilation = CSharpCompilation.Create(
@@ -1122,6 +1612,7 @@ public sealed class InterpolatedStringLogAnalyzerTests
             new[] { CSharpSyntaxTree.ParseText(coreSource) },
             sharedReferences,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+        await AssertNoCompilerErrorsAsync(coreCompilation);
 
         // Compile the friend assembly referencing it
         var friendCompilation = CSharpCompilation.Create(
@@ -1129,9 +1620,41 @@ public sealed class InterpolatedStringLogAnalyzerTests
             new[] { CSharpSyntaxTree.ParseText(friendSource) },
             sharedReferences.Append(coreCompilation.ToMetadataReference()).ToArray(),
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+        await AssertNoCompilerErrorsAsync(friendCompilation);
 
         var analyzers = ImmutableArray.Create<DiagnosticAnalyzer>(new InterpolatedStringLogAnalyzer());
         var compilationWithAnalyzers = friendCompilation.WithAnalyzers(analyzers);
         return await compilationWithAnalyzers.GetAnalyzerDiagnosticsAsync();
+    }
+
+    // A compilation built from only a couple of hand-picked references binds most real-world
+    // snippets incompletely, producing CS0012-style "type defined in an assembly that is not
+    // referenced" errors. A negative assertion (diagnostics.Should().BeEmpty()) against such a
+    // compilation can pass vacuously, without the analyzer ever actually inspecting the intended
+    // code path. Referencing the full trusted-platform-assembly set avoids that, and asserting
+    // zero compiler errors here surfaces a broken test snippet as a test failure instead of a
+    // silently meaningless assertion.
+    private static async Task AssertNoCompilerErrorsAsync(CSharpCompilation compilation)
+    {
+        var diagnostics = await Task.Run(() => compilation.GetDiagnostics());
+        diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).Should().BeEmpty();
+    }
+
+    private static MetadataReference[] BuildFullReferences()
+    {
+        var trustedAssemblies = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!)
+            .Split(Path.PathSeparator);
+
+        // Exclude ZeeKayDa's own assemblies: the fake types these test snippets declare (e.g. a
+        // stand-in "ZeeKayDa.Auth.StartupVerificationContext") deliberately shadow the real
+        // production types, and referencing both would collide on assembly identity.
+        var references = trustedAssemblies
+            .Where(path => !Path.GetFileNameWithoutExtension(path).StartsWith("ZeeKayDa.", StringComparison.Ordinal))
+            .Select(path => (MetadataReference)MetadataReference.CreateFromFile(path))
+            .ToList();
+
+        references.Add(MetadataReference.CreateFromFile(typeof(Microsoft.Extensions.Logging.ILogger<>).Assembly.Location));
+
+        return references.ToArray();
     }
 }

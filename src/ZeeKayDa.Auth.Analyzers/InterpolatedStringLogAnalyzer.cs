@@ -9,9 +9,10 @@ using Microsoft.CodeAnalysis.Operations;
 namespace ZeeKayDa.Auth.Analyzers;
 
 /// <summary>
-/// Catches non-constant string arguments passed to <c>Log*</c> methods inside <c>ZeeKayDa.*</c>
-/// namespaces, and non-constant <c>messageTemplate</c> arguments passed to
-/// <c>StartupVerificationContext.AddWarning</c>. The message template must be a
+/// Catches non-constant string arguments passed to <c>Log*</c>/<c>BeginScope</c> calls (instance,
+/// conditional-access, or static extension-method form) inside ZeeKayDa.Auth's own assemblies, and
+/// non-constant <c>messageTemplate</c> arguments passed to
+/// <c>StartupVerificationContext.AddWarning</c> (qualified or unqualified). The message template must be a
 /// compile-time constant so that <c>SecretSanitizingLogger</c> can inspect the template and its
 /// structured arguments — a non-constant string (interpolated, concatenated with a variable, or a
 /// local variable) is already fully expanded and cannot be redacted. <c>AddWarning</c> needs its
@@ -53,32 +54,25 @@ public sealed class InterpolatedStringLogAnalyzer : DiagnosticAnalyzer
         var invocation = (InvocationExpressionSyntax)context.Node;
 
         // Plain `logger.LogX(...)` uses MemberAccessExpressionSyntax; conditional-access
-        // `logger?.LogX(...)` uses MemberBindingExpressionSyntax, whose receiver lives on the
-        // enclosing ConditionalAccessExpressionSyntax rather than on the member node itself.
-        ExpressionSyntax? receiverExpression;
-        string methodName;
-        switch (invocation.Expression)
+        // `logger?.LogX(...)` uses MemberBindingExpressionSyntax; an unqualified call with an
+        // implicit `this` receiver (e.g. AddWarning(...) called from inside
+        // StartupVerificationContext itself) uses IdentifierNameSyntax. Only the method name is
+        // needed here to route the call — the receiver itself is resolved from the bound
+        // IInvocationOperation, not from this syntax.
+        string? methodName = invocation.Expression switch
         {
-            case MemberAccessExpressionSyntax memberAccess:
-                receiverExpression = memberAccess.Expression;
-                methodName = memberAccess.Name.Identifier.Text;
-                break;
-            case MemberBindingExpressionSyntax memberBinding:
-                receiverExpression = GetConditionalAccessReceiver(invocation);
-                methodName = memberBinding.Name.Identifier.Text;
-                break;
-            default:
-                return;
-        }
+            MemberAccessExpressionSyntax memberAccess => memberAccess.Name.Identifier.Text,
+            MemberBindingExpressionSyntax memberBinding => memberBinding.Name.Identifier.Text,
+            IdentifierNameSyntax identifierName => identifierName.Identifier.Text,
+            _ => null,
+        };
+        if (methodName is null) return;
 
-        if (!IsInZeeKayDaNamespace(invocation)) return;
+        if (!ZeeKayDaAssemblyGate.IsZeeKayDaAssembly(context.SemanticModel.Compilation)) return;
 
-        if (methodName.StartsWith("Log", System.StringComparison.Ordinal))
+        if (methodName.StartsWith("Log", System.StringComparison.Ordinal) || methodName == "BeginScope")
         {
-            // Only the Log* branch needs the resolved receiver; AddWarning is matched by
-            // symbol (containing type + name) and never looks at it.
-            if (receiverExpression is null) return;
-            AnalyzeLogInvocation(context, invocation, receiverExpression);
+            AnalyzeLogInvocation(context, invocation);
             return;
         }
 
@@ -86,43 +80,13 @@ public sealed class InterpolatedStringLogAnalyzer : DiagnosticAnalyzer
             AnalyzeAddWarningInvocation(context, invocation);
     }
 
-    // Walks up through the fluent chain (member accesses and invocations) that the target
-    // invocation is the root of, to find the ConditionalAccessExpressionSyntax it ultimately
-    // belongs to — not just an immediate `x?.Y(...)` parent. This matters for a chain like
-    // `logger?.LogChain(...).LogChain(...)`, where the first call's direct parent is a
-    // MemberAccessExpressionSyntax for the next link, not the ConditionalAccessExpressionSyntax
-    // itself.
-    private static ExpressionSyntax? GetConditionalAccessReceiver(InvocationExpressionSyntax invocation)
-    {
-        SyntaxNode current = invocation;
-        while (true)
-        {
-            switch (current.Parent)
-            {
-                case ConditionalAccessExpressionSyntax { WhenNotNull: var whenNotNull } conditional
-                    when whenNotNull == current:
-                    return conditional.Expression;
-
-                case MemberAccessExpressionSyntax memberAccess when memberAccess.Expression == current:
-                    current = memberAccess;
-                    continue;
-
-                case InvocationExpressionSyntax outerInvocation when outerInvocation.Expression == current:
-                    current = outerInvocation;
-                    continue;
-
-                default:
-                    return null;
-            }
-        }
-    }
-
-    private static void AnalyzeLogInvocation(
-        SyntaxNodeAnalysisContext context, InvocationExpressionSyntax invocation, ExpressionSyntax receiverExpression)
+    private static void AnalyzeLogInvocation(SyntaxNodeAnalysisContext context, InvocationExpressionSyntax invocation)
     {
         if (IsInLoggerImplementation(context, invocation)) return;
 
-        var receiverType = context.SemanticModel.GetTypeInfo(receiverExpression).Type;
+        if (context.SemanticModel.GetOperation(invocation) is not IInvocationOperation operation) return;
+
+        var receiverType = ResolveLoggerReceiverType(operation);
         if (receiverType is null) return;
 
         if (!ImplementsILogger(receiverType)) return;
@@ -142,6 +106,23 @@ public sealed class InterpolatedStringLogAnalyzer : DiagnosticAnalyzer
         }
     }
 
+    // The bound operation already distinguishes an ordinary instance call — including a reduced
+    // extension-method call such as `logger.LogInformation(...)`, where Instance is the logger —
+    // from the fully static call form `LoggerExtensions.LogInformation(logger, ...)`, where
+    // Instance is null and the logger is an ordinary argument bound to the extension method's
+    // "this" parameter (ordinal 0). Resolving the receiver this way, rather than from syntax,
+    // correctly handles named/reordered arguments and never mistakes an unrelated extension
+    // method's ILogger-typed argument for its receiver.
+    private static ITypeSymbol? ResolveLoggerReceiverType(IInvocationOperation operation)
+    {
+        if (operation.Instance is not null) return operation.Instance.Type;
+
+        if (!operation.TargetMethod.IsExtensionMethod) return null;
+
+        var thisArgument = operation.Arguments.FirstOrDefault(a => a.Parameter?.Ordinal == 0);
+        return thisArgument?.Value.Type;
+    }
+
     // Unlike Log*, AddWarning is identified by symbol (containing type + name), not by a
     // name-prefix-plus-receiver-type heuristic, and its template argument is found via the
     // bound IInvocationOperation's already-resolved parameter mapping — not by re-deriving
@@ -159,8 +140,9 @@ public sealed class InterpolatedStringLogAnalyzer : DiagnosticAnalyzer
         var templateArgument = operation.Arguments.FirstOrDefault(a => a.Parameter?.Name == "messageTemplate");
         if (templateArgument is null) return;
 
-        if (!templateArgument.Value.ConstantValue.HasValue)
-            context.ReportDiagnostic(Diagnostic.Create(Rule, templateArgument.Value.Syntax.GetLocation()));
+        if (templateArgument.Value.ConstantValue.HasValue) return;
+
+        context.ReportDiagnostic(Diagnostic.Create(Rule, templateArgument.Value.Syntax.GetLocation()));
     }
 
     private static bool ImplementsILogger(ITypeSymbol type)
@@ -175,18 +157,6 @@ public sealed class InterpolatedStringLogAnalyzer : DiagnosticAnalyzer
             && type.ContainingNamespace?.ToDisplayString() == "Microsoft.Extensions.Logging"
             && type is INamedTypeSymbol named
             && named.TypeParameters.Length == 0;
-    }
-
-    private static bool IsInZeeKayDaNamespace(SyntaxNode node)
-    {
-        var parts = new System.Collections.Generic.List<string>();
-        foreach (var ns in node.Ancestors().OfType<BaseNamespaceDeclarationSyntax>())
-            parts.Insert(0, ns.Name.ToString());
-
-        if (parts.Count == 0) return false;
-        var fullNamespace = string.Join(".", parts);
-        return fullNamespace.StartsWith("ZeeKayDa.", System.StringComparison.Ordinal)
-            && !fullNamespace.StartsWith("ZeeKayDa.Auth.Analyzers", System.StringComparison.Ordinal);
     }
 
     private static bool IsInLoggerImplementation(SyntaxNodeAnalysisContext context, SyntaxNode node)
