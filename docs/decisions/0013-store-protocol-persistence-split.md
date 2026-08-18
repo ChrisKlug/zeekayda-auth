@@ -18,10 +18,11 @@ Status: Accepted   ·   Date: 2026-07-15   ·   Issue: #375
 > plaintext `FamilyId` (see Decision), replacing the all-ciphertext tombstone, so that
 > `AlreadyRedeemed{FamilyId}` (RFC 9700 §2.1.1 replay handling) survives a Data-Protection key
 > rotation. Security reviewed and approved the plaintext `FamilyId` on its own merits: `FamilyId`
-> is a random GUID used only as a non-secret correlation/revocation-lookup identifier (revocation
-> markers key on `Hash(FamilyId)`, and `RevokeFamilyAsync` is framework-internal, unreachable by a
-> read-only store observer — a leaked `FamilyId` grants no capability, forges no token, enables no
-> redemption), so this discloses correlation, not a bearer credential. Two facts specific to the
+> is a random GUID used only as a non-secret correlation/revocation-lookup identifier — revocation
+> is driven only by the plaintext `FamilyId` value itself, never by the raw code handle, and
+> `RevokeFamilyAsync` is framework-internal, unreachable by a read-only store observer — a leaked
+> `FamilyId` grants no capability, forges no token, enables no redemption — so this discloses
+> correlation, not a bearer credential. Two facts specific to the
 > *code* store make the trade clearly correct: the tombstone's backend TTL is the code's own
 > seconds-to-minutes lifetime, so the cleartext exists only briefly; and each authorization code
 > maps to a distinct, freshly-minted family, so a `FamilyId` appears in at most one code tombstone
@@ -36,8 +37,7 @@ Status: Accepted   ·   Date: 2026-07-15   ·   Issue: #375
 cross-assembly) but gains an `internal` interface member that only `[InternalsVisibleTo]`
 assemblies can satisfy, so a third party attempting to implement it gets a compile error. The
 framework ships one sealed coordinator, `AuthorizationCodeStore`, that owns everything
-protocol-critical: handle hashing, Data-Protection encryption, the check-and-consume state
-machine and its atomicity, fail-closed I/O, logical expiry, and outcome selection.
+protocol-critical listed above.
 
 The one thing a third party still implements is `IAuthorizationCodeBackingStore` — a narrow,
 "dumb" key-value primitive with three methods (`TryInsertAsync`, `GetAsync`, `RemoveAsync`) that
@@ -89,8 +89,8 @@ legitimately wants to vary is *where the bytes live* — everything else is fixe
 - **A single shared backing interface for both the code and refresh-token stores (rejected).** The
   two stores diverge on lifetime (seconds vs. months) and durability pressure (a lost code just
   fails one authorization; lost refresh tokens force mass re-authentication). Forcing one
-  registration would push consumers to over- or under-provision. Confirmed correct in practice: the
-  refresh-token store (ADR 0014) needed a genuinely different, queryable shape, not this KV one.
+  registration would push consumers to over- or under-provision; the two stores are free to
+  diverge on backing shape independently.
 - **Encrypt `FamilyId` too and add an `AlreadyRedeemed.FamilyUnrecoverable` case (rejected).**
   `FamilyId` is a non-secret random GUID, so encrypting it buys nothing; leaving it cleartext lets
   replay detection and family revocation both survive a DP key rotation, strictly better, with no
