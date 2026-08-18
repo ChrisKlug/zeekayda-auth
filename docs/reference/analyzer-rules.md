@@ -129,14 +129,17 @@ dotnet_diagnostic.ZEEKAYDA0001.severity = none
 
 ### What it enforces
 
-`Log*` message templates inside `ZeeKayDa.*` namespaces must be compile-time constant strings.
-Interpolated strings, variable references, string concatenation with non-literal operands,
-`string.Format`, and any other non-constant expression are all flagged regardless of the
-identifier names involved.
+`Log*`/`BeginScope` message templates inside `ZeeKayDa.*` namespaces must be compile-time constant
+strings. Interpolated strings, variable references, string concatenation with non-literal
+operands, `string.Format`, and any other non-constant expression are all flagged regardless of the
+identifier names involved. This applies to instance calls (`logger.LogInformation(...)`),
+conditional-access calls (`logger?.LogInformation(...)`), and the static-method call form
+(`LoggerExtensions.LogInformation(logger, ...)`) alike.
 
 The rule also constrains one specific non-`Log*` method by symbol rather than by name/receiver
-heuristic: `StartupVerificationContext.AddWarning`'s `messageTemplate` parameter. `AddWarning` is
-how an `IStartupVerifier`/`IStartupVerificationGate` implementation reports a warning for the
+heuristic: `StartupVerificationContext.AddWarning`'s `messageTemplate` parameter, whether the call
+is receiver-qualified or (from inside `StartupVerificationContext` itself) unqualified. `AddWarning`
+is how an `IStartupVerifier`/`IStartupVerificationGate` implementation reports a warning for the
 startup-verification runner to log on its behalf (see [ADR
 0016](../decisions/0016-unified-startup-verification.md) §3, §9) — its template flows into the same
 redaction-sensitive log call the `Log*` branch above protects, so it needs the same constant-string

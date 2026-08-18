@@ -9,9 +9,10 @@ using Microsoft.CodeAnalysis.Operations;
 namespace ZeeKayDa.Auth.Analyzers;
 
 /// <summary>
-/// Catches non-constant string arguments passed to <c>Log*</c> methods inside <c>ZeeKayDa.*</c>
-/// namespaces, and non-constant <c>messageTemplate</c> arguments passed to
-/// <c>StartupVerificationContext.AddWarning</c>. The message template must be a
+/// Catches non-constant string arguments passed to <c>Log*</c>/<c>BeginScope</c> calls (instance,
+/// conditional-access, or static extension-method form) inside <c>ZeeKayDa.*</c> namespaces, and
+/// non-constant <c>messageTemplate</c> arguments passed to
+/// <c>StartupVerificationContext.AddWarning</c> (qualified or unqualified). The message template must be a
 /// compile-time constant so that <c>SecretSanitizingLogger</c> can inspect the template and its
 /// structured arguments — a non-constant string (interpolated, concatenated with a variable, or a
 /// local variable) is already fully expanded and cannot be redacted. <c>AddWarning</c> needs its
@@ -67,16 +68,24 @@ public sealed class InterpolatedStringLogAnalyzer : DiagnosticAnalyzer
                 receiverExpression = GetConditionalAccessReceiver(invocation);
                 methodName = memberBinding.Name.Identifier.Text;
                 break;
+            case IdentifierNameSyntax identifierName:
+                // Unqualified call with an implicit `this` receiver, e.g. AddWarning(...) called
+                // from inside StartupVerificationContext itself. Only the AddWarning path below
+                // can handle this — it matches by symbol and never needs a receiver expression;
+                // Log*/BeginScope calls are never made unqualified against an implicit `this`.
+                receiverExpression = null;
+                methodName = identifierName.Identifier.Text;
+                break;
             default:
                 return;
         }
 
         if (!IsInZeeKayDaNamespace(invocation)) return;
 
-        if (methodName.StartsWith("Log", System.StringComparison.Ordinal))
+        if (methodName.StartsWith("Log", System.StringComparison.Ordinal) || methodName == "BeginScope")
         {
-            // Only the Log* branch needs the resolved receiver; AddWarning is matched by
-            // symbol (containing type + name) and never looks at it.
+            // Only this branch needs the resolved receiver; AddWarning is matched by symbol
+            // (containing type + name) and never looks at it.
             if (receiverExpression is null) return;
             AnalyzeLogInvocation(context, invocation, receiverExpression);
             return;
@@ -122,7 +131,7 @@ public sealed class InterpolatedStringLogAnalyzer : DiagnosticAnalyzer
     {
         if (IsInLoggerImplementation(context, invocation)) return;
 
-        var receiverType = context.SemanticModel.GetTypeInfo(receiverExpression).Type;
+        var receiverType = ResolveLoggerReceiverType(context, invocation, receiverExpression);
         if (receiverType is null) return;
 
         if (!ImplementsILogger(receiverType)) return;
@@ -142,6 +151,26 @@ public sealed class InterpolatedStringLogAnalyzer : DiagnosticAnalyzer
         }
     }
 
+    // `LoggerExtensions.LogInformation(logger, "...")` (static-method call form) names the
+    // extension method's declaring type on the left of the dot — GetTypeInfo on that expression
+    // resolves to the LoggerExtensions type itself, not the logger value, even though the call is
+    // genuinely against an ILogger. In that shape the real receiver is the invocation's first
+    // argument (the extension method's "this" parameter).
+    private static ITypeSymbol? ResolveLoggerReceiverType(
+        SyntaxNodeAnalysisContext context, InvocationExpressionSyntax invocation, ExpressionSyntax receiverExpression)
+    {
+        var receiverType = context.SemanticModel.GetTypeInfo(receiverExpression).Type;
+        if (receiverType is not null && ImplementsILogger(receiverType)) return receiverType;
+
+        if (context.SemanticModel.GetSymbolInfo(invocation).Symbol is IMethodSymbol { IsExtensionMethod: true } &&
+            invocation.ArgumentList.Arguments.Count > 0)
+        {
+            return context.SemanticModel.GetTypeInfo(invocation.ArgumentList.Arguments[0].Expression).Type;
+        }
+
+        return receiverType;
+    }
+
     // Unlike Log*, AddWarning is identified by symbol (containing type + name), not by a
     // name-prefix-plus-receiver-type heuristic, and its template argument is found via the
     // bound IInvocationOperation's already-resolved parameter mapping — not by re-deriving
@@ -159,8 +188,25 @@ public sealed class InterpolatedStringLogAnalyzer : DiagnosticAnalyzer
         var templateArgument = operation.Arguments.FirstOrDefault(a => a.Parameter?.Name == "messageTemplate");
         if (templateArgument is null) return;
 
-        if (!templateArgument.Value.ConstantValue.HasValue)
-            context.ReportDiagnostic(Diagnostic.Create(Rule, templateArgument.Value.Syntax.GetLocation()));
+        if (templateArgument.Value.ConstantValue.HasValue) return;
+        if (IsForwardedMessageTemplateParameter(templateArgument.Value, containingType)) return;
+
+        context.ReportDiagnostic(Diagnostic.Create(Rule, templateArgument.Value.Syntax.GetLocation()));
+    }
+
+    // StartupVerificationContext's own params-array overload forwards its non-constant
+    // messageTemplate parameter, unchanged, to the LogLevel overload — that call site is not a
+    // new template being constructed, just the already-validated parameter passing through, so
+    // it must not be flagged. The exemption is intentionally narrow: it only recognises a
+    // parameter named exactly "messageTemplate" declared on another method of the same
+    // StartupVerificationContext type, so it cannot be used to launder an arbitrary variable in
+    // caller code.
+    private static bool IsForwardedMessageTemplateParameter(IOperation value, INamedTypeSymbol containingType)
+    {
+        if (value is not IParameterReferenceOperation { Parameter: { Name: "messageTemplate" } parameter })
+            return false;
+
+        return SymbolEqualityComparer.Default.Equals(parameter.ContainingSymbol?.ContainingType, containingType);
     }
 
     private static bool ImplementsILogger(ITypeSymbol type)
