@@ -57,7 +57,7 @@ meaning in a resolution context.
   effectively unbounded, not merely long. Re-fetching on every issuance bounds staleness to the
   access token lifetime and makes the subject-still-valid check (`SubjectInvalid`) a natural
   consequence of the same call, rather than a second mechanism — this is how session/account
-  revocation (see issues #103, #104) actually takes effect in the token pipeline.
+  revocation actually takes effect in the token pipeline.
 - **A snapshot on the entry records was rejected** for exactly the unbounded-staleness reason above,
   and because it would require a *second*, separately-designed hook to get equivalent
   re-validation and claim-transformation capability — `IClaimsProvider` gives operators that hook for
@@ -78,7 +78,7 @@ meaning in a resolution context.
   adding API surface that encodes an implementation assumption into the contract.
 - **`ClientId` and request metadata are deliberately excluded** from `ClaimsProviderContext` — claims
   resolution is a subject-level concern; client-varying claims belong in a future claim
-  transformation pipeline (deferred, see issues #205/#206), not in this seam.
+  transformation pipeline (deferred pending that pipeline's design), not in this seam.
 
 ## Consequences
 
@@ -90,7 +90,8 @@ meaning in a resolution context.
 - Claims returned by `IClaimsProvider` may carry personal data and must never appear in log entries,
   error responses, or exception messages — `SecretSanitizingLogger` (ADR 0009) covers the
   logging-side redaction; the token endpoint itself must not embed claim values in any exception or
-  error response.
+  error response. `FamilyId` is likewise not raw-loggable — see ADR 0008's logging-hygiene guidance
+  (log a truncated hash, not the raw value).
 - No schema change to ADR 0008's entry records, and `ClaimRecord`/`IReadOnlyList<ClaimRecord>` are
   the forward-compatible transfer types the future claim transformation pipeline will sit downstream
   of, with no breaking change to `IClaimsProvider` anticipated when that pipeline lands.

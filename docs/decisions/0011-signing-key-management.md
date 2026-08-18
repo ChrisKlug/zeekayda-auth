@@ -6,9 +6,10 @@ Status: Accepted   ·   Date: 2026-06-23   ·   Issue: #187
 > were reviewed and approved by the security agent as a token-validation trust-boundary decision
 > before this ADR merged; that sign-off still governs today's derivation. A second security +
 > architect review (two rounds, both APPROVE with no blocking findings) covered the first
-> production provider (Azure Key Vault remote signing); the second round was against commit
-> `ea5c9b1`, which closed a closed-generic `ISanitizingLogger<T>` shadowing gap the first round had
-> flagged as an accepted residual. Separately, a Key Vault list-key-versions read-consistency
+> production provider (Azure Key Vault remote signing, shipped in PR #298); the first round
+> reviewed that PR's design and diff directly, and the second round was against commit `ea5c9b1`,
+> which closed a closed-generic `ISanitizingLogger<T>` shadowing gap the first round had flagged as
+> an accepted residual. Separately, a Key Vault list-key-versions read-consistency
 > question raised in that review was investigated against Microsoft's documented reliability model
 > and the residual risk was accepted as-is, with no mitigation (the only affected case — a
 > brand-new key during a rare Microsoft-initiated regional failover — is self-healing and never a
@@ -35,12 +36,12 @@ public interface IJwtSigningService
 {
     // The active key plus any key still inside its retirement window. Exactly the set that
     // must appear in the JWKS.
-    ValueTask<IReadOnlyList<SigningKeyDescriptor>> GetSigningKeysAsync(CancellationToken ct = default);
+    ValueTask<IReadOnlyList<SigningKeyDescriptor>> GetSigningKeysAsync(CancellationToken cancellationToken = default);
 
     // Builds the JWS header internally (selecting the active key/algorithm), forms the signing
     // input, and signs, all in one call — so header and signature can never disagree about which
     // key produced them.
-    ValueTask<SigningResult> SignAsync(ReadOnlyMemory<byte> payloadSegment, CancellationToken ct = default);
+    ValueTask<SigningResult> SignAsync(ReadOnlyMemory<byte> payloadSegment, CancellationToken cancellationToken = default);
 }
 ```
 
@@ -110,9 +111,10 @@ derive from), `JwkThumbprint`, `SigningKeyRotation`/`SigningKeyDescriptorFactory
 serve a genuine third-party provider package (ADR 0012). ZeeKayDa's own crypto dispatch
 (`SigningAlgorithms`) and concrete redaction logic (`SecretSanitizingLogger<T>`) stay `internal`.
 Making `ISanitizingLogger<T>` nameable introduces a host-shadowing risk (a host registering its own
-implementation could silently disable redaction), mitigated by a hard-failing startup validator
-(`SanitizingLoggerRegistrationStartupValidator`) that runs first among startup checks and rejects
-both an unexpected open-generic implementation and any closed-generic override.
+implementation could silently disable redaction), mitigated by a hard-failing startup gate
+(`SanitizingLoggerRegistrationGate`, the sole `IStartupVerificationGate` — see ADR 0016) that runs
+before every other startup check and rejects both an unexpected open-generic implementation and any
+closed-generic override.
 
 **No JWT encryption (JWE) in v1** — not even an "off" toggle. v1 has no dynamic client registration,
 so no client can request an encrypted token; the encryption discovery fields are OPTIONAL in OIDC
@@ -160,6 +162,9 @@ methods return the same builder, so environment-conditional provider selection i
   rejected** — the flat `AddXxxSigning()` methods already compose with ordinary `if`/`else`
   branching, and a sub-builder would add a parallel surface across every provider package for a
   problem already solved.
+- **A macOS Keychain signing provider was implemented, reviewed, and then descoped** — a production
+  ASP.NET Core auth server is not a realistic macOS-hosted workload, and the file-system provider
+  (ADR 0012) already covers macOS/Linux deployments without native interop.
 - **Placing the development-key environment gate on the shared `AuthorizationServerOptions` root was
   tried, shipped, and reverted.** It mirrored the in-memory store's server-wide gate placement, but
   conflated the gate's *input* (genuinely server-wide: the host environment name) with its *policy*
@@ -184,7 +189,7 @@ methods return the same builder, so environment-conditional provider selection i
 - Public extension types (`JwtSigningService<TOptions>`, `JwkThumbprint`, `SigningKeyRotation`,
   `SigningKeyDescriptorFactory`, `ISanitizingLogger<T>`) are a SemVer commitment — necessary for
   genuine third-party providers, but their shapes are now stable API. The `ISanitizingLogger<T>`
-  host-shadowing risk is mitigated by a hard-failing startup validator rather than closed off
+  host-shadowing risk is mitigated by a hard-failing startup gate rather than closed off
   structurally (a public sealed concrete type was considered, touches ~34 call sites, and remains
   available as a future hardening step).
 - No encryption in v1 is acceptable given no dynamic client registration and OPTIONAL discovery
