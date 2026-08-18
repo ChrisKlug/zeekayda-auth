@@ -576,6 +576,32 @@ EOF
 assert_exit "return statement inside a block-bodied property accessor fails" 1 run_checker "${DIR}"
 
 # ===========================================================================
+# Structural check: every src/**/*.csproj must be listed in ZeeKayDa.Auth.slnx,
+# or it silently escapes all three passes (the gap that let
+# ZeeKayDa.Auth.Analyzers.csproj go unchecked before it was added to the .slnx).
+# ===========================================================================
+
+DIR="$(case_dir unlisted_src_project)"
+new_fixture "${DIR}"
+write_source "${DIR}" <<'EOF'
+class Fixture {}
+EOF
+write_file "${DIR}/src/Unlisted/Unlisted.csproj" <<EOF
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <Analyzer Include="${ANALYZER_DLL}" />
+  </ItemGroup>
+</Project>
+EOF
+write_file "${DIR}/src/Unlisted/Service.cs" <<'EOF'
+class Unlisted {}
+EOF
+assert_exit "src/**/*.csproj not listed in the .slnx fails" 1 run_checker "${DIR}"
+
+# ===========================================================================
 # Pass C — effective severity per project. Each case is its own single-project
 # fixture repo since it needs full control over csproj/props/editorconfig content.
 # The fixture .cs file is intentionally trivial — pass C never inspects source

@@ -120,6 +120,8 @@ static IReadOnlyList<string> DiscoverProjects(string repoRoot)
         throw new InvalidOperationException($"No src projects found under a /src/ folder in {solutionPath}");
     }
 
+    AssertNoUnlistedSrcProjects(repoRoot, srcProjects);
+
     var samplesDir = Path.Combine(repoRoot, "samples");
     var sampleProjects = Directory.Exists(samplesDir)
         ? Directory.EnumerateFiles(samplesDir, "*.csproj", SearchOption.AllDirectories)
@@ -140,6 +142,40 @@ static IReadOnlyList<string> DiscoverProjects(string repoRoot)
 
     return allProjects;
 }
+
+// Guards against the gap that let ZeeKayDa.Auth.Analyzers.csproj go unchecked before this
+// script's own PR added it to the .slnx: a project can exist on disk under src/ without
+// being listed in ZeeKayDa.Auth.slnx, which means DiscoverProjects's trust of the slnx's
+// "/src/" entries would silently skip it across all three passes. This is a structural
+// problem with the repo/solution, not a per-project log-hygiene violation, so it surfaces
+// via the top-level Fail rather than the violations list.
+static void AssertNoUnlistedSrcProjects(string repoRoot, IReadOnlyList<string> srcProjects)
+{
+    var listedPaths = srcProjects
+        .Select(NormalizePath)
+        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+    var srcDir = Path.Combine(repoRoot, "src");
+    if (!Directory.Exists(srcDir))
+    {
+        return;
+    }
+
+    var unlisted = Directory.EnumerateFiles(srcDir, "*.csproj", SearchOption.AllDirectories)
+        .Where(path => !listedPaths.Contains(NormalizePath(path)))
+        .OrderBy(static path => path, StringComparer.Ordinal)
+        .ToArray();
+
+    if (unlisted.Length > 0)
+    {
+        throw new InvalidOperationException(
+            $"Found {unlisted.Length} project(s) under src/ that are not listed as a \"/src/\" "
+            + $"<Project Path> entry in ZeeKayDa.Auth.slnx, so they would silently escape every "
+            + $"log-hygiene pass: {string.Join(", ", unlisted)}");
+    }
+}
+
+static string NormalizePath(string path) => Path.GetFullPath(path).Replace('\\', '/');
 
 // One `dotnet msbuild` invocation per project, shared by pass A (Compile items, to build
 // the syntax trees) and pass C (everything else). RunAnalyzers/RunAnalyzersDuringBuild
@@ -162,9 +198,15 @@ static ProjectEvaluation EvaluateProject(string projectPath)
     using var process = Process.Start(startInfo)
         ?? throw new InvalidOperationException($"Failed to start 'dotnet msbuild' for {projectPath}");
 
-    var stdout = process.StandardOutput.ReadToEnd();
-    var stderr = process.StandardError.ReadToEnd();
+    // Reading stdout and stderr sequentially (ReadToEnd, then ReadToEnd) risks a classic
+    // Process deadlock: if the child fills the OS pipe buffer on the stream that isn't
+    // being read yet, it blocks writing to it while this process blocks reading the other
+    // stream, and neither side ever proceeds. Reading both concurrently avoids that.
+    var stdoutTask = process.StandardOutput.ReadToEndAsync();
+    var stderrTask = process.StandardError.ReadToEndAsync();
     process.WaitForExit();
+    var stdout = stdoutTask.GetAwaiter().GetResult();
+    var stderr = stderrTask.GetAwaiter().GetResult();
 
     if (process.ExitCode != 0)
     {
@@ -1000,6 +1042,9 @@ internal static class LogHygieneRules
             }
         }
 
+        // "category-loghygiene" is coupled to the "LogHygiene" category string the analyzers
+        // declare (ILoggerDirectUseAnalyzer/InterpolatedStringLogAnalyzer) and must be kept in
+        // sync with it if that category is ever renamed.
         foreach (var key in new[] { "dotnet_analyzer_diagnostic.category-loghygiene.severity", "dotnet_analyzer_diagnostic.severity" })
         {
             if (options.AnalyzerOptions.TryGetValue(key, out var value)
