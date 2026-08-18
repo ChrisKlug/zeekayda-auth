@@ -251,6 +251,8 @@ dotnet build ZeeKayDa.Auth.Windows.slnf
 dotnet format ZeeKayDa.Auth.slnx --verify-no-changes
 ```
 
+The repository-root `NuGet.config` pins restore to `nuget.org` only, regardless of any other sources configured on your machine (e.g. a corporate feed added globally). This is a defense against dependency confusion, so it applies even if you normally restore from an internal feed — if you need a package that genuinely only lives on another feed, that's a discussion for a PR, not a local workaround.
+
 ---
 
 ## Test Naming Convention
