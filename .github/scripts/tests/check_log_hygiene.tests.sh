@@ -526,6 +526,56 @@ EOF
 assert_exit "return statement of a target-typed SuppressionDescriptor fails" 1 run_checker "${DIR}"
 
 # ===========================================================================
+# Newly-found vectors (third security re-verification pass): whitespace/newline
+# inside a qualified name defeats string-splitting on the last '.' in ToString().
+# ===========================================================================
+
+DIR="$(case_dir bypass_suppressmessage_whitespace_in_qualified_name)"
+new_fixture "${DIR}"
+write_source "${DIR}" <<'EOF'
+class Service
+{
+    [System.Diagnostics.CodeAnalysis.
+     SuppressMessage("Design", "ZEEKAYDA0002")]
+    void M() {}
+}
+EOF
+assert_exit "SuppressMessage with whitespace/newline inside the qualified name fails" 1 run_checker "${DIR}"
+
+DIR="$(case_dir bypass_diagnosticsuppressor_whitespace_in_qualified_name)"
+new_fixture "${DIR}"
+write_source "${DIR}" <<'EOF'
+class CustomSuppressor : Microsoft.CodeAnalysis.Diagnostics.
+    DiagnosticSuppressor
+{
+}
+EOF
+assert_exit "DiagnosticSuppressor base type with whitespace/newline inside the qualified name fails" 1 run_checker "${DIR}"
+
+# ===========================================================================
+# Newly-found fix (third security re-verification pass): `return new(...)`
+# inside a block-bodied property/indexer accessor.
+# ===========================================================================
+
+DIR="$(case_dir bypass_suppressiondescriptor_property_accessor_return)"
+new_fixture "${DIR}"
+write_source "${DIR}" <<'EOF'
+using Microsoft.CodeAnalysis.Diagnostics;
+
+class Descriptors
+{
+    static SuppressionDescriptor MyDescriptor
+    {
+        get
+        {
+            return new("SUPP003", "ZEEKAYDA0002", "justification");
+        }
+    }
+}
+EOF
+assert_exit "return statement inside a block-bodied property accessor fails" 1 run_checker "${DIR}"
+
+# ===========================================================================
 # Pass C — effective severity per project. Each case is its own single-project
 # fixture repo since it needs full control over csproj/props/editorconfig content.
 # The fixture .cs file is intentionally trivial — pass C never inspects source

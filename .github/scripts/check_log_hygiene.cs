@@ -393,6 +393,11 @@ internal static class LogHygieneRules
             CheckTemplateExpression(model, argument.Expression, invocation));
     }
 
+    // NOT covered (accepted residual limitation, consistent with the rest of this file): a
+    // `using static ...LoggerMessage;` followed by a bare, unqualified `Define<T>(...)` call
+    // with no receiver at all. This method only recognizes a qualifier expression
+    // (`LoggerMessage.Define(...)` or an aliased/qualified equivalent); a call with no
+    // qualifier never reaches this check.
     private static bool IsLoggerMessageQualifier(ExpressionSyntax invocationExpression, IReadOnlyDictionary<string, string> aliases) =>
         invocationExpression is MemberAccessExpressionSyntax { Expression: IdentifierNameSyntax identifier }
             && IsLoggerMessageIdentifier(identifier.Identifier.Text, aliases)
@@ -580,9 +585,7 @@ internal static class LogHygieneRules
             return;
         }
 
-        var targetText = usingDirective.Name.ToString();
-        var lastSegment = targetText.Contains('.') ? targetText[(targetText.LastIndexOf('.') + 1)..] : targetText;
-        map[usingDirective.Alias.Name.Identifier.Text] = lastSegment;
+        map[usingDirective.Alias.Name.Identifier.Text] = GetRightmostSimpleName(usingDirective.Name);
     }
 
     private static IEnumerable<string> CheckPragma(PragmaWarningDirectiveTriviaSyntax pragma)
@@ -733,12 +736,12 @@ internal static class LogHygieneRules
     // metadata for Microsoft.CodeAnalysis types (see BuildCompilation), so the check has to
     // stay syntactic rather than resolving the constructed type via the semantic model.
     // Recognized shapes: a field/local/property/parameter initializer, an arrow-bodied
-    // property/method/local function, a `return` inside a method/local function, and a
-    // `new(...)` element inside a collection expression or initializer whose declared type is
-    // (or contains, for a collection) SuppressionDescriptor. NOT covered (accepted residual
-    // limitation, consistent with the rest of this file): a descriptor built inside a deeply
-    // nested expression, stored via `var` and only later assigned to a SuppressionDescriptor-
-    // typed field.
+    // property/method/local function, a `return` inside a method/local function or a
+    // block-bodied property/indexer accessor, and a `new(...)` element inside a collection
+    // expression or initializer whose declared type is (or contains, for a collection)
+    // SuppressionDescriptor. NOT covered (accepted residual limitation, consistent with the
+    // rest of this file): a descriptor built inside a deeply nested expression, stored via
+    // `var` and only later assigned to a SuppressionDescriptor-typed field.
     private static bool IsDeclaredAsSuppressionDescriptor(BaseObjectCreationExpressionSyntax creation, IReadOnlyDictionary<string, string> aliases)
     {
         var declaredType = creation.Parent switch
@@ -776,15 +779,45 @@ internal static class LogHygieneRules
             _ => null,
         };
 
-    private static TypeSyntax? GetEnclosingMethodReturnType(SyntaxNode node) =>
-        node.Ancestors().OfType<MethodDeclarationSyntax>().FirstOrDefault()?.ReturnType
-            ?? (TypeSyntax?)node.Ancestors().OfType<LocalFunctionStatementSyntax>().FirstOrDefault()?.ReturnType;
+    private static TypeSyntax? GetEnclosingMethodReturnType(SyntaxNode node)
+    {
+        var methodReturnType = node.Ancestors().OfType<MethodDeclarationSyntax>().FirstOrDefault()?.ReturnType;
+        if (methodReturnType is not null)
+        {
+            return methodReturnType;
+        }
+
+        var localFunctionReturnType = node.Ancestors().OfType<LocalFunctionStatementSyntax>().FirstOrDefault()?.ReturnType;
+        if (localFunctionReturnType is not null)
+        {
+            return localFunctionReturnType;
+        }
+
+        // A `return new(...)` inside a block-bodied accessor (`get { return new(...); }`) has
+        // no method/local function to walk up to — the accessor itself carries no return type,
+        // so it has to be read off the enclosing property/indexer declaration instead.
+        var accessor = node.Ancestors().OfType<AccessorDeclarationSyntax>().FirstOrDefault();
+        return accessor?.Parent?.Parent switch
+        {
+            PropertyDeclarationSyntax property => property.Type,
+            IndexerDeclarationSyntax indexer => indexer.Type,
+            _ => null,
+        };
+    }
 
     // For `new(...)` inside a collection/array/list initializer (e.g. `[new(...)]` or
     // `{ new(...) }`), walks up to the nearest enclosing declared type (variable, field, or
     // property) and checks the element/type-argument, not the outer collection type name —
     // e.g. SuppressionDescriptor[], SuppressionDescriptor?[], List<SuppressionDescriptor>,
     // IEnumerable<SuppressionDescriptor>.
+    //
+    // NOT covered (accepted residual limitation, consistent with the rest of this file): a
+    // type alias to an array type, e.g. `using D = SuppressionDescriptor[];` then
+    // `D x = [new("ZEEKAYDA0001", ...)];`. The switch below has no IdentifierNameSyntax case
+    // that consults the alias map, so an aliased array type falls through to the `_ => false`
+    // arm. Resolving this would require inferring an array shape back out of an alias target
+    // that is itself just a name, which is a deeper rabbit hole than the alias resolution
+    // elsewhere in this file — documenting the gap was judged the better tradeoff here.
     private static bool IsElementOfSuppressionDescriptorCollection(BaseObjectCreationExpressionSyntax creation, IReadOnlyDictionary<string, string> aliases)
     {
         var enclosingType = creation.Ancestors()
@@ -1029,8 +1062,7 @@ internal static class LogHygieneRules
 
     private static bool IsNamed(ExpressionSyntax name, string simpleName, IReadOnlyDictionary<string, string> aliases)
     {
-        var text = name.ToString();
-        var lastSegment = text.Contains('.') ? text[(text.LastIndexOf('.') + 1)..] : text;
+        var lastSegment = GetRightmostSimpleName(name);
 
         if (aliases.TryGetValue(lastSegment, out var resolved))
         {
@@ -1039,6 +1071,24 @@ internal static class LogHygieneRules
 
         return lastSegment == simpleName || lastSegment == simpleName + "Attribute";
     }
+
+    // Resolves the final identifier of a (possibly qualified) name syntactically, walking
+    // to the rightmost simple name (QualifiedNameSyntax.Right, MemberAccessExpressionSyntax.Name,
+    // AliasQualifiedNameSyntax.Name, or the node itself once it is a SimpleNameSyntax) rather
+    // than splitting name.ToString() on the last '.'. This matters because ToString() includes
+    // trivia verbatim: a qualified name wrapped across lines by hand or by an auto-formatter
+    // (e.g. `[System.Diagnostics.CodeAnalysis.\n SuppressMessage(...)]`) would otherwise yield a
+    // "simple name" with leading whitespace/newlines that never equals the expected identifier,
+    // silently defeating every check built on this helper.
+    private static string GetRightmostSimpleName(SyntaxNode node) =>
+        node switch
+        {
+            QualifiedNameSyntax qualifiedName => GetRightmostSimpleName(qualifiedName.Right),
+            AliasQualifiedNameSyntax aliasQualifiedName => GetRightmostSimpleName(aliasQualifiedName.Name),
+            MemberAccessExpressionSyntax memberAccess => GetRightmostSimpleName(memberAccess.Name),
+            SimpleNameSyntax simpleName => simpleName.Identifier.Text,
+            _ => node.ToString().Trim(),
+        };
 
     private static string FormatLocation(SyntaxNode node)
     {
