@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
-# Smoke tests for .github/scripts/check_log_hygiene.sh
+# Smoke tests for .github/scripts/check_log_hygiene.cs
 #
-# Builds synthetic .cs fixture files and asserts that the log hygiene checker
-# exits 0 when no violations are present (or all are validly suppressed) and
-# exits 1 when violations are found or suppressions are malformed.
+# Builds synthetic single-project fixture repos (a minimal ZeeKayDa.Auth.slnx plus one
+# "src/Fixture/Fixture.csproj") and asserts that `dotnet run check_log_hygiene.cs --
+# <fixture-dir>` exits 0 when no violation is present (or all are validly justified) and
+# exits 1 otherwise.
 #
-# The script under test must honour the LOG_HYGIENE_SEARCH_PATHS environment
-# variable as a colon-separated list of paths that overrides the hardcoded
-# SEARCH_PATHS array.
+# Unlike its predecessor shell script, the script under test takes the fixture
+# repo root as a positional argument rather than an environment-variable search-path
+# override, since it discovers projects from the fixture's own ZeeKayDa.Auth.slnx exactly
+# as it would the real one.
 #
 # Invoked from CI and can be run locally:
 #   bash .github/scripts/tests/check_log_hygiene.tests.sh
@@ -16,43 +18,78 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
-TARGET="${REPO_ROOT}/.github/scripts/check_log_hygiene.sh"
+CHECKER="${REPO_ROOT}/.github/scripts/check_log_hygiene.cs"
 
-if [[ ! -f "${TARGET}" ]]; then
-    echo "FAIL: cannot find ${TARGET}" >&2
+if [[ ! -f "${CHECKER}" ]]; then
+    echo "FAIL: cannot find ${CHECKER}" >&2
     exit 1
 fi
 
 WORK_DIR="$(mktemp -d)"
 trap 'rm -rf "${WORK_DIR}"' EXIT
 
+# Pass C asserts that ZeeKayDa.Auth.Analyzers.dll is present in the resolved Analyzer
+# items, so fixtures that exercise passes A/B (and expect a clean pass overall) need it
+# on their own Analyzer item list too — otherwise every fixture would fail on that
+# assertion regardless of what it's actually testing. Point at the real, already-built
+# DLL rather than adding a ProjectReference, so fixture evaluation doesn't also build the
+# analyzer project on every case.
+ANALYZER_DLL="${REPO_ROOT}/src/ZeeKayDa.Auth.Analyzers/bin/Debug/netstandard2.0/ZeeKayDa.Auth.Analyzers.dll"
+if [[ ! -f "${ANALYZER_DLL}" ]]; then
+    dotnet build "${REPO_ROOT}/src/ZeeKayDa.Auth.Analyzers/ZeeKayDa.Auth.Analyzers.csproj" --configuration Debug --nologo -v:quiet
+fi
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-write_cs_file() {
+write_file() {
+    local path="$1"
+    mkdir -p "$(dirname "${path}")"
+    cat > "${path}"
+}
+
+# Every fixture is a single-project repo: ZeeKayDa.Auth.slnx listing exactly one
+# "/src/" project at src/Fixture/Fixture.csproj. Individual cases overwrite
+# Fixture.csproj, add Directory.Build.props/.targets, .editorconfig, .globalconfig,
+# or a ruleset as needed, and write the fixture's .cs source under src/Fixture/.
+new_fixture() {
     local dir="$1"
-    local filename="$2"
-    local content="$3"
-    mkdir -p "${dir}"
-    printf '%s\n' "${content}" > "${dir}/${filename}"
+    write_file "${dir}/ZeeKayDa.Auth.slnx" <<'EOF'
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Fixture/Fixture.csproj" />
+  </Folder>
+</Solution>
+EOF
+    write_default_csproj "${dir}"
 }
 
-run_hygiene_check() {
-    local search_path="$1"
-    (
-        cd "${REPO_ROOT}"
-        LOG_HYGIENE_SEARCH_PATHS="${search_path}" bash "${TARGET}" >/dev/null 2>&1
-    )
+write_default_csproj() {
+    local dir="$1"
+    write_file "${dir}/src/Fixture/Fixture.csproj" <<EOF
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <EnableDefaultItems>true</EnableDefaultItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Analyzer Include="${ANALYZER_DLL}" />
+  </ItemGroup>
+</Project>
+EOF
 }
 
-# Like run_hygiene_check, but also scopes the config-file checks (NoWarn/.editorconfig) to a
-# directory instead of the real repo root, via LOG_HYGIENE_CONFIG_SEARCH_PATHS.
-run_hygiene_check_config() {
-    local config_path="$1"
+write_source() {
+    local dir="$1"
+    write_file "${dir}/src/Fixture/Service.cs"
+}
+
+run_checker() {
+    local fixture_dir="$1"
     (
         cd "${REPO_ROOT}"
-        LOG_HYGIENE_SEARCH_PATHS="${config_path}" LOG_HYGIENE_CONFIG_SEARCH_PATHS="${config_path}" bash "${TARGET}" >/dev/null 2>&1
+        dotnet run "${CHECKER}" -- "${fixture_dir}" >/dev/null 2>&1
     )
 }
 
@@ -76,285 +113,523 @@ assert_exit() {
     fi
 }
 
-# ---------------------------------------------------------------------------
-# Case 1: Clean file — no sensitive patterns at all → exit 0
-# ---------------------------------------------------------------------------
-DIR="${WORK_DIR}/case1"
-write_cs_file "${DIR}" "Service.cs" \
-    '_logger.LogInformation("User authenticated successfully for {UserId}", userId);'
-assert_exit "clean file with no sensitive patterns passes" 0 \
-    run_hygiene_check "${DIR}"
+case_dir() {
+    local name="$1"
+    local dir="${WORK_DIR}/${name}"
+    mkdir -p "${dir}"
+    echo "${dir}"
+}
 
-# ---------------------------------------------------------------------------
-# Case 2: Bare suppression — "# log-hygiene-ok" with no colon, reason, or
-# issue reference → exit 1
-# ---------------------------------------------------------------------------
-DIR="${WORK_DIR}/case2"
-write_cs_file "${DIR}" "Service.cs" \
-    '_logger.LogInformation("Token: {access_token}", token); // log-hygiene-ok'
-assert_exit "bare suppression without structured format fails" 1 \
-    run_hygiene_check "${DIR}"
+# ===========================================================================
+# Retained behaviour (ported from the predecessor script's smoke tests)
+# ===========================================================================
 
-# ---------------------------------------------------------------------------
-# Case 3: Valid structured suppression — "# log-hygiene-ok: <reason> (#NNN)"
-# → exit 0
-# ---------------------------------------------------------------------------
-DIR="${WORK_DIR}/case3"
-write_cs_file "${DIR}" "Service.cs" \
-    '_logger.LogInformation("Token: {access_token}", token); // log-hygiene-ok: test fixture only (#179)'
-assert_exit "valid structured suppression with reason and issue ref passes" 0 \
-    run_hygiene_check "${DIR}"
+DIR="$(case_dir case01)"
+new_fixture "${DIR}"
+write_source "${DIR}" <<'EOF'
+class Service
+{
+    void M(object logger, string userId)
+    {
+        logger.LogInformation("User authenticated successfully for {UserId}", userId);
+    }
+}
+EOF
+assert_exit "clean file with no sensitive placeholders passes" 0 run_checker "${DIR}"
 
-# ---------------------------------------------------------------------------
-# Case 4: Missing issue reference — "# log-hygiene-ok: reason without ref"
-# → exit 1
-# ---------------------------------------------------------------------------
-DIR="${WORK_DIR}/case4"
-write_cs_file "${DIR}" "Service.cs" \
-    '_logger.LogInformation("Token: {access_token}", token); // log-hygiene-ok: reason without issue ref'
-assert_exit "suppression missing issue reference fails" 1 \
-    run_hygiene_check "${DIR}"
+DIR="$(case_dir case02)"
+new_fixture "${DIR}"
+write_source "${DIR}" <<'EOF'
+class Service
+{
+    void M(object logger, string token)
+    {
+        logger.LogInformation("Token: {access_token}", token); // log-hygiene-ok
+    }
+}
+EOF
+assert_exit "bare suppression without structured format fails" 1 run_checker "${DIR}"
 
-# ---------------------------------------------------------------------------
-# Case 5: Empty reason — "# log-hygiene-ok: (#179)" → exit 1
-# ---------------------------------------------------------------------------
-DIR="${WORK_DIR}/case5"
-write_cs_file "${DIR}" "Service.cs" \
-    '_logger.LogInformation("Token: {access_token}", token); // log-hygiene-ok: (#179)'
-assert_exit "suppression with empty reason fails" 1 \
-    run_hygiene_check "${DIR}"
+DIR="$(case_dir case03)"
+new_fixture "${DIR}"
+write_source "${DIR}" <<'EOF'
+class Service
+{
+    void M(object logger, string token)
+    {
+        logger.LogInformation("Token: {access_token}", token); // log-hygiene-ok: test fixture only (#179)
+    }
+}
+EOF
+assert_exit "valid structured suppression with reason and issue ref passes" 0 run_checker "${DIR}"
 
-# ---------------------------------------------------------------------------
-# Case 6: No suppression comment at all — sensitive pattern with no comment
-# → exit 1
-# ---------------------------------------------------------------------------
-DIR="${WORK_DIR}/case6"
-write_cs_file "${DIR}" "Service.cs" \
-    '_logger.LogInformation("Token: {access_token}", token);'
-assert_exit "sensitive pattern with no suppression comment fails" 1 \
-    run_hygiene_check "${DIR}"
+DIR="$(case_dir case04)"
+new_fixture "${DIR}"
+write_source "${DIR}" <<'EOF'
+class Service
+{
+    void M(object logger, string token)
+    {
+        logger.LogInformation("Token: {access_token}", token); // log-hygiene-ok: reason without issue ref
+    }
+}
+EOF
+assert_exit "suppression missing issue reference fails" 1 run_checker "${DIR}"
 
-# ---------------------------------------------------------------------------
-# Case 7: Valid structured suppression with a different issue number → exit 0
-# ---------------------------------------------------------------------------
-DIR="${WORK_DIR}/case7"
-write_cs_file "${DIR}" "Service.cs" \
-    '_logger.LogInformation("Token: {access_token}", token); // log-hygiene-ok: test fixture only (#999)'
-assert_exit "valid structured suppression with alternate issue ref passes" 0 \
-    run_hygiene_check "${DIR}"
+DIR="$(case_dir case05)"
+new_fixture "${DIR}"
+write_source "${DIR}" <<'EOF'
+class Service
+{
+    void M(object logger, string token)
+    {
+        logger.LogInformation("Token: {access_token}", token); // log-hygiene-ok: (#179)
+    }
+}
+EOF
+assert_exit "suppression with empty reason fails" 1 run_checker "${DIR}"
 
-# ---------------------------------------------------------------------------
-# Case 8: Multiple sensitive token types — all covered by valid suppressions
-# → exit 0
-# ---------------------------------------------------------------------------
-DIR="${WORK_DIR}/case8"
-write_cs_file "${DIR}" "Service.cs" \
-    '_logger.LogInformation("Secret: {client_secret}", s); // log-hygiene-ok: integration test only (#179)
-_logger.LogInformation("Verifier: {code_verifier}", v); // log-hygiene-ok: integration test only (#179)'
-assert_exit "multiple lines each with valid structured suppressions pass" 0 \
-    run_hygiene_check "${DIR}"
+DIR="$(case_dir case06)"
+new_fixture "${DIR}"
+write_source "${DIR}" <<'EOF'
+class Service
+{
+    void M(object logger, string token)
+    {
+        logger.LogInformation("Token: {access_token}", token);
+    }
+}
+EOF
+assert_exit "sensitive placeholder with no suppression comment fails" 1 run_checker "${DIR}"
 
-# ---------------------------------------------------------------------------
-# Case 9: Mixed file — one valid suppression and one bare suppression → exit 1
-# ---------------------------------------------------------------------------
-DIR="${WORK_DIR}/case9"
-write_cs_file "${DIR}" "Service.cs" \
-    '_logger.LogInformation("Token: {access_token}", t); // log-hygiene-ok: valid (#179)
-_logger.LogInformation("Secret: {client_secret}", s); // log-hygiene-ok'
-assert_exit "mixed file with one bare suppression fails" 1 \
-    run_hygiene_check "${DIR}"
+DIR="$(case_dir case07)"
+new_fixture "${DIR}"
+write_source "${DIR}" <<'EOF'
+class Service
+{
+    void M(object logger, string token)
+    {
+        logger.LogInformation("Token: {access_token}", token); // log-hygiene-ok: test fixture only (#999)
+    }
+}
+EOF
+assert_exit "valid structured suppression with alternate issue ref passes" 0 run_checker "${DIR}"
 
-# ---------------------------------------------------------------------------
-# Case 10: Empty directory (no .cs files) → exit 0
-# ---------------------------------------------------------------------------
-DIR="${WORK_DIR}/case10"
-mkdir -p "${DIR}"
-assert_exit "empty directory with no cs files passes" 0 \
-    run_hygiene_check "${DIR}"
+DIR="$(case_dir case08)"
+new_fixture "${DIR}"
+write_source "${DIR}" <<'EOF'
+class Service
+{
+    void M(object logger, string s, string v)
+    {
+        logger.LogInformation("Secret: {client_secret}", s); // log-hygiene-ok: integration test only (#179)
+        logger.LogInformation("Verifier: {code_verifier}", v); // log-hygiene-ok: integration test only (#179)
+    }
+}
+EOF
+assert_exit "multiple lines each with valid structured suppressions pass" 0 run_checker "${DIR}"
 
-# ---------------------------------------------------------------------------
-# Case 11: Bypass marker embedded inside a string literal — not a // comment
-# The sensitive pattern would be flagged by grep; the marker is inside the string
-# so it must NOT be treated as a suppression → exit 1
-# ---------------------------------------------------------------------------
-DIR="${WORK_DIR}/case11"
-write_cs_file "${DIR}" "Service.cs" \
-    '_logger.LogInformation("token={access_token} log-hygiene-ok: reason (#42)", value);'
-assert_exit "bypass marker inside string literal is not a valid suppression" 1 \
-    run_hygiene_check "${DIR}"
+DIR="$(case_dir case09)"
+new_fixture "${DIR}"
+write_source "${DIR}" <<'EOF'
+class Service
+{
+    void M(object logger, string t, string s)
+    {
+        logger.LogInformation("Token: {access_token}", t); // log-hygiene-ok: valid (#179)
+        logger.LogInformation("Secret: {client_secret}", s); // log-hygiene-ok
+    }
+}
+EOF
+assert_exit "mixed file with one bare suppression fails" 1 run_checker "${DIR}"
 
-# ---------------------------------------------------------------------------
-# Case 12: Marker inside a /* */ block comment rather than a // line comment
-# → exit 1
-# ---------------------------------------------------------------------------
-DIR="${WORK_DIR}/case12"
-write_cs_file "${DIR}" "Service.cs" \
-    'var x = token; /* log-hygiene-ok: reason (#42) */ _logger.LogInformation("{access_token}", x);'
-assert_exit "bypass marker not in a // comment is not a valid suppression" 1 \
-    run_hygiene_check "${DIR}"
+DIR="$(case_dir case10)"
+new_fixture "${DIR}"
+assert_exit "project with no cs files passes" 0 run_checker "${DIR}"
 
-# ---------------------------------------------------------------------------
-# Case 13: Valid-looking suppression with trailing code after the (#N) token —
-# isolates the $ end-anchor: the marker is a real // comment and the reason +
-# issue ref are present, but extra code follows the closing parenthesis so the
-# line does not end with (#N). Without the $ anchor this would be a bypass.
-# → exit 1
-# ---------------------------------------------------------------------------
-DIR="${WORK_DIR}/case13"
-write_cs_file "${DIR}" "Service.cs" \
-    '_logger.LogInformation("{access_token}", t); // log-hygiene-ok: reason (#42) extra trailing code'
-assert_exit "suppression with trailing code after issue ref fails ($ end-anchor isolation)" 1 \
-    run_hygiene_check "${DIR}"
+DIR="$(case_dir case14)"
+new_fixture "${DIR}"
+write_source "${DIR}" <<'EOF'
+class Service
+{
+    void M()
+    {
+#pragma warning disable ZEEKAYDA0002 // log-hygiene-ok: composes a constant prefix with another unformatted template (#444)
+        System.Console.WriteLine();
+#pragma warning restore ZEEKAYDA0002
+    }
+}
+EOF
+assert_exit "pragma disable with valid structured suppression passes" 0 run_checker "${DIR}"
 
-# ---------------------------------------------------------------------------
-# Case 14: #pragma warning disable ZEEKAYDA0002 with a valid structured
-# suppression comment on the same line → exit 0
-# ---------------------------------------------------------------------------
-DIR="${WORK_DIR}/case14"
-write_cs_file "${DIR}" "Service.cs" \
-    '#pragma warning disable ZEEKAYDA0002 // log-hygiene-ok: composes a constant prefix with another unformatted template (#444)'
-assert_exit "pragma disable with valid structured suppression passes" 0 \
-    run_hygiene_check "${DIR}"
+DIR="$(case_dir case15)"
+new_fixture "${DIR}"
+write_source "${DIR}" <<'EOF'
+class Service
+{
+    void M()
+    {
+#pragma warning disable ZEEKAYDA0002
+        System.Console.WriteLine();
+#pragma warning restore ZEEKAYDA0002
+    }
+}
+EOF
+assert_exit "pragma disable without a suppression comment fails" 1 run_checker "${DIR}"
 
-# ---------------------------------------------------------------------------
-# Case 15: #pragma warning disable ZEEKAYDA0002 with no suppression comment
-# → exit 1
-# ---------------------------------------------------------------------------
-DIR="${WORK_DIR}/case15"
-write_cs_file "${DIR}" "Service.cs" \
-    '#pragma warning disable ZEEKAYDA0002'
-assert_exit "pragma disable without a suppression comment fails" 1 \
-    run_hygiene_check "${DIR}"
+DIR="$(case_dir case16)"
+new_fixture "${DIR}"
+write_source "${DIR}" <<'EOF'
+class Service
+{
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "ZEEKAYDA0002")] // log-hygiene-ok: composes a constant prefix with another unformatted template (#444)
+    void M() {}
+}
+EOF
+assert_exit "SuppressMessage with valid structured suppression passes" 0 run_checker "${DIR}"
 
-# ---------------------------------------------------------------------------
-# Case 16: [SuppressMessage] attribute for ZEEKAYDA0002 with a valid structured
-# suppression comment on the same line → exit 0
-# ---------------------------------------------------------------------------
-DIR="${WORK_DIR}/case16"
-write_cs_file "${DIR}" "Service.cs" \
-    '[SuppressMessage("Design", "ZEEKAYDA0002")] // log-hygiene-ok: composes a constant prefix with another unformatted template (#444)'
-assert_exit "SuppressMessage with valid structured suppression passes" 0 \
-    run_hygiene_check "${DIR}"
+DIR="$(case_dir case17)"
+new_fixture "${DIR}"
+write_source "${DIR}" <<'EOF'
+class Service
+{
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "ZEEKAYDA0002")]
+    void M() {}
+}
+EOF
+assert_exit "SuppressMessage without a suppression comment fails" 1 run_checker "${DIR}"
 
-# ---------------------------------------------------------------------------
-# Case 17: [SuppressMessage] attribute for ZEEKAYDA0002 with no suppression
-# comment → exit 1
-# ---------------------------------------------------------------------------
-DIR="${WORK_DIR}/case17"
-write_cs_file "${DIR}" "Service.cs" \
-    '[SuppressMessage("Design", "ZEEKAYDA0002")]'
-assert_exit "SuppressMessage without a suppression comment fails" 1 \
-    run_hygiene_check "${DIR}"
+# ===========================================================================
+# Precision wins (new)
+# ===========================================================================
 
-# ---------------------------------------------------------------------------
-# Case 17b: fully-qualified [System.Diagnostics.CodeAnalysis.SuppressMessage]
-# attribute with no suppression comment → exit 1 (a bare "[SuppressMessage("
-# anchor would miss this)
-# ---------------------------------------------------------------------------
-DIR="${WORK_DIR}/case17b"
-write_cs_file "${DIR}" "Service.cs" \
-    '[System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "ZEEKAYDA0002")]'
-assert_exit "fully-qualified SuppressMessage without a suppression comment fails" 1 \
-    run_hygiene_check "${DIR}"
+DIR="$(case_dir case_precision01)"
+new_fixture "${DIR}"
+write_source "${DIR}" <<'EOF'
+class Service
+{
+    // Mentions access_token here but it's just a comment, not a log template.
+    void M(object logger, string userId)
+    {
+        logger.LogInformation("User {UserId} authenticated", userId);
+    }
+}
+EOF
+assert_exit "sensitive name in a comment passes" 0 run_checker "${DIR}"
 
-# ---------------------------------------------------------------------------
-# Case 18: <NoWarn> entry for ZEEKAYDA0001 in a .csproj with a valid structured
-# XML comment on the same line → exit 0
-# ---------------------------------------------------------------------------
-DIR="${WORK_DIR}/case18"
-mkdir -p "${DIR}"
-printf '%s\n' '<Project><PropertyGroup><NoWarn>ZEEKAYDA0001</NoWarn> <!-- log-hygiene-ok: generated proxy code, reviewed manually (#454) --></PropertyGroup></Project>' \
-    > "${DIR}/Sample.csproj"
-assert_exit "NoWarn with valid structured XML comment passes" 0 \
-    run_hygiene_check_config "${DIR}"
+DIR="$(case_dir case_precision02)"
+new_fixture "${DIR}"
+write_source "${DIR}" <<'EOF'
+class Service
+{
+    void M(object logger, string userId)
+    {
+        // Plain text mention, not a {placeholder} — must not be flagged.
+        logger.LogInformation("Doing something with access_token here for {UserId}", userId);
+    }
+}
+EOF
+assert_exit "sensitive name in a non-template string passes" 0 run_checker "${DIR}"
 
-# ---------------------------------------------------------------------------
-# Case 19: <NoWarn> entry for ZEEKAYDA0001 in a .csproj with no justification
-# comment → exit 1
-# ---------------------------------------------------------------------------
-DIR="${WORK_DIR}/case19"
-mkdir -p "${DIR}"
-printf '%s\n' '<Project><PropertyGroup><NoWarn>ZEEKAYDA0001</NoWarn></PropertyGroup></Project>' \
-    > "${DIR}/Sample.csproj"
-assert_exit "NoWarn without a justification comment fails" 1 \
-    run_hygiene_check_config "${DIR}"
+DIR="$(case_dir case_precision03)"
+new_fixture "${DIR}"
+write_source "${DIR}" <<'EOF'
+class Service
+{
+    const string Template = "Token: {access_token}";
 
-# ---------------------------------------------------------------------------
-# Case 19b: <NoWarn Condition="..."> with an attribute on the element (a bare
-# "<NoWarn>" anchor would miss this) and no justification comment → exit 1
-# ---------------------------------------------------------------------------
-DIR="${WORK_DIR}/case19b"
-mkdir -p "${DIR}"
-printf '%s\n' "<Project><PropertyGroup><NoWarn Condition=\"'\$(Configuration)'=='Debug'\">ZEEKAYDA0001</NoWarn></PropertyGroup></Project>" \
-    > "${DIR}/Sample.csproj"
-assert_exit "NoWarn with an XML attribute and no justification fails" 1 \
-    run_hygiene_check_config "${DIR}"
+    void M(object logger, string token)
+    {
+        logger.LogInformation(Template, token);
+    }
+}
+EOF
+assert_exit "sensitive placeholder in a const string template fails" 1 run_checker "${DIR}"
 
-# ---------------------------------------------------------------------------
-# Case 20: .editorconfig severity override below "error" for ZEEKAYDA0002 with
-# a valid structured comment on the line above → exit 0
-# ---------------------------------------------------------------------------
-DIR="${WORK_DIR}/case20"
-mkdir -p "${DIR}"
-printf '%s\n' \
-    '; log-hygiene-ok: temporarily relaxed while migrating legacy module (#454)' \
-    'dotnet_diagnostic.ZEEKAYDA0002.severity = warning' \
-    > "${DIR}/.editorconfig"
-assert_exit "editorconfig severity override with valid comment above passes" 0 \
-    run_hygiene_check_config "${DIR}"
+DIR="$(case_dir case_precision04)"
+new_fixture "${DIR}"
+write_source "${DIR}" <<'EOF'
+class Service
+{
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Design",
+        "ZEEKAYDA0002")]
+    void M() {}
+}
+EOF
+assert_exit "multi-line SuppressMessage without a suppression comment fails" 1 run_checker "${DIR}"
 
-# ---------------------------------------------------------------------------
-# Case 21: .editorconfig severity override below "error" for ZEEKAYDA0002 with
-# no justification comment on the line above → exit 1
-# ---------------------------------------------------------------------------
-DIR="${WORK_DIR}/case21"
-mkdir -p "${DIR}"
-printf '%s\n' \
-    'dotnet_diagnostic.ZEEKAYDA0002.severity = warning' \
-    > "${DIR}/.editorconfig"
-assert_exit "editorconfig severity override without justification fails" 1 \
-    run_hygiene_check_config "${DIR}"
+# ===========================================================================
+# Newly-found vectors (must fail; no justification escape hatch)
+# ===========================================================================
 
-# ---------------------------------------------------------------------------
-# Case 22: .editorconfig severity explicitly set to "error" is not a
-# suppression at all → exit 0, no justification required
-# ---------------------------------------------------------------------------
-DIR="${WORK_DIR}/case22"
-mkdir -p "${DIR}"
-printf '%s\n' \
-    'dotnet_diagnostic.ZEEKAYDA0002.severity = error' \
-    > "${DIR}/.editorconfig"
-assert_exit "editorconfig severity set to error requires no justification" 0 \
-    run_hygiene_check_config "${DIR}"
+DIR="$(case_dir case_new01)"
+new_fixture "${DIR}"
+write_source "${DIR}" <<'EOF'
+class Service
+{
+    void M()
+    {
+#pragma warning disable
+        System.Console.WriteLine();
+#pragma warning restore
+    }
+}
+EOF
+assert_exit "bare pragma warning disable fails" 1 run_checker "${DIR}"
 
-# ---------------------------------------------------------------------------
-# Case 23: <NoWarn> justification containing a hyphen in the reason text →
-# exit 0 (regression test: the reason-text regex must not stop at the first
-# hyphen; see docs/reference/analyzer-rules.md's own hyphenated example)
-# ---------------------------------------------------------------------------
-DIR="${WORK_DIR}/case23"
-mkdir -p "${DIR}"
-printf '%s\n' '<Project><PropertyGroup><NoWarn>ZEEKAYDA0001</NoWarn> <!-- log-hygiene-ok: diagnostic-only dev build (#454) --></PropertyGroup></Project>' \
-    > "${DIR}/Sample.csproj"
-assert_exit "NoWarn justification with a hyphenated reason passes" 0 \
-    run_hygiene_check_config "${DIR}"
+DIR="$(case_dir case_new02)"
+new_fixture "${DIR}"
+write_source "${DIR}" <<'EOF'
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.Diagnostics;
 
-# ---------------------------------------------------------------------------
-# Case 24: a <NoWarn> "justified" by a reason and issue reference split across
-# two separate XML comments → exit 1 (regression test: the reason-text regex
-# must not cross a "-->...<!--" comment boundary and treat the two comments
-# as one combined justification)
-# ---------------------------------------------------------------------------
-DIR="${WORK_DIR}/case24"
-mkdir -p "${DIR}"
-printf '%s\n' '<Project><PropertyGroup><NoWarn>ZEEKAYDA0001</NoWarn></PropertyGroup></Project> <!-- log-hygiene-ok: TODO --> <!-- (#1) -->' \
-    > "${DIR}/Sample.csproj"
-assert_exit "NoWarn justification split across two XML comments still fails" 1 \
-    run_hygiene_check_config "${DIR}"
+class CustomSuppressor : DiagnosticSuppressor
+{
+}
+EOF
+assert_exit "DiagnosticSuppressor subclass fails" 1 run_checker "${DIR}"
 
-# ---------------------------------------------------------------------------
+DIR="$(case_dir case_new03)"
+new_fixture "${DIR}"
+write_source "${DIR}" <<'EOF'
+using Microsoft.CodeAnalysis.Diagnostics;
+
+class Descriptors
+{
+    static readonly SuppressionDescriptor Descriptor =
+        new SuppressionDescriptor("SUPP001", "ZEEKAYDA0002", "justification");
+}
+EOF
+assert_exit "SuppressionDescriptor naming a rule ID fails" 1 run_checker "${DIR}"
+
+# ===========================================================================
+# Pass C — effective severity per project. Each case is its own single-project
+# fixture repo since it needs full control over csproj/props/editorconfig content.
+# The fixture .cs file is intentionally trivial — pass C never inspects source
+# content, only MSBuild-evaluated project state.
+# ===========================================================================
+
+write_trivial_source() {
+    local dir="$1"
+    write_source "${dir}" <<'EOF'
+class Fixture {}
+EOF
+}
+
+# --- The 12 PR #457 vectors -------------------------------------------------
+
+DIR="$(case_dir vector_globalconfig)"
+new_fixture "${DIR}"
+write_trivial_source "${DIR}"
+write_file "${DIR}/src/Fixture/.globalconfig" <<'EOF'
+is_global = true
+dotnet_diagnostic.ZEEKAYDA0002.severity = none
+EOF
+assert_exit "vector: .globalconfig override fails" 1 run_checker "${DIR}"
+
+DIR="$(case_dir vector_nowarn_targets)"
+new_fixture "${DIR}"
+write_trivial_source "${DIR}"
+write_file "${DIR}/src/Fixture/Directory.Build.targets" <<'EOF'
+<Project>
+  <PropertyGroup>
+    <NoWarn>$(NoWarn);ZEEKAYDA0001</NoWarn>
+  </PropertyGroup>
+</Project>
+EOF
+assert_exit "vector: NoWarn in Directory.Build.targets fails" 1 run_checker "${DIR}"
+
+DIR="$(case_dir vector_category_severity_none)"
+new_fixture "${DIR}"
+write_trivial_source "${DIR}"
+write_file "${DIR}/src/Fixture/.editorconfig" <<'EOF'
+root = true
+[*.cs]
+dotnet_analyzer_diagnostic.category-LogHygiene.severity = none
+EOF
+assert_exit "vector: category-LogHygiene severity=none fails" 1 run_checker "${DIR}"
+
+DIR="$(case_dir vector_global_severity_none)"
+new_fixture "${DIR}"
+write_trivial_source "${DIR}"
+write_file "${DIR}/src/Fixture/.editorconfig" <<'EOF'
+root = true
+[*.cs]
+dotnet_analyzer_diagnostic.severity = none
+EOF
+assert_exit "vector: dotnet_analyzer_diagnostic.severity=none fails" 1 run_checker "${DIR}"
+
+DIR="$(case_dir vector_run_analyzers_false)"
+write_file "${DIR}/ZeeKayDa.Auth.slnx" <<'EOF'
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Fixture/Fixture.csproj" />
+  </Folder>
+</Solution>
+EOF
+write_file "${DIR}/src/Fixture/Fixture.csproj" <<'EOF'
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RunAnalyzers>false</RunAnalyzers>
+  </PropertyGroup>
+</Project>
+EOF
+write_trivial_source "${DIR}"
+assert_exit "vector: RunAnalyzers=false fails" 1 run_checker "${DIR}"
+
+DIR="$(case_dir vector_nowarn_multiline)"
+write_file "${DIR}/ZeeKayDa.Auth.slnx" <<'EOF'
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Fixture/Fixture.csproj" />
+  </Folder>
+</Solution>
+EOF
+write_file "${DIR}/src/Fixture/Fixture.csproj" <<'EOF'
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <NoWarn>
+      ZEEKAYDA0001
+    </NoWarn>
+  </PropertyGroup>
+</Project>
+EOF
+write_trivial_source "${DIR}"
+assert_exit "vector: multi-line NoWarn fails" 1 run_checker "${DIR}"
+
+DIR="$(case_dir vector_nowarn_second_entry)"
+write_file "${DIR}/ZeeKayDa.Auth.slnx" <<'EOF'
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Fixture/Fixture.csproj" />
+  </Folder>
+</Solution>
+EOF
+write_file "${DIR}/src/Fixture/Fixture.csproj" <<'EOF'
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <NoWarn>CS1591;ZEEKAYDA0001</NoWarn>
+  </PropertyGroup>
+</Project>
+EOF
+write_trivial_source "${DIR}"
+assert_exit "vector: second NoWarn entry after an unrelated one fails" 1 run_checker "${DIR}"
+
+DIR="$(case_dir vector_severity_casing)"
+new_fixture "${DIR}"
+write_trivial_source "${DIR}"
+write_file "${DIR}/src/Fixture/.editorconfig" <<'EOF'
+root = true
+[*.cs]
+dotnet_diagnostic.ZEEKAYDA0002.severity = NoNe
+EOF
+assert_exit "vector: case-insensitive severity value fails" 1 run_checker "${DIR}"
+
+DIR="$(case_dir vector_nowarn_property_indirection)"
+write_file "${DIR}/ZeeKayDa.Auth.slnx" <<'EOF'
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Fixture/Fixture.csproj" />
+  </Folder>
+</Solution>
+EOF
+write_file "${DIR}/src/Fixture/Fixture.csproj" <<'EOF'
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <SuppressedRule>ZEEKAYDA0001</SuppressedRule>
+    <TargetFramework>net10.0</TargetFramework>
+    <NoWarn>$(SuppressedRule)</NoWarn>
+  </PropertyGroup>
+</Project>
+EOF
+write_trivial_source "${DIR}"
+assert_exit "vector: NoWarn via property indirection fails" 1 run_checker "${DIR}"
+
+DIR="$(case_dir vector_analyzer_removed)"
+write_file "${DIR}/ZeeKayDa.Auth.slnx" <<'EOF'
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Fixture/Fixture.csproj" />
+  </Folder>
+</Solution>
+EOF
+write_file "${DIR}/src/Fixture/Fixture.csproj" <<'EOF'
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+</Project>
+EOF
+write_trivial_source "${DIR}"
+assert_exit "vector: analyzer reference not present fails" 1 run_checker "${DIR}"
+
+# --- Newly-found vector: ruleset action -------------------------------------
+
+DIR="$(case_dir vector_ruleset_action)"
+write_file "${DIR}/ZeeKayDa.Auth.slnx" <<'EOF'
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Fixture/Fixture.csproj" />
+  </Folder>
+</Solution>
+EOF
+write_file "${DIR}/src/Fixture/Fixture.csproj" <<'EOF'
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <CodeAnalysisRuleSet>Fixture.ruleset</CodeAnalysisRuleSet>
+  </PropertyGroup>
+</Project>
+EOF
+write_file "${DIR}/src/Fixture/Fixture.ruleset" <<'EOF'
+<RuleSet Name="Fixture" ToolsVersion="10.0">
+  <Rules AnalyzerId="ZeeKayDa.Auth.Analyzers" RuleNamespace="ZeeKayDa.Auth.Analyzers">
+    <Rule Id="ZEEKAYDA0002" Action="None" />
+  </Rules>
+</RuleSet>
+EOF
+write_trivial_source "${DIR}"
+assert_exit "vector: ruleset action downgrades a rule fails" 1 run_checker "${DIR}"
+
+# --- No-hatch cases: project-wide suppression fails even with a comment ----
+
+DIR="$(case_dir no_hatch_nowarn_justified)"
+write_file "${DIR}/ZeeKayDa.Auth.slnx" <<'EOF'
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Fixture/Fixture.csproj" />
+  </Folder>
+</Solution>
+EOF
+write_file "${DIR}/src/Fixture/Fixture.csproj" <<'EOF'
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <NoWarn>ZEEKAYDA0001</NoWarn> <!-- log-hygiene-ok: generated proxy code, reviewed manually (#454) -->
+  </PropertyGroup>
+</Project>
+EOF
+write_trivial_source "${DIR}"
+assert_exit "no-hatch: NoWarn with a justification comment still fails" 1 run_checker "${DIR}"
+
+DIR="$(case_dir no_hatch_editorconfig_justified)"
+new_fixture "${DIR}"
+write_trivial_source "${DIR}"
+write_file "${DIR}/src/Fixture/.editorconfig" <<'EOF'
+root = true
+[*.cs]
+; log-hygiene-ok: temporarily relaxed while migrating legacy module (#454)
+dotnet_diagnostic.ZEEKAYDA0002.severity = warning
+EOF
+assert_exit "no-hatch: .editorconfig override with a justification comment still fails" 1 run_checker "${DIR}"
+
+# ===========================================================================
 # Summary
-# ---------------------------------------------------------------------------
+# ===========================================================================
 echo
 echo "Smoke test summary: ${PASS} passed, ${FAIL} failed"
 [[ "${FAIL}" -eq 0 ]]

@@ -13,9 +13,10 @@
 SECURITY.md @ChrisKlug
 .github/SECURITY.md @ChrisKlug
 
-# Log-hygiene enforcement — the hygiene script and its tests are part of the
-# security control surface. Any change (including suppression comment format
+# Log-hygiene enforcement — the hygiene checker, its canary backstop, and its tests are
+# part of the security control surface. Any change (including suppression comment format
 # relaxations) requires security-owner review.
-# Issue #179: structured suppression format.
-.github/scripts/check_log_hygiene.sh @ChrisKlug
+# Issue #179: structured suppression format. Issue #459: Roslyn/MSBuild checker.
+.github/scripts/check_log_hygiene.cs @ChrisKlug
 .github/scripts/tests/check_log_hygiene.tests.sh @ChrisKlug
+.github/scripts/canary/ @ChrisKlug

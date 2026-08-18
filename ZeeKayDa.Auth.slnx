@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/ZeeKayDa.Auth.Analyzers/ZeeKayDa.Auth.Analyzers.csproj" />
     <Project Path="src/ZeeKayDa.Auth.AspNetCore/ZeeKayDa.Auth.AspNetCore.csproj" />
     <Project Path="src/ZeeKayDa.Auth.AzureKeyVault/ZeeKayDa.Auth.AzureKeyVault.csproj" />
     <Project Path="src/ZeeKayDa.Auth.FileSystem/ZeeKayDa.Auth.FileSystem.csproj" />

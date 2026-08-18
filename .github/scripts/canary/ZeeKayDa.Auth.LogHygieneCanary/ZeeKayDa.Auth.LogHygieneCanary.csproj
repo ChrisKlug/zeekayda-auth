@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Log-hygiene canary backstop (issue #459). Deliberately contains two known-bad
+    snippets — a direct ILogger<T> injection and a non-constant log-message template —
+    that ZEEKAYDA0001/ZEEKAYDA0002 must always flag. It is never built as part of
+    ZeeKayDa.Auth.slnx (it does not appear there) and is out of the check_log_hygiene.cs
+    checker's own scope (that script only reads "/src/" entries from the .slnx plus
+    samples/**/*.csproj) — this project is meant to fail to compile, so it must never be
+    built by the normal build/test/checker paths.
+
+    It lives under .github/scripts/ rather than src/ or samples/ specifically so it stays
+    out of the checker's scope while still sitting inside the repo tree, which means it
+    still inherits the real root Directory.Build.props and .editorconfig the same way any
+    other project would — that inheritance is the point: this asserts the two rules fire
+    under the repo's actual configuration, not an isolated one.
+
+    Wired into CI as a discrete step in the "log-hygiene" job (ci.yml), built with
+    TreatWarningsAsErrors/WarningsAsErrors overridden off (the modern `dotnet build` CLI
+    rejects the classic MSBuild.exe `-warnaserror-` switch outright — MSB1001, unknown
+    switch) so that only genuine errors — the two diagnostics under test — decide the
+    outcome, not incidental warnings-as-errors from this intentionally bad code.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>ZeeKayDa.Auth.LogHygieneCanary</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <ProjectReference Include="../../../../src/ZeeKayDa.Auth.Analyzers/ZeeKayDa.Auth.Analyzers.csproj"
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+</Project>
