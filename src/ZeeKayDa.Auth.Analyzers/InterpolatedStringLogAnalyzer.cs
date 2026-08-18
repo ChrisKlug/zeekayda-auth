@@ -52,6 +52,18 @@ public sealed class InterpolatedStringLogAnalyzer : DiagnosticAnalyzer
         context.EnableConcurrentExecution();
 
         context.RegisterSyntaxNodeAction(AnalyzeInvocation, SyntaxKind.InvocationExpression);
+
+        // Once a Log*/AddWarning method group is converted to a delegate (e.g.
+        // `Action<string, object?[]> log = logger.LogInformation;`), the later call through that
+        // delegate variable has no ILogger/AddWarning-shaped receiver in its syntax at all — the
+        // AnalyzeInvocation checks above have nothing to hook into at the call site. The
+        // conversion itself, however, is still syntactically local (a plain member-access
+        // expression on the right of an assignment or initializer), so it is flagged there
+        // instead. This deliberately does not follow the delegate variable any further —
+        // reassignment, parameter passing, and field storage across methods are all out of scope
+        // (issue #463).
+        context.RegisterSyntaxNodeAction(
+            AnalyzeMethodGroupConversion, SyntaxKind.EqualsValueClause, SyntaxKind.SimpleAssignmentExpression);
     }
 
     private static void AnalyzeInvocation(SyntaxNodeAnalysisContext context)
@@ -139,8 +151,7 @@ public sealed class InterpolatedStringLogAnalyzer : DiagnosticAnalyzer
         if (context.SemanticModel.GetOperation(invocation) is not IInvocationOperation operation) return;
 
         var method = operation.TargetMethod;
-        if (method.ContainingType is not { Name: "StartupVerificationContext" } containingType) return;
-        if (containingType.ContainingNamespace?.ToDisplayString() != "ZeeKayDa.Auth") return;
+        if (!IsStartupVerificationContextMethod(method)) return;
 
         var templateArgument = operation.Arguments.FirstOrDefault(a => a.Parameter?.Name == "messageTemplate");
         if (templateArgument is null) return;
@@ -148,6 +159,56 @@ public sealed class InterpolatedStringLogAnalyzer : DiagnosticAnalyzer
         if (templateArgument.Value.ConstantValue.HasValue) return;
 
         context.ReportDiagnostic(Diagnostic.Create(Rule, templateArgument.Value.Syntax.GetLocation()));
+    }
+
+    private static bool IsStartupVerificationContextMethod(IMethodSymbol method)
+    {
+        return method.ContainingType is { Name: "StartupVerificationContext" } containingType
+            && containingType.ContainingNamespace?.ToDisplayString() == "ZeeKayDa.Auth";
+    }
+
+    // Flags `Action<string, object?[]> log = logger.LogInformation;` and
+    // `someField = warningsCollector.AddWarning;` — a Log*/AddWarning method group converted to a
+    // delegate, at the point of conversion. Bare member-access expressions only: a conditional
+    // access (`logger?.LogInformation`) cannot form a method group in C#, and an unqualified
+    // reference has no receiver to check, so neither shape applies here.
+    private static void AnalyzeMethodGroupConversion(SyntaxNodeAnalysisContext context)
+    {
+        ExpressionSyntax? rhs = context.Node switch
+        {
+            EqualsValueClauseSyntax equalsValue => equalsValue.Value,
+            AssignmentExpressionSyntax assignment => assignment.Right,
+            _ => null,
+        };
+        if (rhs is not MemberAccessExpressionSyntax memberAccess) return;
+
+        var methodName = memberAccess.Name.Identifier.Text;
+        var isLogLike = methodName.StartsWith("Log", System.StringComparison.Ordinal) || methodName == "BeginScope";
+        if (!isLogLike && methodName != "AddWarning") return;
+
+        if (!ZeeKayDaAssemblyGate.IsZeeKayDaAssembly(context.SemanticModel.Compilation)) return;
+
+        if (context.SemanticModel.GetSymbolInfo(memberAccess).Symbol is not IMethodSymbol method) return;
+
+        if (isLogLike)
+        {
+            var receiverType = context.SemanticModel.GetTypeInfo(memberAccess.Expression).Type;
+            if (receiverType is null || !ImplementsILogger(receiverType)) return;
+        }
+        else if (!IsStartupVerificationContextMethod(method))
+        {
+            return;
+        }
+
+        // The method group must actually be converting to a delegate shape that could carry a
+        // format string — this rules out e.g. capturing BeginScope's generic overloads into an
+        // unrelated delegate type that has no string parameter at all.
+        var convertedType = context.SemanticModel.GetTypeInfo(rhs).ConvertedType;
+        if (convertedType is not INamedTypeSymbol { TypeKind: TypeKind.Delegate } delegateType) return;
+        if (delegateType.DelegateInvokeMethod is not { } invokeMethod) return;
+        if (!invokeMethod.Parameters.Any(p => p.Type.SpecialType == SpecialType.System_String)) return;
+
+        context.ReportDiagnostic(Diagnostic.Create(Rule, memberAccess.GetLocation()));
     }
 
     private static bool ImplementsILogger(ITypeSymbol type)
