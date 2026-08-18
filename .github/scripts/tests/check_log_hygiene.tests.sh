@@ -404,6 +404,128 @@ EOF
 assert_exit "SuppressionDescriptor naming a rule ID fails" 1 run_checker "${DIR}"
 
 # ===========================================================================
+# Compile-verified bypasses (architect/security review against PR #459)
+# ===========================================================================
+
+DIR="$(case_dir bypass_suppressmessage_colon_suffix)"
+new_fixture "${DIR}"
+write_source "${DIR}" <<'EOF'
+class Service
+{
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("LogHygiene", "ZEEKAYDA0001:Do not use ILogger directly")]
+    void M() {}
+}
+EOF
+assert_exit "SuppressMessage with colon-suffixed checkId fails" 1 run_checker "${DIR}"
+
+DIR="$(case_dir bypass_suppressmessage_named_category)"
+new_fixture "${DIR}"
+write_source "${DIR}" <<'EOF'
+class Service
+{
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(category: "LogHygiene", "ZEEKAYDA0001")]
+    void M() {}
+}
+EOF
+assert_exit "SuppressMessage with named category shifting positional checkId fails" 1 run_checker "${DIR}"
+
+DIR="$(case_dir bypass_addwarning_named_code)"
+new_fixture "${DIR}"
+write_source "${DIR}" <<'EOF'
+class Service
+{
+    void M(object context, string token)
+    {
+        context.AddWarning(code: "X", "token {access_token} seen");
+    }
+}
+EOF
+assert_exit "AddWarning with named earlier argument shifting the template fails" 1 run_checker "${DIR}"
+
+DIR="$(case_dir bypass_suppressmessage_alias)"
+new_fixture "${DIR}"
+write_source "${DIR}" <<'EOF'
+using SM = System.Diagnostics.CodeAnalysis.SuppressMessageAttribute;
+
+class Service
+{
+    [SM("LogHygiene", "ZEEKAYDA0001")]
+    void M() {}
+}
+EOF
+assert_exit "aliased SuppressMessageAttribute fails" 1 run_checker "${DIR}"
+
+DIR="$(case_dir bypass_diagnosticsuppressor_alias)"
+new_fixture "${DIR}"
+write_source "${DIR}" <<'EOF'
+using Microsoft.CodeAnalysis;
+using DS = Microsoft.CodeAnalysis.Diagnostics.DiagnosticSuppressor;
+
+class CustomSuppressor : DS
+{
+}
+EOF
+assert_exit "aliased DiagnosticSuppressor base type fails" 1 run_checker "${DIR}"
+
+# ===========================================================================
+# Newly-found vectors (second security re-verification pass): cross-file
+# `global using` aliases, and additional SuppressionDescriptor declaration shapes.
+# ===========================================================================
+
+DIR="$(case_dir bypass_global_alias_suppressmessage)"
+new_fixture "${DIR}"
+write_file "${DIR}/src/Fixture/GlobalUsings.cs" <<'EOF'
+global using SM = System.Diagnostics.CodeAnalysis.SuppressMessageAttribute;
+EOF
+write_file "${DIR}/src/Fixture/Service.cs" <<'EOF'
+class Service
+{
+    [SM("LogHygiene", "ZEEKAYDA0001")]
+    void M() {}
+}
+EOF
+assert_exit "cross-file global using alias of SuppressMessageAttribute fails" 1 run_checker "${DIR}"
+
+DIR="$(case_dir bypass_global_alias_diagnosticsuppressor)"
+new_fixture "${DIR}"
+write_file "${DIR}/src/Fixture/GlobalUsings.cs" <<'EOF'
+global using DS = Microsoft.CodeAnalysis.Diagnostics.DiagnosticSuppressor;
+EOF
+write_file "${DIR}/src/Fixture/Service.cs" <<'EOF'
+class CustomSuppressor : DS
+{
+}
+EOF
+assert_exit "cross-file global using alias of DiagnosticSuppressor fails" 1 run_checker "${DIR}"
+
+DIR="$(case_dir bypass_suppressiondescriptor_arrow_property)"
+new_fixture "${DIR}"
+write_source "${DIR}" <<'EOF'
+using Microsoft.CodeAnalysis.Diagnostics;
+
+class Descriptors
+{
+    static SuppressionDescriptor MyDescriptor => new("SUPP001", "ZEEKAYDA0002", "justification");
+}
+EOF
+assert_exit "arrow-bodied property returning a target-typed SuppressionDescriptor fails" 1 run_checker "${DIR}"
+
+DIR="$(case_dir bypass_suppressiondescriptor_return_statement)"
+new_fixture "${DIR}"
+write_source "${DIR}" <<'EOF'
+using Microsoft.CodeAnalysis.Diagnostics;
+
+class Descriptors
+{
+    static SuppressionDescriptor GetIt()
+    {
+        return new("SUPP002", "ZEEKAYDA0002", "justification");
+    }
+}
+EOF
+assert_exit "return statement of a target-typed SuppressionDescriptor fails" 1 run_checker "${DIR}"
+
+# ===========================================================================
 # Pass C — effective severity per project. Each case is its own single-project
 # fixture repo since it needs full control over csproj/props/editorconfig content.
 # The fixture .cs file is intentionally trivial — pass C never inspects source

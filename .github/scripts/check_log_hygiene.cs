@@ -1,4 +1,5 @@
-#:package Microsoft.CodeAnalysis.CSharp
+#:package Microsoft.CodeAnalysis.CSharp@4.14.0
+#:property ManagePackageVersionsCentrally=false
 
 // Roslyn/MSBuild-driven log-hygiene checker.
 //
@@ -292,8 +293,9 @@ internal static partial class Justification
             ?? anchor.FirstAncestorOrSelf<MemberDeclarationSyntax>() as SyntaxNode
             ?? anchor;
 
-        return container.GetTrailingTrivia().Concat(anchor.GetLeadingTrivia())
-            .Any(IsJustificationComment);
+        // Trailing trivia only: this requires the justification comment on the same line,
+        // matching the error messages that tell callers to place it there.
+        return container.GetTrailingTrivia().Any(IsJustificationComment);
     }
 
     public static bool IsPresentOnPragma(PragmaWarningDirectiveTriviaSyntax pragma) =>
@@ -316,14 +318,17 @@ internal static class LogHygieneRules
 
     public static IEnumerable<string> RunPassA(CSharpCompilation compilation)
     {
+        var globalAliases = BuildGlobalAliasMap(compilation);
+
         foreach (var tree in compilation.SyntaxTrees)
         {
             var model = compilation.GetSemanticModel(tree);
             var root = tree.GetRoot();
+            var aliases = BuildAliasMap(root, globalAliases);
 
             foreach (var invocation in root.DescendantNodes().OfType<InvocationExpressionSyntax>())
             {
-                foreach (var violation in CheckInvocation(model, invocation))
+                foreach (var violation in CheckInvocation(model, invocation, aliases))
                 {
                     yield return violation;
                 }
@@ -331,7 +336,7 @@ internal static class LogHygieneRules
 
             foreach (var attribute in root.DescendantNodes().OfType<AttributeSyntax>())
             {
-                if (!IsNamed(attribute.Name, "LoggerMessage"))
+                if (!IsNamed(attribute.Name, "LoggerMessage", aliases))
                 {
                     continue;
                 }
@@ -352,7 +357,8 @@ internal static class LogHygieneRules
         }
     }
 
-    private static IEnumerable<string> CheckInvocation(SemanticModel model, InvocationExpressionSyntax invocation)
+    private static IEnumerable<string> CheckInvocation(
+        SemanticModel model, InvocationExpressionSyntax invocation, IReadOnlyDictionary<string, string> aliases)
     {
         var methodName = invocation.Expression switch
         {
@@ -368,44 +374,33 @@ internal static class LogHygieneRules
         }
 
         var isLogLike = methodName.StartsWith("Log", StringComparison.Ordinal) || methodName == "BeginScope";
-        var isDefineLike = methodName.StartsWith("Define", StringComparison.Ordinal) && IsLoggerMessageQualifier(invocation.Expression);
+        var isDefineLike = methodName.StartsWith("Define", StringComparison.Ordinal) && IsLoggerMessageQualifier(invocation.Expression, aliases);
+        var isAddWarningLike = methodName == "AddWarning";
 
-        if (isLogLike || isDefineLike)
+        if (!isLogLike && !isDefineLike && !isAddWarningLike)
         {
-            // Method identification is name/shape-based rather than symbol-based, since this
-            // compilation carries no metadata for application types (see BuildCompilation).
-            // Every string-constant argument is checked, not just "the template" argument,
-            // since without symbol resolution there is no reliable way to know which argument
-            // that is; this is a defence-in-depth pass, so over-checking is the safe direction.
-            return invocation.ArgumentList.Arguments.SelectMany(argument =>
-                CheckTemplateExpression(model, argument.Expression, invocation));
+            return [];
         }
 
-        if (methodName == "AddWarning")
-        {
-            var templateArgument = FindNamedOrPositionalArgument(invocation.ArgumentList.Arguments, "messageTemplate", positionalIndex: 1);
-            return templateArgument is null ? [] : CheckTemplateExpression(model, templateArgument, invocation);
-        }
-
-        return [];
+        // Method identification is name/shape-based rather than symbol-based, since this
+        // compilation carries no metadata for application types (see BuildCompilation).
+        // Every string-constant argument is checked, not just "the template" argument (or,
+        // for AddWarning, "the messageTemplate" argument), since without symbol resolution
+        // there is no reliable way to single one out by position/name that can't be shifted
+        // by an earlier named argument; this is a defence-in-depth pass, so over-checking is
+        // the safe direction.
+        return invocation.ArgumentList.Arguments.SelectMany(argument =>
+            CheckTemplateExpression(model, argument.Expression, invocation));
     }
 
-    private static bool IsLoggerMessageQualifier(ExpressionSyntax invocationExpression) =>
-        invocationExpression is MemberAccessExpressionSyntax { Expression: IdentifierNameSyntax { Identifier.Text: "LoggerMessage" } }
-            or MemberAccessExpressionSyntax { Expression: MemberAccessExpressionSyntax { Name.Identifier.Text: "LoggerMessage" } };
+    private static bool IsLoggerMessageQualifier(ExpressionSyntax invocationExpression, IReadOnlyDictionary<string, string> aliases) =>
+        invocationExpression is MemberAccessExpressionSyntax { Expression: IdentifierNameSyntax identifier }
+            && IsLoggerMessageIdentifier(identifier.Identifier.Text, aliases)
+        || invocationExpression is MemberAccessExpressionSyntax { Expression: MemberAccessExpressionSyntax { Name: { } name } }
+            && IsLoggerMessageIdentifier(name.Identifier.Text, aliases);
 
-    private static ExpressionSyntax? FindNamedOrPositionalArgument(
-        SeparatedSyntaxList<ArgumentSyntax> arguments, string name, int positionalIndex)
-    {
-        var named = arguments.FirstOrDefault(a => a.NameColon?.Name.Identifier.Text == name);
-        if (named is not null)
-        {
-            return named.Expression;
-        }
-
-        var positional = arguments.Where(a => a.NameColon is null).ToArray();
-        return positionalIndex < positional.Length ? positional[positionalIndex].Expression : null;
-    }
+    private static bool IsLoggerMessageIdentifier(string text, IReadOnlyDictionary<string, string> aliases) =>
+        text == "LoggerMessage" || (aliases.TryGetValue(text, out var resolved) && resolved == "LoggerMessage");
 
     private static IEnumerable<string> CheckTemplateExpression(SemanticModel model, ExpressionSyntax expression, SyntaxNode reportAnchor)
     {
@@ -489,10 +484,13 @@ internal static class LogHygieneRules
 
     public static IEnumerable<string> RunPassB(CSharpCompilation compilation)
     {
+        var globalAliases = BuildGlobalAliasMap(compilation);
+
         foreach (var tree in compilation.SyntaxTrees)
         {
             var model = compilation.GetSemanticModel(tree);
             var root = tree.GetRoot();
+            var aliases = BuildAliasMap(root, globalAliases);
 
             foreach (var pragma in root.DescendantNodes(descendIntoTrivia: true).OfType<PragmaWarningDirectiveTriviaSyntax>())
             {
@@ -504,7 +502,7 @@ internal static class LogHygieneRules
 
             foreach (var attribute in root.DescendantNodes().OfType<AttributeSyntax>())
             {
-                foreach (var violation in CheckSuppressMessageAttribute(model, attribute))
+                foreach (var violation in CheckSuppressMessageAttribute(model, attribute, aliases))
                 {
                     yield return violation;
                 }
@@ -512,7 +510,7 @@ internal static class LogHygieneRules
 
             foreach (var classDeclaration in root.DescendantNodes().OfType<ClassDeclarationSyntax>())
             {
-                foreach (var violation in CheckDiagnosticSuppressorSubclass(classDeclaration))
+                foreach (var violation in CheckDiagnosticSuppressorSubclass(classDeclaration, aliases))
                 {
                     yield return violation;
                 }
@@ -520,12 +518,71 @@ internal static class LogHygieneRules
 
             foreach (var creation in root.DescendantNodes().OfType<BaseObjectCreationExpressionSyntax>())
             {
-                foreach (var violation in CheckSuppressionDescriptor(model, creation))
+                foreach (var violation in CheckSuppressionDescriptor(model, creation, aliases))
                 {
                     yield return violation;
                 }
             }
         }
+    }
+
+    // Scans every syntax tree in the compilation for `global using X = ...;` aliases,
+    // since a global using alias declared in one file (e.g. GlobalUsings.cs) applies to
+    // every file in the compilation, matching real C# semantics. Called once per
+    // compilation (not once per tree) since this set is the same for every tree.
+    private static IReadOnlyDictionary<string, string> BuildGlobalAliasMap(CSharpCompilation compilation)
+    {
+        var map = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        foreach (var tree in compilation.SyntaxTrees)
+        {
+            foreach (var usingDirective in tree.GetRoot().DescendantNodes().OfType<UsingDirectiveSyntax>())
+            {
+                if (!usingDirective.GlobalKeyword.IsKind(SyntaxKind.GlobalKeyword))
+                {
+                    continue;
+                }
+
+                AddAlias(map, usingDirective);
+            }
+        }
+
+        return map;
+    }
+
+    // Maps a using-alias identifier (e.g. "SM" in `using SM = ...SuppressMessageAttribute;`)
+    // to the last dotted segment of its target, so IsNamed can resolve an aliased reference
+    // to the same simple name it would recognize unaliased. Merges the tree's own
+    // non-global aliases (file-scoped, per real C# semantics) with the compilation-wide
+    // global aliases passed in; a local alias overrides a global one of the same name,
+    // matching the more specific scope winning.
+    private static IReadOnlyDictionary<string, string> BuildAliasMap(SyntaxNode root, IReadOnlyDictionary<string, string> globalAliases)
+    {
+        var map = new Dictionary<string, string>(globalAliases, StringComparer.Ordinal);
+
+        foreach (var usingDirective in root.DescendantNodes().OfType<UsingDirectiveSyntax>())
+        {
+            if (usingDirective.GlobalKeyword.IsKind(SyntaxKind.GlobalKeyword))
+            {
+                continue;
+            }
+
+            AddAlias(map, usingDirective);
+        }
+
+        return map;
+    }
+
+    private static void AddAlias(Dictionary<string, string> map, UsingDirectiveSyntax usingDirective)
+    {
+        if (usingDirective.Alias is null || usingDirective.Name is null)
+        {
+            return;
+        }
+
+        var targetText = usingDirective.Name.ToString();
+        var lastSegment = targetText.Contains('.') ? targetText[(targetText.LastIndexOf('.') + 1)..] : targetText;
+        map[usingDirective.Alias.Name.Identifier.Text] = lastSegment;
     }
 
     private static IEnumerable<string> CheckPragma(PragmaWarningDirectiveTriviaSyntax pragma)
@@ -561,21 +618,26 @@ internal static class LogHygieneRules
             """;
     }
 
-    private static IEnumerable<string> CheckSuppressMessageAttribute(SemanticModel model, AttributeSyntax attribute)
+    private static IEnumerable<string> CheckSuppressMessageAttribute(
+        SemanticModel model, AttributeSyntax attribute, IReadOnlyDictionary<string, string> aliases)
     {
-        if (!IsNamed(attribute.Name, "SuppressMessage") || attribute.ArgumentList is null)
+        if (!IsNamed(attribute.Name, "SuppressMessage", aliases) || attribute.ArgumentList is null)
         {
             yield break;
         }
 
-        var checkIdArgument = FindAttributeArgument(attribute.ArgumentList.Arguments, "checkId", positionalIndex: 1);
-        if (checkIdArgument is null)
-        {
-            yield break;
-        }
+        // Check every constant-string argument — positional, NameColon, or NameEquals alike —
+        // rather than trying to locate "the" checkId argument by position/name: an earlier
+        // named argument shifts positional indices unpredictably, and the canonical Roslyn
+        // form embeds a "<ruleId>:<description>" suffix that must be stripped before
+        // comparing.
+        var checkId = attribute.ArgumentList.Arguments
+            .Select(argument => model.GetConstantValue(argument.Expression))
+            .Where(constant => constant.Value is string)
+            .Select(constant => StripDescriptionSuffix((string)constant.Value!))
+            .FirstOrDefault(value => RuleIds.Contains(value, StringComparer.OrdinalIgnoreCase));
 
-        var constant = model.GetConstantValue(checkIdArgument.Expression);
-        if (constant.Value is not string checkId || !RuleIds.Contains(checkId, StringComparer.OrdinalIgnoreCase))
+        if (checkId is null)
         {
             yield break;
         }
@@ -594,26 +656,23 @@ internal static class LogHygieneRules
             """;
     }
 
-    private static AttributeArgumentSyntax? FindAttributeArgument(
-        SeparatedSyntaxList<AttributeArgumentSyntax> arguments, string name, int positionalIndex)
+    // The canonical Roslyn/IDE-generated form of a SuppressMessage checkId embeds a
+    // human-readable description after a colon, e.g. "ZEEKAYDA0001:Do not use ILogger
+    // directly". Only the portion before the colon is the rule ID.
+    private static string StripDescriptionSuffix(string checkId)
     {
-        var named = arguments.FirstOrDefault(a => a.NameColon?.Name.Identifier.Text == name);
-        if (named is not null)
-        {
-            return named;
-        }
-
-        var positional = arguments.Where(a => a.NameColon is null).ToArray();
-        return positionalIndex < positional.Length ? positional[positionalIndex] : null;
+        var colon = checkId.IndexOf(':');
+        return colon >= 0 ? checkId[..colon] : checkId;
     }
 
     // A custom DiagnosticSuppressor is a hard failure with no justification-comment escape
     // hatch: unlike a #pragma or [SuppressMessage] at a call site, it is a standing,
     // programmatic suppression that no single-line comment can scope or make reviewable.
-    private static IEnumerable<string> CheckDiagnosticSuppressorSubclass(ClassDeclarationSyntax classDeclaration)
+    private static IEnumerable<string> CheckDiagnosticSuppressorSubclass(
+        ClassDeclarationSyntax classDeclaration, IReadOnlyDictionary<string, string> aliases)
     {
         var derivesFromSuppressor = classDeclaration.BaseList?.Types
-            .Any(baseType => IsNamed(baseType.Type, "DiagnosticSuppressor")) ?? false;
+            .Any(baseType => IsNamed(baseType.Type, "DiagnosticSuppressor", aliases)) ?? false;
 
         if (!derivesFromSuppressor)
         {
@@ -630,12 +689,13 @@ internal static class LogHygieneRules
             """;
     }
 
-    private static IEnumerable<string> CheckSuppressionDescriptor(SemanticModel model, BaseObjectCreationExpressionSyntax creation)
+    private static IEnumerable<string> CheckSuppressionDescriptor(
+        SemanticModel model, BaseObjectCreationExpressionSyntax creation, IReadOnlyDictionary<string, string> aliases)
     {
         var isSuppressionDescriptor = creation switch
         {
-            ObjectCreationExpressionSyntax { Type: { } type } => IsNamed(type, "SuppressionDescriptor"),
-            ImplicitObjectCreationExpressionSyntax => true,
+            ObjectCreationExpressionSyntax { Type: { } type } => IsNamed(type, "SuppressionDescriptor", aliases),
+            ImplicitObjectCreationExpressionSyntax => IsDeclaredAsSuppressionDescriptor(creation, aliases),
             _ => false,
         };
 
@@ -644,14 +704,17 @@ internal static class LogHygieneRules
             yield break;
         }
 
-        var suppressedIdArgument = FindNamedOrPositionalArgument(creation.ArgumentList.Arguments, "suppressedDiagnosticId", positionalIndex: 1);
-        if (suppressedIdArgument is null)
-        {
-            yield break;
-        }
+        // Check every constant-string argument rather than locating "the"
+        // suppressedDiagnosticId argument by position/name — see CheckSuppressMessageAttribute
+        // for why position/name lookup is unsafe. The SuppressionDescriptor constructor has no
+        // "id:description" colon convention, so no suffix-stripping is needed here.
+        var suppressedId = creation.ArgumentList.Arguments
+            .Select(argument => model.GetConstantValue(argument.Expression))
+            .Where(constant => constant.Value is string)
+            .Select(constant => (string)constant.Value!)
+            .FirstOrDefault(value => RuleIds.Contains(value, StringComparer.OrdinalIgnoreCase));
 
-        var constant = model.GetConstantValue(suppressedIdArgument);
-        if (constant.Value is not string suppressedId || !RuleIds.Contains(suppressedId, StringComparer.OrdinalIgnoreCase))
+        if (suppressedId is null)
         {
             yield break;
         }
@@ -664,6 +727,85 @@ internal static class LogHygieneRules
             suppress narrowly at the call site with a justified #pragma/[SuppressMessage] instead.
             """;
     }
+
+    // Target-typed `new(...)` carries no type name of its own, so the target type has to be
+    // read off whatever it is being assigned/declared/returned into. This compilation has no
+    // metadata for Microsoft.CodeAnalysis types (see BuildCompilation), so the check has to
+    // stay syntactic rather than resolving the constructed type via the semantic model.
+    // Recognized shapes: a field/local/property/parameter initializer, an arrow-bodied
+    // property/method/local function, a `return` inside a method/local function, and a
+    // `new(...)` element inside a collection expression or initializer whose declared type is
+    // (or contains, for a collection) SuppressionDescriptor. NOT covered (accepted residual
+    // limitation, consistent with the rest of this file): a descriptor built inside a deeply
+    // nested expression, stored via `var` and only later assigned to a SuppressionDescriptor-
+    // typed field.
+    private static bool IsDeclaredAsSuppressionDescriptor(BaseObjectCreationExpressionSyntax creation, IReadOnlyDictionary<string, string> aliases)
+    {
+        var declaredType = creation.Parent switch
+        {
+            EqualsValueClauseSyntax { Parent: VariableDeclaratorSyntax { Parent: VariableDeclarationSyntax variableDeclaration } } => variableDeclaration.Type,
+            EqualsValueClauseSyntax { Parent: PropertyDeclarationSyntax propertyDeclaration } => propertyDeclaration.Type,
+            EqualsValueClauseSyntax { Parent: ParameterSyntax parameter } => parameter.Type,
+            ArrowExpressionClauseSyntax arrow => GetArrowBodyType(arrow),
+            ReturnStatementSyntax returnStatement => GetEnclosingMethodReturnType(returnStatement),
+            InitializerExpressionSyntax or CollectionExpressionSyntax or ExpressionElementSyntax => null, // handled below
+            _ => null,
+        };
+
+        if (declaredType is not null)
+        {
+            return IsNamed(declaredType, "SuppressionDescriptor", aliases);
+        }
+
+        // A `new(...)` element of a collection expression (`[new(...)]`) is wrapped in an
+        // ExpressionElementSyntax rather than being the collection expression's direct child.
+        if (creation.Parent is InitializerExpressionSyntax or CollectionExpressionSyntax or ExpressionElementSyntax)
+        {
+            return IsElementOfSuppressionDescriptorCollection(creation, aliases);
+        }
+
+        return false;
+    }
+
+    private static TypeSyntax? GetArrowBodyType(ArrowExpressionClauseSyntax arrow) =>
+        arrow.Parent switch
+        {
+            PropertyDeclarationSyntax property => property.Type,
+            MethodDeclarationSyntax method => method.ReturnType,
+            LocalFunctionStatementSyntax localFunction => localFunction.ReturnType,
+            _ => null,
+        };
+
+    private static TypeSyntax? GetEnclosingMethodReturnType(SyntaxNode node) =>
+        node.Ancestors().OfType<MethodDeclarationSyntax>().FirstOrDefault()?.ReturnType
+            ?? (TypeSyntax?)node.Ancestors().OfType<LocalFunctionStatementSyntax>().FirstOrDefault()?.ReturnType;
+
+    // For `new(...)` inside a collection/array/list initializer (e.g. `[new(...)]` or
+    // `{ new(...) }`), walks up to the nearest enclosing declared type (variable, field, or
+    // property) and checks the element/type-argument, not the outer collection type name —
+    // e.g. SuppressionDescriptor[], SuppressionDescriptor?[], List<SuppressionDescriptor>,
+    // IEnumerable<SuppressionDescriptor>.
+    private static bool IsElementOfSuppressionDescriptorCollection(BaseObjectCreationExpressionSyntax creation, IReadOnlyDictionary<string, string> aliases)
+    {
+        var enclosingType = creation.Ancestors()
+            .Select(ancestor => ancestor switch
+            {
+                VariableDeclarationSyntax variableDeclaration => variableDeclaration.Type,
+                PropertyDeclarationSyntax property => property.Type,
+                _ => null,
+            })
+            .FirstOrDefault(type => type is not null);
+
+        return enclosingType switch
+        {
+            ArrayTypeSyntax arrayType => IsNamed(UnwrapNullable(arrayType.ElementType), "SuppressionDescriptor", aliases),
+            GenericNameSyntax { TypeArgumentList.Arguments: [var typeArgument] } => IsNamed(UnwrapNullable(typeArgument), "SuppressionDescriptor", aliases),
+            _ => false,
+        };
+    }
+
+    private static TypeSyntax UnwrapNullable(TypeSyntax type) =>
+        type is NullableTypeSyntax nullableType ? nullableType.ElementType : type;
 
     // ------------------------------------------------------------------
     // Pass C — effective severity per project (replaces checks 4 & 5)
@@ -885,10 +1027,16 @@ internal static class LogHygieneRules
     // Shared helpers
     // ------------------------------------------------------------------
 
-    private static bool IsNamed(ExpressionSyntax name, string simpleName)
+    private static bool IsNamed(ExpressionSyntax name, string simpleName, IReadOnlyDictionary<string, string> aliases)
     {
         var text = name.ToString();
         var lastSegment = text.Contains('.') ? text[(text.LastIndexOf('.') + 1)..] : text;
+
+        if (aliases.TryGetValue(lastSegment, out var resolved))
+        {
+            lastSegment = resolved;
+        }
+
         return lastSegment == simpleName || lastSegment == simpleName + "Attribute";
     }
 
