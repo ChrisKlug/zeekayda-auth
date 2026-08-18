@@ -1,0 +1,34 @@
+#nullable enable
+abstract ZeeKayDa.Auth.TestKit.Stores.AuthorizationCodeBackingStoreConformanceTests.CreateStore() -> ZeeKayDa.Auth.Stores.IAuthorizationCodeBackingStore!
+abstract ZeeKayDa.Auth.TestKit.Stores.RefreshTokenGrantStoreConformanceTests.CreateStore() -> ZeeKayDa.Auth.Stores.IRefreshTokenGrantStore!
+virtual ZeeKayDa.Auth.TestKit.Stores.AuthorizationCodeBackingStoreConformanceTests.CreateFaultInjectedStore(System.Exception! fault) -> ZeeKayDa.Auth.Stores.IAuthorizationCodeBackingStore?
+virtual ZeeKayDa.Auth.TestKit.Stores.AuthorizationCodeBackingStoreConformanceTests.SupportsAtomicInsert.get -> bool
+virtual ZeeKayDa.Auth.TestKit.Stores.RefreshTokenGrantStoreConformanceTests.CreateFaultInjectedStore(System.Exception! fault) -> ZeeKayDa.Auth.Stores.IRefreshTokenGrantStore?
+virtual ZeeKayDa.Auth.TestKit.Stores.RefreshTokenGrantStoreConformanceTests.SupportsAtomicConsume.get -> bool
+virtual ZeeKayDa.Auth.TestKit.Stores.RefreshTokenGrantStoreConformanceTests.SupportsMidRevokeInsertCompleteness.get -> bool
+ZeeKayDa.Auth.TestKit.Stores.AuthorizationCodeBackingStoreConformanceTests
+ZeeKayDa.Auth.TestKit.Stores.AuthorizationCodeBackingStoreConformanceTests.AuthorizationCodeBackingStoreConformanceTests() -> void
+ZeeKayDa.Auth.TestKit.Stores.AuthorizationCodeBackingStoreConformanceTests.GetAsync_propagates_a_transport_fault_instead_of_swallowing_it() -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.TestKit.Stores.AuthorizationCodeBackingStoreConformanceTests.GetAsync_returns_null_for_a_confirmed_absent_key() -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.TestKit.Stores.AuthorizationCodeBackingStoreConformanceTests.RemoveAsync_is_idempotent_on_an_absent_key() -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.TestKit.Stores.AuthorizationCodeBackingStoreConformanceTests.RemoveAsync_propagates_a_transport_fault_instead_of_swallowing_it() -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.TestKit.Stores.AuthorizationCodeBackingStoreConformanceTests.RemoveAsync_removes_a_present_key() -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.TestKit.Stores.AuthorizationCodeBackingStoreConformanceTests.TryInsertAsync_exactly_one_of_many_concurrent_inserts_to_the_same_key_succeeds() -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.TestKit.Stores.AuthorizationCodeBackingStoreConformanceTests.TryInsertAsync_propagates_a_transport_fault_instead_of_swallowing_it() -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.TestKit.Stores.AuthorizationCodeBackingStoreConformanceTests.TryInsertAsync_then_GetAsync_round_trips_the_stored_bytes() -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.TestKit.Stores.RefreshTokenGrantStoreConformanceTests
+ZeeKayDa.Auth.TestKit.Stores.RefreshTokenGrantStoreConformanceTests.FindByHandleAsync_propagates_a_transport_fault_instead_of_swallowing_it() -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.TestKit.Stores.RefreshTokenGrantStoreConformanceTests.FindByHandleAsync_returns_null_for_a_confirmed_absent_handle() -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.TestKit.Stores.RefreshTokenGrantStoreConformanceTests.InsertAsync_accepts_a_grant_born_Revoked_with_no_prior_row_and_IsFamilyRevokedAsync_reports_it() -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.TestKit.Stores.RefreshTokenGrantStoreConformanceTests.InsertAsync_propagates_a_transport_fault_instead_of_swallowing_it() -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.TestKit.Stores.RefreshTokenGrantStoreConformanceTests.InsertAsync_then_FindByHandleAsync_round_trips_the_grant() -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.TestKit.Stores.RefreshTokenGrantStoreConformanceTests.IsFamilyRevokedAsync_propagates_a_transport_fault_instead_of_swallowing_it() -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.TestKit.Stores.RefreshTokenGrantStoreConformanceTests.IsFamilyRevokedAsync_reports_revoked_for_a_grant_inserted_strictly_after_RevokeFamilyAsync_returns() -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.TestKit.Stores.RefreshTokenGrantStoreConformanceTests.RefreshTokenGrantStoreConformanceTests() -> void
+ZeeKayDa.Auth.TestKit.Stores.RefreshTokenGrantStoreConformanceTests.RevokeBySubjectAsync_does_not_affect_grants_for_a_different_subject() -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.TestKit.Stores.RefreshTokenGrantStoreConformanceTests.RevokeBySubjectAsync_marks_every_grant_for_the_subject_as_Revoked_including_one_inserted_mid_revoke() -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.TestKit.Stores.RefreshTokenGrantStoreConformanceTests.RevokeFamilyAsync_does_not_affect_grants_in_a_different_family() -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.TestKit.Stores.RefreshTokenGrantStoreConformanceTests.RevokeFamilyAsync_is_idempotent_and_also_revokes_an_already_Consumed_grant() -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.TestKit.Stores.RefreshTokenGrantStoreConformanceTests.RevokeFamilyAsync_marks_every_grant_in_the_family_as_Revoked_including_one_inserted_mid_revoke() -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.TestKit.Stores.RefreshTokenGrantStoreConformanceTests.TryMarkConsumedAsync_exactly_one_of_many_concurrent_calls_to_the_same_handle_succeeds() -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.TestKit.Stores.RefreshTokenGrantStoreConformanceTests.TryMarkConsumedAsync_propagates_a_transport_fault_instead_of_swallowing_it() -> System.Threading.Tasks.Task!
