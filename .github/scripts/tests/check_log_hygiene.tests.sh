@@ -46,6 +46,16 @@ run_hygiene_check() {
     )
 }
 
+# Like run_hygiene_check, but also scopes the config-file checks (NoWarn/.editorconfig) to a
+# directory instead of the real repo root, via LOG_HYGIENE_CONFIG_SEARCH_PATHS.
+run_hygiene_check_config() {
+    local config_path="$1"
+    (
+        cd "${REPO_ROOT}"
+        LOG_HYGIENE_SEARCH_PATHS="${config_path}" LOG_HYGIENE_CONFIG_SEARCH_PATHS="${config_path}" bash "${TARGET}" >/dev/null 2>&1
+    )
+}
+
 PASS=0
 FAIL=0
 record_pass() { PASS=$((PASS + 1)); echo "PASS: $1"; }
@@ -215,6 +225,132 @@ write_cs_file "${DIR}" "Service.cs" \
     '#pragma warning disable ZEEKAYDA0002'
 assert_exit "pragma disable without a suppression comment fails" 1 \
     run_hygiene_check "${DIR}"
+
+# ---------------------------------------------------------------------------
+# Case 16: [SuppressMessage] attribute for ZEEKAYDA0002 with a valid structured
+# suppression comment on the same line → exit 0
+# ---------------------------------------------------------------------------
+DIR="${WORK_DIR}/case16"
+write_cs_file "${DIR}" "Service.cs" \
+    '[SuppressMessage("Design", "ZEEKAYDA0002")] // log-hygiene-ok: composes a constant prefix with another unformatted template (#444)'
+assert_exit "SuppressMessage with valid structured suppression passes" 0 \
+    run_hygiene_check "${DIR}"
+
+# ---------------------------------------------------------------------------
+# Case 17: [SuppressMessage] attribute for ZEEKAYDA0002 with no suppression
+# comment → exit 1
+# ---------------------------------------------------------------------------
+DIR="${WORK_DIR}/case17"
+write_cs_file "${DIR}" "Service.cs" \
+    '[SuppressMessage("Design", "ZEEKAYDA0002")]'
+assert_exit "SuppressMessage without a suppression comment fails" 1 \
+    run_hygiene_check "${DIR}"
+
+# ---------------------------------------------------------------------------
+# Case 17b: fully-qualified [System.Diagnostics.CodeAnalysis.SuppressMessage]
+# attribute with no suppression comment → exit 1 (a bare "[SuppressMessage("
+# anchor would miss this)
+# ---------------------------------------------------------------------------
+DIR="${WORK_DIR}/case17b"
+write_cs_file "${DIR}" "Service.cs" \
+    '[System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "ZEEKAYDA0002")]'
+assert_exit "fully-qualified SuppressMessage without a suppression comment fails" 1 \
+    run_hygiene_check "${DIR}"
+
+# ---------------------------------------------------------------------------
+# Case 18: <NoWarn> entry for ZEEKAYDA0001 in a .csproj with a valid structured
+# XML comment on the same line → exit 0
+# ---------------------------------------------------------------------------
+DIR="${WORK_DIR}/case18"
+mkdir -p "${DIR}"
+printf '%s\n' '<Project><PropertyGroup><NoWarn>ZEEKAYDA0001</NoWarn> <!-- log-hygiene-ok: generated proxy code, reviewed manually (#454) --></PropertyGroup></Project>' \
+    > "${DIR}/Sample.csproj"
+assert_exit "NoWarn with valid structured XML comment passes" 0 \
+    run_hygiene_check_config "${DIR}"
+
+# ---------------------------------------------------------------------------
+# Case 19: <NoWarn> entry for ZEEKAYDA0001 in a .csproj with no justification
+# comment → exit 1
+# ---------------------------------------------------------------------------
+DIR="${WORK_DIR}/case19"
+mkdir -p "${DIR}"
+printf '%s\n' '<Project><PropertyGroup><NoWarn>ZEEKAYDA0001</NoWarn></PropertyGroup></Project>' \
+    > "${DIR}/Sample.csproj"
+assert_exit "NoWarn without a justification comment fails" 1 \
+    run_hygiene_check_config "${DIR}"
+
+# ---------------------------------------------------------------------------
+# Case 19b: <NoWarn Condition="..."> with an attribute on the element (a bare
+# "<NoWarn>" anchor would miss this) and no justification comment → exit 1
+# ---------------------------------------------------------------------------
+DIR="${WORK_DIR}/case19b"
+mkdir -p "${DIR}"
+printf '%s\n' "<Project><PropertyGroup><NoWarn Condition=\"'\$(Configuration)'=='Debug'\">ZEEKAYDA0001</NoWarn></PropertyGroup></Project>" \
+    > "${DIR}/Sample.csproj"
+assert_exit "NoWarn with an XML attribute and no justification fails" 1 \
+    run_hygiene_check_config "${DIR}"
+
+# ---------------------------------------------------------------------------
+# Case 20: .editorconfig severity override below "error" for ZEEKAYDA0002 with
+# a valid structured comment on the line above → exit 0
+# ---------------------------------------------------------------------------
+DIR="${WORK_DIR}/case20"
+mkdir -p "${DIR}"
+printf '%s\n' \
+    '; log-hygiene-ok: temporarily relaxed while migrating legacy module (#454)' \
+    'dotnet_diagnostic.ZEEKAYDA0002.severity = warning' \
+    > "${DIR}/.editorconfig"
+assert_exit "editorconfig severity override with valid comment above passes" 0 \
+    run_hygiene_check_config "${DIR}"
+
+# ---------------------------------------------------------------------------
+# Case 21: .editorconfig severity override below "error" for ZEEKAYDA0002 with
+# no justification comment on the line above → exit 1
+# ---------------------------------------------------------------------------
+DIR="${WORK_DIR}/case21"
+mkdir -p "${DIR}"
+printf '%s\n' \
+    'dotnet_diagnostic.ZEEKAYDA0002.severity = warning' \
+    > "${DIR}/.editorconfig"
+assert_exit "editorconfig severity override without justification fails" 1 \
+    run_hygiene_check_config "${DIR}"
+
+# ---------------------------------------------------------------------------
+# Case 22: .editorconfig severity explicitly set to "error" is not a
+# suppression at all → exit 0, no justification required
+# ---------------------------------------------------------------------------
+DIR="${WORK_DIR}/case22"
+mkdir -p "${DIR}"
+printf '%s\n' \
+    'dotnet_diagnostic.ZEEKAYDA0002.severity = error' \
+    > "${DIR}/.editorconfig"
+assert_exit "editorconfig severity set to error requires no justification" 0 \
+    run_hygiene_check_config "${DIR}"
+
+# ---------------------------------------------------------------------------
+# Case 23: <NoWarn> justification containing a hyphen in the reason text →
+# exit 0 (regression test: the reason-text regex must not stop at the first
+# hyphen; see docs/reference/analyzer-rules.md's own hyphenated example)
+# ---------------------------------------------------------------------------
+DIR="${WORK_DIR}/case23"
+mkdir -p "${DIR}"
+printf '%s\n' '<Project><PropertyGroup><NoWarn>ZEEKAYDA0001</NoWarn> <!-- log-hygiene-ok: diagnostic-only dev build (#454) --></PropertyGroup></Project>' \
+    > "${DIR}/Sample.csproj"
+assert_exit "NoWarn justification with a hyphenated reason passes" 0 \
+    run_hygiene_check_config "${DIR}"
+
+# ---------------------------------------------------------------------------
+# Case 24: a <NoWarn> "justified" by a reason and issue reference split across
+# two separate XML comments → exit 1 (regression test: the reason-text regex
+# must not cross a "-->...<!--" comment boundary and treat the two comments
+# as one combined justification)
+# ---------------------------------------------------------------------------
+DIR="${WORK_DIR}/case24"
+mkdir -p "${DIR}"
+printf '%s\n' '<Project><PropertyGroup><NoWarn>ZEEKAYDA0001</NoWarn></PropertyGroup></Project> <!-- log-hygiene-ok: TODO --> <!-- (#1) -->' \
+    > "${DIR}/Sample.csproj"
+assert_exit "NoWarn justification split across two XML comments still fails" 1 \
+    run_hygiene_check_config "${DIR}"
 
 # ---------------------------------------------------------------------------
 # Summary
