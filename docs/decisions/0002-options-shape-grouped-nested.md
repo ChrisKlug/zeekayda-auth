@@ -10,7 +10,7 @@ strongly-typed, `sealed`, get-only nested option groups (`TokenEndpoint`, `Autho
 `JwksEndpoint`, `IdToken`, `Response`, …), each default-initialised so it can never be nulled out.
 
 ```csharp
-// Before: flat
+// Rejected: flat
 public class AuthorizationServerOptions
 {
     public Uri? Issuer { get; set; }
@@ -18,7 +18,7 @@ public class AuthorizationServerOptions
     public ICollection<TokenEndpointAuthMethod>? TokenEndpointAuthMethodsSupported { get; set; }
 }
 
-// After: grouped nested
+// Chosen: grouped nested
 public class AuthorizationServerOptions
 {
     public Uri? Issuer { get; set; }
