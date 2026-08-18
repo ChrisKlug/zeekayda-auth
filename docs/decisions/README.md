@@ -51,16 +51,20 @@ only restated spec text, narration, and ceremony get cut.
 Existing ADRs are being rewritten into this lean shape in small batches (see the tracking issue
 for the rewrite effort) rather than left to migrate opportunistically — the earlier three-part
 "current state / considered-and-rejected alternatives / changelog appendix" shape is being phased
-out in favor of this one; ADRs not yet migrated (currently 0014, 0016) still use it until their
-batch comes up.
+out in favor of this one. Of the ADRs known to this document: 0008 is retired (see "Retired
+numbers" below) and no longer applies; 0011, 0012, 0013, and 0015 are migrated to the lean shape
+(0015 itself is retired, folded into 0011); 0014 and 0016 have not yet been migrated and still use
+the older shape.
 
 ## Retired numbers
 
-Once an ADR number is fully retired — every part of its content merged into another ADR — the file
-is deleted outright, not kept as a stub. Pre-1.0 there's no redirect and no changelog to maintain:
-git history holds the old text if anyone ever needs it, and the "why it changed" lives in the
-surviving ADR's `Why`/`Consequences`. A retired number is never reused for a new decision.
+An ADR number is retired, not deleted, once every part of its content has moved elsewhere: the
+file is replaced with a short stub pointing at whatever superseded it, and the number itself must
+never be reused for a new ADR.
 
+- **0008** — Authorization Code and Refresh Token Store. Superseded by
+  [ADR 0013](./0013-store-protocol-persistence-split.md) (authorization-code store and shared
+  store rules) and [ADR 0014](./0014-refresh-token-grant-store.md) (refresh-token store reshape).
 - **0015** — merged into [ADR 0011](./0011-signing-key-management.md).
 
 ## Why amendments are avoidable right now

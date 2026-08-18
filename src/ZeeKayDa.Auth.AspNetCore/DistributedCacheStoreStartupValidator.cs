@@ -20,7 +20,7 @@ internal sealed class DistributedCacheStoreStartupValidator : IStartupVerifier
         "ZeeKayDa.Auth: IDistributedCache resolves to a non-MemoryDistributedCache implementation. " +
         "The distributed-cache-backed token stores are non-atomic; multi-instance deployments are " +
         "exposed to TOCTOU double-redemption/double-consumption. Replace these stores with an " +
-        "atomic implementation before going to production. See ADR 0008 §8.";
+        "atomic implementation before going to production. See docs/reference/token-stores.md for guidance.";
 
     /// <inheritdoc/>
     public string Name => "DistributedCacheStore";

@@ -36,12 +36,12 @@ public sealed class AuthorizationCodeEntryTests
     public void AuthorizationCodeEntry_has_exactly_14_public_instance_properties()
     {
         // Guards against an accidental addition or removal of properties that would break
-        // the contract defined in ADR 0008 §2 (11 required + 3 nullable = 14 total).
+        // the contract of exactly 11 required + 3 nullable = 14 total properties.
         var properties = typeof(AuthorizationCodeEntry)
             .GetProperties(BindingFlags.Public | BindingFlags.Instance);
 
         properties.Should().HaveCount(14,
-            because: "ADR 0008 §2 defines exactly 11 required and 3 nullable properties");
+            because: "the contract defines exactly 11 required and 3 nullable properties");
     }
 
     [Theory]
@@ -67,7 +67,7 @@ public sealed class AuthorizationCodeEntryTests
 
         property.GetCustomAttributesData()
             .Should().Contain(a => a.AttributeType.Name == "RequiredMemberAttribute",
-                because: $"{propertyName} must be marked 'required' in IL (ADR 0008 §2)");
+                because: $"{propertyName} must be marked 'required' in IL");
     }
 
     [Theory]

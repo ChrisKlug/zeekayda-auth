@@ -432,6 +432,20 @@ every time — the same single-winner guarantee as ADR 0013, on a CAS instead of
 *technically* let the coordinator self-revoke by predicate without the `familyId` round-trip, but
 this was considered and rejected (see "Self-revoke inside `TryConsumeAsync`" in the alternatives).
 
+**Rotation is mandatory and non-configurable, for every client type.** RFC 9700 §4.14.2 requires
+either refresh-token rotation or sender-constrained tokens for public clients; this framework does
+not implement sender-constrained tokens (DPoP/mTLS) yet, so rotation is the only replay defence
+available, and making it optional would remove it entirely. `RefreshTokenEntry.PreviousTokenHandleHash`
+(a hash, never the raw handle) links a forensic rotation chain for diagnostics; it is never
+consulted for authorization decisions.
+
+**A failed rotation write must not leave an indeterminate token.** If persisting the newly-rotated
+refresh token fails after the presented (old) token has already been marked `Consumed`, the
+endpoint calling `TryConsumeAsync` **must** call `RevokeFamilyAsync` before propagating the
+failure to the client. A partially-applied rotation — old token consumed, new token never durably
+stored — becomes a fully-revoked family rather than a state where neither the caller nor a later
+request can tell whether a valid successor exists.
+
 ### 5. Absolute family-lifetime cap and mark-don't-delete
 
 - **`AbsoluteFamilyLifetime` option.** `FamilyAbsoluteExpiry` is baked at family birth (first token
