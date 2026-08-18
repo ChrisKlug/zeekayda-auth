@@ -465,10 +465,13 @@ repository. Authentication requires a GitHub Personal Access Token (PAT) with at
 `read:packages` scope.
 
 > **Never run this inside a clone of `zeekayda-auth`.** `dotnet nuget add source` without
-> `--configfile` writes to the nearest `NuGet.config` in the directory hierarchy — inside this repo,
-> that's the tracked, repo-root `NuGet.config` (see [Building Locally](#building-locally)). Running
-> it here would both weaken the repo's pinned restore source and write your PAT in clear text into
-> a file `git status` will show as modified.
+> `--configfile` writes the source entry to the nearest `NuGet.config` in the directory
+> hierarchy — inside this repo, that's the tracked, repo-root `NuGet.config` (see
+> [Building Locally](#building-locally)) — weakening the repo's pinned restore source, visibly, in
+> `git status`. The credential itself is stored separately, in your user-level
+> `~/.nuget/NuGet/NuGet.Config` (not tracked by git), so simply reverting the tracked file does
+> **not** remove the PAT from disk. Run `dotnet nuget remove source ZeeKayDa-preview` to undo both
+> if you run this by mistake inside the repo.
 
 ```bash
 dotnet nuget add source https://nuget.pkg.github.com/ChrisKlug/index.json \
