@@ -74,9 +74,30 @@ public sealed class TokenEndpointHandler
 ### Suppression
 
 Suppressions require justification and team review. A CI check
-(`.github/scripts/check_log_hygiene.sh`) enforces this for `#pragma` suppressions specifically: any
-`#pragma warning disable` naming `ZEEKAYDA0001` or `ZEEKAYDA0002` must carry a structured
-`// log-hygiene-ok: <reason> (#<issue-or-pr-number>)` comment on the same line, or the build fails.
+(`.github/scripts/check_log_hygiene.sh`) enforces this for a specific set of suppression forms: a
+single-line `#pragma warning disable` naming `ZEEKAYDA0001` or `ZEEKAYDA0002`; a single-line
+`[SuppressMessage(...)]` attribute (bare or fully qualified); a single-line `<NoWarn>` entry in a
+`.csproj`/`Directory.Build.props`; and a single-line `.editorconfig` severity override below
+`error`. Each must carry a structured `// log-hygiene-ok: <reason> (#<issue-or-pr-number>)`
+comment on the same line — or, for `<NoWarn>`, a trailing `<!-- log-hygiene-ok: ... -->` XML
+comment, and for `.editorconfig`, a standalone comment line immediately above the override
+(`.editorconfig` doesn't support trailing inline comments). Any of these forms without the
+required justification fails the build.
+
+This check is a grep-based script, not a semantic analysis, and it does not cover every way to
+silence the analyzer. It does **not** detect: suppressions split across multiple lines;
+`.globalconfig` files; `Directory.Build.targets`; `<NoWarn>$(SomeProperty)</NoWarn>`-style MSBuild
+property indirection; a category-wide `dotnet_analyzer_diagnostic.category-LogHygiene.severity`
+override; analyzer-disabling switches such as `<RunAnalyzers>false</RunAnalyzers>` or
+`<EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>`; a `.editorconfig` severity value or
+diagnostic ID written with different casing than the script expects (its match is
+case-sensitive; Roslyn's is not); or suppressions placed outside the paths this script searches
+(for example, test or sample projects). Several of those routes (multi-line forms,
+`.globalconfig`, `Directory.Build.targets`) do still name `ZEEKAYDA0001`/`ZEEKAYDA0002` in the
+diff, but the category-wide severity override and analyzer-disabling switches do not — so treat a
+clean run of this script as evidence against the specific forms above, not as proof that no
+suppression exists. Closing this gap with a structural, compiler-driven check (rather than
+pattern matching) is tracked in issue #459.
 
 ```csharp
 #pragma warning disable ZEEKAYDA0001 // log-hygiene-ok: legacy adapter predates ISanitizingLogger<T>, migration tracked (#123)
@@ -88,14 +109,13 @@ private readonly ILogger<TokenEndpointHandler> _logger;
 
 ```ini
 [src/ZeeKayDa.Auth/**/*.cs]
+; log-hygiene-ok: legacy adapter predates ISanitizingLogger<T>, migration tracked (#123)
 dotnet_diagnostic.ZEEKAYDA0001.severity = none
 ```
 
 > ⚠️ **Warning:** Suppressing this rule removes the compile-time safety net for the affected
 > type. Any suppression must be reviewed and justified in a code comment explaining why the
-> `ISanitizingLogger<T>` wrapper is not applicable. Note that `check_log_hygiene.sh`'s structured-
-> comment requirement currently applies only to `#pragma` suppressions, not to an `.editorconfig`
-> severity override — an `.editorconfig`-based suppression is not caught by that check.
+> `ISanitizingLogger<T>` wrapper is not applicable.
 
 ---
 
@@ -167,11 +187,11 @@ _logger.LogDebug("Processing request for client {ClientId}", clientId);
 
 ### Suppression
 
-Suppressions require justification and team review. A CI check
-(`.github/scripts/check_log_hygiene.sh`) enforces this for `#pragma` suppressions specifically: any
-`#pragma warning disable` naming `ZEEKAYDA0001` or `ZEEKAYDA0002` must carry a structured
-`// log-hygiene-ok: <reason> (#<issue-or-pr-number>)` comment on the same line, or the build fails.
-See `StartupVerificationHostedService.LogWarning` for a real example of the required form.
+Suppressions require justification and team review, using the same structured
+`// log-hygiene-ok: <reason> (#<issue-or-pr-number>)` comment form described under
+[ZEEKAYDA0001's Suppression section](#suppression), including the same coverage limits of the CI
+check that enforces it. See `StartupVerificationHostedService.LogWarning` for a real example of
+the required form.
 
 ```csharp
 #pragma warning disable ZEEKAYDA0002 // log-hygiene-ok: diagnostic-only, key material never leaves this dev-only build config (#123)
@@ -183,15 +203,14 @@ _logger.LogDebug($"Diagnostic — raw key material: {keyMaterial}");
 
 ```ini
 [src/ZeeKayDa.Auth/**/*.cs]
-dotnet_diagnostic.ZEEKAYDA0002.severity = none  ; Non-constant string in log call
+; log-hygiene-ok: diagnostic-only, key material never leaves this dev-only build config (#123)
+dotnet_diagnostic.ZEEKAYDA0002.severity = none
 ```
 
 > ⚠️ **Warning:** Suppressing this rule disables the compile-time check for the affected call
 > sites. Any suppression must be accompanied by a code comment explaining why the non-constant
 > string is safe at that specific location and confirming that no sensitive value can reach
-> the log sink through the suppressed call. As with ZEEKAYDA0001, `check_log_hygiene.sh`'s
-> structured-comment requirement applies only to `#pragma` suppressions, not to an
-> `.editorconfig` severity override.
+> the log sink through the suppressed call.
 
 ---
 
@@ -289,7 +308,8 @@ public sealed class MyClientRepository : IClientRepository
 
 ```ini
 [**/*.cs]
-dotnet_diagnostic.ZEEKAYDA0003.severity = none  ; IClientRepository does not reference IClientRegistrationValidator
+; IClientRepository does not reference IClientRegistrationValidator
+dotnet_diagnostic.ZEEKAYDA0003.severity = none
 ```
 
 > ⚠️ **Warning:** Suppressing this rule removes the reminder for the affected type. Any suppression
