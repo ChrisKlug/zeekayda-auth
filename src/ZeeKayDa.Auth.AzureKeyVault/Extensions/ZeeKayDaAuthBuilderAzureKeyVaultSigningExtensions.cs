@@ -2,7 +2,6 @@ using Azure.Core;
 using Azure.Security.KeyVault.Certificates;
 using Azure.Security.KeyVault.Keys;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.AzureKeyVault;
@@ -184,7 +183,8 @@ public static class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensions
         builder.Services.TryAddSingleton<TimeProvider>(TimeProvider.System);
         builder.Services.TryAddSingleton<IKeyVaultCertificateReader, KeyVaultCertificateReader>();
         builder.Services.AddSingleton<IJwtSigningService, AzureKeyVaultCachedSigningJwtSigningService>();
-        builder.Services.AddHostedService<AzureKeyVaultCachedSigningStartupService>();
+        builder.Services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IStartupVerifier, AzureKeyVaultCachedSigningMemoryResidencyVerifier>());
 
         return builder;
     }
