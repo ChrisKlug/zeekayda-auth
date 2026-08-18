@@ -3,7 +3,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.AspNetCore;
-using ZeeKayDa.Auth.Logging;
 using ZeeKayDa.Auth.Stores;
 
 namespace Microsoft.Extensions.DependencyInjection;
@@ -105,11 +104,10 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
         builder.ThrowIfAlreadyRegistered(typeof(IAuthorizationCodeStore));
         builder.Services.AddSingleton<IAuthorizationCodeBackingStore, InMemoryAuthorizationCodeBackingStore>();
         builder.Services.AddSingleton<IAuthorizationCodeStore, AuthorizationCodeStore>();
-        builder.Services.AddSingleton<IHostedService>(sp => new InMemoryStoreWarningService(
+        builder.Services.AddSingleton<IStartupVerifier>(sp => new InMemoryStoreVerifier(
             sp.GetRequiredService<IHostEnvironment>(),
-            InMemoryStoreWarningService.AuthorizationCodeStoreName,
-            allowOutsideDevelopment,
-            sp.GetRequiredService<ISanitizingLogger<InMemoryStoreWarningService>>()));
+            InMemoryStoreVerifier.AuthorizationCodeStoreName,
+            allowOutsideDevelopment));
 
         return builder;
     }
@@ -146,11 +144,10 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
         builder.ThrowIfAlreadyRegistered(typeof(IRefreshTokenStore));
         builder.Services.AddSingleton<IRefreshTokenGrantStore, InMemoryRefreshTokenGrantStore>();
         builder.Services.AddSingleton<IRefreshTokenStore, RefreshTokenStore>();
-        builder.Services.AddSingleton<IHostedService>(sp => new InMemoryStoreWarningService(
+        builder.Services.AddSingleton<IStartupVerifier>(sp => new InMemoryStoreVerifier(
             sp.GetRequiredService<IHostEnvironment>(),
-            InMemoryStoreWarningService.RefreshTokenStoreName,
-            allowOutsideDevelopment,
-            sp.GetRequiredService<ISanitizingLogger<InMemoryStoreWarningService>>()));
+            InMemoryStoreVerifier.RefreshTokenStoreName,
+            allowOutsideDevelopment));
 
         return builder;
     }
@@ -210,7 +207,7 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
         builder.Services.AddSingleton<IAuthorizationCodeBackingStore, DistributedCacheAuthorizationCodeBackingStore>();
         builder.Services.AddSingleton<IAuthorizationCodeStore, AuthorizationCodeStore>();
         builder.Services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IHostedService, DistributedCacheStoreStartupValidator>());
+            ServiceDescriptor.Singleton<IStartupVerifier, DistributedCacheStoreStartupValidator>());
 
         return builder;
     }
@@ -236,7 +233,7 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
         builder.Services.AddSingleton<IRefreshTokenGrantStore, DistributedCacheRefreshTokenGrantStore>();
         builder.Services.AddSingleton<IRefreshTokenStore, RefreshTokenStore>();
         builder.Services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IHostedService, DistributedCacheStoreStartupValidator>());
+            ServiceDescriptor.Singleton<IStartupVerifier, DistributedCacheStoreStartupValidator>());
 
         return builder;
     }

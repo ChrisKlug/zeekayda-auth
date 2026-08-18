@@ -260,9 +260,11 @@ aggregation both run: the operator sees the `stores.*` presence failure *and* th
 warning in the same startup, and the host still refuses to start. Nothing is weakened — the failure
 that aborts startup is identical — but the warning ADR 0008 wanted suppressed now appears alongside
 it. That is the accepted cost of aggregation, and **ADR 0008 §5 must be amended in the
-implementation PR** so the two ADRs do not disagree. Ordering the presence verifier before the
-in-memory verifier (which DI registration order does anyway) keeps the failure first in the
-operator's log.
+implementation PR** so the two ADRs do not disagree. Because warnings log inline during the
+phase-2 loop while failures surface only in the aggregated exception thrown after the loop
+completes, the in-memory warning now appears in the operator's log *before* the presence
+failure, not after it — DI registration order between the two verifiers has no bearing on log
+ordering.
 
 ### 5. Unexpected exceptions from a verifier
 

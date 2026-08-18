@@ -2,6 +2,7 @@ using System.Reflection;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
+using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests.Extensions;
@@ -132,7 +133,7 @@ public sealed class ZeeKayDaAuthBuilderSigningExtensionsTests
     private sealed class StubTimeProvider : TimeProvider;
 
     [Fact]
-    public void AddInMemoryDevelopmentJwtSigningKeys_registers_DevelopmentSigningKeyWarningService_as_IHostedService()
+    public void AddInMemoryDevelopmentJwtSigningKeys_registers_DevelopmentSigningKeyWarningService_as_IStartupVerifier()
     {
         var services = new ServiceCollection();
         services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment { ContentRootPath = "/app" });
@@ -141,7 +142,7 @@ public sealed class ZeeKayDaAuthBuilderSigningExtensionsTests
         builder.AddInMemoryDevelopmentJwtSigningKeys();
 
         var registrations = services
-            .Where(d => d.ServiceType == typeof(IHostedService))
+            .Where(d => d.ServiceType == typeof(IStartupVerifier))
             .ToList();
         registrations.Should().ContainSingle(d =>
             d.ImplementationType == typeof(DevelopmentSigningKeyWarningService));

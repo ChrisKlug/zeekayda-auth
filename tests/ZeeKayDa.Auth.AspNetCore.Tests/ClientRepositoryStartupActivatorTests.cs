@@ -1,18 +1,15 @@
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
+using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.AspNetCore;
 using ZeeKayDa.Auth.Clients;
-using ZeeKayDa.Auth.Logging;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests;
 
 public sealed class ClientRepositoryStartupActivatorTests
 {
     [Fact]
-    public async Task StartAsync_logs_warning_when_AddInMemoryClients_was_called_but_custom_repository_shadows_it()
+    public async Task VerifyAsync_adds_a_warning_when_AddInMemoryClients_was_called_but_custom_repository_shadows_it()
     {
-        var logger = new CapturingLogger<ClientRepositoryStartupActivator>();
-
         var services = new ServiceCollection();
         // Simulate that AddInMemoryClients was called — this registers InMemoryClientRegistrationOptions.
         services.AddSingleton(new InMemoryClientRegistrationOptions());
@@ -20,21 +17,34 @@ public sealed class ClientRepositoryStartupActivatorTests
         services.AddSingleton<IClientRepository, CustomClientRepository>();
 
         using var provider = services.BuildServiceProvider();
-        var scopeFactory = provider.GetRequiredService<IServiceScopeFactory>();
+        var sut = new ClientRepositoryStartupActivator();
+        var context = new StartupVerificationContext();
 
-        var sut = new ClientRepositoryStartupActivator(scopeFactory, logger);
+        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
 
-        await sut.StartAsync(CancellationToken.None);
-
-        logger.Entries.Should().ContainSingle()
-            .Which.Level.Should().Be(LogLevel.Warning);
-
-        logger.Entries.Single().Message.Should()
-            .Contain(typeof(CustomClientRepository).FullName);
+        context.Warnings.Should().ContainSingle()
+            .Which.Args.Should().Contain(typeof(CustomClientRepository).FullName);
     }
 
     [Fact]
-    public async Task StartAsync_does_not_log_warning_when_InMemoryClientRepository_is_the_resolved_repository()
+    public async Task VerifyAsync_adds_a_warning_with_code_clients_inmemory_shadowed()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(new InMemoryClientRegistrationOptions());
+        services.AddSingleton<IClientRepository, CustomClientRepository>();
+
+        using var provider = services.BuildServiceProvider();
+        var sut = new ClientRepositoryStartupActivator();
+        var context = new StartupVerificationContext();
+
+        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+
+        context.Warnings.Should().ContainSingle()
+            .Which.Code.Should().Be("clients.inmemory_shadowed");
+    }
+
+    [Fact]
+    public async Task VerifyAsync_does_not_add_a_warning_when_InMemoryClientRepository_is_the_resolved_repository()
     {
         // When AddInMemoryClients was NOT called, InMemoryClientRegistrationOptions is not
         // registered and GetService<InMemoryClientRegistrationOptions>() returns null.
@@ -43,35 +53,35 @@ public sealed class ClientRepositoryStartupActivatorTests
         services.AddSingleton<IClientRepository, CustomClientRepository>();
 
         using var provider = services.BuildServiceProvider();
-        var scopeFactory = provider.GetRequiredService<IServiceScopeFactory>();
+        var sut = new ClientRepositoryStartupActivator();
+        var context = new StartupVerificationContext();
 
-        var sut = new ClientRepositoryStartupActivator(
-            scopeFactory,
-            NullSanitizingLogger<ClientRepositoryStartupActivator>.Instance);
+        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
 
-        await sut.Awaiting(s => s.StartAsync(CancellationToken.None)).Should().NotThrowAsync();
+        context.Warnings.Should().BeEmpty();
     }
 
-    /// <summary>
-    /// Minimal <see cref="ISanitizingLogger{T}"/> that captures log entries for assertion.
-    /// </summary>
-    private sealed class CapturingLogger<T> : ISanitizingLogger<T>
+    [Fact]
+    public async Task VerifyAsync_propagates_the_exception_when_IClientRepository_resolution_fails()
     {
-        public List<(LogLevel Level, string Message)> Entries { get; } = [];
+        var services = new ServiceCollection();
+        // IClientRepository is not registered — GetRequiredService must throw and the exception
+        // must flow out of VerifyAsync unmodified; nothing here catches it.
+        using var provider = services.BuildServiceProvider();
+        var sut = new ClientRepositoryStartupActivator();
+        var context = new StartupVerificationContext();
 
-        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        var act = async () => await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
 
-        public bool IsEnabled(LogLevel logLevel) => true;
+        await act.Should().ThrowAsync<InvalidOperationException>();
+    }
 
-        public void Log<TState>(
-            LogLevel logLevel,
-            EventId eventId,
-            TState state,
-            Exception? exception,
-            Func<TState, Exception?, string> formatter)
-        {
-            Entries.Add((logLevel, formatter(state, exception)));
-        }
+    [Fact]
+    public void Name_is_ClientRepositoryActivation()
+    {
+        var sut = new ClientRepositoryStartupActivator();
+
+        sut.Name.Should().Be("ClientRepositoryActivation");
     }
 
     private sealed class CustomClientRepository : IClientRepository

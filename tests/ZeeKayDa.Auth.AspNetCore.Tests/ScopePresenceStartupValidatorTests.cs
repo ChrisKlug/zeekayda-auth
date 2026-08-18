@@ -7,77 +7,93 @@ namespace ZeeKayDa.Auth.AspNetCore.Tests;
 
 public sealed class ScopePresenceStartupValidatorTests
 {
-    private static ScopePresenceStartupValidator BuildSut(IScopeRepository repository)
+    private static (ScopePresenceStartupValidator Sut, ServiceProvider Provider) BuildSut(IScopeRepository repository)
     {
         var services = new ServiceCollection();
         services.AddSingleton(repository);
-        return new ScopePresenceStartupValidator(
-            services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>());
+        var provider = services.BuildServiceProvider();
+        return (new ScopePresenceStartupValidator(), provider);
     }
 
     [Fact]
-    public async Task StartAsync_completes_without_throwing_when_openid_scope_is_present()
+    public async Task VerifyAsync_completes_without_failures_when_openid_scope_is_present()
     {
-        var sut = BuildSut(new InMemoryScopeRepository([StandardScopes.OpenId]));
+        var (sut, provider) = BuildSut(new InMemoryScopeRepository([StandardScopes.OpenId]));
+        using var _ = provider;
+        var context = new StartupVerificationContext();
 
-        await sut.Awaiting(s => s.StartAsync(CancellationToken.None)).Should().NotThrowAsync();
+        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+
+        context.Failures.Should().BeEmpty();
     }
 
     [Fact]
-    public async Task StartAsync_completes_when_openid_scope_is_among_several_scopes()
+    public async Task VerifyAsync_completes_when_openid_scope_is_among_several_scopes()
     {
-        var sut = BuildSut(new InMemoryScopeRepository(StandardScopes.All));
+        var (sut, provider) = BuildSut(new InMemoryScopeRepository(StandardScopes.All));
+        using var _ = provider;
+        var context = new StartupVerificationContext();
 
-        await sut.Awaiting(s => s.StartAsync(CancellationToken.None)).Should().NotThrowAsync();
+        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+
+        context.Failures.Should().BeEmpty();
     }
 
     [Fact]
-    public async Task StartAsync_throws_ZeeKayDaConfigurationException_when_openid_scope_is_missing()
+    public async Task VerifyAsync_adds_a_failure_when_openid_scope_is_missing()
     {
-        var sut = BuildSut(new InMemoryScopeRepository([StandardScopes.Profile]));
+        var (sut, provider) = BuildSut(new InMemoryScopeRepository([StandardScopes.Profile]));
+        using var _ = provider;
+        var context = new StartupVerificationContext();
 
-        await sut.Awaiting(s => s.StartAsync(CancellationToken.None))
-            .Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+
+        context.Failures.Should().ContainSingle();
     }
 
     [Fact]
-    public async Task StartAsync_throws_with_code_scopes_openid_missing()
+    public async Task VerifyAsync_adds_a_failure_with_code_scopes_openid_missing()
     {
-        var sut = BuildSut(new InMemoryScopeRepository([]));
+        var (sut, provider) = BuildSut(new InMemoryScopeRepository([]));
+        using var _ = provider;
+        var context = new StartupVerificationContext();
 
-        var ex = await sut.Awaiting(s => s.StartAsync(CancellationToken.None))
-            .Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
 
-        ex.Which.AggregatedFailures.Should().ContainSingle()
+        context.Failures.Should().ContainSingle()
             .Which.Code.Should().Be("scopes.openid_missing");
     }
 
     [Fact]
-    public async Task StartAsync_throws_with_message_containing_openid_scope_name()
+    public async Task VerifyAsync_adds_a_failure_with_message_containing_openid_scope_name()
     {
-        var sut = BuildSut(new InMemoryScopeRepository([]));
+        var (sut, provider) = BuildSut(new InMemoryScopeRepository([]));
+        using var _ = provider;
+        var context = new StartupVerificationContext();
 
-        var ex = await sut.Awaiting(s => s.StartAsync(CancellationToken.None))
-            .Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
 
-        ex.Which.AggregatedFailures.Single().Message.Should().Contain(StandardScopes.OpenId.Name);
+        context.Failures.Single().Message.Should().Contain(StandardScopes.OpenId.Name);
     }
 
     [Fact]
-    public async Task StartAsync_throws_for_custom_repository_without_openid_scope()
+    public async Task VerifyAsync_adds_a_failure_for_custom_repository_without_openid_scope()
     {
-        var sut = BuildSut(new CustomRepositoryWithoutOpenId());
+        var (sut, provider) = BuildSut(new CustomRepositoryWithoutOpenId());
+        using var _ = provider;
+        var context = new StartupVerificationContext();
 
-        await sut.Awaiting(s => s.StartAsync(CancellationToken.None))
-            .Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+
+        context.Failures.Should().ContainSingle();
     }
 
     [Fact]
-    public async Task StopAsync_does_not_throw()
+    public void Name_is_ScopePresence()
     {
-        var sut = BuildSut(new InMemoryScopeRepository([StandardScopes.OpenId]));
+        var sut = new ScopePresenceStartupValidator();
 
-        await sut.Awaiting(s => s.StopAsync(CancellationToken.None)).Should().NotThrowAsync();
+        sut.Name.Should().Be("ScopePresence");
     }
 
     private sealed class CustomRepositoryWithoutOpenId : IScopeRepository

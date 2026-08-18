@@ -1,5 +1,4 @@
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using ZeeKayDa.Auth.Stores;
 
 namespace ZeeKayDa.Auth.AspNetCore;
@@ -14,41 +13,35 @@ namespace ZeeKayDa.Auth.AspNetCore;
 /// DI container replacing the default provider), the check is skipped rather than failing with a
 /// confusing resolution error.
 /// </remarks>
-internal sealed class TokenStorePresenceValidator : IHostedService
+internal sealed class TokenStorePresenceValidator : IStartupVerifier
 {
-    private readonly IServiceProviderIsService? _isService;
-
-    public TokenStorePresenceValidator(IServiceProviderIsService? isService)
-        => _isService = isService;
+    /// <inheritdoc/>
+    public string Name => "TokenStorePresence";
 
     /// <inheritdoc/>
-    public Task StartAsync(CancellationToken cancellationToken)
+    public ValueTask VerifyAsync(
+        StartupVerificationContext context,
+        IServiceProvider scopedServices,
+        CancellationToken cancellationToken)
     {
-        if (_isService is null)
-            return Task.CompletedTask;
+        var isService = scopedServices.GetService<IServiceProviderIsService>();
+        if (isService is null)
+            return ValueTask.CompletedTask;
 
-        var failures = new List<ZeeKayDaConfigurationFailure>();
-
-        if (!_isService.IsService(typeof(IAuthorizationCodeStore)))
-            failures.Add(new ZeeKayDaConfigurationFailure(
+        if (!isService.IsService(typeof(IAuthorizationCodeStore)))
+            context.AddFailure(
                 "stores.authorization_code_store.missing",
                 "No IAuthorizationCodeStore has been registered. " +
                 "Call builder.AddInMemoryAuthorizationCodeStore(), builder.AddAuthorizationCodeStore<T>(), " +
-                "or builder.AddDistributedCacheAuthorizationCodeStore()."));
+                "or builder.AddDistributedCacheAuthorizationCodeStore().");
 
-        if (!_isService.IsService(typeof(IRefreshTokenStore)))
-            failures.Add(new ZeeKayDaConfigurationFailure(
+        if (!isService.IsService(typeof(IRefreshTokenStore)))
+            context.AddFailure(
                 "stores.refresh_token_store.missing",
                 "No IRefreshTokenStore has been registered. " +
                 "Call builder.AddInMemoryRefreshTokenStore(), builder.AddRefreshTokenGrantStore<T>(), " +
-                "or builder.AddDistributedCacheRefreshTokenStore()."));
+                "or builder.AddDistributedCacheRefreshTokenStore().");
 
-        if (failures.Count > 0)
-            throw new ZeeKayDaConfigurationException([.. failures]);
-
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
-
-    /// <inheritdoc/>
-    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }
