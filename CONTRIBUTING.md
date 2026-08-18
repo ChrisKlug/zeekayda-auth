@@ -221,12 +221,12 @@ If you are unsure about a style decision, check how the surrounding code is writ
 
 ### Public API tracking
 
-`ZeeKayDa.Auth`, `ZeeKayDa.Auth.AspNetCore`, `ZeeKayDa.Auth.AzureKeyVault`, `ZeeKayDa.Auth.FileSystem`, and `ZeeKayDa.Auth.Windows` each carry a `PublicAPI.Shipped.txt` and `PublicAPI.Unshipped.txt`, enforced by [`Microsoft.CodeAnalysis.PublicApiAnalyzers`](https://github.com/dotnet/roslyn-analyzers/blob/main/src/PublicApiAnalyzers/PublicApiAnalyzers.Help.md). The build fails if a public member is added, removed, or changes shape without a matching entry — for example, an accidental narrowing from `public` to `internal`.
+`ZeeKayDa.Auth`, `ZeeKayDa.Auth.AspNetCore`, `ZeeKayDa.Auth.AzureKeyVault`, `ZeeKayDa.Auth.FileSystem`, `ZeeKayDa.Auth.Windows`, and `ZeeKayDa.Auth.TestKit` each carry a `PublicAPI.Shipped.txt` and `PublicAPI.Unshipped.txt`, enforced by [`Microsoft.CodeAnalysis.PublicApiAnalyzers`](https://github.com/dotnet/roslyn-analyzers/blob/main/src/PublicApiAnalyzers/PublicApiAnalyzers.Help.md). The build fails if a public member is added, removed, or changes shape without a matching entry — for example, an accidental narrowing from `public` to `internal`.
 
 - **Adding, removing, or changing** a public member: add/update the corresponding entry in that project's `PublicAPI.Unshipped.txt`. The compiler error (`RS0016`/`RS0017`/`RS0025`/`RS0036`) names the exact line to add — copy it verbatim.
 - **On release**: move every entry from `PublicAPI.Unshipped.txt` to `PublicAPI.Shipped.txt` as part of [cutting a stable release](#cutting-a-stable-release).
 - `ZeeKayDa.Auth.Analyzers` is not covered — it has no public surface of the kind this guards.
-- `ZeeKayDa.Auth.TestKit` is excluded from this change; it does ship public conformance base classes with `protected abstract`/`virtual` inheritance hooks that are exactly the kind of surface this analyzer protects. Adding coverage for it is out of scope here and tracked as a candidate for a follow-up.
+- `ZeeKayDa.Auth.TestKit`'s tracked surface includes its `[Fact]` conformance test methods, not just the `abstract`/`virtual` inheritance hooks a third-party implementer overrides — the test methods are `public` because xUnit only discovers and runs `public` test methods, which makes them public API in the sense this analyzer guards.
 
 ---
 
