@@ -18,12 +18,13 @@
 # parenthesised issue/PR number are required. Changes to this script and any
 # suppression inventory file require security-owner approval (see CODEOWNERS).
 #
-# The same structured justification is required for every other way to silence
-# ZEEKAYDA0001/ZEEKAYDA0002: #pragma warning disable, [SuppressMessage(...)],
-# a project-wide <NoWarn> entry, and a .editorconfig severity override below "error".
+# The same structured justification is required for the other ways this script can detect
+# silencing ZEEKAYDA0001/ZEEKAYDA0002: #pragma warning disable, [SuppressMessage(...)],
+# a single-line project-wide <NoWarn> entry, and a single-line .editorconfig severity
+# override below "error". This is a grep-based check, not semantic analysis — see
+# docs/reference/analyzer-rules.md for what it does and does not cover.
 #
 # ADR 0007 §7 / Issue #118. Structured suppression format: Issue #179.
-# Pragma/SuppressMessage/NoWarn/.editorconfig coverage: Issue #454.
 
 set -euo pipefail
 
