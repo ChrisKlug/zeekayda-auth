@@ -129,11 +129,17 @@ fi
 # the same visible, structured justification as a single-line suppression.
 NOWARN_PATTERN='<NoWarn[^>]*>[^<]*\b(ZEEKAYDA0001|ZEEKAYDA0002)\b'
 nowarn_found=0
+# Reason text is restricted to non-< and non-> characters so the match can't cross a
+# "-->...<!--" boundary; this also means a reason mentioning a generic type like
+# ISanitizingLogger<T> is rejected — write around it rather than widen the exclusion.
+# Held in a variable (rather than written inline in [[ =~ ]]) because bash's parser treats an
+# unescaped "<>" as a redirection token even inside a regex bracket expression.
+NOWARN_JUSTIFICATION_REGEX='<!--[[:space:]]*log-hygiene-ok:[[:space:]]+[^[:space:]][^<>]*\(#[0-9]+\)[[:space:]]*-->'
 
 for path in "${CONFIG_SEARCH_PATHS[@]}"; do
     [ -d "$path" ] || continue
     while IFS= read -r line; do
-        [[ "$line" =~ \<\!--[[:space:]]*log-hygiene-ok:[[:space:]]+[^[:space:]][^\<\>]*\(#[0-9]+\)[[:space:]]*--\> ]] && continue
+        [[ "$line" =~ $NOWARN_JUSTIFICATION_REGEX ]] && continue
         echo "$line"
         nowarn_found=1
     done < <(grep -rn --include="*.csproj" --include="Directory.Build.props" -E "$NOWARN_PATTERN" "$path" 2>/dev/null || true)

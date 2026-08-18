@@ -340,6 +340,19 @@ assert_exit "NoWarn justification with a hyphenated reason passes" 0 \
     run_hygiene_check_config "${DIR}"
 
 # ---------------------------------------------------------------------------
+# Case 24: a <NoWarn> "justified" by a reason and issue reference split across
+# two separate XML comments → exit 1 (regression test: the reason-text regex
+# must not cross a "-->...<!--" comment boundary and treat the two comments
+# as one combined justification)
+# ---------------------------------------------------------------------------
+DIR="${WORK_DIR}/case24"
+mkdir -p "${DIR}"
+printf '%s\n' '<Project><PropertyGroup><NoWarn>ZEEKAYDA0001</NoWarn></PropertyGroup></Project> <!-- log-hygiene-ok: TODO --> <!-- (#1) -->' \
+    > "${DIR}/Sample.csproj"
+assert_exit "NoWarn justification split across two XML comments still fails" 1 \
+    run_hygiene_check_config "${DIR}"
+
+# ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
 echo
