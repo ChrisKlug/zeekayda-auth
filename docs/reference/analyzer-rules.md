@@ -93,8 +93,8 @@ override; analyzer-disabling switches such as `<RunAnalyzers>false</RunAnalyzers
 paths this script searches (for example, test or sample projects). None of those routes need to
 mention `ZEEKAYDA0001`/`ZEEKAYDA0002` in the diff at all, so treat a clean run of this script as
 evidence against the specific forms above, not as proof that no suppression exists. Closing this
-gap with a structural, compiler-driven check (rather than pattern matching) is tracked in a
-follow-up issue.
+gap with a structural, compiler-driven check (rather than pattern matching) is tracked in
+issue #459.
 
 ```csharp
 #pragma warning disable ZEEKAYDA0001 // log-hygiene-ok: legacy adapter predates ISanitizingLogger<T>, migration tracked (#123)
