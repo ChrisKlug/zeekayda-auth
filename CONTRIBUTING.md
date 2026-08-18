@@ -226,7 +226,7 @@ If you are unsure about a style decision, check how the surrounding code is writ
 - **Adding, removing, or changing** a public member: add/update the corresponding entry in that project's `PublicAPI.Unshipped.txt`. The compiler error (`RS0016`/`RS0017`/`RS0025`/`RS0036`) names the exact line to add — copy it verbatim.
 - **On release**: move every entry from `PublicAPI.Unshipped.txt` to `PublicAPI.Shipped.txt` as part of [cutting a stable release](#cutting-a-stable-release).
 - `ZeeKayDa.Auth.Analyzers` is not covered — it has no public surface of the kind this guards.
-- `ZeeKayDa.Auth.TestKit`'s tracked surface includes its `[Fact]`/`[Theory]` conformance test methods, not just the `abstract`/`virtual` inheritance hooks a third-party implementer overrides — the test methods are `public` so a derived class in another assembly can run them, which makes them public API in the sense this analyzer guards.
+- `ZeeKayDa.Auth.TestKit`'s tracked surface includes its `[Fact]` conformance test methods, not just the `abstract`/`virtual` inheritance hooks a third-party implementer overrides — the test methods are `public` because xUnit only discovers and runs `public` test methods, which makes them public API in the sense this analyzer guards.
 
 ---
 
