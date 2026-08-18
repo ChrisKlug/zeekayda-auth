@@ -141,28 +141,8 @@ public sealed class InterpolatedStringLogAnalyzer : DiagnosticAnalyzer
         if (templateArgument is null) return;
 
         if (templateArgument.Value.ConstantValue.HasValue) return;
-        if (IsForwardedMessageTemplateParameter(templateArgument.Value, containingType)) return;
 
         context.ReportDiagnostic(Diagnostic.Create(Rule, templateArgument.Value.Syntax.GetLocation()));
-    }
-
-    // StartupVerificationContext's own params-array overload forwards its non-constant
-    // messageTemplate parameter, unchanged, to the LogLevel overload — that call site is not a
-    // new template being constructed, just the already-validated parameter passing through, so
-    // it must not be flagged. The exemption is intentionally narrow: it only recognises a
-    // parameter named exactly "messageTemplate" declared on an AddWarning overload of the same
-    // StartupVerificationContext type — not on any other member of that type — so it cannot be
-    // used to launder an arbitrary variable through an unrelated constructor, private helper, or
-    // lambda that merely happens to name a parameter "messageTemplate".
-    private static bool IsForwardedMessageTemplateParameter(IOperation value, INamedTypeSymbol containingType)
-    {
-        if (value is not IParameterReferenceOperation { Parameter: { Name: "messageTemplate" } parameter })
-            return false;
-
-        if (parameter.ContainingSymbol is not IMethodSymbol { Name: "AddWarning", MethodKind: MethodKind.Ordinary } declaringMethod)
-            return false;
-
-        return SymbolEqualityComparer.Default.Equals(declaringMethod.ContainingType, containingType);
     }
 
     private static bool ImplementsILogger(ITypeSymbol type)

@@ -596,13 +596,13 @@ public sealed class InterpolatedStringLogAnalyzerTests
     }
 
     [Fact]
-    public async Task No_diagnostic_for_AddWarning_overload_forwarding_its_own_messageTemplate_parameter()
+    public async Task Diagnostic_fires_when_one_AddWarning_overload_forwards_to_another_by_name()
     {
-        // Regression coverage for the real StartupVerificationContext.AddWarning(code, messageTemplate,
-        // args) overload, which forwards its own non-constant messageTemplate parameter, unchanged
-        // and unqualified, to the LogLevel overload. That is not a new template being constructed at
-        // this call site — it is the same parameter the caller already had to pass a constant for —
-        // so it must not be flagged.
+        // There is no longer any exemption for AddWarning-calling-AddWarning: forwarding a
+        // non-constant messageTemplate parameter into a same-named sibling overload is flagged
+        // exactly like any other non-constant template. The real StartupVerificationContext
+        // avoids this by forwarding into a private AddWarningCore helper instead (see
+        // No_diagnostic_for_AddWarning_overloads_that_forward_into_a_private_AddWarningCore_helper).
         var source = """
             using Microsoft.Extensions.Logging;
             namespace ZeeKayDa.Auth
@@ -619,15 +619,104 @@ public sealed class InterpolatedStringLogAnalyzerTests
 
         var diagnostics = await GetDiagnosticsAsync(source);
 
+        diagnostics.Should().ContainSingle()
+            .Which.Id.Should().Be(InterpolatedStringLogAnalyzer.DiagnosticId);
+    }
+
+    [Fact]
+    public async Task Diagnostic_fires_when_a_static_AddWarning_overload_forwards_to_another_by_name()
+    {
+        // Regression coverage for architect finding A1(a): MethodKind.Ordinary is also true for
+        // static methods, so a static AddWarning overload forwarding to a sibling overload must
+        // be flagged the same as an instance one — there is no longer any AddWarning-specific
+        // forwarding exemption at all.
+        var source = """
+            using Microsoft.Extensions.Logging;
+            namespace ZeeKayDa.Auth
+            {
+                public sealed class StartupVerificationContext
+                {
+                    public static void AddWarning(string code, string messageTemplate, LogLevel level, params object?[] args) { }
+
+                    public static void AddWarning(string code, string messageTemplate, params object?[] args)
+                        => AddWarning(code, messageTemplate, LogLevel.Warning, args);
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnosticsAsync(source);
+
+        diagnostics.Should().ContainSingle()
+            .Which.Id.Should().Be(InterpolatedStringLogAnalyzer.DiagnosticId);
+    }
+
+    [Fact]
+    public async Task Diagnostic_fires_when_messageTemplate_is_reassigned_before_forwarding_to_another_AddWarning()
+    {
+        // Regression coverage for architect finding A1(b): reassigning messageTemplate before the
+        // forwarding call previously still passed the exemption, because the reference at the call
+        // site was still an IParameterReferenceOperation even though its value had been mutated.
+        // With the exemption removed entirely this is moot, but the case is kept as a tripwire.
+        var source = """
+            using Microsoft.Extensions.Logging;
+            namespace ZeeKayDa.Auth
+            {
+                public sealed class StartupVerificationContext
+                {
+                    public void AddWarning(string code, string messageTemplate, LogLevel level, params object?[] args) { }
+
+                    public void AddWarning(string code, string messageTemplate, params object?[] args)
+                    {
+                        messageTemplate = messageTemplate;
+                        AddWarning(code, messageTemplate, LogLevel.Warning, args);
+                    }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnosticsAsync(source);
+
+        diagnostics.Should().ContainSingle()
+            .Which.Id.Should().Be(InterpolatedStringLogAnalyzer.DiagnosticId);
+    }
+
+    [Fact]
+    public async Task No_diagnostic_for_AddWarning_overloads_that_forward_into_a_private_AddWarningCore_helper()
+    {
+        // Mirrors the real StartupVerificationContext structure: both public AddWarning overloads
+        // forward into a private AddWarningCore helper rather than calling each other. The
+        // analyzer's AddWarning dispatch is name-based (methodName == "AddWarning"), so a call to
+        // AddWarningCore is never routed into AnalyzeAddWarningInvocation in the first place — the
+        // safety guarantee is that AddWarningCore is private and therefore unreachable from
+        // anywhere outside these two overloads.
+        var source = """
+            using Microsoft.Extensions.Logging;
+            namespace ZeeKayDa.Auth
+            {
+                public sealed class StartupVerificationContext
+                {
+                    public void AddWarning(string code, string messageTemplate, LogLevel level, params object?[] args)
+                        => AddWarningCore(code, messageTemplate, level, args);
+
+                    public void AddWarning(string code, string messageTemplate, params object?[] args)
+                        => AddWarningCore(code, messageTemplate, LogLevel.Warning, args);
+
+                    private void AddWarningCore(string code, string messageTemplate, LogLevel level, object?[] args) { }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnosticsAsync(source);
+
         diagnostics.Should().BeEmpty();
     }
 
     [Fact]
     public async Task Diagnostic_fires_for_unrelated_type_forwarding_a_variable_named_messageTemplate()
     {
-        // The forwarding exemption is scoped to StartupVerificationContext itself (matched by
-        // symbol) — an unrelated type that happens to declare a parameter also named
-        // "messageTemplate" and forwards it into AddWarning must still be flagged.
+        // The check is scoped to StartupVerificationContext itself (matched by symbol) — an
+        // unrelated type that happens to declare a parameter also named "messageTemplate" and
+        // forwards it into AddWarning must still be flagged.
         var source = """
             using Microsoft.Extensions.Logging;
             namespace ZeeKayDa.Auth
