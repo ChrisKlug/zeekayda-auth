@@ -251,6 +251,8 @@ dotnet build ZeeKayDa.Auth.Windows.slnf
 dotnet format ZeeKayDa.Auth.slnx --verify-no-changes
 ```
 
+The repository-root `NuGet.config` pins restore to `nuget.org` only, overriding any other sources configured on your machine (e.g. a corporate feed added globally) unless you pass `--source`/`RestoreSources` explicitly. This is a defense against dependency confusion, so it applies even if you normally restore from an internal feed — if you need a package that genuinely only lives on another feed, open an issue to discuss it rather than adding the source locally.
+
 ---
 
 ## Test Naming Convention
@@ -458,17 +460,28 @@ For example: `0.1.0-preview.42`. Preview packages include `.snupkg` symbol packa
 
 ### Consuming preview packages
 
-To install a preview build, add the GitHub Packages NuGet source. Authentication requires a GitHub Personal Access Token (PAT) with at least `read:packages` scope.
+This section is for consuming a preview build **from your own project**, not from a clone of this
+repository. Authentication requires a GitHub Personal Access Token (PAT) with at least
+`read:packages` scope.
+
+> **Never run this inside a clone of `zeekayda-auth`.** `dotnet nuget add source` without
+> `--configfile` writes the source entry to the nearest `NuGet.config` in the directory
+> hierarchy — inside this repo, that's the tracked, repo-root `NuGet.config` (see
+> [Building Locally](#building-locally)) — weakening the repo's pinned restore source, visibly, in
+> `git status`. The credential itself is stored separately, in your user-level
+> `~/.nuget/NuGet/NuGet.Config` (not tracked by git), so simply reverting the tracked file does
+> **not** remove the PAT from disk. Run `dotnet nuget remove source ZeeKayDa-preview` to undo both
+> if you run this by mistake inside the repo.
 
 ```bash
 dotnet nuget add source https://nuget.pkg.github.com/ChrisKlug/index.json \
   --name ZeeKayDa-preview \
   --username <your-github-username> \
-  --password <your-PAT> \
+  --password "$GITHUB_PACKAGES_PAT" \
   --store-password-in-clear-text
 ```
 
-> The `--store-password-in-clear-text` flag is required on Linux and macOS where no system credential store is available.
+> The `--store-password-in-clear-text` flag is required on Linux and macOS where no system credential store is available. Pass your PAT via an environment variable (as above) rather than typing it literally, so it doesn't end up in shell history.
 
 Then install the package as usual, specifying the preview version explicitly if needed:
 
