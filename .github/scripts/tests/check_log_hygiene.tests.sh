@@ -328,6 +328,18 @@ assert_exit "editorconfig severity set to error requires no justification" 0 \
     run_hygiene_check_config "${DIR}"
 
 # ---------------------------------------------------------------------------
+# Case 23: <NoWarn> justification containing a hyphen in the reason text →
+# exit 0 (regression test: the reason-text regex must not stop at the first
+# hyphen; see docs/reference/analyzer-rules.md's own hyphenated example)
+# ---------------------------------------------------------------------------
+DIR="${WORK_DIR}/case23"
+mkdir -p "${DIR}"
+printf '%s\n' '<Project><PropertyGroup><NoWarn>ZEEKAYDA0001</NoWarn> <!-- log-hygiene-ok: diagnostic-only dev build (#454) --></PropertyGroup></Project>' \
+    > "${DIR}/Sample.csproj"
+assert_exit "NoWarn justification with a hyphenated reason passes" 0 \
+    run_hygiene_check_config "${DIR}"
+
+# ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
 echo

@@ -132,7 +132,7 @@ nowarn_found=0
 for path in "${CONFIG_SEARCH_PATHS[@]}"; do
     [ -d "$path" ] || continue
     while IFS= read -r line; do
-        [[ "$line" =~ \<\!--[[:space:]]*log-hygiene-ok:[[:space:]]+[^[:space:]][^-]*\(#[0-9]+\)[[:space:]]*--\> ]] && continue
+        [[ "$line" =~ \<\!--[[:space:]]*log-hygiene-ok:[[:space:]]+[^[:space:]].*\(#[0-9]+\)[[:space:]]*--\> ]] && continue
         echo "$line"
         nowarn_found=1
     done < <(grep -rn --include="*.csproj" --include="Directory.Build.props" -E "$NOWARN_PATTERN" "$path" 2>/dev/null || true)

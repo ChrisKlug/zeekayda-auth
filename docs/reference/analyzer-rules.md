@@ -74,14 +74,27 @@ public sealed class TokenEndpointHandler
 ### Suppression
 
 Suppressions require justification and team review. A CI check
-(`.github/scripts/check_log_hygiene.sh`) enforces this across every suppression route: a
-`#pragma warning disable` or `[SuppressMessage(...)]` naming `ZEEKAYDA0001` or `ZEEKAYDA0002` must
-carry a structured `// log-hygiene-ok: <reason> (#<issue-or-pr-number>)` comment on the same line;
-a project-wide `<NoWarn>` entry in a `.csproj`/`Directory.Build.props` must carry the same
-justification as a trailing `<!-- log-hygiene-ok: ... -->` XML comment; and a `.editorconfig`
-severity override below `error` must carry it as a standalone comment line immediately above the
-override (`.editorconfig` doesn't support trailing inline comments). Any of these without the
+(`.github/scripts/check_log_hygiene.sh`) enforces this for a specific set of suppression forms: a
+single-line `#pragma warning disable` naming `ZEEKAYDA0001` or `ZEEKAYDA0002`; a single-line
+`[SuppressMessage(...)]` attribute (bare or fully qualified); a single-line `<NoWarn>` entry in a
+`.csproj`/`Directory.Build.props`; and a single-line `.editorconfig` severity override below
+`error`. Each must carry a structured `// log-hygiene-ok: <reason> (#<issue-or-pr-number>)`
+comment on the same line — or, for `<NoWarn>`, a trailing `<!-- log-hygiene-ok: ... -->` XML
+comment, and for `.editorconfig`, a standalone comment line immediately above the override
+(`.editorconfig` doesn't support trailing inline comments). Any of these forms without the
 required justification fails the build.
+
+This check is a grep-based script, not a semantic analysis, and it does not cover every way to
+silence the analyzer. It does **not** detect: suppressions split across multiple lines;
+`.globalconfig` files; `Directory.Build.targets`; `<NoWarn>$(SomeProperty)</NoWarn>`-style MSBuild
+property indirection; a category-wide `dotnet_analyzer_diagnostic.category-LogHygiene.severity`
+override; analyzer-disabling switches such as `<RunAnalyzers>false</RunAnalyzers>` or
+`<EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>`; or suppressions placed outside the
+paths this script searches (for example, test or sample projects). None of those routes need to
+mention `ZEEKAYDA0001`/`ZEEKAYDA0002` in the diff at all, so treat a clean run of this script as
+evidence against the specific forms above, not as proof that no suppression exists. Closing this
+gap with a structural, compiler-driven check (rather than pattern matching) is tracked in a
+follow-up issue.
 
 ```csharp
 #pragma warning disable ZEEKAYDA0001 // log-hygiene-ok: legacy adapter predates ISanitizingLogger<T>, migration tracked (#123)
@@ -171,15 +184,11 @@ _logger.LogDebug("Processing request for client {ClientId}", clientId);
 
 ### Suppression
 
-Suppressions require justification and team review. A CI check
-(`.github/scripts/check_log_hygiene.sh`) enforces this across every suppression route: a
-`#pragma warning disable` or `[SuppressMessage(...)]` naming `ZEEKAYDA0001` or `ZEEKAYDA0002` must
-carry a structured `// log-hygiene-ok: <reason> (#<issue-or-pr-number>)` comment on the same line;
-a project-wide `<NoWarn>` entry in a `.csproj`/`Directory.Build.props` must carry the same
-justification as a trailing `<!-- log-hygiene-ok: ... -->` XML comment; and a `.editorconfig`
-severity override below `error` must carry it as a standalone comment line immediately above the
-override. Any of these without the required justification fails the build.
-See `StartupVerificationHostedService.LogWarning` for a real example of the required form.
+Suppressions require justification and team review, using the same structured
+`// log-hygiene-ok: <reason> (#<issue-or-pr-number>)` comment form described under
+[ZEEKAYDA0001's Suppression section](#suppression), including the same coverage limits of the CI
+check that enforces it. See `StartupVerificationHostedService.LogWarning` for a real example of
+the required form.
 
 ```csharp
 #pragma warning disable ZEEKAYDA0002 // log-hygiene-ok: diagnostic-only, key material never leaves this dev-only build config (#123)
@@ -296,7 +305,8 @@ public sealed class MyClientRepository : IClientRepository
 
 ```ini
 [**/*.cs]
-dotnet_diagnostic.ZEEKAYDA0003.severity = none  ; IClientRepository does not reference IClientRegistrationValidator
+; IClientRepository does not reference IClientRegistrationValidator
+dotnet_diagnostic.ZEEKAYDA0003.severity = none
 ```
 
 > ⚠️ **Warning:** Suppressing this rule removes the reminder for the affected type. Any suppression
