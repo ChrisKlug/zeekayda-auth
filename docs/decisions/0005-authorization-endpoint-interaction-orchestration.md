@@ -8,8 +8,8 @@ Status: Accepted   ·   Date: 2026-07-01   ·   Issue: #156
 intercepted by an `IAuthenticationRequestHandler` registered via `AddScheme<...>` on
 `UseAuthentication()` — not by `MapZeeKayDaAuth()`. This is a narrower scope than ADR 0001:
 discovery, JWKS, and the token endpoint remain routed `IZeeKayDaEndpoint`s mapped by
-`MapZeeKayDaAuth()` (ADR 0001 §1), which is still required. Only the two interaction-heavy,
-short-circuiting endpoints use the handler pattern.
+`MapZeeKayDaAuth()` (see ADR 0001's endpoint mapping pattern), which is still required. Only the
+two interaction-heavy, short-circuiting endpoints use the handler pattern.
 
 **Hybrid ownership model** — ZeeKayDa.Auth and ASP.NET Core split responsibility strictly:
 
@@ -105,7 +105,9 @@ end. The framework never auto-restarts the flow — the relying party decides wh
 opt-in (`EnableZkdErrorCodes` on the client) machine-readable sub-code alongside the spec-defined
 `error` value — e.g. `zkd_error=timeout` alongside `error=interaction_required`. It must never
 let a non-opted-in-observable distinction leak (RFC 9700 information-disclosure caution); e.g.
-`invalid_client`'s sub-codes never distinguish unknown client from wrong credential.
+`invalid_client`'s sub-codes never distinguish unknown client from wrong credential, and
+`zkd_error=provider_denied` (which may reveal that a provider-selection step occurred) is sent
+only to clients that opted in.
 
 ### Security-relevant constraints carried by this design
 
@@ -115,7 +117,14 @@ let a non-opted-in-observable distinction leak (RFC 9700 information-disclosure 
   …) redirect errors to the client. Collapsing the phases is an open-redirect / error-
   exfiltration vulnerability.
 - **Redirect URI: exact byte-for-byte match** — no prefix/normalisation/wildcard matching; loopback
-  (RFC 8252 §7.3) is the only case with a variable port.
+  (RFC 8252 §7.3) is the only case with a variable port (fragment/userinfo rejection is enforced
+  at registration — see ADR 0007).
+- **`prompt=none` never renders interactive UI** (OIDC Core §3.1.2.1) — rendering login/consent
+  inside the relying party's silent-auth iframe is a clickjacking risk. It succeeds only against
+  an existing SSO session plus a prior consent grant covering the requested scopes; otherwise it
+  returns `login_required`/`consent_required`/`account_selection_required`/`interaction_required`,
+  never a dead end. **`nonce` is required whenever `openid` scope is requested** and is rejected
+  with `error=invalid_request` if absent (OIDC Core §3.1.2.1, §3.1.3.7).
 - **`iss` unconditionally on every response** (RFC 9207) — mix-up attack mitigation (RFC 9700 §4.4).
 - **PKCE (S256) is mandatory for every client**, and the implicit flow / ROPC are rejected outright
   — both removed in OAuth 2.1.
@@ -140,7 +149,8 @@ let a non-opted-in-observable distinction leak (RFC 9700 information-disclosure 
 - All four internal cookies (`zkd.session`, `zkd.interaction`, `zkd.external`, `zkd.pending`) are
   `HttpOnly`, DP-encrypted, and reserved names — a host attempting to register any of them throws
   at startup. `zkd.session` needs `SameSite=None` if `prompt=none` silent auth is supported;
-  the others stay `Lax`/`Strict`.
+  the others stay `Lax`/`Strict`. `zkd.pending` uses `SameSite=Strict` (tighter than the
+  interaction/external cookies) since it's only ever read from same-site POSTs.
 - Host-owned interaction pages (login/consent/provider-selection) are clickjacking targets and
   **must** set `frame-ancestors 'none'` / `X-Frame-Options: DENY` — the framework cannot enforce
   this on host-rendered pages.

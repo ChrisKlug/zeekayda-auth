@@ -2,55 +2,69 @@
 
 Status: Accepted   ·   Date: 2026-06-07   ·   Issue: #337
 
-**Amends ADR 0005 §6b** — extends the authorization-code bound-parameter list with `AuthTime`,
-`Acr`, and `Amr` (parameters fixed at authentication time are captured on the code, not re-read
-from the SSO session at redemption — same pattern already applied to `nonce`).
+**Amends ADR 0005's interaction-context storage** — extends the authorization-code bound-parameter
+list with `AuthTime`, `Acr`, and `Amr` (parameters fixed at authentication time are captured on
+the code, not re-read from the SSO session at redemption — same pattern already applied to
+`nonce`).
 
 ## Decision
 
-Two purpose-specific interfaces, `IAuthorizationCodeStore` and `IRefreshTokenStore`, live in
-`ZeeKayDa.Auth` (core) — not `IDistributedCache` used directly, unlike the interaction context
-store (ADR 0005 §6b). Default implementations of both, backed by `IMemoryCache`/`IDistributedCache`,
-also live in core, since neither touches `HttpContext` (ADR 0001 §3 allowlist).
+Two purpose-specific coordinator interfaces, `IAuthorizationCodeStore` and `IRefreshTokenStore`,
+live in `ZeeKayDa.Auth` (core) — not `IDistributedCache` used directly, unlike the interaction
+context store (ADR 0005). Each coordinator is **framework-sealed**: it carries an internal member
+that only `[InternalsVisibleTo]` assemblies can satisfy, so only the framework's own
+`AuthorizationCodeStore`/`RefreshTokenStore` implement it, even though the interface stays
+`public` for injection. The real extension point for a new persistence technology is a second,
+fully public interface per store — `IAuthorizationCodeBackingStore` and
+`IRefreshTokenGrantStore` — that the sealed coordinator delegates to for storage while owning the
+atomicity, hashing, and tombstone semantics itself. Default `InMemory*`/`DistributedCache*`
+backing-store implementations of both ship in core, since neither touches `HttpContext`
+(ADR 0001's core/AspNetCore split).
 
 ```csharp
 namespace ZeeKayDa.Auth.Stores;
 
 public interface IAuthorizationCodeStore
 {
-    Task StoreAsync(AuthorizationCodeEntry entry, CancellationToken ct);
+    Task StoreAsync(string code, AuthorizationCodeEntry entry, CancellationToken ct);
 
     // familyId is minted by the caller BEFORE this call and written into the tombstone
     // atomically with redemption — see "Pre-commit familyId" below.
-    ValueTask<AuthorizationCodeRedemptionOutcome> TryRedeemAsync(
+    ValueTask<AuthorizationCodeRedemptionResult> TryRedeemAsync(
         string code, string clientId, string familyId, CancellationToken ct);
+
+    // Reserved: satisfying this member requires internal access, so only the framework's
+    // own coordinator can implement IAuthorizationCodeStore. Custom persistence implements
+    // IAuthorizationCodeBackingStore instead.
+    internal void SealAsFrameworkOwnedProtocol();
 }
 
-public abstract class AuthorizationCodeRedemptionOutcome
+public abstract class AuthorizationCodeRedemptionResult
 {
-    private AuthorizationCodeRedemptionOutcome() { }
-    public sealed class Redeemed : AuthorizationCodeRedemptionOutcome { public required AuthorizationCodeEntry Entry { get; init; } }
-    public sealed class ClientMismatch : AuthorizationCodeRedemptionOutcome { }        // NOT consumed
-    public sealed class AlreadyRedeemed : AuthorizationCodeRedemptionOutcome { public required string FamilyId { get; init; } }
-    public sealed class NotFound : AuthorizationCodeRedemptionOutcome { }
+    private AuthorizationCodeRedemptionResult() { }
+    public sealed class Redeemed : AuthorizationCodeRedemptionResult { public required AuthorizationCodeEntry Entry { get; init; } }
+    public sealed class ClientMismatch : AuthorizationCodeRedemptionResult { }        // NOT consumed
+    public sealed class AlreadyRedeemed : AuthorizationCodeRedemptionResult { public required string FamilyId { get; init; } }
+    public sealed class NotFound : AuthorizationCodeRedemptionResult { }
 }
 ```
 
-`IRefreshTokenStore` mirrors the shape (`StoreAsync`, non-destructive `FindAsync`,
-`TryConsumeAsync` returning a closed `RefreshTokenConsumptionOutcome` with `Consumed` /
+`IRefreshTokenStore` mirrors the shape (`StoreAsync(tokenHandle, entry, ct)`, non-destructive
+`FindAsync`, `TryConsumeAsync` returning a closed `RefreshTokenConsumptionResult` with `Consumed` /
 `ClientMismatch` / `AlreadyConsumed(FamilyId)` / `Revoked(FamilyId)` / `NotFound`, and
-`RevokeFamilyAsync(familyId)`, idempotent). `AlreadyConsumed` and `Revoked` produce the identical
-client-visible `invalid_grant`, but are kept as distinct cases so telemetry can tell the
-triggering reuse event (`AlreadyConsumed`) apart from a token presented after its family was
-already closed (`Revoked` — a stronger attack indicator) without a second store round-trip. Both
-outcome hierarchies use the sealed nested-class + private-constructor closed-union idiom so a
-switch is exhaustive by construction. Neither entry type stores the raw handle — only
-`SHA-256(handle)` is used as the cache key (see key derivation below), so a data-at-rest
-compromise doesn't also expose the bearer credential. Rotation must not widen scope (RFC 6749
-§6): the token endpoint enforces this before calling `StoreAsync` on the new entry — the store
-itself has no opinion on scope semantics.
+`RevokeFamilyAsync(familyId)`, idempotent) and is framework-sealed the same way, with
+`IRefreshTokenGrantStore` as its own backing-store extension point. `AlreadyConsumed` and
+`Revoked` produce the identical client-visible `invalid_grant`, but are kept as distinct cases so
+telemetry can tell the triggering reuse event (`AlreadyConsumed`) apart from a token presented
+after its family was already closed (`Revoked` — a stronger attack indicator) without a second
+store round-trip. Both outcome hierarchies use the sealed nested-class + private-constructor
+closed-union idiom so a switch is exhaustive by construction. Neither entry type stores the raw
+handle — only `SHA-256(handle)` is used as the cache key (see key derivation below), so a
+data-at-rest compromise doesn't also expose the bearer credential. Rotation must not widen scope
+(RFC 6749 §6): the token endpoint enforces this before calling `StoreAsync` on the new entry —
+the store itself has no opinion on scope semantics.
 
-**Why not `IDistributedCache` directly?** The interaction context (ADR 0005 §6b) is genuinely
+**Why not `IDistributedCache` directly?** The interaction context (ADR 0005) is genuinely
 write-once/read-once/expire — `IDistributedCache` fits. Token stores need semantics
 `IDistributedCache` cannot express: distinguishing *valid-unredeemed* / *tombstoned* / *not-found*
 for single-use enforcement (RFC 9700 §2.1.1), and revoking every token sharing a `familyId` in one

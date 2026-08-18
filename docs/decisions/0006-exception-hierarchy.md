@@ -17,10 +17,21 @@ All framework-thrown, non-argument exceptions derive from an abstract `ZeeKayDaE
   ("N configuration errors — see AggregatedFailures for details") and is never a contract.
   Most configuration errors are caught earlier by `IValidateOptions<T>`/`ValidateOnStart()`;
   this exception covers the residual runtime-only-detectable cases.
-- **`ZeeKayDaInteractionException`** — request-time misuse of the interaction API (§ADR 0005): no
-  active interaction context, resuming an already-concluded one, wrong-step results.
-- **`ZeeKayDaStoreException`** — store transport failures (ADR 0008 §7); lives in the root
-  namespace alongside its siblings because store failures can occur from any store-backed feature.
+- **`ZeeKayDaInteractionException`** — request-time misuse of the interaction API (see ADR 0005's
+  interaction service interfaces): no active interaction context, resuming an already-concluded
+  one, wrong-step results.
+- **`ZeeKayDaStoreException`** — store transport failures (see ADR 0008's exception contract for
+  the authorization-code/refresh-token stores); lives in the root namespace alongside its
+  siblings because store failures can occur from any store-backed feature.
+
+```csharp
+public abstract class ZeeKayDaException : Exception
+{
+    protected ZeeKayDaException(string message) : base(message) { }
+}
+public class ZeeKayDaConfigurationException : ZeeKayDaException { /* ... */ }
+public class ZeeKayDaInteractionException : ZeeKayDaException { /* ... */ }
+```
 
 Both concrete subtypes are unsealed, so future releases can add finer-grained subtypes (e.g. a
 future `ZeeKayDaInteractionContextExpiredException`) without breaking existing catch clauses, and
@@ -28,7 +39,7 @@ test doubles can subclass them. `ZeeKayDaException` itself is `abstract` with `p
 constructors and no parameterless overload — it can never be thrown directly, and every throw
 site must supply an actionable message. All types live in `ZeeKayDa.Auth` (core), never
 `ZeeKayDa.Auth.AspNetCore`, so catching a framework exception never forces a web-stack reference
-(ADR 0001 §3's layering rule extended to exceptions).
+(ADR 0001's core/AspNetCore dependency layering rule extended to exceptions).
 
 **BCL argument-guard exceptions are retained as-is** — `ArgumentNullException`, `ArgumentException`,
 `ArgumentOutOfRangeException` remain correct for call-site argument validation and are never

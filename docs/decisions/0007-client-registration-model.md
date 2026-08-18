@@ -129,12 +129,15 @@ PKCE unconditionally, with no opt-out.
 
 **Scope intersection**: `effective_scopes = (requested ∩ client.AllowedScopes) ∩
 user_granted_scopes`; dropped scopes are silently omitted from the request and never echoed in
-error responses; `IConsentInteraction.GrantAsync` (ADR 0005 §7) re-intersects as a last line of
-defence so a host bug can't grant scopes the client was never registered for.
+error responses; `IConsentInteraction.GrantAsync` (see ADR 0005's consent interaction interface)
+re-intersects as a last line of defence so a host bug can't grant scopes the client was never
+registered for.
 
 **Client enumeration mitigation**: `invalid_client` for both unknown `client_id` and wrong
 credential, with `error_description` never including the `client_id`; when `EnableZkdErrorCodes`
-is on, the `zkd_error` value must never distinguish the two cases either.
+is on, the `zkd_error` value must never distinguish the two cases either. Logs MUST never include
+presented client secrets, raw `Authorization` headers, raw token endpoint request bodies
+containing `client_secret`, or `code_verifier` values (RFC 7636 §7.5).
 
 **Package split**: `IClientRegistration`, `ClientRegistration`, credential/hasher types,
 `IClientRepository`/`InMemoryClientRepository`, `IClientRegistrationValidator`, and the
