@@ -1,7 +1,4 @@
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using ZeeKayDa.Auth.Logging;
 
 namespace ZeeKayDa.Auth.AspNetCore;
 
@@ -9,34 +6,35 @@ namespace ZeeKayDa.Auth.AspNetCore;
 /// Emits a startup warning when <see cref="AuthorizationServerOptions.AllowInsecureIssuer"/> is
 /// enabled, so that insecure development configurations are never silently deployed to production.
 /// </summary>
-internal sealed class InsecureIssuerWarningService : IHostedService
+internal sealed class InsecureIssuerWarningService : IStartupVerifier
 {
     private readonly IOptions<AuthorizationServerOptions> _options;
-    private readonly ISanitizingLogger<InsecureIssuerWarningService> _logger;
 
-    public InsecureIssuerWarningService(
-        IOptions<AuthorizationServerOptions> options,
-        ISanitizingLogger<InsecureIssuerWarningService> logger)
+    public InsecureIssuerWarningService(IOptions<AuthorizationServerOptions> options)
     {
+        ArgumentNullException.ThrowIfNull(options);
         _options = options;
-        _logger = logger;
     }
 
     /// <inheritdoc/>
-    public Task StartAsync(CancellationToken cancellationToken)
+    public string Name => "InsecureIssuer";
+
+    /// <inheritdoc/>
+    public ValueTask VerifyAsync(
+        StartupVerificationContext context,
+        IServiceProvider scopedServices,
+        CancellationToken cancellationToken)
     {
         if (_options.Value.AllowInsecureIssuer)
         {
-            _logger.LogWarning(
+            context.AddWarning(
+                "issuer.insecure_allowed",
                 "AllowInsecureIssuer is enabled for issuer '{Issuer}'. " +
                 "This is a LOOPBACK DEVELOPMENT-ONLY setting and must NEVER be used in production. " +
                 "Remove AllowInsecureIssuer = true before deploying to any non-development environment.",
                 _options.Value.Issuer);
         }
 
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
-
-    /// <inheritdoc/>
-    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }

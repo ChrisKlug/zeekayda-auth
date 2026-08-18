@@ -1,8 +1,6 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using ZeeKayDa.Auth;
-using ZeeKayDa.Auth.Logging;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.AspNetCore;
@@ -15,10 +13,10 @@ namespace ZeeKayDa.Auth.AspNetCore;
 /// <remarks>
 /// When the host environment name is not in
 /// <see cref="DevelopmentSigningKeyOptions.AllowedDevelopmentJwtSigningKeysEnvironments"/>,
-/// startup fails with a <see cref="ZeeKayDaConfigurationException"/> so that an accidental
-/// development-key configuration is never silently deployed to a non-permitted host.
+/// startup fails so that an accidental development-key configuration is never silently deployed
+/// to a non-permitted host.
 /// </remarks>
-internal sealed class DevelopmentSigningKeyWarningService : IHostedService
+internal sealed class DevelopmentSigningKeyWarningService : IStartupVerifier
 {
     internal const string WarningMessage =
         "ZeeKayDa.Auth: development signing keys are active. The signing key is ephemeral or " +
@@ -36,31 +34,34 @@ internal sealed class DevelopmentSigningKeyWarningService : IHostedService
     private readonly IHostEnvironment _environment;
     private readonly IOptions<DevelopmentSigningKeyOptions> _devOptions;
     private readonly IJwtSigningService _signingService;
-    private readonly ISanitizingLogger<DevelopmentSigningKeyWarningService> _logger;
 
     public DevelopmentSigningKeyWarningService(
         IHostEnvironment environment,
         IOptions<DevelopmentSigningKeyOptions> devOptions,
-        IJwtSigningService signingService,
-        ISanitizingLogger<DevelopmentSigningKeyWarningService> logger)
+        IJwtSigningService signingService)
     {
         ArgumentNullException.ThrowIfNull(environment);
         ArgumentNullException.ThrowIfNull(devOptions);
         ArgumentNullException.ThrowIfNull(signingService);
-        ArgumentNullException.ThrowIfNull(logger);
 
         _environment = environment;
         _devOptions = devOptions;
         _signingService = signingService;
-        _logger = logger;
     }
 
     /// <inheritdoc/>
-    public async Task StartAsync(CancellationToken cancellationToken)
+    public string Name => "DevelopmentSigningKey";
+
+    /// <inheritdoc/>
+    public async ValueTask VerifyAsync(
+        StartupVerificationContext context,
+        IServiceProvider scopedServices,
+        CancellationToken cancellationToken)
     {
         var currentEnvironment = _environment.EnvironmentName;
 
-        // Production is always a hard fail; non-allowed environments also throw.
+        // Production is always a hard fail; non-allowed environments also throw. The runner
+        // absorbs a thrown ZeeKayDaConfigurationException, preserving its Code verbatim.
         DevelopmentSigningKeyGate.Enforce(
             currentEnvironment,
             _devOptions.Value.AllowedDevelopmentJwtSigningKeysEnvironments);
@@ -68,11 +69,14 @@ internal sealed class DevelopmentSigningKeyWarningService : IHostedService
         var isDevelopment = string.Equals(currentEnvironment, "Development", StringComparison.OrdinalIgnoreCase);
         if (!isDevelopment)
         {
-            _logger.Log(LogLevel.Critical, NonDevelopmentCriticalMessage);
+            context.AddWarning(
+                "signing.dev_keys.active_outside_development",
+                NonDevelopmentCriticalMessage,
+                LogLevel.Critical);
         }
         else
         {
-            _logger.Log(LogLevel.Warning, WarningMessage);
+            context.AddWarning("signing.dev_keys.active", WarningMessage);
         }
 
         // Pre-warm the cache: generate / load the key at startup so the first signing request
@@ -80,7 +84,4 @@ internal sealed class DevelopmentSigningKeyWarningService : IHostedService
         // surface immediately rather than on the first token request.
         await _signingService.GetSigningKeysAsync(cancellationToken).ConfigureAwait(false);
     }
-
-    /// <inheritdoc/>
-    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }
