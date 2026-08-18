@@ -89,12 +89,15 @@ silence the analyzer. It does **not** detect: suppressions split across multiple
 `.globalconfig` files; `Directory.Build.targets`; `<NoWarn>$(SomeProperty)</NoWarn>`-style MSBuild
 property indirection; a category-wide `dotnet_analyzer_diagnostic.category-LogHygiene.severity`
 override; analyzer-disabling switches such as `<RunAnalyzers>false</RunAnalyzers>` or
-`<EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>`; or suppressions placed outside the
-paths this script searches (for example, test or sample projects). None of those routes need to
-mention `ZEEKAYDA0001`/`ZEEKAYDA0002` in the diff at all, so treat a clean run of this script as
-evidence against the specific forms above, not as proof that no suppression exists. Closing this
-gap with a structural, compiler-driven check (rather than pattern matching) is tracked in
-issue #459.
+`<EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>`; a `.editorconfig` severity value or
+diagnostic ID written with different casing than the script expects (its match is
+case-sensitive; Roslyn's is not); or suppressions placed outside the paths this script searches
+(for example, test or sample projects). Several of those routes (multi-line forms,
+`.globalconfig`, `Directory.Build.targets`) do still name `ZEEKAYDA0001`/`ZEEKAYDA0002` in the
+diff, but the category-wide severity override and analyzer-disabling switches do not — so treat a
+clean run of this script as evidence against the specific forms above, not as proof that no
+suppression exists. Closing this gap with a structural, compiler-driven check (rather than
+pattern matching) is tracked in issue #459.
 
 ```csharp
 #pragma warning disable ZEEKAYDA0001 // log-hygiene-ok: legacy adapter predates ISanitizingLogger<T>, migration tracked (#123)
