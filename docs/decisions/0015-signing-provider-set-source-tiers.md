@@ -408,8 +408,8 @@ low-frequency cadence.
 
 A small, explicitly-implemented `ISigningStartupSelfTest` interface on `JwtSigningService<TOptions>` —
 deliberately not a member on `IJwtSigningService` itself, which would be a breaking change for an
-external implementer — exists solely so a framework-owned `IHostedService`
-(`SigningStartupSelfTestHostedService`, registered once by `AddZeeKayDaAuthCore()`) can force the
+external implementer — exists solely so a framework-owned `IStartupVerifier`
+(`SigningStartupSelfTestVerifier`, registered once by `AddZeeKayDaAuthCore()`) can force the
 *first* handoff to happen eagerly, at host startup, rather than lazily on the first real
 token-issuing request: its one method simply forces active-signer materialization, and the self-test
 above runs as a side effect of that materialization exactly as it would for any other handoff. Every
