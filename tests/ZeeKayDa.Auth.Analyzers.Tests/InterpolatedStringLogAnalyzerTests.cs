@@ -1711,6 +1711,172 @@ public sealed class InterpolatedStringLogAnalyzerTests
             .Which.Id.Should().Be(InterpolatedStringLogAnalyzer.DiagnosticId);
     }
 
+    // ── Method-group delegate bypass (issue #463) ────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Diagnostic_fires_on_LogInformation_method_group_assigned_to_a_delegate_variable()
+    {
+        // The later call through `log(...)` has no ILogger-shaped receiver at all to hook into —
+        // this is caught at the method-group conversion instead.
+        var source = """
+            using System;
+            using Microsoft.Extensions.Logging;
+            namespace ZeeKayDa.Auth.Logging
+            {
+                internal interface ISanitizingLogger<T> : ILogger<T> { }
+            }
+            namespace ZeeKayDa.Auth.Services
+            {
+                using ZeeKayDa.Auth.Logging;
+                class MyService
+                {
+                    void DoWork()
+                    {
+                        ISanitizingLogger<object> logger = null!;
+                        Action<string, object?[]> log = logger.LogInformation;
+                        string secret = "s3cr3t";
+                        log($"leak {secret}", Array.Empty<object?>());
+                    }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnosticsAsync(source);
+
+        diagnostics.Should().ContainSingle()
+            .Which.Id.Should().Be(InterpolatedStringLogAnalyzer.DiagnosticId);
+    }
+
+    [Fact]
+    public async Task Diagnostic_fires_on_AddWarning_method_group_assigned_to_a_field()
+    {
+        var source = """
+            using System;
+            using Microsoft.Extensions.Logging;
+            namespace ZeeKayDa.Auth
+            {
+                public sealed class StartupVerificationContext
+                {
+                    public void AddWarning(string code, string messageTemplate, params object?[] args) { }
+                }
+            }
+            namespace ZeeKayDa.Auth.Services
+            {
+                class MyVerifier
+                {
+                    private Action<string, string, object?[]> _warn = null!;
+
+                    void DoWork(ZeeKayDa.Auth.StartupVerificationContext warningsCollector)
+                    {
+                        _warn = warningsCollector.AddWarning;
+                    }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnosticsAsync(source);
+
+        diagnostics.Should().ContainSingle()
+            .Which.Id.Should().Be(InterpolatedStringLogAnalyzer.DiagnosticId);
+    }
+
+    [Fact]
+    public async Task No_diagnostic_for_delegate_assigned_from_an_unrelated_method_group()
+    {
+        // A method group unrelated to Log*/AddWarning (ordinary delegate usage) must never be
+        // flagged, regardless of receiver type or delegate shape.
+        var source = """
+            using System;
+            using Microsoft.Extensions.Logging;
+            namespace ZeeKayDa.Auth.Services
+            {
+                class Formatter
+                {
+                    public string Format(string template, object?[] args) => template;
+                }
+                class MyService
+                {
+                    void DoWork(ILogger logger, Formatter formatter)
+                    {
+                        Func<string, object?[], string> format = formatter.Format;
+                        string result = format("template", Array.Empty<object?>());
+                    }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnosticsAsync(source);
+
+        diagnostics.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task No_diagnostic_for_LogInformation_method_group_converted_to_a_delegate_without_a_string_parameter()
+    {
+        // The delegate shape check means this only flags conversions to a delegate that could
+        // plausibly carry a message template — an unrelated delegate shape is not a bypass.
+        var source = """
+            using System;
+            using Microsoft.Extensions.Logging;
+            namespace ZeeKayDa.Auth.Logging
+            {
+                internal interface ISanitizingLogger<T> : ILogger<T> { }
+            }
+            namespace ZeeKayDa.Auth.Services
+            {
+                using ZeeKayDa.Auth.Logging;
+                static class LoggerNoArgExtensions
+                {
+                    public static void LogNoArgs(this ISanitizingLogger<object> logger) { }
+                }
+                class MyService
+                {
+                    void DoWork()
+                    {
+                        ISanitizingLogger<object> logger = null!;
+                        Action log = logger.LogNoArgs;
+                    }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnosticsAsync(source);
+
+        diagnostics.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Diagnostic_still_fires_on_a_direct_LogInformation_call_after_the_method_group_check_was_added()
+    {
+        // Regression guard: the assignment-site check must not interfere with the ordinary
+        // direct-call detection it sits alongside.
+        var source = """
+            using Microsoft.Extensions.Logging;
+            namespace ZeeKayDa.Auth.Logging
+            {
+                internal interface ISanitizingLogger<T> : ILogger<T> { }
+            }
+            namespace ZeeKayDa.Auth.Services
+            {
+                using ZeeKayDa.Auth.Logging;
+                class MyService
+                {
+                    void DoWork()
+                    {
+                        ISanitizingLogger<object> logger = null!;
+                        string secret = "s3cr3t";
+                        logger.LogInformation($"leak {secret}");
+                    }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnosticsAsync(source);
+
+        diagnostics.Should().ContainSingle()
+            .Which.Id.Should().Be(InterpolatedStringLogAnalyzer.DiagnosticId);
+    }
+
     // ── Infrastructure ────────────────────────────────────────────────────────────────────────────
 
     private static async Task<ImmutableArray<Diagnostic>> GetDiagnosticsAsync(

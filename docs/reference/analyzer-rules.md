@@ -165,6 +165,14 @@ startup-verification runner to log on its behalf (see [ADR
 redaction-sensitive log call the `Log*` branch above protects, so it needs the same constant-string
 guarantee even though it isn't itself a call to `ILogger`.
 
+The rule also catches a `Log*`/`AddWarning` method group captured into a delegate — for example
+`Action<string, object?[]> log = logger.LogInformation;` — at the point of assignment. Once the
+method group has been converted to a delegate, a later call through that delegate variable
+(`log($"leak {secret}", args)`) has no `ILogger`/`AddWarning`-shaped receiver in its syntax for the
+rule to recognize, so the conversion itself is flagged instead. This check does not follow the
+delegate variable any further: reassignment, passing it as a parameter, or storing it in a field
+across methods are not tracked, and a bypass built that way slips through undetected.
+
 ### Rationale
 
 `SecretSanitizingLogger` redacts sensitive values by inspecting the structured-logging message
