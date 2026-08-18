@@ -44,7 +44,7 @@ public sealed class ILoggerDirectUseAnalyzer : DiagnosticAnalyzer
     {
         var parameter = (ParameterSyntax)context.Node;
         if (parameter.Type is null) return;
-        if (!IsInZeeKayDaNamespace(parameter)) return;
+        if (!ZeeKayDaAssemblyGate.IsZeeKayDaAssembly(context.SemanticModel.Compilation)) return;
         if (IsInLoggerImplementation(context, parameter)) return;
 
         var typeInfo = context.SemanticModel.GetTypeInfo(parameter.Type);
@@ -55,29 +55,12 @@ public sealed class ILoggerDirectUseAnalyzer : DiagnosticAnalyzer
     private static void AnalyzeField(SyntaxNodeAnalysisContext context)
     {
         var field = (FieldDeclarationSyntax)context.Node;
-        if (!IsInZeeKayDaNamespace(field)) return;
+        if (!ZeeKayDaAssemblyGate.IsZeeKayDaAssembly(context.SemanticModel.Compilation)) return;
         if (IsInLoggerImplementation(context, field)) return;
 
         var typeInfo = context.SemanticModel.GetTypeInfo(field.Declaration.Type);
         if (IsDirectILoggerT(typeInfo.Type))
             context.ReportDiagnostic(Diagnostic.Create(Rule, field.Declaration.Type.GetLocation()));
-    }
-
-    /// <summary>
-    /// Returns true when the node is inside a type declared in a namespace that starts with
-    /// "ZeeKayDa". Handles both file-scoped and block-scoped namespace declarations.
-    /// </summary>
-    private static bool IsInZeeKayDaNamespace(SyntaxNode node)
-    {
-        // Walk ancestor namespaces (innermost first) and combine their names in order.
-        var parts = new System.Collections.Generic.List<string>();
-        foreach (var ns in node.Ancestors().OfType<BaseNamespaceDeclarationSyntax>())
-            parts.Insert(0, ns.Name.ToString());
-
-        if (parts.Count == 0) return false;
-        var fullNamespace = string.Join(".", parts);
-        return fullNamespace.StartsWith("ZeeKayDa.", System.StringComparison.Ordinal)
-            && !fullNamespace.StartsWith("ZeeKayDa.Auth.Analyzers", System.StringComparison.Ordinal);
     }
 
     /// <summary>
