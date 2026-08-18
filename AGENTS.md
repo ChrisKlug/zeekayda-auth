@@ -91,6 +91,8 @@ Status: Accepted   ·   Date: YYYY-MM-DD   ·   Issue: #N
 
 No mandatory usage/extension-sketch sections, no security banners, no changelog appendix. Sketches are a design *technique* (pressure-test an API shape during the discussion), not required ADR content. If an ADR runs long it's doing too much — split the decision or cut words.
 
+A short code sample earns its place under `Why` or `Consequences` when it makes a tradeoff concrete faster than prose would — e.g. showing the rejected shape next to the chosen one. It's an exception, not a default: most ADRs need none. This is pre-release software with no external consumers yet — an ADR describes where the design is now; include past approaches or amendment history only when they explain why the current decision is what it is, not as a record for its own sake.
+
 ## Routing — MAIN ORCHESTRATOR ONLY
 
 > **STOP. If you are a specialist agent (`developer`, `tester`, `architect`, `security`, `docs`), this section does not apply to you. Execute your own domain work directly and return your results to whoever called you — never delegate to another specialist from here.**

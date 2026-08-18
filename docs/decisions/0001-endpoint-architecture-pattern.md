@@ -4,11 +4,14 @@ Status: Accepted   ·   Date: 2026-05-31   ·   Issue: #106, #156
 
 ## Decision
 
-Protocol endpoints (discovery, JWKS, token, authorization, …) are each an `internal sealed`
+Protocol endpoints (discovery, JWKS, token, …) are each an `internal sealed`
 class implementing a package-internal `IZeeKayDaEndpoint` (`ZeeKayDa.Auth.AspNetCore`), registered
 in DI via `TryAddEnumerable`, and mapped by the public `MapZeeKayDaAuth()` extension, which
 resolves and calls every registered `IZeeKayDaEndpoint`. Registration is `AddZeeKayDaAuth()` +
 `MapZeeKayDaAuth()` — not `UseZeeKayDaAuth`, since these are routed endpoints, not middleware.
+ADR 0005 governs the authorization endpoint's eventual handler-based
+(`IAuthenticationRequestHandler`) implementation; this pattern covers discovery, JWKS, and the
+token endpoint.
 
 `ZeeKayDa.Auth` (core) has zero ASP.NET Core knowledge; `ZeeKayDa.Auth.AspNetCore` depends on
 it, never the reverse. Dependencies are governed by a namespace allowlist: all of

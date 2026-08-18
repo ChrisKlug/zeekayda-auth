@@ -9,6 +9,33 @@ Status: Accepted   ·   Date: 2026-06-07   ·   Issue: #51, #337
 strongly-typed, `sealed`, get-only nested option groups (`TokenEndpoint`, `AuthorizationEndpoint`,
 `JwksEndpoint`, `IdToken`, `Response`, …), each default-initialised so it can never be nulled out.
 
+```csharp
+// Before: flat
+public class AuthorizationServerOptions
+{
+    public Uri? Issuer { get; set; }
+    public Uri? TokenEndpointUri { get; set; }
+    public ICollection<TokenEndpointAuthMethod>? TokenEndpointAuthMethodsSupported { get; set; }
+}
+
+// After: grouped nested
+public class AuthorizationServerOptions
+{
+    public Uri? Issuer { get; set; }
+    public TokenEndpointOptions TokenEndpoint { get; } = new(); // get-only: can't be nulled out
+}
+
+public sealed class TokenEndpointOptions
+{
+    public Uri? Uri { get; set; }
+    public ICollection<TokenEndpointAuthMethod>? AuthMethodsSupported { get; set; }
+}
+```
+
+A settable group (`{ get; set; }`) would let a consumer assign `null` and drop the framework's
+defaults for that whole endpoint; `{ get; }` with eager initialisation makes that state
+unrepresentable.
+
 **Grouping rule (mechanical, spec-driven):** a property groups with any other property whose
 discovery-document key shares a spec-defined prefix — an endpoint name (`token_endpoint_*`), an
 artifact name (`id_token_*`), or a response-shape name (`response_*`). Groups named after an HTTP
@@ -30,9 +57,7 @@ descriptive English and never carries an `Endpoint` suffix.
 feature-registration escape hatch or safety gate that is inert unless some other opt-in feature
 was also registered (a signing-key provider, an in-memory store, etc.) is not a discovery-metadata
 property, and this rule does not license hoisting it onto the shared root by default — it
-co-locates with the feature that introduces it. (PR #333 read this ADR as precedent for hoisting
-`AllowedDevelopmentJwtSigningKeysEnvironments` onto the root; that was a misreading, reversed —
-see ADR 0011.)
+co-locates with the feature that introduces it (see ADR 0011).
 
 The `AuthorizationServerOptionsValidator` (`ZeeKayDa.Auth/Configuration/`) stays a single,
 root-rooted `IValidateOptions<AuthorizationServerOptions>` — not one validator per group — because

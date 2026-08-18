@@ -4,12 +4,23 @@ Status: Accepted   ·   Date: 2026-06-14   ·   Issue: #209
 
 ## Decision
 
-`CodeChallengeMethod` is a new public enum in `ZeeKayDa.Auth`, following the existing
-enum-typed-protocol-field pattern (`SigningAlgorithm`, `ResponseType`, `ResponseMode`,
-`GrantType`). It starts with a single member, `S256`. `plain` has no member at all — not even an
+`CodeChallengeMethod` is a new public enum in `ZeeKayDa.Auth.Authorization`, following the #209
+placement rule for domain-scoped protocol vocabularies: an enum whose consumers sit entirely
+within one feature domain belongs in that domain's namespace, not the root `ZeeKayDa.Auth`
+namespace. It starts with a single member, `S256`. `plain` has no member at all — not even an
 `[Obsolete]` one — since [RFC 9700 §2.1.1](https://www.rfc-editor.org/rfc/rfc9700#section-2.1.1)
 prohibits it outright and the framework has, and will have, no verifier for it. Future methods
 (`S384`, `S512`, …) are added only once the framework implements the corresponding verifier.
+
+```csharp
+public enum CodeChallengeMethod
+{
+    S256, // no Plain member — RFC 9700 §2.1.1 prohibits it outright
+}
+
+// AuthorizationEndpointOptions
+public ICollection<CodeChallengeMethod>? CodeChallengeMethodsSupported { get; set; } // null by default
+```
 
 The property — `AuthorizationEndpointOptions.CodeChallengeMethodsSupported` — lives under
 `AuthorizationEndpoint`, not on the options root, and defaults to `null` (field omitted from the
@@ -21,11 +32,6 @@ rule exists — the type system makes that state unrepresentable.
 enum-typed-protocol-field pattern) was removed and replaced with an open, string-based vocabulary;
 the enum/string trade-off discussed here still applies to `CodeChallengeMethod`, `SigningAlgorithm`,
 `ResponseType`, `ResponseMode`, `GrantType`, and `PromptValue`.
-
-*Amended by issue #209:* a placement rule was added for protocol-vocabulary enums whose consumers
-sit entirely within one feature domain — such an enum belongs in that domain's namespace, not the
-root `ZeeKayDa.Auth` namespace. `SigningAlgorithm` moved from `ZeeKayDa.Auth` to
-`ZeeKayDa.Auth.Tokens` under this rule.
 
 ## Why
 

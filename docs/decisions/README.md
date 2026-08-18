@@ -4,9 +4,10 @@ This directory holds ZeeKayDa.Auth's Architecture Decision Records (ADRs). They 
 significant design decisions for contributors, not end-users. (The Jekyll site excludes this
 directory; see `docs/_config.yml`.)
 
-Every non-trivial feature follows the ADR-first process described in
-[`CONTRIBUTING.md`'s "ADR-First Development"](../../CONTRIBUTING.md#adr-first-development).
-This document describes the *format* an ADR file itself should take once it exists.
+Every non-trivial feature follows the issue-first process described in
+[`CONTRIBUTING.md`'s "Issue-First Policy"](../../CONTRIBUTING.md#issue-first-policy), which
+determines when a lean ADR is warranted. This document describes the *format* an ADR file itself
+should take once it exists.
 
 ## Format: lean, decision-first
 
@@ -49,8 +50,9 @@ only restated spec text, narration, and ceremony get cut.
 
 Existing ADRs are being rewritten into this lean shape in small batches (see the tracking issue
 for the rewrite effort) rather than left to migrate opportunistically — the earlier three-part
-"current state / considered-and-rejected alternatives / changelog appendix" shape this directory
-used to document has been retired.
+"current state / considered-and-rejected alternatives / changelog appendix" shape is being phased
+out in favor of this one; ADRs not yet migrated (currently 0005–0016) still use it until their
+batch comes up.
 
 ## Why amendments are avoidable right now
 
