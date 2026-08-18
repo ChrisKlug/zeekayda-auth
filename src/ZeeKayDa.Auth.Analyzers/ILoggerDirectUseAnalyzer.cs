@@ -33,7 +33,12 @@ public sealed class ILoggerDirectUseAnalyzer : DiagnosticAnalyzer
     /// <inheritdoc/>
     public override void Initialize(AnalysisContext context)
     {
-        context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);
+        // This is a security control enforcing ADR 0007 §7's log-never list, not a style
+        // preference, so the usual "don't nag about generated code" convention does not apply:
+        // classifying a file as generated (by filename, header, [GeneratedCode], or
+        // generated_code = true) would otherwise silently suppress the rule with no rule ID
+        // in the diff.
+        context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.Analyze | GeneratedCodeAnalysisFlags.ReportDiagnostics);
         context.EnableConcurrentExecution();
 
         context.RegisterSyntaxNodeAction(AnalyzeParameter, SyntaxKind.Parameter);
