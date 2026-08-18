@@ -87,7 +87,7 @@ single-purpose interfaces, not through a public `IZeeKayDaEndpoint` — see ADR 
 
 - A flat options class does not scale to the ~70 metadata fields the full OIDC + RFC 8414 +
   extension surface eventually defines; IntelliSense collapses and cross-endpoint invariants have
-  no home. Reshaping now, pre-1.0, is a small breaking change; reshaping later would not be.
+  no home.
 - **Builder extensions per endpoint** (`.WithTokenEndpointConfiguration(...)`) were rejected: they
   split configuration across two surfaces, don't bind from `IConfiguration`, break
   `IOptionsSnapshot`/`IPostConfigureOptions` composition, and are invisible to a single validator.
