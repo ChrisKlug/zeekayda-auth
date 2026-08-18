@@ -474,7 +474,7 @@ The validator depends on `IOptions<TokenEndpointOptions>`, `IOptions<IdTokenOpti
 - **Logs and metrics:** externally observable logs, metrics, diagnostics, and `zkd_error` values MUST NOT distinguish unknown client from wrong credential. Logs MUST never include presented client secrets, raw `Authorization` headers, raw token endpoint request bodies containing `client_secret`, or `code_verifier` values (RFC 7636 §7.5 — single-use, but logging within the verifier's validity window enables interception-attack completion).
 - **Rate limiting** is the operator's responsibility; timing uniformity is necessary but not sufficient to defeat a sustained enumeration attempt.
 
-> **Amendment (issue #459):** the log-never list above (`client_secret`, `code_verifier`, and the
+> **Amendment:** the log-never list above (`client_secret`, `code_verifier`, and the
 > rest of the sensitive-name set) is unchanged; only how it is *enforced* has moved. It was
 > originally enforced by `check_log_hygiene.sh` enumerating a fixed set of suppression syntaxes —
 > an approach later shown not to converge (12 additional bypass vectors found against it). It is

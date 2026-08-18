@@ -130,6 +130,9 @@ rule to assert analyzer behaviour, and test code does not ship.
   third-party analyzer package — covered by the canary backstop
   (`.github/scripts/canary/ZeeKayDa.Auth.LogHygieneCanary/`), a small project containing known-bad
   code that must always produce both `ZEEKAYDA0001` and `ZEEKAYDA0002`.
+- Weakening the analyzers' own logic (for example the assembly-name exemption in
+  ZEEKAYDA0001/ZEEKAYDA0002 themselves) is out of scope for this checker — it verifies severity
+  resolution, not analyzer correctness. Covered by `tests/ZeeKayDa.Auth.Analyzers.Tests`.
 - IL-patched or post-build-rewritten assemblies are outside any source-level check; the runtime
   `SecretSanitizingLogger` is the compensating control.
 
