@@ -289,8 +289,50 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
+      - name: Cache NuGet packages
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ${{ env.NUGET_PACKAGES }}
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/Directory.Packages.props', '**/*.csproj', '**/global.json') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@9a946fdbd5fb07b82b2f5a4466058b876ab72bb2 # v5.3.0
+        with:
+          global-json-file: global.json
+
       - name: Check log hygiene
-        run: bash .github/scripts/check_log_hygiene.sh
+        run: dotnet run .github/scripts/check_log_hygiene.cs -- .
+
+      # Backstop for suppression channels pass C's model of severity resolution doesn't
+      # cover (see check_log_hygiene.cs's own header comment) — a project deliberately
+      # containing both known-bad snippets must still fail to build with both diagnostics
+      # present. TreatWarningsAsErrors/WarningsAsErrors are cleared so only the two
+      # diagnostics under test (both Error severity by default) decide pass/fail, not
+      # incidental warnings from the intentionally bad canary code.
+      - name: Run log-hygiene canary (expected to fail to build)
+        run: |
+          set +e
+          dotnet build .github/scripts/canary/ZeeKayDa.Auth.LogHygieneCanary/ZeeKayDa.Auth.LogHygieneCanary.csproj \
+            -p:TreatWarningsAsErrors=false -p:WarningsAsErrors= > canary-output.txt 2>&1
+          canary_exit=$?
+          cat canary-output.txt
+
+          if [[ "${canary_exit}" -eq 0 ]]; then
+            echo "::error::Log-hygiene canary built successfully — ZEEKAYDA0001/ZEEKAYDA0002 are not firing."
+            exit 1
+          fi
+
+          missing=0
+          for id in ZEEKAYDA0001 ZEEKAYDA0002; do
+            if ! grep -q "${id}" canary-output.txt; then
+              echo "::error::Log-hygiene canary did not report ${id}."
+              missing=1
+            fi
+          done
+
+          exit "${missing}"
 
   log-hygiene-script-tests:
     name: Log Hygiene Script Tests
@@ -303,6 +345,19 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Cache NuGet packages
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ${{ env.NUGET_PACKAGES }}
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/Directory.Packages.props', '**/*.csproj', '**/global.json') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@9a946fdbd5fb07b82b2f5a4466058b876ab72bb2 # v5.3.0
+        with:
+          global-json-file: global.json
 
       - name: Run log hygiene script smoke tests
         run: bash .github/scripts/tests/check_log_hygiene.tests.sh

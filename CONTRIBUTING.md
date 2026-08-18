@@ -289,8 +289,8 @@ Every pull request and every push to `main` runs the following GitHub Actions jo
 | `coverage-regression-script-tests` | Runs the fixture-driven smoke tests for `.github/scripts/check_coverage_regression.cs`. |
 | `format-check` | Runs `dotnet format --verify-no-changes` to ensure all code matches the `.editorconfig` rules. |
 | `codeql` | Runs GitHub CodeQL static analysis (`security-and-quality` query suite). Findings must be fixed or explicitly justified before a PR can be merged. See [SECURITY.md](SECURITY.md). |
-| `log-hygiene` | Runs `.github/scripts/check_log_hygiene.sh` — fails if any C# file uses a sensitive OAuth/OIDC parameter name (`client_secret`, `access_token`, etc.) as a structured-log placeholder without a valid structured suppression comment. |
-| `log-hygiene-script-tests` | Runs the fixture-driven smoke tests for `.github/scripts/check_log_hygiene.sh`. |
+| `log-hygiene` | Runs `.github/scripts/check_log_hygiene.cs` — fails if any `src`/`samples` project uses a sensitive OAuth/OIDC parameter name (`client_secret`, `access_token`, etc.) as a structured-log placeholder, resolves ZEEKAYDA0001/ZEEKAYDA0002 below Error anywhere MSBuild/Roslyn would resolve severity, or lacks a required suppression justification — then runs the log-hygiene canary as a backstop. |
+| `log-hygiene-script-tests` | Runs the fixture-driven smoke tests for `.github/scripts/check_log_hygiene.cs`. |
 
 **All jobs must be green before a PR can be merged.**
 
@@ -365,12 +365,21 @@ bash .github/scripts/tests/check_coverage_regression.tests.sh
 
 ### Log hygiene check
 
-The `log-hygiene` job runs `.github/scripts/check_log_hygiene.sh` to ensure that sensitive OAuth/OIDC parameter names (such as `client_secret`, `access_token`, `code_verifier`, etc.) never appear as structured-log placeholders in production code. This is a defence-in-depth measure that complements the Roslyn analyzer ZEEKAYDA0001 (see ADR 0007).
+The `log-hygiene` job runs [`.github/scripts/check_log_hygiene.cs`](.github/scripts/check_log_hygiene.cs) — a standalone [file-based C# program](https://learn.microsoft.com/dotnet/core/tutorials/file-based-programs), following the same pattern as `check_coverage_regression.cs` — to ensure that sensitive OAuth/OIDC parameter names (such as `client_secret`, `access_token`, `code_verifier`, etc.) never appear as structured-log placeholders in production code, and that ZEEKAYDA0001/ZEEKAYDA0002 (see [Analyzer rules](docs/reference/analyzer-rules.md)) cannot be silently downgraded or disabled project-wide. This is a defence-in-depth measure that complements those two Roslyn analyzers (see ADR 0007).
 
-Run it locally with:
+Its predecessor (`check_log_hygiene.sh`) enumerated four suppression *syntaxes* by text pattern; an independent review found 12 additional ways to bypass it. This script instead reads MSBuild's and Roslyn's own *resolution* of effective severity — asking the same question the compiler would ask, rather than pattern-matching the ways a suppression can be spelled. It runs three passes plus a canary backstop:
+
+- **Pass A** — walks `Log*`/`BeginScope`/`LoggerMessage.Define*`/`[LoggerMessage]`/`StartupVerificationContext.AddWarning` call sites in a references-free compilation (used only for constant folding, so `const string` templates are resolved) and flags a sensitive placeholder name.
+- **Pass B** — requires the structured `// log-hygiene-ok: <reason> (#N)` comment on any `#pragma`/`[SuppressMessage]` (including bare pragmas and multi-line/const-indirected forms) that touches either rule, and hard-fails on any `DiagnosticSuppressor`/`SuppressionDescriptor` naming either rule (no justification escape hatch for those).
+- **Pass C** — asks `dotnet msbuild` for each project's evaluated `NoWarn`, `RunAnalyzers`, analyzer-reference, ruleset, and `.editorconfig`/`.globalconfig` state and asserts neither rule is downgraded below Error anywhere in that resolution. **There is no project-wide escape hatch for pass C** — a project-wide downgrade fails even with a justification comment.
+- **Canary** — a small fixture project (`.github/scripts/canary/ZeeKayDa.Auth.LogHygieneCanary/`) containing one known-bad `ILogger<T>` injection and one known-bad interpolated log call, built as a discrete CI step; its build output must contain both diagnostic IDs. This is the only defence against a suppression channel pass C doesn't model.
+
+Coverage scope is every project under the `/src/` folder of `ZeeKayDa.Auth.slnx` (this includes `ZeeKayDa.Auth.Analyzers` itself — it has no log-call sites today, so this is currently a no-op, and needs no special case to become meaningful the day it grows one) plus `samples/**/*.csproj`. `tests/` is intentionally exempt: test projects legitimately suppress these rules to assert analyzer behaviour, and test code does not ship.
+
+Run the checker locally with:
 
 ```bash
-bash .github/scripts/check_log_hygiene.sh
+dotnet run .github/scripts/check_log_hygiene.cs -- .
 ```
 
 **When is a suppression appropriate?**
@@ -411,7 +420,7 @@ _logger.LogDebug("Verifier: {code_verifier}", verifier); // log-hygiene-ok: test
 _logger.LogDebug("Verifier: {code_verifier}", verifier); // log-hygiene-ok: (#179)
 ```
 
-**A second, independent check in the same script**: any `#pragma warning disable` naming `ZEEKAYDA0001` or `ZEEKAYDA0002` (the analyzer rules — see [Analyzer rules](docs/reference/analyzer-rules.md)) must carry the same structured `// log-hygiene-ok: <reason> (#N)` comment on the same line, or the build fails. This closes a self-served-suppression gap the placeholder-name grep above doesn't cover: a developer disabling one of those two analyzer rules outright, rather than working around a specific flagged placeholder.
+**Pass B — in-source suppression justification**: any `#pragma warning disable` (with or without naming `ZEEKAYDA0001`/`ZEEKAYDA0002` explicitly — a bare `#pragma warning disable` suppresses everything, including these two rules, and is caught too) or `[SuppressMessage]` attribute naming either rule must carry the same structured `// log-hygiene-ok: <reason> (#N)` comment, or the build fails. A `DiagnosticSuppressor`/`SuppressionDescriptor` naming either rule has **no** justification-comment escape hatch at all — remove it, or suppress narrowly at the call site instead.
 
 ```csharp
 // Accepted:
@@ -419,11 +428,16 @@ _logger.LogDebug("Verifier: {code_verifier}", verifier); // log-hygiene-ok: (#17
 
 // Rejected — no structured comment at all:
 #pragma warning disable ZEEKAYDA0002
+
+// Rejected — bare pragma with no rule ID and no comment:
+#pragma warning disable
 ```
+
+**Pass C — no project-wide escape hatch**: a project-wide `<NoWarn>`/`<WarningsNotAsErrors>` entry, a `RunAnalyzers=false`/`RunAnalyzersDuringBuild=false` property, a `.editorconfig`/`.globalconfig` severity override (including the `dotnet_analyzer_diagnostic.severity`/`dotnet_analyzer_diagnostic.category-loghygiene.severity` bulk-severity keys), a removed analyzer reference, or a `<CodeAnalysisRuleSet>` entry downgrading either rule **always fails pass C, even with a `// log-hygiene-ok`/XML-comment justification next to it.** Only a narrowly-scoped, justified `#pragma`/`[SuppressMessage]` at the actual call site is a sanctioned suppression route.
 
 **Review requirement:**
 
-The hygiene script (`.github/scripts/check_log_hygiene.sh`) and its smoke tests are listed in CODEOWNERS. Any PR that modifies either file requires approval from a security owner. This ensures that suppression format rules cannot be silently relaxed.
+The hygiene checker (`.github/scripts/check_log_hygiene.cs`), its canary (`.github/scripts/canary/`), and their smoke tests are listed in CODEOWNERS. Any PR that modifies any of them requires approval from a security owner. This ensures that suppression format rules cannot be silently relaxed.
 
 ---
 
