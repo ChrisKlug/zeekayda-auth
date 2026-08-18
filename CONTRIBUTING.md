@@ -219,6 +219,15 @@ By signing off you are agreeing to the [Developer Certificate of Origin v1.1](ht
 
 If you are unsure about a style decision, check how the surrounding code is written and follow the same pattern. When in doubt, ask in the issue before writing the code.
 
+### Public API tracking
+
+`ZeeKayDa.Auth`, `ZeeKayDa.Auth.AspNetCore`, `ZeeKayDa.Auth.AzureKeyVault`, `ZeeKayDa.Auth.FileSystem`, and `ZeeKayDa.Auth.Windows` each carry a `PublicAPI.Shipped.txt` and `PublicAPI.Unshipped.txt`, enforced by [`Microsoft.CodeAnalysis.PublicApiAnalyzers`](https://github.com/dotnet/roslyn-analyzers/blob/main/src/PublicApiAnalyzers/PublicApiAnalyzers.Help.md). The build fails if a public member is added, removed, or changes shape without a matching entry — for example, an accidental narrowing from `public` to `internal`.
+
+- **Adding, removing, or changing** a public member: add/update the corresponding entry in that project's `PublicAPI.Unshipped.txt`. The compiler error (`RS0016`/`RS0017`/`RS0025`/`RS0036`) names the exact line to add — copy it verbatim.
+- **On release**: move every entry from `PublicAPI.Unshipped.txt` to `PublicAPI.Shipped.txt` as part of [cutting a stable release](#cutting-a-stable-release).
+- `ZeeKayDa.Auth.Analyzers` is not covered — it has no public surface of the kind this guards.
+- `ZeeKayDa.Auth.TestKit` is excluded from this change; it does ship public conformance base classes with `protected abstract`/`virtual` inheritance hooks that are exactly the kind of surface this analyzer protects. Adding coverage for it is out of scope here and tracked as a candidate for a follow-up.
+
 ---
 
 ## Building Locally
@@ -424,13 +433,14 @@ This section is for maintainers.
 
 1. Ensure `<VersionPrefix>` in `Directory.Build.props` reflects the intended release version (e.g. `1.0.0`).
 2. Update `CHANGELOG.md` — move all entries under `[Unreleased]` to a new versioned section (e.g. `[1.0.0] - 2026-05-31`), then commit and merge to `main`.
-3. Create and push a version tag that **exactly matches** the `<VersionPrefix>` value, prefixed with `v`:
+3. Move every entry in each project's `PublicAPI.Unshipped.txt` to its `PublicAPI.Shipped.txt` (see [Public API tracking](#public-api-tracking)), then commit and merge to `main`.
+4. Create and push a version tag that **exactly matches** the `<VersionPrefix>` value, prefixed with `v`:
    ```bash
    git tag v1.0.0
    git push origin v1.0.0
    ```
-4. The `publish-release.yml` workflow fires automatically, validates the tag against `Directory.Build.props`, builds, packs (with `.snupkg` symbols), and pushes to [NuGet.org](https://www.nuget.org/) using [Trusted Publishing](https://learn.microsoft.com/en-us/nuget/nuget-org/trusted-publishing) — no API key secret required.
-5. Create a matching GitHub Release from the tag and add release notes.
+5. The `publish-release.yml` workflow fires automatically, validates the tag against `Directory.Build.props`, builds, packs (with `.snupkg` symbols), and pushes to [NuGet.org](https://www.nuget.org/) using [Trusted Publishing](https://learn.microsoft.com/en-us/nuget/nuget-org/trusted-publishing) — no API key secret required.
+6. Create a matching GitHub Release from the tag and add release notes.
 
 > If the tag version does not match `<VersionPrefix>` in `Directory.Build.props`, the workflow will fail with a clear error message. Fix the mismatch and re-push the tag.
 

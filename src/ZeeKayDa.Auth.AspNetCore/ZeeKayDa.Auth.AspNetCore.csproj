@@ -20,4 +20,9 @@
                       ReferenceOutputAssembly="false" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Tracks this project's public surface in PublicAPI.Shipped.txt/PublicAPI.Unshipped.txt -->
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+  </ItemGroup>
+
 </Project>

@@ -303,3 +303,5 @@ dotnet_diagnostic.ZEEKAYDA0003.severity = none  ; IClientRepository does not ref
 - [Configure host-level log hygiene](../how-to/configure-host-log-hygiene.md) — runtime log
   hygiene steps for ASP.NET Core host surfaces outside ZeeKayDa.Auth's redaction boundary
 - [AuthorizationServerOptions reference](configuration.md) — core authorization server configuration
+- [Public API tracking](../../CONTRIBUTING.md#public-api-tracking) — `Microsoft.CodeAnalysis.PublicApiAnalyzers`
+  workflow that fails the build on an undeclared public API change (`RS0016`/`RS0017`/`RS0025`/`RS0036`)

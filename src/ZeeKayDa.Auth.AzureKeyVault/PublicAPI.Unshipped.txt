@@ -1,0 +1,23 @@
+#nullable enable
+Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensions
+ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultCachedSigningOptions
+ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultCachedSigningOptions.Algorithm.get -> ZeeKayDa.Auth.Tokens.SigningAlgorithm
+ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultCachedSigningOptions.Algorithm.set -> void
+ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultCachedSigningOptions.AzureKeyVaultCachedSigningOptions() -> void
+ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultCachedSigningOptions.CertificateIdentifier.get -> Azure.Security.KeyVault.Certificates.KeyVaultCertificateIdentifier
+ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultCachedSigningOptions.CertificateIdentifier.set -> void
+ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultCachedSigningOptions.Credential.get -> Azure.Core.TokenCredential?
+ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultCachedSigningOptions.Credential.set -> void
+ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultRemoteSigningOptions
+ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultRemoteSigningOptions.Algorithm.get -> ZeeKayDa.Auth.Tokens.SigningAlgorithm
+ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultRemoteSigningOptions.Algorithm.set -> void
+ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultRemoteSigningOptions.AzureKeyVaultRemoteSigningOptions() -> void
+ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultRemoteSigningOptions.Credential.get -> Azure.Core.TokenCredential?
+ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultRemoteSigningOptions.Credential.set -> void
+ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultRemoteSigningOptions.KeyIdentifier.get -> Azure.Security.KeyVault.Keys.KeyVaultKeyIdentifier
+ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultRemoteSigningOptions.KeyIdentifier.set -> void
+ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultSigningException
+ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultSigningException.AzureKeyVaultSigningException(string! message) -> void
+ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultSigningException.AzureKeyVaultSigningException(string! message, System.Exception! innerException) -> void
+static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensions.AddAzureKeyVaultCachedSigning(this ZeeKayDa.Auth.ZeeKayDaAuthBuilder! builder, Azure.Security.KeyVault.Certificates.KeyVaultCertificateIdentifier certificateIdentifier, ZeeKayDa.Auth.Tokens.SigningAlgorithm algorithm, Azure.Core.TokenCredential! credential, System.Action<ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultCachedSigningOptions!>? configure = null) -> ZeeKayDa.Auth.ZeeKayDaAuthBuilder!
+static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensions.AddAzureKeyVaultRemoteSigning(this ZeeKayDa.Auth.ZeeKayDaAuthBuilder! builder, Azure.Security.KeyVault.Keys.KeyVaultKeyIdentifier keyIdentifier, ZeeKayDa.Auth.Tokens.SigningAlgorithm algorithm, Azure.Core.TokenCredential! credential, System.Action<ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultRemoteSigningOptions!>? configure = null) -> ZeeKayDa.Auth.ZeeKayDaAuthBuilder!
