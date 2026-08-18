@@ -219,16 +219,16 @@ public sealed class AzureKeyVaultCachedSigningIntegrationTests
             .WithMessage("*certificate_not_found*");
     }
 
-    // ── Startup service: informational log only (AC #2) ─────────────────────────────────────────
+    // ── Startup verifier: informational notice only (AC #2) ─────────────────────────────────────
     // Pre-warming (AC #1) is no longer this class's job: since issue #437, the framework-owned
     // SigningStartupSelfTestVerifier materializes and verifies the active signer for every
-    // registered IJwtSigningService, including this one. AzureKeyVaultCachedSigningStartupService
-    // keeps only its own memory-residency log line — see AzureKeyVaultCachedSigningStartupServiceTests
-    // for that behavior, and JwtSigningServiceTests (ZeeKayDa.Auth.Tests) for the generic self-test
-    // pass/fail coverage.
+    // registered IJwtSigningService, including this one.
+    // AzureKeyVaultCachedSigningMemoryResidencyVerifier keeps only its own memory-residency notice
+    // — see AzureKeyVaultCachedSigningMemoryResidencyVerifierTests for that behavior, and
+    // JwtSigningServiceTests (ZeeKayDa.Auth.Tests) for the generic self-test pass/fail coverage.
 
     [Fact]
-    public void AddAzureKeyVaultCachedSigning_registers_AzureKeyVaultCachedSigningStartupService_as_a_hosted_service()
+    public void AddAzureKeyVaultCachedSigning_registers_AzureKeyVaultCachedSigningMemoryResidencyVerifier_as_a_startup_verifier()
     {
         var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
         var reader = new FakeKeyVaultCertificateReader();
@@ -244,9 +244,9 @@ public sealed class AzureKeyVaultCachedSigningIntegrationTests
         builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
         using var provider = services.BuildServiceProvider();
-        var hostedServices = provider.GetServices<Microsoft.Extensions.Hosting.IHostedService>().ToList();
+        var verifiers = provider.GetServices<IStartupVerifier>().ToList();
 
-        hostedServices.OfType<AzureKeyVaultCachedSigningStartupService>().Should().ContainSingle();
+        verifiers.OfType<AzureKeyVaultCachedSigningMemoryResidencyVerifier>().Should().ContainSingle();
     }
 
     [Fact]
