@@ -399,6 +399,170 @@ public sealed class InterpolatedStringLogAnalyzerTests
             .Which.Id.Should().Be(InterpolatedStringLogAnalyzer.DiagnosticId);
     }
 
+    [Fact]
+    public async Task Diagnostic_fires_on_conditional_access_LogInformation_call()
+    {
+        // logger?.LogInformation(...) uses MemberBindingExpressionSyntax rather than
+        // MemberAccessExpressionSyntax and must be caught the same way logger.LogInformation(...) is.
+        var source = """
+            using Microsoft.Extensions.Logging;
+            namespace ZeeKayDa.Auth.Logging
+            {
+                internal interface ISanitizingLogger<T> : ILogger<T> { }
+            }
+            namespace ZeeKayDa.Auth.Services
+            {
+                using ZeeKayDa.Auth.Logging;
+                class MyService
+                {
+                    void DoWork()
+                    {
+                        ISanitizingLogger<object>? logger = null;
+                        string value = "x";
+                        logger?.LogInformation($"client_secret={value}");
+                    }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnosticsAsync(source);
+
+        diagnostics.Should().ContainSingle()
+            .Which.Id.Should().Be(InterpolatedStringLogAnalyzer.DiagnosticId);
+    }
+
+    [Fact]
+    public async Task No_diagnostic_for_conditional_access_LogInformation_call_with_constant_template()
+    {
+        var source = """
+            using Microsoft.Extensions.Logging;
+            namespace ZeeKayDa.Auth.Logging
+            {
+                internal interface ISanitizingLogger<T> : ILogger<T> { }
+            }
+            namespace ZeeKayDa.Auth.Services
+            {
+                using ZeeKayDa.Auth.Logging;
+                class MyService
+                {
+                    void DoWork()
+                    {
+                        ISanitizingLogger<object>? logger = null;
+                        string value = "x";
+                        logger?.LogInformation("Value: {Value}", value);
+                    }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnosticsAsync(source);
+
+        diagnostics.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task No_diagnostic_for_conditional_access_call_on_a_non_ILogger_receiver()
+    {
+        // The conditional-access receiver must resolve to the correct expression (an
+        // ILogger-typed receiver), not just "some non-null receiver" — a Log*-prefixed method on
+        // an unrelated type must not be flagged.
+        var source = """
+            using Microsoft.Extensions.Logging;
+            namespace ZeeKayDa.Auth.Services
+            {
+                class Foo
+                {
+                    public void LogInformation(string msg) { }
+                }
+                class MyService
+                {
+                    void DoWork()
+                    {
+                        Foo? notALogger = null;
+                        string value = "x";
+                        notALogger?.LogInformation($"val={value}");
+                    }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnosticsAsync(source);
+
+        diagnostics.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Diagnostic_fires_on_chained_conditional_access_Log_call()
+    {
+        // GetConditionalAccessReceiver must find the invocation regardless of chain depth: the
+        // first link of a fluent `?.` chain (`logger?.LogChain(...).LogChain(...)`) has a
+        // MemberAccessExpressionSyntax parent, not the ConditionalAccessExpressionSyntax itself.
+        // Log*/AddWarning are void-returning in production, so this chain shape is not reachable
+        // through the real APIs today — LogChain below is a test-only fluent helper that returns
+        // something chainable purely to exercise this analyzer path.
+        var source = """
+            using Microsoft.Extensions.Logging;
+            namespace ZeeKayDa.Auth.Logging
+            {
+                internal interface ISanitizingLogger<T> : ILogger<T> { }
+            }
+            namespace ZeeKayDa.Auth.Services
+            {
+                using ZeeKayDa.Auth.Logging;
+                static class LoggerChainingExtensions
+                {
+                    public static ISanitizingLogger<object> LogChain(this ISanitizingLogger<object> logger, string message) => logger;
+                }
+                class MyService
+                {
+                    void DoWork()
+                    {
+                        ISanitizingLogger<object>? logger = null;
+                        string secret = "s3cr3t";
+                        logger?.LogChain($"leak {secret}").LogChain("ok");
+                    }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnosticsAsync(source);
+
+        diagnostics.Should().ContainSingle()
+            .Which.Id.Should().Be(InterpolatedStringLogAnalyzer.DiagnosticId);
+    }
+
+    [Fact]
+    public async Task Diagnostic_fires_on_conditional_access_AddWarning_call()
+    {
+        var source = """
+            using Microsoft.Extensions.Logging;
+            namespace ZeeKayDa.Auth
+            {
+                public sealed class StartupVerificationContext
+                {
+                    public void AddWarning(string code, string messageTemplate, LogLevel level, params object?[] args) { }
+                    public void AddWarning(string code, string messageTemplate, params object?[] args) { }
+                }
+            }
+            namespace ZeeKayDa.Auth.Services
+            {
+                class MyVerifier
+                {
+                    void DoWork(ZeeKayDa.Auth.StartupVerificationContext? context)
+                    {
+                        string secret = "s3cr3t";
+                        context?.AddWarning("x.code", $"leaked {secret}");
+                    }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnosticsAsync(source);
+
+        diagnostics.Should().ContainSingle()
+            .Which.Id.Should().Be(InterpolatedStringLogAnalyzer.DiagnosticId);
+    }
+
     // ── AddWarning's messageTemplate (issue #444 follow-up) ──────────────────────────────────────────
 
     [Fact]
