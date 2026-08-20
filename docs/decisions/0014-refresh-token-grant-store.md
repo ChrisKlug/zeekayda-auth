@@ -157,8 +157,8 @@
 
 ## Context
 
-[ADR 0008](./0008-authorization-code-and-refresh-token-store.md) defined `IRefreshTokenStore` as a
-third-party extension point; [ADR 0013](./0013-store-protocol-persistence-split.md) reshaped the
+ADR 0008 (retired; merged into [ADR 0013](./0013-store-protocol-persistence-split.md) and this ADR)
+originally defined `IRefreshTokenStore` as a third-party extension point; ADR 0013 reshaped the
 *authorization-code* store down to a dumb, opaque key-value backing primitive
 (`IAuthorizationCodeBackingStore`) behind a framework-sealed coordinator, and anticipated the
 refresh-token store reusing that same `StoreKey` + backing-KV shape.

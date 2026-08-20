@@ -58,13 +58,14 @@ the older shape.
 
 ## Retired numbers
 
-An ADR number is retired, not deleted, once every part of its content has moved elsewhere: the
-file is replaced with a short stub pointing at whatever superseded it, and the number itself must
-never be reused for a new ADR.
+Once an ADR number is fully retired — every part of its content merged into another ADR — the file
+is deleted outright, not kept as a stub. Pre-1.0 there's no redirect and no changelog to maintain:
+git history holds the old text if anyone ever needs it, and the "why it changed" lives in the
+surviving ADR's `Why`/`Consequences`. A retired number is never reused for a new decision.
 
-- **0008** — Authorization Code and Refresh Token Store. Superseded by
-  [ADR 0013](./0013-store-protocol-persistence-split.md) (authorization-code store and shared
-  store rules) and [ADR 0014](./0014-refresh-token-grant-store.md) (refresh-token store reshape).
+- **0008** — merged into [ADR 0013](./0013-store-protocol-persistence-split.md)
+  (authorization-code store + shared store rules) and
+  [ADR 0014](./0014-refresh-token-grant-store.md) (refresh-token store reshape).
 - **0015** — merged into [ADR 0011](./0011-signing-key-management.md).
 
 ## Why amendments are avoidable right now
