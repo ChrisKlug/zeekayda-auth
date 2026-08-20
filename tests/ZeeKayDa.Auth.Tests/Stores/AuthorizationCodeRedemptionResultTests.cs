@@ -170,7 +170,7 @@ public sealed class AuthorizationCodeRedemptionResultTests
 
         property.GetCustomAttributesData()
             .Should().Contain(a => a.AttributeType.Name == "RequiredMemberAttribute",
-                because: "FamilyId must be 'required string' per ADR 0008 §2 so that it cannot " +
+                because: "FamilyId must be 'required string' so that it cannot " +
                          "be omitted when constructing an AlreadyRedeemed outcome");
     }
 
@@ -182,7 +182,7 @@ public sealed class AuthorizationCodeRedemptionResultTests
                 BindingFlags.Public | BindingFlags.Instance)!;
 
         property.PropertyType.Should().Be(typeof(string),
-            because: "FamilyId must be a non-nullable string per ADR 0008 §2");
+            because: "FamilyId must be a non-nullable string");
     }
 
     [Fact]

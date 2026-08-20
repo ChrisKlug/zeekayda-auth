@@ -527,7 +527,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     [Fact]
     public async Task Mixed_allowOutsideDevelopment_values_across_granular_calls_are_enforced_independently()
     {
-        // ADR 0008 §5: each of the three in-memory registration methods carries its own
+        // Each of the three in-memory registration methods carries its own
         // allowOutsideDevelopment parameter and gates independently on it. Mixing granular calls
         // with different values must not let one call's override leak into the other's gate.
         var services = CreateServicesWithWarningServiceDependencies(Environments.Production);
