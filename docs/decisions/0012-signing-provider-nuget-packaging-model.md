@@ -16,8 +16,7 @@ stays in `ZeeKayDa.Auth`/`ZeeKayDa.Auth.AspNetCore` — it is not extracted to i
 
 A planned macOS Keychain provider was implemented, reviewed, and then descoped as a product-scope
 call — a production ASP.NET Core auth server is not a realistic macOS-hosted workload, and the file
-system provider already covers macOS/Linux deployments without native interop (see ADR 0011's Why
-section for that decision).
+system provider already covers macOS/Linux deployments without native interop.
 
 Both Azure Key Vault variants ship in one package because they share the same dependency
 (`Azure.Security.KeyVault.Keys`, `Azure.Identity`) and operational context — a consumer choosing
@@ -34,17 +33,10 @@ boundary. Its entire public surface is one or two `Add<Provider>Signing()` exten
 `ZeeKayDaAuthBuilder` plus any `configure` options type; the concrete `JwtSigningService<TOptions>`
 subclass and any platform interop are `internal`.
 
-```csharp
-// Chosen: registration-shape convention every provider package follows (illustrative — the
-// specific parameters vary per provider; see e.g. AddPemFileSigning in ZeeKayDa.Auth.FileSystem).
-public static ZeeKayDaAuthBuilder AddXxxSigning(
-    this ZeeKayDaAuthBuilder builder, Action<XxxSigningOptions>? configure = null)
-{
-    builder.ThrowIfAlreadyRegistered(typeof(IJwtSigningService));
-    // register IJwtSigningService (singleton) + IValidateOptions<XxxSigningOptions>
-    return builder;
-}
-```
+Every provider package's `Add<Provider>Signing()` extension follows the registration convention ADR
+0011 settles for signing providers — singleton registration, `ThrowIfAlreadyRegistered`, its own
+`IValidateOptions<TOptions>`, and returning the same builder (see e.g. `AddPemFileSigning` in
+`ZeeKayDa.Auth.FileSystem` for a concrete example).
 
 `ZeeKayDa.Auth.FileSystem` is granted `InternalsVisibleTo` from core so it can reuse core's
 `internal` POSIX `stat`/`lstat` P/Invoke for symlink-ownership validation, rather than forking
@@ -68,17 +60,12 @@ surface must do so.
 - **Extracting the two Azure Key Vault variants into separate packages was rejected** — they share a
   dependency and an operational context; the two-package split would force a package-reference swap
   at the point where a consumer should just be choosing between two extension methods.
-- **`InternalsVisibleTo` was tried for the file-system provider's dependency on core's shared
-  thumbprint/logging helpers before this ADR, and rejected in favour of a public contract** —
-  `InternalsVisibleTo` can only name assemblies known at build time, so it structurally cannot serve
-  a genuine third-party provider implementing the same extensibility contract. The fix was making the
-  contracts (`JwkThumbprint`, `SigningKeyRotation`, `SigningKeyDescriptorFactory`,
-  `ISanitizingLogger<T>`) public in core (see ADR 0011), while keeping ZeeKayDa's own crypto/redaction
-  logic internal. The POSIX interop IVT grant above is one of a small number of deliberate, reviewed
-  exceptions to that rule — justified here by the cost of forking security-critical,
-  platform-ABI-dependent code, since duplicating it would risk a second, independently-drifting copy
-  of code that already needed a security-review fix for a symlink-following bug (`stat()` vs
-  `lstat()`).
+- **`InternalsVisibleTo` for shared provider helpers was tried and rejected before this ADR** — see
+  ADR 0011 for why (it can serve only first-party assemblies, never a genuine third party). The POSIX
+  interop IVT grant above is one of a small number of deliberate, reviewed exceptions to that rule —
+  justified here by the cost of forking security-critical, platform-ABI-dependent code, since
+  duplicating it would risk a second, independently-drifting copy of code that already needed a
+  security-review fix for a symlink-following bug (`stat()` vs `lstat()`).
 
 ## Consequences
 
