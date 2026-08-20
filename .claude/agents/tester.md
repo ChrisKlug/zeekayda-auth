@@ -2,6 +2,8 @@
 name: tester
 description: Test specialist for ZeeKayDa.Auth. Designs test strategies, writes comprehensive xUnit tests, identifies coverage gaps, and ensures security-critical paths are thoroughly validated. Use when verifying acceptance criteria, writing missing tests, running the test suite, or reviewing test coverage.
 tools: Read, Write, Edit, Grep, Glob, Bash, LSP, ToolSearch, Skill, WebFetch
+model: sonnet
+effort: medium
 skills:
   - test-standards
   - code-navigation

@@ -34,6 +34,7 @@
       "mcp__plugin_microsoft-docs_microsoft-learn__microsoft_docs_search"
     ],
     "ask": [
+      "Bash(gh pr create *)",
       "Bash(git push --force *)",
       "Bash(git push -f *)",
       "Bash(git tag *)",
