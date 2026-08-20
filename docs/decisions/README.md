@@ -56,10 +56,12 @@ batch comes up.
 
 ## Retired numbers
 
-Once an ADR number is retired, it is never reused for a new decision — a retired file becomes a
-short stub pointing at whichever ADR absorbed its content, so an existing citation by number still
-resolves to something. **ADR 0015** is retired: its content was merged into
-[ADR 0011](./0011-signing-key-management.md); see [the stub](./0015-signing-provider-set-source-tiers.md).
+Once an ADR number is fully retired — every part of its content merged into another ADR — the file
+is deleted outright, not kept as a stub. Pre-1.0 there's no redirect and no changelog to maintain:
+git history holds the old text if anyone ever needs it, and the "why it changed" lives in the
+surviving ADR's `Why`/`Consequences`. A retired number is never reused for a new decision.
+
+- **0015** — merged into [ADR 0011](./0011-signing-key-management.md).
 
 ## Why amendments are avoidable right now
 
