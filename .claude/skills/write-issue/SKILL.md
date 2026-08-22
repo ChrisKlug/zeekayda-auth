@@ -97,6 +97,48 @@ gh api graphql -f query='{ repository(owner: "OWNER", name: "REPO") { issue(numb
 gh api -X POST /repos/OWNER/REPO/issues/PARENT_NUMBER/sub_issues --field sub_issue_id=DATABASE_ID
 ```
 
+## Step 5 — Amending an issue after a decision changes
+
+A decision made after an issue was written — a design ruling, a review finding, a maintainer call —
+often invalidates part of that issue. **How you record the change depends on whether it adds or
+reverses.**
+
+- **Additive change** (a new acceptance criterion, an extra scope item, a clarification): a comment
+  is fine. The body stays true; the comment extends it.
+- **Reversal** (the issue asserts something the decision has since overturned): **edit the body.**
+  A comment is not enough and is actively dangerous.
+
+The failure mode is specific and it has already happened here. An issue body states the old
+behaviour as a checked-off acceptance criterion. A comment further down says it was reversed. A
+developer — or a subagent — works the acceptance criteria, because that is what acceptance criteria
+are for, and **builds the reversed thing.** In one real case an issue instructed someone to
+reimplement a feature that had been deleted three comments earlier.
+
+When you do rewrite a body, leave a short comment saying the amendment is folded in and the body is
+authoritative, so the amendment comment above it is not read as still-pending work.
+
+### Sweep the whole set, not just the obvious issue
+
+A ruling that reverses something usually invalidates more than one issue. After any significant
+decision, scan every open issue in the affected set for:
+
+- **Contradictions** — an acceptance criterion that now describes a bug
+- **Now-vacuous criteria** — a criterion about something that no longer exists
+- **Stale terminology** — a renamed type or concept, which is cosmetic but misleads a reader
+- **Misplaced scope** — work reassigned to a different issue, especially deletions moved to a later
+  expand/contract tail issue, which will not compile if left where it was
+
+Grepping the bodies for the changed terms is faster and more reliable than re-reading them:
+
+```sh
+for N in $(seq FIRST LAST); do
+  gh issue view $N --json body --jq .body | grep -q "OldTermName" && echo "#$N"
+done
+```
+
+Distinguish legitimate references from stale ones before editing — an issue that *deletes* a type
+mentions it correctly.
+
 ## Triaging incoming issues
 
 - Apply the correct labels; identify duplicates and close with a link to the canonical issue
