@@ -1,6 +1,6 @@
 ---
 title: "Token stores"
-description: "Reference for IAuthorizationCodeStore, IRefreshTokenStore, lifetime options, built-in implementations, and ZeeKayDaStoreException."
+description: "Reference for IAuthorizationCodeStore, IRefreshTokenStore, the IAuthorizationCodeBackingStore and IRefreshTokenGrantStore extension points, lifetime options, built-in implementations, and ZeeKayDaStoreException."
 parent: "Reference"
 nav_order: 5
 ---
@@ -83,20 +83,20 @@ Registers only `DistributedCacheRefreshTokenStore` as `IRefreshTokenStore`. Requ
 
 ### `.AddAuthorizationCodeStore<T>()`
 
-Registers a custom `T : class, IAuthorizationCodeStore` as a singleton. This is the recommended registration path for production custom stores.
+Registers a custom `T : class, IAuthorizationCodeBackingStore` as the singleton backing store, wired underneath the framework's sealed `IAuthorizationCodeStore` coordinator. This is the recommended registration path for production custom stores. You implement `IAuthorizationCodeBackingStore`, not `IAuthorizationCodeStore` directly — see [The backing store contracts](#the-backing-store-contracts) below.
 
 ```csharp
 builder.Services
     .AddZeeKayDaAuth(options => { options.Issuer = "https://id.example.com"; })
-    .AddAuthorizationCodeStore<MyRedisAuthorizationCodeStore>()
-    .AddRefreshTokenStore<MyRedisRefreshTokenStore>();
+    .AddAuthorizationCodeStore<MyRedisAuthorizationCodeBackingStore>()
+    .AddRefreshTokenGrantStore<MyRedisRefreshTokenGrantStore>();
 ```
 
 `T` must be a concrete reference type with a publicly accessible constructor so the DI container can instantiate it.
 
-### `.AddRefreshTokenStore<T>()`
+### `.AddRefreshTokenGrantStore<T>()`
 
-Registers a custom `T : class, IRefreshTokenStore` as a singleton.
+Registers a custom `T : class, IRefreshTokenGrantStore` as the singleton backing store, wired underneath the framework's sealed `IRefreshTokenStore` coordinator. You implement `IRefreshTokenGrantStore`, not `IRefreshTokenStore` directly — see [The backing store contracts](#the-backing-store-contracts) below.
 
 ---
 
@@ -264,25 +264,170 @@ public class ZeeKayDaStoreException : ZeeKayDaException
 
 ## Implementing a custom store
 
-Custom store implementations must satisfy the interface contract documented in XML doc comments on each method. Key requirements:
+A production custom store does not implement `IAuthorizationCodeStore` or `IRefreshTokenStore` directly. Those two interfaces are sealed **coordinators**: the framework owns the redemption protocol — single-use enforcement, replay/reuse detection, at-rest encryption, clock-skew-tolerant expiry — and only delegates the question of *where the bytes live* to a backing store you write. The two backing-store contracts are:
 
-1. **Fail closed.** Wrap infrastructure exceptions in `ZeeKayDaStoreException`. Never return a semantic outcome on a transport failure.
-2. **Atomic single-use enforcement.** `TryRedeemAsync` and `TryConsumeAsync` must perform the check-and-mark step atomically. For Redis, use a Lua script. For SQL, use a single `UPDATE … WHERE redeemed_at IS NULL` inside a transaction. Without atomicity, two concurrent requests for the same handle can both succeed, violating [RFC 9700 §2.1.1](https://www.rfc-editor.org/rfc/rfc9700#section-2.1.1) and [RFC 9700 §4.14.2](https://www.rfc-editor.org/rfc/rfc9700#section-4.14.2).
-3. **Pre-committed `familyId`.** `TryRedeemAsync` receives `familyId` as a parameter and must write it into the tombstone atomically with the redemption mark. Every `AlreadyRedeemed` outcome must carry the `FamilyId` that was committed into the tombstone — never `null` — so the token endpoint can revoke the correct family on a replay.
-4. **Derive storage keys from handles using a collision-resistant one-way function.** Raw token handles are bearer credentials; using them directly as storage keys exposes live credentials to anyone with read access to the backing store (Redis ops, database queries, log sidecars). The key derivation algorithm is your store's choice — SHA-256, HMAC-SHA-256, or any other collision-resistant construction all satisfy the contract. What is required is that the function is one-way (the raw handle cannot be recovered from the key) and collision-resistant (two distinct handles must not produce the same key). The built-in stores hash the handle before using it as a key; the exact algorithm and encoding are their internal implementation detail, not part of the interface contract, and differ between the authorization-code store and the refresh-token store (see [ADR 0013](../decisions/0013-store-protocol-persistence-split.md)).
-5. **Idempotent `RevokeFamilyAsync`.** A double-revocation call must not throw. A call with a `familyId` that has no associated entries is a successful no-op.
-6. **Tombstone retention = `RefreshTokenLifetime`.** Authorization code tombstones must remain alive for at least `RefreshTokenLifetime` so that a replay within the token's validity window always produces `AlreadyRedeemed`, not `NotFound`.
+- `IAuthorizationCodeBackingStore` — sits underneath `IAuthorizationCodeStore`. It has no knowledge of OAuth, tombstones, encryption, or expiry semantics; it stores opaque, already-encrypted bytes under already-hashed keys.
+- `IRefreshTokenGrantStore` — sits underneath `IRefreshTokenStore`. It has no hashing, no encryption, and no single-use state machine beyond one atomic invariant; it stores rows and runs equality queries over their non-secret columns.
 
-Register the custom implementation using the typed builder methods:
+Register a custom implementation of either with the typed builder methods, exactly as for the built-in stores:
 
 ```csharp
 builder.Services
     .AddZeeKayDaAuth(options => { options.Issuer = "https://id.example.com"; })
-    .AddAuthorizationCodeStore<MyAtomicCodeStore>()
-    .AddRefreshTokenStore<MyAtomicRefreshTokenStore>();
+    .AddAuthorizationCodeStore<MyAtomicCodeBackingStore>()
+    .AddRefreshTokenGrantStore<MyAtomicRefreshTokenGrantStore>();
 ```
 
-> 💡 **Tip:** The two stores are independently replaceable. You can mix an in-memory authorization code store (acceptable during development) with a custom persistent refresh token store by calling `.AddInMemoryAuthorizationCodeStore()` and `.AddRefreshTokenStore<T>()` on the same builder chain.
+> 💡 **Tip:** The two stores are independently replaceable. You can mix an in-memory authorization code store (acceptable during development) with a custom persistent refresh-token grant store by calling `.AddInMemoryAuthorizationCodeStore()` and `.AddRefreshTokenGrantStore<T>()` on the same builder chain.
+
+### `StoreKey`
+
+Both backing-store contracts receive keys as `StoreKey`, not as raw strings — a `readonly struct` wrapping an opaque, already-hashed string. Its constructor is internal: only the framework can produce a `StoreKey`, by hashing a raw code or token handle. A backing store can persist a `StoreKey` (as a Redis key, a SQL primary key, a Cosmos document ID), compare it, and call `ToString()` to get the safe hashed-string form — but it can never fabricate one from a raw handle, and it can never recover a raw handle from one. This makes "the backing store never sees a raw bearer credential" structurally true rather than merely documented.
+
+```csharp
+public readonly struct StoreKey : IEquatable<StoreKey>
+{
+    public override string ToString(); // the safe, hashed string form
+    public bool Equals(StoreKey other);
+    // == and != operators
+}
+```
+
+### The backing store contracts
+
+#### `IAuthorizationCodeBackingStore`
+
+```csharp
+public interface IAuthorizationCodeBackingStore
+{
+    ValueTask<bool> TryInsertAsync(
+        StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken);
+
+    ValueTask<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken);
+
+    ValueTask RemoveAsync(StoreKey key, CancellationToken cancellationToken);
+}
+```
+
+| Member | Contract |
+|---|---|
+| `TryInsertAsync` | **MUST be a single atomic insert-if-absent operation** — a Redis `SET NX`, a SQL unique-constraint `INSERT`, a conditional Cosmos create. Returns `true` if inserted, `false` if a value already existed at `key`. A non-atomic `if (!Exists(key)) Insert(key)` has a TOCTOU window that lets two concurrent redemptions of the same code both succeed. `expiresAt` is advisory — the coordinator enforces expiry logically and does not depend on backend eviction, so a backend without native TTL support may ignore it. |
+| `GetAsync` | Read-only; never mutates. **MUST return `null` only for a confirmed-absent key.** On any transport or backend failure (timeout, connection drop, deserialization error, auth failure) the implementation **MUST let the exception propagate** — it must never catch the fault and return `null`. A swallowed fault that returns `null` is read by the coordinator as "no tombstone ⇒ code not yet redeemed," silently re-opening a replay window. |
+| `RemoveAsync` | Removes the value at `key` if present. **Idempotent** — removing an absent key is a successful no-op, not an error. |
+
+> ⚠️ **Warning:** `TryInsertAsync` is the one hard atomicity invariant on this interface. If your backend cannot express insert-if-absent as a single operation, do not implement this interface against it directly — use a backend that can, or a first-party adapter.
+
+#### `IRefreshTokenGrantStore`
+
+```csharp
+public interface IRefreshTokenGrantStore
+{
+    ValueTask InsertAsync(RefreshTokenGrant grant, CancellationToken cancellationToken);
+
+    ValueTask<RefreshTokenGrant?> FindByHandleAsync(StoreKey handleHash, CancellationToken cancellationToken);
+
+    ValueTask<bool> TryMarkConsumedAsync(StoreKey handleHash, CancellationToken cancellationToken);
+
+    ValueTask RevokeFamilyAsync(string familyId, CancellationToken cancellationToken);
+
+    ValueTask RevokeBySubjectAsync(string subject, CancellationToken cancellationToken);
+
+    ValueTask<bool> IsFamilyRevokedAsync(string familyId, CancellationToken cancellationToken);
+}
+```
+
+The interface is deliberately limited to exactly these six methods — there is no bulk remove/cleanup method and no bulk-read-by-family/subject.
+
+| Member | Contract |
+|---|---|
+| `InsertAsync` | Inserts a new grant. `HandleHash` is derived from a 256-bit random handle, so a primary-key collision is a genuine duplicate or bug — let a unique-constraint violation propagate; the coordinator wraps it. Must also accept a grant that is `Revoked` from birth, with no prior row for its family — the coordinator relies on this to revoke a family that has no live grants yet. |
+| `FindByHandleAsync` | Read-only. **MUST return `null` only for a confirmed-absent handle.** Same fail-closed contract as `IAuthorizationCodeBackingStore.GetAsync` — on any transport/backend fault the implementation **MUST let the exception propagate**, never catch it and return `null`. A fault masked as `null` reads as "no such token" and silently defeats reuse detection. |
+| `TryMarkConsumedAsync` | **The one hard atomicity invariant on this interface.** Transitions the grant from `Active` to `Consumed` as a single atomic operation and returns whether *this call* performed the transition: `true` iff the row was `Active` and is now `Consumed` because of this call; `false` if the row was already non-`Active` or is absent. SQL: `UPDATE ... SET status=Consumed WHERE handle=@h AND status=Active`, check `rowsAffected==1`. Cosmos: conditional replace with `IfMatch=etag`. Redis: a Lua script or `WATCH`/`MULTI`/`EXEC`. Without atomicity, two concurrent consumers can both transition the same grant, breaking single-use enforcement. |
+| `RevokeFamilyAsync` | Sets every grant whose `FamilyId` equals `familyId`, and that already exists at the moment the call evaluates its predicate, to `Revoked`. **Idempotent.** The correctness bar is completeness over existing rows, per [RFC 9700 §4.13](https://www.rfc-editor.org/rfc/rfc9700#section-4.13): every grant already in the family — including one inserted concurrently with, but not strictly after, this call — must end up `Revoked`. Mark, do not delete: a still-live token in a revoked family must remain findable and read as `Revoked`. |
+| `RevokeBySubjectAsync` | Same completeness bar as `RevokeFamilyAsync`, keyed on `Subject`. Present so a future subject-level logout-all is possible; no coordinator method calls it yet. `subject` arrives as cleartext (a plain equality predicate, not a hashed key) — this control must never fail to match, which is why the subject is not peppered or keyed. |
+| `IsFamilyRevokedAsync` | Read-only, no side effects. Returns `true` iff any grant in `familyId` currently reads `Revoked`. **MUST be a strongly-consistent / primary read** — a stale-replica read that misses a just-committed revoke fails open. **MUST throw on fault**; a fault masked as `false` reads as "not revoked" and defeats the gate. The coordinator calls this before honouring a grant's own `Active` status, so a successor inserted after `RevokeFamilyAsync` is still caught at consume time. |
+
+> ⚠️ **Warning:** Three obligations here are security-critical and invisible to the compiler: `TryMarkConsumedAsync`'s atomicity, the fail-closed (throw, don't swallow) behaviour of every read path, and revocation completeness including grants inserted mid-revoke. A naive implementation compiles and passes a happy-path smoke test while violating all three. Run the [conformance kit](#conformance-kit) against your implementation before deploying it.
+
+### `RefreshTokenGrant`
+
+The persisted row shape `IRefreshTokenGrantStore` operates on. The framework constructs and consumes these; a backend only stores, retrieves, and runs equality queries over them.
+
+```csharp
+public sealed record RefreshTokenGrant
+{
+    public required StoreKey HandleHash { get; init; }
+    public required string FamilyId { get; init; }
+    public required string Subject { get; init; }
+    public required string ClientId { get; init; }
+    public required DateTimeOffset FamilyAbsoluteExpiry { get; init; }
+    public required DateTimeOffset ExpiresAt { get; init; }
+    public required RefreshGrantStatus Status { get; init; }
+    public required ReadOnlyMemory<byte> ProtectedPayload { get; init; }
+}
+
+public enum RefreshGrantStatus
+{
+    Active = 0,
+    Consumed = 1,
+    Revoked = 2,
+}
+```
+
+| Column | Meaning |
+|---|---|
+| `HandleHash` | Primary key. The framework's hash of the raw refresh-token handle. Never the raw handle — see [`StoreKey`](#storekey). |
+| `FamilyId` | Cleartext, non-secret random GUID shared across a rotation chain. Queryable — index this column; `RevokeFamilyAsync` filters on it. |
+| `Subject` | Cleartext subject identifier. PII, but not a bearer credential — deliberately *not* a `StoreKey`, because `RevokeBySubjectAsync` needs a plain equality predicate. Protect it with database access control and encryption at rest; index this column too. |
+| `ClientId` | Cleartext `client_id` (public, not secret) the grant is bound to. Queryable. |
+| `FamilyAbsoluteExpiry` | Non-secret. The absolute wall-clock time at which the whole rotation family expires, regardless of individual token activity. Drives cleanup. |
+| `ExpiresAt` | Non-secret. This token's own logical expiry. The coordinator applies `ClockSkewTolerance` on top when checking it — see [`ClockSkewTolerance`](#clockskewtolerance). |
+| `Status` | Lifecycle state (`Active`, `Consumed`, `Revoked`). The single-use pivot is a compare-and-swap on this column, performed by `TryMarkConsumedAsync`. |
+| `ProtectedPayload` | Opaque Data-Protection ciphertext of the token's serialized entry. Store verbatim — a backend can never read the subject, scope, or session claims inside it. |
+
+`FamilyId` and `Subject` are deliberately cleartext rather than `StoreKey` values so they remain plain, indexable equality predicates for `RevokeFamilyAsync` and `RevokeBySubjectAsync`.
+
+### Backend suitability
+
+Which backends can implement `IRefreshTokenGrantStore` correctly without extra machinery:
+
+| Backend | Insert | Find-by-handle | CAS consume | Revoke by family / subject | Verdict |
+|---|---|---|---|---|---|
+| Relational SQL | `INSERT`, primary key on handle | `SELECT WHERE handle=@h` | `UPDATE ... WHERE handle=@h AND status=Active`, check `rowsAffected==1` | `UPDATE ... WHERE family_id=@f` (indexed) | **Native. First-class.** The one atomicity invariant is a single-statement atomic CAS under row locking; revocation is one `UPDATE`, complete by construction. |
+| Cosmos DB | `CreateItemAsync` | point read | conditional replace with `IfMatch=etag` | query + patch | **Native, correctness-safe.** Partition-key choice affects cost, not correctness — a suboptimal key is slow, never wrong. |
+| Redis | grant key **plus hand-maintained family/subject index sets** | `GET` on the grant key | Lua script or `WATCH`/`MULTI`/`EXEC` | `SMEMBERS` then update each member — **only as complete as the index** | **Not first-class.** Redis has no `WHERE family_id = X`; a Redis-backed implementation must maintain its own secondary indexes as a non-transactional dual write, which can drift on a partial-write crash and silently reopen the reuse window `RevokeFamilyAsync` exists to close. Prefer a natively queryable backend for production. |
+
+The same shape of trade-off applies to `IAuthorizationCodeBackingStore`: relational SQL and Cosmos DB support the atomic insert-if-absent primitive natively; a KV store without an atomic compare-and-set (a plain `IDistributedCache`, for instance) cannot guarantee it, which is why the first-party distributed-cache stores are documented as dev/test-only (see [Distributed-cache-backed stores](#distributed-cache-backed-stores)).
+
+### Conformance kit
+
+`ZeeKayDa.Auth.TestKit` ships ready-to-derive xUnit fixtures for both backing-store contracts: `AuthorizationCodeBackingStoreConformanceTests` and `RefreshTokenGrantStoreConformanceTests`. Running the matching fixture against your implementation is a **MUST** before deploying it — it exercises the invariants the compiler cannot check:
+
+- **Atomicity** — a 50-way concurrent race against the same key/handle, asserting exactly one caller wins `TryInsertAsync` or `TryMarkConsumedAsync`.
+- **Revocation completeness** — insert grants across a family (or subject), call `RevokeFamilyAsync` (or `RevokeBySubjectAsync`), and assert every grant reads `Revoked`, including one inserted concurrently with the revoke call — the race a drifting secondary index loses.
+- **Post-revoke insert completeness** — revoke a family, then insert a new grant into it strictly after the revoke returns, and assert `IsFamilyRevokedAsync` still reports the family revoked.
+- **Born-`Revoked` acceptance** — `InsertAsync` must accept a grant that is `Revoked` from birth, with no prior row for its family, and `IsFamilyRevokedAsync` must then report that family revoked.
+- **Fail-closed / throws-not-swallows** — fault injection proving a transport failure surfaces (raw or wrapped in `ZeeKayDaStoreException`), never as a swallowed `null` or `false`.
+- **Round-trip correctness** — a stored value or grant reads back unchanged.
+
+Reference `ZeeKayDa.Auth.TestKit` from your own test project and derive the abstract class, implementing `CreateStore()` to return your store:
+
+```csharp
+using ZeeKayDa.Auth.Stores;
+using ZeeKayDa.Auth.TestKit.Stores;
+
+public sealed class MyRefreshTokenGrantStoreConformanceTests : RefreshTokenGrantStoreConformanceTests
+{
+    protected override IRefreshTokenGrantStore CreateStore() => new MyRefreshTokenGrantStore(/* ... */);
+}
+```
+
+Two protected properties let a genuinely non-atomic dev/test backend opt out of the tests it cannot pass, rather than skew the kit's default expectations for everyone else:
+
+- `SupportsAtomicInsert` / `SupportsAtomicConsume` — override to `false` only for a non-atomic dev/test backend. Production backends must support the atomic primitive.
+- `SupportsMidRevokeInsertCompleteness` — override to `false` only for a non-transactional secondary-index backend whose revocation cannot be proven complete against a grant inserted concurrently with the revoke call. Production backends must support this.
+
+Override `CreateFaultInjectedStore(Exception fault)` to return a store whose transport always throws `fault`, so the fail-closed tests can verify the fault propagates rather than being swallowed. Return `null` (the default) if your backend has no injectable failure point; the fault-injection tests are then skipped for that fixture.
 
 ---
 
