@@ -8,6 +8,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- **BREAKING (behavioral): the advertised-signing-algorithm startup check now also enforces that the active key's algorithm is advertised, and no longer treats a retirement-window key as producible** (#494)
+
+  `AdvertisedSigningAlgorithmVerifier` previously derived the set of "algorithms the provider can
+  produce" from the full result of `IJwtSigningService.GetSigningKeysAsync`, which includes
+  retirement-window keys kept only so already-issued tokens can still be verified. A host that
+  rotated its signing algorithm (e.g. RS256 -> ES256) but left `IdToken.SigningAlgValuesSupported`
+  unchanged would pass startup as long as the old RS256 key was still inside its retirement window,
+  even though every new token was actually signed ES256. That "producible" set is now derived from
+  a new `ISigningKeyProducibility` interface — implemented by `JwtSigningService<TOptions>`, so
+  every in-box provider gets it for free — which reports only the active key's algorithm plus any
+  not-yet-active (staged) key's algorithm, explicitly excluding retirement-window-only keys.
+
+  The check is also no longer one-directional: the active signing key's algorithm must now itself
+  be present in `IdToken.SigningAlgValuesSupported`, failing with a new
+  `signing.active_algorithm_not_advertised` code if it is not. A host that signs with an algorithm
+  it does not advertise — the literal "signs with whatever it has, discovery lies" scenario — was
+  previously never caught.
+
+  **A previously-booting host may now fail startup** if its active signer's algorithm was not
+  advertised, or if an advertised algorithm was backed only by a retirement-window key. A custom,
+  out-of-tree `IJwtSigningService` implementation that does not implement `ISigningKeyProducibility`
+  is unaffected by either failure mode — the check is skipped for it, with a
+  `signing.advertised_algorithm_check_skipped` warning logged instead.
+
 - **BREAKING: `SigningKeyRotation.SelectActiveKey`'s bootstrap-exemption flag replaced by two entry points** (#449)
 
   The `bool supportsBootstrapExemption` parameter is removed. `SelectActiveKey(timeline, now)`

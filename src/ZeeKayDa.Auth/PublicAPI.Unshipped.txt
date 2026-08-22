@@ -374,6 +374,8 @@ ZeeKayDa.Auth.Tokens.IJwtSigningService.SignAsync(System.ReadOnlyMemory<byte> pa
 ZeeKayDa.Auth.Tokens.ISigner
 ZeeKayDa.Auth.Tokens.ISigner.Algorithm.get -> ZeeKayDa.Auth.Tokens.SigningAlgorithm
 ZeeKayDa.Auth.Tokens.ISigner.SignAsync(System.ReadOnlyMemory<byte> signingInput, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<System.ReadOnlyMemory<byte>>
+ZeeKayDa.Auth.Tokens.ISigningKeyProducibility
+ZeeKayDa.Auth.Tokens.ISigningKeyProducibility.GetProducibilityAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeeKayDa.Auth.Tokens.SigningKeyProducibilitySnapshot!>
 ZeeKayDa.Auth.Tokens.ISigningKeyRetirementWindowProvider
 ZeeKayDa.Auth.Tokens.ISigningKeyRetirementWindowProvider.GetRetirementWindow() -> System.TimeSpan
 ZeeKayDa.Auth.Tokens.ISigningStartupSelfTest
@@ -478,6 +480,15 @@ ZeeKayDa.Auth.Tokens.SigningKeyDescriptor.RsaPublicParameters.get -> System.Secu
 ZeeKayDa.Auth.Tokens.SigningKeyDescriptor.SigningKeyDescriptor(string! kid, ZeeKayDa.Auth.Tokens.SigningAlgorithm algorithm, System.Security.Cryptography.ECParameters ecPublicParameters) -> void
 ZeeKayDa.Auth.Tokens.SigningKeyDescriptor.SigningKeyDescriptor(string! kid, ZeeKayDa.Auth.Tokens.SigningAlgorithm algorithm, System.Security.Cryptography.RSAParameters rsaPublicParameters) -> void
 ZeeKayDa.Auth.Tokens.SigningKeyDescriptorFactory
+ZeeKayDa.Auth.Tokens.SigningKeyProducibilitySnapshot
+ZeeKayDa.Auth.Tokens.SigningKeyProducibilitySnapshot.<Clone>$() -> ZeeKayDa.Auth.Tokens.SigningKeyProducibilitySnapshot!
+ZeeKayDa.Auth.Tokens.SigningKeyProducibilitySnapshot.ActiveAlgorithm.get -> ZeeKayDa.Auth.Tokens.SigningAlgorithm
+ZeeKayDa.Auth.Tokens.SigningKeyProducibilitySnapshot.ActiveAlgorithm.init -> void
+ZeeKayDa.Auth.Tokens.SigningKeyProducibilitySnapshot.Algorithms.get -> System.Collections.Generic.IReadOnlyCollection<ZeeKayDa.Auth.Tokens.SigningAlgorithm>!
+ZeeKayDa.Auth.Tokens.SigningKeyProducibilitySnapshot.Algorithms.init -> void
+ZeeKayDa.Auth.Tokens.SigningKeyProducibilitySnapshot.Deconstruct(out ZeeKayDa.Auth.Tokens.SigningAlgorithm ActiveAlgorithm, out System.Collections.Generic.IReadOnlyCollection<ZeeKayDa.Auth.Tokens.SigningAlgorithm>! Algorithms) -> void
+ZeeKayDa.Auth.Tokens.SigningKeyProducibilitySnapshot.Equals(ZeeKayDa.Auth.Tokens.SigningKeyProducibilitySnapshot? other) -> bool
+ZeeKayDa.Auth.Tokens.SigningKeyProducibilitySnapshot.SigningKeyProducibilitySnapshot(ZeeKayDa.Auth.Tokens.SigningAlgorithm ActiveAlgorithm, System.Collections.Generic.IReadOnlyCollection<ZeeKayDa.Auth.Tokens.SigningAlgorithm>! Algorithms) -> void
 ZeeKayDa.Auth.Tokens.SigningKeyRotation
 ZeeKayDa.Auth.Tokens.SigningKeyType
 ZeeKayDa.Auth.Tokens.SigningKeyType.Ec = 1 -> ZeeKayDa.Auth.Tokens.SigningKeyType
@@ -581,6 +592,9 @@ override ZeeKayDa.Auth.Tokens.PublicKeyParameters.GetHashCode() -> int
 override ZeeKayDa.Auth.Tokens.PublicKeyParameters.ToString() -> string!
 override ZeeKayDa.Auth.Tokens.RotationEntry.GetHashCode() -> int
 override ZeeKayDa.Auth.Tokens.RotationKey.GetHashCode() -> int
+override ZeeKayDa.Auth.Tokens.SigningKeyProducibilitySnapshot.Equals(object? obj) -> bool
+override ZeeKayDa.Auth.Tokens.SigningKeyProducibilitySnapshot.GetHashCode() -> int
+override ZeeKayDa.Auth.Tokens.SigningKeyProducibilitySnapshot.ToString() -> string!
 override ZeeKayDa.Auth.Tokens.SigningResult.Equals(object? obj) -> bool
 override ZeeKayDa.Auth.Tokens.SigningResult.GetHashCode() -> int
 override ZeeKayDa.Auth.Tokens.SigningResult.ToString() -> string!
@@ -631,6 +645,8 @@ static ZeeKayDa.Auth.Tokens.RotationEntry.operator !=(ZeeKayDa.Auth.Tokens.Rotat
 static ZeeKayDa.Auth.Tokens.RotationEntry.operator ==(ZeeKayDa.Auth.Tokens.RotationEntry left, ZeeKayDa.Auth.Tokens.RotationEntry right) -> bool
 static ZeeKayDa.Auth.Tokens.RotationKey.operator !=(ZeeKayDa.Auth.Tokens.RotationKey left, ZeeKayDa.Auth.Tokens.RotationKey right) -> bool
 static ZeeKayDa.Auth.Tokens.RotationKey.operator ==(ZeeKayDa.Auth.Tokens.RotationKey left, ZeeKayDa.Auth.Tokens.RotationKey right) -> bool
+static ZeeKayDa.Auth.Tokens.SigningKeyProducibilitySnapshot.operator !=(ZeeKayDa.Auth.Tokens.SigningKeyProducibilitySnapshot? left, ZeeKayDa.Auth.Tokens.SigningKeyProducibilitySnapshot? right) -> bool
+static ZeeKayDa.Auth.Tokens.SigningKeyProducibilitySnapshot.operator ==(ZeeKayDa.Auth.Tokens.SigningKeyProducibilitySnapshot? left, ZeeKayDa.Auth.Tokens.SigningKeyProducibilitySnapshot? right) -> bool
 static ZeeKayDa.Auth.Tokens.SigningKeyDescriptorFactory.BuildDescriptor(System.Security.Cryptography.AsymmetricAlgorithm! publicKey, ZeeKayDa.Auth.Tokens.SigningKeyType keyType, ZeeKayDa.Auth.Tokens.SigningAlgorithm algorithm, string! mismatchFailureCode, System.Func<ZeeKayDa.Auth.Tokens.SigningKeyType, string!>! mismatchMessage) -> ZeeKayDa.Auth.Tokens.SigningKeyDescriptor!
 static ZeeKayDa.Auth.Tokens.SigningKeyRotation.BuildActivationTimeline(System.Collections.Generic.IReadOnlyList<ZeeKayDa.Auth.Tokens.RotationKey>! keys) -> System.Collections.Generic.IReadOnlyList<ZeeKayDa.Auth.Tokens.RotationEntry>!
 static ZeeKayDa.Auth.Tokens.SigningKeyRotation.HasTooSoonPendingActivation(System.Collections.Generic.IReadOnlyList<ZeeKayDa.Auth.Tokens.RotationEntry>! timeline, ZeeKayDa.Auth.Tokens.RotationEntry active, System.DateTimeOffset now, System.TimeSpan assumedJwksPropagationDelay, out ZeeKayDa.Auth.Tokens.RotationEntry? soonestPending) -> bool

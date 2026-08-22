@@ -1324,6 +1324,65 @@ public sealed class JwtSigningServiceTests
         exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.self_test_failed");
     }
 
+    // ── Signing-key producibility (ISigningKeyProducibility, issue #494 follow-up) ─────────────────
+
+    [Fact]
+    public async Task GetProducibilityAsync_reports_the_active_algorithm_plus_a_staged_keys_algorithm()
+    {
+        using var rsa = RSA.Create(2048);
+        using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var timeProvider = new FakeTimeProvider(Epoch);
+        var successorActivatesAt = Epoch.AddHours(1);
+
+        await using var sut = BuildKeySetService(
+            timeProvider,
+            () =>
+            [
+                MakeRsaListing(rsa, "k1", activateAt: null, expiresAt: Epoch.AddYears(1)),
+                new KeyListing(
+                    new KeyId("k2"), SigningAlgorithm.ES256, PublicKeyParameters.FromEc(ec.ExportParameters(false)),
+                    successorActivatesAt, Epoch.AddYears(1)),
+            ]);
+        var ct = TestContext.Current.CancellationToken;
+        var producibility = (ISigningKeyProducibility)sut;
+
+        var snapshot = await producibility.GetProducibilityAsync(ct);
+
+        snapshot.ActiveAlgorithm.Should().Be(SigningAlgorithm.RS256, "k1 has no ActivateAt and is the sole eligible signer right now");
+        snapshot.Algorithms.Should().BeEquivalentTo(
+            [SigningAlgorithm.RS256, SigningAlgorithm.ES256],
+            "k2 is not yet active but will become the signer soon, so its algorithm counts as producible");
+    }
+
+    [Fact]
+    public async Task GetProducibilityAsync_excludes_a_retirement_window_keys_algorithm_once_it_is_superseded()
+    {
+        using var rsa1 = RSA.Create(2048);
+        using var rsa2 = RSA.Create(2048);
+        var timeProvider = new FakeTimeProvider(Epoch);
+        var successorActivatesAt = Epoch.AddHours(1);
+
+        await using var sut = BuildKeySetService(
+            timeProvider,
+            () =>
+            [
+                MakeRsaListing(rsa1, "k1", activateAt: null, expiresAt: Epoch.AddYears(1)),
+                MakeRsaListing(rsa2, "k2", activateAt: successorActivatesAt, expiresAt: Epoch.AddYears(1), algorithm: SigningAlgorithm.RS384),
+            ],
+            signerFactory: id => new FakeSigner(algorithm: id.Value == "k1" ? SigningAlgorithm.RS256 : SigningAlgorithm.RS384));
+        var ct = TestContext.Current.CancellationToken;
+        var producibility = (ISigningKeyProducibility)sut;
+
+        timeProvider.Advance(TimeSpan.FromHours(2));
+        var snapshot = await producibility.GetProducibilityAsync(ct);
+
+        snapshot.ActiveAlgorithm.Should().Be(SigningAlgorithm.RS384, "k2 has now superseded k1 as the active signer");
+        snapshot.Algorithms.Should().BeEquivalentTo(
+            [SigningAlgorithm.RS384],
+            "k1 is now retirement-window-only — it can still verify already-issued tokens but never signs a new one, " +
+            "so its algorithm must not be reported as producible");
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────────────────────────
 
     private static byte[] DecodeBase64Url(ReadOnlyMemory<byte> encoded)

@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Tokens;
@@ -7,30 +6,44 @@ namespace ZeeKayDa.Auth.Tests.Tokens;
 
 /// <summary>
 /// Exercises <see cref="AdvertisedSigningAlgorithmVerifier"/> in isolation: the failure raised when
-/// an advertised algorithm has no matching key, the silent no-op when nothing is registered at all,
-/// and the deliberate one-directional asymmetry that allows a key for a non-advertised algorithm
-/// (a retirement-window key) to pass without complaint.
+/// an advertised algorithm has no key able to sign it now or soon, the failure raised when the
+/// active signing key's own algorithm is not advertised, the silent no-op when nothing is
+/// registered at all, and the deliberate exclusion of retirement-window-only keys from both checks.
 /// </summary>
 public sealed class AdvertisedSigningAlgorithmVerifierTests
 {
-    private static readonly RSA Rsa = RSA.Create(2048);
-    private static readonly ECDsa Ec256 = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-    private static readonly ECDsa Ec384 = ECDsa.Create(ECCurve.NamedCurves.nistP384);
-
-    private sealed class FakeSigningService(IReadOnlyList<SigningKeyDescriptor> keys) : IJwtSigningService
+    private sealed class FakeSigningService(SigningKeyProducibilitySnapshot snapshot)
+        : IJwtSigningService, ISigningKeyProducibility
     {
         public ValueTask<IReadOnlyList<SigningKeyDescriptor>> GetSigningKeysAsync(CancellationToken cancellationToken = default)
-            => ValueTask.FromResult(keys);
+            => throw new NotImplementedException();
+
+        public ValueTask<SigningResult> SignAsync(ReadOnlyMemory<byte> payloadSegment, CancellationToken cancellationToken = default)
+            => throw new NotImplementedException();
+
+        public ValueTask<SigningKeyProducibilitySnapshot> GetProducibilityAsync(CancellationToken cancellationToken = default)
+            => ValueTask.FromResult(snapshot);
+    }
+
+    private sealed class FakeSigningServiceWithoutProducibility : IJwtSigningService
+    {
+        public ValueTask<IReadOnlyList<SigningKeyDescriptor>> GetSigningKeysAsync(CancellationToken cancellationToken = default)
+            => throw new NotImplementedException();
 
         public ValueTask<SigningResult> SignAsync(ReadOnlyMemory<byte> payloadSegment, CancellationToken cancellationToken = default)
             => throw new NotImplementedException();
     }
 
-    private static SigningKeyDescriptor RsaKey(SigningAlgorithm algorithm, string kid = "rsa-1")
-        => new(kid, algorithm, Rsa.ExportParameters(false));
-
-    private static SigningKeyDescriptor EcKey(SigningAlgorithm algorithm, string kid = "ec-1")
-        => new(kid, algorithm, algorithm == SigningAlgorithm.ES384 ? Ec384.ExportParameters(false) : Ec256.ExportParameters(false));
+    /// <summary>
+    /// Builds a producibility snapshot for a fake provider: <paramref name="active"/> is the
+    /// currently active signer's algorithm, and <paramref name="stagedAlgorithms"/> are the
+    /// algorithms of any not-yet-active keys. A retirement-window-only key never appears here at
+    /// all — it is simply omitted, exactly as the real <see cref="JwtSigningService{TOptions}"/>
+    /// implementation excludes it.
+    /// </summary>
+    private static SigningKeyProducibilitySnapshot Producibility(
+        SigningAlgorithm active, params SigningAlgorithm[] stagedAlgorithms)
+        => new(active, new HashSet<SigningAlgorithm>(stagedAlgorithms) { active });
 
     private static ServiceProvider BuildProvider(IJwtSigningService? signingService)
     {
@@ -52,7 +65,7 @@ public sealed class AdvertisedSigningAlgorithmVerifierTests
     [Fact]
     public async Task VerifyAsync_records_a_failure_when_the_advertised_algorithm_has_no_matching_key()
     {
-        using var provider = BuildProvider(new FakeSigningService([EcKey(SigningAlgorithm.ES256)]));
+        using var provider = BuildProvider(new FakeSigningService(Producibility(SigningAlgorithm.ES256)));
         var sut = BuildSut(SigningAlgorithm.RS256);
         var context = new StartupVerificationContext();
 
@@ -79,9 +92,25 @@ public sealed class AdvertisedSigningAlgorithmVerifierTests
     }
 
     [Fact]
+    public async Task VerifyAsync_records_a_warning_and_skips_the_check_when_the_signing_service_does_not_implement_producibility()
+    {
+        using var provider = BuildProvider(new FakeSigningServiceWithoutProducibility());
+        var sut = BuildSut(SigningAlgorithm.RS256);
+        var context = new StartupVerificationContext();
+
+        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+
+        context.Failures.Should().BeEmpty();
+        context.Warnings.Should().ContainSingle(w => w.Code == "signing.advertised_algorithm_check_skipped");
+    }
+
+    [Fact]
     public async Task VerifyAsync_records_no_failure_when_the_advertised_algorithm_has_a_matching_key()
     {
-        using var provider = BuildProvider(new FakeSigningService([RsaKey(SigningAlgorithm.RS256)]));
+        // Also the still-valid retirement-window case: a retiring key (a previously-advertised
+        // algorithm now on its way out) never appears in the producibility snapshot at all, so its
+        // absence from SigningAlgValuesSupported does not need to be modelled explicitly here.
+        using var provider = BuildProvider(new FakeSigningService(Producibility(SigningAlgorithm.RS256)));
         var sut = BuildSut(SigningAlgorithm.RS256);
         var context = new StartupVerificationContext();
 
@@ -91,27 +120,9 @@ public sealed class AdvertisedSigningAlgorithmVerifierTests
     }
 
     [Fact]
-    public async Task VerifyAsync_ignores_a_key_whose_algorithm_is_not_advertised()
-    {
-        using var provider = BuildProvider(new FakeSigningService(
-        [
-            RsaKey(SigningAlgorithm.RS256),
-            EcKey(SigningAlgorithm.ES256),
-        ]));
-        var sut = BuildSut(SigningAlgorithm.RS256);
-        var context = new StartupVerificationContext();
-
-        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
-
-        context.Failures.Should().BeEmpty(
-            "a key for an algorithm that is no longer advertised is normal retirement-window state, " +
-            "not a misconfiguration — the check only runs advertised -> producible, never the reverse");
-    }
-
-    [Fact]
     public async Task VerifyAsync_records_a_single_failure_naming_the_unavailable_algorithm_and_the_covered_set()
     {
-        using var provider = BuildProvider(new FakeSigningService([RsaKey(SigningAlgorithm.RS256)]));
+        using var provider = BuildProvider(new FakeSigningService(Producibility(SigningAlgorithm.RS256)));
         var sut = BuildSut(SigningAlgorithm.RS256, SigningAlgorithm.ES384);
         var context = new StartupVerificationContext();
 
@@ -126,7 +137,8 @@ public sealed class AdvertisedSigningAlgorithmVerifierTests
     [Fact]
     public async Task VerifyAsync_describes_an_empty_key_set_without_empty_brackets()
     {
-        using var provider = BuildProvider(new FakeSigningService([]));
+        using var provider = BuildProvider(
+            new FakeSigningService(new SigningKeyProducibilitySnapshot(SigningAlgorithm.RS256, [])));
         var sut = BuildSut(SigningAlgorithm.RS256);
         var context = new StartupVerificationContext();
 
@@ -136,6 +148,42 @@ public sealed class AdvertisedSigningAlgorithmVerifierTests
             f.Code == "signing.advertised_algorithm_unavailable" &&
             !f.Message.Contains("[]") &&
             f.Message.Contains("no algorithms at all"));
+    }
+
+    [Fact]
+    public async Task VerifyAsync_records_a_failure_when_the_only_key_for_an_advertised_algorithm_is_retirement_window_only()
+    {
+        // The exact Fix 1 exploit: rotated RS256 -> ES256, but SigningAlgValuesSupported was never
+        // updated. The RS256 key still exists but only inside its retirement window, so it must not
+        // count as able to sign a new token.
+        using var provider = BuildProvider(new FakeSigningService(Producibility(SigningAlgorithm.ES256)));
+        var sut = BuildSut(SigningAlgorithm.RS256);
+        var context = new StartupVerificationContext();
+
+        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+
+        context.Failures.Should().Contain(f =>
+            f.Code == "signing.advertised_algorithm_unavailable" &&
+            f.Message.Contains("RS256"));
+    }
+
+    [Fact]
+    public async Task VerifyAsync_records_a_failure_when_the_active_key_signs_with_an_algorithm_that_is_not_advertised()
+    {
+        // The exact Fix 2 exploit: the active key signs RS256, but only ES256 (a staged key not
+        // yet active) is advertised. The staged key being producible-soon satisfies the advertised
+        // -> producible direction, so only the active-but-unadvertised failure should fire.
+        using var provider = BuildProvider(
+            new FakeSigningService(Producibility(SigningAlgorithm.RS256, SigningAlgorithm.ES256)));
+        var sut = BuildSut(SigningAlgorithm.ES256);
+        var context = new StartupVerificationContext();
+
+        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+
+        context.Failures.Should().ContainSingle(f =>
+            f.Code == "signing.active_algorithm_not_advertised" &&
+            f.Message.Contains("RS256") &&
+            f.Message.Contains("ES256"));
     }
 
     [Fact]

@@ -81,11 +81,14 @@ the framework does not model.
 configured.** Deriving `id_token_signing_alg_values_supported` from whichever keys happen to be loaded
 would make the document flicker during key rotation. Operators declare what the server supports;
 key state does not. Startup now cross-checks that static list against the registered
-`IJwtSigningService`'s current keys and fails if an advertised algorithm has no key behind it — there
-is no runtime backstop otherwise, so a silently-misconfigured server would issue tokens in an
-algorithm it never advertised. The check is one-directional: a key whose algorithm is no longer
-advertised (a retirement-window key kept only so already-issued tokens still validate) is normal
-migration state, not a failure.
+`IJwtSigningService` in both directions: every advertised algorithm needs a key able to sign a new
+token with it now or soon (the active key, or a not-yet-active key already staged to take over), and
+the active key's own algorithm must itself be advertised — a server that signs new tokens with an
+algorithm it does not list is misleading relying parties from the other direction. There is no
+runtime backstop for either direction, so a silently-misconfigured server would otherwise issue
+tokens in an algorithm it never advertised, or advertise an algorithm it can no longer actually
+produce. Neither direction is checked against a key retained only for its retirement window (kept
+so already-issued tokens still validate) — that is normal migration state, not a failure.
 
 **Collection keys bind by replacement, not merge.** An operator who sets one entry of an
 `IConfiguration` collection key loses the rest of that key's defaults. The validator's
