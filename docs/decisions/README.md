@@ -54,6 +54,15 @@ prevent twice. Design-time "we considered X and didn't do it" is noise; leave it
   settled on*, it's in the wrong directory.
 - **Rationale essays.** State the decision and enough of the why to stop someone reversing it by
   accident. If it needs three paragraphs, write a `docs/explanation/` page and keep the entry short.
+- **Speculative API shapes for work that isn't built.** A proposed interface name, signature, or
+  record shape for code that does not exist is not a decision in force — it is a sketch, and it will
+  be redone against the real codebase when the work is picked up. Carrying it here anchors whoever
+  builds it on stale thinking.
+
+  What *does* belong, for unbuilt work: decisions already realised in shipped code, security or
+  correctness properties, spec-mandated refusals, and rejected alternatives someone would otherwise
+  re-propose. Those are true now — they constrain what exists — so they read correctly as decisions
+  in force. **Drop the shape, keep the constraint.**
 
 ## The one exception: security sign-offs
 

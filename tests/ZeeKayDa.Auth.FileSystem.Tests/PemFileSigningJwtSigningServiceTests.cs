@@ -21,7 +21,7 @@ namespace ZeeKayDa.Auth.FileSystem.Tests;
 /// <remarks>
 /// This provider is on ADR 0015's <see cref="KeySetOptions"/> contract (issue #422):
 /// <c>ListKeysAsync</c> runs exactly once, ever, for the lifetime of a service instance, so there is
-/// no reload/change-detection surface to test here — unlike the pre-migration ADR 0011 contract, a
+/// no reload/change-detection surface to test here — unlike the earlier contract, a
 /// changed or newly-added file is never picked up without a restart. Rotation between already-known
 /// files still switches the active signer purely from elapsed wall-clock time, with zero further
 /// file I/O — that behaviour is covered below.

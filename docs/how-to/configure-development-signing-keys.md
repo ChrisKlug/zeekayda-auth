@@ -183,9 +183,9 @@ For `.AddPersistedDevelopmentJwtSigningKeys(...)`, the same property lives on
 
 `Production` still cannot be added to this list — the gate rejects a
 `Production` host environment unconditionally, regardless of what the list contains, and this is
-enforced both by startup validation and by the gate itself. For why this property lives on the
-provider-specific options type rather than a shared root, see
-[ADR 0011's development-key environment gate decision and its "Why" section](https://github.com/ChrisKlug/zeekayda-auth/blob/main/docs/decisions/0011-signing-key-management.md).
+enforced both by startup validation and by the gate itself. This property lives on the
+provider-specific options type rather than a shared root because the gate is inherently tied to
+the development-signing-key provider, not to signing configuration in general.
 
 If you only need the host to report `Development` itself — for example, a local integration test
 host that would otherwise pick up its own environment name — it can be simpler to leave the list

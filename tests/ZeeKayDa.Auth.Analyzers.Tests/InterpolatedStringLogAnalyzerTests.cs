@@ -361,7 +361,7 @@ public sealed class InterpolatedStringLogAnalyzerTests
     [Fact]
     public async Task Diagnostic_still_fires_inside_friend_assembly_class_implementing_a_PUBLIC_ISanitizingLogger()
     {
-        // Regression coverage for ADR 0011 Amendment 2(d): the exemption is gated on
+        // Regression coverage: the exemption is gated on
         // `ContainingAssembly.Name == "ZeeKayDa.Auth"` alone (InterpolatedStringLogAnalyzer.
         // IsInLoggerImplementation), not on ISanitizingLogger<T>'s visibility. Making the
         // interface public must not open a new way for a friend (or third-party) assembly's own

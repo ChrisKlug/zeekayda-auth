@@ -1,7 +1,7 @@
 namespace ZeeKayDa.Auth.Tests.Logging;
 
 /// <summary>
-/// Documents the visibility invariants of the sanitizing-logger types (ADR 0011 Amendment 2(d)).
+/// Documents the visibility invariants of the sanitizing-logger types.
 /// </summary>
 public sealed class ISanitizingLoggerVisibilityTests
 {
@@ -11,8 +11,7 @@ public sealed class ISanitizingLoggerVisibilityTests
         // Public so that packages referencing only core ZeeKayDa.Auth (e.g.
         // ZeeKayDa.Auth.AzureKeyVault, and genuine third-party signing/storage providers) can
         // constructor-inject it without InternalsVisibleTo, which can only ever name first-party
-        // assemblies at build time. This mirrors why JwkThumbprint is public
-        // (ADR 0011 Amendment 2(c)).
+        // assemblies at build time. This mirrors why JwkThumbprint is public.
         //
         // This was previously asserted false, citing a concern that the ZEEKAYDA0002 analyzer's
         // logger-implementation exemption (InterpolatedStringLogAnalyzer.IsInLoggerImplementation)

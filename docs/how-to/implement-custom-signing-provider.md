@@ -28,8 +28,8 @@ provider needs to enforce a timing invariant of its own.
 - You understand the retirement-window and publish-then-activate model shared by every provider —
   see [Rotate signing keys](rotate-signing-keys.md) first if you haven't already. This guide covers
   the *options shapes* and *methods* a provider implements, not the rotation model itself.
-- For the full contract and rationale behind the split below, see
-  [ADR 0011](../decisions/0011-signing-key-management.md). This guide is deliberately
+- For the full contract and rationale behind the split below, see the
+  [signing keys reference](../reference/signing-keys.md). This guide is deliberately
   practical — it shows you what to derive from and what to copy, not why each invariant exists.
 
 ## Which options type do I implement?
@@ -309,7 +309,7 @@ you lose exactly the property the other was providing.
 
 ## The completeness contract: fail closed on a partial read
 
-`ListKeysAsync` carries a completeness contract (ADR 0011's kill-by-omission decision): a provider that cannot produce a
+`ListKeysAsync` carries a completeness contract (the kill-by-omission rule): a provider that cannot produce a
 *complete* read of its current key set **must throw**, never return a short or partial list. This
 matters because the base class treats an *omitted* key as **revoked** — see
 [Rotate signing keys: emergency revocation](rotate-signing-keys.md#emergency-key-rotation) for the
@@ -381,6 +381,5 @@ between the two calls.
   [Configure Windows Certificate Store signing](configure-windows-certificate-store-signing.md) —
   the shipped `KeySetOptions` examples.
 - [Signing keys reference](../reference/signing-keys.md) — the full `IJwtSigningService` /
-  `JwtSigningService<TOptions>` / `KeyListing` / `ISigner` contract this guide builds on.
-- [ADR 0011: Signing Key Management and the Provider Contract](../decisions/0011-signing-key-management.md) —
-  the full design rationale for the options hierarchy and the data-not-objects provider contract.
+  `JwtSigningService<TOptions>` / `KeyListing` / `ISigner` contract this guide builds on,
+  including the design rationale for the options hierarchy and the data-not-objects provider contract.

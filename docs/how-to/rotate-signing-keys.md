@@ -41,8 +41,7 @@ You rotate a signing key for one of three reasons:
 
 ## The model, in plain language
 
-All production providers share the same three ideas. The [ADR 0011 §3.3 and §3.5](https://github.com/ChrisKlug/zeekayda-auth/blob/main/docs/decisions/0011-signing-key-management.md)
-define this in full; this section is the developer-facing summary.
+All production providers share the same three ideas, summarized here for developers.
 
 ### A retired key's public half stays published for a while — its private half does not
 
@@ -90,9 +89,9 @@ otherwise-valid token signed with a `kid` it has simply never seen.
 ZeeKayDa.Auth's providers avoid this by requiring a new key to be **published** — visible in
 `GetSigningKeysAsync()` results, and so in the JWKS — for some lead time **before** it is
 promoted to active signer. That lead time is called `PublicationLead` on every production
-provider's options type: on the Azure Key Vault options types (ADR 0011's
-`KeySourceOptions`) it defaults to `RefreshInterval` (itself 1 hour by default); on the Windows
-Certificate Store and file-based PEM/PFX options types (ADR 0011's `KeySetOptions`) it also
+provider's options type: on the Azure Key Vault options types (`KeySourceOptions`)
+it defaults to `RefreshInterval` (itself 1 hour by default); on the Windows
+Certificate Store and file-based PEM/PFX options types (`KeySetOptions`) it also
 defaults to 1 hour. See
 [Windows Certificate Store and file-based (PEM/PFX)](#windows-certificate-store-and-file-based-pempfx--manual-registration)
 below for what it governs on those providers. In every case, set it to something at least as long
@@ -170,7 +169,7 @@ start — adding, removing, or replacing a certificate always requires a config 
 restart.
 
 > 💡 **Tip:** The file-based PEM/PFX provider and the Windows Certificate Store provider both
-> implement ADR 0011's `KeySetOptions` contract (property `PublicationLead`): the complete
+> implement the `KeySetOptions` contract (property `PublicationLead`): the complete
 > set of registered files/thumbprints is fixed at configuration time, and every one of them is read
 > exactly once, at startup. The activation *behavior* described in this section — `NotBefore` is
 > the only signal, with no library-enforced floor under it — is identical for both.
