@@ -80,7 +80,12 @@ the framework does not model.
 **Discovery is a stable, cached contract, and advertised signing algorithms are statically
 configured.** Deriving `id_token_signing_alg_values_supported` from whichever keys happen to be loaded
 would make the document flicker during key rotation. Operators declare what the server supports;
-key state does not.
+key state does not. Startup now cross-checks that static list against the registered
+`IJwtSigningService`'s current keys and fails if an advertised algorithm has no key behind it — there
+is no runtime backstop otherwise, so a silently-misconfigured server would issue tokens in an
+algorithm it never advertised. The check is one-directional: a key whose algorithm is no longer
+advertised (a retirement-window key kept only so already-issued tokens still validate) is normal
+migration state, not a failure.
 
 **Collection keys bind by replacement, not merge.** An operator who sets one entry of an
 `IConfiguration` collection key loses the rest of that key's defaults. The validator's
