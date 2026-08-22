@@ -30,10 +30,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   actually became the active signer, since startup verification is one-shot.
 
   **A previously-booting host may now fail startup** if its active or staged signer's algorithm was
-  not advertised, or if an advertised algorithm was backed only by a retirement-window key. A
-  custom, out-of-tree `IJwtSigningService` implementation that does not implement
-  `ISigningKeyProducibility` is unaffected by either failure mode — the check is skipped for it,
-  with a `signing.advertised_algorithm_check_skipped` warning logged instead.
+  not advertised, or if an advertised algorithm has no key at all — active, staged, or retiring —
+  able to sign or verify with it. An advertised algorithm backed *only* by a retirement-window key
+  (normal for as long as a migration's retirement window stays open) is a `signing.advertised_algorithm_retirement_window_only`
+  warning, not a failure — it becomes one once that key itself is gone. A custom, out-of-tree
+  `IJwtSigningService` implementation that does not implement `ISigningKeyProducibility` is
+  unaffected by any of this — the check is skipped for it, with a
+  `signing.advertised_algorithm_check_skipped` warning logged instead.
 
 - **BREAKING: `SigningKeyRotation.SelectActiveKey`'s bootstrap-exemption flag replaced by two entry points** (#449)
 
