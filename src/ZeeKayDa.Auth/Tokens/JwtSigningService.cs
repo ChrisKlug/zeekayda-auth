@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Buffers.Text;
+using System.Collections.Frozen;
 using System.Diagnostics.CodeAnalysis;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -14,15 +15,16 @@ namespace ZeeKayDa.Auth.Tokens;
 /// snapshot key-listing caching (once for a <see cref="KeySetOptions"/> provider, or on a
 /// recurring cadence for a <see cref="KeySourceOptions"/> provider), lazy active-key
 /// selection, key-algorithm compatibility validation, deterministic disposal of superseded signers,
-/// and the JWS signing operation. Implementors provide only <see cref="ListKeysAsync"/> and
-/// <see cref="CreateSignerAsync"/>.
+/// the JWS signing operation, and the <see cref="ISigningKeyProducibility"/> surface consulted by
+/// the startup advertised-algorithm check. Implementors provide only <see cref="ListKeysAsync"/>
+/// and <see cref="CreateSignerAsync"/>.
 /// </summary>
 /// <typeparam name="TOptions">
 /// The provider-specific options type. Must derive from <see cref="KeySetOptions"/> (a fixed
 /// key set known at configuration time) or <see cref="KeySourceOptions"/> (a source the base
 /// class re-reads on a cadence).
 /// </typeparam>
-public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigningStartupSelfTest, IAsyncDisposable
+public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigningStartupSelfTest, ISigningKeyProducibility, IAsyncDisposable
     where TOptions : JwtSigningServiceOptions
 {
     // Never a valid JWS (no '.' separator, contains a space), so it can't be mistaken for one even
@@ -171,6 +173,32 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
         var snapshot = await EnsureSnapshotAsync(cancellationToken).ConfigureAwait(false);
         var handle = await EnsureActiveSignerAsync(snapshot, cancellationToken).ConfigureAwait(false);
         handle.Return();
+    }
+
+    /// <summary>
+    /// Reports the currently active signing key's algorithm, plus the algorithm of every key that
+    /// is not yet active but will become the active signer in due course. A key retained only
+    /// within its retirement window is deliberately excluded — it verifies already-issued tokens,
+    /// but never signs a new one.
+    /// </summary>
+    /// <remarks>
+    /// Explicit-interface-implemented, the same pattern used by <see cref="ISigningStartupSelfTest"/>.
+    /// </remarks>
+    async ValueTask<SigningKeyProducibilitySnapshot> ISigningKeyProducibility.GetProducibilityAsync(
+        CancellationToken cancellationToken)
+    {
+        var snapshot = await EnsureSnapshotAsync(cancellationToken).ConfigureAwait(false);
+        var now = _timeProvider.GetUtcNow();
+
+        var active = SelectActiveKey(snapshot.Timeline, now) ?? throw NoActiveKeyException();
+        var activeAlgorithm = snapshot.DescriptorsById[active.Key.Id].Algorithm;
+
+        var futureSigners = SigningKeyRotation.SelectFutureSigners(snapshot.Timeline, active, now);
+        var stagedAlgorithms = futureSigners
+            .Select(entry => snapshot.DescriptorsById[entry.Key.Id].Algorithm)
+            .ToFrozenSet();
+
+        return new SigningKeyProducibilitySnapshot(activeAlgorithm, stagedAlgorithms);
     }
 
     /// <inheritdoc/>

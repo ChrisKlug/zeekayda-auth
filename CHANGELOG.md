@@ -8,6 +8,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- **BREAKING (behavioral): the advertised-signing-algorithm startup check now also enforces that every currently-or-soon producible algorithm is advertised, and no longer treats a retirement-window key as producible** (#494)
+
+  `AdvertisedSigningAlgorithmVerifier` previously derived the set of "algorithms the provider can
+  produce" from the full result of `IJwtSigningService.GetSigningKeysAsync`, which includes
+  retirement-window keys kept only so already-issued tokens can still be verified. A host that
+  rotated its signing algorithm (e.g. RS256 -> ES256) but left `IdToken.SigningAlgValuesSupported`
+  unchanged would pass startup as long as the old RS256 key was still inside its retirement window,
+  even though every new token was actually signed ES256. That "producible" set is now derived from
+  a new `ISigningKeyProducibility` interface — implemented by `JwtSigningService<TOptions>`, so
+  every in-box provider gets it for free — which reports only the active key's algorithm plus any
+  not-yet-active (staged) key's algorithm, explicitly excluding retirement-window-only keys.
+
+  The check is also no longer one-directional: it now asserts full set equality between what is
+  advertised and what is producible. Every algorithm the provider can currently or soon produce —
+  the active key's algorithm, and the algorithm of any staged key — must itself be present in
+  `IdToken.SigningAlgValuesSupported`, failing with a new `signing.producible_algorithm_not_advertised`
+  code if it is not. This catches both a host that signs with an algorithm it does not advertise
+  (the "signs with whatever it has, discovery lies" scenario), and an operator who stages a new
+  key's algorithm before updating the advertised list — previously invisible until that key
+  actually became the active signer, since startup verification is one-shot.
+
+  **A previously-booting host may now fail startup** if its active or staged signer's algorithm was
+  not advertised, or if an advertised algorithm was backed only by a retirement-window key. A
+  custom, out-of-tree `IJwtSigningService` implementation that does not implement
+  `ISigningKeyProducibility` is unaffected by either failure mode — the check is skipped for it,
+  with a `signing.advertised_algorithm_check_skipped` warning logged instead.
+
 - **BREAKING: `SigningKeyRotation.SelectActiveKey`'s bootstrap-exemption flag replaced by two entry points** (#449)
 
   The `bool supportsBootstrapExemption` parameter is removed. `SelectActiveKey(timeline, now)`
@@ -66,6 +93,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   `ActivateAt = null` encoding for the chronologically-first version.
 
 ### Added
+
+- **`ISigningKeyProducibility` and `SigningKeyProducibilitySnapshot`** (#494)
+
+  New optional signing-provider interface reporting which algorithms an `IJwtSigningService` can
+  sign a new token with right now or soon (the active key's algorithm, plus any staged key's
+  algorithm). Backs the advertised-signing-algorithm startup check described above; every in-box
+  provider implements it via `JwtSigningService<TOptions>`.
+
+- **`SigningKeyRotation.SelectFutureSigners`** (#494)
+
+  New method selecting every timeline entry that is not yet active but could still legitimately
+  become the active signer once its own activation time arrives, excluding a staged key that would
+  already be expired by the time it could take over. Used by `ISigningKeyProducibility`'s
+  implementation to derive the staged-algorithm set.
 
 - **`ZeeKayDa.Auth.AzureKeyVault` package — Azure Key Vault remote signing** (#287)
 

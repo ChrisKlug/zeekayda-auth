@@ -120,7 +120,10 @@ provider, so it resolves `IJwtSigningService` from `scopedServices` and returns 
 When one *is* registered but does not implement `ISigningStartupSelfTest` it records a `Warning`
 naming the concrete resolved type rather than skipping quietly — `IJwtSigningService` is registered
 with a plain `AddSingleton`, so a decorator that forwards the interface while dropping the self-test
-would otherwise disable the control with no other signal.
+would otherwise disable the control with no other signal. The advertised-signing-algorithm verifier
+follows the same skip-with-warning pattern for its own optional capability interface,
+`ISigningKeyProducibility` — this is a general shape for an optional capability interface on
+`IJwtSigningService`, not something unique to the self-test.
 
 **Two instances of one verifier type register with plain `AddSingleton`.** `TryAddEnumerable`
 deduplicates by implementation type and would silently drop the second, which is why the per-store

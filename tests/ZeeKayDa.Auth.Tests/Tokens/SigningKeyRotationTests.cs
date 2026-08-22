@@ -231,4 +231,64 @@ public sealed class SigningKeyRotationTests
         hasWarning.Should().BeFalse();
         soonest.Should().BeNull();
     }
+
+    // ── SelectFutureSigners ───────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void SelectFutureSigners_includes_a_staged_key_that_can_still_activate_before_it_expires()
+    {
+        var active = Key("AAA", activatesAt: T0 - TimeSpan.FromDays(1));
+        var staged = Key("BBB", activatesAt: T0 + TimeSpan.FromDays(1), expiresAt: T0 + TimeSpan.FromDays(30));
+        var timeline = SigningKeyRotation.BuildActivationTimeline([active, staged]);
+        var activeEntry = timeline.Single(e => e.Key.Id == "AAA");
+
+        var futureSigners = SigningKeyRotation.SelectFutureSigners(timeline, activeEntry, now: T0);
+
+        futureSigners.Should().ContainSingle(e => e.Key.Id == "BBB");
+    }
+
+    [Fact]
+    public void SelectFutureSigners_excludes_a_staged_key_that_would_already_be_expired_by_its_own_ActivatesAt()
+    {
+        // Regression test: a staged key whose ExpiresAt falls before its own ActivatesAt can never
+        // actually take over as active signer, no matter how far in the future its activation is
+        // scheduled - it must never be reported as a future signer.
+        var active = Key("AAA", activatesAt: T0 - TimeSpan.FromDays(1));
+        var neverReallyEligible = new RotationKey(
+            "BBB", ActivatesAt: T0 + TimeSpan.FromDays(10), ExpiresAt: T0 + TimeSpan.FromDays(5));
+        var timeline = SigningKeyRotation.BuildActivationTimeline([active, neverReallyEligible]);
+        var activeEntry = timeline.Single(e => e.Key.Id == "AAA");
+
+        var futureSigners = SigningKeyRotation.SelectFutureSigners(timeline, activeEntry, now: T0);
+
+        futureSigners.Should().NotContain(e => e.Key.Id == "BBB");
+    }
+
+    [Fact]
+    public void SelectFutureSigners_includes_a_staged_key_exactly_at_the_ActivatesAt_equals_ExpiresAt_boundary()
+    {
+        var active = Key("AAA", activatesAt: T0 - TimeSpan.FromDays(1));
+        var stagedActivatesAt = T0 + TimeSpan.FromDays(10);
+        var boundaryKey = new RotationKey("BBB", ActivatesAt: stagedActivatesAt, ExpiresAt: stagedActivatesAt);
+        var timeline = SigningKeyRotation.BuildActivationTimeline([active, boundaryKey]);
+        var activeEntry = timeline.Single(e => e.Key.Id == "AAA");
+
+        var futureSigners = SigningKeyRotation.SelectFutureSigners(timeline, activeEntry, now: T0);
+
+        futureSigners.Should().ContainSingle(e => e.Key.Id == "BBB",
+            "ActivatesAt == ExpiresAt is still eligible at that instant (<=), matching IsEligibleAt's convention elsewhere");
+    }
+
+    [Fact]
+    public void SelectFutureSigners_never_includes_the_active_key_itself()
+    {
+        var active = Key("AAA", activatesAt: T0 - TimeSpan.FromDays(1));
+        var staged = Key("BBB", activatesAt: T0 + TimeSpan.FromDays(1));
+        var timeline = SigningKeyRotation.BuildActivationTimeline([active, staged]);
+        var activeEntry = timeline.Single(e => e.Key.Id == "AAA");
+
+        var futureSigners = SigningKeyRotation.SelectFutureSigners(timeline, activeEntry, now: T0);
+
+        futureSigners.Should().NotContain(e => e.Key.Id == "AAA");
+    }
 }

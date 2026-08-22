@@ -66,6 +66,8 @@ public static class ZeeKayDaAuthCoreServiceCollectionExtensions
         // of which signing-provider package registered it.
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IStartupVerifier, SigningStartupSelfTestVerifier>());
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IStartupVerifier, AdvertisedSigningAlgorithmVerifier>());
 
         return services;
     }
