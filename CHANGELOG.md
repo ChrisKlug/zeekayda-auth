@@ -17,13 +17,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   previously passing `true`/`false` should call `SelectActiveKeyForFixedKeySet`/`SelectActiveKey`
   respectively; behavior for each tier is unchanged, only the call shape.
 
-- **BREAKING: legacy ADR 0011 signing-provider contract removed** (#428)
+- **BREAKING: legacy signing-provider contract removed** (#428)
 
   `SigningKeySet`, `SigningKeyPair`, `RotatingKeySourceOptions`, and `StaticKeySourceOptions` are
   deleted, along with `JwtSigningService<TOptions>.LoadKeysAsync`, `HasKeySetChangedAsync`,
   `SignInputAsync`, `SigningKeyRotation.ToChangeDetectionSet`, and the two-argument
   `JwtSigningService(IOptions<TOptions>, TimeProvider)` constructor. `ListKeysAsync` and
-  `CreateSignerAsync` (ADR 0015) are now `abstract` — every
+  `CreateSignerAsync` are now `abstract` — every
   provider must implement the `KeySetOptions`/`KeySourceOptions` contract; there is no longer a
   throwing default for providers still on the old shape. All in-box providers (development,
   file/PEM, PFX, Windows Certificate Store, Azure Key Vault) already migrated in #421-#425 and are
@@ -39,7 +39,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   `Id.Value` now fails fast with `signing.duplicate_key_id` at snapshot-build time, matching the
   existing duplicate-derived-`kid` rejection.
 
-- **BREAKING (behavioral default change): Azure Key Vault signing providers migrated to ADR 0015 Tier B (`KeySourceOptions`)** (#425)
+- **BREAKING (behavioral default change): Azure Key Vault signing providers migrated to the `KeySourceOptions`)** (#425)
 
   `AzureKeyVaultRemoteSigningOptions` and `AzureKeyVaultCachedSigningOptions` now derive from
   `KeySourceOptions` instead of the older `RotatingKeySourceOptions`. `KeyRotationCheckInterval`
@@ -69,7 +69,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - **`ZeeKayDa.Auth.AzureKeyVault` package — Azure Key Vault remote signing** (#287)
 
-  New NuGet package, the first production `IJwtSigningService` provider (ADR 0011, ADR 0012).
+  New NuGet package, the first production `IJwtSigningService` provider.
   `AddAzureKeyVaultRemoteSigning(keyIdentifier, credential, configure?)` on `ZeeKayDaAuthBuilder`
   registers a signing provider where every JWT signature is produced by a live call to Key
   Vault's `CryptographyClient` — the private key never leaves the vault and is never held in
@@ -77,7 +77,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   entirely from Key Vault's own durable per-version `CreatedOn`/`NotBefore` timestamps (restart-
   safe and consistent across load-balanced replicas). `kid` is the RFC 7638 JWK thumbprint of
   each key version's public key, not the raw Key Vault URI, so no vault/key name is disclosed via
-  a token header or the JWKS. See ADR 0011 Amendment 2 for the full design rationale.
+  a token header or the JWKS.
 
 - **`JwtSigningService<TOptions>.SignInputAsync` — overridable async signing hook** (#287)
 
@@ -88,14 +88,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   `DevelopmentJwtSigningService` and any existing provider. Overriding it is what makes a genuine
   remote/network signer (such as Azure Key Vault) possible without blocking a thread for the
   round trip; header construction, active-key selection, and `kid`/`alg` fixation remain
-  non-overridable. See ADR 0011 Amendment 2.
+  non-overridable.
 
 - **`ISigningKeyRetirementWindowProvider`** (#287)
 
-  New core service implementing the ADR 0011 §3.3 `RetirementWindow` derivation (`1 hour +
+  New core service implementing the `RetirementWindow` derivation (`1 hour +
   ClockSkewTolerance`, until configurable per-token lifetimes exist), registered in
-  `AddZeeKayDaAuthCore()`. First consumed by the Azure Key Vault remote signing provider. See
-  ADR 0011 Amendment 2.
+  `AddZeeKayDaAuthCore()`. First consumed by the Azure Key Vault remote signing provider.
 
 - **`ZeeKayDa.Auth.Tokens.JwkThumbprint` — public RFC 7638 JWK thumbprint utility** (#287)
 
@@ -104,7 +103,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   any `JwtSigningService<TOptions>` author — first-party or third-party — derive a safe,
   non-leaking `kid` from a public key without hand-rolling RFC 7638 canonicalisation themselves.
   `DevelopmentJwtSigningService` now calls this shared helper with no change in the `kid` values
-  it produces. See ADR 0011 Amendment 2.
+  it produces.
 
 - **`ZeeKayDa.Auth.Logging.ISanitizingLogger<T>` is now public** (#287)
 
@@ -118,7 +117,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   has shadowed the framework's `ISanitizingLogger<>` at either the open-generic level (a
   replacement registered before or after `AddZeeKayDaAuth()`) or a closed-generic level (an
   override for one specific type), since either would silently disable credential
-  redaction for the entire application. See ADR 0011 Amendment 2(d).
+  redaction for the entire application.
 
 - **`AuthorizationServerOptions.Logging.DisableExceptionSanitizing` config opt-out** (#173)
 
@@ -242,7 +241,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   });
   ```
 
-- **Add new validation rules for token endpoint client authentication** (per ADR 0002)
+- **Add new validation rules for token endpoint client authentication**
   - `TokenEndpoint.AuthMethodsSupported` must not be null or empty
   - `TokenEndpoint.AuthMethodsSupported` must contain at least one non-`None` method if `GrantTypesSupported` includes `ClientCredentials` (RFC 6749 §4.4 compliance)
 
@@ -254,9 +253,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   for programmatic handling is `AggregatedFailures` and the `Code` field on each
   `ZeeKayDaConfigurationFailure`. `Message` may change in any release without notice.
 
-- **Formalise `SecurityHeaders` as a framework-behavior group in ADR 0002** (#159)
+- **Formalise `SecurityHeaders` as a framework-behavior group** (#159)
 
-  ADR 0002 now formally recognises a second option-group category — **framework-behavior groups** —
+  A second option-group category is now formally recognised — **framework-behavior groups** —
   for settings that control the framework's own runtime behavior with no discovery-document
   analogue. `SecurityHeaders` is confirmed correct; no rename is needed. Future framework-behavior
   groups must use a plain descriptive name with no `Endpoint` suffix.

@@ -70,7 +70,7 @@ public sealed class AzureKeyVaultRemoteSigningIntegrationTests
         services.AddSingleton<IKeyVaultKeyReader>(reader);
         services.AddSingleton<IKeyVaultSigner>(new FakeKeyVaultSigner
         {
-            // The ADR 0015 §11 self-test (issue #437) runs on every active-key handoff, so the fake
+            // The self-test (issue #437) runs on every active-key handoff, so the fake
             // must produce a genuinely verifiable signature rather than a fixed placeholder.
             SignFunc = (uri, _, _, signingInput) =>
             {

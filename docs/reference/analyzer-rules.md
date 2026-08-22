@@ -267,7 +267,7 @@ _logger.LogDebug($"Diagnostic — raw key material: {keyMaterial}");
 ### What it checks
 
 Any out-of-assembly `IClientRepository` implementation whose type body contains no reference to
-`IClientRegistrationValidator` is flagged. ADR 0007 §6.1 requires every custom repository to resolve
+`IClientRegistrationValidator` is flagged. Every custom repository must resolve
 the validator from DI and call it before persisting a new or updated client registration. A
 repository that never references the validator at all is almost certainly missing this step.
 

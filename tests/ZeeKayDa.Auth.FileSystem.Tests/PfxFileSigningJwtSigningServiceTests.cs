@@ -16,7 +16,7 @@ namespace ZeeKayDa.Auth.FileSystem.Tests;
 /// password handling and the bundled-format least-privilege obligation (issue #423's security ask).
 /// </summary>
 /// <remarks>
-/// This provider is on ADR 0015's <see cref="KeySetOptions"/> contract (issue #423):
+/// This provider is on the <see cref="KeySetOptions"/> contract (issue #423):
 /// <c>ListKeysAsync</c> runs exactly once, ever, for the lifetime of a service instance, so there is
 /// no reload/change-detection surface to test here — a changed or newly-added file is never picked up
 /// without a restart. Rotation between already-known files still switches the active signer purely
@@ -229,7 +229,7 @@ public sealed class PfxFileSigningJwtSigningServiceTests
 
     // ── Multi-file rotation via AddFile, each with its own password ──────────────────────────────
     //
-    // ADR 0015: ListKeysAsync runs exactly once and builds one immutable snapshot/timeline;
+    // ListKeysAsync runs exactly once and builds one immutable snapshot/timeline;
     // active-key selection is then recomputed lazily against the wall clock on every call, with zero
     // further file I/O — so a rotation between already-known files still switches the active signer
     // purely from elapsed time.
@@ -343,7 +343,7 @@ public sealed class PfxFileSigningJwtSigningServiceTests
 
     // ── Every registered certificate already expired at startup ─────────────────────────────────
     //
-    // ADR 0015: a KeySetOptions provider never re-reads, so an already-expired sole key with no eligible successor has
+    // A KeySetOptions provider never re-reads, so an already-expired sole key with no eligible successor has
     // SelectActiveKey == null and signing fails closed via the base class's own generic
     // "signing.no_active_key" error — there is no provider-specific "no active certificate" special
     // case any more, since ListKeysAsync no longer owns "is this configuration currently usable."
@@ -363,7 +363,7 @@ public sealed class PfxFileSigningJwtSigningServiceTests
         exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.no_active_key");
     }
 
-    // ── Too-soon-NotBefore startup warning (ADR 0015 §1, issue #423) ─────────────────────────────
+    // ── Too-soon-NotBefore startup warning (issue #423) ──────────────────────────────────────────
 
     [Fact]
     public async Task GetSigningKeysAsync_logs_a_warning_when_the_soonest_pending_NotBefore_is_closer_than_PublicationLead()
@@ -446,8 +446,8 @@ public sealed class PfxFileSigningJwtSigningServiceTests
         var second = await sut.GetSigningKeysAsync(ct);
 
         second[0].Kid.Should().Be(first[0].Kid,
-            "kid must be derived from the key material; ListKeysAsync runs exactly once for this " +
-            "an ADR 0015 KeySetOptions provider regardless of elapsed time");
+            "kid must be derived from the key material; ListKeysAsync runs exactly once for " +
+            "this KeySetOptions provider regardless of elapsed time");
     }
 
     // ── Algorithm/key-type mismatch ───────────────────────────────────────────────────────────────
@@ -506,7 +506,7 @@ public sealed class PfxFileSigningJwtSigningServiceTests
     [Fact]
     public async Task SignAsync_signs_with_an_EC_certificates_private_key()
     {
-        // ADR 0015 §2/§5's least-privilege loading means CreateSignerAsync (and therefore an EC
+        // Least-privilege loading means CreateSignerAsync (and therefore an EC
         // private-key extraction) is only ever invoked by a real SignAsync call, never by
         // GetSigningKeysAsync alone — this exercises that path directly.
         var ct = TestContext.Current.CancellationToken;
@@ -525,8 +525,8 @@ public sealed class PfxFileSigningJwtSigningServiceTests
     // ── Bundled-format least-privilege (issue #423 security ask) ─────────────────────────────────
     //
     // PFX bundles cert+key in one file, so ListKeysAsync has no choice but to read the whole bundle
-    // (including the private half) to obtain each public certificate. The obligation ADR 0015 §2/§5
-    // places on this provider is that non-active private material is only read *transiently* and never
+    // (including the private half) to obtain each public certificate. The obligation
+    // placed on this provider is that non-active private material is only read *transiently* and never
     // retained: after the one-time listing, a non-active file's bundle must never be opened again,
     // while the active file's bundle is re-opened afresh by CreateSignerAsync rather than a private
     // handle being kept alive from listing. Counting password-source invocations proves both halves.
@@ -565,7 +565,7 @@ public sealed class PfxFileSigningJwtSigningServiceTests
     //
     // Unreachable via the public API in normal operation — the base class only ever calls
     // CreateSignerAsync with a KeyId it previously observed on a ListKeysAsync-returned KeyListing,
-    // and this ADR 0015 KeySetOptions provider's registered files never change after startup — but invoked
+    // and this KeySetOptions provider's registered files never change after startup — but invoked
     // directly via reflection here to prove the defensive check fails loudly rather than silently.
 
     [Fact]

@@ -8,7 +8,7 @@ using Microsoft.CodeAnalysis.Diagnostics;
 namespace ZeeKayDa.Auth.Analyzers;
 
 /// <summary>
-/// Enforces ADR 0007 §7 log hygiene at compile time: ZeeKayDa services must inject
+/// Enforces log hygiene at compile time: ZeeKayDa services must inject
 /// <c>ISanitizingLogger&lt;T&gt;</c> rather than <c>ILogger&lt;T&gt;</c> directly.
 /// Diagnostic ID: ZEEKAYDA0001, category: LogHygiene, severity: Error.
 /// </summary>
@@ -33,7 +33,7 @@ public sealed class ILoggerDirectUseAnalyzer : DiagnosticAnalyzer
     /// <inheritdoc/>
     public override void Initialize(AnalysisContext context)
     {
-        // This is a security control enforcing ADR 0007 §7's log-never list, not a style
+        // This is a security control enforcing the log-never list, not a style
         // preference, so the usual "don't nag about generated code" convention does not apply:
         // classifying a file as generated (by filename, header, [GeneratedCode], or
         // generated_code = true) would otherwise silently suppress the rule with no rule ID

@@ -90,14 +90,6 @@ third-party surface into the SemVer contract. The JWK mapping is hand-rolled ove
 specified by RFC 7517/7518 and held to known-answer vectors — a maintenance cost taken deliberately
 over the dependency.
 
-**No JWT encryption in v1, not even an off toggle.** Without dynamic client registration no client
-can request an encrypted token, and the encryption discovery fields are OPTIONAL, so their absence
-is spec-correct. `ITokenWriter` composes, so an `IEncryptionService` sibling can land later.
-
-**Advertised signing algorithms are statically configured.** Deriving
-`id_token_signing_alg_values_supported` from whichever keys happen to be loaded would make discovery
-flicker during rotation, and discovery is a stable, cached contract.
-
 **One signing provider per application, registered flatly.** Every `Add<Provider>Signing()` extension
 registers `IJwtSigningService` as a singleton, calls `ThrowIfAlreadyRegistered` so a second provider
 fails loudly instead of silently winning, registers its own `IValidateOptions<TOptions>`, and returns

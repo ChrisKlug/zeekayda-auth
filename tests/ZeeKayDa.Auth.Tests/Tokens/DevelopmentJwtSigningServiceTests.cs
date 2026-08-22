@@ -12,7 +12,7 @@ namespace ZeeKayDa.Auth.Tests.Tokens;
 
 public sealed class DevelopmentJwtSigningServiceTests
 {
-    // ── ADR 0015 new-contract dependencies (four-arg JwtSigningService<TOptions> constructor) ──────
+    // ── new-contract dependencies (four-arg JwtSigningService<TOptions> constructor) ───────────────────────────────
 
     /// <summary>A no-op <see cref="ISigningKeyRetirementWindowProvider"/> — irrelevant for a
     /// single, never-retiring dev key.</summary>
@@ -22,7 +22,7 @@ public sealed class DevelopmentJwtSigningServiceTests
     }
 
     /// <summary>A no-op <see cref="ISanitizingLogger{T}"/> — the dev provider's single key never
-    /// vanishes, so the ADR 0015 §6 within-window-vanish Warning is never expected here.</summary>
+    /// vanishes, so the within-window-vanish Warning is never expected here.</summary>
     private sealed class NullSanitizingLogger<T> : ISanitizingLogger<T>
     {
         public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
@@ -219,7 +219,7 @@ public sealed class DevelopmentJwtSigningServiceTests
 
     // ── Key memoization (no rotation) ────────────────────────────────────────────────────────────
 
-    // DevelopmentSigningKeyOptions derives from KeySetOptions (ADR 0015 §1, issue #421): a
+    // DevelopmentSigningKeyOptions derives from KeySetOptions (issue #421): a
     // degenerate KeySetOptions provider whose ListKeysAsync is called exactly once, ever, for the
     // lifetime of the service instance. There is no rotation-cadence property to force a reload,
     // so the base class never re-enters ListKeysAsync regardless of elapsed time — the test below

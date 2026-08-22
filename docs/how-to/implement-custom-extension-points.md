@@ -381,7 +381,7 @@ framework's dispatch pipeline. The built-in `ClientSecretAuthenticator` handles
 > degrades every token-endpoint hit — not just requests for your authentication method.
 >
 > Parse a header, check a form key, or inspect a connection property. Do not call a database,
-> validate a signature, or make an HTTP request. See ADR 0007 §4 for the full contract.
+> validate a signature, or make an HTTP request.
 
 > **Note:** `none` is a special case — it is handled automatically by the composite dispatcher
 > as a fallback for public clients and does not require an `IClientAuthenticator` implementation.

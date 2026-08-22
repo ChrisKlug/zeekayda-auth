@@ -292,8 +292,8 @@ internal sealed record ProjectEvaluation(
 
 /// <summary>
 /// Sensitive OAuth/OIDC parameter names that must never appear as a structured-log
-/// placeholder, per ADR 0007 §7's log-never list. Copied verbatim from the PATTERN list in
-/// the now-deleted predecessor shell script — do not alter without a corresponding ADR 0007
+/// placeholder, per the framework's log-never list. Copied verbatim from the PATTERN list in
+/// the now-deleted predecessor shell script — do not alter without a corresponding
 /// amendment, matched case-insensitively as before.
 /// </summary>
 internal static class SensitiveLogNames
@@ -475,7 +475,7 @@ internal static class LogHygieneRules
         var location = FormatLocation(expression);
         yield return
             $"""
-            {location}: LOG HYGIENE FAILURE (ADR 0007 §7): message template contains sensitive placeholder(s) [{string.Join(", ", sensitiveNames)}]: "{template}"
+            {location}: LOG HYGIENE FAILURE: message template contains sensitive placeholder(s) [{string.Join(", ", sensitiveNames)}]: "{template}"
             Sensitive parameter names must not appear as structured-log placeholders in any ZeeKayDa.Auth code.
             To suppress a specific line, append a structured suppression comment:
               // log-hygiene-ok: <non-empty reason> (#<issue-or-pr-number>)

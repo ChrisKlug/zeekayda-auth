@@ -148,7 +148,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
             .Select(element => element.GetString())
             .Should().Equal("authorization_code");
 
-        // Test factory adds None on top of the default (ClientSecretBasic only, per ADR 0002).
+        // Test factory adds None on top of the default (ClientSecretBasic only).
         doc.RootElement.GetProperty("token_endpoint_auth_methods_supported").EnumerateArray()
             .Select(element => element.GetString())
             .Should().BeEquivalentTo(new[] { "client_secret_basic", "none" });
