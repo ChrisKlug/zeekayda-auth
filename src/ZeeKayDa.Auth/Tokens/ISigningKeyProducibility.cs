@@ -3,10 +3,12 @@ namespace ZeeKayDa.Auth.Tokens;
 /// <summary>
 /// Optional signing-key-producibility surface for an <see cref="IJwtSigningService"/>
 /// implementation. Deliberately a separate interface rather than a member on
-/// <see cref="IJwtSigningService"/> itself — adding a member there would be a breaking change for
-/// any external, out-of-tree implementation of that interface. A registered
-/// <see cref="IJwtSigningService"/> that does not implement this interface simply does not receive
-/// the framework-owned advertised-algorithm startup check (see <c>AdvertisedSigningAlgorithmVerifier</c>).
+/// <see cref="IJwtSigningService"/> itself — the same interface-segregation call already made for
+/// <see cref="ISigningStartupSelfTest"/>: producing a signature and reporting startup-time
+/// introspection state are different concerns, and only a startup verifier ever calls this one. A
+/// registered <see cref="IJwtSigningService"/> that does not implement this interface simply does
+/// not receive the framework-owned advertised-algorithm startup check (see
+/// <c>AdvertisedSigningAlgorithmVerifier</c>).
 /// </summary>
 /// <remarks>
 /// <see cref="JwtSigningService{TOptions}"/> implements this interface <b>explicitly</b> and does
