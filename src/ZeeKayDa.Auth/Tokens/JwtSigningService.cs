@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Buffers.Text;
+using System.Collections.Frozen;
 using System.Diagnostics.CodeAnalysis;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -181,8 +182,7 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
     /// but never signs a new one.
     /// </summary>
     /// <remarks>
-    /// Explicit-interface-implemented rather than <see langword="virtual"/> so no derived provider
-    /// can override or weaken it — the same pattern used by <see cref="ISigningStartupSelfTest"/>.
+    /// Explicit-interface-implemented, the same pattern used by <see cref="ISigningStartupSelfTest"/>.
     /// </remarks>
     async ValueTask<SigningKeyProducibilitySnapshot> ISigningKeyProducibility.GetProducibilityAsync(
         CancellationToken cancellationToken)
@@ -193,13 +193,12 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
         var active = SelectActiveKey(snapshot.Timeline, now) ?? throw NoActiveKeyException();
         var activeAlgorithm = snapshot.DescriptorsById[active.Key.Id].Algorithm;
 
-        var notYetActiveAlgorithms = snapshot.Timeline
-            .Where(entry => !string.Equals(entry.Key.Id, active.Key.Id, StringComparison.Ordinal) && entry.ActivatesAt > now)
-            .Select(entry => snapshot.DescriptorsById[entry.Key.Id].Algorithm);
+        var futureSigners = SigningKeyRotation.SelectFutureSigners(snapshot.Timeline, active, now);
+        var stagedAlgorithms = futureSigners
+            .Select(entry => snapshot.DescriptorsById[entry.Key.Id].Algorithm)
+            .ToFrozenSet();
 
-        var algorithms = new HashSet<SigningAlgorithm>(notYetActiveAlgorithms) { activeAlgorithm };
-
-        return new SigningKeyProducibilitySnapshot(activeAlgorithm, algorithms);
+        return new SigningKeyProducibilitySnapshot(activeAlgorithm, stagedAlgorithms);
     }
 
     /// <inheritdoc/>

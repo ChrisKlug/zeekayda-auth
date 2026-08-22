@@ -1349,9 +1349,41 @@ public sealed class JwtSigningServiceTests
         var snapshot = await producibility.GetProducibilityAsync(ct);
 
         snapshot.ActiveAlgorithm.Should().Be(SigningAlgorithm.RS256, "k1 has no ActivateAt and is the sole eligible signer right now");
-        snapshot.Algorithms.Should().BeEquivalentTo(
-            [SigningAlgorithm.RS256, SigningAlgorithm.ES256],
-            "k2 is not yet active but will become the signer soon, so its algorithm counts as producible");
+        snapshot.StagedAlgorithms.Should().BeEquivalentTo(
+            [SigningAlgorithm.ES256],
+            "k2 is not yet active but will become the signer soon, so its algorithm counts as staged");
+        snapshot.CanProduce(SigningAlgorithm.RS256).Should().BeTrue();
+        snapshot.CanProduce(SigningAlgorithm.ES256).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetProducibilityAsync_excludes_a_staged_key_that_would_already_be_expired_by_its_own_activation()
+    {
+        // The exact Fix 1 exploit: a staged ES256 key activates in 10 days but expires in 5 — it can
+        // never actually become the active signer, since it would already be expired by the time it
+        // would take over. Its algorithm must not be reported as producible.
+        using var rsa = RSA.Create(2048);
+        using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var timeProvider = new FakeTimeProvider(Epoch);
+
+        await using var sut = BuildKeySetService(
+            timeProvider,
+            () =>
+            [
+                MakeRsaListing(rsa, "k1", activateAt: null, expiresAt: Epoch.AddYears(1)),
+                new KeyListing(
+                    new KeyId("k2"), SigningAlgorithm.ES256, PublicKeyParameters.FromEc(ec.ExportParameters(false)),
+                    Epoch.AddDays(10), Epoch.AddDays(5)),
+            ]);
+        var ct = TestContext.Current.CancellationToken;
+        var producibility = (ISigningKeyProducibility)sut;
+
+        var snapshot = await producibility.GetProducibilityAsync(ct);
+
+        snapshot.ActiveAlgorithm.Should().Be(SigningAlgorithm.RS256);
+        snapshot.StagedAlgorithms.Should().BeEmpty(
+            "k2 would already be expired by the time its own ActivatesAt arrives, so it can never actually sign anything");
+        snapshot.CanProduce(SigningAlgorithm.ES256).Should().BeFalse();
     }
 
     [Fact]
@@ -1377,10 +1409,10 @@ public sealed class JwtSigningServiceTests
         var snapshot = await producibility.GetProducibilityAsync(ct);
 
         snapshot.ActiveAlgorithm.Should().Be(SigningAlgorithm.RS384, "k2 has now superseded k1 as the active signer");
-        snapshot.Algorithms.Should().BeEquivalentTo(
-            [SigningAlgorithm.RS384],
+        snapshot.StagedAlgorithms.Should().BeEmpty(
             "k1 is now retirement-window-only — it can still verify already-issued tokens but never signs a new one, " +
             "so its algorithm must not be reported as producible");
+        snapshot.CanProduce(SigningAlgorithm.RS256).Should().BeFalse();
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────────────────────────

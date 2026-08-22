@@ -13,15 +13,18 @@ namespace ZeeKayDa.Auth.Tokens;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The check runs in both directions. An advertised algorithm with no key able to sign a new token
-/// now or soon is a startup failure: there is no runtime backstop today, so a server that
-/// advertises an algorithm it cannot actually produce would silently mislead relying parties until
-/// a token in that algorithm was requested. Conversely, the active signing key's algorithm must
-/// itself be advertised — a server that signs with an algorithm it does not list is equally
-/// misleading relying parties, just from the other direction. Neither direction is checked against
-/// a key retained only for its retirement window (kept so already-issued tokens, or other
-/// verifiers, can still validate against it) — that is normal migration state, not a
-/// misconfiguration.
+/// The check runs in both directions, asserting full equality between what is advertised and what
+/// is producible. An advertised algorithm with no key able to sign a new token now or soon is a
+/// startup failure: there is no runtime backstop today, so a server that advertises an algorithm it
+/// cannot actually produce would silently mislead relying parties until a token in that algorithm
+/// was requested. Conversely, every algorithm the provider can currently or soon produce — the
+/// active key's algorithm, and the algorithm of every staged (not-yet-active) key — must itself be
+/// advertised. This closes a deferred-migration gap: an operator who stages a new key before
+/// updating the advertised list would otherwise pass startup today and have that key silently start
+/// signing an unadvertised algorithm tomorrow, with no runtime re-check ever, since startup
+/// verification is one-shot. Neither direction is checked against a key retained only for its
+/// retirement window (kept so already-issued tokens, or other verifiers, can still validate against
+/// it) — that is normal migration state, not a misconfiguration.
 /// </para>
 /// <para>
 /// Resolves <see cref="IJwtSigningService"/> lazily from <c>scopedServices</c> at
@@ -67,7 +70,7 @@ internal sealed class AdvertisedSigningAlgorithmVerifier(IOptions<AuthorizationS
         var snapshot = await producibility.GetProducibilityAsync(cancellationToken).ConfigureAwait(false);
 
         CheckAdvertisedAlgorithmsAreProducible(context, advertised, snapshot);
-        CheckActiveAlgorithmIsAdvertised(context, advertised, snapshot);
+        CheckProducibleAlgorithmsAreAdvertised(context, advertised, snapshot);
     }
 
     /// <inheritdoc/>
@@ -81,38 +84,53 @@ internal sealed class AdvertisedSigningAlgorithmVerifier(IOptions<AuthorizationS
         ICollection<SigningAlgorithm> advertised,
         SigningKeyProducibilitySnapshot snapshot)
     {
-        var unavailable = advertised.Distinct().Where(a => !snapshot.Algorithms.Contains(a)).ToArray();
+        var unavailable = advertised.Distinct().Where(a => !snapshot.CanProduce(a)).ToArray();
         if (unavailable.Length == 0)
             return;
 
-        var producibleDescription = snapshot.Algorithms.Count == 0
-            ? "no algorithms at all"
-            : $"[{string.Join(", ", snapshot.Algorithms)}]";
+        // Always at least [ActiveAlgorithm] — a snapshot's producible set can never be empty.
+        var producible = string.Join(", ", ProducibleAlgorithms(snapshot));
 
         context.AddFailure(
             "signing.advertised_algorithm_unavailable",
             $"IdToken.SigningAlgValuesSupported advertises [{string.Join(", ", unavailable)}], " +
             "but the registered signing provider holds no key able to sign a new token with it " +
-            $"now or soon. The provider's currently producible algorithms cover {producibleDescription}.");
+            $"now or soon. The provider's currently producible algorithms cover [{producible}].");
     }
 
     /// <summary>
-    /// Fails when the active signing key's algorithm is not itself advertised — the server is
-    /// signing new tokens with an algorithm the discovery document does not list.
+    /// Fails when an algorithm the provider can currently or soon produce — the active key's
+    /// algorithm, or a staged (not-yet-active) key's algorithm — is not itself advertised. Reported
+    /// as a single failure naming which of the unadvertised algorithms is active versus staged, so
+    /// an operator can distinguish "your active signer isn't advertised" from "you staged a new
+    /// algorithm without advertising it first".
     /// </summary>
-    private static void CheckActiveAlgorithmIsAdvertised(
+    private static void CheckProducibleAlgorithmsAreAdvertised(
         StartupVerificationContext context,
         ICollection<SigningAlgorithm> advertised,
         SigningKeyProducibilitySnapshot snapshot)
     {
-        if (advertised.Contains(snapshot.ActiveAlgorithm))
+        var unadvertised = new List<string>();
+
+        if (!advertised.Contains(snapshot.ActiveAlgorithm))
+            unadvertised.Add($"{snapshot.ActiveAlgorithm} (active)");
+
+        unadvertised.AddRange(snapshot.StagedAlgorithms
+            .Where(a => !advertised.Contains(a))
+            .Select(a => $"{a} (staged)"));
+
+        if (unadvertised.Count == 0)
             return;
 
         context.AddFailure(
-            "signing.active_algorithm_not_advertised",
-            $"The registered signing provider's active signing key signs with " +
-            $"{snapshot.ActiveAlgorithm}, but IdToken.SigningAlgValuesSupported does not advertise " +
-            $"it (advertises [{string.Join(", ", advertised)}]). Tokens issued right now are signed " +
-            "under an algorithm the discovery document does not list.");
+            "signing.producible_algorithm_not_advertised",
+            $"The registered signing provider can sign a new token now or soon with " +
+            $"[{string.Join(", ", unadvertised)}], but IdToken.SigningAlgValuesSupported does not " +
+            $"advertise it (advertises [{string.Join(", ", advertised)}]). Every algorithm the " +
+            "provider can currently or soon produce — active or staged — must be advertised in the " +
+            "discovery document.");
     }
+
+    private static IEnumerable<SigningAlgorithm> ProducibleAlgorithms(SigningKeyProducibilitySnapshot snapshot) =>
+        new[] { snapshot.ActiveAlgorithm }.Concat(snapshot.StagedAlgorithms).Distinct();
 }

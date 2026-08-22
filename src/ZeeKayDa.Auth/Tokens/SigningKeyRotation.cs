@@ -180,6 +180,27 @@ public static class SigningKeyRotation
         return soonestPending is { } pending && pending.ActivatesAt - now < assumedJwksPropagationDelay;
     }
 
+    /// <summary>
+    /// Selects every timeline entry that is not yet active but could still legitimately become the
+    /// active signer once its own <see cref="RotationKey.ActivatesAt"/> arrives — i.e. it would
+    /// still be eligible (not yet expired) at that point. A staged key whose
+    /// <see cref="RotationKey.ExpiresAt"/> falls before its own <see cref="RotationKey.ActivatesAt"/>
+    /// is excluded: it would already be expired by the time it could take over, so it can never
+    /// actually sign anything, regardless of how far in the future its activation is scheduled.
+    /// </summary>
+    /// <param name="timeline">The activation timeline, as built by <see cref="BuildActivationTimeline"/>.</param>
+    /// <param name="active">The currently active entry, as returned by <see cref="SelectActiveKey"/>
+    /// or <see cref="SelectActiveKeyForFixedKeySet"/>.</param>
+    /// <param name="now">The current instant to select against.</param>
+    public static IReadOnlyList<RotationEntry> SelectFutureSigners(
+        IReadOnlyList<RotationEntry> timeline, RotationEntry active, DateTimeOffset now) =>
+        timeline
+            .Where(entry =>
+                !string.Equals(entry.Key.Id, active.Key.Id, StringComparison.Ordinal) &&
+                entry.ActivatesAt > now &&
+                IsEligibleAt(entry.Key, entry.ActivatesAt))
+            .ToList();
+
     // Named generically ("At", not "Now") because this ExpiresAt check is evaluated both at the
     // current wall-clock time and at a candidate's own ActivatesAt.
     private static bool IsEligibleAt(RotationKey key, DateTimeOffset pointInTime) =>
