@@ -22,9 +22,17 @@ namespace ZeeKayDa.Auth.Tokens;
 /// advertised. This closes a deferred-migration gap: an operator who stages a new key before
 /// updating the advertised list would otherwise pass startup today and have that key silently start
 /// signing an unadvertised algorithm tomorrow, with no runtime re-check ever, since startup
-/// verification is one-shot. Neither direction is checked against a key retained only for its
-/// retirement window (kept so already-issued tokens, or other verifiers, can still validate against
-/// it) — that is normal migration state, not a misconfiguration.
+/// verification is one-shot.
+/// </para>
+/// <para>
+/// The reverse direction never needs a key retained only for its retirement window to stay
+/// advertised — that is normal migration state, not a misconfiguration. The forward direction is
+/// different: an advertised algorithm backed <em>only</em> by a retirement-window key (kept so
+/// already-issued tokens can still be verified, not to sign new ones) is not a hard failure, because
+/// a normal migration passes through this state for as long as that window is open — but it is
+/// reported as a warning, since the same algorithm having no key at all is a hard failure. Leaving it
+/// advertised after the retirement window closes becomes that hard failure once the key itself is
+/// gone.
 /// </para>
 /// <para>
 /// Resolves <see cref="IJwtSigningService"/> lazily from <c>scopedServices</c> at
@@ -68,8 +76,11 @@ internal sealed class AdvertisedSigningAlgorithmVerifier(IOptions<AuthorizationS
 
         var advertised = options.Value.IdToken.SigningAlgValuesSupported;
         var snapshot = await producibility.GetProducibilityAsync(cancellationToken).ConfigureAwait(false);
+        var allKeyAlgorithms = (await signingService.GetSigningKeysAsync(cancellationToken).ConfigureAwait(false))
+            .Select(key => key.Algorithm)
+            .ToHashSet();
 
-        CheckAdvertisedAlgorithmsAreProducible(context, advertised, snapshot);
+        CheckAdvertisedAlgorithmsAreProducible(context, advertised, snapshot, allKeyAlgorithms);
         CheckProducibleAlgorithmsAreAdvertised(context, advertised, snapshot);
     }
 
@@ -77,15 +88,36 @@ internal sealed class AdvertisedSigningAlgorithmVerifier(IOptions<AuthorizationS
     public string Name => "AdvertisedSigningAlgorithms";
 
     /// <summary>
-    /// Fails when an advertised algorithm has no key able to sign a new token with it now or soon.
+    /// Fails when an advertised algorithm has no key at all — active, staged, or retiring — able to
+    /// sign or verify with it; warns instead when its only key is retirement-window-only, since a
+    /// normal migration passes through that state for as long as the window stays open.
     /// </summary>
     private static void CheckAdvertisedAlgorithmsAreProducible(
         StartupVerificationContext context,
         ICollection<SigningAlgorithm> advertised,
-        SigningKeyProducibilitySnapshot snapshot)
+        SigningKeyProducibilitySnapshot snapshot,
+        IReadOnlySet<SigningAlgorithm> allKeyAlgorithms)
     {
         var unavailable = advertised.Distinct().Where(a => !snapshot.CanProduce(a)).ToArray();
         if (unavailable.Length == 0)
+            return;
+
+        var retirementWindowOnly = unavailable.Where(allKeyAlgorithms.Contains).ToArray();
+        var noKeyAtAll = unavailable.Where(a => !allKeyAlgorithms.Contains(a)).ToArray();
+
+        if (retirementWindowOnly.Length > 0)
+        {
+            context.AddWarning(
+                "signing.advertised_algorithm_retirement_window_only",
+                "ZeeKayDa.Auth: IdToken.SigningAlgValuesSupported advertises [{Algorithms}], but the " +
+                "registered signing provider's only key(s) for it are inside their retirement window " +
+                "(kept to verify already-issued tokens, not to sign new ones). Normal while a " +
+                "migration's retirement window is open — remove it from SigningAlgValuesSupported once " +
+                "that window closes, or this becomes a startup failure once the key itself is gone.",
+                string.Join(", ", retirementWindowOnly));
+        }
+
+        if (noKeyAtAll.Length == 0)
             return;
 
         // Always at least [ActiveAlgorithm] — a snapshot's producible set can never be empty.
@@ -93,9 +125,9 @@ internal sealed class AdvertisedSigningAlgorithmVerifier(IOptions<AuthorizationS
 
         context.AddFailure(
             "signing.advertised_algorithm_unavailable",
-            $"IdToken.SigningAlgValuesSupported advertises [{string.Join(", ", unavailable)}], " +
-            "but the registered signing provider holds no key able to sign a new token with it " +
-            $"now or soon. The provider's currently producible algorithms cover [{producible}].");
+            $"IdToken.SigningAlgValuesSupported advertises [{string.Join(", ", noKeyAtAll)}], " +
+            "but the registered signing provider holds no key at all — active, staged, or retiring " +
+            $"— for it. The provider's currently producible algorithms cover [{producible}].");
     }
 
     /// <summary>

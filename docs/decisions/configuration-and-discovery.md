@@ -87,9 +87,13 @@ and conversely every algorithm the provider can currently or soon produce — ac
 itself be advertised, not just the active one. The reverse direction closes a deferred-migration gap:
 an operator who stages a new key before updating the advertised list would otherwise pass startup
 today and have that key silently start signing an unadvertised algorithm once it activates, with no
-runtime re-check ever, since startup verification is one-shot. Neither direction is checked against a
-key retained only for its retirement window (kept so already-issued tokens still validate) — that is
-normal migration state, not a failure.
+runtime re-check ever, since startup verification is one-shot. The reverse direction never needs a
+key retained only for its retirement window (kept so already-issued tokens still validate) to stay
+advertised — that is normal migration state, not a failure. The forward direction treats that same
+retirement-window state as a warning rather than a hard failure: an advertised algorithm backed only
+by a retiring key cannot sign a new token, but a normal migration passes through exactly this state
+for as long as the window stays open. Only an advertised algorithm with no key at all — active,
+staged, or retiring — is a hard failure.
 
 **Collection keys bind by replacement, not merge.** An operator who sets one entry of an
 `IConfiguration` collection key loses the rest of that key's defaults. The validator's
