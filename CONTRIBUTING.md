@@ -49,12 +49,14 @@ Process is matched to the risk of the change, not applied uniformly:
 
 | Change | Process |
 |---|---|
-| Internal / mechanical — bug fix, refactor, test, chore | Just build it. No design gate, no ADR. |
-| New or changed **public API** / behaviour | Agree the shape with a maintainer first — a short discussion in the issue thread (the "mini-ADR": what, why, one line on the alternative). Then build. |
-| Touches **tokens, crypto, or endpoints** | A security review — of the shape, the PR, or both. |
-| A **big or hard-to-reverse** decision | Record a lean ADR (`docs/decisions/`) — decision, why, consequences, about half a page. Rare. |
+| Internal / mechanical — bug fix, refactor, test, chore | Just build it. No design gate, no review round. |
+| New or changed **public API** / behaviour | Agree the shape with a maintainer *before writing code*. The agreed shape — sample usage, concrete signatures, and the rejected alternative — is posted on the issue as an `### Agreed shape` comment, and that comment is what gets built. |
+| Touches **tokens, crypto, or endpoints** | A security review, in two rounds: once locally before the PR exists, then on the open PR. |
+| Changes **structure or an extension point** | An architecture review, same two rounds. |
 
-**One narrow issue = one buildable thing.** There is no epic tier by default — issues are sequenced with GitHub's native `blocked by` / `blocks` relationships instead of an epic hierarchy. The shape discussion for a public-API change happens directly in that issue's thread, not in a separate design document.
+**One narrow issue = one buildable thing.** There is no epic tier by default — issues are sequenced with GitHub's native `blocked by` / `blocks` relationships instead of an epic hierarchy. The shape discussion happens in conversation and lands on the issue thread, never in a separate design document.
+
+There is **no design-document lifecycle**. Work is not blocked on a decision record being written and merged first. Where a change makes a durable difference to how the framework behaves, the [decision register](docs/decisions/README.md) is updated in the same pull request as the change itself — and most changes don't touch it at all.
 
 **Ideas that are not yet ready** for design or implementation are tagged `status:idea`. They are excluded from the active-work view (`is:open -label:status:idea`).
 
@@ -69,9 +71,9 @@ concrete, temporary implications for how we work:
 - Breaking API changes need **no deprecation shims**, `[Obsolete]` attributes, or migration
   guides. If a shape is wrong, we fix it directly rather than carrying the old shape alongside
   the new one.
-- ADRs may be **rewritten in place** to describe the current design, rather than amended in
-  perpetuity. See [`docs/decisions/README.md`](docs/decisions/README.md) for the ADR format and
-  the opportunistic-migration policy this enables.
+- The [decision register](docs/decisions/README.md) is **rewritten in place** to describe the
+  current design, rather than amended in perpetuity. Entries record what is true now; git history
+  holds what used to be true.
 
 This is a deliberate but temporary relaxation — it exists only because nothing yet depends on the
 current shapes being stable.
@@ -116,7 +118,7 @@ Use the **Feature Request** issue template. Please include:
 - Any relevant spec references (RFC number, OpenID Connect section, etc.)
 - Whether you are willing to implement it yourself
 
-> ℹ️ Features that require significant design work will trigger the ADR process. The maintainer will create an ADR issue from your feature request, and implementation work begins only after the ADR is accepted. This protects your effort from being based on a design that changes during review.
+> ℹ️ Features that need significant design work get their shape agreed with the maintainer before any code is written — the agreed API shape is posted on the issue, and implementation follows from it. This protects your effort from being based on a design that changes during review.
 
 ---
 
@@ -210,7 +212,7 @@ By signing off you are agreeing to the [Developer Certificate of Origin v1.1](ht
 
 ## Code Style
 
-- **Language:** C# (latest LTS feature set unless otherwise decided in an ADR)
+- **Language:** C# (latest LTS feature set unless otherwise decided)
 - **Formatter:** The `.editorconfig` in the repo root is authoritative — your IDE should pick it up automatically
 - **Nullable reference types:** Enabled — no `#nullable disable` suppressions without a comment explaining why
 - **No `this.` prefix** on member access
@@ -365,7 +367,7 @@ bash .github/scripts/tests/check_coverage_regression.tests.sh
 
 ### Log hygiene check
 
-The `log-hygiene` job runs [`.github/scripts/check_log_hygiene.cs`](.github/scripts/check_log_hygiene.cs) — a standalone [file-based C# program](https://learn.microsoft.com/dotnet/core/tutorials/file-based-programs), following the same pattern as `check_coverage_regression.cs` — to ensure that sensitive OAuth/OIDC parameter names (such as `client_secret`, `access_token`, `code_verifier`, etc.) never appear as structured-log placeholders in production code, and that ZEEKAYDA0001/ZEEKAYDA0002 (see [Analyzer rules](docs/reference/analyzer-rules.md)) cannot be silently downgraded or disabled project-wide. This is a defence-in-depth measure that complements those two Roslyn analyzers (see ADR 0007).
+The `log-hygiene` job runs [`.github/scripts/check_log_hygiene.cs`](.github/scripts/check_log_hygiene.cs) — a standalone [file-based C# program](https://learn.microsoft.com/dotnet/core/tutorials/file-based-programs), following the same pattern as `check_coverage_regression.cs` — to ensure that sensitive OAuth/OIDC parameter names (such as `client_secret`, `access_token`, `code_verifier`, etc.) never appear as structured-log placeholders in production code, and that ZEEKAYDA0001/ZEEKAYDA0002 (see [Analyzer rules](docs/reference/analyzer-rules.md)) cannot be silently downgraded or disabled project-wide. This is a defence-in-depth measure that complements those two Roslyn analyzers.
 
 Its predecessor (`check_log_hygiene.sh`) enumerated four suppression *syntaxes* by text pattern; an independent review found 12 additional ways to bypass it. This script instead reads MSBuild's and Roslyn's own *resolution* of effective severity — asking the same question the compiler would ask, rather than pattern-matching the ways a suppression can be spelled. It runs three passes plus a canary backstop:
 

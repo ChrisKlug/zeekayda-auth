@@ -1,6 +1,6 @@
 ---
 name: write-issue
-description: Write a well-structured GitHub issue for ZeeKayDa.Auth — decides between an ADR issue and an implementation issue, applies the issue templates and labels, and sequences related work with blocked-by relations. Use when fleshing out a new idea, filing a bug, creating design or implementation issues, or triaging incoming issues.
+description: Write a well-structured GitHub issue for ZeeKayDa.Auth — applies the issue templates and labels, and sequences related work with blocked-by relations. Use when fleshing out a new idea, filing a bug, creating design or implementation issues, or triaging incoming issues.
 argument-hint: [idea or issue description]
 allowed-tools:
   - Bash(gh *)
@@ -14,15 +14,13 @@ This skill turns ideas, bug reports, and tasks into complete, actionable GitHub 
 
 ## Step 1 — Decide the issue type
 
-**Does this work need an ADR?** An ADR is warranted for non-obvious decisions with lasting consequences: new abstractions, storage contracts, public API shape, security-sensitive designs, or anything where "why did we choose this?" will matter in 6 months.
+Most issues are **implementation issues** (`type:task`): one narrow, buildable thing. Write it directly.
 
-Routine work does **not** need an ADR: adding a property to an existing model, fixing a bug, implementing something fully prescribed by the spec, or adding tests.
+A `type:design` issue is for a problem that is **not yet understood well enough to build** — where the issue's job is to frame the question rather than specify the work. Use it sparingly. It does *not* commit anyone to writing a design document: the shape gets agreed in conversation with the maintainer at Stage 1 of `/work-on-issue`, and lands on the issue as an `### Agreed shape` comment.
 
-- **ADR needed** → write an *ADR issue* (design phase). Never write the implementation issues yet — they come after the ADR PR merges.
-- **No ADR needed** → write an *implementation issue* directly.
-- **Uncertain** → ask the user before deciding.
+There is no ADR lifecycle any more. Do not write an issue whose deliverable is a design document, do not block implementation issues on one, and do not ask for a decision record up front — the register is written in the same PR as the change it describes, if at all.
 
-Never write an ADR issue until the problem is fully understood — ask clarifying questions first.
+**Uncertain?** Ask the user.
 
 ## Step 2 — Sequence it, don't nest it
 
@@ -32,34 +30,32 @@ There is no epic tier by default (per the workflow-leaning pivot in PR #377 — 
 
 ## Step 3 — Write the issue
 
-### ADR issues (`type:design`)
+### Design issues (`type:design`) — the rare case
 
 Frame the problem, not the solution:
 
-1. Concise title in imperative sentence case ("Design client registration model") — no implementation details, no label-like prefixes
-2. **Problem statement** — what gap is being addressed, why it needs an ADR
+1. Concise title in imperative sentence case ("Decide how client registration is modelled") — no implementation details, no label-like prefixes
+2. **Problem statement** — what gap is being addressed
 3. **Known constraints** — spec requirements, backward compatibility, security constraints
-4. **Spec references** — exact spec sections the design must satisfy
-5. **Open design questions** — the decisions the ADR must resolve (the architect's agenda)
-6. **Sign-off criteria** — what the ADR must answer; the issue closes when the ADR PR merges
-7. **Security flag** — note if tokens/crypto/protocol flows are involved; security must sign off on the ADR PR
+4. **Spec references** — exact spec sections any design must satisfy
+5. **Open questions** — the decisions that have to be resolved before this is buildable
 
-Quality bar: "Does this give the architect a clear agenda and unambiguous sign-off criteria?"
+The issue closes when the shape is agreed and the work is done — not when a document merges.
 
 Labels: `type:design`, relevant `area:*`, `priority:*`
 
 ### Implementation issues (`type:task`)
 
-Written only after the ADR PR merges (for ADR-path work):
+The default. One narrow issue = one buildable thing:
 
 1. Concise title in imperative sentence case — no `feat:`/`fix:` prefixes, no `type:*`/`area:*`/`priority:*` tokens (classification belongs in labels)
-2. **Context** — why this is needed; link the accepted ADR
+2. **Context** — why this is needed
 3. **Scope** — what is in and explicitly out of scope
-4. **Acceptance criteria** — concrete, testable conditions derived from the ADR, not speculative
+4. **Acceptance criteria** — concrete and testable. Each one should name an observable behaviour someone could write a test against; "works correctly" is not a criterion
 5. **Security considerations** — tag `area:security` where relevant
 6. **Spec alignment** — cite the exact spec section being implemented (e.g. "per RFC 7636 §4.3"); flag conflicts with the spec before writing the issue
 7. **Docs requirement** — tag `area:docs` if public-facing
-8. **References** — ADR link, RFC sections, related issues
+8. **References** — RFC sections, related issues
 9. End with: "The docs agent must be involved — documentation is required for all public-facing changes"
 
 Quality bar: "Could a developer implement this with no further questions?"

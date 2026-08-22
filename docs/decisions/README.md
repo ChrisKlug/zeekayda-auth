@@ -1,79 +1,65 @@
-# Architecture Decision Records
+# Decision register
 
-This directory holds ZeeKayDa.Auth's Architecture Decision Records (ADRs). They record
-significant design decisions for contributors, not end-users. (The Jekyll site excludes this
-directory; see `docs/_config.yml`.)
+What is true **now** about how ZeeKayDa.Auth works, and what we tried that didn't work. One file
+per topic area. Contributor-facing, not end-user documentation — the Jekyll site excludes this
+directory (see `docs/_config.yml`).
 
-Every non-trivial feature follows the issue-first process described in
-[`CONTRIBUTING.md`'s "Issue-First Policy"](../../CONTRIBUTING.md#issue-first-policy), which
-determines when a lean ADR is warranted. This document describes the *format* an ADR file itself
-should take once it exists.
+This is not a history. It answers two questions for whoever reads it next: *what do I build
+against?* and *what shouldn't I re-propose?*
 
-## Format: lean, decision-first
+## Format
 
-An ADR records a decision worth remembering — not a design essay. Roughly half a page,
-decision first:
+Two sections. Nothing else.
 
 ```markdown
-# ADR NNNN — <title>
-Status: Accepted   ·   Date: YYYY-MM-DD   ·   Issue: #N
+# Signing keys
 
-## Decision
-<what we decided — a few sentences to a short paragraph>
+## Decisions in force
 
-## Why
-<the reasoning and the key rejected alternative(s) — bullets or short prose>
+**Keys come from a provider, not configuration.** `ISigningKeyProvider` returns a key set; the
+framework picks the active key. Providers ship as separate NuGet packages.
 
-## Consequences
-<only if non-obvious — what changes, what to watch>
+## Tried, didn't work
+
+- **macOS Keychain provider.** Built and reviewed, then descoped — nobody hosts a production auth
+  server on macOS, and the file-system provider already covers it.
 ```
 
-There are no mandatory usage/extension-sketch sections, no security banners, and no changelog
-appendix. If an ADR needs amending later, rewrite the `Decision`/`Why` text in place to reflect
-the current reality — don't append a dated amendment log entry underneath it. A one-line note
-naming the amending issue/ADR is fine where it helps a reader find related context; a full
-running history is not the goal. If an ADR runs long, it's doing too much: split the decision or
-cut words.
+- **No numbers, no `Status`, no `Date`, no issue or PR references, no changelog, no amendment log.**
+- A decision changed? **Rewrite the entry in place.** Git holds the history; nobody reads a
+  superseded decision on purpose.
+- A decision was abandoned? Move it to *Tried, didn't work* with one line on why.
+- Entries are written **in the same PR as the change they describe** — never a separate design PR.
+- Most changes touch this directory not at all. It records durable framework behaviour, not a log
+  of what was decided this week.
 
-Every decision and the key rejected alternative that led to it must survive into the lean form —
-only restated spec text, narration, and ceremony get cut.
+## Keep it short
 
-> ⚠️ **Warning: preserve security sign-off provenance.** Some ADRs carry a security-review
-> approval tied to a specific commit or PR (for example, ADR 0011's `RetirementWindow`
-> derivation required explicit security sign-off before merge). That sign-off record — what was
-> approved, and the commit/PR it was approved against — **must be preserved**, either restated in
-> the decision text if it still governs today's design, or as a one-line note pointing to it. It
-> is never dropped as "just history": it is the audit trail that a specific trust-boundary
-> decision was reviewed and by whom.
+**Files are capped at 150 lines, enforced by CI.** At the cap, cut words or split the topic —
+never raise the cap.
 
-## Rewriting existing ADRs
+The cap exists because the previous format didn't hold. These files used to be numbered ADRs;
+they reached 4,270 lines across 14 documents, were amended roughly five times for every one
+written, and grew to 1,297 lines despite a written "half a page" target. Guidance didn't
+constrain it, so now the build does.
 
-Existing ADRs are being rewritten into this lean shape in small batches (see the tracking issue
-for the rewrite effort) rather than left to migrate opportunistically — the earlier three-part
-"current state / considered-and-rejected alternatives / changelog appendix" shape is being phased
-out in favor of this one. Of the ADRs known to this document: 0008 is retired (see "Retired
-numbers" below) and no longer applies; 0011, 0012, 0013, and 0015 are migrated to the lean shape
-(0015 itself is retired, folded into 0011); 0014 and 0016 have not yet been migrated and still use
-the older shape.
+The same restraint applies to *Tried, didn't work*. An entry earns its place if **we built it, or
+a reviewer signed off on it, before it was reversed** — those are the mistakes worth the tokens to
+prevent twice. Design-time "we considered X and didn't do it" is noise; leave it out.
 
-## Retired numbers
+## What doesn't belong here
 
-Once an ADR number is fully retired — every part of its content merged into another ADR — the file
-is deleted outright, not kept as a stub. Pre-1.0 there's no redirect and no changelog to maintain:
-git history holds the old text if anyone ever needs it, and the "why it changed" lives in the
-surviving ADR's `Why`/`Consequences`. A retired number is never reused for a new decision.
+- **API reference** — interface listings, type shapes, contract tables, worked examples. Those go
+  in `docs/reference/`. If an entry is explaining *how to use* something rather than *what we
+  settled on*, it's in the wrong directory.
+- **Rationale essays.** State the decision and enough of the why to stop someone reversing it by
+  accident. If it needs three paragraphs, write a `docs/explanation/` page and keep the entry short.
 
-- **0008** — merged into [ADR 0013](./0013-store-protocol-persistence-split.md)
-  (authorization-code store + shared store rules) and
-  [ADR 0014](./0014-refresh-token-grant-store.md) (refresh-token store reshape).
-- **0015** — merged into [ADR 0011](./0011-signing-key-management.md).
+## The one exception: security sign-offs
 
-## Why amendments are avoidable right now
+`security-sign-offs.md` is exempt from the format and the line cap. Security approvals tied to a
+specific commit or PR are an audit trail — the record that a particular trust-boundary decision was
+reviewed, by whom, against what, and with which residual risks explicitly accepted. That is
+inherently dated and inherently historical, and it is never dropped as "just history."
 
-Rewriting an ADR's decision in place — rather than appending an amendment that records the old
-and new states side by side — is only safe because nothing outside this repository yet depends on
-the old state being independently recoverable. See
-[`CONTRIBUTING.md`'s "Pre-1.0 Stability Policy"](../../CONTRIBUTING.md#pre-10-stability-policy)
-for why that is true today and what changes once it stops being true. That policy, not this
-document, is the source of truth for *whether* in-place rewrites remain appropriate — this
-document only defines the *shape* an ADR takes when they are.
+Everywhere else, keep history out.

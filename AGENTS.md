@@ -44,11 +44,11 @@ docs/
 
 ### Platform-specific signing providers and solution filters
 
-Some signing-provider packages only make sense on one OS (`ZeeKayDa.Auth.Windows` today; a Linux/cross-platform file-based provider is planned in #291 per ADR 0012). `ZeeKayDa.Auth.slnx` remains the single canonical solution — always build/test/format against it locally unless you have a specific reason to scope down. `ZeeKayDa.Auth.Windows.slnf`, `ZeeKayDa.Auth.MacOS.slnf`, and `ZeeKayDa.Auth.Linux.slnf` are thin solution *filters* (no duplicated project metadata) that CI uses to build/test each platform-specific package only on its own OS's runner, so a package never gets pulled onto the wrong platform's leg. Introduced in PR #318.
+Some signing-provider packages only make sense on one OS (`ZeeKayDa.Auth.Windows` today; a cross-platform file-based provider is planned). `ZeeKayDa.Auth.slnx` remains the single canonical solution — always build/test/format against it locally unless you have a specific reason to scope down. `ZeeKayDa.Auth.Windows.slnf`, `ZeeKayDa.Auth.MacOS.slnf`, and `ZeeKayDa.Auth.Linux.slnf` are thin solution *filters* (no duplicated project metadata) that CI uses to build/test each platform-specific package only on its own OS's runner, so a package never gets pulled onto the wrong platform's leg. Introduced in PR #318.
 
-**A macOS Keychain provider (#290) was implemented, reviewed, and then descoped** as a product-scope call — a production ASP.NET Core auth server is not a realistic macOS-hosted workload, and the only remaining audience (developers on macOS) is already covered by the local-dev provider and #291 without native interop. See ADR 0011 Amendment 7 and ADR 0012 Amendment 1 for the record. `ZeeKayDa.Auth.MacOS.slnf` still exists and still runs the OS-agnostic core packages' tests on a real macOS CI runner — that's independently valuable and unrelated to the killed provider — it just doesn't build a macOS-specific package (yet; #291 may end up added to it, since #291 is cross-platform).
+**A macOS Keychain provider (#290) was implemented, reviewed, and then descoped** as a product-scope call — a production ASP.NET Core auth server is not a realistic macOS-hosted workload, and the only remaining audience (developers on macOS) is already covered by the local-dev provider and #291 without native interop. `ZeeKayDa.Auth.MacOS.slnf` still exists and still runs the OS-agnostic core packages' tests on a real macOS CI runner — that's independently valuable and unrelated to the killed provider — it just doesn't build a macOS-specific package (yet; #291 may end up added to it, since #291 is cross-platform).
 
-**Before targeting an OS-specific TFM for a new platform package, verify its workload requirements empirically, don't assume the Windows precedent generalizes.** `net10.0-windows` needs no `dotnet workload install` (Windows Desktop reference assemblies ship via plain NuGet), but `net10.0-macos` does (confirmed via `dotnet workload list` showing zero installed, and a scratch project with that TFM failing restore with `NETSDK1147`) — and CI installs no workloads. Check `dotnet workload list` and try restoring a throwaway project with the candidate TFM before committing to it in an ADR or a `.csproj`.
+**Before targeting an OS-specific TFM for a new platform package, verify its workload requirements empirically, don't assume the Windows precedent generalizes.** `net10.0-windows` needs no `dotnet workload install` (Windows Desktop reference assemblies ship via plain NuGet), but `net10.0-macos` does (confirmed via `dotnet workload list` showing zero installed, and a scratch project with that TFM failing restore with `NETSDK1147`) — and CI installs no workloads. Check `dotnet workload list` and try restoring a throwaway project with the candidate TFM before committing to it in a decision entry or a `.csproj`.
 
 ## Project Conventions
 
@@ -60,38 +60,36 @@ Some signing-provider packages only make sense on one OS (`ZeeKayDa.Auth.Windows
 
 **Ceremony scales with blast radius.** Match the process to the risk — don't spend a day of design docs on a one-file fix, and don't land a new public API without agreeing its shape first.
 
+Work on an issue runs through the staged loop in the **`/work-on-issue`** skill. Read it before starting. The short version:
+
+> **Agree the shape with the maintainer → build → review locally → show the maintainer the code → open the PR → reviewers post on the PR → merge.**
+
+Three stages stop until the maintainer answers: the agreed shape (before any code exists), the code walkthrough (before the PR exists), and the merge. The maintainer is exacting about API shape — a finished PR is the wrong moment for them to first see how an API reads. Do not batch these stages or run ahead to save a round trip.
+
 | Change | Process |
 |---|---|
-| Internal / mechanical — bug fix, refactor, test, chore | Just build it (`developer`). No design gate, no ADR. |
-| New or changed **public API** / behaviour | Agree the shape with the maintainer first — a short discussion in the issue (the "mini-ADR": what, why, one line on the alternative). Then build. |
-| Touches **tokens, crypto, or endpoints** | A `security` look — at the shape, the PR, or both. |
-| A **big or hard-to-reverse** decision | Record a lean ADR (below). Rare. |
+| Internal / mechanical — bug fix, refactor, test, chore | Just build it (`developer`). No design gate, no reviewers. |
+| New or changed **public API** / behaviour | Full loop. The shape is agreed with the maintainer first and posted on the issue as the build contract. |
+| Touches **tokens, crypto, or endpoints** | `security` reviews — locally first, then on the PR. |
+| Changes **structure or an extension point** | `architect` reviews, same two rounds. |
 
 - **One narrow issue = one buildable thing.** No epics by default; sequence with `blocked by` / `blocks` relationships, not epic hierarchies.
-- The shape discussion happens in the **main session with the maintainer** and is captured in the **issue thread** — not a separate document. That is the maintainer's one involvement point; keep them out of the build/review loop otherwise.
+- Reviewers run **in parallel, spawned in a single message**, so neither sees the other's findings before forming a verdict. Independent verdicts are the whole reason two reviewers exist rather than one.
+- The first review round is **local** — findings return to the orchestrator and never reach GitHub. Rough first versions stay off the PR page.
 - After a PR merges, run `/post-merge-checks`.
 
-### Lean ADRs
+## Decision register
 
-An ADR records a decision worth remembering — not a design essay. Half a page, decision first:
+`docs/decisions/` records **what is true now** — not how we got here. One file per topic area, two sections: `Decisions in force` and `Tried, didn't work`.
 
-```
-# ADR NNNN — <title>
-Status: Accepted   ·   Date: YYYY-MM-DD   ·   Issue: #N
+- No numbers, no `Status`, no `Date`, no issue references, no changelog, no amendment log.
+- A decision changed? **Rewrite it in place.** Git is the history.
+- A decision was abandoned? Move it to `Tried, didn't work` with one line on why — so nobody re-proposes it.
+- Written in the **same PR as the change it describes**. There is no separate design PR, and no design-issue-then-implementation-issue lifecycle.
+- Most issues touch the register not at all. It holds durable framework behaviour, not per-issue choices.
+- Files are capped at 150 lines, enforced by CI. At the cap, cut words or split the topic — never raise the cap.
 
-## Decision
-<what we decided — 1–3 sentences>
-
-## Why
-<the reasoning and the main rejected alternative — a few bullets>
-
-## Consequences
-<only if non-obvious — what changes, what to watch>
-```
-
-No mandatory usage/extension-sketch sections, no security banners, no changelog appendix. Sketches are a design *technique* (pressure-test an API shape during the discussion), not required ADR content. If an ADR runs long it's doing too much — split the decision or cut words.
-
-A short code sample earns its place under `Why` or `Consequences` when it makes a tradeoff concrete faster than prose would — e.g. showing the rejected shape next to the chosen one. It's an exception, not a default: most ADRs need none. This is pre-release software with no external consumers yet — an ADR describes where the design is now; include past approaches or amendment history only when they explain why the current decision is what it is, not as a record for its own sake.
+The format is in `docs/decisions/README.md`. It is deliberately minimal: the previous ADR format grew to 4,270 lines and was being amended roughly five times for every one that was written.
 
 ## Routing — MAIN ORCHESTRATOR ONLY
 
@@ -104,10 +102,11 @@ The main session and the maintainer own **design discussion and decisions** — 
 | Task | Route |
 |---|---|
 | Writing or changing C# code (features, bug fixes, refactors) | `developer` agent |
-| A genuinely hard API/abstraction design needing specialist depth | `architect` agent (otherwise just discuss it here with the maintainer) |
+| Proposing the shape of a public API before it's built | `architect` agent, via the `/work-on-issue` loop |
 | Writing or updating Markdown documentation | `docs` agent |
 | Security review of a token/crypto/endpoint change | `security` agent |
 | Writing or verifying tests, checking acceptance criteria | `tester` agent |
+| Starting work on an issue | `/work-on-issue` skill |
 | Writing or triaging a GitHub issue | `/write-issue` skill, or write it directly if the shape is already clear |
 | After a PR merges | `/post-merge-checks` skill (main session) |
 | Reviewing a branch or PR other than the current checkout | `/review-branch` skill, then the right review agent |
@@ -127,6 +126,6 @@ Prefer the LSP tool over text search for symbol-level navigation (definitions, r
 - **Be terse.** Short, precise answers; no progress narration; the user will ask if they need more.
 - **Ask before deciding.** Never resolve ambiguity by guessing. In the main session, ask the user. In a specialist agent, return the open question as your result — the orchestrator will route it.
 - **Never fabricate** facts, spec content, or API details. If uncertain, say so and ask.
-- **Review happens on the PR.** Commit and push freely on feature branches — the user reviews diffs in the pull request, not in the working tree. Never commit directly to `main`, and never merge a PR or create a release tag without explicit approval.
-- **Review sequence: build → open PR → review agent posts on the PR → maintainer triages.** Once `developer` is done and pre-PR checks pass, open the PR — don't gate opening it on a pre-PR security/architect pass. Have `security`/`architect` review the *actual open PR* and post their findings there per their own posting convention (all findings, with severity — not pre-filtered to what the orchestrator judged worth fixing). Then bring the maintainer a short summary of every finding and let them decide what gets fixed, rather than silently applying fixes for findings the orchestrator picked before the maintainer ever saw them. Fixes land as new commits on the same PR, visible in its history.
-- **Approval gates are harness-enforced.** The permission policy in `.claude/settings.json` makes `git tag`, force-pushes, `gh pr merge`, and `gh release` always prompt the user — even when a broader allow rule exists. A permission prompt at one of these points is the review gate working as intended; never look for an alternative command to avoid it.
+- **The maintainer sees the code before GitHub does.** Commit locally on the feature branch and keep it there — the first review round happens between agents and never reaches the PR. The maintainer reviews the working branch in their own editor and approves *before* a PR is opened. Never commit directly to `main`, and never open a PR, merge one, or create a release tag without explicit approval.
+- **Bring every review finding to the maintainer.** Once the PR is open, reviewers post all findings on it with severity — not pre-filtered to what you judged worth fixing. Summarise all of them and let the maintainer decide what gets fixed, rather than silently applying the ones you picked. Fixes land as new commits on the same PR, visible in its history.
+- **Approval gates are harness-enforced.** The permission policy in `.claude/settings.json` makes `gh pr create`, `git tag`, force-pushes, `gh pr merge`, and `gh release` always prompt the user — even when a broader allow rule exists. A permission prompt at one of these points is the review gate working as intended; never look for an alternative command to avoid it.
