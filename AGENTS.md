@@ -8,6 +8,24 @@ ZeeKayDa.Auth is an open-source OpenID Connect identity provider framework for .
 - **Target**: library/framework (not a standalone application)
 - Merge to `main` → publish preview to GitHub Packages (`-preview` suffix); git tag `v*.*.*` → stable release on NuGet.org
 
+## Pre-release — nothing is load-bearing yet
+
+**ZeeKayDa.Auth has not shipped. There are no users, no external implementers, and no
+compatibility to preserve.** Treat every public type, interface, options class, and extension
+method as freely changeable until the 1.0 tag exists.
+
+This is not permission to be careless — it is permission to be *decisive*. Concretely:
+
+- **Never** justify a design by "changing it would be a breaking change." It would not be.
+- **Never** add a side-interface, an optional capability probe, or an overload to avoid touching an
+  existing contract. Change the contract.
+- Rework beats accretion. If a fix is the fourth patch onto the same design, stop and re-cut the
+  design instead — that is the cheaper option right now and will never be cheaper again.
+- Delete aggressively: dead abstractions, speculative extension points, options nobody sets.
+  Git is the history.
+
+Once 1.0 ships this section is deleted and SemVer applies in full.
+
 ## Governing Specifications
 
 All features and behaviour must be grounded in the relevant specification. **The spec always wins** — over convention, convenience, .NET idiom, a specialist agent's output, and your own opinion. Every issue, design decision, and implementation must reference the relevant spec section where applicable.
