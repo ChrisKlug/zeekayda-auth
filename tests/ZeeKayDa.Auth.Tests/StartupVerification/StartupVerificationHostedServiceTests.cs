@@ -8,10 +8,10 @@ namespace ZeeKayDa.Auth.Tests.StartupVerification;
 /// <summary>
 /// Exercises <see cref="StartupVerificationHostedService"/>'s two-phase <c>StartAsync</c>: gate
 /// abort-on-first-failure semantics, verifier run-all-then-aggregate semantics, the unexpected
-/// exception special cases from ADR 0016 §5, and — critically — that logging never happens before
+/// exception special cases, and — critically — that logging never happens before
 /// the gate phase has completed and that a warning's structured arguments still reach
 /// <c>SecretSanitizingLogger</c>'s by-key redaction after being composed with the runner's own
-/// constant prefix (ADR 0016 §9, issue #444).
+/// constant prefix.
 /// </summary>
 public sealed class StartupVerificationHostedServiceTests
 {
@@ -116,7 +116,7 @@ public sealed class StartupVerificationHostedServiceTests
 
         // The runner's own placeholder is named {ErrorCode}, not {Code}, so it does not collide
         // with SecretSanitizingLogger.SensitiveKeys' "code" entry: the warning's stable
-        // discriminator survives redaction untouched, as ADR 0016 §3 requires.
+        // discriminator survives redaction untouched, as the design requires.
         entry.Pairs.Should().Contain(kv => kv.Key == "ErrorCode" && (string?)kv.Value == "x.code");
     }
 
@@ -273,7 +273,7 @@ public sealed class StartupVerificationHostedServiceTests
         exception.Which.AggregatedFailures.Select(f => f.Code).Should().BeEquivalentTo("v1.fail", "v2.fail");
     }
 
-    // ── Unexpected-exception handling (ADR 0016 §5) ─────────────────────────────────────────────────
+    // ── Unexpected-exception handling ────────────────────────────────────────────────────────────
 
     [Fact]
     public async Task StartAsync_unwraps_a_ZeeKayDaConfigurationException_thrown_by_a_verifier_preserving_its_codes()

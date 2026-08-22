@@ -647,3 +647,47 @@ existence of shipped code as approval for any of them.
 *Unverifiable anchor:* the round-2 Azure Key Vault sign-off in §1.2 is anchored to commit `ea5c9b1`,
 which no longer resolves — the branch commit did not survive squash-merge. The record is preserved
 verbatim, but that SHA cannot be checked out.
+
+---
+
+## 6. Corrections
+
+Appended, never applied in place. A sign-off record is only useful if the gap between what was
+approved and what shipped is itself visible — silently editing an old entry to match reality would
+erase exactly the fact worth keeping.
+
+### 6.1 §4.3's side-effecting-verifier ordering mitigation was never implemented
+
+**Discovered 2026-08-21, while migrating the startup-verification design into the register.**
+Tracked by **#499**.
+
+§4.3 records, as the mitigation that made an accepted residual acceptable:
+
+> side-effecting verifiers are registered **last**, after the cheap configuration checks, so a
+> configuration failure is discovered before the expensive work
+
+Neither half holds against shipped code.
+
+**The side-effecting verifier is registered first.** `SigningStartupSelfTestVerifier` — which
+performs a real signing operation, including a remote call on a Key Vault provider — is registered
+by `AddZeeKayDaAuthCore()` (`ZeeKayDaAuthCoreServiceCollectionExtensions.cs:68`).
+`AddZeeKayDaAuth()` calls that at `ZeeKayDaAuthServiceCollectionExtensions.cs:64`, *before* the
+cheap verifiers at `:107`–`:115`. The runner iterates in registration order, so the expensive check
+runs first. The code comments at `:96` that "no ordering dependency exists here", which is the
+opposite of what the sign-off relies on.
+
+**And ordering could not have helped.** Phase 2 runs every verifier regardless of earlier failures,
+accumulating into a list and throwing only after the loop
+(`StartupVerificationHostedService.cs:58`, `:80`). There is no early exit. The aggregate-all model
+was a later deliberate decision, and it made the ordering mitigation inoperative rather than merely
+unimplemented.
+
+**Status of the residual:** it stands **unmitigated**, not accepted-with-mitigation as §4.3 reads.
+The direct impact is low — it fails closed, and the work is a self-test rather than anything
+attacker-triggerable — but a misconfigured application on a Key Vault provider performs a remote
+signing call on every startup. #499 decides between accepting the residual honestly and giving the
+runner real cheap-then-side-effecting phases.
+
+**Why this is recorded here rather than fixed in §4.3:** the original text is the evidence of what
+the reviewer believed they were approving. That belief, and its divergence from the code, is the
+audit-relevant fact.
