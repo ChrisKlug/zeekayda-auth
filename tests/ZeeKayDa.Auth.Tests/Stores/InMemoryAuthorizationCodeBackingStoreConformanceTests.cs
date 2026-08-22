@@ -4,7 +4,7 @@ using ZeeKayDa.Auth.TestKit.Stores;
 namespace ZeeKayDa.Auth.Tests.Stores;
 
 /// <summary>
-/// Runs the ADR 0013 §10 conformance kit against <see cref="InMemoryAuthorizationCodeBackingStore"/>.
+/// Runs the authorization-code backing-store conformance kit against <see cref="InMemoryAuthorizationCodeBackingStore"/>.
 /// </summary>
 public sealed class InMemoryAuthorizationCodeBackingStoreConformanceTests : AuthorizationCodeBackingStoreConformanceTests
 {

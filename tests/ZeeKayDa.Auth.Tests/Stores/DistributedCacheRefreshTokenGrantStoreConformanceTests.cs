@@ -7,10 +7,10 @@ using ZeeKayDa.Auth.TestKit.Stores;
 namespace ZeeKayDa.Auth.Tests.Stores;
 
 /// <summary>
-/// Runs the ADR 0014 §9 conformance kit against <see cref="DistributedCacheRefreshTokenGrantStore"/>.
+/// Runs the refresh-token-grant-store conformance kit against <see cref="DistributedCacheRefreshTokenGrantStore"/>.
 /// The mid-revoke-insert completeness case is relaxed: this store maintains its own
 /// non-transactional secondary indexes over <see cref="IDistributedCache"/> and is documented
-/// dev/test-only, not for production (ADR 0014 §8's explicit caveat — see the store's type-level
+/// dev/test-only, not for production (an explicit caveat — see the store's type-level
 /// remarks). Its CAS invariant is a read-then-write, also not atomic, so that case is skipped too.
 /// </summary>
 public sealed class DistributedCacheRefreshTokenGrantStoreConformanceTests : RefreshTokenGrantStoreConformanceTests

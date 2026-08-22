@@ -6,7 +6,7 @@ namespace ZeeKayDa.Auth.Tests.Stores;
 /// <summary>
 /// Verifies the type shape of <see cref="RefreshTokenEntry"/>, <see cref="RefreshTokenGrant"/>,
 /// <see cref="RefreshGrantStatus"/>, <see cref="RefreshTokenConsumptionResult"/>, and
-/// <see cref="IRefreshTokenStore"/>'s method signatures (ADR 0014 §2/§10).
+/// <see cref="IRefreshTokenStore"/>'s method signatures.
 /// </summary>
 public sealed class RefreshTokenStoreContractTests
 {
@@ -111,7 +111,7 @@ public sealed class RefreshTokenStoreContractTests
         prop.Should().NotBeNull();
         prop!.PropertyType.Should().Be(typeof(DateTimeOffset));
         prop.GetCustomAttribute<System.Runtime.CompilerServices.RequiredMemberAttribute>()
-            .Should().NotBeNull("FamilyAbsoluteExpiry must be required (ADR 0014 §10)");
+            .Should().NotBeNull("FamilyAbsoluteExpiry must be required");
     }
 
     [Fact]
@@ -182,7 +182,7 @@ public sealed class RefreshTokenStoreContractTests
         };
     }
 
-    // ── RefreshTokenConsumptionResult — type hierarchy (ADR 0014 §10 rename) ─────────────────────
+    // ── RefreshTokenConsumptionResult — type hierarchy ───────────────────────────────────────────
 
     [Fact]
     public void RefreshTokenConsumptionResult_is_abstract()
@@ -318,7 +318,7 @@ public sealed class RefreshTokenStoreContractTests
         ownProps.Should().BeEmpty();
     }
 
-    // ── RefreshTokenGrant — type shape (ADR 0014 §2) ──────────────────────────────────────────────
+    // ── RefreshTokenGrant — type shape ────────────────────────────────────────────────────────────
 
     [Fact]
     public void RefreshTokenGrant_is_a_sealed_record()
@@ -341,7 +341,8 @@ public sealed class RefreshTokenStoreContractTests
     [Fact]
     public void RefreshTokenGrant_Subject_is_a_plain_string_not_a_StoreKey()
     {
-        // ADR 0014 sign-off item 1: Subject is deliberately cleartext, NOT an opaque hash.
+        // Subject is deliberately cleartext, NOT an opaque hash — this was a deliberate reversal
+        // of an earlier decision to hash it.
         var prop = typeof(RefreshTokenGrant).GetProperty(nameof(RefreshTokenGrant.Subject));
 
         prop.Should().NotBeNull();
@@ -434,7 +435,7 @@ public sealed class RefreshTokenStoreContractTests
 
         method.Should().NotBeNull("TryConsumeAsync must be declared on IRefreshTokenStore");
         method!.ReturnType.Should().Be(typeof(ValueTask<RefreshTokenConsumptionResult>),
-            "TryConsumeAsync must return ValueTask<RefreshTokenConsumptionResult> (ADR 0014 §10 rename)");
+            "TryConsumeAsync must return ValueTask<RefreshTokenConsumptionResult>");
     }
 
     [Fact]
@@ -458,7 +459,7 @@ public sealed class RefreshTokenStoreContractTests
             "SealAsFrameworkOwnedProtocol is internal and deliberately excluded from this count");
     }
 
-    // ── IRefreshTokenGrantStore — method signatures (ADR 0014 §3) ─────────────────────────────────
+    // ── IRefreshTokenGrantStore — method signatures ───────────────────────────────────────────────
 
     [Fact]
     public void IRefreshTokenGrantStore_is_an_interface()
@@ -473,7 +474,7 @@ public sealed class RefreshTokenStoreContractTests
 
         methods.Should().HaveCount(6,
             "InsertAsync, FindByHandleAsync, TryMarkConsumedAsync, RevokeFamilyAsync, RevokeBySubjectAsync, " +
-            "IsFamilyRevokedAsync (ADR 0014 §3, amended by issue #386)");
+            "IsFamilyRevokedAsync (amended by issue #386)");
     }
 
     [Fact]

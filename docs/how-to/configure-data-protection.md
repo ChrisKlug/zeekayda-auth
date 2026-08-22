@@ -26,8 +26,7 @@ every instance in a deployment to share the same key ring.
 
 The default authorization code and refresh token stores serialize each entry to JSON and
 then encrypt the serialised bytes using `IDataProtectionProvider` before writing them to the
-backing cache (see [ADR 0013 — Authorization-Code Store: Protocol / Persistence
-Split](../decisions/0013-store-protocol-persistence-split.md)). Purpose strings used:
+backing cache. Purpose strings used:
 
 - `ZeeKayDa.Auth:AuthorizationCodeStore`
 - `ZeeKayDa.Auth:RefreshTokenStore`
@@ -73,8 +72,7 @@ browser held a valid cookie. This is documented in
 > **14 days**.
 >
 > A key that expires before the refresh tokens it protected become unreadable tokens, not a
-> clean error. The store treats a failed decrypt as `NotFound` (per [ADR 0013's exception
-> contract](../decisions/0013-store-protocol-persistence-split.md)), which means users are
+> clean error. The store treats a failed decrypt as `NotFound`, which means users are
 > silently logged out with no indication that the cause is an expired key. The consequence of
 > underestimating retention is not a service error — it is invisible user disruption.
 
@@ -376,8 +374,7 @@ thrown by `IDataProtector.Unprotect` is **caught and silently discarded**. The s
 returns `NotFound` (or `AlreadyRedeemed` for an unreadable authorization code tombstone).
 No exception is thrown to the caller, and **no log entry is written**.
 
-Per [ADR 0013's exception contract](../decisions/0013-store-protocol-persistence-split.md),
-a `NotFound` result causes the token endpoint to return `error=invalid_grant` to the
+A `NotFound` result causes the token endpoint to return `error=invalid_grant` to the
 client. `ZeeKayDaStoreException` is reserved for transport-level failures — for example,
 an `IDistributedCache` I/O error — not for decryption failures.
 
@@ -451,5 +448,4 @@ mixes granular calls with different values gets one outcome per store:
 - [Key storage providers in ASP.NET Core](https://learn.microsoft.com/en-us/aspnet/core/security/data-protection/implementation/key-storage-providers)
 - [Key management in ASP.NET Core](https://learn.microsoft.com/en-us/aspnet/core/security/data-protection/implementation/key-management)
 - [Configure ASP.NET Core Data Protection](https://learn.microsoft.com/en-us/aspnet/core/security/data-protection/configuration/overview)
-- [ADR 0013 — store encryption and key-retention requirement](../decisions/0013-store-protocol-persistence-split.md)
-- [ADR 0005 — authorization-state cookie encryption](https://github.com/ChrisKlug/zeekayda-auth/blob/main/docs/decisions/0005-authorization-endpoint-interaction-orchestration.md)
+- [Token stores](../reference/token-stores.md) — store encryption and the Data Protection key-retention requirement

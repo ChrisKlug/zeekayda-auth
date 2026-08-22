@@ -65,7 +65,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
             sd.ServiceType == typeof(IAuthorizationCodeStore) &&
             sd.ImplementationType == typeof(AuthorizationCodeStore) &&
             sd.Lifetime == ServiceLifetime.Singleton,
-            because: "third parties can only ever implement IAuthorizationCodeBackingStore (ADR 0013 §1); " +
+            because: "third parties can only ever implement IAuthorizationCodeBackingStore; " +
                      "IAuthorizationCodeStore always resolves to the sealed framework coordinator");
     }
 
@@ -147,7 +147,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
             sd.ServiceType == typeof(IRefreshTokenStore) &&
             sd.ImplementationType == typeof(RefreshTokenStore) &&
             sd.Lifetime == ServiceLifetime.Singleton,
-            because: "third parties can only ever implement IRefreshTokenGrantStore (ADR 0014 §4); " +
+            because: "third parties can only ever implement IRefreshTokenGrantStore; " +
                      "IRefreshTokenStore always resolves to the sealed framework coordinator");
     }
 

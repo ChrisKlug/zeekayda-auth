@@ -7,7 +7,7 @@ using ZeeKayDa.Auth.TestKit.Stores;
 namespace ZeeKayDa.Auth.Tests.Stores;
 
 /// <summary>
-/// Runs the ADR 0013 §10 conformance kit against
+/// Runs the authorization-code backing-store conformance kit against
 /// <see cref="DistributedCacheAuthorizationCodeBackingStore"/>. The atomicity assertion is
 /// skipped: this store composes a non-atomic read-then-write over <see cref="IDistributedCache"/>
 /// and is documented dev/test-only, not for production (see its type-level remarks).

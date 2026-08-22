@@ -6,7 +6,7 @@ using ZeeKayDa.Auth.Stores;
 namespace ZeeKayDa.Auth.Tests.Stores;
 
 /// <summary>
-/// Tests for the <c>RefreshTokenStore</c> framework coordinator (ADR 0014 §4). Covers the
+/// Tests for the <c>RefreshTokenStore</c> framework coordinator. Covers the
 /// cleartext-first decision tree, the CAS pivot, the lost-race re-read, the clamp arithmetic
 /// (§5), and the single <c>Unprotect</c> catch site (§7) — wired over
 /// <see cref="InMemoryRefreshTokenGrantStore"/> for round-trip tests and a fake
@@ -518,7 +518,7 @@ public sealed class RefreshTokenStoreTests
             .Which.FamilyId.Should().Be(familyId);
     }
 
-    // ── #388 gate: revocation sentinel arms IsFamilyRevokedAsync for a zero-row family (ADR 0014 §12) ─
+    // ── #388 gate: revocation sentinel arms IsFamilyRevokedAsync for a zero-row family ────────────────
 
     [Fact]
     public async Task RevokeFamilyAsync_on_zero_row_family_inserts_a_sentinel_that_IsFamilyRevokedAsync_reports()
@@ -661,8 +661,8 @@ public sealed class RefreshTokenStoreTests
     public async Task TryConsumeAsync_returns_AlreadyConsumed_without_throwing_even_when_ProtectedPayload_is_corrupt()
     {
         // A grant with a deliberately corrupt/unparseable ProtectedPayload must still resolve
-        // AlreadyConsumed purely from the cleartext Status column — the ADR 0014 §4/§7 sign-off
-        // item 3 concern: reuse detection must never ride on a successful decrypt.
+        // AlreadyConsumed purely from the cleartext Status column — reuse detection must never
+        // ride on a successful decrypt.
         var grantStore = new InMemoryRefreshTokenGrantStore();
         var store = CreateStore(grantStore: grantStore);
         const string handle = "corrupt-payload-consumed";
@@ -954,7 +954,7 @@ public sealed class RefreshTokenStoreTests
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
 
-    // ── Sealing member (ADR 0014 §4, mirroring ADR 0013 §1) ──────────────────────────────────────
+    // ── Sealing member ───────────────────────────────────────────────────────────────────────────
 
     [Fact]
     public void SealAsFrameworkOwnedProtocol_can_be_invoked_through_the_interface_without_throwing()
@@ -1187,7 +1187,7 @@ public sealed class RefreshTokenStoreTests
 
     /// <summary>
     /// Wraps a real grant store and counts every <see cref="InsertAsync"/> call that actually
-    /// succeeds, used to prove the ADR 0014 §12 sentinel-insert idempotency contract: a repeat
+    /// succeeds, used to prove the sentinel-insert idempotency contract: a repeat
     /// <c>RevokeFamilyAsync</c> for the same family must collide on its own prior sentinel and
     /// never grow past one successful insert for that key.
     /// </summary>
