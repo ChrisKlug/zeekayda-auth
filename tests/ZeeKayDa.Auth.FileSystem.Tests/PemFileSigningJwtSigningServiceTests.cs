@@ -19,7 +19,7 @@ namespace ZeeKayDa.Auth.FileSystem.Tests;
 /// exercises the real <see cref="FileSigningKeyReader"/> against real temporary files.
 /// </summary>
 /// <remarks>
-/// This provider is on ADR 0015's <see cref="KeySetOptions"/> contract (issue #422):
+/// This provider is on the <see cref="KeySetOptions"/> contract (issue #422):
 /// <c>ListKeysAsync</c> runs exactly once, ever, for the lifetime of a service instance, so there is
 /// no reload/change-detection surface to test here — unlike the earlier contract, a
 /// changed or newly-added file is never picked up without a restart. Rotation between already-known
@@ -347,7 +347,7 @@ public sealed class PemFileSigningJwtSigningServiceTests
 
     // ── Multi-file rotation via AddFile (AC #9/#10) ──────────────────────────────────────────────
     //
-    // ADR 0015: ListKeysAsync runs exactly once and builds one immutable snapshot/timeline;
+    // ListKeysAsync runs exactly once and builds one immutable snapshot/timeline;
     // active-key selection is then recomputed lazily against the wall clock on every call, with zero
     // further file I/O — so a rotation between already-known files still switches the active signer
     // purely from elapsed time.
@@ -453,7 +453,7 @@ public sealed class PemFileSigningJwtSigningServiceTests
 
     // ── Every registered certificate already expired at startup ─────────────────────────────────
     //
-    // ADR 0015 Security Considerations item 6: a KeySetOptions provider never re-reads, so an already-(or
+    // A KeySetOptions provider never re-reads, so an already-(or
     // eventually-)expired sole key with no eligible successor drifts to (or starts as)
     // SelectActiveKey == null and signing fails closed at request time via the base class's own
     // generic "signing.no_active_key" error — there is no provider-specific "no active certificate"
@@ -475,7 +475,7 @@ public sealed class PemFileSigningJwtSigningServiceTests
         exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.no_active_key");
     }
 
-    // ── Too-soon-NotBefore startup warning (ADR 0015 §1, issue #422) ─────────────────────────────
+    // ── Too-soon-NotBefore startup warning (issue #422) ──────────────────────────────────────────
 
     [Fact]
     public async Task GetSigningKeysAsync_logs_a_warning_when_the_soonest_pending_NotBefore_is_closer_than_PublicationLead()
@@ -559,8 +559,8 @@ public sealed class PemFileSigningJwtSigningServiceTests
         var second = await sut.GetSigningKeysAsync(ct);
 
         second[0].Kid.Should().Be(first[0].Kid,
-            "kid must be derived from the key material; ListKeysAsync runs exactly once for this " +
-            "an ADR 0015 KeySetOptions provider regardless of elapsed time");
+            "kid must be derived from the key material; ListKeysAsync runs exactly once for " +
+            "this KeySetOptions provider regardless of elapsed time");
     }
 
     // ── Algorithm/key-type mismatch ───────────────────────────────────────────────────────────────
@@ -599,7 +599,7 @@ public sealed class PemFileSigningJwtSigningServiceTests
     [Fact]
     public async Task SignAsync_signs_with_an_EC_certificates_private_key()
     {
-        // ADR 0015 §2/§5's least-privilege loading means CreateSignerAsync (and therefore an EC
+        // Least-privilege loading means CreateSignerAsync (and therefore an EC
         // private-key extraction) is only ever invoked by a real SignAsync call, never by
         // GetSigningKeysAsync alone — this exercises that path directly.
         var ct = TestContext.Current.CancellationToken;
@@ -677,7 +677,7 @@ public sealed class PemFileSigningJwtSigningServiceTests
     //
     // Unreachable via the public API in normal operation — the base class only ever calls
     // CreateSignerAsync with a KeyId it previously observed on a ListKeysAsync-returned KeyListing,
-    // and this ADR 0015 KeySetOptions provider's registered files never change after startup — but invoked
+    // and this KeySetOptions provider's registered files never change after startup — but invoked
     // directly via reflection here to prove the defensive check fails loudly rather than silently,
     // should that invariant ever be violated (e.g. a future base-class bug).
 

@@ -143,7 +143,7 @@ Both clients will be present in the repository.
 When more than one `IClientSecretHasher` is registered, the framework must know which one to use
 as the default — that is, which hasher creates new secrets and generates the timing-pad dummy
 credential at startup. The `isDefault` parameter on `AddSecretsHasher<T>()` controls this. The
-full selection matrix from ADR 0007 §3.5 is:
+full selection matrix is:
 
 | Hashers registered | Explicit defaults (`isDefault: true`) | Outcome |
 |---|---|---|

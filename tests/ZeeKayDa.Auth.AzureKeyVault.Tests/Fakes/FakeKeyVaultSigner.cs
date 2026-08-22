@@ -23,7 +23,7 @@ internal sealed class FakeKeyVaultSigner : IKeyVaultSigner, IDisposable
     /// every <c>KeyVaultRemoteSigner</c> activation depends on — <see cref="IKeyVaultSigner"/> itself
     /// carries no <see cref="IDisposable"/> contract, so this member only exists so a test can prove
     /// nothing in the production code path ever attempts to tear this seam down across an
-    /// active-key handoff (ADR 0015 §2/Security Considerations item 5).
+    /// active-key handoff.
     /// </summary>
     public int DisposeCallCount { get; private set; }
 

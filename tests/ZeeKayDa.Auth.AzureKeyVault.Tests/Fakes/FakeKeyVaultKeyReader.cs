@@ -61,7 +61,7 @@ internal sealed class FakeKeyVaultKeyReader : IKeyVaultKeyReader
         _rsaMaterial[version] = parameters;
 
         // Retained purely so a test double signer (FakeKeyVaultSigner) can produce a genuinely
-        // verifiable signature for the ADR 0015 §11 self-test (issue #437) — the real Key
+        // verifiable signature for the self-test (issue #437) — the real Key
         // Vault-backed reader never retains private key material; this is a test-only convenience.
         if (rsa is not null)
             _rsaPrivateMaterial[version] = rsa.ExportParameters(true);
@@ -117,8 +117,8 @@ internal sealed class FakeKeyVaultKeyReader : IKeyVaultKeyReader
     /// <summary>
     /// Returns a fresh <see cref="RSA"/> instance holding the full key pair (public and private)
     /// generated for <paramref name="version"/> — used exclusively by a test double signer
-    /// (<c>FakeKeyVaultSigner</c>) so it can produce a real, verifiable signature for the ADR 0015
-    /// §11 self-test (issue #437). The caller owns and must dispose the returned instance.
+    /// (<c>FakeKeyVaultSigner</c>) so it can produce a real, verifiable signature for the
+    /// self-test (issue #437). The caller owns and must dispose the returned instance.
     /// </summary>
     public RSA CreateRsaPrivateKey(string version)
     {

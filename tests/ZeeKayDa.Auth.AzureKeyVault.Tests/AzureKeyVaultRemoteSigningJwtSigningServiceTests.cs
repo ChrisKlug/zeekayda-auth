@@ -32,7 +32,7 @@ public sealed class AzureKeyVaultRemoteSigningJwtSigningServiceTests
     /// <summary>
     /// A <see cref="FakeKeyVaultSigner.SignFunc"/> that signs with the real private key material
     /// <paramref name="reader"/> retained for whichever key version <paramref name="uri"/> targets,
-    /// so the ADR 0015 §11 self-test (issue #437) — which every active-key handoff now runs, not
+    /// so the self-test (issue #437) — which every active-key handoff now runs, not
     /// just real token signing — sees a genuinely verifiable signature. RS256 only, matching every
     /// test in this file that exercises <c>SignAsync</c>.
     /// </summary>
@@ -452,7 +452,7 @@ public sealed class AzureKeyVaultRemoteSigningJwtSigningServiceTests
         var payload = "payload"u8.ToArray();
         var result = await sut.SignAsync(payload, ct);
 
-        signer.Calls.Should().HaveCount(2, "one call is the ADR 0015 §11 self-test (issue #437) and one is the real signature");
+        signer.Calls.Should().HaveCount(2, "one call is the self-test (issue #437) and one is the real signature");
         signer.Calls[0].Algorithm.Should().Be(SigningAlgorithm.RS256);
         signer.Calls[0].KeyVersionUri.Should().Be(v1.Id, "signing must target the exact key version that produced the active descriptor");
         signer.Calls[0].Kid.Should().Be(JwkThumbprint.Compute(reader.GetRsaMaterial("v1")),
@@ -503,7 +503,7 @@ public sealed class AzureKeyVaultRemoteSigningJwtSigningServiceTests
 
         await sut.SignAsync("payload"u8.ToArray(), ct);
 
-        signer.Calls.Should().HaveCount(2, "one call is the ADR 0015 §11 self-test (issue #437) and one is the real signature");
+        signer.Calls.Should().HaveCount(2, "one call is the self-test (issue #437) and one is the real signature");
         signer.Calls[0].KeyVersionUri.Should().Be(v2.Id, "signing after the handoff must target v2's Key Vault key version, not v1's");
         signer.Calls[0].Kid.Should().Be(JwkThumbprint.Compute(reader.GetRsaMaterial("v2")));
     }
@@ -513,7 +513,7 @@ public sealed class AzureKeyVaultRemoteSigningJwtSigningServiceTests
     {
         // Regression test (issue #425 security review, finding F9a): KeyVaultRemoteSigner.Dispose is
         // documented as a deliberate no-op because IKeyVaultSigner is a shared, DI-owned seam every
-        // activation depends on (ADR 0015 §2/Security Considerations item 5). This proves it: v1's
+        // activation depends on. This proves it: v1's
         // signer wrapper is retired by the v1->v2 handoff, and the service itself is later disposed,
         // yet the shared FakeKeyVaultSigner is never told to dispose either time.
         var ct = TestContext.Current.CancellationToken;
@@ -542,7 +542,7 @@ public sealed class AzureKeyVaultRemoteSigningJwtSigningServiceTests
         signer.DisposeCallCount.Should().Be(0, "disposing the service itself must not tear down the shared IKeyVaultSigner seam either");
     }
 
-    // ── Refresh cadence (KeySourceOptions / ADR 0015) ────────────────────────────────────────────
+    // ── Refresh cadence (KeySourceOptions) ───────────────────────────────────────────────────────
 
     [Fact]
     public async Task ListKeysAsync_is_called_once_per_RefreshInterval()
@@ -568,7 +568,7 @@ public sealed class AzureKeyVaultRemoteSigningJwtSigningServiceTests
             "once RefreshInterval has elapsed, ListKeysAsync must re-enumerate Key Vault's version list");
     }
 
-    // ── Vanished-kid / within-window-vanish Warning (shared base, ADR 0015 §6) ──────────────────
+    // ── Vanished-kid / within-window-vanish Warning (shared base) ───────────────────────────────
 
     [Fact]
     public async Task GetSigningKeysAsync_does_not_warn_when_a_previously_published_kid_retires_normally_and_the_version_stays_in_key_vault()
@@ -594,7 +594,7 @@ public sealed class AzureKeyVaultRemoteSigningJwtSigningServiceTests
         keys.Should().ContainSingle("v1's retirement window has fully elapsed");
         logger.Entries.Should().NotContain(e => e.Level == LogLevel.Warning,
             "v1's key version is still present in Key Vault, merely excluded for having aged past its " +
-            "retirement window — an expected exclusion, not the anomaly ADR 0015 §6 warns about");
+            "retirement window — an expected exclusion, not the anomaly the within-window-vanish check warns about");
     }
 
     [Fact]
@@ -624,7 +624,7 @@ public sealed class AzureKeyVaultRemoteSigningJwtSigningServiceTests
         keys.Should().ContainSingle("v1 is gone from Key Vault entirely, so it cannot be included any more");
         logger.Entries.Should().Contain(e => e.Level == LogLevel.Warning,
             "a previously-published key vanishing from Key Vault entirely, before its retirement window " +
-            "elapsed, must be surfaced as a Warning per ADR 0015 §6");
+            "elapsed, must be surfaced as a Warning");
     }
 
     [Fact]
@@ -661,7 +661,7 @@ public sealed class AzureKeyVaultRemoteSigningJwtSigningServiceTests
         keys.Should().ContainSingle("v1 is disabled, so the kill switch drops it immediately");
         logger.Entries.Should().Contain(e => e.Level == LogLevel.Warning,
             "disabling a previously-published key while still inside its retirement window is the real " +
-            "emergency-revocation procedure, and must be surfaced as a Warning per ADR 0015 §6 exactly " +
+            "emergency-revocation procedure, and must be surfaced as a Warning exactly " +
             "like outright deletion");
     }
 }

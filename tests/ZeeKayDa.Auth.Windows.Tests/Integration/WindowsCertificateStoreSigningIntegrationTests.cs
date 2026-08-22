@@ -12,7 +12,7 @@
 // provokable in CI, so it is only simulated here via the fake's ExceptionToThrow. The genuinely
 // Windows-only real-store round trip is covered separately by Integration/CertificateStoreReaderTests.cs.
 //
-// ADR 0015 (issue #424): as a KeySetOptions provider, ListKeysAsync runs exactly once, ever, for the lifetime of a service
+// As a KeySetOptions provider (issue #424), ListKeysAsync runs exactly once, ever, for the lifetime of a service
 // instance, and its per-certificate status logging fires only on that one evaluation — there is no
 // reload/change-detection surface, and no repeated logging cycle, left to exercise here. Rotation
 // between already-registered certificates still switches the active signer purely from elapsed wall
@@ -190,7 +190,7 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
         await using var provider = services.BuildServiceProvider();
         var signingService = provider.GetRequiredService<IJwtSigningService>();
 
-        // ListKeysAsync alone never needs a private key (ADR 0015 §2/§5) — the failure only
+        // ListKeysAsync alone never needs a private key — the failure only
         // surfaces once a real SignAsync call needs to extract the active certificate's private key.
         var act = async () => await signingService.SignAsync("payload"u8.ToArray(), ct);
 

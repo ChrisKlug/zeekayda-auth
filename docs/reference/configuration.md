@@ -288,9 +288,7 @@ Each entry must be a non-empty, non-whitespace string with no leading or trailin
 control characters. If `GrantTypesSupported` includes `GrantType.ClientCredentials`, the collection
 must contain at least one method other than `TokenEndpointAuthMethods.None` (`"none"`).
 
-This cross-group validator rule is defined in
-[ADR 0002 §4 Rule 2](../decisions/0002-options-shape-grouped-nested.md#required-validator-rules-for-tokenendpointauthmethodssupported)
-and is grounded in [RFC 6749 §4.4](https://www.rfc-editor.org/rfc/rfc6749#section-4.4) and
+This cross-group validator rule is grounded in [RFC 6749 §4.4](https://www.rfc-editor.org/rfc/rfc6749#section-4.4) and
 [RFC 9700 §2.6](https://www.rfc-editor.org/rfc/rfc9700#section-2.6). If violated, startup validation
 emits:
 
@@ -321,10 +319,10 @@ secret. Public clients cannot securely transmit credentials at the token endpoin
 
 - Public clients using the authorization code flow with `"none"` **must** use PKCE and present a valid `code_verifier` at the token endpoint.
 - `"none"` may be advertised alongside confidential-client methods such as `"client_secret_basic"`; this supports deployments that serve both public clients and confidential clients.
-- Startup validation does **not** reject `"none"` just because `GrantTypesSupported` omits `GrantType.AuthorizationCode`. ADR 0002 rejects only the `client_credentials` + `none`-only combination above.
+- Startup validation does **not** reject `"none"` just because `GrantTypesSupported` omits `GrantType.AuthorizationCode`. Only the `client_credentials` + `none`-only combination above is rejected.
 - When the token endpoint is implemented, it must enforce each registered client's `token_endpoint_auth_method` at request time (tracked by issue #64). Without per-client enforcement, a confidential client could downgrade to public-client behavior by omitting credentials.
 
-Attempting to support `ClientCredentials` with only public-client authentication will fail at host startup with the ADR 0002 error message shown above.
+Attempting to support `ClientCredentials` with only public-client authentication will fail at host startup with the error message shown above.
 
 ```csharp
 // ✓ Valid: public clients with authorization code grant + PKCE

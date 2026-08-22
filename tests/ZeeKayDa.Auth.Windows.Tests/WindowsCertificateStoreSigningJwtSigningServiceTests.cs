@@ -18,7 +18,7 @@ namespace ZeeKayDa.Auth.Windows.Tests;
 /// ask) over <see cref="ICertificateStoreReader"/> rather than the filesystem.
 /// </summary>
 /// <remarks>
-/// This provider is on ADR 0015's <see cref="KeySetOptions"/> contract (issue #424):
+/// This provider is on the <see cref="KeySetOptions"/> contract (issue #424):
 /// <c>ListKeysAsync</c> runs exactly once, ever, for the lifetime of a service instance, so there is
 /// no reload/change-detection surface to test here — a rotated-in, removed, or replaced certificate
 /// is never picked up without a restart. Rotation between already-registered certificates still
@@ -120,7 +120,7 @@ public sealed class WindowsCertificateStoreSigningJwtSigningServiceTests
 
     // ── Missing/inaccessible private key surfaces only when signing ─────────────────────────────
     //
-    // ADR 0015 §2/§5's least-privilege loading means ListKeysAsync never needs a private key — only
+    // Least-privilege loading means ListKeysAsync never needs a private key — only
     // CreateSignerAsync does, and only for the active certificate. A certificate with no private key
     // installed alongside it is therefore perfectly listable; the failure surfaces only once a real
     // SignAsync call actually needs to extract the private key.
@@ -159,7 +159,7 @@ public sealed class WindowsCertificateStoreSigningJwtSigningServiceTests
 
     // ── Multi-certificate rotation via AddCertificate ────────────────────────────────────────────
     //
-    // ADR 0015: ListKeysAsync runs exactly once and builds one immutable snapshot/timeline;
+    // ListKeysAsync runs exactly once and builds one immutable snapshot/timeline;
     // active-key selection is then recomputed lazily against the wall clock on every call, with zero
     // further store access — so a rotation between already-known certificates still switches the
     // active signer purely from elapsed time.
@@ -266,7 +266,7 @@ public sealed class WindowsCertificateStoreSigningJwtSigningServiceTests
 
     // ── Every registered certificate already expired at startup ─────────────────────────────────
     //
-    // ADR 0015: a KeySetOptions provider never re-reads, so an already-expired sole key with no eligible successor has
+    // A KeySetOptions provider never re-reads, so an already-expired sole key with no eligible successor has
     // SelectActiveKey == null and signing fails closed via the base class's own generic
     // "signing.no_active_key" error — there is no provider-specific "no active certificate" special
     // case any more, since ListKeysAsync no longer owns "is this configuration currently usable."
@@ -286,7 +286,7 @@ public sealed class WindowsCertificateStoreSigningJwtSigningServiceTests
         exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.no_active_key");
     }
 
-    // ── Too-soon-NotBefore startup warning (ADR 0015 §1, issue #424) ─────────────────────────────
+    // ── Too-soon-NotBefore startup warning (issue #424) ──────────────────────────────────────────
 
     [Fact]
     public async Task GetSigningKeysAsync_logs_a_warning_when_the_soonest_pending_NotBefore_is_closer_than_PublicationLead()
@@ -366,8 +366,8 @@ public sealed class WindowsCertificateStoreSigningJwtSigningServiceTests
         var second = await sut.GetSigningKeysAsync(ct);
 
         second[0].Kid.Should().Be(first[0].Kid,
-            "kid must be derived from the key material; ListKeysAsync runs exactly once for this " +
-            "an ADR 0015 KeySetOptions provider regardless of elapsed time");
+            "kid must be derived from the key material; ListKeysAsync runs exactly once for " +
+            "this KeySetOptions provider regardless of elapsed time");
     }
 
     // ── Algorithm/key-type mismatch ───────────────────────────────────────────────────────────────
@@ -426,7 +426,7 @@ public sealed class WindowsCertificateStoreSigningJwtSigningServiceTests
     [Fact]
     public async Task SignAsync_signs_with_an_EC_certificates_private_key()
     {
-        // ADR 0015 §2/§5's least-privilege loading means CreateSignerAsync (and therefore an EC
+        // Least-privilege loading means CreateSignerAsync (and therefore an EC
         // private-key extraction) is only ever invoked by a real SignAsync call, never by
         // GetSigningKeysAsync alone — this exercises that path directly.
         var ct = TestContext.Current.CancellationToken;
@@ -446,7 +446,7 @@ public sealed class WindowsCertificateStoreSigningJwtSigningServiceTests
     //
     // A Windows Certificate Store entry bundles cert+key exactly like PFX, so ListKeysAsync has no
     // choice but to read the whole certificate (including the private half, when installed) to
-    // obtain each public certificate. The obligation ADR 0015 §2/§5 places on this provider is that
+    // obtain each public certificate. The obligation placed on this provider is that
     // non-active private material is only read *transiently* and never retained: after the one-time
     // listing, a non-active certificate must never be re-read, while the active certificate is
     // re-read afresh by CreateSignerAsync rather than a private handle being kept alive from
@@ -481,7 +481,7 @@ public sealed class WindowsCertificateStoreSigningJwtSigningServiceTests
     //
     // Unreachable via the public API in normal operation — the base class only ever calls
     // CreateSignerAsync with a KeyId it previously observed on a ListKeysAsync-returned KeyListing,
-    // and this ADR 0015 KeySetOptions provider's registered thumbprints never change after startup — but
+    // and this KeySetOptions provider's registered thumbprints never change after startup — but
     // invoked directly via reflection here to prove the defensive check fails loudly rather than
     // silently.
 
@@ -512,7 +512,7 @@ public sealed class WindowsCertificateStoreSigningJwtSigningServiceTests
     // PublicKeysMatch/RsaParametersMatch/EcParametersMatch/CurveIdentifiersMatch) was this provider's
     // own hand-rolled proof that the private key CreateSignerAsync hands back still pairs with the
     // public key ListKeysAsync captured for the same thumbprint. Issue #437 deleted all of it: the
-    // framework-owned ADR 0015 §11 self-test — run by JwtSigningService<TOptions>'s own
+    // framework-owned self-test — run by JwtSigningService<TOptions>'s own
     // EnsureActiveSignerAsync on every handoff, initial materialization and every rotation alike, and
     // exercised generically by JwtSigningServiceTests in ZeeKayDa.Auth.Tests — now proves the
     // equivalent invariant (sign with the returned signer, verify against the listed public key) for

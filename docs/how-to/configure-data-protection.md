@@ -55,8 +55,8 @@ These cookies are encrypted by ASP.NET Core's cookie authentication middleware u
 `IDataProtectionProvider`. If a user's browser sends a cookie that was written by instance A
 to instance B, instance B must be able to decrypt it. A decryption failure causes a silent
 re-prompt: the user sees the login page again with no error message, even though their
-browser held a valid cookie. This is documented in
-[ADR 0005 §"Security Considerations"](https://github.com/ChrisKlug/zeekayda-auth/blob/main/docs/decisions/0005-authorization-endpoint-interaction-orchestration.md#security-considerations).
+browser held a valid cookie. A decryption failure is therefore indistinguishable from an absent cookie, by design — the
+framework must not reveal that a cookie was present but unreadable.
 
 > ⚠️ **Warning:** ZeeKayDa.Auth does not solve distributed key management. It uses whatever
 > key ring the host application configures. Failing to configure a shared key ring in a

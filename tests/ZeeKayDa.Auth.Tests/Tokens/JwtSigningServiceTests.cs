@@ -8,16 +8,16 @@ using ZeeKayDa.Auth.Tokens;
 namespace ZeeKayDa.Auth.Tests.Tokens;
 
 /// <summary>
-/// Exercises the ADR 0015 contract (<see cref="KeySetOptions"/>/<see cref="KeySourceOptions"/>,
+/// Exercises the provider contract (<see cref="KeySetOptions"/>/<see cref="KeySourceOptions"/>,
 /// <see cref="KeyListing"/>, <see cref="ISigner"/>) machinery on
-/// <see cref="JwtSigningService{TOptions}"/> — the sole signing-provider contract since the ADR
-/// 0011 legacy contract was removed in issue #428.
+/// <see cref="JwtSigningService{TOptions}"/> — the sole signing-provider contract since the
+/// legacy contract was removed in issue #428.
 /// </summary>
 public sealed class JwtSigningServiceTests
 {
     private static readonly DateTimeOffset Epoch = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
-    // Mirrors JwtSigningService<TOptions>'s private SelfTestPayload constant — the ADR 0015 §11
+    // Mirrors JwtSigningService<TOptions>'s private SelfTestPayload constant — the
     // self-test (issue #437) always signs exactly this payload, so a signer test double that needs
     // to distinguish the self-test call from a real signing call compares against this.
     private static readonly byte[] SelfTestPayloadBytes = "zeekayda-auth signing self-test"u8.ToArray();
@@ -34,7 +34,7 @@ public sealed class JwtSigningServiceTests
 
     /// <summary>
     /// An <see cref="ISigner"/> test double that counts every call. When <paramref name="privateKey"/>
-    /// is supplied, it signs for real (so the ADR 0015 §11 self-test — issue #437 — which every
+    /// is supplied, it signs for real (so the self-test — issue #437 — which every
     /// active-key handoff now runs, sees a genuinely verifiable signature); otherwise it returns a
     /// fixed, non-verifying placeholder, for tests that never exercise a real handoff or that
     /// deliberately want the self-test to fail.
@@ -67,8 +67,8 @@ public sealed class JwtSigningServiceTests
 
     /// <summary>
     /// An <see cref="ISigner"/> test double whose <see cref="SignAsync"/> always throws, modelling a
-    /// missing Key Vault "sign" permission or an inaccessible CNG key container — a failure the ADR
-    /// 0015 §11 self-test (issue #437) surfaces as an exception from the sign call itself, not as a
+    /// missing Key Vault "sign" permission or an inaccessible CNG key container — a failure the
+    /// self-test (issue #437) surfaces as an exception from the sign call itself, not as a
     /// verification mismatch (security review finding F4).
     /// </summary>
     private sealed class ThrowingSigner : ISigner
@@ -87,7 +87,7 @@ public sealed class JwtSigningServiceTests
     /// <summary>
     /// An <see cref="ISigner"/> test double whose <see cref="SignAsync"/> blocks until
     /// <paramref name="release"/> completes, signalling <see cref="Entered"/> first so a test can
-    /// deterministically know the call is in flight before proceeding. The ADR 0015 §11 self-test
+    /// deterministically know the call is in flight before proceeding. The self-test
     /// (issue #437) signs <see cref="SelfTestPayloadBytes"/> synchronously while the base class
     /// still holds its signer lock, so that specific call is answered immediately with a real,
     /// verifiable signature over <paramref name="privateKey"/> rather than gated — gating it too
@@ -137,7 +137,7 @@ public sealed class JwtSigningServiceTests
     }
 
     /// <summary>
-    /// Captures every log call so tests can assert on the ADR 0015 §6 within-window-vanish
+    /// Captures every log call so tests can assert on the within-window-vanish
     /// <see cref="LogLevel.Warning"/> without depending on the real sanitizing wrapper.
     /// </summary>
     private sealed class CapturingLogger<T> : ISanitizingLogger<T>
@@ -404,7 +404,7 @@ public sealed class JwtSigningServiceTests
 
         await sut.DisposeAsync();
 
-        signer.DisposeCount.Should().Be(1, "the sole active signer must be released at shutdown (ADR 0015 §5)");
+        signer.DisposeCount.Should().Be(1, "the sole active signer must be released at shutdown");
     }
 
     [Fact]
@@ -542,7 +542,7 @@ public sealed class JwtSigningServiceTests
         var after = await sut.GetSigningKeysAsync(ct);
 
         logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Warning && e.Message.Contains("old"),
-            "an early/within-window vanish must be logged at Warning per ADR 0015 §6");
+            "an early/within-window vanish must be logged at Warning");
         after.Should().NotContain(k => k.Kid == oldKid,
             "the vanished key must actually be dropped from the JWKS listing, not merely warned about");
     }
@@ -840,7 +840,7 @@ public sealed class JwtSigningServiceTests
     /// <summary>
     /// An <see cref="ISigner"/> test double that always returns <paramref name="signature"/> for a
     /// real signing call — but, when <paramref name="selfTestKey"/> is supplied, signs
-    /// <see cref="SelfTestPayloadBytes"/> for real instead, so the ADR 0015 §11 self-test (issue
+    /// <see cref="SelfTestPayloadBytes"/> for real instead, so the self-test (issue
     /// #437) passes without disturbing the fixed <paramref name="signature"/> this double's callers
     /// assert on for the actual token signature.
     /// </summary>
@@ -1054,7 +1054,7 @@ public sealed class JwtSigningServiceTests
         signersCreated.Should().HaveCount(2);
         signersCreated[0].DisposeCount.Should().Be(1, "the superseded signer for the old material must be disposed");
         signersCreated[1].SignAsyncCallCount.Should().Be(
-            2, "the second SignAsync call must use the freshly created signer — one call is the ADR 0015 §11 self-test " +
+            2, "the second SignAsync call must use the freshly created signer — one call is the self-test " +
                "(issue #437) for the new handoff, and one is the real signature");
     }
 
@@ -1148,7 +1148,7 @@ public sealed class JwtSigningServiceTests
             "validation must fail on the bad refresh before any signer is ever requested for that listing");
     }
 
-    // ── ADR 0015 startup self-test (ISigningStartupSelfTest, issue #437) ───────────────────────────
+    // ── startup self-test (ISigningStartupSelfTest, issue #437) ────────────────────────────────────
 
     [Theory]
     [InlineData(SigningAlgorithm.RS256)]
@@ -1238,7 +1238,7 @@ public sealed class JwtSigningServiceTests
     public async Task VerifyActiveSignerAsync_returns_the_borrowed_signer_handle_even_on_failure()
     {
         // The self-test must not leak the SignerHandle's borrow: if it did, DisposeAsync's shutdown
-        // release could never actually dispose the underlying signer (ADR 0015 §5).
+        // release could never actually dispose the underlying signer.
         using var rsa = RSA.Create(2048);
         var timeProvider = new FakeTimeProvider(Epoch);
         FakeSigner? signer = null;

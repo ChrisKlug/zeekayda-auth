@@ -118,7 +118,7 @@ public sealed class CompositeClientSecretHasherTests
     [Fact]
     public void Verify_pads_timing_when_non_default_hasher_fails()
     {
-        // ADR 0007 §3.4: PadTiming fires on failure when matched hasher is not the default.
+        // PadTiming fires on failure when matched hasher is not the default.
         var (composite, defaultHasher, _) = CreateMultiHasherComposite(
             defaultVerifyResult: false,
             altVerifyResult: false);
@@ -161,7 +161,7 @@ public sealed class CompositeClientSecretHasherTests
     [Fact]
     public void VerifyUnknownClientForTimingOnly_returns_false()
     {
-        // ADR 0007 §3.4: runs _default.Verify(_dummySecret, presented).
+        // Runs _default.Verify(_dummySecret, presented).
         // _dummySecret was created by _default.Create(DummyPresented) with FakeHasher,
         // which returns false from Verify regardless of presented.
         var (composite, _) = CreateSingleHasherComposite(defaultVerifyResult: false);

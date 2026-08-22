@@ -663,7 +663,7 @@ public sealed class AzureKeyVaultCachedSigningJwtSigningServiceTests
         isValid.Should().BeTrue("the signature must be verifiable against the certificate's own public key");
     }
 
-    // ── Refresh cadence (KeySourceOptions / ADR 0015) ────────────────────────────────────────────
+    // ── Refresh cadence (KeySourceOptions) ───────────────────────────────────────────────────────
 
     [Fact]
     public async Task ListKeysAsync_is_called_once_per_RefreshInterval()
@@ -689,7 +689,7 @@ public sealed class AzureKeyVaultCachedSigningJwtSigningServiceTests
             "once RefreshInterval has elapsed, ListKeysAsync must re-enumerate Key Vault's version list");
     }
 
-    // ── Vanished-kid / within-window-vanish Warning (shared base, ADR 0015 §6) ──────────────────
+    // ── Vanished-kid / within-window-vanish Warning (shared base) ───────────────────────────────
 
     [Fact]
     public async Task GetSigningKeysAsync_does_not_warn_when_a_previously_published_kid_retires_normally_and_the_version_stays_in_key_vault()
@@ -715,7 +715,7 @@ public sealed class AzureKeyVaultCachedSigningJwtSigningServiceTests
         keys.Should().ContainSingle("v1's retirement window has fully elapsed");
         logger.Entries.Should().NotContain(e => e.Level == LogLevel.Warning,
             "v1's certificate version is still present in Key Vault, merely excluded for having aged past " +
-            "its retirement window — an expected exclusion, not the anomaly ADR 0015 §6 warns about");
+            "its retirement window — an expected exclusion, not the anomaly the within-window-vanish check warns about");
     }
 
     [Fact]
@@ -747,7 +747,7 @@ public sealed class AzureKeyVaultCachedSigningJwtSigningServiceTests
         keys.Should().ContainSingle("v1 is gone from Key Vault entirely, so it cannot be included any more");
         logger.Entries.Should().Contain(e => e.Level == LogLevel.Warning,
             "a previously-published key vanishing from Key Vault entirely, before its retirement window " +
-            "elapsed, must be surfaced as a Warning per ADR 0015 §6");
+            "elapsed, must be surfaced as a Warning");
     }
 
     [Fact]
@@ -784,7 +784,7 @@ public sealed class AzureKeyVaultCachedSigningJwtSigningServiceTests
         keys.Should().ContainSingle("v1 is disabled, so the kill switch drops it immediately");
         logger.Entries.Should().Contain(e => e.Level == LogLevel.Warning,
             "disabling a previously-published key while still inside its retirement window is the real " +
-            "emergency-revocation procedure, and must be surfaced as a Warning per ADR 0015 §6 exactly " +
+            "emergency-revocation procedure, and must be surfaced as a Warning exactly " +
             "like outright deletion");
     }
 

@@ -9,7 +9,7 @@ namespace ZeeKayDa.Auth.Analyzers;
 
 /// <summary>
 /// Warns when an <c>IClientRepository</c> implementation in an external assembly never references
-/// <c>IClientRegistrationValidator</c>. ADR 0007 §6.1 requires every custom repository to resolve
+/// <c>IClientRegistrationValidator</c>. Every custom repository must resolve
 /// the validator from DI and call it before persisting a new or updated client registration.
 /// Diagnostic ID: ZEEKAYDA0003, category: Extensibility, severity: Warning.
 /// </summary>
@@ -22,7 +22,7 @@ public sealed class ClientRepositoryValidatorAnalyzer : DiagnosticAnalyzer
     private static readonly DiagnosticDescriptor Rule = new(
         DiagnosticId,
         title: "IClientRepository implementation does not reference IClientRegistrationValidator",
-        messageFormat: "'{0}' implements IClientRepository but never references IClientRegistrationValidator. ADR 0007 §6.1 requires every custom IClientRepository to resolve IClientRegistrationValidator from DI and call it before persisting a new or updated client registration. See docs/how-to/implement-custom-extension-points.md for guidance. If you have an intentional custom validation strategy, suppress this diagnostic with a justification comment.",
+        messageFormat: "'{0}' implements IClientRepository but never references IClientRegistrationValidator. Every custom IClientRepository must resolve IClientRegistrationValidator from DI and call it before persisting a new or updated client registration. See docs/how-to/implement-custom-extension-points.md for guidance. If you have an intentional custom validation strategy, suppress this diagnostic with a justification comment.",
         category: "Extensibility",
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
@@ -35,7 +35,7 @@ public sealed class ClientRepositoryValidatorAnalyzer : DiagnosticAnalyzer
     public override void Initialize(AnalysisContext context)
     {
         // Deliberately left as None, unlike ZEEKAYDA0001/0002: this is a Warning-severity
-        // extensibility heuristic ("references, not proves-called", per ADR 0007 §6.1), not a
+        // extensibility heuristic ("references, not proves-called"), not a
         // security control, so the standard "don't nag about generated code" reasoning still
         // applies. Revisit only if this rule is ever promoted to a security control.
         context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);

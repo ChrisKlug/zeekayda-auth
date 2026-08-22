@@ -218,7 +218,7 @@ signal in aggregate — every additional code is a distinguisher. Follow these g
 > on the token endpoint is not optional — it is the primary mitigation for this accepted
 > distinguishability.
 >
-> This residual is documented in ADR 0007 §3.4. Regardless of `EnableZkdErrorCodes`, operators
+> This residual is accepted deliberately. Regardless of `EnableZkdErrorCodes`, operators
 > must apply rate limiting to the token endpoint. Timing uniformity alone is not sufficient to
 > defeat a sustained enumeration attempt.
 
@@ -226,7 +226,7 @@ signal in aggregate — every additional code is a distinguisher. Follow these g
 
 Even with `EnableZkdErrorCodes = true`, the `zkd_error` value for `invalid_client` **must not**
 distinguish "unknown `client_id`" from "wrong credential". The framework enforces this constraint
-internally; no configuration is required. See ADR 0007 §7 for the binding constraint details.
+internally; no configuration is required.
 
 ## Next steps
 

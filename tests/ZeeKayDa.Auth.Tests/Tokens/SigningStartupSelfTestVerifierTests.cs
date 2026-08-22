@@ -8,7 +8,7 @@ namespace ZeeKayDa.Auth.Tests.Tokens;
 /// Exercises <see cref="SigningStartupSelfTestVerifier"/> in isolation: delegation to a registered
 /// <see cref="ISigningStartupSelfTest"/>, the silent no-op when nothing is registered at all, and
 /// the <see cref="LogLevel.Warning"/> warning recorded when something is registered that does not
-/// implement the self-test interface — none of which are allowed to silently disable the ADR 0015
+/// implement the self-test interface — none of which are allowed to silently disable the
 /// self-test without a trace (issue #437 security review, finding F2).
 /// </summary>
 public sealed class SigningStartupSelfTestVerifierTests
@@ -120,7 +120,7 @@ public sealed class SigningStartupSelfTestVerifierTests
             w.Level == LogLevel.Warning &&
             w.Args.Contains(typeof(PlainSigningService)),
             "a registered IJwtSigningService that silently drops ISigningStartupSelfTest (e.g. a decorator " +
-            "registered over a real provider) must never disable the ADR 0015 self-test without a trace " +
+            "registered over a real provider) must never disable the self-test without a trace " +
             "naming the concrete type that was resolved");
     }
 
