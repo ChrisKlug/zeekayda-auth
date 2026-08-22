@@ -6,7 +6,7 @@ using ZeeKayDa.Auth.Stores;
 namespace ZeeKayDa.Auth.Tests.Stores;
 
 /// <summary>
-/// Adapter-level tests for <see cref="DistributedCacheRefreshTokenGrantStore"/> (ADR 0014 §8):
+/// Adapter-level tests for <see cref="DistributedCacheRefreshTokenGrantStore"/>:
 /// grant round-trip, secondary-index maintenance for family/subject revocation, and fail-closed
 /// fault propagation. This store is documented dev/test-only and explicitly non-atomic — see its
 /// type-level remarks — so no CAS-atomicity assertion is made here (that is covered, with the
@@ -177,7 +177,7 @@ public sealed class DistributedCacheRefreshTokenGrantStoreTests
         (await store.FindByHandleAsync(g3.HandleHash, CancellationToken.None))!.Status.Should().Be(RefreshGrantStatus.Active);
     }
 
-    // ── IsFamilyRevokedAsync (issue #386, ADR 0014 §11) ──────────────────────────────────────────────
+    // ── IsFamilyRevokedAsync (issue #386) ────────────────────────────────────────────────────────────
 
     [Fact]
     public async Task IsFamilyRevokedAsync_returns_true_when_an_indexed_grant_in_the_family_is_Revoked()
@@ -241,7 +241,7 @@ public sealed class DistributedCacheRefreshTokenGrantStoreTests
         var act = async () => await store.IsFamilyRevokedAsync("family-1", CancellationToken.None);
 
         await act.Should().ThrowAsync<ZeeKayDaStoreException>(
-                because: "a fault masked as false reads as \"not revoked\" and defeats the gate (ADR 0014 §11)")
+                because: "a fault masked as false reads as \"not revoked\" and defeats the gate")
             .Where(ex => ex.InnerException is TransportFaultException);
     }
 
@@ -270,7 +270,7 @@ public sealed class DistributedCacheRefreshTokenGrantStoreTests
     }
 
     /// <summary>
-    /// The dangerous one (ADR 0014 §3/§8): a swallowed fault masked as <see langword="null"/> is
+    /// The dangerous one: a swallowed fault masked as <see langword="null"/> is
     /// read by the coordinator as "confirmed absent," silently defeating reuse detection.
     /// </summary>
     [Fact]
@@ -315,7 +315,7 @@ public sealed class DistributedCacheRefreshTokenGrantStoreTests
         var act = async () => await store.FindByHandleAsync(grant.HandleHash, CancellationToken.None);
 
         await act.Should().ThrowAsync<ZeeKayDaStoreException>(
-            because: "corrupted data is not confirmed absence — it must propagate, not degrade to null (ADR 0014 §3)");
+            because: "corrupted data is not confirmed absence — it must propagate, not degrade to null");
     }
 
     [Fact]
@@ -333,7 +333,7 @@ public sealed class DistributedCacheRefreshTokenGrantStoreTests
         var act = async () => await store.RevokeFamilyAsync(familyId, CancellationToken.None);
 
         await act.Should().ThrowAsync<ZeeKayDaStoreException>(
-            because: "a corrupted revocation index is data corruption, not confirmed absence (ADR 0014 §8)");
+            because: "a corrupted revocation index is data corruption, not confirmed absence");
     }
 
     [Fact]
@@ -351,7 +351,7 @@ public sealed class DistributedCacheRefreshTokenGrantStoreTests
         var act = async () => await store.RevokeBySubjectAsync(subject, CancellationToken.None);
 
         await act.Should().ThrowAsync<ZeeKayDaStoreException>(
-            because: "a corrupted revocation index is data corruption, not confirmed absence (ADR 0014 §8)");
+            because: "a corrupted revocation index is data corruption, not confirmed absence");
     }
 
     [Fact]

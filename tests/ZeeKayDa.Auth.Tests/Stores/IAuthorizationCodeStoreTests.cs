@@ -161,7 +161,7 @@ public sealed class IAuthorizationCodeStoreTests
         parameters[3].ParameterType.Should().Be(typeof(CancellationToken));
     }
 
-    // ── Sealing member (ADR 0013 §1) ─────────────────────────────────────────────────────────────
+    // ── Sealing member ───────────────────────────────────────────────────────────────────────────
 
     [Fact]
     public void IAuthorizationCodeStore_declares_exactly_one_internal_method()
@@ -173,7 +173,7 @@ public sealed class IAuthorizationCodeStoreTests
 
         internalMethods.Should().ContainSingle(
             because: "an internal member is what blocks third-party implementation of this " +
-                     "framework-sealed interface (ADR 0013 §1), and there must be exactly one");
+                     "framework-sealed interface, and there must be exactly one");
     }
 
     // ── Implementability via a fake ───────────────────────────────────────────────────────────────
@@ -300,7 +300,7 @@ public sealed class IAuthorizationCodeStoreTests
             CancellationToken cancellationToken)
             => ValueTask.FromResult(_outcome);
 
-        // Satisfiable here because ZeeKayDa.Auth.Tests is a friend assembly (ADR 0013 §1) —
+        // Satisfiable here because ZeeKayDa.Auth.Tests is a friend assembly —
         // a genuine third-party assembly could not implement IAuthorizationCodeStore at all.
         void IAuthorizationCodeStore.SealAsFrameworkOwnedProtocol() { }
     }

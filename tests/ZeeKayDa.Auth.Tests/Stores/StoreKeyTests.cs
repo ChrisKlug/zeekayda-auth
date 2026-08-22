@@ -2,7 +2,7 @@ using ZeeKayDa.Auth.Stores;
 
 namespace ZeeKayDa.Auth.Tests.Stores;
 
-/// <summary>Tests for the <see cref="StoreKey"/> opaque, already-hashed key type (ADR 0013 §2).</summary>
+/// <summary>Tests for the <see cref="StoreKey"/> opaque, already-hashed key type.</summary>
 public sealed class StoreKeyTests
 {
     [Fact]

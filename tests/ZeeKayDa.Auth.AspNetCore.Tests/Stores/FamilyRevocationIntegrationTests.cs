@@ -96,14 +96,14 @@ public sealed class FamilyRevocationIntegrationTests
 
         var consumeOutcome = await tokenStore.TryConsumeAsync(tokenHandle, clientId, CancellationToken.None);
 
-        // ADR 0014 §12 (issue #388) closes exactly this gap: RevokeFamilyAsync now unconditionally
+        // Issue #388 closes exactly this gap: RevokeFamilyAsync now unconditionally
         // inserts a durable revocation sentinel, even when the family had zero rows at revoke time
         // (as here — the auth-code replay is detected and the family revoked before the FIRST
-        // refresh token of that family is ever stored). The sentinel arms the §11
+        // refresh token of that family is ever stored). The sentinel arms the
         // IsFamilyRevokedAsync gate, so a grant stored afterward into the same family is caught at
         // its own consume, closing the "auth-code replayed before its first refresh token" hole.
         consumeOutcome.Should().BeOfType<RefreshTokenConsumptionResult.Revoked>(
-                "ADR 0014 §12's revocation sentinel arms the family-revoked gate even when the family " +
+                "the revocation sentinel arms the family-revoked gate even when the family " +
                 "had zero rows at revoke time, so a grant stored afterward is dead on arrival")
             .Which.FamilyId.Should().Be(familyId);
     }

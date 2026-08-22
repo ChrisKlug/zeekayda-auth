@@ -7,7 +7,7 @@ using ZeeKayDa.Auth.Stores;
 namespace ZeeKayDa.Auth.Tests.Stores;
 
 /// <summary>
-/// Tests for the <c>AuthorizationCodeStore</c> framework coordinator (ADR 0013 §1, §9). Covers
+/// Tests for the <c>AuthorizationCodeStore</c> framework coordinator. Covers
 /// the full check-and-consume state machine, the two-catch-site decrypt asymmetry (§7), the
 /// fail-closed <c>Guarded(...)</c> wrapper (§8), and cancellation semantics.
 /// </summary>
@@ -402,7 +402,7 @@ public sealed class AuthorizationCodeStoreTests
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
 
-    // ── Sealing member (ADR 0013 §1) ─────────────────────────────────────────────────────────────
+    // ── Sealing member ───────────────────────────────────────────────────────────────────────────
 
     [Fact]
     public void SealAsFrameworkOwnedProtocol_can_be_invoked_through_the_interface_without_throwing()

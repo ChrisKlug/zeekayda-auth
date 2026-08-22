@@ -8,7 +8,7 @@ namespace ZeeKayDa.Auth.Tests.Stores;
 
 /// <summary>
 /// Tests for <see cref="DistributedCacheAuthorizationCodeBackingStore"/>. This is now a thin
-/// persistence primitive (ADR 0013 §1) — no crypto, no state machine, no outcome selection — so
+/// persistence primitive — no crypto, no state machine, no outcome selection — so
 /// these tests cover only get/insert/remove semantics against <see cref="IDistributedCache"/> and
 /// the documented non-atomicity. Protocol-level behaviour is covered by
 /// <c>AuthorizationCodeStoreTests</c>.

@@ -5,7 +5,7 @@ namespace ZeeKayDa.Auth.Tests.Tokens;
 /// <summary>
 /// Tests for <see cref="TokenEndpointOptions.ComputeFamilyAbsoluteExpiry"/> — the sentinel-safe
 /// birth-time conversion from <see cref="TokenEndpointOptions.AbsoluteFamilyLifetime"/> to a
-/// concrete <c>FamilyAbsoluteExpiry</c> wall-clock (ADR 0014 §5).
+/// concrete <c>FamilyAbsoluteExpiry</c> wall-clock.
 /// </summary>
 public sealed class TokenEndpointOptionsTests
 {

@@ -6,7 +6,7 @@ using ZeeKayDa.Auth.AspNetCore;
 namespace ZeeKayDa.Auth.AspNetCore.Tests;
 
 /// <summary>
-/// Tests for <see cref="AbsoluteFamilyLifetimeUnboundedWarningService"/> (ADR 0014 §5): the
+/// Tests for <see cref="AbsoluteFamilyLifetimeUnboundedWarningService"/>: the
 /// startup-time warning emitted when <c>TokenEndpoint.AbsoluteFamilyLifetime</c> is left at the
 /// <see cref="TimeSpan.MaxValue"/> unbounded escape-hatch sentinel.
 /// </summary>

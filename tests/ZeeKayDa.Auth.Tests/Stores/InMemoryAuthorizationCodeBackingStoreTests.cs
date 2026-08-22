@@ -4,7 +4,7 @@ namespace ZeeKayDa.Auth.Tests.Stores;
 
 /// <summary>
 /// Tests for <see cref="InMemoryAuthorizationCodeBackingStore"/>. This is now a thin persistence
-/// primitive (ADR 0013 §1) — no crypto, no state machine, no outcome selection — so these tests
+/// primitive — no crypto, no state machine, no outcome selection — so these tests
 /// cover only get/insert/remove semantics and the atomicity invariant. Protocol-level behaviour
 /// (encryption, expiry, redemption outcomes) is covered by <c>AuthorizationCodeStoreTests</c>.
 /// </summary>

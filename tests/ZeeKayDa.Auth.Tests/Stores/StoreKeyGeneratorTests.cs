@@ -4,7 +4,7 @@ namespace ZeeKayDa.Auth.Tests.Stores;
 
 /// <summary>
 /// Tests for <see cref="StoreKeyGenerator"/>: raw code/token handle generation. Unaffected by
-/// ADR 0013 (the authorization-code store protocol/persistence split) — this type generates the
+/// the authorization-code store protocol/persistence split — this type generates the
 /// raw handle handed to a store, distinct from the framework-internal <see cref="StoreKey"/>
 /// that wraps the already-hashed persistence key.
 /// </summary>

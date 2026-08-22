@@ -4,8 +4,8 @@ using ZeeKayDa.Auth.Stores;
 namespace ZeeKayDa.Auth.Tests.Stores;
 
 /// <summary>
-/// Verifies the sealing mechanism of <see cref="IRefreshTokenStore"/> (ADR 0014 §4, mirroring ADR
-/// 0013 §1): the interface stays implementable from a friend assembly (this test project), but
+/// Verifies the sealing mechanism of <see cref="IRefreshTokenStore"/>: the interface stays
+/// implementable from a friend assembly (this test project), but
 /// carries exactly one internal member that blocks a genuine third-party implementation.
 /// </summary>
 public sealed class IRefreshTokenStoreTests
@@ -26,7 +26,7 @@ public sealed class IRefreshTokenStoreTests
 
         internalMethods.Should().ContainSingle(
             because: "an internal member is what blocks third-party implementation of this " +
-                     "framework-sealed interface (ADR 0014 §4, ADR 0013 §1), and there must be exactly one");
+                     "framework-sealed interface, and there must be exactly one");
     }
 
     [Fact]
@@ -153,8 +153,8 @@ public sealed class IRefreshTokenStoreTests
         public Task RevokeFamilyAsync(string familyId, CancellationToken cancellationToken)
             => Task.CompletedTask;
 
-        // Satisfiable here because ZeeKayDa.Auth.Tests is a friend assembly (ADR 0014 §4, ADR 0013
-        // §1) — a genuine third-party assembly could not implement IRefreshTokenStore at all.
+        // Satisfiable here because ZeeKayDa.Auth.Tests is a friend assembly — a genuine
+        // third-party assembly could not implement IRefreshTokenStore at all.
         void IRefreshTokenStore.SealAsFrameworkOwnedProtocol() { }
     }
 }

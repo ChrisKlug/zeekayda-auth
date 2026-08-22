@@ -3,7 +3,7 @@ using ZeeKayDa.Auth.Stores;
 namespace ZeeKayDa.Auth.Tests.Stores;
 
 /// <summary>
-/// Adapter-level tests for <see cref="InMemoryRefreshTokenGrantStore"/> (ADR 0014 §1/§3): insert,
+/// Adapter-level tests for <see cref="InMemoryRefreshTokenGrantStore"/>: insert,
 /// find, the CAS invariant, and family/subject revocation. No hashing, encryption, expiry, or
 /// outcome-selection knowledge belongs here — that is the coordinator's job
 /// (<c>RefreshTokenStoreTests</c>).
@@ -237,7 +237,7 @@ public sealed class InMemoryRefreshTokenGrantStoreTests
         await act.Should().NotThrowAsync();
     }
 
-    // ── IsFamilyRevokedAsync (issue #386, ADR 0014 §11) ──────────────────────────────────────────────
+    // ── IsFamilyRevokedAsync (issue #386) ────────────────────────────────────────────────────────────
 
     [Fact]
     public async Task IsFamilyRevokedAsync_returns_true_when_a_grant_in_the_family_is_Revoked()
