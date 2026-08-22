@@ -1,3 +1,5 @@
+using System.Collections.Frozen;
+
 namespace ZeeKayDa.Auth.Tokens;
 
 /// <summary>
@@ -33,7 +35,7 @@ public interface ISigningKeyProducibility
 /// The set of signing algorithms an <see cref="IJwtSigningService"/> can produce a new token with
 /// right now or in the near future, as returned by <see cref="ISigningKeyProducibility.GetProducibilityAsync"/>.
 /// </summary>
-public sealed record SigningKeyProducibilitySnapshot
+public sealed class SigningKeyProducibilitySnapshot
 {
     /// <summary>
     /// Initialises a new snapshot.
@@ -41,10 +43,9 @@ public sealed record SigningKeyProducibilitySnapshot
     /// <param name="activeAlgorithm">The algorithm of the currently active signing key.</param>
     /// <param name="stagedAlgorithms">
     /// The algorithm of every key that is not yet active but will become the active signer in due
-    /// course. Must not itself repeat <paramref name="activeAlgorithm"/>-only information — it may
-    /// legitimately contain the same algorithm value as <paramref name="activeAlgorithm"/> when a
-    /// staged key happens to share it, but it never needs to for <see cref="CanProduce"/> to behave
-    /// correctly.
+    /// course. May legitimately contain <paramref name="activeAlgorithm"/> when a staged key
+    /// happens to share it — the constructor filters it out, since <see cref="StagedAlgorithms"/>
+    /// never needs to repeat it for <see cref="CanProduce"/> to behave correctly.
     /// </param>
     /// <exception cref="ArgumentNullException"><paramref name="stagedAlgorithms"/> is <see langword="null"/>.</exception>
     public SigningKeyProducibilitySnapshot(SigningAlgorithm activeAlgorithm, IReadOnlySet<SigningAlgorithm> stagedAlgorithms)
@@ -52,18 +53,18 @@ public sealed record SigningKeyProducibilitySnapshot
         ArgumentNullException.ThrowIfNull(stagedAlgorithms);
 
         ActiveAlgorithm = activeAlgorithm;
-        StagedAlgorithms = stagedAlgorithms;
+        StagedAlgorithms = stagedAlgorithms.Where(a => a != activeAlgorithm).ToFrozenSet();
     }
 
     /// <summary>Gets the algorithm of the currently active signing key.</summary>
-    public SigningAlgorithm ActiveAlgorithm { get; init; }
+    public SigningAlgorithm ActiveAlgorithm { get; }
 
     /// <summary>
     /// Gets the algorithm of every key that is not yet active but will become the active signer in
-    /// due course. Does not include <see cref="ActiveAlgorithm"/> by construction — use
-    /// <see cref="CanProduce"/> to check the full producible set.
+    /// due course. Never includes <see cref="ActiveAlgorithm"/> — use <see cref="CanProduce"/> to
+    /// check the full producible set.
     /// </summary>
-    public IReadOnlySet<SigningAlgorithm> StagedAlgorithms { get; init; }
+    public IReadOnlySet<SigningAlgorithm> StagedAlgorithms { get; }
 
     /// <summary>
     /// Returns <see langword="true"/> when <paramref name="algorithm"/> is either

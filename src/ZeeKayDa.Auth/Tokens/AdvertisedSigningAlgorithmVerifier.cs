@@ -132,5 +132,5 @@ internal sealed class AdvertisedSigningAlgorithmVerifier(IOptions<AuthorizationS
     }
 
     private static IEnumerable<SigningAlgorithm> ProducibleAlgorithms(SigningKeyProducibilitySnapshot snapshot) =>
-        new[] { snapshot.ActiveAlgorithm }.Concat(snapshot.StagedAlgorithms).Distinct();
+        new[] { snapshot.ActiveAlgorithm }.Concat(snapshot.StagedAlgorithms);
 }
