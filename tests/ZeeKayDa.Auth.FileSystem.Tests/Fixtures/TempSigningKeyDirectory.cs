@@ -40,7 +40,7 @@ internal sealed class TempSigningKeyDirectory : IDisposable
     /// <para>
     /// <strong>This was also a live product concern, not just a test-fixture inconvenience</strong> —
     /// since fixed in <see cref="FileSigningKeyReader"/>: because this provider is the sole
-    /// recommended signing provider for macOS (ADR 0011 Amendment 7; issue #291), an operator who
+    /// recommended signing provider for macOS, an operator who
     /// pointed <c>AddPemFileSigning</c>/<c>AddPfxFileSigning</c> at a path under <c>/tmp</c>,
     /// <c>/var</c>, or <c>/etc</c> on macOS — all common locations — would have hit this same
     /// false-positive rejection in production.

@@ -120,7 +120,7 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, IAsyncDi
 }
 ```
 
-A provider implements exactly two methods (ADR 0011): **`ListKeysAsync`** returns the currently
+A provider implements exactly two methods: **`ListKeysAsync`** returns the currently
 trusted set as `KeyListing`s — pure public metadata plus an activation/expiry window, never private
 material — and **`CreateSignerAsync`** is called lazily, only for the `KeyId` the base class has
 determined is currently active, to obtain an `ISigner` capable of producing that one key's
@@ -140,7 +140,7 @@ signatures. The base class does the rest:
   `ListKeysAsync` result early (before its retirement window elapsed) must be logged as a
   `Warning` are all decided by the base class from the listings alone — a provider never computes
   any of this itself. See [Rotate signing keys](../how-to/rotate-signing-keys.md) for the full
-  activation/retirement timing model, and ADR 0011's kill-by-omission decision for that specifically.
+  activation/retirement timing model, and the kill-by-omission rule for that specifically.
 - **The crypto call itself.** Header construction, active-key selection, and `kid`/`alg` assignment
   always happen in a non-overridable path, so they can never drift out of sync with the actual
   signature. `CreateSignerAsync`'s returned `ISigner.SignAsync` is the one overridable step that
@@ -268,7 +268,7 @@ public abstract class KeySourceOptions : JwtSigningServiceOptions
 ```
 
 `JwtSigningServiceOptions` itself carries no rotation-shaped property at all — every provider's
-options type derives from one of the two ADR 0011 option types below it, never directly from the
+options type derives from one of the two option types below it, never directly from the
 base type, and which one it derives from is what determines `ListKeysAsync`'s reload behavior:
 
 - **`KeySetOptions`** — the complete set of registered keys/certificates is fixed at
@@ -289,9 +289,7 @@ own default) — but resolve it differently: `KeySetOptions` has no poll at all,
 `PublicationLead` there is advisory only, entirely under the operator's control via each
 certificate's own `NotBefore`; `KeySourceOptions` enforces `PublicationLead >= RefreshInterval`,
 since a newly-published key must not be able to activate before the process would even poll and
-notice it exists. See
-[ADR 0011](https://github.com/ChrisKlug/zeekayda-auth/blob/main/docs/decisions/0011-signing-key-management.md)
-for the full contract and [Rotate signing keys](../how-to/rotate-signing-keys.md) for concrete
+notice it exists. See [Rotate signing keys](../how-to/rotate-signing-keys.md) for concrete
 values per provider.
 
 > ⚠️ **Warning:** For a `KeySourceOptions` provider, `RefreshInterval` is also how quickly
@@ -393,7 +391,7 @@ ZeeKayDa.Auth exposes the trusted signing key set at `connect/jwks`, matching th
 [the discovery document publishes](discovery-endpoint.md) (overridable via
 `AuthorizationServerOptions.JwksEndpoint.Uri` — see [`JwksEndpoint`](configuration.md#jwksendpoint)).
 
-By design (ADR 0011 §4.3), the endpoint maps every descriptor returned by the registered
+By design, the endpoint maps every descriptor returned by the registered
 `IJwtSigningService.GetSigningKeysAsync()` to a JWK-set document
 ([RFC 7517](https://www.rfc-editor.org/rfc/rfc7517)), and every emitted JWK carries `"use": "sig"`
 so a relying party never mistakes a signing key for an encryption key. The read path shares the
@@ -404,7 +402,7 @@ against a cold cache.
 > ⚠️ **Warning:** The full JWKS document provider described above is still in progress.
 > Until it ships, `connect/jwks` returns `501 Not Implemented`. The
 > endpoint path, the discovery `jwks_uri` cross-reference, and the caching/`"use": "sig"` behavior
-> documented here are the fixed design (ADR 0011 §4.3) that the shipped endpoint will implement;
+> documented here are the fixed design that the shipped endpoint will implement;
 > this warning will be removed once it lands.
 
 ---
@@ -497,4 +495,3 @@ type.
 - [Rotate signing keys](../how-to/rotate-signing-keys.md)
 - [AuthorizationServerOptions reference](configuration.md) — including `JwksEndpoint.Uri`
 - [Discovery endpoint](discovery-endpoint.md) — publishes `jwks_uri` and `id_token_signing_alg_values_supported`
-- [ADR 0011 — Signing Key Management and the Provider Contract](https://github.com/ChrisKlug/zeekayda-auth/blob/main/docs/decisions/0011-signing-key-management.md) (design rationale, `RetirementWindow` derivation, rotation model, and the current `KeySetOptions`/`KeySourceOptions` contract this page documents)

@@ -98,7 +98,7 @@ If the private key exists but cannot be accessed by the current process identity
 
 ## Rotation and restart-to-reload semantics
 
-This provider implements ADR 0011's `KeySetOptions` contract: the complete set of
+This provider implements the `KeySetOptions` contract: the complete set of
 registered thumbprints is fixed at configuration time, and the only thing that ever advances
 afterward is the wall clock crossing each certificate's `NotBefore`/`NotAfter`.
 

@@ -266,7 +266,7 @@ though startup will still succeed.
 
 ## Rotation and restart-to-reload semantics
 
-Both providers implement ADR 0011's `KeySetOptions` contract: the complete set of
+Both providers implement the `KeySetOptions` contract: the complete set of
 registered files is fixed at configuration time, and the only thing that ever advances afterward
 is the wall clock crossing each certificate's `NotBefore`/`NotAfter`.
 
