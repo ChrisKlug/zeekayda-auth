@@ -7,9 +7,11 @@ namespace ZeeKayDa.Auth.Tests.Extensions;
 
 /// <summary>
 /// Exercises <see cref="ZeeKayDaSigningKeyServiceCollectionExtensions.AddZeeKayDaSigningKeySource{TSource}"/>:
-/// registration idempotency with respect to the ring, and that a source type defined entirely
-/// outside this framework's own assemblies — using only <see cref="ISigningKeySource"/>'s public
-/// members, no <c>InternalsVisibleTo</c> grant relied on — registers through the same public call.
+/// registration idempotency, the loud failure on registering a second, different source, and that
+/// <see cref="ISigningKeySource"/> is not ambiently resolvable. This assembly carries an
+/// <c>InternalsVisibleTo</c> grant from core, so it cannot prove a source needs no such grant —
+/// <c>ZeeKayDa.Auth.FileSystem.Tests</c>' <c>ThirdPartySigningKeySourceRegistrationTests</c> proves
+/// that from an assembly with no grant at all.
 /// </summary>
 public sealed class ZeeKayDaSigningKeyServiceCollectionExtensionsTests
 {
@@ -33,6 +35,17 @@ public sealed class ZeeKayDaSigningKeyServiceCollectionExtensionsTests
             => throw new NotSupportedException();
     }
 
+    /// <summary>A second, distinct <see cref="ISigningKeySource"/> implementation, for proving that
+    /// registering a different source than one already registered fails loudly.</summary>
+    private sealed class OtherExternalSigningKeySource : ISigningKeySource
+    {
+        public ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public ValueTask<ISigner> CreateSignerAsync(KeyId id, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+    }
+
     [Fact]
     public void AddZeeKayDaSigningKeySource_registers_an_ISigningKeyRing()
     {
@@ -45,14 +58,14 @@ public sealed class ZeeKayDaSigningKeyServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public void AddZeeKayDaSigningKeySource_registers_the_source()
+    public void AddZeeKayDaSigningKeySource_does_not_register_ISigningKeySource_for_ambient_resolution()
     {
         var services = new ServiceCollection();
 
         services.AddZeeKayDaSigningKeySource<ExternalSigningKeySource>();
 
         using var provider = services.BuildServiceProvider();
-        provider.GetRequiredService<ISigningKeySource>().Should().BeOfType<ExternalSigningKeySource>();
+        provider.GetService<ISigningKeySource>().Should().BeNull();
     }
 
     [Fact]
@@ -64,6 +77,28 @@ public sealed class ZeeKayDaSigningKeyServiceCollectionExtensionsTests
         services.AddZeeKayDaSigningKeySource<ExternalSigningKeySource>();
 
         services.Should().ContainSingle(d => d.ServiceType == typeof(ISigningKeyRing));
+    }
+
+    [Fact]
+    public void AddZeeKayDaSigningKeySource_called_twice_with_the_same_source_registers_it_exactly_once()
+    {
+        var services = new ServiceCollection();
+
+        services.AddZeeKayDaSigningKeySource<ExternalSigningKeySource>();
+        services.AddZeeKayDaSigningKeySource<ExternalSigningKeySource>();
+
+        services.Should().ContainSingle(d => d.ServiceType == typeof(ISigningKeySource));
+    }
+
+    [Fact]
+    public void AddZeeKayDaSigningKeySource_called_with_a_different_source_throws_InvalidOperationException()
+    {
+        var services = new ServiceCollection();
+        services.AddZeeKayDaSigningKeySource<ExternalSigningKeySource>();
+
+        var act = () => services.AddZeeKayDaSigningKeySource<OtherExternalSigningKeySource>();
+
+        act.Should().Throw<InvalidOperationException>();
     }
 
     [Fact]

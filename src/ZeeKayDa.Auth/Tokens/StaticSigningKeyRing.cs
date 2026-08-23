@@ -15,8 +15,10 @@ public sealed class StaticSigningKeyRing : ISigningKeyRing, IDisposable
     private readonly ISigningKeySource _source;
     private readonly TimeProvider _timeProvider;
 
-    private SigningKeySet? _current;
-    private ISigner? _signer;
+    // The signing key set and the signer opened for it are read and written together, exactly once,
+    // via Interlocked.CompareExchange — never as two independently-updated fields — so a consumer
+    // can never observe one without the other, and InitializeAsync can only ever commit once.
+    private RingState? _state;
 
     // 0 = live, 1 = disposed. int so Interlocked.Exchange makes the transition atomic.
     private int _disposed;
@@ -44,7 +46,7 @@ public sealed class StaticSigningKeyRing : ISigningKeyRing, IDisposable
 
     /// <inheritdoc/>
     public SigningKeySet Current =>
-        _current ?? throw new InvalidOperationException(
+        _state?.Set ?? throw new InvalidOperationException(
             $"{nameof(StaticSigningKeyRing)} has not completed startup initialization yet.");
 
     /// <inheritdoc/>
@@ -62,31 +64,44 @@ public sealed class StaticSigningKeyRing : ISigningKeyRing, IDisposable
         ArgumentNullException.ThrowIfNull(buildSigningInput);
         ObjectDisposedException.ThrowIf(_disposed != 0, this);
 
-        var current = Current;
-        var signer = _signer ?? throw new InvalidOperationException(
+        var ringState = _state ?? throw new InvalidOperationException(
             $"{nameof(StaticSigningKeyRing)} has not completed startup initialization yet.");
 
-        var context = new SigningContext(current.SigningKey);
+        var context = new SigningContext(ringState.Set.SigningKey);
         var signingInput = buildSigningInput(context, state);
 
-        var signature = await signer.SignAsync(signingInput, cancellationToken).ConfigureAwait(false);
+        // Copied before signing and after the signature comes back, so a pooled or reused buffer on
+        // either side of ISigner.SignAsync can never disagree with the bytes SigningOutcome reports
+        // as having been signed.
+        var signingInputCopy = new ReadOnlyMemory<byte>(signingInput.ToArray());
+        var signature = await ringState.Signer.SignAsync(signingInputCopy, cancellationToken).ConfigureAwait(false);
+        var signatureCopy = new ReadOnlyMemory<byte>(signature.ToArray());
 
-        return new SigningOutcome(signingInput, signature, current.SigningKey);
+        return new SigningOutcome(signingInputCopy, signatureCopy, ringState.Set.SigningKey);
     }
 
     /// <inheritdoc/>
-    public void Dispose()
+    void IDisposable.Dispose()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
             return;
 
-        _signer?.Dispose();
+        _state?.Signer.Dispose();
         GC.SuppressFinalize(this);
     }
 
     async ValueTask ISigningKeyRing.InitializeAsync(CancellationToken cancellationToken)
     {
         var sourceKeys = await _source.ReadAsync(cancellationToken).ConfigureAwait(false);
+        if (sourceKeys is null)
+        {
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "signing.null_source_key_set",
+                    "The signing key source's ReadAsync returned null. ISigningKeySource.ReadAsync " +
+                    "must never return null."));
+        }
+
         var set = SigningKeySetBuilder.Build(sourceKeys);
 
         if (set.SigningKey.ExpiresAt is { } expiresAt && expiresAt <= _timeProvider.GetUtcNow())
@@ -118,25 +133,65 @@ public sealed class StaticSigningKeyRing : ISigningKeyRing, IDisposable
             throw;
         }
 
-        _signer = signer;
-        _current = set;
+        if (Interlocked.CompareExchange(ref _state, new RingState(set, signer), null) is not null)
+        {
+            // Lost the race: some other call already completed initialization first. Dispose the
+            // signer this call opened rather than leaking it — it will never be reachable through
+            // Current or SignAsync.
+            signer.Dispose();
+            throw new InvalidOperationException(
+                $"{nameof(StaticSigningKeyRing)}.InitializeAsync was already called. It must be " +
+                "called exactly once.");
+        }
+
+        // Dispose() may have run concurrently with the work above, between this instance being
+        // constructed and _state being committed. Re-check now rather than leaving a live signer
+        // handle reachable behind a ring that has already reported itself disposed.
+        if (Volatile.Read(ref _disposed) != 0)
+            signer.Dispose();
     }
 
-    SigningKeySet? ISigningKeyRing.CurrentOrNull => _current;
+    SigningKeySet? ISigningKeyRing.CurrentOrNull => _state?.Set;
 
     private async ValueTask<ISigner> OpenSignerAsync(SigningKey signingKey, CancellationToken cancellationToken)
     {
+        ISigner? signer;
         try
         {
-            return await _source.CreateSignerAsync(signingKey.SourceId, cancellationToken).ConfigureAwait(false);
+            signer = await _source.CreateSignerAsync(signingKey.SourceId, cancellationToken).ConfigureAwait(false);
+        }
+        catch (ZeeKayDaConfigurationException)
+        {
+            // A source's own configuration exception already carries a stable, published code —
+            // absorb it verbatim rather than flattening it into signing.signer_unavailable.
+            throw;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            // The exception TYPE is named, never ex.Message. An arbitrary underlying provider
+            // exception may carry credential material (a request URL, an auth header) that
+            // ZeeKayDaConfigurationFailure.Message — a plain string on public API surface — cannot
+            // redact. The root cause stays available to operators as InnerException.
             throw new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure(
                     "signing.signer_unavailable",
-                    $"The signer for key '{signingKey.SourceId.Value}' could not be opened: {ex.Message}"),
+                    $"The signer for key '{signingKey.SourceId.Value}' could not be opened: " +
+                    $"{ex.GetType().FullName}. See the inner exception for the root cause."),
                 ex);
         }
+
+        if (signer is null)
+        {
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "signing.null_signer",
+                    $"The signing key source's CreateSignerAsync returned null for key " +
+                    $"'{signingKey.SourceId.Value}'. ISigningKeySource.CreateSignerAsync must never " +
+                    "return null."));
+        }
+
+        return signer;
     }
+
+    private sealed record RingState(SigningKeySet Set, ISigner Signer);
 }

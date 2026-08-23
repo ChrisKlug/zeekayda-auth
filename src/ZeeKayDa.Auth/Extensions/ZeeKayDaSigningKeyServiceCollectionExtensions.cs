@@ -1,3 +1,4 @@
+using System.Linq;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using ZeeKayDa.Auth.Tokens;
@@ -10,6 +11,12 @@ namespace ZeeKayDa.Auth.Extensions;
 /// </summary>
 public static class ZeeKayDaSigningKeyServiceCollectionExtensions
 {
+    // Registered under this key rather than as a plain singleton, so GetService<ISigningKeySource>()
+    // returns null for arbitrary application code and only StaticSigningKeyRing's own factory below
+    // can resolve it — closing off the ability to call CreateSignerAsync and dispose the live
+    // production private-key handle outside the framework's own startup self-test.
+    private const string SigningKeySourceServiceKey = "ZeeKayDa.Auth.Tokens.ISigningKeySource";
+
     /// <summary>
     /// Registers <typeparamref name="TSource"/> as the application's <see cref="ISigningKeySource"/>,
     /// a <see cref="StaticSigningKeyRing"/> over it, and the startup verification that reads the
@@ -21,19 +28,37 @@ public static class ZeeKayDaSigningKeyServiceCollectionExtensions
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="services"/> is <see langword="null"/>.
     /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when a different <see cref="ISigningKeySource"/> implementation is already registered.
+    /// </exception>
     /// <remarks>
-    /// Idempotent with respect to the ring: every registration uses <c>TryAdd</c>, so calling this
-    /// method more than once (for example, defensively from a third-party provider package's own
-    /// registration method) registers exactly one <see cref="ISigningKeyRing"/>.
+    /// Idempotent with respect to <typeparamref name="TSource"/>: calling this method again with the
+    /// same source type (for example, defensively from a third-party provider package's own
+    /// registration method) is a no-op. Calling it with a <em>different</em> source type throws,
+    /// rather than silently keeping whichever was registered first. <see cref="ISigningKeySource"/>
+    /// itself is registered under an internal key, not as a plain singleton — it is not resolvable
+    /// via <c>GetService&lt;ISigningKeySource&gt;()</c>.
     /// </remarks>
     public static IServiceCollection AddZeeKayDaSigningKeySource<TSource>(this IServiceCollection services)
         where TSource : class, ISigningKeySource
     {
         ArgumentNullException.ThrowIfNull(services);
 
+        var existing = services.FirstOrDefault(sd =>
+            sd.ServiceType == typeof(ISigningKeySource) && Equals(sd.ServiceKey, SigningKeySourceServiceKey));
+
+        if (existing is not null && existing.KeyedImplementationType != typeof(TSource))
+        {
+            throw new InvalidOperationException(
+                $"A different ISigningKeySource ('{existing.KeyedImplementationType?.Name}') is " +
+                $"already registered. Only one signing key source may be registered per application.");
+        }
+
         services.TryAddSingleton<TimeProvider>(TimeProvider.System);
-        services.TryAddSingleton<ISigningKeySource, TSource>();
-        services.TryAddSingleton<ISigningKeyRing, StaticSigningKeyRing>();
+        services.TryAddKeyedSingleton<ISigningKeySource, TSource>(SigningKeySourceServiceKey);
+        services.TryAddSingleton<ISigningKeyRing>(sp => new StaticSigningKeyRing(
+            sp.GetRequiredKeyedService<ISigningKeySource>(SigningKeySourceServiceKey),
+            sp.GetRequiredService<TimeProvider>()));
 
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IStartupVerifier, SigningKeyRingStartupVerifier>());

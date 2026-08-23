@@ -6,8 +6,16 @@ namespace ZeeKayDa.Auth.Tokens;
 /// </summary>
 public readonly struct SigningContext
 {
-    internal SigningContext(SigningKey key) => Key = key;
+    private readonly SigningKey? _key;
+
+    internal SigningContext(SigningKey key) => _key = key;
 
     /// <summary>Gets the key that will sign.</summary>
-    public SigningKey Key { get; }
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when this instance is <see langword="default"/>(<see cref="SigningContext"/>) rather
+    /// than one obtained from <see cref="ISigningKeyRing.SignAsync{TState}"/>.
+    /// </exception>
+    public SigningKey Key => _key ?? throw new InvalidOperationException(
+        $"{nameof(SigningContext)} was default-initialized; it must be obtained from a " +
+        $"{nameof(ISigningKeyRing)}.{nameof(ISigningKeyRing.SignAsync)} callback.");
 }
