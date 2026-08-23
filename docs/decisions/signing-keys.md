@@ -20,17 +20,18 @@ disposes it on active-key change, so a signer over a shared SDK client must not 
 JWK thumbprint over the public key. A provider supplies only its own internal `KeyId`, so it cannot
 express a `kid` that leaks a vault URI, certificate thumbprint, or file path into every issued token.
 
-**A second, expand-only signing model sits beside `JwtSigningService<TOptions>` until #511.** Keys are
-three named slots — `Previous`/`Current`/`Next`, `Current` required, the other two independently
-optional — capped so every published key is bounded, not an unbounded array an attacker who obtains
-one more key can use. `SourceKeySet.FromSlots` is the only way to build one and is where "no `Current`"
-is rejected, so a provider cannot express "no signer." `SigningKeySetBuilder.Build` is the single pure
-choke point from `SourceKeySet` to `SigningKeySet`: no clock, no policy, no I/O, always derives `kid`
-via `JwkThumbprint`, and every rejection throws `ZeeKayDaConfigurationException` before any private
-material exists. `StaticSigningKeyRing` reads its `ISigningKeySource` once at startup, self-tests the
-signer with a fresh per-invocation nonce (a compile-time-constant payload only proves *a* signature
-verifies, not a fresh one), and owns that one signer for the process lifetime, disposing it once at
-shutdown.
+**A second, expand-only signing model sits beside `JwtSigningService<TOptions>` until the old model is
+deleted, in two tiers: `KeySetOptions` for a fixed set an operator edits directly, `KeySourceOptions`
+for a set a provider polls from an external store.** Keys are three named slots —
+`Previous`/`Current`/`Next`, `Current` required, the other two independently optional. `SourceKeySet.FromSlots`
+rejects a missing `Current`, so a provider cannot express "no signer." `SigningKeySetBuilder.Build` is
+the single pure choke point from `SourceKeySet` to `SigningKeySet`: no clock, no policy, no I/O,
+always derives `kid` via `JwkThumbprint`, and every rejection throws `ZeeKayDaConfigurationException`
+before any private material exists. `StaticSigningKeyRing` reads its `ISigningKeySource` once at
+startup, self-tests the signer with a fresh per-invocation nonce, and owns that signer for the process
+lifetime. `SigningKeySet.SigningKey` stays non-nullable: there is no reachable state here without a
+signing key, and because `ISigningKeyRing` is framework-sealed, a future polling ring can add
+`SigningKeyOrNull`/`IsSigning` additively instead of a breaking null check.
 
 **The single-key bootstrap exemption belongs to the fixed tier only.** A lone eligible key is active
 on `KeySetOptions`; on `KeySourceOptions` it is not, so a listing that revocation has shrunk to one
