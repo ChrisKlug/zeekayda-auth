@@ -106,9 +106,17 @@ That comment is the build contract and the only thing this stage puts on GitHub.
 
 ### 1c — Slice it before you build ⛔
 
-**Design stage ends by deciding how many PRs this is.** Once the shape is agreed, estimate the diff.
-If it is more than roughly 500 lines of production code, split the issue into sub-issues and build
-them one at a time, each its own branch, review round and PR.
+**Design stage ends by deciding how many PRs this is.** Once the shape is agreed, estimate the work
+and split the issue into sub-issues if it is too big for one PR — each sub-issue its own branch,
+review round and PR.
+
+**Measure the estimate in lines of implementation logic — not diff lines.** Those differ by roughly
+five to one, so the wrong measure slices into useless fragments. On #506 a 3,419-line diff was 1,829
+lines of tests, 1,005 lines of XML doc comments, 179 of generated API surface and register text, and
+only about 700 lines of actual logic. Tests, XML docs and `PublicAPI.Unshipped.txt` all scale with the
+logic and none of them make a PR harder to review.
+
+**Roughly 400–600 lines of implementation logic is one PR.** Past that, slice.
 
 This is not tidiness. A 3,000-line PR cannot be reviewed by a human, so review falls entirely to two
 Opus agents whose findings then arrive in a batch too large to fix cheaply — and the maintainer pays
