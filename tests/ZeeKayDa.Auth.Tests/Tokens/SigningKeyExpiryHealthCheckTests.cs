@@ -98,14 +98,38 @@ public sealed class SigningKeyExpiryHealthCheckTests
         var previous = CreateRsaKey("previous", Now.AddDays(-1));
         var current = CreateRsaKey("current", Now.AddDays(30));
         var next = CreateRsaKey("next", Now.AddDays(120));
+        var currentSigningKey = BuildSigningKey(current);
         var set = new SigningKeySet(
-            BuildSigningKey(current), [BuildSigningKey(previous), BuildSigningKey(current), BuildSigningKey(next)],
+            currentSigningKey, [BuildSigningKey(previous), BuildSigningKey(current), BuildSigningKey(next)],
             [SigningAlgorithm.RS256]);
 
         var result = SigningKeyExpiryHealthCheck.Evaluate(set, Now, DegradedThreshold);
 
         result.Data.Should().ContainKeys(
             BuildSigningKey(previous).Kid, BuildSigningKey(current).Kid, BuildSigningKey(next).Kid);
+    }
+
+    [Fact]
+    public void Evaluate_data_marks_the_signing_key_by_Kid_even_when_it_is_a_distinct_instance()
+    {
+        // Deliberately builds a fresh SigningKey instance per slot, with the same public key
+        // material for "current" appearing under both the signing-key argument and its entry in
+        // published — so IsSigningKey can only be derived by comparing Kid, never by
+        // ReferenceEquals, which SigningKeySetBuilder.Build never guarantees across two separate
+        // Build calls over the same public key.
+        var previous = CreateRsaKey("previous", Now.AddDays(-1));
+        var current = CreateRsaKey("current", Now.AddDays(30));
+        var next = CreateRsaKey("next", Now.AddDays(120));
+        var currentSigningKey = BuildSigningKey(current);
+        var set = new SigningKeySet(
+            currentSigningKey, [BuildSigningKey(previous), BuildSigningKey(current), BuildSigningKey(next)],
+            [SigningAlgorithm.RS256]);
+
+        var result = SigningKeyExpiryHealthCheck.Evaluate(set, Now, DegradedThreshold);
+
+        var data = result.Data.Values.OfType<SigningKeyExpiryStatus>().ToList();
+        data.Should().ContainSingle(s => s.Kid == currentSigningKey.Kid && s.IsSigningKey);
+        data.Where(s => s.Kid != currentSigningKey.Kid).Should().OnlyContain(s => !s.IsSigningKey);
     }
 
     [Fact]
@@ -160,6 +184,48 @@ public sealed class SigningKeyExpiryHealthCheckTests
         var result = await sut.CheckHealthAsync(new HealthCheckContext(), TestContext.Current.CancellationToken);
 
         result.Status.Should().Be(HealthStatus.Healthy);
+    }
+
+    [Fact]
+    public async Task CheckHealthAsync_reports_Unhealthy_once_past_expiry_without_re_reading_the_source()
+    {
+        using var rsa = RSA.Create(2048);
+        var current = new SourceKey(
+            new KeyId("current"), SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), Now.AddDays(1));
+        var privateKeyPem = rsa.ExportRSAPrivateKeyPem();
+        var source = new CountingSigningKeySource(current, privateKeyPem);
+        var timeProvider = new FakeTimeProvider(Now);
+        var ring = new StaticSigningKeyRing(source, timeProvider);
+        await ((ISigningKeyRing)ring).InitializeAsync(TestContext.Current.CancellationToken);
+
+        timeProvider.SetUtcNow(Now.AddDays(2)); // advance past the signing key's expiry
+        var sut = new SigningKeyExpiryHealthCheck(ring, timeProvider, Options.Create(new SigningKeyExpiryHealthCheckOptions()));
+
+        var result = await sut.CheckHealthAsync(new HealthCheckContext(), TestContext.Current.CancellationToken);
+
+        result.Status.Should().Be(HealthStatus.Unhealthy);
+        source.ReadAsyncCallCount.Should().Be(1);
+    }
+
+    /// <summary>Real <see cref="ISigningKeySource"/> tracking how many times <see cref="ReadAsync"/>
+    /// was called — the defining property of <see cref="StaticSigningKeyRing"/> is that it never
+    /// re-reads, so a health check probing it repeatedly must not move this count.</summary>
+    private sealed class CountingSigningKeySource(SourceKey current, string privateKeyPem) : ISigningKeySource
+    {
+        public int ReadAsyncCallCount { get; private set; }
+
+        public ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+        {
+            ReadAsyncCallCount++;
+            return new ValueTask<SourceKeySet>(SourceKeySet.FromSlots(previous: null, current, next: null));
+        }
+
+        public ValueTask<ISigner> CreateSignerAsync(KeyId id, CancellationToken cancellationToken = default)
+        {
+            var signerRsa = RSA.Create();
+            signerRsa.ImportFromPem(privateKeyPem);
+            return new ValueTask<ISigner>(new LocalSigner(SigningAlgorithm.RS256, signerRsa));
+        }
     }
 
     [Fact]

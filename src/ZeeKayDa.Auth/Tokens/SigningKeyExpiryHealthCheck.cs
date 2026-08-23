@@ -83,7 +83,7 @@ public sealed class SigningKeyExpiryHealthCheck : IHealthCheck
             key => key.Kid,
             object (key) => new SigningKeyExpiryStatus(
                 key.Kid,
-                IsSigningKey: ReferenceEquals(key, set.SigningKey),
+                IsSigningKey: string.Equals(key.Kid, set.SigningKey.Kid, StringComparison.Ordinal),
                 key.ExpiresAt,
                 RemainingLifetime: key.ExpiresAt is { } expiresAt ? expiresAt - now : null));
 

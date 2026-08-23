@@ -43,10 +43,12 @@ public static class ZeeKayDaSigningKeyHealthChecksBuilderExtensions
     {
         ArgumentNullException.ThrowIfNull(builder);
 
-        builder.Services.AddOptions<SigningKeyExpiryHealthCheckOptions>();
+        builder.Services.AddOptions<SigningKeyExpiryHealthCheckOptions>().ValidateOnStart();
         if (configure is not null)
             builder.Services.Configure(configure);
 
+        builder.Services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IValidateOptions<SigningKeyExpiryHealthCheckOptions>, SigningKeyExpiryHealthCheckOptionsValidator>());
         builder.Services.TryAddSingleton<TimeProvider>(TimeProvider.System);
 
         return builder.Add(new HealthCheckRegistration(
