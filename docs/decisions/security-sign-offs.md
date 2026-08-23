@@ -176,6 +176,41 @@ same security-critical, platform-ABI-dependent code. It is **not** a pattern oth
 or third-party, should reach for; a provider that can meet its needs through core's public surface
 must do so.
 
+### 1.7 Static signing key ring — the `kid` choke point and the sealed ring — ✅ signed off 2026-08-23
+
+**Approved by:** the security agent, as a signing/JWKS trust-boundary decision.
+**Approved against:** PR #528 (issue #506) at commit `50c783d`, two review rounds (local, then PR).
+
+**What was approved.** Three structural controls, in combination:
+
+1. `SigningKeySetBuilder.Build` is the only route from a source's `SourceKeySet` to a
+   `SigningKeySet`, and it always derives `kid` as an RFC 7638 thumbprint of the key's own public
+   material. `SigningKey`'s constructor is `internal`, so a `kid` that disagrees with the public key
+   it names is unrepresentable outside this assembly, and a source cannot push a vault URI or file
+   path into a token header. Validation runs entirely over public data, before any private material
+   exists, and every rejection is a coded `ZeeKayDaConfigurationException`.
+2. `ISigningKeyRing` is framework-sealed (`InitializeAsync` and `CurrentOrNull` are `internal`),
+   so the startup self-test that proves the opened signer's private key pairs with the published
+   public key cannot be bypassed by implementing the ring. Third parties extend via
+   `ISigningKeySource` only.
+3. `ISigningKeySource` is registered under an internal DI key, not as a plain singleton, so
+   `CreateSignerAsync` — and therefore the live production private-key handle — is not ambiently
+   resolvable by application code.
+
+**Explicit negatives — what this sign-off does NOT cover.**
+
+- **The old `JwtSigningService` model is out of scope.** Its `ValidateKeyStrength(SigningKeyDescriptor)`
+  still sizes an RSA key by `modulus.Length * 8` (`SigningAlgorithms.cs:44`) and so accepts a
+  left-padded sub-2048-bit modulus. Recorded as a **Low** finding on PR #528; the new model's
+  overload counts significant bits and is not affected.
+- **Recorded and accepted for this PR, not mitigated:** a throwing `ISigner.Dispose` in the ring's
+  cleanup paths can mask the primary configuration failure; `PublicKeyParameters`' EC defensive copy
+  shares the curve's mutable `Oid` instance; `CurrentOrNull` keeps reporting after `Dispose`; the
+  "see the inner exception" guidance is unreachable because the startup runner drops
+  `InnerException`. All are robustness, not security-boundary, and all are on the PR comment.
+- **Signature-format and JWKS-endpoint behaviour are not covered** — no endpoint publishes this key
+  set yet.
+
 ---
 
 ## 2. Authorization-code store
