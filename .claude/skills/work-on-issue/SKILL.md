@@ -104,6 +104,27 @@ Rejected: <the alternative, one line on why not>
 
 That comment is the build contract and the only thing this stage puts on GitHub.
 
+### 1c — Slice it before you build ⛔
+
+**Design stage ends by deciding how many PRs this is.** Once the shape is agreed, estimate the diff.
+If it is more than roughly 500 lines of production code, split the issue into sub-issues and build
+them one at a time, each its own branch, review round and PR.
+
+This is not tidiness. A 3,000-line PR cannot be reviewed by a human, so review falls entirely to two
+Opus agents whose findings then arrive in a batch too large to fix cheaply — and the maintainer pays
+for a review round they could not participate in. Small slices let them read the diff themselves,
+which is faster and better than any agent round.
+
+Watch for the issue growing *during* Stage 1. Folding in a neighbouring issue, a scope addition
+arriving mid-design, shifting work in from a later issue — each is a reason to re-check the slice
+count, and each has silently tripled an issue before now. If you recommend an expansion, you own
+saying whether it still fits in one PR.
+
+Sequence the slices so each one is independently reviewable and leaves the build green: the model and
+its pure validation first, then the runtime that consumes it, then registration and startup, then
+anything operational like a health check. Put the slicing in the agreed-shape comment and let the
+maintainer approve it before any code is written.
+
 **This is a build spec, not a sketch.** `developer` runs on a smaller model and implements it
 literally. Concrete signatures, types, and member names — anything left ambiguous becomes an
 implementation guess. If the shape is still vague when the maintainer approves it, tighten it before

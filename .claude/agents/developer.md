@@ -69,6 +69,19 @@ Never guess on an ambiguous requirement and present the guess as settled. Return
 - Keep classes and methods short; no god classes or god methods. Keep cyclomatic complexity down (10–15 is the warning zone) — favour small, intent-revealing methods over complex multi-part conditionals
 - At 5+ parameters on a method or constructor, consider a parameter object
 
+### Rules that exist because review found them repeatedly
+
+Apply these while writing, not after. Each one has cost a full Opus review round at least once.
+
+- **Never return live mutable state from a property.** A property handing back the instance's own `byte[]`, array, or mutable struct containing one lets a caller change the object after every invariant was validated. Return a defensive copy, or expose a `ReadOnlySpan<T>`. This applies especially to cryptographic material, where a mutated key silently invalidates a derived identifier.
+- **Copy mutable input at a validation choke point.** If a method validates data and stores it, and the data came from a caller-owned buffer, the caller can mutate it afterwards. Validating a reference you do not own validates nothing durable.
+- **Never interpolate a caught `ex.Message` into a message that will be logged or surfaced.** Third-party SDK exceptions routinely carry request URIs, tokens, and connection strings. Name `ex.GetType().FullName` and let the original travel as `InnerException`.
+- **`Enum.IsDefined` on every enum value crossing a public boundary.** An unchecked cast reaches internals and gets emitted into protocol output. Check it at the boundary, not where it is consumed.
+- **Re-throw before you re-classify.** When wrapping exceptions from a caller-supplied implementation, `catch` your own domain exception first and rethrow it, so a well-formed failure is not flattened into a generic one.
+- **Null-check every value returned by a caller-supplied interface**, not only the arguments passed in. An extension point returning `null` should produce a named failure, never a `NullReferenceException`.
+- **Measure sizes, don't infer them from lengths.** `array.Length * 8` is not a bit count for anything that may be zero-padded. Count significant bits, or ask the platform type for its own size.
+- **Guard one-shot initialization structurally.** If a method may only be called once, enforce it with `Interlocked.CompareExchange` rather than relying on the current call graph. "Only the framework calls it" stops being true the moment someone else does.
+
 ## Comments and XML Docs
 
 Write the minimum that a reader actually needs. Project history lives in issues and the decision register, not in the code.
@@ -87,6 +100,17 @@ Write the minimum that a reader actually needs. Project history lives in issues 
 ## Branch Sync Hygiene
 
 Before starting new implementation work (or creating a new branch): `git checkout main && git pull --ff-only`. New branches are created from this up-to-date `main` unless a stacked/alternate base was explicitly requested.
+
+## Running the test suite — once per change, never to re-confirm
+
+Run the suite after you change code. **Do not run it again to re-confirm a result you already have.**
+Re-running the full suite for a second reason — to check formatting, to sanity-check a coverage
+number, to be sure before reporting — with no edit in between produces the same answer at full cost.
+Runs are minutes each and the maintainer pays for every one.
+
+If you need coverage, formatting and tests, sequence the work so one run serves all three: make every
+edit, then run tests, formatting and coverage once each, then report. If a run reveals a failure, fix
+it and run again — that is a run per change, which is correct.
 
 ## Test coverage failures — stop, don't loop
 
