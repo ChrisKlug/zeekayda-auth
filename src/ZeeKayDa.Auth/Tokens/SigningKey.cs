@@ -12,7 +12,7 @@ namespace ZeeKayDa.Auth.Tokens;
 public sealed class SigningKey
 {
     internal SigningKey(
-        KeyId sourceId, string kid, SigningAlgorithm algorithm, PublicKeyParameters publicKey, DateTimeOffset? expiresAt)
+        SourceKeyId sourceId, string kid, SigningAlgorithm algorithm, PublicKeyParameters publicKey, DateTimeOffset? expiresAt)
     {
         SourceId = sourceId;
         Kid = kid;
@@ -22,7 +22,7 @@ public sealed class SigningKey
     }
 
     /// <summary>Gets the source's own identifier for this key.</summary>
-    public KeyId SourceId { get; }
+    public SourceKeyId SourceId { get; }
 
     /// <summary>
     /// Gets the JWKS/JWS key identifier, always an RFC 7638 thumbprint of <see cref="PublicKey"/>.

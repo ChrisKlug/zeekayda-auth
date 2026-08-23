@@ -20,13 +20,13 @@ public sealed class ThirdPartySigningKeySourceRegistrationTests
         {
             using var rsa = RSA.Create(2048);
             var current = new SourceKey(
-                new KeyId("current"), SigningAlgorithm.RS256,
+                new SourceKeyId("current"), SigningAlgorithm.RS256,
                 PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), DateTimeOffset.UtcNow.AddDays(90));
 
-            return new ValueTask<SourceKeySet>(SourceKeySet.FromSlots(previous: null, current, next: null));
+            return new ValueTask<SourceKeySet>(SourceKeySet.Create(previous: null, current, next: null));
         }
 
-        public ValueTask<ISigner> CreateSignerAsync(KeyId id, CancellationToken cancellationToken = default)
+        public ValueTask<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
     }
 

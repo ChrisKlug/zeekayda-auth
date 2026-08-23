@@ -62,7 +62,7 @@ public sealed class SourceKeySet
     /// Thrown with failure code <c>signing.no_current_key</c> when <paramref name="current"/> is
     /// <see langword="null"/>.
     /// </exception>
-    public static SourceKeySet FromSlots(SourceKey? previous, SourceKey? current, SourceKey? next)
+    public static SourceKeySet Create(SourceKey? previous, SourceKey? current, SourceKey? next)
     {
         if (current is null)
         {

@@ -17,7 +17,7 @@ public sealed class StaticSigningKeyRingTests
 
     private sealed class FakeSigningKeySource(
         Func<CancellationToken, ValueTask<SourceKeySet>> read,
-        Func<KeyId, CancellationToken, ValueTask<ISigner>> createSigner) : ISigningKeySource
+        Func<SourceKeyId, CancellationToken, ValueTask<ISigner>> createSigner) : ISigningKeySource
     {
         public int ReadAsyncCallCount { get; private set; }
 
@@ -29,7 +29,7 @@ public sealed class StaticSigningKeyRingTests
             return read(cancellationToken);
         }
 
-        public ValueTask<ISigner> CreateSignerAsync(KeyId id, CancellationToken cancellationToken = default)
+        public ValueTask<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
         {
             CreateSignerAsyncCallCount++;
             return createSigner(id, cancellationToken);
@@ -187,11 +187,11 @@ public sealed class StaticSigningKeyRingTests
         using var rsa = RSA.Create(2048);
         var disposeCount = 0;
         var current = new SourceKey(
-            new KeyId("current"), SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), Epoch.AddDays(90));
+            new SourceKeyId("current"), SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), Epoch.AddDays(90));
         var privateKeyPem = rsa.ExportRSAPrivateKeyPem();
 
         var source = new FakeSigningKeySource(
-            _ => new ValueTask<SourceKeySet>(SourceKeySet.FromSlots(null, current, null)),
+            _ => new ValueTask<SourceKeySet>(SourceKeySet.Create(null, current, null)),
             (_, _) =>
             {
                 var signerRsa = RSA.Create();
@@ -228,7 +228,7 @@ public sealed class StaticSigningKeyRingTests
     public async Task InitializeAsync_propagates_a_builder_validation_failure_from_ReadAsync()
     {
         var source = new FakeSigningKeySource(
-            _ => new ValueTask<SourceKeySet>(SourceKeySet.FromSlots(null, null, null)), // no Current
+            _ => new ValueTask<SourceKeySet>(SourceKeySet.Create(null, null, null)), // no Current
             (_, _) => throw new NotSupportedException("must not be reached"));
         ISigningKeyRing ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
 
@@ -243,9 +243,9 @@ public sealed class StaticSigningKeyRingTests
     {
         using var rsa = RSA.Create(2048);
         var current = new SourceKey(
-            new KeyId("current"), SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), Epoch.AddDays(90));
+            new SourceKeyId("current"), SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), Epoch.AddDays(90));
         var source = new FakeSigningKeySource(
-            _ => new ValueTask<SourceKeySet>(SourceKeySet.FromSlots(null, current, null)),
+            _ => new ValueTask<SourceKeySet>(SourceKeySet.Create(null, current, null)),
             (_, _) => throw new InvalidOperationException("simulated: key vault unreachable"));
         ISigningKeyRing ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
 
@@ -260,9 +260,9 @@ public sealed class StaticSigningKeyRingTests
     {
         using var rsa = RSA.Create(2048);
         var current = new SourceKey(
-            new KeyId("current"), SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), Epoch.AddDays(90));
+            new SourceKeyId("current"), SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), Epoch.AddDays(90));
         var source = new FakeSigningKeySource(
-            _ => new ValueTask<SourceKeySet>(SourceKeySet.FromSlots(null, current, null)),
+            _ => new ValueTask<SourceKeySet>(SourceKeySet.Create(null, current, null)),
             (_, _) => new ValueTask<ISigner>(
                 new WrongAlgorithmSigner(new LocalSigner(SigningAlgorithm.RS256, RSA.Create(2048)), SigningAlgorithm.RS384)));
         ISigningKeyRing ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
@@ -279,9 +279,9 @@ public sealed class StaticSigningKeyRingTests
         using var publicRsa = RSA.Create(2048); // published public key
         using var otherRsa = RSA.Create(2048); // signer's actual (mismatched) private key
         var current = new SourceKey(
-            new KeyId("current"), SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(publicRsa.ExportParameters(false)), Epoch.AddDays(90));
+            new SourceKeyId("current"), SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(publicRsa.ExportParameters(false)), Epoch.AddDays(90));
         var source = new FakeSigningKeySource(
-            _ => new ValueTask<SourceKeySet>(SourceKeySet.FromSlots(null, current, null)),
+            _ => new ValueTask<SourceKeySet>(SourceKeySet.Create(null, current, null)),
             (_, _) => new ValueTask<ISigner>(new LocalSigner(SigningAlgorithm.RS256, otherRsa)));
         ISigningKeyRing ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
 
@@ -296,14 +296,14 @@ public sealed class StaticSigningKeyRingTests
     {
         using var rsa = RSA.Create(2048);
         var current = new SourceKey(
-            new KeyId("current"), SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), Epoch.AddDays(90));
+            new SourceKeyId("current"), SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), Epoch.AddDays(90));
         var privateKeyPem = rsa.ExportRSAPrivateKeyPem();
         var signerRsa = RSA.Create();
         signerRsa.ImportFromPem(privateKeyPem);
         var sharedSigner = new MemoizingSigner(new LocalSigner(SigningAlgorithm.RS256, signerRsa));
 
-        SourceKeySet ReadCurrent(CancellationToken _) => SourceKeySet.FromSlots(null, current, null);
-        ValueTask<ISigner> LendSharedSigner(KeyId _, CancellationToken __) => new(sharedSigner);
+        SourceKeySet ReadCurrent(CancellationToken _) => SourceKeySet.Create(null, current, null);
+        ValueTask<ISigner> LendSharedSigner(SourceKeyId _, CancellationToken __) => new(sharedSigner);
 
         var firstSource = new FakeSigningKeySource(t => new ValueTask<SourceKeySet>(ReadCurrent(t)), LendSharedSigner);
         ISigningKeyRing firstRing = new StaticSigningKeyRing(firstSource, new FakeTimeProvider(Epoch));
@@ -330,9 +330,9 @@ public sealed class StaticSigningKeyRingTests
         using var otherRsa = RSA.Create(2048); // mismatched private key: the self-test must fail
         var disposeCount = 0;
         var current = new SourceKey(
-            new KeyId("current"), SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(publicRsa.ExportParameters(false)), Epoch.AddDays(90));
+            new SourceKeyId("current"), SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(publicRsa.ExportParameters(false)), Epoch.AddDays(90));
         var source = new FakeSigningKeySource(
-            _ => new ValueTask<SourceKeySet>(SourceKeySet.FromSlots(null, current, null)),
+            _ => new ValueTask<SourceKeySet>(SourceKeySet.Create(null, current, null)),
             (_, _) => new ValueTask<ISigner>(
                 new TrackingSigner(new LocalSigner(SigningAlgorithm.RS256, otherRsa), () => disposeCount++)));
         ISigningKeyRing ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
@@ -349,9 +349,9 @@ public sealed class StaticSigningKeyRingTests
         using var rsa = RSA.Create(2048);
         var disposeCount = 0;
         var current = new SourceKey(
-            new KeyId("current"), SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), Epoch.AddDays(90));
+            new SourceKeyId("current"), SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), Epoch.AddDays(90));
         var source = new FakeSigningKeySource(
-            _ => new ValueTask<SourceKeySet>(SourceKeySet.FromSlots(null, current, null)),
+            _ => new ValueTask<SourceKeySet>(SourceKeySet.Create(null, current, null)),
             (_, _) => new ValueTask<ISigner>(
                 new TrackingSigner(
                     new WrongAlgorithmSigner(new LocalSigner(SigningAlgorithm.RS256, RSA.Create(2048)), SigningAlgorithm.RS384),
@@ -383,9 +383,9 @@ public sealed class StaticSigningKeyRingTests
     {
         using var rsa = RSA.Create(2048);
         var current = new SourceKey(
-            new KeyId("current"), SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), Epoch.AddDays(90));
+            new SourceKeyId("current"), SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), Epoch.AddDays(90));
         var source = new FakeSigningKeySource(
-            _ => new ValueTask<SourceKeySet>(SourceKeySet.FromSlots(null, current, null)),
+            _ => new ValueTask<SourceKeySet>(SourceKeySet.Create(null, current, null)),
             (_, _) => new ValueTask<ISigner>((ISigner)null!));
         ISigningKeyRing ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
 
@@ -401,9 +401,9 @@ public sealed class StaticSigningKeyRingTests
         const string secret = "Authorization: Bearer eyJsecret-token-value";
         using var rsa = RSA.Create(2048);
         var current = new SourceKey(
-            new KeyId("current"), SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), Epoch.AddDays(90));
+            new SourceKeyId("current"), SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), Epoch.AddDays(90));
         var source = new FakeSigningKeySource(
-            _ => new ValueTask<SourceKeySet>(SourceKeySet.FromSlots(null, current, null)),
+            _ => new ValueTask<SourceKeySet>(SourceKeySet.Create(null, current, null)),
             (_, _) => throw new InvalidOperationException($"GET https://contoso-prod.vault.azure.net/keys/signing 401; {secret}"));
         ISigningKeyRing ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
 
@@ -420,9 +420,9 @@ public sealed class StaticSigningKeyRingTests
     {
         using var rsa = RSA.Create(2048);
         var current = new SourceKey(
-            new KeyId("current"), SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), Epoch.AddDays(90));
+            new SourceKeyId("current"), SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), Epoch.AddDays(90));
         var source = new FakeSigningKeySource(
-            _ => new ValueTask<SourceKeySet>(SourceKeySet.FromSlots(null, current, null)),
+            _ => new ValueTask<SourceKeySet>(SourceKeySet.Create(null, current, null)),
             (_, _) => throw new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure("provider.custom_failure", "a provider-specific failure")));
         ISigningKeyRing ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
@@ -484,12 +484,12 @@ public sealed class StaticSigningKeyRingTests
     {
         using var rsa = RSA.Create(2048);
         var current = new SourceKey(
-            new KeyId("current"), SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), Epoch.AddDays(90));
+            new SourceKeyId("current"), SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), Epoch.AddDays(90));
         var privateKeyPem = rsa.ExportRSAPrivateKeyPem();
         BufferReusingSigner? reusingSigner = null;
 
         var source = new FakeSigningKeySource(
-            _ => new ValueTask<SourceKeySet>(SourceKeySet.FromSlots(null, current, null)),
+            _ => new ValueTask<SourceKeySet>(SourceKeySet.Create(null, current, null)),
             (_, _) =>
             {
                 var signerRsa = RSA.Create();
@@ -518,7 +518,7 @@ public sealed class StaticSigningKeyRingTests
     private static (FakeSigningKeySource Source, SourceKey Current) CreateSuccessfulSource(RSA rsa, DateTimeOffset expiresAt)
     {
         var current = new SourceKey(
-            new KeyId("current"), SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), expiresAt);
+            new SourceKeyId("current"), SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), expiresAt);
 
         // The signer must be opened over a private key matching the published public key, otherwise
         // the self-test itself would fail — CreateSignerAsync gets its own fresh RSA instance
@@ -526,7 +526,7 @@ public sealed class StaticSigningKeyRingTests
         var privateKeyPem = rsa.ExportRSAPrivateKeyPem();
 
         var source = new FakeSigningKeySource(
-            _ => new ValueTask<SourceKeySet>(SourceKeySet.FromSlots(null, current, null)),
+            _ => new ValueTask<SourceKeySet>(SourceKeySet.Create(null, current, null)),
             (_, _) =>
             {
                 var signerRsa = RSA.Create();

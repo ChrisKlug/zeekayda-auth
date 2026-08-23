@@ -12,4 +12,4 @@ namespace ZeeKayDa.Auth.Tokens;
 /// <param name="ExpiresAt">
 /// The key's expiry, or <see langword="null"/> when it never expires.
 /// </param>
-public sealed record SourceKey(KeyId Id, SigningAlgorithm Algorithm, PublicKeyParameters PublicKey, DateTimeOffset? ExpiresAt);
+public sealed record SourceKey(SourceKeyId Id, SigningAlgorithm Algorithm, PublicKeyParameters PublicKey, DateTimeOffset? ExpiresAt);

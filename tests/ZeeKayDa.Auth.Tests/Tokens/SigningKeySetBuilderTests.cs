@@ -18,7 +18,7 @@ public sealed class SigningKeySetBuilderTests
     public void Build_returns_a_set_whose_signing_key_is_the_Current_slot_key()
     {
         var current = CreateRsaSourceKey("current");
-        var keys = SourceKeySet.FromSlots(previous: null, current, next: null);
+        var keys = SourceKeySet.Create(previous: null, current, next: null);
 
         var set = SigningKeySetBuilder.Build(keys);
 
@@ -31,7 +31,7 @@ public sealed class SigningKeySetBuilderTests
         var previous = CreateRsaSourceKey("previous");
         var current = CreateRsaSourceKey("current");
         var next = CreateRsaSourceKey("next");
-        var keys = SourceKeySet.FromSlots(previous, current, next);
+        var keys = SourceKeySet.Create(previous, current, next);
 
         var set = SigningKeySetBuilder.Build(keys);
 
@@ -42,7 +42,7 @@ public sealed class SigningKeySetBuilderTests
     public void Build_with_only_Current_produces_a_set_with_a_single_published_key()
     {
         var current = CreateRsaSourceKey("current");
-        var keys = SourceKeySet.FromSlots(previous: null, current, next: null);
+        var keys = SourceKeySet.Create(previous: null, current, next: null);
 
         var set = SigningKeySetBuilder.Build(keys);
 
@@ -53,7 +53,7 @@ public sealed class SigningKeySetBuilderTests
     public void Build_derives_Kid_as_the_RFC7638_thumbprint_of_the_public_key()
     {
         var current = CreateRsaSourceKey("current");
-        var keys = SourceKeySet.FromSlots(previous: null, current, next: null);
+        var keys = SourceKeySet.Create(previous: null, current, next: null);
 
         var set = SigningKeySetBuilder.Build(keys);
 
@@ -66,7 +66,7 @@ public sealed class SigningKeySetBuilderTests
         var previous = CreateEcSourceKey("previous", ECCurve.NamedCurves.nistP521, SigningAlgorithm.ES512);
         var current = CreateRsaSourceKey("current", algorithm: SigningAlgorithm.RS256);
         var next = CreateEcSourceKey("next", ECCurve.NamedCurves.nistP256, SigningAlgorithm.ES256);
-        var keys = SourceKeySet.FromSlots(previous, current, next);
+        var keys = SourceKeySet.Create(previous, current, next);
 
         var set = SigningKeySetBuilder.Build(keys);
 
@@ -78,7 +78,7 @@ public sealed class SigningKeySetBuilderTests
     {
         var previous = CreateRsaSourceKey("previous", algorithm: SigningAlgorithm.RS256);
         var current = CreateRsaSourceKey("current", algorithm: SigningAlgorithm.RS256);
-        var keys = SourceKeySet.FromSlots(previous, current, next: null);
+        var keys = SourceKeySet.Create(previous, current, next: null);
 
         var set = SigningKeySetBuilder.Build(keys);
 
@@ -101,7 +101,7 @@ public sealed class SigningKeySetBuilderTests
     public void Build_throws_when_a_source_id_is_empty_or_whitespace(string emptyId)
     {
         var current = CreateRsaSourceKey(emptyId);
-        var keys = SourceKeySet.FromSlots(previous: null, current, next: null);
+        var keys = SourceKeySet.Create(previous: null, current, next: null);
 
         var act = () => SigningKeySetBuilder.Build(keys);
 
@@ -130,9 +130,9 @@ public sealed class SigningKeySetBuilderTests
         using var rsa = RSA.Create(2048);
         var publicKey = PublicKeyParameters.FromRsa(rsa.ExportParameters(false));
 
-        var previous = new SourceKey(new KeyId("previous"), SigningAlgorithm.RS256, publicKey, ExpiresAt: null);
-        var current = new SourceKey(new KeyId("current"), SigningAlgorithm.RS256, publicKey, ExpiresAt: null);
-        var keys = SourceKeySet.FromSlots(previous, current, next: null);
+        var previous = new SourceKey(new SourceKeyId("previous"), SigningAlgorithm.RS256, publicKey, ExpiresAt: null);
+        var current = new SourceKey(new SourceKeyId("current"), SigningAlgorithm.RS256, publicKey, ExpiresAt: null);
+        var keys = SourceKeySet.Create(previous, current, next: null);
 
         var act = () => SigningKeySetBuilder.Build(keys);
 
@@ -147,8 +147,8 @@ public sealed class SigningKeySetBuilderTests
     {
         using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var publicKey = PublicKeyParameters.FromEc(ec.ExportParameters(false));
-        var current = new SourceKey(new KeyId("current"), SigningAlgorithm.RS256, publicKey, ExpiresAt: null);
-        var keys = SourceKeySet.FromSlots(previous: null, current, next: null);
+        var current = new SourceKey(new SourceKeyId("current"), SigningAlgorithm.RS256, publicKey, ExpiresAt: null);
+        var keys = SourceKeySet.Create(previous: null, current, next: null);
 
         var act = () => SigningKeySetBuilder.Build(keys);
 
@@ -163,8 +163,8 @@ public sealed class SigningKeySetBuilderTests
         // validation message must be keyed on the id they actually configured.
         using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var publicKey = PublicKeyParameters.FromEc(ec.ExportParameters(false));
-        var current = new SourceKey(new KeyId("current"), SigningAlgorithm.RS256, publicKey, ExpiresAt: null);
-        var keys = SourceKeySet.FromSlots(previous: null, current, next: null);
+        var current = new SourceKey(new SourceKeyId("current"), SigningAlgorithm.RS256, publicKey, ExpiresAt: null);
+        var keys = SourceKeySet.Create(previous: null, current, next: null);
 
         var act = () => SigningKeySetBuilder.Build(keys);
 
@@ -177,8 +177,8 @@ public sealed class SigningKeySetBuilderTests
     {
         using var rsa = RSA.Create(2048);
         var publicKey = PublicKeyParameters.FromRsa(rsa.ExportParameters(false));
-        var current = new SourceKey(new KeyId("current"), SigningAlgorithm.ES256, publicKey, ExpiresAt: null);
-        var keys = SourceKeySet.FromSlots(previous: null, current, next: null);
+        var current = new SourceKey(new SourceKeyId("current"), SigningAlgorithm.ES256, publicKey, ExpiresAt: null);
+        var keys = SourceKeySet.Create(previous: null, current, next: null);
 
         var act = () => SigningKeySetBuilder.Build(keys);
 
@@ -191,7 +191,7 @@ public sealed class SigningKeySetBuilderTests
     {
         // ES256 requires P-256; the key is P-384.
         var current = CreateEcSourceKey("current", ECCurve.NamedCurves.nistP384, SigningAlgorithm.ES256);
-        var keys = SourceKeySet.FromSlots(previous: null, current, next: null);
+        var keys = SourceKeySet.Create(previous: null, current, next: null);
 
         var act = () => SigningKeySetBuilder.Build(keys);
 
@@ -205,7 +205,7 @@ public sealed class SigningKeySetBuilderTests
     public void Build_result_is_immune_to_mutating_every_reachable_RSA_public_key_accessor()
     {
         var current = CreateRsaSourceKey("current");
-        var keys = SourceKeySet.FromSlots(previous: null, current, next: null);
+        var keys = SourceKeySet.Create(previous: null, current, next: null);
         var set = SigningKeySetBuilder.Build(keys);
         var originalKid = set.SigningKey.Kid;
 
@@ -223,7 +223,7 @@ public sealed class SigningKeySetBuilderTests
     public void Build_result_is_immune_to_mutating_every_reachable_EC_public_key_accessor()
     {
         var current = CreateEcSourceKey("current", ECCurve.NamedCurves.nistP256, SigningAlgorithm.ES256);
-        var keys = SourceKeySet.FromSlots(previous: null, current, next: null);
+        var keys = SourceKeySet.Create(previous: null, current, next: null);
         var set = SigningKeySetBuilder.Build(keys);
         var originalKid = set.SigningKey.Kid;
 
@@ -239,7 +239,7 @@ public sealed class SigningKeySetBuilderTests
     public void Build_does_not_share_the_source_s_PublicKeyParameters_instance_with_the_built_SigningKey()
     {
         var current = CreateRsaSourceKey("current");
-        var keys = SourceKeySet.FromSlots(previous: null, current, next: null);
+        var keys = SourceKeySet.Create(previous: null, current, next: null);
 
         var set = SigningKeySetBuilder.Build(keys);
 
@@ -252,7 +252,7 @@ public sealed class SigningKeySetBuilderTests
     public void Build_throws_when_the_declared_algorithm_is_not_a_defined_SigningAlgorithm_member()
     {
         var current = CreateRsaSourceKey("current", algorithm: (SigningAlgorithm)999);
-        var keys = SourceKeySet.FromSlots(previous: null, current, next: null);
+        var keys = SourceKeySet.Create(previous: null, current, next: null);
 
         var act = () => SigningKeySetBuilder.Build(keys);
 
@@ -278,8 +278,8 @@ public sealed class SigningKeySetBuilderTests
         };
         offCurveParams.Q.Y![^1] ^= 0x01; // perturb Y so (X, Y) is very unlikely to remain on the curve
         var publicKey = PublicKeyParameters.FromEc(offCurveParams);
-        var current = new SourceKey(new KeyId("current"), SigningAlgorithm.ES256, publicKey, ExpiresAt: null);
-        var keys = SourceKeySet.FromSlots(previous: null, current, next: null);
+        var current = new SourceKey(new SourceKeyId("current"), SigningAlgorithm.ES256, publicKey, ExpiresAt: null);
+        var keys = SourceKeySet.Create(previous: null, current, next: null);
 
         var act = () => SigningKeySetBuilder.Build(keys);
 
@@ -295,8 +295,8 @@ public sealed class SigningKeySetBuilderTests
             Modulus = new byte[256], // all-zero, 2048 bits by length, structurally not a public key
             Exponent = [0x01, 0x00, 0x01],
         });
-        var current = new SourceKey(new KeyId("current"), SigningAlgorithm.RS256, publicKey, ExpiresAt: null);
-        var keys = SourceKeySet.FromSlots(previous: null, current, next: null);
+        var current = new SourceKey(new SourceKeyId("current"), SigningAlgorithm.RS256, publicKey, ExpiresAt: null);
+        var keys = SourceKeySet.Create(previous: null, current, next: null);
 
         var act = () => SigningKeySetBuilder.Build(keys);
 
@@ -312,8 +312,8 @@ public sealed class SigningKeySetBuilderTests
     {
         using var rsa = RSA.Create(1024);
         var publicKey = PublicKeyParameters.FromRsa(rsa.ExportParameters(false));
-        var current = new SourceKey(new KeyId("current"), SigningAlgorithm.RS256, publicKey, ExpiresAt: null);
-        var keys = SourceKeySet.FromSlots(previous: null, current, next: null);
+        var current = new SourceKey(new SourceKeyId("current"), SigningAlgorithm.RS256, publicKey, ExpiresAt: null);
+        var keys = SourceKeySet.Create(previous: null, current, next: null);
 
         var act = () => SigningKeySetBuilder.Build(keys);
 
@@ -331,8 +331,8 @@ public sealed class SigningKeySetBuilderTests
         var paddedModulus = new byte[256];
         smallModulus.CopyTo(paddedModulus, 256 - smallModulus.Length);
         var publicKey = PublicKeyParameters.FromRsa(new RSAParameters { Modulus = paddedModulus, Exponent = [0x01, 0x00, 0x01] });
-        var current = new SourceKey(new KeyId("current"), SigningAlgorithm.RS256, publicKey, ExpiresAt: null);
-        var keys = SourceKeySet.FromSlots(previous: null, current, next: null);
+        var current = new SourceKey(new SourceKeyId("current"), SigningAlgorithm.RS256, publicKey, ExpiresAt: null);
+        var keys = SourceKeySet.Create(previous: null, current, next: null);
 
         var act = () => SigningKeySetBuilder.Build(keys);
 
@@ -352,8 +352,8 @@ public sealed class SigningKeySetBuilderTests
             Q = ec.ExportParameters(false).Q,
         };
         var publicKey = PublicKeyParameters.FromEc(unsupportedCurveParams);
-        var current = new SourceKey(new KeyId("current"), SigningAlgorithm.ES256, publicKey, ExpiresAt: null);
-        var keys = SourceKeySet.FromSlots(previous: null, current, next: null);
+        var current = new SourceKey(new SourceKeyId("current"), SigningAlgorithm.ES256, publicKey, ExpiresAt: null);
+        var keys = SourceKeySet.Create(previous: null, current, next: null);
 
         var act = () => SigningKeySetBuilder.Build(keys);
 
@@ -368,13 +368,13 @@ public sealed class SigningKeySetBuilderTests
     {
         using var rsa = RSA.Create(keySize);
         var publicKey = PublicKeyParameters.FromRsa(rsa.ExportParameters(false));
-        return new SourceKey(new KeyId(id), algorithm, publicKey, expiresAt ?? Now.AddDays(90));
+        return new SourceKey(new SourceKeyId(id), algorithm, publicKey, expiresAt ?? Now.AddDays(90));
     }
 
     private static SourceKey CreateEcSourceKey(string id, ECCurve curve, SigningAlgorithm algorithm, DateTimeOffset? expiresAt = null)
     {
         using var ec = ECDsa.Create(curve);
         var publicKey = PublicKeyParameters.FromEc(ec.ExportParameters(false));
-        return new SourceKey(new KeyId(id), algorithm, publicKey, expiresAt ?? Now.AddDays(90));
+        return new SourceKey(new SourceKeyId(id), algorithm, publicKey, expiresAt ?? Now.AddDays(90));
     }
 }

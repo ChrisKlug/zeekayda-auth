@@ -74,5 +74,5 @@ public sealed class SigningSelfTestTests
     }
 
     private static SigningKey BuildKey(RSA rsa) =>
-        new(new KeyId("current"), "kid", SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), null);
+        new(new SourceKeyId("current"), "kid", SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), null);
 }

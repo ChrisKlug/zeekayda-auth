@@ -191,7 +191,7 @@ public sealed class SigningKeyExpiryHealthCheckTests
     {
         using var rsa = RSA.Create(2048);
         var current = new SourceKey(
-            new KeyId("current"), SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), Now.AddDays(1));
+            new SourceKeyId("current"), SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), Now.AddDays(1));
         var privateKeyPem = rsa.ExportRSAPrivateKeyPem();
         var source = new CountingSigningKeySource(current, privateKeyPem);
         var timeProvider = new FakeTimeProvider(Now);
@@ -217,10 +217,10 @@ public sealed class SigningKeyExpiryHealthCheckTests
         public ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
         {
             ReadAsyncCallCount++;
-            return new ValueTask<SourceKeySet>(SourceKeySet.FromSlots(previous: null, current, next: null));
+            return new ValueTask<SourceKeySet>(SourceKeySet.Create(previous: null, current, next: null));
         }
 
-        public ValueTask<ISigner> CreateSignerAsync(KeyId id, CancellationToken cancellationToken = default)
+        public ValueTask<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
         {
             var signerRsa = RSA.Create();
             signerRsa.ImportFromPem(privateKeyPem);
@@ -242,7 +242,7 @@ public sealed class SigningKeyExpiryHealthCheckTests
     private static SigningKeySet BuildSet(DateTimeOffset? signingKeyExpiresAt)
     {
         var current = CreateRsaKey("current", signingKeyExpiresAt);
-        var keys = SourceKeySet.FromSlots(previous: null, current, next: null);
+        var keys = SourceKeySet.Create(previous: null, current, next: null);
         return SigningKeySetBuilder.Build(keys);
     }
 
@@ -250,9 +250,9 @@ public sealed class SigningKeyExpiryHealthCheckTests
     {
         using var rsa = RSA.Create(2048);
         var publicKey = PublicKeyParameters.FromRsa(rsa.ExportParameters(false));
-        return new SourceKey(new KeyId(id), SigningAlgorithm.RS256, publicKey, expiresAt);
+        return new SourceKey(new SourceKeyId(id), SigningAlgorithm.RS256, publicKey, expiresAt);
     }
 
     private static SigningKey BuildSigningKey(SourceKey sourceKey) =>
-        SigningKeySetBuilder.Build(SourceKeySet.FromSlots(previous: null, sourceKey, next: null)).SigningKey;
+        SigningKeySetBuilder.Build(SourceKeySet.Create(previous: null, sourceKey, next: null)).SigningKey;
 }

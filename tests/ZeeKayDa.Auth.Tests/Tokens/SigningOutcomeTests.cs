@@ -25,7 +25,7 @@ public sealed class SigningOutcomeTests
     {
         using var rsa = RSA.Create(2048);
         var key = new SigningKey(
-            new KeyId("current"), "kid", SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), null);
+            new SourceKeyId("current"), "kid", SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), null);
 
         var outcome = new SigningOutcome(ReadOnlyMemory<byte>.Empty, ReadOnlyMemory<byte>.Empty, key);
 

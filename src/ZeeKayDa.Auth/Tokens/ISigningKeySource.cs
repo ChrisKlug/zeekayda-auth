@@ -24,7 +24,7 @@ public interface ISigningKeySource
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>
     /// The keys currently configured, including which one signs. Build with
-    /// <see cref="SourceKeySet.FromSlots"/> from the three named slots, or the
+    /// <see cref="SourceKeySet.Create"/> from the three named slots, or the
     /// <see cref="SourceKeySet"/> constructor directly.
     /// </returns>
     ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default);
@@ -38,5 +38,5 @@ public interface ISigningKeySource
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A freshly created, exclusively owned signer for the key identified by
     /// <paramref name="id"/>.</returns>
-    ValueTask<ISigner> CreateSignerAsync(KeyId id, CancellationToken cancellationToken = default);
+    ValueTask<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default);
 }

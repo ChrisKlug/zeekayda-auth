@@ -23,7 +23,7 @@ express a `kid` that leaks a vault URI, certificate thumbprint, or file path int
 **A second, expand-only signing model sits beside `JwtSigningService<TOptions>` until the old model is
 deleted, in two tiers: `KeySetOptions` for a fixed set an operator edits directly, `KeySourceOptions`
 for a set a provider polls from an external store.** Keys are three named slots —
-`Previous`/`Current`/`Next`, `Current` required, the other two independently optional. `SourceKeySet.FromSlots`
+`Previous`/`Current`/`Next`, `Current` required, the other two independently optional. `SourceKeySet.Create`
 rejects a missing `Current`, so a provider cannot express "no signer." `SigningKeySetBuilder.Build` is
 the single pure choke point from `SourceKeySet` to `SigningKeySet`: no clock, no policy, no I/O,
 always derives `kid` via `JwkThumbprint`, and every rejection throws `ZeeKayDaConfigurationException`

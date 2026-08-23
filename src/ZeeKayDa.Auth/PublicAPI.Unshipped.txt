@@ -164,6 +164,8 @@ ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.TokenEndpoint.init -> void
 ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.TokenEndpointAuthMethodsSupported.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
 ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.TokenEndpointAuthMethodsSupported.init -> void
 ZeeKayDa.Auth.Extensions.ZeeKayDaAuthCoreServiceCollectionExtensions
+ZeeKayDa.Auth.Extensions.ZeeKayDaSigningKeyHealthChecksBuilderExtensions
+ZeeKayDa.Auth.Extensions.ZeeKayDaSigningKeyServiceCollectionExtensions
 ZeeKayDa.Auth.GrantType
 ZeeKayDa.Auth.GrantType.AuthorizationCode = 0 -> ZeeKayDa.Auth.GrantType
 ZeeKayDa.Auth.GrantType.ClientCredentials = 2 -> ZeeKayDa.Auth.GrantType
@@ -378,6 +380,12 @@ ZeeKayDa.Auth.Tokens.ISigningKeyProducibility
 ZeeKayDa.Auth.Tokens.ISigningKeyProducibility.GetProducibilityAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeeKayDa.Auth.Tokens.SigningKeyProducibilitySnapshot!>
 ZeeKayDa.Auth.Tokens.ISigningKeyRetirementWindowProvider
 ZeeKayDa.Auth.Tokens.ISigningKeyRetirementWindowProvider.GetRetirementWindow() -> System.TimeSpan
+ZeeKayDa.Auth.Tokens.ISigningKeyRing
+ZeeKayDa.Auth.Tokens.ISigningKeyRing.Current.get -> ZeeKayDa.Auth.Tokens.SigningKeySet!
+ZeeKayDa.Auth.Tokens.ISigningKeyRing.SignAsync<TState>(TState state, System.Func<ZeeKayDa.Auth.Tokens.SigningContext, TState, System.ReadOnlyMemory<byte>>! buildSigningInput, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeeKayDa.Auth.Tokens.SigningOutcome>
+ZeeKayDa.Auth.Tokens.ISigningKeySource
+ZeeKayDa.Auth.Tokens.ISigningKeySource.CreateSignerAsync(ZeeKayDa.Auth.Tokens.SourceKeyId id, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeeKayDa.Auth.Tokens.ISigner!>
+ZeeKayDa.Auth.Tokens.ISigningKeySource.ReadAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeeKayDa.Auth.Tokens.SourceKeySet!>
 ZeeKayDa.Auth.Tokens.ISigningStartupSelfTest
 ZeeKayDa.Auth.Tokens.ISigningStartupSelfTest.VerifyActiveSignerAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
 ZeeKayDa.Auth.Tokens.IdTokenOptions
@@ -471,6 +479,15 @@ ZeeKayDa.Auth.Tokens.SigningAlgorithm.PS512 = 8 -> ZeeKayDa.Auth.Tokens.SigningA
 ZeeKayDa.Auth.Tokens.SigningAlgorithm.RS256 = 0 -> ZeeKayDa.Auth.Tokens.SigningAlgorithm
 ZeeKayDa.Auth.Tokens.SigningAlgorithm.RS384 = 1 -> ZeeKayDa.Auth.Tokens.SigningAlgorithm
 ZeeKayDa.Auth.Tokens.SigningAlgorithm.RS512 = 2 -> ZeeKayDa.Auth.Tokens.SigningAlgorithm
+ZeeKayDa.Auth.Tokens.SigningContext
+ZeeKayDa.Auth.Tokens.SigningContext.Key.get -> ZeeKayDa.Auth.Tokens.SigningKey!
+ZeeKayDa.Auth.Tokens.SigningContext.SigningContext() -> void
+ZeeKayDa.Auth.Tokens.SigningKey
+ZeeKayDa.Auth.Tokens.SigningKey.Algorithm.get -> ZeeKayDa.Auth.Tokens.SigningAlgorithm
+ZeeKayDa.Auth.Tokens.SigningKey.ExpiresAt.get -> System.DateTimeOffset?
+ZeeKayDa.Auth.Tokens.SigningKey.Kid.get -> string!
+ZeeKayDa.Auth.Tokens.SigningKey.PublicKey.get -> ZeeKayDa.Auth.Tokens.PublicKeyParameters!
+ZeeKayDa.Auth.Tokens.SigningKey.SourceId.get -> ZeeKayDa.Auth.Tokens.SourceKeyId
 ZeeKayDa.Auth.Tokens.SigningKeyDescriptor
 ZeeKayDa.Auth.Tokens.SigningKeyDescriptor.Algorithm.get -> ZeeKayDa.Auth.Tokens.SigningAlgorithm
 ZeeKayDa.Auth.Tokens.SigningKeyDescriptor.EcPublicParameters.get -> System.Security.Cryptography.ECParameters?
@@ -480,15 +497,51 @@ ZeeKayDa.Auth.Tokens.SigningKeyDescriptor.RsaPublicParameters.get -> System.Secu
 ZeeKayDa.Auth.Tokens.SigningKeyDescriptor.SigningKeyDescriptor(string! kid, ZeeKayDa.Auth.Tokens.SigningAlgorithm algorithm, System.Security.Cryptography.ECParameters ecPublicParameters) -> void
 ZeeKayDa.Auth.Tokens.SigningKeyDescriptor.SigningKeyDescriptor(string! kid, ZeeKayDa.Auth.Tokens.SigningAlgorithm algorithm, System.Security.Cryptography.RSAParameters rsaPublicParameters) -> void
 ZeeKayDa.Auth.Tokens.SigningKeyDescriptorFactory
+ZeeKayDa.Auth.Tokens.SigningKeyExpiryHealthCheck
+ZeeKayDa.Auth.Tokens.SigningKeyExpiryHealthCheck.CheckHealthAsync(Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckContext! context, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult>!
+ZeeKayDa.Auth.Tokens.SigningKeyExpiryHealthCheck.SigningKeyExpiryHealthCheck(ZeeKayDa.Auth.Tokens.ISigningKeyRing? ring, System.TimeProvider! timeProvider, Microsoft.Extensions.Options.IOptions<ZeeKayDa.Auth.Tokens.SigningKeyExpiryHealthCheckOptions!>! options) -> void
+ZeeKayDa.Auth.Tokens.SigningKeyExpiryHealthCheckOptions
+ZeeKayDa.Auth.Tokens.SigningKeyExpiryHealthCheckOptions.DegradedThreshold.get -> System.TimeSpan
+ZeeKayDa.Auth.Tokens.SigningKeyExpiryHealthCheckOptions.DegradedThreshold.set -> void
+ZeeKayDa.Auth.Tokens.SigningKeyExpiryHealthCheckOptions.SigningKeyExpiryHealthCheckOptions() -> void
+ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus
+ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus.<Clone>$() -> ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus!
+ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus.Deconstruct(out string! Kid, out bool IsSigningKey, out System.DateTimeOffset? ExpiresAt, out System.TimeSpan? RemainingLifetime) -> void
+ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus.Equals(ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus? other) -> bool
+ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus.ExpiresAt.get -> System.DateTimeOffset?
+ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus.ExpiresAt.init -> void
+ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus.IsSigningKey.get -> bool
+ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus.IsSigningKey.init -> void
+ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus.Kid.get -> string!
+ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus.Kid.init -> void
+ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus.RemainingLifetime.get -> System.TimeSpan?
+ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus.RemainingLifetime.init -> void
+ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus.SigningKeyExpiryStatus(string! Kid, bool IsSigningKey, System.DateTimeOffset? ExpiresAt, System.TimeSpan? RemainingLifetime) -> void
 ZeeKayDa.Auth.Tokens.SigningKeyProducibilitySnapshot
 ZeeKayDa.Auth.Tokens.SigningKeyProducibilitySnapshot.ActiveAlgorithm.get -> ZeeKayDa.Auth.Tokens.SigningAlgorithm
 ZeeKayDa.Auth.Tokens.SigningKeyProducibilitySnapshot.CanProduce(ZeeKayDa.Auth.Tokens.SigningAlgorithm algorithm) -> bool
 ZeeKayDa.Auth.Tokens.SigningKeyProducibilitySnapshot.SigningKeyProducibilitySnapshot(ZeeKayDa.Auth.Tokens.SigningAlgorithm activeAlgorithm, System.Collections.Generic.IReadOnlySet<ZeeKayDa.Auth.Tokens.SigningAlgorithm>! stagedAlgorithms) -> void
 ZeeKayDa.Auth.Tokens.SigningKeyProducibilitySnapshot.StagedAlgorithms.get -> System.Collections.Generic.IReadOnlySet<ZeeKayDa.Auth.Tokens.SigningAlgorithm>!
 ZeeKayDa.Auth.Tokens.SigningKeyRotation
+ZeeKayDa.Auth.Tokens.SigningKeySet
+ZeeKayDa.Auth.Tokens.SigningKeySet.AdvertisedAlgorithms.get -> System.Collections.Generic.IReadOnlyList<ZeeKayDa.Auth.Tokens.SigningAlgorithm>!
+ZeeKayDa.Auth.Tokens.SigningKeySet.Published.get -> System.Collections.Generic.IReadOnlyList<ZeeKayDa.Auth.Tokens.SigningKey!>!
+ZeeKayDa.Auth.Tokens.SigningKeySet.SigningKey.get -> ZeeKayDa.Auth.Tokens.SigningKey!
+ZeeKayDa.Auth.Tokens.SigningKeySetBuilder
 ZeeKayDa.Auth.Tokens.SigningKeyType
 ZeeKayDa.Auth.Tokens.SigningKeyType.Ec = 1 -> ZeeKayDa.Auth.Tokens.SigningKeyType
 ZeeKayDa.Auth.Tokens.SigningKeyType.Rsa = 0 -> ZeeKayDa.Auth.Tokens.SigningKeyType
+ZeeKayDa.Auth.Tokens.SigningOutcome
+ZeeKayDa.Auth.Tokens.SigningOutcome.Deconstruct(out System.ReadOnlyMemory<byte> SigningInput, out System.ReadOnlyMemory<byte> Signature, out ZeeKayDa.Auth.Tokens.SigningKey! Key) -> void
+ZeeKayDa.Auth.Tokens.SigningOutcome.Equals(ZeeKayDa.Auth.Tokens.SigningOutcome other) -> bool
+ZeeKayDa.Auth.Tokens.SigningOutcome.Key.get -> ZeeKayDa.Auth.Tokens.SigningKey!
+ZeeKayDa.Auth.Tokens.SigningOutcome.Key.init -> void
+ZeeKayDa.Auth.Tokens.SigningOutcome.Signature.get -> System.ReadOnlyMemory<byte>
+ZeeKayDa.Auth.Tokens.SigningOutcome.Signature.init -> void
+ZeeKayDa.Auth.Tokens.SigningOutcome.SigningInput.get -> System.ReadOnlyMemory<byte>
+ZeeKayDa.Auth.Tokens.SigningOutcome.SigningInput.init -> void
+ZeeKayDa.Auth.Tokens.SigningOutcome.SigningOutcome() -> void
+ZeeKayDa.Auth.Tokens.SigningOutcome.SigningOutcome(System.ReadOnlyMemory<byte> SigningInput, System.ReadOnlyMemory<byte> Signature, ZeeKayDa.Auth.Tokens.SigningKey! Key) -> void
 ZeeKayDa.Auth.Tokens.SigningResult
 ZeeKayDa.Auth.Tokens.SigningResult.<Clone>$() -> ZeeKayDa.Auth.Tokens.SigningResult!
 ZeeKayDa.Auth.Tokens.SigningResult.Algorithm.get -> ZeeKayDa.Auth.Tokens.SigningAlgorithm
@@ -502,6 +555,34 @@ ZeeKayDa.Auth.Tokens.SigningResult.Kid.init -> void
 ZeeKayDa.Auth.Tokens.SigningResult.SignatureSegment.get -> System.ReadOnlyMemory<byte>
 ZeeKayDa.Auth.Tokens.SigningResult.SignatureSegment.init -> void
 ZeeKayDa.Auth.Tokens.SigningResult.SigningResult(System.ReadOnlyMemory<byte> HeaderSegment, System.ReadOnlyMemory<byte> SignatureSegment, string! Kid, ZeeKayDa.Auth.Tokens.SigningAlgorithm Algorithm) -> void
+ZeeKayDa.Auth.Tokens.SourceKey
+ZeeKayDa.Auth.Tokens.SourceKey.<Clone>$() -> ZeeKayDa.Auth.Tokens.SourceKey!
+ZeeKayDa.Auth.Tokens.SourceKey.Algorithm.get -> ZeeKayDa.Auth.Tokens.SigningAlgorithm
+ZeeKayDa.Auth.Tokens.SourceKey.Algorithm.init -> void
+ZeeKayDa.Auth.Tokens.SourceKey.Deconstruct(out ZeeKayDa.Auth.Tokens.SourceKeyId Id, out ZeeKayDa.Auth.Tokens.SigningAlgorithm Algorithm, out ZeeKayDa.Auth.Tokens.PublicKeyParameters! PublicKey, out System.DateTimeOffset? ExpiresAt) -> void
+ZeeKayDa.Auth.Tokens.SourceKey.Equals(ZeeKayDa.Auth.Tokens.SourceKey? other) -> bool
+ZeeKayDa.Auth.Tokens.SourceKey.ExpiresAt.get -> System.DateTimeOffset?
+ZeeKayDa.Auth.Tokens.SourceKey.ExpiresAt.init -> void
+ZeeKayDa.Auth.Tokens.SourceKey.Id.get -> ZeeKayDa.Auth.Tokens.SourceKeyId
+ZeeKayDa.Auth.Tokens.SourceKey.Id.init -> void
+ZeeKayDa.Auth.Tokens.SourceKey.PublicKey.get -> ZeeKayDa.Auth.Tokens.PublicKeyParameters!
+ZeeKayDa.Auth.Tokens.SourceKey.PublicKey.init -> void
+ZeeKayDa.Auth.Tokens.SourceKey.SourceKey(ZeeKayDa.Auth.Tokens.SourceKeyId Id, ZeeKayDa.Auth.Tokens.SigningAlgorithm Algorithm, ZeeKayDa.Auth.Tokens.PublicKeyParameters! PublicKey, System.DateTimeOffset? ExpiresAt) -> void
+ZeeKayDa.Auth.Tokens.SourceKeyId
+ZeeKayDa.Auth.Tokens.SourceKeyId.Deconstruct(out string! Value) -> void
+ZeeKayDa.Auth.Tokens.SourceKeyId.Equals(ZeeKayDa.Auth.Tokens.SourceKeyId other) -> bool
+ZeeKayDa.Auth.Tokens.SourceKeyId.SourceKeyId() -> void
+ZeeKayDa.Auth.Tokens.SourceKeyId.SourceKeyId(string! Value) -> void
+ZeeKayDa.Auth.Tokens.SourceKeyId.Value.get -> string!
+ZeeKayDa.Auth.Tokens.SourceKeyId.Value.init -> void
+ZeeKayDa.Auth.Tokens.SourceKeySet
+ZeeKayDa.Auth.Tokens.SourceKeySet.Keys.get -> System.Collections.Generic.IReadOnlyList<ZeeKayDa.Auth.Tokens.SourceKey!>!
+ZeeKayDa.Auth.Tokens.SourceKeySet.SigningKey.get -> ZeeKayDa.Auth.Tokens.SourceKey!
+ZeeKayDa.Auth.Tokens.SourceKeySet.SourceKeySet(ZeeKayDa.Auth.Tokens.SourceKey! signingKey, params ZeeKayDa.Auth.Tokens.SourceKey![]! alsoPublished) -> void
+ZeeKayDa.Auth.Tokens.StaticSigningKeyRing
+ZeeKayDa.Auth.Tokens.StaticSigningKeyRing.Current.get -> ZeeKayDa.Auth.Tokens.SigningKeySet!
+ZeeKayDa.Auth.Tokens.StaticSigningKeyRing.SignAsync<TState>(TState state, System.Func<ZeeKayDa.Auth.Tokens.SigningContext, TState, System.ReadOnlyMemory<byte>>! buildSigningInput, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeeKayDa.Auth.Tokens.SigningOutcome>
+ZeeKayDa.Auth.Tokens.StaticSigningKeyRing.StaticSigningKeyRing(ZeeKayDa.Auth.Tokens.ISigningKeySource! source, System.TimeProvider! timeProvider) -> void
 ZeeKayDa.Auth.Tokens.TokenEndpointAuthMethods
 ZeeKayDa.Auth.Tokens.TokenEndpointOptions
 ZeeKayDa.Auth.Tokens.TokenEndpointOptions.AbsoluteFamilyLifetime.get -> System.TimeSpan
@@ -588,9 +669,17 @@ override ZeeKayDa.Auth.Tokens.PublicKeyParameters.GetHashCode() -> int
 override ZeeKayDa.Auth.Tokens.PublicKeyParameters.ToString() -> string!
 override ZeeKayDa.Auth.Tokens.RotationEntry.GetHashCode() -> int
 override ZeeKayDa.Auth.Tokens.RotationKey.GetHashCode() -> int
+override ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus.Equals(object? obj) -> bool
+override ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus.GetHashCode() -> int
+override ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus.ToString() -> string!
+override ZeeKayDa.Auth.Tokens.SigningOutcome.GetHashCode() -> int
 override ZeeKayDa.Auth.Tokens.SigningResult.Equals(object? obj) -> bool
 override ZeeKayDa.Auth.Tokens.SigningResult.GetHashCode() -> int
 override ZeeKayDa.Auth.Tokens.SigningResult.ToString() -> string!
+override ZeeKayDa.Auth.Tokens.SourceKey.Equals(object? obj) -> bool
+override ZeeKayDa.Auth.Tokens.SourceKey.GetHashCode() -> int
+override ZeeKayDa.Auth.Tokens.SourceKey.ToString() -> string!
+override ZeeKayDa.Auth.Tokens.SourceKeyId.GetHashCode() -> int
 override ZeeKayDa.Auth.ZeeKayDaConfigurationFailure.Equals(object? obj) -> bool
 override ZeeKayDa.Auth.ZeeKayDaConfigurationFailure.GetHashCode() -> int
 override ZeeKayDa.Auth.ZeeKayDaConfigurationFailure.ToString() -> string!
@@ -603,6 +692,8 @@ static ZeeKayDa.Auth.Clients.Pbkdf2ClientSecret.operator ==(ZeeKayDa.Auth.Client
 static ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.operator !=(ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument? left, ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument? right) -> bool
 static ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.operator ==(ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument? left, ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument? right) -> bool
 static ZeeKayDa.Auth.Extensions.ZeeKayDaAuthCoreServiceCollectionExtensions.AddZeeKayDaAuthCore(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static ZeeKayDa.Auth.Extensions.ZeeKayDaSigningKeyHealthChecksBuilderExtensions.AddZeeKayDaSigningKeys(this Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder! builder, System.Action<ZeeKayDa.Auth.Tokens.SigningKeyExpiryHealthCheckOptions!>? configure = null, string! name = "zeekayda-signing-keys", Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus? failureStatus = null, System.Collections.Generic.IEnumerable<string!>? tags = null) -> Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder!
+static ZeeKayDa.Auth.Extensions.ZeeKayDaSigningKeyServiceCollectionExtensions.AddZeeKayDaSigningKeySource<TSource>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
 static ZeeKayDa.Auth.Scopes.ScopeDefinition.operator !=(ZeeKayDa.Auth.Scopes.ScopeDefinition? left, ZeeKayDa.Auth.Scopes.ScopeDefinition? right) -> bool
 static ZeeKayDa.Auth.Scopes.ScopeDefinition.operator ==(ZeeKayDa.Auth.Scopes.ScopeDefinition? left, ZeeKayDa.Auth.Scopes.ScopeDefinition? right) -> bool
 static ZeeKayDa.Auth.Scopes.StandardScopes.Address.get -> ZeeKayDa.Auth.Scopes.ScopeDefinition!
@@ -623,6 +714,7 @@ static ZeeKayDa.Auth.Stores.StoreKey.operator !=(ZeeKayDa.Auth.Stores.StoreKey l
 static ZeeKayDa.Auth.Stores.StoreKey.operator ==(ZeeKayDa.Auth.Stores.StoreKey left, ZeeKayDa.Auth.Stores.StoreKey right) -> bool
 static ZeeKayDa.Auth.Tokens.JwkThumbprint.Compute(System.Security.Cryptography.ECParameters ecPublicParameters) -> string!
 static ZeeKayDa.Auth.Tokens.JwkThumbprint.Compute(System.Security.Cryptography.RSAParameters rsaPublicParameters) -> string!
+static ZeeKayDa.Auth.Tokens.JwkThumbprint.GetJwkCurveName(System.Security.Cryptography.ECCurve curve) -> string!
 static ZeeKayDa.Auth.Tokens.KeyId.operator !=(ZeeKayDa.Auth.Tokens.KeyId left, ZeeKayDa.Auth.Tokens.KeyId right) -> bool
 static ZeeKayDa.Auth.Tokens.KeyId.operator ==(ZeeKayDa.Auth.Tokens.KeyId left, ZeeKayDa.Auth.Tokens.KeyId right) -> bool
 static ZeeKayDa.Auth.Tokens.KeyListing.operator !=(ZeeKayDa.Auth.Tokens.KeyListing? left, ZeeKayDa.Auth.Tokens.KeyListing? right) -> bool
@@ -639,14 +731,24 @@ static ZeeKayDa.Auth.Tokens.RotationEntry.operator ==(ZeeKayDa.Auth.Tokens.Rotat
 static ZeeKayDa.Auth.Tokens.RotationKey.operator !=(ZeeKayDa.Auth.Tokens.RotationKey left, ZeeKayDa.Auth.Tokens.RotationKey right) -> bool
 static ZeeKayDa.Auth.Tokens.RotationKey.operator ==(ZeeKayDa.Auth.Tokens.RotationKey left, ZeeKayDa.Auth.Tokens.RotationKey right) -> bool
 static ZeeKayDa.Auth.Tokens.SigningKeyDescriptorFactory.BuildDescriptor(System.Security.Cryptography.AsymmetricAlgorithm! publicKey, ZeeKayDa.Auth.Tokens.SigningKeyType keyType, ZeeKayDa.Auth.Tokens.SigningAlgorithm algorithm, string! mismatchFailureCode, System.Func<ZeeKayDa.Auth.Tokens.SigningKeyType, string!>! mismatchMessage) -> ZeeKayDa.Auth.Tokens.SigningKeyDescriptor!
+static ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus.operator !=(ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus? left, ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus? right) -> bool
+static ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus.operator ==(ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus? left, ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus? right) -> bool
 static ZeeKayDa.Auth.Tokens.SigningKeyRotation.BuildActivationTimeline(System.Collections.Generic.IReadOnlyList<ZeeKayDa.Auth.Tokens.RotationKey>! keys) -> System.Collections.Generic.IReadOnlyList<ZeeKayDa.Auth.Tokens.RotationEntry>!
 static ZeeKayDa.Auth.Tokens.SigningKeyRotation.HasTooSoonPendingActivation(System.Collections.Generic.IReadOnlyList<ZeeKayDa.Auth.Tokens.RotationEntry>! timeline, ZeeKayDa.Auth.Tokens.RotationEntry active, System.DateTimeOffset now, System.TimeSpan assumedJwksPropagationDelay, out ZeeKayDa.Auth.Tokens.RotationEntry? soonestPending) -> bool
 static ZeeKayDa.Auth.Tokens.SigningKeyRotation.SelectActiveKey(System.Collections.Generic.IReadOnlyList<ZeeKayDa.Auth.Tokens.RotationEntry>! timeline, System.DateTimeOffset now) -> ZeeKayDa.Auth.Tokens.RotationEntry?
 static ZeeKayDa.Auth.Tokens.SigningKeyRotation.SelectActiveKeyForFixedKeySet(System.Collections.Generic.IReadOnlyList<ZeeKayDa.Auth.Tokens.RotationEntry>! timeline, System.DateTimeOffset now) -> ZeeKayDa.Auth.Tokens.RotationEntry?
 static ZeeKayDa.Auth.Tokens.SigningKeyRotation.SelectFutureSigners(System.Collections.Generic.IReadOnlyList<ZeeKayDa.Auth.Tokens.RotationEntry>! timeline, ZeeKayDa.Auth.Tokens.RotationEntry active, System.DateTimeOffset now) -> System.Collections.Generic.IReadOnlyList<ZeeKayDa.Auth.Tokens.RotationEntry>!
 static ZeeKayDa.Auth.Tokens.SigningKeyRotation.SelectIncludedKeys(System.Collections.Generic.IReadOnlyList<ZeeKayDa.Auth.Tokens.RotationEntry>! timeline, ZeeKayDa.Auth.Tokens.RotationEntry active, System.DateTimeOffset now, System.TimeSpan retirementWindow) -> System.Collections.Generic.IReadOnlyList<ZeeKayDa.Auth.Tokens.RotationEntry>!
+static ZeeKayDa.Auth.Tokens.SigningKeySetBuilder.Build(ZeeKayDa.Auth.Tokens.SourceKeySet! keys) -> ZeeKayDa.Auth.Tokens.SigningKeySet!
+static ZeeKayDa.Auth.Tokens.SigningOutcome.operator !=(ZeeKayDa.Auth.Tokens.SigningOutcome left, ZeeKayDa.Auth.Tokens.SigningOutcome right) -> bool
+static ZeeKayDa.Auth.Tokens.SigningOutcome.operator ==(ZeeKayDa.Auth.Tokens.SigningOutcome left, ZeeKayDa.Auth.Tokens.SigningOutcome right) -> bool
 static ZeeKayDa.Auth.Tokens.SigningResult.operator !=(ZeeKayDa.Auth.Tokens.SigningResult? left, ZeeKayDa.Auth.Tokens.SigningResult? right) -> bool
 static ZeeKayDa.Auth.Tokens.SigningResult.operator ==(ZeeKayDa.Auth.Tokens.SigningResult? left, ZeeKayDa.Auth.Tokens.SigningResult? right) -> bool
+static ZeeKayDa.Auth.Tokens.SourceKey.operator !=(ZeeKayDa.Auth.Tokens.SourceKey? left, ZeeKayDa.Auth.Tokens.SourceKey? right) -> bool
+static ZeeKayDa.Auth.Tokens.SourceKey.operator ==(ZeeKayDa.Auth.Tokens.SourceKey? left, ZeeKayDa.Auth.Tokens.SourceKey? right) -> bool
+static ZeeKayDa.Auth.Tokens.SourceKeyId.operator !=(ZeeKayDa.Auth.Tokens.SourceKeyId left, ZeeKayDa.Auth.Tokens.SourceKeyId right) -> bool
+static ZeeKayDa.Auth.Tokens.SourceKeyId.operator ==(ZeeKayDa.Auth.Tokens.SourceKeyId left, ZeeKayDa.Auth.Tokens.SourceKeyId right) -> bool
+static ZeeKayDa.Auth.Tokens.SourceKeySet.Create(ZeeKayDa.Auth.Tokens.SourceKey? previous, ZeeKayDa.Auth.Tokens.SourceKey? current, ZeeKayDa.Auth.Tokens.SourceKey? next) -> ZeeKayDa.Auth.Tokens.SourceKeySet!
 static ZeeKayDa.Auth.ZeeKayDaConfigurationFailure.operator !=(ZeeKayDa.Auth.ZeeKayDaConfigurationFailure? left, ZeeKayDa.Auth.ZeeKayDaConfigurationFailure? right) -> bool
 static ZeeKayDa.Auth.ZeeKayDaConfigurationFailure.operator ==(ZeeKayDa.Auth.ZeeKayDaConfigurationFailure? left, ZeeKayDa.Auth.ZeeKayDaConfigurationFailure? right) -> bool
 virtual ZeeKayDa.Auth.Clients.ClientSecretHasher<TSecret>.CreateCore(System.ReadOnlySpan<char> plaintext) -> TSecret
@@ -658,97 +760,7 @@ virtual ZeeKayDa.Auth.Tokens.JwtSigningService<TOptions>.OnDisposeAsync() -> Sys
 ~override ZeeKayDa.Auth.Tokens.RotationEntry.ToString() -> string
 ~override ZeeKayDa.Auth.Tokens.RotationKey.Equals(object obj) -> bool
 ~override ZeeKayDa.Auth.Tokens.RotationKey.ToString() -> string
-ZeeKayDa.Auth.Extensions.ZeeKayDaSigningKeyHealthChecksBuilderExtensions
-ZeeKayDa.Auth.Extensions.ZeeKayDaSigningKeyServiceCollectionExtensions
-ZeeKayDa.Auth.Tokens.ISigningKeyRing
-ZeeKayDa.Auth.Tokens.ISigningKeyRing.Current.get -> ZeeKayDa.Auth.Tokens.SigningKeySet!
-ZeeKayDa.Auth.Tokens.ISigningKeyRing.SignAsync<TState>(TState state, System.Func<ZeeKayDa.Auth.Tokens.SigningContext, TState, System.ReadOnlyMemory<byte>>! buildSigningInput, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeeKayDa.Auth.Tokens.SigningOutcome>
-ZeeKayDa.Auth.Tokens.ISigningKeySource
-ZeeKayDa.Auth.Tokens.ISigningKeySource.CreateSignerAsync(ZeeKayDa.Auth.Tokens.KeyId id, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeeKayDa.Auth.Tokens.ISigner!>
-ZeeKayDa.Auth.Tokens.ISigningKeySource.ReadAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeeKayDa.Auth.Tokens.SourceKeySet!>
-ZeeKayDa.Auth.Tokens.SigningContext
-ZeeKayDa.Auth.Tokens.SigningContext.Key.get -> ZeeKayDa.Auth.Tokens.SigningKey!
-ZeeKayDa.Auth.Tokens.SigningContext.SigningContext() -> void
-ZeeKayDa.Auth.Tokens.SigningKey
-ZeeKayDa.Auth.Tokens.SigningKey.Algorithm.get -> ZeeKayDa.Auth.Tokens.SigningAlgorithm
-ZeeKayDa.Auth.Tokens.SigningKey.ExpiresAt.get -> System.DateTimeOffset?
-ZeeKayDa.Auth.Tokens.SigningKey.Kid.get -> string!
-ZeeKayDa.Auth.Tokens.SigningKey.PublicKey.get -> ZeeKayDa.Auth.Tokens.PublicKeyParameters!
-ZeeKayDa.Auth.Tokens.SigningKey.SourceId.get -> ZeeKayDa.Auth.Tokens.KeyId
-ZeeKayDa.Auth.Tokens.SigningKeyExpiryHealthCheck
-ZeeKayDa.Auth.Tokens.SigningKeyExpiryHealthCheck.CheckHealthAsync(Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckContext! context, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult>!
-ZeeKayDa.Auth.Tokens.SigningKeyExpiryHealthCheck.SigningKeyExpiryHealthCheck(ZeeKayDa.Auth.Tokens.ISigningKeyRing? ring, System.TimeProvider! timeProvider, Microsoft.Extensions.Options.IOptions<ZeeKayDa.Auth.Tokens.SigningKeyExpiryHealthCheckOptions!>! options) -> void
-ZeeKayDa.Auth.Tokens.SigningKeyExpiryHealthCheckOptions
-ZeeKayDa.Auth.Tokens.SigningKeyExpiryHealthCheckOptions.DegradedThreshold.get -> System.TimeSpan
-ZeeKayDa.Auth.Tokens.SigningKeyExpiryHealthCheckOptions.DegradedThreshold.set -> void
-ZeeKayDa.Auth.Tokens.SigningKeyExpiryHealthCheckOptions.SigningKeyExpiryHealthCheckOptions() -> void
-ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus
-ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus.<Clone>$() -> ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus!
-ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus.Deconstruct(out string! Kid, out bool IsSigningKey, out System.DateTimeOffset? ExpiresAt, out System.TimeSpan? RemainingLifetime) -> void
-ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus.Equals(ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus? other) -> bool
-ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus.ExpiresAt.get -> System.DateTimeOffset?
-ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus.ExpiresAt.init -> void
-ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus.IsSigningKey.get -> bool
-ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus.IsSigningKey.init -> void
-ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus.Kid.get -> string!
-ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus.Kid.init -> void
-ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus.RemainingLifetime.get -> System.TimeSpan?
-ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus.RemainingLifetime.init -> void
-ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus.SigningKeyExpiryStatus(string! Kid, bool IsSigningKey, System.DateTimeOffset? ExpiresAt, System.TimeSpan? RemainingLifetime) -> void
-ZeeKayDa.Auth.Tokens.SigningKeySet
-ZeeKayDa.Auth.Tokens.SigningKeySet.AdvertisedAlgorithms.get -> System.Collections.Generic.IReadOnlyList<ZeeKayDa.Auth.Tokens.SigningAlgorithm>!
-ZeeKayDa.Auth.Tokens.SigningKeySet.Published.get -> System.Collections.Generic.IReadOnlyList<ZeeKayDa.Auth.Tokens.SigningKey!>!
-ZeeKayDa.Auth.Tokens.SigningKeySet.SigningKey.get -> ZeeKayDa.Auth.Tokens.SigningKey!
-ZeeKayDa.Auth.Tokens.SigningKeySetBuilder
-ZeeKayDa.Auth.Tokens.SigningOutcome
-ZeeKayDa.Auth.Tokens.SigningOutcome.Deconstruct(out System.ReadOnlyMemory<byte> SigningInput, out System.ReadOnlyMemory<byte> Signature, out ZeeKayDa.Auth.Tokens.SigningKey! Key) -> void
-ZeeKayDa.Auth.Tokens.SigningOutcome.Equals(ZeeKayDa.Auth.Tokens.SigningOutcome other) -> bool
-ZeeKayDa.Auth.Tokens.SigningOutcome.Key.get -> ZeeKayDa.Auth.Tokens.SigningKey!
-ZeeKayDa.Auth.Tokens.SigningOutcome.Key.init -> void
-ZeeKayDa.Auth.Tokens.SigningOutcome.Signature.get -> System.ReadOnlyMemory<byte>
-ZeeKayDa.Auth.Tokens.SigningOutcome.Signature.init -> void
-ZeeKayDa.Auth.Tokens.SigningOutcome.SigningInput.get -> System.ReadOnlyMemory<byte>
-ZeeKayDa.Auth.Tokens.SigningOutcome.SigningInput.init -> void
-ZeeKayDa.Auth.Tokens.SigningOutcome.SigningOutcome() -> void
-ZeeKayDa.Auth.Tokens.SigningOutcome.SigningOutcome(System.ReadOnlyMemory<byte> SigningInput, System.ReadOnlyMemory<byte> Signature, ZeeKayDa.Auth.Tokens.SigningKey! Key) -> void
-ZeeKayDa.Auth.Tokens.SourceKey
-ZeeKayDa.Auth.Tokens.SourceKey.<Clone>$() -> ZeeKayDa.Auth.Tokens.SourceKey!
-ZeeKayDa.Auth.Tokens.SourceKey.Algorithm.get -> ZeeKayDa.Auth.Tokens.SigningAlgorithm
-ZeeKayDa.Auth.Tokens.SourceKey.Algorithm.init -> void
-ZeeKayDa.Auth.Tokens.SourceKey.Deconstruct(out ZeeKayDa.Auth.Tokens.KeyId Id, out ZeeKayDa.Auth.Tokens.SigningAlgorithm Algorithm, out ZeeKayDa.Auth.Tokens.PublicKeyParameters! PublicKey, out System.DateTimeOffset? ExpiresAt) -> void
-ZeeKayDa.Auth.Tokens.SourceKey.Equals(ZeeKayDa.Auth.Tokens.SourceKey? other) -> bool
-ZeeKayDa.Auth.Tokens.SourceKey.ExpiresAt.get -> System.DateTimeOffset?
-ZeeKayDa.Auth.Tokens.SourceKey.ExpiresAt.init -> void
-ZeeKayDa.Auth.Tokens.SourceKey.Id.get -> ZeeKayDa.Auth.Tokens.KeyId
-ZeeKayDa.Auth.Tokens.SourceKey.Id.init -> void
-ZeeKayDa.Auth.Tokens.SourceKey.PublicKey.get -> ZeeKayDa.Auth.Tokens.PublicKeyParameters!
-ZeeKayDa.Auth.Tokens.SourceKey.PublicKey.init -> void
-ZeeKayDa.Auth.Tokens.SourceKey.SourceKey(ZeeKayDa.Auth.Tokens.KeyId Id, ZeeKayDa.Auth.Tokens.SigningAlgorithm Algorithm, ZeeKayDa.Auth.Tokens.PublicKeyParameters! PublicKey, System.DateTimeOffset? ExpiresAt) -> void
-ZeeKayDa.Auth.Tokens.SourceKeySet
-ZeeKayDa.Auth.Tokens.SourceKeySet.Keys.get -> System.Collections.Generic.IReadOnlyList<ZeeKayDa.Auth.Tokens.SourceKey!>!
-ZeeKayDa.Auth.Tokens.SourceKeySet.SigningKey.get -> ZeeKayDa.Auth.Tokens.SourceKey!
-ZeeKayDa.Auth.Tokens.SourceKeySet.SourceKeySet(ZeeKayDa.Auth.Tokens.SourceKey! signingKey, params ZeeKayDa.Auth.Tokens.SourceKey![]! alsoPublished) -> void
-ZeeKayDa.Auth.Tokens.StaticSigningKeyRing
-ZeeKayDa.Auth.Tokens.StaticSigningKeyRing.Current.get -> ZeeKayDa.Auth.Tokens.SigningKeySet!
-ZeeKayDa.Auth.Tokens.StaticSigningKeyRing.SignAsync<TState>(TState state, System.Func<ZeeKayDa.Auth.Tokens.SigningContext, TState, System.ReadOnlyMemory<byte>>! buildSigningInput, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeeKayDa.Auth.Tokens.SigningOutcome>
-ZeeKayDa.Auth.Tokens.StaticSigningKeyRing.StaticSigningKeyRing(ZeeKayDa.Auth.Tokens.ISigningKeySource! source, System.TimeProvider! timeProvider) -> void
-override ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus.Equals(object? obj) -> bool
-override ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus.GetHashCode() -> int
-override ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus.ToString() -> string!
-override ZeeKayDa.Auth.Tokens.SigningOutcome.GetHashCode() -> int
-override ZeeKayDa.Auth.Tokens.SourceKey.Equals(object? obj) -> bool
-override ZeeKayDa.Auth.Tokens.SourceKey.GetHashCode() -> int
-override ZeeKayDa.Auth.Tokens.SourceKey.ToString() -> string!
-static ZeeKayDa.Auth.Extensions.ZeeKayDaSigningKeyHealthChecksBuilderExtensions.AddZeeKayDaSigningKeys(this Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder! builder, System.Action<ZeeKayDa.Auth.Tokens.SigningKeyExpiryHealthCheckOptions!>? configure = null, string! name = "zeekayda-signing-keys", Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus? failureStatus = null, System.Collections.Generic.IEnumerable<string!>? tags = null) -> Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder!
-static ZeeKayDa.Auth.Extensions.ZeeKayDaSigningKeyServiceCollectionExtensions.AddZeeKayDaSigningKeySource<TSource>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
-static ZeeKayDa.Auth.Tokens.JwkThumbprint.GetJwkCurveName(System.Security.Cryptography.ECCurve curve) -> string!
-static ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus.operator !=(ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus? left, ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus? right) -> bool
-static ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus.operator ==(ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus? left, ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus? right) -> bool
-static ZeeKayDa.Auth.Tokens.SigningKeySetBuilder.Build(ZeeKayDa.Auth.Tokens.SourceKeySet! keys) -> ZeeKayDa.Auth.Tokens.SigningKeySet!
-static ZeeKayDa.Auth.Tokens.SigningOutcome.operator !=(ZeeKayDa.Auth.Tokens.SigningOutcome left, ZeeKayDa.Auth.Tokens.SigningOutcome right) -> bool
-static ZeeKayDa.Auth.Tokens.SigningOutcome.operator ==(ZeeKayDa.Auth.Tokens.SigningOutcome left, ZeeKayDa.Auth.Tokens.SigningOutcome right) -> bool
-static ZeeKayDa.Auth.Tokens.SourceKey.operator !=(ZeeKayDa.Auth.Tokens.SourceKey? left, ZeeKayDa.Auth.Tokens.SourceKey? right) -> bool
-static ZeeKayDa.Auth.Tokens.SourceKey.operator ==(ZeeKayDa.Auth.Tokens.SourceKey? left, ZeeKayDa.Auth.Tokens.SourceKey? right) -> bool
-static ZeeKayDa.Auth.Tokens.SourceKeySet.FromSlots(ZeeKayDa.Auth.Tokens.SourceKey? previous, ZeeKayDa.Auth.Tokens.SourceKey? current, ZeeKayDa.Auth.Tokens.SourceKey? next) -> ZeeKayDa.Auth.Tokens.SourceKeySet!
 ~override ZeeKayDa.Auth.Tokens.SigningOutcome.Equals(object obj) -> bool
 ~override ZeeKayDa.Auth.Tokens.SigningOutcome.ToString() -> string
+~override ZeeKayDa.Auth.Tokens.SourceKeyId.Equals(object obj) -> bool
+~override ZeeKayDa.Auth.Tokens.SourceKeyId.ToString() -> string

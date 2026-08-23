@@ -18,7 +18,7 @@ public sealed class StaticSigningKeyRing : ISigningKeyRing, IDisposable
     // The signing key set and the signer opened for it are read and written together, exactly once,
     // via Interlocked.CompareExchange — never as two independently-updated fields — so a consumer
     // can never observe one without the other, and InitializeAsync can only ever commit once.
-    private RingState? _state;
+    private SignerBinding? _binding;
 
     // 0 = live, 1 = disposed. int so Interlocked.Exchange makes the transition atomic.
     private int _disposed;
@@ -46,7 +46,7 @@ public sealed class StaticSigningKeyRing : ISigningKeyRing, IDisposable
 
     /// <inheritdoc/>
     public SigningKeySet Current =>
-        _state?.Set ?? throw new InvalidOperationException(
+        _binding?.KeySet ?? throw new InvalidOperationException(
             $"{nameof(StaticSigningKeyRing)} has not completed startup initialization yet.");
 
     /// <inheritdoc/>
@@ -64,20 +64,20 @@ public sealed class StaticSigningKeyRing : ISigningKeyRing, IDisposable
         ArgumentNullException.ThrowIfNull(buildSigningInput);
         ObjectDisposedException.ThrowIf(_disposed != 0, this);
 
-        var ringState = _state ?? throw new InvalidOperationException(
+        var binding = _binding ?? throw new InvalidOperationException(
             $"{nameof(StaticSigningKeyRing)} has not completed startup initialization yet.");
 
-        var context = new SigningContext(ringState.Set.SigningKey);
+        var context = new SigningContext(binding.KeySet.SigningKey);
         var signingInput = buildSigningInput(context, state);
 
         // Copied before signing and after the signature comes back, so a pooled or reused buffer on
         // either side of ISigner.SignAsync can never disagree with the bytes SigningOutcome reports
         // as having been signed.
         var signingInputCopy = new ReadOnlyMemory<byte>(signingInput.ToArray());
-        var signature = await ringState.Signer.SignAsync(signingInputCopy, cancellationToken).ConfigureAwait(false);
+        var signature = await binding.Signer.SignAsync(signingInputCopy, cancellationToken).ConfigureAwait(false);
         var signatureCopy = new ReadOnlyMemory<byte>(signature.ToArray());
 
-        return new SigningOutcome(signingInputCopy, signatureCopy, ringState.Set.SigningKey);
+        return new SigningOutcome(signingInputCopy, signatureCopy, binding.KeySet.SigningKey);
     }
 
     /// <inheritdoc/>
@@ -86,7 +86,7 @@ public sealed class StaticSigningKeyRing : ISigningKeyRing, IDisposable
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
             return;
 
-        _state?.Signer.Dispose();
+        _binding?.Signer.Dispose();
         GC.SuppressFinalize(this);
     }
 
@@ -133,7 +133,7 @@ public sealed class StaticSigningKeyRing : ISigningKeyRing, IDisposable
             throw;
         }
 
-        if (Interlocked.CompareExchange(ref _state, new RingState(set, signer), null) is not null)
+        if (Interlocked.CompareExchange(ref _binding, new SignerBinding(signer, set), null) is not null)
         {
             // Lost the race: some other call already completed initialization first. Dispose the
             // signer this call opened rather than leaking it — it will never be reachable through
@@ -145,13 +145,13 @@ public sealed class StaticSigningKeyRing : ISigningKeyRing, IDisposable
         }
 
         // Dispose() may have run concurrently with the work above, between this instance being
-        // constructed and _state being committed. Re-check now rather than leaving a live signer
+        // constructed and _binding being committed. Re-check now rather than leaving a live signer
         // handle reachable behind a ring that has already reported itself disposed.
         if (Volatile.Read(ref _disposed) != 0)
             signer.Dispose();
     }
 
-    SigningKeySet? ISigningKeyRing.CurrentOrNull => _state?.Set;
+    SigningKeySet? ISigningKeyRing.CurrentOrNull => _binding?.KeySet;
 
     private async ValueTask<ISigner> OpenSignerAsync(SigningKey signingKey, CancellationToken cancellationToken)
     {
@@ -193,5 +193,5 @@ public sealed class StaticSigningKeyRing : ISigningKeyRing, IDisposable
         return signer;
     }
 
-    private sealed record RingState(SigningKeySet Set, ISigner Signer);
+    private sealed record SignerBinding(ISigner Signer, SigningKeySet KeySet);
 }
