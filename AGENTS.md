@@ -71,6 +71,11 @@ Some signing-provider packages only make sense on one OS (`ZeeKayDa.Auth.Windows
 ## Project Conventions
 
 - Every change starts with a GitHub issue; no direct commits to `main`
+- **Exception — agent configuration.** `.claude/**` and `AGENTS.md` go straight to `main`: commit and
+  push, no issue, no PR, no review. These files steer how agents work rather than shipping in any
+  package, and routing them through the full loop costs more than it protects. This bypasses the
+  branch-protection ruleset by design; the push output will say so. Everything else — `src/`,
+  `tests/`, `docs/`, `samples/`, build and CI files — follows the normal loop.
 - Semantic versioning (SemVer) strictly enforced
 - Security issues go through the private security advisory process — **never** a public issue
 
