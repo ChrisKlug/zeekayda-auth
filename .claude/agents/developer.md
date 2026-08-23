@@ -92,11 +92,43 @@ Before starting new implementation work (or creating a new branch): `git checkou
 
 If the coverage check fails after your primary changes, have a quick look for missing tests. If you can't fix it quickly, **stop and report the failure** — do not retry over and over. Looping on failures burns tokens, masks the real problem, and produces fragile fixes.
 
-## Before you hand back for review
+## API self-check — run before you hand back
+
+These are the defects reviewers find over and over on this codebase. They are cheap to check and
+expensive to find in review, so check them explicitly against every public or internal type you added
+or changed. Report what you checked, not just what you fixed.
+
+- **A collection you hand out is downcastable and mutable.** `IReadOnlyList<T>` backed by a live
+  `List<T>` or `T[]` lets any consumer cast and mutate it — and desynchronise it from anything you
+  derived at construction. Use `ImmutableArray<T>` or `.AsReadOnly()`.
+- **You hand an `IDisposable` to a caller who does not own it.** Someone will write
+  `using var x = await GetThing();` and destroy shared state for the process lifetime. Either
+  transfer ownership genuinely, or do not expose the instance at all.
+- **A dependency is resolved eagerly where it is legitimately optional.** A constructor parameter that
+  throws when a service is absent takes down more than itself — a health check that cannot resolve
+  destroys the whole health report. Use a nullable parameter with a default and report the condition.
+- **Validation is ordered after the thing it guards.** A check that runs after the value has already
+  been imported, parsed, or hashed is unreachable, and the failure surfaces as someone else's
+  exception type. Order the guard before the use, and make sure its failure code is reachable by a
+  test.
+- **An invariant is enforced only in prose.** A doc comment saying "must never be empty", "at most
+  three", or "must match an entry in" is not enforcement. Either guard it in code or stop claiming
+  it.
+- **A public contract has no public way to register an implementation.** If the interface is public
+  and the registration is internal, a third party can write it and not use it.
+- **Two values that must agree are read separately.** If a caller reads which key is active and then
+  asks to sign, those are two reads and something can change between them. Return the pair from one
+  call.
+- **A doc comment states an exception type the code cannot throw**, or omits one it can. `<exception>`
+  is a contract.
+
+Then:
 
 1. Run the `/check-formatting` skill to verify formatting
 2. Run the `/check-code-coverage` skill to check the coverage regression gate
 3. If the change touches tokens, cryptography, endpoints, or storage: run the `/security-checklist` skill as a self-check, and note in your result that a security review is required
+4. If your change made anything in `docs/decisions/` untrue, fix it in the same commit — the register
+   recording something the code no longer does is worse than it recording nothing
 
 These run before you return your result — not before a PR, because at this point there is no PR.
 

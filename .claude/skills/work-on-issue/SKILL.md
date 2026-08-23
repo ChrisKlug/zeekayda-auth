@@ -30,11 +30,51 @@ the wrong moment to first see how an API reads.
 ## Stage 1 — Agree the shape ⛔
 
 Read the issue (`gh issue view <n> --comments`) and enough surrounding code to know what already
-exists. Then spawn **`architect`** for a *proposal*, not a document. Required, in this order:
+exists.
+
+### 1a — Name the consumers first ⛔
+
+**Before any design work, list every call site this API will have.** Not "a consumer" in the
+abstract — the actual, named ones: each blocked issue by number, each provider that implements the
+contract, the DI registration, the health check, the test. Put them in a table and show it to the
+maintainer in chat before proposing a shape:
+
+| Consumer | What it needs to do |
+|---|---|
+| #514 JWKS endpoint | Serialise every published key to a JWK Set |
+| #521 token issuer | Build a JWS header naming the key, then sign header+payload with that same key |
+| third-party HSM source | Implement the source contract and register it from its own package |
+| … | … |
+
+The maintainer needs this table as much as you do: it is the shortest statement of what is being
+designed for, and it is where they will spot a consumer you have not thought of. Two minutes here is
+the cheapest correction in the whole loop.
+
+**Then write each call site as code that compiles against the proposed signatures.** Not illustrative
+snippets — the real call, in a scratch file, built. This is the step that catches design holes, and
+skipping it is why they surface in review instead:
+
+- A signature that reads fine in isolation but cannot express what the caller must do — a token
+  issuer that has to commit a `kid` into a header *before* it can ask for a signature, say — is
+  invisible until someone writes the caller's actual bytes.
+- An `IDisposable` handed to a caller who will idiomatically `using` it.
+- A public contract with no public way to register an implementation.
+- An optional dependency that is resolved eagerly and throws when absent.
+
+Every one of those compiles as a *description* and fails as *code*. Write the code.
+
+If a call site cannot be written because the shape does not cover it, that is the finding — surface
+it now, not in Stage 3.
+
+### 1b — Propose the shape
+
+Spawn **`architect`** for a *proposal*, not a document. Required, in this order:
 
 1. Two or three sentences on what the issue actually is.
-2. **Sample consumer code** — how a third-party developer calls this.
-3. **Sample extension code** — what a third party implements, if there is an extension point.
+2. **The call-site table**, and each call site written as compiling code.
+3. **Sample extension code** — what a third party implements. "There is no extension point" is a
+   claim to check against 1a, not a shortcut: if any consumer in the table is a third-party
+   implementation or a registration, there is one.
 4. The one main alternative, and one line on why not.
 
 Relay it to the maintainer in chat, code first, terse. Then iterate:
@@ -53,7 +93,9 @@ When the maintainer says "do it", post **one** comment on the issue:
 ```markdown
 ### Agreed shape
 
-<sample consumer code>
+<the call-site table>
+
+<each call site as code, against the final signatures>
 
 <sample extension code, if there is an extension point>
 
@@ -96,6 +138,23 @@ Findings come back **to you only**. Nothing is posted to GitHub at this stage.
 
 `developer` fixes; repeat. Stop when the reviewers are clean, or when what remains is a judgement call
 that belongs to the maintainer — carry those into Stage 4 rather than deciding them yourself.
+
+### Re-review only what changed
+
+**The first round is a full review. Every round after it is not.** Two Opus reviewers re-reading a
+whole diff to check eleven fixes is the single most expensive mistake available in this loop, and it
+buys almost nothing — a reviewer re-reading from scratch mostly re-derives what it already said.
+
+After the first round, spawn each reviewer with **its own findings and the fix commits**, and ask two
+questions only: is each fix correct and complete, and did any of them introduce something worse than
+it solved. That second question is not optional — this loop has produced a shutdown hang and a
+half-applied dispose guard from fix rounds, and the fix round is exactly where a hardened state
+machine leaves an unhardened path beside it.
+
+A reviewer that says "I'll re-read only those" is telling you how to run the next round. Take it.
+
+Re-run a **full** review only when the shape itself changed — a new member on a public interface, a
+responsibility moved between types. Then it is a new design, and it gets a new first round.
 
 ---
 
