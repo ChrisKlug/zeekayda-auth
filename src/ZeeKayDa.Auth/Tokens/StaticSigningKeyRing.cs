@@ -129,7 +129,10 @@ public sealed class StaticSigningKeyRing : ISigningKeyRing, IDisposable
         }
         catch
         {
-            signer.Dispose();
+            // A throwing Dispose on a third-party signer must not replace the failure that actually
+            // matters — the operator needs the algorithm mismatch or self-test failure, not whatever
+            // went wrong while cleaning up after it.
+            DisposeQuietly(signer);
             throw;
         }
 
@@ -138,7 +141,7 @@ public sealed class StaticSigningKeyRing : ISigningKeyRing, IDisposable
             // Lost the race: some other call already completed initialization first. Dispose the
             // signer this call opened rather than leaking it — it will never be reachable through
             // Current or SignAsync.
-            signer.Dispose();
+            DisposeQuietly(signer);
             throw new InvalidOperationException(
                 $"{nameof(StaticSigningKeyRing)}.InitializeAsync was already called. It must be " +
                 "called exactly once.");
@@ -152,6 +155,22 @@ public sealed class StaticSigningKeyRing : ISigningKeyRing, IDisposable
     }
 
     SigningKeySet? ISigningKeyRing.CurrentOrNull => _binding?.KeySet;
+
+    /// <summary>
+    /// Disposes a signer on a failure path, swallowing anything its own <c>Dispose</c> throws so the
+    /// original failure is the one that reaches the operator.
+    /// </summary>
+    private static void DisposeQuietly(ISigner signer)
+    {
+        try
+        {
+            signer.Dispose();
+        }
+        catch
+        {
+            // Intentionally swallowed: we are already unwinding a more important failure.
+        }
+    }
 
     private async ValueTask<ISigner> OpenSignerAsync(SigningKey signingKey, CancellationToken cancellationToken)
     {

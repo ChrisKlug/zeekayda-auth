@@ -41,7 +41,9 @@ internal static class SigningAlgorithms
         if (descriptor.KeyType == SigningKeyType.Rsa)
         {
             var modulus = descriptor.RsaPublicParameters!.Value.Modulus;
-            var bitLength = modulus is not null ? modulus.Length * 8 : 0;
+            // Significant bits, not array length: a 1024-bit modulus left-padded to 256 bytes would
+            // otherwise pass the 2048-bit gate and sign production tokens under a weak key.
+            var bitLength = modulus is not null ? CountSignificantBits(modulus) : 0;
 
             if (bitLength < 2048)
             {
@@ -239,7 +241,13 @@ internal static class SigningAlgorithms
             ec.ImportParameters(publicKey.EcPublicParameters!.Value);
             return PublicKeyParameters.FromEc(ec.ExportParameters(false));
         }
-        catch (CryptographicException ex)
+        // Windows CNG reports structurally invalid material — an off-curve point, say — as
+        // PlatformNotSupportedException wrapping a CryptographicException, while macOS and Linux
+        // raise CryptographicException directly. Both mean the same thing here: the source handed us
+        // something that is not a usable public key. Catching only one of them let the raw platform
+        // exception escape the builder on Windows, breaking the guarantee that every rejection
+        // arrives as a ZeeKayDaConfigurationException.
+        catch (Exception ex) when (ex is CryptographicException or PlatformNotSupportedException)
         {
             throw new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure(

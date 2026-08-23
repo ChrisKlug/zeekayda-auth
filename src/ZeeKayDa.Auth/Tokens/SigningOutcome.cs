@@ -27,4 +27,21 @@ public readonly record struct SigningOutcome(ReadOnlyMemory<byte> SigningInput, 
             $"{nameof(ISigningKeyRing)}.{nameof(ISigningKeyRing.SignAsync)}.");
         init => _key = value;
     }
+
+    // The record's synthesized PrintMembers reads Key, so ToString() on a default instance would
+    // throw from the guard above — a debugger watch or a log line is the last place that should
+    // fail. Print the default as such instead.
+    private bool PrintMembers(System.Text.StringBuilder builder)
+    {
+        if (_key is null)
+        {
+            builder.Append("<default>");
+            return true;
+        }
+
+        builder.Append($"{nameof(SigningInput)} = {SigningInput.Length} bytes, ");
+        builder.Append($"{nameof(Signature)} = {Signature.Length} bytes, ");
+        builder.Append($"{nameof(Key)} = {_key.Kid}");
+        return true;
+    }
 }

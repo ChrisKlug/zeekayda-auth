@@ -32,7 +32,7 @@ container and no `FakeTimeProvider` plumbing through the check itself.
 **`Unhealthy` when the subsystem is absent, not `Degraded` and not silently `Healthy`.** No ring
 registered, or a ring that has not yet completed startup initialization, both report `Unhealthy`
 naming the reason — an unconfigured or not-yet-ready signing key ring is not a lesser form of
-healthy, and a orchestrator's readiness probe must treat it as not ready.
+healthy, and an orchestrator's readiness probe must treat it as not ready.
 
 **`Previous`/`Next` keys are reported in the result data but never drive the verdict.** Only the key
 that actually signs can make the check fail; a `Previous` key past its retirement window or a `Next`
