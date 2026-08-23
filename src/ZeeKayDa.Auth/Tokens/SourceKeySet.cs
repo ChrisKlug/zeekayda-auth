@@ -25,10 +25,23 @@ public sealed class SourceKeySet
     /// Thrown when <paramref name="signingKey"/> or <paramref name="alsoPublished"/> is
     /// <see langword="null"/>.
     /// </exception>
+    /// <exception cref="ZeeKayDaConfigurationException">
+    /// Thrown with failure code <c>signing.null_published_key</c> when <paramref name="alsoPublished"/>
+    /// contains a <see langword="null"/> element.
+    /// </exception>
     public SourceKeySet(SourceKey signingKey, params SourceKey[] alsoPublished)
     {
         ArgumentNullException.ThrowIfNull(signingKey);
         ArgumentNullException.ThrowIfNull(alsoPublished);
+
+        if (Array.IndexOf(alsoPublished, null) >= 0)
+        {
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "signing.null_published_key",
+                    "The signing key source reported a null key among the keys published alongside " +
+                    "the signing key. Every element of alsoPublished must be non-null."));
+        }
 
         SigningKey = signingKey;
         Keys = ImmutableArray.Create(signingKey).AddRange(alsoPublished);

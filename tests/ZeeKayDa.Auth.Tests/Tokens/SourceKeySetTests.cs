@@ -73,6 +73,17 @@ public sealed class SourceKeySetTests
         act.Should().Throw<ArgumentNullException>();
     }
 
+    [Fact]
+    public void Constructor_throws_ZeeKayDaConfigurationException_when_alsoPublished_contains_a_null_element()
+    {
+        var current = CreateRsaKey("current");
+
+        var act = () => new SourceKeySet(current, [null!]);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.null_published_key");
+    }
+
     private static SourceKey CreateRsaKey(string id)
     {
         using var rsa = RSA.Create(2048);

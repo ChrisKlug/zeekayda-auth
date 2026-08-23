@@ -50,6 +50,20 @@ public sealed class JwkThumbprintTests
     }
 
     [Fact]
+    public void Compute_rsa_ignores_leading_zero_padding_on_the_modulus_per_RFC7518()
+    {
+        var minimalModulus = DecodeBase64Url(Rfc7638ModulusBase64Url);
+        var paddedModulus = new byte[minimalModulus.Length + 1];
+        minimalModulus.CopyTo(paddedModulus, 1); // leading zero byte prepended
+        var exponent = DecodeBase64Url(Rfc7638ExponentBase64Url);
+
+        var minimalThumbprint = JwkThumbprint.Compute(new RSAParameters { Modulus = minimalModulus, Exponent = exponent });
+        var paddedThumbprint = JwkThumbprint.Compute(new RSAParameters { Modulus = paddedModulus, Exponent = exponent });
+
+        paddedThumbprint.Should().Be(minimalThumbprint);
+    }
+
+    [Fact]
     public void Compute_rsa_differs_for_different_keys()
     {
         using var rsa1 = RSA.Create(2048);

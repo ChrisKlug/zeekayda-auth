@@ -41,12 +41,15 @@ public static class JwkThumbprint
     /// <returns>The base64url-encoded SHA-256 thumbprint.</returns>
     /// <remarks>
     /// The canonical minimal RSA JWK member set, in the lexicographic order RFC 7638 requires, is
-    /// <c>{"e":"&lt;b64url(e)&gt;","kty":"RSA","n":"&lt;b64url(n)&gt;"}</c>.
+    /// <c>{"e":"&lt;b64url(e)&gt;","kty":"RSA","n":"&lt;b64url(n)&gt;"}</c>. <c>e</c> and <c>n</c> are
+    /// encoded from their minimal big-endian representation (leading zero bytes stripped) per
+    /// RFC 7518 §6.3.1.1, so a modulus left-padded to a fixed byte length still yields the same
+    /// <c>kid</c> conformant JWK tooling would derive from it.
     /// </remarks>
     public static string Compute(RSAParameters rsaPublicParameters)
     {
-        var e = Base64UrlEncode(rsaPublicParameters.Exponent!);
-        var n = Base64UrlEncode(rsaPublicParameters.Modulus!);
+        var e = Base64UrlEncode(TrimLeadingZeros(rsaPublicParameters.Exponent!));
+        var n = Base64UrlEncode(TrimLeadingZeros(rsaPublicParameters.Modulus!));
 
         return ComputeThumbprint(writer =>
         {
@@ -133,6 +136,20 @@ public static class JwkThumbprint
 
         var hash = SHA256.HashData(buffer.WrittenSpan);
         return Base64UrlEncode(hash);
+    }
+
+    /// <summary>
+    /// Strips leading zero bytes from a big-endian unsigned integer, per RFC 7518 §6.3.1.1's minimal
+    /// encoding requirement for <c>n</c> and <c>e</c>. A single zero byte is preserved for a
+    /// genuinely zero-valued input.
+    /// </summary>
+    private static byte[] TrimLeadingZeros(byte[] value)
+    {
+        var firstNonZero = 0;
+        while (firstNonZero < value.Length - 1 && value[firstNonZero] == 0)
+            firstNonZero++;
+
+        return firstNonZero == 0 ? value : value[firstNonZero..];
     }
 
     private static string Base64UrlEncode(byte[] input)

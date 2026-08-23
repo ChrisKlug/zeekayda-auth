@@ -61,4 +61,34 @@ public sealed class PublicKeyParametersTests
         result.EcPublicParameters!.Value.Q.X.Should().Equal(
             originalX, "the caller mutating its own array afterwards must not retroactively change the listing");
     }
+
+    [Fact]
+    public void RsaPublicParameters_mutating_the_returned_arrays_does_not_affect_a_later_access()
+    {
+        using var rsa = RSA.Create(2048);
+        var originalModulus = (byte[])rsa.ExportParameters(false).Modulus!.Clone();
+        var result = PublicKeyParameters.FromRsa(rsa.ExportParameters(false));
+
+        var firstRead = result.RsaPublicParameters!.Value;
+        firstRead.Modulus![0] ^= 0xFF;
+        firstRead.Exponent![0] ^= 0xFF;
+
+        result.RsaPublicParameters!.Value.Modulus.Should().Equal(
+            originalModulus, "each access returns a fresh copy, so mutating a previously returned array must not corrupt what the instance holds");
+    }
+
+    [Fact]
+    public void EcPublicParameters_mutating_the_returned_arrays_does_not_affect_a_later_access()
+    {
+        using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var originalX = (byte[])ec.ExportParameters(false).Q.X!.Clone();
+        var result = PublicKeyParameters.FromEc(ec.ExportParameters(false));
+
+        var firstRead = result.EcPublicParameters!.Value;
+        firstRead.Q.X![0] ^= 0xFF;
+        firstRead.Q.Y![0] ^= 0xFF;
+
+        result.EcPublicParameters!.Value.Q.X.Should().Equal(
+            originalX, "each access returns a fresh copy, so mutating a previously returned array must not corrupt what the instance holds");
+    }
 }

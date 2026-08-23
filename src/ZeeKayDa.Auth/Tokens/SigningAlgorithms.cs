@@ -119,12 +119,12 @@ internal static class SigningAlgorithms
     /// </summary>
     /// <param name="algorithm">The declared algorithm.</param>
     /// <param name="publicKey">The public key material whose type and curve are checked.</param>
-    /// <param name="kid">The key's derived <c>kid</c>, for the exception message.</param>
+    /// <param name="keyLabel">The configured slot's own identifier, for the exception message.</param>
     /// <exception cref="ZeeKayDaConfigurationException">
     /// Thrown when <paramref name="publicKey"/>'s key type or EC curve does not match
     /// <paramref name="algorithm"/>.
     /// </exception>
-    internal static void ValidateKeyAlgorithmCompatibility(SigningAlgorithm algorithm, PublicKeyParameters publicKey, string kid)
+    internal static void ValidateKeyAlgorithmCompatibility(SigningAlgorithm algorithm, PublicKeyParameters publicKey, string keyLabel)
     {
         var isRsaAlgorithm = algorithm is
             SigningAlgorithm.RS256 or SigningAlgorithm.RS384 or SigningAlgorithm.RS512
@@ -138,7 +138,7 @@ internal static class SigningAlgorithms
             throw new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure(
                     "signing.key_algorithm_mismatch",
-                    $"Key '{kid}' claims RSA algorithm {algorithm} but its public key is not an RSA key."));
+                    $"Key '{keyLabel}' claims RSA algorithm {algorithm} but its public key is not an RSA key."));
         }
 
         if (isEcAlgorithm)
@@ -148,16 +148,16 @@ internal static class SigningAlgorithms
                 throw new ZeeKayDaConfigurationException(
                     new ZeeKayDaConfigurationFailure(
                         "signing.key_algorithm_mismatch",
-                        $"Key '{kid}' claims EC algorithm {algorithm} but its public key is not an EC key."));
+                        $"Key '{keyLabel}' claims EC algorithm {algorithm} but its public key is not an EC key."));
             }
 
-            ValidateEcCurveAlgorithmPairing(algorithm, publicKey.EcPublicParameters!.Value, kid);
+            ValidateEcCurveAlgorithmPairing(algorithm, publicKey.EcPublicParameters!.Value, keyLabel);
         }
     }
 
     /// <summary>
     /// Validates that the key described by <paramref name="publicKey"/> meets minimum strength
-    /// requirements (RSA ≥ 2048 bits; EC curve must be P-256, P-384, or P-521) — the
+    /// requirements (RSA ≥ 2048 significant bits; EC curve must be P-256, P-384, or P-521) — the
     /// <see cref="PublicKeyParameters"/> counterpart of
     /// <see cref="ValidateKeyStrength(SigningKeyDescriptor)"/>.
     /// </summary>
@@ -167,26 +167,30 @@ internal static class SigningAlgorithms
     /// signature symmetry with <see cref="ValidateKeyAlgorithmCompatibility(SigningAlgorithm, PublicKeyParameters, string)"/>.
     /// </param>
     /// <param name="publicKey">The public key material to validate.</param>
-    /// <param name="kid">The key's derived <c>kid</c>, for the exception message.</param>
+    /// <param name="keyLabel">The configured slot's own identifier, for the exception message.</param>
     /// <exception cref="ZeeKayDaConfigurationException">
     /// Thrown when the key is too small or uses an unsupported EC curve.
     /// </exception>
-    internal static void ValidateKeyStrength(SigningAlgorithm algorithm, PublicKeyParameters publicKey, string kid)
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown when <paramref name="publicKey"/>'s <see cref="PublicKeyParameters.KeyType"/> is
+    /// neither <see cref="SigningKeyType.Rsa"/> nor <see cref="SigningKeyType.Ec"/>.
+    /// </exception>
+    internal static void ValidateKeyStrength(SigningAlgorithm algorithm, PublicKeyParameters publicKey, string keyLabel)
     {
         if (publicKey.KeyType == SigningKeyType.Rsa)
         {
             var modulus = publicKey.RsaPublicParameters!.Value.Modulus;
-            var bitLength = modulus is not null ? modulus.Length * 8 : 0;
+            var bitLength = modulus is not null ? CountSignificantBits(modulus) : 0;
 
             if (bitLength < 2048)
             {
                 throw new ZeeKayDaConfigurationException(
                     new ZeeKayDaConfigurationFailure(
                         "signing.rsa_key_too_small",
-                        $"RSA key '{kid}' is {bitLength} bits. Minimum key size is 2048 bits per NIST SP 800-57."));
+                        $"RSA key '{keyLabel}' is {bitLength} bits. Minimum key size is 2048 bits per NIST SP 800-57."));
             }
         }
-        else
+        else if (publicKey.KeyType == SigningKeyType.Ec)
         {
             var curveOid = publicKey.EcPublicParameters!.Value.Curve.Oid?.Value;
 
@@ -195,10 +199,73 @@ internal static class SigningAlgorithms
                 throw new ZeeKayDaConfigurationException(
                     new ZeeKayDaConfigurationFailure(
                         "signing.ec_unsupported_curve",
-                        $"EC key '{kid}' uses curve OID '{curveOid ?? "unknown"}'. " +
+                        $"EC key '{keyLabel}' uses curve OID '{curveOid ?? "unknown"}'. " +
                         "Only NIST P-256, P-384, and P-521 are accepted."));
             }
         }
+        else
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(publicKey), publicKey.KeyType, $"Unknown {nameof(SigningKeyType)} value.");
+        }
+    }
+
+    /// <summary>
+    /// Imports <paramref name="publicKey"/>'s RSA or EC parameters into the BCL's own cryptographic
+    /// provider and re-exports them, both structurally validating the key (rejecting garbage such as
+    /// an off-curve EC point or a non-canonical RSA modulus the BCL itself refuses) and producing a
+    /// canonical copy fully decoupled from whatever a signing key source's own
+    /// <see cref="PublicKeyParameters"/> instance holds.
+    /// </summary>
+    /// <param name="publicKey">The public key material to import.</param>
+    /// <param name="keyLabel">The configured slot's own identifier, for the exception message.</param>
+    /// <returns>A freshly constructed, structurally valid <see cref="PublicKeyParameters"/>.</returns>
+    /// <exception cref="ZeeKayDaConfigurationException">
+    /// Thrown with failure code <c>signing.invalid_public_key</c> when the underlying cryptographic
+    /// provider rejects <paramref name="publicKey"/> as structurally invalid.
+    /// </exception>
+    internal static PublicKeyParameters ImportAndCanonicalize(PublicKeyParameters publicKey, string keyLabel)
+    {
+        try
+        {
+            if (publicKey.KeyType == SigningKeyType.Rsa)
+            {
+                using var rsa = RSA.Create();
+                rsa.ImportParameters(publicKey.RsaPublicParameters!.Value);
+                return PublicKeyParameters.FromRsa(rsa.ExportParameters(false));
+            }
+
+            using var ec = ECDsa.Create();
+            ec.ImportParameters(publicKey.EcPublicParameters!.Value);
+            return PublicKeyParameters.FromEc(ec.ExportParameters(false));
+        }
+        catch (CryptographicException ex)
+        {
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "signing.invalid_public_key",
+                    $"Key '{keyLabel}' is not a structurally valid public key: {ex.GetType().Name}. " +
+                    "See the inner exception for the root cause."),
+                ex);
+        }
+    }
+
+    /// <summary>
+    /// Counts the significant bits of a big-endian unsigned integer — the number of bits from the
+    /// most-significant set bit down, ignoring leading zero bytes — rather than
+    /// <c>value.Length * 8</c>, which a modulus left-padded to a fixed byte length would inflate.
+    /// </summary>
+    private static int CountSignificantBits(byte[] value)
+    {
+        var firstNonZero = 0;
+        while (firstNonZero < value.Length && value[firstNonZero] == 0)
+            firstNonZero++;
+
+        if (firstNonZero == value.Length)
+            return 0;
+
+        var bitsInLeadingByte = 32 - System.Numerics.BitOperations.LeadingZeroCount((uint)value[firstNonZero]);
+        return ((value.Length - firstNonZero - 1) * 8) + bitsInLeadingByte;
     }
 
     /// <summary>
@@ -329,7 +396,7 @@ internal static class SigningAlgorithms
     private static void ValidateEcCurveAlgorithmPairing(SigningKeyDescriptor descriptor, ECDsa ecKey) =>
         ValidateEcCurveAlgorithmPairing(descriptor.Algorithm, ecKey.ExportParameters(false), descriptor.Kid);
 
-    private static void ValidateEcCurveAlgorithmPairing(SigningAlgorithm algorithm, ECParameters ecParams, string kid)
+    private static void ValidateEcCurveAlgorithmPairing(SigningAlgorithm algorithm, ECParameters ecParams, string keyLabel)
     {
         // AlgorithmCurveOids contains entries for all EC algorithms (ES256/384/512), and
         // this method is only called when isEcAlgorithm is true, so the lookup always succeeds.
@@ -342,7 +409,7 @@ internal static class SigningAlgorithms
             throw new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure(
                     "signing.ec_curve_algorithm_mismatch",
-                    $"Key '{kid}' uses algorithm {algorithm} which requires " +
+                    $"Key '{keyLabel}' uses algorithm {algorithm} which requires " +
                     $"curve OID {expectedOid}, but the key uses curve OID '{curveOid}'."));
         }
     }

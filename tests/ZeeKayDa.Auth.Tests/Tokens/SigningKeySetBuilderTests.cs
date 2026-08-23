@@ -157,6 +157,22 @@ public sealed class SigningKeySetBuilderTests
     }
 
     [Fact]
+    public void Build_validation_failure_messages_name_the_configured_source_id_not_the_derived_kid()
+    {
+        // The operator typed "current" (SourceKey.Id) and never sees the derived kid — every
+        // validation message must be keyed on the id they actually configured.
+        using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var publicKey = PublicKeyParameters.FromEc(ec.ExportParameters(false));
+        var current = new SourceKey(new KeyId("current"), SigningAlgorithm.RS256, publicKey, ExpiresAt: null);
+        var keys = SourceKeySet.FromSlots(previous: null, current, next: null);
+
+        var act = () => SigningKeySetBuilder.Build(keys);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Message.Contains("'current'"));
+    }
+
+    [Fact]
     public void Build_throws_when_an_EC_algorithm_is_declared_over_an_RSA_public_key()
     {
         using var rsa = RSA.Create(2048);
@@ -183,6 +199,112 @@ public sealed class SigningKeySetBuilderTests
             .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.ec_curve_algorithm_mismatch");
     }
 
+    // ── Public key material is immutable once built ─────────────────────────────────────────────
+
+    [Fact]
+    public void Build_result_is_immune_to_mutating_every_reachable_RSA_public_key_accessor()
+    {
+        var current = CreateRsaSourceKey("current");
+        var keys = SourceKeySet.FromSlots(previous: null, current, next: null);
+        var set = SigningKeySetBuilder.Build(keys);
+        var originalKid = set.SigningKey.Kid;
+
+        // A malicious component resolving the built set and mutating whatever it can reach: every
+        // accessor returns a fresh copy, so none of this can move the recomputed kid.
+        var rsaParams = set.SigningKey.PublicKey.RsaPublicParameters!.Value;
+        rsaParams.Modulus![0] ^= 0xFF;
+        rsaParams.Exponent![0] ^= 0xFF;
+
+        JwkThumbprint.Compute(set.SigningKey.PublicKey.RsaPublicParameters!.Value).Should().Be(originalKid);
+        set.SigningKey.Kid.Should().Be(originalKid);
+    }
+
+    [Fact]
+    public void Build_result_is_immune_to_mutating_every_reachable_EC_public_key_accessor()
+    {
+        var current = CreateEcSourceKey("current", ECCurve.NamedCurves.nistP256, SigningAlgorithm.ES256);
+        var keys = SourceKeySet.FromSlots(previous: null, current, next: null);
+        var set = SigningKeySetBuilder.Build(keys);
+        var originalKid = set.SigningKey.Kid;
+
+        var ecParams = set.SigningKey.PublicKey.EcPublicParameters!.Value;
+        ecParams.Q.X![0] ^= 0xFF;
+        ecParams.Q.Y![0] ^= 0xFF;
+
+        JwkThumbprint.Compute(set.SigningKey.PublicKey.EcPublicParameters!.Value).Should().Be(originalKid);
+        set.SigningKey.Kid.Should().Be(originalKid);
+    }
+
+    [Fact]
+    public void Build_does_not_share_the_source_s_PublicKeyParameters_instance_with_the_built_SigningKey()
+    {
+        var current = CreateRsaSourceKey("current");
+        var keys = SourceKeySet.FromSlots(previous: null, current, next: null);
+
+        var set = SigningKeySetBuilder.Build(keys);
+
+        set.SigningKey.PublicKey.Should().NotBeSameAs(current.PublicKey);
+    }
+
+    // ── Validation: undefined algorithm ──────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Build_throws_when_the_declared_algorithm_is_not_a_defined_SigningAlgorithm_member()
+    {
+        var current = CreateRsaSourceKey("current", algorithm: (SigningAlgorithm)999);
+        var keys = SourceKeySet.FromSlots(previous: null, current, next: null);
+
+        var act = () => SigningKeySetBuilder.Build(keys);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.undefined_algorithm");
+    }
+
+    // ── Validation: structural public-key garbage ────────────────────────────────────────────────
+
+    [Fact]
+    public void Build_throws_signing_invalid_public_key_for_an_off_curve_EC_point()
+    {
+        using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var validParams = ec.ExportParameters(false);
+        var offCurveParams = new ECParameters
+        {
+            Curve = validParams.Curve,
+            Q = new ECPoint
+            {
+                X = validParams.Q.X,
+                Y = (byte[])validParams.Q.Y!.Clone(),
+            },
+        };
+        offCurveParams.Q.Y![^1] ^= 0x01; // perturb Y so (X, Y) is very unlikely to remain on the curve
+        var publicKey = PublicKeyParameters.FromEc(offCurveParams);
+        var current = new SourceKey(new KeyId("current"), SigningAlgorithm.ES256, publicKey, ExpiresAt: null);
+        var keys = SourceKeySet.FromSlots(previous: null, current, next: null);
+
+        var act = () => SigningKeySetBuilder.Build(keys);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.invalid_public_key");
+    }
+
+    [Fact]
+    public void Build_throws_signing_invalid_public_key_for_an_all_zero_RSA_modulus()
+    {
+        var publicKey = PublicKeyParameters.FromRsa(new RSAParameters
+        {
+            Modulus = new byte[256], // all-zero, 2048 bits by length, structurally not a public key
+            Exponent = [0x01, 0x00, 0x01],
+        });
+        var current = new SourceKey(new KeyId("current"), SigningAlgorithm.RS256, publicKey, ExpiresAt: null);
+        var keys = SourceKeySet.FromSlots(previous: null, current, next: null);
+
+        var act = () => SigningKeySetBuilder.Build(keys);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().Contain(
+                f => f.Code == "signing.rsa_key_too_small" || f.Code == "signing.invalid_public_key");
+    }
+
     // ── Validation: key strength ─────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -200,12 +322,29 @@ public sealed class SigningKeySetBuilderTests
     }
 
     [Fact]
+    public void Build_throws_when_an_RSA_modulus_is_left_padded_to_look_like_2048_bits()
+    {
+        // A 1024-bit modulus left-padded with zero bytes to a 256-byte (2048-bit) array. Counting
+        // significant bits (not byte length) must still reject this as too small.
+        using var rsa = RSA.Create(1024);
+        var smallModulus = rsa.ExportParameters(false).Modulus!;
+        var paddedModulus = new byte[256];
+        smallModulus.CopyTo(paddedModulus, 256 - smallModulus.Length);
+        var publicKey = PublicKeyParameters.FromRsa(new RSAParameters { Modulus = paddedModulus, Exponent = [0x01, 0x00, 0x01] });
+        var current = new SourceKey(new KeyId("current"), SigningAlgorithm.RS256, publicKey, ExpiresAt: null);
+        var keys = SourceKeySet.FromSlots(previous: null, current, next: null);
+
+        var act = () => SigningKeySetBuilder.Build(keys);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.rsa_key_too_small");
+    }
+
+    [Fact]
     public void Build_rejects_a_non_NIST_curve_at_build_time_before_any_private_material_exists()
     {
-        // Kid derivation runs before key-strength validation, and JwkThumbprint's own
-        // supported-curve set is the same three NIST curves SigningAlgorithms accepts — so a
-        // non-NIST curve is rejected at the derivation step, before any private key material
-        // exists, but still surfaces as ZeeKayDaConfigurationException like every other rejection.
+        // Key-strength validation runs before kid derivation, so a non-NIST curve is rejected there,
+        // before any private key material exists and before JwkThumbprint ever sees the curve.
         using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var unsupportedCurveParams = new ECParameters
         {
