@@ -112,6 +112,123 @@ internal static class SigningAlgorithms
     }
 
     /// <summary>
+    /// Validates that <paramref name="algorithm"/> is compatible with <paramref name="publicKey"/>'s
+    /// key type and, for an EC algorithm, its curve — the <see cref="PublicKeyParameters"/>
+    /// counterpart of <see cref="ValidateKeyAlgorithmCompatibility(SigningKeyDescriptor, AsymmetricAlgorithm)"/>,
+    /// usable before any private material exists.
+    /// </summary>
+    /// <param name="algorithm">The declared algorithm.</param>
+    /// <param name="publicKey">The public key material whose type and curve are checked.</param>
+    /// <param name="kid">The key's derived <c>kid</c>, for the exception message.</param>
+    /// <exception cref="ZeeKayDaConfigurationException">
+    /// Thrown when <paramref name="publicKey"/>'s key type or EC curve does not match
+    /// <paramref name="algorithm"/>.
+    /// </exception>
+    internal static void ValidateKeyAlgorithmCompatibility(SigningAlgorithm algorithm, PublicKeyParameters publicKey, string kid)
+    {
+        var isRsaAlgorithm = algorithm is
+            SigningAlgorithm.RS256 or SigningAlgorithm.RS384 or SigningAlgorithm.RS512
+            or SigningAlgorithm.PS256 or SigningAlgorithm.PS384 or SigningAlgorithm.PS512;
+
+        var isEcAlgorithm = algorithm is
+            SigningAlgorithm.ES256 or SigningAlgorithm.ES384 or SigningAlgorithm.ES512;
+
+        if (isRsaAlgorithm && publicKey.KeyType != SigningKeyType.Rsa)
+        {
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "signing.key_algorithm_mismatch",
+                    $"Key '{kid}' claims RSA algorithm {algorithm} but its public key is not an RSA key."));
+        }
+
+        if (isEcAlgorithm)
+        {
+            if (publicKey.KeyType != SigningKeyType.Ec)
+            {
+                throw new ZeeKayDaConfigurationException(
+                    new ZeeKayDaConfigurationFailure(
+                        "signing.key_algorithm_mismatch",
+                        $"Key '{kid}' claims EC algorithm {algorithm} but its public key is not an EC key."));
+            }
+
+            ValidateEcCurveAlgorithmPairing(algorithm, publicKey.EcPublicParameters!.Value, kid);
+        }
+    }
+
+    /// <summary>
+    /// Validates that the key described by <paramref name="publicKey"/> meets minimum strength
+    /// requirements (RSA ≥ 2048 bits; EC curve must be P-256, P-384, or P-521) — the
+    /// <see cref="PublicKeyParameters"/> counterpart of
+    /// <see cref="ValidateKeyStrength(SigningKeyDescriptor)"/>.
+    /// </summary>
+    /// <param name="algorithm">
+    /// The declared algorithm. Unused by this overload (<paramref name="publicKey"/>'s own
+    /// <see cref="PublicKeyParameters.KeyType"/> already selects the RSA/EC branch) — kept for
+    /// signature symmetry with <see cref="ValidateKeyAlgorithmCompatibility(SigningAlgorithm, PublicKeyParameters, string)"/>.
+    /// </param>
+    /// <param name="publicKey">The public key material to validate.</param>
+    /// <param name="kid">The key's derived <c>kid</c>, for the exception message.</param>
+    /// <exception cref="ZeeKayDaConfigurationException">
+    /// Thrown when the key is too small or uses an unsupported EC curve.
+    /// </exception>
+    internal static void ValidateKeyStrength(SigningAlgorithm algorithm, PublicKeyParameters publicKey, string kid)
+    {
+        if (publicKey.KeyType == SigningKeyType.Rsa)
+        {
+            var modulus = publicKey.RsaPublicParameters!.Value.Modulus;
+            var bitLength = modulus is not null ? modulus.Length * 8 : 0;
+
+            if (bitLength < 2048)
+            {
+                throw new ZeeKayDaConfigurationException(
+                    new ZeeKayDaConfigurationFailure(
+                        "signing.rsa_key_too_small",
+                        $"RSA key '{kid}' is {bitLength} bits. Minimum key size is 2048 bits per NIST SP 800-57."));
+            }
+        }
+        else
+        {
+            var curveOid = publicKey.EcPublicParameters!.Value.Curve.Oid?.Value;
+
+            if (!AcceptedEcCurveOids.Contains(curveOid ?? string.Empty))
+            {
+                throw new ZeeKayDaConfigurationException(
+                    new ZeeKayDaConfigurationFailure(
+                        "signing.ec_unsupported_curve",
+                        $"EC key '{kid}' uses curve OID '{curveOid ?? "unknown"}'. " +
+                        "Only NIST P-256, P-384, and P-521 are accepted."));
+            }
+        }
+    }
+
+    /// <summary>
+    /// Verifies <paramref name="signature"/> over <paramref name="signingInput"/> against
+    /// <paramref name="publicKey"/> directly, using <paramref name="algorithm"/> — the
+    /// <see cref="PublicKeyParameters"/> counterpart of
+    /// <see cref="Verify(SigningKeyDescriptor, ReadOnlySpan{byte}, ReadOnlySpan{byte})"/>, used by
+    /// <see cref="SigningSelfTest"/>.
+    /// </summary>
+    /// <param name="algorithm">The algorithm the signature was produced under.</param>
+    /// <param name="publicKey">The public key to verify against.</param>
+    /// <param name="signingInput">The exact bytes that were signed.</param>
+    /// <param name="signature">The signature bytes to verify.</param>
+    /// <returns><see langword="true"/> when the signature verifies; otherwise <see langword="false"/>.</returns>
+    internal static bool Verify(
+        SigningAlgorithm algorithm, PublicKeyParameters publicKey, ReadOnlySpan<byte> signingInput, ReadOnlySpan<byte> signature)
+    {
+        if (publicKey.KeyType == SigningKeyType.Rsa)
+        {
+            using var rsa = RSA.Create();
+            rsa.ImportParameters(publicKey.RsaPublicParameters!.Value);
+            return VerifyRsa(algorithm, rsa, signingInput, signature);
+        }
+
+        using var ec = ECDsa.Create();
+        ec.ImportParameters(publicKey.EcPublicParameters!.Value);
+        return VerifyEc(algorithm, ec, signingInput, signature);
+    }
+
+    /// <summary>
     /// Produces the raw signature bytes for <paramref name="signingInput"/> using the algorithm
     /// declared in <paramref name="descriptor"/> and the supplied <paramref name="privateKey"/>.
     /// </summary>
@@ -209,13 +326,15 @@ internal static class SigningAlgorithms
         };
     }
 
-    private static void ValidateEcCurveAlgorithmPairing(SigningKeyDescriptor descriptor, ECDsa ecKey)
+    private static void ValidateEcCurveAlgorithmPairing(SigningKeyDescriptor descriptor, ECDsa ecKey) =>
+        ValidateEcCurveAlgorithmPairing(descriptor.Algorithm, ecKey.ExportParameters(false), descriptor.Kid);
+
+    private static void ValidateEcCurveAlgorithmPairing(SigningAlgorithm algorithm, ECParameters ecParams, string kid)
     {
         // AlgorithmCurveOids contains entries for all EC algorithms (ES256/384/512), and
         // this method is only called when isEcAlgorithm is true, so the lookup always succeeds.
-        var expectedOid = AlgorithmCurveOids[descriptor.Algorithm];
+        var expectedOid = AlgorithmCurveOids[algorithm];
 
-        var ecParams = ecKey.ExportParameters(false);
         var curveOid = ecParams.Curve.Oid?.Value ?? string.Empty;
 
         if (!string.Equals(expectedOid, curveOid, StringComparison.OrdinalIgnoreCase))
@@ -223,7 +342,7 @@ internal static class SigningAlgorithms
             throw new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure(
                     "signing.ec_curve_algorithm_mismatch",
-                    $"Key '{descriptor.Kid}' uses algorithm {descriptor.Algorithm} which requires " +
+                    $"Key '{kid}' uses algorithm {algorithm} which requires " +
                     $"curve OID {expectedOid}, but the key uses curve OID '{curveOid}'."));
         }
     }

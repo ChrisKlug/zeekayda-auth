@@ -514,7 +514,7 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
     /// Recomputes active-key selection from <paramref name="snapshot"/> and <c>now</c>, and — only
     /// when the active <see cref="KeyId"/> has changed — calls <see cref="CreateSignerAsync"/> for
     /// the new active key, self-tests it (signs <see cref="SelfTestPayload"/> and verifies against
-    /// the key's own listed public key via <see cref="SigningAlgorithms.Verify"/>), and disposes the
+    /// the key's own listed public key via <see cref="SigningAlgorithms.Verify(SigningKeyDescriptor, ReadOnlySpan{byte}, ReadOnlySpan{byte})"/>), and disposes the
     /// signer it supersedes. Returns a borrowed <see cref="SignerHandle"/> that the caller MUST
     /// <see cref="SignerHandle.Return"/> exactly once.
     /// </summary>
@@ -580,7 +580,7 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
     /// ever used to produce a real token: rejects a signer instance reused from the currently
     /// installed handle, rejects an algorithm mismatch, and self-tests it (signs
     /// <see cref="SelfTestPayload"/> and verifies against the key's own listed public key via
-    /// <see cref="SigningAlgorithms.Verify"/>). Disposes the signer on any validation failure except
+    /// <see cref="SigningAlgorithms.Verify(SigningKeyDescriptor, ReadOnlySpan{byte}, ReadOnlySpan{byte})"/>). Disposes the signer on any validation failure except
     /// the reused-instance case (see remarks). Must be called while holding <c>_signerLock</c>.
     /// </summary>
     /// <remarks>
@@ -768,7 +768,7 @@ public abstract class JwtSigningService<TOptions> : IJwtSigningService, ISigning
     /// <summary>
     /// Runs the same algorithm-compatibility and key-strength checks the base class always runs at
     /// snapshot-build time, over public data only: a public-only <see cref="RSA"/>/<see cref="ECDsa"/>
-    /// object is imported purely so <see cref="SigningAlgorithms.ValidateKeyAlgorithmCompatibility"/>
+    /// object is imported purely so <see cref="SigningAlgorithms.ValidateKeyAlgorithmCompatibility(SigningKeyDescriptor, AsymmetricAlgorithm)"/>
     /// can inspect its runtime type and curve — no private material is ever involved.
     /// </summary>
     private static void ValidateListing(KeyListing listing, SigningKeyDescriptor descriptor)
