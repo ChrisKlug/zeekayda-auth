@@ -14,11 +14,14 @@ namespace ZeeKayDa.Auth.Tokens;
 /// </remarks>
 public sealed record PublicKeyParameters
 {
+    private readonly RSAParameters? _rsaPublicParameters;
+    private readonly ECParameters? _ecPublicParameters;
+
     private PublicKeyParameters(SigningKeyType keyType, RSAParameters? rsaPublicParameters, ECParameters? ecPublicParameters)
     {
         KeyType = keyType;
-        RsaPublicParameters = rsaPublicParameters;
-        EcPublicParameters = ecPublicParameters;
+        _rsaPublicParameters = rsaPublicParameters;
+        _ecPublicParameters = ecPublicParameters;
     }
 
     /// <summary>Gets the key type (RSA or EC).</summary>
@@ -28,13 +31,23 @@ public sealed record PublicKeyParameters
     /// Gets the RSA public parameters when <see cref="KeyType"/> is <see cref="SigningKeyType.Rsa"/>;
     /// otherwise <see langword="null"/>.
     /// </summary>
-    public RSAParameters? RsaPublicParameters { get; }
+    /// <remarks>
+    /// Returns a fresh defensive copy on every access. The framework's own copy of <c>Modulus</c>
+    /// and <c>Exponent</c> is never handed out by reference, so a caller mutating the returned
+    /// arrays can never corrupt the key material this instance — or a <see cref="SigningKey"/> built
+    /// from it — actually holds.
+    /// </remarks>
+    public RSAParameters? RsaPublicParameters => CopyRsa(_rsaPublicParameters);
 
     /// <summary>
     /// Gets the EC public parameters when <see cref="KeyType"/> is <see cref="SigningKeyType.Ec"/>;
     /// otherwise <see langword="null"/>.
     /// </summary>
-    public ECParameters? EcPublicParameters { get; }
+    /// <remarks>
+    /// Returns a fresh defensive copy on every access, for the same reason as
+    /// <see cref="RsaPublicParameters"/>.
+    /// </remarks>
+    public ECParameters? EcPublicParameters => CopyEc(_ecPublicParameters);
 
     /// <summary>
     /// Builds an RSA <see cref="PublicKeyParameters"/> from the exponent and modulus only.
@@ -72,5 +85,33 @@ public sealed record PublicKeyParameters
         };
 
         return new(SigningKeyType.Ec, rsaPublicParameters: null, publicOnly);
+    }
+
+    private static RSAParameters? CopyRsa(RSAParameters? source)
+    {
+        if (source is not { } value)
+            return null;
+
+        return new RSAParameters
+        {
+            Modulus = value.Modulus?.ToArray(),
+            Exponent = value.Exponent?.ToArray(),
+        };
+    }
+
+    private static ECParameters? CopyEc(ECParameters? source)
+    {
+        if (source is not { } value)
+            return null;
+
+        return new ECParameters
+        {
+            Curve = value.Curve,
+            Q = new ECPoint
+            {
+                X = value.Q.X?.ToArray(),
+                Y = value.Q.Y?.ToArray(),
+            },
+        };
     }
 }

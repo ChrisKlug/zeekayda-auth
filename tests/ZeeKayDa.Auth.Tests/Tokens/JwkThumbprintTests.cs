@@ -50,6 +50,20 @@ public sealed class JwkThumbprintTests
     }
 
     [Fact]
+    public void Compute_rsa_ignores_leading_zero_padding_on_the_modulus_per_RFC7518()
+    {
+        var minimalModulus = DecodeBase64Url(Rfc7638ModulusBase64Url);
+        var paddedModulus = new byte[minimalModulus.Length + 1];
+        minimalModulus.CopyTo(paddedModulus, 1); // leading zero byte prepended
+        var exponent = DecodeBase64Url(Rfc7638ExponentBase64Url);
+
+        var minimalThumbprint = JwkThumbprint.Compute(new RSAParameters { Modulus = minimalModulus, Exponent = exponent });
+        var paddedThumbprint = JwkThumbprint.Compute(new RSAParameters { Modulus = paddedModulus, Exponent = exponent });
+
+        paddedThumbprint.Should().Be(minimalThumbprint);
+    }
+
+    [Fact]
     public void Compute_rsa_differs_for_different_keys()
     {
         using var rsa1 = RSA.Create(2048);
@@ -150,6 +164,36 @@ public sealed class JwkThumbprintTests
         };
 
         var act = () => JwkThumbprint.Compute(nullOidParams);
+
+        act.Should().Throw<NotSupportedException>();
+    }
+
+    // ── GetJwkCurveName ──────────────────────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("P-256")]
+    [InlineData("P-384")]
+    [InlineData("P-521")]
+    public void GetJwkCurveName_returns_the_expected_name_for_each_supported_curve(string expected)
+    {
+        var curve = expected switch
+        {
+            "P-256" => ECCurve.NamedCurves.nistP256,
+            "P-384" => ECCurve.NamedCurves.nistP384,
+            _ => ECCurve.NamedCurves.nistP521,
+        };
+
+        var crv = JwkThumbprint.GetJwkCurveName(curve);
+
+        crv.Should().Be(expected);
+    }
+
+    [Fact]
+    public void GetJwkCurveName_throws_NotSupportedException_for_unsupported_curve()
+    {
+        var unsupportedCurve = ECCurve.CreateFromValue("1.2.840.10045.3.1.1"); // P-192 — not accepted
+
+        var act = () => JwkThumbprint.GetJwkCurveName(unsupportedCurve);
 
         act.Should().Throw<NotSupportedException>();
     }

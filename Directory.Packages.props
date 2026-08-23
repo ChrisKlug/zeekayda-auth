@@ -18,6 +18,12 @@
     <PackageVersion Include="Microsoft.AspNetCore.DataProtection.Abstractions" Version="10.0.10" />
     <PackageVersion Include="Microsoft.AspNetCore.DataProtection" Version="10.0.10" />
     <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.1.0" />
+    <!-- Non-ASP.NET: a plain console host can resolve HealthCheckService and run checks; the
+         ASP.NET-specific MapHealthChecks middleware lives in a different package this project does
+         not reference. Declares four dependencies (.Abstractions, Hosting.Abstractions,
+         Logging.Abstractions, Options); core already referenced the latter three, so the net-new
+         packages are this one, HealthChecks.Abstractions, and Diagnostics.Abstractions. -->
+    <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.10" />
   </ItemGroup>
   <ItemGroup>
     <!-- Roslyn — used by the ZeeKayDa.Auth.Analyzers project and its test project -->

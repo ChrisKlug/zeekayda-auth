@@ -7,7 +7,7 @@ apart. Each seam's own rules live in its topic file; this is the shape they shar
 
 **The house pattern: a public seam paired with a closed collection or member.** Where a subsystem has
 both a protocol to enforce and a genuinely variable part, the variable part gets a public interface
-and the protocol gets a type a third party structurally cannot join. It shows up three times, arrived
+and the protocol gets a type a third party structurally cannot join. It shows up four times, arrived
 at independently:
 
 - **Gate versus verifier.** `IStartupVerifier` is public and third parties register into it; the gate
@@ -20,6 +20,10 @@ at independently:
 - **The framework-internal store key.** A backing store receives keys as an opaque struct whose
   constructor is internal, so "hash the handle before you key anything on it" is unrepresentable in
   third-party code rather than documented.
+- **Source versus ring.** `ISigningKeySource` is public and third-party-implementable; the
+  `ISigningKeyRing` it feeds is framework-sealed (`InitializeAsync` and `CurrentOrNull` are
+  `internal`), so a source can never bypass the startup self-test by implementing the ring itself
+  (`signing-keys.md`).
 
 Reach for this before reaching for a doc comment. It is what the register means by making the wrong
 thing impossible instead of forbidden.
@@ -55,8 +59,9 @@ must use it** — these are not a pattern to copy.
 **The enumerated public extension surface is the SemVer contract.** What a third party may implement:
 the startup verifier, the scope repository, the discovery document provider, the client repository,
 the client registration and credential interfaces, a client secret hasher (via the abstract base), the
-client registration validator, the two store backing contracts, the client authenticator, and a
-signing provider via the abstract signing base and its signer type. Everything else public is
+client registration validator, the two store backing contracts, the client authenticator, a
+signing provider via the abstract signing base and its signer type, and a signing key source via
+`ISigningKeySource`. Everything else public is
 consume-only. Adding to this list is a minor version; changing anything on it is a major one. The
 question asked of every new public member before it lands is whether it can be changed later without a
 breaking change.
