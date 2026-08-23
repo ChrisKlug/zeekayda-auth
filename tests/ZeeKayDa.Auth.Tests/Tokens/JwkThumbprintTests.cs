@@ -154,6 +154,36 @@ public sealed class JwkThumbprintTests
         act.Should().Throw<NotSupportedException>();
     }
 
+    // ── GetJwkCurveName ──────────────────────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("P-256")]
+    [InlineData("P-384")]
+    [InlineData("P-521")]
+    public void GetJwkCurveName_returns_the_expected_name_for_each_supported_curve(string expected)
+    {
+        var curve = expected switch
+        {
+            "P-256" => ECCurve.NamedCurves.nistP256,
+            "P-384" => ECCurve.NamedCurves.nistP384,
+            _ => ECCurve.NamedCurves.nistP521,
+        };
+
+        var crv = JwkThumbprint.GetJwkCurveName(curve);
+
+        crv.Should().Be(expected);
+    }
+
+    [Fact]
+    public void GetJwkCurveName_throws_NotSupportedException_for_unsupported_curve()
+    {
+        var unsupportedCurve = ECCurve.CreateFromValue("1.2.840.10045.3.1.1"); // P-192 — not accepted
+
+        var act = () => JwkThumbprint.GetJwkCurveName(unsupportedCurve);
+
+        act.Should().Throw<NotSupportedException>();
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────────────────────────
 
     /// <summary>
