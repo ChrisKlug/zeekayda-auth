@@ -100,11 +100,12 @@ over the dependency.
 `Add<Provider>Signing()` extensions register `IJwtSigningService` as a singleton and call
 `ThrowIfAlreadyRegistered` so a second provider fails loudly. The `KeySourceOptions` tier's
 `AddZeeKayDaSigningKeySource<TSource>()` (type and factory overloads) enforces the same rule with an
-internal `SigningKeySourceRegistration` marker, keyed under a private, unnameable object rather than
-a string: the same `TSource` registered twice via the type overload is a no-op; a genuinely different
-`TSource` throws; and a second registration of the same `TSource` throws whenever either call used
-the factory overload, since a factory can close over configuration a silent no-op would discard.
-Either way, environment-conditional provider selection stays an ordinary `if`/`else`.
+internal `SigningKeySourceRegistration` marker, keyed under a private object rather than a string so
+guessing the key cannot pre-empt it: the same `TSource` registered twice via the type overload is a
+no-op; a different `TSource`, or a second registration where either call used the factory overload,
+throws — a factory can close over configuration a silent no-op would discard. The ring factory also
+rejects a composed collection carrying more than one such marker, closing a DI last-wins gap where two
+independently-registered sources would otherwise agree unnoticed. Selection stays an ordinary `if`/`else`.
 
 **Each production provider platform is its own package; the development provider is not.**
 `ZeeKayDa.Auth.AzureKeyVault` (remote and cached variants together — same dependency, same
@@ -139,9 +140,8 @@ not a pattern: anything expressible through core's public surface must use it.
   attempt. It can serve exactly one first-party package and can never serve a third party without a
   new core release naming them. Public contracts with internal crypto is the fix.
 - **The development-key environment gate on the shared server options root.** Shipped, then reverted:
-  it conflated the gate's input (the host environment name, genuinely server-wide) with its policy
-  (feature-scoped, inert unless a development-key method was called). It now lives on the provider's
-  own options type.
+  it conflated the gate's input (server-wide host environment name) with its policy (feature-scoped,
+  inert unless a development-key method was called). Now lives on the provider's own options type.
 - **A hand-rolled key-pairing check inside the Windows Certificate Store provider.** Added after a
   security-review finding, then superseded — the same invariant is now proven generically on every
   handoff, for every provider.

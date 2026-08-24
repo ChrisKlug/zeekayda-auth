@@ -159,7 +159,8 @@ public sealed class ZeeKayDaSigningKeyServiceCollectionExtensionsTests
 
         var act = () => services.AddZeeKayDaSigningKeySource(implementationFactory);
 
-        act.Should().Throw<ArgumentException>();
+        act.Should().Throw<ArgumentException>().WithParameterName("TSource");
+        services.Should().BeEmpty();
     }
 
     [Fact]
@@ -169,7 +170,8 @@ public sealed class ZeeKayDaSigningKeyServiceCollectionExtensionsTests
 
         var act = () => services.AddZeeKayDaSigningKeySource<AbstractSigningKeySource>();
 
-        act.Should().Throw<ArgumentException>();
+        act.Should().Throw<ArgumentException>().WithParameterName("TSource");
+        services.Should().BeEmpty();
     }
 
     [Fact]
@@ -195,7 +197,7 @@ public sealed class ZeeKayDaSigningKeyServiceCollectionExtensionsTests
         services.AddZeeKayDaSigningKeySource(_ => instance);
 
         using var provider = services.BuildServiceProvider();
-        var ring = (ISigningKeyRing)provider.GetRequiredService<ISigningKeyRing>();
+        var ring = provider.GetRequiredService<ISigningKeyRing>();
         await ring.InitializeAsync(TestContext.Current.CancellationToken);
 
         // Both counters live on the one instance the test holds a reference to, so this can only
@@ -238,42 +240,37 @@ public sealed class ZeeKayDaSigningKeyServiceCollectionExtensionsTests
         act.Should().Throw<InvalidOperationException>();
     }
 
-    [Fact]
-    public void AddZeeKayDaSigningKeySource_with_factory_of_a_different_source_throws_naming_both_sources()
+    public enum SecondRegistrationKind
+    {
+        TypeOverload,
+        FactoryOverload,
+    }
+
+    [Theory]
+    [InlineData(SecondRegistrationKind.TypeOverload, SecondRegistrationKind.FactoryOverload)]
+    [InlineData(SecondRegistrationKind.FactoryOverload, SecondRegistrationKind.TypeOverload)]
+    [InlineData(SecondRegistrationKind.TypeOverload, SecondRegistrationKind.TypeOverload)]
+    public void AddZeeKayDaSigningKeySource_of_a_different_source_throws_naming_both_sources_and_the_registering_assembly(
+        SecondRegistrationKind first, SecondRegistrationKind second)
     {
         var services = new ServiceCollection();
-        services.AddZeeKayDaSigningKeySource<ExternalSigningKeySource>();
+        Register<ExternalSigningKeySource>(services, first);
 
-        var act = () => services.AddZeeKayDaSigningKeySource(_ => new OtherExternalSigningKeySource());
+        var act = () => Register<OtherExternalSigningKeySource>(services, second);
 
         act.Should().Throw<InvalidOperationException>()
             .WithMessage($"*{typeof(OtherExternalSigningKeySource).FullName}*")
-            .WithMessage($"*{typeof(ExternalSigningKeySource).FullName}*");
-    }
-
-    [Fact]
-    public void AddZeeKayDaSigningKeySource_of_a_different_source_after_a_factory_throws_naming_both_sources()
-    {
-        var services = new ServiceCollection();
-        services.AddZeeKayDaSigningKeySource(_ => new ExternalSigningKeySource());
-
-        var act = () => services.AddZeeKayDaSigningKeySource<OtherExternalSigningKeySource>();
-
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage($"*{typeof(OtherExternalSigningKeySource).FullName}*")
-            .WithMessage($"*{typeof(ExternalSigningKeySource).FullName}*");
-    }
-
-    [Fact]
-    public void AddZeeKayDaSigningKeySource_different_source_message_names_the_registering_assembly()
-    {
-        var services = new ServiceCollection();
-        services.AddZeeKayDaSigningKeySource<ExternalSigningKeySource>();
-
-        var act = () => services.AddZeeKayDaSigningKeySource<OtherExternalSigningKeySource>();
-
-        act.Should().Throw<InvalidOperationException>()
+            .WithMessage($"*{typeof(ExternalSigningKeySource).FullName}*")
             .WithMessage($"*{typeof(OtherExternalSigningKeySource).Assembly.GetName().Name}*");
+
+        static void Register<TSource>(IServiceCollection services, SecondRegistrationKind kind)
+            where TSource : class, ISigningKeySource
+        {
+            if (kind == SecondRegistrationKind.TypeOverload)
+                services.AddZeeKayDaSigningKeySource<TSource>();
+            else
+                services.AddZeeKayDaSigningKeySource(_ => Activator.CreateInstance<TSource>());
+        }
     }
 
     [Fact]
@@ -309,12 +306,15 @@ public sealed class ZeeKayDaSigningKeyServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public void Resolving_ISigningKeyRing_throws_when_composed_descriptors_disagree_about_the_registered_source_type()
+    public void Resolving_ISigningKeyRing_throws_when_composed_from_two_libraries_that_each_registered_their_own_source()
     {
-        // Models a service collection composed from two independently-built collections, each of
-        // which registered its own signing key source. Interleaved so that DI's own "last
-        // registration wins" resolution picks the marker from one and the source from the other —
-        // exactly the divergence a naive keyed lookup would miss.
+        // Models the composition a modular host or shared bootstrap library actually produces: two
+        // independently-built service collections, each of which called AddZeeKayDaSigningKeySource
+        // for its own source, appended into one host collection in the natural order (all of the
+        // first collection's descriptors, then all of the second's) — not hand-interleaved. MS DI's
+        // keyed-service resolution is last-wins, so after this composition both the marker and the
+        // resolved instance come from the second collection and agree with each other; only a check
+        // for more than one recorded registration under the key can catch this.
         var firstServices = new ServiceCollection();
         firstServices.AddZeeKayDaSigningKeySource<ExternalSigningKeySource>();
 
@@ -322,12 +322,10 @@ public sealed class ZeeKayDaSigningKeyServiceCollectionExtensionsTests
         secondServices.AddZeeKayDaSigningKeySource<OtherExternalSigningKeySource>();
 
         var combined = new ServiceCollection();
-        combined.Add(firstServices.Single(d => d.ServiceType == typeof(SigningKeySourceRegistration)));
-        combined.Add(secondServices.Single(d => d.ServiceType == typeof(SigningKeySourceRegistration)));
-        combined.Add(secondServices.Single(d => d.ServiceType == typeof(ISigningKeySource)));
-        combined.Add(firstServices.Single(d => d.ServiceType == typeof(ISigningKeySource)));
-        combined.TryAddSingleton<TimeProvider>(TimeProvider.System);
-        combined.Add(firstServices.Single(d => d.ServiceType == typeof(ISigningKeyRing)));
+        foreach (var descriptor in firstServices)
+            combined.Add(descriptor);
+        foreach (var descriptor in secondServices)
+            combined.Add(descriptor);
 
         using var provider = combined.BuildServiceProvider();
 
@@ -335,6 +333,29 @@ public sealed class ZeeKayDaSigningKeyServiceCollectionExtensionsTests
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
             .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.source_registration_mismatch");
+    }
+
+    [Fact]
+    public void AddZeeKayDaSigningKeySource_after_composed_registrations_compares_against_the_most_recently_registered_source()
+    {
+        // If the guard picked the first recorded registration rather than the one DI will actually
+        // resolve, this call would compare the new source against a stale incumbent and either throw
+        // wrongly or accept a no-op it should not.
+        var firstServices = new ServiceCollection();
+        firstServices.AddZeeKayDaSigningKeySource<ExternalSigningKeySource>();
+
+        var secondServices = new ServiceCollection();
+        secondServices.AddZeeKayDaSigningKeySource<OtherExternalSigningKeySource>();
+
+        var combined = new ServiceCollection();
+        foreach (var descriptor in firstServices)
+            combined.Add(descriptor);
+        foreach (var descriptor in secondServices)
+            combined.Add(descriptor);
+
+        var act = () => combined.AddZeeKayDaSigningKeySource<OtherExternalSigningKeySource>();
+
+        act.Should().NotThrow();
     }
 
     private abstract class AbstractSigningKeySource : ISigningKeySource

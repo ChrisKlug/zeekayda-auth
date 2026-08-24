@@ -194,8 +194,9 @@ must do so.
    public key cannot be bypassed by implementing the ring. Third parties extend via
    `ISigningKeySource` only.
 3. `ISigningKeySource` is registered under an internal DI key, not as a plain singleton, so
-   `CreateSignerAsync` — and therefore the live production private-key handle — is not ambiently
-   resolvable by application code.
+   `GetService<ISigningKeySource>()` returns `null` and `GetServices<ISigningKeySource>()` is empty —
+   `CreateSignerAsync` and the live production private-key handle are not reachable through the
+   ordinary, un-keyed resolution surface application code uses.
 
 **Explicit negatives — what this sign-off does NOT cover.**
 
@@ -211,19 +212,34 @@ must do so.
 - **Signature-format and JWKS-endpoint behaviour are not covered** — no endpoint publishes this key
   set yet.
 
-**Addendum, 2026-08-24, re-verified against issue #525 (fix round on branch
+**Addendum, 2026-08-24 (first pass), re-verified against issue #525 (fix round on branch
 `feat/525-signing-source-registration-guard`).** Control 3's identity mechanism moved from the
 keyed service's `KeyedImplementationType` (which is `null` for a factory registration and therefore
 unusable for the guard) to an internal `SigningKeySourceRegistration` marker, itself registered under
-the same private, unnameable key object — closing a hole where a guessable string key would have let
-other code pre-empt the framework's own keyed registration. Control 3 was re-verified against the
-factory overload specifically: an abstract `TSource` (an interface satisfies `class`) is rejected
+the same private object key. **Correction to control 3's framing:** that key closes off *accidental*
+collision and pre-emption only — nobody guesses an object identity — not deliberate in-process code.
+With zero reflection, `sp.GetKeyedServices<ISigningKeySource>(KeyedService.AnyKey).Single()` reaches
+the same singleton the ring uses, and the key itself is readable off the framework's own
+`ISigningKeySource` descriptor (`services.Single(d => d.ServiceType == typeof(ISigningKeySource))
+.ServiceKey`). `GetService<ISigningKeySource>()` returning `null` and `GetServices<ISigningKeySource>()`
+being empty, as control 3 above now states, still hold. Control 3 was otherwise re-verified against
+the factory overload specifically: an abstract `TSource` (an interface satisfies `class`) is rejected
 before either overload can register anything under that key, and a second registration of the same
 `TSource` throws whenever either call used the factory overload, so a factory closing over
 configuration can no longer be silently discarded by a same-type "no-op" path. **Accepted residual,
 not mitigated:** a factory declared over a concrete base `TSource` that returns a derived instance
 still passes the ring's marker-vs-resolved-instance assignability check, since the check is
 `IsInstanceOfType`, not exact-type equality.
+
+**Addendum, 2026-08-24 (second pass), issue #525.** The mismatch guard from the first-pass addendum
+could not fire for a realistic composed service collection: MS DI's keyed-service resolution is
+last-wins, so appending one independently-built collection's descriptors and then another's leaves
+both the marker and the resolved `ISigningKeySource` drawn from the same, most-recently-added
+collection — they always agree, and the divergent registration from the first collection is silently
+discarded. Closed by detecting **duplication** instead of disagreement: the ring factory now resolves
+every `SigningKeySourceRegistration` registered under the key and throws `ZeeKayDaConfigurationException`
+if more than one is found, keeping the assignability check as a cheap additional assertion. The
+concrete-base-`TSource` residual above is unaffected and remains accepted.
 
 ---
 
