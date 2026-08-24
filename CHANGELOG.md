@@ -11,7 +11,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **`AddZeeKayDaSigningKeySource` now accepts a factory, for signing key sources that cannot be DI-activated, and nothing is registered in the container for the source itself** (#525, #530)
 
   `AddZeeKayDaSigningKeySource<TSource>(this IServiceCollection services, Func<IServiceProvider, TSource> implementationFactory)`
-  registers `TSource` via a factory instead of DI activation, for a source whose constructor needs a
+  constructs `TSource` via a factory instead of DI activation, for a source whose constructor needs a
   connection string, a slot name, or a pre-built client — for example an HSM or KMS integration owned
   by a third-party package. Both overloads funnel through the same one-source-per-application guard:
   the same `TSource` registered twice via the type overload is a no-op, but a second registration of
@@ -34,14 +34,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   factory constructs and owns the source directly, by `ActivatorUtilities` or the caller's factory
   closure, so it is not reachable via `GetService`, `GetServices`, or any keyed lookup. **A
   third-party source author must act on one rule as a result: the ring, not the container, now owns
-  the source's disposal.** It disposes the source once, at shutdown, always after the `ISigner` it
-  opened — via `IDisposable.Dispose` or `IAsyncDisposable.DisposeAsync`, whichever the host's own
-  disposal path selects. A source implementing `IAsyncDisposable` without also implementing
-  `IDisposable` is rejected with `ArgumentException` at registration, and again with a coded
-  `ZeeKayDaConfigurationException` (`signing.source_async_only_disposal`) if a factory declared over a
-  base type is caught returning such an instance — the framework cannot know whether the host disposes
-  the service provider synchronously or asynchronously, so both disposal interfaces are required
-  together or not at all.
+  the source's disposal.** It disposes the source once, at shutdown, after the `ISigner` it opened —
+  via `IDisposable.Dispose` or `IAsyncDisposable.DisposeAsync`, whichever the host's own disposal path
+  selects — except when `Dispose`/`DisposeAsync` races `InitializeAsync` before the signer is
+  committed, in which case the source is disposed first and the signer once `InitializeAsync`
+  completes and observes the disposed flag. A source implementing `IAsyncDisposable` without also
+  implementing `IDisposable` is rejected with `ArgumentException`, both at registration on
+  `typeof(TSource)` and by `StaticSigningKeyRing`'s own constructor on the actual constructed
+  instance — so that shape can never reach a running ring, and nothing throws at shutdown.
+
+  Registering an `ISigningKeyRing` directly, ahead of `AddZeeKayDaSigningKeySource`, is also rejected:
+  it throws `InvalidOperationException` naming the manual registration, closing the one remaining way
+  the one-source-per-application guard could otherwise be silently defeated.
 
 ### Changed
 
