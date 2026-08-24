@@ -581,6 +581,7 @@ ZeeKayDa.Auth.Tokens.SourceKeySet.SigningKey.get -> ZeeKayDa.Auth.Tokens.SourceK
 ZeeKayDa.Auth.Tokens.SourceKeySet.SourceKeySet(ZeeKayDa.Auth.Tokens.SourceKey! signingKey, params ZeeKayDa.Auth.Tokens.SourceKey![]! alsoPublished) -> void
 ZeeKayDa.Auth.Tokens.StaticSigningKeyRing
 ZeeKayDa.Auth.Tokens.StaticSigningKeyRing.Current.get -> ZeeKayDa.Auth.Tokens.SigningKeySet!
+ZeeKayDa.Auth.Tokens.StaticSigningKeyRing.DisposeAsync() -> System.Threading.Tasks.ValueTask
 ZeeKayDa.Auth.Tokens.StaticSigningKeyRing.SignAsync<TState>(TState state, System.Func<ZeeKayDa.Auth.Tokens.SigningContext, TState, System.ReadOnlyMemory<byte>>! buildSigningInput, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeeKayDa.Auth.Tokens.SigningOutcome>
 ZeeKayDa.Auth.Tokens.StaticSigningKeyRing.StaticSigningKeyRing(ZeeKayDa.Auth.Tokens.ISigningKeySource! source, System.TimeProvider! timeProvider) -> void
 ZeeKayDa.Auth.Tokens.TokenEndpointAuthMethods

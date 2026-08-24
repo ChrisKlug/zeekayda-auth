@@ -7,10 +7,13 @@ namespace ZeeKayDa.Auth.Tokens;
 /// <remarks>
 /// Owns the one <see cref="ISigner"/> it opens for the process lifetime and disposes it once, at
 /// shutdown — a consumer of <see cref="ISigningKeyRing"/> never receives it and never disposes it.
-/// A polling implementation can be added behind the same interface later without changing any
-/// consumer.
+/// Also owns the <see cref="ISigningKeySource"/> it was constructed over: nothing else in the
+/// container holds a reference to it, so the ring disposes it once, at shutdown, after the signer —
+/// via <see cref="IDisposable.Dispose"/> or <see cref="IAsyncDisposable.DisposeAsync"/>, whichever
+/// the host calls. A polling implementation can be added behind the same interface later without
+/// changing any consumer.
 /// </remarks>
-public sealed class StaticSigningKeyRing : ISigningKeyRing, IDisposable
+public sealed class StaticSigningKeyRing : ISigningKeyRing, IDisposable, IAsyncDisposable
 {
     private readonly ISigningKeySource _source;
     private readonly TimeProvider _timeProvider;
@@ -81,12 +84,46 @@ public sealed class StaticSigningKeyRing : ISigningKeyRing, IDisposable
     }
 
     /// <inheritdoc/>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when the signing key source implements only <see cref="IAsyncDisposable"/>, not
+    /// <see cref="IDisposable"/>. Registration rejects that shape up front, so this is a last line of
+    /// defence, not the expected path — dispose the service provider asynchronously instead.
+    /// </exception>
     void IDisposable.Dispose()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
             return;
 
         _binding?.Signer.Dispose();
+
+        if (_source is IDisposable disposable)
+        {
+            disposable.Dispose();
+        }
+        else if (_source is IAsyncDisposable)
+        {
+            throw new InvalidOperationException(
+                $"'{_source.GetType().FullName}' implements {nameof(IAsyncDisposable)} but not " +
+                $"{nameof(IDisposable)}, and cannot be disposed synchronously. Dispose the service " +
+                "provider asynchronously instead.");
+        }
+
+        GC.SuppressFinalize(this);
+    }
+
+    /// <inheritdoc/>
+    public async ValueTask DisposeAsync()
+    {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            return;
+
+        _binding?.Signer.Dispose();
+
+        if (_source is IAsyncDisposable asyncDisposable)
+            await asyncDisposable.DisposeAsync().ConfigureAwait(false);
+        else if (_source is IDisposable disposable)
+            disposable.Dispose();
+
         GC.SuppressFinalize(this);
     }
 

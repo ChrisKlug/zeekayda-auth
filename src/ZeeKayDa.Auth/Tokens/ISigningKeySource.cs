@@ -15,6 +15,14 @@ namespace ZeeKayDa.Auth.Tokens;
 /// <c>AddZeeKayDaSigningKeySource&lt;TSource&gt;()</c> — a public call with no
 /// <c>InternalsVisibleTo</c> grant required.
 /// </para>
+/// <para>
+/// The <see cref="ISigningKeyRing"/> constructs and owns the one instance it reads from — nothing
+/// registers an <see cref="ISigningKeySource"/> in the container, so no application code can reach
+/// it. The ring disposes it once, at shutdown, after the <see cref="ISigner"/> it opened. Implement
+/// <see cref="IDisposable"/> if the source holds a handle — a client, a connection — that needs
+/// closing; implementing <see cref="IAsyncDisposable"/> without <see cref="IDisposable"/> is rejected
+/// at registration time.
+/// </para>
 /// </remarks>
 public interface ISigningKeySource
 {

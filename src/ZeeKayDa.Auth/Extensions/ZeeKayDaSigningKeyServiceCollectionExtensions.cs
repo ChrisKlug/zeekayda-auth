@@ -11,17 +11,6 @@ namespace ZeeKayDa.Auth.Extensions;
 /// </summary>
 public static class ZeeKayDaSigningKeyServiceCollectionExtensions
 {
-    // Both ISigningKeySource and its registration marker are resolved only through this private,
-    // unnameable key. GetService<ISigningKeySource>() and IEnumerable<ISigningKeySource> return
-    // nothing for arbitrary application code, and nothing outside this assembly can pre-empt the
-    // framework's own TryAddKeyedSingleton by guessing a string key. This closes off *accidental*
-    // collision and pre-emption — nobody guesses an object identity. It is not a boundary against
-    // deliberate in-process code: code holding the IServiceCollection at composition time can read
-    // this key straight off the framework's own ISigningKeySource descriptor, and code holding only
-    // an IServiceProvider can reach the live instance via
-    // GetKeyedServices<ISigningKeySource>(KeyedService.AnyKey) — neither needs reflection.
-    private static readonly object SigningKeySourceServiceKey = new();
-
     /// <summary>
     /// Registers <typeparamref name="TSource"/> as the application's <see cref="ISigningKeySource"/>,
     /// a <see cref="StaticSigningKeyRing"/> over it, and the startup verification that reads the
@@ -35,7 +24,8 @@ public static class ZeeKayDaSigningKeyServiceCollectionExtensions
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Thrown when <typeparamref name="TSource"/> is an interface or abstract class rather than a
-    /// concrete <see cref="ISigningKeySource"/> implementation.
+    /// concrete <see cref="ISigningKeySource"/> implementation, or when <typeparamref name="TSource"/>
+    /// implements <see cref="IAsyncDisposable"/> without also implementing <see cref="IDisposable"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Thrown when a different <see cref="ISigningKeySource"/> implementation is already registered,
@@ -47,9 +37,10 @@ public static class ZeeKayDaSigningKeyServiceCollectionExtensions
     /// <em>different</em> source type throws, rather than silently keeping whichever was registered
     /// first, and so does calling it for a <typeparamref name="TSource"/> already registered via the
     /// factory overload — a factory delegate can close over configuration, so treating that as a
-    /// no-op would silently discard it. <see cref="ISigningKeySource"/> itself is registered under an
-    /// internal key, not as a plain singleton — it is not resolvable via
-    /// <c>GetService&lt;ISigningKeySource&gt;()</c>.
+    /// no-op would silently discard it. Nothing is registered in the container for
+    /// <see cref="ISigningKeySource"/> at all — the <see cref="ISigningKeyRing"/> factory constructs
+    /// and owns the source directly, so it is not resolvable via
+    /// <c>GetService&lt;ISigningKeySource&gt;()</c> or any other container lookup.
     /// </remarks>
     public static IServiceCollection AddZeeKayDaSigningKeySource<TSource>(this IServiceCollection services)
         where TSource : class, ISigningKeySource
@@ -75,7 +66,8 @@ public static class ZeeKayDaSigningKeyServiceCollectionExtensions
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Thrown when <typeparamref name="TSource"/> is an interface or abstract class rather than a
-    /// concrete <see cref="ISigningKeySource"/> implementation.
+    /// concrete <see cref="ISigningKeySource"/> implementation, or when <typeparamref name="TSource"/>
+    /// implements <see cref="IAsyncDisposable"/> without also implementing <see cref="IDisposable"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Thrown when a different <see cref="ISigningKeySource"/> implementation is already registered,
@@ -86,8 +78,9 @@ public static class ZeeKayDaSigningKeyServiceCollectionExtensions
     /// overload is involved on either side — a factory delegate can close over configuration, and a
     /// second registration silently keeping the first factory's configuration is exactly the failure
     /// this method exists to prevent. Calling it with a <em>different</em> source type also throws.
-    /// <see cref="ISigningKeySource"/> itself is registered under an internal key, not as a plain
-    /// singleton — it is not resolvable via <c>GetService&lt;ISigningKeySource&gt;()</c>.
+    /// Nothing is registered in the container for <see cref="ISigningKeySource"/> at all — the
+    /// <see cref="ISigningKeyRing"/> factory constructs and owns the source directly, so it is not
+    /// resolvable via <c>GetService&lt;ISigningKeySource&gt;()</c> or any other container lookup.
     /// </remarks>
     public static IServiceCollection AddZeeKayDaSigningKeySource<TSource>(
         this IServiceCollection services, Func<IServiceProvider, TSource> implementationFactory)
@@ -106,35 +99,42 @@ public static class ZeeKayDaSigningKeyServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
 
         ValidateNotAbstract<TSource>();
+        ValidateDisposalShape(typeof(TSource));
 
         var registeredByFactory = implementationFactory is not null;
-        var existing = FindExistingRegistration(services);
+        var existing = FindExistingRegistration(services);   // last UNKEYED marker descriptor
 
         if (existing is not null)
             ValidateAgainstExisting<TSource>(existing, registeredByFactory);
         else
-            services.AddKeyedSingleton(
-                SigningKeySourceServiceKey, new SigningKeySourceRegistration(typeof(TSource), registeredByFactory));
-
-        if (implementationFactory is null)
-            services.TryAddKeyedSingleton<ISigningKeySource, TSource>(SigningKeySourceServiceKey);
-        else
-            services.TryAddKeyedSingleton<ISigningKeySource>(
-                SigningKeySourceServiceKey, (sp, _) => implementationFactory(sp));
+            services.AddSingleton(new SigningKeySourceRegistration(typeof(TSource), registeredByFactory));
 
         services.TryAddSingleton<TimeProvider>(TimeProvider.System);
         services.TryAddSingleton<ISigningKeyRing>(sp =>
         {
-            var registrations = sp.GetKeyedServices<SigningKeySourceRegistration>(SigningKeySourceServiceKey)
-                .ToArray();
+            ValidateRegistrationSet(sp.GetServices<SigningKeySourceRegistration>().ToArray());
 
-            var recordedType = ValidateRegistrationSet(registrations);
+            // The source is constructed last, and nothing between constructing it and handing it to the
+            // ring may throw: the ring is its only owner, so an orphaned source is never disposed.
+            var timeProvider = sp.GetRequiredService<TimeProvider>();
+            var source = implementationFactory is null
+                ? ActivatorUtilities.CreateInstance<TSource>(sp)
+                : implementationFactory(sp);
 
-            var source = sp.GetRequiredKeyedService<ISigningKeySource>(SigningKeySourceServiceKey);
+            if (IsAsyncOnlyDisposable(source.GetType()))
+            {
+                // The rejected instance is never disposed: the host is failing startup and cannot
+                // proceed, so there is nothing left to hand the instance to that could dispose it.
+                throw new ZeeKayDaConfigurationException(
+                    new ZeeKayDaConfigurationFailure(
+                        "signing.source_async_only_disposal",
+                        $"'{DisplayName(source.GetType())}' implements {nameof(IAsyncDisposable)} " +
+                        $"but not {nameof(IDisposable)}. The ring that owns this source cannot know " +
+                        $"whether the host will dispose the service provider synchronously or " +
+                        $"asynchronously, so implement {nameof(IDisposable)} as well."));
+            }
 
-            ValidateResolvedSource(recordedType, source);
-
-            return new StaticSigningKeyRing(source, sp.GetRequiredService<TimeProvider>());
+            return new StaticSigningKeyRing(source, timeProvider);
         });
 
         services.TryAddEnumerable(
@@ -154,6 +154,33 @@ public static class ZeeKayDaSigningKeyServiceCollectionExtensions
             $"registered as a signing key source. Pass the concrete {nameof(ISigningKeySource)} " +
             "implementation type as TSource.", nameof(TSource));
     }
+
+    /// <summary>
+    /// Rejects a source type that implements <see cref="IAsyncDisposable"/> without also implementing
+    /// <see cref="IDisposable"/>, at registration time, before the collection is mutated.
+    /// </summary>
+    /// <exception cref="ArgumentException">
+    /// Thrown when <paramref name="sourceType"/> implements <see cref="IAsyncDisposable"/> but not
+    /// <see cref="IDisposable"/>.
+    /// </exception>
+    private static void ValidateDisposalShape(Type sourceType)
+    {
+        if (!IsAsyncOnlyDisposable(sourceType))
+            return;
+
+        throw new ArgumentException(
+            $"'{sourceType.FullName}' implements {nameof(IAsyncDisposable)} but not " +
+            $"{nameof(IDisposable)}. The ring that owns this source cannot know whether the host " +
+            $"will dispose the service provider synchronously or asynchronously, so implement " +
+            $"{nameof(IDisposable)} as well.", "TSource");
+    }
+
+    /// <summary>
+    /// The shared predicate behind <see cref="ValidateDisposalShape"/> and the ring factory's own
+    /// check on the constructed instance.
+    /// </summary>
+    private static bool IsAsyncOnlyDisposable(Type type) =>
+        typeof(IAsyncDisposable).IsAssignableFrom(type) && !typeof(IDisposable).IsAssignableFrom(type);
 
     private static void ValidateAgainstExisting<TSource>(
         SigningKeySourceRegistration existing, bool registeredByFactory)
@@ -183,15 +210,14 @@ public static class ZeeKayDaSigningKeyServiceCollectionExtensions
     }
 
     /// <summary>
-    /// Validates the recorded registrations before the source instance is resolved, so a
+    /// Validates the recorded registrations before the source instance is constructed, so a
     /// misconfigured composition fails before any of the winning registration's side effects run.
     /// </summary>
-    /// <returns>The single distinct <see cref="SigningKeySourceRegistration.SourceType"/> in force.</returns>
     /// <exception cref="ZeeKayDaConfigurationException">
     /// Thrown when no registration is found, when more than one distinct source type is recorded, or
     /// when any recorded registration used the factory overload alongside another registration.
     /// </exception>
-    private static Type ValidateRegistrationSet(IReadOnlyCollection<SigningKeySourceRegistration> registrations)
+    private static void ValidateRegistrationSet(IReadOnlyCollection<SigningKeySourceRegistration> registrations)
     {
         if (registrations.Count == 0)
         {
@@ -227,36 +253,12 @@ public static class ZeeKayDaSigningKeyServiceCollectionExtensions
                     "collections that each registered the same source via the factory overload would " +
                     "silently discard all but one factory's configuration."));
         }
-
-        return distinctTypes[0];
-    }
-
-    /// <summary>
-    /// Validates the source instance DI resolved against the recorded registration's type.
-    /// </summary>
-    /// <exception cref="ZeeKayDaConfigurationException">
-    /// Thrown when the resolved <see cref="ISigningKeySource"/> is not an instance of the recorded
-    /// registration's type.
-    /// </exception>
-    private static void ValidateResolvedSource(Type recordedType, ISigningKeySource source)
-    {
-        if (!recordedType.IsInstanceOfType(source))
-        {
-            throw new ZeeKayDaConfigurationException(
-                new ZeeKayDaConfigurationFailure(
-                    "signing.source_registration_mismatch",
-                    $"The resolved signing key source '{DisplayName(source.GetType())}' does not " +
-                    $"match the registered source type '{DisplayName(recordedType)}'."));
-        }
     }
 
     private static SigningKeySourceRegistration? FindExistingRegistration(IServiceCollection services) =>
         (SigningKeySourceRegistration?)services
-            .LastOrDefault(sd =>
-                sd.ServiceType == typeof(SigningKeySourceRegistration) &&
-                sd.IsKeyedService &&
-                Equals(sd.ServiceKey, SigningKeySourceServiceKey))
-            ?.KeyedImplementationInstance;
+            .LastOrDefault(sd => sd.ServiceType == typeof(SigningKeySourceRegistration))
+            ?.ImplementationInstance;
 
     private static string DisplayName(Type type) => $"{type.FullName} ({type.Assembly.GetName().Name})";
 }
