@@ -31,7 +31,7 @@ public static class ZeeKayDaSigningKeyHealthChecksBuilderExtensions
     /// Registers no <see cref="ISigningKeyRing"/> and no <see cref="ISigningKeySource"/> — an
     /// application that adds only this health check still starts, and the probe reports
     /// <see cref="HealthStatus.Unhealthy"/> naming the missing registration rather than throwing.
-    /// Call <see cref="ZeeKayDaSigningKeyServiceCollectionExtensions.AddZeeKayDaSigningKeySource{TSource}"/>
+    /// Call <see cref="ZeeKayDaSigningKeyServiceCollectionExtensions.AddZeeKayDaSigningKeySource{TSource}(IServiceCollection)"/>
     /// separately to register a ring for this check to report on.
     /// </remarks>
     public static IHealthChecksBuilder AddZeeKayDaSigningKeys(

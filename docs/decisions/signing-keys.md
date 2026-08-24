@@ -34,9 +34,8 @@ signing key, and because `ISigningKeyRing` is framework-sealed, a future polling
 `SigningKeyOrNull`/`IsSigning` additively instead of a breaking null check.
 
 **The single-key bootstrap exemption belongs to the fixed tier only.** A lone eligible key is active
-on `KeySetOptions`; on `KeySourceOptions` it is not, so a listing that revocation has shrunk to one
-key cannot re-arm the exemption on restart or scale-out. Dispatch is on the options type, and the
-source tier has no argument that could obtain it.
+on `KeySetOptions`; on `KeySourceOptions` it is not, so a listing shrunk to one key by revocation
+cannot re-arm the exemption on restart or scale-out. Dispatch is on the options type.
 
 **One timeline engine, and the operator sets only `ActivateAt`.** `SigningKeyRotation` is a pure
 function over immutable public data that both tiers call. Every other instant is derived —
@@ -97,19 +96,24 @@ third-party surface into the SemVer contract. The JWK mapping is hand-rolled ove
 specified by RFC 7517/7518 and held to known-answer vectors — a maintenance cost taken deliberately
 over the dependency.
 
-**One signing provider per application, registered flatly.** Every `Add<Provider>Signing()` extension
-registers `IJwtSigningService` as a singleton, calls `ThrowIfAlreadyRegistered` so a second provider
-fails loudly instead of silently winning, registers its own `IValidateOptions<TOptions>`, and returns
-the same builder — so environment-conditional provider selection is an ordinary `if`/`else`.
+**One signing provider per application, registered flatly.** The old model's `Add<Provider>Signing()`
+extensions register `IJwtSigningService` as a singleton and call `ThrowIfAlreadyRegistered` so a second
+provider fails loudly. The `KeySourceOptions` tier's `AddZeeKayDaSigningKeySource<TSource>()` (type and
+factory overloads) enforces the same rule with an internal `SigningKeySourceRegistration` marker, keyed
+under a private object rather than a string so guessing the key cannot pre-empt it: the same `TSource`
+registered twice via the type overload is a no-op; a different `TSource`, or a second registration where
+either call used the factory overload, throws — a factory can close over configuration a silent no-op
+would discard. The ring factory also validates the composed marker set before resolving: distinct source
+types or a factory-registered marker throw; markers all naming the same type-registered `TSource`
+resolve, matching the single-collection no-op. Selection stays an ordinary `if`/`else`.
 
 **Each production provider platform is its own package; the development provider is not.**
 `ZeeKayDa.Auth.AzureKeyVault` (remote and cached variants together — same dependency, same
 operational context, so the choice is a method call, not a package swap), `ZeeKayDa.Auth.Windows`
-(Windows-only TFM, so a mismatched restore fails at build time), `ZeeKayDa.Auth.FileSystem`
-(portable, BCL-only). Each references core only, never the ASP.NET Core adapter, and exposes nothing
-but its registration methods and options type. Package identity is permanent once published, so this
-was settled before any provider shipped; the development provider stays in core as the first
-registration a new adopter hits, with no platform dependency to isolate.
+(Windows-only TFM, so a mismatched restore fails at build time), `ZeeKayDa.Auth.FileSystem` (portable,
+BCL-only). Each references core only, never the ASP.NET Core adapter, and exposes nothing but its
+registration methods and options type — settled before any provider shipped, since package identity
+is permanent once published. The development provider stays in core, with no platform to isolate.
 
 **`ZeeKayDa.Auth.FileSystem` and `ZeeKayDa.Auth.Windows` hold narrow `InternalsVisibleTo` grants**
 from core, for POSIX `stat`/`lstat` interop and process-identity diagnostics respectively — forking
@@ -136,9 +140,8 @@ not a pattern: anything expressible through core's public surface must use it.
   attempt. It can serve exactly one first-party package and can never serve a third party without a
   new core release naming them. Public contracts with internal crypto is the fix.
 - **The development-key environment gate on the shared server options root.** Shipped, then reverted:
-  it conflated the gate's input (the host environment name, genuinely server-wide) with its policy
-  (feature-scoped, inert unless a development-key method was called). It now lives on the provider's
-  own options type.
+  it conflated the gate's input (server-wide host environment name) with its policy (feature-scoped,
+  inert unless a development-key method was called). Now lives on the provider's own options type.
 - **A hand-rolled key-pairing check inside the Windows Certificate Store provider.** Added after a
   security-review finding, then superseded — the same invariant is now proven generically on every
   handoff, for every provider.

@@ -6,6 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **`AddZeeKayDaSigningKeySource` now accepts a factory, for signing key sources that cannot be DI-activated** (#525)
+
+  `AddZeeKayDaSigningKeySource<TSource>(this IServiceCollection services, Func<IServiceProvider, TSource> implementationFactory)`
+  registers `TSource` via a factory instead of DI activation, for a source whose constructor needs a
+  connection string, a slot name, or a pre-built client — for example an HSM or KMS integration owned
+  by a third-party package. Both overloads funnel through the same one-source-per-application guard:
+  the same `TSource` registered twice via the type overload is a no-op, but a second registration of
+  the same `TSource` where either call used the factory overload throws `InvalidOperationException`,
+  since a factory delegate can close over configuration and silently keeping the first one would
+  discard the second call's configuration. Registering a genuinely different `TSource` still throws,
+  now naming both the rejected and the incumbent source with their full type and assembly names.
+  Passing an abstract type or interface (including `ISigningKeySource` itself) as `TSource` throws
+  `ArgumentException`.
+
+  The guard also covers composition: when two independently-built `IServiceCollection`s each
+  registered a signing key source and are composed into one host, resolving `ISigningKeyRing` throws
+  `ZeeKayDaConfigurationException` (`signing.source_registration_mismatch`) if the composed set names
+  more than one distinct source type, or holds more than one registration where any used the factory
+  overload. Registrations all naming the same, type-registered source resolve normally, matching the
+  single-collection no-op. The check runs before the source is constructed, so a failing composition
+  never executes the winning registration's side effects.
+
 ### Changed
 
 - **BREAKING (behavioral): the advertised-signing-algorithm startup check now also enforces that every currently-or-soon producible algorithm is advertised, and no longer treats a retirement-window key as producible** (#494)

@@ -194,8 +194,9 @@ must do so.
    public key cannot be bypassed by implementing the ring. Third parties extend via
    `ISigningKeySource` only.
 3. `ISigningKeySource` is registered under an internal DI key, not as a plain singleton, so
-   `CreateSignerAsync` — and therefore the live production private-key handle — is not ambiently
-   resolvable by application code.
+   `GetService<ISigningKeySource>()` returns `null` and `GetServices<ISigningKeySource>()` is empty —
+   `CreateSignerAsync` and the live production private-key handle are not reachable through the
+   ordinary, un-keyed resolution surface application code uses.
 
 **Explicit negatives — what this sign-off does NOT cover.**
 
@@ -210,6 +211,52 @@ must do so.
   `InnerException`. All are robustness, not security-boundary, and all are on the PR comment.
 - **Signature-format and JWKS-endpoint behaviour are not covered** — no endpoint publishes this key
   set yet.
+
+**Addendum, 2026-08-24 (first pass), re-verified against issue #525 (fix round on branch
+`feat/525-signing-source-registration-guard`).** Control 3's identity mechanism moved from the
+keyed service's `KeyedImplementationType` (which is `null` for a factory registration and therefore
+unusable for the guard) to an internal `SigningKeySourceRegistration` marker, itself registered under
+the same private object key. **Correction to control 3's framing:** that key closes off *accidental*
+collision and pre-emption only — nobody guesses an object identity — not deliberate in-process code.
+With zero reflection, `sp.GetKeyedServices<ISigningKeySource>(KeyedService.AnyKey).Single()` reaches
+the same singleton the ring uses, and the key itself is readable off the framework's own
+`ISigningKeySource` descriptor (`services.Single(d => d.ServiceType == typeof(ISigningKeySource))
+.ServiceKey`). `GetService<ISigningKeySource>()` returning `null` and `GetServices<ISigningKeySource>()`
+being empty, as control 3 above now states, still hold. Control 3 was otherwise re-verified against
+the factory overload specifically: an abstract `TSource` (an interface satisfies `class`) is rejected
+before either overload can register anything under that key, and a second registration of the same
+`TSource` throws whenever either call used the factory overload, so a factory closing over
+configuration can no longer be silently discarded by a same-type "no-op" path. **Accepted residual,
+not mitigated:** a factory declared over a concrete base `TSource` that returns a derived instance
+still passes the ring's marker-vs-resolved-instance assignability check, since the check is
+`IsInstanceOfType`, not exact-type equality.
+
+**Addendum, 2026-08-24 (second pass), issue #525.** The mismatch guard from the first-pass addendum
+could not fire for a realistic composed service collection: MS DI's keyed-service resolution is
+last-wins, so appending one independently-built collection's descriptors and then another's leaves
+both the marker and the resolved `ISigningKeySource` drawn from the same, most-recently-added
+collection — they always agree, and the divergent registration from the first collection is silently
+discarded. Closed by detecting **duplication** instead of disagreement: the ring factory now resolves
+every `SigningKeySourceRegistration` registered under the key and throws `ZeeKayDaConfigurationException`
+if more than one is found, keeping the assignability check as a cheap additional assertion. The
+concrete-base-`TSource` residual above is unaffected and remains accepted.
+
+**Addendum, 2026-08-24 (third pass), issue #525, commit `851356d` on PR #531.** The second-pass
+addendum above states that the ring factory throws when more than one `SigningKeySourceRegistration`
+is found. **That is no longer accurate and is corrected here.** Throwing on any count above one
+hard-failed a composition that is unambiguous — two independently-built collections that each
+registered the *same* `TSource` via the type overload, which on a single collection is a documented
+no-op — so the rule was narrowed to match the registration-time guard. The ring factory now throws
+`ZeeKayDaConfigurationException` (`signing.source_registration_mismatch`) when the resolved set
+records **more than one distinct `SourceType`**, or when it holds **more than one registration and
+any of them used the factory overload**; a set of registrations all naming the same, type-registered
+`TSource` resolves normally. It also throws when the set is empty. Verified against the built
+assembly: `type(A)+type(B)`, `fac(A)+fac(A)`, `type(A)+fac(A)`, `fac(A)+type(A)`, `fac(A)+fac(B)` and
+an interleaved `type(A)+type(B)` all throw; only `type(A)+type(A)` resolves. The composed-collection
+gap the second-pass addendum closed is **not** reopened by this narrowing. Also verified in the same
+pass: validation runs before the source instance is resolved, measured at zero factory invocations
+and zero source constructions on a failing composition, so no winning registration's side effects
+run before the failure. Both accepted residuals above are unaffected and remain accepted.
 
 ---
 
