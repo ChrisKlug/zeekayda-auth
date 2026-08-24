@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **`AddZeeKayDaSigningKeySource` now accepts a factory, for signing key sources that cannot be DI-activated** (#525)
+
+  `AddZeeKayDaSigningKeySource<TSource>(this IServiceCollection services, Func<IServiceProvider, TSource> implementationFactory)`
+  registers `TSource` via a factory instead of DI activation, for a source whose constructor needs a
+  connection string, a slot name, or a pre-built client — for example an HSM or KMS integration owned
+  by a third-party package. The existing type-based overload is unchanged and both now funnel through
+  the same one-source-per-application guard. That guard previously identified the incumbent source via
+  `ServiceDescriptor.KeyedImplementationType`, which is `null` for a factory registration, so a
+  factory-registered source would have compared unequal to every type including its own and thrown
+  against itself; registration identity is now tracked explicitly with an internal
+  `SigningKeySourceRegistration` marker, and the failure message names both the rejected and the
+  incumbent source by their full type names. The same `TSource` registered twice — via either overload,
+  in either order, even with two different factories — remains a no-op rather than a conflict.
+
 ### Changed
 
 - **BREAKING (behavioral): the advertised-signing-algorithm startup check now also enforces that every currently-or-soon producible algorithm is advertised, and no longer treats a retirement-window key as producible** (#494)

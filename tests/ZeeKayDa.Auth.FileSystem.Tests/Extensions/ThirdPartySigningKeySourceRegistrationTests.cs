@@ -6,11 +6,12 @@ using ZeeKayDa.Auth.Tokens;
 namespace ZeeKayDa.Auth.FileSystem.Tests.Extensions;
 
 /// <summary>
-/// Proves <see cref="ZeeKayDaSigningKeyServiceCollectionExtensions.AddZeeKayDaSigningKeySource{TSource}"/>
-/// works for a source type defined entirely outside this framework's own assemblies. Unlike
-/// <c>ZeeKayDa.Auth.Tests</c>, this assembly carries no <c>InternalsVisibleTo</c> grant from core, so
-/// this test compiling and passing is the actual proof that only <see cref="ISigningKeySource"/>'s
-/// public members are needed — a grant this project does not have could not silently be relied on.
+/// Proves both <c>AddZeeKayDaSigningKeySource</c> overloads work for a source type defined entirely
+/// outside this framework's own assemblies. Unlike <c>ZeeKayDa.Auth.Tests</c>, this assembly carries
+/// no <c>InternalsVisibleTo</c> grant from core, so this test compiling and passing is the actual
+/// proof that only <see cref="ISigningKeySource"/>'s public members are needed — including for the
+/// factory overload, whose one-source-per-application guard depends on the internal
+/// <c>SigningKeySourceRegistration</c> type, which must therefore work with no such grant.
 /// </summary>
 public sealed class ThirdPartySigningKeySourceRegistrationTests
 {
@@ -36,6 +37,17 @@ public sealed class ThirdPartySigningKeySourceRegistrationTests
         var services = new ServiceCollection();
 
         services.AddZeeKayDaSigningKeySource<ExternalSigningKeySource>();
+
+        using var provider = services.BuildServiceProvider();
+        provider.GetRequiredService<ISigningKeyRing>().Should().NotBeNull();
+    }
+
+    [Fact]
+    public void AddZeeKayDaSigningKeySource_with_factory_registers_an_ISigningKeyRing_for_a_third_party_source()
+    {
+        var services = new ServiceCollection();
+
+        services.AddZeeKayDaSigningKeySource(_ => new ExternalSigningKeySource());
 
         using var provider = services.BuildServiceProvider();
         provider.GetRequiredService<ISigningKeyRing>().Should().NotBeNull();

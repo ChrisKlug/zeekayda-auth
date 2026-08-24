@@ -6,12 +6,12 @@ using ZeeKayDa.Auth.Tokens;
 namespace ZeeKayDa.Auth.Tests.Extensions;
 
 /// <summary>
-/// Exercises <see cref="ZeeKayDaSigningKeyServiceCollectionExtensions.AddZeeKayDaSigningKeySource{TSource}"/>:
-/// registration idempotency, the loud failure on registering a second, different source, and that
-/// <see cref="ISigningKeySource"/> is not ambiently resolvable. This assembly carries an
-/// <c>InternalsVisibleTo</c> grant from core, so it cannot prove a source needs no such grant —
-/// <c>ZeeKayDa.Auth.FileSystem.Tests</c>' <c>ThirdPartySigningKeySourceRegistrationTests</c> proves
-/// that from an assembly with no grant at all.
+/// Exercises both <c>AddZeeKayDaSigningKeySource</c> overloads: registration idempotency (including
+/// across the type and factory overloads), the loud failure on registering a second, different
+/// source, and that <see cref="ISigningKeySource"/> is not ambiently resolvable. This assembly
+/// carries an <c>InternalsVisibleTo</c> grant from core, so it cannot prove a source needs no such
+/// grant — <c>ZeeKayDa.Auth.FileSystem.Tests</c>' <c>ThirdPartySigningKeySourceRegistrationTests</c>
+/// proves that from an assembly with no grant at all.
 /// </summary>
 public sealed class ZeeKayDaSigningKeyServiceCollectionExtensionsTests
 {
@@ -118,6 +118,112 @@ public sealed class ZeeKayDaSigningKeyServiceCollectionExtensionsTests
         IServiceCollection services = null!;
 
         var act = () => services.AddZeeKayDaSigningKeySource<ExternalSigningKeySource>();
+
+        act.Should().Throw<ArgumentNullException>();
+    }
+
+    [Fact]
+    public void AddZeeKayDaSigningKeySource_with_factory_registers_a_working_ISigningKeyRing()
+    {
+        var services = new ServiceCollection();
+
+        services.AddZeeKayDaSigningKeySource(_ => new ExternalSigningKeySource());
+
+        using var provider = services.BuildServiceProvider();
+        provider.GetRequiredService<ISigningKeyRing>().Should().BeOfType<StaticSigningKeyRing>();
+    }
+
+    [Fact]
+    public void AddZeeKayDaSigningKeySource_with_factory_invokes_the_factory_and_uses_its_instance()
+    {
+        var services = new ServiceCollection();
+        var instance = new ExternalSigningKeySource();
+
+        services.AddZeeKayDaSigningKeySource(_ => instance);
+
+        using var provider = services.BuildServiceProvider();
+        var ring = (StaticSigningKeyRing)provider.GetRequiredService<ISigningKeyRing>();
+        ring.Should().NotBeNull();
+        provider.GetKeyedService<ISigningKeySource>("ZeeKayDa.Auth.Tokens.ISigningKeySource")
+            .Should().BeSameAs(instance);
+    }
+
+    [Fact]
+    public void AddZeeKayDaSigningKeySource_with_factory_called_twice_registers_the_source_exactly_once()
+    {
+        var services = new ServiceCollection();
+
+        services.AddZeeKayDaSigningKeySource(_ => new ExternalSigningKeySource());
+        services.AddZeeKayDaSigningKeySource(_ => new ExternalSigningKeySource());
+
+        services.Should().ContainSingle(d => d.ServiceType == typeof(ISigningKeySource));
+    }
+
+    [Fact]
+    public void AddZeeKayDaSigningKeySource_with_type_then_factory_of_the_same_source_is_idempotent()
+    {
+        var services = new ServiceCollection();
+
+        services.AddZeeKayDaSigningKeySource<ExternalSigningKeySource>();
+        services.AddZeeKayDaSigningKeySource(_ => new ExternalSigningKeySource());
+
+        services.Should().ContainSingle(d => d.ServiceType == typeof(ISigningKeySource));
+    }
+
+    [Fact]
+    public void AddZeeKayDaSigningKeySource_with_factory_then_type_of_the_same_source_is_idempotent()
+    {
+        var services = new ServiceCollection();
+
+        services.AddZeeKayDaSigningKeySource(_ => new ExternalSigningKeySource());
+        services.AddZeeKayDaSigningKeySource<ExternalSigningKeySource>();
+
+        services.Should().ContainSingle(d => d.ServiceType == typeof(ISigningKeySource));
+    }
+
+    [Fact]
+    public void AddZeeKayDaSigningKeySource_with_factory_of_a_different_source_throws_naming_both_sources()
+    {
+        var services = new ServiceCollection();
+        services.AddZeeKayDaSigningKeySource<ExternalSigningKeySource>();
+
+        var act = () => services.AddZeeKayDaSigningKeySource(_ => new OtherExternalSigningKeySource());
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage($"*{typeof(OtherExternalSigningKeySource).FullName}*")
+            .WithMessage($"*{typeof(ExternalSigningKeySource).FullName}*");
+    }
+
+    [Fact]
+    public void AddZeeKayDaSigningKeySource_of_a_different_source_after_a_factory_throws_naming_both_sources()
+    {
+        var services = new ServiceCollection();
+        services.AddZeeKayDaSigningKeySource(_ => new ExternalSigningKeySource());
+
+        var act = () => services.AddZeeKayDaSigningKeySource<OtherExternalSigningKeySource>();
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage($"*{typeof(OtherExternalSigningKeySource).FullName}*")
+            .WithMessage($"*{typeof(ExternalSigningKeySource).FullName}*");
+    }
+
+    [Fact]
+    public void AddZeeKayDaSigningKeySource_with_factory_throws_ArgumentNullException_when_services_is_null()
+    {
+        IServiceCollection services = null!;
+
+        var act = () => services.AddZeeKayDaSigningKeySource(_ => new ExternalSigningKeySource());
+
+        act.Should().Throw<ArgumentNullException>();
+    }
+
+    [Fact]
+    public void AddZeeKayDaSigningKeySource_throws_ArgumentNullException_when_implementationFactory_is_null()
+    {
+        var services = new ServiceCollection();
+        Func<IServiceProvider, ExternalSigningKeySource> implementationFactory = null!;
+
+        var act = () => services.AddZeeKayDaSigningKeySource(implementationFactory);
 
         act.Should().Throw<ArgumentNullException>();
     }
