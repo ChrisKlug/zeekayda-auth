@@ -21,29 +21,11 @@ public sealed class DevelopmentSigningKeyWarningServiceTests
         public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
     }
 
-    private sealed class FakeSigningService : IJwtSigningService
-    {
-        public int GetSigningKeysCallCount { get; private set; }
-
-        public ValueTask<IReadOnlyList<SigningKeyDescriptor>> GetSigningKeysAsync(
-            CancellationToken cancellationToken = default)
-        {
-            GetSigningKeysCallCount++;
-            return ValueTask.FromResult<IReadOnlyList<SigningKeyDescriptor>>([]);
-        }
-
-        public ValueTask<SigningResult> SignAsync(
-            ReadOnlyMemory<byte> payloadSegment,
-            CancellationToken cancellationToken = default)
-            => throw new NotImplementedException();
-    }
-
     private static readonly IServiceProvider EmptyProvider = new ServiceCollection().BuildServiceProvider();
 
     private static DevelopmentSigningKeyWarningService BuildSut(
         string environmentName,
-        IReadOnlyList<string>? allowedEnvironments = null,
-        FakeSigningService? signingService = null)
+        IReadOnlyList<string>? allowedEnvironments = null)
     {
         var devOptions = new DevelopmentSigningKeyOptions();
         if (allowedEnvironments is not null)
@@ -51,8 +33,7 @@ public sealed class DevelopmentSigningKeyWarningServiceTests
 
         return new DevelopmentSigningKeyWarningService(
             new FakeHostEnvironment(environmentName),
-            Options.Create(devOptions),
-            signingService ?? new FakeSigningService());
+            Options.Create(devOptions));
     }
 
     // ── Constructor: argument validation ─────────────────────────────────────────────────────────
@@ -62,8 +43,7 @@ public sealed class DevelopmentSigningKeyWarningServiceTests
     {
         var act = () => new DevelopmentSigningKeyWarningService(
             null!,
-            Options.Create(new DevelopmentSigningKeyOptions()),
-            new FakeSigningService());
+            Options.Create(new DevelopmentSigningKeyOptions()));
 
         act.Should().Throw<ArgumentNullException>().WithParameterName("environment");
     }
@@ -73,21 +53,9 @@ public sealed class DevelopmentSigningKeyWarningServiceTests
     {
         var act = () => new DevelopmentSigningKeyWarningService(
             new FakeHostEnvironment(Environments.Development),
-            null!,
-            new FakeSigningService());
-
-        act.Should().Throw<ArgumentNullException>().WithParameterName("devOptions");
-    }
-
-    [Fact]
-    public void Constructor_throws_ArgumentNullException_when_signingService_is_null()
-    {
-        var act = () => new DevelopmentSigningKeyWarningService(
-            new FakeHostEnvironment(Environments.Development),
-            Options.Create(new DevelopmentSigningKeyOptions()),
             null!);
 
-        act.Should().Throw<ArgumentNullException>().WithParameterName("signingService");
+        act.Should().Throw<ArgumentNullException>().WithParameterName("devOptions");
     }
 
     // ── VerifyAsync: Development environment — warning only ──────────────────────────────────────
@@ -269,20 +237,6 @@ public sealed class DevelopmentSigningKeyWarningServiceTests
 
         context.Warnings.Should().ContainSingle()
             .Which.MessageTemplate.Should().Be(DevelopmentSigningKeyWarningService.NonDevelopmentCriticalMessage);
-    }
-
-    // ── VerifyAsync: pre-warms the signing key cache ─────────────────────────────────────────────
-
-    [Fact]
-    public async Task VerifyAsync_calls_GetSigningKeysAsync_to_pre_warm_cache()
-    {
-        var signingService = new FakeSigningService();
-        var sut = BuildSut(Environments.Development, signingService: signingService);
-        var context = new StartupVerificationContext();
-
-        await sut.VerifyAsync(context, EmptyProvider, TestContext.Current.CancellationToken);
-
-        signingService.GetSigningKeysCallCount.Should().Be(1, "the cache must be pre-warmed at startup");
     }
 
     [Fact]

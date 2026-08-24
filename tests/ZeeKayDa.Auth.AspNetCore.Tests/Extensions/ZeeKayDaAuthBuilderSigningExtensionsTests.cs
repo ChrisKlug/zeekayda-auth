@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth;
+using ZeeKayDa.Auth.Extensions;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests.Extensions;
@@ -70,7 +71,7 @@ public sealed class ZeeKayDaAuthBuilderSigningExtensionsTests
     // ── Ephemeral mode (AddInMemoryDevelopmentJwtSigningKeys) ────────────────────────────────────
 
     [Fact]
-    public async Task AddInMemoryDevelopmentJwtSigningKeys_registers_IJwtSigningService()
+    public async Task AddInMemoryDevelopmentJwtSigningKeys_registers_the_ring_over_the_development_source()
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -80,8 +81,24 @@ public sealed class ZeeKayDaAuthBuilderSigningExtensionsTests
         builder.AddInMemoryDevelopmentJwtSigningKeys();
 
         await using var provider = services.BuildServiceProvider();
-        var service = provider.GetRequiredService<IJwtSigningService>();
-        service.Should().BeOfType<DevelopmentJwtSigningService>();
+        provider.GetRequiredService<ISigningKeyRing>().Should().BeOfType<StaticSigningKeyRing>();
+        provider.GetRequiredService<SigningKeySourceRegistration>().SourceType
+            .Should().Be<DevelopmentSigningKeySource>();
+    }
+
+    [Fact]
+    public async Task AddInMemoryDevelopmentJwtSigningKeys_does_not_register_the_source_in_the_container()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment { ContentRootPath = "/app" });
+        var builder = new ZeeKayDaAuthBuilder(services);
+
+        builder.AddInMemoryDevelopmentJwtSigningKeys();
+
+        await using var provider = services.BuildServiceProvider();
+        provider.GetService<ISigningKeySource>().Should().BeNull(
+            "the ring constructs and owns the source, so nothing else can reach it");
     }
 
     [Fact]
@@ -204,7 +221,7 @@ public sealed class ZeeKayDaAuthBuilderSigningExtensionsTests
         var act = () => builder.AddInMemoryDevelopmentJwtSigningKeys();
 
         act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*IJwtSigningService*already registered*");
+            .WithMessage("*already registered as the signing key source*");
     }
 
     // ── Persist to default path (AddPersistedDevelopmentJwtSigningKeys with no argument) ────────
@@ -317,7 +334,7 @@ public sealed class ZeeKayDaAuthBuilderSigningExtensionsTests
         var act = () => builder.AddPersistedDevelopmentJwtSigningKeys();
 
         act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*IJwtSigningService*already registered*");
+            .WithMessage("*already registered as the signing key source*");
     }
 
     [Fact]
@@ -331,7 +348,7 @@ public sealed class ZeeKayDaAuthBuilderSigningExtensionsTests
         var act = () => builder.AddPersistedDevelopmentJwtSigningKeys();
 
         act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*IJwtSigningService*already registered*");
+            .WithMessage("*already registered as the signing key source*");
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────────────────────────

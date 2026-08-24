@@ -13,7 +13,7 @@ namespace ZeeKayDa.Auth.Tokens;
 /// <see cref="PersistToDirectory"/> member, so an in-memory registration can never be silently
 /// turned into a persisted one.
 /// </remarks>
-public sealed class DevelopmentSigningKeyOptions : KeySetOptions
+public sealed class DevelopmentSigningKeyOptions
 {
     /// <summary>
     /// Gets or sets the name of the host environment in which the service is running.

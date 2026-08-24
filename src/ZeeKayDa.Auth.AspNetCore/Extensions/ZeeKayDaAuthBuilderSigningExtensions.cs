@@ -38,8 +38,8 @@ public static class ZeeKayDaAuthBuilderSigningExtensions
     /// Thrown when <paramref name="builder"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// Thrown when an <see cref="IJwtSigningService"/> has already been registered.
-    /// Only one signing key provider is allowed.
+    /// Thrown when a signing key source has already been registered — including by the other
+    /// development registration method. Only one signing key provider is allowed.
     /// </exception>
     public static ZeeKayDaAuthBuilder AddInMemoryDevelopmentJwtSigningKeys(
         this ZeeKayDaAuthBuilder builder,
@@ -52,7 +52,7 @@ public static class ZeeKayDaAuthBuilderSigningExtensions
         if (configure is not null)
         {
             // Copy onto the real options type so PersistToDirectory stays unreachable from this
-            // method's callback while DevelopmentJwtSigningService still sees a single options type.
+            // method's callback while the source still sees a single options type.
             builder.Services.AddOptions<DevelopmentSigningKeyOptions>().Configure(options =>
             {
                 var surface = new InMemoryDevelopmentSigningKeyOptions
@@ -98,8 +98,8 @@ public static class ZeeKayDaAuthBuilderSigningExtensions
     /// Thrown when <paramref name="builder"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// Thrown when an <see cref="IJwtSigningService"/> has already been registered.
-    /// Only one signing key provider is allowed.
+    /// Thrown when a signing key source has already been registered — including by the other
+    /// development registration method. Only one signing key provider is allowed.
     /// </exception>
     public static ZeeKayDaAuthBuilder AddPersistedDevelopmentJwtSigningKeys(
         this ZeeKayDaAuthBuilder builder,
@@ -121,8 +121,6 @@ public static class ZeeKayDaAuthBuilderSigningExtensions
         string? persistToDirectory,
         bool persist)
     {
-        builder.ThrowIfAlreadyRegistered(typeof(IJwtSigningService));
-
         // Ensures core services are resolvable even if AddZeeKayDaAuth() hasn't run yet.
         builder.Services.AddZeeKayDaAuthCore();
 
@@ -149,7 +147,7 @@ public static class ZeeKayDaAuthBuilderSigningExtensions
 
         builder.Services.TryAddSingleton<TimeProvider>(TimeProvider.System);
         builder.Services.TryAddSingleton<IDevelopmentSigningKeyFileSystem, LocalSigningKeyFileSystem>();
-        builder.Services.AddSingleton<IJwtSigningService, DevelopmentJwtSigningService>();
+        builder.Services.AddZeeKayDaSigningKeySource<DevelopmentSigningKeySource>();
         builder.Services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IStartupVerifier, DevelopmentSigningKeyWarningService>());
     }

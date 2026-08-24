@@ -14,21 +14,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   constructs `TSource` via a factory instead of DI activation, for a source whose constructor needs a
   connection string, a slot name, or a pre-built client — for example an HSM or KMS integration owned
   by a third-party package. Both overloads funnel through the same one-source-per-application guard:
-  the same `TSource` registered twice via the type overload is a no-op, but a second registration of
-  the same `TSource` where either call used the factory overload throws `InvalidOperationException`,
-  since a factory delegate can close over configuration and silently keeping the first one would
-  discard the second call's configuration. Registering a genuinely different `TSource` still throws,
-  now naming both the rejected and the incumbent source with their full type and assembly names.
-  Passing an abstract type or interface (including `ISigningKeySource` itself) as `TSource` throws
-  `ArgumentException`.
+  a second registration throws `InvalidOperationException`, whichever overload either call used and
+  whether or not `TSource` matches, naming both the rejected and the incumbent source with their full
+  type and assembly names. A repeat registration of the same type is deliberately not a no-op — a
+  provider's `Add<Provider>Signing()` method registers the source *and* configures its options beside
+  it, so a second call treated as a no-op here would still have applied a second configuration
+  callback. Passing an abstract type or interface (including `ISigningKeySource` itself) as
+  `TSource` throws `ArgumentException`.
 
   The guard also covers composition: when two independently-built `IServiceCollection`s each
   registered a signing key source and are composed into one host, resolving `ISigningKeyRing` throws
-  `ZeeKayDaConfigurationException` (`signing.source_registration_mismatch`) if the composed set names
-  more than one distinct source type, or holds more than one registration where any used the factory
-  overload. Registrations all naming the same, type-registered source resolve normally, matching the
-  single-collection no-op. The check runs before the source is constructed, so a failing composition
-  never executes the winning registration's side effects.
+  `ZeeKayDaConfigurationException` (`signing.source_registration_mismatch`) — whether the composed set
+  names two different source types or the same one twice, since each collection also configured that
+  source's options and only one of those configurations describes what the application actually signs
+  with. The check runs before the source is constructed, so a failing composition never executes the
+  winning registration's side effects.
 
   Nothing is registered in the container for `ISigningKeySource` at all — the `ISigningKeyRing`
   factory constructs and owns the source directly, by `ActivatorUtilities` or the caller's factory
@@ -53,6 +53,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   and is not detectable from this method.
 
 ### Changed
+
+- **BREAKING: the development signing key provider is now an `ISigningKeySource` served through the signing key ring** (#512)
+
+  `AddInMemoryDevelopmentJwtSigningKeys()` and `AddPersistedDevelopmentJwtSigningKeys()` keep their
+  names and their configuration surfaces, but now register a `DevelopmentSigningKeySource` and a
+  `StaticSigningKeyRing` over it instead of an `IJwtSigningService`. An application that resolved
+  `IJwtSigningService` to reach the development key must resolve `ISigningKeyRing` instead. The
+  environment gate, the `0700`/`0600` file permissions, and the fail-closed checks on a broader mode,
+  a symlinked path, or a directory owned by another user are all unchanged.
+
+  `DevelopmentSigningKeyOptions` no longer derives from `KeySetOptions`, so its inherited
+  `PublicationLead` property is gone — a single generated key under a read-once ring has no
+  publication lead to configure. The development key is now reported with no expiry at all rather
+  than an expiry of `DateTimeOffset.MaxValue`, so the signing key expiry health check reports it as
+  a key that never expires instead of computing a remaining lifetime in millennia.
+
+  The startup verifier that emits the development-key warning no longer pre-warms the key: the ring's
+  own startup verifier already reads the source and self-tests its signer before the host accepts
+  traffic, so file I/O and permission failures still surface at startup, not on the first token.
 
 - **BREAKING (behavioral): the advertised-signing-algorithm startup check now also enforces that every currently-or-soon producible algorithm is advertised, and no longer treats a retirement-window key as producible** (#494)
 

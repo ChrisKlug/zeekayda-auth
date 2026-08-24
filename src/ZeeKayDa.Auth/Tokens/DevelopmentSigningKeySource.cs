@@ -2,12 +2,11 @@ using System.Buffers;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Options;
-using ZeeKayDa.Auth.Logging;
 
 namespace ZeeKayDa.Auth.Tokens;
 
 /// <summary>
-/// A development-only <see cref="IJwtSigningService"/> that generates an ephemeral RSA key on
+/// A development-only <see cref="ISigningKeySource"/> that generates an ephemeral RSA key on
 /// startup, with optional persistence to a local file so that tokens survive application restarts.
 /// </summary>
 /// <remarks>
@@ -17,14 +16,8 @@ namespace ZeeKayDa.Auth.Tokens;
 /// <c>DevelopmentSigningKeyWarningService</c> is not running (e.g. direct construction in unit
 /// tests); the gate is skipped when <see cref="DevelopmentSigningKeyOptions.EnvironmentName"/> is
 /// <see langword="null"/> (no host).
-/// <para>
-/// This is a degenerate <see cref="KeySetOptions"/> provider: exactly one key, active from startup,
-/// with no rotation use-case — rotating an ephemeral key would silently invalidate all tokens
-/// issued during the process's lifetime so far.
-/// </para>
 /// </remarks>
-internal sealed class DevelopmentJwtSigningService
-    : JwtSigningService<DevelopmentSigningKeyOptions>
+internal sealed class DevelopmentSigningKeySource : ISigningKeySource, IDisposable
 {
     // Minimum RSA key size per NIST SP 800-57 Part 1 Rev. 5 §5.6.1 Table 2.
     private const int MinimumRsaKeySize = 3072;
@@ -32,79 +25,87 @@ internal sealed class DevelopmentJwtSigningService
     // Key file name within the persistence directory.
     private const string KeyFileName = "dev-signing-key.pem";
 
-    // Stable provider-internal identifier for the single dev key. Never the JWKS/JWS kid — the
-    // base class derives that from the public key material.
-    private static readonly KeyId DevKeyId = new("development");
+    // Stable source-internal identifier for the single dev key. Never the JWKS/JWS kid — the ring
+    // derives that from the public key material.
+    private static readonly SourceKeyId DevKeyId = new("development");
 
-    private readonly IOptions<DevelopmentSigningKeyOptions> _devOptions;
+    private readonly IOptions<DevelopmentSigningKeyOptions> _options;
     private readonly IDevelopmentSigningKeyFileSystem _fileSystem;
 
-    // Holds the RSA key generated/loaded by ListKeysAsync until CreateSignerAsync claims it via
+    // Holds the RSA key generated/loaded by ReadAsync until CreateSignerAsync claims it via
     // Interlocked.Exchange, transferring ownership to the LocalSigner it returns.
     private RSA? _pendingPrivateKey;
 
-    public DevelopmentJwtSigningService(
-        IOptions<DevelopmentSigningKeyOptions> devOptions,
-        TimeProvider timeProvider,
-        IDevelopmentSigningKeyFileSystem fileSystem,
-        ISigningKeyRetirementWindowProvider retirementWindowProvider,
-        ISanitizingLogger<JwtSigningService<DevelopmentSigningKeyOptions>> logger)
-        : base(devOptions, timeProvider, retirementWindowProvider, logger)
+    public DevelopmentSigningKeySource(
+        IOptions<DevelopmentSigningKeyOptions> options,
+        IDevelopmentSigningKeyFileSystem fileSystem)
     {
+        ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(fileSystem);
-        _devOptions = devOptions;
+
+        _options = options;
         _fileSystem = fileSystem;
     }
 
     /// <inheritdoc/>
-    protected override async ValueTask<IReadOnlyList<KeyListing>> ListKeysAsync(CancellationToken cancellationToken)
+    public async ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
     {
         // RSA.Create is CPU-bound with no async variant, so key generation cannot be cancelled.
         DevelopmentSigningKeyGate.Enforce(
-            _devOptions.Value.EnvironmentName,
-            _devOptions.Value.AllowedDevelopmentJwtSigningKeysEnvironments);
+            _options.Value.EnvironmentName,
+            _options.Value.AllowedDevelopmentJwtSigningKeysEnvironments);
 
-        var persistDir = _devOptions.Value.PersistToDirectory;
+        var persistDir = _options.Value.PersistToDirectory;
         var rsa = persistDir is not null
             ? await LoadOrGeneratePersistedKeyAsync(persistDir, cancellationToken).ConfigureAwait(false)
             : GenerateEphemeralKey();
 
-        // Compute the public key parameters before stashing the private key reference, so that a
-        // failure here leaves _pendingPrivateKey untouched rather than holding a key nothing will
-        // ever claim or dispose.
-        var publicKey = PublicKeyParameters.FromRsa(rsa.ExportParameters(false));
+        SourceKey key;
+        try
+        {
+            // ExpiresAt = null: a dev key never expires — its lifetime is the process's, not a
+            // certificate's.
+            key = new SourceKey(
+                DevKeyId,
+                SigningAlgorithm.RS256,
+                PublicKeyParameters.FromRsa(rsa.ExportParameters(false)),
+                ExpiresAt: null);
+        }
+        catch
+        {
+            // Nothing will ever claim this key through CreateSignerAsync, so dispose it here rather
+            // than leaving it to finalization.
+            rsa.Dispose();
+            throw;
+        }
 
-        _pendingPrivateKey = rsa;
+        // Replacing rather than assigning keeps a second read from orphaning the first read's key.
+        Interlocked.Exchange(ref _pendingPrivateKey, rsa)?.Dispose();
 
-        // ActivateAt = null: the single dev key is active from startup (the degenerate KeySetOptions
-        // case). ExpiresAt = MaxValue: a dev key never hard-expires — its lifetime is the
-        // process's, not a certificate's.
-        var listing = new KeyListing(DevKeyId, SigningAlgorithm.RS256, publicKey, ActivateAt: null, ExpiresAt: DateTimeOffset.MaxValue);
-        return [listing];
+        return SourceKeySet.Create(previous: null, current: key, next: null);
     }
 
     /// <inheritdoc/>
-    protected override ValueTask OnDisposeAsync()
-    {
-        // If ListKeysAsync generated/loaded a key but CreateSignerAsync never claimed it, the key
-        // would otherwise leak until GC finalization instead of being disposed/zeroized.
-        Interlocked.Exchange(ref _pendingPrivateKey, null)?.Dispose();
-
-        return ValueTask.CompletedTask;
-    }
-
-    /// <inheritdoc/>
-    protected override ValueTask<ISigner> CreateSignerAsync(KeyId id, CancellationToken cancellationToken)
+    public ValueTask<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
     {
         var rsa = Interlocked.Exchange(ref _pendingPrivateKey, null)
             ?? throw new InvalidOperationException(
                 $"{nameof(CreateSignerAsync)} was called for key '{id.Value}' but no pending private " +
-                $"key is available. This dev-only provider expects {nameof(CreateSignerAsync)} to be " +
-                $"called at most once, immediately after {nameof(ListKeysAsync)} generated or loaded " +
-                "the single dev key.");
+                $"key is available. This dev-only source expects {nameof(CreateSignerAsync)} to be " +
+                $"called at most once, immediately after {nameof(ReadAsync)} generated or loaded the " +
+                "single dev key.");
 
         return new ValueTask<ISigner>(new LocalSigner(SigningAlgorithm.RS256, rsa));
     }
+
+    /// <summary>
+    /// Disposes the generated or loaded key when <see cref="CreateSignerAsync"/> never claimed it.
+    /// </summary>
+    /// <remarks>
+    /// A claimed key belongs to the <see cref="LocalSigner"/> handed out for it, which the ring
+    /// disposes before it disposes this source, so this never double-disposes.
+    /// </remarks>
+    public void Dispose() => Interlocked.Exchange(ref _pendingPrivateKey, null)?.Dispose();
 
     private static RSA GenerateEphemeralKey() => RSA.Create(MinimumRsaKeySize);
 
