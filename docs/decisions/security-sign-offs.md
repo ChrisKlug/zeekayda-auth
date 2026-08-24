@@ -211,6 +211,20 @@ must do so.
 - **Signature-format and JWKS-endpoint behaviour are not covered** — no endpoint publishes this key
   set yet.
 
+**Addendum, 2026-08-24, re-verified against issue #525 (fix round on branch
+`feat/525-signing-source-registration-guard`).** Control 3's identity mechanism moved from the
+keyed service's `KeyedImplementationType` (which is `null` for a factory registration and therefore
+unusable for the guard) to an internal `SigningKeySourceRegistration` marker, itself registered under
+the same private, unnameable key object — closing a hole where a guessable string key would have let
+other code pre-empt the framework's own keyed registration. Control 3 was re-verified against the
+factory overload specifically: an abstract `TSource` (an interface satisfies `class`) is rejected
+before either overload can register anything under that key, and a second registration of the same
+`TSource` throws whenever either call used the factory overload, so a factory closing over
+configuration can no longer be silently discarded by a same-type "no-op" path. **Accepted residual,
+not mitigated:** a factory declared over a concrete base `TSource` that returns a derived instance
+still passes the ring's marker-vs-resolved-instance assignability check, since the check is
+`IsInstanceOfType`, not exact-type equality.
+
 ---
 
 ## 2. Authorization-code store

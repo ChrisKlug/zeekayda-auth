@@ -34,9 +34,8 @@ signing key, and because `ISigningKeyRing` is framework-sealed, a future polling
 `SigningKeyOrNull`/`IsSigning` additively instead of a breaking null check.
 
 **The single-key bootstrap exemption belongs to the fixed tier only.** A lone eligible key is active
-on `KeySetOptions`; on `KeySourceOptions` it is not, so a listing that revocation has shrunk to one
-key cannot re-arm the exemption on restart or scale-out. Dispatch is on the options type, and the
-source tier has no argument that could obtain it.
+on `KeySetOptions`; on `KeySourceOptions` it is not, so a listing shrunk to one key by revocation
+cannot re-arm the exemption on restart or scale-out. Dispatch is on the options type.
 
 **One timeline engine, and the operator sets only `ActivateAt`.** `SigningKeyRotation` is a pure
 function over immutable public data that both tiers call. Every other instant is derived —
@@ -97,19 +96,23 @@ third-party surface into the SemVer contract. The JWK mapping is hand-rolled ove
 specified by RFC 7517/7518 and held to known-answer vectors — a maintenance cost taken deliberately
 over the dependency.
 
-**One signing provider per application, registered flatly.** Every `Add<Provider>Signing()` extension
-registers `IJwtSigningService` as a singleton, calls `ThrowIfAlreadyRegistered` so a second provider
-fails loudly instead of silently winning, registers its own `IValidateOptions<TOptions>`, and returns
-the same builder — so environment-conditional provider selection is an ordinary `if`/`else`.
+**One signing provider per application, registered flatly.** The old model's
+`Add<Provider>Signing()` extensions register `IJwtSigningService` as a singleton and call
+`ThrowIfAlreadyRegistered` so a second provider fails loudly. The `KeySourceOptions` tier's
+`AddZeeKayDaSigningKeySource<TSource>()` (type and factory overloads) enforces the same rule with an
+internal `SigningKeySourceRegistration` marker, keyed under a private, unnameable object rather than
+a string: the same `TSource` registered twice via the type overload is a no-op; a genuinely different
+`TSource` throws; and a second registration of the same `TSource` throws whenever either call used
+the factory overload, since a factory can close over configuration a silent no-op would discard.
+Either way, environment-conditional provider selection stays an ordinary `if`/`else`.
 
 **Each production provider platform is its own package; the development provider is not.**
 `ZeeKayDa.Auth.AzureKeyVault` (remote and cached variants together — same dependency, same
 operational context, so the choice is a method call, not a package swap), `ZeeKayDa.Auth.Windows`
-(Windows-only TFM, so a mismatched restore fails at build time), `ZeeKayDa.Auth.FileSystem`
-(portable, BCL-only). Each references core only, never the ASP.NET Core adapter, and exposes nothing
-but its registration methods and options type. Package identity is permanent once published, so this
-was settled before any provider shipped; the development provider stays in core as the first
-registration a new adopter hits, with no platform dependency to isolate.
+(Windows-only TFM, so a mismatched restore fails at build time), `ZeeKayDa.Auth.FileSystem` (portable,
+BCL-only). Each references core only, never the ASP.NET Core adapter, and exposes nothing but its
+registration methods and options type — settled before any provider shipped, since package identity
+is permanent once published. The development provider stays in core, with no platform to isolate.
 
 **`ZeeKayDa.Auth.FileSystem` and `ZeeKayDa.Auth.Windows` hold narrow `InternalsVisibleTo` grants**
 from core, for POSIX `stat`/`lstat` interop and process-identity diagnostics respectively — forking

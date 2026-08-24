@@ -11,11 +11,13 @@ namespace ZeeKayDa.Auth.Extensions;
 /// </summary>
 public static class ZeeKayDaSigningKeyServiceCollectionExtensions
 {
-    // Registered under this key rather than as a plain singleton, so GetService<ISigningKeySource>()
-    // returns null for arbitrary application code and only StaticSigningKeyRing's own factory below
-    // can resolve it — closing off the ability to call CreateSignerAsync and dispose the live
-    // production private-key handle outside the framework's own startup self-test.
-    private const string SigningKeySourceServiceKey = "ZeeKayDa.Auth.Tokens.ISigningKeySource";
+    // Both ISigningKeySource and its registration marker are resolved only through this private,
+    // unnameable key. GetService<ISigningKeySource>() and IEnumerable<ISigningKeySource> return
+    // nothing for arbitrary application code, and nothing outside this assembly can pre-empt the
+    // framework's own TryAddKeyedSingleton by guessing a string key — closing off the ability to
+    // resolve ISigningKeySource, and therefore the live production private-key handle, outside the
+    // framework's own startup self-test.
+    private static readonly object SigningKeySourceServiceKey = new();
 
     /// <summary>
     /// Registers <typeparamref name="TSource"/> as the application's <see cref="ISigningKeySource"/>,
@@ -28,16 +30,23 @@ public static class ZeeKayDaSigningKeyServiceCollectionExtensions
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="services"/> is <see langword="null"/>.
     /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Thrown when <typeparamref name="TSource"/> is an interface or abstract class rather than a
+    /// concrete <see cref="ISigningKeySource"/> implementation.
+    /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// Thrown when a different <see cref="ISigningKeySource"/> implementation is already registered.
+    /// Thrown when a different <see cref="ISigningKeySource"/> implementation is already registered,
+    /// or when <typeparamref name="TSource"/> is already registered via the factory overload.
     /// </exception>
     /// <remarks>
     /// Idempotent with respect to <typeparamref name="TSource"/>: calling this method again with the
-    /// same source type (for example, defensively from a third-party provider package's own
-    /// registration method) is a no-op. Calling it with a <em>different</em> source type throws,
-    /// rather than silently keeping whichever was registered first. <see cref="ISigningKeySource"/>
-    /// itself is registered under an internal key, not as a plain singleton — it is not resolvable
-    /// via <c>GetService&lt;ISigningKeySource&gt;()</c>.
+    /// same source type, both times via this overload, is a no-op. Calling it with a
+    /// <em>different</em> source type throws, rather than silently keeping whichever was registered
+    /// first, and so does calling it for a <typeparamref name="TSource"/> already registered via the
+    /// factory overload — a factory delegate can close over configuration, so treating that as a
+    /// no-op would silently discard it. <see cref="ISigningKeySource"/> itself is registered under an
+    /// internal key, not as a plain singleton — it is not resolvable via
+    /// <c>GetService&lt;ISigningKeySource&gt;()</c>.
     /// </remarks>
     public static IServiceCollection AddZeeKayDaSigningKeySource<TSource>(this IServiceCollection services)
         where TSource : class, ISigningKeySource
@@ -61,21 +70,27 @@ public static class ZeeKayDaSigningKeyServiceCollectionExtensions
     /// Thrown when <paramref name="services"/> or <paramref name="implementationFactory"/> is
     /// <see langword="null"/>.
     /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Thrown when <typeparamref name="TSource"/> is an interface or abstract class rather than a
+    /// concrete <see cref="ISigningKeySource"/> implementation.
+    /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// Thrown when a different <see cref="ISigningKeySource"/> implementation is already registered.
+    /// Thrown when a different <see cref="ISigningKeySource"/> implementation is already registered,
+    /// or when <typeparamref name="TSource"/> is already registered, by either overload.
     /// </exception>
     /// <remarks>
-    /// Idempotent with respect to <typeparamref name="TSource"/>: calling this method again with the
-    /// same source type — including with a different <paramref name="implementationFactory"/> — is a
-    /// no-op, with the first factory winning. Calling it with a <em>different</em> source type throws,
-    /// rather than silently keeping whichever was registered first. <see cref="ISigningKeySource"/>
-    /// itself is registered under an internal key, not as a plain singleton — it is not resolvable
-    /// via <c>GetService&lt;ISigningKeySource&gt;()</c>.
+    /// A second registration of the same <typeparamref name="TSource"/> always throws when this
+    /// overload is involved on either side — a factory delegate can close over configuration, and a
+    /// second registration silently keeping the first factory's configuration is exactly the failure
+    /// this method exists to prevent. Calling it with a <em>different</em> source type also throws.
+    /// <see cref="ISigningKeySource"/> itself is registered under an internal key, not as a plain
+    /// singleton — it is not resolvable via <c>GetService&lt;ISigningKeySource&gt;()</c>.
     /// </remarks>
     public static IServiceCollection AddZeeKayDaSigningKeySource<TSource>(
         this IServiceCollection services, Func<IServiceProvider, TSource> implementationFactory)
         where TSource : class, ISigningKeySource
     {
+        ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(implementationFactory);
 
         return AddCore(services, implementationFactory);
@@ -87,21 +102,43 @@ public static class ZeeKayDaSigningKeyServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        var existing = (SigningKeySourceRegistration?)services
-            .FirstOrDefault(sd => sd.ServiceType == typeof(SigningKeySourceRegistration))
-            ?.ImplementationInstance;
-
-        if (existing is not null && existing.SourceType != typeof(TSource))
+        if (typeof(TSource).IsAbstract)
         {
-            throw new InvalidOperationException(
-                $"Cannot register signing key source '{typeof(TSource).FullName}': " +
-                $"'{existing.SourceType.FullName}' is already registered. Only one signing key " +
-                $"source may be registered per application. Select between them with an ordinary " +
-                $"if/else over the two registration calls rather than calling both.");
+            throw new ArgumentException(
+                $"'{typeof(TSource).FullName}' is an interface or abstract class and cannot be " +
+                $"registered as a signing key source. Pass the concrete {nameof(ISigningKeySource)} " +
+                "implementation type as TSource.");
         }
 
-        if (existing is null)
-            services.AddSingleton(new SigningKeySourceRegistration(typeof(TSource)));
+        var registeredByFactory = implementationFactory is not null;
+        var existing = FindExistingRegistration(services);
+
+        if (existing is not null)
+        {
+            if (existing.SourceType != typeof(TSource))
+            {
+                throw new InvalidOperationException(
+                    $"Cannot register signing key source '{DisplayName(typeof(TSource))}': " +
+                    $"'{DisplayName(existing.SourceType)}' is already registered. Only one signing " +
+                    "key source may be registered per application. Select between them with an " +
+                    "ordinary if/else over the two registration calls rather than calling both.");
+            }
+
+            if (existing.RegisteredByFactory || registeredByFactory)
+            {
+                throw new InvalidOperationException(
+                    $"'{DisplayName(typeof(TSource))}' is already registered as the signing key " +
+                    "source, and at least one of the two registrations used the factory overload. " +
+                    "A factory delegate can close over configuration, so a second factory " +
+                    "registration for the same source type would silently discard the second " +
+                    "factory's configuration. Register the signing key source exactly once.");
+            }
+        }
+        else
+        {
+            services.AddKeyedSingleton(
+                SigningKeySourceServiceKey, new SigningKeySourceRegistration(typeof(TSource), registeredByFactory));
+        }
 
         if (implementationFactory is null)
             services.TryAddKeyedSingleton<ISigningKeySource, TSource>(SigningKeySourceServiceKey);
@@ -110,23 +147,49 @@ public static class ZeeKayDaSigningKeyServiceCollectionExtensions
                 SigningKeySourceServiceKey, (sp, _) => implementationFactory(sp));
 
         services.TryAddSingleton<TimeProvider>(TimeProvider.System);
-        services.TryAddSingleton<ISigningKeyRing>(sp => new StaticSigningKeyRing(
-            sp.GetRequiredKeyedService<ISigningKeySource>(SigningKeySourceServiceKey),
-            sp.GetRequiredService<TimeProvider>()));
+        services.TryAddSingleton<ISigningKeyRing>(sp =>
+        {
+            var source = sp.GetRequiredKeyedService<ISigningKeySource>(SigningKeySourceServiceKey);
+            var recordedType = sp
+                .GetRequiredKeyedService<SigningKeySourceRegistration>(SigningKeySourceServiceKey)
+                .SourceType;
+
+            if (!recordedType.IsInstanceOfType(source))
+            {
+                throw new ZeeKayDaConfigurationException(
+                    new ZeeKayDaConfigurationFailure(
+                        "signing.source_registration_mismatch",
+                        $"The resolved signing key source '{DisplayName(source.GetType())}' does " +
+                        $"not match the registered source type '{DisplayName(recordedType)}'. This " +
+                        $"indicates two different {nameof(ISigningKeySource)} registrations were " +
+                        "composed into the same service collection."));
+            }
+
+            return new StaticSigningKeyRing(source, sp.GetRequiredService<TimeProvider>());
+        });
 
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IStartupVerifier, SigningKeyRingStartupVerifier>());
 
         return services;
     }
+
+    private static SigningKeySourceRegistration? FindExistingRegistration(IServiceCollection services) =>
+        (SigningKeySourceRegistration?)services
+            .FirstOrDefault(sd => sd.ServiceType == typeof(SigningKeySourceRegistration) && sd.IsKeyedService)
+            ?.KeyedImplementationInstance;
+
+    private static string DisplayName(Type type) => $"{type.FullName} ({type.Assembly.GetName().Name})";
 }
 
 /// <summary>
-/// Records which <see cref="ISigningKeySource"/> implementation has been registered, so the
-/// one-source-per-application guard in
-/// <see cref="ZeeKayDaSigningKeyServiceCollectionExtensions"/> can recognize the incumbent even
-/// when it was registered via the factory overload, for which
-/// <see cref="ServiceDescriptor.ImplementationType"/> is <see langword="null"/>.
+/// Records the <see cref="ISigningKeySource"/> implementation type registered via
+/// <see cref="ZeeKayDaSigningKeyServiceCollectionExtensions"/>, and whether that registration used
+/// the factory overload.
 /// </summary>
-/// <param name="SourceType">The <see cref="ISigningKeySource"/> implementation type registered.</param>
-internal sealed record SigningKeySourceRegistration(Type SourceType);
+/// <param name="SourceType">The registered <see cref="ISigningKeySource"/> implementation type.</param>
+/// <param name="RegisteredByFactory">
+/// <see langword="true"/> if the source was registered via the factory overload;
+/// <see langword="false"/> if it was registered via the type overload for DI activation.
+/// </param>
+internal sealed record SigningKeySourceRegistration(Type SourceType, bool RegisteredByFactory);
