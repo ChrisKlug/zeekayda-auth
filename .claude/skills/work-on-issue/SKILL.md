@@ -194,6 +194,40 @@ A reviewer that says "I'll re-read only those" is telling you how to run the nex
 Re-run a **full** review only when the shape itself changed — a new member on a public interface, a
 responsibility moved between types. Then it is a new design, and it gets a new first round.
 
+### Never hand over a commit nobody has looked at
+
+**The last fix commit is the one that escapes.** It is written after the reviewers have said their
+piece, it is usually small, it feels like tidying, and the loop's own momentum is toward the gate —
+so it goes to the maintainer and then to the PR having been seen by nobody.
+
+That has already happened. On #525 the review ran three rounds; the fourth commit fixed the last
+round's finding and was never reviewed at all. The PR review found a defect in it — after ~840k
+tokens of local review that never looked at that commit. The expensive part was not the three
+rounds. It was skipping the cheap check on the one commit with nothing behind it.
+
+**Every commit reaches Stage 4 having been read by a reviewer or by you.** If a fix is too small to
+justify a reviewer round, it is small enough for you to read yourself — `git diff` the commit, read
+the file it touched, and say in Stage 4 that you reviewed it rather than an agent. That is a minute,
+not a round. A commit nobody has read is not ready to show, however green the build is.
+
+### A fix that changes a documented rule must re-check the document
+
+Targeted re-review is scoped to the fix diff, which is correct for cost and wrong for one specific
+thing: it cannot see documentation written in an *earlier* round that the current fix has just
+falsified. The reviewer is looking at the code change; the stale claim is in a file the change does
+not touch.
+
+This is exactly how a register ends up recording a mitigation that does not exist — a decision entry
+or sign-off addendum written for round N, describing a rule that round N+1 narrowed. On #525, one
+round wrote a sign-off addendum saying the guard threw whenever more than one registration was
+resolved; the next round relaxed that rule and left the addendum standing.
+
+**Whenever a fix changes a rule, a threshold, a failure mode, or a public behaviour, re-read what
+already documents it** — `docs/decisions/`, the CHANGELOG entry, and the XML docs on the members
+involved — before the commit is made, not at the gate. Ask directly: *did I just make something
+already written down false?* Nothing else in this loop asks that question, and no reviewer scoped to
+a diff can answer it.
+
 ---
 
 ## Stage 4 — Show the maintainer the code ⛔
@@ -202,7 +236,9 @@ Give them, in chat:
 
 - the public API as it actually ended up — the real signatures, not the Stage 1 sketch;
 - what changed, briefly;
-- what the local review round found, and anything deliberately left unfixed and why.
+- what the local review round found, and anything deliberately left unfixed and why;
+- **who read each commit.** If any commit was reviewed only by you rather than by an agent, say so.
+  A commit nobody read does not reach this gate — see "Never hand over a commit nobody has looked at".
 
 The branch is local; they diff it in their own editor. Keep this short enough to actually be read —
 if it is too long to read, the gate stops working.
