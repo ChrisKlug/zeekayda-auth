@@ -250,6 +250,7 @@ public sealed class ZeeKayDaSigningKeyServiceCollectionExtensionsTests
     [InlineData(SecondRegistrationKind.TypeOverload, SecondRegistrationKind.FactoryOverload)]
     [InlineData(SecondRegistrationKind.FactoryOverload, SecondRegistrationKind.TypeOverload)]
     [InlineData(SecondRegistrationKind.TypeOverload, SecondRegistrationKind.TypeOverload)]
+    [InlineData(SecondRegistrationKind.FactoryOverload, SecondRegistrationKind.FactoryOverload)]
     public void AddZeeKayDaSigningKeySource_of_a_different_source_throws_naming_both_sources_and_the_registering_assembly(
         SecondRegistrationKind first, SecondRegistrationKind second)
     {
@@ -310,11 +311,11 @@ public sealed class ZeeKayDaSigningKeyServiceCollectionExtensionsTests
     {
         // Models the composition a modular host or shared bootstrap library actually produces: two
         // independently-built service collections, each of which called AddZeeKayDaSigningKeySource
-        // for its own source, appended into one host collection in the natural order (all of the
-        // first collection's descriptors, then all of the second's) — not hand-interleaved. MS DI's
-        // keyed-service resolution is last-wins, so after this composition both the marker and the
-        // resolved instance come from the second collection and agree with each other; only a check
-        // for more than one recorded registration under the key can catch this.
+        // for its own, distinct source, appended into one host collection in the natural order (all
+        // of the first collection's descriptors, then all of the second's) — not hand-interleaved. MS
+        // DI's keyed-service resolution is last-wins, so after this composition both the marker and
+        // the resolved instance come from the second collection and agree with each other; only a
+        // check for more than one distinct recorded source type under the key can catch this.
         var firstServices = new ServiceCollection();
         firstServices.AddZeeKayDaSigningKeySource<ExternalSigningKeySource>();
 
@@ -328,6 +329,81 @@ public sealed class ZeeKayDaSigningKeyServiceCollectionExtensionsTests
             combined.Add(descriptor);
 
         using var provider = combined.BuildServiceProvider();
+
+        var act = () => provider.GetRequiredService<ISigningKeyRing>();
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.source_registration_mismatch");
+    }
+
+    [Fact]
+    public void Resolving_ISigningKeyRing_throws_when_composed_from_two_libraries_that_each_used_the_factory_overload()
+    {
+        // Same composition shape, but both collections registered the *same* source type via the
+        // factory overload. The distinct-type check alone would wave this through, but each factory
+        // can close over its own configuration, so the composition is still ambiguous and must throw.
+        var firstServices = new ServiceCollection();
+        firstServices.AddZeeKayDaSigningKeySource(_ => new ExternalSigningKeySource());
+
+        var secondServices = new ServiceCollection();
+        secondServices.AddZeeKayDaSigningKeySource(_ => new ExternalSigningKeySource());
+
+        var combined = new ServiceCollection();
+        foreach (var descriptor in firstServices)
+            combined.Add(descriptor);
+        foreach (var descriptor in secondServices)
+            combined.Add(descriptor);
+
+        using var provider = combined.BuildServiceProvider();
+
+        var act = () => provider.GetRequiredService<ISigningKeyRing>();
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.source_registration_mismatch");
+    }
+
+    [Fact]
+    public void Resolving_ISigningKeyRing_does_not_throw_when_composed_from_two_libraries_that_registered_the_same_source_by_type()
+    {
+        // On a single collection, registering the same TSource twice via the type overload is a
+        // documented no-op. Composing two independently-built collections that each did exactly that
+        // is unambiguous in the same way — one source type, no factory closures to lose — and must
+        // resolve a working ring rather than being treated as the ambiguous case.
+        var firstServices = new ServiceCollection();
+        firstServices.AddZeeKayDaSigningKeySource<ExternalSigningKeySource>();
+
+        var secondServices = new ServiceCollection();
+        secondServices.AddZeeKayDaSigningKeySource<ExternalSigningKeySource>();
+
+        var combined = new ServiceCollection();
+        foreach (var descriptor in firstServices)
+            combined.Add(descriptor);
+        foreach (var descriptor in secondServices)
+            combined.Add(descriptor);
+
+        using var provider = combined.BuildServiceProvider();
+
+        var act = () => provider.GetRequiredService<ISigningKeyRing>();
+
+        act.Should().NotThrow();
+        provider.GetRequiredService<ISigningKeyRing>().Should().BeOfType<StaticSigningKeyRing>();
+    }
+
+    [Fact]
+    public void Resolving_ISigningKeyRing_throws_a_coded_failure_when_an_unrelated_source_is_registered_under_the_framework_key()
+    {
+        // Proves the assignability check without reflection: code holding the IServiceCollection at
+        // composition time can read the framework's own private service key straight off the
+        // ISigningKeySource descriptor and register an unrelated source under it.
+        var services = new ServiceCollection();
+        services.AddZeeKayDaSigningKeySource<ExternalSigningKeySource>();
+
+        var frameworkKey = services
+            .Single(d => d.ServiceType == typeof(ISigningKeySource))
+            .ServiceKey;
+        services.AddKeyedSingleton<ISigningKeySource>(frameworkKey, (_, _) => new OtherExternalSigningKeySource());
+
+        using var provider = services.BuildServiceProvider();
 
         var act = () => provider.GetRequiredService<ISigningKeyRing>();
 

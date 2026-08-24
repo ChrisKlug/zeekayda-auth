@@ -96,16 +96,16 @@ third-party surface into the SemVer contract. The JWK mapping is hand-rolled ove
 specified by RFC 7517/7518 and held to known-answer vectors — a maintenance cost taken deliberately
 over the dependency.
 
-**One signing provider per application, registered flatly.** The old model's
-`Add<Provider>Signing()` extensions register `IJwtSigningService` as a singleton and call
-`ThrowIfAlreadyRegistered` so a second provider fails loudly. The `KeySourceOptions` tier's
-`AddZeeKayDaSigningKeySource<TSource>()` (type and factory overloads) enforces the same rule with an
-internal `SigningKeySourceRegistration` marker, keyed under a private object rather than a string so
-guessing the key cannot pre-empt it: the same `TSource` registered twice via the type overload is a
-no-op; a different `TSource`, or a second registration where either call used the factory overload,
-throws — a factory can close over configuration a silent no-op would discard. The ring factory also
-rejects a composed collection carrying more than one such marker, closing a DI last-wins gap where two
-independently-registered sources would otherwise agree unnoticed. Selection stays an ordinary `if`/`else`.
+**One signing provider per application, registered flatly.** The old model's `Add<Provider>Signing()`
+extensions register `IJwtSigningService` as a singleton and call `ThrowIfAlreadyRegistered` so a second
+provider fails loudly. The `KeySourceOptions` tier's `AddZeeKayDaSigningKeySource<TSource>()` (type and
+factory overloads) enforces the same rule with an internal `SigningKeySourceRegistration` marker, keyed
+under a private object rather than a string so guessing the key cannot pre-empt it: the same `TSource`
+registered twice via the type overload is a no-op; a different `TSource`, or a second registration where
+either call used the factory overload, throws — a factory can close over configuration a silent no-op
+would discard. The ring factory also validates the composed marker set before resolving: distinct source
+types or a factory-registered marker throw; markers all naming the same type-registered `TSource`
+resolve, matching the single-collection no-op. Selection stays an ordinary `if`/`else`.
 
 **Each production provider platform is its own package; the development provider is not.**
 `ZeeKayDa.Auth.AzureKeyVault` (remote and cached variants together — same dependency, same

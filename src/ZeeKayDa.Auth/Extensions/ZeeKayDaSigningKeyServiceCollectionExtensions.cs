@@ -16,10 +16,10 @@ public static class ZeeKayDaSigningKeyServiceCollectionExtensions
     // nothing for arbitrary application code, and nothing outside this assembly can pre-empt the
     // framework's own TryAddKeyedSingleton by guessing a string key. This closes off *accidental*
     // collision and pre-emption — nobody guesses an object identity. It is not a boundary against
-    // deliberate in-process code: application code that already holds an IServiceProvider can read
-    // this key straight off the framework's own ISigningKeySource descriptor, or enumerate
-    // GetKeyedServices<ISigningKeySource>(KeyedService.AnyKey), and reach the live instance without
-    // reflection either way.
+    // deliberate in-process code: code holding the IServiceCollection at composition time can read
+    // this key straight off the framework's own ISigningKeySource descriptor, and code holding only
+    // an IServiceProvider can reach the live instance via
+    // GetKeyedServices<ISigningKeySource>(KeyedService.AnyKey) — neither needs reflection.
     private static readonly object SigningKeySourceServiceKey = new();
 
     /// <summary>
@@ -125,11 +125,14 @@ public static class ZeeKayDaSigningKeyServiceCollectionExtensions
         services.TryAddSingleton<TimeProvider>(TimeProvider.System);
         services.TryAddSingleton<ISigningKeyRing>(sp =>
         {
-            var source = sp.GetRequiredKeyedService<ISigningKeySource>(SigningKeySourceServiceKey);
             var registrations = sp.GetKeyedServices<SigningKeySourceRegistration>(SigningKeySourceServiceKey)
                 .ToArray();
 
-            ValidateSingleResolvedRegistration(registrations, source);
+            var recordedType = ValidateRegistrationSet(registrations);
+
+            var source = sp.GetRequiredKeyedService<ISigningKeySource>(SigningKeySourceServiceKey);
+
+            ValidateResolvedSource(recordedType, source);
 
             return new StaticSigningKeyRing(source, sp.GetRequiredService<TimeProvider>());
         });
@@ -180,39 +183,63 @@ public static class ZeeKayDaSigningKeyServiceCollectionExtensions
     }
 
     /// <summary>
-    /// Validates the pair the ring factory actually resolved: the single recorded registration
-    /// and the source instance DI produced for it.
+    /// Validates the recorded registrations before the source instance is resolved, so a
+    /// misconfigured composition fails before any of the winning registration's side effects run.
     /// </summary>
-    /// <remarks>
-    /// Composing two independently-built service collections that each called
-    /// <c>AddZeeKayDaSigningKeySource</c> is not caught by <see cref="AddCore{TSource}"/> — each
-    /// collection only sees its own descriptors at the point it is built. MS DI keyed-service
-    /// resolution is last-wins, and a naive "does the recorded type match the resolved instance"
-    /// check would pass in that composition, because both the marker and the source it validates
-    /// against are drawn from the same, most-recently-added collection. Checking for more than one
-    /// recorded registration under the key catches that composition instead.
-    /// </remarks>
+    /// <returns>The single distinct <see cref="SigningKeySourceRegistration.SourceType"/> in force.</returns>
     /// <exception cref="ZeeKayDaConfigurationException">
-    /// Thrown when more than one <see cref="SigningKeySourceRegistration"/> is registered under the
-    /// signing key source's service key, or when the resolved <see cref="ISigningKeySource"/> is not
-    /// an instance of the single recorded registration's type.
+    /// Thrown when no registration is found, when more than one distinct source type is recorded, or
+    /// when any recorded registration used the factory overload alongside another registration.
     /// </exception>
-    private static void ValidateSingleResolvedRegistration(
-        IReadOnlyCollection<SigningKeySourceRegistration> registrations, ISigningKeySource source)
+    private static Type ValidateRegistrationSet(IReadOnlyCollection<SigningKeySourceRegistration> registrations)
     {
-        if (registrations.Count > 1)
+        if (registrations.Count == 0)
         {
             throw new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure(
                     "signing.source_registration_mismatch",
-                    $"{registrations.Count} signing key source registrations were found. This " +
-                    "happens when two independently-built service collections, each of which called " +
-                    $"{nameof(AddZeeKayDaSigningKeySource)}, are composed into the same host. Only " +
-                    "one signing key source may be registered per application."));
+                    "No signing key source registration was found for the resolved " +
+                    $"{nameof(ISigningKeySource)}."));
         }
 
-        var recordedType = registrations.Single().SourceType;
+        var distinctTypes = registrations.Select(r => r.SourceType).Distinct().ToArray();
 
+        if (distinctTypes.Length > 1)
+        {
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "signing.source_registration_mismatch",
+                    $"{distinctTypes.Length} distinct signing key source types were found across " +
+                    $"{registrations.Count} registrations. This happens when two independently-built " +
+                    $"service collections, each of which called {nameof(AddZeeKayDaSigningKeySource)} " +
+                    "for a different source, are composed into the same host. Only one signing key " +
+                    "source may be registered per application."));
+        }
+
+        if (registrations.Count > 1 && registrations.Any(r => r.RegisteredByFactory))
+        {
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "signing.source_registration_mismatch",
+                    $"{registrations.Count} registrations for signing key source " +
+                    $"'{DisplayName(distinctTypes[0])}' were found, and at least one used the " +
+                    "factory overload. A factory delegate can close over configuration, so composing " +
+                    "collections that each registered the same source via the factory overload would " +
+                    "silently discard all but one factory's configuration."));
+        }
+
+        return distinctTypes[0];
+    }
+
+    /// <summary>
+    /// Validates the source instance DI resolved against the recorded registration's type.
+    /// </summary>
+    /// <exception cref="ZeeKayDaConfigurationException">
+    /// Thrown when the resolved <see cref="ISigningKeySource"/> is not an instance of the recorded
+    /// registration's type.
+    /// </exception>
+    private static void ValidateResolvedSource(Type recordedType, ISigningKeySource source)
+    {
         if (!recordedType.IsInstanceOfType(source))
         {
             throw new ZeeKayDaConfigurationException(
