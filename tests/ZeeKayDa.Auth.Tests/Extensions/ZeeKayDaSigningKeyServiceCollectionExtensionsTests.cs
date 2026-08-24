@@ -340,11 +340,9 @@ public sealed class ZeeKayDaSigningKeyServiceCollectionExtensionsTests
         var (source, disposalOrder) = CreateOrderRecordingSource();
         var services = new ServiceCollection();
         services.AddZeeKayDaSigningKeySource(_ => source);
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
         var ring = provider.GetRequiredService<ISigningKeyRing>();
         await ring.InitializeAsync(TestContext.Current.CancellationToken);
-
-        provider.Dispose();
 
         disposalOrder.Should().Equal("signer", "source");
     }
@@ -355,11 +353,9 @@ public sealed class ZeeKayDaSigningKeyServiceCollectionExtensionsTests
         var source = CreateDualDisposableSource();
         var services = new ServiceCollection();
         services.AddZeeKayDaSigningKeySource(_ => source);
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
         var ring = provider.GetRequiredService<ISigningKeyRing>();
         await ring.InitializeAsync(TestContext.Current.CancellationToken);
-
-        provider.Dispose();
 
         source.SyncDisposed.Should().BeTrue();
         source.AsyncDisposed.Should().BeFalse();
