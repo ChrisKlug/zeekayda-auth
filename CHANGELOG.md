@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
-- **`AddZeeKayDaSigningKeySource` now accepts a factory, for signing key sources that cannot be DI-activated** (#525)
+- **`AddZeeKayDaSigningKeySource` now accepts a factory, for signing key sources that cannot be DI-activated, and nothing is registered in the container for the source itself** (#525, #530)
 
   `AddZeeKayDaSigningKeySource<TSource>(this IServiceCollection services, Func<IServiceProvider, TSource> implementationFactory)`
   registers `TSource` via a factory instead of DI activation, for a source whose constructor needs a
@@ -29,6 +29,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   overload. Registrations all naming the same, type-registered source resolve normally, matching the
   single-collection no-op. The check runs before the source is constructed, so a failing composition
   never executes the winning registration's side effects.
+
+  Nothing is registered in the container for `ISigningKeySource` at all — the `ISigningKeyRing`
+  factory constructs and owns the source directly, by `ActivatorUtilities` or the caller's factory
+  closure, so it is not reachable via `GetService`, `GetServices`, or any keyed lookup. **A
+  third-party source author must act on one rule as a result: the ring, not the container, now owns
+  the source's disposal.** It disposes the source once, at shutdown, always after the `ISigner` it
+  opened — via `IDisposable.Dispose` or `IAsyncDisposable.DisposeAsync`, whichever the host's own
+  disposal path selects. A source implementing `IAsyncDisposable` without also implementing
+  `IDisposable` is rejected with `ArgumentException` at registration, and again with a coded
+  `ZeeKayDaConfigurationException` (`signing.source_async_only_disposal`) if a factory declared over a
+  base type is caught returning such an instance — the framework cannot know whether the host disposes
+  the service provider synchronously or asynchronously, so both disposal interfaces are required
+  together or not at all.
 
 ### Changed
 

@@ -258,6 +258,36 @@ pass: validation runs before the source instance is resolved, measured at zero f
 and zero source constructions on a failing composition, so no winning registration's side effects
 run before the failure. Both accepted residuals above are unaffected and remain accepted.
 
+**Addendum, 2026-08-24 (fourth pass), issue #530, branch `feat/530-ring-owned-signing-key-source`.**
+Control 3 is restated to match what is actually true now, rather than what the keyed registration was
+meant to deliver. Nothing is registered for `ISigningKeySource` at all: there is no `ServiceDescriptor`
+with `ServiceType == typeof(ISigningKeySource)`, so `GetService<ISigningKeySource>()`,
+`GetServices<ISigningKeySource>()` and `GetKeyedServices<ISigningKeySource>(KeyedService.AnyKey)` are
+all empty — there is no descriptor left to read a key off, because there is no descriptor. The source
+lives only inside the `ISigningKeyRing` factory's own closure, constructed there by
+`ActivatorUtilities.CreateInstance<TSource>` or the caller's factory delegate, and reachable no other
+way. This **closes** the `AnyKey`-reachability and readable-service-key residuals recorded in the
+first-pass addendum above: the mechanism they exploited (a keyed registration and a descriptor
+carrying its own key) no longer exists to exploit. It also **closes** the concrete-base-`TSource`
+residual recorded in the same addendum, on the basis given in the agreed-shape discussion for this
+issue: the declared-vs-actual gap can now only arise for a single factory registration the application
+wrote itself, over one source the application itself chose, with nothing else for its identity to be
+confused with — `ValidateResolvedSource`'s `IsInstanceOfType` assertion, the mechanism the residual was
+recorded against, was deleted as a tautology in every surviving path.
+
+**Opened, not closed, by this pass:** an async-only disposal shape is now rejected up front rather than
+silently never being disposed. A `TSource` implementing `IAsyncDisposable` without `IDisposable` is
+rejected at registration, before the collection is mutated; a factory declared over a base type that
+returns such an instance is rejected inside the ring factory, on the constructed instance, with a coded
+`ZeeKayDaConfigurationException` (`signing.source_async_only_disposal`); and `StaticSigningKeyRing`'s
+own synchronous `Dispose` throws `InvalidOperationException` for one as a last line of defence, after
+disposing the signer, mirroring MS DI's own behaviour for an async-only singleton. **New disposal-
+ownership control, verified by running the test suite:** the ring now disposes the source it
+constructed, once, at shutdown, always after the `ISigner` it opened — via `IDisposable.Dispose` on
+the synchronous path and preferring `IAsyncDisposable.DisposeAsync` on the asynchronous path — so a
+third-party HSM/KMS source holding a client handle is no longer orphaned the way a closure-constructed
+source would otherwise be.
+
 ---
 
 ## 2. Authorization-code store

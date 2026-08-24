@@ -96,16 +96,16 @@ third-party surface into the SemVer contract. The JWK mapping is hand-rolled ove
 specified by RFC 7517/7518 and held to known-answer vectors — a maintenance cost taken deliberately
 over the dependency.
 
-**One signing provider per application, registered flatly.** The old model's `Add<Provider>Signing()`
-extensions register `IJwtSigningService` as a singleton and call `ThrowIfAlreadyRegistered` so a second
-provider fails loudly. The `KeySourceOptions` tier's `AddZeeKayDaSigningKeySource<TSource>()` (type and
-factory overloads) enforces the same rule with an internal `SigningKeySourceRegistration` marker, keyed
-under a private object rather than a string so guessing the key cannot pre-empt it: the same `TSource`
-registered twice via the type overload is a no-op; a different `TSource`, or a second registration where
-either call used the factory overload, throws — a factory can close over configuration a silent no-op
-would discard. The ring factory also validates the composed marker set before resolving: distinct source
-types or a factory-registered marker throw; markers all naming the same type-registered `TSource`
-resolve, matching the single-collection no-op. Selection stays an ordinary `if`/`else`.
+**One signing provider per application, and nothing is registered for the source.** The old model's
+`Add<Provider>Signing()` registers `IJwtSigningService` and calls `ThrowIfAlreadyRegistered` so a
+second provider fails loudly. `AddZeeKayDaSigningKeySource<TSource>()` (type and factory overloads)
+enforces the same rule with an internal, unkeyed `SigningKeySourceRegistration` marker — same `TSource`
+twice via the type overload is a no-op; a different `TSource`, or either call using the factory
+overload, throws — and the ring factory re-validates the composed marker set, so composing throws on a
+distinct type or a factory-registered marker. `ISigningKeySource` itself is never registered: the ring
+factory constructs it directly, by closure or `ActivatorUtilities`, unreachable from the container. It
+owns the source's lifetime alongside the signer's, disposing it once at shutdown after the signer, and
+rejects `IAsyncDisposable` without `IDisposable` at registration and again on the constructed instance.
 
 **Each production provider platform is its own package; the development provider is not.**
 `ZeeKayDa.Auth.AzureKeyVault` (remote and cached variants together — same dependency, same
