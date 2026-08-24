@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Security.Cryptography;
 using Microsoft.Extensions.Time.Testing;
 using ZeeKayDa.Auth.Tokens;
@@ -112,6 +113,55 @@ public sealed class StaticSigningKeyRingTests
         }
     }
 
+    /// <summary>A working <see cref="ISigningKeySource"/> that also implements <see cref="IDisposable"/>,
+    /// recording disposal via a caller-supplied callback.</summary>
+    private sealed class DisposableSigningKeySource(
+        Func<CancellationToken, ValueTask<SourceKeySet>> read,
+        Func<SourceKeyId, CancellationToken, ValueTask<ISigner>> createSigner,
+        Action onDispose) : ISigningKeySource, IDisposable
+    {
+        public ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default) => read(cancellationToken);
+
+        public ValueTask<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
+            => createSigner(id, cancellationToken);
+
+        public void Dispose() => onDispose();
+    }
+
+    /// <summary>A working <see cref="ISigningKeySource"/> that implements only
+    /// <see cref="IAsyncDisposable"/>, modelling the shape the ring's synchronous <c>Dispose</c>
+    /// rejects as a last line of defence.</summary>
+    private sealed class AsyncOnlySigningKeySource(
+        Func<CancellationToken, ValueTask<SourceKeySet>> read,
+        Func<SourceKeyId, CancellationToken, ValueTask<ISigner>> createSigner,
+        Func<ValueTask> onDisposeAsync) : ISigningKeySource, IAsyncDisposable
+    {
+        public ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default) => read(cancellationToken);
+
+        public ValueTask<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
+            => createSigner(id, cancellationToken);
+
+        public ValueTask DisposeAsync() => onDisposeAsync();
+    }
+
+    /// <summary>A working <see cref="ISigningKeySource"/> implementing both disposal interfaces,
+    /// recording which one was invoked via caller-supplied callbacks.</summary>
+    private sealed class DualDisposableSigningKeySource(
+        Func<CancellationToken, ValueTask<SourceKeySet>> read,
+        Func<SourceKeyId, CancellationToken, ValueTask<ISigner>> createSigner,
+        Action onDispose,
+        Func<ValueTask> onDisposeAsync) : ISigningKeySource, IDisposable, IAsyncDisposable
+    {
+        public ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default) => read(cancellationToken);
+
+        public ValueTask<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
+            => createSigner(id, cancellationToken);
+
+        public void Dispose() => onDispose();
+
+        public ValueTask DisposeAsync() => onDisposeAsync();
+    }
+
     // ── Current / CurrentOrNull before initialization ───────────────────────────────────────────
 
     [Fact]
@@ -207,6 +257,127 @@ public sealed class StaticSigningKeyRingTests
         ((IDisposable)ring).Dispose();
 
         disposeCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Dispose_disposes_the_source_after_the_signer()
+    {
+        using var rsa = RSA.Create(2048);
+        var disposalOrder = new List<string>();
+        var (read, createSigner, _) = CreateSuccessfulReadAndSigner(rsa, Epoch.AddDays(90), disposalOrder);
+        var source = new DisposableSigningKeySource(read, createSigner, () => disposalOrder.Add("source"));
+        using var ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
+        await ((ISigningKeyRing)ring).InitializeAsync(TestContext.Current.CancellationToken);
+
+        ((IDisposable)ring).Dispose();
+
+        disposalOrder.Should().Equal("signer", "source");
+    }
+
+    [Fact]
+    public async Task DisposeAsync_disposes_the_source_after_the_signer()
+    {
+        using var rsa = RSA.Create(2048);
+        var disposalOrder = new List<string>();
+        var (read, createSigner, _) = CreateSuccessfulReadAndSigner(rsa, Epoch.AddDays(90), disposalOrder);
+        var source = new DisposableSigningKeySource(read, createSigner, () => disposalOrder.Add("source"));
+        var ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
+        await ((ISigningKeyRing)ring).InitializeAsync(TestContext.Current.CancellationToken);
+
+        await ring.DisposeAsync();
+
+        disposalOrder.Should().Equal("signer", "source");
+    }
+
+    [Fact]
+    public async Task DisposeAsync_prefers_DisposeAsync_over_Dispose_on_a_source_implementing_both()
+    {
+        using var rsa = RSA.Create(2048);
+        var disposalOrder = new List<string>();
+        var (read, createSigner, _) = CreateSuccessfulReadAndSigner(rsa, Epoch.AddDays(90), disposalOrder);
+        var source = new DualDisposableSigningKeySource(
+            read, createSigner,
+            onDispose: () => disposalOrder.Add("sync"),
+            onDisposeAsync: () =>
+            {
+                disposalOrder.Add("async");
+                return ValueTask.CompletedTask;
+            });
+        var ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
+        await ((ISigningKeyRing)ring).InitializeAsync(TestContext.Current.CancellationToken);
+
+        await ring.DisposeAsync();
+
+        disposalOrder.Should().Equal("signer", "async");
+    }
+
+    [Fact]
+    public async Task Dispose_calls_Dispose_not_DisposeAsync_on_a_source_implementing_both()
+    {
+        using var rsa = RSA.Create(2048);
+        var disposalOrder = new List<string>();
+        var (read, createSigner, _) = CreateSuccessfulReadAndSigner(rsa, Epoch.AddDays(90), disposalOrder);
+        var source = new DualDisposableSigningKeySource(
+            read, createSigner,
+            onDispose: () => disposalOrder.Add("sync"),
+            onDisposeAsync: () =>
+            {
+                disposalOrder.Add("async");
+                return ValueTask.CompletedTask;
+            });
+        using var ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
+        await ((ISigningKeyRing)ring).InitializeAsync(TestContext.Current.CancellationToken);
+
+        ((IDisposable)ring).Dispose();
+
+        disposalOrder.Should().Equal("signer", "sync");
+    }
+
+    [Fact]
+    public async Task Dispose_disposes_the_signer_then_throws_InvalidOperationException_when_the_source_is_async_only_disposable()
+    {
+        using var rsa = RSA.Create(2048);
+        var disposalOrder = new List<string>();
+        var (read, createSigner, _) = CreateSuccessfulReadAndSigner(rsa, Epoch.AddDays(90), disposalOrder);
+        var source = new AsyncOnlySigningKeySource(read, createSigner, onDisposeAsync: () => ValueTask.CompletedTask);
+        var ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
+        await ((ISigningKeyRing)ring).InitializeAsync(TestContext.Current.CancellationToken);
+
+        var act = () => ((IDisposable)ring).Dispose();
+
+        act.Should().Throw<InvalidOperationException>();
+        disposalOrder.Should().Equal("signer");
+    }
+
+    [Fact]
+    public async Task DisposeAsync_disposes_a_plain_IDisposable_source_when_it_does_not_implement_IAsyncDisposable()
+    {
+        using var rsa = RSA.Create(2048);
+        var disposalOrder = new List<string>();
+        var (read, createSigner, _) = CreateSuccessfulReadAndSigner(rsa, Epoch.AddDays(90), disposalOrder);
+        var source = new DisposableSigningKeySource(read, createSigner, () => disposalOrder.Add("source"));
+        var ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
+        await ((ISigningKeyRing)ring).InitializeAsync(TestContext.Current.CancellationToken);
+
+        await ring.DisposeAsync();
+
+        disposalOrder.Should().Equal("signer", "source");
+    }
+
+    [Fact]
+    public async Task Dispose_and_then_DisposeAsync_only_run_the_first_call_s_disposal()
+    {
+        using var rsa = RSA.Create(2048);
+        var disposalOrder = new List<string>();
+        var (read, createSigner, _) = CreateSuccessfulReadAndSigner(rsa, Epoch.AddDays(90), disposalOrder);
+        var source = new DisposableSigningKeySource(read, createSigner, () => disposalOrder.Add("source"));
+        var ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
+        await ((ISigningKeyRing)ring).InitializeAsync(TestContext.Current.CancellationToken);
+
+        ((IDisposable)ring).Dispose();
+        await ring.DisposeAsync();
+
+        disposalOrder.Should().Equal("signer", "source");
     }
 
     // ── InitializeAsync — startup failures ───────────────────────────────────────────────────────
@@ -535,5 +706,32 @@ public sealed class StaticSigningKeyRingTests
             });
 
         return (source, current);
+    }
+
+    /// <summary>
+    /// Builds a successful <c>ReadAsync</c>/<c>CreateSignerAsync</c> pair whose signer records
+    /// <c>"signer"</c> onto <paramref name="disposalOrder"/> when disposed, so a source built over it
+    /// can be tested for disposal order against its own <c>"source"</c> entry.
+    /// </summary>
+    private static (
+        Func<CancellationToken, ValueTask<SourceKeySet>> Read,
+        Func<SourceKeyId, CancellationToken, ValueTask<ISigner>> CreateSigner,
+        SourceKey Current) CreateSuccessfulReadAndSigner(RSA rsa, DateTimeOffset expiresAt, List<string> disposalOrder)
+    {
+        var current = new SourceKey(
+            new SourceKeyId("current"), SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), expiresAt);
+        var privateKeyPem = rsa.ExportRSAPrivateKeyPem();
+
+        ValueTask<SourceKeySet> Read(CancellationToken _) => new(SourceKeySet.Create(null, current, null));
+
+        ValueTask<ISigner> CreateSigner(SourceKeyId _, CancellationToken __)
+        {
+            var signerRsa = RSA.Create();
+            signerRsa.ImportFromPem(privateKeyPem);
+            return new ValueTask<ISigner>(
+                new TrackingSigner(new LocalSigner(SigningAlgorithm.RS256, signerRsa), () => disposalOrder.Add("signer")));
+        }
+
+        return (Read, CreateSigner, current);
     }
 }
