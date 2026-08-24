@@ -22,6 +22,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   Passing an abstract type or interface (including `ISigningKeySource` itself) as `TSource` throws
   `ArgumentException`.
 
+  The guard also covers composition: when two independently-built `IServiceCollection`s each
+  registered a signing key source and are composed into one host, resolving `ISigningKeyRing` throws
+  `ZeeKayDaConfigurationException` (`signing.source_registration_mismatch`) if the composed set names
+  more than one distinct source type, or holds more than one registration where any used the factory
+  overload. Registrations all naming the same, type-registered source resolve normally, matching the
+  single-collection no-op. The check runs before the source is constructed, so a failing composition
+  never executes the winning registration's side effects.
+
 ### Changed
 
 - **BREAKING (behavioral): the advertised-signing-algorithm startup check now also enforces that every currently-or-soon producible algorithm is advertised, and no longer treats a retirement-window key as producible** (#494)

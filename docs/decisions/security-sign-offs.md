@@ -241,6 +241,23 @@ every `SigningKeySourceRegistration` registered under the key and throws `ZeeKay
 if more than one is found, keeping the assignability check as a cheap additional assertion. The
 concrete-base-`TSource` residual above is unaffected and remains accepted.
 
+**Addendum, 2026-08-24 (third pass), issue #525, commit `851356d` on PR #531.** The second-pass
+addendum above states that the ring factory throws when more than one `SigningKeySourceRegistration`
+is found. **That is no longer accurate and is corrected here.** Throwing on any count above one
+hard-failed a composition that is unambiguous — two independently-built collections that each
+registered the *same* `TSource` via the type overload, which on a single collection is a documented
+no-op — so the rule was narrowed to match the registration-time guard. The ring factory now throws
+`ZeeKayDaConfigurationException` (`signing.source_registration_mismatch`) when the resolved set
+records **more than one distinct `SourceType`**, or when it holds **more than one registration and
+any of them used the factory overload**; a set of registrations all naming the same, type-registered
+`TSource` resolves normally. It also throws when the set is empty. Verified against the built
+assembly: `type(A)+type(B)`, `fac(A)+fac(A)`, `type(A)+fac(A)`, `fac(A)+type(A)`, `fac(A)+fac(B)` and
+an interleaved `type(A)+type(B)` all throw; only `type(A)+type(A)` resolves. The composed-collection
+gap the second-pass addendum closed is **not** reopened by this narrowing. Also verified in the same
+pass: validation runs before the source instance is resolved, measured at zero factory invocations
+and zero source constructions on a failing composition, so no winning registration's side effects
+run before the failure. Both accepted residuals above are unaffected and remain accepted.
+
 ---
 
 ## 2. Authorization-code store
