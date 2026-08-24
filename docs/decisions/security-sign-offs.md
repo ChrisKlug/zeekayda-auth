@@ -16,6 +16,14 @@ limits and explicit negatives ("this sign-off did not cover X") are as load-bear
 and are never trimmed. Where a decision has since changed, the register file for that topic is
 authoritative for *current* behaviour; this file remains authoritative for *what was approved when*.
 
+**Rules for new entries** (in force from the vertical-slice rework; earlier entries predate them).
+An entry is written **last, once, against frozen code** — after review has concluded, never in a
+commit still under review. **Maximum ~15 lines.** Every claim cites the test that proves it
+("closed — proven by `ManualRingRegistration_IsRejected`"); a residual is one sentence plus a test
+name. Prose that a future reviewer would have to re-probe empirically does not go in this file — it
+goes in a test, which is then cited. Entries written before the code settled were falsified by
+later fixes three separate times, at a full review round each; these rules exist because of that.
+
 *Archaeology note:* these records were extracted from the numbered ADRs that preceded the decision
 register (ADRs 0011, 0013, 0014 and 0016 in particular). Those documents are being retired and
 deleted as each topic is migrated — nothing here depends on an ADR number resolving, and this file
