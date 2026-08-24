@@ -43,9 +43,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   `typeof(TSource)` and by `StaticSigningKeyRing`'s own constructor on the actual constructed
   instance — so that shape can never reach a running ring, and nothing throws at shutdown.
 
-  Registering an `ISigningKeyRing` directly, ahead of `AddZeeKayDaSigningKeySource`, is also rejected:
-  it throws `InvalidOperationException` naming the manual registration, closing the one remaining way
-  the one-source-per-application guard could otherwise be silently defeated.
+  Registering an *unkeyed* `ISigningKeyRing` directly, ahead of `AddZeeKayDaSigningKeySource`, is
+  rejected: it throws `InvalidOperationException` naming the offending descriptor's implementation type
+  (or its factory/instance shape when there is no implementation type to name). A keyed
+  `ISigningKeyRing` descriptor is ignored, since it can never win the unkeyed resolution the guard and
+  the framework both use. This closes only the ordering the call can actually observe — an
+  `ISigningKeyRing` already registered at the moment it runs. A manual `ISigningKeyRing` registered
+  *after* `AddZeeKayDaSigningKeySource` wins outright under MS DI's last-registration-wins resolution
+  and is not detectable from this method.
 
 ### Changed
 

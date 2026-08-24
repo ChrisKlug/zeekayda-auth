@@ -40,6 +40,22 @@ public sealed class ZeeKayDaSigningKeyServiceCollectionExtensionsTests
             => throw new NotSupportedException();
     }
 
+    /// <summary>A minimal <see cref="ISigningKeyRing"/> standing in for a manual registration, so a
+    /// test can prove which registered instance a resolution actually returns.</summary>
+    private sealed class FakeSigningKeyRing : ISigningKeyRing
+    {
+        public SigningKeySet Current => throw new NotSupportedException();
+
+        public ValueTask<SigningOutcome> SignAsync<TState>(
+            TState state, Func<SigningContext, TState, ReadOnlyMemory<byte>> buildSigningInput,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        ValueTask ISigningKeyRing.InitializeAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        SigningKeySet? ISigningKeyRing.CurrentOrNull => null;
+    }
+
     /// <summary>A second, distinct <see cref="ISigningKeySource"/> implementation, for proving that
     /// registering a different source than one already registered fails loudly.</summary>
     private sealed class OtherExternalSigningKeySource : ISigningKeySource
@@ -637,32 +653,80 @@ public sealed class ZeeKayDaSigningKeyServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public void AddZeeKayDaSigningKeySource_throws_when_an_ISigningKeyRing_is_already_registered_manually()
+    public void AddZeeKayDaSigningKeySource_throws_when_an_unkeyed_ISigningKeyRing_is_already_registered_manually()
     {
         var services = new ServiceCollection();
         services.AddSingleton<ISigningKeyRing>(_ => throw new NotSupportedException("must not be constructed"));
 
         var act = () => services.AddZeeKayDaSigningKeySource<ExternalSigningKeySource>();
 
-        act.Should().Throw<InvalidOperationException>();
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage($"*{nameof(ZeeKayDaSigningKeyServiceCollectionExtensions.AddZeeKayDaSigningKeySource)}*");
     }
 
     [Fact]
-    public void A_manual_ISigningKeyRing_registration_added_after_AddZeeKayDaSigningKeySource_is_not_rejected_by_this_method()
+    public void AddZeeKayDaSigningKeySource_is_not_rejected_by_a_keyed_ISigningKeyRing_registration()
     {
-        // AddZeeKayDaSigningKeySource has no hook into a manual registration made after it returns:
-        // that call goes straight to the IServiceCollection, not through this extension. The guard
-        // above only closes the ordering it can actually observe — a manual registration already
-        // present when this method runs. This test documents that the reverse ordering is
-        // unaffected: TryAddSingleton's existing "first one wins" semantics still apply.
+        // A keyed descriptor can never win GetRequiredService<ISigningKeyRing>()'s unkeyed
+        // resolution, so it is not the manual registration this guard exists to catch.
         var services = new ServiceCollection();
-        services.AddZeeKayDaSigningKeySource<ExternalSigningKeySource>();
+        services.AddKeyedSingleton<ISigningKeyRing>(
+            "some-key", (_, _) => throw new NotSupportedException("must not be constructed"));
 
-        var act = () => services.TryAddSingleton<ISigningKeyRing>(_ => throw new NotSupportedException("must not be constructed"));
+        var act = () => services.AddZeeKayDaSigningKeySource<ExternalSigningKeySource>();
 
         act.Should().NotThrow();
         using var provider = services.BuildServiceProvider();
         provider.GetRequiredService<ISigningKeyRing>().Should().BeOfType<StaticSigningKeyRing>();
+    }
+
+    [Fact]
+    public void A_manual_ISigningKeyRing_registration_added_after_AddZeeKayDaSigningKeySource_wins_and_is_not_rejected()
+    {
+        // AddZeeKayDaSigningKeySource has no hook into a manual registration made after it returns:
+        // that call goes straight to the IServiceCollection, not through this extension. The guard
+        // above only closes the ordering it can actually observe — a manual registration already
+        // present when this method runs. MS DI's ISigningKeyRing resolution is last-wins, so a
+        // manual registration added afterwards wins outright: the framework's own ring is never
+        // constructed, and nothing here detects or rejects it.
+        var manualRing = new FakeSigningKeyRing();
+        var services = new ServiceCollection();
+        services.AddZeeKayDaSigningKeySource<ExternalSigningKeySource>();
+
+        var act = () => services.AddSingleton<ISigningKeyRing>(manualRing);
+
+        act.Should().NotThrow();
+        using var provider = services.BuildServiceProvider();
+        provider.GetRequiredService<ISigningKeyRing>().Should().BeSameAs(manualRing);
+    }
+
+    [Fact]
+    public void AddZeeKayDaSigningKeySource_names_the_offending_ISigningKeyRing_registration_in_its_message()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<ISigningKeyRing, FakeSigningKeyRing>();
+
+        var act = () => services.AddZeeKayDaSigningKeySource<ExternalSigningKeySource>();
+
+        act.Should().Throw<InvalidOperationException>().WithMessage($"*{nameof(FakeSigningKeyRing)}*");
+    }
+
+    [Fact]
+    public void AddZeeKayDaSigningKeySource_message_distinguishes_its_own_removed_marker_from_a_foreign_registration()
+    {
+        // IServiceCollection is IList<ServiceDescriptor>, so removing this method's own marker after
+        // it ran needs no reflection. Once removed, the guard can no longer tell "our own descriptor,
+        // marker gone" apart from "a foreign descriptor" structurally — the message must say so
+        // honestly rather than accusing a caller of a manual registration that never happened.
+        var services = new ServiceCollection();
+        services.AddZeeKayDaSigningKeySource<ExternalSigningKeySource>();
+        var marker = services.Single(d => d.ServiceType == typeof(SigningKeySourceRegistration));
+        services.Remove(marker);
+
+        var act = () => services.AddZeeKayDaSigningKeySource<ExternalSigningKeySource>();
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*or this collection's own marker for it was removed*");
     }
 
     [Fact]

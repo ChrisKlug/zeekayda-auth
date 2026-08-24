@@ -101,12 +101,12 @@ over the dependency.
 second provider fails loudly. `AddZeeKayDaSigningKeySource<TSource>()` (type and factory overloads)
 enforces the same rule with an internal marker: same `TSource` twice via the type overload is a no-op;
 a different `TSource`, either call using the factory overload, or a pre-existing manual
-`ISigningKeyRing` registration, throws — the last closing the guard's one remaining bypass. The ring
-factory re-validates the composed marker set, throwing on more than one distinct source type or more
-than one factory-involving registration. `ISigningKeySource` itself is never registered: the ring
-factory constructs it directly, unreachable from the container, owns its lifetime alongside the
-signer's, disposing it once at shutdown after the signer, and rejects `IAsyncDisposable` without
-`IDisposable` both at registration and by the ring's own constructor on the instance.
+`ISigningKeyRing` registration, throws — but only an already-registered one; one added afterwards
+wins under MS DI's last-wins resolution, undetectably. The ring factory re-validates the composed
+marker set, throwing on more than one distinct source type or factory-involving registration.
+`ISigningKeySource` itself is never registered: the ring factory constructs it directly, unreachable
+from the container, owns its lifetime alongside the signer's, disposing it once at shutdown normally
+after the signer, and rejects `IAsyncDisposable` without `IDisposable` at registration and construction.
 
 **Each production provider platform is its own package; the development provider is not.**
 `ZeeKayDa.Auth.AzureKeyVault` (remote and cached variants together — same dependency, same

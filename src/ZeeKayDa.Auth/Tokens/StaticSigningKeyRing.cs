@@ -8,10 +8,11 @@ namespace ZeeKayDa.Auth.Tokens;
 /// Owns the one <see cref="ISigner"/> it opens for the process lifetime and disposes it once, at
 /// shutdown — a consumer of <see cref="ISigningKeyRing"/> never receives it and never disposes it.
 /// Also owns the <see cref="ISigningKeySource"/> it was constructed over: nothing else in the
-/// container holds a reference to it, so the ring disposes it once, at shutdown, after the signer —
-/// via <see cref="IDisposable.Dispose"/> or <see cref="IAsyncDisposable.DisposeAsync"/>, whichever
-/// the host calls. A polling implementation can be added behind the same interface later without
-/// changing any consumer.
+/// container holds a reference to it, so the ring disposes it once, at shutdown, normally after the
+/// signer — via <see cref="IDisposable.Dispose"/> or <see cref="IAsyncDisposable.DisposeAsync"/>,
+/// whichever the host calls. The one exception is disposal racing <see cref="ISigningKeyRing.InitializeAsync"/>
+/// before the signer has committed, in which case the source is disposed first. A polling
+/// implementation can be added behind the same interface later without changing any consumer.
 /// </remarks>
 public sealed class StaticSigningKeyRing : ISigningKeyRing, IDisposable, IAsyncDisposable
 {
@@ -34,7 +35,9 @@ public sealed class StaticSigningKeyRing : ISigningKeyRing, IDisposable, IAsyncD
     /// </summary>
     /// <param name="source">
     /// The signing key source to read once. This constructor takes ownership: the ring disposes
-    /// <paramref name="source"/> once, at shutdown, after the signer it opened.
+    /// <paramref name="source"/> once, at shutdown, normally after the signer it opened — the one
+    /// exception is disposal racing initialization before the signer has committed, in which case
+    /// the source is disposed first.
     /// </param>
     /// <param name="timeProvider">Used to evaluate the signing key's expiry at initialization time.</param>
     /// <exception cref="ArgumentNullException">

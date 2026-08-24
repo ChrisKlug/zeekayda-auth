@@ -183,32 +183,49 @@ public static class ZeeKayDaSigningKeyServiceCollectionExtensions
         typeof(IAsyncDisposable).IsAssignableFrom(type) && !typeof(IDisposable).IsAssignableFrom(type);
 
     /// <summary>
-    /// Rejects a composition where an <see cref="ISigningKeyRing"/> is already registered by
+    /// Rejects a composition where an unkeyed <see cref="ISigningKeyRing"/> is already registered by
     /// something other than <see cref="AddZeeKayDaSigningKeySource{TSource}(IServiceCollection)"/> —
     /// otherwise <c>TryAddSingleton&lt;ISigningKeyRing&gt;</c> below silently keeps that registration,
     /// the source this call names is never constructed, and the marker recorded for it is never
-    /// validated against anything.
+    /// validated against anything. A keyed <see cref="ISigningKeyRing"/> descriptor is ignored: it can
+    /// never win the unkeyed resolution this method and the framework both use.
     /// </summary>
     /// <exception cref="InvalidOperationException">
-    /// Thrown when <paramref name="services"/> already contains a descriptor for
+    /// Thrown when <paramref name="services"/> already contains an unkeyed descriptor for
     /// <see cref="ISigningKeyRing"/> and no <see cref="SigningKeySourceRegistration"/> marker has been
     /// recorded yet, meaning that descriptor was not added by this extension.
     /// </exception>
     private static void ValidateNoManualRingRegistration(IServiceCollection services)
     {
-        var hasManualRing = services.Any(sd => sd.ServiceType == typeof(ISigningKeyRing));
+        var manualRing = services.LastOrDefault(
+            sd => sd.ServiceType == typeof(ISigningKeyRing) && !sd.IsKeyedService);
         var hasOwnMarker = FindExistingRegistration(services) is not null;
 
-        if (hasManualRing && !hasOwnMarker)
-        {
-            throw new InvalidOperationException(
-                $"An {nameof(ISigningKeyRing)} is already registered by something other than " +
-                $"{nameof(AddZeeKayDaSigningKeySource)}. Only one signing key source may be " +
-                $"registered per application. Remove the manual {nameof(ISigningKeyRing)} " +
-                $"registration and register the signing key source through " +
-                $"{nameof(AddZeeKayDaSigningKeySource)} instead.");
-        }
+        if (manualRing is null || hasOwnMarker)
+            return;
+
+        throw new InvalidOperationException(
+            $"An {nameof(ISigningKeyRing)} is already registered ({DescribeRingDescriptor(manualRing)}), " +
+            $"and no {nameof(SigningKeySourceRegistration)} marker was found for it. Either it was " +
+            $"registered by something other than {nameof(AddZeeKayDaSigningKeySource)}, or this " +
+            $"collection's own marker for it was removed after {nameof(AddZeeKayDaSigningKeySource)} " +
+            "ran. Only one signing key source may be registered per application. Remove the manual " +
+            $"{nameof(ISigningKeyRing)} registration and register the signing key source through " +
+            $"{nameof(AddZeeKayDaSigningKeySource)} instead.");
     }
+
+    /// <summary>
+    /// Describes an <see cref="ISigningKeyRing"/> <see cref="ServiceDescriptor"/> for an error
+    /// message: its implementation type when one is known, or the shape of the registration (an
+    /// instance or a factory) when it is not.
+    /// </summary>
+    private static string DescribeRingDescriptor(ServiceDescriptor descriptor) => descriptor switch
+    {
+        { ImplementationType: { } type } => DisplayName(type),
+        { ImplementationInstance: { } instance } => $"an instance of {DisplayName(instance.GetType())}",
+        { ImplementationFactory: not null } => "a factory registration with no known implementation type",
+        _ => "a registration with no known implementation type",
+    };
 
     private static void ValidateAgainstExisting<TSource>(
         SigningKeySourceRegistration existing, bool registeredByFactory)

@@ -266,21 +266,38 @@ with `ServiceType == typeof(ISigningKeySource)`, so `GetService<ISigningKeySourc
 all empty — there is no descriptor left to read a key off, because there is no descriptor. The source
 lives only inside the `ISigningKeyRing` factory's own closure, constructed there by
 `ActivatorUtilities.CreateInstance<TSource>` or the caller's factory delegate, and reachable no other
-way. This **closes** the `AnyKey`-reachability and readable-service-key residuals recorded in the
+way **without reflection** — `ring.GetType().GetField("_source", BindingFlags.NonPublic |
+BindingFlags.Instance)` does reach the field, and the instance behind it, from outside the assembly;
+this containment claim is a barrier to ordinary DI resolution, not to reflection. This **closes** the
+`AnyKey`-reachability and readable-service-key residuals recorded in the
 first-pass addendum above: the mechanism they exploited (a keyed registration and a descriptor
 carrying its own key) no longer exists to exploit.
 
 **Correction: the concrete-base-`TSource` residual is NOT closed.** An earlier draft of this addendum
 claimed it was, on the strength of an agreed-shape comment that said to close it. That comment was
 wrong, and the issue body says explicitly that this residual stays open. Verified: a factory registered
-as `AddZeeKayDaSigningKeySource<BaseSigningKeySource>(_ => new AsyncOnlyDerived())` still has a
-declared-vs-actual divergence between the recorded `SourceType` (the base) and the instance the factory
-actually returns — the async-only rejection below fires because it runs against the constructed
-instance's own type, not because the divergence was closed, and its message names the declared base
-rather than the source actually in force. `ValidateResolvedSource`'s `IsInstanceOfType` assertion was
-removed as a tautology, which is a real simplification, but it removed a no-op check, not a control —
-the gap it never actually closed remains open and accepted, on the basis that there is one source,
-chosen by the application itself, with nothing for its identity to be confused with.
+as `AddZeeKayDaSigningKeySource<BaseSigningKeySource>(_ => new AsyncOnlyDerivedSigningKeySource())` is
+rejected before it ever resolves — a base-typed factory returning an async-only derived instance never
+reaches a running ring at all now, because `StaticSigningKeyRing`'s own constructor rejects the
+*instance's own type*, regardless of what `SourceType` claims.
+
+**Correction to an earlier draft's claim about that rejection's own message.** The ring constructor's
+`ArgumentException` formats `source.GetType().FullName`, so it names the actual constructed type
+(`'AsyncOnlyDerivedSigningKeySource' implements IAsyncDisposable but not IDisposable … (Parameter
+'source')`), not the declared base — that message does not exhibit the residual. What *does* stay
+declared-typed, and is where the residual actually surfaces, is the marker: `SigningKeySourceRegistration.SourceType`
+is recorded as `typeof(TSource)` at registration time and never reconciled against what the factory
+constructs, so every message built from it — `ValidateAgainstExisting`'s "already registered" text and
+`ValidateRegistrationSet`'s mismatch text — names the declared base, and `signing.null_source`'s message
+(`DisplayName(typeof(TSource))`) can only ever name the declared base, because a `null` return leaves it
+no instance to consult. A factory registered as `AddZeeKayDaSigningKeySource<BaseSigningKeySource>(_ =>
+new <some ordinary, synchronously-disposable derived source>())` demonstrates the live version of the
+residual: it resolves normally, and every diagnostic the framework can produce about that source names
+`BaseSigningKeySource`, never the concrete type actually running. `ValidateResolvedSource`'s
+`IsInstanceOfType` assertion was removed as a tautology, which is a real simplification, but it removed
+a no-op check, not a control — the gap it never actually closed remains open and accepted, on the basis
+that there is one source, chosen by the application itself, with nothing for its identity to be
+confused with.
 
 **Async-only disposal is now rejected, structurally, not tolerated.** A `TSource` implementing
 `IAsyncDisposable` without `IDisposable` is rejected at registration on `typeof(TSource)`, before the
@@ -301,19 +318,73 @@ order does not hold is `Dispose`/`DisposeAsync` racing `InitializeAsync` before 
 source is disposed first, and the signer only once `InitializeAsync` completes and observes the
 disposed flag. `CHANGELOG.md` previously stated the ordering unconditionally; corrected there too.
 
-**Widens, not closes, the §1.7 residual that a consumer holding the `IServiceProvider` can dispose the
-ring.** §1.7 already accepted that `((IDisposable)ring).Dispose()` tears down the live signer early.
-Because the ring now also owns the source, the same call now tears down the source's own client handle
-(the HSM/KMS connection, a file handle, whatever the provider holds) alongside the signer. Recorded,
-not mitigated — the same code that could already end signing for the process can now also close the
-provider's underlying connection.
+**A consumer holding the `IServiceProvider` disposing the ring — newly recorded here, not a widening of
+an existing §1.7 acceptance.** §1.7's "Recorded and accepted for this PR, not mitigated" bullet lists
+exactly four items: the throwing-`Dispose` masking, `PublicKeyParameters`' EC `Oid` sharing,
+`CurrentOrNull` reporting after `Dispose`, and the dropped `InnerException` guidance. It contains no
+statement about a consumer holding the `IServiceProvider` disposing the ring early — `((IDisposable)ring).Dispose()`
+tearing down the live signer is recorded here for the first time, not accepted previously and widened
+now. Because the ring now also owns the source, the same call now also tears down the source's own
+client handle (the HSM/KMS connection, a file handle, whatever the provider holds) alongside the
+signer. Recorded here, not mitigated — the same code that could already end signing for the process can
+now also close the provider's underlying connection.
 
-**Accepted, not a boundary break:** a legally composed collection can hold more than one distinct
-`ISigningKeyRing` descriptor (for example, a manual registration composed alongside another library's),
-and `GetServices<ISigningKeyRing>()` constructs one source per descriptor. Each source stays inside its
-own ring; nothing crosses between them. `AddZeeKayDaSigningKeySource` itself cannot produce this shape
-— its own manual-registration guard rejects it — but nothing prevents a caller from building it by hand
-outside that method.
+**Correction: the claim that `AddZeeKayDaSigningKeySource` itself cannot produce a multi-descriptor
+`ISigningKeyRing` shape is FALSE.** Measured: three independently-built `IServiceCollection`s, each
+calling only `AddZeeKayDaSigningKeySource<TSource>()` for the *same* `TSource` — the documented-legal
+composition this method exists to accept as a no-op — composed into one host, yield **three**
+`ServiceDescriptor`s for `ISigningKeyRing`. `TryAddSingleton` only deduplicates within the collection it
+runs against; there is nothing that deduplicates across independently-built collections once composed.
+Resolving `GetServices<ISigningKeyRing>()` against the composed provider constructs **three** separate
+`StaticSigningKeyRing` instances, one per descriptor, each over its own freshly-constructed `TSource`.
+`SigningKeyRingStartupVerifier` resolves and initializes only `GetRequiredService<ISigningKeyRing>()` —
+the last-registered, last-wins descriptor — so **N composed framework registrations produce N ring
+descriptors, the verifier initializes only the last-wins one, and enumerating the set (as
+`GetServices` does, and as any diagnostic or third-party code walking the container would) opens N−1
+uninitialised sources** that hold whatever construction-time resources their `ISigningKeySource`
+implementation acquires (a client, a connection, a file handle), with no self-test ever run against
+them and no ordinary code path that reads or uses them either — the container still disposes all N at
+shutdown. **Also corrected:** a manual `ISigningKeyRing` added to a collection *after*
+`AddZeeKayDaSigningKeySource` has already run against it is neither rejected nor observable by this
+method at all — `ValidateNoManualRingRegistration` only ever inspects the collection at the moment its
+own call runs, and MS DI's last-wins resolution means that later manual registration silently wins
+`GetRequiredService`. This is the same fact §B below corrects the `CHANGELOG.md` and `signing-keys.md`
+text for.
+
+**New residual — the ring constructor's rejection path orphans the already-constructed source,
+undisposed, once per resolve attempt.** Measured: three separate resolve attempts against a
+registration whose `TSource` fails `StaticSigningKeyRing`'s own async-only-disposal check each
+construct, and then discard, a `TSource` instance — three orphans over three resolve attempts, none of
+them disposed. The comment that used to explain why this was acceptable was deleted along with the old
+factory check it was written against; recorded here instead. The source is by definition
+async-only-disposable — that is the very shape the constructor is rejecting — so it cannot be disposed
+synchronously by the same factory call that constructed it, and the host is failing startup regardless:
+the process is coming down, not continuing to run with a leaked handle.
+
+**New residual — the ring constructor's `ArgumentException` is flattened by the generic startup-verifier
+catch.** `StartupVerificationHostedService.cs:175`'s `catch (Exception ex)` catches everything that is
+not its own `ZeeKayDaConfigurationException` or an orderly-shutdown `OperationCanceledException`, so the
+async-only-disposal `ArgumentException` above is wrapped into `startup.verifier_failed`, naming only
+`System.ArgumentException`, with the explanatory disposal-shape text demoted to `InnerException` — the
+same drop §1.7 already records for `ZeeKayDaConfigurationException`'s inner-exception guidance. Accepted
+rather than mitigated: registration-time `ValidateDisposalShape<TSource>()` catches this shape for every
+ordinary registration; the *only* path that still reaches the constructor's own check, and therefore
+this flattening, is a base-typed factory registration whose factory returns an async-only derived
+instance — the same accepted, still-open residual recorded above. Do not add a catch clause to
+`StartupVerificationHostedService` for this: that would special-case one configuration exception's
+message over every other verifier's for a case that is itself an accepted, narrow residual.
+
+**New residual — a throwing source `Dispose` propagates into MS DI shutdown and aborts disposal of the
+remaining singletons.** Neither `IDisposable.Dispose()` nor `DisposeSourceAsync()` wraps the source's
+own disposal call in `DisposeQuietly` the way signer disposal is wrapped — a throwing `ISigner.Dispose`
+is swallowed so it cannot mask a more important failure, but a throwing source `Dispose`/`DisposeAsync`
+is not, and propagates straight into the container's disposal loop, which can abort disposal of whatever
+singletons the container was still working through. This is the same shape already accepted for the
+signer's own disposal failing this way pre-source-ownership (§1.7); it is measured here as now reachable
+through the source too. Deliberately not mitigated: wrapping source disposal in `DisposeQuietly` would
+hide a real operational failure — an HSM/KMS connection or file handle that failed to close cleanly —
+from the operator who owns that resource, which is a worse outcome than an aborted shutdown sequence
+they can see in their logs.
 
 ---
 
