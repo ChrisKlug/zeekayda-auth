@@ -32,16 +32,33 @@ public sealed class StaticSigningKeyRing : ISigningKeyRing, IDisposable, IAsyncD
     /// <see cref="SigningKeyRingStartupVerifier"/>) before using <see cref="Current"/> or
     /// <see cref="SignAsync{TState}"/>.
     /// </summary>
-    /// <param name="source">The signing key source to read once.</param>
+    /// <param name="source">
+    /// The signing key source to read once. This constructor takes ownership: the ring disposes
+    /// <paramref name="source"/> once, at shutdown, after the signer it opened.
+    /// </param>
     /// <param name="timeProvider">Used to evaluate the signing key's expiry at initialization time.</param>
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="source"/> or <paramref name="timeProvider"/> is
     /// <see langword="null"/>.
     /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Thrown when <paramref name="source"/> implements <see cref="IAsyncDisposable"/> without also
+    /// implementing <see cref="IDisposable"/>. The ring cannot know whether the host will dispose the
+    /// service provider synchronously or asynchronously, so that shape can never be disposed safely.
+    /// </exception>
     public StaticSigningKeyRing(ISigningKeySource source, TimeProvider timeProvider)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(timeProvider);
+
+        if (source is IAsyncDisposable && source is not IDisposable)
+        {
+            throw new ArgumentException(
+                $"'{source.GetType().FullName}' implements {nameof(IAsyncDisposable)} but not " +
+                $"{nameof(IDisposable)}. The ring that owns this source cannot know whether the host " +
+                $"will dispose the service provider synchronously or asynchronously, so implement " +
+                $"{nameof(IDisposable)} as well.", nameof(source));
+        }
 
         _source = source;
         _timeProvider = timeProvider;
@@ -84,41 +101,34 @@ public sealed class StaticSigningKeyRing : ISigningKeyRing, IDisposable, IAsyncD
     }
 
     /// <inheritdoc/>
-    /// <exception cref="InvalidOperationException">
-    /// Thrown when the signing key source implements only <see cref="IAsyncDisposable"/>, not
-    /// <see cref="IDisposable"/>. Registration rejects that shape up front, so this is a last line of
-    /// defence, not the expected path — dispose the service provider asynchronously instead.
-    /// </exception>
     void IDisposable.Dispose()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
             return;
 
-        _binding?.Signer.Dispose();
+        if (_binding is { } binding)
+            DisposeQuietly(binding.Signer);
 
         if (_source is IDisposable disposable)
-        {
             disposable.Dispose();
-        }
-        else if (_source is IAsyncDisposable)
-        {
-            throw new InvalidOperationException(
-                $"'{_source.GetType().FullName}' implements {nameof(IAsyncDisposable)} but not " +
-                $"{nameof(IDisposable)}, and cannot be disposed synchronously. Dispose the service " +
-                "provider asynchronously instead.");
-        }
 
         GC.SuppressFinalize(this);
     }
 
     /// <inheritdoc/>
-    public async ValueTask DisposeAsync()
+    ValueTask IAsyncDisposable.DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
-            return;
+            return ValueTask.CompletedTask;
 
-        _binding?.Signer.Dispose();
+        if (_binding is { } binding)
+            DisposeQuietly(binding.Signer);
 
+        return DisposeSourceAsync();
+    }
+
+    private async ValueTask DisposeSourceAsync()
+    {
         if (_source is IAsyncDisposable asyncDisposable)
             await asyncDisposable.DisposeAsync().ConfigureAwait(false);
         else if (_source is IDisposable disposable)
@@ -188,7 +198,7 @@ public sealed class StaticSigningKeyRing : ISigningKeyRing, IDisposable, IAsyncD
         // constructed and _binding being committed. Re-check now rather than leaving a live signer
         // handle reachable behind a ring that has already reported itself disposed.
         if (Volatile.Read(ref _disposed) != 0)
-            signer.Dispose();
+            DisposeQuietly(signer);
     }
 
     SigningKeySet? ISigningKeyRing.CurrentOrNull => _binding?.KeySet;

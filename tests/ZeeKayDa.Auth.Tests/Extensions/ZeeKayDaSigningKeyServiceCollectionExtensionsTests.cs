@@ -306,7 +306,7 @@ public sealed class ZeeKayDaSigningKeyServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public void Resolving_ISigningKeyRing_throws_a_coded_failure_when_a_base_typed_factory_returns_an_async_only_derived_source()
+    public void Resolving_ISigningKeyRing_throws_ArgumentException_when_a_base_typed_factory_returns_an_async_only_derived_source()
     {
         var services = new ServiceCollection();
         services.AddZeeKayDaSigningKeySource<BaseSigningKeySource>(_ => new AsyncOnlyDerivedSigningKeySource());
@@ -315,23 +315,7 @@ public sealed class ZeeKayDaSigningKeyServiceCollectionExtensionsTests
 
         var act = () => provider.GetRequiredService<ISigningKeyRing>();
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.source_async_only_disposal");
-    }
-
-    [Fact]
-    public async Task Disposing_the_provider_disposes_an_IDisposable_source_through_the_ring()
-    {
-        var (source, disposalOrder) = CreateOrderRecordingSource();
-        var services = new ServiceCollection();
-        services.AddZeeKayDaSigningKeySource(_ => source);
-        var provider = services.BuildServiceProvider();
-        var ring = provider.GetRequiredService<ISigningKeyRing>();
-        await ring.InitializeAsync(TestContext.Current.CancellationToken);
-
-        provider.Dispose();
-
-        disposalOrder.Should().Contain("source");
+        act.Should().Throw<ArgumentException>().WithParameterName("source");
     }
 
     [Fact]
@@ -650,6 +634,49 @@ public sealed class ZeeKayDaSigningKeyServiceCollectionExtensionsTests
         var act = () => combined.AddZeeKayDaSigningKeySource<OtherExternalSigningKeySource>();
 
         act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void AddZeeKayDaSigningKeySource_throws_when_an_ISigningKeyRing_is_already_registered_manually()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<ISigningKeyRing>(_ => throw new NotSupportedException("must not be constructed"));
+
+        var act = () => services.AddZeeKayDaSigningKeySource<ExternalSigningKeySource>();
+
+        act.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void A_manual_ISigningKeyRing_registration_added_after_AddZeeKayDaSigningKeySource_is_not_rejected_by_this_method()
+    {
+        // AddZeeKayDaSigningKeySource has no hook into a manual registration made after it returns:
+        // that call goes straight to the IServiceCollection, not through this extension. The guard
+        // above only closes the ordering it can actually observe — a manual registration already
+        // present when this method runs. This test documents that the reverse ordering is
+        // unaffected: TryAddSingleton's existing "first one wins" semantics still apply.
+        var services = new ServiceCollection();
+        services.AddZeeKayDaSigningKeySource<ExternalSigningKeySource>();
+
+        var act = () => services.TryAddSingleton<ISigningKeyRing>(_ => throw new NotSupportedException("must not be constructed"));
+
+        act.Should().NotThrow();
+        using var provider = services.BuildServiceProvider();
+        provider.GetRequiredService<ISigningKeyRing>().Should().BeOfType<StaticSigningKeyRing>();
+    }
+
+    [Fact]
+    public void Resolving_ISigningKeyRing_throws_a_coded_failure_when_the_factory_returns_null()
+    {
+        var services = new ServiceCollection();
+        services.AddZeeKayDaSigningKeySource(_ => (ExternalSigningKeySource)null!);
+
+        using var provider = services.BuildServiceProvider();
+
+        var act = () => provider.GetRequiredService<ISigningKeyRing>();
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.null_source");
     }
 
     private static (OrderRecordingSigningKeySource Source, List<string> DisposalOrder) CreateOrderRecordingSource()
