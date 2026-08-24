@@ -140,6 +140,16 @@ If no route fits, tell the user — it might be a gap in the process.
 
 Some tools (e.g. `LSP`, `WebFetch`) may arrive deferred — the schema is not loaded and calling them fails with `InputValidationError`. Load such a tool once with `ToolSearch("select:<ToolName>")` before its first call; don't guess parameters from memory. If it still fails after that, report the exact error to whoever called you instead of silently working around it.
 
+**MCP tools (`mcp__*`) are not reachable from an agent whose frontmatter has an explicit `tools:`
+list** — that covers developer, tester, architect, security and docs. `ToolSearch` returns "No
+matching deferred tools found". Adding the MCP tool name to the `tools:` list is the documented
+workaround, but agent definitions are cached per session, so it takes effect only in a fresh session.
+
+Practical rule when writing agent instructions: **never delegate an MCP call to one of these
+agents.** A delegated call fails silently and comes back looking like a clean result. Keep MCP calls
+with the main orchestrator. If a task you are given depends on one, say so and return it — do not
+report the underlying check as done.
+
 ## Code navigation
 
 Prefer the LSP tool over text search for symbol-level navigation (definitions, references, symbols, call hierarchy); use text search only for strings, comments, and config values. If LSP gives stale results, run `/restart-lsp`. If LSP is unavailable and restarting doesn't fix it, say so explicitly and wait for guidance rather than silently falling back.

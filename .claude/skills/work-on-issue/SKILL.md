@@ -163,6 +163,15 @@ Scope the reviewers by what the change actually touches:
 before forming a verdict — two independent contexts are the entire value of running two reviewers,
 and sequencing them destroys it.
 
+Alongside the reviewers, run the CodeScene `analyze_change_set` MCP tool against the branch
+yourself. **You run it, not the agents** — agents with an explicit `tools:` list cannot reach MCP
+tools, so a delegated CodeScene call silently fails to load and reports nothing.
+
+Treat a Code Health decline on a touched file as one more finding to hand `developer`, at the same
+weight as a reviewer's: worth fixing, or worth a sentence saying why it is acceptable. Do not let it
+trigger refactoring of files the issue never touched — a rising score on unrelated code is scope
+growth wearing a metric as a disguise.
+
 Findings come back **to you only**. Nothing is posted to GitHub at this stage.
 
 `developer` fixes; repeat. Stop when the reviewers are clean, or when what remains is a judgement call
