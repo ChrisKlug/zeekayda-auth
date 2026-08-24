@@ -81,24 +81,37 @@ Some signing-provider packages only make sense on one OS (`ZeeKayDa.Auth.Windows
 
 ## Development Workflow
 
-**Ceremony scales with blast radius.** Match the process to the risk — don't spend a day of design docs on a one-file fix, and don't land a new public API without agreeing its shape first.
+**Vertical slices, milestone first.** Work is organised into vertical-slice milestones — each slice
+ends with something demonstrable end-to-end. The current milestone is the only active work: an issue
+outside it is deferred, not started (exception: a genuine security hole in already-written code).
+Problems discovered mid-work become **one-line issues** — title, one sentence, a label — never a
+workstream. The framework's biggest historical failure mode is moving sideways: polishing internals
+to gem quality while the endpoints that make it *an OIDC provider* stay unbuilt.
 
-Work on an issue runs through the staged loop in the **`/work-on-issue`** skill. Read it before starting. The short version:
+Work on an issue runs through the loop in the **`/work-on-issue`** skill. The short version:
 
-> **Agree the shape with the maintainer → build → review locally → show the maintainer the code → open the PR → reviewers post on the PR → merge.**
+> **Talk the shape through with the maintainer in chat → build in the main session → one
+> severity-gated review round → maintainer reads the diff → PR (verdicts posted, not re-reviewed) →
+> merge.**
 
-Three stages stop until the maintainer answers: the agreed shape (before any code exists), the code walkthrough (before the PR exists), and the merge. The maintainer is exacting about API shape — a finished PR is the wrong moment for them to first see how an API reads. Do not batch these stages or run ahead to save a round trip.
+Three stages stop until the maintainer answers: the shape, the diff, and the merge. Design is a
+*conversation* — one signature, one call site, one question at a time, in plain language. Never
+deliver the maintainer a pre-baked design artifact that assumes they have the issue memorised.
 
 | Change | Process |
 |---|---|
-| Internal / mechanical — bug fix, refactor, test, chore | Just build it (`developer`). No design gate, no reviewers. |
-| New or changed **public API** / behaviour | Full loop. The shape is agreed with the maintainer first and posted on the issue as the build contract. |
-| Touches **tokens, crypto, or endpoints** | `security` reviews — locally first, then on the PR. |
-| Changes **structure or an extension point** | `architect` reviews, same two rounds. |
+| Internal / mechanical — bug fix, refactor, test, chore | Main session just builds it. No design gate, no reviewers. |
+| New or changed **public API** / behaviour | Shape agreed in chat first; short `### Agreed shape` bookmark comment on the issue. |
+| Touches **tokens, crypto, endpoints, or storage** | `security` reviews — **one round**; High/Critical fixed inline, the rest is the maintainer's call. |
+| Changes **structure or an extension point** | `architect` reviews, same single-round rule. |
+| Both surfaces *and* >~150 lines of implementation logic | Both reviewers, in parallel, one message. |
 
-- **One narrow issue = one buildable thing.** No epics by default; sequence with `blocked by` / `blocks` relationships, not epic hierarchies.
-- Reviewers run **in parallel, spawned in a single message**, so neither sees the other's findings before forming a verdict. Independent verdicts are the whole reason two reviewers exist rather than one.
-- The first review round is **local** — findings return to the orchestrator and never reach GitHub. Rough first versions stay off the PR page.
+- **Reviews do not loop.** One round, High/Critical fixed and verified against the fix diff only,
+  Medium/Low listed for the maintainer. A fresh reviewer always finds something — that is sampling,
+  not convergence. The backstops are tests, the per-milestone security audit, and the OpenID
+  conformance suite.
+- **Findings become tests.** Any review finding stating a checkable behaviour is fixed *with a test
+  named for it*. Tests are the durable record; prose is not.
 - After a PR merges, run `/post-merge-checks`.
 
 ## Decision register
@@ -114,23 +127,40 @@ Three stages stop until the maintainer answers: the agreed shape (before any cod
 
 The format is in `docs/decisions/README.md`. It is deliberately minimal: the previous ADR format grew to 4,270 lines and was being amended roughly five times for every one that was written.
 
+**Security sign-off entries** (`docs/decisions/security-sign-offs.md`) are the one dated, append-only
+record — and they are written **last, once, against frozen code**, after review concludes, never in a
+commit still under review. Maximum ~15 lines per entry; every claim cites a test name as its proof
+rather than prose a future reviewer must re-probe. An entry written before the code settled has been
+falsified by later fixes three separate times, at a full review round each — the ordering rule exists
+because of that.
+
 ## Routing — MAIN ORCHESTRATOR ONLY
 
 > **STOP. If you are a specialist agent (`developer`, `tester`, `architect`, `security`, `docs`), this section does not apply to you. Execute your own domain work directly and return your results to whoever called you — never delegate to another specialist from here.**
 
-The main session and the maintainer own **design discussion and decisions** — hold those here, directly, in conversation. Don't route a design question to the `architect` just to have it thought about. What the main session does *not* do is specialist **execution**: writing or changing C# goes to `developer`, a security review to `security`, and so on — that keeps each specialist's standards in force.
+The main session owns **design, decisions, and the code itself**. Design is talked through with the
+maintainer in chat — never routed to `architect` to be thought about. C# is written by the main
+session directly: it has LSP, the design conversation, and the full context, and a subagent spawn
+that must re-derive all of that costs more than it protects. The specialists are for two things
+only: **independent review** (`architect`, `security` — a review's value is a context that did *not*
+write the code) and **large mechanical builds** (`developer`, foreground, only when the work is big,
+fully specified, and would pollute the main context — roughly 300+ lines of implementation logic).
 
-**Don't over-orchestrate.** Converge on the decision with the maintainer first, then delegate execution *once*. Do not reflexively chain `architect` → `security` → spike → review on a change; add each hop only when the blast-radius table above calls for it. Spikes are for genuinely novel or risky mechanisms, not routine work. Every extra agent hop is tokens and latency.
+**Don't over-orchestrate.** Fix rounds, nits, doc rewording, and small changes are never delegated.
+Every agent hop is tokens and latency, and each spawn starts from zero.
 
 | Task | Route |
 |---|---|
-| Writing or changing C# code (features, bug fixes, refactors) | `developer` agent |
-| Proposing the shape of a public API before it's built | `architect` agent, via the `/work-on-issue` loop |
-| Writing or updating Markdown documentation | `docs` agent |
-| Security review of a token/crypto/endpoint change | `security` agent |
-| Writing or verifying tests, checking acceptance criteria | `tester` agent |
+| Designing an API shape | main session, in conversation with the maintainer |
+| Writing or changing C# (features, fixes, refactors, review fixes) | main session, directly |
+| Large, mechanical, fully-specified implementation | `developer` agent (foreground) |
+| Security review of a token/crypto/endpoint/storage change | `security` agent — one round |
+| Structural / extension-point review | `architect` agent — one round |
+| Writing or verifying tests on demand | `tester` agent, or main session |
+| User-facing documentation | **dormant until the walking skeleton ships** — `docs` agent only on the maintainer's explicit request |
 | Starting work on an issue | `/work-on-issue` skill |
-| Writing or triaging a GitHub issue | `/write-issue` skill, or write it directly if the shape is already clear |
+| Filing an issue discovered mid-work | one line with `gh issue create`, no ceremony |
+| Deliberately fleshing out a new feature idea | `/write-issue` skill |
 | After a PR merges | `/post-merge-checks` skill (main session) |
 | Reviewing a branch or PR other than the current checkout | `/review-branch` skill, then the right review agent |
 

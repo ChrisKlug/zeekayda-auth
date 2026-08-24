@@ -12,6 +12,18 @@ This skill turns ideas, bug reports, and tasks into complete, actionable GitHub 
 
 **This project's owner is learning OSS best practices — explain the reasoning behind process choices, don't just produce artifacts.**
 
+## Step 0 — Does this issue deserve ceremony at all?
+
+**An issue discovered mid-work gets one line and no more.** Title, one sentence of context, a label,
+`gh issue create`, done — this skill's templates do not apply to it. Full issue bodies make sideways
+work feel legitimate and urgent; a one-liner is honest about what it is. The full treatment below is
+for work that is deliberately being fleshed out — typically because it is about to be picked up, or
+is being added to a milestone.
+
+**Slice first.** Every issue either belongs to the current vertical-slice milestone, a later one, or
+the backlog. Say which when creating it. Work is organised as vertical slices that each end in
+something demonstrable — not as an undifferentiated pool of improvements.
+
 ## Step 1 — Decide the issue type
 
 Most issues are **implementation issues** (`type:task`): one narrow, buildable thing. Write it directly.
@@ -54,9 +66,8 @@ The default. One narrow issue = one buildable thing:
 4. **Acceptance criteria** — concrete and testable. Each one should name an observable behaviour someone could write a test against; "works correctly" is not a criterion
 5. **Security considerations** — tag `area:security` where relevant
 6. **Spec alignment** — cite the exact spec section being implemented (e.g. "per RFC 7636 §4.3"); flag conflicts with the spec before writing the issue
-7. **Docs requirement** — tag `area:docs` if public-facing
+7. **Docs requirement** — tag `area:docs` if public-facing (user-facing docs are frozen until the walking-skeleton milestone ships; the tag marks future work, not a requirement on this PR)
 8. **References** — RFC sections, related issues
-9. End with: "The docs agent must be involved — documentation is required for all public-facing changes"
 
 Quality bar: "Could a developer implement this with no further questions?"
 
