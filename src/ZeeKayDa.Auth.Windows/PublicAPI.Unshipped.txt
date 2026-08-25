@@ -1,15 +1,25 @@
 #nullable enable
 Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthBuilderWindowsCertificateStoreSigningExtensions
+ZeeKayDa.Auth.Windows.CertificateLookup
+ZeeKayDa.Auth.Windows.CertificateLookup.<Clone>$() -> ZeeKayDa.Auth.Windows.CertificateLookup!
+ZeeKayDa.Auth.Windows.CertificateLookup.Equals(ZeeKayDa.Auth.Windows.CertificateLookup? other) -> bool
+ZeeKayDa.Auth.Windows.CertificateLookup.Thumbprint.get -> string!
 ZeeKayDa.Auth.Windows.WindowsCertificateStoreSigningOptions
-ZeeKayDa.Auth.Windows.WindowsCertificateStoreSigningOptions.AddCertificate(string! thumbprint) -> ZeeKayDa.Auth.Windows.WindowsCertificateStoreSigningOptions!
-ZeeKayDa.Auth.Windows.WindowsCertificateStoreSigningOptions.AdditionalThumbprints.get -> System.Collections.Generic.IReadOnlyList<string!>!
 ZeeKayDa.Auth.Windows.WindowsCertificateStoreSigningOptions.Algorithm.get -> ZeeKayDa.Auth.Tokens.SigningAlgorithm
-ZeeKayDa.Auth.Windows.WindowsCertificateStoreSigningOptions.Algorithm.set -> void
+ZeeKayDa.Auth.Windows.WindowsCertificateStoreSigningOptions.Current.get -> ZeeKayDa.Auth.Windows.CertificateLookup?
+ZeeKayDa.Auth.Windows.WindowsCertificateStoreSigningOptions.Current.set -> void
+ZeeKayDa.Auth.Windows.WindowsCertificateStoreSigningOptions.Next.get -> ZeeKayDa.Auth.Windows.CertificateLookup?
+ZeeKayDa.Auth.Windows.WindowsCertificateStoreSigningOptions.Next.set -> void
+ZeeKayDa.Auth.Windows.WindowsCertificateStoreSigningOptions.Previous.get -> ZeeKayDa.Auth.Windows.CertificateLookup?
+ZeeKayDa.Auth.Windows.WindowsCertificateStoreSigningOptions.Previous.set -> void
 ZeeKayDa.Auth.Windows.WindowsCertificateStoreSigningOptions.StoreLocation.get -> System.Security.Cryptography.X509Certificates.StoreLocation
-ZeeKayDa.Auth.Windows.WindowsCertificateStoreSigningOptions.StoreLocation.set -> void
 ZeeKayDa.Auth.Windows.WindowsCertificateStoreSigningOptions.StoreName.get -> System.Security.Cryptography.X509Certificates.StoreName
-ZeeKayDa.Auth.Windows.WindowsCertificateStoreSigningOptions.StoreName.set -> void
-ZeeKayDa.Auth.Windows.WindowsCertificateStoreSigningOptions.Thumbprint.get -> string!
-ZeeKayDa.Auth.Windows.WindowsCertificateStoreSigningOptions.Thumbprint.set -> void
 ZeeKayDa.Auth.Windows.WindowsCertificateStoreSigningOptions.WindowsCertificateStoreSigningOptions() -> void
-static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthBuilderWindowsCertificateStoreSigningExtensions.AddWindowsCertificateStoreSigning(this ZeeKayDa.Auth.ZeeKayDaAuthBuilder! builder, string! thumbprint, ZeeKayDa.Auth.Tokens.SigningAlgorithm algorithm, System.Security.Cryptography.X509Certificates.StoreLocation storeLocation, System.Security.Cryptography.X509Certificates.StoreName storeName, System.Action<ZeeKayDa.Auth.Windows.WindowsCertificateStoreSigningOptions!>? configure = null) -> ZeeKayDa.Auth.ZeeKayDaAuthBuilder!
+override ZeeKayDa.Auth.Windows.CertificateLookup.Equals(object? obj) -> bool
+override ZeeKayDa.Auth.Windows.CertificateLookup.GetHashCode() -> int
+override ZeeKayDa.Auth.Windows.CertificateLookup.ToString() -> string!
+static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthBuilderWindowsCertificateStoreSigningExtensions.AddWindowsCertificateStoreSigning(this ZeeKayDa.Auth.ZeeKayDaAuthBuilder! builder, ZeeKayDa.Auth.Tokens.SigningAlgorithm algorithm, System.Security.Cryptography.X509Certificates.StoreLocation storeLocation, System.Security.Cryptography.X509Certificates.StoreName storeName, System.Action<ZeeKayDa.Auth.Windows.WindowsCertificateStoreSigningOptions!>! configure) -> ZeeKayDa.Auth.ZeeKayDaAuthBuilder!
+static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthBuilderWindowsCertificateStoreSigningExtensions.AddWindowsCertificateStoreSigning(this ZeeKayDa.Auth.ZeeKayDaAuthBuilder! builder, ZeeKayDa.Auth.Windows.CertificateLookup! certificate, ZeeKayDa.Auth.Tokens.SigningAlgorithm algorithm, System.Security.Cryptography.X509Certificates.StoreLocation storeLocation, System.Security.Cryptography.X509Certificates.StoreName storeName) -> ZeeKayDa.Auth.ZeeKayDaAuthBuilder!
+static ZeeKayDa.Auth.Windows.CertificateLookup.ByThumbprint(string! thumbprint) -> ZeeKayDa.Auth.Windows.CertificateLookup!
+static ZeeKayDa.Auth.Windows.CertificateLookup.operator !=(ZeeKayDa.Auth.Windows.CertificateLookup? left, ZeeKayDa.Auth.Windows.CertificateLookup? right) -> bool
+static ZeeKayDa.Auth.Windows.CertificateLookup.operator ==(ZeeKayDa.Auth.Windows.CertificateLookup? left, ZeeKayDa.Auth.Windows.CertificateLookup? right) -> bool

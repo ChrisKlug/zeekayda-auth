@@ -54,6 +54,64 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- **BREAKING: Windows Certificate Store signing is now an `ISigningKeySource` with three named key slots** (#518)
+
+  `AddWindowsCertificateStoreSigning` no longer registers an `IJwtSigningService`. It registers a
+  `WindowsCertificateStoreSigningKeySource` and a `StaticSigningKeyRing` over it, and splits into two
+  overloads:
+
+  ```csharp
+  // One signing certificate, no rotation staged.
+  .AddWindowsCertificateStoreSigning(
+      CertificateLookup.ByThumbprint("A1B2..."), SigningAlgorithm.RS256, StoreLocation.LocalMachine, StoreName.My);
+
+  // The three slots, all found in the one store named by the arguments.
+  .AddWindowsCertificateStoreSigning(SigningAlgorithm.RS256, StoreLocation.LocalMachine, StoreName.My, options =>
+  {
+      options.Previous = CertificateLookup.ByThumbprint("A1B2...");
+      options.Current  = CertificateLookup.ByThumbprint("C3D4...");
+      options.Next     = CertificateLookup.ByThumbprint("E5F6...");
+  });
+  ```
+
+  **Slots hold a `CertificateLookup`, not a thumbprint string.** `CertificateLookup.ByThumbprint`
+  normalizes what certificate tooling produces — embedded spaces, casing, and the invisible U+200E
+  LEFT-TO-RIGHT MARK that `certmgr` and the Certificates MMC snap-in prepend when a thumbprint is
+  copied from their UI — and throws `ArgumentException` for a value with no hex digits at all, so a
+  configured slot always names a usable certificate by construction. Naming the lookup rather than
+  the thumbprint keeps room for other lookup modes without renaming a property or breaking a
+  signature; only `ByThumbprint` exists today, because a subject name can match several certificates
+  and choosing which of them signs is a decision of its own.
+
+  `WindowsCertificateStoreSigningOptions` loses its `KeySetOptions` base (and with it
+  `PublicationLead`), its `Thumbprint`, `AdditionalThumbprints` and `AddCertificate` members, and
+  carries `Previous`/`Current`/`Next` plus `Algorithm`, `StoreLocation` and `StoreName`. `Current` is
+  required; `Previous` and `Next` are independently optional. Two slots naming the same certificate is
+  a startup failure. The setters on `Algorithm`, `StoreLocation` and `StoreName` are internal, so each
+  is said exactly once, in the registration argument — a `configure` callback silently beating the
+  `storeLocation` argument would not fail, it would quietly search a different store. The single-
+  certificate overload takes no `configure` callback at all, so the certificate it names is
+  unambiguously the one that signs.
+
+  **Which certificate signs is now decided entirely by which slot it is configured in, never by the
+  clock.** The single-certificate bootstrap exemption is gone, and a certificate's `NotBefore` no
+  longer selects among registered certificates: the ring hard-fails a `Current` whose validity window
+  has not opened or has already closed. Staging a successor ahead of its `NotBefore` is what `Next` is
+  for.
+
+  **The store is read exactly once, at startup, and never re-read.** Removing, replacing, or adding a
+  certificate afterwards has no effect on what the process signs with or publishes until it restarts.
+
+  The provider's own algorithm/key-type check is deleted. `SigningKeySetBuilder` already rejects the
+  same mismatch centrally, plus EC curve pairing the local check did not cover, keyed on the source id
+  — the certificate's thumbprint — so the failure still names the certificate. The provider likewise
+  performs no key-pairing check of its own; the ring's per-handoff self-test is the only one.
+
+  A store entry is a bundled format like PFX, so unlike the PEM provider's certificate-only slots,
+  every slot's private key is physically present. Only `Current`'s is ever opened: each slot is read
+  transiently for its public parameters and its certificate disposed immediately, and only
+  `CreateSignerAsync` extracts private material, only for `Current`.
+
 - **BREAKING: PFX file signing is now an `ISigningKeySource` with three named key slots, and a published-only bundle's private key is never decrypted** (#517)
 
   `AddPfxFileSigning` no longer registers an `IJwtSigningService`. It registers a

@@ -35,8 +35,8 @@ public sealed class WindowsCertificateKeyExtractorTests
     }
 
     // ── Handle-outlives-certificate contract ─────────────────────────────────────────────────────
-    // ListKeysAsync/CreateSignerAsync dispose every fetched X509Certificate2 in a `finally` block immediately after
-    // extracting the handles it needs (see WindowsCertificateStoreSigningJwtSigningService), relying
+    // ReadAsync/CreateSignerAsync dispose every fetched X509Certificate2 immediately after
+    // extracting the handles they need (see WindowsCertificateStoreSigningKeySource), relying
     // on the documented .NET Core 3.0+ guarantee that GetRSAPrivateKey()/GetECDsaPrivateKey() return
     // a duplicated handle that remains valid and usable after the parent certificate is disposed.
     // The tests above never actually exercise this: `using var certificate` disposes it only after

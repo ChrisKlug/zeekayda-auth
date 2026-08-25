@@ -8,6 +8,8 @@ namespace ZeeKayDa.Auth.Windows;
 /// </summary>
 /// <remarks>
 /// Registered via <c>AddWindowsCertificateStoreSigning()</c> and activated by <c>ValidateOnStart()</c>.
+/// There is no empty-thumbprint check here: <see cref="CertificateLookup.ByThumbprint"/> rejects a
+/// thumbprint with no hex digits at construction, so a configured slot always holds a usable one.
 /// </remarks>
 internal sealed class WindowsCertificateStoreSigningOptionsValidator : IValidateOptions<WindowsCertificateStoreSigningOptions>
 {
@@ -16,51 +18,45 @@ internal sealed class WindowsCertificateStoreSigningOptionsValidator : IValidate
     {
         var errors = new List<string>();
 
-        if (KeySourcePublicationLeadValidator.ValidateMinimum(nameof(WindowsCertificateStoreSigningOptions), options.PublicationLead) is { } publicationLeadError)
-            errors.Add(publicationLeadError);
-
-        if (string.IsNullOrWhiteSpace(options.Thumbprint))
+        if (options.Current is null)
         {
             errors.Add(
-                "WindowsCertificateStoreSigningOptions.Thumbprint must be set to a non-empty certificate thumbprint.");
+                $"{nameof(WindowsCertificateStoreSigningOptions)}.{nameof(WindowsCertificateStoreSigningOptions.Current)} " +
+                "must be set to the certificate that signs. Previous and Next are optional; Current is not.");
         }
 
         if (!Enum.IsDefined(options.Algorithm))
         {
             errors.Add(
-                $"WindowsCertificateStoreSigningOptions.Algorithm value '{options.Algorithm}' is not a defined " +
-                $"{nameof(SigningAlgorithm)} member.");
+                $"{nameof(WindowsCertificateStoreSigningOptions)}.{nameof(WindowsCertificateStoreSigningOptions.Algorithm)} " +
+                $"value '{options.Algorithm}' is not a defined {nameof(SigningAlgorithm)} member.");
         }
 
-        var normalizedPrimary = ThumbprintFormat.Normalize(options.Thumbprint);
-        var seen = new HashSet<string>(StringComparer.Ordinal) { normalizedPrimary };
-        var hasEmptyAdditionalThumbprint = false;
-        var hasDuplicateAdditionalThumbprint = false;
-        foreach (var additional in options.AdditionalThumbprints)
-        {
-            // A thumbprint made up entirely of non-hex characters normalizes to "" here rather
-            // than throwing at registration time; left uncaught it would surface later as a
-            // confusing "certificate not found: ''" error instead of a clear validation failure.
-            if (additional.Length == 0)
-                hasEmptyAdditionalThumbprint = true;
-            else if (!seen.Add(additional))
-                hasDuplicateAdditionalThumbprint = true;
-        }
-
-        if (hasEmptyAdditionalThumbprint)
-        {
-            errors.Add(
-                "AddCertificate was called with a thumbprint that contains no hex digits after " +
-                "normalization. Verify the thumbprint was copied correctly.");
-        }
-
-        if (hasDuplicateAdditionalThumbprint)
-        {
-            errors.Add(
-                "AddCertificate was called with a thumbprint that duplicates the primary or another " +
-                "already-registered certificate.");
-        }
+        errors.AddRange(FindDuplicateSlotErrors(options));
 
         return errors.Count > 0 ? ValidateOptionsResult.Fail(errors) : ValidateOptionsResult.Success;
+    }
+
+    /// <summary>
+    /// Reports every pair of slots configured with the same certificate. Two slots naming one
+    /// certificate is always a configuration mistake: it publishes the same key twice and, when
+    /// <c>Current</c> is one of them, means a rotation that has not actually moved anything.
+    /// </summary>
+    private static IEnumerable<string> FindDuplicateSlotErrors(WindowsCertificateStoreSigningOptions options)
+    {
+        var slots = new (string Name, CertificateLookup? Lookup)[]
+        {
+            (nameof(WindowsCertificateStoreSigningOptions.Previous), options.Previous),
+            (nameof(WindowsCertificateStoreSigningOptions.Current), options.Current),
+            (nameof(WindowsCertificateStoreSigningOptions.Next), options.Next),
+        };
+
+        var configured = slots.Where(slot => slot.Lookup is not null).ToArray();
+
+        return from index in Enumerable.Range(0, configured.Length)
+               from other in configured.Skip(index + 1)
+               where string.Equals(configured[index].Lookup!.Thumbprint, other.Lookup!.Thumbprint, StringComparison.Ordinal)
+               select $"{configured[index].Name} and {other.Name} are both configured with certificate " +
+                      $"'{other.Lookup!.Thumbprint}'. Each slot must name a different certificate.";
     }
 }
