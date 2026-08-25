@@ -609,6 +609,37 @@ public sealed class ZeeKayDaSigningKeyServiceCollectionExtensionsTests
     }
 
     [Fact]
+    public void Enumerating_ISigningKeyRing_across_composed_registrations_throws_and_constructs_no_source()
+    {
+        // Composing N collections still leaves N ring descriptors — TryAddSingleton only deduplicates
+        // within the collection it runs against. What must not happen is enumeration quietly opening
+        // a source per descriptor, each holding whatever handle its implementation acquires, with no
+        // self-test ever run against it.
+        var constructions = 0;
+        var collections = Enumerable.Range(0, 3).Select(_ =>
+        {
+            var services = new ServiceCollection();
+            services.AddZeeKayDaSigningKeySource(_ =>
+            {
+                constructions++;
+                return new ExternalSigningKeySource();
+            });
+            return services;
+        });
+
+        var combined = new ServiceCollection();
+        foreach (var descriptor in collections.SelectMany(c => c))
+            combined.Add(descriptor);
+
+        using var provider = combined.BuildServiceProvider();
+
+        var act = () => provider.GetServices<ISigningKeyRing>().ToArray();
+
+        act.Should().Throw<ZeeKayDaConfigurationException>();
+        constructions.Should().Be(0, "no source may be constructed for a composition that is rejected");
+    }
+
+    [Fact]
     public void Resolving_ISigningKeyRing_throws_when_composed_from_two_libraries_that_registered_the_same_source()
     {
         // Two collections that each registered the same source type each also configured that
