@@ -62,11 +62,12 @@ internal sealed class PemFileSigningOptionsValidator : IValidateOptions<PemFileS
     // Every filesystem path this configuration touches must be pairwise distinct — two slots sharing
     // a path would publish one key twice under two slot names, or make the same file both the
     // outgoing and the incoming key of a rotation. Each non-empty path is normalized via
-    // Path.GetFullPath before comparison (pure string canonicalization, no filesystem access), so
-    // differences like "tls.pem" vs "./tls.pem" are still caught. Symlink resolution and
-    // case-insensitive-filesystem comparison are deliberately out of scope: this degrades to a load
-    // failure or a duplicate-kid rejection in SigningKeySetBuilder, not key confusion, if two paths
-    // are equivalent but not caught here.
+    // Path.GetFullPath before comparison, so differences like "tls.pem" vs "./tls.pem" are still
+    // caught. That call is pure string canonicalization only for a rooted path; for a relative one it
+    // reads the current directory, which is why the catch below covers I/O failures too. Symlink
+    // resolution and case-insensitive-filesystem comparison are deliberately out of scope: this
+    // degrades to a load failure or a duplicate-kid rejection in SigningKeySetBuilder, not key
+    // confusion, if two paths are equivalent but not caught here.
     private static void AppendDuplicatePathErrors(PemFileSigningOptions options, List<string> errors)
     {
         var seen = new HashSet<string>(StringComparer.Ordinal);
@@ -86,11 +87,14 @@ internal sealed class PemFileSigningOptionsValidator : IValidateOptions<PemFileS
             {
                 fullPath = Path.GetFullPath(path);
             }
-            catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+            catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException or IOException)
             {
-                // GetFullPath throws on an embedded NUL or a path over the platform limit. That is a
-                // configuration error like any other and belongs in the aggregated result, not thrown
-                // out of Validate where it would escape as something other than an options failure.
+                // GetFullPath throws on an embedded NUL or a path over the platform limit, and — for a
+                // relative path, since it resolves against the current directory — on an I/O failure
+                // reading that directory. All of them are configuration errors like any other and
+                // belong in the aggregated result, not thrown out of Validate where they would escape
+                // as something other than an options failure. DirectoryNotFoundException derives from
+                // IOException, so a deleted working directory is covered.
                 hasUncanonicalizablePath = true;
                 return;
             }

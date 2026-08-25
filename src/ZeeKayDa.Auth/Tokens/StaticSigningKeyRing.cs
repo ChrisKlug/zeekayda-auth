@@ -22,6 +22,11 @@ public sealed class StaticSigningKeyRing : ISigningKeyRing, IDisposable, IAsyncD
     // The signing key set and the signer opened for it are read and written together, exactly once,
     // via Interlocked.CompareExchange — never as two independently-updated fields — so a consumer
     // can never observe one without the other, and InitializeAsync can only ever commit once.
+    private SignerBinding? _binding;
+
+    // 0 = live, 1 = disposed. int so Interlocked.Exchange makes the transition atomic.
+    private int _disposed;
+
     // Tolerance on the not-before end of the signing key's validity window, and on that end only.
     // No relying party can observe a key's NotBefore — it is not a JWK member (RFC 7517 §4) and no
     // certificate is published anywhere — so signing a few minutes "early" is undetectable and
@@ -30,11 +35,6 @@ public sealed class StaticSigningKeyRing : ISigningKeyRing, IDisposable, IAsyncD
     // knob here would only ever be turned up to work around a broken clock. The expiry end has a real
     // observer, every relying party validating a token, and stays exact.
     private static readonly TimeSpan NotBeforeGrace = TimeSpan.FromMinutes(5);
-
-    private SignerBinding? _binding;
-
-    // 0 = live, 1 = disposed. int so Interlocked.Exchange makes the transition atomic.
-    private int _disposed;
 
     /// <summary>
     /// Initialises a <see cref="StaticSigningKeyRing"/> over <paramref name="source"/>. Call
@@ -159,7 +159,12 @@ public sealed class StaticSigningKeyRing : ISigningKeyRing, IDisposable, IAsyncD
     /// </remarks>
     private static void ValidateSigningKeyWindow(SigningKey signingKey, DateTimeOffset now)
     {
-        if (signingKey.NotBefore is { } notBefore && notBefore - NotBeforeGrace > now)
+        // Written as a difference between the two instants rather than as `notBefore - Grace > now`.
+        // The two are mathematically identical, but subtracting from notBefore underflows for a key
+        // reported with a NotBefore at DateTimeOffset.MinValue — a plausible way for a third-party
+        // source to spell "always valid" — throwing ArgumentOutOfRangeException out of startup
+        // instead of the configuration failure this method exists to raise.
+        if (signingKey.NotBefore is { } notBefore && notBefore - now > NotBeforeGrace)
         {
             throw new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure(

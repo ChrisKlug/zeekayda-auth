@@ -195,7 +195,7 @@ public sealed class ZeeKayDaAuthBuilderFileSigningExtensionsTests
     // ── Successful registration ──────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task AddPemFileSigning_registers_a_signing_key_ring_rather_than_an_IJwtSigningService()
+    public async Task AddPemFileSigning_registers_a_static_signing_key_ring()
     {
         var builder = NewBuilder();
 

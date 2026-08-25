@@ -423,6 +423,39 @@ public sealed class StaticSigningKeyRingTests
     }
 
     [Fact]
+    public async Task InitializeAsync_accepts_a_Current_key_reporting_NotBefore_at_DateTimeOffset_MinValue()
+    {
+        // MinValue is a plausible way for a third-party source to spell "always valid" on a public
+        // extension point. Computing the grace as `notBefore - Grace` underflows here and throws
+        // ArgumentOutOfRangeException straight out of startup, instead of the configuration failure
+        // this check exists to raise — so the comparison is written as a difference between the two
+        // instants instead.
+        using var rsa = RSA.Create(2048);
+        var (source, _) = CreateSuccessfulSource(
+            rsa, expiresAt: Epoch.AddDays(90), notBefore: DateTimeOffset.MinValue);
+        ISigningKeyRing ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
+
+        var act = async () => await ring.InitializeAsync(TestContext.Current.CancellationToken);
+
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task InitializeAsync_rejects_a_Current_key_reporting_NotBefore_at_DateTimeOffset_MaxValue()
+    {
+        // The far end of the same arithmetic: no underflow, and still the rejection it should be.
+        using var rsa = RSA.Create(2048);
+        var (source, _) = CreateSuccessfulSource(
+            rsa, expiresAt: DateTimeOffset.MaxValue, notBefore: DateTimeOffset.MaxValue);
+        ISigningKeyRing ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
+
+        var act = async () => await ring.InitializeAsync(TestContext.Current.CancellationToken);
+
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.signing_key_not_yet_valid");
+    }
+
+    [Fact]
     public async Task InitializeAsync_gives_the_expiry_end_no_grace_at_all()
     {
         // The expiry end has a real observer — every relying party validating a token — so it stays
