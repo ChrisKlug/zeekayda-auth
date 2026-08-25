@@ -11,7 +11,7 @@ namespace ZeeKayDa.Auth.AzureKeyVault.Tests.Fakes;
 /// </summary>
 internal sealed class FakeKeyVaultSigner : IKeyVaultSigner, IDisposable
 {
-    public List<(Uri KeyVersionUri, string Kid, SigningAlgorithm Algorithm, byte[] SigningInput)> Calls { get; } = [];
+    public List<(Uri KeyVersionUri, string KeyLabel, SigningAlgorithm Algorithm, byte[] SigningInput)> Calls { get; } = [];
 
     public Func<Uri, string, SigningAlgorithm, byte[], ReadOnlyMemory<byte>>? SignFunc { get; set; }
 
@@ -28,14 +28,14 @@ internal sealed class FakeKeyVaultSigner : IKeyVaultSigner, IDisposable
     public int DisposeCallCount { get; private set; }
 
     public ValueTask<ReadOnlyMemory<byte>> SignAsync(
-        Uri keyVersionUri, string kid, SigningAlgorithm algorithm, byte[] signingInput, CancellationToken cancellationToken)
+        Uri keyVersionUri, string keyLabel, SigningAlgorithm algorithm, byte[] signingInput, CancellationToken cancellationToken)
     {
-        Calls.Add((keyVersionUri, kid, algorithm, signingInput));
+        Calls.Add((keyVersionUri, keyLabel, algorithm, signingInput));
 
         if (ThrowException is not null)
             throw ThrowException;
 
-        var result = SignFunc?.Invoke(keyVersionUri, kid, algorithm, signingInput) ?? new byte[] { 1, 2, 3, 4 };
+        var result = SignFunc?.Invoke(keyVersionUri, keyLabel, algorithm, signingInput) ?? new byte[] { 1, 2, 3, 4 };
         return ValueTask.FromResult(result);
     }
 

@@ -20,8 +20,8 @@ public static class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensions
 {
     /// <summary>
     /// Registers Azure Key Vault as the JWT signing key provider. Every signature is produced by a
-    /// live call to Key Vault; the provider automatically discovers and rotates through the
-    /// key's versions.
+    /// live call to Key Vault; the provider discovers the key's versions itself and derives which
+    /// one signs from the vault's own per-version metadata.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -30,17 +30,20 @@ public static class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensions
     /// if Key Vault latency or throttling limits are a concern.
     /// </para>
     /// <para>
-    /// The first key version a deployment ever uses activates immediately. Every subsequent
-    /// rotation requires the new version to have existed for at least
-    /// <see cref="ZeeKayDa.Auth.Tokens.KeySourceOptions.PublicationLead"/> before it signs anything,
-    /// so relying parties have had a chance to see it in a published JWKS — create rotated-in
-    /// versions with that much lead time. <c>PublicationLead</c> must exceed your relying parties'
-    /// actual JWKS cache TTL.
+    /// The vault is read exactly once, at startup — rotation is picked up by restarting the host.
+    /// Rotate by creating a new version of the key (Key Vault's automatic rotation policy does
+    /// exactly that): the new version is published as staged until it has existed for
+    /// <see cref="AzureKeyVaultRemoteSigningOptions.PreActivationDelay"/>, so relying parties see
+    /// its public half in the JWKS before it ever signs, and a restart after that promotes it to
+    /// the signing key. Versions it succeeds stay published per
+    /// <see cref="AzureKeyVaultRemoteSigningOptions.PreviousVersionsToPublish"/>; disabling a
+    /// version in the vault removes it from publication unconditionally.
     /// </para>
     /// <para>
-    /// If the active key version reaches its Key Vault <c>ExpiresOn</c> with no enabled successor,
-    /// key loading fails closed with a configuration error rather than signing with an expired or
-    /// absent key — rotate in a new version before the active one expires.
+    /// If no enabled version is eligible to sign — every one expired, not yet valid, or younger
+    /// than the pre-activation delay (the key's chronologically-first version ever is exempt from
+    /// the delay) — startup fails closed with a configuration error rather than signing with an
+    /// ineligible key.
     /// </para>
     /// </remarks>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
@@ -49,15 +52,14 @@ public static class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensions
     /// <param name="credential">The credential used to authenticate to Key Vault.</param>
     /// <param name="configure">
     /// An optional callback to further configure <see cref="AzureKeyVaultRemoteSigningOptions"/>
-    /// (for example, <see cref="ZeeKayDa.Auth.Tokens.KeySourceOptions.RefreshInterval"/>).
+    /// (for example, <see cref="AzureKeyVaultRemoteSigningOptions.PreActivationDelay"/>).
     /// </param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="builder"/> or <paramref name="credential"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// Thrown when an <see cref="IJwtSigningService"/> has already been registered. Only one
-    /// signing key provider is allowed.
+    /// Thrown when a signing key provider has already been registered. Only one is allowed.
     /// </exception>
     /// <seealso cref="AddAzureKeyVaultCachedSigning"/>
     public static ZeeKayDaAuthBuilder AddAzureKeyVaultRemoteSigning(
@@ -70,12 +72,22 @@ public static class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensions
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(credential);
 
-        // Defensive/idempotent: guarantees ISigningKeyRetirementWindowProvider and
-        // IOptions<AuthorizationServerOptions> are resolvable even when this package is used
-        // standalone, without ZeeKayDa.Auth.AspNetCore's AddZeeKayDaAuth().
-        builder.Services.AddZeeKayDaAuthCore();
-
+        // Transitional, removed with IJwtSigningService itself in #511. The cached Key Vault
+        // provider below is not ported to a signing key source yet (#520), so
+        // AddZeeKayDaSigningKeySource cannot see its registration. Without this, registering it and
+        // then this provider would leave the application with two signing providers rather than the
+        // one it is allowed. The reverse order is not detectable from here and is deferred until
+        // that port lands.
         builder.ThrowIfAlreadyRegistered(typeof(IJwtSigningService));
+
+        // Registered first so a second signing key source is rejected before this method applies any
+        // of its own configuration — a caller that catches the rejection must not be left with this
+        // call's options callbacks applied to the surviving registration.
+        builder.Services.AddZeeKayDaSigningKeySource<AzureKeyVaultRemoteSigningKeySource>();
+
+        // Defensive/idempotent: guarantees the core services are resolvable even when this package is
+        // used standalone, without ZeeKayDa.Auth.AspNetCore's AddZeeKayDaAuth().
+        builder.Services.AddZeeKayDaAuthCore();
 
         builder.Services.AddOptions<AzureKeyVaultRemoteSigningOptions>()
             .Configure(options =>
@@ -95,7 +107,6 @@ public static class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensions
         builder.Services.TryAddSingleton<TimeProvider>(TimeProvider.System);
         builder.Services.TryAddSingleton<IKeyVaultKeyReader, KeyVaultKeyReader>();
         builder.Services.TryAddSingleton<IKeyVaultSigner, KeyVaultSigner>();
-        builder.Services.AddSingleton<IJwtSigningService, AzureKeyVaultRemoteSigningJwtSigningService>();
 
         return builder;
     }
@@ -121,11 +132,14 @@ public static class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensions
     /// <see cref="AddAzureKeyVaultRemoteSigning"/> as the alternative.
     /// </para>
     /// <para>
-    /// Rotation bootstrap, the publish-then-activate delay, and fail-closed behavior on expiry are
-    /// identical to <see cref="AddAzureKeyVaultRemoteSigning"/> — see its remarks. Because this
-    /// provider re-downloads private key material on every
+    /// This provider runs on the <see cref="IJwtSigningService"/> model and polls the vault: the
+    /// certificate's first-ever version activates immediately, every rotated-in version waits out
+    /// <see cref="ZeeKayDa.Auth.Tokens.KeySourceOptions.PublicationLead"/> measured from Key
+    /// Vault's <c>CreatedOn</c> before it signs, and an active version reaching its
+    /// <c>ExpiresOn</c> with no enabled successor fails closed with a configuration error. Because
+    /// this provider re-downloads private key material on every
     /// <see cref="ZeeKayDa.Auth.Tokens.KeySourceOptions.RefreshInterval"/>, that traffic is more
-    /// sensitive than the remote-signing provider's public-key-only refresh.
+    /// sensitive than the remote-signing provider's public-key-only reads.
     /// </para>
     /// </remarks>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>

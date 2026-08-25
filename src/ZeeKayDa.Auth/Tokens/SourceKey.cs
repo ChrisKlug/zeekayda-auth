@@ -20,8 +20,10 @@ namespace ZeeKayDa.Auth.Tokens;
 /// <remarks>
 /// <see cref="NotBefore"/> and <see cref="ExpiresAt"/> are the two ends of one validity window, and
 /// both are facts about the credential rather than policy: neither decides which key signs. That
-/// decision belongs entirely to which slot a key is configured in. The ring rejects a signing key
-/// whose window has not opened or has already closed.
+/// decision belongs entirely to which slot a key is configured in — or, for a source that derives
+/// its slots from its store's own metadata, to which key it reports as
+/// <see cref="SourceKeySet.SigningKey"/>. The ring rejects a signing key whose window has not
+/// opened or has already closed.
 /// </remarks>
 public sealed record SourceKey(
     SourceKeyId Id,

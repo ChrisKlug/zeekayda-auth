@@ -129,11 +129,11 @@ public static class ZeeKayDaAuthBuilderWindowsCertificateStoreSigningExtensions
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(configure);
 
-        // Transitional, removed with IJwtSigningService itself in #511. The Azure Key Vault providers
-        // are not ported to a signing key source yet, so AddZeeKayDaSigningKeySource below cannot see
-        // their registrations. Without this, registering one of them and then this one would leave the
-        // application with two signing providers rather than the one it is allowed. The reverse order
-        // is not detectable from here and is deferred until those ports land.
+        // Transitional, removed with IJwtSigningService itself in #511. The cached Azure Key Vault
+        // provider is not ported to a signing key source yet (#520), so AddZeeKayDaSigningKeySource
+        // below cannot see its registration. Without this, registering it and then this one would
+        // leave the application with two signing providers rather than the one it is allowed. The
+        // reverse order is not detectable from here and is deferred until that port lands.
         builder.ThrowIfAlreadyRegistered(typeof(IJwtSigningService));
 
         // Registered first so a second signing key source is rejected before this method applies any

@@ -16,6 +16,10 @@ ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultRemoteSigningOptions.Credential.get -> 
 ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultRemoteSigningOptions.Credential.set -> void
 ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultRemoteSigningOptions.KeyIdentifier.get -> Azure.Security.KeyVault.Keys.KeyVaultKeyIdentifier
 ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultRemoteSigningOptions.KeyIdentifier.set -> void
+ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultRemoteSigningOptions.PreActivationDelay.get -> System.TimeSpan
+ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultRemoteSigningOptions.PreActivationDelay.set -> void
+ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultRemoteSigningOptions.PreviousVersionsToPublish.get -> int
+ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultRemoteSigningOptions.PreviousVersionsToPublish.set -> void
 ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultSigningException
 ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultSigningException.AzureKeyVaultSigningException(string! message) -> void
 ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultSigningException.AzureKeyVaultSigningException(string! message, System.Exception! innerException) -> void
