@@ -167,8 +167,8 @@ public sealed class PemFileSigningOptionsValidatorTests
     {
         var options = new PemFileSigningOptions
         {
-            Current = new PemSigningFile(Path.Combine(Path.GetTempPath(), "tls.pem")),
-            Next = new PemCertificateFile(Path.Combine(Path.GetTempPath(), ".", "tls.pem")),
+            Current = new PemSigningFile(Path.Join(Path.GetTempPath(), "tls.pem")),
+            Next = new PemCertificateFile(Path.Join(Path.GetTempPath(), ".", "tls.pem")),
         };
 
         Validate(options).Should().Contain(e => e.Contains("slots reference the same file"));

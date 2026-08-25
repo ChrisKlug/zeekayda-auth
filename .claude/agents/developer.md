@@ -81,6 +81,7 @@ Apply these while writing, not after. Each one has cost a full Opus review round
 - **Null-check every value returned by a caller-supplied interface**, not only the arguments passed in. An extension point returning `null` should produce a named failure, never a `NullReferenceException`.
 - **Measure sizes, don't infer them from lengths.** `array.Length * 8` is not a bit count for anything that may be zero-padded. Count significant bits, or ask the platform type for its own size.
 - **Guard one-shot initialization structurally.** If a method may only be called once, enforce it with `Interlocked.CompareExchange` rather than relying on the current call graph. "Only the framework calls it" stops being true the moment someone else does.
+- **`Path.Join`, never `Path.Combine` — in tests too.** `Path.Combine` silently discards every earlier argument when a later one is rooted, so one absolute segment reached from configuration turns `Combine(safeRoot, userSegment)` into `userSegment` and the containment you thought you had is gone. `Path.Join` concatenates unconditionally. CodeQL flags every `Combine` call for this, including in test files, where the finding is ignored under the tests-are-specification rule and so becomes recurring PR noise rather than a signal. Production code here has always used `Join`; match it everywhere and the warning never appears.
 
 ## Comments and XML Docs
 
