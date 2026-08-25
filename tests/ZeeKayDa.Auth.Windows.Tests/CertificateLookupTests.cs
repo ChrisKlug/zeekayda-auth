@@ -1,28 +1,41 @@
 namespace ZeeKayDa.Auth.Windows.Tests;
 
 /// <summary>
-/// Tests for <see cref="CertificateLookup"/>, the value configured into each signing key slot.
+/// Tests for <see cref="CertificateLookup"/> and its one shipped mode,
+/// <see cref="ThumbprintCertificateLookup"/>.
 /// </summary>
 /// <remarks>
 /// Normalization is the point of this type: a thumbprint copied out of <c>certmgr</c> or the
 /// Certificates MMC snap-in carries embedded spaces and an invisible leading U+200E LEFT-TO-RIGHT
-/// MARK, and a lookup built from that must find the same certificate as one built from a clean
+/// MARK, and a lookup built from that must name the same certificate as one built from a clean
 /// thumbprint.
 /// </remarks>
 public sealed class CertificateLookupTests
 {
     private const string CleanThumbprint = "AABBCCDDEEFF00112233445566778899AABBCCDD";
+    private const string MessyThumbprint = "‎aa bb cc dd ee ff 00 11 22 33 44 55 66 77 88 99 aa bb cc dd";
+
+    private static string ThumbprintOf(CertificateLookup lookup) =>
+        lookup.Should().BeOfType<ThumbprintCertificateLookup>().Subject.Thumbprint;
+
+    [Fact]
+    public void ByThumbprint_returns_a_thumbprint_lookup()
+    {
+        // The factory's declared return type is the base, so that adding a lookup mode later is a
+        // pure addition; the mode it actually built is still observable.
+        CertificateLookup.ByThumbprint(CleanThumbprint).Should().BeOfType<ThumbprintCertificateLookup>();
+    }
 
     [Fact]
     public void ByThumbprint_keeps_an_already_clean_thumbprint_unchanged()
     {
-        CertificateLookup.ByThumbprint(CleanThumbprint).Thumbprint.Should().Be(CleanThumbprint);
+        ThumbprintOf(CertificateLookup.ByThumbprint(CleanThumbprint)).Should().Be(CleanThumbprint);
     }
 
     [Fact]
     public void ByThumbprint_uppercases_a_lowercase_thumbprint()
     {
-        CertificateLookup.ByThumbprint(CleanThumbprint.ToLowerInvariant()).Thumbprint.Should().Be(CleanThumbprint);
+        ThumbprintOf(CertificateLookup.ByThumbprint(CleanThumbprint.ToLowerInvariant())).Should().Be(CleanThumbprint);
     }
 
     [Fact]
@@ -30,7 +43,7 @@ public sealed class CertificateLookupTests
     {
         var spacedOut = "aa bb cc dd ee ff 00 11 22 33 44 55 66 77 88 99 aa bb cc dd";
 
-        CertificateLookup.ByThumbprint(spacedOut).Thumbprint.Should().Be(CleanThumbprint);
+        ThumbprintOf(CertificateLookup.ByThumbprint(spacedOut)).Should().Be(CleanThumbprint);
     }
 
     [Fact]
@@ -38,7 +51,7 @@ public sealed class CertificateLookupTests
     {
         var withMark = "‎" + CleanThumbprint;
 
-        CertificateLookup.ByThumbprint(withMark).Thumbprint.Should().Be(CleanThumbprint);
+        ThumbprintOf(CertificateLookup.ByThumbprint(withMark)).Should().Be(CleanThumbprint);
     }
 
     [Theory]
@@ -55,7 +68,7 @@ public sealed class CertificateLookupTests
     [Fact]
     public void ByThumbprint_throws_when_nothing_survives_normalization()
     {
-        // "XYZ" normalizes to "", which would otherwise reach the store as a lookup for the empty
+        // "XYZ-XYZ" normalizes to "", which would otherwise reach the store as a lookup for the empty
         // thumbprint and surface much later as a confusing "certificate not found: ''".
         var act = () => CertificateLookup.ByThumbprint("XYZ-XYZ");
 
@@ -64,13 +77,20 @@ public sealed class CertificateLookupTests
             .WithMessage("*no hex digits*");
     }
 
+    // ── Equality ─────────────────────────────────────────────────────────────────────────────────
+    // Written by hand rather than synthesized, and load-bearing: it is what the options validator
+    // compares to detect two slots configured with one certificate.
+
     [Fact]
     public void Two_lookups_for_the_same_certificate_are_equal_however_the_thumbprint_was_written()
     {
         var fromClean = CertificateLookup.ByThumbprint(CleanThumbprint);
-        var fromMessy = CertificateLookup.ByThumbprint("‎aa bb cc dd ee ff 00 11 22 33 44 55 66 77 88 99 aa bb cc dd");
+        var fromMessy = CertificateLookup.ByThumbprint(MessyThumbprint);
 
-        fromMessy.Should().Be(fromClean, "slot duplication is detected by comparing lookups");
+        fromMessy.Should().Be(fromClean);
+        (fromMessy == fromClean).Should().BeTrue();
+        (fromMessy != fromClean).Should().BeFalse();
+        fromMessy.GetHashCode().Should().Be(fromClean.GetHashCode());
     }
 
     [Fact]
@@ -80,5 +100,37 @@ public sealed class CertificateLookupTests
         var second = CertificateLookup.ByThumbprint("1111111111111111111111111111111111111111");
 
         first.Should().NotBe(second);
+        (first == second).Should().BeFalse();
+        (first != second).Should().BeTrue();
+    }
+
+    [Fact]
+    public void A_lookup_is_never_equal_to_null_or_to_an_unrelated_object()
+    {
+        var lookup = CertificateLookup.ByThumbprint(CleanThumbprint);
+        CertificateLookup? nothing = null;
+
+        lookup.Equals(nothing).Should().BeFalse();
+        lookup.Equals((object?)"not a lookup").Should().BeFalse();
+        (lookup == nothing).Should().BeFalse();
+        (nothing == lookup).Should().BeFalse();
+        (lookup != nothing).Should().BeTrue();
+    }
+
+    [Fact]
+    public void Two_null_lookups_compare_equal()
+    {
+        // The validator compares nullable slots directly, so the null/null case is reachable there.
+        CertificateLookup? left = null;
+        CertificateLookup? right = null;
+
+        (left == right).Should().BeTrue();
+        (left != right).Should().BeFalse();
+    }
+
+    [Fact]
+    public void ToString_names_the_thumbprint_for_diagnostics()
+    {
+        CertificateLookup.ByThumbprint(CleanThumbprint).ToString().Should().Contain(CleanThumbprint);
     }
 }

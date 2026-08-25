@@ -121,11 +121,13 @@ public sealed class WindowsCertificateStoreSigningOptionsValidatorTests
     [Fact]
     public void Validate_detects_a_duplicate_slot_however_the_thumbprint_was_written()
     {
+        // The validator compares the slots as lookups, and lookup equality is over the normalized
+        // thumbprint — so a duplicate is caught whichever way each thumbprint was pasted in.
         var options = ValidOptions();
         options.Previous = CertificateLookup.ByThumbprint("  aa bb cc dd ee ff 00 11 22 33 44 55 66 77 88 99 aa bb cc d  ");
 
         var result = Validator().Validate(null, options);
 
-        result.Failed.Should().BeTrue("thumbprints are normalized before comparison");
+        result.Failed.Should().BeTrue();
     }
 }

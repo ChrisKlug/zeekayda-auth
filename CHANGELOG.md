@@ -78,10 +78,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   normalizes what certificate tooling produces — embedded spaces, casing, and the invisible U+200E
   LEFT-TO-RIGHT MARK that `certmgr` and the Certificates MMC snap-in prepend when a thumbprint is
   copied from their UI — and throws `ArgumentException` for a value with no hex digits at all, so a
-  configured slot always names a usable certificate by construction. Naming the lookup rather than
-  the thumbprint keeps room for other lookup modes without renaming a property or breaking a
-  signature; only `ByThumbprint` exists today, because a subject name can match several certificates
-  and choosing which of them signs is a decision of its own.
+  configured slot always names a usable certificate by construction.
+
+  `CertificateLookup` is an abstract base with one shipped mode, `ThumbprintCertificateLookup`, and
+  each factory is declared to return the base. Adding a lookup mode later is therefore a new derived
+  type and a new factory — no property renamed, no signature changed, and no member forced from
+  `string` to `string?`. Only `ByThumbprint` exists today, because a subject name can match several
+  certificates and choosing which of them signs is a decision of its own. The hierarchy is closed
+  (the constructor is `private protected`) and the types are hand-written classes with explicit
+  equality rather than records, so there is no synthesized `with` expression that could produce a
+  lookup which never passed through a factory's validation.
 
   `WindowsCertificateStoreSigningOptions` loses its `KeySetOptions` base (and with it
   `PublicationLead`), its `Thumbprint`, `AdditionalThumbprints` and `AddCertificate` members, and

@@ -104,7 +104,7 @@ internal sealed class WindowsCertificateStoreSigningKeySource : ISigningKeySourc
         // Only Current is ever openable for signing. Previous and Next are published, never signed
         // with, so an id naming either of them is a defect in the caller rather than a request this
         // source should honour by opening a private key it otherwise never touches.
-        if (current is null || !string.Equals(current.Thumbprint, id.Value, StringComparison.Ordinal))
+        if (current is null || !string.Equals(current.NormalizedThumbprint, id.Value, StringComparison.Ordinal))
         {
             throw new InvalidOperationException(
                 $"{nameof(CreateSignerAsync)} was called for key '{id.Value}', which is not the " +
@@ -113,10 +113,10 @@ internal sealed class WindowsCertificateStoreSigningKeySource : ISigningKeySourc
                 "Current ever signs.");
         }
 
-        using var certificate = _storeReader.GetCertificate(current.Thumbprint, options.StoreLocation, options.StoreName);
+        using var certificate = _storeReader.GetCertificate(current.NormalizedThumbprint, options.StoreLocation, options.StoreName);
 
         // Private/public key pairing is verified by the ring's per-handoff self-test, not here.
-        var (privateKey, _) = _keyExtractor.ExtractPrivateKey(certificate, current.Thumbprint);
+        var (privateKey, _) = _keyExtractor.ExtractPrivateKey(certificate, current.NormalizedThumbprint);
 
         return new ValueTask<ISigner>(new LocalSigner(options.Algorithm, privateKey));
     }
@@ -131,15 +131,15 @@ internal sealed class WindowsCertificateStoreSigningKeySource : ISigningKeySourc
         if (lookup is null)
             return null;
 
-        using var certificate = _storeReader.GetCertificate(lookup.Thumbprint, options.StoreLocation, options.StoreName);
+        using var certificate = _storeReader.GetCertificate(lookup.NormalizedThumbprint, options.StoreLocation, options.StoreName);
 
-        var (rawPublicKey, keyType) = _keyExtractor.ExtractPublicKey(certificate, lookup.Thumbprint);
+        var (rawPublicKey, keyType) = _keyExtractor.ExtractPublicKey(certificate, lookup.NormalizedThumbprint);
         using var publicKey = rawPublicKey;
 
         // X509Certificate2 reports both ends of the validity window as local-kind DateTime, so the
         // conversion below applies the local offset rather than reinterpreting them as UTC.
         return new SourceKey(
-            new SourceKeyId(lookup.Thumbprint),
+            new SourceKeyId(lookup.NormalizedThumbprint),
             options.Algorithm,
             ToPublicKeyParameters(publicKey, keyType),
             ExpiresAt: new DateTimeOffset(certificate.NotAfter),

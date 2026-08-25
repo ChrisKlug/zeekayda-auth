@@ -53,10 +53,12 @@ internal sealed class WindowsCertificateStoreSigningOptionsValidator : IValidate
 
         var configured = slots.Where(slot => slot.Lookup is not null).ToArray();
 
+        // Compared as lookups, not as thumbprint strings: record equality covers the lookup mode as
+        // well as what it names, so a future mode is handled without revisiting this method.
         return from index in Enumerable.Range(0, configured.Length)
                from other in configured.Skip(index + 1)
-               where string.Equals(configured[index].Lookup!.Thumbprint, other.Lookup!.Thumbprint, StringComparison.Ordinal)
+               where configured[index].Lookup == other.Lookup
                select $"{configured[index].Name} and {other.Name} are both configured with certificate " +
-                      $"'{other.Lookup!.Thumbprint}'. Each slot must name a different certificate.";
+                      $"'{other.Lookup!.NormalizedThumbprint}'. Each slot must name a different certificate.";
     }
 }
