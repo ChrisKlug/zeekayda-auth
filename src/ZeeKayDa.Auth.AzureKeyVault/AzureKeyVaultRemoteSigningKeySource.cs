@@ -183,7 +183,7 @@ internal sealed class AzureKeyVaultRemoteSigningKeySource : ISigningKeySource
     /// version newer than it is published as staged — not only the next in line, so two replicas
     /// whose restarts straddle a version ripening still publish each other's signing key — and up to
     /// <see cref="AzureKeyVaultRemoteSigningOptions.PreviousVersionsToPublish"/> versions older than
-    /// it stay published. Published versions are ordered older-first, then staged oldest-first.
+    /// it stay published — previous versions newest-first, then staged versions oldest-first.
     /// </summary>
     /// <exception cref="ZeeKayDaConfigurationException">
     /// No version is eligible to sign, or the signing version's identifier URI is not pinned to its
@@ -255,9 +255,11 @@ internal sealed class AzureKeyVaultRemoteSigningKeySource : ISigningKeySource
         IReadOnlyList<KeyVaultKeyVersionInfo> enabledVersions,
         DateTimeOffset now)
     {
+        // Only genuine future instants qualify: an already-expired version's past EligibleAt must
+        // not win the Min and turn "create a new version" into a wait that can never succeed.
         var ripensAt = enabledVersions
             .Select(v => (Version: v, At: EligibleAt(v, options.PreActivationDelay)))
-            .Where(c => c.Version.ExpiresOn is null || c.At < c.Version.ExpiresOn)
+            .Where(c => c.At > now && (c.Version.ExpiresOn is null || c.At < c.Version.ExpiresOn))
             .Select(c => (DateTimeOffset?)c.At)
             .Min();
 

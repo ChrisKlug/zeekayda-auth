@@ -42,7 +42,10 @@ public sealed class AzureKeyVaultRemoteSigningOptions
 
     /// <summary>
     /// Gets or sets how many enabled key versions older than the signing version stay published, so
-    /// relying parties can still verify tokens those versions signed. Must be zero or greater.
+    /// relying parties can still verify tokens those versions signed. Must be zero or greater. Only
+    /// the older side is capped: every enabled version newer than the signing one is always
+    /// published, so a host restarting after one of them ripens signs with a key this host already
+    /// served.
     /// </summary>
     /// <remarks>
     /// Disabling a version in the vault always removes it from publication regardless of this

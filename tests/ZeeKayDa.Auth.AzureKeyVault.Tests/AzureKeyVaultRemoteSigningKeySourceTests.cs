@@ -435,6 +435,24 @@ public sealed class AzureKeyVaultRemoteSigningKeySourceTests
     }
 
     [Fact]
+    public async Task ReadAsync_no_eligible_version_error_says_create_a_new_version_when_every_enabled_version_has_expired()
+    {
+        // An already-expired version's PAST eligibility instant must not be presented as a wait
+        // target — waiting can never succeed, so the only remedy is a new version.
+        var ct = TestContext.Current.CancellationToken;
+        var now = T0 + TimeSpan.FromDays(10);
+        var reader = new FakeKeyVaultKeyReader();
+        reader.AddRsaVersion("v1", createdOn: T0, enabled: false);
+        reader.AddRsaVersion("v2", createdOn: T0 + TimeSpan.FromDays(1), expiresOn: T0 + TimeSpan.FromDays(5));
+        var sut = BuildSource(reader, new FakeTimeProvider(now));
+
+        var act = async () => await sut.ReadAsync(ct);
+
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .WithMessage("*no_eligible_version*Create a new key version*");
+    }
+
+    [Fact]
     public async Task ReadAsync_propagates_a_version_listing_failure()
     {
         var ct = TestContext.Current.CancellationToken;

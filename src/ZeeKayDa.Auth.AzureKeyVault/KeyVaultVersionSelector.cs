@@ -9,8 +9,8 @@ internal static class KeyVaultVersionSelector
     /// Determines the chronologically-first version ever recorded for a Key Vault key or
     /// certificate, from the full version history. That version is the one exempt from the
     /// publish-before-sign wait (<c>AzureKeyVaultRemoteSigningOptions.PreActivationDelay</c> for
-    /// the remote provider, <c>KeySourceOptions.PublicationLead</c> for the transitional cached
-    /// one) — a brand-new deployment has no earlier key whose relying parties need protecting.
+    /// the remote provider, <c>KeySourceOptions.PublicationLead</c> for the cached one) — a
+    /// brand-new deployment has no earlier key whose relying parties need protecting.
     /// </summary>
     /// <remarks>
     /// Computed over every version, including disabled ones — never restricted to the enabled
