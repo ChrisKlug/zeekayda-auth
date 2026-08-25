@@ -363,10 +363,14 @@ public sealed class ZeeKayDaAuthBuilderFileSigningExtensionsTests
     [Fact]
     public async Task AddPemFileSigning_algorithm_argument_is_the_only_thing_that_sets_the_algorithm()
     {
-        // PemFileSigningOptions.Algorithm has an internal setter, so a configure callback cannot
-        // silently beat the argument — the same hazard the two overloads close for the Current slot.
-        // This test project can reach the internal setter through InternalsVisibleTo, which is
-        // exactly what makes it able to prove the argument still wins for an outside caller.
+        // Two halves, because this project holds InternalsVisibleTo to the FileSystem assembly and so
+        // cannot express the negative case by failing to compile: the setter really is internal, so a
+        // caller outside the assembly cannot beat the argument from a configure callback, and the
+        // argument really is what lands. The API-approval analyzers gate the first half at build time;
+        // the reflection assertion pins it here too, so the test name is true on its own terms.
+        typeof(PemFileSigningOptions).GetProperty(nameof(PemFileSigningOptions.Algorithm))!
+            .SetMethod!.IsAssembly.Should().BeTrue("a public setter would let a callback beat the argument");
+
         var builder = NewBuilder();
 
         builder.AddPemFileSigning(SigningAlgorithm.ES256, options =>
