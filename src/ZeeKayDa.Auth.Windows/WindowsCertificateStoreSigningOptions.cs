@@ -70,10 +70,12 @@ public sealed class WindowsCertificateStoreSigningOptions
     /// <c>AddWindowsCertificateStoreSigning</c>'s <c>storeLocation</c> argument.
     /// </summary>
     /// <remarks>
-    /// <see langword="internal"/> setter for the same reason as <see cref="Algorithm"/>, and with an
-    /// additional edge of its own: <see cref="StoreLocation"/>'s default value is a real store
-    /// (<see cref="StoreLocation.CurrentUser"/>), so a callback that silently beat the argument
-    /// would not fail — it would quietly search the wrong store.
+    /// <see langword="internal"/> setter for the same reason as <see cref="Algorithm"/>: a callback
+    /// that silently beat the argument would search a different store than the registration named,
+    /// and unlike a wrong algorithm that mismatch is invisible until the certificate is not found.
+    /// (Leaving it unset entirely is not the hazard — <see langword="default"/> is <c>0</c>, which
+    /// is not a defined <see cref="StoreLocation"/> member at all and which <c>X509Store</c>
+    /// rejects. The hazard is a callback setting it to a real but unintended store.)
     /// </remarks>
     public StoreLocation StoreLocation { get; internal set; }
 

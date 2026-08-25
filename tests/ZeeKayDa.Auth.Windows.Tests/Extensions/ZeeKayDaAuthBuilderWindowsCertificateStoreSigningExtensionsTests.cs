@@ -268,14 +268,17 @@ public sealed class ZeeKayDaAuthBuilderWindowsCertificateStoreSigningExtensionsT
         // a caller outside the assembly cannot beat the arguments from a configure callback, and the
         // arguments really are what land. The API-approval analyzers gate the first half at build
         // time; the reflection assertions pin it here too, so the test name is true on its own terms.
-        Assert.SkipUnless(OperatingSystem.IsWindows(), "requires the real registration path past the platform gate");
-
+        //
+        // The accessibility half is pure metadata and needs no Windows, so it runs before the skip —
+        // otherwise the pin would never execute on the macOS and Linux CI legs.
         typeof(WindowsCertificateStoreSigningOptions).GetProperty(nameof(WindowsCertificateStoreSigningOptions.Algorithm))!
             .SetMethod!.IsAssembly.Should().BeTrue("a public setter would let a callback beat the argument");
         typeof(WindowsCertificateStoreSigningOptions).GetProperty(nameof(WindowsCertificateStoreSigningOptions.StoreLocation))!
             .SetMethod!.IsAssembly.Should().BeTrue("a public setter would let a callback silently search the wrong store");
         typeof(WindowsCertificateStoreSigningOptions).GetProperty(nameof(WindowsCertificateStoreSigningOptions.StoreName))!
             .SetMethod!.IsAssembly.Should().BeTrue("a public setter would let a callback silently search the wrong store");
+
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "requires the real registration path past the platform gate");
 
         var builder = NewBuilder();
 
