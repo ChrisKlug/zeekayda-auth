@@ -114,6 +114,12 @@ deliver the maintainer a pre-baked design artifact that assumes they have the is
   named for it*. Tests are the durable record; prose is not.
 - After a PR merges, run `/post-merge-checks`.
 
+**Process changes go straight to main, on their own.** A change to `.claude/` — a skill, an agent
+definition — or to this file is committed to `main` and pushed directly, never carried along in a
+feature branch's PR and never routed through one of its own. The push reports that it bypassed
+branch protection; that is expected and approved for this class of change. Keep them out of feature
+PRs so a reviewer reading the PR sees only the issue's work.
+
 ## Decision register
 
 `docs/decisions/` records **what is true now** — not how we got here. One file per topic area, two sections: `Decisions in force` and `Tried, didn't work`.
