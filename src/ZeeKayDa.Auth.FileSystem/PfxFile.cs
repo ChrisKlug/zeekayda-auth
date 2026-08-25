@@ -1,8 +1,8 @@
 namespace ZeeKayDa.Auth.FileSystem;
 
 /// <summary>
-/// One PFX/PKCS#12 bundle configured into a <see cref="PfxFileSigningOptions"/> slot, with the
-/// delegate that supplies its password.
+/// One PFX/PKCS#12 file configured into a <see cref="PfxFileSigningOptions"/> slot, with the delegate
+/// that supplies its password.
 /// </summary>
 /// <param name="Path">The bundle's path.</param>
 /// <param name="PasswordSource">
@@ -18,11 +18,12 @@ namespace ZeeKayDa.Auth.FileSystem;
 /// the password from a slow or remote location should cache it itself.
 /// </para>
 /// <para>
-/// Unlike PEM, there is one slot type here rather than two. A PEM published-only slot drops its
-/// private-key path, which is what makes opening one impossible; a PFX bundle has nothing to drop —
-/// every slot needs its path and password even to read its certificate. What keeps a published-only
-/// slot's private key out of memory is how the file is read, not what is configured: see
+/// Unlike PEM, there is one slot type here rather than two, and it is named for the file rather than
+/// for signing — two of the three slots never sign. A PEM published-only slot drops its private-key
+/// path, which is what makes opening one impossible; a PFX file has nothing to drop, since every slot
+/// needs its path and password even to read a certificate. What keeps a published-only slot's private
+/// key out of reach is how the file is read, not what is configured: see
 /// <see cref="PfxFileSigningKeySource"/>.
 /// </para>
 /// </remarks>
-public sealed record PfxSigningFile(string Path, Func<CancellationToken, ValueTask<string>> PasswordSource);
+public sealed record PfxFile(string Path, Func<CancellationToken, ValueTask<string>> PasswordSource);

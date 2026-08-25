@@ -67,9 +67,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   // The three slots, each with its own password.
   .AddPfxFileSigning(SigningAlgorithm.RS256, options =>
   {
-      options.Previous = new PfxSigningFile("/etc/zeekayda/signing/previous.pfx", ReadPreviousPassword);
-      options.Current  = new PfxSigningFile("/etc/zeekayda/signing/current.pfx", ReadCurrentPassword);
-      options.Next     = new PfxSigningFile("/etc/zeekayda/signing/next.pfx", ReadNextPassword);
+      options.Previous = new PfxFile("/etc/zeekayda/signing/previous.pfx", ReadPreviousPassword);
+      options.Current  = new PfxFile("/etc/zeekayda/signing/current.pfx", ReadCurrentPassword);
+      options.Next     = new PfxFile("/etc/zeekayda/signing/next.pfx", ReadNextPassword);
   });
   ```
 

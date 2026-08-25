@@ -48,8 +48,10 @@ internal sealed class PfxFileSigningKeySource : ISigningKeySource
     // would strand any reader queued behind it.
     private readonly SemaphoreSlim _readGate = new(1, 1);
 
-    // The one key set this source ever reports. Memoized so a second read cannot observe a bundle
-    // replaced after startup — read-once is a property of this source, not only of the ring.
+    // The one key set this source ever reports. Assigned only once every slot has been read and
+    // validated, so a failed read is never cached and a retry re-reads from disk; once a read has
+    // succeeded, no later one can observe a bundle replaced after startup. Read-once is therefore a
+    // property of this source, not only of the ring.
     private SourceKeySet? _keySet;
 
     public PfxFileSigningKeySource(IOptions<PfxFileSigningOptions> options, FileSigningKeyReader reader)
@@ -110,7 +112,7 @@ internal sealed class PfxFileSigningKeySource : ISigningKeySource
     }
 
     private async ValueTask<SourceKey?> ReadSlotAsync(
-        PfxSigningFile? slot, SigningAlgorithm algorithm, CancellationToken cancellationToken)
+        PfxFile? slot, SigningAlgorithm algorithm, CancellationToken cancellationToken)
     {
         if (slot is null)
             return null;
@@ -132,7 +134,7 @@ internal sealed class PfxFileSigningKeySource : ISigningKeySource
     /// exactly one signing certificate.
     /// </exception>
     private async ValueTask<X509Certificate2> LoadPublicCertificateAsync(
-        PfxSigningFile slot, CancellationToken cancellationToken)
+        PfxFile slot, CancellationToken cancellationToken)
     {
         var bytes = await _reader.ReadAllBytesAsync(slot.Path, cancellationToken).ConfigureAwait(false);
         var password = await slot.PasswordSource(cancellationToken).ConfigureAwait(false);
@@ -267,12 +269,28 @@ internal sealed class PfxFileSigningKeySource : ISigningKeySource
                     "one signs is ambiguous. Export a bundle carrying a single signing certificate " +
                     "and its key");
             }
+
+            // A private key whose certificate is not in the bundle. A lone certificate is still
+            // unambiguous; anything else is a bundle that cannot say what it signs with.
+            if (certBags.Count == 1)
+                return certBags[0].GetCertificate();
+
+            throw InvalidPfx(path,
+                "names a private key whose certificate is not among the certificates it carries, so " +
+                "which one signs cannot be determined. Re-export the bundle from the keypair it is " +
+                "meant to hold");
         }
 
-        // No key bag, or none carrying a localKeyId. A single certificate is then unambiguous —
-        // which covers a published-only slot whose bundle has had its private key stripped.
         if (certBags.Count == 1)
             return certBags[0].GetCertificate();
+
+        // No key bag at all — a published-only bundle with its private key stripped, which is the
+        // right shape for a Previous or Next slot. A chain comes with it, so fall back to the one
+        // certificate the exporter marked as the subject of the keypair.
+        var identified = certBags.Where(certBag => LocalKeyIdOf(certBag) is not null).ToList();
+
+        if (identified.Count == 1)
+            return identified[0].GetCertificate();
 
         throw InvalidPfx(path,
             $"contains {certBags.Count} certificates with nothing identifying which one signs. " +
@@ -313,7 +331,7 @@ internal sealed class PfxFileSigningKeySource : ISigningKeySource
     /// The file is not a valid PKCS#12 bundle, or the configured password is incorrect.
     /// </exception>
     private async ValueTask<X509Certificate2> LoadSigningCertificateAsync(
-        PfxSigningFile slot, CancellationToken cancellationToken)
+        PfxFile slot, CancellationToken cancellationToken)
     {
         var bytes = await _reader.ReadAllBytesAsync(slot.Path, cancellationToken).ConfigureAwait(false);
         var password = await slot.PasswordSource(cancellationToken).ConfigureAwait(false);

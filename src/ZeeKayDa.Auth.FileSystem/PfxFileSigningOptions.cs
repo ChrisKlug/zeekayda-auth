@@ -20,13 +20,13 @@ public sealed class PfxFileSigningOptions
     /// it signed, or <see langword="null"/> when there is none. Never used to sign, and its private
     /// key is never decrypted.
     /// </summary>
-    public PfxSigningFile? Previous { get; set; }
+    public PfxFile? Previous { get; set; }
 
     /// <summary>
     /// Gets or sets the key that signs. Required — startup fails when no <see cref="Current"/> is
     /// configured. The only slot whose private key is ever decrypted.
     /// </summary>
-    public PfxSigningFile? Current { get; set; }
+    public PfxFile? Current { get; set; }
 
     /// <summary>
     /// Gets or sets a key staged to become active later, published in advance so relying parties
@@ -45,7 +45,7 @@ public sealed class PfxFileSigningOptions
     /// cached key set.
     /// </para>
     /// </remarks>
-    public PfxSigningFile? Next { get; set; }
+    public PfxFile? Next { get; set; }
 
     /// <summary>
     /// Gets the JWS algorithm every configured slot is signed under. A certificate's key does not

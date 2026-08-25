@@ -168,7 +168,7 @@ public static class ZeeKayDaAuthBuilderFileSigningExtensions
     /// Filesystem permissions are enforced fail-closed exactly as for
     /// <see cref="AddPemFileSigning(ZeeKayDaAuthBuilder,string,SigningAlgorithm,string)"/>. The PFX
     /// password adds defense in depth on top of that — see
-    /// <see cref="PfxSigningFile.PasswordSource"/> for why it is an async delegate rather than a
+    /// <see cref="PfxFile.PasswordSource"/> for why it is an async delegate rather than a
     /// plain <see langword="string"/>.
     /// </para>
     /// <para>
@@ -205,7 +205,7 @@ public static class ZeeKayDaAuthBuilderFileSigningExtensions
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         ArgumentNullException.ThrowIfNull(passwordSource);
 
-        return AddPfxFileSigning(builder, algorithm, options => options.Current = new PfxSigningFile(path, passwordSource));
+        return AddPfxFileSigning(builder, algorithm, options => options.Current = new PfxFile(path, passwordSource));
     }
 
     /// <summary>

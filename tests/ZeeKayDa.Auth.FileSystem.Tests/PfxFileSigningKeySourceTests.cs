@@ -29,9 +29,9 @@ public sealed class PfxFileSigningKeySourceTests
         _ => ValueTask.FromResult(password);
 
     private static PfxFileSigningKeySource BuildSource(
-        PfxSigningFile? current,
-        PfxSigningFile? previous = null,
-        PfxSigningFile? next = null,
+        PfxFile? current,
+        PfxFile? previous = null,
+        PfxFile? next = null,
         SigningAlgorithm algorithm = SigningAlgorithm.RS256)
     {
         var options = new PfxFileSigningOptions
@@ -59,7 +59,7 @@ public sealed class PfxFileSigningKeySourceTests
         using var tempDir = new TempSigningKeyDirectory();
         using var certificate = CreateRsaCertificate();
         var path = tempDir.WritePfxFile("current.pfx", certificate, CorrectPassword);
-        var sut = BuildSource(new PfxSigningFile(path, Password()));
+        var sut = BuildSource(new PfxFile(path, Password()));
 
         var keySet = await sut.ReadAsync(ct);
 
@@ -78,7 +78,7 @@ public sealed class PfxFileSigningKeySourceTests
         using var tempDir = new TempSigningKeyDirectory();
         using var certificate = CreateRsaCertificate();
         var path = tempDir.WritePfxFile("current.pfx", certificate, CorrectPassword);
-        var sut = BuildSource(new PfxSigningFile(path, Password()));
+        var sut = BuildSource(new PfxFile(path, Password()));
 
         var keySet = await sut.ReadAsync(ct);
 
@@ -93,7 +93,7 @@ public sealed class PfxFileSigningKeySourceTests
         using var tempDir = new TempSigningKeyDirectory();
         using var certificate = CreateRsaCertificate();
         var path = tempDir.WritePfxFile("current.pfx", certificate, CorrectPassword);
-        var sut = BuildSource(new PfxSigningFile(path, Password()));
+        var sut = BuildSource(new PfxFile(path, Password()));
         var keySet = await sut.ReadAsync(ct);
 
         using var signer = await sut.CreateSignerAsync(keySet.SigningKey.Id, ct);
@@ -124,9 +124,9 @@ public sealed class PfxFileSigningKeySourceTests
         var currentPath = tempDir.WritePfxFile("current.pfx", currentCertificate, CorrectPassword);
         var nextPath = tempDir.WritePfxFile("next.pfx", nextCertificate, "next-password");
         var sut = BuildSource(
-            new PfxSigningFile(currentPath, Password()),
-            previous: new PfxSigningFile(previousPath, Password("previous-password")),
-            next: new PfxSigningFile(nextPath, Password("next-password")));
+            new PfxFile(currentPath, Password()),
+            previous: new PfxFile(previousPath, Password("previous-password")),
+            next: new PfxFile(nextPath, Password("next-password")));
 
         var keySet = await sut.ReadAsync(ct);
 
@@ -148,8 +148,8 @@ public sealed class PfxFileSigningKeySourceTests
         var currentPath = tempDir.WritePfxFile("current.pfx", currentCertificate, CorrectPassword);
         var nextPath = tempDir.WritePfxFile("next.pfx", nextCertificate, "a different password");
         var sut = BuildSource(
-            new PfxSigningFile(currentPath, Password()),
-            next: new PfxSigningFile(nextPath, Password("a different password")));
+            new PfxFile(currentPath, Password()),
+            next: new PfxFile(nextPath, Password("a different password")));
 
         var keySet = await sut.ReadAsync(ct);
 
@@ -171,7 +171,7 @@ public sealed class PfxFileSigningKeySourceTests
         var bundle = AdversarialPkcs12Factory.UnencryptedCertificateSafe(
             "the-real-password", "attacker", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
         var path = tempDir.WriteBytes("current.pfx", bundle);
-        var sut = BuildSource(new PfxSigningFile(path, Password("a completely different password")));
+        var sut = BuildSource(new PfxFile(path, Password("a completely different password")));
 
         var act = async () => await sut.ReadAsync(ct);
 
@@ -188,7 +188,7 @@ public sealed class PfxFileSigningKeySourceTests
         var bundle = AdversarialPkcs12Factory.UnencryptedCertificateSafe(
             CorrectPassword, "unencrypted-safe", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
         var path = tempDir.WriteBytes("current.pfx", bundle);
-        var sut = BuildSource(new PfxSigningFile(path, Password()));
+        var sut = BuildSource(new PfxFile(path, Password()));
 
         var keySet = await sut.ReadAsync(ct);
 
@@ -207,7 +207,7 @@ public sealed class PfxFileSigningKeySourceTests
         var bundle = AdversarialPkcs12Factory.NoIntegrityProtection(
             "no-mac", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
         var path = tempDir.WriteBytes("current.pfx", bundle);
-        var sut = BuildSource(new PfxSigningFile(path, Password()));
+        var sut = BuildSource(new PfxFile(path, Password()));
 
         var act = async () => await sut.ReadAsync(ct);
 
@@ -231,8 +231,8 @@ public sealed class PfxFileSigningKeySourceTests
             "next-real-password", "next", T0 + TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(400));
         var nextPath = tempDir.WriteBytes("next.pfx", nextBundle);
         var sut = BuildSource(
-            new PfxSigningFile(currentPath, Password()),
-            next: new PfxSigningFile(nextPath, Password("wrong")));
+            new PfxFile(currentPath, Password()),
+            next: new PfxFile(nextPath, Password("wrong")));
 
         var act = async () => await sut.ReadAsync(ct);
 
@@ -254,7 +254,7 @@ public sealed class PfxFileSigningKeySourceTests
         var (bundle, signingSubject, signingPublicKey) = AdversarialPkcs12Factory.ChainCertificateFirst(
             CorrectPassword, T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
         var path = tempDir.WriteBytes("current.pfx", bundle);
-        var sut = BuildSource(new PfxSigningFile(path, Password()));
+        var sut = BuildSource(new PfxFile(path, Password()));
 
         var keySet = await sut.ReadAsync(ct);
 
@@ -277,7 +277,7 @@ public sealed class PfxFileSigningKeySourceTests
         var (bundle, _, _) = AdversarialPkcs12Factory.ChainCertificateFirst(
             CorrectPassword, T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
         var path = tempDir.WriteBytes("current.pfx", bundle);
-        var sut = BuildSource(new PfxSigningFile(path, Password()));
+        var sut = BuildSource(new PfxFile(path, Password()));
         var keySet = await sut.ReadAsync(ct);
 
         using var signer = await sut.CreateSignerAsync(keySet.SigningKey.Id, ct);
@@ -297,7 +297,7 @@ public sealed class PfxFileSigningKeySourceTests
         var bundle = AdversarialPkcs12Factory.TwoCertificatesNoKey(
             CorrectPassword, T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
         var path = tempDir.WriteBytes("current.pfx", bundle);
-        var sut = BuildSource(new PfxSigningFile(path, Password()));
+        var sut = BuildSource(new PfxFile(path, Password()));
 
         var act = async () => await sut.ReadAsync(ct);
 
@@ -316,7 +316,7 @@ public sealed class PfxFileSigningKeySourceTests
         var bundle = AdversarialPkcs12Factory.TwoPairedKeypairs(
             CorrectPassword, T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
         var path = tempDir.WriteBytes("current.pfx", bundle);
-        var sut = BuildSource(new PfxSigningFile(path, Password()));
+        var sut = BuildSource(new PfxFile(path, Password()));
 
         var act = async () => await sut.ReadAsync(ct);
 
@@ -336,7 +336,7 @@ public sealed class PfxFileSigningKeySourceTests
         var bundle = AdversarialPkcs12Factory.SingleCertificateWithUnmatchedKeyId(
             CorrectPassword, T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
         var path = tempDir.WriteBytes("current.pfx", bundle);
-        var sut = BuildSource(new PfxSigningFile(path, Password()));
+        var sut = BuildSource(new PfxFile(path, Password()));
 
         var keySet = await sut.ReadAsync(ct);
 
@@ -357,9 +357,9 @@ public sealed class PfxFileSigningKeySourceTests
         var currentPath = tempDir.WritePfxFile("current.pfx", currentCertificate, CorrectPassword);
         var nextPath = tempDir.WritePfxFile("next.pfx", nextCertificate, CorrectPassword);
         var sut = BuildSource(
-            new PfxSigningFile(currentPath, Password()),
-            previous: new PfxSigningFile(previousPath, Password()),
-            next: new PfxSigningFile(nextPath, Password()));
+            new PfxFile(currentPath, Password()),
+            previous: new PfxFile(previousPath, Password()),
+            next: new PfxFile(nextPath, Password()));
 
         var keySet = await sut.ReadAsync(ct);
 
@@ -375,7 +375,7 @@ public sealed class PfxFileSigningKeySourceTests
         using var tempDir = new TempSigningKeyDirectory();
         using var certificate = CreateRsaCertificate();
         var path = tempDir.WritePfxFile("next.pfx", certificate, CorrectPassword);
-        var sut = BuildSource(current: null, next: new PfxSigningFile(path, Password()));
+        var sut = BuildSource(current: null, next: new PfxFile(path, Password()));
 
         var act = async () => await sut.ReadAsync(ct);
 
@@ -392,7 +392,7 @@ public sealed class PfxFileSigningKeySourceTests
         using var tempDir = new TempSigningKeyDirectory();
         using var certificate = CreateRsaCertificate();
         var path = tempDir.WritePfxFile("current.pfx", certificate, CorrectPassword);
-        var sut = BuildSource(new PfxSigningFile(path, Password()));
+        var sut = BuildSource(new PfxFile(path, Password()));
 
         var first = await sut.ReadAsync(ct);
         File.Delete(path);
@@ -409,7 +409,7 @@ public sealed class PfxFileSigningKeySourceTests
         var ct = TestContext.Current.CancellationToken;
         using var tempDir = new TempSigningKeyDirectory();
         var missingPath = tempDir.GetPath("does-not-exist.pfx");
-        var sut = BuildSource(new PfxSigningFile(missingPath, Password()));
+        var sut = BuildSource(new PfxFile(missingPath, Password()));
 
         var act = async () => await sut.ReadAsync(ct);
 
@@ -426,7 +426,7 @@ public sealed class PfxFileSigningKeySourceTests
         using var tempDir = new TempSigningKeyDirectory();
         using var certificate = CreateRsaCertificate();
         var path = tempDir.WritePfxFile("current.pfx", certificate, CorrectPassword);
-        var sut = BuildSource(new PfxSigningFile(path, Password(wrongPassword)));
+        var sut = BuildSource(new PfxFile(path, Password(wrongPassword)));
 
         var act = async () => await sut.ReadAsync(ct);
 
@@ -445,8 +445,8 @@ public sealed class PfxFileSigningKeySourceTests
         var currentPath = tempDir.WritePfxFile("current.pfx", currentCertificate, CorrectPassword);
         var nextPath = tempDir.WritePfxFile("next.pfx", nextCertificate, CorrectPassword);
         var sut = BuildSource(
-            new PfxSigningFile(currentPath, Password()),
-            next: new PfxSigningFile(nextPath, Password("wrong")));
+            new PfxFile(currentPath, Password()),
+            next: new PfxFile(nextPath, Password("wrong")));
 
         var act = async () => await sut.ReadAsync(ct);
 
@@ -462,7 +462,7 @@ public sealed class PfxFileSigningKeySourceTests
         using var tempDir = new TempSigningKeyDirectory();
         using var certificate = CreateRsaCertificate();
         var path = tempDir.WritePfxFile("current.pfx", certificate, CorrectPassword);
-        var sut = BuildSource(new PfxSigningFile(path, Password(string.Empty)));
+        var sut = BuildSource(new PfxFile(path, Password(string.Empty)));
 
         var act = async () => await sut.ReadAsync(ct);
 
@@ -476,7 +476,7 @@ public sealed class PfxFileSigningKeySourceTests
         var ct = TestContext.Current.CancellationToken;
         using var tempDir = new TempSigningKeyDirectory();
         var path = tempDir.WriteTextFile("garbage.pfx", "this is definitely not a PKCS#12 bundle");
-        var sut = BuildSource(new PfxSigningFile(path, Password()));
+        var sut = BuildSource(new PfxFile(path, Password()));
 
         var act = async () => await sut.ReadAsync(ct);
 
@@ -497,7 +497,7 @@ public sealed class PfxFileSigningKeySourceTests
         using var certificate = CreateRsaCertificate();
         var path = tempDir.WritePfxFile("current.pfx", certificate, CorrectPassword);
         tempDir.MakeTooPermissive(path);
-        var sut = BuildSource(new PfxSigningFile(path, Password()));
+        var sut = BuildSource(new PfxFile(path, Password()));
 
         var act = async () => await sut.ReadAsync(ct);
 
@@ -515,7 +515,7 @@ public sealed class PfxFileSigningKeySourceTests
         using var certificate = CreateRsaCertificate();
         var path = tempDir.WritePfxFile("current.pfx", certificate, CorrectPassword);
         tempDir.MakeTooPermissive(path);
-        var sut = BuildSource(new PfxSigningFile(path, Password()));
+        var sut = BuildSource(new PfxFile(path, Password()));
 
         var act = async () => await sut.ReadAsync(ct);
 
@@ -530,7 +530,7 @@ public sealed class PfxFileSigningKeySourceTests
         using var tempDir = new TempSigningKeyDirectory();
         using var certificate = CreateRsaCertificate();
         var path = tempDir.WritePfxFile("current.pfx", certificate, CorrectPassword);
-        var sut = BuildSource(new PfxSigningFile(path, Password()));
+        var sut = BuildSource(new PfxFile(path, Password()));
 
         var act = async () => await sut.ReadAsync(ct);
 
@@ -550,8 +550,8 @@ public sealed class PfxFileSigningKeySourceTests
         var currentPath = tempDir.WritePfxFile("current.pfx", currentCertificate, CorrectPassword);
         tempDir.MakeTooPermissive(previousPath);
         var sut = BuildSource(
-            new PfxSigningFile(currentPath, Password()),
-            previous: new PfxSigningFile(previousPath, Password()));
+            new PfxFile(currentPath, Password()),
+            previous: new PfxFile(previousPath, Password()));
 
         var act = async () => await sut.ReadAsync(ct);
 
@@ -580,7 +580,7 @@ public sealed class PfxFileSigningKeySourceTests
             return;
         }
 
-        var sut = BuildSource(new PfxSigningFile(symlinkPath, Password()));
+        var sut = BuildSource(new PfxFile(symlinkPath, Password()));
 
         var act = async () => await sut.ReadAsync(ct);
 
@@ -597,7 +597,7 @@ public sealed class PfxFileSigningKeySourceTests
         using var tempDir = new TempSigningKeyDirectory();
         using var certificate = TestCertificateFactory.CreateEcSelfSigned("ec-test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
         var path = tempDir.WritePfxFile("current.pfx", certificate, CorrectPassword);
-        var sut = BuildSource(new PfxSigningFile(path, Password()), algorithm: SigningAlgorithm.ES256);
+        var sut = BuildSource(new PfxFile(path, Password()), algorithm: SigningAlgorithm.ES256);
 
         var keySet = await sut.ReadAsync(ct);
 
@@ -613,7 +613,7 @@ public sealed class PfxFileSigningKeySourceTests
         using var tempDir = new TempSigningKeyDirectory();
         using var certificate = TestCertificateFactory.CreateEcSelfSigned("ec-test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
         var path = tempDir.WritePfxFile("current.pfx", certificate, CorrectPassword);
-        var sut = BuildSource(new PfxSigningFile(path, Password()), algorithm: SigningAlgorithm.ES256);
+        var sut = BuildSource(new PfxFile(path, Password()), algorithm: SigningAlgorithm.ES256);
         var keySet = await sut.ReadAsync(ct);
 
         using var signer = await sut.CreateSignerAsync(keySet.SigningKey.Id, ct);
@@ -634,7 +634,7 @@ public sealed class PfxFileSigningKeySourceTests
         using var tempDir = new TempSigningKeyDirectory();
         using var certificate = CreateRsaCertificate();
         var path = tempDir.WritePfxFile("current.pfx", certificate, CorrectPassword);
-        var sut = BuildSource(new PfxSigningFile(path, Password()), algorithm: SigningAlgorithm.ES256);
+        var sut = BuildSource(new PfxFile(path, Password()), algorithm: SigningAlgorithm.ES256);
 
         var keySet = await sut.ReadAsync(ct);
         var act = () => SigningKeySetBuilder.Build(keySet);
@@ -654,7 +654,7 @@ public sealed class PfxFileSigningKeySourceTests
         using var tempDir = new TempSigningKeyDirectory();
         using var certificate = CreateRsaCertificate();
         var path = tempDir.WritePfxFile("current.pfx", certificate, CorrectPassword);
-        var sut = BuildSource(new PfxSigningFile(path, Password()));
+        var sut = BuildSource(new PfxFile(path, Password()));
 
         var act = async () => await sut.CreateSignerAsync(new SourceKeyId("not-a-configured-file"), ct);
 
@@ -673,8 +673,8 @@ public sealed class PfxFileSigningKeySourceTests
         var previousPath = tempDir.WritePfxFile("previous.pfx", previousCertificate, CorrectPassword);
         var currentPath = tempDir.WritePfxFile("current.pfx", currentCertificate, CorrectPassword);
         var sut = BuildSource(
-            new PfxSigningFile(currentPath, Password()),
-            previous: new PfxSigningFile(previousPath, Password()));
+            new PfxFile(currentPath, Password()),
+            previous: new PfxFile(previousPath, Password()));
 
         var act = async () => await sut.CreateSignerAsync(new SourceKeyId(previousPath), ct);
 
@@ -691,8 +691,8 @@ public sealed class PfxFileSigningKeySourceTests
         var currentPath = tempDir.WritePfxFile("current.pfx", currentCertificate, CorrectPassword);
         var nextPath = tempDir.WritePfxFile("next.pfx", nextCertificate, CorrectPassword);
         var sut = BuildSource(
-            new PfxSigningFile(currentPath, Password()),
-            next: new PfxSigningFile(nextPath, Password()));
+            new PfxFile(currentPath, Password()),
+            next: new PfxFile(nextPath, Password()));
 
         var act = async () => await sut.CreateSignerAsync(new SourceKeyId(nextPath), ct);
 

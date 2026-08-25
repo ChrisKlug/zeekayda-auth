@@ -246,9 +246,9 @@ public sealed class FileSigningIntegrationTests
         var builder = new ZeeKayDaAuthBuilder(services);
         builder.AddPfxFileSigning(SigningAlgorithm.RS256, options =>
         {
-            options.Previous = new PfxSigningFile(previousPath, _ => ValueTask.FromResult("previous-password"));
-            options.Current = new PfxSigningFile(currentPath, _ => ValueTask.FromResult(CorrectPassword));
-            options.Next = new PfxSigningFile(nextPath, _ => ValueTask.FromResult("next-password"));
+            options.Previous = new PfxFile(previousPath, _ => ValueTask.FromResult("previous-password"));
+            options.Current = new PfxFile(currentPath, _ => ValueTask.FromResult(CorrectPassword));
+            options.Next = new PfxFile(nextPath, _ => ValueTask.FromResult("next-password"));
         });
 
         await using var provider = services.BuildServiceProvider();
@@ -273,8 +273,8 @@ public sealed class FileSigningIntegrationTests
         var builder = new ZeeKayDaAuthBuilder(services);
         builder.AddPfxFileSigning(SigningAlgorithm.RS256, options =>
         {
-            options.Current = new PfxSigningFile(currentPath, _ => ValueTask.FromResult(CorrectPassword));
-            options.Next = new PfxSigningFile(nextPath, _ => ValueTask.FromResult(CorrectPassword));
+            options.Current = new PfxFile(currentPath, _ => ValueTask.FromResult(CorrectPassword));
+            options.Next = new PfxFile(nextPath, _ => ValueTask.FromResult(CorrectPassword));
         });
 
         await using var provider = services.BuildServiceProvider();

@@ -39,8 +39,10 @@ internal sealed class PemFileSigningKeySource : ISigningKeySource
     // would strand any reader queued behind it.
     private readonly SemaphoreSlim _readGate = new(1, 1);
 
-    // The one key set this source ever reports. Memoized so a second read cannot observe a file
-    // replaced after startup — read-once is a property of this source, not only of the ring.
+    // The one key set this source ever reports. Assigned only once every slot has been read and
+    // validated, so a failed read is never cached and a retry re-reads from disk; once a read has
+    // succeeded, no later one can observe a file replaced after startup. Read-once is therefore a
+    // property of this source, not only of the ring.
     private SourceKeySet? _keySet;
 
     public PemFileSigningKeySource(IOptions<PemFileSigningOptions> options, FileSigningKeyReader reader)

@@ -39,7 +39,7 @@ internal sealed class PfxFileSigningOptionsValidator : IValidateOptions<PfxFileS
         return errors.Count > 0 ? ValidateOptionsResult.Fail(errors) : ValidateOptionsResult.Success;
     }
 
-    private static void AppendSlotErrors(string slotName, PfxSigningFile? slot, List<string> errors)
+    private static void AppendSlotErrors(string slotName, PfxFile? slot, List<string> errors)
     {
         if (slot is null)
             return;
@@ -53,14 +53,12 @@ internal sealed class PfxFileSigningOptionsValidator : IValidateOptions<PfxFileS
             errors.Add($"PfxFileSigningOptions.{slotName}.PasswordSource must be set to a password-source delegate.");
     }
 
-    private static void AppendDuplicatePathErrors(PfxFileSigningOptions options, List<string> errors)
-    {
-        var paths = new SigningFilePathSet();
-
-        paths.Track(options.Previous?.Path);
-        paths.Track(options.Current?.Path);
-        paths.Track(options.Next?.Path);
-
-        paths.AppendErrors(nameof(PfxFileSigningOptions), errors);
-    }
+    private static void AppendDuplicatePathErrors(PfxFileSigningOptions options, List<string> errors) =>
+        SigningFilePaths.AppendPathErrors(
+            nameof(PfxFileSigningOptions),
+            "Every configured path must be a distinct file.",
+            errors,
+            options.Previous?.Path,
+            options.Current?.Path,
+            options.Next?.Path);
 }
