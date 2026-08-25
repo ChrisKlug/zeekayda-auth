@@ -6,9 +6,8 @@ using ZeeKayDa.Auth.Tokens;
 namespace ZeeKayDa.Auth.AspNetCore;
 
 /// <summary>
-/// Emits a startup warning when development signing keys are active, enforces the environment
-/// gate, and pre-warms the signing key cache so that key generation and file I/O happen at
-/// startup rather than on the first token-signing request.
+/// Emits a startup warning when development signing keys are active, and enforces the environment
+/// gate.
 /// </summary>
 /// <remarks>
 /// When the host environment name is not in
@@ -33,27 +32,23 @@ internal sealed class DevelopmentSigningKeyWarningService : IStartupVerifier
 
     private readonly IHostEnvironment _environment;
     private readonly IOptions<DevelopmentSigningKeyOptions> _devOptions;
-    private readonly IJwtSigningService _signingService;
 
     public DevelopmentSigningKeyWarningService(
         IHostEnvironment environment,
-        IOptions<DevelopmentSigningKeyOptions> devOptions,
-        IJwtSigningService signingService)
+        IOptions<DevelopmentSigningKeyOptions> devOptions)
     {
         ArgumentNullException.ThrowIfNull(environment);
         ArgumentNullException.ThrowIfNull(devOptions);
-        ArgumentNullException.ThrowIfNull(signingService);
 
         _environment = environment;
         _devOptions = devOptions;
-        _signingService = signingService;
     }
 
     /// <inheritdoc/>
     public string Name => "DevelopmentSigningKey";
 
     /// <inheritdoc/>
-    public async ValueTask VerifyAsync(
+    public ValueTask VerifyAsync(
         StartupVerificationContext context,
         IServiceProvider scopedServices,
         CancellationToken cancellationToken)
@@ -79,9 +74,6 @@ internal sealed class DevelopmentSigningKeyWarningService : IStartupVerifier
             context.AddWarning("signing.dev_keys.active", WarningMessage);
         }
 
-        // Pre-warm the cache: generate / load the key at startup so the first signing request
-        // does not incur key generation latency, and so any file-I/O or permission errors
-        // surface immediately rather than on the first token request.
-        await _signingService.GetSigningKeysAsync(cancellationToken).ConfigureAwait(false);
+        return ValueTask.CompletedTask;
     }
 }

@@ -96,14 +96,14 @@ third-party surface into the SemVer contract. The JWK mapping is hand-rolled ove
 specified by RFC 7517/7518 and held to known-answer vectors — a maintenance cost taken deliberately
 over the dependency.
 
-**One signing provider per application, and nothing is registered for the source.** The old model's
-`Add<Provider>Signing()` registers `IJwtSigningService` and calls `ThrowIfAlreadyRegistered` so a
-second provider fails loudly. `AddZeeKayDaSigningKeySource<TSource>()` (type and factory overloads)
-enforces the same rule with an internal marker: same `TSource` twice via the type overload is a no-op;
-a different `TSource`, either call using the factory overload, or a pre-existing manual
-`ISigningKeyRing` registration, throws — but only an already-registered one; one added afterwards
-wins under MS DI's last-wins resolution, undetectably. The ring factory re-validates the composed
-marker set, throwing on more than one distinct source type or factory-involving registration.
+**One signing provider per application, and nothing is registered for the source.**
+`AddZeeKayDaSigningKeySource<TSource>()` (both overloads) enforces this with an internal marker: a
+second call always throws, whichever overload either used and whether or not `TSource` matches.
+A same-type repeat is deliberately not a no-op — a provider registers its source *and* configures
+options beside it, so a "harmless" duplicate still applies a second configuration callback. A manual
+`ISigningKeyRing` also throws, but only one registered already; one added afterwards wins under MS
+DI's last-wins resolution, undetectably. The ring factory re-validates the composed marker set,
+throwing on more than one registration.
 `ISigningKeySource` itself is never registered: the ring factory constructs it directly, unreachable
 from the container, owns its lifetime alongside the signer's, disposing it once at shutdown normally
 after the signer, and rejects `IAsyncDisposable` without `IDisposable` at registration and construction.

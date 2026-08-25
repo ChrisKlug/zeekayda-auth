@@ -394,6 +394,30 @@ hide a real operational failure — an HSM/KMS connection or file handle that fa
 from the operator who owns that resource, which is a worse outcome than an aborted shutdown sequence
 they can see in their logs.
 
+### 1.8 Development signing keys as an `ISigningKeySource` — ✅ signed off 2026-08-25
+
+**Approved by:** the security agent, against branch `feat/512-development-signing-key-source` at
+commit `0ea8ab8` (issue #512) — one review round plus two fix-diff verifications.
+
+1. **The environment gate is the trust boundary, and it holds on every read**, the memoized set
+   included — `ReadAsync_enforces_the_gate_even_when_the_key_set_is_already_memoized`,
+   `ReadAsync_throws_in_Production_regardless_of_AllowedEnvironments`. Neither the gate nor
+   `PersistToDirectory` is reachable from a public configure callback —
+   `AddInMemoryDevelopmentJwtSigningKeys_configure_parameter_type_has_no_PersistToDirectory`.
+2. **The port changed no policy.** ≥3072-bit RSA and the fail-closed file checks survive it —
+   `ReadAsync_generates_a_key_of_at_least_3072_bits`, `Directory_with_too_permissive_mode_fails_closed`,
+   `Key_file_with_too_permissive_permissions_fails_closed`, `Key_file_reached_through_a_symlink_fails_closed`.
+   The key is minted once and lent once, only under the id the source itself reported —
+   `A_second_read_leaves_the_signer_claimable`, `CreateSignerAsync_throws_when_the_key_has_already_been_lent`,
+   `CreateSignerAsync_throws_when_asked_for_a_key_this_source_never_reported`.
+3. **One source per application**, and a rejected second registration leaves none of its own
+   configuration behind — `A_rejected_second_registration_leaves_the_first_one_unconfigured_by_it`.
+
+**Residuals, accepted.** No host means no gate: a directly-constructed source with a null
+`EnvironmentName` is ungated — `ReadAsync_skips_the_gate_when_EnvironmentName_is_null`. `Dispose`
+racing an in-flight read strands the RSA until finalization; `_readGate` is deliberately never
+disposed so that race can neither throw from `Release` nor hang a queued reader — no test.
+
 ---
 
 ## 2. Authorization-code store
@@ -909,3 +933,38 @@ runner real cheap-then-side-effecting phases.
 **Why this is recorded here rather than fixed in §4.3:** the original text is the evidence of what
 the reviewer believed they were approving. That belief, and its divergence from the code, is the
 audit-relevant fact.
+
+### 6.2 §1.7's composed-collection residual is closed by #512; two facts in that paragraph survive
+
+**Recorded 2026-08-25, against `feat/512-development-signing-key-source` at commit `0ea8ab8`.**
+
+The §1.7 paragraph beginning "**Correction: the claim that `AddZeeKayDaSigningKeySource` itself
+cannot produce a multi-descriptor `ISigningKeyRing` shape is FALSE**" rests on a premise #512
+removed. It describes N collections each calling the type overload for the *same* `TSource` as "the
+documented-legal composition this method exists to accept as a no-op", and records a residual that
+enumerating the composed descriptors **opens N−1 uninitialised sources** holding whatever
+construction-time resources they acquire. Neither the premise nor the residual now holds.
+
+- **The same-type repeat is no longer legal anywhere.** Every second registration throws, whichever
+  overload either call used and whether or not the type matches — proven by
+  `AddZeeKayDaSigningKeySource_called_twice_with_the_same_source_throws_InvalidOperationException`.
+- **A composed same-type set no longer resolves.** `ValidateRegistrationSet` throws
+  `signing.source_registration_mismatch` on more than one marker — proven by
+  `Resolving_ISigningKeyRing_throws_when_composed_from_two_libraries_that_registered_the_same_source`.
+  The host now fails startup rather than silently initializing the last-wins ring.
+- **Nothing is constructed before that failure**, so there are no N−1 uninitialised sources to open —
+  proven by `Resolving_ISigningKeyRing_for_a_failing_composed_registration_never_constructs_or_invokes_any_source`.
+  The **residual is closed**, not merely narrowed.
+
+**Two facts from that paragraph survive and are NOT deleted.** (a) Composition still produces N
+`ISigningKeyRing` descriptors — `TryAddSingleton` still deduplicates only within one collection —
+but every one of them now throws on resolve, so the count is inert rather than a working last-wins
+selection. (b) A manual `ISigningKeyRing` registered *after* `AddZeeKayDaSigningKeySource` has run is
+still neither observed nor rejected, and still wins last-wins resolution — proven by
+`A_manual_ISigningKeyRing_registration_added_after_AddZeeKayDaSigningKeySource_wins_and_is_not_rejected`.
+That residual stands unchanged, as does the `CHANGELOG.md`/`signing-keys.md` correction made for it.
+
+The enumerating path the original residual was written about is covered directly: three composed
+same-type collections still yield three `ISigningKeyRing` descriptors, and
+`GetServices<ISigningKeyRing>()` throws having constructed zero sources — proven by
+`Enumerating_ISigningKeyRing_across_composed_registrations_throws_and_constructs_no_source`.

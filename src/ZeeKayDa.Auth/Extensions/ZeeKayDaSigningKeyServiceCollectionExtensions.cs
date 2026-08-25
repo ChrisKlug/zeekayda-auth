@@ -28,20 +28,21 @@ public static class ZeeKayDaSigningKeyServiceCollectionExtensions
     /// implements <see cref="IAsyncDisposable"/> without also implementing <see cref="IDisposable"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// Thrown when a different <see cref="ISigningKeySource"/> implementation is already registered,
-    /// when <typeparamref name="TSource"/> is already registered via the factory overload, or when an
+    /// Thrown when any <see cref="ISigningKeySource"/> is already registered — including
+    /// <typeparamref name="TSource"/> itself, by either overload — or when an
     /// <see cref="ISigningKeyRing"/> is already registered by something other than this method.
     /// </exception>
     /// <remarks>
-    /// Idempotent with respect to <typeparamref name="TSource"/>: calling this method again with the
-    /// same source type, both times via this overload, is a no-op. Calling it with a
-    /// <em>different</em> source type throws, rather than silently keeping whichever was registered
-    /// first, and so does calling it for a <typeparamref name="TSource"/> already registered via the
-    /// factory overload — a factory delegate can close over configuration, so treating that as a
-    /// no-op would silently discard it. Nothing is registered in the container for
-    /// <see cref="ISigningKeySource"/> at all — the <see cref="ISigningKeyRing"/> factory constructs
-    /// and owns the source directly, so it is not resolvable via
-    /// <c>GetService&lt;ISigningKeySource&gt;()</c> or any other container lookup.
+    /// An application registers exactly one signing key source, so a second call always throws,
+    /// whichever overload either call used and whether or not the source type is the same. A repeat
+    /// registration is not idempotent even when the type matches: a provider's own
+    /// <c>Add&lt;Provider&gt;Signing()</c> method registers the source <em>and</em> configures an
+    /// options object beside it, so a second call that looked like a no-op here would still have
+    /// applied a second configuration callback — the two calls are two opinions about what signs the
+    /// application's tokens. Select between them with an ordinary if/else rather than calling both.
+    /// Nothing is registered in the container for <see cref="ISigningKeySource"/> at all — the
+    /// <see cref="ISigningKeyRing"/> factory constructs and owns the source directly, so it is not
+    /// resolvable via <c>GetService&lt;ISigningKeySource&gt;()</c> or any other container lookup.
     /// </remarks>
     public static IServiceCollection AddZeeKayDaSigningKeySource<TSource>(this IServiceCollection services)
         where TSource : class, ISigningKeySource
@@ -71,16 +72,14 @@ public static class ZeeKayDaSigningKeyServiceCollectionExtensions
     /// implements <see cref="IAsyncDisposable"/> without also implementing <see cref="IDisposable"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// Thrown when a different <see cref="ISigningKeySource"/> implementation is already registered,
-    /// when <typeparamref name="TSource"/> is already registered, by either overload, or when an
+    /// Thrown when any <see cref="ISigningKeySource"/> is already registered — including
+    /// <typeparamref name="TSource"/> itself, by either overload — or when an
     /// <see cref="ISigningKeyRing"/> is already registered by something other than this method.
     /// </exception>
     /// <remarks>
-    /// A second registration of the same <typeparamref name="TSource"/> always throws when this
-    /// overload is involved on either side — a factory delegate can close over configuration, and a
-    /// second registration silently keeping the first factory's configuration is exactly the failure
-    /// this method exists to prevent. Calling it with a <em>different</em> source type also throws.
-    /// Nothing is registered in the container for <see cref="ISigningKeySource"/> at all — the
+    /// An application registers exactly one signing key source, so a second call always throws,
+    /// whichever overload either call used and whether or not the source type is the same. Nothing
+    /// is registered in the container for <see cref="ISigningKeySource"/> at all — the
     /// <see cref="ISigningKeyRing"/> factory constructs and owns the source directly, so it is not
     /// resolvable via <c>GetService&lt;ISigningKeySource&gt;()</c> or any other container lookup.
     /// </remarks>
@@ -104,13 +103,12 @@ public static class ZeeKayDaSigningKeyServiceCollectionExtensions
         ValidateDisposalShape<TSource>();
         ValidateNoManualRingRegistration(services);
 
-        var registeredByFactory = implementationFactory is not null;
         var existing = FindExistingRegistration(services);   // last UNKEYED marker descriptor
 
         if (existing is not null)
-            ValidateAgainstExisting<TSource>(existing, registeredByFactory);
-        else
-            services.AddSingleton(new SigningKeySourceRegistration(typeof(TSource), registeredByFactory));
+            ThrowAlreadyRegistered<TSource>(existing);
+
+        services.AddSingleton(new SigningKeySourceRegistration(typeof(TSource)));
 
         services.TryAddSingleton<TimeProvider>(TimeProvider.System);
         services.TryAddSingleton<ISigningKeyRing>(sp =>
@@ -227,31 +225,27 @@ public static class ZeeKayDaSigningKeyServiceCollectionExtensions
         _ => "a registration with no known implementation type",
     };
 
-    private static void ValidateAgainstExisting<TSource>(
-        SigningKeySourceRegistration existing, bool registeredByFactory)
+    /// <summary>
+    /// Rejects a second signing key source registration, whichever overload either call used and
+    /// whether or not the source type matches. A repeat registration of the same type is not treated
+    /// as a no-op: the registration call is only half of what a provider's
+    /// <c>Add&lt;Provider&gt;Signing()</c> method does, and the options configuration beside it would
+    /// have been applied twice.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">Always.</exception>
+    private static void ThrowAlreadyRegistered<TSource>(SigningKeySourceRegistration existing)
         where TSource : class, ISigningKeySource
     {
-        if (existing.SourceType != typeof(TSource))
-        {
-            throw new InvalidOperationException(
-                $"Cannot register signing key source '{DisplayName(typeof(TSource))}': " +
-                $"'{DisplayName(existing.SourceType)}' is already registered. Only one signing " +
-                "key source may be registered per application. Select between them with an " +
-                "ordinary if/else over the two registration calls rather than calling both.");
-        }
+        var subject = existing.SourceType == typeof(TSource)
+            ? $"'{DisplayName(typeof(TSource))}' is already registered as the signing key source"
+            : $"Cannot register signing key source '{DisplayName(typeof(TSource))}': " +
+              $"'{DisplayName(existing.SourceType)}' is already registered";
 
-        if (existing.RegisteredByFactory || registeredByFactory)
-        {
-            throw new InvalidOperationException(
-                $"'{DisplayName(typeof(TSource))}' is already registered as the signing key " +
-                "source, and at least one of the two registrations used the factory overload. " +
-                "A factory delegate can close over configuration, so a second factory " +
-                "registration for the same source type would silently discard the second " +
-                "factory's configuration. Register the signing key source exactly once. If you did " +
-                "not call this method twice yourself, a provider package's own " +
-                "'Add<Provider>Signing()' call may already register this source via the factory " +
-                "overload.");
-        }
+        throw new InvalidOperationException(
+            $"{subject}. Only one signing key source may be registered per application. Select " +
+            "between them with an ordinary if/else over the two registration calls rather than " +
+            "calling both. If you did not call this method twice yourself, a provider package's own " +
+            "'Add<Provider>Signing()' call may already register a source.");
     }
 
     /// <summary>
@@ -259,8 +253,7 @@ public static class ZeeKayDaSigningKeyServiceCollectionExtensions
     /// misconfigured composition fails before any of the winning registration's side effects run.
     /// </summary>
     /// <exception cref="ZeeKayDaConfigurationException">
-    /// Thrown when no registration is found, when more than one distinct source type is recorded, or
-    /// when any recorded registration used the factory overload alongside another registration.
+    /// Thrown when no registration is found, or when more than one registration is recorded.
     /// </exception>
     private static void ValidateRegistrationSet(IReadOnlyCollection<SigningKeySourceRegistration> registrations)
     {
@@ -286,16 +279,18 @@ public static class ZeeKayDaSigningKeyServiceCollectionExtensions
                     "source may be registered per application."));
         }
 
-        if (registrations.Count > 1 && registrations.Any(r => r.RegisteredByFactory))
+        if (registrations.Count > 1)
         {
             throw new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure(
                     "signing.source_registration_mismatch",
                     $"{registrations.Count} registrations for signing key source " +
-                    $"'{DisplayName(distinctTypes[0])}' were found, and at least one used the " +
-                    "factory overload. A factory delegate can close over configuration, so composing " +
-                    "collections that each registered the same source via the factory overload would " +
-                    "silently discard all but one factory's configuration."));
+                    $"'{DisplayName(distinctTypes[0])}' were found. This happens when two " +
+                    "independently-built service collections, each of which registered that source, " +
+                    "are composed into the same host. Only one signing key source may be registered " +
+                    "per application: each of those collections also configured the source's options, " +
+                    "and only one of those configurations describes what the application actually " +
+                    "signs with."));
         }
     }
 
@@ -309,12 +304,7 @@ public static class ZeeKayDaSigningKeyServiceCollectionExtensions
 
 /// <summary>
 /// Records the <see cref="ISigningKeySource"/> implementation type registered via
-/// <see cref="ZeeKayDaSigningKeyServiceCollectionExtensions"/>, and whether that registration used
-/// the factory overload.
+/// <see cref="ZeeKayDaSigningKeyServiceCollectionExtensions"/>.
 /// </summary>
 /// <param name="SourceType">The registered <see cref="ISigningKeySource"/> implementation type.</param>
-/// <param name="RegisteredByFactory">
-/// <see langword="true"/> if the source was registered via the factory overload;
-/// <see langword="false"/> if it was registered via the type overload for DI activation.
-/// </param>
-internal sealed record SigningKeySourceRegistration(Type SourceType, bool RegisteredByFactory);
+internal sealed record SigningKeySourceRegistration(Type SourceType);

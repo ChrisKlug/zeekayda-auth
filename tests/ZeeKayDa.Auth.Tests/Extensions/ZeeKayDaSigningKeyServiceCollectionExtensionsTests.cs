@@ -222,24 +222,30 @@ public sealed class ZeeKayDaSigningKeyServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public void AddZeeKayDaSigningKeySource_called_twice_registers_the_ring_exactly_once()
+    public void AddZeeKayDaSigningKeySource_called_twice_with_the_same_source_throws_InvalidOperationException()
     {
+        // Not idempotent even though the source type matches: a provider's own registration method
+        // registers the source and configures its options beside it, so a second call that looked
+        // like a no-op here would still have applied a second configuration callback.
         var services = new ServiceCollection();
-
-        services.AddZeeKayDaSigningKeySource<ExternalSigningKeySource>();
         services.AddZeeKayDaSigningKeySource<ExternalSigningKeySource>();
 
-        services.Should().ContainSingle(d => d.ServiceType == typeof(ISigningKeyRing));
+        var act = () => services.AddZeeKayDaSigningKeySource<ExternalSigningKeySource>();
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*already registered as the signing key source*");
     }
 
     [Fact]
-    public void AddZeeKayDaSigningKeySource_called_twice_with_the_same_source_registers_the_marker_exactly_once()
+    public void AddZeeKayDaSigningKeySource_called_twice_leaves_the_first_registration_intact()
     {
         var services = new ServiceCollection();
-
-        services.AddZeeKayDaSigningKeySource<ExternalSigningKeySource>();
         services.AddZeeKayDaSigningKeySource<ExternalSigningKeySource>();
 
+        var act = () => services.AddZeeKayDaSigningKeySource<ExternalSigningKeySource>();
+
+        act.Should().Throw<InvalidOperationException>();
+        services.Should().ContainSingle(d => d.ServiceType == typeof(ISigningKeyRing));
         services.Should().ContainSingle(d => d.ServiceType == typeof(SigningKeySourceRegistration));
     }
 
@@ -603,12 +609,42 @@ public sealed class ZeeKayDaSigningKeyServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public void Resolving_ISigningKeyRing_does_not_throw_when_composed_from_two_libraries_that_registered_the_same_source_by_type()
+    public void Enumerating_ISigningKeyRing_across_composed_registrations_throws_and_constructs_no_source()
     {
-        // On a single collection, registering the same TSource twice via the type overload is a
-        // documented no-op. Composing two independently-built collections that each did exactly that
-        // is unambiguous in the same way — one source type, no factory closures to lose — and must
-        // resolve a working ring rather than being treated as the ambiguous case.
+        // Composing N collections still leaves N ring descriptors — TryAddSingleton only deduplicates
+        // within the collection it runs against. What must not happen is enumeration quietly opening
+        // a source per descriptor, each holding whatever handle its implementation acquires, with no
+        // self-test ever run against it.
+        var constructions = 0;
+        var collections = Enumerable.Range(0, 3).Select(_ =>
+        {
+            var services = new ServiceCollection();
+            services.AddZeeKayDaSigningKeySource(_ =>
+            {
+                constructions++;
+                return new ExternalSigningKeySource();
+            });
+            return services;
+        });
+
+        var combined = new ServiceCollection();
+        foreach (var descriptor in collections.SelectMany(c => c))
+            combined.Add(descriptor);
+
+        using var provider = combined.BuildServiceProvider();
+
+        var act = () => provider.GetServices<ISigningKeyRing>().ToArray();
+
+        act.Should().Throw<ZeeKayDaConfigurationException>();
+        constructions.Should().Be(0, "no source may be constructed for a composition that is rejected");
+    }
+
+    [Fact]
+    public void Resolving_ISigningKeyRing_throws_when_composed_from_two_libraries_that_registered_the_same_source()
+    {
+        // Two collections that each registered the same source type each also configured that
+        // source's options, and only one of those configurations describes what the application
+        // actually signs with — so composing them is ambiguous, not a harmless duplicate.
         var firstServices = new ServiceCollection();
         firstServices.AddZeeKayDaSigningKeySource<ExternalSigningKeySource>();
 
@@ -625,16 +661,14 @@ public sealed class ZeeKayDaSigningKeyServiceCollectionExtensionsTests
 
         var act = () => provider.GetRequiredService<ISigningKeyRing>();
 
-        act.Should().NotThrow();
-        provider.GetRequiredService<ISigningKeyRing>().Should().BeOfType<StaticSigningKeyRing>();
+        act.Should().Throw<ZeeKayDaConfigurationException>();
     }
 
     [Fact]
-    public void AddZeeKayDaSigningKeySource_after_composed_registrations_compares_against_the_most_recently_registered_source()
+    public void AddZeeKayDaSigningKeySource_after_composed_registrations_names_the_most_recently_registered_source()
     {
-        // If the guard picked the first recorded registration rather than the one DI will actually
-        // resolve, this call would compare the new source against a stale incumbent and either throw
-        // wrongly or accept a no-op it should not.
+        // Every further call throws, so what this pins is which incumbent the operator is told
+        // about: the one DI will actually resolve, not a stale first entry.
         var firstServices = new ServiceCollection();
         firstServices.AddZeeKayDaSigningKeySource<ExternalSigningKeySource>();
 
@@ -649,7 +683,8 @@ public sealed class ZeeKayDaSigningKeyServiceCollectionExtensionsTests
 
         var act = () => combined.AddZeeKayDaSigningKeySource<OtherExternalSigningKeySource>();
 
-        act.Should().NotThrow();
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage($"*{nameof(OtherExternalSigningKeySource)}*already registered as the signing key source*");
     }
 
     [Fact]
