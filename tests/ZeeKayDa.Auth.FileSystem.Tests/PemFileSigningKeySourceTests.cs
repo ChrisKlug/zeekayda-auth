@@ -26,8 +26,8 @@ public sealed class PemFileSigningKeySourceTests
 
     private static PemFileSigningKeySource BuildSource(
         PemSigningFile? current,
-        PemSigningFile? previous = null,
-        PemSigningFile? next = null,
+        PemCertificateFile? previous = null,
+        PemCertificateFile? next = null,
         SigningAlgorithm algorithm = SigningAlgorithm.RS256)
     {
         var options = new PemFileSigningOptions
@@ -117,8 +117,8 @@ public sealed class PemFileSigningKeySourceTests
         var nextPath = tempDir.WritePemFile("next.pem", nextCertificate);
         var sut = BuildSource(
             new PemSigningFile(currentPath),
-            previous: new PemSigningFile(previousPath),
-            next: new PemSigningFile(nextPath));
+            previous: new PemCertificateFile(previousPath),
+            next: new PemCertificateFile(nextPath));
 
         var keySet = await sut.ReadAsync(ct);
 
@@ -134,7 +134,7 @@ public sealed class PemFileSigningKeySourceTests
         using var tempDir = new TempSigningKeyDirectory();
         using var certificate = CreateRsaCertificate();
         var path = tempDir.WritePemFile("next.pem", certificate);
-        var sut = BuildSource(current: null, next: new PemSigningFile(path));
+        var sut = BuildSource(current: null, next: new PemCertificateFile(path));
 
         var act = async () => await sut.ReadAsync(ct);
 
@@ -145,10 +145,10 @@ public sealed class PemFileSigningKeySourceTests
     [Fact]
     public async Task ReadAsync_never_reads_private_material_for_Previous_or_Next()
     {
-        // The split cert/key form makes this directly observable: Previous and Next name a
-        // certificate-only file plus a key file that does not exist at all. A read that succeeds
-        // proves no private key was opened for either slot, which is what keeps a non-active
-        // private key out of this process entirely.
+        // Previous and Next are PemCertificateFile, which has no KeyPath, so "opened a published-only
+        // slot's private key" is unrepresentable rather than merely untested. What is left to prove is
+        // that a certificate-only file is enough for those slots: no private key exists on disk for
+        // either one here, and the read still succeeds.
         var ct = TestContext.Current.CancellationToken;
         using var tempDir = new TempSigningKeyDirectory();
         using var previousCertificate = CreateRsaCertificate();
@@ -159,8 +159,8 @@ public sealed class PemFileSigningKeySourceTests
         var currentPath = tempDir.WritePemFile("current.pem", currentCertificate);
         var sut = BuildSource(
             new PemSigningFile(currentPath),
-            previous: new PemSigningFile(previousCertPath, tempDir.GetPath("previous-does-not-exist.key")),
-            next: new PemSigningFile(nextCertPath, tempDir.GetPath("next-does-not-exist.key")));
+            previous: new PemCertificateFile(previousCertPath),
+            next: new PemCertificateFile(nextCertPath));
 
         var keySet = await sut.ReadAsync(ct);
 
@@ -319,7 +319,7 @@ public sealed class PemFileSigningKeySourceTests
         var previousPath = tempDir.WritePemFile("previous.pem", previousCertificate);
         var currentPath = tempDir.WritePemFile("current.pem", currentCertificate);
         tempDir.MakeTooPermissive(previousPath);
-        var sut = BuildSource(new PemSigningFile(currentPath), previous: new PemSigningFile(previousPath));
+        var sut = BuildSource(new PemSigningFile(currentPath), previous: new PemCertificateFile(previousPath));
 
         var act = async () => await sut.ReadAsync(ct);
 
@@ -552,7 +552,7 @@ public sealed class PemFileSigningKeySourceTests
         using var currentCertificate = CreateRsaCertificate();
         var previousPath = tempDir.WritePemFile("previous.pem", previousCertificate);
         var currentPath = tempDir.WritePemFile("current.pem", currentCertificate);
-        var sut = BuildSource(new PemSigningFile(currentPath), previous: new PemSigningFile(previousPath));
+        var sut = BuildSource(new PemSigningFile(currentPath), previous: new PemCertificateFile(previousPath));
 
         var act = async () => await sut.CreateSignerAsync(new SourceKeyId(previousPath), ct);
 
@@ -568,7 +568,7 @@ public sealed class PemFileSigningKeySourceTests
         using var nextCertificate = CreateRsaCertificate();
         var currentPath = tempDir.WritePemFile("current.pem", currentCertificate);
         var nextPath = tempDir.WritePemFile("next.pem", nextCertificate);
-        var sut = BuildSource(new PemSigningFile(currentPath), next: new PemSigningFile(nextPath));
+        var sut = BuildSource(new PemSigningFile(currentPath), next: new PemCertificateFile(nextPath));
 
         var act = async () => await sut.CreateSignerAsync(new SourceKeyId(nextPath), ct);
 

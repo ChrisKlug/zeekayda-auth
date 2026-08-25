@@ -38,8 +38,8 @@ public sealed class PemFileSigningOptionsValidatorTests
     {
         var options = new PemFileSigningOptions
         {
-            Previous = new PemSigningFile("/etc/zeekayda/previous.pem"),
-            Next = new PemSigningFile("/etc/zeekayda/next.pem"),
+            Previous = new PemCertificateFile("/etc/zeekayda/previous.pem"),
+            Next = new PemCertificateFile("/etc/zeekayda/next.pem"),
         };
 
         Validate(options).Should().ContainSingle(e => e.Contains("Current must be set"));
@@ -49,8 +49,8 @@ public sealed class PemFileSigningOptionsValidatorTests
     public void Succeeds_when_all_three_slots_are_configured()
     {
         var options = ValidOptions();
-        options.Previous = new PemSigningFile("/etc/zeekayda/previous.pem");
-        options.Next = new PemSigningFile("/etc/zeekayda/next.pem");
+        options.Previous = new PemCertificateFile("/etc/zeekayda/previous.pem");
+        options.Next = new PemCertificateFile("/etc/zeekayda/next.pem");
 
         Validate(options).Should().BeEmpty();
     }
@@ -73,7 +73,7 @@ public sealed class PemFileSigningOptionsValidatorTests
     public void Fails_when_Previouss_Path_is_empty_or_whitespace(string path)
     {
         var options = ValidOptions();
-        options.Previous = new PemSigningFile(path);
+        options.Previous = new PemCertificateFile(path);
 
         Validate(options).Should().Contain(e => e.Contains("Previous.Path must be set"));
     }
@@ -84,7 +84,7 @@ public sealed class PemFileSigningOptionsValidatorTests
     public void Fails_when_Nexts_Path_is_empty_or_whitespace(string path)
     {
         var options = ValidOptions();
-        options.Next = new PemSigningFile(path);
+        options.Next = new PemCertificateFile(path);
 
         Validate(options).Should().Contain(e => e.Contains("Next.Path must be set"));
     }
@@ -100,11 +100,25 @@ public sealed class PemFileSigningOptionsValidatorTests
     [Theory]
     [InlineData("")]
     [InlineData("   ")]
-    public void Fails_when_a_slots_KeyPath_is_empty_or_whitespace(string keyPath)
+    public void Fails_when_Currents_KeyPath_is_empty_or_whitespace(string keyPath)
     {
         var options = new PemFileSigningOptions { Current = new PemSigningFile("/etc/zeekayda/current.pem", keyPath) };
 
         Validate(options).Should().Contain(e => e.Contains("Current.KeyPath must be null"));
+    }
+
+    [Fact]
+    public void A_published_only_slot_cannot_name_a_private_key_file_at_all()
+    {
+        // PemCertificateFile has no KeyPath member, so there is no validator rule to test here — the
+        // rejection is the type. This test exists to fail if Previous or Next is ever widened back to
+        // PemSigningFile, which would silently reopen a path the framework promises to
+        // permission-check but never opens.
+        typeof(PemFileSigningOptions).GetProperty(nameof(PemFileSigningOptions.Previous))!
+            .PropertyType.Should().Be<PemCertificateFile>();
+        typeof(PemFileSigningOptions).GetProperty(nameof(PemFileSigningOptions.Next))!
+            .PropertyType.Should().Be<PemCertificateFile>();
+        typeof(PemCertificateFile).GetProperty("KeyPath").Should().BeNull();
     }
 
     // ── Algorithm ────────────────────────────────────────────────────────────────────────────────
@@ -124,7 +138,7 @@ public sealed class PemFileSigningOptionsValidatorTests
     public void Fails_when_Previous_and_Current_name_the_same_file()
     {
         var options = ValidOptions();
-        options.Previous = new PemSigningFile("/etc/zeekayda/current.pem");
+        options.Previous = new PemCertificateFile("/etc/zeekayda/current.pem");
 
         Validate(options).Should().Contain(e => e.Contains("slots reference the same file"));
     }
@@ -133,7 +147,7 @@ public sealed class PemFileSigningOptionsValidatorTests
     public void Fails_when_Current_and_Next_name_the_same_file()
     {
         var options = ValidOptions();
-        options.Next = new PemSigningFile("/etc/zeekayda/current.pem");
+        options.Next = new PemCertificateFile("/etc/zeekayda/current.pem");
 
         Validate(options).Should().Contain(e => e.Contains("slots reference the same file"));
     }
@@ -142,8 +156,8 @@ public sealed class PemFileSigningOptionsValidatorTests
     public void Fails_when_Previous_and_Next_name_the_same_file()
     {
         var options = ValidOptions();
-        options.Previous = new PemSigningFile("/etc/zeekayda/staged.pem");
-        options.Next = new PemSigningFile("/etc/zeekayda/staged.pem");
+        options.Previous = new PemCertificateFile("/etc/zeekayda/staged.pem");
+        options.Next = new PemCertificateFile("/etc/zeekayda/staged.pem");
 
         Validate(options).Should().Contain(e => e.Contains("slots reference the same file"));
     }
@@ -154,19 +168,19 @@ public sealed class PemFileSigningOptionsValidatorTests
         var options = new PemFileSigningOptions
         {
             Current = new PemSigningFile(Path.Combine(Path.GetTempPath(), "tls.pem")),
-            Next = new PemSigningFile(Path.Combine(Path.GetTempPath(), ".", "tls.pem")),
+            Next = new PemCertificateFile(Path.Combine(Path.GetTempPath(), ".", "tls.pem")),
         };
 
         Validate(options).Should().Contain(e => e.Contains("slots reference the same file"));
     }
 
     [Fact]
-    public void Fails_when_one_slots_KeyPath_duplicates_another_slots_Path()
+    public void Fails_when_Currents_KeyPath_duplicates_another_slots_Path()
     {
         var options = new PemFileSigningOptions
         {
             Current = new PemSigningFile("/etc/zeekayda/current.crt", "/etc/zeekayda/shared.key"),
-            Next = new PemSigningFile("/etc/zeekayda/shared.key"),
+            Next = new PemCertificateFile("/etc/zeekayda/shared.key"),
         };
 
         Validate(options).Should().Contain(e => e.Contains("slots reference the same file"));
@@ -189,10 +203,35 @@ public sealed class PemFileSigningOptionsValidatorTests
         var options = new PemFileSigningOptions
         {
             Current = new PemSigningFile(""),
-            Next = new PemSigningFile(""),
+            Next = new PemCertificateFile(""),
         };
 
         Validate(options).Should().NotContain(e => e.Contains("slots reference the same file"));
+    }
+
+    // ── Paths the OS cannot resolve ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Fails_rather_than_throwing_when_a_slot_path_contains_an_embedded_NUL()
+    {
+        var options = new PemFileSigningOptions { Current = new PemSigningFile("/etc/zeekayda/tls\0.pem") };
+
+        var act = () => Validate(options);
+
+        act.Should().NotThrow("an unresolvable path is a configuration error like any other");
+        Validate(options).Should().Contain(e => e.Contains("cannot resolve"));
+    }
+
+    [Fact]
+    public void Fails_rather_than_throwing_when_a_published_only_slot_path_contains_an_embedded_NUL()
+    {
+        var options = ValidOptions();
+        options.Next = new PemCertificateFile("/etc/zeekayda/next\0.pem");
+
+        var act = () => Validate(options);
+
+        act.Should().NotThrow();
+        Validate(options).Should().Contain(e => e.Contains("cannot resolve"));
     }
 
     // ── Aggregation ──────────────────────────────────────────────────────────────────────────────

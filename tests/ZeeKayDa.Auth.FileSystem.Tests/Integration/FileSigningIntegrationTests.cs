@@ -96,9 +96,9 @@ public sealed class FileSigningIntegrationTests
         var builder = new ZeeKayDaAuthBuilder(services);
         builder.AddPemFileSigning(SigningAlgorithm.RS256, options =>
         {
-            options.Previous = new PemSigningFile(previousPath);
+            options.Previous = new PemCertificateFile(previousPath);
             options.Current = new PemSigningFile(currentPath);
-            options.Next = new PemSigningFile(nextPath);
+            options.Next = new PemCertificateFile(nextPath);
         });
 
         await using var provider = services.BuildServiceProvider();
@@ -126,7 +126,7 @@ public sealed class FileSigningIntegrationTests
         builder.AddPemFileSigning(SigningAlgorithm.RS256, options =>
         {
             options.Current = new PemSigningFile(currentPath);
-            options.Next = new PemSigningFile(nextPath);
+            options.Next = new PemCertificateFile(nextPath);
         });
 
         await using var provider = services.BuildServiceProvider();
@@ -194,7 +194,7 @@ public sealed class FileSigningIntegrationTests
         var (services, _) = BuildServices(T0);
 
         var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddPemFileSigning(SigningAlgorithm.RS256, options => options.Next = new PemSigningFile(nextPath));
+        builder.AddPemFileSigning(SigningAlgorithm.RS256, options => options.Next = new PemCertificateFile(nextPath));
 
         await using var provider = services.BuildServiceProvider();
         var act = async () => await StartHostedServicesAsync(provider, ct);

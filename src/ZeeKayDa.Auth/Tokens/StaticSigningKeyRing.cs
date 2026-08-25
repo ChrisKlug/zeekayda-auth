@@ -22,6 +22,15 @@ public sealed class StaticSigningKeyRing : ISigningKeyRing, IDisposable, IAsyncD
     // The signing key set and the signer opened for it are read and written together, exactly once,
     // via Interlocked.CompareExchange — never as two independently-updated fields — so a consumer
     // can never observe one without the other, and InitializeAsync can only ever commit once.
+    // Tolerance on the not-before end of the signing key's validity window, and on that end only.
+    // No relying party can observe a key's NotBefore — it is not a JWK member (RFC 7517 §4) and no
+    // certificate is published anywhere — so signing a few minutes "early" is undetectable and
+    // harmless, while a host clock trailing the machine that minted the credential would otherwise
+    // turn a correct deployment into a hard startup failure. Fixed and non-configurable: an operator
+    // knob here would only ever be turned up to work around a broken clock. The expiry end has a real
+    // observer, every relying party validating a token, and stays exact.
+    private static readonly TimeSpan NotBeforeGrace = TimeSpan.FromMinutes(5);
+
     private SignerBinding? _binding;
 
     // 0 = live, 1 = disposed. int so Interlocked.Exchange makes the transition atomic.
@@ -150,7 +159,7 @@ public sealed class StaticSigningKeyRing : ISigningKeyRing, IDisposable, IAsyncD
     /// </remarks>
     private static void ValidateSigningKeyWindow(SigningKey signingKey, DateTimeOffset now)
     {
-        if (signingKey.NotBefore is { } notBefore && notBefore > now)
+        if (signingKey.NotBefore is { } notBefore && notBefore - NotBeforeGrace > now)
         {
             throw new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure(

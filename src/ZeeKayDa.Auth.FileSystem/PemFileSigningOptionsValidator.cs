@@ -23,9 +23,10 @@ internal sealed class PemFileSigningOptionsValidator : IValidateOptions<PemFileS
                 "Next are optional; Current is not.");
         }
 
-        AppendSlotErrors(nameof(PemFileSigningOptions.Previous), options.Previous, errors);
-        AppendSlotErrors(nameof(PemFileSigningOptions.Current), options.Current, errors);
-        AppendSlotErrors(nameof(PemFileSigningOptions.Next), options.Next, errors);
+        AppendPathError(nameof(PemFileSigningOptions.Previous), options.Previous?.Path, errors);
+        AppendPathError(nameof(PemFileSigningOptions.Current), options.Current?.Path, errors);
+        AppendPathError(nameof(PemFileSigningOptions.Next), options.Next?.Path, errors);
+        AppendCurrentKeyPathError(options.Current, errors);
 
         if (!Enum.IsDefined(options.Algorithm))
         {
@@ -39,19 +40,22 @@ internal sealed class PemFileSigningOptionsValidator : IValidateOptions<PemFileS
         return errors.Count > 0 ? ValidateOptionsResult.Fail(errors) : ValidateOptionsResult.Success;
     }
 
-    private static void AppendSlotErrors(string slotName, PemSigningFile? slot, List<string> errors)
+    // Previous and Next are PemCertificateFile, which has no KeyPath to check — only Current can
+    // name a private key at all, which is why there is no "a published-only slot named a key file"
+    // error to report here.
+    private static void AppendPathError(string slotName, string? path, List<string> errors)
     {
-        if (slot is null)
-            return;
-
-        if (string.IsNullOrWhiteSpace(slot.Path))
+        if (path is not null && string.IsNullOrWhiteSpace(path))
             errors.Add($"PemFileSigningOptions.{slotName}.Path must be set to a non-empty file path.");
+    }
 
-        if (slot.KeyPath is not null && string.IsNullOrWhiteSpace(slot.KeyPath))
+    private static void AppendCurrentKeyPathError(PemSigningFile? current, List<string> errors)
+    {
+        if (current?.KeyPath is { } keyPath && string.IsNullOrWhiteSpace(keyPath))
         {
             errors.Add(
-                $"PemFileSigningOptions.{slotName}.KeyPath must be null (a combined cert+key Path) " +
-                "or a non-empty file path — never empty/whitespace-only.");
+                "PemFileSigningOptions.Current.KeyPath must be null (a combined cert+key Path) or a " +
+                "non-empty file path — never empty/whitespace-only.");
         }
     }
 
@@ -67,27 +71,52 @@ internal sealed class PemFileSigningOptionsValidator : IValidateOptions<PemFileS
     {
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var hasDuplicatePath = false;
+        var hasUncanonicalizablePath = false;
 
         // Empty/whitespace-only paths are already reported by AppendSlotErrors, so they are skipped
         // here rather than re-flagged; they still must not be added to `seen`, since two
         // independently-empty values are not "the same path".
         void Track(string? path)
         {
-            if (!string.IsNullOrWhiteSpace(path) && !seen.Add(Path.GetFullPath(path)))
+            if (string.IsNullOrWhiteSpace(path))
+                return;
+
+            string fullPath;
+            try
+            {
+                fullPath = Path.GetFullPath(path);
+            }
+            catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+            {
+                // GetFullPath throws on an embedded NUL or a path over the platform limit. That is a
+                // configuration error like any other and belongs in the aggregated result, not thrown
+                // out of Validate where it would escape as something other than an options failure.
+                hasUncanonicalizablePath = true;
+                return;
+            }
+
+            if (!seen.Add(fullPath))
                 hasDuplicatePath = true;
         }
 
-        foreach (var slot in new[] { options.Previous, options.Current, options.Next })
+        Track(options.Previous?.Path);
+        Track(options.Current?.Path);
+        Track(options.Current?.KeyPath);
+        Track(options.Next?.Path);
+
+        if (hasUncanonicalizablePath)
         {
-            Track(slot?.Path);
-            Track(slot?.KeyPath);
+            errors.Add(
+                "A PemFileSigningOptions slot names a path the operating system cannot resolve — it " +
+                "contains an invalid character (such as an embedded NUL) or exceeds the platform's " +
+                "maximum path length.");
         }
 
         if (hasDuplicatePath)
         {
             errors.Add(
-                "Two PemFileSigningOptions slots reference the same file. Every Path and KeyPath " +
-                "across Previous, Current, and Next must be a distinct file.");
+                "Two PemFileSigningOptions slots reference the same file. Every Path, and Current's " +
+                "KeyPath, must be a distinct file.");
         }
     }
 }

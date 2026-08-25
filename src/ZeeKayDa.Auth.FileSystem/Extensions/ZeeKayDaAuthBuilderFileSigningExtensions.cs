@@ -103,8 +103,9 @@ public static class ZeeKayDaAuthBuilderFileSigningExtensions
     /// <para>
     /// Rotation: stage the successor as <c>Next</c> so its public half is published ahead of time,
     /// then promote it to <c>Current</c> and demote the key it succeeds to <c>Previous</c>. The slots
-    /// are read once at startup, so each move takes effect on restart. See
-    /// <see cref="SigningKeyRotation"/> for the full model.
+    /// are read once at startup, so each move takes effect on restart. How long a successor must sit
+    /// in <c>Next</c> before promotion is the operator's decision — see
+    /// <see cref="PemFileSigningOptions.Next"/>.
     /// </para>
     /// </remarks>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>

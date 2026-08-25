@@ -63,9 +63,11 @@ internal sealed class PemFileSigningKeySource : ISigningKeySource
 
             var options = _options.Value;
 
-            var previous = await ReadSlotAsync(options.Previous, options.Algorithm, cancellationToken).ConfigureAwait(false);
-            var current = await ReadSlotAsync(options.Current, options.Algorithm, cancellationToken).ConfigureAwait(false);
-            var next = await ReadSlotAsync(options.Next, options.Algorithm, cancellationToken).ConfigureAwait(false);
+            // Every slot is read by certificate path alone. Previous and Next have no private-key
+            // path to pass even in principle, and Current's is deliberately not passed here.
+            var previous = await ReadSlotAsync(options.Previous?.Path, options.Algorithm, cancellationToken).ConfigureAwait(false);
+            var current = await ReadSlotAsync(options.Current?.Path, options.Algorithm, cancellationToken).ConfigureAwait(false);
+            var next = await ReadSlotAsync(options.Next?.Path, options.Algorithm, cancellationToken).ConfigureAwait(false);
 
             return _keySet = SourceKeySet.Create(previous, current, next);
         }
@@ -100,20 +102,20 @@ internal sealed class PemFileSigningKeySource : ISigningKeySource
     }
 
     private async ValueTask<SourceKey?> ReadSlotAsync(
-        PemSigningFile? slot, SigningAlgorithm algorithm, CancellationToken cancellationToken)
+        string? certificatePath, SigningAlgorithm algorithm, CancellationToken cancellationToken)
     {
-        if (slot is null)
+        if (certificatePath is null)
             return null;
 
-        using var certificate = await LoadPublicCertificateAsync(slot, cancellationToken).ConfigureAwait(false);
+        using var certificate = await LoadPublicCertificateAsync(certificatePath, cancellationToken).ConfigureAwait(false);
 
-        var (rawPublicKey, keyType) = FileSigningKeyExtractor.ExtractPublicKey(certificate, slot.Path);
+        var (rawPublicKey, keyType) = FileSigningKeyExtractor.ExtractPublicKey(certificate, certificatePath);
         using var publicKey = rawPublicKey;
 
         // X509Certificate2 reports both ends of the validity window as local-kind DateTime, so the
         // conversion below applies the local offset rather than reinterpreting them as UTC.
         return new SourceKey(
-            new SourceKeyId(slot.Path),
+            new SourceKeyId(certificatePath),
             algorithm,
             ToPublicKeyParameters(publicKey, keyType),
             ExpiresAt: new DateTimeOffset(certificate.NotAfter),
@@ -132,16 +134,16 @@ internal sealed class PemFileSigningKeySource : ISigningKeySource
             : PublicKeyParameters.FromEc(((ECDsa)publicKey).ExportParameters(false));
 
     /// <summary>
-    /// Parses only the certificate at <paramref name="slot"/> — no private key material is ever read
-    /// or parsed, including for the <c>Current</c> slot.
+    /// Parses only the certificate at <paramref name="certificatePath"/> — no private key material is
+    /// ever read or parsed, including for the <c>Current</c> slot.
     /// </summary>
     /// <exception cref="ZeeKayDaConfigurationException">
     /// The file does not contain a valid PEM-encoded certificate.
     /// </exception>
     private async ValueTask<X509Certificate2> LoadPublicCertificateAsync(
-        PemSigningFile slot, CancellationToken cancellationToken)
+        string certificatePath, CancellationToken cancellationToken)
     {
-        var certPem = await _reader.ReadPemTextAsync(slot.Path, cancellationToken).ConfigureAwait(false);
+        var certPem = await _reader.ReadPemTextAsync(certificatePath, cancellationToken).ConfigureAwait(false);
 
         try
         {
@@ -151,7 +153,7 @@ internal sealed class PemFileSigningKeySource : ISigningKeySource
         {
             throw new ZeeKayDaConfigurationException(new ZeeKayDaConfigurationFailure(
                 "signing.file_signing.invalid_pem",
-                $"The file at '{slot.Path}' does not contain a valid PEM-encoded certificate: {ex.Message}"));
+                $"The file at '{certificatePath}' does not contain a valid PEM-encoded certificate: {ex.Message}"));
         }
     }
 

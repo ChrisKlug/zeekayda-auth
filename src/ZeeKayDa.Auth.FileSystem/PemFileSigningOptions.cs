@@ -19,7 +19,7 @@ public sealed class PemFileSigningOptions
     /// Gets or sets the previously active key, published so relying parties can still verify tokens
     /// it signed, or <see langword="null"/> when there is none. Never used to sign.
     /// </summary>
-    public PemSigningFile? Previous { get; set; }
+    public PemCertificateFile? Previous { get; set; }
 
     /// <summary>
     /// Gets or sets the key that signs. Required — startup fails when no <see cref="Current"/> is
@@ -35,8 +35,16 @@ public sealed class PemFileSigningOptions
     /// <remarks>
     /// A certificate whose <c>NotBefore</c> has not arrived yet belongs here. Configuring one as
     /// <see cref="Current"/> fails startup with <c>signing.signing_key_not_yet_valid</c>.
+    /// <para>
+    /// <b>Nothing verifies that a key was staged here before it was promoted.</b> With a fixed,
+    /// operator-edited list there is no observed history to check it against, so staging a successor
+    /// long enough ahead for relying parties to have re-fetched the JWKS is the operator's decision,
+    /// not something this provider can enforce. Replacing <see cref="Current"/> in place and
+    /// restarting is accepted silently, and will reject tokens at any relying party still holding a
+    /// cached key set.
+    /// </para>
     /// </remarks>
-    public PemSigningFile? Next { get; set; }
+    public PemCertificateFile? Next { get; set; }
 
     /// <summary>
     /// Gets the JWS algorithm every configured slot is signed under. A certificate's key does not

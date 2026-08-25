@@ -382,6 +382,7 @@ public sealed class StaticSigningKeyRingTests
     public async Task InitializeAsync_throws_when_the_Current_key_is_not_valid_yet()
     {
         using var rsa = RSA.Create(2048);
+        // A day out, far beyond the clock-skew grace: a real misconfiguration, not a drifting clock.
         var (source, _) = CreateSuccessfulSource(rsa, expiresAt: Epoch.AddDays(90), notBefore: Epoch.AddDays(1));
         ISigningKeyRing ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
 
@@ -389,6 +390,51 @@ public sealed class StaticSigningKeyRingTests
 
         (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
             .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.signing_key_not_yet_valid");
+    }
+
+    [Fact]
+    public async Task InitializeAsync_accepts_a_Current_key_within_the_not_before_clock_skew_grace()
+    {
+        // A host clock trailing the machine that minted the credential must not turn a correct
+        // deployment into a hard startup failure. Nothing can observe a key's NotBefore — it is not a
+        // JWK member and no certificate is published — so signing inside the grace is undetectable.
+        using var rsa = RSA.Create(2048);
+        var (source, _) = CreateSuccessfulSource(
+            rsa, expiresAt: Epoch.AddDays(90), notBefore: Epoch.AddMinutes(4));
+        ISigningKeyRing ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
+
+        var act = async () => await ring.InitializeAsync(TestContext.Current.CancellationToken);
+
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task InitializeAsync_rejects_a_Current_key_beyond_the_not_before_clock_skew_grace()
+    {
+        using var rsa = RSA.Create(2048);
+        var (source, _) = CreateSuccessfulSource(
+            rsa, expiresAt: Epoch.AddDays(90), notBefore: Epoch.AddMinutes(6));
+        ISigningKeyRing ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
+
+        var act = async () => await ring.InitializeAsync(TestContext.Current.CancellationToken);
+
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.signing_key_not_yet_valid");
+    }
+
+    [Fact]
+    public async Task InitializeAsync_gives_the_expiry_end_no_grace_at_all()
+    {
+        // The expiry end has a real observer — every relying party validating a token — so it stays
+        // exact. One second past expiry is rejected, with no counterpart to the not-before grace.
+        using var rsa = RSA.Create(2048);
+        var (source, _) = CreateSuccessfulSource(rsa, expiresAt: Epoch.AddSeconds(-1));
+        ISigningKeyRing ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
+
+        var act = async () => await ring.InitializeAsync(TestContext.Current.CancellationToken);
+
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.signing_key_expired");
     }
 
     [Fact]

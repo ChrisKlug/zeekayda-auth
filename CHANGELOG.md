@@ -67,18 +67,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   // The three slots.
   .AddPemFileSigning(SigningAlgorithm.RS256, options =>
   {
-      options.Previous = new PemSigningFile("/etc/zeekayda/signing/previous.pem");
+      options.Previous = new PemCertificateFile("/etc/zeekayda/signing/previous.pem");
       options.Current  = new PemSigningFile("/etc/zeekayda/signing/current.pem");
-      options.Next     = new PemSigningFile("/etc/zeekayda/signing/next.pem");
+      options.Next     = new PemCertificateFile("/etc/zeekayda/signing/next.pem");
   });
   ```
+
+  **Only `Current` has a type that can name a private key.** `Current` is a
+  `PemSigningFile(string Path, string? KeyPath = null)`; `Previous` and `Next` are a
+  `PemCertificateFile(string Path)` with no `KeyPath` member at all. Since only `Current`'s private
+  key is ever opened, naming one for a published-only slot could never do anything but leave a file
+  the framework promises to permission-check and never opens — so it is unrepresentable rather than
+  rejected. Promoting a staged key is consequently not an assignment: a slot that starts signing
+  names its private key for the first time, and the key it succeeds stops naming one at the moment it
+  stops signing.
 
   `PemFileSigningOptions` loses its `KeySetOptions` base (and with it `PublicationLead`), its `Path`,
   `KeyPath`, `AddFile` and `AdditionalFiles` members, and carries `Previous`/`Current`/`Next` plus
   `Algorithm`. `Current` is required; `Previous` and `Next` are independently optional. Two slots
   naming the same file is a startup failure. `PemFileRegistration` is renamed `PemSigningFile` and is
-  now a slot value rather than an appended registration. The path overload takes no `configure`
-  callback, so the file it names is unambiguously the one that signs.
+  now a slot value rather than an appended registration. `Algorithm`'s setter is internal, so the
+  algorithm is said exactly once, in the registration argument. The path overload takes no
+  `configure` callback, so the file it names is unambiguously the one that signs.
+
+  **Nothing verifies that a key was staged as `Next` before it was promoted.** With a fixed,
+  operator-edited list there is no observed history to check against, so staging a successor long
+  enough ahead for relying parties to have re-fetched the JWKS is the operator's decision. Replacing
+  `Current` in place and restarting is accepted silently. This is what the removed `PublicationLead`
+  warning used to hint at, on a model that no longer applies.
 
   **Which key signs is now decided entirely by which slot it is configured in, never by the clock.**
   Certificate `NotBefore` no longer selects among registered files, and the single-key bootstrap
@@ -106,6 +122,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   existing `signing.signing_key_expired` check. Both checks apply to the signing key alone and never
   to the published set: staging a key before its window opens is the entire point of the `Next` slot.
   A source whose keys carry no validity window reports `null` and is unaffected.
+
+  The not-before end carries a fixed, non-configurable five-minute clock-skew grace; the expiry end
+  carries none. Nothing outside the process can observe a key's `NotBefore` — it is not a JWK member
+  and no certificate is published — so signing a few minutes early is undetectable, while a host clock
+  trailing the machine that minted the credential would otherwise fail an entirely correct deployment.
+  An expired key has a real observer in every relying party validating a token, so it stays exact.
 
 - **BREAKING: the development signing key provider is now an `ISigningKeySource` served through the signing key ring** (#512)
 

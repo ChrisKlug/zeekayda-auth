@@ -347,16 +347,16 @@ public sealed class ZeeKayDaAuthBuilderFileSigningExtensionsTests
 
         builder.AddPemFileSigning(SigningAlgorithm.ES256, options =>
         {
-            options.Previous = new PemSigningFile("/etc/zeekayda/previous.pem");
+            options.Previous = new PemCertificateFile("/etc/zeekayda/previous.pem");
             options.Current = new PemSigningFile("/etc/zeekayda/current.pem");
-            options.Next = new PemSigningFile("/etc/zeekayda/next.pem", "/etc/zeekayda/next.key");
+            options.Next = new PemCertificateFile("/etc/zeekayda/next.pem");
         });
 
         await using var provider = builder.Services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<PemFileSigningOptions>>().Value;
-        options.Previous.Should().Be(new PemSigningFile("/etc/zeekayda/previous.pem"));
+        options.Previous.Should().Be(new PemCertificateFile("/etc/zeekayda/previous.pem"));
         options.Current.Should().Be(new PemSigningFile("/etc/zeekayda/current.pem"));
-        options.Next.Should().Be(new PemSigningFile("/etc/zeekayda/next.pem", "/etc/zeekayda/next.key"));
+        options.Next.Should().Be(new PemCertificateFile("/etc/zeekayda/next.pem"));
         options.Algorithm.Should().Be(SigningAlgorithm.ES256);
     }
 
