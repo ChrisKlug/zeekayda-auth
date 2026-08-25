@@ -968,3 +968,24 @@ The enumerating path the original residual was written about is covered directly
 same-type collections still yield three `ISigningKeyRing` descriptors, and
 `GetServices<ISigningKeyRing>()` throws having constructed zero sources — proven by
 `Enumerating_ISigningKeyRing_across_composed_registrations_throws_and_constructs_no_source`.
+
+## 2026-08-25 — Azure Key Vault cached signing on ISigningKeySource (#520, commit 2b35193)
+
+Trust boundary: private key material leaves Key Vault into process memory. Reviewed against the
+read-once StaticSigningKeyRing model.
+
+- Least privilege — private material is downloaded for the signing version only, only in
+  `CreateSignerAsync`; every published version (signing one included) is read as public `Cer`.
+  Closed — proven by `ReadAsync_never_downloads_private_material_for_any_version`,
+  `CreateSignerAsync_downloads_private_material_for_exactly_the_signing_version`, and
+  `CreateSignerAsync_rejects_a_published_only_id_without_downloading_anything`.
+- Secret-vs-Cer divergence — a downloaded key whose public half differs from the published one is
+  refused and disposed, failing startup as `signing.azure_key_vault.secret_cer_mismatch`, absorbed
+  verbatim by the ring so the divergence is named. Closed — proven by
+  `Startup_fails_closed_when_the_secret_and_the_Cer_diverge` plus the RSA, EC and key-type unit cases.
+- Fail-closed metadata — a listing entry missing `Enabled` or `CreatedOn` is rejected, never
+  defaulted. Closed — proven by `MapVersion_fails_closed_when_{CreatedOn,Enabled}_is_absent` on both readers.
+- One signing provider — a second Key Vault registration throws in both orders. Closed — proven by
+  the two `AddAzureKeyVault*Signing_throws_when_*_already_registered` tests.
+- Residual: no runtime signal tells an operator this deployment holds a permanent in-memory copy of
+  the signing key; deliberate, consistent with the other local-signing providers, tracked as #549.
