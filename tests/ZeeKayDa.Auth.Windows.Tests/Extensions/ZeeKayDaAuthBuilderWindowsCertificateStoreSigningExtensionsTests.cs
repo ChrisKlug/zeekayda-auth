@@ -269,8 +269,10 @@ public sealed class ZeeKayDaAuthBuilderWindowsCertificateStoreSigningExtensionsT
         // arguments really are what land. The API-approval analyzers gate the first half at build
         // time; the reflection assertions pin it here too, so the test name is true on its own terms.
         //
-        // The accessibility half is pure metadata and needs no Windows, so it runs before the skip —
-        // otherwise the pin would never execute on the macOS and Linux CI legs.
+        // The accessibility half is pure metadata and needs no Windows, so it runs before the skip:
+        // the pin then executes wherever this assembly runs, not only on Windows. (That is local runs
+        // on any OS — the CI legs for macOS and Linux do not build this project at all, since it is in
+        // neither per-OS solution filter.)
         typeof(WindowsCertificateStoreSigningOptions).GetProperty(nameof(WindowsCertificateStoreSigningOptions.Algorithm))!
             .SetMethod!.IsAssembly.Should().BeTrue("a public setter would let a callback beat the argument");
         typeof(WindowsCertificateStoreSigningOptions).GetProperty(nameof(WindowsCertificateStoreSigningOptions.StoreLocation))!

@@ -53,8 +53,8 @@ internal sealed class WindowsCertificateStoreSigningOptionsValidator : IValidate
 
         var configured = slots.Where(slot => slot.Lookup is not null).ToArray();
 
-        // Compared as lookups, not as thumbprint strings: record equality covers the lookup mode as
-        // well as what it names, so a future mode is handled without revisiting this method.
+        // Compared as lookups, not as thumbprint strings: lookup equality covers the mode as well as
+        // what it names, so a future mode is handled without revisiting this method.
         return from index in Enumerable.Range(0, configured.Length)
                from other in configured.Skip(index + 1)
                where configured[index].Lookup == other.Lookup
