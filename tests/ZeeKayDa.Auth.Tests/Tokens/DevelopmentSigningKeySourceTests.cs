@@ -203,6 +203,19 @@ public sealed class DevelopmentSigningKeySourceTests
     }
 
     [Fact]
+    public async Task CreateSignerAsync_throws_when_asked_for_a_key_this_source_never_reported()
+    {
+        using var sut = BuildEphemeral();
+        var ct = TestContext.Current.CancellationToken;
+        await sut.ReadAsync(ct);
+
+        var act = () => sut.CreateSignerAsync(new SourceKeyId("someone-elses-key"), ct).AsTask();
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*which this source did not report*");
+    }
+
+    [Fact]
     public async Task CreateSignerAsync_throws_when_ReadAsync_has_never_run()
     {
         using var sut = BuildEphemeral();
@@ -317,19 +330,54 @@ public sealed class DevelopmentSigningKeySourceTests
     }
 
     [Fact]
-    public async Task A_second_read_disposes_the_key_the_first_read_left_unclaimed()
+    public async Task A_second_read_reports_the_same_key()
     {
-        var sut = BuildEphemeral();
+        using var sut = BuildEphemeral();
         var ct = TestContext.Current.CancellationToken;
-        await sut.ReadAsync(ct);
-        var firstKey = PendingPrivateKeyOf(sut)!;
 
+        var first = await sut.ReadAsync(ct);
+        var second = await sut.ReadAsync(ct);
+
+        second.SigningKey.PublicKey.RsaPublicParameters!.Value.Modulus
+            .Should().Equal(first.SigningKey.PublicKey.RsaPublicParameters!.Value.Modulus,
+                "minting a fresh key on a later read would invalidate every token already issued");
+    }
+
+    [Fact]
+    public async Task A_second_read_leaves_the_signer_claimable()
+    {
+        using var sut = BuildEphemeral();
+        var ct = TestContext.Current.CancellationToken;
+        var set = await sut.ReadAsync(ct);
         await sut.ReadAsync(ct);
 
-        var act = () => firstKey.ExportParameters(true);
-        act.Should().Throw<ObjectDisposedException>(
-            "the key the first read generated is unreachable once the second read replaces it");
-        sut.Dispose();
+        using var signer = await sut.CreateSignerAsync(set.SigningKey.Id, ct);
+        var signature = await signer.SignAsync("payload"u8.ToArray(), ct);
+
+        SigningAlgorithms.Verify(
+                SigningAlgorithm.RS256, set.SigningKey.PublicKey, "payload"u8, signature.Span)
+            .Should().BeTrue("the memoized key set and the pending private key must stay in step");
+    }
+
+    [Fact]
+    public async Task Concurrent_reads_report_one_key_and_leave_one_claimable_signer()
+    {
+        using var sut = BuildEphemeral();
+        var ct = TestContext.Current.CancellationToken;
+
+        var sets = await Task.WhenAll(
+            Enumerable.Range(0, 8).Select(_ => Task.Run(async () => await sut.ReadAsync(ct), ct)));
+
+        var moduli = sets
+            .Select(set => Convert.ToHexString(set.SigningKey.PublicKey.RsaPublicParameters!.Value.Modulus!))
+            .Distinct();
+        moduli.Should().ContainSingle("concurrent reads must not each mint their own key");
+
+        using var signer = await sut.CreateSignerAsync(sets[0].SigningKey.Id, ct);
+        var signature = await signer.SignAsync("payload"u8.ToArray(), ct);
+        SigningAlgorithms.Verify(
+                SigningAlgorithm.RS256, sets[0].SigningKey.PublicKey, "payload"u8, signature.Span)
+            .Should().BeTrue();
     }
 
     // ── Fail-closed file checks ──────────────────────────────────────────────────────────────────

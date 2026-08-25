@@ -338,6 +338,29 @@ public sealed class ZeeKayDaAuthBuilderSigningExtensionsTests
     }
 
     [Fact]
+    public async Task A_rejected_second_registration_leaves_the_first_one_unconfigured_by_it()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment { ContentRootPath = "/app" });
+        var builder = new ZeeKayDaAuthBuilder(services);
+        builder.AddInMemoryDevelopmentJwtSigningKeys();
+
+        try
+        {
+            builder.AddPersistedDevelopmentJwtSigningKeys("/tmp/keys");
+        }
+        catch (InvalidOperationException)
+        {
+            // The rejection is the point; what matters is what it left behind.
+        }
+
+        await using var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<DevelopmentSigningKeyOptions>>().Value;
+        options.PersistToDirectory.Should().BeNull(
+            "a rejected registration must not leave its configuration applied to the surviving one");
+    }
+
+    [Fact]
     public void AddInMemoryDevelopmentJwtSigningKeys_then_AddPersistedDevelopmentJwtSigningKeys_throws_InvalidOperationException()
     {
         var services = new ServiceCollection();
