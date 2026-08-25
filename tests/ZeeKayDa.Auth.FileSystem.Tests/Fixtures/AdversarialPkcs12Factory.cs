@@ -109,6 +109,61 @@ internal static class AdversarialPkcs12Factory
     }
 
     /// <summary>
+    /// A bundle carrying two complete keypairs, each certificate paired to its own key. Both are
+    /// legitimately "the certificate with a key", so which one signs is genuinely ambiguous.
+    /// </summary>
+    public static byte[] TwoPairedKeypairs(
+        string password, DateTimeOffset notBefore, DateTimeOffset notAfter)
+    {
+        var certificates = new Pkcs12SafeContents();
+        var keys = new Pkcs12SafeContents();
+
+        foreach (var (subject, id) in new[] { ("first", (byte)0x01), ("second", (byte)0x02) })
+        {
+            using var key = RSA.Create(2048);
+            using var certificate = new CertificateRequest(
+                $"CN={subject}", key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)
+                .CreateSelfSigned(notBefore, notAfter);
+
+            certificates.AddCertificate(certificate).Attributes.Add(new Pkcs9LocalKeyId([id]));
+            keys.AddShroudedKey(key, password, Pbe).Attributes.Add(new Pkcs9LocalKeyId([id]));
+        }
+
+        var builder = new Pkcs12Builder();
+        builder.AddSafeContentsEncrypted(certificates, password, Pbe);
+        builder.AddSafeContentsUnencrypted(keys);
+        builder.SealWithMac(password, HashAlgorithmName.SHA256, 100_000);
+
+        return builder.Encode();
+    }
+
+    /// <summary>
+    /// A bundle holding one certificate, whose key bag carries a <c>localKeyId</c> the certificate
+    /// does not. A lone certificate is unambiguous regardless.
+    /// </summary>
+    public static byte[] SingleCertificateWithUnmatchedKeyId(
+        string password, DateTimeOffset notBefore, DateTimeOffset notAfter)
+    {
+        using var key = RSA.Create(2048);
+        using var certificate = new CertificateRequest(
+            "CN=unmatched-key-id", key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)
+            .CreateSelfSigned(notBefore, notAfter);
+
+        var certificates = new Pkcs12SafeContents();
+        certificates.AddCertificate(certificate);
+
+        var keys = new Pkcs12SafeContents();
+        keys.AddShroudedKey(key, password, Pbe).Attributes.Add(new Pkcs9LocalKeyId([0x99]));
+
+        var builder = new Pkcs12Builder();
+        builder.AddSafeContentsEncrypted(certificates, password, Pbe);
+        builder.AddSafeContentsUnencrypted(keys);
+        builder.SealWithMac(password, HashAlgorithmName.SHA256, 100_000);
+
+        return builder.Encode();
+    }
+
+    /// <summary>
     /// A bundle carrying two certificates and no key bag, so nothing identifies which one signs.
     /// </summary>
     public static byte[] TwoCertificatesNoKey(

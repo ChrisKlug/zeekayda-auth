@@ -192,7 +192,9 @@ public sealed class PfxFileSigningKeySourceTests
 
         var keySet = await sut.ReadAsync(ct);
 
+        keySet.SigningKey.Id.Should().Be(new SourceKeyId(path));
         keySet.SigningKey.PublicKey.RsaPublicParameters.Should().NotBeNull();
+        keySet.SigningKey.NotBefore.Should().BeCloseTo(T0 - TimeSpan.FromDays(1), TimeSpan.FromSeconds(1));
     }
 
     [Fact]
@@ -256,9 +258,13 @@ public sealed class PfxFileSigningKeySourceTests
 
         var keySet = await sut.ReadAsync(ct);
 
-        signingSubject.Should().Be("CN=test-signing-leaf");
         keySet.SigningKey.PublicKey.RsaPublicParameters!.Value.Modulus
             .Should().BeEquivalentTo(signingPublicKey.Modulus, "the leaf's key signs, not the CA's");
+
+        // The certificate the old first-bag walk would have returned, proving the two differ and that
+        // this test would fail if selection regressed to it.
+        using var chainCertificate = X509CertificateLoader.LoadPkcs12(bundle, CorrectPassword);
+        chainCertificate.Subject.Should().Be(signingSubject);
     }
 
     [Fact]
@@ -298,6 +304,43 @@ public sealed class PfxFileSigningKeySourceTests
         var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
         exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.invalid_pfx");
         exception.Which.Message.Should().Contain("nothing identifying which one signs");
+    }
+
+    [Fact]
+    public async Task ReadAsync_rejects_a_bundle_whose_certificates_are_each_paired_to_their_own_key()
+    {
+        // Two complete keypairs in one bundle: both certificates are legitimately "the one with a
+        // key", so which signs is genuinely ambiguous and guessing would be worse than failing.
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        var bundle = AdversarialPkcs12Factory.TwoPairedKeypairs(
+            CorrectPassword, T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+        var path = tempDir.WriteBytes("current.pfx", bundle);
+        var sut = BuildSource(new PfxSigningFile(path, Password()));
+
+        var act = async () => await sut.ReadAsync(ct);
+
+        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.invalid_pfx");
+        exception.Which.Message.Should().Contain("ambiguous");
+    }
+
+    [Fact]
+    public async Task ReadAsync_loads_a_single_certificate_whose_key_bag_localKeyId_matches_nothing()
+    {
+        // A lone certificate is unambiguous whatever the attributes say, so a bundle whose key bag
+        // carries a localKeyId matching no certificate must still load rather than fail on a
+        // technicality.
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        var bundle = AdversarialPkcs12Factory.SingleCertificateWithUnmatchedKeyId(
+            CorrectPassword, T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+        var path = tempDir.WriteBytes("current.pfx", bundle);
+        var sut = BuildSource(new PfxSigningFile(path, Password()));
+
+        var keySet = await sut.ReadAsync(ct);
+
+        keySet.SigningKey.PublicKey.RsaPublicParameters.Should().NotBeNull();
     }
 
     // ── The three slots ──────────────────────────────────────────────────────────────────────────
