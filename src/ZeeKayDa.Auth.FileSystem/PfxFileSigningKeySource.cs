@@ -205,6 +205,7 @@ internal sealed class PfxFileSigningKeySource : ISigningKeySource
     {
         var certBags = new List<Pkcs12CertBag>();
         var keyLocalIds = new List<ReadOnlyMemory<byte>>();
+        var keyBagCount = 0;
 
         foreach (var safe in info.AuthenticatedSafe)
         {
@@ -234,9 +235,10 @@ internal sealed class PfxFileSigningKeySource : ISigningKeySource
                         certBags.Add(certBag);
                         break;
 
-                    // Recorded for pairing only. Neither is decrypted or imported.
+                    // Counted and recorded for pairing only. Neither is decrypted or imported.
                     case Pkcs12KeyBag:
                     case Pkcs12ShroudedKeyBag:
+                        keyBagCount++;
                         if (LocalKeyIdOf(bag) is { } keyId)
                             keyLocalIds.Add(keyId);
                         break;
@@ -287,10 +289,18 @@ internal sealed class PfxFileSigningKeySource : ISigningKeySource
         // No key bag at all — a published-only bundle with its private key stripped, which is the
         // right shape for a Previous or Next slot. A chain comes with it, so fall back to the one
         // certificate the exporter marked as the subject of the keypair.
-        var identified = certBags.Where(certBag => LocalKeyIdOf(certBag) is not null).ToList();
+        //
+        // Gated on there being no key bag rather than on no key bag carrying a localKeyId: a bundle
+        // that does hold a private key, unmarked, alongside a marked chain certificate would
+        // otherwise select the chain certificate here while CreateSignerAsync opens the real key —
+        // publishing one key and signing with another, which no relying party can verify.
+        if (keyBagCount == 0)
+        {
+            var identified = certBags.Where(certBag => LocalKeyIdOf(certBag) is not null).ToList();
 
-        if (identified.Count == 1)
-            return identified[0].GetCertificate();
+            if (identified.Count == 1)
+                return identified[0].GetCertificate();
+        }
 
         throw InvalidPfx(path,
             $"contains {certBags.Count} certificates with nothing identifying which one signs. " +

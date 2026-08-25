@@ -164,6 +164,108 @@ internal static class AdversarialPkcs12Factory
     }
 
     /// <summary>
+    /// The shape <c>openssl pkcs12 -export -nokeys</c> produces for a chain: no key bag at all, the
+    /// issuer's certificate unmarked, and the leaf carrying the <c>localKeyId</c> of the key that was
+    /// stripped. The right shape for a published-only slot.
+    /// </summary>
+    /// <returns>The bundle, and the public key of the certificate that should be selected.</returns>
+    public static (byte[] Bundle, RSAParameters ExpectedPublicKey) CertificateOnlyChainWithMarkedLeaf(
+        string password, DateTimeOffset notBefore, DateTimeOffset notAfter)
+    {
+        var (ca, leaf, leafKey) = BuildChain(notBefore, notAfter);
+        using (ca)
+        using (leaf)
+        using (leafKey)
+        {
+            var certificates = new Pkcs12SafeContents();
+            certificates.AddCertificate(ca);
+            certificates.AddCertificate(leaf).Attributes.Add(new Pkcs9LocalKeyId([0xAA]));
+
+            var builder = new Pkcs12Builder();
+            builder.AddSafeContentsEncrypted(certificates, password, Pbe);
+            builder.SealWithMac(password, HashAlgorithmName.SHA256, 100_000);
+
+            return (builder.Encode(), leafKey.ExportParameters(false));
+        }
+    }
+
+    /// <summary>
+    /// A bundle that does hold a private key, unmarked, alongside a marked <em>chain</em> certificate
+    /// — so the marked certificate is not the one the key belongs to. Selecting on the mark alone
+    /// would publish the issuer's key while the signer opens the leaf's.
+    /// </summary>
+    public static byte[] UnmarkedKeyBagWithMarkedChainCertificate(
+        string password, DateTimeOffset notBefore, DateTimeOffset notAfter)
+    {
+        var (ca, leaf, leafKey) = BuildChain(notBefore, notAfter);
+        using (ca)
+        using (leaf)
+        using (leafKey)
+        {
+            var certificates = new Pkcs12SafeContents();
+            certificates.AddCertificate(ca).Attributes.Add(new Pkcs9LocalKeyId([0xAA]));
+            certificates.AddCertificate(leaf);
+
+            var keys = new Pkcs12SafeContents();
+            keys.AddShroudedKey(leafKey, password, Pbe);
+
+            var builder = new Pkcs12Builder();
+            builder.AddSafeContentsEncrypted(certificates, password, Pbe);
+            builder.AddSafeContentsUnencrypted(keys);
+            builder.SealWithMac(password, HashAlgorithmName.SHA256, 100_000);
+
+            return builder.Encode();
+        }
+    }
+
+    /// <summary>
+    /// A bundle whose key bag names a <c>localKeyId</c> no certificate carries, with more than one
+    /// certificate present — so the key's own certificate is not in the file.
+    /// </summary>
+    public static byte[] KeyIdMatchingNoCertificate(
+        string password, DateTimeOffset notBefore, DateTimeOffset notAfter)
+    {
+        var (ca, leaf, leafKey) = BuildChain(notBefore, notAfter);
+        using (ca)
+        using (leaf)
+        using (leafKey)
+        {
+            var certificates = new Pkcs12SafeContents();
+            certificates.AddCertificate(ca);
+            certificates.AddCertificate(leaf);
+
+            var keys = new Pkcs12SafeContents();
+            keys.AddShroudedKey(leafKey, password, Pbe).Attributes.Add(new Pkcs9LocalKeyId([0xFE]));
+
+            var builder = new Pkcs12Builder();
+            builder.AddSafeContentsEncrypted(certificates, password, Pbe);
+            builder.AddSafeContentsUnencrypted(keys);
+            builder.SealWithMac(password, HashAlgorithmName.SHA256, 100_000);
+
+            return builder.Encode();
+        }
+    }
+
+    private static (X509Certificate2 Ca, X509Certificate2 Leaf, RSA LeafKey) BuildChain(
+        DateTimeOffset notBefore, DateTimeOffset notAfter)
+    {
+        using var caKey = RSA.Create(2048);
+        var caRequest = new CertificateRequest(
+            "CN=test-chain-ca", caKey, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        caRequest.CertificateExtensions.Add(new X509BasicConstraintsExtension(true, false, 0, true));
+        using var caWithKey = caRequest.CreateSelfSigned(notBefore.AddDays(-1), notAfter.AddDays(1));
+        var ca = X509CertificateLoader.LoadCertificate(caWithKey.Export(X509ContentType.Cert));
+
+        var leafKey = RSA.Create(2048);
+        var leafRequest = new CertificateRequest(
+            "CN=test-signing-leaf", leafKey, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        leafRequest.CertificateExtensions.Add(new X509BasicConstraintsExtension(false, false, 0, true));
+        var leaf = leafRequest.Create(caWithKey, notBefore, notAfter, [1, 2, 3, 4]);
+
+        return (ca, leaf, leafKey);
+    }
+
+    /// <summary>
     /// A bundle carrying two certificates and no key bag, so nothing identifies which one signs.
     /// </summary>
     public static byte[] TwoCertificatesNoKey(

@@ -343,6 +343,65 @@ public sealed class PfxFileSigningKeySourceTests
         keySet.SigningKey.PublicKey.RsaPublicParameters.Should().NotBeNull();
     }
 
+    [Fact]
+    public async Task ReadAsync_selects_the_marked_certificate_from_a_key_stripped_chain_bundle()
+    {
+        // The shape `openssl pkcs12 -export -nokeys` produces, and the right one for a published-only
+        // slot: no private key at all, but the chain comes with it, so the leaf is identified only by
+        // the localKeyId of the key that was stripped.
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        var (bundle, expectedPublicKey) = AdversarialPkcs12Factory.CertificateOnlyChainWithMarkedLeaf(
+            CorrectPassword, T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+        var currentPath = tempDir.WritePfxFile("current.pfx", CreateRsaCertificate(), CorrectPassword);
+        var previousPath = tempDir.WriteBytes("previous.pfx", bundle);
+        var sut = BuildSource(
+            new PfxFile(currentPath, Password()),
+            previous: new PfxFile(previousPath, Password()));
+
+        var keySet = await sut.ReadAsync(ct);
+
+        var previous = keySet.Keys.Single(k => k.Id.Value == previousPath);
+        previous.PublicKey.RsaPublicParameters!.Value.Modulus
+            .Should().BeEquivalentTo(expectedPublicKey.Modulus, "the leaf is the stripped key's certificate, not the CA");
+    }
+
+    [Fact]
+    public async Task ReadAsync_rejects_a_bundle_holding_an_unmarked_key_beside_a_marked_chain_certificate()
+    {
+        // The bundle does hold a private key, so the "no key bag, trust the mark" fallback must not
+        // fire: the marked certificate is the issuer's, while CreateSignerAsync would open the leaf's
+        // key. Publishing one key and signing with another is unverifiable at every relying party.
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        var bundle = AdversarialPkcs12Factory.UnmarkedKeyBagWithMarkedChainCertificate(
+            CorrectPassword, T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+        var path = tempDir.WriteBytes("current.pfx", bundle);
+        var sut = BuildSource(new PfxFile(path, Password()));
+
+        var act = async () => await sut.ReadAsync(ct);
+
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.invalid_pfx");
+    }
+
+    [Fact]
+    public async Task ReadAsync_rejects_a_bundle_whose_key_names_a_certificate_it_does_not_carry()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        var bundle = AdversarialPkcs12Factory.KeyIdMatchingNoCertificate(
+            CorrectPassword, T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+        var path = tempDir.WriteBytes("current.pfx", bundle);
+        var sut = BuildSource(new PfxFile(path, Password()));
+
+        var act = async () => await sut.ReadAsync(ct);
+
+        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.invalid_pfx");
+        exception.Which.Message.Should().Contain("not among the certificates it carries");
+    }
+
     // ── The three slots ──────────────────────────────────────────────────────────────────────────
 
     [Fact]
