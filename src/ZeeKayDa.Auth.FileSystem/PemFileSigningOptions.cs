@@ -39,10 +39,16 @@ public sealed class PemFileSigningOptions
     public PemSigningFile? Next { get; set; }
 
     /// <summary>
-    /// Gets or sets the JWS algorithm every configured slot is signed under. A certificate's key
-    /// does not itself declare RS256 vs PS256 — that choice is made here and must match each
-    /// certificate's actual key type (RSA algorithms for RSA certificates, EC algorithms for EC
-    /// certificates). Defaults to RS256.
+    /// Gets the JWS algorithm every configured slot is signed under. A certificate's key does not
+    /// itself declare RS256 vs PS256 — that choice is made by <c>AddPemFileSigning</c>'s
+    /// <c>algorithm</c> argument and must match each certificate's actual key type (RSA algorithms
+    /// for RSA certificates, EC algorithms for EC certificates).
     /// </summary>
-    public SigningAlgorithm Algorithm { get; set; } = SigningAlgorithm.RS256;
+    /// <remarks>
+    /// The setter is <see langword="internal"/> so the algorithm can be said exactly once, in the
+    /// registration argument. A publicly settable one would let a <c>configure</c> callback silently
+    /// beat that argument — the same "said twice, and the winner is documented nowhere" hazard the
+    /// two <c>AddPemFileSigning</c> overloads exist to prevent for the <see cref="Current"/> slot.
+    /// </remarks>
+    public SigningAlgorithm Algorithm { get; internal set; } = SigningAlgorithm.RS256;
 }

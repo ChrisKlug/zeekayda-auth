@@ -361,15 +361,16 @@ public sealed class ZeeKayDaAuthBuilderFileSigningExtensionsTests
     }
 
     [Fact]
-    public async Task AddPemFileSigning_slots_overload_lets_the_callback_override_the_algorithm_argument()
+    public async Task AddPemFileSigning_algorithm_argument_is_the_only_thing_that_sets_the_algorithm()
     {
+        // PemFileSigningOptions.Algorithm has an internal setter, so a configure callback cannot
+        // silently beat the argument — the same hazard the two overloads close for the Current slot.
+        // This test project can reach the internal setter through InternalsVisibleTo, which is
+        // exactly what makes it able to prove the argument still wins for an outside caller.
         var builder = NewBuilder();
 
-        builder.AddPemFileSigning(SigningAlgorithm.RS256, options =>
-        {
-            options.Current = new PemSigningFile("/etc/zeekayda/current.pem");
-            options.Algorithm = SigningAlgorithm.ES256;
-        });
+        builder.AddPemFileSigning(SigningAlgorithm.ES256, options =>
+            options.Current = new PemSigningFile("/etc/zeekayda/current.pem"));
 
         await using var provider = builder.Services.BuildServiceProvider();
         provider.GetRequiredService<IOptions<PemFileSigningOptions>>().Value.Algorithm

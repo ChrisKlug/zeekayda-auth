@@ -140,6 +140,35 @@ public sealed class StaticSigningKeyRing : ISigningKeyRing, IDisposable, IAsyncD
         GC.SuppressFinalize(this);
     }
 
+    /// <summary>
+    /// Rejects a signing key whose own validity window has not opened or has already closed.
+    /// </summary>
+    /// <remarks>
+    /// Checked against <paramref name="signingKey"/> alone and never against the published set: a
+    /// <c>Next</c> key whose window has not opened yet is the entire point of staging one, and a
+    /// <c>Previous</c> key outliving its window is why it is still published.
+    /// </remarks>
+    private static void ValidateSigningKeyWindow(SigningKey signingKey, DateTimeOffset now)
+    {
+        if (signingKey.NotBefore is { } notBefore && notBefore > now)
+        {
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "signing.signing_key_not_yet_valid",
+                    $"The Current signing key '{signingKey.Kid}' is not valid until {notBefore:O}. " +
+                    "Configure it as Next until then, and leave the key it succeeds as Current."));
+        }
+
+        if (signingKey.ExpiresAt is { } expiresAt && expiresAt <= now)
+        {
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "signing.signing_key_expired",
+                    $"The Current signing key '{signingKey.Kid}' expired at {expiresAt:O}. An " +
+                    "expired signing key issues tokens no relying party will accept."));
+        }
+    }
+
     async ValueTask ISigningKeyRing.InitializeAsync(CancellationToken cancellationToken)
     {
         var sourceKeys = await _source.ReadAsync(cancellationToken).ConfigureAwait(false);
@@ -154,29 +183,7 @@ public sealed class StaticSigningKeyRing : ISigningKeyRing, IDisposable, IAsyncD
 
         var set = SigningKeySetBuilder.Build(sourceKeys);
 
-        var now = _timeProvider.GetUtcNow();
-
-        // Both ends of the signing key's own validity window, checked against set.SigningKey alone
-        // and never against the published set: a Next key whose window has not opened yet is the
-        // entire point of staging one, and a Previous key outliving its window is why it is still
-        // published.
-        if (set.SigningKey.NotBefore is { } notBefore && notBefore > now)
-        {
-            throw new ZeeKayDaConfigurationException(
-                new ZeeKayDaConfigurationFailure(
-                    "signing.signing_key_not_yet_valid",
-                    $"The Current signing key '{set.SigningKey.Kid}' is not valid until {notBefore:O}. " +
-                    "Configure it as Next until then, and leave the key it succeeds as Current."));
-        }
-
-        if (set.SigningKey.ExpiresAt is { } expiresAt && expiresAt <= now)
-        {
-            throw new ZeeKayDaConfigurationException(
-                new ZeeKayDaConfigurationFailure(
-                    "signing.signing_key_expired",
-                    $"The Current signing key '{set.SigningKey.Kid}' expired at {expiresAt:O}. An " +
-                    "expired signing key issues tokens no relying party will accept."));
-        }
+        ValidateSigningKeyWindow(set.SigningKey, _timeProvider.GetUtcNow());
 
         var signer = await OpenSignerAsync(set.SigningKey, cancellationToken).ConfigureAwait(false);
         try

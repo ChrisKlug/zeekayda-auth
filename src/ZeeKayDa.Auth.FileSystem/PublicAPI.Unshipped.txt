@@ -2,7 +2,6 @@
 Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthBuilderFileSigningExtensions
 ZeeKayDa.Auth.FileSystem.PemFileSigningOptions
 ZeeKayDa.Auth.FileSystem.PemFileSigningOptions.Algorithm.get -> ZeeKayDa.Auth.Tokens.SigningAlgorithm
-ZeeKayDa.Auth.FileSystem.PemFileSigningOptions.Algorithm.set -> void
 ZeeKayDa.Auth.FileSystem.PemFileSigningOptions.Current.get -> ZeeKayDa.Auth.FileSystem.PemSigningFile?
 ZeeKayDa.Auth.FileSystem.PemFileSigningOptions.Current.set -> void
 ZeeKayDa.Auth.FileSystem.PemFileSigningOptions.Next.get -> ZeeKayDa.Auth.FileSystem.PemSigningFile?
