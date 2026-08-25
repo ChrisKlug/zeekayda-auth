@@ -34,11 +34,24 @@ throwing `ZeeKayDaConfigurationException` before private material exists. `Stati
 lifetime. `SigningKeySet.SigningKey` stays non-nullable: no reachable state here lacks a signing key, and
 `ISigningKeyRing` being framework-sealed lets a polling ring add `SigningKeyOrNull` additively later.
 
-**A ported source has no bootstrap exemption; slots decide.** The operator names `Current`, so a lone
-configured key is active through ordinary selection, and the ring rejects a `Current` whose validity
-window has not opened (`NotBefore`) or has closed (`ExpiresAt`) — checked against the signing key alone,
-since staging a key before its window opens is what `Next` is for. On the un-ported tiers the exemption
-holds for `KeySetOptions` only: a `KeySourceOptions` listing shrunk by revocation must not re-arm it.
+**A slot-configured ported source has no bootstrap exemption; slots decide.** The operator names
+`Current`, so a lone configured key is active through ordinary selection, and the ring rejects a
+`Current` whose validity window has not opened (`NotBefore`) or has closed (`ExpiresAt`) — checked
+against the signing key alone, since staging a key before its window opens is what `Next` is for. On
+the un-ported tiers the exemption holds for `KeySetOptions` only: a `KeySourceOptions` listing shrunk
+by revocation must not re-arm it.
+
+**The Key Vault remote source derives its slots from the vault's own version metadata; nothing is
+slot-configured.** One key, its versions: the newest enabled version inside its own validity window
+that has existed for `PreActivationDelay` signs; the next version in line, still ripening or carrying
+a future `nbf`, is published as staged; up to `PreviousVersionsToPublish` older enabled versions stay
+published, expired-but-enabled included. The delay derives from Key Vault's durable per-version
+`CreatedOn`, never first-seen time, so every replica and restart agrees; the chronologically-first
+version ever recorded is exempt, computed over the full history including disabled versions so a stale
+partial listing cannot promote a young key early. Disabling a version excludes it everywhere — the one
+revocation lever — and no eligible version fails startup closed (`PreActivationDelay = 0` is the
+operator escape hatch). Rotation is restart-based until #527, and the age gate is exactly what makes
+Key Vault's automatic rotation policy — which creates versions with no `nbf` — safe to promote.
 
 **One timeline engine, and the operator sets only `ActivateAt`.** `SigningKeyRotation` is a pure function
 over immutable public data that both un-ported tiers call. Every other instant is derived —

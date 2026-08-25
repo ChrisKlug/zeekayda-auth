@@ -54,6 +54,54 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- **BREAKING: Azure Key Vault remote signing is now an `ISigningKeySource` that derives its key slots from the vault's version metadata** (#519)
+
+  `AddAzureKeyVaultRemoteSigning` no longer registers an `IJwtSigningService`. It registers an
+  `AzureKeyVaultRemoteSigningKeySource` and a `StaticSigningKeyRing` over it. The registration call is
+  unchanged — one Key Vault key, one algorithm, one credential — but the vault is now read exactly
+  once, at startup, and never re-read: rotation is picked up by restarting the host.
+
+  Unlike the slot-configured providers, nothing here is configured into `Previous`/`Current`/`Next` —
+  the source derives the whole set from the vault's own durable per-version metadata, so every replica
+  and every restart computes the same answer:
+
+  - The **signing version** is the newest enabled version that is inside its own `nbf`/`exp` window
+    and was created at least `PreActivationDelay` ago (default one day). The chronologically-first
+    version the key has ever had is exempt from the delay, so a brand-new deployment starts
+    immediately.
+  - The version **next in line** — still younger than the delay, or carrying a future `nbf` — is
+    published as staged, so relying parties cache its public half before it ever signs.
+  - Up to `PreviousVersionsToPublish` (default 1) enabled versions older than the signing one stay
+    published, expired-but-enabled included, so tokens they signed remain verifiable. Disabling a
+    version in the vault removes it from every slot unconditionally — that is the revocation lever.
+
+  ```csharp
+  .AddAzureKeyVaultRemoteSigning(keyIdentifier, SigningAlgorithm.RS256, credential, options =>
+  {
+      options.PreviousVersionsToPublish = 2;                    // default 1
+      options.PreActivationDelay = TimeSpan.FromHours(12);      // default 1 day; Zero disables
+  });
+  ```
+
+  The age gate is what makes Key Vault's **automatic rotation policy** compose with restart-based
+  rotation: the policy creates new versions with no `nbf`, and a freshly created version simply rides
+  along as staged until it has been published for the delay, becoming the signer on the next restart
+  after that. If enabled versions exist but none is eligible, startup fails closed
+  (`signing.azure_key_vault.no_eligible_version`) naming when the next version ripens; setting
+  `PreActivationDelay` to `TimeSpan.Zero` is the operator escape hatch.
+
+  `AzureKeyVaultRemoteSigningOptions` loses its `KeySourceOptions` base — `RefreshInterval` and
+  `PublicationLead` are gone (there is nothing to refresh until automatic rotation lands in #527;
+  the pre-activation delay replaces the lead in age-based form) — and gains
+  `PreviousVersionsToPublish` and `PreActivationDelay`. A failed or empty vault read still always
+  throws rather than serving a partial key set, so an outage is never indistinguishable from
+  revocation, and disposing a signer still never tears down the shared, DI-owned SDK client.
+
+  The cached Key Vault provider (`AddAzureKeyVaultCachedSigning`) is unchanged and still runs on the
+  transitional `IJwtSigningService` model; its port is #520. Registering it after
+  `AddAzureKeyVaultRemoteSigning` in the same host is no longer detected (the transitional guard
+  only sees the reverse order) — a known, accepted gap that leaves with #520/#511.
+
 - **BREAKING: Windows Certificate Store signing is now an `ISigningKeySource` with three named key slots** (#518)
 
   `AddWindowsCertificateStoreSigning` no longer registers an `IJwtSigningService`. It registers a

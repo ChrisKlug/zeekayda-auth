@@ -11,8 +11,8 @@ namespace ZeeKayDa.Auth.AzureKeyVault.Tests.Fakes;
 /// so that <see cref="GetKeyMaterialAsync"/> can return a *fresh* object on every call — matching
 /// what the real Key Vault-backed <c>KeyVaultKeyReader</c> does (a new object per SDK call) and
 /// avoiding a shared-instance-disposed-twice hazard when the same version is loaded by more than
-/// one short-lived <c>AzureKeyVaultRemoteSigningJwtSigningService</c> instance across a test
-/// (the base class disposes the private key objects it was handed once superseded).
+/// one consumer across a test (<c>AzureKeyVaultRemoteSigningKeySource</c> disposes each key object
+/// as soon as its public parameters are exported).
 /// </summary>
 internal sealed class FakeKeyVaultKeyReader : IKeyVaultKeyReader
 {

@@ -42,6 +42,9 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
     [Fact]
     public void AddAzureKeyVaultRemoteSigning_throws_InvalidOperationException_when_IJwtSigningService_already_registered()
     {
+        // Transitional guard, removed with IJwtSigningService itself in #511: the cached Key Vault
+        // provider still registers an IJwtSigningService, and registering it first must be rejected
+        // here rather than leaving the application with two signing providers.
         var services = new ServiceCollection();
         services.AddSingleton<IJwtSigningService>(NoOpJwtSigningService.Instance);
         var builder = new ZeeKayDaAuthBuilder(services);
@@ -52,10 +55,22 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
             .WithMessage("*IJwtSigningService*already registered*");
     }
 
+    [Fact]
+    public void AddAzureKeyVaultRemoteSigning_throws_when_a_signing_key_source_is_already_registered()
+    {
+        var services = new ServiceCollection();
+        var builder = new ZeeKayDaAuthBuilder(services);
+        builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
+
+        var act = () => builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
+
+        act.Should().Throw<InvalidOperationException>();
+    }
+
     // ── Successful registration ──────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task AddAzureKeyVaultRemoteSigning_resolves_IJwtSigningService_as_the_azure_key_vault_implementation()
+    public async Task AddAzureKeyVaultRemoteSigning_registers_the_signing_key_ring_over_the_key_vault_source()
     {
         var services = new ServiceCollection();
         // The two Key Vault seams must be registered before the extension runs — it only
@@ -70,8 +85,29 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
         builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
         await using var provider = services.BuildServiceProvider();
-        var service = provider.GetRequiredService<IJwtSigningService>();
-        service.Should().BeOfType<AzureKeyVaultRemoteSigningJwtSigningService>();
+        provider.GetRequiredService<ISigningKeyRing>().Should().BeOfType<StaticSigningKeyRing>();
+        provider.GetService<ISigningKeySource>().Should().BeNull(
+            "the ring constructs and owns the one source instance — nothing may reach it through the container");
+        provider.GetService<IJwtSigningService>().Should().BeNull(
+            "the remote provider no longer registers the transitional IJwtSigningService");
+    }
+
+    [Fact]
+    public async Task AddAzureKeyVaultRemoteSigning_configures_the_options_it_was_called_with()
+    {
+        var services = new ServiceCollection();
+        var credential = new FakeTokenCredential();
+        var builder = new ZeeKayDaAuthBuilder(services);
+
+        builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, SigningAlgorithm.ES256, credential);
+
+        await using var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<Microsoft.Extensions.Options.IOptions<AzureKeyVaultRemoteSigningOptions>>().Value;
+        options.KeyIdentifier.Should().Be(KeyIdentifier);
+        options.Algorithm.Should().Be(SigningAlgorithm.ES256);
+        options.Credential.Should().BeSameAs(credential);
+        options.PreviousVersionsToPublish.Should().Be(1, "one previous version publishing is the documented default");
+        options.PreActivationDelay.Should().Be(TimeSpan.FromDays(1), "a one-day pre-activation delay is the documented default");
     }
 
     [Fact]
@@ -158,17 +194,19 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
     }
 
     [Fact]
-    public void AddAzureKeyVaultCachedSigning_throws_InvalidOperationException_when_AddAzureKeyVaultRemoteSigning_already_registered()
+    public void AddAzureKeyVaultRemoteSigning_throws_when_AddAzureKeyVaultCachedSigning_already_registered()
     {
-        // Only one signing key provider is allowed — the two Key Vault variants share the same
-        // IJwtSigningService registration guard, so mixing them in one host must also be rejected.
+        // Only one signing key provider is allowed. The cached provider still registers the
+        // transitional IJwtSigningService, which the remote provider's transitional guard detects.
+        // KNOWN GAP (documented in the extension): the reverse order — remote first, cached second —
+        // is not detectable, because the cached provider's IJwtSigningService guard cannot see a
+        // signing key source registration. Both the gap and the guard leave with #520/#511.
         var services = new ServiceCollection();
-        services.AddSingleton<IKeyVaultKeyReader>(new FakeKeyVaultKeyReader());
-        services.AddSingleton<IKeyVaultSigner>(new FakeKeyVaultSigner());
+        services.AddSingleton<IKeyVaultCertificateReader>(new FakeKeyVaultCertificateReader());
         var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
+        builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
-        var act = () => builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
+        var act = () => builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
         act.Should().Throw<InvalidOperationException>()
             .WithMessage("*IJwtSigningService*already registered*");

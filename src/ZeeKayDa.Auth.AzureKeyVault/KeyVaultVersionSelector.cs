@@ -1,21 +1,24 @@
 namespace ZeeKayDa.Auth.AzureKeyVault;
 
 /// <summary>
-/// Shared version-selection logic used by every Key Vault signing provider's <c>ListKeysAsync</c>.
+/// Shared version-selection logic used by every Key Vault signing provider.
 /// </summary>
 internal static class KeyVaultVersionSelector
 {
     /// <summary>
     /// Determines the chronologically-first version ever recorded for a Key Vault key or
-    /// certificate, from the full version history.
+    /// certificate, from the full version history. That version is the one exempt from the
+    /// publish-before-sign wait (<c>AzureKeyVaultRemoteSigningOptions.PreActivationDelay</c> for
+    /// the remote provider, <c>KeySourceOptions.PublicationLead</c> for the transitional cached
+    /// one) — a brand-new deployment has no earlier key whose relying parties need protecting.
     /// </summary>
     /// <remarks>
     /// Computed over every version, including disabled ones — never restricted to the enabled
     /// subset. Key Vault's list-versions read is only eventually consistent during a regional
     /// failover; if computed over a partial (enabled-only) read, a stale response could let
-    /// version #2 masquerade as "first ever" and activate immediately, bypassing the configured
-    /// publication lead. Over the full history, a stale read can only omit every version outright,
-    /// which the caller is expected to already fail closed on before calling this method.
+    /// version #2 masquerade as "first ever" and sign immediately, bypassing the configured
+    /// publish-before-sign wait. Over the full history, a stale read can only omit every version
+    /// outright, which the caller is expected to already fail closed on before calling this method.
     /// </remarks>
     /// <param name="allVersions">
     /// Every version of the key or certificate, including disabled ones. Must be non-empty — the
