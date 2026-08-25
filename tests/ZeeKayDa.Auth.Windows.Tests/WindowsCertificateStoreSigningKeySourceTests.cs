@@ -234,6 +234,58 @@ public sealed class WindowsCertificateStoreSigningKeySourceTests
     }
 
     [Fact]
+    public async Task ReadAsync_caches_nothing_when_a_slot_fails_to_read_and_a_retry_re_reads()
+    {
+        // Memoization must happen only after every slot has read and validated. If a failed read were
+        // cached, a process that hit a transient store failure at startup would be permanently stuck
+        // on it, and — worse — a later successful read could never correct it.
+        var ct = TestContext.Current.CancellationToken;
+        var reader = new FakeCertificateStoreReader();
+        using var certificate = CreateRsaCertificate();
+        var sut = BuildSource(reader);
+
+        var failing = async () => await sut.ReadAsync(ct);
+        await failing.Should().ThrowAsync<ZeeKayDaConfigurationException>(
+            "no certificate is in the store yet");
+
+        reader.AddCertificate(CurrentThumbprint, certificate);
+        var keySet = await sut.ReadAsync(ct);
+
+        keySet.SigningKey.Id.Should().Be(new SourceKeyId(CurrentThumbprint),
+            "the failed read must not have been cached, so the retry reads the store again");
+    }
+
+    [Fact]
+    public async Task ReadAsync_caches_nothing_when_the_slots_fail_validation_and_a_retry_re_reads()
+    {
+        // The same rule one step later: Current is missing, so every slot reads cleanly and
+        // SourceKeySet.Create is what rejects the set. That rejection must not be cached either.
+        var ct = TestContext.Current.CancellationToken;
+        var reader = new FakeCertificateStoreReader();
+        using var nextCertificate = CreateRsaCertificate();
+        using var currentCertificate = CreateRsaCertificate();
+        reader.AddCertificate(NextThumbprint, nextCertificate);
+        reader.AddCertificate(CurrentThumbprint, currentCertificate);
+        var options = new WindowsCertificateStoreSigningOptions
+        {
+            Next = CertificateLookup.ByThumbprint(NextThumbprint),
+            Algorithm = SigningAlgorithm.RS256,
+            StoreLocation = StoreLocation.CurrentUser,
+            StoreName = StoreName.My,
+        };
+        var sut = new WindowsCertificateStoreSigningKeySource(
+            Options.Create(options), reader, new FakeCertificateKeyExtractor());
+
+        var failing = async () => await sut.ReadAsync(ct);
+        await failing.Should().ThrowAsync<ZeeKayDaConfigurationException>("no Current slot is configured");
+
+        options.Current = CertificateLookup.ByThumbprint(CurrentThumbprint);
+        var keySet = await sut.ReadAsync(ct);
+
+        keySet.SigningKey.Id.Should().Be(new SourceKeyId(CurrentThumbprint));
+    }
+
+    [Fact]
     public async Task ReadAsync_reads_each_configured_slot_from_the_store_exactly_once_however_often_it_is_called()
     {
         var ct = TestContext.Current.CancellationToken;
