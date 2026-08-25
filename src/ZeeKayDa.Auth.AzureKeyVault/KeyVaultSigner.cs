@@ -46,10 +46,10 @@ internal sealed class KeyVaultSigner : IKeyVaultSigner
 
     /// <inheritdoc/>
     public async ValueTask<ReadOnlyMemory<byte>> SignAsync(
-        Uri keyVersionUri, string kid, SigningAlgorithm algorithm, byte[] signingInput, CancellationToken cancellationToken)
+        Uri keyVersionUri, string keyLabel, SigningAlgorithm algorithm, byte[] signingInput, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(keyVersionUri);
-        ArgumentException.ThrowIfNullOrEmpty(kid);
+        ArgumentException.ThrowIfNullOrEmpty(keyLabel);
         ArgumentNullException.ThrowIfNull(signingInput);
 
         var client = _clients.GetOrAdd(keyVersionUri, uri => new CryptographyClient(uri, _credential));
@@ -63,12 +63,12 @@ internal sealed class KeyVaultSigner : IKeyVaultSigner
         }
         catch (RequestFailedException ex) when (ex.Status == 429)
         {
-            throw new AzureKeyVaultSigningException(BuildThrottlingMessage(kid, ex), ex);
+            throw new AzureKeyVaultSigningException(BuildThrottlingMessage(keyLabel, ex), ex);
         }
         catch (RequestFailedException ex)
         {
             throw new AzureKeyVaultSigningException(
-                $"Key Vault signing request for key '{kid}' failed (HTTP {ex.Status}" +
+                $"Key Vault signing request for key version '{keyLabel}' failed (HTTP {ex.Status}" +
                 (ex.ErrorCode is null ? "" : $", ErrorCode: {ex.ErrorCode}") + ").",
                 ex);
         }
@@ -80,14 +80,14 @@ internal sealed class KeyVaultSigner : IKeyVaultSigner
             : throw new NotSupportedException(
                 $"Signing algorithm {algorithm} has no Azure Key Vault SignatureAlgorithm mapping.");
 
-    private static string BuildThrottlingMessage(string kid, RequestFailedException ex)
+    private static string BuildThrottlingMessage(string keyLabel, RequestFailedException ex)
     {
         var retryAfter = TryGetRetryAfter(ex);
         var retrySuffix = retryAfter is not null
             ? $" Retry after {retryAfter}."
             : " No Retry-After header was present on the response; back off and retry.";
 
-        return $"Key Vault throttled the signing request for key '{kid}' (HTTP 429)." + retrySuffix;
+        return $"Key Vault throttled the signing request for key version '{keyLabel}' (HTTP 429)." + retrySuffix;
     }
 
     private static string? TryGetRetryAfter(RequestFailedException ex)

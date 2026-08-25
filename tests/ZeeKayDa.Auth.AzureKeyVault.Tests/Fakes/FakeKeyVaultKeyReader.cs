@@ -37,6 +37,14 @@ internal sealed class FakeKeyVaultKeyReader : IKeyVaultKeyReader
     /// <summary>When set, <see cref="GetKeyVersionsAsync"/> throws this instead of yielding versions.</summary>
     public Exception? VersionsException { get; set; }
 
+    /// <summary>
+    /// When set, <see cref="GetKeyVersionsAsync"/> yields the first <c>AfterYielding</c> versions
+    /// normally and then throws <c>Exception</c> — simulating a listing that fails mid-enumeration
+    /// (e.g. a later page of a paged Key Vault response failing), the sharpest edge of the
+    /// never-a-partial-set contract.
+    /// </summary>
+    public (int AfterYielding, Exception Exception)? MidEnumerationFailure { get; set; }
+
     /// <summary>When set, <see cref="GetKeyMaterialAsync"/> throws this instead of returning material, for every version.</summary>
     public Exception? MaterialException { get; set; }
 
@@ -54,7 +62,8 @@ internal sealed class FakeKeyVaultKeyReader : IKeyVaultKeyReader
         bool enabled = true,
         DateTimeOffset? notBefore = null,
         DateTimeOffset? expiresOn = null,
-        RSAParameters? keyMaterial = null)
+        RSAParameters? keyMaterial = null,
+        Uri? id = null)
     {
         using var rsa = keyMaterial is null ? RSA.Create(2048) : null;
         var parameters = keyMaterial ?? rsa!.ExportParameters(false);
@@ -67,7 +76,7 @@ internal sealed class FakeKeyVaultKeyReader : IKeyVaultKeyReader
             _rsaPrivateMaterial[version] = rsa.ExportParameters(true);
 
         var info = new KeyVaultKeyVersionInfo(
-            MakeVersionUri(version), version, enabled, createdOn, notBefore, expiresOn);
+            id ?? MakeVersionUri(version), version, enabled, createdOn, notBefore, expiresOn);
         Versions.Add(info);
         return info;
     }
@@ -138,11 +147,16 @@ internal sealed class FakeKeyVaultKeyReader : IKeyVaultKeyReader
         if (VersionsException is not null)
             throw VersionsException;
 
+        var yielded = 0;
         foreach (var version in Versions)
         {
+            if (MidEnumerationFailure is { } failure && yielded == failure.AfterYielding)
+                throw failure.Exception;
+
             await Task.Yield();
             cancellationToken.ThrowIfCancellationRequested();
             yield return version;
+            yielded++;
         }
     }
 

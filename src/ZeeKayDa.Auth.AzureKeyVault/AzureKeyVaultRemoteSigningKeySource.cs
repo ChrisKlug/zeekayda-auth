@@ -24,8 +24,8 @@ namespace ZeeKayDa.Auth.AzureKeyVault;
 /// <see cref="AzureKeyVaultRemoteSigningOptions.PreActivationDelay"/> ago — except the
 /// chronologically-first version ever recorded, which is exempt from the delay so a brand-new
 /// deployment starts without waiting (see <see cref="KeyVaultVersionSelector"/>). The newest
-/// eligible version signs; the oldest enabled version newer than it (still ripening through the
-/// delay, or carrying a future <c>NotBefore</c>) is published as staged; and up to
+/// eligible version signs; every enabled version newer than it — whatever is keeping it from
+/// signing yet — is published as staged; and up to
 /// <see cref="AzureKeyVaultRemoteSigningOptions.PreviousVersionsToPublish"/> enabled versions older
 /// than the signing one stay published so relying parties can verify tokens they signed.
 /// </para>
@@ -132,33 +132,20 @@ internal sealed class AzureKeyVaultRemoteSigningKeySource : ISigningKeySource
             }
 
             var now = _timeProvider.GetUtcNow();
-            var signingIndex = enabledNewestFirst.FindIndex(
-                v => IsEligibleToSign(v, firstEverVersion, options.PreActivationDelay, now));
-
-            if (signingIndex < 0)
-                throw NoEligibleVersion(options, enabledNewestFirst, now);
-
-            var signing = enabledNewestFirst[signingIndex];
-
-            // Staged: the version next in line — the OLDEST enabled version newer than the signing
-            // one. Even newer versions stay unpublished until later restarts move them up the line.
-            KeyVaultKeyVersionInfo? staged = signingIndex > 0 ? enabledNewestFirst[signingIndex - 1] : null;
-
-            var previous = enabledNewestFirst
-                .Skip(signingIndex + 1)
-                .Take(options.PreviousVersionsToPublish)
-                .ToList();
+            var (signing, published) = SelectVersions(enabledNewestFirst, firstEverVersion, options, now);
 
             var signingKey = await ToSourceKeyAsync(signing, options, cancellationToken).ConfigureAwait(false);
 
-            var alsoPublished = new List<SourceKey>(previous.Count + 1);
-            foreach (var version in previous)
+            var alsoPublished = new List<SourceKey>(published.Count);
+            foreach (var version in published)
                 alsoPublished.Add(await ToSourceKeyAsync(version, options, cancellationToken).ConfigureAwait(false));
-            if (staged is { } stagedVersion)
-                alsoPublished.Add(await ToSourceKeyAsync(stagedVersion, options, cancellationToken).ConfigureAwait(false));
 
+            // The key set is built first and the signing version committed only after nothing can
+            // throw any more, so a failed read can never leave a signer openable for a version that
+            // was never reported in a key set.
+            var keySet = new SourceKeySet(signingKey, [.. alsoPublished]);
             _signingVersion = new SigningVersion(signing.Version, signing.Id);
-            return _keySet = new SourceKeySet(signingKey, [.. alsoPublished]);
+            return _keySet = keySet;
         }
         finally
         {
@@ -188,6 +175,52 @@ internal sealed class AzureKeyVaultRemoteSigningKeySource : ISigningKeySource
 
         return new ValueTask<ISigner>(new KeyVaultRemoteSigner(
             _signer, signingVersion.KeyVersionUri, signingVersion.Version, _options.Value.Algorithm));
+    }
+
+    /// <summary>
+    /// Selects the signing version and the versions published alongside it from
+    /// <paramref name="enabledNewestFirst"/>. The newest eligible version signs; every enabled
+    /// version newer than it is published as staged — not only the next in line, so two replicas
+    /// whose restarts straddle a version ripening still publish each other's signing key — and up to
+    /// <see cref="AzureKeyVaultRemoteSigningOptions.PreviousVersionsToPublish"/> versions older than
+    /// it stay published. Published versions are ordered older-first, then staged oldest-first.
+    /// </summary>
+    /// <exception cref="ZeeKayDaConfigurationException">
+    /// No version is eligible to sign, or the signing version's identifier URI is not pinned to its
+    /// version.
+    /// </exception>
+    private static (KeyVaultKeyVersionInfo Signing, IReadOnlyList<KeyVaultKeyVersionInfo> Published) SelectVersions(
+        List<KeyVaultKeyVersionInfo> enabledNewestFirst,
+        string firstEverVersion,
+        AzureKeyVaultRemoteSigningOptions options,
+        DateTimeOffset now)
+    {
+        var signingIndex = enabledNewestFirst.FindIndex(
+            v => IsEligibleToSign(v, firstEverVersion, options.PreActivationDelay, now));
+
+        if (signingIndex < 0)
+            throw NoEligibleVersion(options, enabledNewestFirst, now);
+
+        var signing = enabledNewestFirst[signingIndex];
+
+        // Defence-in-depth: the signer is later pinned to this URI, and CryptographyClient resolves
+        // a versionless key URI to the vault's LATEST version — a key the published set may not
+        // contain. The ring's self-test would catch the mismatched signature, but an unpinned URI
+        // is rejected here, where the failure can still name its cause.
+        if (!signing.Id.AbsolutePath.EndsWith($"/{signing.Version}", StringComparison.Ordinal))
+        {
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "signing.azure_key_vault.unversioned_key_uri",
+                    $"The identifier URI reported for Key Vault key version '{signing.Version}' is not pinned " +
+                    "to that version. Signing with an unpinned URI would use whatever version is newest at " +
+                    "sign time rather than the version whose public half was published."));
+        }
+
+        var previous = enabledNewestFirst.Skip(signingIndex + 1).Take(options.PreviousVersionsToPublish);
+        var staged = enabledNewestFirst.Take(signingIndex).Reverse();
+
+        return (signing, [.. previous, .. staged]);
     }
 
     /// <summary>
@@ -223,15 +256,17 @@ internal sealed class AzureKeyVaultRemoteSigningKeySource : ISigningKeySource
         DateTimeOffset now)
     {
         var ripensAt = enabledVersions
-            .Where(v => v.ExpiresOn is null || v.ExpiresOn > now)
-            .Select(v => (DateTimeOffset?)EligibleAt(v, options.PreActivationDelay))
+            .Select(v => (Version: v, At: EligibleAt(v, options.PreActivationDelay)))
+            .Where(c => c.Version.ExpiresOn is null || c.At < c.Version.ExpiresOn)
+            .Select(c => (DateTimeOffset?)c.At)
             .Min();
 
         var remedy = ripensAt is { } at
             ? $"The next version becomes eligible at {at:O}. Wait until then, or lower " +
               $"{nameof(AzureKeyVaultRemoteSigningOptions)}.{nameof(AzureKeyVaultRemoteSigningOptions.PreActivationDelay)} " +
               "(0 disables the delay) and restart."
-            : "Every enabled version has expired. Create a new key version.";
+            : "Every enabled version has expired or expires before it would become eligible. Create a " +
+              "new key version.";
 
         return new ZeeKayDaConfigurationException(
             new ZeeKayDaConfigurationFailure(

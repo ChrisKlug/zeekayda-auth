@@ -46,8 +46,9 @@ public sealed class AzureKeyVaultRemoteSigningOptions
     /// </summary>
     /// <remarks>
     /// Disabling a version in the vault always removes it from publication regardless of this
-    /// count — that is the operator's revocation lever. An expired-but-enabled older version still
-    /// publishes within the count: tokens it signed before expiry are still within their own
+    /// count — that is the operator's revocation lever, and because the vault is read once at
+    /// startup, it takes effect when the host next starts. An expired-but-enabled older version
+    /// still publishes within the count: tokens it signed before expiry are still within their own
     /// lifetime.
     /// </remarks>
     public int PreviousVersionsToPublish { get; set; } = 1;

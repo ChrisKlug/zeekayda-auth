@@ -178,8 +178,11 @@ public sealed class AzureKeyVaultRemoteSigningKeySourceTests
     }
 
     [Fact]
-    public async Task ReadAsync_publishes_only_the_next_in_line_when_several_staged_versions_exist()
+    public async Task ReadAsync_publishes_every_staged_version_when_several_exist()
     {
+        // Every enabled version newer than the signing one is published — not only the next in
+        // line — so two replicas whose restarts straddle a version ripening still publish each
+        // other's signing key.
         var ct = TestContext.Current.CancellationToken;
         var now = T0 + TimeSpan.FromDays(10);
         var reader = new FakeKeyVaultKeyReader();
@@ -191,8 +194,8 @@ public sealed class AzureKeyVaultRemoteSigningKeySourceTests
         var keySet = await sut.ReadAsync(ct);
 
         keySet.SigningKey.Id.Should().Be(new SourceKeyId("v1"));
-        PublishedIds(keySet).Should().BeEquivalentTo(["v1", "v2"],
-            "v2 is next in line; v3 surfaces once a later restart moves it up");
+        PublishedIds(keySet).Should().Equal(["v1", "v2", "v3"],
+            "a replica restarting after v3 ripens will sign with it, so this replica's JWKS must already carry it");
     }
 
     [Fact]
@@ -213,7 +216,7 @@ public sealed class AzureKeyVaultRemoteSigningKeySourceTests
     }
 
     [Fact]
-    public async Task ReadAsync_expired_newer_version_does_not_sign_but_is_still_published_as_next_in_line()
+    public async Task ReadAsync_expired_newer_version_does_not_sign_but_is_still_published_as_staged()
     {
         var ct = TestContext.Current.CancellationToken;
         var now = T0 + TimeSpan.FromDays(30);
@@ -371,6 +374,67 @@ public sealed class AzureKeyVaultRemoteSigningKeySourceTests
     }
 
     [Fact]
+    public async Task ReadAsync_throws_when_the_signing_versions_identifier_uri_is_not_version_pinned()
+    {
+        // Defence-in-depth behind the ring's self-test: an unpinned URI would make the SDK's
+        // CryptographyClient sign with whatever version is newest at sign time, not the version
+        // whose public half was published.
+        var ct = TestContext.Current.CancellationToken;
+        var reader = new FakeKeyVaultKeyReader();
+        reader.AddRsaVersion("v1", createdOn: T0, id: new Uri("https://fake-vault.vault.azure.net/keys/fake-key"));
+        var sut = BuildSource(reader, new FakeTimeProvider(T0));
+
+        var act = async () => await sut.ReadAsync(ct);
+
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .WithMessage("*unversioned_key_uri*");
+    }
+
+    [Fact]
+    public async Task ReadAsync_throws_and_does_not_memoize_when_the_listing_fails_mid_enumeration()
+    {
+        // The sharpest edge of the never-a-partial-set contract: versions already received before
+        // the failure must not be served as if they were the whole history.
+        var ct = TestContext.Current.CancellationToken;
+        var reader = new FakeKeyVaultKeyReader();
+        reader.AddRsaVersion("v1", createdOn: T0);
+        reader.AddRsaVersion("v2", createdOn: T0 + TimeSpan.FromDays(10));
+        reader.AddRsaVersion("v3", createdOn: T0 + TimeSpan.FromDays(20));
+        reader.MidEnumerationFailure = (2, new ZeeKayDaConfigurationException(
+            new ZeeKayDaConfigurationFailure("signing.azure_key_vault.startup_failure", "Simulated paging failure.")));
+        var sut = BuildSource(reader, new FakeTimeProvider(T0 + TimeSpan.FromDays(30)));
+
+        var act = async () => await sut.ReadAsync(ct);
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .WithMessage("*startup_failure*");
+
+        reader.MidEnumerationFailure = null;
+        var keySet = await sut.ReadAsync(ct);
+
+        keySet.SigningKey.Id.Should().Be(new SourceKeyId("v3"),
+            "the partial two-version read must not have been memoized — the retry sees the full history");
+    }
+
+    [Fact]
+    public async Task ReadAsync_no_eligible_version_error_does_not_name_a_ripening_time_past_that_versions_own_expiry()
+    {
+        // v1 (first ever) is disabled; v2 is too young to sign and expires before it would ripen,
+        // so there is no instant at which any version becomes eligible — the error must say to
+        // create a new version rather than promise a wait that can never succeed.
+        var ct = TestContext.Current.CancellationToken;
+        var now = T0 + TimeSpan.FromDays(10);
+        var reader = new FakeKeyVaultKeyReader();
+        reader.AddRsaVersion("v1", createdOn: T0, enabled: false);
+        reader.AddRsaVersion("v2", createdOn: now - TimeSpan.FromHours(1), expiresOn: now + TimeSpan.FromHours(1));
+        var sut = BuildSource(reader, new FakeTimeProvider(now));
+
+        var act = async () => await sut.ReadAsync(ct);
+
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .WithMessage("*no_eligible_version*Create a new key version*");
+    }
+
+    [Fact]
     public async Task ReadAsync_propagates_a_version_listing_failure()
     {
         var ct = TestContext.Current.CancellationToken;
@@ -429,6 +493,23 @@ public sealed class AzureKeyVaultRemoteSigningKeySourceTests
         reader.GetKeyVersionsCallCount.Should().Be(1);
         PublishedIds(second).Should().Equal(["v1"],
             "a version rotated in after startup has no effect until the host restarts");
+    }
+
+    [Fact]
+    public async Task ReadAsync_reads_the_vault_exactly_once_under_concurrent_readers()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var reader = new FakeKeyVaultKeyReader();
+        reader.AddRsaVersion("v1", createdOn: T0);
+        var sut = BuildSource(reader, new FakeTimeProvider(T0));
+
+        var first = sut.ReadAsync(ct).AsTask();
+        var second = sut.ReadAsync(ct).AsTask();
+        var results = await Task.WhenAll(first, second);
+
+        results[1].Should().BeSameAs(results[0],
+            "the read gate serialises concurrent readers onto the one memoized key set");
+        reader.GetKeyVersionsCallCount.Should().Be(1);
     }
 
     // ── CreateSignerAsync ────────────────────────────────────────────────────────────────────────

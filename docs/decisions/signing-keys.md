@@ -43,9 +43,10 @@ by revocation must not re-arm it.
 
 **The Key Vault remote source derives its slots from the vault's own version metadata; nothing is
 slot-configured.** One key, its versions: the newest enabled version inside its own validity window
-that has existed for `PreActivationDelay` signs; the next version in line, still ripening or carrying
-a future `nbf`, is published as staged; up to `PreviousVersionsToPublish` older enabled versions stay
-published, expired-but-enabled included. The delay derives from Key Vault's durable per-version
+that has existed for `PreActivationDelay` signs; every enabled version newer than it — whatever keeps
+it from signing yet — is published as staged, so replicas restarting on either side of a version
+ripening still publish each other's signing key; up to `PreviousVersionsToPublish` older enabled
+versions stay published, expired-but-enabled included. The delay derives from Key Vault's durable per-version
 `CreatedOn`, never first-seen time, so every replica and restart agrees; the chronologically-first
 version ever recorded is exempt, computed over the full history including disabled versions so a stale
 partial listing cannot promote a young key early. Disabling a version excludes it everywhere — the one

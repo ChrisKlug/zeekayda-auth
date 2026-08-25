@@ -69,8 +69,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
     and was created at least `PreActivationDelay` ago (default one day). The chronologically-first
     version the key has ever had is exempt from the delay, so a brand-new deployment starts
     immediately.
-  - The version **next in line** — still younger than the delay, or carrying a future `nbf` — is
-    published as staged, so relying parties cache its public half before it ever signs.
+  - Every enabled version **newer than the signing one** — whatever is keeping it from signing
+    yet — is published as staged, so relying parties cache its public half before it ever signs,
+    and so two replicas whose restarts straddle a version ripening still publish each other's
+    signing key.
   - Up to `PreviousVersionsToPublish` (default 1) enabled versions older than the signing one stay
     published, expired-but-enabled included, so tokens they signed remain verifiable. Disabling a
     version in the vault removes it from every slot unconditionally — that is the revocation lever.

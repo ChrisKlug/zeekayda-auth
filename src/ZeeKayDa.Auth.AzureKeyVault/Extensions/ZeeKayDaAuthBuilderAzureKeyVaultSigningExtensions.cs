@@ -132,14 +132,14 @@ public static class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensions
     /// <see cref="AddAzureKeyVaultRemoteSigning"/> as the alternative.
     /// </para>
     /// <para>
-    /// This provider still runs on the transitional <see cref="IJwtSigningService"/> model (its
-    /// port to a signing key source is #520): the certificate's first-ever version activates
-    /// immediately, every rotated-in version waits out
-    /// <see cref="ZeeKayDa.Auth.Tokens.KeySourceOptions.PublicationLead"/> after publication before
-    /// it signs, and an active version reaching its <c>ExpiresOn</c> with no enabled successor
-    /// fails closed with a configuration error. Because this provider re-downloads private key
-    /// material on every <see cref="ZeeKayDa.Auth.Tokens.KeySourceOptions.RefreshInterval"/>, that
-    /// traffic is more sensitive than the remote-signing provider's public-key-only reads.
+    /// This provider runs on the <see cref="IJwtSigningService"/> model and polls the vault: the
+    /// certificate's first-ever version activates immediately, every rotated-in version waits out
+    /// <see cref="ZeeKayDa.Auth.Tokens.KeySourceOptions.PublicationLead"/> measured from Key
+    /// Vault's <c>CreatedOn</c> before it signs, and an active version reaching its
+    /// <c>ExpiresOn</c> with no enabled successor fails closed with a configuration error. Because
+    /// this provider re-downloads private key material on every
+    /// <see cref="ZeeKayDa.Auth.Tokens.KeySourceOptions.RefreshInterval"/>, that traffic is more
+    /// sensitive than the remote-signing provider's public-key-only reads.
     /// </para>
     /// </remarks>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>

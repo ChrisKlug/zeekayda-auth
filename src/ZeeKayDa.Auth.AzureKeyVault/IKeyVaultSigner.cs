@@ -15,15 +15,15 @@ internal interface IKeyVaultSigner
     /// <paramref name="keyVersionUri"/>.
     /// </summary>
     /// <param name="keyVersionUri">The versioned key identifier URI to sign with.</param>
-    /// <param name="kid">
-    /// The public, non-leaking JWK thumbprint identifying the key — used in any exception message
-    /// this call raises, so a sign-time fault never discloses <paramref name="keyVersionUri"/>'s
-    /// vault/key name to a caller.
+    /// <param name="keyLabel">
+    /// A label identifying the key in any exception message this call raises — the caller passes
+    /// the Key Vault version string. It must never contain the vault or key name, so a sign-time
+    /// fault never discloses <paramref name="keyVersionUri"/>'s vault/key name to a caller.
     /// </param>
     /// <param name="algorithm">The JWS algorithm to use.</param>
     /// <param name="signingInput">The exact bytes to sign — Key Vault computes the digest itself.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>The raw signature bytes in the format required by <paramref name="algorithm"/>.</returns>
     ValueTask<ReadOnlyMemory<byte>> SignAsync(
-        Uri keyVersionUri, string kid, SigningAlgorithm algorithm, byte[] signingInput, CancellationToken cancellationToken);
+        Uri keyVersionUri, string keyLabel, SigningAlgorithm algorithm, byte[] signingInput, CancellationToken cancellationToken);
 }
