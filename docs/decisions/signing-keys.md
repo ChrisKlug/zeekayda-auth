@@ -97,15 +97,13 @@ specified by RFC 7517/7518 and held to known-answer vectors — a maintenance co
 over the dependency.
 
 **One signing provider per application, and nothing is registered for the source.**
-`AddZeeKayDaSigningKeySource<TSource>()` (type and factory overloads) enforces this with an internal
-marker: a second call throws, whichever overload either call used and whether or not `TSource`
-matches. A repeat registration of the same type is deliberately not a no-op — a provider's
-`Add<Provider>Signing()` method registers the source *and* configures its options beside it, so a
-second call treated as a no-op here would still have applied a second configuration callback, and the
-two calls are two opinions about what signs the application's tokens. A pre-existing manual
-`ISigningKeyRing` registration also throws — but only an already-registered one; one added afterwards
-wins under MS DI's last-wins resolution, undetectably. The ring factory re-validates the composed
-marker set, throwing on more than one registration however it arrived.
+`AddZeeKayDaSigningKeySource<TSource>()` (both overloads) enforces this with an internal marker: a
+second call always throws, whichever overload either used and whether or not `TSource` matches.
+A same-type repeat is deliberately not a no-op — a provider registers its source *and* configures
+options beside it, so a "harmless" duplicate still applies a second configuration callback. A manual
+`ISigningKeyRing` also throws, but only one registered already; one added afterwards wins under MS
+DI's last-wins resolution, undetectably. The ring factory re-validates the composed marker set,
+throwing on more than one registration.
 `ISigningKeySource` itself is never registered: the ring factory constructs it directly, unreachable
 from the container, owns its lifetime alongside the signer's, disposing it once at shutdown normally
 after the signer, and rejects `IAsyncDisposable` without `IDisposable` at registration and construction.
