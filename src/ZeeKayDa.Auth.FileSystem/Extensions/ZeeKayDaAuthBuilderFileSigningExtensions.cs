@@ -128,9 +128,9 @@ public static class ZeeKayDaAuthBuilderFileSigningExtensions
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(configure);
 
-        // Transitional, removed with IJwtSigningService itself in #511. The Windows certificate-store
-        // and Azure Key Vault providers are not ported to a signing key source yet, so
-        // AddZeeKayDaSigningKeySource below cannot see their registrations. Without this, registering
+        // Transitional, removed with IJwtSigningService itself in #511. The Azure Key Vault providers
+        // are not ported to a signing key source yet, so AddZeeKayDaSigningKeySource below cannot see
+        // their registrations. Without this, registering
         // one of them and then this one would leave the application with two signing providers rather
         // than the one it is allowed. The reverse order is not detectable from here and is deferred
         // until those ports land.
@@ -255,9 +255,9 @@ public static class ZeeKayDaAuthBuilderFileSigningExtensions
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(configure);
 
-        // Transitional, removed with IJwtSigningService itself in #511. The Windows certificate-store
-        // and Azure Key Vault providers are not ported to a signing key source yet, so
-        // AddZeeKayDaSigningKeySource below cannot see their registrations. Without this, registering
+        // Transitional, removed with IJwtSigningService itself in #511. The Azure Key Vault providers
+        // are not ported to a signing key source yet, so AddZeeKayDaSigningKeySource below cannot see
+        // their registrations. Without this, registering
         // one of them and then this one would leave the application with two signing providers rather
         // than the one it is allowed. The reverse order is not detectable from here and is deferred
         // until those ports land.
