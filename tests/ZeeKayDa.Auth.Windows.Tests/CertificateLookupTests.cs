@@ -129,6 +129,27 @@ public sealed class CertificateLookupTests
     }
 
     [Fact]
+    public void The_equality_gate_cannot_be_replaced_by_a_lookup_mode()
+    {
+        // Symmetry across two lookup modes is structural, not a convention each mode has to honour:
+        // the null check and the exact-type check live on the base and cannot be overridden, and a
+        // mode supplies only EqualsCore, which the base calls once both have passed. A second mode
+        // cannot be built here to demonstrate it directly — EqualsCore is private protected, so even
+        // this assembly's InternalsVisibleTo grant cannot derive from CertificateLookup — so the
+        // invariant is pinned on the metadata instead.
+        var equals = typeof(CertificateLookup).GetMethod(nameof(CertificateLookup.Equals), [typeof(CertificateLookup)])!;
+
+        equals.IsFinal.Should().BeTrue("a lookup mode must not be able to override the null and type checks");
+
+        var equalsCore = typeof(CertificateLookup)
+            .GetMethod("EqualsCore", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+
+        equalsCore.IsAbstract.Should().BeTrue("every lookup mode must supply its own comparison");
+        equalsCore.IsFamilyAndAssembly.Should().BeTrue(
+            "private protected keeps the hierarchy closed to this assembly, matching the constructor");
+    }
+
+    [Fact]
     public void ToString_names_the_thumbprint_for_diagnostics()
     {
         CertificateLookup.ByThumbprint(CleanThumbprint).ToString().Should().Contain(CleanThumbprint);

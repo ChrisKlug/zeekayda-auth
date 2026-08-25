@@ -25,9 +25,12 @@ public sealed class ThumbprintCertificateLookup : CertificateLookup
     internal override string NormalizedThumbprint => Thumbprint;
 
     /// <inheritdoc/>
-    public override bool Equals(CertificateLookup? other) =>
-        other is ThumbprintCertificateLookup lookup
-        && string.Equals(Thumbprint, lookup.Thumbprint, StringComparison.Ordinal);
+    /// <remarks>
+    /// The cast is safe: <see cref="CertificateLookup.Equals(CertificateLookup)"/> has already
+    /// established that <paramref name="other"/> is non-null and of exactly this type.
+    /// </remarks>
+    private protected override bool EqualsCore(CertificateLookup other) =>
+        string.Equals(Thumbprint, ((ThumbprintCertificateLookup)other).Thumbprint, StringComparison.Ordinal);
 
     /// <inheritdoc/>
     public override int GetHashCode() => StringComparer.Ordinal.GetHashCode(Thumbprint);

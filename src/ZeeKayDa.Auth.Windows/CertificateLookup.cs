@@ -88,7 +88,27 @@ public abstract class CertificateLookup : IEquatable<CertificateLookup>
     /// </summary>
     /// <param name="other">The lookup to compare with.</param>
     /// <returns><see langword="true"/> when both name the same certificate the same way.</returns>
-    public abstract bool Equals(CertificateLookup? other);
+    /// <remarks>
+    /// Not virtual. The null check and the exact-type check live here, once, so symmetry across two
+    /// different lookup modes is structurally true rather than a rule each future mode has to
+    /// remember — a mode that compared with <c>is</c> instead would make <c>a.Equals(b)</c> and
+    /// <c>b.Equals(a)</c> disagree whenever one mode's type derived from the other's. A mode supplies
+    /// only <see cref="EqualsCore"/>, which runs after both checks have passed.
+    /// </remarks>
+    public bool Equals(CertificateLookup? other) =>
+        other is not null && other.GetType() == GetType() && EqualsCore(other);
+
+    /// <summary>
+    /// Compares this lookup with <paramref name="other"/>, which is guaranteed to be non-null and of
+    /// exactly this lookup's own type.
+    /// </summary>
+    /// <param name="other">The lookup to compare with. Safe to cast to the implementing type.</param>
+    /// <returns><see langword="true"/> when both name the same certificate.</returns>
+    /// <remarks>
+    /// <see langword="private protected"/>, so only a lookup mode declared in this assembly can
+    /// supply one — the same closure the constructor gives, extended to equality.
+    /// </remarks>
+    private protected abstract bool EqualsCore(CertificateLookup other);
 
     /// <inheritdoc/>
     public abstract override int GetHashCode();

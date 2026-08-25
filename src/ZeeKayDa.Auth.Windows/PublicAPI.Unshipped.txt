@@ -1,6 +1,7 @@
 #nullable enable
 Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthBuilderWindowsCertificateStoreSigningExtensions
 ZeeKayDa.Auth.Windows.CertificateLookup
+ZeeKayDa.Auth.Windows.CertificateLookup.Equals(ZeeKayDa.Auth.Windows.CertificateLookup? other) -> bool
 ZeeKayDa.Auth.Windows.ThumbprintCertificateLookup
 ZeeKayDa.Auth.Windows.ThumbprintCertificateLookup.Thumbprint.get -> string!
 ZeeKayDa.Auth.Windows.WindowsCertificateStoreSigningOptions
@@ -14,9 +15,7 @@ ZeeKayDa.Auth.Windows.WindowsCertificateStoreSigningOptions.Previous.set -> void
 ZeeKayDa.Auth.Windows.WindowsCertificateStoreSigningOptions.StoreLocation.get -> System.Security.Cryptography.X509Certificates.StoreLocation
 ZeeKayDa.Auth.Windows.WindowsCertificateStoreSigningOptions.StoreName.get -> System.Security.Cryptography.X509Certificates.StoreName
 ZeeKayDa.Auth.Windows.WindowsCertificateStoreSigningOptions.WindowsCertificateStoreSigningOptions() -> void
-abstract ZeeKayDa.Auth.Windows.CertificateLookup.Equals(ZeeKayDa.Auth.Windows.CertificateLookup? other) -> bool
 override ZeeKayDa.Auth.Windows.CertificateLookup.Equals(object? obj) -> bool
-override ZeeKayDa.Auth.Windows.ThumbprintCertificateLookup.Equals(ZeeKayDa.Auth.Windows.CertificateLookup? other) -> bool
 override ZeeKayDa.Auth.Windows.ThumbprintCertificateLookup.GetHashCode() -> int
 override ZeeKayDa.Auth.Windows.ThumbprintCertificateLookup.ToString() -> string!
 override abstract ZeeKayDa.Auth.Windows.CertificateLookup.GetHashCode() -> int
