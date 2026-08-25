@@ -41,18 +41,28 @@ against the signing key alone, since staging a key before its window opens is wh
 the un-ported tiers the exemption holds for `KeySetOptions` only: a `KeySourceOptions` listing shrunk
 by revocation must not re-arm it.
 
-**The Key Vault remote source derives its slots from the vault's own version metadata; nothing is
-slot-configured.** One key, its versions: the newest enabled version inside its own validity window
-that has existed for `PreActivationDelay` signs; every enabled version newer than it — whatever keeps
-it from signing yet — is published as staged, so replicas restarting on either side of a version
-ripening still publish each other's signing key; up to `PreviousVersionsToPublish` older enabled
-versions stay published, expired-but-enabled included. The delay derives from Key Vault's durable per-version
-`CreatedOn`, never first-seen time, so every replica and restart agrees; the chronologically-first
-version ever recorded is exempt, computed over the full history including disabled versions so a stale
-partial listing cannot promote a young key early. Disabling a version excludes it everywhere — the one
-revocation lever — and no eligible version fails startup closed (`PreActivationDelay = 0` is the
-operator escape hatch). Rotation is restart-based until #527, and the age gate is exactly what makes
-Key Vault's automatic rotation policy — which creates versions with no `nbf` — safe to promote.
+**The Key Vault sources derive their slots from the vault's own version metadata; nothing is
+slot-configured, and the derivation is one shared function.** One key (remote) or certificate
+(cached), its versions, one selector (`KeyVaultVersionSelector.SelectVersions`): the newest enabled
+version inside its own validity window that has existed for `PreActivationDelay` signs; every enabled
+version newer than it — whatever keeps it from signing yet — is published as staged, so replicas
+restarting on either side of a version ripening still publish each other's signing key; up to
+`PreviousVersionsToPublish` older enabled versions stay published, expired-but-enabled included. The
+delay derives from Key Vault's durable per-version `CreatedOn`, never first-seen time, so every
+replica and restart agrees; the chronologically-first version ever recorded is exempt, computed over
+the full history including disabled versions so a stale partial listing cannot promote a young key
+early. A listing entry missing `Enabled` or `CreatedOn` is rejected, never defaulted — both readers
+fail closed on the two fields the derivation rests on. Disabling a version excludes it everywhere —
+the one revocation lever — and no eligible version fails startup closed (`PreActivationDelay = 0` is
+the operator escape hatch). Rotation is restart-based until #527, and the age gate is exactly what
+makes Key Vault's automatic rotation — which creates versions with no `nbf` — safe to promote.
+
+**The cached Key Vault source downloads private material for exactly one version.** Reads publish
+public `Cer` halves only (no `secrets/get`); the signing version's private key is downloaded once, in
+`CreateSignerAsync`, and cross-checked against the public key the read published — the linked secret
+and the `Cer` are separate vault reads that could diverge, and a divergence is named rather than
+surfacing as a generic self-test failure. A published-only version's private key never enters the
+process.
 
 **One timeline engine, and the operator sets only `ActivateAt`.** `SigningKeyRotation` is a pure function
 over immutable public data that both un-ported tiers call. Every other instant is derived —

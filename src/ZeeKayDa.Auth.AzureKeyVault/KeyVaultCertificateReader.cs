@@ -80,14 +80,36 @@ internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
                 throw MapUnexpectedFailure(ex);
             }
 
-            yield return new KeyVaultCertificateVersionInfo(
-                current.Id,
-                current.Version,
-                current.Enabled ?? true,
-                current.CreatedOn ?? DateTimeOffset.MinValue,
-                current.NotBefore,
-                current.ExpiresOn);
+            yield return MapVersion(current, _certificateName, _vaultUri);
         }
+    }
+
+    /// <summary>
+    /// Maps one SDK <see cref="CertificateProperties"/> onto
+    /// <see cref="KeyVaultCertificateVersionInfo"/>, failing closed on a listing entry missing its
+    /// <c>Enabled</c> or <c>CreatedOn</c> attribute — the two fields the entire version-selection
+    /// derivation rests on. A default would be fail-open: an absent <c>CreatedOn</c> read as
+    /// ancient satisfies the pre-activation age gate immediately, and an absent <c>Enabled</c> read
+    /// as enabled bypasses the revocation lever.
+    /// </summary>
+    /// <exception cref="ZeeKayDaConfigurationException">
+    /// <paramref name="properties"/> carries no <c>Enabled</c> or no <c>CreatedOn</c> value.
+    /// </exception>
+    internal static KeyVaultCertificateVersionInfo MapVersion(
+        CertificateProperties properties, string certificateName, Uri vaultUri)
+    {
+        if (properties.Enabled is not { } enabled || properties.CreatedOn is not { } createdOn)
+        {
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "signing.azure_key_vault.incomplete_version_metadata",
+                    $"Key Vault returned version '{properties.Version}' of certificate '{certificateName}' in " +
+                    $"vault '{vaultUri}' without its Enabled or CreatedOn attribute. Version selection depends " +
+                    "on both, so an incomplete listing fails closed rather than guessing."));
+        }
+
+        return new KeyVaultCertificateVersionInfo(
+            properties.Id, properties.Version, enabled, createdOn, properties.NotBefore, properties.ExpiresOn);
     }
 
     /// <inheritdoc/>

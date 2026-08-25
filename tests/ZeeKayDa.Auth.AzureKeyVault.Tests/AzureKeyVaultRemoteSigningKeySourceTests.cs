@@ -435,6 +435,43 @@ public sealed class AzureKeyVaultRemoteSigningKeySourceTests
     }
 
     [Fact]
+    public async Task ReadAsync_no_eligible_version_error_names_the_NotBefore_instant_when_it_is_later_than_the_age_gate()
+    {
+        // A staged version can be blocked by its own nbf even after the age gate is satisfied — the
+        // error must name the LATER of the two instants, since waiting out only the age gate would
+        // still not let it sign.
+        var ct = TestContext.Current.CancellationToken;
+        var now = T0 + TimeSpan.FromDays(10);
+        var notBefore = now + TimeSpan.FromDays(3);
+        var reader = new FakeKeyVaultKeyReader();
+        reader.AddRsaVersion("v1", createdOn: T0, enabled: false);
+        reader.AddRsaVersion("v2", createdOn: now - TimeSpan.FromHours(1), notBefore: notBefore);
+        var sut = BuildSource(reader, new FakeTimeProvider(now));
+
+        var act = async () => await sut.ReadAsync(ct);
+
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .WithMessage($"*no_eligible_version*{notBefore:O}*");
+    }
+
+    [Fact]
+    public async Task ReadAsync_no_eligible_version_error_names_the_ripening_instant_of_a_version_expiring_after_it()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var now = T0 + TimeSpan.FromDays(10);
+        var reader = new FakeKeyVaultKeyReader();
+        reader.AddRsaVersion("v1", createdOn: T0, enabled: false);
+        reader.AddRsaVersion("v2", createdOn: now - TimeSpan.FromHours(1), expiresOn: now + TimeSpan.FromDays(30));
+        var sut = BuildSource(reader, new FakeTimeProvider(now));
+
+        var act = async () => await sut.ReadAsync(ct);
+
+        var ripensAt = now - TimeSpan.FromHours(1) + DefaultPreActivationDelay;
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .WithMessage($"*no_eligible_version*{ripensAt:O}*");
+    }
+
+    [Fact]
     public async Task ReadAsync_no_eligible_version_error_says_create_a_new_version_when_every_enabled_version_has_expired()
     {
         // An already-expired version's PAST eligibility instant must not be presented as a wait

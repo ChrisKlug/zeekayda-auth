@@ -54,6 +54,48 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- **BREAKING: Azure Key Vault cached signing is now an `ISigningKeySource`, downloading private material for exactly one certificate version** (#520)
+
+  `AddAzureKeyVaultCachedSigning` no longer registers an `IJwtSigningService`. It registers an
+  `AzureKeyVaultCachedSigningKeySource` and a `StaticSigningKeyRing` over it. The registration call
+  is unchanged — one Key Vault certificate, one algorithm, one credential — and the vault is now
+  read exactly once, at startup: rotation is picked up by restarting the host.
+
+  The version-to-slot derivation is **shared with the remote provider** (#519), moved into
+  `KeyVaultVersionSelector.SelectVersions` and identical for both: the newest enabled version
+  inside its own validity window that has existed for `PreActivationDelay` (default one day,
+  first-ever version exempt) signs; every newer enabled version is published as staged; up to
+  `PreviousVersionsToPublish` (default 1) older enabled versions stay published; disabling a
+  version in the vault removes it from every slot. `AzureKeyVaultCachedSigningOptions` loses its
+  `KeySourceOptions` base (`RefreshInterval`/`PublicationLead` gone) and gains those two properties.
+
+  What is specific to the cached provider tightened rather than changed:
+
+  - **Private material is downloaded for exactly one version — the signing one.** `ReadAsync`
+    reads every published version, the signing one included, as public `Cer` material only, so
+    `secrets/get` is exercised for a single version and a published-only version's private key
+    never enters the process. Under the old polling model, only the *active* version's key was
+    downloaded too — but per refresh; now it is once, at startup, when the ring opens the signer.
+  - The **secret-vs-Cer cross-check** survives: the downloaded private key's public component must
+    match the public key the read published for that version, and a divergence fails startup with
+    the cause named (`AzureKeyVaultSigningException`, surfaced through the ring's
+    `signing.signer_unavailable` failure) rather than as a generic self-test failure.
+  - Both Key Vault readers now **fail closed on incomplete listing metadata**
+    (`signing.azure_key_vault.incomplete_version_metadata`): a version reported without `Enabled`
+    or `CreatedOn` is rejected instead of being defaulted to enabled-and-ancient, which would have
+    bypassed the age gate and the revocation lever.
+
+  `AzureKeyVaultCachedSigningMemoryResidencyVerifier` is deleted: the transition-driven disposal it
+  verified does not exist under a read-once ring (the idle-residency bound #489/#427 asked for
+  returns with #527). `KeyVaultSigningKeyDescriptorFactory` is deleted with its last caller — the
+  framework's `SigningKeySetBuilder` performs all algorithm/key-type validation.
+
+  With both Key Vault providers now registering through `AddZeeKayDaSigningKeySource`, the
+  double-registration gap accepted in #548 — remote-then-cached going undetected — is closed: a
+  second Key Vault signing registration throws in **both** orders. No first-party provider
+  registers an `IJwtSigningService` any more; the transitional guards in every provider extension
+  now cover only a third-party still on the old contract, until #511 deletes it.
+
 - **BREAKING: Azure Key Vault remote signing is now an `ISigningKeySource` that derives its key slots from the vault's version metadata** (#519)
 
   `AddAzureKeyVaultRemoteSigning` no longer registers an `IJwtSigningService`. It registers an

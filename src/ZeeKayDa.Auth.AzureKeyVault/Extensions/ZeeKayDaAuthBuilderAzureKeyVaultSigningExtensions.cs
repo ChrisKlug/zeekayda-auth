@@ -72,12 +72,10 @@ public static class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensions
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(credential);
 
-        // Transitional, removed with IJwtSigningService itself in #511. The cached Key Vault
-        // provider below is not ported to a signing key source yet (#520), so
-        // AddZeeKayDaSigningKeySource cannot see its registration. Without this, registering it and
-        // then this provider would leave the application with two signing providers rather than the
-        // one it is allowed. The reverse order is not detectable from here and is deferred until
-        // that port lands.
+        // Transitional, removed with IJwtSigningService itself in #511. No first-party provider
+        // registers an IJwtSigningService any more; this rejects a composition where the
+        // application still carries a third-party provider on the old contract, which
+        // AddZeeKayDaSigningKeySource below cannot see.
         builder.ThrowIfAlreadyRegistered(typeof(IJwtSigningService));
 
         // Registered first so a second signing key source is rejected before this method applies any
@@ -132,14 +130,19 @@ public static class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensions
     /// <see cref="AddAzureKeyVaultRemoteSigning"/> as the alternative.
     /// </para>
     /// <para>
-    /// This provider runs on the <see cref="IJwtSigningService"/> model and polls the vault: the
-    /// certificate's first-ever version activates immediately, every rotated-in version waits out
-    /// <see cref="ZeeKayDa.Auth.Tokens.KeySourceOptions.PublicationLead"/> measured from Key
-    /// Vault's <c>CreatedOn</c> before it signs, and an active version reaching its
-    /// <c>ExpiresOn</c> with no enabled successor fails closed with a configuration error. Because
-    /// this provider re-downloads private key material on every
-    /// <see cref="ZeeKayDa.Auth.Tokens.KeySourceOptions.RefreshInterval"/>, that traffic is more
-    /// sensitive than the remote-signing provider's public-key-only reads.
+    /// The vault is read exactly once, at startup — rotation is picked up by restarting the host.
+    /// Rotate by creating a new version of the certificate: it is published as staged until it has
+    /// existed for <see cref="AzureKeyVaultCachedSigningOptions.PreActivationDelay"/>, so relying
+    /// parties see its public half in the JWKS before it ever signs, and a restart after that
+    /// promotes it to the signing key. Versions it succeeds stay published per
+    /// <see cref="AzureKeyVaultCachedSigningOptions.PreviousVersionsToPublish"/>; disabling a
+    /// version in the vault removes it from publication unconditionally. If no enabled version is
+    /// eligible to sign, startup fails closed with a configuration error.
+    /// </para>
+    /// <para>
+    /// Private key material is downloaded for exactly one version — the signing one. Every other
+    /// published version is read as public <c>Cer</c> material only, so <c>secrets/get</c> is
+    /// needed for one version and a published-only version's private key never enters the process.
     /// </para>
     /// </remarks>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
@@ -172,12 +175,20 @@ public static class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensions
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(credential);
 
-        // Defensive/idempotent: guarantees ISigningKeyRetirementWindowProvider and
-        // IOptions<AuthorizationServerOptions> are resolvable even when this package is used
-        // standalone, without ZeeKayDa.Auth.AspNetCore's AddZeeKayDaAuth().
-        builder.Services.AddZeeKayDaAuthCore();
-
+        // Transitional, removed with IJwtSigningService itself in #511. No first-party provider
+        // registers an IJwtSigningService any more; this rejects a composition where the
+        // application still carries a third-party provider on the old contract, which
+        // AddZeeKayDaSigningKeySource below cannot see.
         builder.ThrowIfAlreadyRegistered(typeof(IJwtSigningService));
+
+        // Registered first so a second signing key source is rejected before this method applies any
+        // of its own configuration — a caller that catches the rejection must not be left with this
+        // call's options callbacks applied to the surviving registration.
+        builder.Services.AddZeeKayDaSigningKeySource<AzureKeyVaultCachedSigningKeySource>();
+
+        // Defensive/idempotent: guarantees the core services are resolvable even when this package is
+        // used standalone, without ZeeKayDa.Auth.AspNetCore's AddZeeKayDaAuth().
+        builder.Services.AddZeeKayDaAuthCore();
 
         builder.Services.AddOptions<AzureKeyVaultCachedSigningOptions>()
             .Configure(options =>
@@ -196,9 +207,6 @@ public static class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensions
 
         builder.Services.TryAddSingleton<TimeProvider>(TimeProvider.System);
         builder.Services.TryAddSingleton<IKeyVaultCertificateReader, KeyVaultCertificateReader>();
-        builder.Services.AddSingleton<IJwtSigningService, AzureKeyVaultCachedSigningJwtSigningService>();
-        builder.Services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupVerifier, AzureKeyVaultCachedSigningMemoryResidencyVerifier>());
 
         return builder;
     }
