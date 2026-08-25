@@ -28,11 +28,26 @@ internal sealed class FakeCertificateKeyExtractor : ICertificateKeyExtractor
     public void OverridePrivateKey(string thumbprint, AsymmetricAlgorithm privateKey, SigningKeyType keyType) =>
         _privateKeyOverridesByThumbprint[thumbprint] = (privateKey, keyType);
 
-    public (AsymmetricAlgorithm PublicKey, SigningKeyType KeyType) ExtractPublicKey(X509Certificate2 certificate, string thumbprint) =>
-        WindowsCertificateKeyExtractor.ExtractPublicKey(certificate, thumbprint);
+    /// <summary>
+    /// Every thumbprint <see cref="ExtractPrivateKey"/> has been called for, in call order. A slot
+    /// that is only ever published must never appear here.
+    /// </summary>
+    public List<string> PrivateKeyExtractions { get; } = [];
 
-    public (AsymmetricAlgorithm PrivateKey, SigningKeyType KeyType) ExtractPrivateKey(X509Certificate2 certificate, string thumbprint) =>
-        _privateKeyOverridesByThumbprint.TryGetValue(thumbprint, out var overridden)
+    /// <summary>Every thumbprint <see cref="ExtractPublicKey"/> has been called for, in call order.</summary>
+    public List<string> PublicKeyExtractions { get; } = [];
+
+    public (AsymmetricAlgorithm PublicKey, SigningKeyType KeyType) ExtractPublicKey(X509Certificate2 certificate, string thumbprint)
+    {
+        PublicKeyExtractions.Add(thumbprint);
+        return WindowsCertificateKeyExtractor.ExtractPublicKey(certificate, thumbprint);
+    }
+
+    public (AsymmetricAlgorithm PrivateKey, SigningKeyType KeyType) ExtractPrivateKey(X509Certificate2 certificate, string thumbprint)
+    {
+        PrivateKeyExtractions.Add(thumbprint);
+        return _privateKeyOverridesByThumbprint.TryGetValue(thumbprint, out var overridden)
             ? overridden
             : WindowsCertificateKeyExtractor.ExtractPrivateKey(certificate, thumbprint);
+    }
 }

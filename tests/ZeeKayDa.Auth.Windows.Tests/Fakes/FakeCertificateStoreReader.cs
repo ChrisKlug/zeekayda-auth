@@ -23,6 +23,13 @@ internal sealed class FakeCertificateStoreReader : ICertificateStoreReader
     public void AddCertificate(string thumbprint, X509Certificate2 certificate) =>
         _certificates[ThumbprintFormat.Normalize(thumbprint)] = certificate;
 
+    /// <summary>
+    /// Removes a certificate from the fake store, so a test can simulate an operator deleting one
+    /// from the real store while the process is running.
+    /// </summary>
+    public void RemoveCertificate(string thumbprint) =>
+        _certificates.Remove(ThumbprintFormat.Normalize(thumbprint));
+
     public X509Certificate2 GetCertificate(string normalizedThumbprint, StoreLocation storeLocation, StoreName storeName)
     {
         Calls.Add(normalizedThumbprint);

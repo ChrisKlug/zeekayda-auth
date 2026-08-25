@@ -4,62 +4,91 @@ using ZeeKayDa.Auth.Tokens;
 namespace ZeeKayDa.Auth.Windows;
 
 /// <summary>
-/// Configuration options for <c>AddWindowsCertificateStoreSigning</c>.
+/// Configuration options for <c>AddWindowsCertificateStoreSigning</c>: the three named signing key
+/// slots, the store they are all found in, and the algorithm they are signed under.
 /// </summary>
 /// <remarks>
-/// The set of registered thumbprints is fixed at configuration time; only the wall clock crossing
-/// each certificate's <c>NotBefore</c>/<c>NotAfter</c> advances which one is active.
-/// <see cref="KeySetOptions.PublicationLead"/> here is only an advisory too-soon-activation
-/// startup warning — there is nothing to re-download here. Picking up a rotated-in,
-/// removed, or replaced certificate requires a process restart: register the successor via
-/// <see cref="AddCertificate"/> ahead of its intended activation time and redeploy.
+/// The slots are read once, at startup, and never re-read — removing or replacing a configured
+/// certificate in the store afterwards has no effect on what the process signs with or publishes.
+/// Rotating means moving a certificate between slots and restarting: stage the successor as
+/// <see cref="Next"/> so its public half is published ahead of time, then promote it to
+/// <see cref="Current"/> and demote the certificate it succeeds to <see cref="Previous"/> so tokens
+/// it signed still verify.
 /// </remarks>
-public sealed class WindowsCertificateStoreSigningOptions : KeySetOptions
+public sealed class WindowsCertificateStoreSigningOptions
 {
-    private readonly List<string> _additionalThumbprints = [];
+    /// <summary>
+    /// Gets or sets the previously active certificate, published so relying parties can still
+    /// verify tokens it signed, or <see langword="null"/> when there is none. Never used to sign,
+    /// and no private-key handle is ever extracted for it — though a store entry always carries its
+    /// private key, so it is briefly reachable while the certificate is read. See
+    /// <see cref="WindowsCertificateStoreSigningOptions"/>'s provider for what that does and does not
+    /// promise.
+    /// </summary>
+    public CertificateLookup? Previous { get; set; }
 
     /// <summary>
-    /// Gets or sets the thumbprint of the required/primary certificate. Set by
-    /// <c>AddWindowsCertificateStoreSigning</c>.
+    /// Gets or sets the certificate that signs. Required — startup fails when no
+    /// <see cref="Current"/> is configured.
     /// </summary>
-    public string Thumbprint { get; set; } = string.Empty;
+    public CertificateLookup? Current { get; set; }
 
     /// <summary>
-    /// Gets or sets the store location to search. Set by <c>AddWindowsCertificateStoreSigning</c>.
+    /// Gets or sets a certificate staged to become active later, published in advance so relying
+    /// parties have already cached it by the time it starts signing, or <see langword="null"/> when
+    /// there is none. Never used to sign, and no private-key handle is ever extracted for it, on the
+    /// same terms as <see cref="Previous"/>.
     /// </summary>
-    public StoreLocation StoreLocation { get; set; }
+    /// <remarks>
+    /// A certificate whose <c>NotBefore</c> has not arrived yet belongs here. Configuring one as
+    /// <see cref="Current"/> fails startup with <c>signing.signing_key_not_yet_valid</c>.
+    /// <para>
+    /// <b>Nothing verifies that a certificate was staged here before it was promoted.</b> With a
+    /// fixed, operator-edited set of slots there is no observed history to check it against, so
+    /// staging a successor long enough ahead for relying parties to have re-fetched the JWKS is the
+    /// operator's decision, not something this provider can enforce. Replacing <see cref="Current"/>
+    /// in place and restarting is accepted silently, and will reject tokens at any relying party
+    /// still holding a cached key set.
+    /// </para>
+    /// </remarks>
+    public CertificateLookup? Next { get; set; }
 
     /// <summary>
-    /// Gets or sets the store name to search. Set by <c>AddWindowsCertificateStoreSigning</c>.
+    /// Gets the JWS algorithm every configured slot is signed under. A certificate's key does not
+    /// itself declare RS256 vs PS256 — that choice is made by
+    /// <c>AddWindowsCertificateStoreSigning</c>'s <c>algorithm</c> argument and must match each
+    /// certificate's actual key type (RSA algorithms for RSA certificates, EC algorithms for EC
+    /// certificates).
     /// </summary>
-    public StoreName StoreName { get; set; }
+    /// <remarks>
+    /// The setter is <see langword="internal"/> so the algorithm can be said exactly once, in the
+    /// registration argument. A publicly settable one would let a <c>configure</c> callback silently
+    /// beat that argument — the "said twice, and the winner is documented nowhere" hazard the two
+    /// <c>AddWindowsCertificateStoreSigning</c> overloads exist to prevent for the
+    /// <see cref="Current"/> slot.
+    /// </remarks>
+    public SigningAlgorithm Algorithm { get; internal set; } = SigningAlgorithm.RS256;
 
     /// <summary>
-    /// Gets or sets the JWS algorithm to use when signing. A certificate's key does not itself
-    /// declare RS256 vs PS256 — that choice is made here and must match the certificate's actual
-    /// key type (RSA algorithms for RSA certificates, EC algorithms for EC certificates). Defaults
-    /// to RS256.
+    /// Gets the store location every slot's certificate is looked up in. Set by
+    /// <c>AddWindowsCertificateStoreSigning</c>'s <c>storeLocation</c> argument.
     /// </summary>
-    public SigningAlgorithm Algorithm { get; set; } = SigningAlgorithm.RS256;
+    /// <remarks>
+    /// <see langword="internal"/> setter for the same reason as <see cref="Algorithm"/>: a callback
+    /// that silently beat the argument would search a different store than the registration named,
+    /// and unlike a wrong algorithm that mismatch is invisible until the certificate is not found.
+    /// (Leaving it unset entirely is not the hazard — <see langword="default"/> is <c>0</c>, which
+    /// is not a defined <see cref="StoreLocation"/> member at all and which <c>X509Store</c>
+    /// rejects. The hazard is a callback setting it to a real but unintended store.)
+    /// </remarks>
+    public StoreLocation StoreLocation { get; internal set; }
 
     /// <summary>
-    /// Gets the thumbprints of every additional certificate registered via
-    /// <see cref="AddCertificate"/>, in registration order.
+    /// Gets the store name every slot's certificate is looked up in. Set by
+    /// <c>AddWindowsCertificateStoreSigning</c>'s <c>storeName</c> argument.
     /// </summary>
-    public IReadOnlyList<string> AdditionalThumbprints => _additionalThumbprints;
-
-    /// <summary>
-    /// Registers an additional certificate — by thumbprint, from the same
-    /// <see cref="StoreLocation"/> and <see cref="StoreName"/> configured on
-    /// <c>AddWindowsCertificateStoreSigning</c> — to support rotation with overlapping validity
-    /// windows.
-    /// </summary>
-    /// <param name="thumbprint">The additional certificate's thumbprint.</param>
-    /// <returns>This instance, so calls can be chained.</returns>
-    public WindowsCertificateStoreSigningOptions AddCertificate(string thumbprint)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(thumbprint);
-        _additionalThumbprints.Add(ThumbprintFormat.Normalize(thumbprint));
-        return this;
-    }
+    /// <remarks>
+    /// <see langword="internal"/> setter for the same reasons as <see cref="StoreLocation"/>.
+    /// </remarks>
+    public StoreName StoreName { get; internal set; }
 }

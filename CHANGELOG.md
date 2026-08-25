@@ -54,6 +54,75 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- **BREAKING: Windows Certificate Store signing is now an `ISigningKeySource` with three named key slots** (#518)
+
+  `AddWindowsCertificateStoreSigning` no longer registers an `IJwtSigningService`. It registers a
+  `WindowsCertificateStoreSigningKeySource` and a `StaticSigningKeyRing` over it, and splits into two
+  overloads:
+
+  ```csharp
+  // One signing certificate, no rotation staged.
+  .AddWindowsCertificateStoreSigning(
+      CertificateLookup.ByThumbprint("A1B2..."), SigningAlgorithm.RS256, StoreLocation.LocalMachine, StoreName.My);
+
+  // The three slots, all found in the one store named by the arguments.
+  .AddWindowsCertificateStoreSigning(SigningAlgorithm.RS256, StoreLocation.LocalMachine, StoreName.My, options =>
+  {
+      options.Previous = CertificateLookup.ByThumbprint("A1B2...");
+      options.Current  = CertificateLookup.ByThumbprint("C3D4...");
+      options.Next     = CertificateLookup.ByThumbprint("E5F6...");
+  });
+  ```
+
+  **Slots hold a `CertificateLookup`, not a thumbprint string.** `CertificateLookup.ByThumbprint`
+  normalizes what certificate tooling produces — embedded spaces, casing, and the invisible U+200E
+  LEFT-TO-RIGHT MARK that `certmgr` and the Certificates MMC snap-in prepend when a thumbprint is
+  copied from their UI — and throws `ArgumentException` for a value with no hex digits at all, so a
+  configured slot always names a usable certificate by construction.
+
+  `CertificateLookup` is an abstract base with one shipped mode, `ThumbprintCertificateLookup`, and
+  each factory is declared to return the base. Adding a lookup mode later is therefore a new derived
+  type and a new factory — no property renamed, no signature changed, and no member forced from
+  `string` to `string?`. Only `ByThumbprint` exists today, because a subject name can match several
+  certificates and choosing which of them signs is a decision of its own. The hierarchy is closed
+  (the constructor is `private protected`) and the types are hand-written classes with explicit
+  equality rather than records, so there is no synthesized `with` expression that could produce a
+  lookup which never passed through a factory's validation.
+
+  `WindowsCertificateStoreSigningOptions` loses its `KeySetOptions` base (and with it
+  `PublicationLead`), its `Thumbprint`, `AdditionalThumbprints` and `AddCertificate` members, and
+  carries `Previous`/`Current`/`Next` plus `Algorithm`, `StoreLocation` and `StoreName`. `Current` is
+  required; `Previous` and `Next` are independently optional. Two slots naming the same certificate is
+  a startup failure. The setters on `Algorithm`, `StoreLocation` and `StoreName` are internal, so each
+  is said exactly once, in the registration argument — a `configure` callback silently beating the
+  `storeLocation` argument would not fail, it would quietly search a different store. The single-
+  certificate overload takes no `configure` callback at all, so the certificate it names is
+  unambiguously the one that signs.
+
+  **Which certificate signs is now decided entirely by which slot it is configured in, never by the
+  clock.** The single-certificate bootstrap exemption is gone, and a certificate's `NotBefore` no
+  longer selects among registered certificates: the ring hard-fails a `Current` whose validity window
+  has not opened or has already closed. Staging a successor ahead of its `NotBefore` is what `Next` is
+  for.
+
+  **The store is read exactly once, at startup, and never re-read.** Removing, replacing, or adding a
+  certificate afterwards has no effect on what the process signs with or publishes until it restarts.
+
+  The provider's own algorithm/key-type check is deleted. `SigningKeySetBuilder` already rejects the
+  same mismatch centrally, plus EC curve pairing the local check did not cover, keyed on the source id
+  — the certificate's thumbprint — so the failure still names the certificate. The provider likewise
+  performs no key-pairing check of its own; the ring's per-handoff self-test is the only one.
+
+  **What a published-only slot promises here is weaker than on the PEM provider, deliberately stated
+  as such.** Opening a store entry hands back the certificate and its private-key association
+  together — the store offers no public-half-only read — so a `Previous` or `Next` private key is
+  briefly reachable through the certificate object regardless. The guarantee this provider makes is
+  an access-path one: no code path extracts a private-key handle for any slot during a read, each
+  slot's certificate is read transiently and disposed immediately once its public parameters are
+  exported, and `CreateSignerAsync` is the only place private material is extracted and rejects any
+  id that is not `Current`. The PEM provider's certificate-only slots give the strictly stronger
+  property that the private key is absent from the process entirely; the two are not equivalent.
+
 - **BREAKING: PFX file signing is now an `ISigningKeySource` with three named key slots, and a published-only bundle's private key is never decrypted** (#517)
 
   `AddPfxFileSigning` no longer registers an `IJwtSigningService`. It registers a
