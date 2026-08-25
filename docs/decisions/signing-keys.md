@@ -22,46 +22,47 @@ express a `kid` that leaks a vault URI, certificate thumbprint, or file path int
 
 **A second, expand-only signing model sits beside `JwtSigningService<TOptions>` until the old model is
 deleted, in two tiers: `KeySetOptions` for a fixed set an operator edits directly, `KeySourceOptions`
-for a set a provider polls from an external store.** Keys are three named slots —
-`Previous`/`Current`/`Next`, `Current` required, the other two independently optional. `SourceKeySet.Create`
-rejects a missing `Current`, so a provider cannot express "no signer." `SigningKeySetBuilder.Build` is
-the single pure choke point from `SourceKeySet` to `SigningKeySet`: no clock, no policy, no I/O,
-always derives `kid` via `JwkThumbprint`, and every rejection throws `ZeeKayDaConfigurationException`
-before any private material exists. `StaticSigningKeyRing` reads its `ISigningKeySource` once at
-startup, self-tests the signer with a fresh per-invocation nonce, and owns that signer for the process
-lifetime. `SigningKeySet.SigningKey` stays non-nullable: there is no reachable state here without a
-signing key, and because `ISigningKeyRing` is framework-sealed, a future polling ring can add
-`SigningKeyOrNull`/`IsSigning` additively instead of a breaking null check.
+for a set a provider polls from an external store.** Keys are three named slots — `Previous`/`Current`/`Next`,
+`Current` required, the other two independently optional. `SourceKeySet.Create` rejects a missing
+`Current`, so a provider cannot express "no signer." `SigningKeySetBuilder.Build` is the single pure
+choke point from `SourceKeySet` to `SigningKeySet`: no clock, no policy, no I/O, always derives `kid`
+via `JwkThumbprint`, and every rejection throws `ZeeKayDaConfigurationException` before any private
+material exists. `StaticSigningKeyRing` reads its `ISigningKeySource` once at startup, self-tests the
+signer with a fresh per-invocation nonce, and owns it for the process lifetime. `SigningKeySet.SigningKey`
+stays non-nullable: there is no reachable state here without a signing key, and because `ISigningKeyRing`
+is framework-sealed, a future polling ring can add `SigningKeyOrNull`/`IsSigning` additively.
 
-**The single-key bootstrap exemption belongs to the fixed tier only.** A lone eligible key is active
-on `KeySetOptions`; on `KeySourceOptions` it is not, so a listing shrunk to one key by revocation
-cannot re-arm the exemption on restart or scale-out. Dispatch is on the options type.
+**A ported source has no bootstrap exemption; slots decide.** The operator names `Current`, so a lone
+configured key is active through ordinary selection, and the ring rejects a `Current` whose validity
+window has not opened (`NotBefore`) or has closed (`ExpiresAt`) — checked against the signing key alone,
+since staging a key before its window opens is what `Next` is for. On the un-ported tiers the exemption
+holds for `KeySetOptions` only: a `KeySourceOptions` listing shrunk by revocation must not re-arm it.
 
-**One timeline engine, and the operator sets only `ActivateAt`.** `SigningKeyRotation` is a pure
-function over immutable public data that both tiers call. Every other instant is derived —
-`PublishAt = ActivateAt − PublicationLead`, and a key stays in the JWKS until its successor's
-activation plus the retirement window — so there is no deactivation knob and a too-short overlap is
-unrepresentable.
+**One timeline engine, and the operator sets only `ActivateAt`.** `SigningKeyRotation` is a pure function
+over immutable public data that both un-ported tiers call. Every other instant is derived —
+`PublishAt = ActivateAt − PublicationLead`, and a key stays in the JWKS until its successor's activation
+plus the retirement window — so there is no deactivation knob and a too-short overlap is unrepresentable.
+A ported source has no timeline: it reports slots and the ring reads them once.
 
-**`PublicationLead` is durable and `ActivateAt`-derived, never observed-first-seen.** A provider maps
-its store's own durable timestamp onto `ActivateAt` so the lead survives restarts and replicas;
-in-memory first-seen bookkeeping is banned. `KeySourceOptions` enforces
-`PublicationLead >= RefreshInterval`, so a key cannot activate before the process would poll and
-notice it; on `KeySetOptions` the operator owns activation timing and the lead only drives a warning.
+**`PublicationLead` is durable and `ActivateAt`-derived, never observed-first-seen.** A provider maps its
+store's own durable timestamp onto `ActivateAt` so the lead survives restarts and replicas; in-memory
+first-seen bookkeeping is banned. `KeySourceOptions` enforces `PublicationLead >= RefreshInterval`, so a
+key cannot activate before the process would poll and notice it; on `KeySetOptions` the operator owns
+activation timing and the lead only drives a warning.
 
 **`RetirementWindow` is derived, never a user setting.** It is
-`max(access-token lifetime, ID-token lifetime, 1-hour floor)` plus the configured clock-skew
-allowance, measured from a successor becoming active; every off-default value is unsafe or useless.
-Refresh-token lifetime is excluded — relying parties never validate refresh tokens against the JWKS.
-The floor is the only live term until token lifetimes become configurable; the derivation then
-changes in place, not into an option. Security signed off.
+`max(access-token lifetime, ID-token lifetime, 1-hour floor)` plus the configured clock-skew allowance,
+measured from a successor becoming active; every off-default value is unsafe or useless. Refresh-token
+lifetime is excluded — relying parties never validate refresh tokens against the JWKS. The floor is the
+only live term until token lifetimes become configurable; the derivation then changes in place, not
+into an option. Security signed off.
 
-**Omission is the kill switch; there is no `Enabled` flag.** A `KeySourceOptions` provider lists a
-key for exactly as long as it should be trusted, so revoking or deleting it in the backing store
-drops it from the JWKS on the next refresh, retirement window or not. Omission is a three-state
-signal: a vanish after the retirement window closes is routine; a vanish *inside* it still drops the
-key but MUST emit a `Warning`, never downgraded, as the only accidental-omission detector; and a
-provider that cannot read its set completely MUST throw, so a store error never reads as revocation.
+**Omission is the kill switch; there is no `Enabled` flag.** A `KeySourceOptions` provider lists a key
+for exactly as long as it should be trusted, so revoking or deleting it in the backing store drops it
+from the JWKS on the next refresh, retirement window or not. Omission is a three-state signal: a vanish
+after the retirement window closes is routine; a vanish *inside* it still drops the key but MUST emit a
+`Warning`, never downgraded, as the only accidental-omission detector; and a provider that cannot read
+its set completely MUST throw, so a store error never reads as revocation.
 
 **Every active-signer handoff is self-tested before the signer is used.** The base signs a fixed,
 non-JWS-shaped constant and verifies it against that key's own published public key, in the single
@@ -71,30 +72,29 @@ material that does not pair with the published key. It is unconditional with no 
 framework-owned startup verifier forces the first handoff eagerly rather than leaving it to the first
 token request. Any failure, mismatch or transient, fails the handoff closed. No sign-off covers it.
 
-**All load-time validation runs on public data.** Key/algorithm compatibility, RSA modulus size
-(2048-bit minimum), NIST-curve-only EC keys, and rejection of duplicate provider key ids and
-duplicate derived `kid`s all run when listings are read, before any private material is loaded,
-throwing `ZeeKayDaConfigurationException`.
+**All load-time validation runs on public data, in one place.** Key/algorithm compatibility, EC curve
+pairing, RSA modulus size (2048-bit minimum), NIST-curve-only EC keys, and rejection of duplicate source
+ids and derived `kid`s all run before any private material is loaded, throwing
+`ZeeKayDaConfigurationException`. A provider never repeats these checks locally — duplicated validation
+is how two layers drift, and the central failure is keyed on the provider's own source id anyway.
 
-**Development signing keys are one line, and hard-gated on environment.** The persistence choice
-lives in the method name rather than a `null` argument. The allowed-environment list is reachable
-only through the registration callback, never bindable configuration, so a committed
-`appsettings.json` cannot widen it; `Production` is rejected unconditionally, and any
-non-`Development` entry logs `Critical` on every startup. Persisted keys are plain PEM with directory
-and file permissions set atomically at creation (`0700`/`0600` on POSIX, a restrictive non-inherited
-ACL on Windows), never create-then-chmod, and loading fails closed on a broader mode, a symlinked
-path, or a directory not owned by the current user.
+**Development signing keys are one line, and hard-gated on environment.** The persistence choice lives in
+the method name rather than a `null` argument. The allowed-environment list is reachable only through the
+registration callback, never bindable configuration, so a committed `appsettings.json` cannot widen it;
+`Production` is rejected unconditionally, and any non-`Development` entry logs `Critical` on every
+startup. Persisted keys are plain PEM with directory and file permissions set atomically at creation
+(`0700`/`0600` on POSIX, a restrictive non-inherited ACL on Windows), never create-then-chmod, and
+loading fails closed on a broader mode, a symlinked path, or a directory not owned by the current user.
 
 **Extension contracts are public in core; ZeeKayDa's own crypto and redaction stay internal.**
-`InternalsVisibleTo` can only name first-party assemblies at build time, so it structurally cannot
-serve a third-party provider package. Making `ISanitizingLogger<T>` nameable creates a host-shadowing
-risk, closed by a hard-failing startup gate that runs before every other startup check and rejects
-an unexpected open-generic implementation or any closed-generic override.
+`InternalsVisibleTo` can only name first-party assemblies at build time, so it structurally cannot serve
+a third-party provider package. Making `ISanitizingLogger<T>` nameable creates a host-shadowing risk,
+closed by a hard-failing startup gate that runs before every other check and rejects an unexpected
+open-generic implementation or any closed-generic override.
 
 **No Microsoft.IdentityModel types on the public surface.** They would bake a large, fast-moving
 third-party surface into the SemVer contract. The JWK mapping is hand-rolled over BCL types, fully
-specified by RFC 7517/7518 and held to known-answer vectors — a maintenance cost taken deliberately
-over the dependency.
+specified by RFC 7517/7518 and held to known-answer vectors — a cost taken deliberately over the dependency.
 
 **One signing provider per application, and nothing is registered for the source.**
 `AddZeeKayDaSigningKeySource<TSource>()` (both overloads) enforces this with an internal marker: a
@@ -104,17 +104,17 @@ options beside it, so a "harmless" duplicate still applies a second configuratio
 `ISigningKeyRing` also throws, but only one registered already; one added afterwards wins under MS
 DI's last-wins resolution, undetectably. The ring factory re-validates the composed marker set,
 throwing on more than one registration.
-`ISigningKeySource` itself is never registered: the ring factory constructs it directly, unreachable
-from the container, owns its lifetime alongside the signer's, disposing it once at shutdown normally
-after the signer, and rejects `IAsyncDisposable` without `IDisposable` at registration and construction.
+`ISigningKeySource` itself is never registered: the ring factory constructs it directly, unreachable from
+the container, owns its lifetime alongside the signer's, disposing it once at shutdown normally after the
+signer, and rejects `IAsyncDisposable` without `IDisposable` at registration and construction.
 
 **Each production provider platform is its own package; the development provider is not.**
-`ZeeKayDa.Auth.AzureKeyVault` (remote and cached variants together — same dependency, same
-operational context, so the choice is a method call, not a package swap), `ZeeKayDa.Auth.Windows`
-(Windows-only TFM, so a mismatched restore fails at build time), `ZeeKayDa.Auth.FileSystem` (portable,
-BCL-only). Each references core only, never the ASP.NET Core adapter, and exposes nothing but its
-registration methods and options type — settled before any provider shipped, since package identity
-is permanent once published. The development provider stays in core, with no platform to isolate.
+`ZeeKayDa.Auth.AzureKeyVault` (remote and cached variants together — same dependency, same operational
+context, so the choice is a method call, not a package swap), `ZeeKayDa.Auth.Windows` (Windows-only TFM,
+so a mismatched restore fails at build time), `ZeeKayDa.Auth.FileSystem` (portable, BCL-only). Each
+references core only, never the ASP.NET Core adapter, and exposes nothing but its registration methods
+and options type — settled before any provider shipped, since package identity is permanent once
+published. The development provider stays in core, with no platform to isolate.
 
 **`ZeeKayDa.Auth.FileSystem` and `ZeeKayDa.Auth.Windows` hold narrow `InternalsVisibleTo` grants**
 from core, for POSIX `stat`/`lstat` interop and process-identity diagnostics respectively — forking

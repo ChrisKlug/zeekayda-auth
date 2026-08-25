@@ -379,6 +379,144 @@ public sealed class StaticSigningKeyRingTests
     }
 
     [Fact]
+    public async Task InitializeAsync_throws_when_the_Current_key_is_not_valid_yet()
+    {
+        using var rsa = RSA.Create(2048);
+        // A day out, far beyond the clock-skew grace: a real misconfiguration, not a drifting clock.
+        var (source, _) = CreateSuccessfulSource(rsa, expiresAt: Epoch.AddDays(90), notBefore: Epoch.AddDays(1));
+        ISigningKeyRing ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
+
+        var act = async () => await ring.InitializeAsync(TestContext.Current.CancellationToken);
+
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.signing_key_not_yet_valid");
+    }
+
+    [Fact]
+    public async Task InitializeAsync_accepts_a_Current_key_within_the_not_before_clock_skew_grace()
+    {
+        // A host clock trailing the machine that minted the credential must not turn a correct
+        // deployment into a hard startup failure. Nothing can observe a key's NotBefore — it is not a
+        // JWK member and no certificate is published — so signing inside the grace is undetectable.
+        using var rsa = RSA.Create(2048);
+        var (source, _) = CreateSuccessfulSource(
+            rsa, expiresAt: Epoch.AddDays(90), notBefore: Epoch.AddMinutes(4));
+        ISigningKeyRing ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
+
+        var act = async () => await ring.InitializeAsync(TestContext.Current.CancellationToken);
+
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task InitializeAsync_rejects_a_Current_key_beyond_the_not_before_clock_skew_grace()
+    {
+        using var rsa = RSA.Create(2048);
+        var (source, _) = CreateSuccessfulSource(
+            rsa, expiresAt: Epoch.AddDays(90), notBefore: Epoch.AddMinutes(6));
+        ISigningKeyRing ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
+
+        var act = async () => await ring.InitializeAsync(TestContext.Current.CancellationToken);
+
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.signing_key_not_yet_valid");
+    }
+
+    [Fact]
+    public async Task InitializeAsync_accepts_a_Current_key_reporting_NotBefore_at_DateTimeOffset_MinValue()
+    {
+        // MinValue is a plausible way for a third-party source to spell "always valid" on a public
+        // extension point. Computing the grace as `notBefore - Grace` underflows here and throws
+        // ArgumentOutOfRangeException straight out of startup, instead of the configuration failure
+        // this check exists to raise — so the comparison is written as a difference between the two
+        // instants instead.
+        using var rsa = RSA.Create(2048);
+        var (source, _) = CreateSuccessfulSource(
+            rsa, expiresAt: Epoch.AddDays(90), notBefore: DateTimeOffset.MinValue);
+        ISigningKeyRing ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
+
+        var act = async () => await ring.InitializeAsync(TestContext.Current.CancellationToken);
+
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task InitializeAsync_rejects_a_Current_key_reporting_NotBefore_at_DateTimeOffset_MaxValue()
+    {
+        // The far end of the same arithmetic: no underflow, and still the rejection it should be.
+        using var rsa = RSA.Create(2048);
+        var (source, _) = CreateSuccessfulSource(
+            rsa, expiresAt: DateTimeOffset.MaxValue, notBefore: DateTimeOffset.MaxValue);
+        ISigningKeyRing ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
+
+        var act = async () => await ring.InitializeAsync(TestContext.Current.CancellationToken);
+
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.signing_key_not_yet_valid");
+    }
+
+    [Fact]
+    public async Task InitializeAsync_gives_the_expiry_end_no_grace_at_all()
+    {
+        // The expiry end has a real observer — every relying party validating a token — so it stays
+        // exact. One second past expiry is rejected, with no counterpart to the not-before grace.
+        using var rsa = RSA.Create(2048);
+        var (source, _) = CreateSuccessfulSource(rsa, expiresAt: Epoch.AddSeconds(-1));
+        ISigningKeyRing ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
+
+        var act = async () => await ring.InitializeAsync(TestContext.Current.CancellationToken);
+
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.signing_key_expired");
+    }
+
+    [Fact]
+    public async Task InitializeAsync_accepts_a_Current_key_whose_NotBefore_has_already_passed()
+    {
+        using var rsa = RSA.Create(2048);
+        var (source, _) = CreateSuccessfulSource(rsa, expiresAt: Epoch.AddDays(90), notBefore: Epoch.AddDays(-1));
+        ISigningKeyRing ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
+
+        var act = async () => await ring.InitializeAsync(TestContext.Current.CancellationToken);
+
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task InitializeAsync_accepts_a_published_Next_key_that_is_not_valid_yet()
+    {
+        // Staging a key before its validity window opens is the entire point of the Next slot, so the
+        // not-yet-valid check must look at the signing key alone and never at the published set.
+        using var rsa = RSA.Create(2048);
+        using var nextRsa = RSA.Create(2048);
+        var next = new SourceKey(
+            new SourceKeyId("next"),
+            SigningAlgorithm.RS256,
+            PublicKeyParameters.FromRsa(nextRsa.ExportParameters(false)),
+            ExpiresAt: Epoch.AddDays(400),
+            NotBefore: Epoch.AddDays(30));
+        var (source, _) = CreateSuccessfulSource(rsa, expiresAt: Epoch.AddDays(90), next: next);
+        ISigningKeyRing ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
+
+        await ring.InitializeAsync(TestContext.Current.CancellationToken);
+
+        ((StaticSigningKeyRing)ring).Current.Published.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task InitializeAsync_accepts_a_Current_key_that_reports_no_NotBefore_at_all()
+    {
+        using var rsa = RSA.Create(2048);
+        var (source, current) = CreateSuccessfulSource(rsa, expiresAt: Epoch.AddDays(90));
+        current.NotBefore.Should().BeNull("a source whose keys carry no validity window reports null");
+        ISigningKeyRing ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
+
+        var act = async () => await ring.InitializeAsync(TestContext.Current.CancellationToken);
+
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
     public async Task InitializeAsync_propagates_a_builder_validation_failure_from_ReadAsync()
     {
         var source = new FakeSigningKeySource(
@@ -669,10 +807,11 @@ public sealed class StaticSigningKeyRingTests
             _ => throw new InvalidOperationException("must not be called before InitializeAsync"),
             (_, _) => throw new InvalidOperationException("must not be called before InitializeAsync"));
 
-    private static (FakeSigningKeySource Source, SourceKey Current) CreateSuccessfulSource(RSA rsa, DateTimeOffset expiresAt)
+    private static (FakeSigningKeySource Source, SourceKey Current) CreateSuccessfulSource(
+        RSA rsa, DateTimeOffset expiresAt, DateTimeOffset? notBefore = null, SourceKey? next = null)
     {
         var current = new SourceKey(
-            new SourceKeyId("current"), SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), expiresAt);
+            new SourceKeyId("current"), SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), expiresAt, notBefore);
 
         // The signer must be opened over a private key matching the published public key, otherwise
         // the self-test itself would fail — CreateSignerAsync gets its own fresh RSA instance
@@ -680,7 +819,7 @@ public sealed class StaticSigningKeyRingTests
         var privateKeyPem = rsa.ExportRSAPrivateKeyPem();
 
         var source = new FakeSigningKeySource(
-            _ => new ValueTask<SourceKeySet>(SourceKeySet.Create(null, current, null)),
+            _ => new ValueTask<SourceKeySet>(SourceKeySet.Create(null, current, next)),
             (_, _) =>
             {
                 var signerRsa = RSA.Create();

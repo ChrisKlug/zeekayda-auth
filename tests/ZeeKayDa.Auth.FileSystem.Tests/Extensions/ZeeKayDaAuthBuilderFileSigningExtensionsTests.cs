@@ -88,7 +88,7 @@ public sealed class ZeeKayDaAuthBuilderFileSigningExtensionsTests
     }
 
     [Fact]
-    public async Task AddPemFileSigning_with_keyPath_sets_Path_and_KeyPath_on_options()
+    public async Task AddPemFileSigning_with_keyPath_fills_the_Current_slot_with_both_paths()
     {
         var builder = NewBuilder();
         const string keyPath = "/etc/zeekayda/signing.key";
@@ -97,20 +97,9 @@ public sealed class ZeeKayDaAuthBuilderFileSigningExtensionsTests
 
         await using var provider = builder.Services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<PemFileSigningOptions>>().Value;
-        options.Path.Should().Be(PemPath);
-        options.KeyPath.Should().Be(keyPath);
-    }
-
-    [Fact]
-    public async Task AddPemFileSigning_with_keyPath_resolves_IJwtSigningService_as_PemFileSigningJwtSigningService()
-    {
-        var builder = NewBuilder();
-
-        builder.AddPemFileSigning(PemPath, SigningAlgorithm.RS256, "/etc/zeekayda/signing.key");
-
-        await using var provider = builder.Services.BuildServiceProvider();
-        var service = provider.GetRequiredService<IJwtSigningService>();
-        service.Should().BeOfType<PemFileSigningJwtSigningService>();
+        options.Current.Should().Be(new PemSigningFile(PemPath, keyPath));
+        options.Previous.Should().BeNull("the path overload stages no rotation");
+        options.Next.Should().BeNull("the path overload stages no rotation");
     }
 
     // ── AddPfxFileSigning: argument validation ───────────────────────────────────────────────────
@@ -206,15 +195,56 @@ public sealed class ZeeKayDaAuthBuilderFileSigningExtensionsTests
     // ── Successful registration ──────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task AddPemFileSigning_resolves_IJwtSigningService_as_PemFileSigningJwtSigningService()
+    public async Task AddPemFileSigning_registers_a_static_signing_key_ring()
     {
         var builder = NewBuilder();
 
         builder.AddPemFileSigning(PemPath, SigningAlgorithm.RS256);
 
         await using var provider = builder.Services.BuildServiceProvider();
-        var service = provider.GetRequiredService<IJwtSigningService>();
-        service.Should().BeOfType<PemFileSigningJwtSigningService>();
+        provider.GetService<ISigningKeyRing>().Should().BeOfType<StaticSigningKeyRing>();
+    }
+
+    [Fact]
+    public async Task AddPemFileSigning_does_not_register_the_source_in_the_container()
+    {
+        // The ring constructs and owns the one source it reads from, so no application code can
+        // reach it.
+        var builder = NewBuilder();
+
+        builder.AddPemFileSigning(PemPath, SigningAlgorithm.RS256);
+
+        await using var provider = builder.Services.BuildServiceProvider();
+        provider.GetService<ISigningKeySource>().Should().BeNull();
+    }
+
+    [Fact]
+    public void AddPemFileSigning_throws_when_a_signing_key_source_is_already_registered()
+    {
+        var builder = NewBuilder();
+        builder.AddPemFileSigning(PemPath, SigningAlgorithm.RS256);
+
+        var act = () => builder.AddPemFileSigning("/etc/zeekayda/other.pem", SigningAlgorithm.RS256);
+
+        act.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public async Task AddPemFileSigning_does_not_apply_its_options_when_the_source_registration_is_rejected()
+    {
+        // The source is registered before any configuration callback runs, so a caller that catches
+        // the rejection is not left with the rejected call's slots on the surviving registration.
+        var builder = NewBuilder();
+        builder.AddPemFileSigning(PemPath, SigningAlgorithm.RS256);
+
+        var act = () => builder.AddPemFileSigning(SigningAlgorithm.ES256, options =>
+            options.Current = new PemSigningFile("/etc/zeekayda/rejected.pem"));
+
+        act.Should().Throw<InvalidOperationException>();
+        await using var provider = builder.Services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<PemFileSigningOptions>>().Value;
+        options.Current.Should().Be(new PemSigningFile(PemPath));
+        options.Algorithm.Should().Be(SigningAlgorithm.RS256);
     }
 
     [Fact]
@@ -290,22 +320,75 @@ public sealed class ZeeKayDaAuthBuilderFileSigningExtensionsTests
         returned.Should().BeSameAs(builder);
     }
 
+    // ── AddPemFileSigning: the three-slot overload ───────────────────────────────────────────────
+
     [Fact]
-    public async Task AddPemFileSigning_configure_callback_sets_additional_options()
+    public void AddPemFileSigning_slots_overload_throws_ArgumentNullException_when_builder_is_null()
+    {
+        var act = () => ((ZeeKayDaAuthBuilder)null!).AddPemFileSigning(SigningAlgorithm.RS256, _ => { });
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("builder");
+    }
+
+    [Fact]
+    public void AddPemFileSigning_slots_overload_throws_ArgumentNullException_when_configure_is_null()
     {
         var builder = NewBuilder();
 
-        builder.AddPemFileSigning(PemPath, SigningAlgorithm.RS256, configure: options =>
+        var act = () => builder.AddPemFileSigning(SigningAlgorithm.RS256, null!);
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("configure");
+    }
+
+    [Fact]
+    public async Task AddPemFileSigning_slots_overload_fills_every_slot_the_callback_sets()
+    {
+        var builder = NewBuilder();
+
+        builder.AddPemFileSigning(SigningAlgorithm.ES256, options =>
         {
-            options.Algorithm = SigningAlgorithm.ES256;
-            options.AddFile("/etc/zeekayda/rotated-in.pem");
+            options.Previous = new PemCertificateFile("/etc/zeekayda/previous.pem");
+            options.Current = new PemSigningFile("/etc/zeekayda/current.pem");
+            options.Next = new PemCertificateFile("/etc/zeekayda/next.pem");
         });
 
         await using var provider = builder.Services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<PemFileSigningOptions>>().Value;
-        options.Path.Should().Be(PemPath);
+        options.Previous.Should().Be(new PemCertificateFile("/etc/zeekayda/previous.pem"));
+        options.Current.Should().Be(new PemSigningFile("/etc/zeekayda/current.pem"));
+        options.Next.Should().Be(new PemCertificateFile("/etc/zeekayda/next.pem"));
         options.Algorithm.Should().Be(SigningAlgorithm.ES256);
-        options.AdditionalFiles.Should().ContainSingle().Which.Path.Should().Be("/etc/zeekayda/rotated-in.pem");
+    }
+
+    [Fact]
+    public async Task AddPemFileSigning_algorithm_argument_is_the_only_thing_that_sets_the_algorithm()
+    {
+        // Two halves, because this project holds InternalsVisibleTo to the FileSystem assembly and so
+        // cannot express the negative case by failing to compile: the setter really is internal, so a
+        // caller outside the assembly cannot beat the argument from a configure callback, and the
+        // argument really is what lands. The API-approval analyzers gate the first half at build time;
+        // the reflection assertion pins it here too, so the test name is true on its own terms.
+        typeof(PemFileSigningOptions).GetProperty(nameof(PemFileSigningOptions.Algorithm))!
+            .SetMethod!.IsAssembly.Should().BeTrue("a public setter would let a callback beat the argument");
+
+        var builder = NewBuilder();
+
+        builder.AddPemFileSigning(SigningAlgorithm.ES256, options =>
+            options.Current = new PemSigningFile("/etc/zeekayda/current.pem"));
+
+        await using var provider = builder.Services.BuildServiceProvider();
+        provider.GetRequiredService<IOptions<PemFileSigningOptions>>().Value.Algorithm
+            .Should().Be(SigningAlgorithm.ES256);
+    }
+
+    [Fact]
+    public void AddPemFileSigning_slots_overload_returns_the_same_builder()
+    {
+        var builder = NewBuilder();
+
+        var returned = builder.AddPemFileSigning(SigningAlgorithm.RS256, _ => { });
+
+        returned.Should().BeSameAs(builder);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────────────────────────

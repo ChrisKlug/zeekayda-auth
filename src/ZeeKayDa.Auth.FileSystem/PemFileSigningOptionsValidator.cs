@@ -16,18 +16,17 @@ internal sealed class PemFileSigningOptionsValidator : IValidateOptions<PemFileS
     {
         var errors = new List<string>();
 
-        if (KeySourcePublicationLeadValidator.ValidateMinimum(nameof(PemFileSigningOptions), options.PublicationLead) is { } publicationLeadError)
-            errors.Add(publicationLeadError);
-
-        if (string.IsNullOrWhiteSpace(options.Path))
-            errors.Add("PemFileSigningOptions.Path must be set to a non-empty file path.");
-
-        if (options.KeyPath is not null && string.IsNullOrWhiteSpace(options.KeyPath))
+        if (options.Current is null)
         {
             errors.Add(
-                "PemFileSigningOptions.KeyPath must be null (a combined cert+key Path) or a " +
-                "non-empty file path — never empty/whitespace-only.");
+                "PemFileSigningOptions.Current must be set to the PEM file that signs. Previous and " +
+                "Next are optional; Current is not.");
         }
+
+        AppendPathError(nameof(PemFileSigningOptions.Previous), options.Previous?.Path, errors);
+        AppendPathError(nameof(PemFileSigningOptions.Current), options.Current?.Path, errors);
+        AppendPathError(nameof(PemFileSigningOptions.Next), options.Next?.Path, errors);
+        AppendCurrentKeyPathError(options.Current, errors);
 
         if (!Enum.IsDefined(options.Algorithm))
         {
@@ -41,55 +40,87 @@ internal sealed class PemFileSigningOptionsValidator : IValidateOptions<PemFileS
         return errors.Count > 0 ? ValidateOptionsResult.Fail(errors) : ValidateOptionsResult.Success;
     }
 
-    // Every filesystem path this configuration touches must be pairwise distinct — two entries
-    // sharing a path would make the rotation timeline ambiguous. Each non-empty path is normalized
-    // via Path.GetFullPath before comparison (pure string canonicalization, no filesystem access),
-    // so differences like "tls.pem" vs "./tls.pem" are still caught. Symlink resolution and
-    // case-insensitive-filesystem comparison are deliberately out of scope: this degrades to a
-    // load failure, not key confusion, if two paths are equivalent but not caught here.
+    // Previous and Next are PemCertificateFile, which has no KeyPath to check — only Current can
+    // name a private key at all, which is why there is no "a published-only slot named a key file"
+    // error to report here.
+    private static void AppendPathError(string slotName, string? path, List<string> errors)
+    {
+        if (path is not null && string.IsNullOrWhiteSpace(path))
+            errors.Add($"PemFileSigningOptions.{slotName}.Path must be set to a non-empty file path.");
+    }
+
+    private static void AppendCurrentKeyPathError(PemSigningFile? current, List<string> errors)
+    {
+        if (current?.KeyPath is { } keyPath && string.IsNullOrWhiteSpace(keyPath))
+        {
+            errors.Add(
+                "PemFileSigningOptions.Current.KeyPath must be null (a combined cert+key Path) or a " +
+                "non-empty file path — never empty/whitespace-only.");
+        }
+    }
+
+    // Every filesystem path this configuration touches must be pairwise distinct — two slots sharing
+    // a path would publish one key twice under two slot names, or make the same file both the
+    // outgoing and the incoming key of a rotation. Each non-empty path is normalized via
+    // Path.GetFullPath before comparison, so differences like "tls.pem" vs "./tls.pem" are still
+    // caught. That call is pure string canonicalization only for a rooted path; for a relative one it
+    // reads the current directory, which is why the catch below covers I/O failures too. Symlink
+    // resolution and case-insensitive-filesystem comparison are deliberately out of scope: this
+    // degrades to a load failure or a duplicate-kid rejection in SigningKeySetBuilder, not key
+    // confusion, if two paths are equivalent but not caught here.
     private static void AppendDuplicatePathErrors(PemFileSigningOptions options, List<string> errors)
     {
         var seen = new HashSet<string>(StringComparer.Ordinal);
-        var hasEmptyAdditionalPath = false;
         var hasDuplicatePath = false;
+        var hasUncanonicalizablePath = false;
 
-        // Empty/whitespace-only Path/KeyPath is already reported by the dedicated errors above, so
-        // an empty value here is silently skipped rather than re-flagged via hasEmptyAdditionalPath
-        // (which is reserved for AddFile's own empty-path error message below); it still must not be
-        // added to `seen`, since two independently-empty values are not "the same path".
-        void Track(string? path, bool reportEmptyAsAddFileError)
+        // Empty/whitespace-only paths are already reported by AppendSlotErrors, so they are skipped
+        // here rather than re-flagged; they still must not be added to `seen`, since two
+        // independently-empty values are not "the same path".
+        void Track(string? path)
         {
-            if (path is null)
+            if (string.IsNullOrWhiteSpace(path))
                 return;
 
-            if (string.IsNullOrWhiteSpace(path))
+            string fullPath;
+            try
             {
-                if (reportEmptyAsAddFileError)
-                    hasEmptyAdditionalPath = true;
+                fullPath = Path.GetFullPath(path);
             }
-            else if (!seen.Add(Path.GetFullPath(path)))
+            catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException or IOException)
             {
+                // GetFullPath throws on an embedded NUL or a path over the platform limit, and — for a
+                // relative path, since it resolves against the current directory — on an I/O failure
+                // reading that directory. All of them are configuration errors like any other and
+                // belong in the aggregated result, not thrown out of Validate where they would escape
+                // as something other than an options failure. DirectoryNotFoundException derives from
+                // IOException, so a deleted working directory is covered.
+                hasUncanonicalizablePath = true;
+                return;
+            }
+
+            if (!seen.Add(fullPath))
                 hasDuplicatePath = true;
-            }
         }
 
-        Track(options.Path, reportEmptyAsAddFileError: false);
-        Track(options.KeyPath, reportEmptyAsAddFileError: false);
+        Track(options.Previous?.Path);
+        Track(options.Current?.Path);
+        Track(options.Current?.KeyPath);
+        Track(options.Next?.Path);
 
-        foreach (var file in options.AdditionalFiles)
+        if (hasUncanonicalizablePath)
         {
-            Track(file.Path, reportEmptyAsAddFileError: true);
-            Track(file.KeyPath, reportEmptyAsAddFileError: true);
+            errors.Add(
+                "A PemFileSigningOptions slot names a path the operating system cannot resolve — it " +
+                "contains an invalid character (such as an embedded NUL) or exceeds the platform's " +
+                "maximum path length.");
         }
-
-        if (hasEmptyAdditionalPath)
-            errors.Add("AddFile was called with a null, empty, or whitespace-only path.");
 
         if (hasDuplicatePath)
         {
             errors.Add(
-                "AddFile was called with a path that duplicates the primary path, the primary key " +
-                "path, or another already-registered file's path/key path.");
+                "Two PemFileSigningOptions slots reference the same file. Every Path, and Current's " +
+                "KeyPath, must be a distinct file.");
         }
     }
 }

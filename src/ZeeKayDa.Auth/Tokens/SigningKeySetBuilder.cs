@@ -126,7 +126,8 @@ public static class SigningKeySetBuilder
                     "kid — check for two distinct source ids sharing the same public key."));
         }
 
-        return new SigningKey(sourceKey.Id, kid, sourceKey.Algorithm, canonicalPublicKey, sourceKey.ExpiresAt);
+        return new SigningKey(
+            sourceKey.Id, kid, sourceKey.Algorithm, canonicalPublicKey, sourceKey.ExpiresAt, sourceKey.NotBefore);
     }
 
     /// <summary>

@@ -486,6 +486,7 @@ ZeeKayDa.Auth.Tokens.SigningKey
 ZeeKayDa.Auth.Tokens.SigningKey.Algorithm.get -> ZeeKayDa.Auth.Tokens.SigningAlgorithm
 ZeeKayDa.Auth.Tokens.SigningKey.ExpiresAt.get -> System.DateTimeOffset?
 ZeeKayDa.Auth.Tokens.SigningKey.Kid.get -> string!
+ZeeKayDa.Auth.Tokens.SigningKey.NotBefore.get -> System.DateTimeOffset?
 ZeeKayDa.Auth.Tokens.SigningKey.PublicKey.get -> ZeeKayDa.Auth.Tokens.PublicKeyParameters!
 ZeeKayDa.Auth.Tokens.SigningKey.SourceId.get -> ZeeKayDa.Auth.Tokens.SourceKeyId
 ZeeKayDa.Auth.Tokens.SigningKeyDescriptor
@@ -559,15 +560,17 @@ ZeeKayDa.Auth.Tokens.SourceKey
 ZeeKayDa.Auth.Tokens.SourceKey.<Clone>$() -> ZeeKayDa.Auth.Tokens.SourceKey!
 ZeeKayDa.Auth.Tokens.SourceKey.Algorithm.get -> ZeeKayDa.Auth.Tokens.SigningAlgorithm
 ZeeKayDa.Auth.Tokens.SourceKey.Algorithm.init -> void
-ZeeKayDa.Auth.Tokens.SourceKey.Deconstruct(out ZeeKayDa.Auth.Tokens.SourceKeyId Id, out ZeeKayDa.Auth.Tokens.SigningAlgorithm Algorithm, out ZeeKayDa.Auth.Tokens.PublicKeyParameters! PublicKey, out System.DateTimeOffset? ExpiresAt) -> void
+ZeeKayDa.Auth.Tokens.SourceKey.Deconstruct(out ZeeKayDa.Auth.Tokens.SourceKeyId Id, out ZeeKayDa.Auth.Tokens.SigningAlgorithm Algorithm, out ZeeKayDa.Auth.Tokens.PublicKeyParameters! PublicKey, out System.DateTimeOffset? ExpiresAt, out System.DateTimeOffset? NotBefore) -> void
 ZeeKayDa.Auth.Tokens.SourceKey.Equals(ZeeKayDa.Auth.Tokens.SourceKey? other) -> bool
 ZeeKayDa.Auth.Tokens.SourceKey.ExpiresAt.get -> System.DateTimeOffset?
 ZeeKayDa.Auth.Tokens.SourceKey.ExpiresAt.init -> void
 ZeeKayDa.Auth.Tokens.SourceKey.Id.get -> ZeeKayDa.Auth.Tokens.SourceKeyId
 ZeeKayDa.Auth.Tokens.SourceKey.Id.init -> void
+ZeeKayDa.Auth.Tokens.SourceKey.NotBefore.get -> System.DateTimeOffset?
+ZeeKayDa.Auth.Tokens.SourceKey.NotBefore.init -> void
 ZeeKayDa.Auth.Tokens.SourceKey.PublicKey.get -> ZeeKayDa.Auth.Tokens.PublicKeyParameters!
 ZeeKayDa.Auth.Tokens.SourceKey.PublicKey.init -> void
-ZeeKayDa.Auth.Tokens.SourceKey.SourceKey(ZeeKayDa.Auth.Tokens.SourceKeyId Id, ZeeKayDa.Auth.Tokens.SigningAlgorithm Algorithm, ZeeKayDa.Auth.Tokens.PublicKeyParameters! PublicKey, System.DateTimeOffset? ExpiresAt) -> void
+ZeeKayDa.Auth.Tokens.SourceKey.SourceKey(ZeeKayDa.Auth.Tokens.SourceKeyId Id, ZeeKayDa.Auth.Tokens.SigningAlgorithm Algorithm, ZeeKayDa.Auth.Tokens.PublicKeyParameters! PublicKey, System.DateTimeOffset? ExpiresAt, System.DateTimeOffset? NotBefore = null) -> void
 ZeeKayDa.Auth.Tokens.SourceKeyId
 ZeeKayDa.Auth.Tokens.SourceKeyId.Deconstruct(out string! Value) -> void
 ZeeKayDa.Auth.Tokens.SourceKeyId.Equals(ZeeKayDa.Auth.Tokens.SourceKeyId other) -> bool

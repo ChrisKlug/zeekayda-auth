@@ -9,6 +9,7 @@
 // same level WindowsCertificateStoreSigningIntegrationTests uses for its JWKS-shape assertions —
 // rather than over real HTTP, which would only ever observe the 501 stub today.
 
+using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -38,84 +39,167 @@ public sealed class FileSigningIntegrationTests
         return (services, timeProvider);
     }
 
-    // ── PEM: end-to-end resolve + JWKS shape (AC #1/#8) ─────────────────────────────────────────
+    // ── PEM: end-to-end through the signing key ring ────────────────────────────────────────────
+
+    /// <summary>
+    /// Runs the host's real startup path — every registered <see cref="IHostedService"/>, which is
+    /// what initializes the signing key ring — so these tests observe exactly what a deployed host
+    /// observes, including a startup that fails.
+    /// </summary>
+    private static async Task StartHostedServicesAsync(ServiceProvider provider, CancellationToken cancellationToken)
+    {
+        foreach (var hostedService in provider.GetServices<IHostedService>())
+            await hostedService.StartAsync(cancellationToken);
+    }
 
     [Fact]
-    public async Task Full_DI_wiring_resolves_and_returns_a_well_formed_signing_key_for_a_PEM_file()
+    public async Task Full_DI_wiring_serves_a_PEM_file_through_the_ring_and_signs_a_JWS()
     {
         var ct = TestContext.Current.CancellationToken;
         using var tempDir = new TempSigningKeyDirectory();
         using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
-        var path = tempDir.WritePemFile("key.pem", certificate);
+        var path = tempDir.WritePemFile("current.pem", certificate);
         var (services, _) = BuildServices(T0);
 
         var builder = new ZeeKayDaAuthBuilder(services);
         builder.AddPemFileSigning(path, SigningAlgorithm.RS256);
 
         await using var provider = services.BuildServiceProvider();
-        var signingService = provider.GetRequiredService<IJwtSigningService>();
+        await StartHostedServicesAsync(provider, ct);
+        var ring = provider.GetRequiredService<ISigningKeyRing>();
 
-        var keys = await signingService.GetSigningKeysAsync(ct);
+        ring.Current.Published.Should().ContainSingle("the single configured slot's public key must be published");
+        ring.Current.SigningKey.Kid.Should().Be(JwkThumbprint.Compute(certificate.GetRSAPublicKey()!.ExportParameters(false)));
+        ring.Current.AdvertisedAlgorithms.Should().Equal(SigningAlgorithm.RS256);
 
-        keys.Should().ContainSingle("AC #8: the single registered file's public key must be exposed");
-        keys[0].Kid.Should().NotBeNullOrEmpty();
-        keys[0].RsaPublicParameters.Should().NotBeNull("the JWKS entry must expose only the public key");
-        keys[0].Algorithm.Should().Be(SigningAlgorithm.RS256);
+        var signingInput = "header.payload"u8.ToArray();
+        var outcome = await ring.SignAsync(signingInput, static (_, input) => input, ct);
+
+        using var rsa = RSA.Create(ring.Current.SigningKey.PublicKey.RsaPublicParameters!.Value);
+        rsa.VerifyData(outcome.SigningInput.Span, outcome.Signature.Span, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)
+            .Should().BeTrue("the ring must sign with the private key of the published Current slot");
     }
 
     [Fact]
-    public async Task Full_DI_wiring_JWKS_output_includes_both_PEM_files_during_a_rotation_overlap()
+    public async Task Full_DI_wiring_publishes_every_configured_PEM_slot_and_signs_with_Current()
     {
         var ct = TestContext.Current.CancellationToken;
         using var tempDir = new TempSigningKeyDirectory();
-        using var predecessor = TestCertificateFactory.CreateRsaSelfSigned("predecessor", T0 - TimeSpan.FromDays(30), T0 + TimeSpan.FromDays(365));
-        var successorNotBefore = T0 + TimeSpan.FromDays(1);
-        using var successor = TestCertificateFactory.CreateRsaSelfSigned("successor", successorNotBefore, T0 + TimeSpan.FromDays(400));
-        var predecessorPath = tempDir.WritePemFile("predecessor.pem", predecessor);
-        var successorPath = tempDir.WritePemFile("successor.pem", successor);
+        using var previous = TestCertificateFactory.CreateRsaSelfSigned("previous", T0 - TimeSpan.FromDays(400), T0 + TimeSpan.FromDays(30));
+        using var current = TestCertificateFactory.CreateRsaSelfSigned("current", T0 - TimeSpan.FromDays(30), T0 + TimeSpan.FromDays(365));
+        using var next = TestCertificateFactory.CreateRsaSelfSigned("next", T0 + TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(400));
+        var previousPath = tempDir.WritePemFile("previous.pem", previous);
+        var currentPath = tempDir.WritePemFile("current.pem", current);
+        var nextPath = tempDir.WritePemFile("next.pem", next);
         var (services, _) = BuildServices(T0);
 
         var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddPemFileSigning(predecessorPath, SigningAlgorithm.RS256, configure: options =>
+        builder.AddPemFileSigning(SigningAlgorithm.RS256, options =>
         {
-            options.AddFile(successorPath);
+            options.Previous = new PemCertificateFile(previousPath);
+            options.Current = new PemSigningFile(currentPath);
+            options.Next = new PemCertificateFile(nextPath);
         });
 
         await using var provider = services.BuildServiceProvider();
-        var signingService = provider.GetRequiredService<IJwtSigningService>();
+        await StartHostedServicesAsync(provider, ct);
+        var ring = provider.GetRequiredService<ISigningKeyRing>();
 
-        var keys = await signingService.GetSigningKeysAsync(ct);
-
-        keys.Should().HaveCount(2, "AC #9: both files must be exposed during the overlap window");
+        ring.Current.Published.Should().HaveCount(3, "every configured slot is published so relying parties can cache it");
+        ring.Current.SigningKey.Kid.Should().Be(JwkThumbprint.Compute(current.GetRSAPublicKey()!.ExportParameters(false)));
     }
 
     [Fact]
-    public async Task Full_DI_wiring_active_signer_switches_when_the_successors_NotBefore_arrives()
+    public async Task Full_DI_wiring_keeps_publishing_a_PEM_file_that_is_deleted_after_startup()
     {
+        // The source reads its slots once, at startup, and never re-reads them, so nothing that
+        // happens to the files afterwards can change what this process signs with or publishes.
         var ct = TestContext.Current.CancellationToken;
         using var tempDir = new TempSigningKeyDirectory();
-        using var predecessor = TestCertificateFactory.CreateRsaSelfSigned("predecessor", T0 - TimeSpan.FromDays(30), T0 + TimeSpan.FromDays(365));
-        var successorNotBefore = T0 + TimeSpan.FromDays(1);
-        using var successor = TestCertificateFactory.CreateRsaSelfSigned("successor", successorNotBefore, T0 + TimeSpan.FromDays(400));
-        var predecessorPath = tempDir.WritePemFile("predecessor.pem", predecessor);
-        var successorPath = tempDir.WritePemFile("successor.pem", successor);
-        var (services, timeProvider) = BuildServices(T0);
+        using var current = TestCertificateFactory.CreateRsaSelfSigned("current", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+        using var next = TestCertificateFactory.CreateRsaSelfSigned("next", T0 + TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(400));
+        var currentPath = tempDir.WritePemFile("current.pem", current);
+        var nextPath = tempDir.WritePemFile("next.pem", next);
+        var (services, _) = BuildServices(T0);
 
         var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddPemFileSigning(predecessorPath, SigningAlgorithm.RS256, configure: options =>
+        builder.AddPemFileSigning(SigningAlgorithm.RS256, options =>
         {
-            options.AddFile(successorPath);
+            options.Current = new PemSigningFile(currentPath);
+            options.Next = new PemCertificateFile(nextPath);
         });
 
         await using var provider = services.BuildServiceProvider();
-        var signingService = provider.GetRequiredService<IJwtSigningService>();
+        await StartHostedServicesAsync(provider, ct);
+        var ring = provider.GetRequiredService<ISigningKeyRing>();
+        var publishedAtStartup = ring.Current.Published.Select(k => k.Kid).ToArray();
 
-        var before = await signingService.GetSigningKeysAsync(ct);
-        before[0].Kid.Should().Be(JwkThumbprint.Compute(predecessor.GetRSAPublicKey()!.ExportParameters(false)));
+        File.Delete(currentPath);
+        File.Delete(nextPath);
 
-        timeProvider.SetUtcNow(successorNotBefore);
-        var after = await signingService.GetSigningKeysAsync(ct);
-        after[0].Kid.Should().Be(JwkThumbprint.Compute(successor.GetRSAPublicKey()!.ExportParameters(false)));
+        ring.Current.Published.Select(k => k.Kid).Should().Equal(publishedAtStartup);
+
+        var outcome = await ring.SignAsync("header.payload"u8.ToArray(), static (_, input) => input, ct);
+        outcome.Key.Kid.Should().Be(JwkThumbprint.Compute(current.GetRSAPublicKey()!.ExportParameters(false)));
+    }
+
+    [Fact]
+    public async Task Full_DI_wiring_fails_startup_when_the_Current_PEM_certificate_is_not_valid_yet()
+    {
+        // The single-key bootstrap exemption is gone: a lone configured file is the active signer
+        // through ordinary slot selection, with no special case that would let a not-yet-valid
+        // certificate sign.
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = TestCertificateFactory.CreateRsaSelfSigned("future", T0 + TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(400));
+        var path = tempDir.WritePemFile("current.pem", certificate);
+        var (services, _) = BuildServices(T0);
+
+        var builder = new ZeeKayDaAuthBuilder(services);
+        builder.AddPemFileSigning(path, SigningAlgorithm.RS256);
+
+        await using var provider = services.BuildServiceProvider();
+        var act = async () => await StartHostedServicesAsync(provider, ct);
+
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .Which.AggregatedFailures.Should().Contain(f => f.Code == "signing.signing_key_not_yet_valid");
+    }
+
+    [Fact]
+    public async Task Full_DI_wiring_fails_startup_when_the_Current_PEM_certificate_has_expired()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = TestCertificateFactory.CreateRsaSelfSigned("expired", T0 - TimeSpan.FromDays(400), T0 - TimeSpan.FromDays(1));
+        var path = tempDir.WritePemFile("current.pem", certificate);
+        var (services, _) = BuildServices(T0);
+
+        var builder = new ZeeKayDaAuthBuilder(services);
+        builder.AddPemFileSigning(path, SigningAlgorithm.RS256);
+
+        await using var provider = services.BuildServiceProvider();
+        var act = async () => await StartHostedServicesAsync(provider, ct);
+
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .Which.AggregatedFailures.Should().Contain(f => f.Code == "signing.signing_key_expired");
+    }
+
+    [Fact]
+    public async Task Full_DI_wiring_fails_startup_when_no_Current_PEM_slot_is_configured()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = TestCertificateFactory.CreateRsaSelfSigned("next", T0 + TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(400));
+        var nextPath = tempDir.WritePemFile("next.pem", certificate);
+        var (services, _) = BuildServices(T0);
+
+        var builder = new ZeeKayDaAuthBuilder(services);
+        builder.AddPemFileSigning(SigningAlgorithm.RS256, options => options.Next = new PemCertificateFile(nextPath));
+
+        await using var provider = services.BuildServiceProvider();
+        var act = async () => await StartHostedServicesAsync(provider, ct);
+
+        await act.Should().ThrowAsync<Exception>("the options validator rejects a configuration with no Current slot");
     }
 
     // ── PFX: end-to-end resolve (AC #4/#8) ──────────────────────────────────────────────────────
@@ -155,9 +239,8 @@ public sealed class FileSigningIntegrationTests
         builder.AddPemFileSigning(missingPath, SigningAlgorithm.RS256);
 
         await using var provider = services.BuildServiceProvider();
-        var signingService = provider.GetRequiredService<IJwtSigningService>();
 
-        var act = async () => await signingService.GetSigningKeysAsync(ct);
+        var act = async () => await StartHostedServicesAsync(provider, ct);
 
         (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>()).WithMessage("*file_not_found*");
     }
@@ -174,9 +257,8 @@ public sealed class FileSigningIntegrationTests
         builder.AddPemFileSigning(path, SigningAlgorithm.RS256);
 
         await using var provider = services.BuildServiceProvider();
-        var signingService = provider.GetRequiredService<IJwtSigningService>();
 
-        var act = async () => await signingService.GetSigningKeysAsync(ct);
+        var act = async () => await StartHostedServicesAsync(provider, ct);
 
         (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>()).WithMessage("*invalid_pem*");
     }
@@ -205,77 +287,30 @@ public sealed class FileSigningIntegrationTests
 
     // ── End-to-end signature verification (AC #8/#9) ─────────────────────────────────────────────
 
-    [Fact]
-    public async Task Full_DI_wiring_signed_token_validates_against_the_published_public_key()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        using var tempDir = new TempSigningKeyDirectory();
-        using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
-        var path = tempDir.WritePemFile("key.pem", certificate);
-        var (services, _) = BuildServices(T0);
-
-        var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddPemFileSigning(path, SigningAlgorithm.RS256);
-
-        await using var provider = services.BuildServiceProvider();
-        var signingService = provider.GetRequiredService<IJwtSigningService>();
-        var payloadSegment = SigningTestHelpers.Base64UrlEncode("{\"sub\":\"test-subject\"}"u8.ToArray());
-
-        var result = await signingService.SignAsync(payloadSegment, ct);
-        var keys = await signingService.GetSigningKeysAsync(ct);
-        var descriptor = keys.Single(k => k.Kid == result.Kid);
-
-        SigningTestHelpers.VerifyRsaSignature(descriptor, result, payloadSegment).Should().BeTrue(
-            "a relying party fetching this key from the JWKS must be able to validate a token this service signs");
-    }
-
     // ── Startup verifier ──────────────────────────────────────────────────────────────────────────
-    // FileSigningStartupService was deleted in issue #437 — it had no genuinely file-format-specific
-    // behavior of its own, only the pre-warm every provider used to hand-roll. The framework-owned
-    // SigningStartupSelfTestVerifier (internal to ZeeKayDa.Auth, which does not grant this test
-    // project [InternalsVisibleTo]) now provides that pre-warm, plus the materialize-and-verify
-    // self-test, generically for every provider. It implements the public IStartupVerifier
-    // interface, so it can be resolved and invoked directly without a host, exactly as any
-    // out-of-assembly caller would.
+    // The PEM provider no longer registers an IJwtSigningService, so the generic
+    // SigningStartupSelfTest verifier that used to pre-warm and self-test it does not apply here.
+    // AddZeeKayDaSigningKeySource registers the SigningKeyRing verifier instead, and that verifier
+    // is what the hosted-service tests above run: they already prove it reads the source, builds the
+    // set, opens the signer and self-tests it, and that a configuration failure fails the host. The
+    // two PEM-specific self-test tests that stood here were deleted as duplicates of those; the PFX
+    // provider's own self-test coverage below is untouched.
 
     [Fact]
-    public async Task Startup_self_test_forces_key_loading_and_propagates_configuration_failure()
+    public async Task AddPemFileSigning_registers_the_signing_key_ring_startup_verifier()
     {
-        var ct = TestContext.Current.CancellationToken;
-        using var tempDir = new TempSigningKeyDirectory();
-        var missingPath = tempDir.GetPath("does-not-exist.pem");
-        var (services, _) = BuildServices(T0);
-
-        var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddPemFileSigning(missingPath, SigningAlgorithm.RS256);
-
-        await using var provider = services.BuildServiceProvider();
-        var verifier = FindSigningStartupSelfTestVerifier(provider);
-
-        var act = async () => await verifier.VerifyAsync(new StartupVerificationContext(), provider, ct);
-
-        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>()).WithMessage("*file_not_found*");
-    }
-
-    [Fact]
-    public async Task Startup_self_test_succeeds_when_the_key_loads_and_signs_and_verifies_without_error()
-    {
-        var ct = TestContext.Current.CancellationToken;
+        // Pins the wiring the tests above depend on: without this verifier, a misconfigured signing
+        // key would surface on the first request instead of failing the host.
         using var tempDir = new TempSigningKeyDirectory();
         using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
-        var path = tempDir.WritePemFile("key.pem", certificate);
+        var path = tempDir.WritePemFile("current.pem", certificate);
         var (services, _) = BuildServices(T0);
 
         var builder = new ZeeKayDaAuthBuilder(services);
         builder.AddPemFileSigning(path, SigningAlgorithm.RS256);
 
         await using var provider = services.BuildServiceProvider();
-        var verifier = FindSigningStartupSelfTestVerifier(provider);
-
-        var act = async () => await verifier.VerifyAsync(new StartupVerificationContext(), provider, ct);
-
-        await act.Should().NotThrowAsync(
-            "the real PEM-backed LocalSigner's signature must verify against its own listed public key");
+        provider.GetServices<IStartupVerifier>().Select(v => v.Name).Should().Contain("SigningKeyRing");
     }
 
     private static IStartupVerifier FindSigningStartupSelfTestVerifier(ServiceProvider provider) =>

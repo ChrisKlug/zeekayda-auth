@@ -27,6 +27,15 @@ public sealed class StaticSigningKeyRing : ISigningKeyRing, IDisposable, IAsyncD
     // 0 = live, 1 = disposed. int so Interlocked.Exchange makes the transition atomic.
     private int _disposed;
 
+    // Tolerance on the not-before end of the signing key's validity window, and on that end only.
+    // No relying party can observe a key's NotBefore — it is not a JWK member (RFC 7517 §4) and no
+    // certificate is published anywhere — so signing a few minutes "early" is undetectable and
+    // harmless, while a host clock trailing the machine that minted the credential would otherwise
+    // turn a correct deployment into a hard startup failure. Fixed and non-configurable: an operator
+    // knob here would only ever be turned up to work around a broken clock. The expiry end has a real
+    // observer, every relying party validating a token, and stays exact.
+    private static readonly TimeSpan NotBeforeGrace = TimeSpan.FromMinutes(5);
+
     /// <summary>
     /// Initialises a <see cref="StaticSigningKeyRing"/> over <paramref name="source"/>. Call
     /// <see cref="ISigningKeyRing.InitializeAsync"/> (done automatically at host startup by
@@ -39,7 +48,7 @@ public sealed class StaticSigningKeyRing : ISigningKeyRing, IDisposable, IAsyncD
     /// exception is disposal racing initialization before the signer has committed, in which case
     /// the source is disposed first.
     /// </param>
-    /// <param name="timeProvider">Used to evaluate the signing key's expiry at initialization time.</param>
+    /// <param name="timeProvider">Used to evaluate the signing key's validity window at initialization time.</param>
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="source"/> or <paramref name="timeProvider"/> is
     /// <see langword="null"/>.
@@ -140,6 +149,40 @@ public sealed class StaticSigningKeyRing : ISigningKeyRing, IDisposable, IAsyncD
         GC.SuppressFinalize(this);
     }
 
+    /// <summary>
+    /// Rejects a signing key whose own validity window has not opened or has already closed.
+    /// </summary>
+    /// <remarks>
+    /// Checked against <paramref name="signingKey"/> alone and never against the published set: a
+    /// <c>Next</c> key whose window has not opened yet is the entire point of staging one, and a
+    /// <c>Previous</c> key outliving its window is why it is still published.
+    /// </remarks>
+    private static void ValidateSigningKeyWindow(SigningKey signingKey, DateTimeOffset now)
+    {
+        // Written as a difference between the two instants rather than as `notBefore - Grace > now`.
+        // The two are mathematically identical, but subtracting from notBefore underflows for a key
+        // reported with a NotBefore at DateTimeOffset.MinValue — a plausible way for a third-party
+        // source to spell "always valid" — throwing ArgumentOutOfRangeException out of startup
+        // instead of the configuration failure this method exists to raise.
+        if (signingKey.NotBefore is { } notBefore && notBefore - now > NotBeforeGrace)
+        {
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "signing.signing_key_not_yet_valid",
+                    $"The Current signing key '{signingKey.Kid}' is not valid until {notBefore:O}. " +
+                    "Configure it as Next until then, and leave the key it succeeds as Current."));
+        }
+
+        if (signingKey.ExpiresAt is { } expiresAt && expiresAt <= now)
+        {
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "signing.signing_key_expired",
+                    $"The Current signing key '{signingKey.Kid}' expired at {expiresAt:O}. An " +
+                    "expired signing key issues tokens no relying party will accept."));
+        }
+    }
+
     async ValueTask ISigningKeyRing.InitializeAsync(CancellationToken cancellationToken)
     {
         var sourceKeys = await _source.ReadAsync(cancellationToken).ConfigureAwait(false);
@@ -154,14 +197,7 @@ public sealed class StaticSigningKeyRing : ISigningKeyRing, IDisposable, IAsyncD
 
         var set = SigningKeySetBuilder.Build(sourceKeys);
 
-        if (set.SigningKey.ExpiresAt is { } expiresAt && expiresAt <= _timeProvider.GetUtcNow())
-        {
-            throw new ZeeKayDaConfigurationException(
-                new ZeeKayDaConfigurationFailure(
-                    "signing.signing_key_expired",
-                    $"The Current signing key '{set.SigningKey.Kid}' expired at {expiresAt:O}. An " +
-                    "expired signing key issues tokens no relying party will accept."));
-        }
+        ValidateSigningKeyWindow(set.SigningKey, _timeProvider.GetUtcNow());
 
         var signer = await OpenSignerAsync(set.SigningKey, cancellationToken).ConfigureAwait(false);
         try

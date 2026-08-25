@@ -54,6 +54,81 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- **BREAKING: PEM file signing is now an `ISigningKeySource` with three named key slots** (#516)
+
+  `AddPemFileSigning` no longer registers an `IJwtSigningService`. It registers a
+  `PemFileSigningKeySource` and a `StaticSigningKeyRing` over it, and gains a second overload for
+  configuring the three named slots the framework's rotation model uses:
+
+  ```csharp
+  // One signing key, no rotation staged — unchanged from before.
+  .AddPemFileSigning("/etc/zeekayda/signing/tls.pem", SigningAlgorithm.RS256);
+
+  // The three slots.
+  .AddPemFileSigning(SigningAlgorithm.RS256, options =>
+  {
+      options.Previous = new PemCertificateFile("/etc/zeekayda/signing/previous.pem");
+      options.Current  = new PemSigningFile("/etc/zeekayda/signing/current.pem");
+      options.Next     = new PemCertificateFile("/etc/zeekayda/signing/next.pem");
+  });
+  ```
+
+  **Only `Current` has a type that can name a private key.** `Current` is a
+  `PemSigningFile(string Path, string? KeyPath = null)`; `Previous` and `Next` are a
+  `PemCertificateFile(string Path)` with no `KeyPath` member at all. Since only `Current`'s private
+  key is ever opened, naming one for a published-only slot could never do anything but leave a file
+  the framework promises to permission-check and never opens — so it is unrepresentable rather than
+  rejected. Promoting a staged key is consequently not an assignment: a slot that starts signing
+  names its private key for the first time, and the key it succeeds stops naming one at the moment it
+  stops signing.
+
+  `PemFileSigningOptions` loses its `KeySetOptions` base (and with it `PublicationLead`), its `Path`,
+  `KeyPath`, `AddFile` and `AdditionalFiles` members, and carries `Previous`/`Current`/`Next` plus
+  `Algorithm`. `Current` is required; `Previous` and `Next` are independently optional. Two slots
+  naming the same file is a startup failure. `PemFileRegistration` is renamed `PemSigningFile` and is
+  now a slot value rather than an appended registration. `Algorithm`'s setter is internal, so the
+  algorithm is said exactly once, in the registration argument. The path overload takes no
+  `configure` callback, so the file it names is unambiguously the one that signs.
+
+  **Nothing verifies that a key was staged as `Next` before it was promoted.** With a fixed,
+  operator-edited list there is no observed history to check against, so staging a successor long
+  enough ahead for relying parties to have re-fetched the JWKS is the operator's decision. Replacing
+  `Current` in place and restarting is accepted silently. This is what the removed `PublicationLead`
+  warning used to hint at, on a model that no longer applies.
+
+  **Which key signs is now decided entirely by which slot it is configured in, never by the clock.**
+  Certificate `NotBefore` no longer selects among registered files, and the single-key bootstrap
+  exemption is deleted: a `Current`-only configuration is the active signer through ordinary slot
+  selection, with no special case. A certificate whose validity window has not opened belongs in
+  `Next`; configuring it as `Current` fails startup (`signing.signing_key_not_yet_valid`).
+
+  The slots are read once, at startup, and never re-read. Replacing or deleting a configured file
+  afterwards has no effect on what the process signs with or publishes until it restarts. Only
+  `Current`'s private key is ever read: a `Previous` or `Next` private key is never loaded into the
+  process at all.
+
+  The provider no longer performs its own algorithm/key-type check, so
+  `signing.file_signing.algorithm_key_type_mismatch` is gone. `SigningKeySetBuilder` rejects the same
+  mismatch centrally as `signing.key_algorithm_mismatch`, plus EC curve pairing the provider's check
+  did not cover, keyed on the configured file path so the failure still names the file. File
+  permission enforcement, symlink rejection, and PEM parsing are unchanged.
+
+- **A signing key source can report its keys' `NotBefore`, and the ring rejects a `Current` that is not valid yet** (#516)
+
+  `SourceKey` gains an optional `NotBefore`, carried through to `SigningKey`. It is a fact about the
+  credential, like the `ExpiresAt` already there — the two ends of one validity window — and neither
+  decides which key signs. `StaticSigningKeyRing.InitializeAsync` now fails startup with
+  `signing.signing_key_not_yet_valid` when the signing key's window has not opened, the mirror of the
+  existing `signing.signing_key_expired` check. Both checks apply to the signing key alone and never
+  to the published set: staging a key before its window opens is the entire point of the `Next` slot.
+  A source whose keys carry no validity window reports `null` and is unaffected.
+
+  The not-before end carries a fixed, non-configurable five-minute clock-skew grace; the expiry end
+  carries none. Nothing outside the process can observe a key's `NotBefore` — it is not a JWK member
+  and no certificate is published — so signing a few minutes early is undetectable, while a host clock
+  trailing the machine that minted the credential would otherwise fail an entirely correct deployment.
+  An expired key has a real observer in every relying party validating a token, so it stays exact.
+
 - **BREAKING: the development signing key provider is now an `ISigningKeySource` served through the signing key ring** (#512)
 
   `AddInMemoryDevelopmentJwtSigningKeys()` and `AddPersistedDevelopmentJwtSigningKeys()` keep their

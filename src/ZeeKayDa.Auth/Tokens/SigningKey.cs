@@ -12,13 +12,19 @@ namespace ZeeKayDa.Auth.Tokens;
 public sealed class SigningKey
 {
     internal SigningKey(
-        SourceKeyId sourceId, string kid, SigningAlgorithm algorithm, PublicKeyParameters publicKey, DateTimeOffset? expiresAt)
+        SourceKeyId sourceId,
+        string kid,
+        SigningAlgorithm algorithm,
+        PublicKeyParameters publicKey,
+        DateTimeOffset? expiresAt,
+        DateTimeOffset? notBefore = null)
     {
         SourceId = sourceId;
         Kid = kid;
         Algorithm = algorithm;
         PublicKey = publicKey;
         ExpiresAt = expiresAt;
+        NotBefore = notBefore;
     }
 
     /// <summary>Gets the source's own identifier for this key.</summary>
@@ -37,4 +43,11 @@ public sealed class SigningKey
 
     /// <summary>Gets the key's expiry, or <see langword="null"/> when it never expires.</summary>
     public DateTimeOffset? ExpiresAt { get; }
+
+    /// <summary>
+    /// Gets the instant this key's own credential becomes valid, or <see langword="null"/> when it
+    /// is valid from the moment it exists — carried through from
+    /// <see cref="SourceKey.NotBefore"/>.
+    /// </summary>
+    public DateTimeOffset? NotBefore { get; }
 }

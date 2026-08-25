@@ -3,79 +3,60 @@ using ZeeKayDa.Auth.Tokens;
 namespace ZeeKayDa.Auth.FileSystem;
 
 /// <summary>
-/// Configuration options for <c>AddPemFileSigning</c>.
+/// Configuration options for <c>AddPemFileSigning</c>: the three named signing key slots and the
+/// algorithm they are signed under.
 /// </summary>
 /// <remarks>
-/// The set of registered PEM files is fixed at configuration time; only the wall clock crossing
-/// each file's certificate <c>NotBefore</c>/<c>NotAfter</c> advances which one is active.
-/// <see cref="KeySetOptions.PublicationLead"/> here is only an advisory too-soon-activation
-/// startup warning — there is nothing to re-download here. Picking up a rotated-in or
-/// replaced file requires a process restart: register the successor via
-/// <see cref="AddFile(string, string)"/> ahead of its intended activation time and redeploy.
+/// The slots are read once, at startup, and never re-read — replacing or deleting a configured file
+/// afterwards has no effect on what the process signs with or publishes. Rotating means moving a
+/// file between slots and restarting: stage the successor as <see cref="Next"/> so its public half
+/// is published ahead of time, then promote it to <see cref="Current"/> and demote the key it
+/// succeeds to <see cref="Previous"/> so tokens it signed still verify.
 /// </remarks>
-public sealed class PemFileSigningOptions : KeySetOptions
+public sealed class PemFileSigningOptions
 {
-    private readonly List<PemFileRegistration> _additionalFiles = [];
+    /// <summary>
+    /// Gets or sets the previously active key, published so relying parties can still verify tokens
+    /// it signed, or <see langword="null"/> when there is none. Never used to sign.
+    /// </summary>
+    public PemCertificateFile? Previous { get; set; }
 
     /// <summary>
-    /// Gets or sets the path to the required/primary PEM file. When <see cref="KeyPath"/> is
-    /// <see langword="null"/>, this file must contain both the certificate and its private key (a
-    /// single combined cert+key PEM file). Set by <c>AddPemFileSigning</c>.
+    /// Gets or sets the key that signs. Required — startup fails when no <see cref="Current"/> is
+    /// configured.
     /// </summary>
-    public string Path { get; set; } = string.Empty;
+    public PemSigningFile? Current { get; set; }
 
     /// <summary>
-    /// Gets or sets the path to a separate private-key PEM file for <see cref="Path"/>, set by
-    /// <c>AddPemFileSigning</c>'s <c>keyPath</c> parameter. When <see langword="null"/> (the
-    /// default), <see cref="Path"/> is a combined cert+key file, exactly as this provider has
-    /// always required.
+    /// Gets or sets a key staged to become active later, published in advance so relying parties
+    /// have already cached it by the time it starts signing, or <see langword="null"/> when there is
+    /// none. Never used to sign.
     /// </summary>
-    public string? KeyPath { get; set; }
+    /// <remarks>
+    /// A certificate whose <c>NotBefore</c> has not arrived yet belongs here. Configuring one as
+    /// <see cref="Current"/> fails startup with <c>signing.signing_key_not_yet_valid</c>.
+    /// <para>
+    /// <b>Nothing verifies that a key was staged here before it was promoted.</b> With a fixed,
+    /// operator-edited list there is no observed history to check it against, so staging a successor
+    /// long enough ahead for relying parties to have re-fetched the JWKS is the operator's decision,
+    /// not something this provider can enforce. Replacing <see cref="Current"/> in place and
+    /// restarting is accepted silently, and will reject tokens at any relying party still holding a
+    /// cached key set.
+    /// </para>
+    /// </remarks>
+    public PemCertificateFile? Next { get; set; }
 
     /// <summary>
-    /// Gets or sets the JWS algorithm to use when signing. A certificate's key does not itself
-    /// declare RS256 vs PS256 — that choice is made here and must match the certificate's actual
-    /// key type (RSA algorithms for RSA certificates, EC algorithms for EC certificates). Defaults
-    /// to RS256.
+    /// Gets the JWS algorithm every configured slot is signed under. A certificate's key does not
+    /// itself declare RS256 vs PS256 — that choice is made by <c>AddPemFileSigning</c>'s
+    /// <c>algorithm</c> argument and must match each certificate's actual key type (RSA algorithms
+    /// for RSA certificates, EC algorithms for EC certificates).
     /// </summary>
-    public SigningAlgorithm Algorithm { get; set; } = SigningAlgorithm.RS256;
-
-    /// <summary>
-    /// Gets every additional PEM file registered via <see cref="AddFile(string, string)"/>, in
-    /// registration order.
-    /// </summary>
-    public IReadOnlyList<PemFileRegistration> AdditionalFiles => _additionalFiles;
-
-    /// <summary>
-    /// Registers an additional PEM file to support rotation with overlapping validity windows.
-    /// When <paramref name="keyPath"/> is <see langword="null"/> (the default), <paramref name="path"/>
-    /// must be a combined cert+key file; when supplied, <paramref name="path"/> is a certificate-only
-    /// file and <paramref name="keyPath"/> is a separate private-key-only file.
-    /// </summary>
-    /// <param name="path">
-    /// The additional PEM file's path — a combined cert+key file when <paramref name="keyPath"/> is
-    /// <see langword="null"/>, otherwise the certificate-only file.
-    /// </param>
-    /// <param name="keyPath">
-    /// The additional private-key-only PEM file's path, or <see langword="null"/> (the default) when
-    /// <paramref name="path"/> is a combined cert+key file.
-    /// </param>
-    /// <returns>This instance, so calls can be chained.</returns>
-    public PemFileSigningOptions AddFile(string path, string? keyPath = null)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(path);
-
-        if (keyPath is not null)
-            ArgumentException.ThrowIfNullOrWhiteSpace(keyPath);
-
-        _additionalFiles.Add(new PemFileRegistration(path, keyPath));
-        return this;
-    }
+    /// <remarks>
+    /// The setter is <see langword="internal"/> so the algorithm can be said exactly once, in the
+    /// registration argument. A publicly settable one would let a <c>configure</c> callback silently
+    /// beat that argument — the same "said twice, and the winner is documented nowhere" hazard the
+    /// two <c>AddPemFileSigning</c> overloads exist to prevent for the <see cref="Current"/> slot.
+    /// </remarks>
+    public SigningAlgorithm Algorithm { get; internal set; } = SigningAlgorithm.RS256;
 }
-
-/// <summary>
-/// One additional PEM file registered via <see cref="PemFileSigningOptions.AddFile(string, string)"/>.
-/// </summary>
-/// <param name="Path">The certificate path — a combined cert+key file when <paramref name="KeyPath"/> is <see langword="null"/>, otherwise the certificate-only file.</param>
-/// <param name="KeyPath">The separate private-key file's path, or <see langword="null"/> for a combined cert+key file.</param>
-public sealed record PemFileRegistration(string Path, string? KeyPath = null);
