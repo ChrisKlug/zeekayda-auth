@@ -15,9 +15,9 @@ Because a provider never holds a private-key object, aliasing or mis-ordering on
 unrepresentable. `ISigner.Dispose` releases only the handle that instance introduced — the base disposes
 it on active-key change, so a signer over a shared SDK client must not close that client.
 
-**Bundled formats keep non-active private material out of memory by never decrypting it.** The framework
-sees only public data and cannot enforce it. PFX discharges it structurally: the read path takes the
-certificate bag via `Pkcs12Info`, leaving the key bag encrypted, so only `Current`'s key materialises.
+**Bundled formats keep non-active private material out of reach by never importing it.** The framework
+sees only public data and cannot enforce it. PFX verifies the MAC against the password, takes the
+certificate the key bag's `localKeyId` names — PKCS#12 has no bag ordering — and imports no key at all.
 
 **The framework derives every `kid`; a provider cannot supply one.** The base computes an RFC 7638 JWK
 thumbprint over the public key. A provider supplies only its own internal `KeyId`, so it cannot express a

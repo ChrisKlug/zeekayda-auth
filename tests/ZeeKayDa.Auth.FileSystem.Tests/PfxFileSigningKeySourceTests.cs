@@ -157,6 +157,149 @@ public sealed class PfxFileSigningKeySourceTests
         keySet.Keys.Select(k => k.Id.Value).Should().BeEquivalentTo([currentPath, nextPath]);
     }
 
+    // ── Integrity: the password must actually authenticate the bundle ───────────────────────────
+
+    [Fact]
+    public async Task ReadAsync_rejects_a_bundle_whose_certificate_safe_is_unencrypted_when_the_password_is_wrong()
+    {
+        // The exploit this closes: reaching a certificate in an unencrypted safe needs no password,
+        // so without a MAC check any substituted bundle is accepted. Previous and Next are published
+        // but never signed with, so the ring's self-test would not catch it either — an attacker's
+        // public key would simply appear in the JWKS as a valid verification key.
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        var bundle = AdversarialPkcs12Factory.UnencryptedCertificateSafe(
+            "the-real-password", "attacker", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+        var path = tempDir.WriteBytes("current.pfx", bundle);
+        var sut = BuildSource(new PfxSigningFile(path, Password("a completely different password")));
+
+        var act = async () => await sut.ReadAsync(ct);
+
+        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.invalid_pfx");
+        exception.Which.Message.Should().Contain("integrity check");
+    }
+
+    [Fact]
+    public async Task ReadAsync_accepts_a_bundle_whose_certificate_safe_is_unencrypted_when_the_password_is_correct()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        var bundle = AdversarialPkcs12Factory.UnencryptedCertificateSafe(
+            CorrectPassword, "unencrypted-safe", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+        var path = tempDir.WriteBytes("current.pfx", bundle);
+        var sut = BuildSource(new PfxSigningFile(path, Password()));
+
+        var keySet = await sut.ReadAsync(ct);
+
+        keySet.SigningKey.PublicKey.RsaPublicParameters.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task ReadAsync_rejects_a_bundle_with_no_integrity_protection_at_all()
+    {
+        // Nothing in such a bundle can be authenticated against the configured password, so accepting
+        // it would mean the password is not a control on this path.
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        var bundle = AdversarialPkcs12Factory.NoIntegrityProtection(
+            "no-mac", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+        var path = tempDir.WriteBytes("current.pfx", bundle);
+        var sut = BuildSource(new PfxSigningFile(path, Password()));
+
+        var act = async () => await sut.ReadAsync(ct);
+
+        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.invalid_pfx");
+        exception.Which.Message.Should().Contain("integrity mode");
+    }
+
+    [Fact]
+    public async Task ReadAsync_rejects_a_wrong_password_on_a_published_only_slot_rather_than_deferring_it_to_promotion()
+    {
+        // A published-only slot has no signer, so nothing else would ever exercise its password. If a
+        // wrong one passed startup, the operator would discover it only when that slot is promoted to
+        // Current and the service refuses to start — which is exactly what staging in Next exists to
+        // avoid.
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var currentCertificate = CreateRsaCertificate();
+        var currentPath = tempDir.WritePfxFile("current.pfx", currentCertificate, CorrectPassword);
+        var nextBundle = AdversarialPkcs12Factory.UnencryptedCertificateSafe(
+            "next-real-password", "next", T0 + TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(400));
+        var nextPath = tempDir.WriteBytes("next.pfx", nextBundle);
+        var sut = BuildSource(
+            new PfxSigningFile(currentPath, Password()),
+            next: new PfxSigningFile(nextPath, Password("wrong")));
+
+        var act = async () => await sut.ReadAsync(ct);
+
+        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.invalid_pfx");
+        exception.Which.Message.Should().Contain(nextPath);
+    }
+
+    // ── Chain bundles: the signing certificate, not the first one ───────────────────────────────
+
+    [Fact]
+    public async Task ReadAsync_reports_the_signing_certificate_when_a_chain_certificate_is_stored_first()
+    {
+        // PKCS#12 imposes no bag ordering, so "the first certificate" is not the one that signs.
+        // Publishing a chain certificate's key would put a key nothing can sign with into the JWKS,
+        // while the tokens the real key signed carry a kid that is no longer published at all.
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        var (bundle, signingSubject, signingPublicKey) = AdversarialPkcs12Factory.ChainCertificateFirst(
+            CorrectPassword, T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+        var path = tempDir.WriteBytes("current.pfx", bundle);
+        var sut = BuildSource(new PfxSigningFile(path, Password()));
+
+        var keySet = await sut.ReadAsync(ct);
+
+        signingSubject.Should().Be("CN=test-signing-leaf");
+        keySet.SigningKey.PublicKey.RsaPublicParameters!.Value.Modulus
+            .Should().BeEquivalentTo(signingPublicKey.Modulus, "the leaf's key signs, not the CA's");
+    }
+
+    [Fact]
+    public async Task CreateSignerAsync_opens_the_same_certificate_the_read_reported_for_a_chain_bundle()
+    {
+        // The read path and the signing path must not disagree about which certificate is the signing
+        // one, or the ring would publish one key and sign with another.
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        var (bundle, _, _) = AdversarialPkcs12Factory.ChainCertificateFirst(
+            CorrectPassword, T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+        var path = tempDir.WriteBytes("current.pfx", bundle);
+        var sut = BuildSource(new PfxSigningFile(path, Password()));
+        var keySet = await sut.ReadAsync(ct);
+
+        using var signer = await sut.CreateSignerAsync(keySet.SigningKey.Id, ct);
+        var signingInput = "header.payload"u8.ToArray();
+        var signature = await signer.SignAsync(signingInput, ct);
+
+        using var rsa = RSA.Create(keySet.SigningKey.PublicKey.RsaPublicParameters!.Value);
+        rsa.VerifyData(signingInput, signature.Span, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)
+            .Should().BeTrue("the published key and the signing key must be the same key pair");
+    }
+
+    [Fact]
+    public async Task ReadAsync_rejects_a_bundle_with_several_certificates_and_nothing_identifying_the_signer()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        var bundle = AdversarialPkcs12Factory.TwoCertificatesNoKey(
+            CorrectPassword, T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+        var path = tempDir.WriteBytes("current.pfx", bundle);
+        var sut = BuildSource(new PfxSigningFile(path, Password()));
+
+        var act = async () => await sut.ReadAsync(ct);
+
+        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.invalid_pfx");
+        exception.Which.Message.Should().Contain("nothing identifying which one signs");
+    }
+
     // ── The three slots ──────────────────────────────────────────────────────────────────────────
 
     [Fact]

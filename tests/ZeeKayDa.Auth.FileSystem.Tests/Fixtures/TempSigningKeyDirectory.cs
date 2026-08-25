@@ -166,6 +166,15 @@ internal sealed class TempSigningKeyDirectory : IDisposable
         return path;
     }
 
+    /// <summary>Writes pre-encoded bundle bytes, for a PKCS#12 shape <c>Export</c> cannot produce.</summary>
+    public string WriteBytes(string fileName, byte[] contents)
+    {
+        var path = GetPath(fileName);
+        File.WriteAllBytes(path, contents);
+        SecureToCurrentIdentity(path);
+        return path;
+    }
+
     /// <summary>Builds the combined cert+key PEM text <c>AddPemFileSigning</c> expects in a single file.</summary>
     public static string BuildCombinedPem(X509Certificate2 certificate)
     {
