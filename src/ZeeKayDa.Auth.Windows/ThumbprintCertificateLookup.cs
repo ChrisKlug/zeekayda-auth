@@ -33,7 +33,7 @@ public sealed class ThumbprintCertificateLookup : CertificateLookup
         string.Equals(Thumbprint, ((ThumbprintCertificateLookup)other).Thumbprint, StringComparison.Ordinal);
 
     /// <inheritdoc/>
-    public override int GetHashCode() => StringComparer.Ordinal.GetHashCode(Thumbprint);
+    private protected override int GetHashCodeCore() => StringComparer.Ordinal.GetHashCode(Thumbprint);
 
     /// <summary>
     /// Returns a diagnostic description naming the thumbprint. A thumbprint is public information —

@@ -141,12 +141,33 @@ public sealed class CertificateLookupTests
 
         equals.IsFinal.Should().BeTrue("a lookup mode must not be able to override the null and type checks");
 
-        var equalsCore = typeof(CertificateLookup)
-            .GetMethod("EqualsCore", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        var objectEquals = typeof(CertificateLookup).GetMethod(nameof(object.Equals), [typeof(object)])!;
+        var getHashCode = typeof(CertificateLookup).GetMethod(nameof(object.GetHashCode))!;
 
-        equalsCore.IsAbstract.Should().BeTrue("every lookup mode must supply its own comparison");
-        equalsCore.IsFamilyAndAssembly.Should().BeTrue(
-            "private protected keeps the hierarchy closed to this assembly, matching the constructor");
+        objectEquals.IsFinal.Should().BeTrue("the object overload applies the same gate and is not a second door");
+        getHashCode.IsFinal.Should().BeTrue(
+            "hashing and equality are paired on the base, so a mode cannot override one without the other");
+
+        foreach (var name in new[] { "EqualsCore", "GetHashCodeCore" })
+        {
+            var core = typeof(CertificateLookup)
+                .GetMethod(name, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+
+            core.IsAbstract.Should().BeTrue($"every lookup mode must supply its own {name}");
+            core.IsFamilyAndAssembly.Should().BeTrue(
+                "private protected keeps the hierarchy closed to this assembly, matching the constructor");
+        }
+    }
+
+    [Fact]
+    public void The_hash_code_folds_in_the_lookup_mode()
+    {
+        // Two modes wrapping the same string must not collide. Only one mode exists to test with, so
+        // this pins the mechanism: the hash is not simply the component's own hash.
+        var lookup = CertificateLookup.ByThumbprint(CleanThumbprint);
+
+        lookup.GetHashCode().Should().NotBe(StringComparer.Ordinal.GetHashCode(CleanThumbprint),
+            "the mode is folded in, so a second mode wrapping the same string hashes differently");
     }
 
     [Fact]

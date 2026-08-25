@@ -15,10 +15,9 @@ ZeeKayDa.Auth.Windows.WindowsCertificateStoreSigningOptions.Previous.set -> void
 ZeeKayDa.Auth.Windows.WindowsCertificateStoreSigningOptions.StoreLocation.get -> System.Security.Cryptography.X509Certificates.StoreLocation
 ZeeKayDa.Auth.Windows.WindowsCertificateStoreSigningOptions.StoreName.get -> System.Security.Cryptography.X509Certificates.StoreName
 ZeeKayDa.Auth.Windows.WindowsCertificateStoreSigningOptions.WindowsCertificateStoreSigningOptions() -> void
-override ZeeKayDa.Auth.Windows.CertificateLookup.Equals(object? obj) -> bool
-override ZeeKayDa.Auth.Windows.ThumbprintCertificateLookup.GetHashCode() -> int
 override ZeeKayDa.Auth.Windows.ThumbprintCertificateLookup.ToString() -> string!
-override abstract ZeeKayDa.Auth.Windows.CertificateLookup.GetHashCode() -> int
+override sealed ZeeKayDa.Auth.Windows.CertificateLookup.Equals(object? obj) -> bool
+override sealed ZeeKayDa.Auth.Windows.CertificateLookup.GetHashCode() -> int
 static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthBuilderWindowsCertificateStoreSigningExtensions.AddWindowsCertificateStoreSigning(this ZeeKayDa.Auth.ZeeKayDaAuthBuilder! builder, ZeeKayDa.Auth.Tokens.SigningAlgorithm algorithm, System.Security.Cryptography.X509Certificates.StoreLocation storeLocation, System.Security.Cryptography.X509Certificates.StoreName storeName, System.Action<ZeeKayDa.Auth.Windows.WindowsCertificateStoreSigningOptions!>! configure) -> ZeeKayDa.Auth.ZeeKayDaAuthBuilder!
 static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthBuilderWindowsCertificateStoreSigningExtensions.AddWindowsCertificateStoreSigning(this ZeeKayDa.Auth.ZeeKayDaAuthBuilder! builder, ZeeKayDa.Auth.Windows.CertificateLookup! certificate, ZeeKayDa.Auth.Tokens.SigningAlgorithm algorithm, System.Security.Cryptography.X509Certificates.StoreLocation storeLocation, System.Security.Cryptography.X509Certificates.StoreName storeName) -> ZeeKayDa.Auth.ZeeKayDaAuthBuilder!
 static ZeeKayDa.Auth.Windows.CertificateLookup.ByThumbprint(string! thumbprint) -> ZeeKayDa.Auth.Windows.CertificateLookup!

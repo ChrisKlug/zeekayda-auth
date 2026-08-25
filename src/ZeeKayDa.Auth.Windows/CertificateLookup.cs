@@ -111,10 +111,26 @@ public abstract class CertificateLookup : IEquatable<CertificateLookup>
     private protected abstract bool EqualsCore(CertificateLookup other);
 
     /// <inheritdoc/>
-    public abstract override int GetHashCode();
+    /// <remarks>
+    /// Combines the lookup mode with the mode's own component, so two modes that happen to wrap the
+    /// same string do not collide. Sealed for the same reason <see cref="Equals(CertificateLookup)"/>
+    /// is: a mode supplies only <see cref="GetHashCodeCore"/>, which means a mode cannot override
+    /// hashing without also overriding equality, or the reverse. The pairing is structural.
+    /// </remarks>
+    public sealed override int GetHashCode() => HashCode.Combine(GetType(), GetHashCodeCore());
+
+    /// <summary>Returns a hash code for this lookup's own component.</summary>
+    /// <returns>A hash code consistent with <see cref="EqualsCore"/>.</returns>
+    private protected abstract int GetHashCodeCore();
 
     /// <inheritdoc/>
-    public override bool Equals(object? obj) => Equals(obj as CertificateLookup);
+    /// <remarks>
+    /// The exact-type check is applied directly to <paramref name="obj"/> rather than downcasting
+    /// first: a cast to the base would succeed for any mode, so testing the runtime type here is what
+    /// makes the comparison correct for every one of them.
+    /// </remarks>
+    public sealed override bool Equals(object? obj) =>
+        obj is not null && obj.GetType() == GetType() && EqualsCore((CertificateLookup)obj);
 
     /// <summary>Determines whether two lookups name the same certificate the same way.</summary>
     /// <param name="left">The first lookup, or <see langword="null"/>.</param>
