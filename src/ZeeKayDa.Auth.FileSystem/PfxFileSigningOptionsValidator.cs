@@ -16,18 +16,16 @@ internal sealed class PfxFileSigningOptionsValidator : IValidateOptions<PfxFileS
     {
         var errors = new List<string>();
 
-        if (KeySourcePublicationLeadValidator.ValidateMinimum(nameof(PfxFileSigningOptions), options.PublicationLead) is { } publicationLeadError)
-            errors.Add(publicationLeadError);
-
-        if (string.IsNullOrWhiteSpace(options.Path))
-            errors.Add("PfxFileSigningOptions.Path must be set to a non-empty file path.");
-
-        if (options.PasswordSource is null)
+        if (options.Current is null)
         {
             errors.Add(
-                "PfxFileSigningOptions.PasswordSource must be set. AddPfxFileSigning requires a " +
-                "password-source delegate for the primary file.");
+                "PfxFileSigningOptions.Current must be set to the PFX file that signs. Previous and " +
+                "Next are optional; Current is not.");
         }
+
+        AppendSlotErrors(nameof(PfxFileSigningOptions.Previous), options.Previous, errors);
+        AppendSlotErrors(nameof(PfxFileSigningOptions.Current), options.Current, errors);
+        AppendSlotErrors(nameof(PfxFileSigningOptions.Next), options.Next, errors);
 
         if (!Enum.IsDefined(options.Algorithm))
         {
@@ -36,40 +34,31 @@ internal sealed class PfxFileSigningOptionsValidator : IValidateOptions<PfxFileS
                 $"{nameof(SigningAlgorithm)} member.");
         }
 
-        AppendAdditionalFileErrors(options, errors);
+        AppendDuplicatePathErrors(options, errors);
 
         return errors.Count > 0 ? ValidateOptionsResult.Fail(errors) : ValidateOptionsResult.Success;
     }
 
-    private static void AppendAdditionalFileErrors(PfxFileSigningOptions options, List<string> errors)
+    private static void AppendSlotErrors(string slotName, PfxFile? slot, List<string> errors)
     {
-        var seen = new HashSet<string>(StringComparer.Ordinal) { options.Path };
-        var hasEmptyAdditionalPath = false;
-        var hasDuplicateAdditionalPath = false;
-        var hasMissingPasswordSource = false;
+        if (slot is null)
+            return;
 
-        foreach (var file in options.AdditionalFiles)
-        {
-            if (string.IsNullOrWhiteSpace(file.Path))
-                hasEmptyAdditionalPath = true;
-            else if (!seen.Add(file.Path))
-                hasDuplicateAdditionalPath = true;
+        if (string.IsNullOrWhiteSpace(slot.Path))
+            errors.Add($"PfxFileSigningOptions.{slotName}.Path must be set to a non-empty file path.");
 
-            if (file.PasswordSource is null)
-                hasMissingPasswordSource = true;
-        }
-
-        if (hasEmptyAdditionalPath)
-            errors.Add("AddFile was called with a null, empty, or whitespace-only path.");
-
-        if (hasDuplicateAdditionalPath)
-        {
-            errors.Add(
-                "AddFile was called with a path that duplicates the primary path or another " +
-                "already-registered file.");
-        }
-
-        if (hasMissingPasswordSource)
-            errors.Add("AddFile was called with a null password-source delegate.");
+        // Every slot needs a password to be opened at all, including a published-only one, whose
+        // certificate sits inside a password-protected safe.
+        if (slot.PasswordSource is null)
+            errors.Add($"PfxFileSigningOptions.{slotName}.PasswordSource must be set to a password-source delegate.");
     }
+
+    private static void AppendDuplicatePathErrors(PfxFileSigningOptions options, List<string> errors) =>
+        SigningFilePaths.AppendPathErrors(
+            nameof(PfxFileSigningOptions),
+            "Every configured path must be a distinct file.",
+            errors,
+            options.Previous?.Path,
+            options.Current?.Path,
+            options.Next?.Path);
 }

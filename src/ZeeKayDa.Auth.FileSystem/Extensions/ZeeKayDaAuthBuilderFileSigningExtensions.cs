@@ -128,10 +128,12 @@ public static class ZeeKayDaAuthBuilderFileSigningExtensions
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(configure);
 
-        // Transitional, removed with IJwtSigningService itself in #511: the sibling PFX provider has
-        // not been ported to a signing key source yet, so AddZeeKayDaSigningKeySource below cannot
-        // see its registration. Without this, registering both would leave the application with two
-        // signing providers rather than the one it is allowed.
+        // Transitional, removed with IJwtSigningService itself in #511. The Windows certificate-store
+        // and Azure Key Vault providers are not ported to a signing key source yet, so
+        // AddZeeKayDaSigningKeySource below cannot see their registrations. Without this, registering
+        // one of them and then this one would leave the application with two signing providers rather
+        // than the one it is allowed. The reverse order is not detectable from here and is deferred
+        // until those ports land.
         builder.ThrowIfAlreadyRegistered(typeof(IJwtSigningService));
 
         // Registered first so a second signing key source is rejected before this method applies any
@@ -157,32 +159,30 @@ public static class ZeeKayDaAuthBuilderFileSigningExtensions
     }
 
     /// <summary>
-    /// Registers a PFX/PKCS#12 bundle as the JWT signing key provider. The file identified by
-    /// <paramref name="path"/> is loaded at startup and its private key is used for signing locally,
-    /// in process.
+    /// Registers a single PFX/PKCS#12 bundle as the JWT signing key, with no rotation staged. The
+    /// file identified by <paramref name="path"/> is read once at startup and its private key is used
+    /// for signing locally, in process.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Filesystem permissions are enforced fail-closed exactly as for <see cref="AddPemFileSigning(ZeeKayDaAuthBuilder,string,SigningAlgorithm,string)"/>.
-    /// The PFX password adds defense in depth on top of that — see
-    /// <see cref="PfxFileSigningOptions.PasswordSource"/> for why it is an async delegate rather
-    /// than a plain <see langword="string"/>.
+    /// Filesystem permissions are enforced fail-closed exactly as for
+    /// <see cref="AddPemFileSigning(ZeeKayDaAuthBuilder,string,SigningAlgorithm,string)"/>. The PFX
+    /// password adds defense in depth on top of that — see
+    /// <see cref="PfxFile.PasswordSource"/> for why it is an async delegate rather than a
+    /// plain <see langword="string"/>.
     /// </para>
     /// <para>
-    /// Rotation: register additional PFX files (each with its own password source) via
-    /// <see cref="PfxFileSigningOptions.AddFile"/> in <paramref name="configure"/>. Shares the
-    /// rotation/retirement model described on <see cref="SigningKeyRotation"/>.
+    /// To stage a rotation, use the
+    /// <see cref="AddPfxFileSigning(ZeeKayDaAuthBuilder,SigningAlgorithm,Action{PfxFileSigningOptions})"/>
+    /// overload and fill the <c>Previous</c>/<c>Current</c>/<c>Next</c> slots. This overload takes no
+    /// configuration callback precisely so that the bundle it names is unambiguously the one that
+    /// signs.
     /// </para>
     /// </remarks>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
-    /// <param name="path">The path to the required/primary PFX/PKCS#12 file.</param>
+    /// <param name="path">The path to the PFX/PKCS#12 file that signs.</param>
     /// <param name="algorithm">The JWS algorithm to sign with.</param>
     /// <param name="passwordSource">The delegate that supplies <paramref name="path"/>'s password.</param>
-    /// <param name="configure">
-    /// An optional callback to further configure <see cref="PfxFileSigningOptions"/> (for example,
-    /// <see cref="ZeeKayDa.Auth.Tokens.KeySetOptions.PublicationLead"/> or additional files for
-    /// rotation via <see cref="PfxFileSigningOptions.AddFile"/>).
-    /// </param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="builder"/> or <paramref name="passwordSource"/> is
@@ -192,44 +192,95 @@ public static class ZeeKayDaAuthBuilderFileSigningExtensions
     /// Thrown when <paramref name="path"/> is null, empty, or whitespace.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// Thrown when an <see cref="IJwtSigningService"/> has already been registered. Only one signing
-    /// key provider is allowed.
+    /// Thrown when a signing key source has already been registered. Only one signing key provider
+    /// is allowed.
     /// </exception>
     public static ZeeKayDaAuthBuilder AddPfxFileSigning(
         this ZeeKayDaAuthBuilder builder,
         string path,
         SigningAlgorithm algorithm,
-        Func<CancellationToken, ValueTask<string>> passwordSource,
-        Action<PfxFileSigningOptions>? configure = null)
+        Func<CancellationToken, ValueTask<string>> passwordSource)
     {
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         ArgumentNullException.ThrowIfNull(passwordSource);
 
-        builder.Services.AddZeeKayDaAuthCore();
+        return AddPfxFileSigning(builder, algorithm, options => options.Current = new PfxFile(path, passwordSource));
+    }
 
+    /// <summary>
+    /// Registers PFX/PKCS#12 bundles as the JWT signing keys, configured into the
+    /// <see cref="PfxFileSigningOptions.Previous"/>, <see cref="PfxFileSigningOptions.Current"/> and
+    /// <see cref="PfxFileSigningOptions.Next"/> slots. Every configured slot is read once at startup
+    /// and published; only <c>Current</c>'s private key is ever decrypted, and it signs locally, in
+    /// process.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <see cref="PfxFileSigningOptions.Current"/> is required; <c>Previous</c> and <c>Next</c> are
+    /// independently optional. Every slot needs its own password source — a published-only bundle's
+    /// certificate sits inside a password-protected safe — and real-world bundles are frequently
+    /// password-per-file. Startup fails when no <c>Current</c> is configured, when two slots name the
+    /// same file, or when <c>Current</c>'s certificate is expired or not valid yet.
+    /// </para>
+    /// <para>
+    /// A published-only slot's private key is never decrypted: its certificate is read out of the
+    /// bundle without touching the key bag. See <see cref="PfxFileSigningOptions"/>.
+    /// </para>
+    /// <para>
+    /// Rotation: stage the successor as <c>Next</c> so its public half is published ahead of time,
+    /// then promote it to <c>Current</c> and demote the key it succeeds to <c>Previous</c>. The slots
+    /// are read once at startup, so each move takes effect on restart. How long a successor must sit
+    /// in <c>Next</c> before promotion is the operator's decision — see
+    /// <see cref="PfxFileSigningOptions.Next"/>.
+    /// </para>
+    /// </remarks>
+    /// <param name="builder">The ZeeKayDa.Auth builder.</param>
+    /// <param name="algorithm">The JWS algorithm every configured slot is signed under.</param>
+    /// <param name="configure">A callback that fills the signing key slots.</param>
+    /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="builder"/> or <paramref name="configure"/> is
+    /// <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when a signing key source has already been registered. Only one signing key provider
+    /// is allowed.
+    /// </exception>
+    public static ZeeKayDaAuthBuilder AddPfxFileSigning(
+        this ZeeKayDaAuthBuilder builder,
+        SigningAlgorithm algorithm,
+        Action<PfxFileSigningOptions> configure)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentNullException.ThrowIfNull(configure);
+
+        // Transitional, removed with IJwtSigningService itself in #511. The Windows certificate-store
+        // and Azure Key Vault providers are not ported to a signing key source yet, so
+        // AddZeeKayDaSigningKeySource below cannot see their registrations. Without this, registering
+        // one of them and then this one would leave the application with two signing providers rather
+        // than the one it is allowed. The reverse order is not detectable from here and is deferred
+        // until those ports land.
         builder.ThrowIfAlreadyRegistered(typeof(IJwtSigningService));
 
-        // The mirror of the guard in AddPemFileSigning, and equally transitional: this provider is
-        // still on IJwtSigningService, so it must reject a PEM registration by the ring that one
-        // leaves behind. Both guards go away with #511.
-        builder.ThrowIfAlreadyRegistered(typeof(ISigningKeyRing));
+        // Registered first so a second signing key source is rejected before this method applies any
+        // of its own configuration — a caller that catches the rejection must not be left with this
+        // call's options callbacks applied to the surviving registration.
+        builder.Services.AddZeeKayDaSigningKeySource<PfxFileSigningKeySource>();
+
+        // Defensive/idempotent: guarantees the core services are resolvable even when this package is
+        // used standalone, without ZeeKayDa.Auth.AspNetCore's AddZeeKayDaAuth().
+        builder.Services.AddZeeKayDaAuthCore();
 
         builder.Services.AddOptions<PfxFileSigningOptions>()
-            .Configure(options =>
-            {
-                options.Path = path;
-                options.Algorithm = algorithm;
-                options.PasswordSource = passwordSource;
-            })
-            .Configure(configure ?? (_ => { }))
+            .Configure(options => options.Algorithm = algorithm)
+            .Configure(configure)
             .ValidateOnStart();
 
         builder.Services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IValidateOptions<PfxFileSigningOptions>, PfxFileSigningOptionsValidator>());
 
         AddSharedFileSigningServices(builder);
-        builder.Services.AddSingleton<IJwtSigningService, PfxFileSigningJwtSigningService>();
 
         return builder;
     }

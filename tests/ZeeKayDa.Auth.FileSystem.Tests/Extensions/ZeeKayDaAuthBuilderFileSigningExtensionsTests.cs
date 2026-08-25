@@ -248,15 +248,131 @@ public sealed class ZeeKayDaAuthBuilderFileSigningExtensionsTests
     }
 
     [Fact]
-    public async Task AddPfxFileSigning_resolves_IJwtSigningService_as_PfxFileSigningJwtSigningService()
+    public async Task AddPfxFileSigning_registers_a_static_signing_key_ring()
     {
         var builder = NewBuilder();
 
         builder.AddPfxFileSigning(PfxPath, SigningAlgorithm.RS256, AnyPassword());
 
         await using var provider = builder.Services.BuildServiceProvider();
-        var service = provider.GetRequiredService<IJwtSigningService>();
-        service.Should().BeOfType<PfxFileSigningJwtSigningService>();
+        provider.GetService<ISigningKeyRing>().Should().BeOfType<StaticSigningKeyRing>();
+    }
+
+    [Fact]
+    public async Task AddPfxFileSigning_fills_the_Current_slot_with_the_path_and_password_source()
+    {
+        var builder = NewBuilder();
+        var passwordSource = AnyPassword();
+
+        builder.AddPfxFileSigning(PfxPath, SigningAlgorithm.RS256, passwordSource);
+
+        await using var provider = builder.Services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<PfxFileSigningOptions>>().Value;
+        options.Current.Should().Be(new PfxFile(PfxPath, passwordSource));
+        options.Previous.Should().BeNull("the path overload stages no rotation");
+        options.Next.Should().BeNull("the path overload stages no rotation");
+    }
+
+    // ── AddPfxFileSigning: the three-slot overload ───────────────────────────────────────────────
+
+    [Fact]
+    public void AddPfxFileSigning_slots_overload_throws_ArgumentNullException_when_builder_is_null()
+    {
+        var act = () => ((ZeeKayDaAuthBuilder)null!).AddPfxFileSigning(SigningAlgorithm.RS256, _ => { });
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("builder");
+    }
+
+    [Fact]
+    public void AddPfxFileSigning_slots_overload_throws_ArgumentNullException_when_configure_is_null()
+    {
+        var builder = NewBuilder();
+
+        var act = () => builder.AddPfxFileSigning(SigningAlgorithm.RS256, null!);
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("configure");
+    }
+
+    [Fact]
+    public async Task AddPfxFileSigning_slots_overload_fills_every_slot_the_callback_sets()
+    {
+        var builder = NewBuilder();
+        var previousPassword = AnyPassword();
+        var currentPassword = AnyPassword();
+        var nextPassword = AnyPassword();
+
+        builder.AddPfxFileSigning(SigningAlgorithm.ES256, options =>
+        {
+            options.Previous = new PfxFile("/etc/zeekayda/previous.pfx", previousPassword);
+            options.Current = new PfxFile("/etc/zeekayda/current.pfx", currentPassword);
+            options.Next = new PfxFile("/etc/zeekayda/next.pfx", nextPassword);
+        });
+
+        await using var provider = builder.Services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<PfxFileSigningOptions>>().Value;
+        options.Previous.Should().Be(new PfxFile("/etc/zeekayda/previous.pfx", previousPassword));
+        options.Current.Should().Be(new PfxFile("/etc/zeekayda/current.pfx", currentPassword));
+        options.Next.Should().Be(new PfxFile("/etc/zeekayda/next.pfx", nextPassword));
+        options.Algorithm.Should().Be(SigningAlgorithm.ES256);
+    }
+
+    [Fact]
+    public async Task AddPfxFileSigning_algorithm_argument_is_the_only_thing_that_sets_the_algorithm()
+    {
+        // PfxFileSigningOptions.Algorithm has an internal setter, mirroring PEM: the algorithm is
+        // said once, in the registration argument, and a configure callback cannot beat it.
+        typeof(PfxFileSigningOptions).GetProperty(nameof(PfxFileSigningOptions.Algorithm))!
+            .SetMethod!.IsAssembly.Should().BeTrue("a public setter would let a callback beat the argument");
+
+        var builder = NewBuilder();
+
+        builder.AddPfxFileSigning(SigningAlgorithm.ES256, options =>
+            options.Current = new PfxFile("/etc/zeekayda/current.pfx", AnyPassword()));
+
+        await using var provider = builder.Services.BuildServiceProvider();
+        provider.GetRequiredService<IOptions<PfxFileSigningOptions>>().Value.Algorithm
+            .Should().Be(SigningAlgorithm.ES256);
+    }
+
+    [Fact]
+    public void AddPfxFileSigning_throws_when_a_signing_key_source_is_already_registered()
+    {
+        var builder = NewBuilder();
+        builder.AddPfxFileSigning(PfxPath, SigningAlgorithm.RS256, AnyPassword());
+
+        var act = () => builder.AddPfxFileSigning("/etc/zeekayda/other.pfx", SigningAlgorithm.RS256, AnyPassword());
+
+        act.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public async Task AddPfxFileSigning_does_not_apply_its_options_when_the_source_registration_is_rejected()
+    {
+        // The source is registered before any configuration callback runs, so a caller that catches
+        // the rejection is not left with the rejected call's slots on the surviving registration.
+        var builder = NewBuilder();
+        var originalPassword = AnyPassword();
+        builder.AddPfxFileSigning(PfxPath, SigningAlgorithm.RS256, originalPassword);
+
+        var act = () => builder.AddPfxFileSigning(SigningAlgorithm.ES256, options =>
+            options.Current = new PfxFile("/etc/zeekayda/rejected.pfx", AnyPassword()));
+
+        act.Should().Throw<InvalidOperationException>();
+        await using var provider = builder.Services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<PfxFileSigningOptions>>().Value;
+        options.Current.Should().Be(new PfxFile(PfxPath, originalPassword));
+        options.Algorithm.Should().Be(SigningAlgorithm.RS256);
+    }
+
+    [Fact]
+    public async Task AddPfxFileSigning_does_not_register_the_source_in_the_container()
+    {
+        var builder = NewBuilder();
+
+        builder.AddPfxFileSigning(PfxPath, SigningAlgorithm.RS256, AnyPassword());
+
+        await using var provider = builder.Services.BuildServiceProvider();
+        provider.GetService<ISigningKeySource>().Should().BeNull();
     }
 
     // FileSigningStartupService was deleted in issue #437: it had no genuinely file-format-specific

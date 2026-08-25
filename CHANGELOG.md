@@ -54,6 +54,67 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- **BREAKING: PFX file signing is now an `ISigningKeySource` with three named key slots, and a published-only bundle's private key is never decrypted** (#517)
+
+  `AddPfxFileSigning` no longer registers an `IJwtSigningService`. It registers a
+  `PfxFileSigningKeySource` and a `StaticSigningKeyRing` over it, and gains a second overload for the
+  three named slots, mirroring `AddPemFileSigning`:
+
+  ```csharp
+  // One signing key, no rotation staged — unchanged from before.
+  .AddPfxFileSigning("/etc/zeekayda/signing/tls.pfx", SigningAlgorithm.RS256, ReadPassword);
+
+  // The three slots, each with its own password.
+  .AddPfxFileSigning(SigningAlgorithm.RS256, options =>
+  {
+      options.Previous = new PfxFile("/etc/zeekayda/signing/previous.pfx", ReadPreviousPassword);
+      options.Current  = new PfxFile("/etc/zeekayda/signing/current.pfx", ReadCurrentPassword);
+      options.Next     = new PfxFile("/etc/zeekayda/signing/next.pfx", ReadNextPassword);
+  });
+  ```
+
+  `PfxFileSigningOptions` loses its `KeySetOptions` base (and with it `PublicationLead`), its `Path`,
+  `PasswordSource`, `AddFile` and `AdditionalFiles` members, and carries `Previous`/`Current`/`Next`
+  plus `Algorithm`, whose setter is now internal. `Current` is required; `Previous` and `Next` are
+  independently optional. Every slot carries its own password source — a published-only bundle's
+  certificate sits inside a password-protected safe — and two slots naming the same file is a startup
+  failure. The path overload takes no `configure` callback.
+
+  **A `Previous` or `Next` bundle's private key is never imported into a key object.** PKCS#12 bundles
+  the certificate and key together, so keeping non-active private material out of reach is this
+  provider's own obligation rather than something the framework can enforce. The read path now
+  discharges it by walking the bundle with `Pkcs12Info`: the password authenticates the file and
+  decrypts the authenticated safe, the certificate bag is read, and no key bag is ever decrypted or
+  imported. `X509CertificateLoader.LoadPkcs12`, which would import one, is reached only when
+  `Current`'s signer is opened. That holds on every platform, so the transient on-disk key-container
+  residue this provider used to risk on Windows is now unreachable for the published-only slots rather
+  than merely narrowed.
+
+  **A bundle must now authenticate against its configured password, and must identify which
+  certificate signs.** Two consequences follow, and both can reject a bundle that previously loaded:
+
+  - The bundle's MAC is verified against the configured password, and a bundle carrying no password
+    MAC is rejected outright. Without this the password is not a control on the read path at all: a
+    bundle whose certificate sits in an unencrypted safe is never asked for one, so any password —
+    and any substituted file — would be accepted. Because `Previous` and `Next` are published but
+    never signed with, nothing downstream would have caught it; their public keys would simply appear
+    in the JWKS as valid verification keys.
+  - The certificate reported is the one paired with the bundle's private key by its `localKeyId`
+    attribute, not the first certificate in the file. PKCS#12 imposes no bag ordering, so a bundle
+    carrying a chain can store an issuer's certificate first. Publishing that instead would put a key
+    nothing can sign with into the JWKS while the tokens the real key signed carry a `kid` that is no
+    longer published. A bundle with several certificates and nothing identifying the signer is
+    rejected rather than guessed at.
+
+  Otherwise as for PEM: which key signs is decided entirely by which slot it is configured in, the
+  single-key bootstrap exemption is gone, `NotBefore`/`ExpiresAt` come from the certificate, and the
+  provider's own algorithm/key-type check is deleted in favour of `SigningKeySetBuilder`'s. File
+  permission enforcement and symlink rejection are unchanged, and apply to every configured slot.
+
+  `ZeeKayDa.Auth.FileSystem` picks up a `System.Security.Cryptography.Pkcs` package reference for the
+  managed PKCS#12 parsing — already used by `ZeeKayDa.Auth.AzureKeyVault` for the same purpose, and
+  internal to both, so no type from it reaches the public surface.
+
 - **BREAKING: PEM file signing is now an `ISigningKeySource` with three named key slots** (#516)
 
   `AddPemFileSigning` no longer registers an `IJwtSigningService`. It registers a

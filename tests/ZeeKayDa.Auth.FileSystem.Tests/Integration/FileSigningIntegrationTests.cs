@@ -217,12 +217,78 @@ public sealed class FileSigningIntegrationTests
         builder.AddPfxFileSigning(path, SigningAlgorithm.RS256, _ => ValueTask.FromResult(CorrectPassword));
 
         await using var provider = services.BuildServiceProvider();
-        var signingService = provider.GetRequiredService<IJwtSigningService>();
+        await StartHostedServicesAsync(provider, ct);
+        var ring = provider.GetRequiredService<ISigningKeyRing>();
 
-        var keys = await signingService.GetSigningKeysAsync(ct);
+        ring.Current.Published.Should().ContainSingle();
+        ring.Current.SigningKey.Kid.Should().Be(JwkThumbprint.Compute(certificate.GetRSAPublicKey()!.ExportParameters(false)));
 
-        keys.Should().ContainSingle();
-        keys[0].RsaPublicParameters.Should().NotBeNull();
+        var outcome = await ring.SignAsync("header.payload"u8.ToArray(), static (_, input) => input, ct);
+
+        using var rsa = RSA.Create(ring.Current.SigningKey.PublicKey.RsaPublicParameters!.Value);
+        rsa.VerifyData(outcome.SigningInput.Span, outcome.Signature.Span, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)
+            .Should().BeTrue("the ring must sign with the private key of the published Current slot");
+    }
+
+    [Fact]
+    public async Task Full_DI_wiring_publishes_every_configured_PFX_slot_and_signs_with_Current()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var previous = TestCertificateFactory.CreateRsaSelfSigned("previous", T0 - TimeSpan.FromDays(400), T0 + TimeSpan.FromDays(30));
+        using var current = TestCertificateFactory.CreateRsaSelfSigned("current", T0 - TimeSpan.FromDays(30), T0 + TimeSpan.FromDays(365));
+        using var next = TestCertificateFactory.CreateRsaSelfSigned("next", T0 + TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(400));
+        var previousPath = tempDir.WritePfxFile("previous.pfx", previous, "previous-password");
+        var currentPath = tempDir.WritePfxFile("current.pfx", current, CorrectPassword);
+        var nextPath = tempDir.WritePfxFile("next.pfx", next, "next-password");
+        var (services, _) = BuildServices(T0);
+
+        var builder = new ZeeKayDaAuthBuilder(services);
+        builder.AddPfxFileSigning(SigningAlgorithm.RS256, options =>
+        {
+            options.Previous = new PfxFile(previousPath, _ => ValueTask.FromResult("previous-password"));
+            options.Current = new PfxFile(currentPath, _ => ValueTask.FromResult(CorrectPassword));
+            options.Next = new PfxFile(nextPath, _ => ValueTask.FromResult("next-password"));
+        });
+
+        await using var provider = services.BuildServiceProvider();
+        await StartHostedServicesAsync(provider, ct);
+        var ring = provider.GetRequiredService<ISigningKeyRing>();
+
+        ring.Current.Published.Should().HaveCount(3, "every configured slot is published, each opened with its own password");
+        ring.Current.SigningKey.Kid.Should().Be(JwkThumbprint.Compute(current.GetRSAPublicKey()!.ExportParameters(false)));
+    }
+
+    [Fact]
+    public async Task Full_DI_wiring_keeps_publishing_a_PFX_bundle_that_is_deleted_after_startup()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var current = TestCertificateFactory.CreateRsaSelfSigned("current", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+        using var next = TestCertificateFactory.CreateRsaSelfSigned("next", T0 + TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(400));
+        var currentPath = tempDir.WritePfxFile("current.pfx", current, CorrectPassword);
+        var nextPath = tempDir.WritePfxFile("next.pfx", next, CorrectPassword);
+        var (services, _) = BuildServices(T0);
+
+        var builder = new ZeeKayDaAuthBuilder(services);
+        builder.AddPfxFileSigning(SigningAlgorithm.RS256, options =>
+        {
+            options.Current = new PfxFile(currentPath, _ => ValueTask.FromResult(CorrectPassword));
+            options.Next = new PfxFile(nextPath, _ => ValueTask.FromResult(CorrectPassword));
+        });
+
+        await using var provider = services.BuildServiceProvider();
+        await StartHostedServicesAsync(provider, ct);
+        var ring = provider.GetRequiredService<ISigningKeyRing>();
+        var publishedAtStartup = ring.Current.Published.Select(k => k.Kid).ToArray();
+
+        File.Delete(currentPath);
+        File.Delete(nextPath);
+
+        ring.Current.Published.Select(k => k.Kid).Should().Equal(publishedAtStartup);
+
+        var outcome = await ring.SignAsync("header.payload"u8.ToArray(), static (_, input) => input, ct);
+        outcome.Key.Kid.Should().Be(JwkThumbprint.Compute(current.GetRSAPublicKey()!.ExportParameters(false)));
     }
 
     // ── Startup failure propagation ──────────────────────────────────────────────────────────────
@@ -276,13 +342,12 @@ public sealed class FileSigningIntegrationTests
         builder.AddPfxFileSigning(path, SigningAlgorithm.RS256, _ => ValueTask.FromResult("wrong-password"));
 
         await using var provider = services.BuildServiceProvider();
-        var signingService = provider.GetRequiredService<IJwtSigningService>();
 
-        var act = async () => await signingService.GetSigningKeysAsync(ct);
+        var act = async () => await StartHostedServicesAsync(provider, ct);
 
         var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
         exception.Which.Message.Should().Contain("invalid_pfx");
-        exception.Which.Message.Should().NotContain(CorrectPassword);
+        exception.Which.Message.Should().NotContain(CorrectPassword).And.NotContain("wrong-password");
     }
 
     // ── End-to-end signature verification (AC #8/#9) ─────────────────────────────────────────────
