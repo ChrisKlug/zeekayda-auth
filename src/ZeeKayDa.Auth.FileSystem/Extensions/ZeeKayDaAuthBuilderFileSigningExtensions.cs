@@ -19,10 +19,9 @@ namespace Microsoft.Extensions.DependencyInjection;
 public static class ZeeKayDaAuthBuilderFileSigningExtensions
 {
     /// <summary>
-    /// Registers a PEM certificate (and, optionally, a separate private-key PEM file) as the JWT
-    /// signing key provider. The file(s) identified by <paramref name="path"/> and
-    /// <paramref name="keyPath"/> are loaded at startup and the private key is used for signing
-    /// locally, in process.
+    /// Registers a single PEM certificate as the JWT signing key, with no rotation staged. The
+    /// file(s) identified by <paramref name="path"/> and <paramref name="keyPath"/> are read once at
+    /// startup and the private key is used for signing locally, in process.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -39,16 +38,16 @@ public static class ZeeKayDaAuthBuilderFileSigningExtensions
     /// broader-than-expected permission is a hard startup failure, not a warning.
     /// </para>
     /// <para>
-    /// Rotation: register additional PEM files via
-    /// <see cref="PemFileSigningOptions.AddFile(string, string)"/> in <paramref name="configure"/>.
-    /// With one registered file it is the active signer immediately; with two or more, the file
-    /// whose certificate <c>NotBefore</c> has arrived and is most recent wins. See
-    /// <see cref="SigningKeyRotation"/> for the full model.
+    /// To stage a rotation, use the
+    /// <see cref="AddPemFileSigning(ZeeKayDaAuthBuilder,SigningAlgorithm,Action{PemFileSigningOptions})"/>
+    /// overload and fill the <c>Previous</c>/<c>Current</c>/<c>Next</c> slots. This overload takes no
+    /// configuration callback precisely so that the file it names is unambiguously the one that
+    /// signs.
     /// </para>
     /// </remarks>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
     /// <param name="path">
-    /// The path to the required/primary PEM file — a combined cert+key file when
+    /// The path to the PEM file that signs — a combined cert+key file when
     /// <paramref name="keyPath"/> is <see langword="null"/>, otherwise the certificate-only file.
     /// </param>
     /// <param name="algorithm">The JWS algorithm to sign with.</param>
@@ -56,11 +55,6 @@ public static class ZeeKayDaAuthBuilderFileSigningExtensions
     /// The path to a separate private-key-only PEM file for <paramref name="path"/>, or
     /// <see langword="null"/> (the default) when <paramref name="path"/> is a combined cert+key
     /// file.
-    /// </param>
-    /// <param name="configure">
-    /// An optional callback to further configure <see cref="PemFileSigningOptions"/> (for example,
-    /// <see cref="ZeeKayDa.Auth.Tokens.KeySetOptions.PublicationLead"/> or additional files for
-    /// rotation via <see cref="PemFileSigningOptions.AddFile(string, string)"/>).
     /// </param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
     /// <exception cref="ArgumentNullException">
@@ -71,15 +65,14 @@ public static class ZeeKayDaAuthBuilderFileSigningExtensions
     /// <paramref name="keyPath"/> is empty or whitespace (but not <see langword="null"/>).
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// Thrown when an <see cref="IJwtSigningService"/> has already been registered. Only one signing
-    /// key provider is allowed.
+    /// Thrown when a signing key source has already been registered. Only one signing key provider
+    /// is allowed.
     /// </exception>
     public static ZeeKayDaAuthBuilder AddPemFileSigning(
         this ZeeKayDaAuthBuilder builder,
         string path,
         SigningAlgorithm algorithm,
-        string? keyPath = null,
-        Action<PemFileSigningOptions>? configure = null)
+        string? keyPath = null)
     {
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
@@ -87,27 +80,77 @@ public static class ZeeKayDaAuthBuilderFileSigningExtensions
         if (keyPath is not null)
             ArgumentException.ThrowIfNullOrWhiteSpace(keyPath);
 
-        // Defensive/idempotent: guarantees ISigningKeyRetirementWindowProvider is resolvable even
-        // when this package is used standalone, without ZeeKayDa.Auth.AspNetCore's AddZeeKayDaAuth().
-        builder.Services.AddZeeKayDaAuthCore();
+        return AddPemFileSigning(builder, algorithm, options => options.Current = new PemSigningFile(path, keyPath));
+    }
 
+    /// <summary>
+    /// Registers PEM certificates as the JWT signing keys, configured into the
+    /// <see cref="PemFileSigningOptions.Previous"/>, <see cref="PemFileSigningOptions.Current"/> and
+    /// <see cref="PemFileSigningOptions.Next"/> slots. Every configured slot is read once at startup
+    /// and published; only <c>Current</c>'s private key is ever read, and it signs locally, in
+    /// process.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <see cref="PemFileSigningOptions.Current"/> is required; <c>Previous</c> and <c>Next</c> are
+    /// independently optional. Startup fails when no <c>Current</c> is configured, when two slots
+    /// name the same file, or when <c>Current</c>'s certificate is expired or not valid yet.
+    /// </para>
+    /// <para>
+    /// Filesystem permissions are enforced fail-closed on every loaded file, exactly as for
+    /// <see cref="AddPemFileSigning(ZeeKayDaAuthBuilder,string,SigningAlgorithm,string)"/>.
+    /// </para>
+    /// <para>
+    /// Rotation: stage the successor as <c>Next</c> so its public half is published ahead of time,
+    /// then promote it to <c>Current</c> and demote the key it succeeds to <c>Previous</c>. The slots
+    /// are read once at startup, so each move takes effect on restart. See
+    /// <see cref="SigningKeyRotation"/> for the full model.
+    /// </para>
+    /// </remarks>
+    /// <param name="builder">The ZeeKayDa.Auth builder.</param>
+    /// <param name="algorithm">The JWS algorithm every configured slot is signed under.</param>
+    /// <param name="configure">A callback that fills the signing key slots.</param>
+    /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="builder"/> or <paramref name="configure"/> is
+    /// <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when a signing key source has already been registered. Only one signing key provider
+    /// is allowed.
+    /// </exception>
+    public static ZeeKayDaAuthBuilder AddPemFileSigning(
+        this ZeeKayDaAuthBuilder builder,
+        SigningAlgorithm algorithm,
+        Action<PemFileSigningOptions> configure)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentNullException.ThrowIfNull(configure);
+
+        // Transitional, removed with IJwtSigningService itself in #511: the sibling PFX provider has
+        // not been ported to a signing key source yet, so AddZeeKayDaSigningKeySource below cannot
+        // see its registration. Without this, registering both would leave the application with two
+        // signing providers rather than the one it is allowed.
         builder.ThrowIfAlreadyRegistered(typeof(IJwtSigningService));
 
+        // Registered first so a second signing key source is rejected before this method applies any
+        // of its own configuration — a caller that catches the rejection must not be left with this
+        // call's options callbacks applied to the surviving registration.
+        builder.Services.AddZeeKayDaSigningKeySource<PemFileSigningKeySource>();
+
+        // Defensive/idempotent: guarantees the core services are resolvable even when this package is
+        // used standalone, without ZeeKayDa.Auth.AspNetCore's AddZeeKayDaAuth().
+        builder.Services.AddZeeKayDaAuthCore();
+
         builder.Services.AddOptions<PemFileSigningOptions>()
-            .Configure(options =>
-            {
-                options.Path = path;
-                options.KeyPath = keyPath;
-                options.Algorithm = algorithm;
-            })
-            .Configure(configure ?? (_ => { }))
+            .Configure(options => options.Algorithm = algorithm)
+            .Configure(configure)
             .ValidateOnStart();
 
         builder.Services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IValidateOptions<PemFileSigningOptions>, PemFileSigningOptionsValidator>());
 
         AddSharedFileSigningServices(builder);
-        builder.Services.AddSingleton<IJwtSigningService, PemFileSigningJwtSigningService>();
 
         return builder;
     }
@@ -119,7 +162,7 @@ public static class ZeeKayDaAuthBuilderFileSigningExtensions
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Filesystem permissions are enforced fail-closed exactly as for <see cref="AddPemFileSigning(ZeeKayDaAuthBuilder,string,SigningAlgorithm,string,Action{PemFileSigningOptions})"/>.
+    /// Filesystem permissions are enforced fail-closed exactly as for <see cref="AddPemFileSigning(ZeeKayDaAuthBuilder,string,SigningAlgorithm,string)"/>.
     /// The PFX password adds defense in depth on top of that — see
     /// <see cref="PfxFileSigningOptions.PasswordSource"/> for why it is an async delegate rather
     /// than a plain <see langword="string"/>.
@@ -127,7 +170,7 @@ public static class ZeeKayDaAuthBuilderFileSigningExtensions
     /// <para>
     /// Rotation: register additional PFX files (each with its own password source) via
     /// <see cref="PfxFileSigningOptions.AddFile"/> in <paramref name="configure"/>. Shares the
-    /// rotation/retirement model described on <see cref="AddPemFileSigning(ZeeKayDaAuthBuilder,string,SigningAlgorithm,string,Action{PemFileSigningOptions})"/>.
+    /// rotation/retirement model described on <see cref="SigningKeyRotation"/>.
     /// </para>
     /// </remarks>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
@@ -165,6 +208,11 @@ public static class ZeeKayDaAuthBuilderFileSigningExtensions
         builder.Services.AddZeeKayDaAuthCore();
 
         builder.ThrowIfAlreadyRegistered(typeof(IJwtSigningService));
+
+        // The mirror of the guard in AddPemFileSigning, and equally transitional: this provider is
+        // still on IJwtSigningService, so it must reject a PEM registration by the ring that one
+        // leaves behind. Both guards go away with #511.
+        builder.ThrowIfAlreadyRegistered(typeof(ISigningKeyRing));
 
         builder.Services.AddOptions<PfxFileSigningOptions>()
             .Configure(options =>

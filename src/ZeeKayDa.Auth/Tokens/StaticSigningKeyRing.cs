@@ -39,7 +39,7 @@ public sealed class StaticSigningKeyRing : ISigningKeyRing, IDisposable, IAsyncD
     /// exception is disposal racing initialization before the signer has committed, in which case
     /// the source is disposed first.
     /// </param>
-    /// <param name="timeProvider">Used to evaluate the signing key's expiry at initialization time.</param>
+    /// <param name="timeProvider">Used to evaluate the signing key's validity window at initialization time.</param>
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="source"/> or <paramref name="timeProvider"/> is
     /// <see langword="null"/>.
@@ -154,7 +154,22 @@ public sealed class StaticSigningKeyRing : ISigningKeyRing, IDisposable, IAsyncD
 
         var set = SigningKeySetBuilder.Build(sourceKeys);
 
-        if (set.SigningKey.ExpiresAt is { } expiresAt && expiresAt <= _timeProvider.GetUtcNow())
+        var now = _timeProvider.GetUtcNow();
+
+        // Both ends of the signing key's own validity window, checked against set.SigningKey alone
+        // and never against the published set: a Next key whose window has not opened yet is the
+        // entire point of staging one, and a Previous key outliving its window is why it is still
+        // published.
+        if (set.SigningKey.NotBefore is { } notBefore && notBefore > now)
+        {
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "signing.signing_key_not_yet_valid",
+                    $"The Current signing key '{set.SigningKey.Kid}' is not valid until {notBefore:O}. " +
+                    "Configure it as Next until then, and leave the key it succeeds as Current."));
+        }
+
+        if (set.SigningKey.ExpiresAt is { } expiresAt && expiresAt <= now)
         {
             throw new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure(

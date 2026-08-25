@@ -16,18 +16,16 @@ internal sealed class PemFileSigningOptionsValidator : IValidateOptions<PemFileS
     {
         var errors = new List<string>();
 
-        if (KeySourcePublicationLeadValidator.ValidateMinimum(nameof(PemFileSigningOptions), options.PublicationLead) is { } publicationLeadError)
-            errors.Add(publicationLeadError);
-
-        if (string.IsNullOrWhiteSpace(options.Path))
-            errors.Add("PemFileSigningOptions.Path must be set to a non-empty file path.");
-
-        if (options.KeyPath is not null && string.IsNullOrWhiteSpace(options.KeyPath))
+        if (options.Current is null)
         {
             errors.Add(
-                "PemFileSigningOptions.KeyPath must be null (a combined cert+key Path) or a " +
-                "non-empty file path — never empty/whitespace-only.");
+                "PemFileSigningOptions.Current must be set to the PEM file that signs. Previous and " +
+                "Next are optional; Current is not.");
         }
+
+        AppendSlotErrors(nameof(PemFileSigningOptions.Previous), options.Previous, errors);
+        AppendSlotErrors(nameof(PemFileSigningOptions.Current), options.Current, errors);
+        AppendSlotErrors(nameof(PemFileSigningOptions.Next), options.Next, errors);
 
         if (!Enum.IsDefined(options.Algorithm))
         {
@@ -41,55 +39,55 @@ internal sealed class PemFileSigningOptionsValidator : IValidateOptions<PemFileS
         return errors.Count > 0 ? ValidateOptionsResult.Fail(errors) : ValidateOptionsResult.Success;
     }
 
-    // Every filesystem path this configuration touches must be pairwise distinct — two entries
-    // sharing a path would make the rotation timeline ambiguous. Each non-empty path is normalized
-    // via Path.GetFullPath before comparison (pure string canonicalization, no filesystem access),
-    // so differences like "tls.pem" vs "./tls.pem" are still caught. Symlink resolution and
-    // case-insensitive-filesystem comparison are deliberately out of scope: this degrades to a
-    // load failure, not key confusion, if two paths are equivalent but not caught here.
+    private static void AppendSlotErrors(string slotName, PemSigningFile? slot, List<string> errors)
+    {
+        if (slot is null)
+            return;
+
+        if (string.IsNullOrWhiteSpace(slot.Path))
+            errors.Add($"PemFileSigningOptions.{slotName}.Path must be set to a non-empty file path.");
+
+        if (slot.KeyPath is not null && string.IsNullOrWhiteSpace(slot.KeyPath))
+        {
+            errors.Add(
+                $"PemFileSigningOptions.{slotName}.KeyPath must be null (a combined cert+key Path) " +
+                "or a non-empty file path — never empty/whitespace-only.");
+        }
+    }
+
+    // Every filesystem path this configuration touches must be pairwise distinct — two slots sharing
+    // a path would publish one key twice under two slot names, or make the same file both the
+    // outgoing and the incoming key of a rotation. Each non-empty path is normalized via
+    // Path.GetFullPath before comparison (pure string canonicalization, no filesystem access), so
+    // differences like "tls.pem" vs "./tls.pem" are still caught. Symlink resolution and
+    // case-insensitive-filesystem comparison are deliberately out of scope: this degrades to a load
+    // failure or a duplicate-kid rejection in SigningKeySetBuilder, not key confusion, if two paths
+    // are equivalent but not caught here.
     private static void AppendDuplicatePathErrors(PemFileSigningOptions options, List<string> errors)
     {
         var seen = new HashSet<string>(StringComparer.Ordinal);
-        var hasEmptyAdditionalPath = false;
         var hasDuplicatePath = false;
 
-        // Empty/whitespace-only Path/KeyPath is already reported by the dedicated errors above, so
-        // an empty value here is silently skipped rather than re-flagged via hasEmptyAdditionalPath
-        // (which is reserved for AddFile's own empty-path error message below); it still must not be
-        // added to `seen`, since two independently-empty values are not "the same path".
-        void Track(string? path, bool reportEmptyAsAddFileError)
+        // Empty/whitespace-only paths are already reported by AppendSlotErrors, so they are skipped
+        // here rather than re-flagged; they still must not be added to `seen`, since two
+        // independently-empty values are not "the same path".
+        void Track(string? path)
         {
-            if (path is null)
-                return;
-
-            if (string.IsNullOrWhiteSpace(path))
-            {
-                if (reportEmptyAsAddFileError)
-                    hasEmptyAdditionalPath = true;
-            }
-            else if (!seen.Add(Path.GetFullPath(path)))
-            {
+            if (!string.IsNullOrWhiteSpace(path) && !seen.Add(Path.GetFullPath(path)))
                 hasDuplicatePath = true;
-            }
         }
 
-        Track(options.Path, reportEmptyAsAddFileError: false);
-        Track(options.KeyPath, reportEmptyAsAddFileError: false);
-
-        foreach (var file in options.AdditionalFiles)
+        foreach (var slot in new[] { options.Previous, options.Current, options.Next })
         {
-            Track(file.Path, reportEmptyAsAddFileError: true);
-            Track(file.KeyPath, reportEmptyAsAddFileError: true);
+            Track(slot?.Path);
+            Track(slot?.KeyPath);
         }
-
-        if (hasEmptyAdditionalPath)
-            errors.Add("AddFile was called with a null, empty, or whitespace-only path.");
 
         if (hasDuplicatePath)
         {
             errors.Add(
-                "AddFile was called with a path that duplicates the primary path, the primary key " +
-                "path, or another already-registered file's path/key path.");
+                "Two PemFileSigningOptions slots reference the same file. Every Path and KeyPath " +
+                "across Previous, Current, and Next must be a distinct file.");
         }
     }
 }
