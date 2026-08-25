@@ -492,6 +492,24 @@ public sealed class DevelopmentSigningKeySourceTests
     }
 
     [Fact]
+    public async Task ReadAsync_enforces_the_gate_even_when_the_key_set_is_already_memoized()
+    {
+        // Memoizing the key set must not memoize the decision to allow it: a read that skipped the
+        // gate because an earlier read passed it would be the one fail-open this source can have.
+        var options = new DevelopmentSigningKeyOptions { EnvironmentName = "Development" };
+        using var sut = new DevelopmentSigningKeySource(
+            Options.Create(options), new InMemorySigningKeyFileSystem());
+        var ct = TestContext.Current.CancellationToken;
+        await sut.ReadAsync(ct);
+
+        options.AllowedDevelopmentJwtSigningKeysEnvironments = ["Staging"];
+        var act = () => sut.ReadAsync(ct).AsTask();
+
+        await act.Should().ThrowAsync<ZeeKayDaConfigurationException>()
+            .WithMessage("*Development*");
+    }
+
+    [Fact]
     public async Task ReadAsync_skips_the_gate_when_EnvironmentName_is_null()
     {
         using var sut = BuildForEnvironment(environmentName: null, allowed: null);

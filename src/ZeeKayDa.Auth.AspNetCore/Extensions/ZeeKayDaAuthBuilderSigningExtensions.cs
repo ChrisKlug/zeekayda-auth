@@ -124,8 +124,8 @@ public static class ZeeKayDaAuthBuilderSigningExtensions
         // Registered first so a second signing key source is rejected before this method applies
         // any of its own configuration — a caller that catches the rejection must not be left with
         // this call's options callbacks applied to the surviving registration.
-        builder.Services.TryAddSingleton<IDevelopmentSigningKeyFileSystem, LocalSigningKeyFileSystem>();
         builder.Services.AddZeeKayDaSigningKeySource<DevelopmentSigningKeySource>();
+        builder.Services.TryAddSingleton<IDevelopmentSigningKeyFileSystem, LocalSigningKeyFileSystem>();
 
         // Ensures core services are resolvable even if AddZeeKayDaAuth() hasn't run yet.
         builder.Services.AddZeeKayDaAuthCore();

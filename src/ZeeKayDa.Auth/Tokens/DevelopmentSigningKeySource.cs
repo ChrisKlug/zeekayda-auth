@@ -33,7 +33,9 @@ internal sealed class DevelopmentSigningKeySource : ISigningKeySource, IDisposab
     private readonly IDevelopmentSigningKeyFileSystem _fileSystem;
 
     // Serialises reads so the key is generated or loaded exactly once even if two callers read
-    // concurrently — "only the ring calls this" is not something this type can enforce.
+    // concurrently — "only the ring calls this" is not something this type can enforce. Deliberately
+    // not disposed: disposing it would make a read that is already in flight at shutdown throw from
+    // its own Release, and would strand any reader queued behind it forever.
     private readonly SemaphoreSlim _readGate = new(1, 1);
 
     // Holds the RSA key generated/loaded by ReadAsync until CreateSignerAsync claims it via
@@ -86,10 +88,14 @@ internal sealed class DevelopmentSigningKeySource : ISigningKeySource, IDisposab
                     PublicKeyParameters.FromRsa(rsa.ExportParameters(false)),
                     ExpiresAt: null);
 
-                _pendingPrivateKey = rsa;
-                _keySet = SourceKeySet.Create(previous: null, current: key, next: null);
+                // The set is built before the private key is published, so a failure here can never
+                // leave a disposed key behind for CreateSignerAsync to lend.
+                var keySet = SourceKeySet.Create(previous: null, current: key, next: null);
 
-                return _keySet;
+                _pendingPrivateKey = rsa;
+                _keySet = keySet;
+
+                return keySet;
             }
             catch
             {
@@ -132,11 +138,7 @@ internal sealed class DevelopmentSigningKeySource : ISigningKeySource, IDisposab
     /// A claimed key belongs to the <see cref="LocalSigner"/> handed out for it, which the ring
     /// disposes before it disposes this source, so this never double-disposes.
     /// </remarks>
-    public void Dispose()
-    {
-        Interlocked.Exchange(ref _pendingPrivateKey, null)?.Dispose();
-        _readGate.Dispose();
-    }
+    public void Dispose() => Interlocked.Exchange(ref _pendingPrivateKey, null)?.Dispose();
 
     private static RSA GenerateEphemeralKey() => RSA.Create(MinimumRsaKeySize);
 
