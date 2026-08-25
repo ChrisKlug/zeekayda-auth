@@ -113,10 +113,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   — the certificate's thumbprint — so the failure still names the certificate. The provider likewise
   performs no key-pairing check of its own; the ring's per-handoff self-test is the only one.
 
-  A store entry is a bundled format like PFX, so unlike the PEM provider's certificate-only slots,
-  every slot's private key is physically present. Only `Current`'s is ever opened: each slot is read
-  transiently for its public parameters and its certificate disposed immediately, and only
-  `CreateSignerAsync` extracts private material, only for `Current`.
+  **What a published-only slot promises here is weaker than on the PEM provider, deliberately stated
+  as such.** Opening a store entry hands back the certificate and its private-key association
+  together — the store offers no public-half-only read — so a `Previous` or `Next` private key is
+  briefly reachable through the certificate object regardless. The guarantee this provider makes is
+  an access-path one: no code path extracts a private-key handle for any slot during a read, each
+  slot's certificate is read transiently and disposed immediately once its public parameters are
+  exported, and `CreateSignerAsync` is the only place private material is extracted and rejects any
+  id that is not `Current`. The PEM provider's certificate-only slots give the strictly stronger
+  property that the private key is absent from the process entirely; the two are not equivalent.
 
 - **BREAKING: PFX file signing is now an `ISigningKeySource` with three named key slots, and a published-only bundle's private key is never decrypted** (#517)
 

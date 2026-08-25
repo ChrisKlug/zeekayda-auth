@@ -20,7 +20,10 @@ public sealed class WindowsCertificateStoreSigningOptions
     /// <summary>
     /// Gets or sets the previously active certificate, published so relying parties can still
     /// verify tokens it signed, or <see langword="null"/> when there is none. Never used to sign,
-    /// and its private key is never opened.
+    /// and no private-key handle is ever extracted for it — though a store entry always carries its
+    /// private key, so it is briefly reachable while the certificate is read. See
+    /// <see cref="WindowsCertificateStoreSigningOptions"/>'s provider for what that does and does not
+    /// promise.
     /// </summary>
     public CertificateLookup? Previous { get; set; }
 
@@ -33,7 +36,8 @@ public sealed class WindowsCertificateStoreSigningOptions
     /// <summary>
     /// Gets or sets a certificate staged to become active later, published in advance so relying
     /// parties have already cached it by the time it starts signing, or <see langword="null"/> when
-    /// there is none. Never used to sign, and its private key is never opened.
+    /// there is none. Never used to sign, and no private-key handle is ever extracted for it, on the
+    /// same terms as <see cref="Previous"/>.
     /// </summary>
     /// <remarks>
     /// A certificate whose <c>NotBefore</c> has not arrived yet belongs here. Configuring one as

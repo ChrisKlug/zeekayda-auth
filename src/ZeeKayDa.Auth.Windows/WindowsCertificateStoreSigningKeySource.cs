@@ -18,11 +18,22 @@ namespace ZeeKayDa.Auth.Windows;
 /// requires a restart.
 /// </para>
 /// <para>
-/// A store entry is a bundled format exactly like PFX — there is no way to open it for the public
-/// half alone — so <see cref="ReadAsync"/> reads each slot's certificate transiently, retains only
-/// the exported public parameters, and disposes the certificate immediately. Only
-/// <see cref="CreateSignerAsync"/> extracts private material, and only for <c>Current</c>, so a
-/// <c>Previous</c> or <c>Next</c> private key is never opened at all.
+/// <b>What this source guarantees about a published-only slot's private key is an access-path
+/// property, not a materialisation one.</b> Opening a store entry hands back the certificate and its
+/// private-key association together — there is no way to ask the store for the public half alone —
+/// so a <c>Previous</c> or <c>Next</c> private key is briefly reachable through the certificate
+/// object whether or not anything asks for it. That is a property of the platform, and this source
+/// cannot change it. What it does guarantee is that no code path extracts a private-key handle for
+/// any slot during <see cref="ReadAsync"/>: each slot's certificate is read transiently, only the
+/// exported public parameters are retained, and the certificate is disposed immediately, releasing
+/// the association. <see cref="CreateSignerAsync"/> is the only place private material is extracted,
+/// and it rejects any id that is not <c>Current</c>.
+/// </para>
+/// <para>
+/// The distinction matters when comparing this provider to the PEM one, whose published-only slots
+/// take a certificate-only file: there, a published slot's private key is physically absent from the
+/// process, which is a strictly stronger property than the one stated above. Do not read the two as
+/// equivalent.
 /// </para>
 /// <para>
 /// Uses only <see cref="WindowsCertificateKeyExtractor.ExtractPublicKey"/>/

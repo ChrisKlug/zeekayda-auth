@@ -152,11 +152,13 @@ public sealed class WindowsCertificateStoreSigningKeySourceTests
     }
 
     [Fact]
-    public async Task ReadAsync_never_opens_private_material_for_Previous_or_Next()
+    public async Task ReadAsync_extracts_no_private_key_handle_for_any_slot()
     {
-        // Unlike a certificate-only PEM file, a store entry always carries its private key, so this
-        // has to be proven rather than being unrepresentable: only Current may ever reach
-        // ExtractPrivateKey, and only from CreateSignerAsync.
+        // The access-path guarantee, which is the honest one for this provider. Opening a store entry
+        // hands back the private-key association whatever the caller wants, so "a published slot's
+        // private key never materializes" is not something this source can promise the way the PEM
+        // provider's certificate-only slots can. What it can promise, and what this pins, is that no
+        // read path asks the extractor for a private key at all.
         var ct = TestContext.Current.CancellationToken;
         var reader = new FakeCertificateStoreReader();
         var keyExtractor = new FakeCertificateKeyExtractor();
@@ -170,13 +172,14 @@ public sealed class WindowsCertificateStoreSigningKeySourceTests
 
         await sut.ReadAsync(ct);
 
-        keyExtractor.PrivateKeyExtractions.Should().BeEmpty("a read publishes public material only");
+        keyExtractor.PrivateKeyExtractions.Should().BeEmpty(
+            "a read publishes public material only, for every slot including Current");
         keyExtractor.PublicKeyExtractions.Should()
             .BeEquivalentTo([PreviousThumbprint, CurrentThumbprint, NextThumbprint]);
     }
 
     [Fact]
-    public async Task CreateSignerAsync_opens_the_private_key_of_Current_alone()
+    public async Task CreateSignerAsync_extracts_the_private_key_of_Current_alone()
     {
         var ct = TestContext.Current.CancellationToken;
         var reader = new FakeCertificateStoreReader();
