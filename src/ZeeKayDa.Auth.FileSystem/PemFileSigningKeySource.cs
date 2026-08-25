@@ -109,29 +109,8 @@ internal sealed class PemFileSigningKeySource : ISigningKeySource
 
         using var certificate = await LoadPublicCertificateAsync(certificatePath, cancellationToken).ConfigureAwait(false);
 
-        var (rawPublicKey, keyType) = FileSigningKeyExtractor.ExtractPublicKey(certificate, certificatePath);
-        using var publicKey = rawPublicKey;
-
-        // X509Certificate2 reports both ends of the validity window as local-kind DateTime, so the
-        // conversion below applies the local offset rather than reinterpreting them as UTC.
-        return new SourceKey(
-            new SourceKeyId(certificatePath),
-            algorithm,
-            ToPublicKeyParameters(publicKey, keyType),
-            ExpiresAt: new DateTimeOffset(certificate.NotAfter),
-            NotBefore: new DateTimeOffset(certificate.NotBefore));
+        return FileSigningKeyExtractor.ToSourceKey(certificate, certificatePath, algorithm);
     }
-
-    /// <summary>
-    /// Exports <paramref name="publicKey"/>'s public parameters. The cast is safe:
-    /// <see cref="FileSigningKeyExtractor.ExtractPublicKey"/> only ever returns an
-    /// <see cref="RSA"/> paired with <see cref="SigningKeyType.Rsa"/> or an <see cref="ECDsa"/>
-    /// paired with <see cref="SigningKeyType.Ec"/>.
-    /// </summary>
-    private static PublicKeyParameters ToPublicKeyParameters(AsymmetricAlgorithm publicKey, SigningKeyType keyType) =>
-        keyType == SigningKeyType.Rsa
-            ? PublicKeyParameters.FromRsa(((RSA)publicKey).ExportParameters(false))
-            : PublicKeyParameters.FromEc(((ECDsa)publicKey).ExportParameters(false));
 
     /// <summary>
     /// Parses only the certificate at <paramref name="certificatePath"/> — no private key material is

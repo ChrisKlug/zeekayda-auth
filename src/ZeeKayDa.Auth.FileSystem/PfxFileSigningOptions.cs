@@ -3,67 +3,59 @@ using ZeeKayDa.Auth.Tokens;
 namespace ZeeKayDa.Auth.FileSystem;
 
 /// <summary>
-/// Configuration options for <c>AddPfxFileSigning</c>.
+/// Configuration options for <c>AddPfxFileSigning</c>: the three named signing key slots and the
+/// algorithm they are signed under.
 /// </summary>
 /// <remarks>
-/// The set of registered PFX files is fixed at configuration time; only the wall clock crossing
-/// each file's certificate <c>NotBefore</c>/<c>NotAfter</c> advances which one is active.
-/// <see cref="KeySetOptions.PublicationLead"/> here is only an advisory too-soon-activation
-/// startup warning — there is nothing to re-download here. Picking up a rotated-in or
-/// replaced file requires a process restart: register the successor via <see cref="AddFile"/>
-/// ahead of its intended activation time and redeploy.
-/// <para>
-/// <see cref="PasswordSource"/> is an async, cancellable delegate rather than a plain
-/// <c>string</c> so a password can be sourced from an environment variable, a file, or a remote
-/// secret store without blocking a thread or putting a secret inline in configuration.
-/// </para>
+/// The slots are read once, at startup, and never re-read — replacing or deleting a configured bundle
+/// afterwards has no effect on what the process signs with or publishes. Rotating means moving a
+/// bundle between slots and restarting: stage the successor as <see cref="Next"/> so its public half
+/// is published ahead of time, then promote it to <see cref="Current"/> and demote the key it succeeds
+/// to <see cref="Previous"/> so tokens it signed still verify.
 /// </remarks>
-public sealed class PfxFileSigningOptions : KeySetOptions
+public sealed class PfxFileSigningOptions
 {
-    private readonly List<(string Path, Func<CancellationToken, ValueTask<string>> PasswordSource)> _additionalFiles = [];
+    /// <summary>
+    /// Gets or sets the previously active key, published so relying parties can still verify tokens
+    /// it signed, or <see langword="null"/> when there is none. Never used to sign, and its private
+    /// key is never decrypted.
+    /// </summary>
+    public PfxSigningFile? Previous { get; set; }
 
     /// <summary>
-    /// Gets or sets the path to the required/primary PFX/PKCS#12 file. Set by
-    /// <c>AddPfxFileSigning</c>.
+    /// Gets or sets the key that signs. Required — startup fails when no <see cref="Current"/> is
+    /// configured. The only slot whose private key is ever decrypted.
     /// </summary>
-    public string Path { get; set; } = string.Empty;
+    public PfxSigningFile? Current { get; set; }
 
     /// <summary>
-    /// Gets or sets the delegate that supplies the password for <see cref="Path"/>. Invoked once
-    /// when the provider builds its one-time key listing, and again only if <see cref="Path"/> is
-    /// the active signer — implementations sourcing the password from a slow or remote location
-    /// should cache it themselves if repeated retrieval is undesirable. Set by
-    /// <c>AddPfxFileSigning</c>.
+    /// Gets or sets a key staged to become active later, published in advance so relying parties
+    /// have already cached it by the time it starts signing, or <see langword="null"/> when there is
+    /// none. Never used to sign, and its private key is never decrypted.
     /// </summary>
-    public Func<CancellationToken, ValueTask<string>>? PasswordSource { get; set; }
+    /// <remarks>
+    /// A certificate whose <c>NotBefore</c> has not arrived yet belongs here. Configuring one as
+    /// <see cref="Current"/> fails startup with <c>signing.signing_key_not_yet_valid</c>.
+    /// <para>
+    /// <b>Nothing verifies that a key was staged here before it was promoted.</b> With a fixed,
+    /// operator-edited list there is no observed history to check it against, so staging a successor
+    /// long enough ahead for relying parties to have re-fetched the JWKS is the operator's decision,
+    /// not something this provider can enforce. Replacing <see cref="Current"/> in place and
+    /// restarting is accepted silently, and will reject tokens at any relying party still holding a
+    /// cached key set.
+    /// </para>
+    /// </remarks>
+    public PfxSigningFile? Next { get; set; }
 
     /// <summary>
-    /// Gets or sets the JWS algorithm to use when signing. A certificate's key does not itself
-    /// declare RS256 vs PS256 — that choice is made here and must match the certificate's actual
-    /// key type (RSA algorithms for RSA certificates, EC algorithms for EC certificates). Defaults
-    /// to RS256.
+    /// Gets the JWS algorithm every configured slot is signed under. A certificate's key does not
+    /// itself declare RS256 vs PS256 — that choice is made by <c>AddPfxFileSigning</c>'s
+    /// <c>algorithm</c> argument and must match each certificate's actual key type (RSA algorithms
+    /// for RSA certificates, EC algorithms for EC certificates).
     /// </summary>
-    public SigningAlgorithm Algorithm { get; set; } = SigningAlgorithm.RS256;
-
-    /// <summary>
-    /// Gets the additional PFX files (and their password sources) registered via
-    /// <see cref="AddFile"/>, in registration order.
-    /// </summary>
-    public IReadOnlyList<(string Path, Func<CancellationToken, ValueTask<string>> PasswordSource)> AdditionalFiles => _additionalFiles;
-
-    /// <summary>
-    /// Registers an additional PFX/PKCS#12 file to support rotation with overlapping validity
-    /// windows. Each file may have its own password, since real-world PFX bundles are frequently
-    /// password-per-file.
-    /// </summary>
-    /// <param name="path">The additional PFX file's path.</param>
-    /// <param name="passwordSource">The delegate that supplies this file's password.</param>
-    /// <returns>This instance, so calls can be chained.</returns>
-    public PfxFileSigningOptions AddFile(string path, Func<CancellationToken, ValueTask<string>> passwordSource)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(path);
-        ArgumentNullException.ThrowIfNull(passwordSource);
-        _additionalFiles.Add((path, passwordSource));
-        return this;
-    }
+    /// <remarks>
+    /// The setter is <see langword="internal"/> so the algorithm can be said exactly once, in the
+    /// registration argument, rather than being silently overridden by a <c>configure</c> callback.
+    /// </remarks>
+    public SigningAlgorithm Algorithm { get; internal set; } = SigningAlgorithm.RS256;
 }

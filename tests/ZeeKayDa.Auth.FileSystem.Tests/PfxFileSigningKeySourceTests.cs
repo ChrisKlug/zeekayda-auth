@@ -1,0 +1,515 @@
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
+using Microsoft.Extensions.Options;
+using ZeeKayDa.Auth.FileSystem.Tests.Fixtures;
+using ZeeKayDa.Auth.Tokens;
+
+namespace ZeeKayDa.Auth.FileSystem.Tests;
+
+/// <summary>
+/// Direct-construction tests for <see cref="PfxFileSigningKeySource"/>, bypassing DI and the
+/// <c>AddPfxFileSigning</c> extension methods entirely. A fake reader is never substituted: this
+/// source's whole job is real filesystem interaction (permission enforcement, symlink detection),
+/// so every test below exercises the real <see cref="FileSigningKeyReader"/> against real temporary
+/// bundles.
+/// </summary>
+/// <remarks>
+/// The source reads its three slots exactly once and never re-reads them, so there is no reload or
+/// change-detection surface here. Which key signs is decided entirely by which slot it is configured
+/// in, never by the clock, so this type holds no <c>TimeProvider</c>: the one clock check that
+/// remains, on the signing key's own validity window, belongs to <c>StaticSigningKeyRing</c> and is
+/// tested there.
+/// </remarks>
+public sealed class PfxFileSigningKeySourceTests
+{
+    private static readonly DateTimeOffset T0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
+    private const string CorrectPassword = "correct horse battery staple";
+
+    private static Func<CancellationToken, ValueTask<string>> Password(string password = CorrectPassword) =>
+        _ => ValueTask.FromResult(password);
+
+    private static PfxFileSigningKeySource BuildSource(
+        PfxSigningFile? current,
+        PfxSigningFile? previous = null,
+        PfxSigningFile? next = null,
+        SigningAlgorithm algorithm = SigningAlgorithm.RS256)
+    {
+        var options = new PfxFileSigningOptions
+        {
+            Previous = previous,
+            Current = current,
+            Next = next,
+        };
+        options.Algorithm = algorithm;
+
+        return new PfxFileSigningKeySource(
+            Options.Create(options),
+            new FileSigningKeyReader(NullSanitizingLogger<FileSigningKeyReader>.Instance));
+    }
+
+    private static X509Certificate2 CreateRsaCertificate() =>
+        TestCertificateFactory.CreateRsaSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+
+    // ── Happy path ───────────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task ReadAsync_reports_the_Current_bundles_public_key_as_the_signing_key()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        var path = tempDir.WritePfxFile("current.pfx", certificate, CorrectPassword);
+        var sut = BuildSource(new PfxSigningFile(path, Password()));
+
+        var keySet = await sut.ReadAsync(ct);
+
+        keySet.Keys.Should().ContainSingle();
+        keySet.SigningKey.Id.Should().Be(new SourceKeyId(path));
+        keySet.SigningKey.Algorithm.Should().Be(SigningAlgorithm.RS256);
+        keySet.SigningKey.PublicKey.KeyType.Should().Be(SigningKeyType.Rsa);
+        keySet.SigningKey.PublicKey.RsaPublicParameters.Should().NotBeNull(
+            "only public material may ever leave this source's read path");
+    }
+
+    [Fact]
+    public async Task ReadAsync_reports_the_certificates_validity_window_on_both_ends()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        var path = tempDir.WritePfxFile("current.pfx", certificate, CorrectPassword);
+        var sut = BuildSource(new PfxSigningFile(path, Password()));
+
+        var keySet = await sut.ReadAsync(ct);
+
+        keySet.SigningKey.NotBefore.Should().Be(new DateTimeOffset(certificate.NotBefore));
+        keySet.SigningKey.ExpiresAt.Should().Be(new DateTimeOffset(certificate.NotAfter));
+    }
+
+    [Fact]
+    public async Task CreateSignerAsync_returns_a_signer_whose_signature_verifies_against_the_reported_public_key()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        var path = tempDir.WritePfxFile("current.pfx", certificate, CorrectPassword);
+        var sut = BuildSource(new PfxSigningFile(path, Password()));
+        var keySet = await sut.ReadAsync(ct);
+
+        using var signer = await sut.CreateSignerAsync(keySet.SigningKey.Id, ct);
+        var signingInput = "header.payload"u8.ToArray();
+        var signature = await signer.SignAsync(signingInput, ct);
+
+        signer.Algorithm.Should().Be(SigningAlgorithm.RS256);
+        using var rsa = RSA.Create(keySet.SigningKey.PublicKey.RsaPublicParameters!.Value);
+        rsa.VerifyData(signingInput, signature.Span, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)
+            .Should().BeTrue("the signer must be opened over the same key pair the read reported");
+    }
+
+    // ── The bundled-format obligation: a published-only slot's key bag is never decrypted ────────
+
+    [Fact]
+    public async Task ReadAsync_reads_a_bundle_without_ever_producing_a_certificate_that_carries_its_private_key()
+    {
+        // The read path walks the PKCS#12 structure and takes the certificate bag, leaving the
+        // shrouded key bag encrypted. Nothing it produces carries private material — which is what
+        // keeps a Previous or Next private key out of this process entirely, on every platform,
+        // rather than merely narrowing the window in which it exists.
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var previousCertificate = CreateRsaCertificate();
+        using var currentCertificate = CreateRsaCertificate();
+        using var nextCertificate = CreateRsaCertificate();
+        var previousPath = tempDir.WritePfxFile("previous.pfx", previousCertificate, "previous-password");
+        var currentPath = tempDir.WritePfxFile("current.pfx", currentCertificate, CorrectPassword);
+        var nextPath = tempDir.WritePfxFile("next.pfx", nextCertificate, "next-password");
+        var sut = BuildSource(
+            new PfxSigningFile(currentPath, Password()),
+            previous: new PfxSigningFile(previousPath, Password("previous-password")),
+            next: new PfxSigningFile(nextPath, Password("next-password")));
+
+        var keySet = await sut.ReadAsync(ct);
+
+        keySet.Keys.Should().HaveCount(3);
+        keySet.Keys.Should().AllSatisfy(key =>
+            key.PublicKey.RsaPublicParameters.Should().NotBeNull("every slot yields public material only"));
+    }
+
+    [Fact]
+    public async Task ReadAsync_reads_a_published_slot_whose_password_only_ever_opens_its_certificate()
+    {
+        // A per-slot password is still required to reach a published-only certificate — the safe it
+        // sits in is password-protected — so this proves the password is used for the safe and not
+        // as a step towards the key.
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var currentCertificate = CreateRsaCertificate();
+        using var nextCertificate = CreateRsaCertificate();
+        var currentPath = tempDir.WritePfxFile("current.pfx", currentCertificate, CorrectPassword);
+        var nextPath = tempDir.WritePfxFile("next.pfx", nextCertificate, "a different password");
+        var sut = BuildSource(
+            new PfxSigningFile(currentPath, Password()),
+            next: new PfxSigningFile(nextPath, Password("a different password")));
+
+        var keySet = await sut.ReadAsync(ct);
+
+        keySet.Keys.Should().HaveCount(2);
+        keySet.Keys.Select(k => k.Id.Value).Should().BeEquivalentTo([currentPath, nextPath]);
+    }
+
+    // ── The three slots ──────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task ReadAsync_publishes_every_configured_slot_and_signs_with_Current()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var previousCertificate = CreateRsaCertificate();
+        using var currentCertificate = CreateRsaCertificate();
+        using var nextCertificate = CreateRsaCertificate();
+        var previousPath = tempDir.WritePfxFile("previous.pfx", previousCertificate, CorrectPassword);
+        var currentPath = tempDir.WritePfxFile("current.pfx", currentCertificate, CorrectPassword);
+        var nextPath = tempDir.WritePfxFile("next.pfx", nextCertificate, CorrectPassword);
+        var sut = BuildSource(
+            new PfxSigningFile(currentPath, Password()),
+            previous: new PfxSigningFile(previousPath, Password()),
+            next: new PfxSigningFile(nextPath, Password()));
+
+        var keySet = await sut.ReadAsync(ct);
+
+        keySet.Keys.Should().HaveCount(3);
+        keySet.SigningKey.Id.Should().Be(new SourceKeyId(currentPath));
+        keySet.Keys.Select(k => k.Id.Value).Should().BeEquivalentTo([currentPath, previousPath, nextPath]);
+    }
+
+    [Fact]
+    public async Task ReadAsync_throws_when_no_Current_slot_is_configured()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        var path = tempDir.WritePfxFile("next.pfx", certificate, CorrectPassword);
+        var sut = BuildSource(current: null, next: new PfxSigningFile(path, Password()));
+
+        var act = async () => await sut.ReadAsync(ct);
+
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.no_current_key");
+    }
+
+    // ── Read-once ────────────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task ReadAsync_returns_the_same_key_set_after_a_configured_bundle_is_deleted()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        var path = tempDir.WritePfxFile("current.pfx", certificate, CorrectPassword);
+        var sut = BuildSource(new PfxSigningFile(path, Password()));
+
+        var first = await sut.ReadAsync(ct);
+        File.Delete(path);
+        var second = await sut.ReadAsync(ct);
+
+        second.Should().BeSameAs(first, "the source reads its slots exactly once and never re-reads them");
+    }
+
+    // ── Missing file, wrong password, invalid bundle ─────────────────────────────────────────────
+
+    [Fact]
+    public async Task ReadAsync_throws_when_the_Current_file_does_not_exist()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        var missingPath = tempDir.GetPath("does-not-exist.pfx");
+        var sut = BuildSource(new PfxSigningFile(missingPath, Password()));
+
+        var act = async () => await sut.ReadAsync(ct);
+
+        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.file_not_found");
+        exception.Which.Message.Should().Contain(missingPath);
+    }
+
+    [Fact]
+    public async Task ReadAsync_throws_for_an_incorrect_password_and_never_leaks_it()
+    {
+        const string wrongPassword = "hunter2-is-not-the-password";
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        var path = tempDir.WritePfxFile("current.pfx", certificate, CorrectPassword);
+        var sut = BuildSource(new PfxSigningFile(path, Password(wrongPassword)));
+
+        var act = async () => await sut.ReadAsync(ct);
+
+        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.invalid_pfx");
+        exception.Which.Message.Should().NotContain(wrongPassword).And.NotContain(CorrectPassword);
+    }
+
+    [Fact]
+    public async Task ReadAsync_throws_for_an_incorrect_password_on_a_published_only_slot()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var currentCertificate = CreateRsaCertificate();
+        using var nextCertificate = CreateRsaCertificate();
+        var currentPath = tempDir.WritePfxFile("current.pfx", currentCertificate, CorrectPassword);
+        var nextPath = tempDir.WritePfxFile("next.pfx", nextCertificate, CorrectPassword);
+        var sut = BuildSource(
+            new PfxSigningFile(currentPath, Password()),
+            next: new PfxSigningFile(nextPath, Password("wrong")));
+
+        var act = async () => await sut.ReadAsync(ct);
+
+        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.invalid_pfx");
+        exception.Which.Message.Should().Contain(nextPath);
+    }
+
+    [Fact]
+    public async Task ReadAsync_throws_for_an_empty_password_when_the_bundle_has_one()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        var path = tempDir.WritePfxFile("current.pfx", certificate, CorrectPassword);
+        var sut = BuildSource(new PfxSigningFile(path, Password(string.Empty)));
+
+        var act = async () => await sut.ReadAsync(ct);
+
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.invalid_pfx");
+    }
+
+    [Fact]
+    public async Task ReadAsync_throws_when_the_file_is_not_a_PKCS12_bundle_at_all()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        var path = tempDir.WriteTextFile("garbage.pfx", "this is definitely not a PKCS#12 bundle");
+        var sut = BuildSource(new PfxSigningFile(path, Password()));
+
+        var act = async () => await sut.ReadAsync(ct);
+
+        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.invalid_pfx");
+        exception.Which.Message.Should().Contain(path);
+    }
+
+    // ── Permission enforcement ───────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task ReadAsync_throws_when_the_file_is_broader_than_0600_on_Unix()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "0600-mode enforcement is the Unix permission model.");
+
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        var path = tempDir.WritePfxFile("current.pfx", certificate, CorrectPassword);
+        tempDir.MakeTooPermissive(path);
+        var sut = BuildSource(new PfxSigningFile(path, Password()));
+
+        var act = async () => await sut.ReadAsync(ct);
+
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.file_too_permissive");
+    }
+
+    [Fact]
+    public async Task ReadAsync_throws_when_the_ACL_grants_a_broad_principal_on_Windows()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "broad-principal ACL enforcement is the Windows permission model.");
+
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        var path = tempDir.WritePfxFile("current.pfx", certificate, CorrectPassword);
+        tempDir.MakeTooPermissive(path);
+        var sut = BuildSource(new PfxSigningFile(path, Password()));
+
+        var act = async () => await sut.ReadAsync(ct);
+
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.file_too_permissive");
+    }
+
+    [Fact]
+    public async Task ReadAsync_succeeds_when_the_file_is_secured_to_the_current_identity()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        var path = tempDir.WritePfxFile("current.pfx", certificate, CorrectPassword);
+        var sut = BuildSource(new PfxSigningFile(path, Password()));
+
+        var act = async () => await sut.ReadAsync(ct);
+
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task ReadAsync_enforces_permissions_on_a_Previous_slots_file_too()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "0600-mode enforcement is the Unix permission model.");
+
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var previousCertificate = CreateRsaCertificate();
+        using var currentCertificate = CreateRsaCertificate();
+        var previousPath = tempDir.WritePfxFile("previous.pfx", previousCertificate, CorrectPassword);
+        var currentPath = tempDir.WritePfxFile("current.pfx", currentCertificate, CorrectPassword);
+        tempDir.MakeTooPermissive(previousPath);
+        var sut = BuildSource(
+            new PfxSigningFile(currentPath, Password()),
+            previous: new PfxSigningFile(previousPath, Password()));
+
+        var act = async () => await sut.ReadAsync(ct);
+
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.file_too_permissive");
+    }
+
+    // ── Symlink rejection ────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task ReadAsync_throws_when_the_configured_path_is_a_symlink()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        var realPath = tempDir.WritePfxFile("real.pfx", certificate, CorrectPassword);
+        var symlinkPath = tempDir.GetPath("link.pfx");
+
+        try
+        {
+            File.CreateSymbolicLink(symlinkPath, realPath);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Assert.Skip("Creating a symlink requires elevated privileges/Developer Mode on this platform.");
+            return;
+        }
+
+        var sut = BuildSource(new PfxSigningFile(symlinkPath, Password()));
+
+        var act = async () => await sut.ReadAsync(ct);
+
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.symlink_detected");
+    }
+
+    // ── EC certificates ──────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task ReadAsync_supports_EC_certificates_with_a_matching_EC_algorithm()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = TestCertificateFactory.CreateEcSelfSigned("ec-test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+        var path = tempDir.WritePfxFile("current.pfx", certificate, CorrectPassword);
+        var sut = BuildSource(new PfxSigningFile(path, Password()), algorithm: SigningAlgorithm.ES256);
+
+        var keySet = await sut.ReadAsync(ct);
+
+        keySet.SigningKey.PublicKey.KeyType.Should().Be(SigningKeyType.Ec);
+        keySet.SigningKey.PublicKey.EcPublicParameters.Should().NotBeNull();
+        keySet.SigningKey.Algorithm.Should().Be(SigningAlgorithm.ES256);
+    }
+
+    [Fact]
+    public async Task CreateSignerAsync_signs_with_an_EC_certificates_private_key()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = TestCertificateFactory.CreateEcSelfSigned("ec-test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+        var path = tempDir.WritePfxFile("current.pfx", certificate, CorrectPassword);
+        var sut = BuildSource(new PfxSigningFile(path, Password()), algorithm: SigningAlgorithm.ES256);
+        var keySet = await sut.ReadAsync(ct);
+
+        using var signer = await sut.CreateSignerAsync(keySet.SigningKey.Id, ct);
+        var signingInput = "header.payload"u8.ToArray();
+        var signature = await signer.SignAsync(signingInput, ct);
+
+        using var ecdsa = ECDsa.Create(keySet.SigningKey.PublicKey.EcPublicParameters!.Value);
+        ecdsa.VerifyData(signingInput, signature.Span, HashAlgorithmName.SHA256).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ReadAsync_reports_a_mismatched_algorithm_verbatim_and_leaves_the_rejection_to_the_key_set_builder()
+    {
+        // This source performs no key-pairing check of its own: SigningKeySetBuilder is the single
+        // choke point where a mismatched algorithm is rejected, keyed on the source id — which here
+        // is the file path, so the failure still names the offending bundle.
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        var path = tempDir.WritePfxFile("current.pfx", certificate, CorrectPassword);
+        var sut = BuildSource(new PfxSigningFile(path, Password()), algorithm: SigningAlgorithm.ES256);
+
+        var keySet = await sut.ReadAsync(ct);
+        var act = () => SigningKeySetBuilder.Build(keySet);
+
+        keySet.SigningKey.Algorithm.Should().Be(SigningAlgorithm.ES256);
+        var exception = act.Should().Throw<ZeeKayDaConfigurationException>();
+        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.key_algorithm_mismatch");
+        exception.Which.Message.Should().Contain(path);
+    }
+
+    // ── CreateSignerAsync is only ever openable for Current ──────────────────────────────────────
+
+    [Fact]
+    public async Task CreateSignerAsync_throws_when_called_for_a_key_id_that_is_not_configured_at_all()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        var path = tempDir.WritePfxFile("current.pfx", certificate, CorrectPassword);
+        var sut = BuildSource(new PfxSigningFile(path, Password()));
+
+        var act = async () => await sut.CreateSignerAsync(new SourceKeyId("not-a-configured-file"), ct);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [Fact]
+    public async Task CreateSignerAsync_throws_when_called_for_the_Previous_slot()
+    {
+        // Previous is published, never signed with. Honouring this call would decrypt a key bag this
+        // source otherwise never touches.
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var previousCertificate = CreateRsaCertificate();
+        using var currentCertificate = CreateRsaCertificate();
+        var previousPath = tempDir.WritePfxFile("previous.pfx", previousCertificate, CorrectPassword);
+        var currentPath = tempDir.WritePfxFile("current.pfx", currentCertificate, CorrectPassword);
+        var sut = BuildSource(
+            new PfxSigningFile(currentPath, Password()),
+            previous: new PfxSigningFile(previousPath, Password()));
+
+        var act = async () => await sut.CreateSignerAsync(new SourceKeyId(previousPath), ct);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [Fact]
+    public async Task CreateSignerAsync_throws_when_called_for_the_Next_slot()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var currentCertificate = CreateRsaCertificate();
+        using var nextCertificate = CreateRsaCertificate();
+        var currentPath = tempDir.WritePfxFile("current.pfx", currentCertificate, CorrectPassword);
+        var nextPath = tempDir.WritePfxFile("next.pfx", nextCertificate, CorrectPassword);
+        var sut = BuildSource(
+            new PfxSigningFile(currentPath, Password()),
+            next: new PfxSigningFile(nextPath, Password()));
+
+        var act = async () => await sut.CreateSignerAsync(new SourceKeyId(nextPath), ct);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+    }
+}

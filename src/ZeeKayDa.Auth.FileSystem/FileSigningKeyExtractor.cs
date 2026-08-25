@@ -59,6 +59,48 @@ internal static class FileSigningKeyExtractor
             "Verify the file is not corrupt and, for PFX files, that the correct password was supplied."));
     }
 
+    /// <summary>
+    /// Builds the <see cref="SourceKey"/> a file-based signing key source reports for one configured
+    /// slot, from that slot's certificate and nothing else.
+    /// </summary>
+    /// <param name="certificate">The slot's certificate. Only public material is read.</param>
+    /// <param name="certificatePath">
+    /// The configured path, used as the source's own identifier for this key. Never the JWKS/JWS
+    /// <c>kid</c> — <see cref="SigningKeySetBuilder"/> derives that from the public material — but it
+    /// is what every configuration failure names, so it must be the path the operator typed.
+    /// </param>
+    /// <param name="algorithm">The algorithm the slot is signed under, from the provider's options.</param>
+    /// <remarks>
+    /// No algorithm/key-type check happens here. <see cref="SigningKeySetBuilder"/> is the single
+    /// choke point for that, and it checks more than a provider-local version would.
+    /// </remarks>
+    public static SourceKey ToSourceKey(
+        X509Certificate2 certificate, string certificatePath, SigningAlgorithm algorithm)
+    {
+        var (rawPublicKey, keyType) = ExtractPublicKey(certificate, certificatePath);
+        using var publicKey = rawPublicKey;
+
+        // X509Certificate2 reports both ends of the validity window as local-kind DateTime, so the
+        // conversion below applies the local offset rather than reinterpreting them as UTC.
+        return new SourceKey(
+            new SourceKeyId(certificatePath),
+            algorithm,
+            ToPublicKeyParameters(publicKey, keyType),
+            ExpiresAt: new DateTimeOffset(certificate.NotAfter),
+            NotBefore: new DateTimeOffset(certificate.NotBefore));
+    }
+
+    /// <summary>
+    /// Exports <paramref name="publicKey"/>'s public parameters. The cast is safe:
+    /// <see cref="ExtractPublicKey"/> only ever returns an <see cref="RSA"/> paired with
+    /// <see cref="SigningKeyType.Rsa"/> or an <see cref="ECDsa"/> paired with
+    /// <see cref="SigningKeyType.Ec"/>.
+    /// </summary>
+    private static PublicKeyParameters ToPublicKeyParameters(AsymmetricAlgorithm publicKey, SigningKeyType keyType) =>
+        keyType == SigningKeyType.Rsa
+            ? PublicKeyParameters.FromRsa(((RSA)publicKey).ExportParameters(false))
+            : PublicKeyParameters.FromEc(((ECDsa)publicKey).ExportParameters(false));
+
     /// <summary>Best-effort key type/size description for the informational startup log line.</summary>
     public static (string KeyType, int KeySizeBits) DescribeKeyForLogging(X509Certificate2 certificate)
     {
