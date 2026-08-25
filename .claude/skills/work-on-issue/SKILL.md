@@ -106,6 +106,13 @@ durable record of security decisions; review transcripts and register paragraphs
 **Every commit reaches Stage 4 read by someone.** A fix commit too small for a reviewer round is
 small enough for you to read yourself — and you say at Stage 4 that you, not an agent, read it.
 
+**Every round is its own commit, and the round before it is committed first.** Commit the work, then
+review it; commit the review fixes, then verify them; commit what the maintainer's rulings changed.
+Never amend an earlier round's commit and never let a later round's changes ride along inside it. The
+maintainer reads the branch commit by commit, so what a review found, and what their own answers
+caused, must each be a diff they can read on its own — a squashed branch hides exactly the part they
+asked a question about. Say in the commit message which round it came from.
+
 ## Stage 4 — Maintainer reads the diff ⛔
 
 In chat, short enough to actually be read:
@@ -117,8 +124,9 @@ In chat, short enough to actually be read:
 - who read each commit.
 
 The branch is local; the maintainer diffs it in their own editor and rules on the Medium/Lows.
-Anything they want fixed, you fix inline; the reviewer sees the fix diff if it touches their
-findings.
+Anything they want fixed, you fix inline, **as a commit of its own on top of the branch they just
+read** — never folded into the commit that prompted the question. The reviewer sees the fix diff if
+it touches their findings.
 
 On approval: push, `gh pr create` (the permission prompt is this gate — never work around it), then
 post each reviewer's **existing verdict** on the PR with `gh pr comment` as the durable record. That
