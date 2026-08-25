@@ -11,38 +11,10 @@ namespace ZeeKayDa.Auth.AzureKeyVault;
 /// </remarks>
 internal sealed class AzureKeyVaultCachedSigningOptionsValidator : IValidateOptions<AzureKeyVaultCachedSigningOptions>
 {
-    // RefreshInterval gates how often private key bytes are re-downloaded from Key Vault's secret
-    // endpoint; this floor rejects a value short enough to risk Key Vault throttling.
-    private static readonly TimeSpan MinimumRefreshInterval = TimeSpan.FromMinutes(1);
-
     /// <inheritdoc/>
     public ValidateOptionsResult Validate(string? name, AzureKeyVaultCachedSigningOptions options)
     {
         var errors = new List<string>();
-
-        if (options.RefreshInterval < MinimumRefreshInterval)
-        {
-            errors.Add(
-                $"AzureKeyVaultCachedSigningOptions.RefreshInterval must be at least {MinimumRefreshInterval} " +
-                "(a shorter value both risks Key Vault throttling and is shorter than most relying parties' " +
-                "JWKS cache TTL). You are still responsible for ensuring RefreshInterval exceeds your actual " +
-                "relying parties' JWKS cache TTL — this floor only rejects values that are almost certainly a " +
-                "mistake.");
-        }
-
-        // Passes options itself, not options.PublicationLead, so an invalid raw value is turned
-        // into a friendly aggregated error here rather than throwing before validation completes.
-        if (KeySourcePublicationLeadValidator.ValidateMinimum(
-                nameof(AzureKeyVaultCachedSigningOptions), options) is { } minimumLeadError)
-        {
-            errors.Add(minimumLeadError);
-        }
-
-        if (KeySourcePublicationLeadValidator.ValidateAtLeastRefreshInterval(
-                nameof(AzureKeyVaultCachedSigningOptions), options) is { } leadVsRefreshError)
-        {
-            errors.Add(leadVsRefreshError);
-        }
 
         if (options.CertificateIdentifier.VaultUri is null)
         {
@@ -62,6 +34,20 @@ internal sealed class AzureKeyVaultCachedSigningOptionsValidator : IValidateOpti
             errors.Add(
                 $"AzureKeyVaultCachedSigningOptions.Algorithm value '{options.Algorithm}' is not a defined " +
                 $"{nameof(SigningAlgorithm)} member.");
+        }
+
+        if (options.PreviousVersionsToPublish < 0)
+        {
+            errors.Add(
+                $"AzureKeyVaultCachedSigningOptions.PreviousVersionsToPublish ({options.PreviousVersionsToPublish}) " +
+                "must be zero or greater. Use 0 to publish no versions older than the signing one.");
+        }
+
+        if (options.PreActivationDelay < TimeSpan.Zero)
+        {
+            errors.Add(
+                $"AzureKeyVaultCachedSigningOptions.PreActivationDelay ({options.PreActivationDelay}) must be " +
+                "zero or greater. Use TimeSpan.Zero to let a newly created certificate version sign immediately.");
         }
 
         return errors.Count > 0 ? ValidateOptionsResult.Fail(errors) : ValidateOptionsResult.Success;

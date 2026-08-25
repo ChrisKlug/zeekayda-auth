@@ -8,6 +8,10 @@ ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultCachedSigningOptions.CertificateIdentif
 ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultCachedSigningOptions.CertificateIdentifier.set -> void
 ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultCachedSigningOptions.Credential.get -> Azure.Core.TokenCredential?
 ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultCachedSigningOptions.Credential.set -> void
+ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultCachedSigningOptions.PreActivationDelay.get -> System.TimeSpan
+ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultCachedSigningOptions.PreActivationDelay.set -> void
+ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultCachedSigningOptions.PreviousVersionsToPublish.get -> int
+ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultCachedSigningOptions.PreviousVersionsToPublish.set -> void
 ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultRemoteSigningOptions
 ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultRemoteSigningOptions.Algorithm.get -> ZeeKayDa.Auth.Tokens.SigningAlgorithm
 ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultRemoteSigningOptions.Algorithm.set -> void

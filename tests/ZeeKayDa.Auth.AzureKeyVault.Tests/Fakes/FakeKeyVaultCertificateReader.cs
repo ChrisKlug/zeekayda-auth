@@ -38,6 +38,14 @@ internal sealed class FakeKeyVaultCertificateReader : IKeyVaultCertificateReader
     public Exception? VersionsException { get; set; }
 
     /// <summary>
+    /// When set, <see cref="GetCertificateVersionsAsync"/> yields the first <c>AfterYielding</c>
+    /// versions normally and then throws <c>Exception</c> — simulating a listing that fails
+    /// mid-enumeration (e.g. a later page of a paged Key Vault response failing), the sharpest edge
+    /// of the never-a-partial-set contract.
+    /// </summary>
+    public (int AfterYielding, Exception Exception)? MidEnumerationFailure { get; set; }
+
+    /// <summary>
     /// When set, cancelled as soon as <see cref="GetCertificateVersionsAsync"/> is invoked (before it
     /// yields anything) — lets a test deterministically simulate the caller's own request being
     /// cancelled mid-refresh, after the base class has already acquired its internal snapshot lock,
@@ -192,11 +200,16 @@ internal sealed class FakeKeyVaultCertificateReader : IKeyVaultCertificateReader
         if (VersionsException is not null)
             throw VersionsException;
 
+        var yielded = 0;
         foreach (var version in Versions)
         {
+            if (MidEnumerationFailure is { } failure && yielded == failure.AfterYielding)
+                throw failure.Exception;
+
             await Task.Yield();
             cancellationToken.ThrowIfCancellationRequested();
             yield return version;
+            yielded++;
         }
     }
 

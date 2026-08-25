@@ -111,28 +111,13 @@ internal sealed class AzureKeyVaultRemoteSigningKeySource : ISigningKeySource
                         "has no versions. Create at least one key version before starting the host."));
             }
 
-            // See KeyVaultVersionSelector.DetermineFirstEverVersion for why this is computed over
-            // every version, including disabled ones, rather than over the enabled subset below.
-            var firstEverVersion = KeyVaultVersionSelector.DetermineFirstEverVersion(allVersions);
-
-            var enabledNewestFirst = allVersions
-                .Where(v => v.Enabled)
-                .OrderByDescending(v => v.CreatedOn)
-                .ThenByDescending(v => v.Version, StringComparer.Ordinal)
-                .ToList();
-
-            if (enabledNewestFirst.Count == 0)
-            {
-                throw new ZeeKayDaConfigurationException(
-                    new ZeeKayDaConfigurationFailure(
-                        "signing.azure_key_vault.no_active_key",
-                        $"No enabled version of Key Vault key '{options.KeyIdentifier.Name}' in vault " +
-                        $"'{options.KeyIdentifier.VaultUri}' exists. Verify the key has at least one " +
-                        "enabled version."));
-            }
-
-            var now = _timeProvider.GetUtcNow();
-            var (signing, published) = SelectVersions(enabledNewestFirst, firstEverVersion, options, now);
+            var (signing, published) = KeyVaultVersionSelector.SelectVersions(
+                allVersions,
+                options.PreviousVersionsToPublish,
+                options.PreActivationDelay,
+                _timeProvider.GetUtcNow(),
+                KeyVaultVersionSelector.SelectionContext.ForKey(
+                    options.KeyIdentifier.Name, options.KeyIdentifier.VaultUri));
 
             var signingKey = await ToSourceKeyAsync(signing, options, cancellationToken).ConfigureAwait(false);
 
@@ -175,118 +160,6 @@ internal sealed class AzureKeyVaultRemoteSigningKeySource : ISigningKeySource
 
         return new ValueTask<ISigner>(new KeyVaultRemoteSigner(
             _signer, signingVersion.KeyVersionUri, signingVersion.Version, _options.Value.Algorithm));
-    }
-
-    /// <summary>
-    /// Selects the signing version and the versions published alongside it from
-    /// <paramref name="enabledNewestFirst"/>. The newest eligible version signs; every enabled
-    /// version newer than it is published as staged — not only the next in line, so two replicas
-    /// whose restarts straddle a version ripening still publish each other's signing key — and up to
-    /// <see cref="AzureKeyVaultRemoteSigningOptions.PreviousVersionsToPublish"/> versions older than
-    /// it stay published — previous versions newest-first, then staged versions oldest-first.
-    /// </summary>
-    /// <exception cref="ZeeKayDaConfigurationException">
-    /// No version is eligible to sign, or the signing version's identifier URI is not pinned to its
-    /// version.
-    /// </exception>
-    private static (KeyVaultKeyVersionInfo Signing, IReadOnlyList<KeyVaultKeyVersionInfo> Published) SelectVersions(
-        List<KeyVaultKeyVersionInfo> enabledNewestFirst,
-        string firstEverVersion,
-        AzureKeyVaultRemoteSigningOptions options,
-        DateTimeOffset now)
-    {
-        var signingIndex = enabledNewestFirst.FindIndex(
-            v => IsEligibleToSign(v, firstEverVersion, options.PreActivationDelay, now));
-
-        if (signingIndex < 0)
-            throw NoEligibleVersion(options, enabledNewestFirst, now);
-
-        var signing = enabledNewestFirst[signingIndex];
-
-        // Defence-in-depth: the signer is later pinned to this URI, and CryptographyClient resolves
-        // a versionless key URI to the vault's LATEST version — a key the published set may not
-        // contain. The ring's self-test would catch the mismatched signature, but an unpinned URI
-        // is rejected here, where the failure can still name its cause.
-        if (!signing.Id.AbsolutePath.EndsWith($"/{signing.Version}", StringComparison.Ordinal))
-        {
-            throw new ZeeKayDaConfigurationException(
-                new ZeeKayDaConfigurationFailure(
-                    "signing.azure_key_vault.unversioned_key_uri",
-                    $"The identifier URI reported for Key Vault key version '{signing.Version}' is not pinned " +
-                    "to that version. Signing with an unpinned URI would use whatever version is newest at " +
-                    "sign time rather than the version whose public half was published."));
-        }
-
-        var previous = enabledNewestFirst.Skip(signingIndex + 1).Take(options.PreviousVersionsToPublish);
-        var staged = enabledNewestFirst.Take(signingIndex).Reverse();
-
-        return (signing, [.. previous, .. staged]);
-    }
-
-    /// <summary>
-    /// Whether <paramref name="version"/> may be selected as the signing version at
-    /// <paramref name="now"/>: inside its own validity window, and created at least
-    /// <paramref name="preActivationDelay"/> ago — so relying parties have had that long to pick its
-    /// public half up from a published JWKS before it signs anything. The chronologically-first
-    /// version ever recorded is exempt from the delay: there was no earlier key whose relying
-    /// parties need protecting, and without the exemption a brand-new deployment could not start.
-    /// </summary>
-    private static bool IsEligibleToSign(
-        in KeyVaultKeyVersionInfo version, string firstEverVersion, TimeSpan preActivationDelay, DateTimeOffset now)
-    {
-        if (version.NotBefore is { } notBefore && notBefore > now)
-            return false;
-
-        if (version.ExpiresOn is { } expiresOn && expiresOn <= now)
-            return false;
-
-        // Written as a difference from `now` rather than `CreatedOn <= now - delay`, which
-        // underflows for a fake-clock `now` near DateTimeOffset.MinValue.
-        return version.Version == firstEverVersion || now - version.CreatedOn >= preActivationDelay;
-    }
-
-    /// <summary>
-    /// Builds the fail-closed error for "enabled versions exist, but none may sign yet", telling the
-    /// operator when the youngest blocker ripens and naming the two remedies: wait, or lower
-    /// <see cref="AzureKeyVaultRemoteSigningOptions.PreActivationDelay"/> and restart.
-    /// </summary>
-    private static ZeeKayDaConfigurationException NoEligibleVersion(
-        AzureKeyVaultRemoteSigningOptions options,
-        IReadOnlyList<KeyVaultKeyVersionInfo> enabledVersions,
-        DateTimeOffset now)
-    {
-        // Only genuine future instants qualify: an already-expired version's past EligibleAt must
-        // not win the Min and turn "create a new version" into a wait that can never succeed.
-        var ripensAt = enabledVersions
-            .Select(v => (Version: v, At: EligibleAt(v, options.PreActivationDelay)))
-            .Where(c => c.At > now && (c.Version.ExpiresOn is null || c.At < c.Version.ExpiresOn))
-            .Select(c => (DateTimeOffset?)c.At)
-            .Min();
-
-        var remedy = ripensAt is { } at
-            ? $"The next version becomes eligible at {at:O}. Wait until then, or lower " +
-              $"{nameof(AzureKeyVaultRemoteSigningOptions)}.{nameof(AzureKeyVaultRemoteSigningOptions.PreActivationDelay)} " +
-              "(0 disables the delay) and restart."
-            : "Every enabled version has expired or expires before it would become eligible. Create a " +
-              "new key version.";
-
-        return new ZeeKayDaConfigurationException(
-            new ZeeKayDaConfigurationFailure(
-                "signing.azure_key_vault.no_eligible_version",
-                $"Key Vault key '{options.KeyIdentifier.Name}' in vault '{options.KeyIdentifier.VaultUri}' has " +
-                $"{enabledVersions.Count} enabled version(s), but none is eligible to sign: a version must be " +
-                $"inside its own validity window and at least {options.PreActivationDelay} old before it signs, " +
-                $"so relying parties have had time to see it in a published JWKS. {remedy}"));
-    }
-
-    /// <summary>
-    /// The instant <paramref name="version"/> satisfies both the age gate and its own
-    /// <c>NotBefore</c> — the later of the two.
-    /// </summary>
-    private static DateTimeOffset EligibleAt(in KeyVaultKeyVersionInfo version, TimeSpan preActivationDelay)
-    {
-        var ageSatisfiedAt = version.CreatedOn + preActivationDelay;
-        return version.NotBefore is { } notBefore && notBefore > ageSatisfiedAt ? notBefore : ageSatisfiedAt;
     }
 
     /// <summary>

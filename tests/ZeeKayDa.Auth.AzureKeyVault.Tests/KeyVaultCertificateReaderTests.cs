@@ -37,8 +37,6 @@ public sealed class KeyVaultCertificateReaderTests
             CertificateIdentifier = new KeyVaultCertificateIdentifier(new Uri(VaultUri, "certificates/fake-cert")),
             Credential = new FakeTokenCredential(),
             Algorithm = SigningAlgorithm.RS256,
-            RefreshInterval = TimeSpan.FromMinutes(5),
-            PublicationLead = TimeSpan.FromMinutes(5),
         }));
 
     private static (AsymmetricAlgorithm PrivateKey, SigningKeyType KeyType) InvokeExtractPrivateKey(
@@ -384,5 +382,63 @@ public sealed class KeyVaultCertificateReaderTests
         var payload = "real-keyvault-ec-fixture-payload"u8.ToArray();
         var signature = ecdsa.SignData(payload, HashAlgorithmName.SHA256);
         ecdsa.VerifyData(payload, signature, HashAlgorithmName.SHA256).Should().BeTrue();
+    }
+
+    // ── MapVersion: fail-closed listing metadata ─────────────────────────────────────────────────
+
+    private static readonly Uri MapVersionUri = new("https://fake-vault.vault.azure.net/certificates/fake-cert/v1");
+
+    private static CertificateProperties BuildProperties(
+        DateTimeOffset? createdOn, bool? enabled, DateTimeOffset? notBefore = null, DateTimeOffset? expiresOn = null)
+    {
+        var properties = CertificateModelFactory.CertificateProperties(
+            id: MapVersionUri, name: "fake-cert", vaultUri: new Uri("https://fake-vault.vault.azure.net/"),
+            version: "v1", notBefore: notBefore, expiresOn: expiresOn, createdOn: createdOn);
+        properties.Enabled = enabled;
+        return properties;
+    }
+
+    [Fact]
+    public void MapVersion_maps_a_complete_listing_entry()
+    {
+        var createdOn = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
+        var properties = BuildProperties(
+            createdOn, enabled: true,
+            notBefore: createdOn - TimeSpan.FromDays(1), expiresOn: createdOn + TimeSpan.FromDays(365));
+
+        var info = KeyVaultCertificateReader.MapVersion(properties, "fake-cert", new Uri("https://fake-vault.vault.azure.net/"));
+
+        info.Id.Should().Be(MapVersionUri);
+        info.Version.Should().Be("v1");
+        info.Enabled.Should().BeTrue();
+        info.CreatedOn.Should().Be(createdOn);
+        info.NotBefore.Should().Be(createdOn - TimeSpan.FromDays(1));
+        info.ExpiresOn.Should().Be(createdOn + TimeSpan.FromDays(365));
+    }
+
+    [Fact]
+    public void MapVersion_fails_closed_when_CreatedOn_is_absent()
+    {
+        // An absent CreatedOn treated as ancient would satisfy the pre-activation age gate
+        // immediately AND claim the first-ever exemption — the exact failure the gate exists to
+        // prevent, reached through the one input the gate cannot see.
+        var properties = BuildProperties(createdOn: null, enabled: true);
+
+        var act = () => KeyVaultCertificateReader.MapVersion(properties, "fake-cert", new Uri("https://fake-vault.vault.azure.net/"));
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .WithMessage("*incomplete_version_metadata*");
+    }
+
+    [Fact]
+    public void MapVersion_fails_closed_when_Enabled_is_absent()
+    {
+        // An absent Enabled treated as enabled would bypass the operator's revocation lever.
+        var properties = BuildProperties(createdOn: DateTimeOffset.Parse("2026-01-01T00:00:00Z"), enabled: null);
+
+        var act = () => KeyVaultCertificateReader.MapVersion(properties, "fake-cert", new Uri("https://fake-vault.vault.azure.net/"));
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .WithMessage("*incomplete_version_metadata*");
     }
 }
