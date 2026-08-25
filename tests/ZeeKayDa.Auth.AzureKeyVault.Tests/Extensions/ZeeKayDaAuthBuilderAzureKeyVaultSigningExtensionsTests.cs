@@ -220,7 +220,8 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
 
         var act = () => builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
-        act.Should().Throw<InvalidOperationException>();
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*signing key source*", "the key-source guard, not the transitional IJwtSigningService guard, must be the one that fires");
     }
 
     [Fact]
@@ -232,7 +233,8 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
 
         var act = () => builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
-        act.Should().Throw<InvalidOperationException>();
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*signing key source*", "the key-source guard, not the transitional IJwtSigningService guard, must be the one that fires");
     }
 
     // ── AddAzureKeyVaultCachedSigning: successful registration ──────────────────────────────────

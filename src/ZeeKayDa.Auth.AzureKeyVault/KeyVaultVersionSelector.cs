@@ -11,10 +11,22 @@ internal static class KeyVaultVersionSelector
     /// <summary>
     /// Names the Key Vault object a selection runs over, for failure messages: the remote provider
     /// selects among versions of a <c>key</c>, the cached provider among versions of a
-    /// <c>certificate</c>.
+    /// <c>certificate</c>. Built through the two factories rather than positionally, so a caller
+    /// cannot transpose the string members, and the operator-remedy property path is
+    /// <c>nameof</c>-anchored to the real options member rather than a literal that a rename would
+    /// silently stalen.
     /// </summary>
     internal readonly record struct SelectionContext(
-        string ObjectKind, string ObjectName, Uri VaultUri, string OptionsTypeName);
+        string ObjectKind, string ObjectName, Uri VaultUri, string PreActivationDelayPath)
+    {
+        public static SelectionContext ForKey(string name, Uri vaultUri) => new(
+            "key", name, vaultUri,
+            $"{nameof(AzureKeyVaultRemoteSigningOptions)}.{nameof(AzureKeyVaultRemoteSigningOptions.PreActivationDelay)}");
+
+        public static SelectionContext ForCertificate(string name, Uri vaultUri) => new(
+            "certificate", name, vaultUri,
+            $"{nameof(AzureKeyVaultCachedSigningOptions)}.{nameof(AzureKeyVaultCachedSigningOptions.PreActivationDelay)}");
+    }
 
     /// <summary>
     /// Selects the signing version and the versions published alongside it from
@@ -176,7 +188,7 @@ internal static class KeyVaultVersionSelector
 
         var remedy = ripensAt is { } at
             ? $"The next version becomes eligible at {at:O}. Wait until then, or lower " +
-              $"{context.OptionsTypeName}.PreActivationDelay (0 disables the delay) and restart."
+              $"{context.PreActivationDelayPath} (0 disables the delay) and restart."
             : "Every enabled version has expired or expires before it would become eligible. Create a " +
               $"new {context.ObjectKind} version.";
 

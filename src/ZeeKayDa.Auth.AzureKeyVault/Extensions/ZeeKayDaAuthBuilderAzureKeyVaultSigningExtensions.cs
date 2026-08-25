@@ -154,15 +154,14 @@ public static class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensions
     /// <param name="credential">The credential used to authenticate to Key Vault.</param>
     /// <param name="configure">
     /// An optional callback to further configure <see cref="AzureKeyVaultCachedSigningOptions"/>
-    /// (for example, <see cref="ZeeKayDa.Auth.Tokens.KeySourceOptions.RefreshInterval"/>).
+    /// (for example, <see cref="AzureKeyVaultCachedSigningOptions.PreActivationDelay"/>).
     /// </param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="builder"/> or <paramref name="credential"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// Thrown when an <see cref="IJwtSigningService"/> has already been registered. Only one
-    /// signing key provider is allowed.
+    /// Thrown when a signing key provider has already been registered. Only one is allowed.
     /// </exception>
     /// <seealso cref="AddAzureKeyVaultRemoteSigning"/>
     public static ZeeKayDaAuthBuilder AddAzureKeyVaultCachedSigning(

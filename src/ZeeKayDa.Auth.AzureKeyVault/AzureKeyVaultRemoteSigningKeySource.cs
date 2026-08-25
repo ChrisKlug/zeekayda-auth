@@ -116,9 +116,8 @@ internal sealed class AzureKeyVaultRemoteSigningKeySource : ISigningKeySource
                 options.PreviousVersionsToPublish,
                 options.PreActivationDelay,
                 _timeProvider.GetUtcNow(),
-                new KeyVaultVersionSelector.SelectionContext(
-                    "key", options.KeyIdentifier.Name, options.KeyIdentifier.VaultUri,
-                    nameof(AzureKeyVaultRemoteSigningOptions)));
+                KeyVaultVersionSelector.SelectionContext.ForKey(
+                    options.KeyIdentifier.Name, options.KeyIdentifier.VaultUri));
 
             var signingKey = await ToSourceKeyAsync(signing, options, cancellationToken).ConfigureAwait(false);
 

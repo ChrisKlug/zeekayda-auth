@@ -111,9 +111,8 @@ internal sealed class AzureKeyVaultCachedSigningKeySource : ISigningKeySource
                 options.PreviousVersionsToPublish,
                 options.PreActivationDelay,
                 _timeProvider.GetUtcNow(),
-                new KeyVaultVersionSelector.SelectionContext(
-                    "certificate", options.CertificateIdentifier.Name, options.CertificateIdentifier.VaultUri,
-                    nameof(AzureKeyVaultCachedSigningOptions)));
+                KeyVaultVersionSelector.SelectionContext.ForCertificate(
+                    options.CertificateIdentifier.Name, options.CertificateIdentifier.VaultUri));
 
             var signingKey = await ToSourceKeyAsync(signing, options, cancellationToken).ConfigureAwait(false);
 
@@ -227,11 +226,17 @@ internal sealed class AzureKeyVaultCachedSigningKeySource : ISigningKeySource
 
         if (!matches)
         {
-            throw new AzureKeyVaultSigningException(
-                $"The private key downloaded for Key Vault certificate version '{version}' does not match " +
-                "the public key published for that version. The certificate's linked secret and its Cer " +
-                "disagree — refusing to sign with a key that cannot be verified against what relying " +
-                "parties were told to trust.");
+            // A ZeeKayDaConfigurationException, not AzureKeyVaultSigningException: the ring absorbs
+            // configuration exceptions verbatim, so this — the sharpest tamper signal the provider
+            // can produce — reaches the operator's startup output with the divergence named, rather
+            // than flattened into a generic signer_unavailable that reads as transient.
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "signing.azure_key_vault.secret_cer_mismatch",
+                    $"The private key downloaded for Key Vault certificate version '{version}' does not match " +
+                    "the public key published for that version. The certificate's linked secret and its Cer " +
+                    "disagree — refusing to sign with a key that cannot be verified against what relying " +
+                    "parties were told to trust."));
         }
     }
 
@@ -239,8 +244,12 @@ internal sealed class AzureKeyVaultCachedSigningKeySource : ISigningKeySource
         actual.Modulus.AsSpan().SequenceEqual(published.Modulus) &&
         actual.Exponent.AsSpan().SequenceEqual(published.Exponent);
 
+    // The null-conditional Oid access matters: an explicit-parameters EC curve carries no OID at
+    // all, and a missing OID on either side must read as "cannot be verified to match" — never as
+    // two nulls comparing equal.
     private static bool EcPublicParametersMatch(ECParameters actual, ECParameters published) =>
-        string.Equals(actual.Curve.Oid.Value, published.Curve.Oid.Value, StringComparison.Ordinal) &&
+        actual.Curve.Oid?.Value is { } actualOid &&
+        string.Equals(actualOid, published.Curve.Oid?.Value, StringComparison.Ordinal) &&
         actual.Q.X.AsSpan().SequenceEqual(published.Q.X) &&
         actual.Q.Y.AsSpan().SequenceEqual(published.Q.Y);
 

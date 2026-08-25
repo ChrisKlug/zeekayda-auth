@@ -150,9 +150,9 @@ public sealed class AzureKeyVaultCachedSigningIntegrationTests
     public async Task Startup_fails_closed_when_the_secret_and_the_Cer_diverge()
     {
         // The tamper-evidence cross-check: the private key downloaded from the linked secret must
-        // match the public key published from the Cer. The ring wraps the source's
-        // AzureKeyVaultSigningException as signing.signer_unavailable, keeping the named divergence
-        // as the inner exception operators read.
+        // match the public key published from the Cer, and the divergence must reach the startup
+        // output NAMED — a configuration failure the ring absorbs verbatim, never a generic
+        // signer_unavailable that reads as transient.
         var ct = TestContext.Current.CancellationToken;
         var (services, reader, _) = BuildServices(T0);
         reader.AddRsaVersion("v1", createdOn: T0);
@@ -166,11 +166,8 @@ public sealed class AzureKeyVaultCachedSigningIntegrationTests
 
         var act = async () => await StartHostedServicesAsync(provider, ct);
 
-        // The startup verifier aggregates failures, so the inner exception is not preserved on the
-        // rethrown aggregate — but the ring's signer_unavailable failure names the exception TYPE
-        // in its message, which is what keeps the divergence diagnosable from the startup log.
         (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
-            .WithMessage($"*signer_unavailable*{nameof(AzureKeyVaultSigningException)}*");
+            .WithMessage("*secret_cer_mismatch*does not match*");
     }
 
     [Fact]

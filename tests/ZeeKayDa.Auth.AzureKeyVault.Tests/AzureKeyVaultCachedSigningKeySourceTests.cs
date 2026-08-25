@@ -213,12 +213,54 @@ public sealed class AzureKeyVaultCachedSigningKeySourceTests
 
         var act = async () => await sut.CreateSignerAsync(keySet.SigningKey.Id, ct);
 
-        (await act.Should().ThrowAsync<AzureKeyVaultSigningException>())
-            .WithMessage("*does not match*");
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .WithMessage("*secret_cer_mismatch*does not match*",
+                "a configuration failure is absorbed verbatim by the ring, so the divergence reaches the operator named");
         capturedPrivateKey.Should().NotBeNull();
         var useAfterFailure = () => ((RSA)capturedPrivateKey!).ExportParameters(includePrivateParameters: false);
         useAfterFailure.Should().Throw<ObjectDisposedException>(
             "the diverged private key must be disposed, not left reachable, when the cross-check rejects it");
+    }
+
+    [Fact]
+    public async Task CreateSignerAsync_rejects_a_downloaded_ec_private_key_that_does_not_match_the_published_public_key()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var reader = new FakeKeyVaultCertificateReader();
+        reader.AddEcVersion("v1", createdOn: T0);
+        using var divergedKey = System.Security.Cryptography.ECDsa.Create(System.Security.Cryptography.ECCurve.NamedCurves.nistP256);
+        reader.SetMismatchedPrivateKeyMaterial("v1", divergedKey.ExportParameters(includePrivateParameters: true));
+        AsymmetricAlgorithm? capturedPrivateKey = null;
+        reader.OnPrivateKeyExtracted = (_, key) => capturedPrivateKey = key;
+        var sut = BuildSource(reader, new FakeTimeProvider(T0), algorithm: SigningAlgorithm.ES256);
+        var keySet = await sut.ReadAsync(ct);
+
+        var act = async () => await sut.CreateSignerAsync(keySet.SigningKey.Id, ct);
+
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .WithMessage("*secret_cer_mismatch*");
+        capturedPrivateKey.Should().NotBeNull();
+        var useAfterFailure = () => ((System.Security.Cryptography.ECDsa)capturedPrivateKey!).ExportParameters(includePrivateParameters: false);
+        useAfterFailure.Should().Throw<ObjectDisposedException>();
+    }
+
+    [Fact]
+    public async Task CreateSignerAsync_rejects_a_downloaded_private_key_whose_type_differs_from_the_published_one()
+    {
+        // The published Cer reports RSA; the linked secret hands back an EC key — the sharpest
+        // possible secret substitution, and the mismatch arm no comparison branch covers.
+        var ct = TestContext.Current.CancellationToken;
+        var reader = new FakeKeyVaultCertificateReader();
+        reader.AddRsaVersion("v1", createdOn: T0);
+        using var divergedKey = System.Security.Cryptography.ECDsa.Create(System.Security.Cryptography.ECCurve.NamedCurves.nistP256);
+        reader.SetMismatchedPrivateKeyMaterial("v1", divergedKey.ExportParameters(includePrivateParameters: true));
+        var sut = BuildSource(reader, new FakeTimeProvider(T0));
+        var keySet = await sut.ReadAsync(ct);
+
+        var act = async () => await sut.CreateSignerAsync(keySet.SigningKey.Id, ct);
+
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .WithMessage("*secret_cer_mismatch*");
     }
 
     // ── Failure paths: always throw, never a partial set ─────────────────────────────────────────
