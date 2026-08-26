@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.AspNetCore;
 using ZeeKayDa.Auth.Clients;
+using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests;
 
@@ -90,5 +91,85 @@ public sealed class ClientRepositoryStartupActivatorTests
             string clientId,
             CancellationToken cancellationToken = default)
             => ValueTask.FromResult<IClientRegistration?>(null);
+    }
+
+    // ── Asking the signing key ring for the key set (#499) ───────────────────────────────────────
+
+    [Fact]
+    public async Task VerifyAsync_initializes_the_signing_key_ring_before_validating_clients()
+    {
+        // The client subset check validates against the advertised algorithms, so it asks for them
+        // rather than assuming it runs after the ring's own activator.
+        var ring = new RecordingSigningKeyRing(failure: null);
+        var services = new ServiceCollection();
+        services.AddSingleton<IClientRepository, CustomClientRepository>();
+        services.AddSingleton<ISigningKeyRing>(ring);
+        using var provider = services.BuildServiceProvider();
+        var sut = new ClientRepositoryStartupActivator();
+        var context = new StartupVerificationContext();
+
+        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+
+        ring.EnsureInitializedCallCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task VerifyAsync_does_not_report_a_ring_failure_that_the_rings_own_activator_reports()
+    {
+        // Reporting it here as well would put the same code in the aggregate twice for one broken
+        // configuration. Startup still fails — on the ring's own report.
+        var ring = new RecordingSigningKeyRing(
+            new ZeeKayDaConfigurationFailure("signing.source_unavailable", "Simulated."));
+        var services = new ServiceCollection();
+        services.AddSingleton<IClientRepository, CustomClientRepository>();
+        services.AddSingleton<ISigningKeyRing>(ring);
+        using var provider = services.BuildServiceProvider();
+        var sut = new ClientRepositoryStartupActivator();
+        var context = new StartupVerificationContext();
+
+        var act = async () => await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+
+        await act.Should().NotThrowAsync();
+        context.Failures.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task VerifyAsync_still_validates_clients_when_no_signing_key_ring_is_registered()
+    {
+        // A host that adds only the signing key health check has no ring at all.
+        var services = new ServiceCollection();
+        services.AddSingleton(new InMemoryClientRegistrationOptions());
+        services.AddSingleton<IClientRepository, CustomClientRepository>();
+        using var provider = services.BuildServiceProvider();
+        var sut = new ClientRepositoryStartupActivator();
+        var context = new StartupVerificationContext();
+
+        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+
+        context.Warnings.Should().ContainSingle().Which.Code.Should().Be("clients.inmemory_shadowed");
+    }
+
+    private sealed class RecordingSigningKeyRing(ZeeKayDaConfigurationFailure? failure) : ISigningKeyRing
+    {
+        public int EnsureInitializedCallCount { get; private set; }
+
+        public SigningKeySet Current => throw new NotSupportedException();
+
+        public ValueTask<SigningOutcome> SignAsync<TState>(
+            TState state,
+            Func<SigningContext, TState, ReadOnlyMemory<byte>> buildSigningInput,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        ValueTask ISigningKeyRing.EnsureInitializedAsync(CancellationToken cancellationToken)
+        {
+            EnsureInitializedCallCount++;
+
+            return failure is null
+                ? ValueTask.CompletedTask
+                : throw new ZeeKayDaConfigurationException(failure);
+        }
+
+        SigningKeySet? ISigningKeyRing.CurrentOrNull => null;
     }
 }
