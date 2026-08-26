@@ -60,13 +60,7 @@ docs/
 
 **Note:** `ZeeKayDa.Auth` has `InternalsVisibleTo` for the other `src/` projects. Do not make types `public` solely for cross-project access — use the existing internal visibility.
 
-### Platform-specific signing providers and solution filters
-
-Some signing-provider packages only make sense on one OS (`ZeeKayDa.Auth.Windows` today; a cross-platform file-based provider is planned). `ZeeKayDa.Auth.slnx` remains the single canonical solution — always build/test/format against it locally unless you have a specific reason to scope down. `ZeeKayDa.Auth.Windows.slnf`, `ZeeKayDa.Auth.MacOS.slnf`, and `ZeeKayDa.Auth.Linux.slnf` are thin solution *filters* (no duplicated project metadata) that CI uses to build/test each platform-specific package only on its own OS's runner, so a package never gets pulled onto the wrong platform's leg. Introduced in PR #318.
-
-**A macOS Keychain provider (#290) was implemented, reviewed, and then descoped** as a product-scope call — a production ASP.NET Core auth server is not a realistic macOS-hosted workload, and the only remaining audience (developers on macOS) is already covered by the local-dev provider and #291 without native interop. `ZeeKayDa.Auth.MacOS.slnf` still exists and still runs the OS-agnostic core packages' tests on a real macOS CI runner — that's independently valuable and unrelated to the killed provider — it just doesn't build a macOS-specific package (yet; #291 may end up added to it, since #291 is cross-platform).
-
-**Before targeting an OS-specific TFM for a new platform package, verify its workload requirements empirically, don't assume the Windows precedent generalizes.** `net10.0-windows` needs no `dotnet workload install` (Windows Desktop reference assemblies ship via plain NuGet), but `net10.0-macos` does (confirmed via `dotnet workload list` showing zero installed, and a scratch project with that TFM failing restore with `NETSDK1147`) — and CI installs no workloads. Check `dotnet workload list` and try restoring a throwaway project with the candidate TFM before committing to it in a decision entry or a `.csproj`.
+`ZeeKayDa.Auth.slnx` is the single canonical solution — build/test/format against it locally. The platform `.slnf` solution filters and the OS-specific-TFM rules are in `docs/decisions/build-and-ci.md`; read it before adding or changing a platform-specific package.
 
 ## Project Conventions
 
@@ -185,15 +179,11 @@ If no route fits, tell the user — it might be a gap in the process.
 
 Some tools (e.g. `LSP`, `WebFetch`) may arrive deferred — the schema is not loaded and calling them fails with `InputValidationError`. Load such a tool once with `ToolSearch("select:<ToolName>")` before its first call; don't guess parameters from memory. If it still fails after that, report the exact error to whoever called you instead of silently working around it.
 
-**MCP tools (`mcp__*`) are not reachable from an agent whose frontmatter has an explicit `tools:`
-list** — that covers developer, tester, architect, security and docs. `ToolSearch` returns "No
-matching deferred tools found". Adding the MCP tool name to the `tools:` list is the documented
-workaround, but agent definitions are cached per session, so it takes effect only in a fresh session.
-
-Practical rule when writing agent instructions: **never delegate an MCP call to one of these
-agents.** A delegated call fails silently and comes back looking like a clean result. Keep MCP calls
-with the main orchestrator. If a task you are given depends on one, say so and return it — do not
-report the underlying check as done.
+**Never delegate an MCP call (`mcp__*`) to a specialist agent** — an agent with an explicit
+`tools:` list in its frontmatter (developer, tester, architect, security, docs) cannot reach MCP
+tools, and the delegated call fails silently, coming back looking like a clean result. Keep MCP
+calls with the main orchestrator. If a task you are given depends on one, say so and return it —
+do not report the underlying check as done.
 
 ## Code navigation
 
