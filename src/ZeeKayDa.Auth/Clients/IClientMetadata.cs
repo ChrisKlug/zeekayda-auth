@@ -27,7 +27,7 @@ namespace ZeeKayDa.Auth.Clients;
 /// suggestion.
 /// </para>
 /// </remarks>
-public interface IClientInfo
+public interface IClientMetadata
 {
     /// <summary>The unique identifier for this client.</summary>
     string ClientId { get; }
@@ -38,10 +38,13 @@ public interface IClientInfo
     /// </summary>
     /// <remarks>
     /// Declared (non-default interface member) because a silent default value would convert a
-    /// configuration omission into a security-relevant runtime behaviour change. Enforced
-    /// three-way consistency rule: a client is public if and only if it has no entries in
+    /// configuration omission into a security-relevant runtime behaviour change. Three-way
+    /// consistency rule: a client is public if and only if it has no entries in
     /// <see cref="IClientRegistration.Credentials"/>, and if and only if
-    /// <see cref="AllowedTokenEndpointAuthMethods"/> is exactly <c>{ "none" }</c>.
+    /// <see cref="AllowedTokenEndpointAuthMethods"/> is exactly <c>{ "none" }</c>. Enforced at
+    /// registration time by <see cref="IClientRegistrationValidator"/> — a custom
+    /// <see cref="IClientRepository"/> that never runs the validator enforces nothing, and MUST
+    /// uphold the rule itself at write time.
     /// See <see href="https://www.rfc-editor.org/rfc/rfc6749#section-2.1">RFC 6749 §2.1</see>.
     /// </remarks>
     bool IsPublic { get; }
@@ -59,13 +62,13 @@ public interface IClientInfo
     /// <summary>
     /// Permitted post-logout redirect URIs. May be empty.
     /// </summary>
-    /// <remarks>See <see cref="IClientInfo"/>'s string-set comparison invariant.</remarks>
+    /// <remarks>See <see cref="IClientMetadata"/>'s string-set comparison invariant.</remarks>
     IReadOnlySet<string> PostLogoutRedirectUris { get; }
 
     /// <summary>
     /// Scopes this client is permitted to request.
     /// </summary>
-    /// <remarks>See <see cref="IClientInfo"/>'s string-set comparison invariant.</remarks>
+    /// <remarks>See <see cref="IClientMetadata"/>'s string-set comparison invariant.</remarks>
     IReadOnlySet<string> AllowedScopes { get; }
 
     /// <summary>OAuth 2.0 grant types this client is permitted to use.</summary>
@@ -81,7 +84,7 @@ public interface IClientInfo
     /// Token endpoint authentication methods this client is permitted to use.
     /// </summary>
     /// <remarks>
-    /// See <see cref="IClientInfo"/>'s string-set comparison invariant. The value
+    /// See <see cref="IClientMetadata"/>'s string-set comparison invariant. The value
     /// <c>"none"</c> (see <see cref="TokenEndpointAuthMethods.None"/>) is only valid for public
     /// clients (<see cref="IsPublic"/> == <see langword="true"/>).
     /// </remarks>

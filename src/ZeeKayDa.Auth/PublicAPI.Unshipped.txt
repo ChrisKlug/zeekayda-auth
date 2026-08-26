@@ -79,19 +79,19 @@ ZeeKayDa.Auth.Clients.ClientSecretHasher<TSecret>.ClientSecretHasher() -> void
 ZeeKayDa.Auth.Clients.ClientSecretHasher<TSecret>.Create(System.ReadOnlySpan<char> plaintext) -> ZeeKayDa.Auth.Clients.IClientSecret!
 ZeeKayDa.Auth.Clients.ClientSecretHasher<TSecret>.Verify(ZeeKayDa.Auth.Clients.IClientSecret! stored, System.ReadOnlySpan<char> presented) -> bool
 ZeeKayDa.Auth.Clients.IClientCredential
-ZeeKayDa.Auth.Clients.IClientInfo
-ZeeKayDa.Auth.Clients.IClientInfo.AllowedGrantTypes.get -> System.Collections.Generic.IReadOnlySet<ZeeKayDa.Auth.GrantType>!
-ZeeKayDa.Auth.Clients.IClientInfo.AllowedPromptValues.get -> System.Collections.Generic.IReadOnlySet<ZeeKayDa.Auth.Authorization.PromptValue>!
-ZeeKayDa.Auth.Clients.IClientInfo.AllowedResponseModes.get -> System.Collections.Generic.IReadOnlySet<ZeeKayDa.Auth.Authorization.ResponseMode>!
-ZeeKayDa.Auth.Clients.IClientInfo.AllowedResponseTypes.get -> System.Collections.Generic.IReadOnlySet<ZeeKayDa.Auth.Authorization.ResponseType>!
-ZeeKayDa.Auth.Clients.IClientInfo.AllowedScopes.get -> System.Collections.Generic.IReadOnlySet<string!>!
-ZeeKayDa.Auth.Clients.IClientInfo.AllowedSigningAlgorithms.get -> System.Collections.Generic.IReadOnlySet<ZeeKayDa.Auth.Tokens.SigningAlgorithm>?
-ZeeKayDa.Auth.Clients.IClientInfo.AllowedTokenEndpointAuthMethods.get -> System.Collections.Generic.IReadOnlySet<string!>!
-ZeeKayDa.Auth.Clients.IClientInfo.ClientId.get -> string!
-ZeeKayDa.Auth.Clients.IClientInfo.EnableZkdErrorCodes.get -> bool
-ZeeKayDa.Auth.Clients.IClientInfo.IsPublic.get -> bool
-ZeeKayDa.Auth.Clients.IClientInfo.PostLogoutRedirectUris.get -> System.Collections.Generic.IReadOnlySet<string!>!
-ZeeKayDa.Auth.Clients.IClientInfo.RedirectUris.get -> System.Collections.Generic.IReadOnlySet<string!>!
+ZeeKayDa.Auth.Clients.IClientMetadata
+ZeeKayDa.Auth.Clients.IClientMetadata.AllowedGrantTypes.get -> System.Collections.Generic.IReadOnlySet<ZeeKayDa.Auth.GrantType>!
+ZeeKayDa.Auth.Clients.IClientMetadata.AllowedPromptValues.get -> System.Collections.Generic.IReadOnlySet<ZeeKayDa.Auth.Authorization.PromptValue>!
+ZeeKayDa.Auth.Clients.IClientMetadata.AllowedResponseModes.get -> System.Collections.Generic.IReadOnlySet<ZeeKayDa.Auth.Authorization.ResponseMode>!
+ZeeKayDa.Auth.Clients.IClientMetadata.AllowedResponseTypes.get -> System.Collections.Generic.IReadOnlySet<ZeeKayDa.Auth.Authorization.ResponseType>!
+ZeeKayDa.Auth.Clients.IClientMetadata.AllowedScopes.get -> System.Collections.Generic.IReadOnlySet<string!>!
+ZeeKayDa.Auth.Clients.IClientMetadata.AllowedSigningAlgorithms.get -> System.Collections.Generic.IReadOnlySet<ZeeKayDa.Auth.Tokens.SigningAlgorithm>?
+ZeeKayDa.Auth.Clients.IClientMetadata.AllowedTokenEndpointAuthMethods.get -> System.Collections.Generic.IReadOnlySet<string!>!
+ZeeKayDa.Auth.Clients.IClientMetadata.ClientId.get -> string!
+ZeeKayDa.Auth.Clients.IClientMetadata.EnableZkdErrorCodes.get -> bool
+ZeeKayDa.Auth.Clients.IClientMetadata.IsPublic.get -> bool
+ZeeKayDa.Auth.Clients.IClientMetadata.PostLogoutRedirectUris.get -> System.Collections.Generic.IReadOnlySet<string!>!
+ZeeKayDa.Auth.Clients.IClientMetadata.RedirectUris.get -> System.Collections.Generic.IReadOnlySet<string!>!
 ZeeKayDa.Auth.Clients.IClientRegistration
 ZeeKayDa.Auth.Clients.IClientRegistration.Credentials.get -> System.Collections.Generic.IReadOnlyList<ZeeKayDa.Auth.Clients.IClientCredential!>!
 ZeeKayDa.Auth.Clients.IClientRegistrationValidator
