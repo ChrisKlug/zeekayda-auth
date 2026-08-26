@@ -12,10 +12,11 @@ namespace ZeeKayDa.Auth.AspNetCore;
 /// <c>id_token_signing_alg_values_supported</c>, which OpenID Connect Discovery 1.0 §3 requires:
 /// the advertised algorithms are derived from the ring's key set. Failing here is what keeps that
 /// dependency from surfacing as a dependency-injection error on the first discovery request.
-/// Uses <see cref="IServiceProviderIsService"/> to inspect the container without resolving the ring
-/// — resolving it constructs the signing key source. If <see cref="IServiceProviderIsService"/> is
-/// absent (a third-party DI container replacing the default provider), the check is skipped rather
-/// than failing with a confusing resolution error.
+/// Resolves the ring rather than asking <see cref="IServiceProviderIsService"/> about it, so the
+/// check works on any container rather than skipping itself on a third-party one. Resolution is free
+/// here: <c>SigningKeyRingStartupVerifier</c> is registered from <c>AddZeeKayDaAuthCore()</c>, which
+/// runs before this verifier, so by the time this runs the ring has already been constructed and
+/// initialized — this cannot be the call that builds a signing key source.
 /// </remarks>
 internal sealed class SigningKeyRingPresenceValidator : IStartupVerifier
 {
@@ -28,16 +29,13 @@ internal sealed class SigningKeyRingPresenceValidator : IStartupVerifier
         IServiceProvider scopedServices,
         CancellationToken cancellationToken)
     {
-        var isService = scopedServices.GetService<IServiceProviderIsService>();
-        if (isService is null)
-            return ValueTask.CompletedTask;
-
-        if (!isService.IsService(typeof(ISigningKeyRing)))
+        if (scopedServices.GetService<ISigningKeyRing>() is null)
             context.AddFailure(
                 "signing.key_ring.missing",
                 "No signing key source has been registered, so no token can be signed and " +
                 "id_token_signing_alg_values_supported cannot be published. Call " +
-                "builder.AddInMemoryDevelopmentJwtSigningKeys() for local development, one of the " +
+                "builder.AddInMemoryDevelopmentJwtSigningKeys() or " +
+                "builder.AddPersistedDevelopmentJwtSigningKeys() for local development, one of the " +
                 "provider packages' registrations (builder.AddPemFileSigning(), " +
                 "builder.AddPfxFileSigning(), builder.AddAzureKeyVaultRemoteSigning(), " +
                 "builder.AddAzureKeyVaultCachedSigning(), builder.AddWindowsCertificateStoreSigning()), " +

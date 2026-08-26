@@ -33,13 +33,15 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
     /// The signing key ring, or <see langword="null"/> when none is registered — a host that only
     /// adds the signing key health check has no ring, and the protocol endpoints refuse to start
     /// without one. Supplies the algorithms a client's <c>AllowedSigningAlgorithms</c> must be a
-    /// subset of, once the ring has read its source.
+    /// subset of, once the ring has read its source. Deliberately has no default: omitting it
+    /// silently weakens the subset check, which is not something a call site should be able to do
+    /// by accident.
     /// </param>
     public ClientRegistrationValidator(
         IOptions<AuthorizationServerOptions> options,
         CompositeClientSecretHasher hasher,
         ISanitizingLogger<ClientRegistrationValidator> logger,
-        ISigningKeyRing? keyRing = null)
+        ISigningKeyRing? keyRing)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(hasher);
@@ -373,13 +375,25 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
 
         var serverAlgorithms = ResolveServerAlgorithms();
 
-        // Nothing to be a subset of: no ring has read its source yet (a repository validating from
-        // its own constructor, before startup verification runs) and the operator has stated no
-        // ceiling either. Nothing else enforces this set today — the token endpoint that will read
-        // it does not exist yet — so this is a genuinely unchecked window, not a check deferred to
-        // a later one.
         if (serverAlgorithms is null)
+        {
+            // Nothing to be a subset of: no ring has read its source yet (a repository validating
+            // from its own constructor, before startup verification runs) and the operator has
+            // stated no ceiling either. Nothing else enforces this set today — the token endpoint
+            // that will read it does not exist yet — so this is a genuinely unchecked window, and
+            // it says so rather than passing silently.
+            if (_keyRing is not null)
+            {
+                _logger.LogWarning(
+                    "Client '{ClientId}' declares AllowedSigningAlgorithms, but the signing key ring " +
+                    "has not yet read its source, so the set could not be checked against the " +
+                    "server's advertised algorithms. This happens when an IClientRepository is " +
+                    "resolved before host startup verification runs.",
+                    client.ClientId);
+            }
+
             return;
+        }
 
         foreach (var algorithm in algorithms.Where(algorithm => !serverAlgorithms.Contains(algorithm)))
         {

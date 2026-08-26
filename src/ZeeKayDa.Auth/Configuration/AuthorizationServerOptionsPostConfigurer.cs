@@ -1,11 +1,13 @@
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.Discovery;
+using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.Configuration;
 
 /// <summary>
-/// Canonicalizes and freezes <see cref="DiscoveryOptions.CorsOrigins"/> before startup validation runs.
+/// Canonicalizes and freezes <see cref="DiscoveryOptions.CorsOrigins"/>, and freezes
+/// <see cref="Tokens.IdTokenOptions.AdvertisedSigningAlgorithms"/>, before startup validation runs.
 /// </summary>
 /// <remarks>
 /// <see cref="IPostConfigureOptions{TOptions}"/> runs after all <c>Configure</c> callbacks and before
@@ -45,5 +47,12 @@ internal sealed class AuthorizationServerOptionsPostConfigurer : IPostConfigureO
         }
 
         options.DiscoveryDocument.CorsOrigins = result.AsReadOnly();
+
+        // Frozen for the same reason as CorsOrigins: the discovery document reads this filter on
+        // every request, and the startup checks that reconcile it with the key set run exactly
+        // once. A collection still mutable afterwards could narrow the advertised set past what
+        // startup approved, with no check left to catch it.
+        if (options.IdToken.AdvertisedSigningAlgorithms is { } advertised)
+            options.IdToken.AdvertisedSigningAlgorithms = advertised.ToList().AsReadOnly();
     }
 }

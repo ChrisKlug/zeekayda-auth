@@ -68,7 +68,8 @@ public sealed class InMemoryClientRepositoryTests
         => new ClientRegistrationValidator(
             Options.Create(serverOptions ?? DefaultServerOptions()),
             MakeHasher(),
-            NullSanitizingLogger<ClientRegistrationValidator>.Instance);
+            NullSanitizingLogger<ClientRegistrationValidator>.Instance,
+            keyRing: null);
 
     private static InMemoryClientRepository MakeRepository(
         InMemoryClientRegistrationOptions opts,

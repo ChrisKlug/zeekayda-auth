@@ -354,9 +354,16 @@ published key (`Previous`, `Current`, and `Next`), ascending by `SigningAlgorith
 server can never advertise an algorithm it holds no key for.
 
 Leave this `null` (the default) to advertise that whole set. Set it to withhold an algorithm the
-server could otherwise advertise; it can never add one. Naming an algorithm no configured key uses
-is a no-op and warns at startup, and a filter that excludes the signing key's own algorithm fails
-startup with `signing.advertised_algorithms.excludes_signing_key`.
+server could otherwise advertise; it can never add one. A filter that excludes the signing key's own
+algorithm fails startup with `signing.advertised_algorithms.excludes_signing_key`.
+
+Three startup warnings cover the rest:
+
+| Code | Meaning |
+|---|---|
+| `signing.advertised_algorithms.withholds_published_algorithm` | The filter withholds an algorithm a published key still uses. Those keys stay in the JWKS and tokens they signed remain verifiable, but a relying party that pins acceptance to `id_token_signing_alg_values_supported` will reject them until they expire. |
+| `signing.advertised_algorithms.absent_from_key_set` | The filter names an algorithm no configured key uses. The entry has no effect. |
+| `signing.advertised_algorithms.rs256_absent` | The advertised set omits `RS256`, which [OpenID Connect Discovery 1.0 §3](https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderMetadata) requires. The framework warns rather than injecting it — advertising an algorithm with no key behind it is the failure this derivation exists to prevent. |
 
 ```csharp
 // Two keys are configured, RS256 and ES256, but only RS256 is advertised.

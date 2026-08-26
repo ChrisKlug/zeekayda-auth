@@ -862,6 +862,27 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
+    public void Validate_warns_when_the_key_ring_exists_but_has_not_read_its_source()
+    {
+        // A host that resolves IClientRepository before startup verification runs gets no subset
+        // check at all. That window is unchecked by anything else, so it is logged rather than
+        // passed over in silence.
+        var opts = new AuthorizationServerOptions { Issuer = "https://test.example.com" };
+        opts.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
+        var logger = new CapturingLogger();
+        var validator = MakeValidator(logger: logger, serverOptions: opts, keySet: null);
+
+        var client = MakeValidPublicClient() with
+        {
+            AllowedSigningAlgorithms = new HashSet<SigningAlgorithm> { SigningAlgorithm.ES512 }
+        };
+
+        validator.Validate(client);
+
+        logger.Warnings.Should().ContainSingle(w => w.Contains("has not yet read its source"));
+    }
+
+    [Fact]
     public void Validate_skips_the_subset_check_when_there_is_no_key_set_and_no_filter()
     {
         var opts = new AuthorizationServerOptions { Issuer = "https://test.example.com" };

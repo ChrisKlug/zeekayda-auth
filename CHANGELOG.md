@@ -78,6 +78,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
     to add — it would advertise no algorithm the server actually issues tokens with.
   - A filter naming an algorithm no configured key uses is a no-op and warns at startup with
     `signing.advertised_algorithms.absent_from_key_set`.
+  - A filter withholding an algorithm a published key still uses warns with
+    `signing.advertised_algorithms.withholds_published_algorithm` — those keys stay in the JWKS, so
+    tokens they signed remain verifiable, but a relying party that pins acceptance to discovery will
+    reject them until they expire.
+
+  Independently of the filter, an advertised set that omits `RS256` warns with
+  `signing.advertised_algorithms.rs256_absent`: OpenID Connect Discovery 1.0 §3 requires `RS256` in
+  `id_token_signing_alg_values_supported`, and an EC-only key set cannot satisfy that. The framework
+  warns rather than injecting `RS256`, because advertising an algorithm with no key behind it is
+  exactly the failure this derivation exists to prevent.
 
   A client registration's `AllowedSigningAlgorithms` is now checked against the **advertised** set —
   the key set narrowed by the filter — instead of against the configured list. For in-memory clients

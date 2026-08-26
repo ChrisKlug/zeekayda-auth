@@ -1010,6 +1010,7 @@ inference:
   already been inert on `main` before this change: `AdvertisedSigningAlgorithmVerifier` returned
   silently with no `IJwtSigningService` registered, and the last provider stopped registering one
   when #520 merged, so no shipped configuration ran it. Deleting it is therefore a no-op at runtime,
-  not a removed control. #515 makes the disagreement unrepresentable by deriving the advertised set
-  from the published set; until it merges, an operator can advertise an algorithm the key set cannot
-  produce with no startup signal. Residual, tracked by #515.
+  not a removed control. #515 closed the residual by deriving the advertised set from the published
+  set: the derivation is an intersection, so no configuration expresses an algorithm the key set has
+  no key for. Closed — proven by
+  `GetDocument_never_advertises_an_algorithm_the_filter_names_but_no_key_uses`.

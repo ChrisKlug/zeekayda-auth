@@ -15,9 +15,11 @@ public sealed class SigningKeyRingStartupVerifierTests
 {
     private sealed class FakeSigningKeyRing(Func<CancellationToken, ValueTask> initialize) : ISigningKeyRing
     {
+        private readonly SigningKeySet _keySet = TestSigningKeys.KeySet(SigningAlgorithm.RS256);
+
         public int InitializeAsyncCallCount { get; private set; }
 
-        public SigningKeySet Current => throw new NotSupportedException();
+        public SigningKeySet Current => _keySet;
 
         public ValueTask<SigningOutcome> SignAsync<TState>(
             TState state, Func<SigningContext, TState, ReadOnlyMemory<byte>> buildSigningInput, CancellationToken cancellationToken = default)
@@ -29,7 +31,7 @@ public sealed class SigningKeyRingStartupVerifierTests
             await initialize(cancellationToken);
         }
 
-        SigningKeySet? ISigningKeyRing.CurrentOrNull => null;
+        SigningKeySet? ISigningKeyRing.CurrentOrNull => _keySet;
     }
 
     private static ServiceProvider BuildProvider(ISigningKeyRing? ring)
@@ -160,16 +162,75 @@ public sealed class SigningKeyRingStartupVerifierTests
     }
 
     [Fact]
-    public async Task VerifyAsync_accepts_a_filter_that_keeps_the_signing_keys_algorithm()
+    public async Task VerifyAsync_accepts_a_filter_that_keeps_every_published_algorithm()
     {
         using var provider = BuildProvider(
             TestSigningKeys.KeySet(SigningAlgorithm.RS256, SigningAlgorithm.ES256),
-            SigningAlgorithm.RS256);
+            SigningAlgorithm.RS256, SigningAlgorithm.ES256);
 
         var context = await VerifyAsync(provider);
 
         context.Failures.Should().BeEmpty();
         context.Warnings.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task VerifyAsync_warns_when_the_filter_withholds_an_algorithm_a_published_key_uses()
+    {
+        // ES256 signs; RS256 is published but withheld. Tokens the RS256 key signed are still live
+        // and its kid is still in the JWKS, so a relying party pinning to discovery breaks.
+        using var provider = BuildProvider(
+            TestSigningKeys.KeySet(SigningAlgorithm.ES256, SigningAlgorithm.RS256),
+            SigningAlgorithm.ES256);
+
+        var context = await VerifyAsync(provider);
+
+        context.Failures.Should().BeEmpty("the signing key's own algorithm is still advertised");
+        context.Warnings.Should().Contain(
+            w => w.Code == "signing.advertised_algorithms.withholds_published_algorithm");
+    }
+
+    [Fact]
+    public async Task VerifyAsync_does_not_report_the_signing_keys_algorithm_as_withheld_as_well_as_fatal()
+    {
+        using var provider = BuildProvider(
+            TestSigningKeys.KeySet(SigningAlgorithm.ES256, SigningAlgorithm.RS256),
+            SigningAlgorithm.RS256);
+
+        var context = await VerifyAsync(provider);
+
+        context.Failures.Should().ContainSingle()
+            .Which.Code.Should().Be("signing.advertised_algorithms.excludes_signing_key");
+        context.Warnings.Should().NotContain(
+            w => w.Code == "signing.advertised_algorithms.withholds_published_algorithm",
+            "reporting it twice would bury the fatal message");
+    }
+
+    [Fact]
+    public async Task VerifyAsync_warns_when_the_advertised_set_omits_RS256()
+    {
+        // OpenID Connect Discovery 1.0 section 3 requires RS256 in
+        // id_token_signing_alg_values_supported.
+        using var provider = BuildProvider(TestSigningKeys.KeySet(SigningAlgorithm.ES256));
+
+        var context = await VerifyAsync(provider);
+
+        context.Failures.Should().BeEmpty();
+        context.Warnings.Should().ContainSingle()
+            .Which.Code.Should().Be("signing.advertised_algorithms.rs256_absent");
+    }
+
+    [Fact]
+    public async Task VerifyAsync_warns_about_RS256_when_a_filter_withholds_the_only_RS256_key()
+    {
+        using var provider = BuildProvider(
+            TestSigningKeys.KeySet(SigningAlgorithm.ES256, SigningAlgorithm.RS256),
+            SigningAlgorithm.ES256);
+
+        var context = await VerifyAsync(provider);
+
+        context.Warnings.Should().Contain(w => w.Code == "signing.advertised_algorithms.rs256_absent",
+            "the check is on the set discovery will actually publish, not on the keys alone");
     }
 
     [Fact]
