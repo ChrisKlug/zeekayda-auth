@@ -6,7 +6,8 @@ using ZeeKayDa.Auth.Tokens;
 namespace ZeeKayDa.Auth.Configuration;
 
 /// <summary>
-/// Canonicalizes and freezes <see cref="DiscoveryOptions.CorsOrigins"/>, and freezes
+/// Canonicalizes and freezes <see cref="DiscoveryOptions.CorsOrigins"/> and
+/// <see cref="JwksEndpointOptions.CorsOrigins"/>, and freezes
 /// <see cref="Tokens.IdTokenOptions.AdvertisedSigningAlgorithms"/>, before startup validation runs.
 /// </summary>
 /// <remarks>
@@ -22,21 +23,28 @@ internal sealed class AuthorizationServerOptionsPostConfigurer : IPostConfigureO
     /// <inheritdoc/>
     public void PostConfigure(string? name, AuthorizationServerOptions options)
     {
-        var result = new List<string>(options.DiscoveryDocument.CorsOrigins.Count);
+        options.DiscoveryDocument.CorsOrigins =
+            Canonicalize(options.DiscoveryDocument.CorsOrigins, options.AllowInsecureIssuer);
+        options.JwksEndpoint.CorsOrigins =
+            Canonicalize(options.JwksEndpoint.CorsOrigins, options.AllowInsecureIssuer);
+
+        // Frozen for the same reason as CorsOrigins: the discovery document reads this filter on
+        // every request, and the startup checks that reconcile it with the key set run exactly
+        // once. A collection still mutable afterwards could narrow the advertised set past what
+        // startup approved, with no check left to catch it.
+        if (options.IdToken.AdvertisedSigningAlgorithms is { } advertised)
+            options.IdToken.AdvertisedSigningAlgorithms = advertised.ToList().AsReadOnly();
+    }
+
+    private static IList<string> Canonicalize(IList<string> origins, bool allowInsecureIssuer)
+    {
+        var result = new List<string>(origins.Count);
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var origin in options.DiscoveryDocument.CorsOrigins)
+        foreach (var origin in origins)
         {
-            if (origin is not null &&
-                origin.IndexOfAny(['\r', '\n']) < 0 &&
-                !origin.Contains('*') &&
-                Uri.TryCreate(origin, UriKind.Absolute, out var uri) &&
-                uri.UserInfo.Length == 0 &&
-                uri.Query.Length == 0 &&
-                uri.Fragment.Length == 0 &&
-                uri.AbsolutePath.Length <= 1)
+            if (new CorsOrigin(origin, allowInsecureIssuer).Canonical is { } canonical)
             {
-                var canonical = uri.GetLeftPart(UriPartial.Authority).ToLowerInvariant();
                 if (seen.Add(canonical))
                     result.Add(canonical);
             }
@@ -46,13 +54,7 @@ internal sealed class AuthorizationServerOptionsPostConfigurer : IPostConfigureO
             }
         }
 
-        options.DiscoveryDocument.CorsOrigins = result.AsReadOnly();
-
-        // Frozen for the same reason as CorsOrigins: the discovery document reads this filter on
-        // every request, and the startup checks that reconcile it with the key set run exactly
-        // once. A collection still mutable afterwards could narrow the advertised set past what
-        // startup approved, with no check left to catch it.
-        if (options.IdToken.AdvertisedSigningAlgorithms is { } advertised)
-            options.IdToken.AdvertisedSigningAlgorithms = advertised.ToList().AsReadOnly();
+        return result.AsReadOnly();
     }
+
 }

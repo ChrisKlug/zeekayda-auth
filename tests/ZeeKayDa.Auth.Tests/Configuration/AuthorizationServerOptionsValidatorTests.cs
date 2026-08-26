@@ -818,16 +818,96 @@ public sealed class AuthorizationServerOptionsValidatorTests
     // ── Cache-Control max-age ─────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Validate_fails_for_negative_cache_max_age()
+    public void Validate_fails_for_negative_discovery_cache_max_age()
     {
         var result = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
-            DiscoveryDocument = { CacheMaxAgeSeconds = -1 },
+            DiscoveryDocument = { CacheMaxAge = TimeSpan.FromSeconds(-1) },
         });
 
         result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("DiscoveryDocument.CacheMaxAgeSeconds");
+        result.FailureMessage.Should().Contain("DiscoveryDocument.CacheMaxAge");
+    }
+
+    [Fact]
+    public void Validate_fails_for_negative_jwks_cache_max_age()
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            JwksEndpoint = { CacheMaxAge = TimeSpan.FromSeconds(-1) },
+        });
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("JwksEndpoint.CacheMaxAge");
+    }
+
+    // ── JwksEndpoint.CorsOrigins — same rules as the discovery allowlist ─────────────────────────
+
+    [Fact]
+    public void Validate_accepts_https_origin_in_jwks_CORS_allow_list()
+    {
+        var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
+        options.JwksEndpoint.CorsOrigins.Add("https://app.example.com");
+
+        var result = Validate(options);
+
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Validate_fails_for_wildcard_origin_in_jwks_CORS_allow_list()
+    {
+        var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
+        options.JwksEndpoint.CorsOrigins.Add("https://*.example.com");
+
+        var result = Validate(options);
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("wildcard");
+        result.FailureMessage.Should().Contain("JwksEndpoint.CorsOrigins",
+            because: "with two allowlists, the failure must name the list the bad entry is in");
+    }
+
+    [Fact]
+    public void Validate_fails_with_named_list_for_an_origin_whose_host_is_not_a_valid_idn()
+    {
+        var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
+        options.DiscoveryDocument.CorsOrigins.Add("https://℀.example");
+
+        var result = Validate(options);
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("DiscoveryDocument.CorsOrigins");
+        result.FailureMessage.Should().Contain("valid host name");
+    }
+
+    [Fact]
+    public void Validate_accepts_an_ipv6_loopback_origin_when_insecure_issuer_is_allowed()
+    {
+        var options = new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            AllowInsecureIssuer = true,
+        };
+        options.DiscoveryDocument.CorsOrigins.Add("http://[::1]:5001");
+
+        var result = Validate(options);
+
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Validate_fails_for_http_non_loopback_origin_in_jwks_CORS_allow_list()
+    {
+        var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
+        options.JwksEndpoint.CorsOrigins.Add("http://app.example.com");
+
+        var result = Validate(options);
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("https");
     }
 
     // ── CorsOrigins — scheme validation ──────────────────────────────────────────────────────────

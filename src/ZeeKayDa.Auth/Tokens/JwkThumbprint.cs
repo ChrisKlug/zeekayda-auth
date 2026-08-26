@@ -91,19 +91,16 @@ public static class JwkThumbprint
 
     /// <summary>
     /// Maps <paramref name="curve"/> to its RFC 7518 §6.2.1.1 JWK <c>crv</c> member name
-    /// (<c>"P-256"</c>, <c>"P-384"</c>, or <c>"P-521"</c>).
+    /// (<c>"P-256"</c>, <c>"P-384"</c>, or <c>"P-521"</c>) — the same table
+    /// <see cref="Compute(ECParameters)"/> uses internally, so a JWK Set producer and the
+    /// thumbprint can never disagree on a curve's name.
     /// </summary>
     /// <param name="curve">The EC curve. Must be one of NIST P-256, P-384, or P-521.</param>
     /// <returns>The JWK <c>crv</c> name.</returns>
     /// <exception cref="NotSupportedException">
     /// Thrown when the curve is not one of NIST P-256, P-384, or P-521.
     /// </exception>
-    /// <remarks>
-    /// Public so that a JWK Set producer (e.g. the JWKS endpoint) does not need to copy this table
-    /// across an assembly boundary — this is the same table <see cref="Compute(ECParameters)"/>
-    /// uses internally.
-    /// </remarks>
-    public static string GetJwkCurveName(ECCurve curve) => ResolveJwkCurveName(curve);
+    internal static string GetJwkCurveName(ECCurve curve) => ResolveJwkCurveName(curve);
 
     private static string ResolveJwkCurveName(ECCurve curve)
     {
@@ -141,9 +138,11 @@ public static class JwkThumbprint
     /// <summary>
     /// Strips leading zero bytes from a big-endian unsigned integer, per RFC 7518 §6.3.1.1's minimal
     /// encoding requirement for <c>n</c> and <c>e</c>. A single zero byte is preserved for a
-    /// genuinely zero-valued input.
+    /// genuinely zero-valued input. Internal so a JWK Set producer encodes these members with the
+    /// exact rule the thumbprint hashed, keeping a served key's parameters and its <c>kid</c>
+    /// structurally incapable of using different encodings.
     /// </summary>
-    private static byte[] TrimLeadingZeros(byte[] value)
+    internal static byte[] TrimLeadingZeros(byte[] value)
     {
         var firstNonZero = 0;
         while (firstNonZero < value.Length - 1 && value[firstNonZero] == 0)
@@ -152,7 +151,7 @@ public static class JwkThumbprint
         return firstNonZero == 0 ? value : value[firstNonZero..];
     }
 
-    private static string Base64UrlEncode(byte[] input)
+    internal static string Base64UrlEncode(byte[] input)
     {
         var encoded = new byte[Base64Url.GetEncodedLength(input.Length)];
         Base64Url.EncodeToUtf8(input, encoded);

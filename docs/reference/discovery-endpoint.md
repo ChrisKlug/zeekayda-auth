@@ -73,7 +73,7 @@ app.Run();
 | Header | Value |
 |---|---|
 | `Content-Type` | `application/json` |
-| `Cache-Control` | `public, max-age=3600, must-revalidate` by default; `no-store` when `DiscoveryDocument.CacheMaxAgeSeconds` is `0` |
+| `Cache-Control` | `public, max-age=3600, must-revalidate` by default; `no-store` when `DiscoveryDocument.CacheMaxAge` is below one second |
 | `Access-Control-Allow-Origin` | `*` when `DiscoveryDocument.CorsOrigins` is empty; the matched allowlist entry when non-empty |
 | `Vary` | `Origin` (only when `DiscoveryDocument.CorsOrigins` is non-empty), appended to any existing `Vary` value |
 | `X-Content-Type-Options` | `nosniff` (default; disable with `SecurityHeaders.ContentTypeOptionsNoSniff = false`) |
@@ -177,17 +177,17 @@ Only scopes with `IsDiscoverable = true` are included in `scopes_supported`.
 
 ## Pre-alpha advertised endpoints
 
-ZeeKayDa.Auth is pre-alpha. Discovery currently publishes default `authorization_endpoint`,
-`token_endpoint`, and `jwks_uri` values so clients can observe the intended metadata shape, but the
-protocol implementations are not complete yet.
+ZeeKayDa.Auth is pre-alpha. Discovery currently publishes default `authorization_endpoint` and
+`token_endpoint` values so clients can observe the intended metadata shape, but those protocol
+implementations are not complete yet. The `jwks_uri` endpoint is implemented — see
+[JWKS endpoint](jwks-endpoint.md).
 
-Until those surfaces are implemented:
+Until the remaining surfaces are implemented:
 
 | Endpoint | Methods | Status |
 |---|---|---|
 | `{issuer}/connect/authorize` | `GET`, `POST` | `501 Not Implemented` |
 | `{issuer}/connect/token` | `POST` | `501 Not Implemented` |
-| `{issuer}/connect/jwks` | `GET` | `501 Not Implemented` |
 
 ## Endpoint URI derivation
 

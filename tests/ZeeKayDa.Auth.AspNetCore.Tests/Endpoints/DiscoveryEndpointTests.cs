@@ -234,6 +234,23 @@ public sealed class DiscoveryEndpointTests : IDisposable
         response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
     }
 
+    // ── Anonymous access ──────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetDiscoveryDocument_returns_200_under_a_host_wide_fallback_authorization_policy()
+    {
+        using var factory = new TestWebAppFactoryWithFallbackAuthorizationPolicy();
+        using var client = CreateClient(factory);
+
+        // The canary proves the fallback policy is actually enforced on this host...
+        var hostRoute = await client.GetAsync("/host-route", TestContext.Current.CancellationToken);
+        hostRoute.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        // ...and the discovery document must remain anonymously readable regardless.
+        var response = await client.GetAsync(DiscoveryPath, TestContext.Current.CancellationToken);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
     // ── Path-bearing issuer ───────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -395,7 +412,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
         using var factory = new TestWebAppFactory(opts =>
         {
             opts.Issuer = "https://test.example.com";
-            opts.DiscoveryDocument.CacheMaxAgeSeconds = 300;
+            opts.DiscoveryDocument.CacheMaxAge = TimeSpan.FromSeconds(300);
         });
         using var client = CreateClient(factory);
 
@@ -410,7 +427,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
         using var factory = new TestWebAppFactory(opts =>
         {
             opts.Issuer = "https://test.example.com";
-            opts.DiscoveryDocument.CacheMaxAgeSeconds = 0;
+            opts.DiscoveryDocument.CacheMaxAge = TimeSpan.Zero;
         });
         using var client = CreateClient(factory);
 
@@ -437,7 +454,6 @@ public sealed class DiscoveryEndpointTests : IDisposable
     [InlineData("GET", "/connect/authorize")]
     [InlineData("POST", "/connect/authorize")]
     [InlineData("POST", "/connect/token")]
-    [InlineData("GET", "/connect/jwks")]
     public async Task AdvertisedPreAlphaProtocolEndpoints_return_501(string method, string path)
     {
         using var request = new HttpRequestMessage(new HttpMethod(method), path);
@@ -450,7 +466,6 @@ public sealed class DiscoveryEndpointTests : IDisposable
     [Theory]
     [InlineData("GET", "/custom/authorize?prompt=login")]
     [InlineData("POST", "/custom/token?tenant=1")]
-    [InlineData("GET", "/keys")]
     public async Task AdvertisedPreAlphaProtocolEndpoints_return_501_at_published_URIs_when_explicit_overrides_are_configured(string method, string path)
     {
         using var factory = new TestWebAppFactory(opts =>
@@ -458,7 +473,6 @@ public sealed class DiscoveryEndpointTests : IDisposable
             opts.Issuer = "https://login.example.com";
             opts.AuthorizationEndpoint.Uri = "https://login.example.com/custom/authorize?prompt=login";
             opts.TokenEndpoint.Uri = "https://login.example.com/custom/token?tenant=1";
-            opts.JwksEndpoint.Uri = "https://login.example.com/keys";
         });
         using var client = CreateClient(factory, "https://login.example.com");
         using var request = new HttpRequestMessage(new HttpMethod(method), path);
@@ -489,7 +503,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     [InlineData("GET", "/connect/authorize", HttpStatusCode.NotImplemented)]
     [InlineData("POST", "/connect/authorize", HttpStatusCode.NotImplemented)]
     [InlineData("POST", "/connect/token", HttpStatusCode.NotImplemented)]
-    [InlineData("GET", "/connect/jwks", HttpStatusCode.NotImplemented)]
+    [InlineData("GET", "/connect/jwks", HttpStatusCode.OK)]
     public async Task HttpRequests_are_allowed_for_loopback_with_AllowInsecureIssuer_flag(
         string method,
         string path,

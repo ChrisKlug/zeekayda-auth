@@ -76,7 +76,7 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IZeeKayDaEndpoint, PreAlphaTokenEndpoint>());
         services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IZeeKayDaEndpoint, PreAlphaJwksEndpoint>());
+            ServiceDescriptor.Singleton<IZeeKayDaEndpoint, JwksEndpoint>());
 
         // Registered unconditionally so using it without any IClientSecretHasher gives a clear
         // error instead of a generic "service not registered" DI failure.

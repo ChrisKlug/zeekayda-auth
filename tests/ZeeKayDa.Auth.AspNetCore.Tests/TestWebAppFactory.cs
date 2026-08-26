@@ -1,5 +1,8 @@
 using System.Net;
 using System.Security.Cryptography;
+using System.Text.Encodings.Web;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -7,6 +10,8 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Extensions;
 using ZeeKayDa.Auth.Stores;
 using ZeeKayDa.Auth.Tokens;
@@ -255,6 +260,70 @@ internal sealed class TestWebAppFactoryWithPing : WebApplicationFactory<TestWebA
                 endpoints.MapZeeKayDaAuth();
             });
         });
+    }
+}
+
+/// <summary>
+/// A <see cref="WebApplicationFactory{TEntryPoint}"/> whose host sets an authorization
+/// <c>FallbackPolicy</c> requiring an authenticated user — Microsoft's recommended hardening for
+/// application routes — for proving the public metadata endpoints stay anonymously readable.
+/// The <c>/host-route</c> endpoint is mapped without any authorization metadata as a canary: it
+/// must return 401, proving the fallback policy is actually in force.
+/// </summary>
+internal sealed class TestWebAppFactoryWithFallbackAuthorizationPolicy : WebApplicationFactory<TestWebAppFactory>
+{
+    protected override IHostBuilder CreateHostBuilder()
+        => Host.CreateDefaultBuilder()
+               .ConfigureWebHostDefaults(webBuilder => webBuilder.UseTestServer());
+
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    {
+        builder.UseContentRoot(AppContext.BaseDirectory);
+
+        builder.ConfigureServices(services =>
+        {
+            services.AddRouting();
+            services.AddAuthentication("Test")
+                .AddScheme<AuthenticationSchemeOptions, NeverAuthenticateHandler>("Test", _ => { });
+            services.AddAuthorization(options => options.FallbackPolicy =
+                new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build());
+
+            services.AddZeeKayDaAuth(options =>
+            {
+                options.Issuer = "https://test.example.com";
+                options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
+            }).AddInMemoryClients(clients =>
+                clients.AddPublic("test-client",
+                    ["https://test.example.com/callback"],
+                    [],
+                    ["openid"]))
+              // Integration test hosts run as "Production" by default; allow in-memory stores.
+              .AddInMemoryStores(allowOutsideDevelopment: true)
+              .AddTestSigningKeys();
+        });
+
+        builder.Configure(app =>
+        {
+            app.UseRouting();
+            app.UseAuthentication();
+            app.UseAuthorization();
+            app.UseEndpoints(endpoints =>
+            {
+                endpoints.MapGet("/host-route", () => Results.Ok("host"));
+                endpoints.MapZeeKayDaAuth();
+            });
+        });
+    }
+
+    /// <summary>Never authenticates, so the fallback policy's 401 challenge always fires.</summary>
+    private sealed class NeverAuthenticateHandler(
+        IOptionsMonitor<AuthenticationSchemeOptions> options,
+        ILoggerFactory logger,
+        UrlEncoder encoder)
+        : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
+    {
+        protected override Task<AuthenticateResult> HandleAuthenticateAsync()
+            => Task.FromResult(AuthenticateResult.NoResult());
     }
 }
 

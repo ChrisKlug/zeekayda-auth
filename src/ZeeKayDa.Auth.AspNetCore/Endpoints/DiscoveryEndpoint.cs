@@ -38,38 +38,17 @@ internal sealed class DiscoveryEndpoint : IZeeKayDaEndpoint
         var issuerUri = EndpointRouteHelper.GetIssuerUri(_options);
         var routePath = EndpointRouteHelper.GetIssuerPathPrefixedRoute(issuerUri, WellKnownSuffix);
 
-        endpoints.MapGet(routePath, Handle).RequireIssuerHost(issuerUri);
+        // AllowAnonymous so a host-wide authorization fallback policy cannot turn discovery into a
+        // 401 — the document must stay publicly readable per OIDC Discovery 1.0.
+        endpoints.MapGet(routePath, Handle).RequireIssuerHost(issuerUri).AllowAnonymous();
     }
 
     private async ValueTask<IResult> Handle(
         IDiscoveryDocumentProvider provider,
         HttpContext context)
     {
-        // must-revalidate (not proxy-revalidate) so browser caches, not just CDN/proxy caches,
-        // are required to revalidate after the TTL expires.
-        var maxAge = _options.Value.DiscoveryDocument.CacheMaxAgeSeconds;
-        context.Response.Headers.CacheControl = maxAge > 0
-            ? $"public, max-age={maxAge}, must-revalidate"
-            : "no-store";
-
-        if (_allowedOrigins.Count == 0)
-        {
-            context.Response.Headers.AccessControlAllowOrigin = "*";
-        }
-        else
-        {
-            // Vary: Origin so caches never serve a wildcard-cached response to an
-            // allowlisted-origin request or vice-versa.
-            context.Response.Headers.Append("Vary", "Origin");
-
-            var requestOrigin = context.Request.Headers.Origin.ToString();
-            if (!string.IsNullOrEmpty(requestOrigin) &&
-                _allowedOrigins.TryGetValue(requestOrigin, out var allowedOrigin))
-            {
-                // Emit the matching allowlist entry, NEVER the raw incoming header value.
-                context.Response.Headers.AccessControlAllowOrigin = allowedOrigin;
-            }
-        }
+        PublicMetadataHeaders.Apply(
+            context, _options.Value.DiscoveryDocument.CacheMaxAge, _allowedOrigins);
 
         var document = await provider.GetDocumentAsync(context.RequestAborted).ConfigureAwait(false);
         return Results.Json(document, ZeeKayDaJsonSerializerContext.Default.OpenIdConfigurationDocument);

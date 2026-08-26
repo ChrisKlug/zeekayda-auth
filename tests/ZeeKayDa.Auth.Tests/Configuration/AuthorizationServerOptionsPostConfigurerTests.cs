@@ -26,6 +26,59 @@ public sealed class AuthorizationServerOptionsPostConfigurerTests
     }
 
     [Fact]
+    public void PostConfigure_canonicalizes_an_internationalized_host_to_its_punycode_form()
+    {
+        var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
+        options.DiscoveryDocument.CorsOrigins.Add("https://bücher.example");
+
+        PostConfigure(options);
+
+        // Browsers serialize the Origin header in punycode, so the stored canonical entry must
+        // be the A-label form or the allowlist entry could never match a real request.
+        options.DiscoveryDocument.CorsOrigins.Should().ContainSingle()
+            .Which.Should().Be("https://xn--bcher-kva.example");
+    }
+
+    [Fact]
+    public void PostConfigure_preserves_the_brackets_of_an_ipv6_origin()
+    {
+        var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
+        options.DiscoveryDocument.CorsOrigins.Add("http://[::1]:5001");
+
+        PostConfigure(options);
+
+        // Browsers serialize an IPv6 Origin with brackets; an entry stored without them could
+        // never match a request.
+        options.DiscoveryDocument.CorsOrigins.Should().ContainSingle()
+            .Which.Should().Be("http://[::1]:5001");
+    }
+
+    [Fact]
+    public void PostConfigure_leaves_an_origin_with_an_invalid_idn_host_as_is_for_the_validator()
+    {
+        var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
+        options.DiscoveryDocument.CorsOrigins.Add("https://℀.example");
+
+        PostConfigure(options);
+
+        options.DiscoveryDocument.CorsOrigins.Should().ContainSingle()
+            .Which.Should().Be("https://℀.example");
+    }
+
+    [Fact]
+    public void PostConfigure_canonicalizes_and_freezes_the_jwks_CORS_allow_list()
+    {
+        var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
+        options.JwksEndpoint.CorsOrigins.Add("HTTPS://APP.EXAMPLE.COM");
+
+        PostConfigure(options);
+
+        options.JwksEndpoint.CorsOrigins.Should().ContainSingle()
+            .Which.Should().Be("https://app.example.com");
+        options.JwksEndpoint.CorsOrigins.IsReadOnly.Should().BeTrue();
+    }
+
+    [Fact]
     public void PostConfigure_deduplicates_origins_case_insensitively()
     {
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };

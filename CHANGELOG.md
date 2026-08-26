@@ -8,6 +8,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **The JWKS endpoint is implemented: `connect/jwks` serves the signing key ring's published keys as an RFC 7517 JWK Set** (#514)
+
+  The pre-alpha `501` stub is replaced by a real endpoint serving every configured slot
+  (`Previous`/`Current`/`Next`, in that order) as `application/jwk-set+json`. Each JWK carries
+  `kid` (the RFC 7638 thumbprint issued tokens also carry in their JOSE header), `kty`,
+  `use: "sig"`, `alg`, and the public parameters for its key type — never a private component,
+  proven by test. The body is hand-rolled over BCL types, byte-identical across requests for an
+  unchanged key set, and derived lazily from `ISigningKeyRing.Current` with a reference-equality
+  check rather than observer wiring. `Cache-Control` comes from `JwksEndpoint.CacheMaxAge`, and
+  the new `JwksEndpoint.CorsOrigins` allowlist mirrors the discovery endpoint's CORS treatment
+  (wildcard when empty; exact canonical match plus `Vary: Origin` otherwise), validated and
+  canonicalized at startup under the same rules.
+
+- **`JwksEndpoint.CacheMaxAge` — a configurable `Cache-Control` TTL for the JWKS response** (#513)
+
+  `JwksEndpointOptions` gains `CacheMaxAge` (`TimeSpan`, default one hour), emitted on the JWKS
+  response as `Cache-Control: public, max-age=…, must-revalidate`, or `no-store` at
+  `TimeSpan.Zero` — the same treatment the discovery endpoint has always applied. The value governs
+  how long a relying party may keep trusting a cached key set, including a key that has since been
+  removed from configuration, so it is the operator's revocation-latency dial.
+
 - **`ITokenIssuer` — a shape-agnostic token issuance seam, with `JwtTokenIssuer` over the signing key ring** (#521)
 
   `ITokenIssuer.IssueAsync(TokenIssuanceContext, TokenPayload, ct)` returns an `IssuedToken` and is
@@ -73,6 +94,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   and is not detectable from this method.
 
 ### Changed
+
+- **BREAKING: `DiscoveryDocument.CacheMaxAgeSeconds` (`int`) is now `DiscoveryDocument.CacheMaxAge` (`TimeSpan`)** (#513)
+
+  The discovery endpoint's cache TTL is now a `TimeSpan`, matching every other duration option on
+  `AuthorizationServerOptions`. The default is unchanged (one hour), `TimeSpan.Zero` still emits
+  `no-store`, negative values still fail startup validation, and the header still carries whole
+  seconds — a positive value below one second emits `no-store` rather than a cacheable
+  `max-age=0`. The new `JwksEndpoint.CacheMaxAge` (see *Added*) uses the same type and semantics.
+
+  This also renames the JSON configuration key: an existing `"CacheMaxAgeSeconds": 3600` no longer
+  binds — it is silently ignored and the one-hour default reapplies — and becomes
+  `"CacheMaxAge": "01:00:00"` (the standard `TimeSpan` format).
 
 - **BREAKING: startup checks split into a cheap `IStartupVerifier` phase and an `IStartupActivator` phase, and the activator phase does not run when a verifier failed** (#499, #500)
 
