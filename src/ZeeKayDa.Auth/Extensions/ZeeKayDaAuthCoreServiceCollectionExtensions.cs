@@ -63,6 +63,12 @@ public static class ZeeKayDaAuthCoreServiceCollectionExtensions
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IStartupActivator, SigningKeyRingStartupVerifier>());
 
+        // The issuer for each TokenKind is a keyed service, so the host can swap how one kind is
+        // issued without touching the other — e.g. opaque access tokens alongside JWT ID tokens
+        // once a reference-token issuer exists. TryAdd keeps a host's own earlier registration.
+        services.TryAddKeyedSingleton<ITokenIssuer, JwtTokenIssuer>(TokenKind.AccessToken);
+        services.TryAddKeyedSingleton<ITokenIssuer, JwtTokenIssuer>(TokenKind.IdToken);
+
         return services;
     }
 }
