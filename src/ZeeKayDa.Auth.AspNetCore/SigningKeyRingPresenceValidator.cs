@@ -14,9 +14,9 @@ namespace ZeeKayDa.Auth.AspNetCore;
 /// dependency from surfacing as a dependency-injection error on the first discovery request.
 /// Resolves the ring rather than asking <see cref="IServiceProviderIsService"/> about it, so the
 /// check works on any container rather than skipping itself on a third-party one. Resolution is free
-/// here: <c>SigningKeyRingStartupVerifier</c> is registered from <c>AddZeeKayDaAuthCore()</c>, which
-/// runs before this verifier, so by the time this runs the ring has already been constructed and
-/// initialized — this cannot be the call that builds a signing key source.
+/// here in the ordinary case: <c>SigningKeyRingStartupVerifier</c> is registered from
+/// <c>AddZeeKayDaAuthCore()</c>, which runs before this verifier, so the ring has normally already
+/// been constructed and initialized by the time this runs.
 /// </remarks>
 internal sealed class SigningKeyRingPresenceValidator : IStartupVerifier
 {
@@ -29,7 +29,7 @@ internal sealed class SigningKeyRingPresenceValidator : IStartupVerifier
         IServiceProvider scopedServices,
         CancellationToken cancellationToken)
     {
-        if (scopedServices.GetService<ISigningKeyRing>() is null)
+        if (!IsSigningKeyRingRegistered(scopedServices))
             context.AddFailure(
                 "signing.key_ring.missing",
                 "No signing key source has been registered, so no token can be signed and " +
@@ -42,5 +42,30 @@ internal sealed class SigningKeyRingPresenceValidator : IStartupVerifier
                 "or services.AddZeeKayDaSigningKeySource<TSource>() for a custom ISigningKeySource.");
 
         return ValueTask.CompletedTask;
+    }
+
+    /// <summary>
+    /// Whether an <see cref="ISigningKeyRing"/> is registered — which is not the same question as
+    /// whether one can be built.
+    /// </summary>
+    /// <remarks>
+    /// A ring factory that throws answers "yes, and it is broken": the registration exists, and
+    /// <c>SigningKeyRingStartupVerifier</c> has already run and recorded that failure. Letting the
+    /// exception escape here would report the same configuration failure a second time, because
+    /// <c>Microsoft.Extensions.DependencyInjection</c> does not cache a failed factory invocation.
+    /// Only a <see cref="ZeeKayDaConfigurationException"/> is treated this way — that is the
+    /// framework's own "this composition is wrong" signal, already aggregated by the runner. Any
+    /// other exception is a genuine surprise and still aborts startup here.
+    /// </remarks>
+    private static bool IsSigningKeyRingRegistered(IServiceProvider scopedServices)
+    {
+        try
+        {
+            return scopedServices.GetService<ISigningKeyRing>() is not null;
+        }
+        catch (ZeeKayDaConfigurationException)
+        {
+            return true;
+        }
     }
 }

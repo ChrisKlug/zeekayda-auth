@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace ZeeKayDa.Auth.Tokens;
@@ -66,7 +67,12 @@ internal sealed class SigningKeyRingStartupVerifier : IStartupVerifier
         if (filter is not null)
             VerifyFilter(context, keySet, filter);
 
-        VerifyRs256IsAdvertised(context, AdvertisedSigningAlgorithms.Resolve(keySet, filter));
+        // Only for a host that serves a discovery document. A core-only host — one that called
+        // AddZeeKayDaAuthCore() without AddZeeKayDaAuth(), so no AuthorizationServerOptions are
+        // registered — publishes no metadata, and warning it about a Discovery §3 requirement it
+        // is not subject to is noise.
+        if (options is not null)
+            VerifyRs256IsAdvertised(context, AdvertisedSigningAlgorithms.Resolve(keySet, filter));
     }
 
     /// <summary>
@@ -100,12 +106,19 @@ internal sealed class SigningKeyRingStartupVerifier : IStartupVerifier
 
         if (withheld.Length > 0)
         {
+            // Information, not Warning: every filter that narrows anything at all withholds a
+            // published algorithm, so at Warning this would fire on every correct use of the
+            // feature — and a warning that fires on correct use is one operators learn to ignore,
+            // which costs exactly the case that matters. Distinguishing a retiring key (whose
+            // tokens are live) from a staged one (which has never signed) needs slot identity that
+            // SigningKeySet does not carry; until it does (#553), this records rather than alarms.
             context.AddWarning(
                 "signing.advertised_algorithms.withholds_published_algorithm",
                 "IdToken.AdvertisedSigningAlgorithms withholds {WithheldAlgorithms}, which the " +
                 "published key set still uses. Those keys stay in the JWKS, so tokens they signed " +
                 "remain verifiable, but a relying party that pins acceptance to " +
                 "id_token_signing_alg_values_supported will reject them until they expire.",
+                LogLevel.Information,
                 Format(withheld));
         }
 

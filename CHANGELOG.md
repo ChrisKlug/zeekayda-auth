@@ -78,10 +78,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
     to add — it would advertise no algorithm the server actually issues tokens with.
   - A filter naming an algorithm no configured key uses is a no-op and warns at startup with
     `signing.advertised_algorithms.absent_from_key_set`.
-  - A filter withholding an algorithm a published key still uses warns with
+  - A filter withholding an algorithm a published key still uses is recorded at `Information` with
     `signing.advertised_algorithms.withholds_published_algorithm` — those keys stay in the JWKS, so
     tokens they signed remain verifiable, but a relying party that pins acceptance to discovery will
-    reject them until they expire.
+    reject them until they expire. `Information` rather than `Warning` because every filter that
+    narrows anything withholds a published algorithm, so it fires on correct use of the feature too.
 
   Independently of the filter, an advertised set that omits `RS256` warns with
   `signing.advertised_algorithms.rs256_absent`: OpenID Connect Discovery 1.0 §3 requires `RS256` in

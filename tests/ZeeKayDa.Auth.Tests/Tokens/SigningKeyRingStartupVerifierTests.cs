@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Tokens;
 
@@ -186,8 +187,10 @@ public sealed class SigningKeyRingStartupVerifierTests
         var context = await VerifyAsync(provider);
 
         context.Failures.Should().BeEmpty("the signing key's own algorithm is still advertised");
-        context.Warnings.Should().Contain(
-            w => w.Code == "signing.advertised_algorithms.withholds_published_algorithm");
+        context.Warnings.Should().ContainSingle(
+                w => w.Code == "signing.advertised_algorithms.withholds_published_algorithm")
+            .Which.Level.Should().Be(LogLevel.Information,
+                "every effective filter trips this, so it records rather than alarms");
     }
 
     [Fact]
@@ -251,6 +254,22 @@ public sealed class SigningKeyRingStartupVerifierTests
     public async Task VerifyAsync_reconciles_nothing_when_no_filter_is_configured()
     {
         using var provider = BuildProvider(TestSigningKeys.KeySet(SigningAlgorithm.RS256));
+
+        var context = await VerifyAsync(provider);
+
+        context.Failures.Should().BeEmpty();
+        context.Warnings.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task VerifyAsync_does_not_warn_about_RS256_for_a_host_with_no_server_options()
+    {
+        // AddZeeKayDaAuthCore() without AddZeeKayDaAuth(): no discovery document is served, so the
+        // Discovery section 3 requirement does not apply.
+        var services = new ServiceCollection();
+        services.AddSingleton<ISigningKeyRing>(
+            new InitializedRing(TestSigningKeys.KeySet(SigningAlgorithm.ES256)));
+        using var provider = services.BuildServiceProvider();
 
         var context = await VerifyAsync(provider);
 

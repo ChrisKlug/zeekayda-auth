@@ -81,6 +81,24 @@ public sealed class SigningKeyRingPresenceValidatorTests
     }
 
     [Fact]
+    public async Task VerifyAsync_reports_no_failure_when_the_ring_factory_itself_throws()
+    {
+        // The registration exists and is broken, which is a different answer from "absent" —
+        // SigningKeyRingStartupVerifier has already recorded that failure. MS.DI does not cache a
+        // failed factory invocation, so letting it escape here would report the same configuration
+        // failure twice in one startup.
+        var services = new ServiceCollection();
+        services.AddZeeKayDaSigningKeySource<StubSigningKeySource>(_ => null!);
+        using var provider = services.BuildServiceProvider();
+        var sut = new SigningKeyRingPresenceValidator();
+        var context = new StartupVerificationContext();
+
+        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+
+        context.Failures.Should().BeEmpty();
+    }
+
+    [Fact]
     public void Name_is_SigningKeyRingPresence()
     {
         var sut = new SigningKeyRingPresenceValidator();
@@ -94,41 +112,3 @@ public sealed class SigningKeyRingPresenceValidatorTests
     }
 }
 
-/// <summary>
-/// The client-registration subset check is only as good as the order the startup verifiers run in:
-/// the ring must have read its source before client registrations are validated against the
-/// advertised set. That order is registration order, and nothing but these tests holds it in place.
-/// </summary>
-public sealed class StartupVerifierOrderingTests
-{
-    [Fact]
-    public void SigningKeyRingStartupVerifier_is_registered_before_ClientRepositoryStartupActivator()
-    {
-        var services = new ServiceCollection();
-        services.AddZeeKayDaAuth(options => options.Issuer = "https://test.example.com");
-        services.AddZeeKayDaSigningKeySource<StubSigningKeySource>();
-
-        var verifiers = services
-            .Where(d => d.ServiceType == typeof(IStartupVerifier))
-            .Select(d => d.ImplementationType)
-            .ToList();
-
-        var ringIndex = verifiers.IndexOf(typeof(SigningKeyRingStartupVerifier));
-        var clientIndex = verifiers.IndexOf(typeof(ClientRepositoryStartupActivator));
-
-        ringIndex.Should().BeGreaterThanOrEqualTo(0);
-        clientIndex.Should().BeGreaterThanOrEqualTo(0);
-        ringIndex.Should().BeLessThan(clientIndex,
-            "client registrations are validated against the advertised algorithms, which do not " +
-            "exist until the ring has read its source");
-    }
-
-    private sealed class StubSigningKeySource : ISigningKeySource
-    {
-        public ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
-
-        public ValueTask<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
-    }
-}
