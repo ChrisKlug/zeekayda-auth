@@ -12,11 +12,21 @@ namespace ZeeKayDa.Auth.AspNetCore;
 /// <c>id_token_signing_alg_values_supported</c>, which OpenID Connect Discovery 1.0 §3 requires:
 /// the advertised algorithms are derived from the ring's key set. Failing here is what keeps that
 /// dependency from surfacing as a dependency-injection error on the first discovery request.
-/// Resolves the ring rather than asking <see cref="IServiceProviderIsService"/> about it, so the
-/// check works on any container rather than skipping itself on a third-party one. Resolution is free
-/// here in the ordinary case: <c>SigningKeyRingStartupVerifier</c> is registered from
-/// <c>AddZeeKayDaAuthCore()</c>, which runs before this verifier, so the ring has normally already
-/// been constructed and initialized by the time this runs.
+/// <para>
+/// Asks <see cref="IServiceProviderIsService"/> rather than resolving the ring, because resolving it
+/// constructs the caller's signing key source — real work, and this is a verifier, running in the
+/// phase that exists so a host with no signing source learns about it before any work is done. The
+/// ring's own activator runs in the <em>next</em> phase, so nothing has initialized the ring by the
+/// time this runs.
+/// </para>
+/// <para>
+/// A container that does not provide <see cref="IServiceProviderIsService"/> — a third party
+/// replacing the default provider — falls back to resolving, so the check reports rather than
+/// skipping itself; those hosts pay the construction here. On that path a ring factory that throws
+/// answers "registered, and broken", which is not what this check asks about: the ring's activator
+/// reports that failure in the next phase, and Microsoft.Extensions.DependencyInjection does not
+/// cache a failed factory invocation, so re-throwing it here would report it twice.
+/// </para>
 /// </remarks>
 internal sealed class SigningKeyRingPresenceValidator : IStartupVerifier
 {
@@ -59,12 +69,17 @@ internal sealed class SigningKeyRingPresenceValidator : IStartupVerifier
     /// </remarks>
     private static bool IsSigningKeyRingRegistered(IServiceProvider scopedServices)
     {
+        if (scopedServices.GetService<IServiceProviderIsService>() is { } isService)
+            return isService.IsService(typeof(ISigningKeyRing));
+
         try
         {
             return scopedServices.GetService<ISigningKeyRing>() is not null;
         }
         catch (ZeeKayDaConfigurationException)
         {
+            // The registration exists and is broken, which is a different answer from "absent" —
+            // the ring's own activator, in the next phase, reports that failure.
             return true;
         }
     }

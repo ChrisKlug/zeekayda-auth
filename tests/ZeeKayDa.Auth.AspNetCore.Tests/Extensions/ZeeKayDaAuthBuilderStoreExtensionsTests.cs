@@ -640,7 +640,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     }
 
     [Fact]
-    public void AddDistributedCacheAuthorizationCodeStore_registers_DistributedCacheStoreStartupValidator_as_IStartupVerifier()
+    public void AddDistributedCacheAuthorizationCodeStore_registers_DistributedCacheStoreStartupValidator_as_IStartupActivator()
     {
         var services = new ServiceCollection();
         var builder = new ZeeKayDaAuthBuilder(services);
@@ -648,7 +648,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
         builder.AddDistributedCacheAuthorizationCodeStore();
 
         services.Should().Contain(sd =>
-            sd.ServiceType == typeof(IStartupVerifier) &&
+            sd.ServiceType == typeof(IStartupActivator) &&
             sd.ImplementationType == typeof(DistributedCacheStoreStartupValidator));
     }
 
@@ -735,7 +735,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     }
 
     [Fact]
-    public void AddDistributedCacheRefreshTokenStore_registers_DistributedCacheStoreStartupValidator_as_IStartupVerifier()
+    public void AddDistributedCacheRefreshTokenStore_registers_DistributedCacheStoreStartupValidator_as_IStartupActivator()
     {
         var services = new ServiceCollection();
         var builder = new ZeeKayDaAuthBuilder(services);
@@ -743,7 +743,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
         builder.AddDistributedCacheRefreshTokenStore();
 
         services.Should().Contain(sd =>
-            sd.ServiceType == typeof(IStartupVerifier) &&
+            sd.ServiceType == typeof(IStartupActivator) &&
             sd.ImplementationType == typeof(DistributedCacheStoreStartupValidator));
     }
 
@@ -840,7 +840,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
         builder.AddDistributedCacheTokenStores();
 
         services.Count(sd =>
-            sd.ServiceType == typeof(IStartupVerifier) &&
+            sd.ServiceType == typeof(IStartupActivator) &&
             sd.ImplementationType == typeof(DistributedCacheStoreStartupValidator))
             .Should().Be(1, "TryAddEnumerable ensures idempotent registration across both calls");
     }
@@ -855,7 +855,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
         builder.AddDistributedCacheRefreshTokenStore();
 
         services.Count(sd =>
-            sd.ServiceType == typeof(IStartupVerifier) &&
+            sd.ServiceType == typeof(IStartupActivator) &&
             sd.ImplementationType == typeof(DistributedCacheStoreStartupValidator))
             .Should().Be(1, "TryAddEnumerable ensures idempotent registration when called independently");
     }

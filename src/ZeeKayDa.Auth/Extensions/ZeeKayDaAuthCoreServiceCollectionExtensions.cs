@@ -55,14 +55,13 @@ public static class ZeeKayDaAuthCoreServiceCollectionExtensions
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IStartupVerificationGate, SanitizingLoggerRegistrationGate>());
 
-        // Registered here, and not only from AddZeeKayDaSigningKeySource(), so that the ring is
-        // initialized before the verifiers AddZeeKayDaAuth() registers afterwards run — client
-        // registrations are validated against the advertised algorithms, which do not exist until
-        // the ring has read its source. Verifiers run in registration order and TryAddEnumerable is
-        // idempotent, so the two registrations are one verifier, positioned here. A no-op when no
-        // ISigningKeyRing is registered at all.
+        // Registered here as well as by AddZeeKayDaSigningKeySource, and not for position — the
+        // activator phase makes order irrelevant. It is for coverage: StaticSigningKeyRing has a
+        // public constructor, so a host can register an ISigningKeyRing itself without going
+        // through AddZeeKayDaSigningKeySource, and without this that ring would never be
+        // initialized or self-tested. A silent no-op when no ring is registered at all.
         services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupVerifier, SigningKeyRingStartupVerifier>());
+            ServiceDescriptor.Singleton<IStartupActivator, SigningKeyRingStartupVerifier>());
 
         return services;
     }

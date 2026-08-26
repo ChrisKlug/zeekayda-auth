@@ -54,6 +54,50 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- **BREAKING: startup checks split into a cheap `IStartupVerifier` phase and an `IStartupActivator` phase, and the activator phase does not run when a verifier failed** (#499, #500)
+
+  `IStartupVerifier`'s members move to a new base interface, `IStartupCheck`, alongside a second
+  derived interface, `IStartupActivator`. The runner drains gates, then verifiers, then activators —
+  **and skips the activator phase entirely when any verifier reported a failure**, so an application
+  with a broken issuer no longer opens a remote connection to a key vault before being told about the
+  issuer. A `docs/decisions/security-sign-offs.md` §4.3 sign-off condition asserted this property and
+  was never satisfied; it is now implemented rather than dropped.
+
+  Membership is mechanical: **a check that resolves and calls only what the framework itself
+  registered is an `IStartupVerifier`; a check that resolves or calls anything it did not is an
+  `IStartupActivator`.** Resolving counts, not just calling — a constructor is code. Four framework
+  checks move: the signing key ring initializer, the client repository activator, the `openid` scope
+  check, and the distributed-cache store check. A third-party `IStartupVerifier` that implements the
+  interface *implicitly* is unaffected; one that implements `VerifyAsync` or `Name` **explicitly**
+  must retarget the explicit implementation to `IStartupCheck`, since that is where the members now
+  live. The split is two collections rather than a declarable priority, so the standing refusal of an
+  ordering knob is intact.
+
+  Registering a check as `IStartupCheck` itself now **fails startup** naming the type
+  (`startup.check_registered_as_base_interface`). Microsoft.Extensions.DependencyInjection does not
+  resolve a derived registration for a base service type, so such a check would compile, read as
+  correct, and silently never run.
+
+  Aggregation is now per phase rather than across all checks: a host with a malformed CORS origin and
+  an unregistered client repository reports them in separate restarts, the first being a verifier and
+  the second an activator. That is the cost of not doing expensive work for a configuration already
+  known to be broken. Within a phase, two checks reporting the same code *and* the same message are
+  collapsed to one — so `InMemoryStoreVerifier`'s non-Development failure now names its store, since
+  one instance is registered per in-memory store.
+
+  `ISigningKeyRing.InitializeAsync` becomes `EnsureInitializedAsync` and is **idempotent**: a second
+  call performs no second source read and opens no second signer, and concurrent callers await the
+  same work and observe the same outcome, including the same failure. That is what lets a check
+  needing the key set ask for it rather than assume it runs after the ring's own activator — order
+  within a phase is not a guarantee.
+
+  **An unexpectedly throwing check no longer discards the aggregate** (#500). It is recorded as
+  `startup.verifier_failed` and its phase continues, so an operator with three genuine configuration
+  errors plus one buggy check sees all four rather than only the throw. Root causes travel as the
+  aggregate's `InnerException` — an `AggregateException` when several checks threw — via a new
+  `ZeeKayDaConfigurationException(IReadOnlyList<ZeeKayDaConfigurationFailure>, Exception)` overload.
+  Gate warnings buffered before a later gate fails are flushed rather than discarded with the buffer.
+
 - **BREAKING: `id_token_signing_alg_values_supported` is derived from the signing key set, and `IdToken.SigningAlgValuesSupported` becomes the optional narrowing filter `IdToken.AdvertisedSigningAlgorithms`** (#515)
 
   The discovery document no longer publishes an operator-declared list of signing algorithms. It

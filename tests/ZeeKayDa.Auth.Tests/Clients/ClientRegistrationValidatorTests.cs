@@ -104,7 +104,7 @@ public sealed class ClientRegistrationValidatorTests
             CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
-        ValueTask ISigningKeyRing.InitializeAsync(CancellationToken cancellationToken)
+        ValueTask ISigningKeyRing.EnsureInitializedAsync(CancellationToken cancellationToken)
             => throw new NotSupportedException();
 
         SigningKeySet? ISigningKeyRing.CurrentOrNull => current;

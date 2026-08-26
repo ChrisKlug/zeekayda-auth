@@ -51,7 +51,7 @@ public sealed class ZeeKayDaSigningKeyServiceCollectionExtensionsTests
             CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
-        ValueTask ISigningKeyRing.InitializeAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
+        ValueTask ISigningKeyRing.EnsureInitializedAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
 
         SigningKeySet? ISigningKeyRing.CurrentOrNull => null;
     }
@@ -268,7 +268,9 @@ public sealed class ZeeKayDaSigningKeyServiceCollectionExtensionsTests
         services.AddZeeKayDaSigningKeySource<ExternalSigningKeySource>();
 
         using var provider = services.BuildServiceProvider();
-        provider.GetServices<IStartupVerifier>().Should().ContainSingle(v => v is SigningKeyRingStartupVerifier);
+        provider.GetServices<IStartupActivator>().Should().ContainSingle(v => v is SigningKeyRingStartupVerifier);
+        provider.GetServices<IStartupVerifier>().Should().BeEmpty(
+            "reading the source is real work and belongs in the activator phase");
     }
 
     [Fact]
@@ -348,7 +350,7 @@ public sealed class ZeeKayDaSigningKeyServiceCollectionExtensionsTests
         services.AddZeeKayDaSigningKeySource(_ => source);
         var provider = services.BuildServiceProvider();
         var ring = provider.GetRequiredService<ISigningKeyRing>();
-        await ring.InitializeAsync(TestContext.Current.CancellationToken);
+        await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
 
         provider.Dispose();
 
@@ -363,7 +365,7 @@ public sealed class ZeeKayDaSigningKeyServiceCollectionExtensionsTests
         services.AddZeeKayDaSigningKeySource(_ => source);
         var provider = services.BuildServiceProvider();
         var ring = provider.GetRequiredService<ISigningKeyRing>();
-        await ring.InitializeAsync(TestContext.Current.CancellationToken);
+        await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
 
         provider.Dispose();
 
@@ -379,7 +381,7 @@ public sealed class ZeeKayDaSigningKeyServiceCollectionExtensionsTests
         services.AddZeeKayDaSigningKeySource(_ => source);
         var provider = services.BuildServiceProvider();
         var ring = provider.GetRequiredService<ISigningKeyRing>();
-        await ring.InitializeAsync(TestContext.Current.CancellationToken);
+        await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
 
         await provider.DisposeAsync();
 
@@ -411,7 +413,7 @@ public sealed class ZeeKayDaSigningKeyServiceCollectionExtensionsTests
 
         using var provider = services.BuildServiceProvider();
         var ring = provider.GetRequiredService<ISigningKeyRing>();
-        await ring.InitializeAsync(TestContext.Current.CancellationToken);
+        await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
 
         // Both counters live on the one instance the test holds a reference to, so this can only
         // pass if that exact instance — not a separately DI-activated one — is what the ring reads
@@ -844,5 +846,20 @@ public sealed class ZeeKayDaSigningKeyServiceCollectionExtensionsTests
 
         public abstract ValueTask<ISigner> CreateSignerAsync(
             SourceKeyId id, CancellationToken cancellationToken = default);
+    }
+
+    [Fact]
+    public void AddZeeKayDaAuthCore_registers_the_ring_activator_for_a_manually_registered_ring()
+    {
+        // StaticSigningKeyRing has a public constructor, so a host can register an ISigningKeyRing
+        // without AddZeeKayDaSigningKeySource. Without this registration that ring would never be
+        // initialized or self-tested, and the host would start with an uninitialized ring.
+        var services = new ServiceCollection();
+
+        services.AddZeeKayDaAuthCore();
+
+        services.Should().Contain(
+            d => d.ServiceType == typeof(IStartupActivator)
+                 && d.ImplementationType == typeof(SigningKeyRingStartupVerifier));
     }
 }

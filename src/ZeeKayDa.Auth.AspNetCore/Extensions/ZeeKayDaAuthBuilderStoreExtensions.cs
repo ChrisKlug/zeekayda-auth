@@ -207,7 +207,7 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
         builder.Services.AddSingleton<IAuthorizationCodeBackingStore, DistributedCacheAuthorizationCodeBackingStore>();
         builder.Services.AddSingleton<IAuthorizationCodeStore, AuthorizationCodeStore>();
         builder.Services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupVerifier, DistributedCacheStoreStartupValidator>());
+            ServiceDescriptor.Singleton<IStartupActivator, DistributedCacheStoreStartupValidator>());
 
         return builder;
     }
@@ -233,7 +233,7 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
         builder.Services.AddSingleton<IRefreshTokenGrantStore, DistributedCacheRefreshTokenGrantStore>();
         builder.Services.AddSingleton<IRefreshTokenStore, RefreshTokenStore>();
         builder.Services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupVerifier, DistributedCacheStoreStartupValidator>());
+            ServiceDescriptor.Singleton<IStartupActivator, DistributedCacheStoreStartupValidator>());
 
         return builder;
     }

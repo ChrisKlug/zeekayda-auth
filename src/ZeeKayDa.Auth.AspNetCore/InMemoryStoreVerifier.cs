@@ -78,9 +78,13 @@ internal sealed class InMemoryStoreVerifier : IStartupVerifier
 
         if (!_allowOutsideDevelopment)
         {
+            // Names its own store: one instance is registered per in-memory store, both report in
+            // the same phase, and the runner collapses failures that are identical in code and
+            // message — so a message naming no store would report one of two broken registrations
+            // and send the operator round the restart cycle for the other.
             context.AddFailure(
                 "stores.inmemory.non_development",
-                "In-memory token stores are active outside a Development environment. " +
+                $"The in-memory {_storeName} is active outside a Development environment. " +
                 "This is a configuration error: in-memory stores lose all tokens on restart " +
                 "and disable single-use enforcement across instances. " +
                 "Replace this registration with a persistent store implementation, or pass " +

@@ -234,7 +234,7 @@ public sealed class DevelopmentSigningKeySourceTests
     {
         var ct = TestContext.Current.CancellationToken;
         using var ring = new StaticSigningKeyRing(BuildEphemeral(), new FakeTimeProvider());
-        await ((ISigningKeyRing)ring).InitializeAsync(ct);
+        await ((ISigningKeyRing)ring).EnsureInitializedAsync(ct);
 
         var outcome = await ring.SignAsync(
             """{"sub":"alice"}"""u8.ToArray(),

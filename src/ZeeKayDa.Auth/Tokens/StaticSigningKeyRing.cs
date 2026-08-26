@@ -10,7 +10,7 @@ namespace ZeeKayDa.Auth.Tokens;
 /// Also owns the <see cref="ISigningKeySource"/> it was constructed over: nothing else in the
 /// container holds a reference to it, so the ring disposes it once, at shutdown, normally after the
 /// signer — via <see cref="IDisposable.Dispose"/> or <see cref="IAsyncDisposable.DisposeAsync"/>,
-/// whichever the host calls. The one exception is disposal racing <see cref="ISigningKeyRing.InitializeAsync"/>
+/// whichever the host calls. The one exception is disposal racing <see cref="ISigningKeyRing.EnsureInitializedAsync"/>
 /// before the signer has committed, in which case the source is disposed first. A polling
 /// implementation can be added behind the same interface later without changing any consumer.
 /// </remarks>
@@ -21,11 +21,18 @@ public sealed class StaticSigningKeyRing : ISigningKeyRing, IDisposable, IAsyncD
 
     // The signing key set and the signer opened for it are read and written together, exactly once,
     // via Interlocked.CompareExchange — never as two independently-updated fields — so a consumer
-    // can never observe one without the other, and InitializeAsync can only ever commit once.
+    // can never observe one without the other, and initialization can only ever commit once.
     private SignerBinding? _binding;
 
     // 0 = live, 1 = disposed. int so Interlocked.Exchange makes the transition atomic.
     private int _disposed;
+
+    // The in-flight or completed initialization, committed exactly once via CompareExchange. This
+    // guards the ENTRY to initialization, where _binding guards only its commit: without it, a
+    // second caller re-read the source and opened a second signer before discovering it had lost
+    // the race. Startup checks that need the key set ask for it rather than assuming they run in a
+    // position where it already exists, so no check's correctness depends on registration order.
+    private Task? _initialization;
 
     // Tolerance on the not-before end of the signing key's validity window, and on that end only.
     // No relying party can observe a key's NotBefore — it is not a JWK member (RFC 7517 §4) and no
@@ -38,7 +45,7 @@ public sealed class StaticSigningKeyRing : ISigningKeyRing, IDisposable, IAsyncD
 
     /// <summary>
     /// Initialises a <see cref="StaticSigningKeyRing"/> over <paramref name="source"/>. Call
-    /// <see cref="ISigningKeyRing.InitializeAsync"/> (done automatically at host startup by
+    /// <see cref="ISigningKeyRing.EnsureInitializedAsync"/> (done automatically at host startup by
     /// <see cref="SigningKeyRingStartupVerifier"/>) before using <see cref="Current"/> or
     /// <see cref="SignAsync{TState}"/>.
     /// </summary>
@@ -183,7 +190,51 @@ public sealed class StaticSigningKeyRing : ISigningKeyRing, IDisposable, IAsyncD
         }
     }
 
-    async ValueTask ISigningKeyRing.InitializeAsync(CancellationToken cancellationToken)
+    ValueTask ISigningKeyRing.EnsureInitializedAsync(CancellationToken cancellationToken)
+    {
+        // Already done: no allocation, no await, no second read.
+        if (Volatile.Read(ref _binding) is not null)
+            return ValueTask.CompletedTask;
+
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var inFlight = Interlocked.CompareExchange(ref _initialization, started.Task, null);
+
+        // Someone else owns this initialization: await theirs rather than starting a second one.
+        // They observe the same outcome, including the same failure.
+        if (inFlight is not null)
+            return new ValueTask(inFlight);
+
+        // Every caller, this one included, awaits started.Task. The run task is deliberately not
+        // awaited or returned: on failure both would fault, only one would be observed, and the
+        // other would reach TaskScheduler.UnobservedTaskException.
+        _ = RunInitializationAsync(started, cancellationToken);
+        return new ValueTask(started.Task);
+    }
+
+    /// <summary>
+    /// Performs the one initialization this ring will ever do, transferring its outcome to
+    /// <paramref name="started"/> so every concurrent caller observes the same result.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="TaskCompletionSource.SetFromTask"/> rather than a try/catch: it carries success,
+    /// failure and cancellation across without a catch-all clause, and it preserves a cancelled task
+    /// as cancelled where catching <see cref="OperationCanceledException"/> and calling
+    /// <c>SetException</c> would have made it faulted.
+    /// <para>
+    /// A failure is not reset for retry. Initialization runs at startup, where a failure aborts the
+    /// host — leaving the completed task in place is what makes a second caller see the original
+    /// failure rather than trigger a second attempt against a source that just refused.
+    /// </para>
+    /// </remarks>
+    private Task RunInitializationAsync(TaskCompletionSource started, CancellationToken cancellationToken)
+        => InitializeCoreAsync(cancellationToken).ContinueWith(
+            static (initialization, state) => ((TaskCompletionSource)state!).SetFromTask(initialization),
+            started,
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
+
+    private async Task InitializeCoreAsync(CancellationToken cancellationToken)
     {
         var sourceKeys = await _source.ReadAsync(cancellationToken).ConfigureAwait(false);
         if (sourceKeys is null)
@@ -224,13 +275,11 @@ public sealed class StaticSigningKeyRing : ISigningKeyRing, IDisposable, IAsyncD
 
         if (Interlocked.CompareExchange(ref _binding, new SignerBinding(signer, set), null) is not null)
         {
-            // Lost the race: some other call already completed initialization first. Dispose the
-            // signer this call opened rather than leaking it — it will never be reachable through
-            // Current or SignAsync.
+            // Unreachable through EnsureInitializedAsync, which admits exactly one caller to this
+            // method — kept as the structural guarantee that the binding is written once, so a
+            // future second entry point cannot silently swap the key set out from under callers.
             DisposeQuietly(signer);
-            throw new InvalidOperationException(
-                $"{nameof(StaticSigningKeyRing)}.InitializeAsync was already called. It must be " +
-                "called exactly once.");
+            return;
         }
 
         // Dispose() may have run concurrently with the work above, between this instance being

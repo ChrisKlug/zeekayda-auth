@@ -5,7 +5,7 @@ using Microsoft.Extensions.Options;
 namespace ZeeKayDa.Auth.Tokens;
 
 /// <summary>
-/// Framework-owned <see cref="IStartupVerifier"/> that initializes whatever <see cref="ISigningKeyRing"/>
+/// Framework-owned <see cref="IStartupActivator"/> that initializes whatever <see cref="ISigningKeyRing"/>
 /// is registered, once per host startup — so a misconfigured signing key fails the host rather than
 /// the first request — and then reconciles
 /// <see cref="IdTokenOptions.AdvertisedSigningAlgorithms"/> against the key set it built.
@@ -18,21 +18,21 @@ namespace ZeeKayDa.Auth.Tokens;
 /// rule by <c>SigningKeyRingPresenceValidator</c> instead.
 /// </para>
 /// <para>
-/// Registered from <c>AddZeeKayDaAuthCore()</c> as well as from
-/// <see cref="Extensions.ZeeKayDaSigningKeyServiceCollectionExtensions.AddZeeKayDaSigningKeySource{TSource}(IServiceCollection)"/>,
-/// so the ring is initialized before <c>ClientRepositoryStartupActivator</c> validates client
-/// registrations against the advertised set. <c>TryAddEnumerable</c> makes the pair idempotent, and
-/// verifiers run in registration order, so the earlier registration wins the position.
+/// An activator rather than a verifier because it calls into a caller-supplied
+/// <see cref="ISigningKeySource"/> — source I/O and a real signing self-test, a remote call on the
+/// Key Vault providers. Its phase does not run at all when a cheap configuration check has already
+/// failed. Nothing depends on its position within that phase: a check needing the key set calls
+/// <c>EnsureInitializedAsync</c> itself, which is idempotent.
 /// </para>
 /// </remarks>
-internal sealed class SigningKeyRingStartupVerifier : IStartupVerifier
+internal sealed class SigningKeyRingStartupVerifier : IStartupActivator
 {
     /// <inheritdoc/>
     public string Name => "SigningKeyRing";
 
     /// <inheritdoc/>
     /// <remarks>
-    /// Delegates to the internal <c>ISigningKeyRing.InitializeAsync</c> and lets any thrown
+    /// Delegates to the internal <c>ISigningKeyRing.EnsureInitializedAsync</c> and lets any thrown
     /// <see cref="ZeeKayDaConfigurationException"/> propagate — the runner treats it as if its
     /// <see cref="ZeeKayDaConfigurationException.AggregatedFailures"/> had already been added to
     /// <paramref name="context"/>.
@@ -46,7 +46,7 @@ internal sealed class SigningKeyRingStartupVerifier : IStartupVerifier
         if (ring is null)
             return;
 
-        await ring.InitializeAsync(cancellationToken).ConfigureAwait(false);
+        await ring.EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
 
         VerifyAdvertisedAlgorithms(context, scopedServices, ring);
     }
@@ -54,7 +54,7 @@ internal sealed class SigningKeyRingStartupVerifier : IStartupVerifier
     /// <summary>
     /// Reconciles the operator's optional narrowing filter with the key set the ring just built, and
     /// checks the resulting advertised set against what OpenID Connect Discovery requires of it.
-    /// Runs after <c>InitializeAsync</c>, which is what makes <see cref="ISigningKeyRing.Current"/>
+    /// Runs after <c>EnsureInitializedAsync</c>, which is what makes <see cref="ISigningKeyRing.Current"/>
     /// safe to read here.
     /// </summary>
     private static void VerifyAdvertisedAlgorithms(

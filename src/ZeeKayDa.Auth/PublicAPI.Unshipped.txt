@@ -170,9 +170,11 @@ ZeeKayDa.Auth.GrantType
 ZeeKayDa.Auth.GrantType.AuthorizationCode = 0 -> ZeeKayDa.Auth.GrantType
 ZeeKayDa.Auth.GrantType.ClientCredentials = 2 -> ZeeKayDa.Auth.GrantType
 ZeeKayDa.Auth.GrantType.RefreshToken = 1 -> ZeeKayDa.Auth.GrantType
+ZeeKayDa.Auth.IStartupActivator
+ZeeKayDa.Auth.IStartupCheck
+ZeeKayDa.Auth.IStartupCheck.Name.get -> string!
+ZeeKayDa.Auth.IStartupCheck.VerifyAsync(ZeeKayDa.Auth.StartupVerificationContext! context, System.IServiceProvider! scopedServices, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask
 ZeeKayDa.Auth.IStartupVerifier
-ZeeKayDa.Auth.IStartupVerifier.Name.get -> string!
-ZeeKayDa.Auth.IStartupVerifier.VerifyAsync(ZeeKayDa.Auth.StartupVerificationContext! context, System.IServiceProvider! scopedServices, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask
 ZeeKayDa.Auth.Logging.ISanitizingLogger<T>
 ZeeKayDa.Auth.Logging.LoggingOptions
 ZeeKayDa.Auth.Logging.LoggingOptions.DisableExceptionSanitizing.get -> bool
@@ -507,6 +509,7 @@ ZeeKayDa.Auth.ZeeKayDaAuthBuilder.ZeeKayDaAuthBuilder(Microsoft.Extensions.Depen
 ZeeKayDa.Auth.ZeeKayDaConfigurationException
 ZeeKayDa.Auth.ZeeKayDaConfigurationException.AggregatedFailures.get -> System.Collections.Generic.IReadOnlyList<ZeeKayDa.Auth.ZeeKayDaConfigurationFailure!>!
 ZeeKayDa.Auth.ZeeKayDaConfigurationException.ZeeKayDaConfigurationException(ZeeKayDa.Auth.ZeeKayDaConfigurationFailure! failure, System.Exception! innerException) -> void
+ZeeKayDa.Auth.ZeeKayDaConfigurationException.ZeeKayDaConfigurationException(System.Collections.Generic.IReadOnlyList<ZeeKayDa.Auth.ZeeKayDaConfigurationFailure!>! failures, System.Exception! innerException) -> void
 ZeeKayDa.Auth.ZeeKayDaConfigurationException.ZeeKayDaConfigurationException(params ZeeKayDa.Auth.ZeeKayDaConfigurationFailure![]! failures) -> void
 ZeeKayDa.Auth.ZeeKayDaConfigurationFailure
 ZeeKayDa.Auth.ZeeKayDaConfigurationFailure.<Clone>$() -> ZeeKayDa.Auth.ZeeKayDaConfigurationFailure!

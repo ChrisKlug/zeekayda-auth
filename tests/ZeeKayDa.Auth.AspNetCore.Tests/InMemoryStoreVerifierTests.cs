@@ -247,4 +247,24 @@ public sealed class InMemoryStoreVerifierTests
         verifiers[0].Name.Should().Be($"InMemoryStore({InMemoryStoreVerifier.AuthorizationCodeStoreName})");
         verifiers[1].Name.Should().Be($"InMemoryStore({InMemoryStoreVerifier.RefreshTokenStoreName})");
     }
+
+    [Fact]
+    public async Task Both_in_memory_stores_report_a_failure_naming_their_own_store()
+    {
+        // The runner collapses failures identical in code and message within a phase. Two stores are
+        // two broken registrations, so each failure must name its own store or the operator fixes
+        // one, restarts, and meets the other.
+        var authorizationCodes = BuildSut("Production", storeName: "authorization code store");
+        var refreshTokens = BuildSut("Production", storeName: "refresh token store");
+        using var provider = new ServiceCollection().BuildServiceProvider();
+        var first = new StartupVerificationContext();
+        var second = new StartupVerificationContext();
+
+        await authorizationCodes.VerifyAsync(first, provider, TestContext.Current.CancellationToken);
+        await refreshTokens.VerifyAsync(second, provider, TestContext.Current.CancellationToken);
+
+        first.Failures.Single().Message.Should().Contain("authorization code store");
+        second.Failures.Single().Message.Should().Contain("refresh token store");
+        first.Failures.Single().Message.Should().NotBe(second.Failures.Single().Message);
+    }
 }

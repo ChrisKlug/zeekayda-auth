@@ -6,12 +6,16 @@ using ZeeKayDa.Auth.Logging;
 namespace ZeeKayDa.Auth;
 
 /// <summary>
-/// The single <see cref="IHostedService"/> that runs every framework startup check. Runs two
+/// The single <see cref="IHostedService"/> that runs every framework startup check. Runs three
 /// disjoint phases in one <see cref="StartAsync"/>: internal gates first (fail-fast, sequential,
-/// nothing logged until every gate has passed), then public <see cref="IStartupVerifier"/>
-/// instances (run all, aggregate every failure into one <see cref="ZeeKayDaConfigurationException"/>
-/// thrown once). Because both phases run inside a single <see cref="StartAsync"/> call,
-/// <c>HostOptions.ServicesStartConcurrently</c> has no effect on this ordering.
+/// nothing logged until every gate has passed), then <see cref="IStartupVerifier"/> instances, then
+/// <see cref="IStartupActivator"/> instances. Each of the latter two runs all of its members and
+/// aggregates every failure into one <see cref="ZeeKayDaConfigurationException"/> thrown once — but
+/// <strong>the activator phase does not run at all if the verifier phase produced a failure</strong>,
+/// so an application with a broken issuer never opens a connection to a key vault before being told
+/// about the issuer. Because every phase runs inside a single <see cref="StartAsync"/> call,
+/// <c>HostOptions.ServicesStartConcurrently</c> has no effect on this ordering, and because the
+/// phases are disjoint collections rather than an ordering knob, no check can claim a position.
 /// </summary>
 internal sealed class StartupVerificationHostedService(
     IEnumerable<IStartupVerificationGate> gates,
@@ -21,64 +25,178 @@ internal sealed class StartupVerificationHostedService(
     /// <inheritdoc/>
     public async Task StartAsync(CancellationToken cancellationToken)
     {
-        var pendingGateWarnings = new List<(object Source, string Name, StartupVerificationWarning Warning)>();
+        await RunGatePhaseAsync(cancellationToken).ConfigureAwait(false);
+
+        // The check collections are resolved after the gate phase rather than constructor-injected.
+        // Resolving runs every check's constructor, including third-party ones, and a constructor is
+        // free to log — deferring it is what makes "nothing logs before the gate has passed" true of
+        // check construction, not merely of check execution.
+        RejectChecksRegisteredAsTheBaseInterface();
+
+        await RunPhaseAsync(rootServices.GetServices<IStartupVerifier>(), cancellationToken)
+            .ConfigureAwait(false);
+
+        // Only reached when every verifier passed. A configuration already known to be broken never
+        // reaches the checks that call into caller-supplied extension points.
+        await RunPhaseAsync(rootServices.GetServices<IStartupActivator>(), cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Runs every internal gate, sequentially, aborting on the first that fails. Nothing is logged
+    /// during this phase: gate warnings are buffered and flushed only once the gate proving the
+    /// sanitizing logger has not been shadowed has itself passed.
+    /// </summary>
+    private async Task RunGatePhaseAsync(CancellationToken cancellationToken)
+    {
+        var pendingWarnings = new List<(object Source, string Name, StartupVerificationWarning Warning)>();
+
+        // Whether the gate proving the sanitizing logger has not been shadowed has passed. Deriving
+        // this from "the buffer is non-empty" would hold only while that gate is registered first; a
+        // gate inserted ahead of it would then have its warnings logged through the very logger the
+        // next gate is about to prove shadowed.
+        var loggerVerified = false;
 
         foreach (var gate in gates)
         {
             await using var gateScope = scopeFactory.CreateAsyncScope();
-            var gateContext = new StartupVerificationContext();
+            var context = new StartupVerificationContext();
 
-            await InvokeAsync(
+            var thrown = await InvokeAsync(
                 gate.Name,
-                gateContext,
-                ct => gate.VerifyAsync(gateContext, gateScope.ServiceProvider, ct),
+                context,
+                ct => gate.VerifyAsync(context, gateScope.ServiceProvider, ct),
                 cancellationToken);
 
-            if (gateContext.Failures.Count > 0)
-                throw new ZeeKayDaConfigurationException([.. gateContext.Failures]);
+            if (context.Failures.Count > 0)
+                throw AbortGatePhase(context, thrown, loggerVerified, pendingWarnings);
 
-            // Gate warnings are held until every gate has passed, because the sanitizing logger
-            // is not yet known to be trustworthy.
-            foreach (var warning in gateContext.Warnings)
-                pendingGateWarnings.Add((gate, gate.Name, warning));
+            loggerVerified |= gate is SanitizingLoggerRegistrationGate;
+
+            foreach (var warning in context.Warnings)
+                pendingWarnings.Add((gate, gate.Name, warning));
         }
 
-        foreach (var (source, name, warning) in pendingGateWarnings)
+        foreach (var (source, name, warning) in pendingWarnings)
             LogWarningOrThrow(source, name, warning);
+    }
 
-        // IEnumerable<IStartupVerifier> is resolved here rather than constructor-injected.
-        // Resolving it runs every verifier's constructor, including third-party ones, and a
-        // constructor is free to log — deferring the resolution until after the gate phase is
-        // what makes "nothing logs before the gate has passed" true of verifier construction, not
-        // merely of verifier execution.
-        var verifiers = rootServices.GetServices<IStartupVerifier>();
+    /// <summary>
+    /// Builds the exception that aborts the gate phase, flushing warnings buffered by gates that
+    /// already passed rather than discarding them — but only once the logger is known good.
+    /// </summary>
+    /// <remarks>
+    /// The root cause travels with the abort: a gate failing on an unexpected exception is a bug
+    /// someone needs the stack trace for.
+    /// </remarks>
+    private ZeeKayDaConfigurationException AbortGatePhase(
+        StartupVerificationContext context,
+        Exception? thrown,
+        bool loggerVerified,
+        List<(object Source, string Name, StartupVerificationWarning Warning)> pendingWarnings)
+    {
+        if (loggerVerified)
+        {
+            foreach (var (source, name, warning) in pendingWarnings)
+                LogWarningOrThrow(source, name, warning);
+        }
 
+        return thrown is null
+            ? new ZeeKayDaConfigurationException([.. context.Failures])
+            : new ZeeKayDaConfigurationException([.. context.Failures], thrown);
+    }
+
+    /// <summary>
+    /// Logs one check's warnings, returning a failure for any that could not be logged — a warning
+    /// the operator will never see is itself a configuration problem, not a silent loss.
+    /// </summary>
+    private IEnumerable<ZeeKayDaConfigurationFailure> LogWarnings(
+        IStartupCheck check, StartupVerificationContext context)
+    {
+        foreach (var warning in context.Warnings)
+        {
+            if (!TryLogWarning(check, check.Name, warning, out var logFailureException))
+                yield return WrapWarningLogFailure(check.Name, logFailureException!);
+        }
+    }
+
+    /// <summary>
+    /// Rejects a check registered against <see cref="IStartupCheck"/> itself.
+    /// </summary>
+    /// <remarks>
+    /// The runner enumerates <see cref="IStartupVerifier"/> and <see cref="IStartupActivator"/>, and
+    /// Microsoft.Extensions.DependencyInjection does not resolve a derived registration for a base
+    /// service type — so <c>AddSingleton&lt;IStartupCheck, MyCheck&gt;()</c> compiles, reads as
+    /// correct, and silently never runs. A startup check that never runs is the one failure mode this
+    /// whole subsystem exists to prevent, so it fails the host rather than relying on a doc comment
+    /// saying not to.
+    /// </remarks>
+    private void RejectChecksRegisteredAsTheBaseInterface()
+    {
+        var misregistered = rootServices.GetServices<IStartupCheck>().ToArray();
+        if (misregistered.Length == 0)
+            return;
+
+        throw new ZeeKayDaConfigurationException(
+            [.. misregistered.Select(check => new ZeeKayDaConfigurationFailure(
+                "startup.check_registered_as_base_interface",
+                $"'{check.GetType().FullName}' is registered as {nameof(IStartupCheck)}, which the " +
+                $"runner never enumerates, so it would never run. Register it as " +
+                $"{nameof(IStartupVerifier)} if it only reads options or inspects the container, or " +
+                $"as {nameof(IStartupActivator)} if it calls into a caller-supplied extension point."))]);
+    }
+
+    /// <summary>
+    /// Runs one phase to completion and throws once if anything in it failed. Every check in the
+    /// phase runs even after an earlier one failed, so an operator sees every problem in that phase
+    /// in one pass.
+    /// </summary>
+    private async Task RunPhaseAsync(IEnumerable<IStartupCheck> checks, CancellationToken cancellationToken)
+    {
         var failures = new List<ZeeKayDaConfigurationFailure>();
 
-        foreach (var verifier in verifiers)
+        // An unexpected exception is recorded as a failure so the phase can continue, but its root
+        // cause would then be lost — ZeeKayDaConfigurationFailure carries only strings. The
+        // exceptions are collected here and travel as the aggregate's InnerException.
+        var unexpected = new List<Exception>();
+
+        foreach (var check in checks)
         {
             await using var scope = scopeFactory.CreateAsyncScope();
             var context = new StartupVerificationContext();
 
-            await InvokeAsync(
-                verifier.Name,
-                context,
-                ct => verifier.VerifyAsync(context, scope.ServiceProvider, ct),
-                cancellationToken);
-
-            foreach (var warning in context.Warnings)
+            if (await InvokeAsync(
+                    check.Name,
+                    context,
+                    ct => check.VerifyAsync(context, scope.ServiceProvider, ct),
+                    cancellationToken) is { } thrown)
             {
-                if (TryLogWarning(verifier, verifier.Name, warning, out var logFailureException))
-                    continue;
-
-                failures.Add(WrapWarningLogFailure(verifier.Name, logFailureException!));
+                unexpected.Add(thrown);
             }
 
+            failures.AddRange(LogWarnings(check, context));
             failures.AddRange(context.Failures);
         }
 
-        if (failures.Count > 0)
+        // Two checks reporting the same (Code, Message) describe one broken configuration, not two
+        // problems — the client-repository activator and the signing key ring's own activator both
+        // surface a failed key source, because each genuinely needs it initialized. Collapsing here
+        // keeps that rule in one place instead of in a catch block inside whichever check happened
+        // to run second.
+        failures = [.. failures.DistinctBy(failure => (failure.Code, failure.Message))];
+
+        if (failures.Count == 0)
+            return;
+
+        if (unexpected.Count == 0)
             throw new ZeeKayDaConfigurationException([.. failures]);
+
+        // The aggregate of actionable messages is what an operator must see, and the root causes of
+        // any unexpected throws are what a developer needs. Both travel: the failures as
+        // AggregatedFailures, the throws as InnerException.
+        throw new ZeeKayDaConfigurationException(
+            failures,
+            unexpected.Count == 1 ? unexpected[0] : new AggregateException(unexpected));
     }
 
     /// <inheritdoc/>
@@ -146,7 +264,13 @@ internal sealed class StartupVerificationHostedService(
     }
 
     // Shared unexpected-exception handling for both phases. Never swallows.
-    private static async ValueTask InvokeAsync(
+    /// <summary>
+    /// Invokes one check, translating what it throws into what it should have reported. Returns the
+    /// unexpected exception when there was one, so the caller can carry the root cause on its phase
+    /// aggregate — a failure alone cannot, since <see cref="ZeeKayDaConfigurationFailure"/> is
+    /// strings only.
+    /// </summary>
+    private static async ValueTask<Exception?> InvokeAsync(
         string name,
         StartupVerificationContext context,
         Func<CancellationToken, ValueTask> invoke,
@@ -174,17 +298,23 @@ internal sealed class StartupVerificationHostedService(
         }
         catch (Exception ex)
         {
+            // Recorded, not thrown. Throwing here propagated past the phase loop and discarded every
+            // failure already aggregated, so one check with a bug hid the genuine, fixable
+            // configuration errors beside it and the operator found them one restart at a time.
+            //
             // The exception TYPE is named, never ex.Message. An arbitrary underlying exception
             // message may carry credential material, and ZeeKayDaConfigurationFailure.Message is
             // a plain string on public API surface that SecretSanitizingLogger cannot redact. The
-            // root cause stays available to operators as InnerException, where the redaction
-            // wrapper does apply if it is ever logged through ISanitizingLogger<T>.
-            throw new ZeeKayDaConfigurationException(
-                new ZeeKayDaConfigurationFailure(
-                    "startup.verifier_failed",
-                    $"Verifier '{name}' threw {ex.GetType().FullName}. See the inner exception " +
-                    "for the root cause."),
-                ex);
+            // root cause stays available to operators as the phase aggregate's InnerException, where
+            // the redaction wrapper does apply if it is ever logged through ISanitizingLogger<T>.
+            context.AddFailure(
+                "startup.verifier_failed",
+                $"Check '{name}' threw {ex.GetType().FullName}. See the inner exception " +
+                "for the root cause.");
+
+            return ex;
         }
+
+        return null;
     }
 }

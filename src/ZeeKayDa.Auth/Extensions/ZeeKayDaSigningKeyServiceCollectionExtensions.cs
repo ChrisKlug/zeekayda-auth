@@ -136,7 +136,7 @@ public static class ZeeKayDaSigningKeyServiceCollectionExtensions
         });
 
         services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupVerifier, SigningKeyRingStartupVerifier>());
+            ServiceDescriptor.Singleton<IStartupActivator, SigningKeyRingStartupVerifier>());
 
         return services;
     }

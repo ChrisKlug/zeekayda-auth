@@ -14,7 +14,7 @@ namespace ZeeKayDa.Auth.AspNetCore;
 /// any other implementation is assumed to be a shared distributed cache, and a warning reminds
 /// operators that the built-in stores are non-atomic and must be replaced before production.
 /// </remarks>
-internal sealed class DistributedCacheStoreStartupValidator : IStartupVerifier
+internal sealed class DistributedCacheStoreStartupValidator : IStartupActivator
 {
     internal const string WarningMessage =
         "ZeeKayDa.Auth: IDistributedCache resolves to a non-MemoryDistributedCache implementation. " +

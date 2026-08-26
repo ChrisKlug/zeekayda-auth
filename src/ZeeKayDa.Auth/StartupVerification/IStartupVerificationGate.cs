@@ -8,7 +8,7 @@ namespace ZeeKayDa.Auth;
 /// </summary>
 /// <remarks>
 /// A gate must never log — it inspects and reports through the context passed to
-/// <see cref="VerifyAsync"/> exactly like a verifier does, since nothing is yet known to be safe to
+/// <see cref="IStartupCheck.VerifyAsync"/> exactly like a verifier does, since nothing is yet known to be safe to
 /// log through until every gate has passed.
 /// </remarks>
 internal interface IStartupVerificationGate
@@ -17,7 +17,7 @@ internal interface IStartupVerificationGate
     string Name { get; }
 
     /// <summary>
-    /// Runs this check. See <see cref="IStartupVerifier.VerifyAsync"/> for the exception-handling
+    /// Runs this check. See <see cref="IStartupCheck.VerifyAsync"/> for the exception-handling
     /// contract, which is identical.
     /// </summary>
     /// <param name="context">Accumulates the failures and warnings this invocation produces.</param>

@@ -109,10 +109,11 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IStartupVerifier, AbsoluteFamilyLifetimeUnboundedWarningService>());
 
-        // An IStartupVerifier rather than IValidateOptions so the openid-scope check can be
-        // awaited without risking a deadlock on synchronous, blocking async I/O.
+        // A startup check rather than IValidateOptions so the openid-scope check can be awaited
+        // without risking a deadlock on synchronous, blocking async I/O. An activator because it
+        // calls a caller-supplied IScopeRepository.
         services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupVerifier, ScopePresenceStartupValidator>());
+            ServiceDescriptor.Singleton<IStartupActivator, ScopePresenceStartupValidator>());
 
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IStartupVerifier, TokenStorePresenceValidator>());
@@ -126,7 +127,7 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         // Resolves IClientRepository at startup so its construction-time validation fails fast
         // rather than at first request.
         services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupVerifier, ClientRepositoryStartupActivator>());
+            ServiceDescriptor.Singleton<IStartupActivator, ClientRepositoryStartupActivator>());
 
         // The composite is registered as its concrete type, not IClientAuthenticator, so it is
         // excluded from IEnumerable<IClientAuthenticator> and cannot dispatch recursively.

@@ -6,7 +6,12 @@ namespace ZeeKayDa.Auth.AspNetCore;
 /// <summary>
 /// Verifies that <see cref="IScopeRepository"/> exposes the <c>openid</c> scope at application startup.
 /// </summary>
-internal sealed class ScopePresenceStartupValidator : IStartupVerifier
+/// <remarks>
+/// An activator rather than a verifier: <see cref="IScopeRepository.GetScopesAsync"/> is a
+/// caller-supplied extension point, and while the shipped in-memory default returns a list, a custom
+/// repository may run a database query.
+/// </remarks>
+internal sealed class ScopePresenceStartupValidator : IStartupActivator
 {
     /// <inheritdoc/>
     public string Name => "ScopePresence";
