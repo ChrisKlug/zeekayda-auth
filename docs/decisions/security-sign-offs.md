@@ -969,6 +969,30 @@ same-type collections still yield three `ISigningKeyRing` descriptors, and
 `GetServices<ISigningKeyRing>()` throws having constructed zero sources — proven by
 `Enumerating_ISigningKeyRing_across_composed_registrations_throws_and_constructs_no_source`.
 
+### 6.3 The #511 entry's advertised-vs-producible residual is closed by #515
+
+**Recorded 2026-08-26, against `feat/515-derive-advertised-algs` at commit `571a985`.**
+
+The #511 entry records, as an accepted residual, that deleting `AdvertisedSigningAlgorithmVerifier`
+left an operator able to advertise an algorithm the key set cannot produce with no startup signal.
+That residual stood from #511 merging until #515; it is now closed, and the #511 entry is left as
+written.
+
+`id_token_signing_alg_values_supported` is derived from the published key set rather than declared
+beside it, and the operator's `IdToken.AdvertisedSigningAlgorithms` filter intersects that set rather
+than replacing it — so no configuration expresses an algorithm the server holds no key for. Closed —
+proven by `GetDocument_never_advertises_an_algorithm_the_filter_names_but_no_key_uses`.
+
+Note the changed distinction: the advertised set is what the server holds a **key** for, not what it
+can currently **produce**. `Previous` and `Next` keys are advertised deliberately, so an algorithm no
+longer signing is still advertised while tokens signed under it are live — proven by
+`GetDocument_advertises_every_published_slots_algorithm_not_only_the_signers`.
+
+One residual is opened, not closed: a filter may withhold an algorithm a published key still uses,
+breaking relying parties that pin acceptance to discovery. It is recorded at `Information` rather
+than `Warning` because every effective filter trips it; stating it only for keys that have signed
+needs slot identity `SigningKeySet` does not carry — tracked by #553.
+
 ## 2026-08-25 — Azure Key Vault cached signing on ISigningKeySource (#520, commit 2b35193)
 
 Trust boundary: private key material leaves Key Vault into process memory. Reviewed against the
@@ -1010,7 +1034,6 @@ inference:
   already been inert on `main` before this change: `AdvertisedSigningAlgorithmVerifier` returned
   silently with no `IJwtSigningService` registered, and the last provider stopped registering one
   when #520 merged, so no shipped configuration ran it. Deleting it is therefore a no-op at runtime,
-  not a removed control. #515 closed the residual by deriving the advertised set from the published
-  set: the derivation is an intersection, so no configuration expresses an algorithm the key set has
-  no key for. Closed — proven by
-  `GetDocument_never_advertises_an_algorithm_the_filter_names_but_no_key_uses`.
+  not a removed control. #515 makes the disagreement unrepresentable by deriving the advertised set
+  from the published set; until it merges, an operator can advertise an algorithm the key set cannot
+  produce with no startup signal. Residual, tracked by #515.
