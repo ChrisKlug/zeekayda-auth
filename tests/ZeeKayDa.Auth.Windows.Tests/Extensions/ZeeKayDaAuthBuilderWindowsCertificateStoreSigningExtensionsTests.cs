@@ -123,19 +123,6 @@ public sealed class ZeeKayDaAuthBuilderWindowsCertificateStoreSigningExtensionsT
 
     // ── Double-registration guard ────────────────────────────────────────────────────────────────
 
-    [Fact]
-    public void AddWindowsCertificateStoreSigning_throws_InvalidOperationException_when_IJwtSigningService_already_registered()
-    {
-        Assert.SkipUnless(OperatingSystem.IsWindows(), "requires the real registration path past the platform gate");
-
-        var builder = NewBuilder();
-        builder.Services.AddSingleton<IJwtSigningService>(NoOpJwtSigningService.Instance);
-
-        var act = () => builder.AddWindowsCertificateStoreSigning(
-            Certificate(), SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My);
-
-        act.Should().Throw<InvalidOperationException>().WithMessage("*IJwtSigningService*already registered*");
-    }
 
     [Fact]
     public void AddWindowsCertificateStoreSigning_throws_when_a_signing_key_source_is_already_registered()
@@ -204,21 +191,6 @@ public sealed class ZeeKayDaAuthBuilderWindowsCertificateStoreSigningExtensionsT
         provider.GetService<ISigningKeySource>().Should().BeNull();
     }
 
-    [Fact]
-    public async Task AddWindowsCertificateStoreSigning_registers_the_framework_owned_signing_startup_self_test_as_an_IStartupVerifier()
-    {
-        Assert.SkipUnless(OperatingSystem.IsWindows(), "requires the real registration path past the platform gate");
-
-        var builder = NewBuilder();
-
-        builder.AddWindowsCertificateStoreSigning(Certificate(), SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My);
-
-        var targetType = typeof(IJwtSigningService).Assembly.GetType(
-            "ZeeKayDa.Auth.Tokens.SigningStartupSelfTestVerifier", throwOnError: true)!;
-
-        await using var provider = builder.Services.BuildServiceProvider();
-        provider.GetServices<IStartupVerifier>().Should().Contain(s => targetType.IsAssignableFrom(s.GetType()));
-    }
 
     [Fact]
     public async Task AddWindowsCertificateStoreSigning_fills_the_Current_slot_and_leaves_the_others_empty()
@@ -322,14 +294,4 @@ public sealed class ZeeKayDaAuthBuilderWindowsCertificateStoreSigningExtensionsT
 
     // ── Helpers ──────────────────────────────────────────────────────────────────────────────────
 
-    private sealed class NoOpJwtSigningService : IJwtSigningService
-    {
-        public static readonly NoOpJwtSigningService Instance = new();
-
-        public ValueTask<IReadOnlyList<SigningKeyDescriptor>> GetSigningKeysAsync(CancellationToken cancellationToken) =>
-            throw new NotSupportedException();
-
-        public ValueTask<SigningResult> SignAsync(ReadOnlyMemory<byte> signingInput, CancellationToken cancellationToken) =>
-            throw new NotSupportedException();
-    }
 }

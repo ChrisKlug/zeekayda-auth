@@ -28,14 +28,12 @@ public sealed class FileSigningIntegrationTests
     private static readonly DateTimeOffset T0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
     private const string CorrectPassword = "correct horse battery staple";
 
-    private static (ServiceCollection Services, FakeTimeProvider TimeProvider) BuildServices(
-        DateTimeOffset now, TimeSpan? retirementWindow = null)
+    private static (ServiceCollection Services, FakeTimeProvider TimeProvider) BuildServices(DateTimeOffset now)
     {
         var timeProvider = new FakeTimeProvider(now);
         var services = new ServiceCollection();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<TimeProvider>(timeProvider);
-        services.AddSingleton<ISigningKeyRetirementWindowProvider>(new SigningKeyRetirementWindowProviderStub(retirementWindow ?? TimeSpan.FromHours(1)));
         return (services, timeProvider);
     }
 
@@ -378,14 +376,5 @@ public sealed class FileSigningIntegrationTests
         provider.GetServices<IStartupVerifier>().Select(v => v.Name).Should().Contain("SigningKeyRing");
     }
 
-    private static IStartupVerifier FindSigningStartupSelfTestVerifier(ServiceProvider provider) =>
-        provider.GetServices<IStartupVerifier>()
-            .Single(v => v.Name == "SigningStartupSelfTest");
-
     // ── Helpers ───────────────────────────────────────────────────────────────────────────────────
-
-    private sealed class SigningKeyRetirementWindowProviderStub(TimeSpan window) : ISigningKeyRetirementWindowProvider
-    {
-        public TimeSpan GetRetirementWindow() => window;
-    }
 }

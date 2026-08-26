@@ -137,27 +137,7 @@ public sealed class ZeeKayDaAuthBuilderFileSigningExtensionsTests
 
     // ── Double-registration guard (AC #13): any combination ─────────────────────────────────────
 
-    [Fact]
-    public void AddPemFileSigning_throws_InvalidOperationException_when_IJwtSigningService_already_registered()
-    {
-        var builder = NewBuilder();
-        builder.Services.AddSingleton<IJwtSigningService>(NoOpJwtSigningService.Instance);
 
-        var act = () => builder.AddPemFileSigning(PemPath, SigningAlgorithm.RS256);
-
-        act.Should().Throw<InvalidOperationException>().WithMessage("*IJwtSigningService*already registered*");
-    }
-
-    [Fact]
-    public void AddPfxFileSigning_throws_InvalidOperationException_when_IJwtSigningService_already_registered()
-    {
-        var builder = NewBuilder();
-        builder.Services.AddSingleton<IJwtSigningService>(NoOpJwtSigningService.Instance);
-
-        var act = () => builder.AddPfxFileSigning(PfxPath, SigningAlgorithm.RS256, AnyPassword());
-
-        act.Should().Throw<InvalidOperationException>().WithMessage("*IJwtSigningService*already registered*");
-    }
 
     [Fact]
     public void AddPfxFileSigning_after_AddPemFileSigning_on_the_same_builder_throws()
@@ -188,6 +168,22 @@ public sealed class ZeeKayDaAuthBuilderFileSigningExtensionsTests
         builder.AddPemFileSigning(PemPath, SigningAlgorithm.RS256);
 
         var act = () => builder.AddPemFileSigning(PemPath, SigningAlgorithm.RS256);
+
+        act.Should().Throw<InvalidOperationException>();
+    }
+
+    /// <summary>
+    /// Issue #511: a second call with *different* options must fail loudly rather than silently
+    /// composing two configurations onto one registration. The guard throws before this call's
+    /// options callbacks are applied, so the surviving registration is the first one, unmodified.
+    /// </summary>
+    [Fact]
+    public void AddPfxFileSigning_after_AddPfxFileSigning_with_different_options_throws()
+    {
+        var builder = NewBuilder();
+        builder.AddPfxFileSigning(PfxPath, SigningAlgorithm.RS256, AnyPassword());
+
+        var act = () => builder.AddPfxFileSigning(PfxPath, SigningAlgorithm.ES256, AnyPassword());
 
         act.Should().Throw<InvalidOperationException>();
     }
@@ -386,35 +382,7 @@ public sealed class ZeeKayDaAuthBuilderFileSigningExtensionsTests
     // Its full type name is therefore matched by reflection rather than referenced directly, exactly
     // as the DI-registration proof this test replaces would look from any out-of-assembly test.
 
-    [Fact]
-    public async Task AddPemFileSigning_registers_the_framework_owned_signing_startup_self_test_as_an_IStartupVerifier()
-    {
-        var builder = NewBuilder();
 
-        builder.AddPemFileSigning(PemPath, SigningAlgorithm.RS256);
-
-        var targetType = typeof(IJwtSigningService).Assembly.GetType(
-            "ZeeKayDa.Auth.Tokens.SigningStartupSelfTestVerifier", throwOnError: true)!;
-
-        await using var provider = builder.Services.BuildServiceProvider();
-        provider.GetServices<IStartupVerifier>().Should().Contain(
-            s => targetType.IsAssignableFrom(s.GetType()));
-    }
-
-    [Fact]
-    public async Task AddPfxFileSigning_registers_the_framework_owned_signing_startup_self_test_as_an_IStartupVerifier()
-    {
-        var builder = NewBuilder();
-
-        builder.AddPfxFileSigning(PfxPath, SigningAlgorithm.RS256, AnyPassword());
-
-        var targetType = typeof(IJwtSigningService).Assembly.GetType(
-            "ZeeKayDa.Auth.Tokens.SigningStartupSelfTestVerifier", throwOnError: true)!;
-
-        await using var provider = builder.Services.BuildServiceProvider();
-        provider.GetServices<IStartupVerifier>().Should().Contain(
-            s => targetType.IsAssignableFrom(s.GetType()));
-    }
 
     [Fact]
     public void AddPemFileSigning_returns_builder_for_chaining()
@@ -509,14 +477,4 @@ public sealed class ZeeKayDaAuthBuilderFileSigningExtensionsTests
 
     // ── Helpers ───────────────────────────────────────────────────────────────────────────────────
 
-    private sealed class NoOpJwtSigningService : IJwtSigningService
-    {
-        public static readonly NoOpJwtSigningService Instance = new();
-
-        public ValueTask<IReadOnlyList<SigningKeyDescriptor>> GetSigningKeysAsync(CancellationToken cancellationToken) =>
-            throw new NotSupportedException();
-
-        public ValueTask<SigningResult> SignAsync(ReadOnlyMemory<byte> signingInput, CancellationToken cancellationToken) =>
-            throw new NotSupportedException();
-    }
 }

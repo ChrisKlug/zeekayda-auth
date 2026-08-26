@@ -114,16 +114,13 @@ correctly at all," and its correct response is to refuse to start before Kestrel
 connection. Re-running side-effecting checks — client-secret hashing, a real vault sign — is actively
 wrong. A verifier that also wants to contribute a health entry can implement an additional interface.
 
-**The signing self-test verifier resolves its provider lazily and no-ops when there is none.**
-`AddZeeKayDaAuthCore()` registers it unconditionally, including for hosts that configure no signing
-provider, so it resolves `IJwtSigningService` from `scopedServices` and returns silently when absent.
-When one *is* registered but does not implement `ISigningStartupSelfTest` it records a `Warning`
-naming the concrete resolved type rather than skipping quietly — `IJwtSigningService` is registered
-with a plain `AddSingleton`, so a decorator that forwards the interface while dropping the self-test
-would otherwise disable the control with no other signal. The advertised-signing-algorithm verifier
-follows the same skip-with-warning pattern for its own optional capability interface,
-`ISigningKeyProducibility` — this is a general shape for an optional capability interface on
-`IJwtSigningService`, not something unique to the self-test.
+**The signing key ring verifier resolves its ring lazily and no-ops when there is none.**
+`SigningKeyRingStartupVerifier` resolves `ISigningKeyRing` from `scopedServices` and returns silently
+when absent, so a host that registers only the signing-key health check still starts. When a ring *is*
+registered it forces `InitializeAsync` — the one-time source read, set build, and signer self-test —
+so a misconfigured key fails the host rather than the first request. There is no optional capability
+interface to skip past: the self-test is inside the ring, and `ISigningKeyRing` is framework-sealed,
+so no registered ring can be missing it.
 
 **Two instances of one verifier type register with plain `AddSingleton`.** `TryAddEnumerable`
 deduplicates by implementation type and would silently drop the second, which is why the per-store

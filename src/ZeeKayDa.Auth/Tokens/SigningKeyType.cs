@@ -1,7 +1,7 @@
 namespace ZeeKayDa.Auth.Tokens;
 
 /// <summary>
-/// Identifies the cryptographic key type of a <see cref="SigningKeyDescriptor"/>.
+/// Identifies the cryptographic key type of a <see cref="PublicKeyParameters"/>.
 /// </summary>
 public enum SigningKeyType
 {

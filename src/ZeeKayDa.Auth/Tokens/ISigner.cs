@@ -2,9 +2,8 @@ namespace ZeeKayDa.Auth.Tokens;
 
 /// <summary>
 /// Produces signature bytes over a formed JWS signing input for exactly one activation of one
-/// signing key. Returned by <see cref="JwtSigningService{TOptions}.CreateSignerAsync"/> for the
-/// key the base class has selected as active, or by <see cref="ISigningKeySource.CreateSignerAsync"/>
-/// for the key a <see cref="StaticSigningKeyRing"/> has selected as its signer.
+/// signing key. Returned by <see cref="ISigningKeySource.CreateSignerAsync"/> for the key a
+/// <see cref="StaticSigningKeyRing"/> has selected as its signer.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -15,31 +14,25 @@ namespace ZeeKayDa.Auth.Tokens;
 /// <see cref="ISigner"/> directly.
 /// </para>
 /// <para>
-/// <b><see cref="IDisposable.Dispose"/> is a normative contract, not advisory prose, and the two
-/// caller shapes hold this instance for different lifetimes.</b> A
-/// <see cref="JwtSigningService{TOptions}"/>-based provider's <c>CreateSignerAsync</c> is called
-/// once per active-key handoff, and the base class disposes the superseded <see cref="ISigner"/>
-/// every time the active key changes (or at shutdown). A <see cref="StaticSigningKeyRing"/> calls
-/// <see cref="ISigningKeySource.CreateSignerAsync"/> exactly once, at startup, and owns the
-/// returned instance for the process lifetime, disposing it exactly once, at shutdown — there is no
-/// handoff to dispose it on. Either way, <c>Dispose</c> on an implementation of this interface
-/// <b>MUST</b> release only the per-activation handle or resource this specific instance
-/// introduced. A remote implementation whose <see cref="SignAsync"/> uses a shared, DI-owned SDK
-/// client (an Azure Key Vault client, say) <b>MUST NOT</b> tear that shared client down on
-/// <c>Dispose</c> — doing so would break every other <see cref="ISigner"/> instance, and every
-/// future caller, that also depends on the same shared client. Only <see cref="LocalSigner"/>'s own
-/// wrapped <see cref="System.Security.Cryptography.AsymmetricAlgorithm"/> is safe to dispose
+/// <b><see cref="IDisposable.Dispose"/> is a normative contract, not advisory prose.</b> A
+/// <see cref="StaticSigningKeyRing"/> calls <see cref="ISigningKeySource.CreateSignerAsync"/>
+/// exactly once, at startup, and owns the returned instance for the process lifetime, disposing it
+/// exactly once, at shutdown. <c>Dispose</c> on an implementation of this interface <b>MUST</b>
+/// release only the per-activation handle or resource this specific instance introduced. A remote
+/// implementation whose <see cref="SignAsync"/> uses a shared, DI-owned SDK client (an Azure Key
+/// Vault client, say) <b>MUST NOT</b> tear that shared client down on <c>Dispose</c> — doing so
+/// would break every other <see cref="ISigner"/> instance, and every future caller, that also
+/// depends on the same shared client. Only <see cref="LocalSigner"/>'s own wrapped
+/// <see cref="System.Security.Cryptography.AsymmetricAlgorithm"/> is safe to dispose
 /// unconditionally, because it is never shared with anything else.
 /// </para>
 /// <para>
 /// <b>Ownership direction is the other half of this contract.</b> Every call to
-/// <c>CreateSignerAsync</c> — on either surface — <b>MUST</b> return a freshly created
+/// <see cref="ISigningKeySource.CreateSignerAsync"/> <b>MUST</b> return a freshly created
 /// <see cref="ISigner"/> instance that is exclusively owned by the caller; it <b>MUST NOT</b> cache
 /// a previously returned instance and re-lend it from a second call. A
-/// <see cref="JwtSigningService{TOptions}"/>'s borrow/refcount machinery, and a
-/// <see cref="StaticSigningKeyRing"/> handing the instance to every <c>SignAsync</c> call for the
-/// rest of the process, both assume the instance handed back by each <c>CreateSignerAsync</c> call
-/// has no other live holder.
+/// <see cref="StaticSigningKeyRing"/> hands the instance to every <c>SignAsync</c> call for the
+/// rest of the process, and assumes the instance handed back has no other live holder.
 /// </para>
 /// </remarks>
 public interface ISigner : IDisposable
@@ -60,10 +53,10 @@ public interface ISigner : IDisposable
     /// <remarks>
     /// This MUST be the true algorithm <see cref="SignAsync"/> uses to produce its signature bytes —
     /// not merely the algorithm the provider intended or was asked for. Immediately after
-    /// <c>CreateSignerAsync</c> returns an <see cref="ISigner"/> for a given key, the base class
-    /// compares this property against that same key's <see cref="KeyListing.Algorithm"/> — already
-    /// validated for algorithm/key-strength compatibility at <c>ListKeysAsync</c> time — and rejects
-    /// the signer on any mismatch. Without this check a provider bug could silently produce a JWS
+    /// <see cref="ISigningKeySource.CreateSignerAsync"/> returns an <see cref="ISigner"/> for a given
+    /// key, <see cref="StaticSigningKeyRing"/> compares this property against that same key's
+    /// <see cref="SigningKey.Algorithm"/> — already validated for algorithm/key-strength
+    /// compatibility when the set was built — and rejects the signer on any mismatch. Without this check a provider bug could silently produce a JWS
     /// whose header names one algorithm while the signature bytes were actually produced under
     /// another: not a forged signature, but a wrong one, and one that would only surface as an
     /// opaque signature-verification failure downstream rather than a clear configuration error here.

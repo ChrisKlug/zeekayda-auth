@@ -989,3 +989,27 @@ read-once StaticSigningKeyRing model.
   the two `AddAzureKeyVault*Signing_throws_when_*_already_registered` tests.
 - Residual: no runtime signal tells an operator this deployment holds a permanent in-memory copy of
   the signing key; deliberate, consistent with the other local-signing providers, tracked as #549.
+
+## 2026-08-26 — the reviewed `IJwtSigningService` subsystem is deleted (#511)
+
+Not a new sign-off. A scope note so the §1 entries are not read as live: the provider contract they
+were written against — `IJwtSigningService`, `JwtSigningService<TOptions>`, the
+`KeySetOptions`/`KeySourceOptions` tiers, `SigningKeyRotation`, `ISigningStartupSelfTest` and
+`ISigningKeyProducibility` — no longer exists. Those entries remain authoritative for *what was
+approved when*; `signing-keys.md` is authoritative for current behaviour.
+
+Two controls those entries cover ended differently, and both are recorded here rather than left to
+inference:
+
+- **The active-signer self-test (§1.5) survives, moved.** It now runs inside
+  `StaticSigningKeyRing.InitializeAsync`, still unconditional, still with no HSM opt-out, forced
+  eagerly by `SigningKeyRingStartupVerifier`. The `ISigningStartupSelfTest` seam it was implemented
+  through is gone because a source cannot skip a check the sealed ring performs. Closed — proven by
+  the `StaticSigningKeyRing` self-test cases and `SigningKeyRingStartupVerifierTests`.
+- **The advertised-vs-producible algorithm cross-check is deleted, not replaced, in this PR.** It had
+  already been inert on `main` before this change: `AdvertisedSigningAlgorithmVerifier` returned
+  silently with no `IJwtSigningService` registered, and the last provider stopped registering one
+  when #520 merged, so no shipped configuration ran it. Deleting it is therefore a no-op at runtime,
+  not a removed control. #515 makes the disagreement unrepresentable by deriving the advertised set
+  from the published set; until it merges, an operator can advertise an algorithm the key set cannot
+  produce with no startup signal. Residual, tracked by #515.

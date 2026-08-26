@@ -47,30 +47,7 @@ public sealed class ZeeKayDaAuthCoreServiceCollectionExtensionsTests
 
     // ── Issue #437: framework-owned startup self-test wiring ───────────────────────────────────────
 
-    [Fact]
-    public void AddZeeKayDaAuthCore_registers_SigningStartupSelfTestVerifier_as_an_IStartupVerifier()
-    {
-        var services = new ServiceCollection();
-        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
 
-        services.AddZeeKayDaAuthCore();
-
-        using var provider = services.BuildServiceProvider();
-        provider.GetServices<IStartupVerifier>().OfType<SigningStartupSelfTestVerifier>().Should().ContainSingle();
-    }
-
-    [Fact]
-    public void AddZeeKayDaAuthCore_registers_the_signing_startup_self_test_verifier_exactly_once_across_repeated_calls()
-    {
-        var services = new ServiceCollection();
-        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
-
-        services.AddZeeKayDaAuthCore();
-        services.AddZeeKayDaAuthCore();
-
-        using var provider = services.BuildServiceProvider();
-        provider.GetServices<IStartupVerifier>().OfType<SigningStartupSelfTestVerifier>().Should().ContainSingle();
-    }
 
     // ── Issue #444: unified startup verification wiring ─────────────────────────────────────────────
 
