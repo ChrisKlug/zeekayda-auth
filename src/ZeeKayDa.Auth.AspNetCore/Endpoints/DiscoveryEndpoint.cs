@@ -47,9 +47,8 @@ internal sealed class DiscoveryEndpoint : IZeeKayDaEndpoint
         IDiscoveryDocumentProvider provider,
         HttpContext context)
     {
-        context.Response.Headers.CacheControl =
-            CacheControlHeader.For(_options.Value.DiscoveryDocument.CacheMaxAge);
-        CorsHeaders.Apply(context, _allowedOrigins);
+        PublicMetadataHeaders.Apply(
+            context, _options.Value.DiscoveryDocument.CacheMaxAge, _allowedOrigins);
 
         var document = await provider.GetDocumentAsync(context.RequestAborted).ConfigureAwait(false);
         return Results.Json(document, ZeeKayDaJsonSerializerContext.Default.OpenIdConfigurationDocument);

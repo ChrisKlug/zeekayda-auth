@@ -61,9 +61,8 @@ internal sealed class JwksEndpoint : IZeeKayDaEndpoint
     // the startup check that names the actual problem.
     private IResult Handle([FromServices] ISigningKeyRing ring, HttpContext context)
     {
-        context.Response.Headers.CacheControl =
-            CacheControlHeader.For(_options.Value.JwksEndpoint.CacheMaxAge);
-        CorsHeaders.Apply(context, _allowedOrigins);
+        PublicMetadataHeaders.Apply(
+            context, _options.Value.JwksEndpoint.CacheMaxAge, _allowedOrigins);
 
         // The ring is initialized at startup or the host never started, so Current cannot throw
         // here; the reference check makes concurrent requests race only towards writing the same
