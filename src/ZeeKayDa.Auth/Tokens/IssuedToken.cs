@@ -16,4 +16,14 @@ namespace ZeeKayDa.Auth.Tokens;
 /// already put in the payload, so returning it here would create a second place for the same fact
 /// to be wrong, and <c>token_type</c> is a token-endpoint response concern, not an issuance one.
 /// </remarks>
-public sealed record IssuedToken(string Value, TokenKind Kind);
+public sealed record IssuedToken(string Value, TokenKind Kind)
+{
+    // The synthesized PrintMembers would print Value — a live bearer token — and the sanitizing
+    // logger redacts by placeholder name, so a logged IssuedToken would reach the sink verbatim.
+    // Print the kind and length only; the token itself never appears in ToString().
+    private bool PrintMembers(System.Text.StringBuilder builder)
+    {
+        builder.Append($"{nameof(Value)} = <{Value.Length} chars>, {nameof(Kind)} = {Kind}");
+        return true;
+    }
+}

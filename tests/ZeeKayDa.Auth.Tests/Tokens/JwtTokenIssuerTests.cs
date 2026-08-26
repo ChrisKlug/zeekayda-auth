@@ -219,6 +219,20 @@ public sealed class JwtTokenIssuerTests
         token.Kind.Should().Be(TokenKind.AccessToken);
     }
 
+    // ── Log hygiene ──────────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void IssuedToken_ToString_does_not_contain_the_token_value()
+    {
+        // The sanitizing logger redacts by placeholder name, so it cannot catch a logged
+        // IssuedToken — the record itself must never print the bearer token.
+        var token = new IssuedToken("eyJhbGciOiJSUzI1NiJ9.secret.payload", TokenKind.AccessToken);
+
+        token.ToString().Should().NotContain("secret")
+            .And.NotContain("eyJhbGciOiJSUzI1NiJ9")
+            .And.Contain(nameof(TokenKind.AccessToken));
+    }
+
     // ── Guards ───────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
