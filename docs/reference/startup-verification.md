@@ -13,10 +13,14 @@ There are two of them, and **which one you implement decides when your check run
 
 | Interface | Phase | For a check that |
 |---|---|---|
-| `IStartupVerifier` | second | only reads options or inspects the container |
-| `IStartupActivator` | third | calls into a caller-supplied extension point — a repository, a signing key source, a scope store |
+| `IStartupVerifier` | second (early) | resolves and calls only what the framework itself registered — options, `IServiceProviderIsService` |
+| `IStartupActivator` | third (late) | resolves or calls anything the framework did **not** register — an `IClientRepository`, an `ISigningKeySource`, an `IDistributedCache` |
 
-Both derive from `IStartupCheck`, which carries the two members. **The activator phase does not run at all if any verifier reported a failure**, so an application whose issuer is misconfigured never opens a connection to a key vault before being told about the issuer. Resolving a service whose construction runs someone else's code counts as calling into it: if resolving it can do work, your check is an activator.
+Both derive from `IStartupCheck`, which carries the two members. **The activator phase does not run at all if any verifier reported a failure**, so an application whose issuer is misconfigured never opens a connection to a key vault before being told about the issuer.
+
+The rule is about *whose code runs*, not about how slow you expect it to be: resolving a service counts, because a constructor is code. If your check touches a type the host registered, it is an activator, even when the implementation you have in mind does nothing expensive.
+
+> ⚠️ Implement and register `IStartupVerifier` or `IStartupActivator`, never `IStartupCheck` itself. A check registered as the base interface is never enumerated, so it would silently never run — startup fails with `startup.check_registered_as_base_interface` rather than letting that happen.
 
 ## `IStartupCheck`, `IStartupVerifier`, and `IStartupActivator`
 
@@ -94,7 +98,7 @@ Startup verification runs in three phases, all inside the same hosted service's 
 
 Three consequences of this shape matter to you as an implementer:
 
-- **You see every problem in one restart**, not one problem per restart. A host missing both the `openid` scope and an `IDistributedCache` registration gets both failures in one `AggregatedFailures` list.
+- **You see every problem in a phase in one restart**, not one problem per restart. A host with two invalid client registrations gets both failures in one `AggregatedFailures` list. The guarantee is per phase, not across phases: a cheap failure and an activator failure surface in separate restarts, because the activator never ran.
 - **Your check cannot run before the internal gates have passed**, and nothing you register can reorder that. This is what guarantees the redaction layer is already trustworthy by the time your warnings are logged.
 - **An activator sees a configuration that already passed every cheap check.** If your check is expensive, or reaches out over a network, that is where it belongs.
 

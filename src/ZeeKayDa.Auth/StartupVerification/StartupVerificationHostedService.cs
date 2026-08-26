@@ -27,15 +27,17 @@ internal sealed class StartupVerificationHostedService(
     {
         var pendingGateWarnings = new List<(object Source, string Name, StartupVerificationWarning Warning)>();
 
+        // Whether the gate that proves the sanitizing logger has not been shadowed has passed. Until
+        // it has, nothing may be logged at all — including a buffered warning from a gate that
+        // passed earlier, since an earlier gate passing says nothing about the logger.
+        var loggerVerified = false;
+
         foreach (var gate in gates)
         {
             await using var gateScope = scopeFactory.CreateAsyncScope();
             var gateContext = new StartupVerificationContext();
 
-            // A gate's unexpected exception is discarded rather than carried: the gate phase aborts
-            // on its own failure check immediately below, so there is no phase aggregate to hang it
-            // on. It still reaches operators as the failure text naming the exception type.
-            _ = await InvokeAsync(
+            var thrownByGate = await InvokeAsync(
                 gate.Name,
                 gateContext,
                 ct => gate.VerifyAsync(gateContext, gateScope.ServiceProvider, ct),
@@ -43,16 +45,27 @@ internal sealed class StartupVerificationHostedService(
 
             if (gateContext.Failures.Count > 0)
             {
-                // Warnings from gates that already passed are logged before aborting, rather than
-                // discarded with the buffer. This is safe precisely because they are pending: a
-                // warning can only be in the buffer if an earlier gate passed, and the gate that
-                // establishes whether the logger can be trusted is itself a gate — so if that one
-                // failed, the buffer is empty and nothing is logged.
-                foreach (var (pendingSource, pendingName, pendingWarning) in pendingGateWarnings)
-                    LogWarningOrThrow(pendingSource, pendingName, pendingWarning);
+                // Warnings buffered by gates that already passed are logged before aborting rather
+                // than discarded — but only once the sanitizing-logger gate itself has passed.
+                // Deriving that from "the buffer is non-empty" would hold only while that gate is
+                // registered first; a gate inserted ahead of it would then have its warnings logged
+                // through the very logger the next gate is about to prove shadowed.
+                if (loggerVerified)
+                {
+                    foreach (var (pendingSource, pendingName, pendingWarning) in pendingGateWarnings)
+                        LogWarningOrThrow(pendingSource, pendingName, pendingWarning);
+                }
 
-                throw new ZeeKayDaConfigurationException([.. gateContext.Failures]);
+                // The root cause travels with the abort, as it did before the phase loop recorded
+                // rather than threw — a gate failing on an unexpected exception is a bug someone
+                // needs the stack trace for.
+                throw thrownByGate is null
+                    ? new ZeeKayDaConfigurationException([.. gateContext.Failures])
+                    : new ZeeKayDaConfigurationException([.. gateContext.Failures], thrownByGate);
             }
+
+            if (gate is SanitizingLoggerRegistrationGate)
+                loggerVerified = true;
 
             // Gate warnings are held until every gate has passed, because the sanitizing logger
             // is not yet known to be trustworthy.
@@ -142,6 +155,13 @@ internal sealed class StartupVerificationHostedService(
 
             failures.AddRange(context.Failures);
         }
+
+        // Two checks reporting the same (Code, Message) describe one broken configuration, not two
+        // problems — the client-repository activator and the signing key ring's own activator both
+        // surface a failed key source, because each genuinely needs it initialized. Collapsing here
+        // keeps that rule in one place instead of in a catch block inside whichever check happened
+        // to run second.
+        failures = [.. failures.DistinctBy(failure => (failure.Code, failure.Message))];
 
         if (failures.Count == 0)
             return;
@@ -267,7 +287,7 @@ internal sealed class StartupVerificationHostedService(
             // the redaction wrapper does apply if it is ever logged through ISanitizingLogger<T>.
             context.AddFailure(
                 "startup.verifier_failed",
-                $"Verifier '{name}' threw {ex.GetType().FullName}. See the inner exception " +
+                $"Check '{name}' threw {ex.GetType().FullName}. See the inner exception " +
                 "for the root cause.");
 
             return ex;

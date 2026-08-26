@@ -114,10 +114,11 @@ public sealed class ClientRepositoryStartupActivatorTests
     }
 
     [Fact]
-    public async Task VerifyAsync_does_not_report_a_ring_failure_that_the_rings_own_activator_reports()
+    public async Task VerifyAsync_lets_a_ring_failure_propagate_rather_than_deciding_who_reports_it()
     {
-        // Reporting it here as well would put the same code in the aggregate twice for one broken
-        // configuration. Startup still fails — on the ring's own report.
+        // The ring's own activator reports the same failure, and the runner collapses identical
+        // failures within a phase. Catching it here would encode an assumption about what another
+        // check reports — and would swallow it entirely if that check were ever absent.
         var ring = new RecordingSigningKeyRing(
             new ZeeKayDaConfigurationFailure("signing.source_unavailable", "Simulated."));
         var services = new ServiceCollection();
@@ -129,8 +130,8 @@ public sealed class ClientRepositoryStartupActivatorTests
 
         var act = async () => await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
 
-        await act.Should().NotThrowAsync();
-        context.Failures.Should().BeEmpty();
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .WithMessage("*source_unavailable*");
     }
 
     [Fact]

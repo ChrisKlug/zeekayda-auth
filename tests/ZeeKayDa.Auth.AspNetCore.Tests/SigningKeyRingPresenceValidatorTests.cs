@@ -83,17 +83,18 @@ public sealed class SigningKeyRingPresenceValidatorTests
     [Fact]
     public async Task VerifyAsync_reports_no_failure_when_the_ring_factory_itself_throws()
     {
-        // The registration exists and is broken, which is a different answer from "absent" —
-        // SigningKeyRingStartupVerifier has already recorded that failure. MS.DI does not cache a
-        // failed factory invocation, so letting it escape here would report the same configuration
-        // failure twice in one startup.
+        // "Registered but broken" is a different answer from "absent"; the ring's own activator
+        // reports the failure in the next phase. Driven through a container with no
+        // IServiceProviderIsService, because that is the only path that resolves the ring at all —
+        // the default container answers without invoking the factory.
         var services = new ServiceCollection();
         services.AddZeeKayDaSigningKeySource<StubSigningKeySource>(_ => null!);
-        using var provider = services.BuildServiceProvider();
+        using var inner = services.BuildServiceProvider();
         var sut = new SigningKeyRingPresenceValidator();
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+        await sut.VerifyAsync(
+            context, new ResolvingOnlyServiceProvider(inner), TestContext.Current.CancellationToken);
 
         context.Failures.Should().BeEmpty();
     }
@@ -109,6 +110,13 @@ public sealed class SigningKeyRingPresenceValidatorTests
     private sealed class NoServiceProviderIsServiceProvider : IServiceProvider
     {
         public object? GetService(Type serviceType) => null;
+    }
+
+    /// <summary>Forwards every resolution but withholds <see cref="IServiceProviderIsService"/>.</summary>
+    private sealed class ResolvingOnlyServiceProvider(IServiceProvider inner) : IServiceProvider
+    {
+        public object? GetService(Type serviceType)
+            => serviceType == typeof(IServiceProviderIsService) ? null : inner.GetService(serviceType);
     }
 }
 

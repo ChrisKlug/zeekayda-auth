@@ -72,9 +72,19 @@ public class ZeeKayDaConfigurationException : ZeeKayDaException
     /// </param>
     public ZeeKayDaConfigurationException(
         IReadOnlyList<ZeeKayDaConfigurationFailure> failures, Exception innerException)
-        : base(ComposeMessage([.. failures]), innerException)
+        : base(ComposeMessage([.. NotNull(failures)]), innerException)
     {
         AggregatedFailures = [.. failures];
+    }
+
+    // ComposeMessage runs in the base constructor call, before any statement in this constructor
+    // could guard it, so a null list would surface as a NullReferenceException from a collection
+    // expression rather than the ArgumentNullException the params overload gives.
+    private static IReadOnlyList<ZeeKayDaConfigurationFailure> NotNull(
+        IReadOnlyList<ZeeKayDaConfigurationFailure> failures)
+    {
+        ArgumentNullException.ThrowIfNull(failures);
+        return failures;
     }
 
     /// <summary>

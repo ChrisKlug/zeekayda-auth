@@ -7,11 +7,13 @@ namespace ZeeKayDa.Auth;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <strong>The membership rule is mechanical.</strong> A check that only reads options or inspects
-/// the container is an <see cref="IStartupVerifier"/>. A check that calls into a caller-supplied
-/// extension point — a repository, a signing key source, a scope store — is an
-/// <see cref="IStartupActivator"/>, because what that implementation does is not knowable from
-/// here. Resolving a service whose construction runs caller code counts as calling into it.
+/// <strong>The membership rule is mechanical:</strong> a check that resolves or calls
+/// <em>anything the framework did not itself register</em> is an <see cref="IStartupActivator"/>;
+/// everything else is an <see cref="IStartupVerifier"/>. Resolving counts, not just calling — a
+/// constructor runs code too. So a check reading <c>IOptions&lt;AuthorizationServerOptions&gt;</c> or
+/// asking <c>IServiceProviderIsService</c> a question is a verifier, while one touching an
+/// <c>IClientRepository</c>, an <c>ISigningKeySource</c>, or an <c>IDistributedCache</c> is an
+/// activator, whether or not that particular implementation turns out to do any work.
 /// </para>
 /// <para>
 /// <strong>No activator runs if any verifier failed.</strong> That is the point of the phase: an

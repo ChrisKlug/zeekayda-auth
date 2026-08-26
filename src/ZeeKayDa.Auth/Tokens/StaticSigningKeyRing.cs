@@ -204,7 +204,11 @@ public sealed class StaticSigningKeyRing : ISigningKeyRing, IDisposable, IAsyncD
         if (inFlight is not null)
             return new ValueTask(inFlight);
 
-        return new ValueTask(RunInitializationAsync(started, cancellationToken));
+        // Every caller, this one included, awaits started.Task. The run task is deliberately not
+        // awaited or returned: on failure both would fault, only one would be observed, and the
+        // other would reach TaskScheduler.UnobservedTaskException.
+        _ = RunInitializationAsync(started, cancellationToken);
+        return new ValueTask(started.Task);
     }
 
     /// <summary>
@@ -225,8 +229,9 @@ public sealed class StaticSigningKeyRing : ISigningKeyRing, IDisposable, IAsyncD
         }
         catch (Exception ex)
         {
+            // Not rethrown: the exception reaches every caller through started.Task, and rethrowing
+            // here would fault a second task nobody awaits.
             started.SetException(ex);
-            throw;
         }
     }
 

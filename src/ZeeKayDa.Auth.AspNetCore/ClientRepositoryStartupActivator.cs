@@ -50,31 +50,21 @@ internal sealed class ClientRepositoryStartupActivator : IStartupActivator
                 "AddInMemoryClients, or remove AddInMemoryClients entirely.",
                 repository.GetType().FullName);
         }
-
     }
 
     /// <summary>
-    /// Initializes the signing key ring if one is registered, swallowing a configuration failure.
+    /// Initializes the signing key ring if one is registered, so client registrations are validated
+    /// against algorithms that exist.
     /// </summary>
     /// <remarks>
-    /// The ring's own activator reports that failure — recording it here as well would put the same
-    /// code in the aggregate twice for one broken configuration. All this cares about is whether the
-    /// advertised algorithms exist by the time client registrations are validated; if they cannot,
-    /// the validator logs that it could not run the subset check and the startup still fails on the
-    /// ring's own report.
+    /// Failures are not caught. The ring's own activator reports the same failure, and the runner
+    /// collapses identical failures within a phase — which is a better place for that rule than a
+    /// <c>catch</c> here encoding an assumption about what another check will report.
     /// </remarks>
     private static async ValueTask EnsureSigningKeysReadAsync(
         IServiceProvider scopedServices, CancellationToken cancellationToken)
     {
-        if (scopedServices.GetService<ISigningKeyRing>() is not { } ring)
-            return;
-
-        try
-        {
+        if (scopedServices.GetService<ISigningKeyRing>() is { } ring)
             await ring.EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch (ZeeKayDaConfigurationException)
-        {
-        }
     }
 }

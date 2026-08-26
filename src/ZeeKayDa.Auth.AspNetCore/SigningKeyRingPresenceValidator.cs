@@ -17,7 +17,9 @@ namespace ZeeKayDa.Auth.AspNetCore;
 /// phase precisely so that a host with no signing source learns about it before any work is done.
 /// A container that does not provide <see cref="IServiceProviderIsService"/> (a third-party
 /// container replacing the default provider) falls back to resolving, so the check still reports
-/// rather than skipping itself; those hosts pay the construction here instead.
+/// rather than skipping itself; those hosts pay the construction here instead. This runs in the
+/// verifier phase, before any activator — including the ring's own — so nothing has initialized the
+/// ring by the time it runs.
 /// </remarks>
 internal sealed class SigningKeyRingPresenceValidator : IStartupVerifier
 {
@@ -70,7 +72,7 @@ internal sealed class SigningKeyRingPresenceValidator : IStartupVerifier
         catch (ZeeKayDaConfigurationException)
         {
             // The registration exists and is broken, which is a different answer from "absent" —
-            // the ring's own activator reports that failure.
+            // the ring's own activator, in the next phase, reports that failure.
             return true;
         }
     }

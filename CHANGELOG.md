@@ -67,9 +67,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   `IStartupVerifier`; a check that calls into a caller-supplied extension point is an
   `IStartupActivator`.** Resolving a service whose construction runs caller code counts as calling
   into it. Three framework checks move — the signing key ring initializer, the client repository
-  activator, and the `openid` scope check. Existing third-party `IStartupVerifier` implementations
-  keep working unchanged; the split is two collections rather than a declarable priority, so the
-  standing refusal of an ordering knob is intact.
+  activator, and the `openid` scope check. A third-party `IStartupVerifier` that implements the
+  interface *implicitly* is unaffected; one that implements `VerifyAsync` or `Name` **explicitly**
+  must retarget the explicit implementation to `IStartupCheck`, since that is where the members now
+  live. The split is two collections rather than a declarable priority, so the standing refusal of an
+  ordering knob is intact.
+
+  Registering a check as `IStartupCheck` itself now **fails startup** naming the type
+  (`startup.check_registered_as_base_interface`). Microsoft.Extensions.DependencyInjection does not
+  resolve a derived registration for a base service type, so such a check would compile, read as
+  correct, and silently never run.
+
+  Aggregation is now per phase rather than across all checks: a host missing both an `IDistributedCache`
+  and the `openid` scope reports them in separate restarts, because the second is an activator. That
+  is the cost of not doing expensive work for a configuration already known to be broken.
 
   `ISigningKeyRing.InitializeAsync` becomes `EnsureInitializedAsync` and is **idempotent**: a second
   call performs no second source read and opens no second signer, and concurrent callers await the

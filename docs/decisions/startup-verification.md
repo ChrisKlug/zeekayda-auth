@@ -13,14 +13,14 @@ How the framework's own startup checks run: the single runner, the public `IStar
 `HostOptions.ServicesStartConcurrently` cannot reach the ordering, and no registration order puts a
 check ahead of an earlier phase — they are not in the same list.
 
-**Cheap checks run before anything does work.** The activator phase does not run at all when a
-verifier failed, so an application with a broken issuer never opens a connection to a key vault
-before being told about the issuer. Membership is mechanical: **a check that only reads options or
-inspects the container is an `IStartupVerifier`; one that calls into a caller-supplied extension
-point is an `IStartupActivator`**, since what that implementation does is unknowable from here.
-Resolving a service whose construction runs caller code counts as calling into it. Declaring yourself
-cheap claims no valuable position; the only one worth claiming is ahead of the sanitizing-logger
-gate, and that collection stays closed.
+**Cheap checks run before anything does work.** The activator phase does not run when a verifier
+failed, so an application with a broken issuer never opens a connection to a key vault before being
+told about it. Membership is mechanical: **a check that resolves and
+calls only what the framework itself registered is an `IStartupVerifier`; one resolving or calling
+anything the framework did not register is an `IStartupActivator`**. Resolving counts — a constructor
+is code. Accepted cost: aggregation is per phase, so a cheap failure and an activator failure need two
+restarts. Registering as `IStartupCheck` fails startup; MS.DI never enumerates a base service type, so
+it would silently never run.
 
 **Order within a phase is not a guarantee, and a check needing another's work asks for it.**
 `ISigningKeyRing.EnsureInitializedAsync` is idempotent for exactly this reason: the client-repository

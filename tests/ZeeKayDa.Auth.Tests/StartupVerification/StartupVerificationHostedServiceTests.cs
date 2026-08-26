@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Logging;
 
@@ -509,20 +510,50 @@ public sealed class StartupVerificationHostedServiceTests
     // ── Gate warnings survive a later gate's failure (#500) ──────────────────────────────────────
 
     [Fact]
-    public async Task StartAsync_logs_warnings_from_a_passed_gate_when_a_later_gate_fails()
+    public async Task StartAsync_logs_warnings_buffered_after_the_logger_gate_passed_when_a_later_gate_fails()
     {
-        var passing = new DelegatingGate("Passing", context => context.AddWarning("gate.warned", "something"));
+        var loggerGate = CreateGenuineSanitizingLoggerGate();
+        var warning = new DelegatingGate("Warning", context => context.AddWarning("gate.warned", "something"));
         var failing = new DelegatingGate("Failing", context => context.AddFailure("gate.failed", "Simulated."));
         using var provider = BuildProviderWithSanitizingLogging(out var sink);
         var sut = new StartupVerificationHostedService(
-            [passing, failing], provider, provider.GetRequiredService<IServiceScopeFactory>());
+            [loggerGate, warning, failing], provider, provider.GetRequiredService<IServiceScopeFactory>());
 
         var act = async () => await sut.StartAsync(TestContext.Current.CancellationToken);
 
         await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
-        sink.Entries.Should().ContainSingle(
-            "a warning is only buffered once an earlier gate passed, so the logger is already known good");
+        sink.Entries.Should().ContainSingle("the logger was proved trustworthy before the warning was buffered");
     }
+
+    [Fact]
+    public async Task StartAsync_discards_warnings_buffered_before_the_logger_gate_fails()
+    {
+        // A gate registered ahead of the sanitizing-logger gate can buffer a warning before anything
+        // has established that the logger redacts. If that gate then fails, flushing the buffer would
+        // log through the very logger it just proved shadowed.
+        var warning = new DelegatingGate("Warning", context => context.AddWarning("gate.warned", "something"));
+        var shadowedLoggerGate = CreateShadowedSanitizingLoggerGate();
+        using var provider = BuildProviderWithSanitizingLogging(out var sink);
+        var sut = new StartupVerificationHostedService(
+            [warning, shadowedLoggerGate], provider, provider.GetRequiredService<IServiceScopeFactory>());
+
+        var act = async () => await sut.StartAsync(TestContext.Current.CancellationToken);
+
+        await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        sink.Entries.Should().BeEmpty("nothing may be logged until the logger is known to redact");
+    }
+
+    private static SanitizingLoggerRegistrationGate CreateGenuineSanitizingLoggerGate()
+        => new(
+            new SecretSanitizingLogger<SanitizingLoggerRegistrationGate>(
+                NullLogger<SanitizingLoggerRegistrationGate>.Instance,
+                Options.Create(new AuthorizationServerOptions())),
+            new SanitizingLoggerClosedOverrideScanner(new ServiceCollection()));
+
+    private static SanitizingLoggerRegistrationGate CreateShadowedSanitizingLoggerGate()
+        => new(
+            new NullSanitizingLogger<SanitizingLoggerRegistrationGate>(),
+            new SanitizingLoggerClosedOverrideScanner(new ServiceCollection()));
 
     // ── A check registered as the base interface never runs, so it fails the host ────────────────
 
@@ -555,5 +586,60 @@ public sealed class StartupVerificationHostedServiceTests
         var act = async () => await sut.StartAsync(TestContext.Current.CancellationToken);
 
         await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task StartAsync_collapses_identical_failures_reported_by_two_checks_in_one_phase()
+    {
+        // Two checks that both need the signing key set both report its failure, because each
+        // genuinely needs it initialized. That is one broken configuration, not two problems.
+        var first = new DelegatingActivator("First", context =>
+        {
+            context.AddFailure("signing.source_unavailable", "The source refused.");
+            return ValueTask.CompletedTask;
+        });
+        var second = new DelegatingActivator("Second", context =>
+        {
+            context.AddFailure("signing.source_unavailable", "The source refused.");
+            return ValueTask.CompletedTask;
+        });
+        using var provider = BuildProviderWithSanitizingLogging(out _, services =>
+        {
+            services.AddSingleton<IStartupActivator>(first);
+            services.AddSingleton<IStartupActivator>(second);
+        });
+        var sut = new StartupVerificationHostedService([], provider, provider.GetRequiredService<IServiceScopeFactory>());
+
+        var act = async () => await sut.StartAsync(TestContext.Current.CancellationToken);
+
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .Which.AggregatedFailures.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task StartAsync_keeps_two_failures_that_share_a_code_but_not_a_message()
+    {
+        // Same code, different subject — two clients, two stores — is two problems.
+        var first = new DelegatingVerifier("First", context =>
+        {
+            context.AddFailure("client.invalid", "Client 'a' is invalid.");
+            return ValueTask.CompletedTask;
+        });
+        var second = new DelegatingVerifier("Second", context =>
+        {
+            context.AddFailure("client.invalid", "Client 'b' is invalid.");
+            return ValueTask.CompletedTask;
+        });
+        using var provider = BuildProviderWithSanitizingLogging(out _, services =>
+        {
+            services.AddSingleton<IStartupVerifier>(first);
+            services.AddSingleton<IStartupVerifier>(second);
+        });
+        var sut = new StartupVerificationHostedService([], provider, provider.GetRequiredService<IServiceScopeFactory>());
+
+        var act = async () => await sut.StartAsync(TestContext.Current.CancellationToken);
+
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .Which.AggregatedFailures.Should().HaveCount(2);
     }
 }
