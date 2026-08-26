@@ -12,14 +12,21 @@ namespace ZeeKayDa.Auth.AspNetCore;
 /// <c>id_token_signing_alg_values_supported</c>, which OpenID Connect Discovery 1.0 §3 requires:
 /// the advertised algorithms are derived from the ring's key set. Failing here is what keeps that
 /// dependency from surfacing as a dependency-injection error on the first discovery request.
+/// <para>
 /// Asks <see cref="IServiceProviderIsService"/> rather than resolving the ring, because resolving it
-/// constructs the caller's signing key source — real work, and this check runs in the cheap verifier
-/// phase precisely so that a host with no signing source learns about it before any work is done.
-/// A container that does not provide <see cref="IServiceProviderIsService"/> (a third-party
-/// container replacing the default provider) falls back to resolving, so the check still reports
-/// rather than skipping itself; those hosts pay the construction here instead. This runs in the
-/// verifier phase, before any activator — including the ring's own — so nothing has initialized the
-/// ring by the time it runs.
+/// constructs the caller's signing key source — real work, and this is a verifier, running in the
+/// phase that exists so a host with no signing source learns about it before any work is done. The
+/// ring's own activator runs in the <em>next</em> phase, so nothing has initialized the ring by the
+/// time this runs.
+/// </para>
+/// <para>
+/// A container that does not provide <see cref="IServiceProviderIsService"/> — a third party
+/// replacing the default provider — falls back to resolving, so the check reports rather than
+/// skipping itself; those hosts pay the construction here. On that path a ring factory that throws
+/// answers "registered, and broken", which is not what this check asks about: the ring's activator
+/// reports that failure in the next phase, and Microsoft.Extensions.DependencyInjection does not
+/// cache a failed factory invocation, so re-throwing it here would report it twice.
+/// </para>
 /// </remarks>
 internal sealed class SigningKeyRingPresenceValidator : IStartupVerifier
 {

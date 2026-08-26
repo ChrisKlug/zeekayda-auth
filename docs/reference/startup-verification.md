@@ -98,7 +98,7 @@ Startup verification runs in three phases, all inside the same hosted service's 
 
 Three consequences of this shape matter to you as an implementer:
 
-- **You see every problem in a phase in one restart**, not one problem per restart. A host with two invalid client registrations gets both failures in one `AggregatedFailures` list. The guarantee is per phase, not across phases: a cheap failure and an activator failure surface in separate restarts, because the activator never ran.
+- **You see every problem in a phase in one restart**, not one problem per restart. A host with two invalid client registrations gets both failures in one `AggregatedFailures` list. The guarantee is per phase, not across phases: a cheap failure and an activator failure surface in separate restarts, because the activator never ran. Within a phase, two checks reporting a failure with the **same code and the same message** are collapsed into one — they describe one broken configuration, not two problems — so make your failure message name its subject if your check can be registered more than once.
 - **Your check cannot run before the internal gates have passed**, and nothing you register can reorder that. This is what guarantees the redaction layer is already trustworthy by the time your warnings are logged.
 - **An activator sees a configuration that already passed every cheap check.** If your check is expensive, or reaches out over a network, that is where it belongs.
 
