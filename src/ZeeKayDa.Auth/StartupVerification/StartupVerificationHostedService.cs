@@ -32,10 +32,12 @@ internal sealed class StartupVerificationHostedService(
             await using var gateScope = scopeFactory.CreateAsyncScope();
             var gateContext = new StartupVerificationContext();
 
-            await InvokeAsync(
+            // A gate's unexpected exception is discarded rather than carried: the gate phase aborts
+            // on its own failure check immediately below, so there is no phase aggregate to hang it
+            // on. It still reaches operators as the failure text naming the exception type.
+            _ = await InvokeAsync(
                 gate.Name,
                 gateContext,
-                unexpected: null,
                 ct => gate.VerifyAsync(gateContext, gateScope.ServiceProvider, ct),
                 cancellationToken);
 
@@ -85,7 +87,7 @@ internal sealed class StartupVerificationHostedService(
 
         // An unexpected exception is recorded as a failure so the phase can continue, but its root
         // cause would then be lost — ZeeKayDaConfigurationFailure carries only strings. The
-        // exceptions are kept here and travel as the aggregate's InnerException.
+        // exceptions are collected here and travel as the aggregate's InnerException.
         var unexpected = new List<Exception>();
 
         foreach (var check in checks)
@@ -93,12 +95,14 @@ internal sealed class StartupVerificationHostedService(
             await using var scope = scopeFactory.CreateAsyncScope();
             var context = new StartupVerificationContext();
 
-            await InvokeAsync(
-                check.Name,
-                context,
-                unexpected,
-                ct => check.VerifyAsync(context, scope.ServiceProvider, ct),
-                cancellationToken);
+            if (await InvokeAsync(
+                    check.Name,
+                    context,
+                    ct => check.VerifyAsync(context, scope.ServiceProvider, ct),
+                    cancellationToken) is { } thrown)
+            {
+                unexpected.Add(thrown);
+            }
 
             foreach (var warning in context.Warnings)
             {
@@ -190,10 +194,15 @@ internal sealed class StartupVerificationHostedService(
     }
 
     // Shared unexpected-exception handling for both phases. Never swallows.
-    private static async ValueTask InvokeAsync(
+    /// <summary>
+    /// Invokes one check, translating what it throws into what it should have reported. Returns the
+    /// unexpected exception when there was one, so the caller can carry the root cause on its phase
+    /// aggregate — a failure alone cannot, since <see cref="ZeeKayDaConfigurationFailure"/> is
+    /// strings only.
+    /// </summary>
+    private static async ValueTask<Exception?> InvokeAsync(
         string name,
         StartupVerificationContext context,
-        List<Exception>? unexpected,
         Func<CancellationToken, ValueTask> invoke,
         CancellationToken cancellationToken)
     {
@@ -233,10 +242,9 @@ internal sealed class StartupVerificationHostedService(
                 $"Verifier '{name}' threw {ex.GetType().FullName}. See the inner exception " +
                 "for the root cause.");
 
-            // Null for a gate: the gate phase aborts on its own failure check immediately after this
-            // returns, so there is no phase aggregate for the root cause to travel on. It still
-            // reaches operators as the failure text naming the exception type.
-            unexpected?.Add(ex);
+            return ex;
         }
+
+        return null;
     }
 }
