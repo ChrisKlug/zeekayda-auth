@@ -843,6 +843,43 @@ public sealed class AuthorizationServerOptionsValidatorTests
         result.FailureMessage.Should().Contain("JwksEndpoint.CacheMaxAge");
     }
 
+    // ── JwksEndpoint.CorsOrigins — same rules as the discovery allowlist ─────────────────────────
+
+    [Fact]
+    public void Validate_accepts_https_origin_in_jwks_CORS_allow_list()
+    {
+        var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
+        options.JwksEndpoint.CorsOrigins.Add("https://app.example.com");
+
+        var result = Validate(options);
+
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Validate_fails_for_wildcard_origin_in_jwks_CORS_allow_list()
+    {
+        var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
+        options.JwksEndpoint.CorsOrigins.Add("https://*.example.com");
+
+        var result = Validate(options);
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("wildcard");
+    }
+
+    [Fact]
+    public void Validate_fails_for_http_non_loopback_origin_in_jwks_CORS_allow_list()
+    {
+        var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
+        options.JwksEndpoint.CorsOrigins.Add("http://app.example.com");
+
+        var result = Validate(options);
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("https");
+    }
+
     // ── CorsOrigins — scheme validation ──────────────────────────────────────────────────────────
 
     [Fact]

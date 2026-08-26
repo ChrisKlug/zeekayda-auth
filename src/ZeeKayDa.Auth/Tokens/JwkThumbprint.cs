@@ -141,9 +141,11 @@ public static class JwkThumbprint
     /// <summary>
     /// Strips leading zero bytes from a big-endian unsigned integer, per RFC 7518 §6.3.1.1's minimal
     /// encoding requirement for <c>n</c> and <c>e</c>. A single zero byte is preserved for a
-    /// genuinely zero-valued input.
+    /// genuinely zero-valued input. Internal so a JWK Set producer encodes these members with the
+    /// exact rule the thumbprint hashed, keeping a served key's parameters and its <c>kid</c>
+    /// structurally incapable of using different encodings.
     /// </summary>
-    private static byte[] TrimLeadingZeros(byte[] value)
+    internal static byte[] TrimLeadingZeros(byte[] value)
     {
         var firstNonZero = 0;
         while (firstNonZero < value.Length - 1 && value[firstNonZero] == 0)
@@ -152,7 +154,7 @@ public static class JwkThumbprint
         return firstNonZero == 0 ? value : value[firstNonZero..];
     }
 
-    private static string Base64UrlEncode(byte[] input)
+    internal static string Base64UrlEncode(byte[] input)
     {
         var encoded = new byte[Base64Url.GetEncodedLength(input.Length)];
         Base64Url.EncodeToUtf8(input, encoded);

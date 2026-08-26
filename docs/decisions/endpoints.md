@@ -60,13 +60,20 @@ pattern, and path-based issuers are what RFC 9207 mix-up resistance relies on in
 `IOptionsSnapshot`/`IOptionsMonitor`. Changing an issuer at runtime invalidates every outstanding
 token and relying-party registration — that is standing up a new server, not reconfiguring one.
 
-**Discovery's `Cache-Control` is written in the handler, not by middleware or an output-caching
-policy.** A policy would make the header depend on the host having registered output caching and
-subject it to the host's global caching rules, and it would stop being unit-testable in isolation.
+**Discovery's and JWKS's `Cache-Control` is written in the handler, not by middleware or an
+output-caching policy.** A policy would make the header depend on the host having registered output
+caching and subject it to the host's global caching rules, and it would stop being unit-testable in
+isolation.
 
-**An advertised-but-unbuilt endpoint answers `501`, not `404`.** The authorization, token and JWKS
+**An advertised-but-unbuilt endpoint answers `501`, not `404`.** The authorization and token
 routes are mapped and shaped now so discovery is stable and the route surface does not shift when
-they land; each returns a `501` problem response until it does.
+they land; each returns a `501` problem response until it does. The JWKS endpoint is implemented.
+
+**The JWKS response is derived lazily from the ring's current key set, keyed by reference
+equality — not maintained by an observer.** Under the read-once ring the body is fixed for the
+process lifetime anyway, and lazy derivation stays correct if a future ring swaps its set at
+runtime, with no observer wiring to keep in sync. The body is served as
+`application/jwk-set+json`, the RFC 7517 §8.5.1 registered media type.
 
 ## Tried, didn't work
 

@@ -239,84 +239,11 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
             errors.Add("AuthorizationServerOptions.JwksEndpoint.CacheMaxAge must not be negative.");
         }
 
-        // Validate DiscoveryDocument.CorsOrigins — each entry must be a strict absolute origin
+        // Validate the CORS allowlists — each entry must be a strict absolute origin
         // (scheme://host[:port]) with no path (other than "/"), query, fragment, userinfo, wildcards,
         // or CRLF. Invalid entries fail startup.
-        foreach (var origin in options.DiscoveryDocument.CorsOrigins)
-        {
-            if (origin is null)
-            {
-                errors.Add("A null value is not a valid CORS origin.");
-                continue;
-            }
-            if (origin.Length == 0)
-            {
-                errors.Add("An empty string is not a valid CORS origin.");
-                continue;
-            }
-            if (origin.IndexOfAny(['\r', '\n']) >= 0)
-            {
-                errors.Add($"CORS origin '{origin}' must not contain CR or LF characters.");
-                continue;
-            }
-            if (string.Equals(origin, "null", StringComparison.Ordinal))
-            {
-                errors.Add("'null' is not a valid CORS origin.");
-                continue;
-            }
-            if (origin.Contains('*'))
-            {
-                errors.Add($"CORS origin '{origin}' must not contain wildcard characters.");
-                continue;
-            }
-            if (!Uri.TryCreate(origin, UriKind.Absolute, out var originUri))
-            {
-                errors.Add($"CORS origin '{origin}' is not a valid absolute URI.");
-                continue;
-            }
-            if (originUri.UserInfo.Length > 0)
-            {
-                errors.Add($"CORS origin '{origin}' must not contain user information.");
-                continue;
-            }
-            if (originUri.Query.Length > 0)
-            {
-                errors.Add($"CORS origin '{origin}' must not contain a query component.");
-                continue;
-            }
-            if (originUri.Fragment.Length > 0)
-            {
-                errors.Add($"CORS origin '{origin}' must not contain a fragment component.");
-                continue;
-            }
-            // An origin is scheme + host + port only; path must be empty or just "/".
-            if (originUri.AbsolutePath.Length > 1)
-            {
-                errors.Add($"CORS origin '{origin}' must not contain a path component. Use 'scheme://host[:port]' only.");
-                continue;
-            }
-
-            // CORS origins must use HTTPS in production. AllowInsecureIssuer permits HTTP only
-            // for loopback addresses (local development). This mirrors the issuer scheme rules.
-            var isHttpsOrigin = string.Equals(originUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase);
-            var isHttpOrigin = string.Equals(originUri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase);
-
-            if (!isHttpsOrigin && !(isHttpOrigin && options.AllowInsecureIssuer))
-            {
-                errors.Add(
-                    $"CORS origin '{origin}' uses scheme '{originUri.Scheme}'. " +
-                    "Only 'https' is permitted in production. Set AllowInsecureIssuer = true to " +
-                    "permit HTTP CORS origins for local development and testing only.");
-                continue;
-            }
-
-            if (isHttpOrigin && options.AllowInsecureIssuer && !LoopbackHelper.IsLoopbackHost(originUri.Host))
-            {
-                errors.Add(
-                    $"CORS origin '{origin}' uses HTTP for a non-loopback host. " +
-                    "AllowInsecureIssuer only permits HTTP loopback CORS origins for local development and testing.");
-            }
-        }
+        ValidateCorsOrigins(options.DiscoveryDocument.CorsOrigins, options.AllowInsecureIssuer, errors);
+        ValidateCorsOrigins(options.JwksEndpoint.CorsOrigins, options.AllowInsecureIssuer, errors);
 
         // Validate SecurityHeaders enum values at startup so an out-of-range cast produces a startup
         // failure consistent with all other misconfiguration, rather than a 500 at request time.
@@ -464,6 +391,85 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
             errors.Add(jwksError.FailureMessage!);
 
         return errors.Count > 0 ? ValidateOptionsResult.Fail(errors) : ValidateOptionsResult.Success;
+    }
+
+    private static void ValidateCorsOrigins(IList<string> origins, bool allowInsecureIssuer, List<string> errors)
+    {
+        foreach (var origin in origins)
+        {
+            if (origin is null)
+            {
+                errors.Add("A null value is not a valid CORS origin.");
+                continue;
+            }
+            if (origin.Length == 0)
+            {
+                errors.Add("An empty string is not a valid CORS origin.");
+                continue;
+            }
+            if (origin.IndexOfAny(['\r', '\n']) >= 0)
+            {
+                errors.Add($"CORS origin '{origin}' must not contain CR or LF characters.");
+                continue;
+            }
+            if (string.Equals(origin, "null", StringComparison.Ordinal))
+            {
+                errors.Add("'null' is not a valid CORS origin.");
+                continue;
+            }
+            if (origin.Contains('*'))
+            {
+                errors.Add($"CORS origin '{origin}' must not contain wildcard characters.");
+                continue;
+            }
+            if (!Uri.TryCreate(origin, UriKind.Absolute, out var originUri))
+            {
+                errors.Add($"CORS origin '{origin}' is not a valid absolute URI.");
+                continue;
+            }
+            if (originUri.UserInfo.Length > 0)
+            {
+                errors.Add($"CORS origin '{origin}' must not contain user information.");
+                continue;
+            }
+            if (originUri.Query.Length > 0)
+            {
+                errors.Add($"CORS origin '{origin}' must not contain a query component.");
+                continue;
+            }
+            if (originUri.Fragment.Length > 0)
+            {
+                errors.Add($"CORS origin '{origin}' must not contain a fragment component.");
+                continue;
+            }
+            // An origin is scheme + host + port only; path must be empty or just "/".
+            if (originUri.AbsolutePath.Length > 1)
+            {
+                errors.Add($"CORS origin '{origin}' must not contain a path component. Use 'scheme://host[:port]' only.");
+                continue;
+            }
+
+            // CORS origins must use HTTPS in production. AllowInsecureIssuer permits HTTP only
+            // for loopback addresses (local development). This mirrors the issuer scheme rules.
+            var isHttpsOrigin = string.Equals(originUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase);
+            var isHttpOrigin = string.Equals(originUri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase);
+
+            if (!isHttpsOrigin && !(isHttpOrigin && allowInsecureIssuer))
+            {
+                errors.Add(
+                    $"CORS origin '{origin}' uses scheme '{originUri.Scheme}'. " +
+                    "Only 'https' is permitted in production. Set AllowInsecureIssuer = true to " +
+                    "permit HTTP CORS origins for local development and testing only.");
+                continue;
+            }
+
+            if (isHttpOrigin && allowInsecureIssuer && !LoopbackHelper.IsLoopbackHost(originUri.Host))
+            {
+                errors.Add(
+                    $"CORS origin '{origin}' uses HTTP for a non-loopback host. " +
+                    "AllowInsecureIssuer only permits HTTP loopback CORS origins for local development and testing.");
+            }
+        }
     }
 
     private static bool HasSameAuthority(Uri endpointUri, Uri issuerUri)

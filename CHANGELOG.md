@@ -8,6 +8,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **The JWKS endpoint is implemented: `connect/jwks` serves the signing key ring's published keys as an RFC 7517 JWK Set** (#514)
+
+  The pre-alpha `501` stub is replaced by a real endpoint serving every configured slot
+  (`Previous`/`Current`/`Next`, in that order) as `application/jwk-set+json`. Each JWK carries
+  `kid` (the RFC 7638 thumbprint issued tokens also carry in their JOSE header), `kty`,
+  `use: "sig"`, `alg`, and the public parameters for its key type — never a private component,
+  proven by test. The body is hand-rolled over BCL types, byte-identical across requests for an
+  unchanged key set, and derived lazily from `ISigningKeyRing.Current` with a reference-equality
+  check rather than observer wiring. `Cache-Control` comes from `JwksEndpoint.CacheMaxAge`, and
+  the new `JwksEndpoint.CorsOrigins` allowlist mirrors the discovery endpoint's CORS treatment
+  (wildcard when empty; exact canonical match plus `Vary: Origin` otherwise), validated and
+  canonicalized at startup under the same rules.
+
 - **`JwksEndpoint.CacheMaxAge` — a configurable `Cache-Control` TTL for the JWKS response** (#513)
 
   `JwksEndpointOptions` gains `CacheMaxAge` (`TimeSpan`, default one hour), emitted on the JWKS

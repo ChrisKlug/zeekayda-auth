@@ -211,6 +211,15 @@ validation. This value governs how long a relying party may keep trusting a cach
 including a key that has since been removed from configuration — so a shorter TTL shortens that
 revocation window at the cost of more JWKS traffic.
 
+`JwksEndpoint.CorsOrigins` (`IList<string>`, default empty) is the JWKS endpoint's CORS allowlist,
+with exactly the semantics and validation rules of
+[`DiscoveryDocument.CorsOrigins`](#discoverydocumentcorsorigins): empty emits
+`Access-Control-Allow-Origin: *`, non-empty performs an exact canonical match against the request
+`Origin` and emits the matching entry plus `Vary: Origin`. The two lists are configured
+independently.
+
+See the [JWKS endpoint reference](jwks-endpoint.md) for the response format.
+
 ---
 
 ### `Response.TypesSupported`
@@ -449,6 +458,9 @@ options.DiscoveryDocument.CorsOrigins.Add("https://app.example.com");
 options.DiscoveryDocument.CorsOrigins.Add("https://admin.example.com");
 ```
 
+The JWKS endpoint has its own, independently configured allowlist with the same rules:
+[`JwksEndpoint.CorsOrigins`](#jwksendpoint).
+
 See [Discovery endpoint — CORS configuration](discovery-endpoint.md#cors-configuration) for the
 full CORS behaviour and an OPTIONS preflight note.
 
@@ -550,8 +562,8 @@ only when all relying parties are co-hosted on the same origin or site as the au
 | `IScopeRepository` must include `openid` | the configured scope repository does not include a scope named `openid` |
 | Cache max-age must not be negative | `DiscoveryDocument.CacheMaxAge` or `JwksEndpoint.CacheMaxAge` is negative |
 | `AuthorizationEndpoint.CodeChallengeMethodsSupported` must not be empty | `AuthorizationEndpoint.CodeChallengeMethodsSupported` is a non-null empty collection |
-| CORS origins must use HTTPS by default | a `DiscoveryDocument.CorsOrigins` entry uses HTTP while `AllowInsecureIssuer` is `false` |
-| HTTP CORS origins must be loopback when allowed | a `DiscoveryDocument.CorsOrigins` entry uses HTTP with a non-loopback host |
+| CORS origins must use HTTPS by default | a `DiscoveryDocument.CorsOrigins` or `JwksEndpoint.CorsOrigins` entry uses HTTP while `AllowInsecureIssuer` is `false` |
+| HTTP CORS origins must be loopback when allowed | a `DiscoveryDocument.CorsOrigins` or `JwksEndpoint.CorsOrigins` entry uses HTTP with a non-loopback host |
 | `SecurityHeaders.ReferrerPolicy` must be a defined enum value | `SecurityHeaders.ReferrerPolicy` is set via an out-of-range cast |
 | `SecurityHeaders.CrossOriginResourcePolicy` must be a defined enum value | `SecurityHeaders.CrossOriginResourcePolicy` is set via an out-of-range cast |
 

@@ -49,25 +49,7 @@ internal sealed class DiscoveryEndpoint : IZeeKayDaEndpoint
         // are required to revalidate after the TTL expires.
         context.Response.Headers.CacheControl =
             CacheControlHeader.For(_options.Value.DiscoveryDocument.CacheMaxAge);
-
-        if (_allowedOrigins.Count == 0)
-        {
-            context.Response.Headers.AccessControlAllowOrigin = "*";
-        }
-        else
-        {
-            // Vary: Origin so caches never serve a wildcard-cached response to an
-            // allowlisted-origin request or vice-versa.
-            context.Response.Headers.Append("Vary", "Origin");
-
-            var requestOrigin = context.Request.Headers.Origin.ToString();
-            if (!string.IsNullOrEmpty(requestOrigin) &&
-                _allowedOrigins.TryGetValue(requestOrigin, out var allowedOrigin))
-            {
-                // Emit the matching allowlist entry, NEVER the raw incoming header value.
-                context.Response.Headers.AccessControlAllowOrigin = allowedOrigin;
-            }
-        }
+        CorsHeaders.Apply(context, _allowedOrigins);
 
         var document = await provider.GetDocumentAsync(context.RequestAborted).ConfigureAwait(false);
         return Results.Json(document, ZeeKayDaJsonSerializerContext.Default.OpenIdConfigurationDocument);

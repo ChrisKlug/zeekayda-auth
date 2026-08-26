@@ -177,17 +177,17 @@ Only scopes with `IsDiscoverable = true` are included in `scopes_supported`.
 
 ## Pre-alpha advertised endpoints
 
-ZeeKayDa.Auth is pre-alpha. Discovery currently publishes default `authorization_endpoint`,
-`token_endpoint`, and `jwks_uri` values so clients can observe the intended metadata shape, but the
-protocol implementations are not complete yet.
+ZeeKayDa.Auth is pre-alpha. Discovery currently publishes default `authorization_endpoint` and
+`token_endpoint` values so clients can observe the intended metadata shape, but those protocol
+implementations are not complete yet. The `jwks_uri` endpoint is implemented — see
+[JWKS endpoint](jwks-endpoint.md).
 
-Until those surfaces are implemented:
+Until the remaining surfaces are implemented:
 
 | Endpoint | Methods | Status |
 |---|---|---|
 | `{issuer}/connect/authorize` | `GET`, `POST` | `501 Not Implemented` |
 | `{issuer}/connect/token` | `POST` | `501 Not Implemented` |
-| `{issuer}/connect/jwks` | `GET` | `501 Not Implemented` |
 
 ## Endpoint URI derivation
 

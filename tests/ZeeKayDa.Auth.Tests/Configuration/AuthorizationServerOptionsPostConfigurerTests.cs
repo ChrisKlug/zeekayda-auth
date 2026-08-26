@@ -26,6 +26,19 @@ public sealed class AuthorizationServerOptionsPostConfigurerTests
     }
 
     [Fact]
+    public void PostConfigure_canonicalizes_and_freezes_the_jwks_CORS_allow_list()
+    {
+        var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
+        options.JwksEndpoint.CorsOrigins.Add("HTTPS://APP.EXAMPLE.COM");
+
+        PostConfigure(options);
+
+        options.JwksEndpoint.CorsOrigins.Should().ContainSingle()
+            .Which.Should().Be("https://app.example.com");
+        options.JwksEndpoint.CorsOrigins.IsReadOnly.Should().BeTrue();
+    }
+
+    [Fact]
     public void PostConfigure_deduplicates_origins_case_insensitively()
     {
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };

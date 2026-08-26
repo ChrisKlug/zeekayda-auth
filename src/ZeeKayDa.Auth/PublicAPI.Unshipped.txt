@@ -136,6 +136,7 @@ ZeeKayDa.Auth.Discovery.IDiscoveryDocumentProvider.GetDocumentAsync(System.Threa
 ZeeKayDa.Auth.Discovery.JwksEndpointOptions
 ZeeKayDa.Auth.Discovery.JwksEndpointOptions.CacheMaxAge.get -> System.TimeSpan
 ZeeKayDa.Auth.Discovery.JwksEndpointOptions.CacheMaxAge.set -> void
+ZeeKayDa.Auth.Discovery.JwksEndpointOptions.CorsOrigins.get -> System.Collections.Generic.IList<string!>!
 ZeeKayDa.Auth.Discovery.JwksEndpointOptions.JwksEndpointOptions() -> void
 ZeeKayDa.Auth.Discovery.JwksEndpointOptions.Uri.get -> string?
 ZeeKayDa.Auth.Discovery.JwksEndpointOptions.Uri.set -> void
