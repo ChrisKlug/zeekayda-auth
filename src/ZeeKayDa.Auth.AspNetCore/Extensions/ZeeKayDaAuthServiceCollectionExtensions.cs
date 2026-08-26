@@ -8,7 +8,9 @@ using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Configuration;
 using ZeeKayDa.Auth.Discovery;
 using ZeeKayDa.Auth.Extensions;
+using ZeeKayDa.Auth.Logging;
 using ZeeKayDa.Auth.Scopes;
+using ZeeKayDa.Auth.Tokens;
 
 namespace Microsoft.Extensions.DependencyInjection;
 
@@ -85,7 +87,13 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         services.TryAddSingleton<IClientSecretFactory>(sp =>
             sp.GetRequiredService<CompositeClientSecretHasher>());
 
-        services.TryAddSingleton<IClientRegistrationValidator, ClientRegistrationValidator>();
+        // A factory rather than type activation: the ISigningKeyRing parameter is optional, and DI
+        // activation cannot supply a default for a service that is not registered.
+        services.TryAddSingleton<IClientRegistrationValidator>(sp => new ClientRegistrationValidator(
+            sp.GetRequiredService<IOptions<AuthorizationServerOptions>>(),
+            sp.GetRequiredService<CompositeClientSecretHasher>(),
+            sp.GetRequiredService<ISanitizingLogger<ClientRegistrationValidator>>(),
+            sp.GetService<ISigningKeyRing>()));
 
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<
@@ -108,6 +116,12 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
 
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IStartupVerifier, TokenStorePresenceValidator>());
+
+        // The discovery document derives id_token_signing_alg_values_supported from the signing key
+        // ring, so a host serving the protocol endpoints must have one. Failing startup here is what
+        // keeps that from surfacing as a DI resolution error on the first discovery request.
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IStartupVerifier, SigningKeyRingPresenceValidator>());
 
         // Resolves IClientRepository at startup so its construction-time validation fails fast
         // rather than at first request.

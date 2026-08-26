@@ -61,7 +61,7 @@ With only `Issuer` configured, ZeeKayDa.Auth registers the following defaults:
 | `Response.ModesSupported` | `["query"]` |
 | `GrantTypesSupported` | `["authorization_code"]` |
 | `TokenEndpoint.AuthMethodsSupported` | `["client_secret_basic"]` |
-| `IdToken.SigningAlgValuesSupported` | `["RS256"]` |
+| `IdToken.AdvertisedSigningAlgorithms` | `null` — every algorithm in the configured signing keys is advertised |
 
 These defaults are a safe starting point for a standard authorization code flow with a
 confidential client.
@@ -78,7 +78,9 @@ Common startup failures and their causes:
 |---|---|
 | `Issuer` validation error | `Issuer` is not set, not an absolute URI, is not canonical (uppercase scheme/host or explicit default port), uses HTTP without `AllowInsecureIssuer`, uses HTTP on a non-loopback host, or contains query, fragment, or user information |
 | `Response.TypesSupported` validation error | The collection was set to `null` or emptied |
-| `IdToken.SigningAlgValuesSupported` validation error | The collection was set to `null` or emptied |
+| `IdToken.AdvertisedSigningAlgorithms` validation error | The filter was set to a non-null empty collection |
+| `signing.key_ring.missing` | No signing key source was registered — the discovery document has no key set to derive `id_token_signing_alg_values_supported` from |
+| `signing.advertised_algorithms.excludes_signing_key` | `IdToken.AdvertisedSigningAlgorithms` excludes the algorithm of the key that signs |
 | Other collection validation errors | Any of the remaining `ICollection` properties was set to `null` |
 
 The full validation rule set is in the

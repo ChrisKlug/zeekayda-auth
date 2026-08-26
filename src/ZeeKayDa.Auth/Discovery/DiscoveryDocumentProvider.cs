@@ -19,7 +19,11 @@ namespace ZeeKayDa.Auth.Discovery;
 /// URI can be overridden by setting the corresponding property on the respective option group
 /// (<see cref="AuthorizationEndpointOptions.Uri"/>, <see cref="TokenEndpointOptions.Uri"/>, <see cref="JwksEndpointOptions.Uri"/>).
 /// Scope names published in <c>scopes_supported</c> are sourced from the configured
-/// <see cref="Scopes.IScopeRepository"/>.
+/// <see cref="Scopes.IScopeRepository"/>. <c>id_token_signing_alg_values_supported</c> is derived
+/// from the <see cref="ISigningKeyRing"/>'s current key set on every read — never from operator
+/// configuration alone — so the server cannot advertise an algorithm it has no key for. A host with
+/// no signing key source registered fails startup (<c>signing.key_ring.missing</c>) rather than
+/// reaching this type.
 /// </remarks>
 internal sealed class DiscoveryDocumentProvider : IDiscoveryDocumentProvider
 {
@@ -30,13 +34,16 @@ internal sealed class DiscoveryDocumentProvider : IDiscoveryDocumentProvider
 
     private readonly IOptions<AuthorizationServerOptions> _options;
     private readonly IScopeRepository _scopeRepository;
+    private readonly ISigningKeyRing _keyRing;
 
     public DiscoveryDocumentProvider(
         IOptions<AuthorizationServerOptions> options,
-        IScopeRepository scopeRepository)
+        IScopeRepository scopeRepository,
+        ISigningKeyRing keyRing)
     {
         _options = options;
         _scopeRepository = scopeRepository;
+        _keyRing = keyRing;
     }
 
     /// <inheritdoc/>
@@ -66,7 +73,8 @@ internal sealed class DiscoveryDocumentProvider : IDiscoveryDocumentProvider
             GrantTypesSupported = [.. options.GrantTypesSupported],
             TokenEndpointAuthMethodsSupported = [.. options.TokenEndpoint.AuthMethodsSupported
                 .Distinct(StringComparer.Ordinal)],
-            IdTokenSigningAlgValuesSupported = [.. options.IdToken.SigningAlgValuesSupported],
+            IdTokenSigningAlgValuesSupported = [.. AdvertisedSigningAlgorithms.Resolve(
+                _keyRing.Current, options.IdToken.AdvertisedSigningAlgorithms)],
             CodeChallengeMethodsSupported = options.AuthorizationEndpoint.CodeChallengeMethodsSupported is { } methods
                 ? [.. methods]
                 : null,

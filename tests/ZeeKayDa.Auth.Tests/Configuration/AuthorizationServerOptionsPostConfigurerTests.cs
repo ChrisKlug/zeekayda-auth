@@ -1,4 +1,5 @@
 using ZeeKayDa.Auth.Configuration;
+using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.Tests.Configuration;
 
@@ -105,5 +106,43 @@ public sealed class AuthorizationServerOptionsPostConfigurerTests
 
         options.DiscoveryDocument.CorsOrigins.Should().ContainSingle()
             .Which.Should().Be("https://app.example.com:8443");
+    }
+
+    // ── IdToken.AdvertisedSigningAlgorithms ──────────────────────────────────────────────────────
+
+    [Fact]
+    public void PostConfigure_freezes_AdvertisedSigningAlgorithms()
+    {
+        // The discovery document reads this filter on every request; the startup checks that
+        // reconcile it with the key set run exactly once.
+        var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
+        options.IdToken.AdvertisedSigningAlgorithms = [SigningAlgorithm.RS256];
+
+        new AuthorizationServerOptionsPostConfigurer().PostConfigure(name: null, options);
+
+        options.IdToken.AdvertisedSigningAlgorithms!.IsReadOnly.Should().BeTrue();
+    }
+
+    [Fact]
+    public void PostConfigure_preserves_the_AdvertisedSigningAlgorithms_entries()
+    {
+        var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
+        options.IdToken.AdvertisedSigningAlgorithms = [SigningAlgorithm.RS256, SigningAlgorithm.ES256];
+
+        new AuthorizationServerOptionsPostConfigurer().PostConfigure(name: null, options);
+
+        options.IdToken.AdvertisedSigningAlgorithms.Should().Equal(
+            SigningAlgorithm.RS256, SigningAlgorithm.ES256);
+    }
+
+    [Fact]
+    public void PostConfigure_leaves_a_null_AdvertisedSigningAlgorithms_null()
+    {
+        var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
+
+        new AuthorizationServerOptionsPostConfigurer().PostConfigure(name: null, options);
+
+        options.IdToken.AdvertisedSigningAlgorithms.Should().BeNull(
+            "null is the default and means advertise the whole published key set");
     }
 }

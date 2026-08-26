@@ -381,8 +381,8 @@ ZeeKayDa.Auth.Tokens.ISigningKeySource.CreateSignerAsync(ZeeKayDa.Auth.Tokens.So
 ZeeKayDa.Auth.Tokens.ISigningKeySource.ReadAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeeKayDa.Auth.Tokens.SourceKeySet!>
 ZeeKayDa.Auth.Tokens.IdTokenOptions
 ZeeKayDa.Auth.Tokens.IdTokenOptions.IdTokenOptions() -> void
-ZeeKayDa.Auth.Tokens.IdTokenOptions.SigningAlgValuesSupported.get -> System.Collections.Generic.ICollection<ZeeKayDa.Auth.Tokens.SigningAlgorithm>!
-ZeeKayDa.Auth.Tokens.IdTokenOptions.SigningAlgValuesSupported.set -> void
+ZeeKayDa.Auth.Tokens.IdTokenOptions.AdvertisedSigningAlgorithms.get -> System.Collections.Generic.ICollection<ZeeKayDa.Auth.Tokens.SigningAlgorithm>?
+ZeeKayDa.Auth.Tokens.IdTokenOptions.AdvertisedSigningAlgorithms.set -> void
 ZeeKayDa.Auth.Tokens.InMemoryDevelopmentSigningKeyOptions
 ZeeKayDa.Auth.Tokens.InMemoryDevelopmentSigningKeyOptions.AllowedDevelopmentJwtSigningKeysEnvironments.get -> System.Collections.Generic.IReadOnlyList<string!>!
 ZeeKayDa.Auth.Tokens.InMemoryDevelopmentSigningKeyOptions.AllowedDevelopmentJwtSigningKeysEnvironments.set -> void

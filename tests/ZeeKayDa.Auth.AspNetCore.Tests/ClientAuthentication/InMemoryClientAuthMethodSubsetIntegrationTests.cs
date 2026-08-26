@@ -195,7 +195,8 @@ public sealed class InMemoryClientAuthMethodSubsetIntegrationTests
                     // which matches the server's AuthMethodsSupported — no override needed.
                     ))
                 // Integration test hosts run as "Production" by default; allow in-memory stores.
-                .AddInMemoryStores(allowOutsideDevelopment: true);
+                .AddInMemoryStores(allowOutsideDevelopment: true)
+                .AddTestSigningKeys();
             });
 
             builder.Configure(app =>

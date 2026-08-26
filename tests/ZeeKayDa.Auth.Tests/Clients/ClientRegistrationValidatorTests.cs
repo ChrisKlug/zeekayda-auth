@@ -5,6 +5,7 @@ using ZeeKayDa.Auth.Authorization;
 using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Configuration;
 using ZeeKayDa.Auth.Logging;
+using ZeeKayDa.Auth.Tests.Tokens;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.Tests.Clients;
@@ -75,7 +76,9 @@ public sealed class ClientRegistrationValidatorTests
     private static ClientRegistrationValidator MakeValidator(
         IClientSecretHasher? hasher = null,
         ISanitizingLogger<ClientRegistrationValidator>? logger = null,
-        AuthorizationServerOptions? serverOptions = null)
+        AuthorizationServerOptions? serverOptions = null,
+        SigningKeySet? keySet = null,
+        bool withKeyRing = true)
     {
         var opts = serverOptions ?? BuildDefaultServerOptions();
 
@@ -83,7 +86,28 @@ public sealed class ClientRegistrationValidatorTests
         return new ClientRegistrationValidator(
             Options.Create(opts),
             composite,
-            logger ?? NullSanitizingLogger<ClientRegistrationValidator>.Instance);
+            logger ?? NullSanitizingLogger<ClientRegistrationValidator>.Instance,
+            withKeyRing ? new FakeSigningKeyRing(keySet) : null);
+    }
+
+    /// <summary>
+    /// A ring whose <c>CurrentOrNull</c> is whatever the test supplies — <see langword="null"/>
+    /// standing for a ring that has not yet read its source.
+    /// </summary>
+    private sealed class FakeSigningKeyRing(SigningKeySet? current) : ISigningKeyRing
+    {
+        public SigningKeySet Current => current ?? throw new InvalidOperationException();
+
+        public ValueTask<SigningOutcome> SignAsync<TState>(
+            TState state,
+            Func<SigningContext, TState, ReadOnlyMemory<byte>> buildSigningInput,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        ValueTask ISigningKeyRing.InitializeAsync(CancellationToken cancellationToken)
+            => throw new NotSupportedException();
+
+        SigningKeySet? ISigningKeyRing.CurrentOrNull => current;
     }
 
     private static AuthorizationServerOptions BuildDefaultServerOptions()
@@ -761,10 +785,11 @@ public sealed class ClientRegistrationValidatorTests
     public void Validate_passes_if_AllowedSigningAlgorithms_is_subset_of_server_algorithms()
     {
         var opts = new AuthorizationServerOptions { Issuer = "https://test.example.com" };
-        opts.IdToken.SigningAlgValuesSupported = [SigningAlgorithm.RS256, SigningAlgorithm.ES256];
         // Include None so public clients (AllowedTokenEndpointAuthMethods={"none"}) pass subset check.
         opts.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
-        var validator = MakeValidator(serverOptions: opts);
+        var validator = MakeValidator(
+            serverOptions: opts,
+            keySet: TestSigningKeys.KeySet(SigningAlgorithm.RS256, SigningAlgorithm.ES256));
 
         var client = MakeValidPublicClient() with
         {
@@ -780,9 +805,9 @@ public sealed class ClientRegistrationValidatorTests
     public void Validate_fails_with_not_subset_code_if_AllowedSigningAlgorithms_is_not_subset_of_server_algorithms()
     {
         var opts = new AuthorizationServerOptions { Issuer = "https://test.example.com" };
-        opts.IdToken.SigningAlgValuesSupported = [SigningAlgorithm.RS256];
         opts.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
-        var validator = MakeValidator(serverOptions: opts);
+        var validator = MakeValidator(
+            serverOptions: opts, keySet: TestSigningKeys.KeySet(SigningAlgorithm.RS256));
 
         var client = MakeValidPublicClient() with
         {
@@ -793,6 +818,85 @@ public sealed class ClientRegistrationValidatorTests
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
             .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.signing_algorithms.not_subset");
+    }
+
+    [Fact]
+    public void Validate_fails_if_AllowedSigningAlgorithms_entry_is_withheld_by_the_advertised_filter()
+    {
+        var opts = new AuthorizationServerOptions { Issuer = "https://test.example.com" };
+        opts.IdToken.AdvertisedSigningAlgorithms = [SigningAlgorithm.RS256];
+        opts.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
+        var validator = MakeValidator(
+            serverOptions: opts,
+            keySet: TestSigningKeys.KeySet(SigningAlgorithm.RS256, SigningAlgorithm.ES256));
+
+        var client = MakeValidPublicClient() with
+        {
+            AllowedSigningAlgorithms = new HashSet<SigningAlgorithm> { SigningAlgorithm.ES256 }
+        };
+
+        var act = () => validator.Validate(client);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.signing_algorithms.not_subset",
+                "the server holds an ES256 key but the operator has withheld it from discovery");
+    }
+
+    [Fact]
+    public void Validate_checks_against_the_filter_alone_when_the_key_ring_has_not_read_its_source()
+    {
+        var opts = new AuthorizationServerOptions { Issuer = "https://test.example.com" };
+        opts.IdToken.AdvertisedSigningAlgorithms = [SigningAlgorithm.RS256];
+        opts.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
+        var validator = MakeValidator(serverOptions: opts, keySet: null);
+
+        var client = MakeValidPublicClient() with
+        {
+            AllowedSigningAlgorithms = new HashSet<SigningAlgorithm> { SigningAlgorithm.ES512 }
+        };
+
+        var act = () => validator.Validate(client);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.signing_algorithms.not_subset");
+    }
+
+    [Fact]
+    public void Validate_warns_when_the_key_ring_exists_but_has_not_read_its_source()
+    {
+        // A host that resolves IClientRepository before startup verification runs gets no subset
+        // check at all. That window is unchecked by anything else, so it is logged rather than
+        // passed over in silence.
+        var opts = new AuthorizationServerOptions { Issuer = "https://test.example.com" };
+        opts.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
+        var logger = new CapturingLogger();
+        var validator = MakeValidator(logger: logger, serverOptions: opts, keySet: null);
+
+        var client = MakeValidPublicClient() with
+        {
+            AllowedSigningAlgorithms = new HashSet<SigningAlgorithm> { SigningAlgorithm.ES512 }
+        };
+
+        validator.Validate(client);
+
+        logger.Warnings.Should().ContainSingle(w => w.Contains("has not yet read its source"));
+    }
+
+    [Fact]
+    public void Validate_skips_the_subset_check_when_there_is_no_key_set_and_no_filter()
+    {
+        var opts = new AuthorizationServerOptions { Issuer = "https://test.example.com" };
+        opts.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
+        var validator = MakeValidator(serverOptions: opts, withKeyRing: false);
+
+        var client = MakeValidPublicClient() with
+        {
+            AllowedSigningAlgorithms = new HashSet<SigningAlgorithm> { SigningAlgorithm.ES512 }
+        };
+
+        var act = () => validator.Validate(client);
+
+        act.Should().NotThrow("there is nothing yet for the client's set to be a subset of");
     }
 
     // ── AllowedScopes ─────────────────────────────────────────────────────────────────────────────

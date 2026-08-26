@@ -3,6 +3,7 @@ using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.Authorization;
 using ZeeKayDa.Auth.Discovery;
 using ZeeKayDa.Auth.Scopes;
+using ZeeKayDa.Auth.Tests.Tokens;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.Tests.Discovery;
@@ -11,13 +12,31 @@ public sealed class DiscoveryDocumentProviderTests
 {
     private static async Task<OpenIdConfigurationDocument> GetDocumentAsync(
         AuthorizationServerOptions options,
-        IScopeRepository? scopeRepository = null)
+        IScopeRepository? scopeRepository = null,
+        SigningKeySet? keySet = null)
     {
         var optionsWrapper = Microsoft.Extensions.Options.Options.Create(options);
         var provider = new DiscoveryDocumentProvider(
             optionsWrapper,
-            scopeRepository ?? new InMemoryScopeRepository(StandardScopes.All));
+            scopeRepository ?? new InMemoryScopeRepository(StandardScopes.All),
+            new FakeSigningKeyRing(keySet ?? TestSigningKeys.KeySet(SigningAlgorithm.RS256)));
         return await provider.GetDocumentAsync(TestContext.Current.CancellationToken);
+    }
+
+    private sealed class FakeSigningKeyRing(SigningKeySet current) : ISigningKeyRing
+    {
+        public SigningKeySet Current => current;
+
+        public ValueTask<SigningOutcome> SignAsync<TState>(
+            TState state,
+            Func<SigningContext, TState, ReadOnlyMemory<byte>> buildSigningInput,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        ValueTask ISigningKeyRing.InitializeAsync(CancellationToken cancellationToken)
+            => throw new NotSupportedException();
+
+        SigningKeySet? ISigningKeyRing.CurrentOrNull => current;
     }
 
     // ── Issuer passthrough (RFC 9207 §4) ─────────────────────────────────────────────────────────
@@ -184,8 +203,7 @@ public sealed class DiscoveryDocumentProviderTests
             },
             GrantTypesSupported = [GrantType.AuthorizationCode, GrantType.RefreshToken],
             TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethods.ClientSecretBasic, "tls_client_auth"] },
-            IdToken = { SigningAlgValuesSupported = [SigningAlgorithm.RS256, SigningAlgorithm.PS256] },
-        }, scopeRepository);
+        }, scopeRepository, TestSigningKeys.KeySet(SigningAlgorithm.RS256, SigningAlgorithm.PS256));
 
         doc.ResponseTypesSupported.Should().Equal(ResponseType.Code);
         doc.ScopesSupported.Should().Equal(StandardScopes.OpenId.Name, StandardScopes.Profile.Name);
@@ -250,6 +268,89 @@ public sealed class DiscoveryDocumentProviderTests
         doc.ScopesSupported.Should().Equal(StandardScopes.OpenId.Name);
     }
 
+    // ── id_token_signing_alg_values_supported is derived from the key set ────────────────────────
+
+    [Fact]
+    public async Task GetDocument_advertises_the_signing_keys_algorithm()
+    {
+        var doc = await GetDocumentAsync(
+            new AuthorizationServerOptions { Issuer = "https://auth.example.com" },
+            keySet: TestSigningKeys.KeySet(SigningAlgorithm.ES384));
+
+        doc.IdTokenSigningAlgValuesSupported.Should().Equal(SigningAlgorithm.ES384);
+    }
+
+    [Fact]
+    public async Task GetDocument_advertises_every_published_slots_algorithm_not_only_the_signers()
+    {
+        // Previous and Next are published but never sign. Their algorithms must stay advertised:
+        // tokens signed under a Previous key are still live and its kid is still in the JWKS.
+        var doc = await GetDocumentAsync(
+            new AuthorizationServerOptions { Issuer = "https://auth.example.com" },
+            keySet: TestSigningKeys.KeySet(
+                SigningAlgorithm.RS256, SigningAlgorithm.ES256, SigningAlgorithm.PS512));
+
+        doc.IdTokenSigningAlgValuesSupported.Should().Equal(
+            SigningAlgorithm.RS256, SigningAlgorithm.ES256, SigningAlgorithm.PS512);
+    }
+
+    [Fact]
+    public async Task GetDocument_advertises_distinct_algorithms_ascending_by_enum_value()
+    {
+        // Slots configured signer-first (PS512), so the ascending order below can only come from
+        // the derivation, not from the order the keys happen to be listed in.
+        var doc = await GetDocumentAsync(
+            new AuthorizationServerOptions { Issuer = "https://auth.example.com" },
+            keySet: TestSigningKeys.KeySet(
+                SigningAlgorithm.PS512, SigningAlgorithm.ES256, SigningAlgorithm.RS256));
+
+        doc.IdTokenSigningAlgValuesSupported.Should().Equal(
+            SigningAlgorithm.RS256, SigningAlgorithm.ES256, SigningAlgorithm.PS512);
+    }
+
+    [Fact]
+    public async Task GetDocument_narrows_the_advertised_set_to_the_configured_filter()
+    {
+        var doc = await GetDocumentAsync(
+            new AuthorizationServerOptions
+            {
+                Issuer = "https://auth.example.com",
+                IdToken = { AdvertisedSigningAlgorithms = [SigningAlgorithm.RS256] },
+            },
+            keySet: TestSigningKeys.KeySet(SigningAlgorithm.RS256, SigningAlgorithm.ES256));
+
+        doc.IdTokenSigningAlgValuesSupported.Should().Equal(SigningAlgorithm.RS256);
+    }
+
+    [Fact]
+    public async Task GetDocument_never_advertises_an_algorithm_the_filter_names_but_no_key_uses()
+    {
+        var doc = await GetDocumentAsync(
+            new AuthorizationServerOptions
+            {
+                Issuer = "https://auth.example.com",
+                IdToken =
+                {
+                    AdvertisedSigningAlgorithms = [SigningAlgorithm.RS256, SigningAlgorithm.ES512],
+                },
+            },
+            keySet: TestSigningKeys.KeySet(SigningAlgorithm.RS256));
+
+        // The filter narrows what the keys allow and can never add to it.
+        doc.IdTokenSigningAlgValuesSupported.Should().Equal(SigningAlgorithm.RS256);
+    }
+
+    [Fact]
+    public async Task GetDocument_advertises_the_whole_published_set_when_no_filter_is_configured()
+    {
+        var doc = await GetDocumentAsync(
+            new AuthorizationServerOptions { Issuer = "https://auth.example.com" },
+            keySet: TestSigningKeys.KeySet(SigningAlgorithm.RS256, SigningAlgorithm.ES256));
+
+        doc.IdTokenSigningAlgValuesSupported.Should().Equal(
+            SigningAlgorithm.RS256, SigningAlgorithm.ES256);
+    }
+
     // ── Cancellation contract ────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -257,7 +358,10 @@ public sealed class DiscoveryDocumentProviderTests
     {
         var options = Microsoft.Extensions.Options.Options.Create(
             new AuthorizationServerOptions { Issuer = "https://auth.example.com" });
-        var provider = new DiscoveryDocumentProvider(options, new InMemoryScopeRepository(StandardScopes.All));
+        var provider = new DiscoveryDocumentProvider(
+            options,
+            new InMemoryScopeRepository(StandardScopes.All),
+            new FakeSigningKeyRing(TestSigningKeys.KeySet(SigningAlgorithm.RS256)));
 
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
@@ -273,7 +377,8 @@ public sealed class DiscoveryDocumentProviderTests
         var options = Microsoft.Extensions.Options.Options.Create(
             new AuthorizationServerOptions { Issuer = "https://auth.example.com" });
         var capturingRepository = new CapturingScopeRepository();
-        var provider = new DiscoveryDocumentProvider(options, capturingRepository);
+        var provider = new DiscoveryDocumentProvider(
+            options, capturingRepository, new FakeSigningKeyRing(TestSigningKeys.KeySet(SigningAlgorithm.RS256)));
 
         using var cts = new CancellationTokenSource();
 
@@ -287,7 +392,10 @@ public sealed class DiscoveryDocumentProviderTests
     {
         var options = Microsoft.Extensions.Options.Options.Create(
             new AuthorizationServerOptions { Issuer = "https://auth.example.com" });
-        var provider = new DiscoveryDocumentProvider(options, new ThrowingScopeRepository());
+        var provider = new DiscoveryDocumentProvider(
+            options,
+            new ThrowingScopeRepository(),
+            new FakeSigningKeyRing(TestSigningKeys.KeySet(SigningAlgorithm.RS256)));
 
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();

@@ -533,29 +533,43 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_fails_when_IdTokenSigningAlgValuesSupported_is_null()
+    public void Validate_succeeds_when_AdvertisedSigningAlgorithms_is_null()
     {
         var result = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
-            IdToken = { SigningAlgValuesSupported = null! },
+            IdToken = { AdvertisedSigningAlgorithms = null },
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("IdToken.SigningAlgValuesSupported");
+        result.Succeeded.Should().BeTrue(
+            "null is the default and advertises every algorithm in the published key set");
     }
 
     [Fact]
-    public void Validate_fails_when_IdTokenSigningAlgValuesSupported_is_empty()
+    public void Validate_fails_when_AdvertisedSigningAlgorithms_is_empty()
     {
         var result = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
-            IdToken = { SigningAlgValuesSupported = [] },
+            IdToken = { AdvertisedSigningAlgorithms = [] },
         });
 
         result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("IdToken.SigningAlgValuesSupported");
+        result.FailureMessage.Should().Contain("IdToken.AdvertisedSigningAlgorithms");
+        result.FailureMessage.Should().Contain("set it to null");
+    }
+
+    [Fact]
+    public void Validate_succeeds_when_AdvertisedSigningAlgorithms_names_an_algorithm()
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            IdToken = { AdvertisedSigningAlgorithms = [SigningAlgorithm.RS256] },
+        });
+
+        result.Succeeded.Should().BeTrue(
+            "reconciling the filter with the key set needs a key set, so it happens at startup");
     }
 
     // ── AuthorizationEndpoint.CodeChallengeMethodsSupported ───────────────────────────────────────
@@ -980,17 +994,17 @@ public sealed class AuthorizationServerOptionsValidatorTests
     [Fact]
     public void Validate_accumulates_errors_across_different_groups()
     {
-        // Bad issuer (trailing slash on path) combined with a null IdToken signing alg list.
+        // Bad issuer (trailing slash on path) combined with an empty advertised-algorithm filter.
         // Both errors must appear in a single result, proving cross-group accumulation.
         var result = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com/tenant1/",
-            IdToken = { SigningAlgValuesSupported = null! },
+            IdToken = { AdvertisedSigningAlgorithms = [] },
         });
 
         result.Failed.Should().BeTrue();
         result.FailureMessage.Should().Contain("trailing slash");
-        result.FailureMessage.Should().Contain("IdToken.SigningAlgValuesSupported");
+        result.FailureMessage.Should().Contain("IdToken.AdvertisedSigningAlgorithms");
     }
 
     // ── ValidateEndpointUri — user-info branch ────────────────────────────────────────────────────

@@ -216,14 +216,16 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
                 "AuthorizationServerOptions.TokenEndpoint.AbsoluteFamilyLifetime must be greater than zero.");
         }
 
-        // Validate IdToken group
-        if (options.IdToken.SigningAlgValuesSupported is null)
+        // Validate IdToken group. Null is the default and means "advertise the whole published key
+        // set"; an empty filter would advertise nothing at all, which is never what an operator
+        // means. A filter that excludes the signing key's own algorithm is caught at startup by
+        // SigningKeyRingStartupVerifier, which is the first point at which the key set exists.
+        if (options.IdToken.AdvertisedSigningAlgorithms is { Count: 0 })
         {
-            errors.Add("AuthorizationServerOptions.IdToken.SigningAlgValuesSupported must not be null.");
-        }
-        else if (options.IdToken.SigningAlgValuesSupported.Count == 0)
-        {
-            errors.Add("AuthorizationServerOptions.IdToken.SigningAlgValuesSupported must contain at least one value.");
+            errors.Add(
+                "AuthorizationServerOptions.IdToken.AdvertisedSigningAlgorithms is an empty set, which " +
+                "would advertise no ID token signing algorithm at all. Name at least one algorithm, or " +
+                "set it to null to advertise every algorithm in the published signing key set.");
         }
 
         // Validate Discovery group

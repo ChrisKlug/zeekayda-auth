@@ -133,7 +133,7 @@ come from `AuthorizationServerOptions`.
 | `grant_types_supported` | `GrantTypesSupported` | Defaults to `["authorization_code"]`. |
 | `token_endpoint_auth_methods_supported` | `TokenEndpoint.AuthMethodsSupported` | Defaults to `["client_secret_basic"]`. |
 | `subject_types_supported` | Fixed value | Always `["public"]`. Pairwise subject identifiers are not currently supported. |
-| `id_token_signing_alg_values_supported` | `IdToken.SigningAlgValuesSupported` | Defaults to `["RS256"]`. Required by OIDC Discovery 1.0 Section 3. |
+| `id_token_signing_alg_values_supported` | The configured signing keys | Derived: the distinct algorithms of every published key, ascending by `SigningAlgorithm` value, optionally narrowed by `IdToken.AdvertisedSigningAlgorithms`. Required by OIDC Discovery 1.0 Section 3. |
 | `code_challenge_methods_supported` | `AuthorizationEndpoint.CodeChallengeMethodsSupported` | Omitted when `null` (the default). Set to `[CodeChallengeMethod.S256]` to advertise PKCE support once token-endpoint enforcement is in place. |
 
 The recommended metadata fields are described by
@@ -240,7 +240,10 @@ Startup fails when:
 - `Issuer` contains a query string or fragment
 - `Issuer` contains user information
 - an endpoint override authority differs from `Issuer`
-- `Response.TypesSupported` or `IdToken.SigningAlgValuesSupported` is null or empty
+- `Response.TypesSupported` is null or empty
+- `IdToken.AdvertisedSigningAlgorithms` is a non-null empty collection
+- no signing key source is registered, so there is no key set to derive
+  `id_token_signing_alg_values_supported` from
 - any supported metadata collection is null
 - a custom scope repository is configured with blank or duplicate scope names
 - `AuthorizationEndpoint.CodeChallengeMethodsSupported` is set to a non-null empty collection
