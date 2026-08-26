@@ -374,14 +374,9 @@ jobs:
       # The decision register replaced numbered ADRs, which had grown to 4,270 lines across 14
       # documents despite a written "half a page" target. A written target didn't hold it, so the
       # build enforces it. Over the cap: cut words or split the topic — don't raise the cap.
-      #
-      # TEMPORARY: 180 while the signing-key subsystem is mid-migration and signing-keys.md carries
-      # entries for both the old IJwtSigningService model and the new key-ring one. #511 deletes the
-      # old model and rewrites that file, and restoring this to 150 is in its scope. If you are
-      # reading this and #511 has merged, the raise outlived its reason — put it back.
       - name: Check decision register file length
         run: |
-          limit=180
+          limit=150
           status=0
           for f in docs/decisions/*.md; do
             case "$(basename "$f")" in

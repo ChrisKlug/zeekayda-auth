@@ -43,13 +43,6 @@ they reached 4,270 lines across 14 documents, were amended roughly five times fo
 written, and grew to 1,297 lines despite a written "half a page" target. Guidance didn't
 constrain it, so now the build does.
 
-**The cap is temporarily 180**, raised once, for one reason: `signing-keys.md` currently describes
-two signing models at once, because the old one is being replaced provider by provider and still
-exists. #511 deletes it and restores 150; that restoration is written into #511's scope rather than
-left as an intention. This is the only circumstance that has justified a raise, and "a topic is
-mid-migration" is the whole of it — not "the entry is important", which is what every over-long
-entry believes about itself.
-
 The same restraint applies to *Tried, didn't work*. An entry earns its place if **we built it, or
 a reviewer signed off on it, before it was reversed** — those are the mistakes worth the tokens to
 prevent twice. Design-time "we considered X and didn't do it" is noise; leave it out.
