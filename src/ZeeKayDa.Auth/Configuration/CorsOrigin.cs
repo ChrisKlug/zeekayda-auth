@@ -8,6 +8,31 @@ namespace ZeeKayDa.Auth.Configuration;
 /// </summary>
 internal sealed class CorsOrigin
 {
+    // The rules in evaluation order; the first that finds a problem wins, so at most one problem
+    // is reported per entry. Scheme rules exist only for the error message — an entry is
+    // canonicalizable on the structural rules alone, which is what lets canonicalization stay
+    // ignorant of AllowInsecureIssuer while validation enforces it.
+    private static readonly Func<CorsOrigin, string?>[] StructuralRules =
+    [
+        origin => origin.HasNullOrigin(),
+        origin => origin.HasEmptyOrigin(),
+        origin => origin.HasCrOrLfCharacters(),
+        origin => origin.HasNullLiteral(),
+        origin => origin.HasWildcardCharacters(),
+        origin => origin.HasNoAbsoluteUri(),
+        origin => origin.HasUserInfo(),
+        origin => origin.HasQueryComponent(),
+        origin => origin.HasFragmentComponent(),
+        origin => origin.HasPathComponent(),
+        origin => origin.HasInvalidIdnHost(),
+    ];
+
+    private static readonly Func<CorsOrigin, string?>[] SchemeRules =
+    [
+        origin => origin.HasForbiddenScheme(),
+        origin => origin.HasHttpNonLoopbackHost(),
+    ];
+
     private readonly string? _origin;
     private readonly bool _allowInsecureIssuer;
     private readonly Uri? _uri;
@@ -20,26 +45,15 @@ internal sealed class CorsOrigin
             ? parsed
             : null;
 
-        // The rules in evaluation order; the first that finds a problem wins, so at most one
-        // problem is reported per entry. Scheme rules run only for the error message — an entry
-        // is canonicalizable on the structural rules alone, which is what lets canonicalization
-        // stay ignorant of AllowInsecureIssuer while validation enforces it.
-        var structuralProblem =
-            HasNullOrigin() ??
-            HasEmptyOrigin() ??
-            HasCrOrLfCharacters() ??
-            HasNullLiteral() ??
-            HasWildcardCharacters() ??
-            HasNoAbsoluteUri() ??
-            HasUserInfo() ??
-            HasQueryComponent() ??
-            HasFragmentComponent() ??
-            HasPathComponent() ??
-            HasInvalidIdnHost();
-
-        ErrorMessage = structuralProblem ?? HasForbiddenScheme() ?? HasHttpNonLoopbackHost();
+        var structuralProblem = FirstProblem(StructuralRules);
+        ErrorMessage = structuralProblem ?? FirstProblem(SchemeRules);
         Canonical = structuralProblem is null ? BuildCanonicalForm() : null;
     }
+
+    private string? FirstProblem(Func<CorsOrigin, string?>[] rules)
+        => rules
+            .Select(rule => rule(this))
+            .FirstOrDefault(problem => problem is not null);
 
     private string? HasNullOrigin()
         => _origin is null ? "A null value is not a valid CORS origin." : null;
@@ -109,7 +123,9 @@ internal sealed class CorsOrigin
     // loopback addresses (local development). This mirrors the issuer scheme rules.
     private string? HasForbiddenScheme()
     {
-        if (IsHttps || (IsHttp && _allowInsecureIssuer))
+        if (IsHttps)
+            return null;
+        if (IsHttp && _allowInsecureIssuer)
             return null;
 
         return $"CORS origin '{_origin}' uses scheme '{_uri!.Scheme}'. " +
