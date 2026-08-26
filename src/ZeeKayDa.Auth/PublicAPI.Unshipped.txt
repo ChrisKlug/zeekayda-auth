@@ -658,7 +658,6 @@ static ZeeKayDa.Auth.Tokens.IssuedToken.operator !=(ZeeKayDa.Auth.Tokens.IssuedT
 static ZeeKayDa.Auth.Tokens.IssuedToken.operator ==(ZeeKayDa.Auth.Tokens.IssuedToken? left, ZeeKayDa.Auth.Tokens.IssuedToken? right) -> bool
 static ZeeKayDa.Auth.Tokens.JwkThumbprint.Compute(System.Security.Cryptography.ECParameters ecPublicParameters) -> string!
 static ZeeKayDa.Auth.Tokens.JwkThumbprint.Compute(System.Security.Cryptography.RSAParameters rsaPublicParameters) -> string!
-static ZeeKayDa.Auth.Tokens.JwkThumbprint.GetJwkCurveName(System.Security.Cryptography.ECCurve curve) -> string!
 static ZeeKayDa.Auth.Tokens.PublicKeyParameters.FromEc(System.Security.Cryptography.ECParameters ecPublicParameters) -> ZeeKayDa.Auth.Tokens.PublicKeyParameters!
 static ZeeKayDa.Auth.Tokens.PublicKeyParameters.FromRsa(System.Security.Cryptography.RSAParameters rsaPublicParameters) -> ZeeKayDa.Auth.Tokens.PublicKeyParameters!
 static ZeeKayDa.Auth.Tokens.PublicKeyParameters.operator !=(ZeeKayDa.Auth.Tokens.PublicKeyParameters? left, ZeeKayDa.Auth.Tokens.PublicKeyParameters? right) -> bool

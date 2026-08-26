@@ -50,7 +50,11 @@ internal sealed class AuthorizationServerOptionsPostConfigurer : IPostConfigureO
                 uri.Fragment.Length == 0 &&
                 uri.AbsolutePath.Length <= 1)
             {
-                var canonical = uri.GetLeftPart(UriPartial.Authority).ToLowerInvariant();
+                // IdnHost, not Host: browsers serialize the Origin header with the punycode
+                // (A-label) form of an internationalized host, so a Unicode allowlist entry
+                // canonicalized as-is would pass validation and then never match a request.
+                var port = uri.IsDefaultPort ? string.Empty : $":{uri.Port}";
+                var canonical = $"{uri.Scheme}://{uri.IdnHost}{port}".ToLowerInvariant();
                 if (seen.Add(canonical))
                     result.Add(canonical);
             }

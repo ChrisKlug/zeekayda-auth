@@ -100,8 +100,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   The discovery endpoint's cache TTL is now a `TimeSpan`, matching every other duration option on
   `AuthorizationServerOptions`. The default is unchanged (one hour), `TimeSpan.Zero` still emits
   `no-store`, negative values still fail startup validation, and the header still carries whole
-  seconds — fractional seconds are truncated. The new `JwksEndpoint.CacheMaxAge` (see *Added*) uses
-  the same type and semantics.
+  seconds — a positive value below one second emits `no-store` rather than a cacheable
+  `max-age=0`. The new `JwksEndpoint.CacheMaxAge` (see *Added*) uses the same type and semantics.
+
+  This also renames the JSON configuration key: an existing `"CacheMaxAgeSeconds": 3600` no longer
+  binds — it is silently ignored and the one-hour default reapplies — and becomes
+  `"CacheMaxAge": "01:00:00"` (the standard `TimeSpan` format).
 
 - **BREAKING: startup checks split into a cheap `IStartupVerifier` phase and an `IStartupActivator` phase, and the activator phase does not run when a verifier failed** (#499, #500)
 

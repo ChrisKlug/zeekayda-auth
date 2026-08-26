@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Tokens;
@@ -45,13 +46,20 @@ internal sealed class JwksEndpoint : IZeeKayDaEndpoint
             _options.Value.JwksEndpoint.Uri,
             "connect/jwks");
 
-        endpoints.MapGet(endpointUri.AbsolutePath, Handle).RequireIssuerHost(endpointUri);
+        // AllowAnonymous so a host-wide authorization fallback policy cannot turn the JWKS into a
+        // 401 — the key set must stay publicly readable or every relying party's validation stops.
+        endpoints.MapGet(endpointUri.AbsolutePath, Handle)
+            .RequireIssuerHost(endpointUri)
+            .AllowAnonymous();
     }
 
     // The ring is a handler parameter, not a constructor dependency: endpoint instances are
     // constructed while the host is still being built, and resolving the ring constructs the
     // signing key source — work that must not happen before the cheap startup checks have passed.
-    private IResult Handle(ISigningKeyRing ring, HttpContext context)
+    // [FromServices] because the ring is conditionally registered: without it, a host with no
+    // signing source would fail at route mapping with a body-inference error instead of reaching
+    // the startup check that names the actual problem.
+    private IResult Handle([FromServices] ISigningKeyRing ring, HttpContext context)
     {
         context.Response.Headers.CacheControl =
             CacheControlHeader.For(_options.Value.JwksEndpoint.CacheMaxAge);

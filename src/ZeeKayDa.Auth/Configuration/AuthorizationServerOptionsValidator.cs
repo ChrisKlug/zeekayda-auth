@@ -242,8 +242,12 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
         // Validate the CORS allowlists — each entry must be a strict absolute origin
         // (scheme://host[:port]) with no path (other than "/"), query, fragment, userinfo, wildcards,
         // or CRLF. Invalid entries fail startup.
-        ValidateCorsOrigins(options.DiscoveryDocument.CorsOrigins, options.AllowInsecureIssuer, errors);
-        ValidateCorsOrigins(options.JwksEndpoint.CorsOrigins, options.AllowInsecureIssuer, errors);
+        ValidateCorsOrigins(
+            options.DiscoveryDocument.CorsOrigins, "DiscoveryDocument.CorsOrigins",
+            options.AllowInsecureIssuer, errors);
+        ValidateCorsOrigins(
+            options.JwksEndpoint.CorsOrigins, "JwksEndpoint.CorsOrigins",
+            options.AllowInsecureIssuer, errors);
 
         // Validate SecurityHeaders enum values at startup so an out-of-range cast produces a startup
         // failure consistent with all other misconfiguration, rather than a 500 at request time.
@@ -393,59 +397,64 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
         return errors.Count > 0 ? ValidateOptionsResult.Fail(errors) : ValidateOptionsResult.Success;
     }
 
-    private static void ValidateCorsOrigins(IList<string> origins, bool allowInsecureIssuer, List<string> errors)
+    private static void ValidateCorsOrigins(
+        IList<string> origins, string optionPath, bool allowInsecureIssuer, List<string> errors)
     {
+        // Each message names the list it came from: with two allowlists, an unprefixed
+        // "CORS origin 'x' is invalid" leaves the operator guessing which option to fix.
+        var prefix = $"AuthorizationServerOptions.{optionPath}: ";
+
         foreach (var origin in origins)
         {
             if (origin is null)
             {
-                errors.Add("A null value is not a valid CORS origin.");
+                errors.Add(prefix + "A null value is not a valid CORS origin.");
                 continue;
             }
             if (origin.Length == 0)
             {
-                errors.Add("An empty string is not a valid CORS origin.");
+                errors.Add(prefix + "An empty string is not a valid CORS origin.");
                 continue;
             }
             if (origin.IndexOfAny(['\r', '\n']) >= 0)
             {
-                errors.Add($"CORS origin '{origin}' must not contain CR or LF characters.");
+                errors.Add(prefix + $"CORS origin '{origin}' must not contain CR or LF characters.");
                 continue;
             }
             if (string.Equals(origin, "null", StringComparison.Ordinal))
             {
-                errors.Add("'null' is not a valid CORS origin.");
+                errors.Add(prefix + "'null' is not a valid CORS origin.");
                 continue;
             }
             if (origin.Contains('*'))
             {
-                errors.Add($"CORS origin '{origin}' must not contain wildcard characters.");
+                errors.Add(prefix + $"CORS origin '{origin}' must not contain wildcard characters.");
                 continue;
             }
             if (!Uri.TryCreate(origin, UriKind.Absolute, out var originUri))
             {
-                errors.Add($"CORS origin '{origin}' is not a valid absolute URI.");
+                errors.Add(prefix + $"CORS origin '{origin}' is not a valid absolute URI.");
                 continue;
             }
             if (originUri.UserInfo.Length > 0)
             {
-                errors.Add($"CORS origin '{origin}' must not contain user information.");
+                errors.Add(prefix + $"CORS origin '{origin}' must not contain user information.");
                 continue;
             }
             if (originUri.Query.Length > 0)
             {
-                errors.Add($"CORS origin '{origin}' must not contain a query component.");
+                errors.Add(prefix + $"CORS origin '{origin}' must not contain a query component.");
                 continue;
             }
             if (originUri.Fragment.Length > 0)
             {
-                errors.Add($"CORS origin '{origin}' must not contain a fragment component.");
+                errors.Add(prefix + $"CORS origin '{origin}' must not contain a fragment component.");
                 continue;
             }
             // An origin is scheme + host + port only; path must be empty or just "/".
             if (originUri.AbsolutePath.Length > 1)
             {
-                errors.Add($"CORS origin '{origin}' must not contain a path component. Use 'scheme://host[:port]' only.");
+                errors.Add(prefix + $"CORS origin '{origin}' must not contain a path component. Use 'scheme://host[:port]' only.");
                 continue;
             }
 

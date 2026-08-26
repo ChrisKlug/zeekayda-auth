@@ -320,6 +320,186 @@ public sealed class JwksEndpointTests : IDisposable
         varyValues.Should().Contain("Origin");
     }
 
+    // ── Anonymous access ─────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetJwks_returns_200_under_a_host_wide_fallback_authorization_policy()
+    {
+        using var factory = new TestWebAppFactoryWithFallbackAuthorizationPolicy();
+        using var client = CreateClient(factory);
+
+        // The canary proves the fallback policy is actually enforced on this host...
+        var hostRoute = await client.GetAsync("/host-route", TestContext.Current.CancellationToken);
+        hostRoute.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        // ...and the JWKS must remain anonymously readable regardless.
+        var response = await client.GetAsync(JwksPath, TestContext.Current.CancellationToken);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    // ── Signature round-trip ─────────────────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData(SigningAlgorithm.RS256)]
+    [InlineData(SigningAlgorithm.ES256)]
+    [InlineData(SigningAlgorithm.ES384)]
+    [InlineData(SigningAlgorithm.ES512)]
+    public async Task GetJwks_served_key_verifies_the_signature_of_a_token_this_server_issued(
+        SigningAlgorithm algorithm)
+    {
+        using var factory = new TestWebAppFactory(configureBuilder: builder =>
+            builder.Services.AddZeeKayDaSigningKeySource(
+                _ => new SingleAlgorithmSigningKeySource(algorithm)));
+        using var client = CreateClient(factory);
+
+        var issuer = factory.Services.GetRequiredKeyedService<ITokenIssuer>(TokenKind.IdToken);
+        var token = await issuer.IssueAsync(
+            new TokenIssuanceContext(new TestClient(), TokenKind.IdToken),
+            new TokenPayload(new Dictionary<string, object?> { ["sub"] = "user-1" }),
+            TestContext.Current.CancellationToken);
+
+        var doc = await client.GetFromJsonAsync<JsonDocument>(
+            JwksPath, TestContext.Current.CancellationToken);
+        var parts = token.Value.Split('.');
+        using var header = JsonDocument.Parse(Base64Url.DecodeFromChars(parts[0]));
+        var tokenKid = header.RootElement.GetProperty("kid").GetString();
+        var jwk = doc!.RootElement.GetProperty("keys").EnumerateArray()
+            .Single(key => key.GetProperty("kid").GetString() == tokenKid);
+
+        var signingInput = Encoding.ASCII.GetBytes($"{parts[0]}.{parts[1]}");
+        var signature = Base64Url.DecodeFromChars(parts[2]);
+        VerifyWithServedJwk(jwk, algorithm, signingInput, signature).Should().BeTrue(
+            because: "a relying party importing the served JWK must be able to verify the token");
+    }
+
+    private static bool VerifyWithServedJwk(
+        JsonElement jwk, SigningAlgorithm algorithm, byte[] signingInput, byte[] signature)
+    {
+        if (algorithm == SigningAlgorithm.RS256)
+        {
+            using var rsa = RSA.Create(new RSAParameters
+            {
+                Modulus = Base64Url.DecodeFromChars(jwk.GetProperty("n").GetString()),
+                Exponent = Base64Url.DecodeFromChars(jwk.GetProperty("e").GetString()),
+            });
+            return rsa.VerifyData(
+                signingInput, signature, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        }
+
+        var (curve, hash) = algorithm switch
+        {
+            SigningAlgorithm.ES256 => (ECCurve.NamedCurves.nistP256, HashAlgorithmName.SHA256),
+            SigningAlgorithm.ES384 => (ECCurve.NamedCurves.nistP384, HashAlgorithmName.SHA384),
+            _ => (ECCurve.NamedCurves.nistP521, HashAlgorithmName.SHA512),
+        };
+        jwk.GetProperty("crv").GetString().Should().Be(algorithm switch
+        {
+            SigningAlgorithm.ES256 => "P-256",
+            SigningAlgorithm.ES384 => "P-384",
+            _ => "P-521",
+        });
+        using var ecdsa = ECDsa.Create(new ECParameters
+        {
+            Curve = curve,
+            Q = new ECPoint
+            {
+                X = Base64Url.DecodeFromChars(jwk.GetProperty("x").GetString()),
+                Y = Base64Url.DecodeFromChars(jwk.GetProperty("y").GetString()),
+            },
+        });
+        return ecdsa.VerifyData(signingInput, signature, hash);
+    }
+
+    private sealed class SingleAlgorithmSigningKeySource : ISigningKeySource, IDisposable
+    {
+        private readonly SigningAlgorithm _algorithm;
+        private readonly RSA? _rsa;
+        private readonly ECDsa? _ecdsa;
+
+        public SingleAlgorithmSigningKeySource(SigningAlgorithm algorithm)
+        {
+            _algorithm = algorithm;
+            if (algorithm == SigningAlgorithm.RS256)
+                _rsa = RSA.Create(2048);
+            else
+                _ecdsa = ECDsa.Create(algorithm switch
+                {
+                    SigningAlgorithm.ES256 => ECCurve.NamedCurves.nistP256,
+                    SigningAlgorithm.ES384 => ECCurve.NamedCurves.nistP384,
+                    _ => ECCurve.NamedCurves.nistP521,
+                });
+        }
+
+        public ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+        {
+            var publicKey = _rsa is not null
+                ? PublicKeyParameters.FromRsa(_rsa.ExportParameters(includePrivateParameters: false))
+                : PublicKeyParameters.FromEc(_ecdsa!.ExportParameters(includePrivateParameters: false));
+            var current = new SourceKey(
+                new SourceKeyId("current-key"), _algorithm, publicKey, ExpiresAt: null);
+
+            return new ValueTask<SourceKeySet>(SourceKeySet.Create(previous: null, current, next: null));
+        }
+
+        public ValueTask<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
+        {
+            // A fresh private key instance: the ring owns and disposes what it is handed.
+            AsymmetricAlgorithm privateKey = _rsa is not null
+                ? RSA.Create(_rsa.ExportParameters(includePrivateParameters: true))
+                : ECDsa.Create(_ecdsa!.ExportParameters(includePrivateParameters: true));
+            return new ValueTask<ISigner>(new LocalSigner(_algorithm, privateKey));
+        }
+
+        public void Dispose()
+        {
+            _rsa?.Dispose();
+            _ecdsa?.Dispose();
+        }
+    }
+
+    // ── Advertised jwks_uri agreement ────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetJwks_serves_the_jwks_uri_the_discovery_document_advertises_for_a_path_bearing_Issuer()
+    {
+        using var factory = new TestWebAppFactory(opts => opts.Issuer = "https://test.example.com/tenant1");
+        using var client = CreateClient(factory);
+
+        var discovery = await client.GetFromJsonAsync<JsonDocument>(
+            "/tenant1/.well-known/openid-configuration", TestContext.Current.CancellationToken);
+        var jwksUri = new Uri(discovery!.RootElement.GetProperty("jwks_uri").GetString()!);
+
+        var response = await client.GetAsync(jwksUri.AbsolutePath, TestContext.Current.CancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var doc = await response.Content.ReadFromJsonAsync<JsonDocument>(
+            TestContext.Current.CancellationToken);
+        doc!.RootElement.GetProperty("keys").GetArrayLength().Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public async Task GetJwks_serves_the_jwks_uri_the_discovery_document_advertises_when_an_override_is_configured()
+    {
+        using var factory = new TestWebAppFactory(opts =>
+        {
+            opts.Issuer = "https://login.example.com";
+            opts.JwksEndpoint.Uri = "https://login.example.com/keys";
+        });
+        using var client = CreateClient(factory, "https://login.example.com");
+
+        var discovery = await client.GetFromJsonAsync<JsonDocument>(
+            "/.well-known/openid-configuration", TestContext.Current.CancellationToken);
+        var jwksUri = new Uri(discovery!.RootElement.GetProperty("jwks_uri").GetString()!);
+
+        jwksUri.Should().Be(new Uri("https://login.example.com/keys"));
+        var response = await client.GetAsync(jwksUri.AbsolutePath, TestContext.Current.CancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var doc = await response.Content.ReadFromJsonAsync<JsonDocument>(
+            TestContext.Current.CancellationToken);
+        doc!.RootElement.GetProperty("keys").GetArrayLength().Should().BeGreaterThan(0);
+    }
+
     // ── Routing ──────────────────────────────────────────────────────────────────────────────────
 
     [Fact]

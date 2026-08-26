@@ -26,6 +26,20 @@ public sealed class AuthorizationServerOptionsPostConfigurerTests
     }
 
     [Fact]
+    public void PostConfigure_canonicalizes_an_internationalized_host_to_its_punycode_form()
+    {
+        var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
+        options.DiscoveryDocument.CorsOrigins.Add("https://bücher.example");
+
+        PostConfigure(options);
+
+        // Browsers serialize the Origin header in punycode, so the stored canonical entry must
+        // be the A-label form or the allowlist entry could never match a real request.
+        options.DiscoveryDocument.CorsOrigins.Should().ContainSingle()
+            .Which.Should().Be("https://xn--bcher-kva.example");
+    }
+
+    [Fact]
     public void PostConfigure_canonicalizes_and_freezes_the_jwks_CORS_allow_list()
     {
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };

@@ -866,6 +866,8 @@ public sealed class AuthorizationServerOptionsValidatorTests
 
         result.Failed.Should().BeTrue();
         result.FailureMessage.Should().Contain("wildcard");
+        result.FailureMessage.Should().Contain("JwksEndpoint.CorsOrigins",
+            because: "with two allowlists, the failure must name the list the bad entry is in");
     }
 
     [Fact]

@@ -234,6 +234,23 @@ public sealed class DiscoveryEndpointTests : IDisposable
         response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
     }
 
+    // ── Anonymous access ──────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetDiscoveryDocument_returns_200_under_a_host_wide_fallback_authorization_policy()
+    {
+        using var factory = new TestWebAppFactoryWithFallbackAuthorizationPolicy();
+        using var client = CreateClient(factory);
+
+        // The canary proves the fallback policy is actually enforced on this host...
+        var hostRoute = await client.GetAsync("/host-route", TestContext.Current.CancellationToken);
+        hostRoute.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        // ...and the discovery document must remain anonymously readable regardless.
+        var response = await client.GetAsync(DiscoveryPath, TestContext.Current.CancellationToken);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
     // ── Path-bearing issuer ───────────────────────────────────────────────────────────────────────
 
     [Fact]

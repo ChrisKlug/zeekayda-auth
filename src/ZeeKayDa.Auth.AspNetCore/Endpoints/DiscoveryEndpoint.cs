@@ -38,15 +38,15 @@ internal sealed class DiscoveryEndpoint : IZeeKayDaEndpoint
         var issuerUri = EndpointRouteHelper.GetIssuerUri(_options);
         var routePath = EndpointRouteHelper.GetIssuerPathPrefixedRoute(issuerUri, WellKnownSuffix);
 
-        endpoints.MapGet(routePath, Handle).RequireIssuerHost(issuerUri);
+        // AllowAnonymous so a host-wide authorization fallback policy cannot turn discovery into a
+        // 401 — the document must stay publicly readable per OIDC Discovery 1.0.
+        endpoints.MapGet(routePath, Handle).RequireIssuerHost(issuerUri).AllowAnonymous();
     }
 
     private async ValueTask<IResult> Handle(
         IDiscoveryDocumentProvider provider,
         HttpContext context)
     {
-        // must-revalidate (not proxy-revalidate) so browser caches, not just CDN/proxy caches,
-        // are required to revalidate after the TTL expires.
         context.Response.Headers.CacheControl =
             CacheControlHeader.For(_options.Value.DiscoveryDocument.CacheMaxAge);
         CorsHeaders.Apply(context, _allowedOrigins);

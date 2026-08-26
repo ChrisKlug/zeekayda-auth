@@ -91,19 +91,16 @@ public static class JwkThumbprint
 
     /// <summary>
     /// Maps <paramref name="curve"/> to its RFC 7518 §6.2.1.1 JWK <c>crv</c> member name
-    /// (<c>"P-256"</c>, <c>"P-384"</c>, or <c>"P-521"</c>).
+    /// (<c>"P-256"</c>, <c>"P-384"</c>, or <c>"P-521"</c>) — the same table
+    /// <see cref="Compute(ECParameters)"/> uses internally, so a JWK Set producer and the
+    /// thumbprint can never disagree on a curve's name.
     /// </summary>
     /// <param name="curve">The EC curve. Must be one of NIST P-256, P-384, or P-521.</param>
     /// <returns>The JWK <c>crv</c> name.</returns>
     /// <exception cref="NotSupportedException">
     /// Thrown when the curve is not one of NIST P-256, P-384, or P-521.
     /// </exception>
-    /// <remarks>
-    /// Public so that a JWK Set producer (e.g. the JWKS endpoint) does not need to copy this table
-    /// across an assembly boundary — this is the same table <see cref="Compute(ECParameters)"/>
-    /// uses internally.
-    /// </remarks>
-    public static string GetJwkCurveName(ECCurve curve) => ResolveJwkCurveName(curve);
+    internal static string GetJwkCurveName(ECCurve curve) => ResolveJwkCurveName(curve);
 
     private static string ResolveJwkCurveName(ECCurve curve)
     {
