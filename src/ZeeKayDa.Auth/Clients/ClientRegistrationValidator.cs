@@ -375,8 +375,9 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
 
         // Nothing to be a subset of: no ring has read its source yet (a repository validating from
         // its own constructor, before startup verification runs) and the operator has stated no
-        // ceiling either. The issuance path enforces the client's set against the key that actually
-        // signs regardless.
+        // ceiling either. Nothing else enforces this set today — the token endpoint that will read
+        // it does not exist yet — so this is a genuinely unchecked window, not a check deferred to
+        // a later one.
         if (serverAlgorithms is null)
             return;
 
