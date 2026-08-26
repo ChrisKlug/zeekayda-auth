@@ -13,15 +13,17 @@ namespace ZeeKayDa.Auth.AspNetCore.Tests.Extensions;
 public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
 {
     [Fact]
-    public void AddZeeKayDaAuth_always_registers_CompositeClientSecretHasher()
+    public void AddZeeKayDaAuth_always_registers_ExceptionSanitizingDisabledWarningService_as_IStartupVerifier()
     {
-        // Verify the descriptor is always present so users get a clear "missing hasher"
-        // error on first use rather than a generic "service not registered" DI failure.
+        // The warning verifier reads the flag at startup and emits a warning only when the flag
+        // is set. It is always registered (unconditionally) so no additional method call is needed.
         var services = new ServiceCollection();
 
         services.AddZeeKayDaAuth(options => options.Issuer = "https://auth.example.com");
 
-        services.Should().Contain(sd => sd.ServiceType == typeof(CompositeClientSecretHasher));
+        services.Should().Contain(sd =>
+            sd.ServiceType == typeof(IStartupVerifier) &&
+            sd.ImplementationType == typeof(ExceptionSanitizingDisabledWarningService));
     }
 
     // ── IClientSecretFactory DI wiring (AC1–AC4, issue #135) ─────────────────────────────────────

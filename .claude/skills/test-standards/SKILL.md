@@ -43,10 +43,15 @@ On **non-security** types, the following are explicitly not wanted:
 - Any test locking behaviour you just *know* works — if it cannot meaningfully break, it is
   dead weight
 
-**Security-surface carve-out:** `docs/decisions/security-sign-offs.md` cites tests by name as
-proof of closed threats. Those tests are the durable record of the decision and stay regardless
-of which category they fall into. On security surfaces generally (tokens, crypto, endpoints,
-storage), guard-clause and fail-closed trivia can be exactly what locks the decision — keep them.
+**Security-surface carve-out:** `docs/decisions/security-sign-offs.md` cites tests as proof of
+closed threats — by method name, by class name, or by wildcard. Any test a citation covers is the
+durable record of the decision and stays regardless of which category it falls into; renaming one
+breaks its citation, so the register is re-checked on rename. Security surfaces include tokens,
+crypto, endpoints, storage, **startup verification and configuration-failure aggregation, and the
+registration of any security control or its warning service**. On those surfaces the rule is
+binding, not advisory: keep every test whose failure would let a control fail open or go
+unregistered — a "does AddX register the control?" test is control-presence, not a DI-resolution
+assertion, even though it looks like one.
 
 When in doubt, keep the test.
 
