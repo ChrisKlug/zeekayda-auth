@@ -67,6 +67,8 @@ internal sealed class StartupVerificationHostedService(
         // it runs every check's constructor, including third-party ones, and a constructor is free
         // to log — deferring the resolution until after the gate phase is what makes "nothing logs
         // before the gate has passed" true of check construction, not merely of check execution.
+        RejectChecksRegisteredAsTheBaseInterface();
+
         await RunPhaseAsync(rootServices.GetServices<IStartupVerifier>(), cancellationToken)
             .ConfigureAwait(false);
 
@@ -74,6 +76,32 @@ internal sealed class StartupVerificationHostedService(
         // reaches the checks that call into caller-supplied extension points.
         await RunPhaseAsync(rootServices.GetServices<IStartupActivator>(), cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Rejects a check registered against <see cref="IStartupCheck"/> itself.
+    /// </summary>
+    /// <remarks>
+    /// The runner enumerates <see cref="IStartupVerifier"/> and <see cref="IStartupActivator"/>, and
+    /// Microsoft.Extensions.DependencyInjection does not resolve a derived registration for a base
+    /// service type — so <c>AddSingleton&lt;IStartupCheck, MyCheck&gt;()</c> compiles, reads as
+    /// correct, and silently never runs. A startup check that never runs is the one failure mode this
+    /// whole subsystem exists to prevent, so it fails the host rather than relying on a doc comment
+    /// saying not to.
+    /// </remarks>
+    private void RejectChecksRegisteredAsTheBaseInterface()
+    {
+        var misregistered = rootServices.GetServices<IStartupCheck>().ToArray();
+        if (misregistered.Length == 0)
+            return;
+
+        throw new ZeeKayDaConfigurationException(
+            [.. misregistered.Select(check => new ZeeKayDaConfigurationFailure(
+                "startup.check_registered_as_base_interface",
+                $"'{check.GetType().FullName}' is registered as {nameof(IStartupCheck)}, which the " +
+                $"runner never enumerates, so it would never run. Register it as " +
+                $"{nameof(IStartupVerifier)} if it only reads options or inspects the container, or " +
+                $"as {nameof(IStartupActivator)} if it calls into a caller-supplied extension point."))]);
     }
 
     /// <summary>

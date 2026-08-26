@@ -847,4 +847,19 @@ public sealed class ZeeKayDaSigningKeyServiceCollectionExtensionsTests
         public abstract ValueTask<ISigner> CreateSignerAsync(
             SourceKeyId id, CancellationToken cancellationToken = default);
     }
+
+    [Fact]
+    public void AddZeeKayDaAuthCore_registers_the_ring_activator_for_a_manually_registered_ring()
+    {
+        // StaticSigningKeyRing has a public constructor, so a host can register an ISigningKeyRing
+        // without AddZeeKayDaSigningKeySource. Without this registration that ring would never be
+        // initialized or self-tested, and the host would start with an uninitialized ring.
+        var services = new ServiceCollection();
+
+        services.AddZeeKayDaAuthCore();
+
+        services.Should().Contain(
+            d => d.ServiceType == typeof(IStartupActivator)
+                 && d.ImplementationType == typeof(SigningKeyRingStartupVerifier));
+    }
 }

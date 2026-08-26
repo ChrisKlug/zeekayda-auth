@@ -523,4 +523,37 @@ public sealed class StartupVerificationHostedServiceTests
         sink.Entries.Should().ContainSingle(
             "a warning is only buffered once an earlier gate passed, so the logger is already known good");
     }
+
+    // ── A check registered as the base interface never runs, so it fails the host ────────────────
+
+    [Fact]
+    public async Task StartAsync_fails_when_a_check_is_registered_as_IStartupCheck()
+    {
+        // AddSingleton<IStartupCheck, X>() compiles and reads as correct, but MS.DI does not resolve
+        // a derived registration for a base service type, so the runner would never enumerate it.
+        var check = new DelegatingVerifier("Misregistered", _ => ValueTask.CompletedTask);
+        using var provider = BuildProviderWithSanitizingLogging(
+            out _, services => services.AddSingleton<IStartupCheck>(check));
+        var sut = new StartupVerificationHostedService([], provider, provider.GetRequiredService<IServiceScopeFactory>());
+
+        var act = async () => await sut.StartAsync(TestContext.Current.CancellationToken);
+
+        var failure = (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .Which.AggregatedFailures.Should().ContainSingle().Subject;
+        failure.Code.Should().Be("startup.check_registered_as_base_interface");
+        failure.Message.Should().Contain(typeof(DelegatingVerifier).FullName!);
+    }
+
+    [Fact]
+    public async Task StartAsync_runs_normally_when_no_check_is_registered_as_IStartupCheck()
+    {
+        var verifier = new DelegatingVerifier("Fine", _ => ValueTask.CompletedTask);
+        using var provider = BuildProviderWithSanitizingLogging(
+            out _, services => services.AddSingleton<IStartupVerifier>(verifier));
+        var sut = new StartupVerificationHostedService([], provider, provider.GetRequiredService<IServiceScopeFactory>());
+
+        var act = async () => await sut.StartAsync(TestContext.Current.CancellationToken);
+
+        await act.Should().NotThrowAsync();
+    }
 }
