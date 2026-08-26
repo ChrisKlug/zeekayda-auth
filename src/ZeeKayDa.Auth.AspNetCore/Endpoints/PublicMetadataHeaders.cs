@@ -4,8 +4,7 @@ namespace ZeeKayDa.Auth.AspNetCore.Endpoints;
 
 /// <summary>
 /// Writes the response headers every public metadata endpoint (discovery, JWKS) carries: the
-/// <c>Cache-Control</c> directive and the CORS headers. One call, so an endpoint cannot apply one
-/// half of the treatment and forget the other.
+/// <c>Cache-Control</c> directive and the CORS headers.
 /// </summary>
 internal static class PublicMetadataHeaders
 {
