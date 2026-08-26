@@ -402,18 +402,6 @@ public sealed class AuthorizationCodeStoreTests
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
 
-    // ── Sealing member ───────────────────────────────────────────────────────────────────────────
-
-    [Fact]
-    public void SealAsFrameworkOwnedProtocol_can_be_invoked_through_the_interface_without_throwing()
-    {
-        IAuthorizationCodeStore store = CreateStore();
-
-        var act = () => store.SealAsFrameworkOwnedProtocol();
-
-        act.Should().NotThrow();
-    }
-
     // ── §8 cancellation is not a store fault ──────────────────────────────────────────────────────
 
     [Fact]

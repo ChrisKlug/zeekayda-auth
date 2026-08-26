@@ -28,6 +28,33 @@ These standards apply to **every test written in this repository**, regardless o
 - Prove that tampered tokens fail validation
 - Prove that timing attacks are not possible on secret comparison
 
+## When a test is NOT wanted
+
+Tests are written for behaviour that can plausibly break, or to record a security decision —
+**never to reach a coverage number**. The coverage gate tolerates deliberately leaving obvious
+code untested; do not write a test whose only function is to satisfy it.
+
+On **non-security** types, the following are explicitly not wanted:
+
+- Guard-clause tests (`ArgumentNullException` / throws-on-null assertions)
+- DI-resolution assertions ("service X resolves from the container")
+- `ToString` tests
+- Trivial property round-trips and "constructor sets property" tests
+- Any test locking behaviour you just *know* works — if it cannot meaningfully break, it is
+  dead weight
+
+**Security-surface carve-out:** `docs/decisions/security-sign-offs.md` cites tests as proof of
+closed threats — by method name, by class name, or by wildcard. Any test a citation covers is the
+durable record of the decision and stays regardless of which category it falls into; renaming one
+breaks its citation, so the register is re-checked on rename. Security surfaces include tokens,
+crypto, endpoints, storage, **startup verification and configuration-failure aggregation, and the
+registration of any security control or its warning service**. On those surfaces the rule is
+binding, not advisory: keep every test whose failure would let a control fail open or go
+unregistered — a "does AddX register the control?" test is control-presence, not a DI-resolution
+assertion, even though it looks like one.
+
+When in doubt, keep the test.
+
 ## Quality Standards
 
 - Test method naming: readable English sentence style using underscores as word separators (e.g. `CreateConfidential_sets_IsPublic_to_false`, `Validate_returns_error_when_redirect_uri_is_missing`)

@@ -15,61 +15,6 @@ namespace ZeeKayDa.Auth.AspNetCore.Tests.Extensions;
 
 public sealed class ZeeKayDaAuthBuilderClientExtensionsTests
 {
-    // ── Argument validation ───────────────────────────────────────────────────────────────────────
-
-    [Fact]
-    public void AddInMemoryClients_throws_ArgumentNullException_if_builder_is_null()
-    {
-        ZeeKayDaAuthBuilder builder = null!;
-
-        var act = () => builder.AddInMemoryClients(_ => { });
-
-        act.Should().Throw<ArgumentNullException>().WithParameterName("builder");
-    }
-
-    [Fact]
-    public void AddInMemoryClients_throws_ArgumentNullException_if_configure_is_null()
-    {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddOptions();
-        var builder = new ZeeKayDaAuthBuilder(services);
-
-        var act = () => builder.AddInMemoryClients(null!);
-
-        act.Should().Throw<ArgumentNullException>().WithParameterName("configure");
-    }
-
-    // ── IClientRepository registration ───────────────────────────────────────────────────────────
-
-    [Fact]
-    public void AddInMemoryClients_registers_IClientRepository()
-    {
-        var services = new ServiceCollection();
-
-        services.AddZeeKayDaAuth(o => o.Issuer = "https://test.example.com")
-            .AddInMemoryClients(clients =>
-                clients.AddPublic("client",
-                    ["https://app.example.com/cb"],
-                    [],
-                    ["openid"]));
-
-        services.Should().Contain(sd => sd.ServiceType == typeof(IClientRepository));
-    }
-
-    [Fact]
-    public void AddInMemoryClients_returns_builder_for_chaining()
-    {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddOptions();
-        var builder = new ZeeKayDaAuthBuilder(services);
-
-        var returned = builder.AddInMemoryClients(_ => { });
-
-        returned.Should().BeSameAs(builder);
-    }
-
     [Fact]
     public void AddInMemoryClients_throws_if_IClientRepository_is_already_registered()
     {

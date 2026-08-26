@@ -127,8 +127,9 @@ jobs:
       contents: read
       actions: read
     env:
-      # Allow minimal run-to-run coverage noise while still blocking meaningful regressions.
-      COVERAGE_ALLOWED_REGRESSION_PERCENT: '0.20'
+      # Tolerance covers run-to-run noise plus deliberately leaving obvious code untested (#560);
+      # meaningful regressions still fail the gate.
+      COVERAGE_ALLOWED_REGRESSION_PERCENT: '0.50'
 
     steps:
       - name: Checkout

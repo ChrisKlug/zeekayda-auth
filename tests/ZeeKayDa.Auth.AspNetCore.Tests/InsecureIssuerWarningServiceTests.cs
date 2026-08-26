@@ -54,20 +54,4 @@ public sealed class InsecureIssuerWarningServiceTests
         context.Warnings.Should().BeEmpty();
     }
 
-    [Fact]
-    public void Name_is_InsecureIssuer()
-    {
-        var sut = new InsecureIssuerWarningService(
-            Options.Create(new AuthorizationServerOptions { Issuer = "https://auth.example.com" }));
-
-        sut.Name.Should().Be("InsecureIssuer");
-    }
-
-    [Fact]
-    public void Constructor_throws_ArgumentNullException_when_options_is_null()
-    {
-        var act = () => new InsecureIssuerWarningService(null!);
-
-        act.Should().Throw<ArgumentNullException>().WithParameterName("options");
-    }
 }

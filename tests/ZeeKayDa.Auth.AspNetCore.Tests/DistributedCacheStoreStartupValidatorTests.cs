@@ -116,12 +116,4 @@ public sealed class DistributedCacheStoreStartupValidatorTests
         context.Warnings.Should().ContainSingle()
             .Which.MessageTemplate.Should().Be(DistributedCacheStoreStartupValidator.WarningMessage);
     }
-
-    [Fact]
-    public void Name_is_DistributedCacheStore()
-    {
-        var sut = new DistributedCacheStoreStartupValidator();
-
-        sut.Name.Should().Be("DistributedCacheStore");
-    }
 }

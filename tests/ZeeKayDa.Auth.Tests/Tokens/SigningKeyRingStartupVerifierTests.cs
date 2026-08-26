@@ -276,12 +276,4 @@ public sealed class SigningKeyRingStartupVerifierTests
         context.Failures.Should().BeEmpty();
         context.Warnings.Should().BeEmpty();
     }
-
-    [Fact]
-    public void Name_is_SigningKeyRing()
-    {
-        var sut = new SigningKeyRingStartupVerifier();
-
-        sut.Name.Should().Be("SigningKeyRing");
-    }
 }

@@ -19,14 +19,6 @@ public sealed class CertificateLookupTests
         lookup.Should().BeOfType<ThumbprintCertificateLookup>().Subject.Thumbprint;
 
     [Fact]
-    public void ByThumbprint_returns_a_thumbprint_lookup()
-    {
-        // The factory's declared return type is the base, so that adding a lookup mode later is a
-        // pure addition; the mode it actually built is still observable.
-        CertificateLookup.ByThumbprint(CleanThumbprint).Should().BeOfType<ThumbprintCertificateLookup>();
-    }
-
-    [Fact]
     public void ByThumbprint_keeps_an_already_clean_thumbprint_unchanged()
     {
         ThumbprintOf(CertificateLookup.ByThumbprint(CleanThumbprint)).Should().Be(CleanThumbprint);
@@ -168,11 +160,5 @@ public sealed class CertificateLookupTests
 
         lookup.GetHashCode().Should().NotBe(StringComparer.Ordinal.GetHashCode(CleanThumbprint),
             "the mode is folded in, so a second mode wrapping the same string hashes differently");
-    }
-
-    [Fact]
-    public void ToString_names_the_thumbprint_for_diagnostics()
-    {
-        CertificateLookup.ByThumbprint(CleanThumbprint).ToString().Should().Contain(CleanThumbprint);
     }
 }

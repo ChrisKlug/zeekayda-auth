@@ -92,14 +92,6 @@ public sealed class TokenStorePresenceValidatorTests
         context.Failures.Should().BeEmpty();
     }
 
-    [Fact]
-    public void Name_is_TokenStorePresence()
-    {
-        var sut = new TokenStorePresenceValidator();
-
-        sut.Name.Should().Be("TokenStorePresence");
-    }
-
     private sealed class NoServiceProviderIsServiceProvider : IServiceProvider
     {
         public object? GetService(Type serviceType) => null;

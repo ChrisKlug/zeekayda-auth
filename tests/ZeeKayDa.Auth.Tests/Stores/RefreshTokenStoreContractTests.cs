@@ -13,17 +13,6 @@ public sealed class RefreshTokenStoreContractTests
     // ── RefreshTokenEntry — type shape ────────────────────────────────────────────────────────────
 
     [Fact]
-    public void RefreshTokenEntry_is_a_sealed_record()
-    {
-        var type = typeof(RefreshTokenEntry);
-
-        type.IsSealed.Should().BeTrue();
-        type.IsValueType.Should().BeFalse();
-        type.GetMethod("<Clone>$").Should().NotBeNull(
-            "the presence of <Clone>$ is the canonical way to confirm a type is a record at runtime");
-    }
-
-    [Fact]
     public void RefreshTokenEntry_FamilyId_is_a_required_init_only_property()
     {
         var prop = typeof(RefreshTokenEntry).GetProperty(nameof(RefreshTokenEntry.FamilyId));
@@ -125,70 +114,7 @@ public sealed class RefreshTokenStoreContractTests
             .Should().BeNull("PreviousTokenHandleHash is optional");
     }
 
-    // ── RefreshTokenEntry — record equality and defaults ──────────────────────────────────────────
-
-    [Fact]
-    public void RefreshTokenEntry_two_instances_with_same_values_are_equal()
-    {
-        var now = DateTimeOffset.UtcNow;
-        IReadOnlyList<string> scope = ["openid", "profile"];
-
-        var a = BuildEntry(scope: scope, now: now);
-        var b = BuildEntry(scope: scope, now: now);
-
-        a.Should().Be(b);
-        (a == b).Should().BeTrue();
-    }
-
-    [Fact]
-    public void RefreshTokenEntry_two_instances_with_different_FamilyId_are_not_equal()
-    {
-        var a = BuildEntry();
-        var b = a with { FamilyId = "fam-2" };
-
-        a.Should().NotBe(b);
-    }
-
-    [Fact]
-    public void RefreshTokenEntry_PreviousTokenHandleHash_defaults_to_null_when_not_set()
-    {
-        var entry = BuildEntry();
-
-        entry.PreviousTokenHandleHash.Should().BeNull();
-    }
-
-    [Fact]
-    public void RefreshTokenEntry_with_PreviousTokenHandleHash_set_equals_another_instance_with_same_hash()
-    {
-        var a = BuildEntry() with { PreviousTokenHandleHash = "abc123" };
-        var b = a with { };
-
-        a.Should().Be(b);
-    }
-
-    private static RefreshTokenEntry BuildEntry(IReadOnlyList<string>? scope = null, DateTimeOffset? now = null)
-    {
-        var n = now ?? DateTimeOffset.UtcNow;
-        return new RefreshTokenEntry
-        {
-            FamilyId = "fam-1",
-            ClientId = "client-1",
-            Sub = "user-1",
-            Scope = scope ?? ["openid"],
-            SsoSessionId = "sso-1",
-            IssuedAt = n,
-            ExpiresAt = n.AddHours(1),
-            FamilyAbsoluteExpiry = n.AddDays(90),
-        };
-    }
-
     // ── RefreshTokenConsumptionResult — type hierarchy ───────────────────────────────────────────
-
-    [Fact]
-    public void RefreshTokenConsumptionResult_is_abstract()
-    {
-        typeof(RefreshTokenConsumptionResult).IsAbstract.Should().BeTrue();
-    }
 
     [Fact]
     public void RefreshTokenConsumptionResult_has_exactly_one_constructor_and_it_is_private()
@@ -200,66 +126,6 @@ public sealed class RefreshTokenStoreContractTests
             "the type must have exactly one constructor to be a closed hierarchy");
         allCtors[0].IsPrivate.Should().BeTrue(
             "a private constructor prevents any subtype from being declared outside the assembly");
-    }
-
-    [Fact]
-    public void RefreshTokenConsumptionResult_Consumed_is_sealed()
-    {
-        typeof(RefreshTokenConsumptionResult.Consumed).IsSealed.Should().BeTrue();
-    }
-
-    [Fact]
-    public void RefreshTokenConsumptionResult_ClientMismatch_is_sealed()
-    {
-        typeof(RefreshTokenConsumptionResult.ClientMismatch).IsSealed.Should().BeTrue();
-    }
-
-    [Fact]
-    public void RefreshTokenConsumptionResult_AlreadyConsumed_is_sealed()
-    {
-        typeof(RefreshTokenConsumptionResult.AlreadyConsumed).IsSealed.Should().BeTrue();
-    }
-
-    [Fact]
-    public void RefreshTokenConsumptionResult_Revoked_is_sealed()
-    {
-        typeof(RefreshTokenConsumptionResult.Revoked).IsSealed.Should().BeTrue();
-    }
-
-    [Fact]
-    public void RefreshTokenConsumptionResult_NotFound_is_sealed()
-    {
-        typeof(RefreshTokenConsumptionResult.NotFound).IsSealed.Should().BeTrue();
-    }
-
-    [Fact]
-    public void RefreshTokenConsumptionResult_Consumed_inherits_from_RefreshTokenConsumptionResult()
-    {
-        typeof(RefreshTokenConsumptionResult.Consumed).Should().BeAssignableTo<RefreshTokenConsumptionResult>();
-    }
-
-    [Fact]
-    public void RefreshTokenConsumptionResult_ClientMismatch_inherits_from_RefreshTokenConsumptionResult()
-    {
-        typeof(RefreshTokenConsumptionResult.ClientMismatch).Should().BeAssignableTo<RefreshTokenConsumptionResult>();
-    }
-
-    [Fact]
-    public void RefreshTokenConsumptionResult_AlreadyConsumed_inherits_from_RefreshTokenConsumptionResult()
-    {
-        typeof(RefreshTokenConsumptionResult.AlreadyConsumed).Should().BeAssignableTo<RefreshTokenConsumptionResult>();
-    }
-
-    [Fact]
-    public void RefreshTokenConsumptionResult_Revoked_inherits_from_RefreshTokenConsumptionResult()
-    {
-        typeof(RefreshTokenConsumptionResult.Revoked).Should().BeAssignableTo<RefreshTokenConsumptionResult>();
-    }
-
-    [Fact]
-    public void RefreshTokenConsumptionResult_NotFound_inherits_from_RefreshTokenConsumptionResult()
-    {
-        typeof(RefreshTokenConsumptionResult.NotFound).Should().BeAssignableTo<RefreshTokenConsumptionResult>();
     }
 
     // ── RefreshTokenConsumptionResult — subtype properties ────────────────────────────────────────
@@ -321,15 +187,6 @@ public sealed class RefreshTokenStoreContractTests
     // ── RefreshTokenGrant — type shape ────────────────────────────────────────────────────────────
 
     [Fact]
-    public void RefreshTokenGrant_is_a_sealed_record()
-    {
-        var type = typeof(RefreshTokenGrant);
-
-        type.IsSealed.Should().BeTrue();
-        type.GetMethod("<Clone>$").Should().NotBeNull();
-    }
-
-    [Fact]
     public void RefreshTokenGrant_HandleHash_is_of_type_StoreKey()
     {
         var prop = typeof(RefreshTokenGrant).GetProperty(nameof(RefreshTokenGrant.HandleHash));
@@ -379,93 +236,12 @@ public sealed class RefreshTokenStoreContractTests
     // ── RefreshGrantStatus — enum shape ────────────────────────────────────────────────────────────
 
     [Fact]
-    public void RefreshGrantStatus_has_exactly_three_members()
-    {
-        Enum.GetValues<RefreshGrantStatus>().Should().HaveCount(3);
-    }
-
-    [Fact]
     public void RefreshGrantStatus_Active_is_zero()
     {
         ((int)RefreshGrantStatus.Active).Should().Be(0, "Active must be the enum default value");
     }
 
-    [Fact]
-    public void RefreshGrantStatus_Consumed_and_Revoked_are_distinct_terminal_states()
-    {
-        ((int)RefreshGrantStatus.Consumed).Should().NotBe((int)RefreshGrantStatus.Revoked);
-    }
-
-    // ── IRefreshTokenStore — method signatures ────────────────────────────────────────────────────
-
-    [Fact]
-    public void IRefreshTokenStore_is_an_interface()
-    {
-        typeof(IRefreshTokenStore).IsInterface.Should().BeTrue();
-    }
-
-    [Fact]
-    public void IRefreshTokenStore_StoreAsync_has_correct_signature()
-    {
-        var method = typeof(IRefreshTokenStore).GetMethod(
-            nameof(IRefreshTokenStore.StoreAsync),
-            new[] { typeof(string), typeof(RefreshTokenEntry), typeof(CancellationToken) });
-
-        method.Should().NotBeNull("StoreAsync must be declared on IRefreshTokenStore");
-        method!.ReturnType.Should().Be(typeof(Task), "StoreAsync must return Task (not ValueTask)");
-    }
-
-    [Fact]
-    public void IRefreshTokenStore_FindAsync_has_correct_signature()
-    {
-        var method = typeof(IRefreshTokenStore).GetMethod(
-            nameof(IRefreshTokenStore.FindAsync),
-            new[] { typeof(string), typeof(CancellationToken) });
-
-        method.Should().NotBeNull("FindAsync must be declared on IRefreshTokenStore");
-        method!.ReturnType.Should().Be(typeof(ValueTask<RefreshTokenEntry?>));
-    }
-
-    [Fact]
-    public void IRefreshTokenStore_TryConsumeAsync_has_correct_signature()
-    {
-        var method = typeof(IRefreshTokenStore).GetMethod(
-            nameof(IRefreshTokenStore.TryConsumeAsync),
-            new[] { typeof(string), typeof(string), typeof(CancellationToken) });
-
-        method.Should().NotBeNull("TryConsumeAsync must be declared on IRefreshTokenStore");
-        method!.ReturnType.Should().Be(typeof(ValueTask<RefreshTokenConsumptionResult>),
-            "TryConsumeAsync must return ValueTask<RefreshTokenConsumptionResult>");
-    }
-
-    [Fact]
-    public void IRefreshTokenStore_RevokeFamilyAsync_has_correct_signature()
-    {
-        var method = typeof(IRefreshTokenStore).GetMethod(
-            nameof(IRefreshTokenStore.RevokeFamilyAsync),
-            new[] { typeof(string), typeof(CancellationToken) });
-
-        method.Should().NotBeNull("RevokeFamilyAsync must be declared on IRefreshTokenStore");
-        method!.ReturnType.Should().Be(typeof(Task), "RevokeFamilyAsync must return Task (not ValueTask)");
-    }
-
-    [Fact]
-    public void IRefreshTokenStore_has_exactly_four_public_methods()
-    {
-        var methods = typeof(IRefreshTokenStore).GetMethods(BindingFlags.Public | BindingFlags.Instance);
-
-        methods.Should().HaveCount(4,
-            "the public contract defines exactly four methods: StoreAsync, FindAsync, TryConsumeAsync, RevokeFamilyAsync; " +
-            "SealAsFrameworkOwnedProtocol is internal and deliberately excluded from this count");
-    }
-
     // ── IRefreshTokenGrantStore — method signatures ───────────────────────────────────────────────
-
-    [Fact]
-    public void IRefreshTokenGrantStore_is_an_interface()
-    {
-        typeof(IRefreshTokenGrantStore).IsInterface.Should().BeTrue();
-    }
 
     [Fact]
     public void IRefreshTokenGrantStore_has_exactly_six_methods()
@@ -477,26 +253,4 @@ public sealed class RefreshTokenStoreContractTests
             "IsFamilyRevokedAsync (amended by issue #386)");
     }
 
-    [Fact]
-    public void IRefreshTokenGrantStore_TryMarkConsumedAsync_returns_ValueTask_of_bool()
-    {
-        var method = typeof(IRefreshTokenGrantStore).GetMethod(
-            nameof(IRefreshTokenGrantStore.TryMarkConsumedAsync),
-            new[] { typeof(StoreKey), typeof(CancellationToken) });
-
-        method.Should().NotBeNull();
-        method!.ReturnType.Should().Be(typeof(ValueTask<bool>),
-            "TryMarkConsumedAsync reports whether THIS call performed the CAS transition");
-    }
-
-    [Fact]
-    public void IRefreshTokenGrantStore_FindByHandleAsync_returns_ValueTask_of_nullable_RefreshTokenGrant()
-    {
-        var method = typeof(IRefreshTokenGrantStore).GetMethod(
-            nameof(IRefreshTokenGrantStore.FindByHandleAsync),
-            new[] { typeof(StoreKey), typeof(CancellationToken) });
-
-        method.Should().NotBeNull();
-        method!.ReturnType.Should().Be(typeof(ValueTask<RefreshTokenGrant?>));
-    }
 }

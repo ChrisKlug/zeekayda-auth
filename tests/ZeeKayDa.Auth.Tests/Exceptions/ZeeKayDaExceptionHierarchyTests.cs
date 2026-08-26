@@ -2,45 +2,7 @@ namespace ZeeKayDa.Auth.Tests.Exceptions;
 
 public sealed class ZeeKayDaExceptionHierarchyTests
 {
-    // ── Type hierarchy ────────────────────────────────────────────────────────────────────────────
-
-    [Fact]
-    public void ZeeKayDaConfigurationException_is_assignable_to_ZeeKayDaException()
-    {
-        typeof(ZeeKayDaConfigurationException).Should().BeAssignableTo<ZeeKayDaException>();
-    }
-
-    [Fact]
-    public void ZeeKayDaInteractionException_is_assignable_to_ZeeKayDaException()
-    {
-        typeof(ZeeKayDaInteractionException).Should().BeAssignableTo<ZeeKayDaException>();
-    }
-
-    [Fact]
-    public void ZeeKayDaException_is_abstract()
-    {
-        typeof(ZeeKayDaException).IsAbstract.Should().BeTrue();
-    }
-
     // ── ZeeKayDaConfigurationException ───────────────────────────────────────────────────────────
-
-    [Fact]
-    public void ZeeKayDaConfigurationException_can_be_caught_as_ZeeKayDaException()
-    {
-        Action act = () => throw new ZeeKayDaConfigurationException(
-            new ZeeKayDaConfigurationFailure("test.code", "test message"));
-
-        act.Should().Throw<ZeeKayDaException>();
-    }
-
-    [Fact]
-    public void ZeeKayDaConfigurationException_Message_contains_failure_count()
-    {
-        var ex = new ZeeKayDaConfigurationException(
-            new ZeeKayDaConfigurationFailure("test.code", "test message"));
-
-        ex.Message.Should().Be("1 configuration error(s):\n  [test.code] test message");
-    }
 
     [Fact]
     public void ZeeKayDaConfigurationException_Message_contains_count_for_multiple_failures()
@@ -53,6 +15,11 @@ public sealed class ZeeKayDaExceptionHierarchyTests
             "2 configuration error(s):\n  [code.a] message a\n  [code.b] message b");
     }
 
+    // The non-empty invariant is what lets StartupVerificationHostedService treat an absorbed
+    // ZeeKayDaConfigurationException as always contributing at least one failure; a zero-failure
+    // instance would let a failed startup check pass silently. Locked on every constructor
+    // overload through which an empty failure set is expressible.
+
     [Fact]
     public void ZeeKayDaConfigurationException_throws_when_constructed_with_zero_failures()
     {
@@ -63,16 +30,13 @@ public sealed class ZeeKayDaExceptionHierarchyTests
     }
 
     [Fact]
-    public void ZeeKayDaConfigurationException_AggregatedFailures_contains_all_passed_failures()
+    public void ZeeKayDaConfigurationException_list_overload_throws_when_failures_is_empty()
     {
-        var f1 = new ZeeKayDaConfigurationFailure("code.a", "message a");
-        var f2 = new ZeeKayDaConfigurationFailure("code.b", "message b");
+        Action act = () => throw new ZeeKayDaConfigurationException(
+            Array.Empty<ZeeKayDaConfigurationFailure>(), new InvalidOperationException("root cause"));
 
-        var ex = new ZeeKayDaConfigurationException(f1, f2);
-
-        ex.AggregatedFailures.Should().HaveCount(2);
-        ex.AggregatedFailures[0].Should().Be(f1);
-        ex.AggregatedFailures[1].Should().Be(f2);
+        act.Should().Throw<ArgumentException>()
+            .WithParameterName("failures");
     }
 
     [Fact]
@@ -85,126 +49,5 @@ public sealed class ZeeKayDaExceptionHierarchyTests
         // Mutating the original array should not affect AggregatedFailures
         failures[0] = new ZeeKayDaConfigurationFailure("code.mutated", "mutated");
         ex.AggregatedFailures[0].Code.Should().Be("code.a");
-    }
-
-    [Fact]
-    public void ZeeKayDaConfigurationException_with_inner_exception_preserves_it()
-    {
-        var innerException = new InvalidOperationException("root cause");
-
-        var ex = new ZeeKayDaConfigurationException(
-            new ZeeKayDaConfigurationFailure("test.code", "test message"), innerException);
-
-        ex.InnerException.Should().BeSameAs(innerException);
-    }
-
-    [Fact]
-    public void ZeeKayDaConfigurationException_with_inner_exception_sets_Message_and_AggregatedFailures()
-    {
-        var failure = new ZeeKayDaConfigurationFailure("test.code", "test message");
-
-        var ex = new ZeeKayDaConfigurationException(failure, new InvalidOperationException("root cause"));
-
-        ex.Message.Should().Be("1 configuration error(s):\n  [test.code] test message");
-        ex.AggregatedFailures.Should().ContainSingle().Which.Should().Be(failure);
-    }
-
-    // ── ZeeKayDaInteractionException ─────────────────────────────────────────────────────────────
-
-    [Fact]
-    public void ZeeKayDaInteractionException_can_be_caught_as_ZeeKayDaException()
-    {
-        Action act = () => throw new ZeeKayDaInteractionException("test");
-
-        act.Should().Throw<ZeeKayDaException>();
-    }
-
-    [Fact]
-    public void ZeeKayDaInteractionException_preserves_Message()
-    {
-        const string message = "Interaction API called in wrong state.";
-
-        var ex = new ZeeKayDaInteractionException(message);
-
-        ex.Message.Should().Be(message);
-    }
-
-    [Fact]
-    public void ZeeKayDaInteractionException_preserves_InnerException()
-    {
-        var inner = new InvalidOperationException("inner");
-
-        var ex = new ZeeKayDaInteractionException("outer", inner);
-
-        ex.InnerException.Should().BeSameAs(inner);
-    }
-
-    // ── ZeeKayDaStoreException ───────────────────────────────────────────────────────────────────
-
-    [Fact]
-    public void ZeeKayDaStoreException_is_assignable_to_ZeeKayDaException()
-    {
-        typeof(ZeeKayDaStoreException).Should().BeAssignableTo<ZeeKayDaException>();
-    }
-
-    [Fact]
-    public void ZeeKayDaStoreException_can_be_instantiated_with_message()
-    {
-        var ex = new ZeeKayDaStoreException("store failure");
-
-        ex.Should().NotBeNull();
-    }
-
-    [Fact]
-    public void ZeeKayDaStoreException_preserves_Message()
-    {
-        const string message = "Redis connection timed out.";
-
-        var ex = new ZeeKayDaStoreException(message);
-
-        ex.Message.Should().Be(message);
-    }
-
-    [Fact]
-    public void ZeeKayDaStoreException_can_be_instantiated_with_message_and_inner_exception()
-    {
-        var inner = new InvalidOperationException("inner");
-
-        var ex = new ZeeKayDaStoreException("store failure", inner);
-
-        ex.Should().NotBeNull();
-    }
-
-    [Fact]
-    public void ZeeKayDaStoreException_preserves_InnerException()
-    {
-        var inner = new InvalidOperationException("inner");
-
-        var ex = new ZeeKayDaStoreException("store failure", inner);
-
-        ex.InnerException.Should().BeSameAs(inner);
-    }
-
-    [Fact]
-    public void ZeeKayDaStoreException_can_be_caught_as_ZeeKayDaException()
-    {
-        Action act = () => throw new ZeeKayDaStoreException("store failure");
-
-        act.Should().Throw<ZeeKayDaException>();
-    }
-
-    [Fact]
-    public void ZeeKayDaStoreException_can_be_subclassed()
-    {
-        // Verifies the class is not sealed — a subclass defined here can be instantiated.
-        var ex = new TestStoreException("subclass message");
-
-        ex.Should().BeAssignableTo<ZeeKayDaStoreException>();
-        ex.Message.Should().Be("subclass message");
-    }
-
-    private sealed class TestStoreException : ZeeKayDaStoreException
-    {
-        public TestStoreException(string message) : base(message) { }
     }
 }
