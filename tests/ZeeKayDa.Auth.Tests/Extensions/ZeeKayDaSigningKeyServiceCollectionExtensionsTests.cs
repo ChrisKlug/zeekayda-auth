@@ -699,6 +699,47 @@ public sealed class ZeeKayDaSigningKeyServiceCollectionExtensionsTests
             .WithMessage($"*{nameof(ZeeKayDaSigningKeyServiceCollectionExtensions.AddZeeKayDaSigningKeySource)}*");
     }
 
+    /// <summary>
+    /// The guard's message names the manual registration so an operator can find it. A factory
+    /// registration has no known implementation type, so the message describes its shape instead —
+    /// the arm the type-registered case above never reaches.
+    /// </summary>
+    [Fact]
+    public void The_manual_ring_rejection_describes_a_factory_registration_by_shape()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<ISigningKeyRing>(_ => throw new NotSupportedException("must not be constructed"));
+
+        var act = () => services.AddZeeKayDaSigningKeySource<ExternalSigningKeySource>();
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*a factory registration with no known implementation type*");
+    }
+
+    [Fact]
+    public void The_manual_ring_rejection_describes_an_instance_registration_by_its_runtime_type()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<ISigningKeyRing>(new FakeSigningKeyRing());
+
+        var act = () => services.AddZeeKayDaSigningKeySource<ExternalSigningKeySource>();
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage($"*an instance of *{nameof(FakeSigningKeyRing)}*");
+    }
+
+    [Fact]
+    public void The_manual_ring_rejection_describes_a_type_registration_by_its_implementation_type()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<ISigningKeyRing, FakeSigningKeyRing>();
+
+        var act = () => services.AddZeeKayDaSigningKeySource<ExternalSigningKeySource>();
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage($"*{nameof(FakeSigningKeyRing)}*");
+    }
+
     [Fact]
     public void AddZeeKayDaSigningKeySource_is_not_rejected_by_a_keyed_ISigningKeyRing_registration()
     {

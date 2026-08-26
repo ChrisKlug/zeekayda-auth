@@ -72,11 +72,6 @@ public static class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensions
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(credential);
 
-        // Transitional, removed with IJwtSigningService itself in #511. No first-party provider
-        // registers an IJwtSigningService any more; this rejects a composition where the
-        // application still carries a third-party provider on the old contract, which
-        // AddZeeKayDaSigningKeySource below cannot see.
-        builder.ThrowIfAlreadyRegistered(typeof(IJwtSigningService));
 
         // Registered first so a second signing key source is rejected before this method applies any
         // of its own configuration — a caller that catches the rejection must not be left with this
@@ -174,11 +169,6 @@ public static class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensions
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(credential);
 
-        // Transitional, removed with IJwtSigningService itself in #511. No first-party provider
-        // registers an IJwtSigningService any more; this rejects a composition where the
-        // application still carries a third-party provider on the old contract, which
-        // AddZeeKayDaSigningKeySource below cannot see.
-        builder.ThrowIfAlreadyRegistered(typeof(IJwtSigningService));
 
         // Registered first so a second signing key source is rejected before this method applies any
         // of its own configuration — a caller that catches the rejection must not be left with this

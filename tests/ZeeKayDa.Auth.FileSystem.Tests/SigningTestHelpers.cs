@@ -28,20 +28,6 @@ internal static class SigningTestHelpers
         return Convert.FromBase64String(text);
     }
 
-    /// <summary>
-    /// Verifies an RS256-signed <see cref="SigningResult"/> against the RSA public key carried by
-    /// <paramref name="descriptor"/>.
-    /// </summary>
-    public static bool VerifyRsaSignature(SigningKeyDescriptor descriptor, SigningResult result, byte[] payloadSegment)
-    {
-        descriptor.Algorithm.Should().Be(SigningAlgorithm.RS256, "this helper only verifies the RS256 signature shape");
-
-        using var rsa = RSA.Create(descriptor.RsaPublicParameters!.Value);
-        var signingInput = BuildSigningInput(result.HeaderSegment, payloadSegment);
-        var signature = Base64UrlDecode(result.SignatureSegment);
-
-        return rsa.VerifyData(signingInput, signature, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
-    }
 
     private static byte[] BuildSigningInput(ReadOnlyMemory<byte> headerSegment, byte[] payloadSegment)
     {

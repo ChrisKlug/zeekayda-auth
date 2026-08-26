@@ -3,9 +3,8 @@ using System.Security.Cryptography;
 namespace ZeeKayDa.Auth.Tokens;
 
 /// <summary>
-/// Public-only key parameters carried by a <see cref="KeyListing"/> — the same public material
-/// <see cref="SigningKeyDescriptor"/> carries, minus the <c>kid</c> and algorithm (those live on
-/// <see cref="KeyListing"/> itself).
+/// Public-only key parameters carried by a <see cref="SourceKey"/> — the public material minus
+/// the <c>kid</c> and algorithm, which live on <see cref="SourceKey"/> itself.
 /// </summary>
 /// <remarks>
 /// Never carries private key material. A provider builds an instance from an <see cref="RSA"/> or

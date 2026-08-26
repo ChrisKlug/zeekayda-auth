@@ -5,7 +5,7 @@ namespace ZeeKayDa.Auth.Tokens;
 /// <summary>
 /// The shipped <see cref="ISigner"/> implementation over a local, in-process RSA or ECDsa private
 /// key. Local providers (development, File/PEM, PFX, Windows Certificate Store) construct this in
-/// <see cref="JwtSigningService{TOptions}.CreateSignerAsync"/> and never implement
+/// <see cref="ISigningKeySource.CreateSignerAsync"/> and never implement
 /// <see cref="ISigner"/> themselves; only genuinely remote providers (Azure Key Vault remote
 /// signing, a KMS, an HSM) implement <see cref="ISigner"/> directly, since the private key never
 /// becomes local for those.

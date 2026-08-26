@@ -11,8 +11,8 @@ namespace ZeeKayDa.Auth.Tokens;
 /// <c>kid</c>.
 /// </summary>
 /// <remarks>
-/// This is a public, standalone utility — not tied to any specific <see cref="IJwtSigningService"/>
-/// implementation — so that any <c>JwtSigningService&lt;TOptions&gt;</c> author, first-party or
+/// This is a public, standalone utility — not tied to any specific
+/// <see cref="ISigningKeySource"/> implementation — so that any source author, first-party or
 /// third-party, can derive a safe <c>kid</c> without hand-rolling the RFC 7638 canonicalisation
 /// themselves. A <c>kid</c> is always public (every issued token header, and the public JWKS), so
 /// deriving it from a raw external identifier (a file path, a cloud resource URI, a database row

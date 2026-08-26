@@ -28,13 +28,12 @@ at independently:
 Reach for this before reaching for a doc comment. It is what the register means by making the wrong
 thing impossible instead of forbidden.
 
-**Not every seam is closed this way, and one deliberately is not.** `IJwtSigningService` is public and
-implementable directly, so a provider that bypasses the framework base class also bypasses the derived
-`kid`, the load-time key validation and the active-signer self-test. The mitigation there is a runtime
-one: a registered signing service that does not implement one of the optional capability interfaces
-(the self-test, or signing-key producibility) records a startup warning naming the concrete type,
-rather than skipping either check silently. That is a weaker guarantee than the three above, and it is
-a known asymmetry rather than a considered exception.
+**The one seam that was deliberately left open is now closed.** `IJwtSigningService` was public and
+implementable directly, so a provider bypassing the framework base class also bypassed the derived
+`kid`, the load-time key validation and the active-signer self-test; the mitigation was a runtime
+warning naming the concrete type. #511 deleted that contract. `ISigningKeySource` reports data and
+lends a signer, and `ISigningKeyRing` — which owns selection, `kid` derivation, validation and the
+self-test — is framework-sealed, so the bypass is now unrepresentable rather than warned about.
 
 **`internal` plus `InternalsVisibleTo` is a correctness boundary, not a security one.** The assemblies
 are not strong-named and the attribute matches on simple assembly name alone, so anything that can

@@ -39,22 +39,6 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
 
     // ── Double-registration guard ─────────────────────────────────────────────────────────────────
 
-    [Fact]
-    public void AddAzureKeyVaultRemoteSigning_throws_InvalidOperationException_when_IJwtSigningService_already_registered()
-    {
-        // Transitional guard, removed with IJwtSigningService itself in #511: no first-party
-        // provider registers an IJwtSigningService any more, so this covers a third-party provider
-        // still on the old contract, which must be rejected rather than leaving the application
-        // with two signing providers.
-        var services = new ServiceCollection();
-        services.AddSingleton<IJwtSigningService>(NoOpJwtSigningService.Instance);
-        var builder = new ZeeKayDaAuthBuilder(services);
-
-        var act = () => builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
-
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*IJwtSigningService*already registered*");
-    }
 
     [Fact]
     public void AddAzureKeyVaultRemoteSigning_throws_when_a_signing_key_source_is_already_registered()
@@ -89,8 +73,6 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
         provider.GetRequiredService<ISigningKeyRing>().Should().BeOfType<StaticSigningKeyRing>();
         provider.GetService<ISigningKeySource>().Should().BeNull(
             "the ring constructs and owns the one source instance — nothing may reach it through the container");
-        provider.GetService<IJwtSigningService>().Should().BeNull(
-            "the remote provider no longer registers the transitional IJwtSigningService");
     }
 
     [Fact]
@@ -195,18 +177,6 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
 
     // ── AddAzureKeyVaultCachedSigning: double-registration guard ────────────────────────────────
 
-    [Fact]
-    public void AddAzureKeyVaultCachedSigning_throws_InvalidOperationException_when_IJwtSigningService_already_registered()
-    {
-        var services = new ServiceCollection();
-        services.AddSingleton<IJwtSigningService>(NoOpJwtSigningService.Instance);
-        var builder = new ZeeKayDaAuthBuilder(services);
-
-        var act = () => builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
-
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*IJwtSigningService*already registered*");
-    }
 
     [Fact]
     public void AddAzureKeyVaultRemoteSigning_throws_when_AddAzureKeyVaultCachedSigning_already_registered()
@@ -237,6 +207,22 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
             .WithMessage("*signing key source*", "the key-source guard, not the transitional IJwtSigningService guard, must be the one that fires");
     }
 
+    /// <summary>
+    /// Issue #511: a second call with *different* options must fail loudly rather than silently
+    /// composing two configurations onto one registration.
+    /// </summary>
+    [Fact]
+    public void AddAzureKeyVaultCachedSigning_after_AddAzureKeyVaultCachedSigning_with_different_options_throws()
+    {
+        var services = new ServiceCollection();
+        var builder = new ZeeKayDaAuthBuilder(services);
+        builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
+
+        var act = () => builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.ES256, new FakeTokenCredential());
+
+        act.Should().Throw<InvalidOperationException>();
+    }
+
     // ── AddAzureKeyVaultCachedSigning: successful registration ──────────────────────────────────
 
     [Fact]
@@ -255,8 +241,6 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
         provider.GetRequiredService<ISigningKeyRing>().Should().BeOfType<StaticSigningKeyRing>();
         provider.GetService<ISigningKeySource>().Should().BeNull(
             "the ring constructs and owns the one source instance — nothing may reach it through the container");
-        provider.GetService<IJwtSigningService>().Should().BeNull(
-            "the cached provider no longer registers the transitional IJwtSigningService");
     }
 
     [Fact]
@@ -346,14 +330,4 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
 
     // ── Helpers ───────────────────────────────────────────────────────────────────────────────────
 
-    private sealed class NoOpJwtSigningService : IJwtSigningService
-    {
-        public static readonly NoOpJwtSigningService Instance = new();
-
-        public ValueTask<IReadOnlyList<SigningKeyDescriptor>> GetSigningKeysAsync(CancellationToken cancellationToken) =>
-            throw new NotSupportedException();
-
-        public ValueTask<SigningResult> SignAsync(ReadOnlyMemory<byte> signingInput, CancellationToken cancellationToken) =>
-            throw new NotSupportedException();
-    }
 }

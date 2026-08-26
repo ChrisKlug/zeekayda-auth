@@ -14,14 +14,11 @@ public static class ZeeKayDaAuthCoreServiceCollectionExtensions
 {
     /// <summary>
     /// Registers ZeeKayDa.Auth core infrastructure — the <see cref="ISanitizingLogger{T}"/>
-    /// implementation and <see cref="ISigningKeyRetirementWindowProvider"/> — so that core
-    /// services (<see cref="ZeeKayDa.Auth.Clients.InMemoryClientRepository"/>,
+    /// implementation and the startup-verification runner — so that core services
+    /// (<see cref="ZeeKayDa.Auth.Clients.InMemoryClientRepository"/>,
     /// <see cref="ZeeKayDa.Auth.Clients.Pbkdf2ClientSecretHasher"/>,
     /// <see cref="ZeeKayDa.Auth.Clients.ClientRegistrationValidator"/>) are resolvable without
-    /// the full ASP.NET Core integration. Signing-key provider packages (e.g.
-    /// <c>ZeeKayDa.Auth.AzureKeyVault</c>) that do not reference
-    /// <c>ZeeKayDa.Auth.AspNetCore</c> also depend on this method for
-    /// <see cref="ISigningKeyRetirementWindowProvider"/>.
+    /// the full ASP.NET Core integration.
     /// </summary>
     /// <param name="services">The service collection to add services to.</param>
     /// <returns><paramref name="services"/> for chaining.</returns>
@@ -44,10 +41,6 @@ public static class ZeeKayDaAuthCoreServiceCollectionExtensions
         // repeated calls and allows AddZeeKayDaAuth() to override this registration.
         services.TryAddSingleton(typeof(ISanitizingLogger<>), typeof(SecretSanitizingLogger<>));
 
-        // The retirement window derivation is central and never a per-provider option, so it is
-        // registered here in core rather than in any individual provider package.
-        services.TryAddSingleton<ISigningKeyRetirementWindowProvider, SigningKeyRetirementWindowProvider>();
-
         // The single runner for every framework startup check. TryAddEnumerable keeps this
         // idempotent across repeated AddZeeKayDaAuthCore() calls (e.g. a provider package calling
         // it defensively alongside AddZeeKayDaAuth()'s own call).
@@ -61,13 +54,6 @@ public static class ZeeKayDaAuthCoreServiceCollectionExtensions
         services.TryAddSingleton(_ => new SanitizingLoggerClosedOverrideScanner(services));
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IStartupVerificationGate, SanitizingLoggerRegistrationGate>());
-
-        // The startup self-test runs against whatever IJwtSigningService is registered, regardless
-        // of which signing-provider package registered it.
-        services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupVerifier, SigningStartupSelfTestVerifier>());
-        services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupVerifier, AdvertisedSigningAlgorithmVerifier>());
 
         return services;
     }

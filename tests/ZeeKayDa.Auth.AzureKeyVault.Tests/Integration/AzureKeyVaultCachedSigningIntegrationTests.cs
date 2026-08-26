@@ -56,7 +56,12 @@ public sealed class AzureKeyVaultCachedSigningIntegrationTests
     {
         var ct = TestContext.Current.CancellationToken;
         var (services, reader, _) = BuildServices(T0);
-        reader.AddRsaVersion("v1", createdOn: T0);
+
+        // A realistic 32-hex-character Key Vault version identifier, not "v1": the leak assertion
+        // below is a substring check against a 43-character base64url thumbprint, so a two-character
+        // version id collides with the thumbprint by chance roughly 1% of the time.
+        const string version = "3a7f21c9e04b4d8fa16c5e93bd270f18";
+        reader.AddRsaVersion(version, createdOn: T0);
 
         var builder = new ZeeKayDaAuthBuilder(services);
         builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
@@ -66,9 +71,9 @@ public sealed class AzureKeyVaultCachedSigningIntegrationTests
         var ring = provider.GetRequiredService<ISigningKeyRing>();
 
         ring.Current.Published.Should().ContainSingle();
-        ring.Current.SigningKey.Kid.Should().Be(JwkThumbprint.Compute(reader.GetRsaMaterial("v1")),
+        ring.Current.SigningKey.Kid.Should().Be(JwkThumbprint.Compute(reader.GetRsaMaterial(version)),
             "kid must be the RFC 7638 thumbprint of the public key");
-        ring.Current.SigningKey.Kid.Should().NotContain("fake-vault").And.NotContain("fake-cert").And.NotContain("v1",
+        ring.Current.SigningKey.Kid.Should().NotContain("fake-vault").And.NotContain("fake-cert").And.NotContain(version,
             "kid must never leak vault, certificate, or version identifiers");
         ring.Current.AdvertisedAlgorithms.Should().Equal(SigningAlgorithm.RS256);
 

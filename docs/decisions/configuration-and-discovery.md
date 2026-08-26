@@ -79,21 +79,11 @@ the framework does not model.
 
 **Discovery is a stable, cached contract, and advertised signing algorithms are statically
 configured.** Deriving `id_token_signing_alg_values_supported` from whichever keys happen to be loaded
-would make the document flicker during key rotation. Operators declare what the server supports;
-key state does not. Startup now cross-checks that static list against the registered
-`IJwtSigningService`, asserting full equality: every advertised algorithm needs a key able to sign a
-new token with it now or soon (the active key, or a not-yet-active key already staged to take over),
-and conversely every algorithm the provider can currently or soon produce — active or staged — must
-itself be advertised, not just the active one. The reverse direction closes a deferred-migration gap:
-an operator who stages a new key before updating the advertised list would otherwise pass startup
-today and have that key silently start signing an unadvertised algorithm once it activates, with no
-runtime re-check ever, since startup verification is one-shot. The reverse direction never needs a
-key retained only for its retirement window (kept so already-issued tokens still validate) to stay
-advertised — that is normal migration state, not a failure. The forward direction treats that same
-retirement-window state as a warning rather than a hard failure: an advertised algorithm backed only
-by a retiring key cannot sign a new token, but a normal migration passes through exactly this state
-for as long as the window stays open. Only an advertised algorithm with no key at all — active,
-staged, or retiring — is a hard failure.
+would make the document flicker during key rotation. Operators declare what the server supports; key
+state does not. The startup cross-check that asserted equality between the advertised list and what the
+signing provider could produce is gone with the provider contract it read (#511); #515 replaces
+detection with derivation — the advertised set becomes the published set's distinct algorithms,
+narrowable but never wideable — so the disagreement stops being representable rather than caught.
 
 **Collection keys bind by replacement, not merge.** An operator who sets one entry of an
 `IConfiguration` collection key loses the rest of that key's defaults. The validator's

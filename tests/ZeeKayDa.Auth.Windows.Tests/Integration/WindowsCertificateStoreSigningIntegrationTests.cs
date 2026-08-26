@@ -47,7 +47,6 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
         var services = new ServiceCollection();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<ICertificateStoreReader>(reader);
-        services.AddSingleton<ISigningKeyRetirementWindowProvider>(new FakeRetirementWindowProvider(retirementWindow ?? TimeSpan.FromHours(1)));
         services.AddSingleton<TimeProvider>(timeProvider);
         return (services, reader, timeProvider);
     }
