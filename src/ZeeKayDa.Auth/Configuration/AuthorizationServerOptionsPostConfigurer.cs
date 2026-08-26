@@ -41,15 +41,7 @@ internal sealed class AuthorizationServerOptionsPostConfigurer : IPostConfigureO
 
         foreach (var origin in origins)
         {
-            if (origin is not null &&
-                origin.IndexOfAny(['\r', '\n']) < 0 &&
-                !origin.Contains('*') &&
-                Uri.TryCreate(origin, UriKind.Absolute, out var uri) &&
-                uri.UserInfo.Length == 0 &&
-                uri.Query.Length == 0 &&
-                uri.Fragment.Length == 0 &&
-                uri.AbsolutePath.Length <= 1 &&
-                TryCanonicalizeOrigin(uri, out var canonical))
+            if (CorsOrigin.TryCanonicalize(origin, out var canonical))
             {
                 if (seen.Add(canonical))
                     result.Add(canonical);
@@ -63,26 +55,4 @@ internal sealed class AuthorizationServerOptionsPostConfigurer : IPostConfigureO
         return result.AsReadOnly();
     }
 
-    /// <summary>
-    /// Builds the canonical <c>scheme://host[:port]</c> form a browser's <c>Origin</c> header will
-    /// carry: punycode (A-label) for an internationalized host — a Unicode entry stored as-is
-    /// would never match a request — and the bracketed literal for IPv6, whose brackets
-    /// <see cref="Uri.IdnHost"/> strips. Returns <see langword="false"/> for a host that is not a
-    /// valid IDN, leaving the entry as-is for the validator to name.
-    /// </summary>
-    private static bool TryCanonicalizeOrigin(Uri uri, out string canonical)
-    {
-        try
-        {
-            var host = uri.HostNameType == UriHostNameType.IPv6 ? uri.Host : uri.IdnHost;
-            var port = uri.IsDefaultPort ? string.Empty : $":{uri.Port}";
-            canonical = $"{uri.Scheme}://{host}{port}".ToLowerInvariant();
-            return true;
-        }
-        catch (UriFormatException)
-        {
-            canonical = string.Empty;
-            return false;
-        }
-    }
 }

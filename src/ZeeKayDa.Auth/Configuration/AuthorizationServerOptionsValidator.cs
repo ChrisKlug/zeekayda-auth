@@ -400,106 +400,12 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
     private static void ValidateCorsOrigins(
         IList<string> origins, string optionPath, bool allowInsecureIssuer, List<string> errors)
     {
-        // Each message names the list it came from: with two allowlists, an unprefixed
-        // "CORS origin 'x' is invalid" leaves the operator guessing which option to fix.
-        var prefix = $"AuthorizationServerOptions.{optionPath}: ";
-
         foreach (var origin in origins)
         {
-            if (origin is null)
-            {
-                errors.Add(prefix + "A null value is not a valid CORS origin.");
-                continue;
-            }
-            if (origin.Length == 0)
-            {
-                errors.Add(prefix + "An empty string is not a valid CORS origin.");
-                continue;
-            }
-            if (origin.IndexOfAny(['\r', '\n']) >= 0)
-            {
-                errors.Add(prefix + $"CORS origin '{origin}' must not contain CR or LF characters.");
-                continue;
-            }
-            if (string.Equals(origin, "null", StringComparison.Ordinal))
-            {
-                errors.Add(prefix + "'null' is not a valid CORS origin.");
-                continue;
-            }
-            if (origin.Contains('*'))
-            {
-                errors.Add(prefix + $"CORS origin '{origin}' must not contain wildcard characters.");
-                continue;
-            }
-            if (!Uri.TryCreate(origin, UriKind.Absolute, out var originUri))
-            {
-                errors.Add(prefix + $"CORS origin '{origin}' is not a valid absolute URI.");
-                continue;
-            }
-            if (originUri.UserInfo.Length > 0)
-            {
-                errors.Add(prefix + $"CORS origin '{origin}' must not contain user information.");
-                continue;
-            }
-            if (originUri.Query.Length > 0)
-            {
-                errors.Add(prefix + $"CORS origin '{origin}' must not contain a query component.");
-                continue;
-            }
-            if (originUri.Fragment.Length > 0)
-            {
-                errors.Add(prefix + $"CORS origin '{origin}' must not contain a fragment component.");
-                continue;
-            }
-            // An origin is scheme + host + port only; path must be empty or just "/".
-            if (originUri.AbsolutePath.Length > 1)
-            {
-                errors.Add(prefix + $"CORS origin '{origin}' must not contain a path component. Use 'scheme://host[:port]' only.");
-                continue;
-            }
-
-            // A host that is not a valid IDN cannot be canonicalized to the punycode form a
-            // browser's Origin header carries, so the entry could never match a request.
-            // (IPv6 literals are exempt: IdnHost does not apply to them.)
-            if (originUri.HostNameType != UriHostNameType.IPv6 && !HasValidIdnHost(originUri))
-            {
-                errors.Add(prefix + $"CORS origin '{origin}' does not contain a valid host name.");
-                continue;
-            }
-
-            // CORS origins must use HTTPS in production. AllowInsecureIssuer permits HTTP only
-            // for loopback addresses (local development). This mirrors the issuer scheme rules.
-            var isHttpsOrigin = string.Equals(originUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase);
-            var isHttpOrigin = string.Equals(originUri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase);
-
-            if (!isHttpsOrigin && !(isHttpOrigin && allowInsecureIssuer))
-            {
-                errors.Add(
-                    $"CORS origin '{origin}' uses scheme '{originUri.Scheme}'. " +
-                    "Only 'https' is permitted in production. Set AllowInsecureIssuer = true to " +
-                    "permit HTTP CORS origins for local development and testing only.");
-                continue;
-            }
-
-            if (isHttpOrigin && allowInsecureIssuer && !LoopbackHelper.IsLoopbackHost(originUri.Host))
-            {
-                errors.Add(
-                    $"CORS origin '{origin}' uses HTTP for a non-loopback host. " +
-                    "AllowInsecureIssuer only permits HTTP loopback CORS origins for local development and testing.");
-            }
-        }
-    }
-
-    private static bool HasValidIdnHost(Uri uri)
-    {
-        try
-        {
-            _ = uri.IdnHost;
-            return true;
-        }
-        catch (UriFormatException)
-        {
-            return false;
+            // Each message names the list it came from: with two allowlists, an unprefixed
+            // "CORS origin 'x' is invalid" leaves the operator guessing which option to fix.
+            if (CorsOrigin.FindProblem(origin, allowInsecureIssuer) is { } problem)
+                errors.Add($"AuthorizationServerOptions.{optionPath}: {problem}");
         }
     }
 
