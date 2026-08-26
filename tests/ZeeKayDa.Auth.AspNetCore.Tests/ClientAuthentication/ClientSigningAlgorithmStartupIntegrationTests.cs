@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using System.Linq;
 using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Tokens;
 
@@ -39,10 +40,11 @@ public sealed class ClientSigningAlgorithmStartupIntegrationTests
 
             if (exception is AggregateException aggregate)
             {
-                foreach (var inner in aggregate.InnerExceptions)
+                foreach (var found in aggregate.InnerExceptions
+                             .Select(FindInChain<T>)
+                             .Where(found => found is not null))
                 {
-                    if (FindInChain<T>(inner) is { } found)
-                        return found;
+                    return found;
                 }
             }
 
