@@ -78,6 +78,15 @@ Some signing-provider packages only make sense on one OS (`ZeeKayDa.Auth.Windows
   `tests/`, `docs/`, `samples/`, build and CI files — follows the normal loop.
 - Semantic versioning (SemVer) strictly enforced
 - Security issues go through the private security advisory process — **never** a public issue
+- **The coding standards in `.claude/agents/developer.md` bind everyone who writes C# in this
+  repository** — the main session, `tester`, and any agent making a fix — not only the `developer`
+  agent whose file they live in. That agent is rarely spawned now that the main session builds
+  directly, so read them there and apply them wherever the code is written. Test code is not
+  exempt: the standards that keep CodeQL quiet (LINQ over a `foreach` containing a filtering `if`,
+  most often) apply to a test helper exactly as they do to `src/`.
+- **Copying an existing helper does not import its exemptions.** Several review findings and CodeQL
+  hits have come from lifting a helper out of a neighbouring file that predates a standard. Bring it
+  up to the current standards, or leave it where it is.
 
 ## Development Workflow
 
