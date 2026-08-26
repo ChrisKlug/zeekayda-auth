@@ -219,6 +219,35 @@ public sealed class JwtTokenIssuerTests
         token.Kind.Should().Be(TokenKind.AccessToken);
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    public void IssuedToken_constructor_rejects_a_null_or_empty_token_value(string? value)
+    {
+        // An empty token on the wire is never right, and ToString()'s length-only printing
+        // must never be the first thing to trip over a null.
+        var act = () => new IssuedToken(value!, TokenKind.AccessToken);
+
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public async Task IssueAsync_escapes_hostile_claim_names_into_exactly_one_claim()
+    {
+        using var rsa = RSA.Create(2048);
+        var (issuer, _) = await CreateIssuerAsync(rsa);
+        const string hostileName = "a\",\"admin\":\"true";
+
+        var token = await issuer.IssueAsync(
+            new TokenIssuanceContext(Client, TokenKind.AccessToken),
+            new TokenPayload(new Dictionary<string, object?> { [hostileName] = "x" }),
+            TestContext.Current.CancellationToken);
+
+        var payload = ParseSegment(token.Value.Split('.')[1]);
+        payload.EnumerateObject().Should().ContainSingle()
+            .Which.Name.Should().Be(hostileName, "the quote and comma must be escaped, never structural");
+    }
+
     // ── Log hygiene ──────────────────────────────────────────────────────────────────────────────
 
     [Fact]

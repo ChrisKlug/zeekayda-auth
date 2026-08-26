@@ -1,4 +1,6 @@
+using System.Collections.Frozen;
 using System.Diagnostics.CodeAnalysis;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 
@@ -11,6 +13,23 @@ namespace ZeeKayDa.Auth.Tokens;
 /// </summary>
 internal static class SigningAlgorithms
 {
+    // The authoritative RFC 7518 identifier is the [JsonStringEnumMemberName] on each member —
+    // the same name STJ serialises into the discovery document and JWKS. Deriving the JWS header
+    // value from the attribute rather than ToString() keeps the two structurally incapable of
+    // diverging, even for a future member whose C# name cannot be the wire id verbatim (EdDSA).
+    private static readonly FrozenDictionary<SigningAlgorithm, string> WireNames =
+        Enum.GetValues<SigningAlgorithm>().ToFrozenDictionary(
+            algorithm => algorithm,
+            algorithm => typeof(SigningAlgorithm).GetField(algorithm.ToString())!
+                .GetCustomAttribute<System.Text.Json.Serialization.JsonStringEnumMemberNameAttribute>()?.Name
+                ?? algorithm.ToString());
+
+    /// <summary>
+    /// The RFC 7518 identifier for <paramref name="algorithm"/>, exactly as it appears on the wire
+    /// in a JWS <c>alg</c> header, the discovery document, and the JWKS.
+    /// </summary>
+    internal static string WireName(SigningAlgorithm algorithm) => WireNames[algorithm];
+
     // OID values are stable across all platforms (macOS, Linux, Windows) unlike friendly names.
     private static readonly HashSet<string> AcceptedEcCurveOids =
         new(StringComparer.OrdinalIgnoreCase)

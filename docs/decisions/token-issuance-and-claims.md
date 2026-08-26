@@ -3,9 +3,18 @@
 What must be true when a grant becomes tokens. The stores underneath are `token-stores.md` and
 `refresh-token-grants.md`; key selection and signing are `signing-keys.md`.
 
-**The token endpoint is not built** — it answers `501`, and no claims-resolution seam or token writer
-exists yet. The entries below are the constraints that seam inherits, drawn from what the stores and
-the signing service already guarantee. Interface shapes are deliberately absent.
+**The token endpoint is not built** — it answers `501`. The token writer now exists as
+`ITokenIssuer` (#521): a shape-agnostic seam taking finalized claims and the client's metadata,
+resolved per `TokenKind` as a keyed DI service, with `JwsTokenIssuer` duties filled by
+`JwtTokenIssuer` over the signing key ring. Claim *selection* still has no seam — `TokenPayload`
+arrives finalized, and the entries below are the constraints that future claims layer inherits.
+
+**A JWT's header is built inside the ring's signing callback, never asserted afterwards.**
+`JwtTokenIssuer` reads `kid`/`alg` from the `SigningKey` the ring resolved for that exact call, so a
+header disagreeing with its signature is unrepresentable rather than detected. The key is resolved
+exactly once per token. A custom JWT issuer keeps this property by signing through
+`ISigningKeyRing.SignAsync` and building its header inside the callback — the atomicity guarantee
+belongs to that path, not to the `ITokenIssuer` contract itself.
 
 ## Decisions in force
 

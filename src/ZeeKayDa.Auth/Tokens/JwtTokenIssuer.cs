@@ -33,14 +33,14 @@ public sealed class JwtTokenIssuer : ITokenIssuer
     /// <summary>
     /// Initializes a new instance of the <see cref="JwtTokenIssuer"/> class.
     /// </summary>
-    /// <param name="ring">The ring that resolves the signing key and signs.</param>
+    /// <param name="keyRing">The ring that resolves the signing key and signs.</param>
     /// <exception cref="ArgumentNullException">
-    /// Thrown when <paramref name="ring"/> is <see langword="null"/>.
+    /// Thrown when <paramref name="keyRing"/> is <see langword="null"/>.
     /// </exception>
-    public JwtTokenIssuer(ISigningKeyRing ring)
+    public JwtTokenIssuer(ISigningKeyRing keyRing)
     {
-        ArgumentNullException.ThrowIfNull(ring);
-        _ring = ring;
+        ArgumentNullException.ThrowIfNull(keyRing);
+        _ring = keyRing;
     }
 
     /// <inheritdoc/>
@@ -49,6 +49,11 @@ public sealed class JwtTokenIssuer : ITokenIssuer
     /// </exception>
     /// <exception cref="ArgumentOutOfRangeException">
     /// Thrown when <paramref name="context"/>.Kind is not a defined <see cref="TokenKind"/> member.
+    /// </exception>
+    /// <exception cref="System.Text.Json.JsonException">
+    /// Thrown when a claim value cannot be serialized — a reference cycle, or a type
+    /// System.Text.Json does not support. See <see cref="TokenPayload"/> for what claim values
+    /// may be.
     /// </exception>
     public async ValueTask<IssuedToken> IssueAsync(
         TokenIssuanceContext context,
@@ -96,8 +101,7 @@ public sealed class JwtTokenIssuer : ITokenIssuer
         using (var writer = new Utf8JsonWriter(buffer))
         {
             writer.WriteStartObject();
-            // SigningAlgorithm member names are the RFC 7518 identifiers verbatim.
-            writer.WriteString("alg", key.Algorithm.ToString());
+            writer.WriteString("alg", SigningAlgorithms.WireName(key.Algorithm));
             writer.WriteString("typ", typ);
             writer.WriteString("kid", key.Kid);
             writer.WriteEndObject();

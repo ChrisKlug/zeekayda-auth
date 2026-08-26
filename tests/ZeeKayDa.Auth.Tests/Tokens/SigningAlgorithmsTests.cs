@@ -126,4 +126,21 @@ public sealed class SigningAlgorithmsTests
 
         act.Should().Throw<NotSupportedException>();
     }
+    [Fact]
+    public void WireName_matches_the_JsonStringEnumMemberName_for_every_member()
+    {
+        // The JWS alg header must be the exact identifier STJ serialises into the discovery
+        // document and JWKS — one source of truth, even for a future member whose C# name
+        // cannot be the RFC 7518 id verbatim.
+        foreach (var algorithm in Enum.GetValues<SigningAlgorithm>())
+        {
+            var attribute = typeof(SigningAlgorithm).GetField(algorithm.ToString())!
+                .GetCustomAttributes(typeof(System.Text.Json.Serialization.JsonStringEnumMemberNameAttribute), inherit: false)
+                .Cast<System.Text.Json.Serialization.JsonStringEnumMemberNameAttribute>()
+                .Single();
+
+            SigningAlgorithms.WireName(algorithm).Should().Be(attribute.Name);
+        }
+    }
+
 }

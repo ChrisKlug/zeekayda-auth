@@ -404,7 +404,7 @@ ZeeKayDa.Auth.Tokens.IssuedToken.Value.init -> void
 ZeeKayDa.Auth.Tokens.JwkThumbprint
 ZeeKayDa.Auth.Tokens.JwtTokenIssuer
 ZeeKayDa.Auth.Tokens.JwtTokenIssuer.IssueAsync(ZeeKayDa.Auth.Tokens.TokenIssuanceContext context, ZeeKayDa.Auth.Tokens.TokenPayload! payload, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeeKayDa.Auth.Tokens.IssuedToken!>
-ZeeKayDa.Auth.Tokens.JwtTokenIssuer.JwtTokenIssuer(ZeeKayDa.Auth.Tokens.ISigningKeyRing! ring) -> void
+ZeeKayDa.Auth.Tokens.JwtTokenIssuer.JwtTokenIssuer(ZeeKayDa.Auth.Tokens.ISigningKeyRing! keyRing) -> void
 ZeeKayDa.Auth.Tokens.LocalSigner
 ZeeKayDa.Auth.Tokens.LocalSigner.Algorithm.get -> ZeeKayDa.Auth.Tokens.SigningAlgorithm
 ZeeKayDa.Auth.Tokens.LocalSigner.Dispose() -> void
