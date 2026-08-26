@@ -57,7 +57,7 @@ must use it** — these are not a pattern to copy.
 
 **The enumerated public extension surface is the SemVer contract.** What a third party may implement:
 the startup verifier, the scope repository, the discovery document provider, the client repository,
-the client registration and credential interfaces, a client secret hasher (via the abstract base), the
+the client metadata, registration and credential interfaces, a client secret hasher (via the abstract base), the
 client registration validator, the two store backing contracts, the client authenticator, a
 signing provider via the abstract signing base and its signer type, and a signing key source via
 `ISigningKeySource`. Everything else public is

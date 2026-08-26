@@ -10,9 +10,13 @@ Implementing a repository is `docs/reference/client-secrets.md` and
 widens the attack surface of a static-first framework. The v1 abstractions are shaped so a write-side
 package can decorate them later without a breaking change.
 
-**A client registration is an interface, not a sealed shape.** A custom repository makes its own
-ORM entity implement it directly, so lookup on the token endpoint's hot path allocates no mapping
-object. The framework ships a sealed record implementation for hosts that want one, and validation
+**A client registration is a pair of interfaces, not a sealed shape.** A custom repository makes its
+own ORM entity implement them directly, so lookup on the token endpoint's hot path allocates no
+mapping object. `IClientMetadata` carries everything except the credentials and `IClientRegistration`
+adds them, so code deciding *what* to issue a client — token issuance above all — never receives its
+secrets; only client authentication takes `IClientRegistration`. The inheritance means a downcast
+still reaches them, which is the point: a guardrail against accidental use, not a boundary against a
+determined caller, who could resolve the repository anyway. The framework ships a sealed record implementation for hosts that want one, and validation
 lives in a separate validator rather than in a constructor, so a test can construct an invalid
 registration deliberately.
 
