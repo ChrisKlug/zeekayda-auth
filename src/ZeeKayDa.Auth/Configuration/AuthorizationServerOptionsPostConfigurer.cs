@@ -23,8 +23,10 @@ internal sealed class AuthorizationServerOptionsPostConfigurer : IPostConfigureO
     /// <inheritdoc/>
     public void PostConfigure(string? name, AuthorizationServerOptions options)
     {
-        options.DiscoveryDocument.CorsOrigins = Canonicalize(options.DiscoveryDocument.CorsOrigins);
-        options.JwksEndpoint.CorsOrigins = Canonicalize(options.JwksEndpoint.CorsOrigins);
+        options.DiscoveryDocument.CorsOrigins =
+            Canonicalize(options.DiscoveryDocument.CorsOrigins, options.AllowInsecureIssuer);
+        options.JwksEndpoint.CorsOrigins =
+            Canonicalize(options.JwksEndpoint.CorsOrigins, options.AllowInsecureIssuer);
 
         // Frozen for the same reason as CorsOrigins: the discovery document reads this filter on
         // every request, and the startup checks that reconcile it with the key set run exactly
@@ -34,14 +36,14 @@ internal sealed class AuthorizationServerOptionsPostConfigurer : IPostConfigureO
             options.IdToken.AdvertisedSigningAlgorithms = advertised.ToList().AsReadOnly();
     }
 
-    private static IList<string> Canonicalize(IList<string> origins)
+    private static IList<string> Canonicalize(IList<string> origins, bool allowInsecureIssuer)
     {
         var result = new List<string>(origins.Count);
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var origin in origins)
         {
-            if (CorsOrigin.TryCanonicalize(origin, out var canonical))
+            if (new CorsOrigin(origin, allowInsecureIssuer).Canonical is { } canonical)
             {
                 if (seen.Add(canonical))
                     result.Add(canonical);

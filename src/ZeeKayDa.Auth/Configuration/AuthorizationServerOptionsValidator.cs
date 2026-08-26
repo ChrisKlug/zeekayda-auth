@@ -400,13 +400,12 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
     private static void ValidateCorsOrigins(
         IList<string> origins, string optionPath, bool allowInsecureIssuer, List<string> errors)
     {
-        foreach (var origin in origins)
-        {
-            // Each message names the list it came from: with two allowlists, an unprefixed
-            // "CORS origin 'x' is invalid" leaves the operator guessing which option to fix.
-            if (CorsOrigin.FindProblem(origin, allowInsecureIssuer) is { } problem)
-                errors.Add($"AuthorizationServerOptions.{optionPath}: {problem}");
-        }
+        // Each message names the list it came from: with two allowlists, an unprefixed
+        // "CORS origin 'x' is invalid" leaves the operator guessing which option to fix.
+        errors.AddRange(origins
+            .Select(origin => new CorsOrigin(origin, allowInsecureIssuer).ErrorMessage)
+            .Where(problem => problem is not null)
+            .Select(problem => $"AuthorizationServerOptions.{optionPath}: {problem}"));
     }
 
     private static bool HasSameAuthority(Uri endpointUri, Uri issuerUri)
