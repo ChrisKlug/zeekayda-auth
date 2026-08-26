@@ -871,6 +871,34 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
+    public void Validate_fails_with_named_list_for_an_origin_whose_host_is_not_a_valid_idn()
+    {
+        var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
+        options.DiscoveryDocument.CorsOrigins.Add("https://℀.example");
+
+        var result = Validate(options);
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("DiscoveryDocument.CorsOrigins");
+        result.FailureMessage.Should().Contain("valid host name");
+    }
+
+    [Fact]
+    public void Validate_accepts_an_ipv6_loopback_origin_when_insecure_issuer_is_allowed()
+    {
+        var options = new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            AllowInsecureIssuer = true,
+        };
+        options.DiscoveryDocument.CorsOrigins.Add("http://[::1]:5001");
+
+        var result = Validate(options);
+
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Fact]
     public void Validate_fails_for_http_non_loopback_origin_in_jwks_CORS_allow_list()
     {
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };

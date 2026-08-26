@@ -22,10 +22,11 @@ published as `jwks_uri` in the [discovery document](discovery-endpoint.md).
 - Override: the exact URI configured in `JwksEndpoint.Uri`
 
 The route is constrained to the configured issuer host. A request for the same path on a different
-host is not handled by ZeeKayDa.Auth. Requests over HTTP from non-loopback addresses are rejected
-at request time with `421 Misdirected Request`. The endpoint requires no authentication — the key
-set is public by design and contains only public key material — and it opts out of any host-wide
-authorization fallback policy so it stays readable in hardened hosts.
+host is not handled by ZeeKayDa.Auth. Requests over HTTP are rejected at request time with
+`421 Misdirected Request`; loopback HTTP is permitted only when `AllowInsecureIssuer` is enabled.
+The endpoint requires no authentication — the key set is public by design and contains only public
+key material — and it opts out of any host-wide authorization fallback policy so it stays readable
+in hardened hosts.
 
 Examples:
 
@@ -77,7 +78,7 @@ Example:
 | Header | Value |
 |---|---|
 | `Content-Type` | `application/jwk-set+json` |
-| `Cache-Control` | `public, max-age=3600, must-revalidate` by default; `no-store` when `JwksEndpoint.CacheMaxAge` is `TimeSpan.Zero` |
+| `Cache-Control` | `public, max-age=3600, must-revalidate` by default; `no-store` when `JwksEndpoint.CacheMaxAge` is below one second |
 | `Access-Control-Allow-Origin` | `*` when `JwksEndpoint.CorsOrigins` is empty; the matching allowlist entry (plus `Vary: Origin`) otherwise |
 
 `JwksEndpoint.CacheMaxAge` governs how long a relying party may keep trusting a cached key set —

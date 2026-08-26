@@ -1088,3 +1088,27 @@ Scoped to `ITokenIssuer`, `JwtTokenIssuer` and their value types. Did **not** co
 - Residual: claim values serialize by runtime type, so a domain object passed as a claim lands
   whole inside the token; documented on `TokenPayload`, unenforced until #92/#205/#206 —
   `IssueAsync_serialises_claims_verbatim_into_the_payload_segment` locks the verbatim behaviour.
+
+## 2026-08-26 — the JWKS endpoint and its cache/CORS surface (#513, #514, commit `819d7e7`)
+
+Scoped to `JwksEndpoint`, `JwkSetWriter` and the JWKS/discovery cache and CORS options; not the token
+or authorization endpoints, which carry no `AllowAnonymous` and still 401 under a fallback policy.
+
+- Only public material is served, for every published slot. Closed — proven by
+  `Write_emits_no_private_key_member_for_a_set_built_from_rsa_and_ec_private_keys` and
+  `GetJwks_returns_no_private_key_member_for_a_fully_populated_ring`.
+- JWKS and discovery stay anonymously readable under a host-wide authorization fallback policy, with
+  a 401 canary route proving it is in force. Closed — proven by
+  `Get{Jwks,DiscoveryDocument}_returns_200_under_a_host_wide_fallback_authorization_policy`.
+- A served JWK verifies a token this server issued, under the `kid` its header names, across
+  RS256/ES256/ES384/ES512. Closed — proven by
+  `GetJwks_served_key_verifies_the_signature_of_a_token_this_server_issued`.
+- CORS emits the allowlist entry, never the request `Origin`, canonicalized to the punycode form a
+  browser sends. Closed — proven by
+  `PostConfigure_canonicalizes_an_internationalized_host_to_its_punycode_form`.
+- IPv6 CORS origins keep their brackets and an IDN-invalid host fails startup with a named error
+  rather than an escaped exception. Closed — proven by
+  `PostConfigure_preserves_the_brackets_of_an_ipv6_origin` and
+  `Validate_fails_with_named_list_for_an_origin_whose_host_is_not_a_valid_idn`.
+- Residual: revocation latency is bounded only by `JwksEndpoint.CacheMaxAge`, unwarned however long
+  it is set (#562).

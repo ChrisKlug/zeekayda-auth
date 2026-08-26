@@ -458,6 +458,15 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
                 continue;
             }
 
+            // A host that is not a valid IDN cannot be canonicalized to the punycode form a
+            // browser's Origin header carries, so the entry could never match a request.
+            // (IPv6 literals are exempt: IdnHost does not apply to them.)
+            if (originUri.HostNameType != UriHostNameType.IPv6 && !HasValidIdnHost(originUri))
+            {
+                errors.Add(prefix + $"CORS origin '{origin}' does not contain a valid host name.");
+                continue;
+            }
+
             // CORS origins must use HTTPS in production. AllowInsecureIssuer permits HTTP only
             // for loopback addresses (local development). This mirrors the issuer scheme rules.
             var isHttpsOrigin = string.Equals(originUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase);
@@ -478,6 +487,19 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
                     $"CORS origin '{origin}' uses HTTP for a non-loopback host. " +
                     "AllowInsecureIssuer only permits HTTP loopback CORS origins for local development and testing.");
             }
+        }
+    }
+
+    private static bool HasValidIdnHost(Uri uri)
+    {
+        try
+        {
+            _ = uri.IdnHost;
+            return true;
+        }
+        catch (UriFormatException)
+        {
+            return false;
         }
     }
 

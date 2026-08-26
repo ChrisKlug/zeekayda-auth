@@ -469,6 +469,7 @@ public sealed class JwksEndpointTests : IDisposable
             "/tenant1/.well-known/openid-configuration", TestContext.Current.CancellationToken);
         var jwksUri = new Uri(discovery!.RootElement.GetProperty("jwks_uri").GetString()!);
 
+        jwksUri.Host.Should().Be("test.example.com");
         var response = await client.GetAsync(jwksUri.AbsolutePath, TestContext.Current.CancellationToken);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);

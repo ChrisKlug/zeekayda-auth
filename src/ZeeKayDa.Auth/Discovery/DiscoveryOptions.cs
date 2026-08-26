@@ -8,7 +8,7 @@ public sealed class DiscoveryOptions
     /// <summary>
     /// Gets or sets the <c>Cache-Control</c> <c>max-age</c> duration for the OpenID Connect
     /// discovery document response. Defaults to one hour. The header's resolution is whole
-    /// seconds; fractional seconds are truncated.
+    /// seconds; a value below one second emits <c>no-store</c>.
     /// </summary>
     /// <remarks>
     /// Set to <see cref="TimeSpan.Zero"/> to disable public caching entirely

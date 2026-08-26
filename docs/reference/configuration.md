@@ -206,7 +206,7 @@ options.JwksEndpoint.Uri = "https://id.example.com/tenant-a/custom/jwks";
 `JwksEndpoint.CacheMaxAge` (`TimeSpan`, default one hour) sets the `max-age` duration for the JWKS
 response's `Cache-Control` header, emitted in whole seconds exactly like
 [`DiscoveryDocument.CacheMaxAge`](#discoverydocumentcachemaxage): `public, max-age=3600,
-must-revalidate` by default, `no-store` at `TimeSpan.Zero`, and negative values fail startup
+must-revalidate` by default, `no-store` below one second, and negative values fail startup
 validation. This value governs how long a relying party may keep trusting a cached key set —
 including a key that has since been removed from configuration — so a shorter TTL shortens that
 revocation window at the cost of more JWKS traffic.
@@ -413,13 +413,13 @@ options.IdToken.AdvertisedSigningAlgorithms = [SigningAlgorithm.RS256];
 | Required | No |
 
 The `max-age` duration for the discovery endpoint's `Cache-Control` header, emitted in whole
-seconds (fractional seconds are truncated). The default response is:
+seconds. The default response is:
 
 ```text
 Cache-Control: public, max-age=3600, must-revalidate
 ```
 
-Set the value to `TimeSpan.Zero` to disable public caching:
+Any value below one second — `TimeSpan.Zero` being the idiomatic choice — disables public caching:
 
 ```text
 Cache-Control: no-store
