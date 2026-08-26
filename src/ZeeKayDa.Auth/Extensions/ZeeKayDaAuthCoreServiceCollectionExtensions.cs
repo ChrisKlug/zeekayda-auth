@@ -14,11 +14,10 @@ public static class ZeeKayDaAuthCoreServiceCollectionExtensions
 {
     /// <summary>
     /// Registers ZeeKayDa.Auth core infrastructure — the <see cref="ISanitizingLogger{T}"/>
-    /// implementation and the startup-verification runner — so that core services
-    /// (<see cref="ZeeKayDa.Auth.Clients.InMemoryClientRepository"/>,
-    /// <see cref="ZeeKayDa.Auth.Clients.Pbkdf2ClientSecretHasher"/>,
-    /// <see cref="ZeeKayDa.Auth.Clients.ClientRegistrationValidator"/>) are resolvable without
-    /// the full ASP.NET Core integration.
+    /// implementation, the startup-verification runner and its gates, the signing-key-ring
+    /// startup activator, and the per-<see cref="TokenKind"/> <see cref="ITokenIssuer"/>
+    /// registrations — so that core services are resolvable without the full ASP.NET Core
+    /// integration.
     /// </summary>
     /// <param name="services">The service collection to add services to.</param>
     /// <returns><paramref name="services"/> for chaining.</returns>
@@ -62,6 +61,12 @@ public static class ZeeKayDaAuthCoreServiceCollectionExtensions
         // initialized or self-tested. A silent no-op when no ring is registered at all.
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IStartupActivator, SigningKeyRingStartupVerifier>());
+
+        // The issuer for each TokenKind is a keyed service, so the host can swap how one kind is
+        // issued without touching the other — e.g. opaque access tokens alongside JWT ID tokens
+        // once a reference-token issuer exists. TryAdd keeps a host's own earlier registration.
+        services.TryAddKeyedSingleton<ITokenIssuer, JwtTokenIssuer>(TokenKind.AccessToken);
+        services.TryAddKeyedSingleton<ITokenIssuer, JwtTokenIssuer>(TokenKind.IdToken);
 
         return services;
     }

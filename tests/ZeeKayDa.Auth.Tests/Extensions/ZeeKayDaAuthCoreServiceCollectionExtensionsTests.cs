@@ -45,6 +45,59 @@ public sealed class ZeeKayDaAuthCoreServiceCollectionExtensionsTests
         act.Should().Throw<ArgumentNullException>();
     }
 
+    // ── Issue #521: TokenKind-to-issuer dispatch via keyed DI ────────────────────────────────────
+
+    private sealed class StubRing : ISigningKeyRing
+    {
+        public SigningKeySet Current => throw new InvalidOperationException("not initialized");
+
+        public ValueTask<SigningOutcome> SignAsync<TState>(
+            TState state,
+            Func<SigningContext, TState, ReadOnlyMemory<byte>> buildSigningInput,
+            CancellationToken cancellationToken = default) => throw new InvalidOperationException("not initialized");
+
+        ValueTask ISigningKeyRing.EnsureInitializedAsync(CancellationToken cancellationToken) => ValueTask.CompletedTask;
+
+        SigningKeySet? ISigningKeyRing.CurrentOrNull => null;
+    }
+
+    private sealed class StubIssuer : ITokenIssuer
+    {
+        public ValueTask<IssuedToken> IssueAsync(
+            TokenIssuanceContext context, TokenPayload payload, CancellationToken cancellationToken = default)
+            => new(new IssuedToken("stub", context.Kind));
+    }
+
+    [Theory]
+    [InlineData(TokenKind.AccessToken)]
+    [InlineData(TokenKind.IdToken)]
+    public void AddZeeKayDaAuthCore_registers_JwtTokenIssuer_for_each_TokenKind(TokenKind kind)
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<ISigningKeyRing>(new StubRing());
+
+        services.AddZeeKayDaAuthCore();
+
+        using var provider = services.BuildServiceProvider();
+        provider.GetRequiredKeyedService<ITokenIssuer>(kind).Should().BeOfType<JwtTokenIssuer>();
+    }
+
+    [Fact]
+    public void AddZeeKayDaAuthCore_keeps_a_hosts_own_issuer_registration_for_a_kind()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<ISigningKeyRing>(new StubRing());
+        var hostIssuer = new StubIssuer();
+        services.AddKeyedSingleton<ITokenIssuer>(TokenKind.AccessToken, hostIssuer);
+
+        services.AddZeeKayDaAuthCore();
+
+        using var provider = services.BuildServiceProvider();
+        provider.GetRequiredKeyedService<ITokenIssuer>(TokenKind.AccessToken).Should().BeSameAs(hostIssuer);
+        provider.GetRequiredKeyedService<ITokenIssuer>(TokenKind.IdToken).Should().BeOfType<JwtTokenIssuer>(
+            "overriding one kind must not affect the other");
+    }
+
     // ── Issue #437: framework-owned startup self-test wiring ───────────────────────────────────────
 
 

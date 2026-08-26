@@ -8,6 +8,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **`ITokenIssuer` — a shape-agnostic token issuance seam, with `JwtTokenIssuer` over the signing key ring** (#521)
+
+  `ITokenIssuer.IssueAsync(TokenIssuanceContext, TokenPayload, ct)` returns an `IssuedToken` and is
+  the seam between deciding a token's contents and producing its wire form. Nothing in the contract
+  is JWS-specific: `TokenPayload` carries finalized claims, not serialized bytes, so a
+  reference-token issuer can hand them to a store without touching a signing type. The framework
+  resolves the issuer per `TokenKind` (`AccessToken`, `IdToken`) as a keyed DI service, registered
+  by `AddZeeKayDaAuthCore()` with `TryAddKeyedSingleton` so a host's own registration for either
+  kind wins without affecting the other.
+
+  `JwtTokenIssuer` serializes the claims to JSON, signs through `ISigningKeyRing.SignAsync`, and
+  assembles the RFC 7515 compact serialization. The JOSE header is built *inside* the ring's signing
+  callback from the `SigningKey` the ring resolved for that call, so the header's `kid`/`alg` and
+  the signature can never come from different keys — the key is resolved exactly once per token.
+  The `typ` header follows the kind's profile: `at+jwt` (RFC 9068) for access tokens, `JWT` for ID
+  tokens.
+
+  `TokenIssuanceContext` carries the client as `IClientMetadata` (#557), so an issuer can vary what
+  it issues per client without ever holding the client's credentials.
+
 - **`AddZeeKayDaSigningKeySource` now accepts a factory, for signing key sources that cannot be DI-activated, and nothing is registered in the container for the source itself** (#525, #530)
 
   `AddZeeKayDaSigningKeySource<TSource>(this IServiceCollection services, Func<IServiceProvider, TSource> implementationFactory)`

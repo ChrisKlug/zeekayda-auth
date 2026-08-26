@@ -509,6 +509,44 @@ builder.Services.AddZeeKayDaAuth(options =>
 > See [Configure host-level log hygiene](configure-host-log-hygiene.md) for the steps required to
 > close this gap in the host pipeline.
 
+## 7. Implement a custom token issuer
+
+`ITokenIssuer` is the seam between deciding a token's contents and producing its wire form. The
+framework resolves the issuer for each token as a **keyed** DI service, keyed by `TokenKind` — so
+you can swap how access tokens are issued without touching ID tokens, and vice versa:
+
+```csharp
+services.AddKeyedSingleton<ITokenIssuer, MyReferenceTokenIssuer>(TokenKind.AccessToken);
+// TokenKind.IdToken keeps the framework's JwtTokenIssuer.
+```
+
+The interface has one member:
+
+```csharp
+public interface ITokenIssuer
+{
+    ValueTask<IssuedToken> IssueAsync(
+        TokenIssuanceContext context,
+        TokenPayload payload,
+        CancellationToken cancellationToken = default);
+}
+```
+
+`TokenIssuanceContext` carries the client as `IClientMetadata` — everything about the client
+except its credentials — and the `TokenKind` being issued. `TokenPayload` carries finalized
+claims: perform no claim selection, renaming, or enrichment in an issuer. Return the token exactly
+as it goes to the client, echoing the requested kind.
+
+Security contract:
+
+| Rule | Why |
+|---|---|
+| Echo `context.Kind` in `IssuedToken.Kind`, always. | The call site asserts it received the kind it asked for; a mismatch must surface as a bug, not a mis-typed token. |
+| Never log or embed `IssuedToken.Value`; it is a live credential. | The framework's own record prints only the value's length for this reason. |
+| A JWT issuer MUST sign via `ISigningKeyRing.SignAsync` and build its JOSE header **inside the callback**, from the `SigningKey` the ring supplies. | The header's `kid`/`alg` and the signature then come from the same resolved key — disagreement is structurally impossible. Resolving key material any other way (for example via `ISigningKeySource` directly) reintroduces exactly that disagreement. |
+| Resolve the key at most once per token. | Two resolutions can straddle a key change; the callback shape gives you one for free. |
+| Claim values must be JSON primitives, arrays of them, or purpose-built claim shapes. | Values serialize by runtime type, whole object graph included — a domain object puts every property it references inside a token readable by whoever holds it. |
+
 ## See also
 
 - [Configure ZeeKayDa.Auth](configure-zeekayda-auth.md) — register the framework and the minimum required options.
