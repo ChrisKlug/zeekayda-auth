@@ -328,6 +328,6 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
         builder.AddWindowsCertificateStoreSigning(Lookup(CurrentThumbprint), SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My);
 
         await using var provider = services.BuildServiceProvider();
-        provider.GetServices<IStartupVerifier>().Select(v => v.Name).Should().Contain("SigningKeyRing");
+        provider.GetServices<IStartupActivator>().Select(v => v.Name).Should().Contain("SigningKeyRing");
     }
 }

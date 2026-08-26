@@ -25,61 +25,12 @@ internal sealed class StartupVerificationHostedService(
     /// <inheritdoc/>
     public async Task StartAsync(CancellationToken cancellationToken)
     {
-        var pendingGateWarnings = new List<(object Source, string Name, StartupVerificationWarning Warning)>();
+        await RunGatePhaseAsync(cancellationToken).ConfigureAwait(false);
 
-        // Whether the gate that proves the sanitizing logger has not been shadowed has passed. Until
-        // it has, nothing may be logged at all — including a buffered warning from a gate that
-        // passed earlier, since an earlier gate passing says nothing about the logger.
-        var loggerVerified = false;
-
-        foreach (var gate in gates)
-        {
-            await using var gateScope = scopeFactory.CreateAsyncScope();
-            var gateContext = new StartupVerificationContext();
-
-            var thrownByGate = await InvokeAsync(
-                gate.Name,
-                gateContext,
-                ct => gate.VerifyAsync(gateContext, gateScope.ServiceProvider, ct),
-                cancellationToken);
-
-            if (gateContext.Failures.Count > 0)
-            {
-                // Warnings buffered by gates that already passed are logged before aborting rather
-                // than discarded — but only once the sanitizing-logger gate itself has passed.
-                // Deriving that from "the buffer is non-empty" would hold only while that gate is
-                // registered first; a gate inserted ahead of it would then have its warnings logged
-                // through the very logger the next gate is about to prove shadowed.
-                if (loggerVerified)
-                {
-                    foreach (var (pendingSource, pendingName, pendingWarning) in pendingGateWarnings)
-                        LogWarningOrThrow(pendingSource, pendingName, pendingWarning);
-                }
-
-                // The root cause travels with the abort, as it did before the phase loop recorded
-                // rather than threw — a gate failing on an unexpected exception is a bug someone
-                // needs the stack trace for.
-                throw thrownByGate is null
-                    ? new ZeeKayDaConfigurationException([.. gateContext.Failures])
-                    : new ZeeKayDaConfigurationException([.. gateContext.Failures], thrownByGate);
-            }
-
-            if (gate is SanitizingLoggerRegistrationGate)
-                loggerVerified = true;
-
-            // Gate warnings are held until every gate has passed, because the sanitizing logger
-            // is not yet known to be trustworthy.
-            foreach (var warning in gateContext.Warnings)
-                pendingGateWarnings.Add((gate, gate.Name, warning));
-        }
-
-        foreach (var (source, name, warning) in pendingGateWarnings)
-            LogWarningOrThrow(source, name, warning);
-
-        // IEnumerable<IStartupCheck> is resolved here rather than constructor-injected. Resolving
-        // it runs every check's constructor, including third-party ones, and a constructor is free
-        // to log — deferring the resolution until after the gate phase is what makes "nothing logs
-        // before the gate has passed" true of check construction, not merely of check execution.
+        // The check collections are resolved after the gate phase rather than constructor-injected.
+        // Resolving runs every check's constructor, including third-party ones, and a constructor is
+        // free to log — deferring it is what makes "nothing logs before the gate has passed" true of
+        // check construction, not merely of check execution.
         RejectChecksRegisteredAsTheBaseInterface();
 
         await RunPhaseAsync(rootServices.GetServices<IStartupVerifier>(), cancellationToken)
@@ -89,6 +40,84 @@ internal sealed class StartupVerificationHostedService(
         // reaches the checks that call into caller-supplied extension points.
         await RunPhaseAsync(rootServices.GetServices<IStartupActivator>(), cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Runs every internal gate, sequentially, aborting on the first that fails. Nothing is logged
+    /// during this phase: gate warnings are buffered and flushed only once the gate proving the
+    /// sanitizing logger has not been shadowed has itself passed.
+    /// </summary>
+    private async Task RunGatePhaseAsync(CancellationToken cancellationToken)
+    {
+        var pendingWarnings = new List<(object Source, string Name, StartupVerificationWarning Warning)>();
+
+        // Whether the gate proving the sanitizing logger has not been shadowed has passed. Deriving
+        // this from "the buffer is non-empty" would hold only while that gate is registered first; a
+        // gate inserted ahead of it would then have its warnings logged through the very logger the
+        // next gate is about to prove shadowed.
+        var loggerVerified = false;
+
+        foreach (var gate in gates)
+        {
+            await using var gateScope = scopeFactory.CreateAsyncScope();
+            var context = new StartupVerificationContext();
+
+            var thrown = await InvokeAsync(
+                gate.Name,
+                context,
+                ct => gate.VerifyAsync(context, gateScope.ServiceProvider, ct),
+                cancellationToken);
+
+            if (context.Failures.Count > 0)
+                throw AbortGatePhase(context, thrown, loggerVerified, pendingWarnings);
+
+            loggerVerified |= gate is SanitizingLoggerRegistrationGate;
+
+            foreach (var warning in context.Warnings)
+                pendingWarnings.Add((gate, gate.Name, warning));
+        }
+
+        foreach (var (source, name, warning) in pendingWarnings)
+            LogWarningOrThrow(source, name, warning);
+    }
+
+    /// <summary>
+    /// Builds the exception that aborts the gate phase, flushing warnings buffered by gates that
+    /// already passed rather than discarding them — but only once the logger is known good.
+    /// </summary>
+    /// <remarks>
+    /// The root cause travels with the abort: a gate failing on an unexpected exception is a bug
+    /// someone needs the stack trace for.
+    /// </remarks>
+    private ZeeKayDaConfigurationException AbortGatePhase(
+        StartupVerificationContext context,
+        Exception? thrown,
+        bool loggerVerified,
+        List<(object Source, string Name, StartupVerificationWarning Warning)> pendingWarnings)
+    {
+        if (loggerVerified)
+        {
+            foreach (var (source, name, warning) in pendingWarnings)
+                LogWarningOrThrow(source, name, warning);
+        }
+
+        return thrown is null
+            ? new ZeeKayDaConfigurationException([.. context.Failures])
+            : new ZeeKayDaConfigurationException([.. context.Failures], thrown);
+    }
+
+    /// <summary>
+    /// Logs one check's warnings, returning a failure for any that could not be logged — a warning
+    /// the operator will never see is itself a configuration problem, not a silent loss.
+    /// </summary>
+    private IEnumerable<ZeeKayDaConfigurationFailure> LogWarnings(
+        IStartupCheck check, StartupVerificationContext context)
+    {
+        foreach (var warning in context.Warnings)
+        {
+            if (!TryLogWarning(check, check.Name, warning, out var logFailureException))
+                yield return WrapWarningLogFailure(check.Name, logFailureException!);
+        }
     }
 
     /// <summary>
@@ -145,14 +174,7 @@ internal sealed class StartupVerificationHostedService(
                 unexpected.Add(thrown);
             }
 
-            foreach (var warning in context.Warnings)
-            {
-                if (TryLogWarning(check, check.Name, warning, out var logFailureException))
-                    continue;
-
-                failures.Add(WrapWarningLogFailure(check.Name, logFailureException!));
-            }
-
+            failures.AddRange(LogWarnings(check, context));
             failures.AddRange(context.Failures);
         }
 
