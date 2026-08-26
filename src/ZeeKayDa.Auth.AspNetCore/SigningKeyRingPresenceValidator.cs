@@ -12,11 +12,12 @@ namespace ZeeKayDa.Auth.AspNetCore;
 /// <c>id_token_signing_alg_values_supported</c>, which OpenID Connect Discovery 1.0 §3 requires:
 /// the advertised algorithms are derived from the ring's key set. Failing here is what keeps that
 /// dependency from surfacing as a dependency-injection error on the first discovery request.
-/// Resolves the ring rather than asking <see cref="IServiceProviderIsService"/> about it, so the
-/// check works on any container rather than skipping itself on a third-party one. Resolution is free
-/// here in the ordinary case: <c>SigningKeyRingStartupVerifier</c> is registered from
-/// <c>AddZeeKayDaAuthCore()</c>, which runs before this verifier, so the ring has normally already
-/// been constructed and initialized by the time this runs.
+/// Asks <see cref="IServiceProviderIsService"/> rather than resolving the ring, because resolving it
+/// constructs the caller's signing key source — real work, and this check runs in the cheap verifier
+/// phase precisely so that a host with no signing source learns about it before any work is done.
+/// A container that does not provide <see cref="IServiceProviderIsService"/> (a third-party
+/// container replacing the default provider) falls back to resolving, so the check still reports
+/// rather than skipping itself; those hosts pay the construction here instead.
 /// </remarks>
 internal sealed class SigningKeyRingPresenceValidator : IStartupVerifier
 {
@@ -59,12 +60,17 @@ internal sealed class SigningKeyRingPresenceValidator : IStartupVerifier
     /// </remarks>
     private static bool IsSigningKeyRingRegistered(IServiceProvider scopedServices)
     {
+        if (scopedServices.GetService<IServiceProviderIsService>() is { } isService)
+            return isService.IsService(typeof(ISigningKeyRing));
+
         try
         {
             return scopedServices.GetService<ISigningKeyRing>() is not null;
         }
         catch (ZeeKayDaConfigurationException)
         {
+            // The registration exists and is broken, which is a different answer from "absent" —
+            // the ring's own activator reports that failure.
             return true;
         }
     }

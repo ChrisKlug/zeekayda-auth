@@ -373,7 +373,7 @@ public sealed class FileSigningIntegrationTests
         builder.AddPemFileSigning(path, SigningAlgorithm.RS256);
 
         await using var provider = services.BuildServiceProvider();
-        provider.GetServices<IStartupVerifier>().Select(v => v.Name).Should().Contain("SigningKeyRing");
+        provider.GetServices<IStartupActivator>().Select(v => v.Name).Should().Contain("SigningKeyRing");
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────────────────────────

@@ -26,7 +26,7 @@ public sealed class SigningKeyRingStartupVerifierTests
             TState state, Func<SigningContext, TState, ReadOnlyMemory<byte>> buildSigningInput, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
-        async ValueTask ISigningKeyRing.InitializeAsync(CancellationToken cancellationToken)
+        async ValueTask ISigningKeyRing.EnsureInitializedAsync(CancellationToken cancellationToken)
         {
             InitializeAsyncCallCount++;
             await initialize(cancellationToken);
@@ -96,7 +96,7 @@ public sealed class SigningKeyRingStartupVerifierTests
             TState state, Func<SigningContext, TState, ReadOnlyMemory<byte>> buildSigningInput, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
-        ValueTask ISigningKeyRing.InitializeAsync(CancellationToken cancellationToken) => ValueTask.CompletedTask;
+        ValueTask ISigningKeyRing.EnsureInitializedAsync(CancellationToken cancellationToken) => ValueTask.CompletedTask;
 
         SigningKeySet? ISigningKeyRing.CurrentOrNull => keySet;
     }

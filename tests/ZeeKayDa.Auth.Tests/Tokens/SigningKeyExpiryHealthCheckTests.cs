@@ -24,7 +24,7 @@ public sealed class SigningKeyExpiryHealthCheckTests
             TState state, Func<SigningContext, TState, ReadOnlyMemory<byte>> buildSigningInput, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
-        ValueTask ISigningKeyRing.InitializeAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
+        ValueTask ISigningKeyRing.EnsureInitializedAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
 
         SigningKeySet? ISigningKeyRing.CurrentOrNull => current;
     }
@@ -196,7 +196,7 @@ public sealed class SigningKeyExpiryHealthCheckTests
         var source = new CountingSigningKeySource(current, privateKeyPem);
         var timeProvider = new FakeTimeProvider(Now);
         var ring = new StaticSigningKeyRing(source, timeProvider);
-        await ((ISigningKeyRing)ring).InitializeAsync(TestContext.Current.CancellationToken);
+        await ((ISigningKeyRing)ring).EnsureInitializedAsync(TestContext.Current.CancellationToken);
 
         timeProvider.SetUtcNow(Now.AddDays(2)); // advance past the signing key's expiry
         var sut = new SigningKeyExpiryHealthCheck(ring, timeProvider, Options.Create(new SigningKeyExpiryHealthCheckOptions()));

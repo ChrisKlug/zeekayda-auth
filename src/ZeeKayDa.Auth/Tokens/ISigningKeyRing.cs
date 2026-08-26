@@ -6,12 +6,12 @@ namespace ZeeKayDa.Auth.Tokens;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <strong>Framework-sealed.</strong> <see cref="InitializeAsync"/> and <see cref="CurrentOrNull"/>
+/// <strong>Framework-sealed.</strong> <see cref="EnsureInitializedAsync"/> and <see cref="CurrentOrNull"/>
 /// are <see langword="internal"/>, so only assemblies named in this project's
 /// <c>InternalsVisibleTo</c> declarations can implement this interface — the shipped
 /// <see cref="StaticSigningKeyRing"/> today, a future polling ring later. A third party extends
 /// signing by implementing <see cref="ISigningKeySource"/> instead; bypassing
-/// <see cref="InitializeAsync"/>'s startup self-test is not an extension point.
+/// <see cref="EnsureInitializedAsync"/>'s startup self-test is not an extension point.
 /// </para>
 /// <para>
 /// <see cref="SignAsync{TState}"/>'s callback is synchronous by design: the caller cannot perform
@@ -53,11 +53,18 @@ public interface ISigningKeyRing
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Reads the source, builds the key set, opens the signer, and self-tests it. Called exactly
-    /// once by <see cref="SigningKeyRingStartupVerifier"/> at host startup.
+    /// Reads the source, builds the key set, opens the signer, and self-tests it — once, however
+    /// many times this is called.
     /// </summary>
+    /// <remarks>
+    /// Idempotent by design, and that is what lets a startup check depending on the key set ask for
+    /// it rather than rely on running after <see cref="SigningKeyRingStartupVerifier"/>. A second
+    /// call performs no second source read and opens no second signer; concurrent callers await the
+    /// same work and observe the same outcome, including the same failure. A failed initialization
+    /// stays failed: it runs at startup, where a failure aborts the host.
+    /// </remarks>
     /// <param name="cancellationToken">A token that is signalled if the host is shutting down.</param>
-    internal ValueTask InitializeAsync(CancellationToken cancellationToken);
+    internal ValueTask EnsureInitializedAsync(CancellationToken cancellationToken);
 
     /// <summary>
     /// Gets the currently active key set, or <see langword="null"/> when the ring has not yet

@@ -993,6 +993,30 @@ breaking relying parties that pin acceptance to discovery. It is recorded at `In
 than `Warning` because every effective filter trips it; stating it only for keys that have signed
 needs slot identity `SigningKeySet` does not carry — tracked by #553.
 
+### 6.4 §4.3's side-effecting-verifier ordering mitigation is now implemented, not merely accepted
+
+**Recorded 2026-08-26, against `fix/499-startup-verification-phases`.**
+
+§6.1 recorded that §4.3's claim — "side-effecting verifiers are registered **last**, after the cheap
+configuration checks, so a configuration failure is discovered before the expensive work" — was never
+implemented and could not be, since registration order is inoperative under aggregate-all. #499
+implements the guarantee rather than dropping it, so §4.3's stated property now holds by a different
+mechanism than the one it described.
+
+Checks that call into a caller-supplied extension point are `IStartupActivator`, drained in a phase
+that does not run at all when any `IStartupVerifier` failed — a separate collection, not an ordering
+knob, so the standing refusal of a declarable priority is intact. Closed — proven by
+`StartAsync_does_not_run_activators_when_a_verifier_failed`, which asserts the activator never runs,
+and by `StartAsync_runs_activators_when_every_verifier_passed`.
+
+§6.1's other correction is also closed: an unexpectedly throwing check no longer discards the
+aggregate — proven by `StartAsync_keeps_every_aggregated_failure_when_a_later_check_throws_unexpectedly`.
+
+Residual: "cheap" is a claim an implementation makes about itself by choosing an interface. A
+third-party check that calls a database from `IStartupVerifier` defeats the phase for its own host.
+Not a security boundary — the position ahead of the sanitizing-logger gate remains structurally
+unreachable — and no framework check can be moved by a third party.
+
 ## 2026-08-25 — Azure Key Vault cached signing on ISigningKeySource (#520, commit 2b35193)
 
 Trust boundary: private key material leaves Key Vault into process memory. Reviewed against the

@@ -54,6 +54,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- **BREAKING: startup checks split into a cheap `IStartupVerifier` phase and an `IStartupActivator` phase, and the activator phase does not run when a verifier failed** (#499, #500)
+
+  `IStartupVerifier`'s members move to a new base interface, `IStartupCheck`, alongside a second
+  derived interface, `IStartupActivator`. The runner drains gates, then verifiers, then activators —
+  **and skips the activator phase entirely when any verifier reported a failure**, so an application
+  with a broken issuer no longer opens a remote connection to a key vault before being told about the
+  issuer. A `docs/decisions/security-sign-offs.md` §4.3 sign-off condition asserted this property and
+  was never satisfied; it is now implemented rather than dropped.
+
+  Membership is mechanical: **a check that only reads options or inspects the container is an
+  `IStartupVerifier`; a check that calls into a caller-supplied extension point is an
+  `IStartupActivator`.** Resolving a service whose construction runs caller code counts as calling
+  into it. Three framework checks move — the signing key ring initializer, the client repository
+  activator, and the `openid` scope check. Existing third-party `IStartupVerifier` implementations
+  keep working unchanged; the split is two collections rather than a declarable priority, so the
+  standing refusal of an ordering knob is intact.
+
+  `ISigningKeyRing.InitializeAsync` becomes `EnsureInitializedAsync` and is **idempotent**: a second
+  call performs no second source read and opens no second signer, and concurrent callers await the
+  same work and observe the same outcome, including the same failure. That is what lets a check
+  needing the key set ask for it rather than assume it runs after the ring's own activator — order
+  within a phase is not a guarantee.
+
+  **An unexpectedly throwing check no longer discards the aggregate** (#500). It is recorded as
+  `startup.verifier_failed` and its phase continues, so an operator with three genuine configuration
+  errors plus one buggy check sees all four rather than only the throw. Root causes travel as the
+  aggregate's `InnerException` — an `AggregateException` when several checks threw — via a new
+  `ZeeKayDaConfigurationException(IReadOnlyList<ZeeKayDaConfigurationFailure>, Exception)` overload.
+  Gate warnings buffered before a later gate fails are flushed rather than discarded with the buffer.
+
 - **BREAKING: `id_token_signing_alg_values_supported` is derived from the signing key set, and `IdToken.SigningAlgValuesSupported` becomes the optional narrowing filter `IdToken.AdvertisedSigningAlgorithms`** (#515)
 
   The discovery document no longer publishes an operator-declared list of signing algorithms. It

@@ -56,6 +56,28 @@ public class ZeeKayDaConfigurationException : ZeeKayDaException
     }
 
     /// <summary>
+    /// Initialises a new instance from several structured <paramref name="failures"/>, preserving an
+    /// originating exception as <see cref="Exception.InnerException"/>.
+    /// </summary>
+    /// <param name="failures">
+    /// The structured failures. Must be non-empty; each entry carries a stable
+    /// <see cref="ZeeKayDaConfigurationFailure.Code"/> and a human-readable message.
+    /// </param>
+    /// <param name="innerException">
+    /// The root cause behind one of <paramref name="failures"/> — for a startup phase in which
+    /// several checks failed and one of them threw unexpectedly, an
+    /// <see cref="AggregateException"/> over every such throw. Preserved so the aggregate of
+    /// actionable messages and the underlying exceptions reach operators together, rather than one
+    /// at the cost of the other.
+    /// </param>
+    public ZeeKayDaConfigurationException(
+        IReadOnlyList<ZeeKayDaConfigurationFailure> failures, Exception innerException)
+        : base(ComposeMessage([.. failures]), innerException)
+    {
+        AggregatedFailures = [.. failures];
+    }
+
+    /// <summary>
     /// The structured validation failures that contributed to this exception.
     /// Always contains at least one entry.
     /// </summary>

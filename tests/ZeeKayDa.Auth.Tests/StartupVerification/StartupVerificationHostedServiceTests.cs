@@ -74,6 +74,14 @@ public sealed class StartupVerificationHostedServiceTests
             => act(context);
     }
 
+    private sealed class DelegatingActivator(string name, Func<StartupVerificationContext, ValueTask> act) : IStartupActivator
+    {
+        public string Name => name;
+
+        public ValueTask VerifyAsync(StartupVerificationContext context, IServiceProvider scopedServices, CancellationToken cancellationToken)
+            => act(context);
+    }
+
     private static ServiceProvider BuildProviderWithSanitizingLogging(
         out LogSink sink, Action<ServiceCollection>? configure = null)
     {
@@ -339,5 +347,180 @@ public sealed class StartupVerificationHostedServiceTests
         var sut = new StartupVerificationHostedService([], provider, provider.GetRequiredService<IServiceScopeFactory>());
 
         await sut.Awaiting(s => s.StopAsync(TestContext.Current.CancellationToken)).Should().NotThrowAsync();
+    }
+
+    // ── Phase separation: activators do not run when a verifier failed (#499) ────────────────────
+
+    [Fact]
+    public async Task StartAsync_does_not_run_activators_when_a_verifier_failed()
+    {
+        // The point of the phase: an application with a broken issuer must not open a remote
+        // connection to a key vault before it is told about the issuer.
+        var activatorRan = false;
+        var verifier = new DelegatingVerifier("Cheap", context =>
+        {
+            context.AddFailure("config.broken", "Simulated cheap failure.");
+            return ValueTask.CompletedTask;
+        });
+        var activator = new DelegatingActivator("Expensive", _ =>
+        {
+            activatorRan = true;
+            return ValueTask.CompletedTask;
+        });
+        using var provider = BuildProviderWithSanitizingLogging(out _, services =>
+        {
+            services.AddSingleton<IStartupVerifier>(verifier);
+            services.AddSingleton<IStartupActivator>(activator);
+        });
+        var sut = new StartupVerificationHostedService([], provider, provider.GetRequiredService<IServiceScopeFactory>());
+
+        var act = async () => await sut.StartAsync(TestContext.Current.CancellationToken);
+
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .Which.AggregatedFailures.Should().ContainSingle().Which.Code.Should().Be("config.broken");
+        activatorRan.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task StartAsync_runs_activators_when_every_verifier_passed()
+    {
+        var activatorRan = false;
+        var verifier = new DelegatingVerifier("Cheap", _ => ValueTask.CompletedTask);
+        var activator = new DelegatingActivator("Expensive", _ =>
+        {
+            activatorRan = true;
+            return ValueTask.CompletedTask;
+        });
+        using var provider = BuildProviderWithSanitizingLogging(out _, services =>
+        {
+            services.AddSingleton<IStartupVerifier>(verifier);
+            services.AddSingleton<IStartupActivator>(activator);
+        });
+        var sut = new StartupVerificationHostedService([], provider, provider.GetRequiredService<IServiceScopeFactory>());
+
+        await sut.StartAsync(TestContext.Current.CancellationToken);
+
+        activatorRan.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task StartAsync_aggregates_activator_failures_across_the_whole_activator_phase()
+    {
+        var first = new DelegatingActivator("First", context =>
+        {
+            context.AddFailure("first.failed", "First.");
+            return ValueTask.CompletedTask;
+        });
+        var second = new DelegatingActivator("Second", context =>
+        {
+            context.AddFailure("second.failed", "Second.");
+            return ValueTask.CompletedTask;
+        });
+        using var provider = BuildProviderWithSanitizingLogging(out _, services =>
+        {
+            services.AddSingleton<IStartupActivator>(first);
+            services.AddSingleton<IStartupActivator>(second);
+        });
+        var sut = new StartupVerificationHostedService([], provider, provider.GetRequiredService<IServiceScopeFactory>());
+
+        var act = async () => await sut.StartAsync(TestContext.Current.CancellationToken);
+
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .Which.AggregatedFailures.Should().HaveCount(2);
+    }
+
+    // ── A throwing check must not discard the aggregate (#500) ───────────────────────────────────
+
+    [Fact]
+    public async Task StartAsync_keeps_every_aggregated_failure_when_a_later_check_throws_unexpectedly()
+    {
+        // Three genuine, fixable errors plus one check with a bug used to surface as the bug alone,
+        // sending the operator round the fix-and-restart cycle aggregation exists to prevent.
+        var failing = new DelegatingVerifier("Failing", context =>
+        {
+            context.AddFailure("genuine.one", "One.");
+            context.AddFailure("genuine.two", "Two.");
+            return ValueTask.CompletedTask;
+        });
+        var throwing = new DelegatingVerifier("Throwing", _ => throw new InvalidOperationException("boom"));
+        var later = new DelegatingVerifier("Later", context =>
+        {
+            context.AddFailure("genuine.three", "Three.");
+            return ValueTask.CompletedTask;
+        });
+        using var provider = BuildProviderWithSanitizingLogging(out _, services =>
+        {
+            services.AddSingleton<IStartupVerifier>(failing);
+            services.AddSingleton<IStartupVerifier>(throwing);
+            services.AddSingleton<IStartupVerifier>(later);
+        });
+        var sut = new StartupVerificationHostedService([], provider, provider.GetRequiredService<IServiceScopeFactory>());
+
+        var act = async () => await sut.StartAsync(TestContext.Current.CancellationToken);
+
+        var ex = (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>()).Which;
+        ex.AggregatedFailures.Select(f => f.Code).Should().BeEquivalentTo(
+            ["genuine.one", "genuine.two", "startup.verifier_failed", "genuine.three"],
+            "checks after the throwing one still run, and nothing already reported is discarded");
+    }
+
+    [Fact]
+    public async Task StartAsync_preserves_an_unexpected_exception_as_the_aggregates_inner_exception()
+    {
+        var throwing = new DelegatingVerifier("Throwing", _ => throw new InvalidOperationException("boom"));
+        var failing = new DelegatingVerifier("Failing", context =>
+        {
+            context.AddFailure("genuine.one", "One.");
+            return ValueTask.CompletedTask;
+        });
+        using var provider = BuildProviderWithSanitizingLogging(out _, services =>
+        {
+            services.AddSingleton<IStartupVerifier>(throwing);
+            services.AddSingleton<IStartupVerifier>(failing);
+        });
+        var sut = new StartupVerificationHostedService([], provider, provider.GetRequiredService<IServiceScopeFactory>());
+
+        var act = async () => await sut.StartAsync(TestContext.Current.CancellationToken);
+
+        var ex = (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>()).Which;
+        ex.InnerException.Should().BeOfType<InvalidOperationException>().Which.Message.Should().Be("boom");
+    }
+
+    [Fact]
+    public async Task StartAsync_wraps_several_unexpected_exceptions_in_one_AggregateException()
+    {
+        var firstThrow = new DelegatingVerifier("One", _ => throw new InvalidOperationException("first"));
+        var secondThrow = new DelegatingVerifier("Two", _ => throw new NotSupportedException("second"));
+        using var provider = BuildProviderWithSanitizingLogging(out _, services =>
+        {
+            services.AddSingleton<IStartupVerifier>(firstThrow);
+            services.AddSingleton<IStartupVerifier>(secondThrow);
+        });
+        var sut = new StartupVerificationHostedService([], provider, provider.GetRequiredService<IServiceScopeFactory>());
+
+        var act = async () => await sut.StartAsync(TestContext.Current.CancellationToken);
+
+        var ex = (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>()).Which;
+        ex.AggregatedFailures.Should().HaveCount(2);
+        ex.InnerException.Should().BeOfType<AggregateException>()
+            .Which.InnerExceptions.Should().HaveCount(2);
+    }
+
+    // ── Gate warnings survive a later gate's failure (#500) ──────────────────────────────────────
+
+    [Fact]
+    public async Task StartAsync_logs_warnings_from_a_passed_gate_when_a_later_gate_fails()
+    {
+        var passing = new DelegatingGate("Passing", context => context.AddWarning("gate.warned", "something"));
+        var failing = new DelegatingGate("Failing", context => context.AddFailure("gate.failed", "Simulated."));
+        using var provider = BuildProviderWithSanitizingLogging(out var sink);
+        var sut = new StartupVerificationHostedService(
+            [passing, failing], provider, provider.GetRequiredService<IServiceScopeFactory>());
+
+        var act = async () => await sut.StartAsync(TestContext.Current.CancellationToken);
+
+        await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        sink.Entries.Should().ContainSingle(
+            "a warning is only buffered once an earlier gate passed, so the logger is already known good");
     }
 }

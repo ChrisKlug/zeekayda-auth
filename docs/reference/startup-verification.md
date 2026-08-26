@@ -1,18 +1,27 @@
 ---
 title: "Startup verification"
-description: "Reference for IStartupVerifier, StartupVerificationContext, and how to add framework- or provider-owned startup checks to ZeeKayDa.Auth."
+description: "Reference for IStartupVerifier, IStartupActivator, StartupVerificationContext, and how to add framework- or provider-owned startup checks to ZeeKayDa.Auth."
 parent: "Reference"
 nav_order: 7
 ---
 
 *Added in Unreleased.*
 
-ZeeKayDa.Auth runs every startup check — its own internal checks and any you add — through a single `IHostedService`, once, before the host finishes starting. Most configuration mistakes are already caught earlier by [`IValidateOptions<T>`](https://learn.microsoft.com/dotnet/core/extensions/options-validation) validation on `AuthorizationServerOptions`, which is synchronous. `IStartupVerifier` exists for the checks that structurally cannot be: anything that needs async I/O, a scoped DI dependency, or a genuine side effect (forcing construction of a repository, performing a real cryptographic sign operation to prove a signing key is reachable).
+ZeeKayDa.Auth runs every startup check — its own internal checks and any you add — through a single `IHostedService`, once, before the host finishes starting. Most configuration mistakes are already caught earlier by [`IValidateOptions<T>`](https://learn.microsoft.com/dotnet/core/extensions/options-validation) validation on `AuthorizationServerOptions`, which is synchronous. These seams exist for the checks that structurally cannot be: anything that needs async I/O, a scoped DI dependency, or a genuine side effect (forcing construction of a repository, performing a real cryptographic sign operation to prove a signing key is reachable).
 
-## `IStartupVerifier`
+There are two of them, and **which one you implement decides when your check runs**:
+
+| Interface | Phase | For a check that |
+|---|---|---|
+| `IStartupVerifier` | second | only reads options or inspects the container |
+| `IStartupActivator` | third | calls into a caller-supplied extension point — a repository, a signing key source, a scope store |
+
+Both derive from `IStartupCheck`, which carries the two members. **The activator phase does not run at all if any verifier reported a failure**, so an application whose issuer is misconfigured never opens a connection to a key vault before being told about the issuer. Resolving a service whose construction runs someone else's code counts as calling into it: if resolving it can do work, your check is an activator.
+
+## `IStartupCheck`, `IStartupVerifier`, and `IStartupActivator`
 
 ```csharp
-public interface IStartupVerifier
+public interface IStartupCheck
 {
     string Name { get; }
 
@@ -21,17 +30,21 @@ public interface IStartupVerifier
         IServiceProvider scopedServices,
         CancellationToken cancellationToken);
 }
+
+public interface IStartupVerifier : IStartupCheck;   // phase 2 — cheap
+public interface IStartupActivator : IStartupCheck;  // phase 3 — does real work
 ```
 
 | Member | Contract |
 |---|---|
-| `Name` | A stable name used for log attribution and diagnostics only. It is **not** an ordering or priority hint — execution order is DI registration order, and nothing a verifier returns can influence it. |
+| `Name` | A stable name used for log attribution and diagnostics only. It is **not** an ordering or priority hint — execution order within a phase is DI registration order, and nothing a check returns can influence it. |
 | `VerifyAsync` | Runs the check. Report outcomes by calling `context.AddFailure(...)` and `context.AddWarning(...)` — never throw except for a genuinely unexpected failure (a DI resolution error, a third-party bug). |
 
 Register an implementation the same way you register any other service:
 
 ```csharp
-builder.Services.AddSingleton<IStartupVerifier, MyCustomVerifier>();
+builder.Services.AddSingleton<IStartupVerifier, MyCustomVerifier>();      // cheap
+builder.Services.AddSingleton<IStartupActivator, MyRepositoryActivator>(); // does real work
 ```
 
 ### Rules for implementing a verifier
@@ -39,7 +52,8 @@ builder.Services.AddSingleton<IStartupVerifier, MyCustomVerifier>();
 - **Never log directly.** The runner logs every warning on your behalf, under a log category matching your own implementation type, after the internal gate phase has completed (see [How verifiers run](#how-verifiers-run)). A verifier that constructor-injects `ILogger<T>` or `ISanitizingLogger<T>` and calls it directly bypasses this and may log before it is safe to do so.
 - **Resolve only genuine singletons from the constructor.** Resolve anything scoped from the `IServiceProvider` passed to `VerifyAsync` — the runner creates a fresh `AsyncServiceScope` for every invocation. Constructor-injecting a scoped service as if it were a singleton is exactly the footgun this design exists to prevent.
 - **Report through the context; don't throw for expected outcomes.** Call `context.AddFailure` for a configuration problem you detected. Only let an exception propagate for something genuinely unexpected — the runner treats a thrown `ZeeKayDaConfigurationException` as if its `AggregatedFailures` had already been added to the context, and wraps any other exception as an unexpected verifier failure (see [Unexpected exceptions](#unexpected-exceptions)).
-- **Being side-effecting is fine.** A verifier that forces construction of a repository, or performs a real sign operation to prove a key is reachable, is a legitimate use of the per-verifier scope — that scope is what makes the side effect safe to run once, in isolation, at startup.
+- **Being side-effecting is fine — register it as an `IStartupActivator`.** A check that forces construction of a repository, or performs a real sign operation to prove a key is reachable, is a legitimate use of the per-check scope. Putting it in the activator phase is what stops it running for a host that is already known to be misconfigured.
+- **Do not depend on running after another check.** Order within a phase is registration order and is not a guarantee. If your check needs another's work done first, ask for it — that is why `ISigningKeyRing.EnsureInitializedAsync` is idempotent, so the check that validates client registrations against the advertised algorithms can call it rather than assume it runs second.
 
 ## `StartupVerificationContext`
 
@@ -72,34 +86,36 @@ public sealed class StartupVerificationContext
 
 ## How verifiers run
 
-Startup verification runs in two phases, both inside the same hosted service's startup call:
+Startup verification runs in three phases, all inside the same hosted service's startup call:
 
 1. **Internal gates run first**, sequentially, and abort startup immediately on the first failure — with nothing logged yet. These exist only inside the framework itself (for example, the check that the redaction-layer logger has not been shadowed by a competing DI registration) and are not an extension point; there is no public interface for adding one.
-2. **Your `IStartupVerifier` instances run second**, once every gate has passed. Every registered verifier runs — a failure in one does not skip the rest — and every failure across every verifier is aggregated into a single `ZeeKayDaConfigurationException` thrown once, after the loop. Warnings are logged as they are produced, before that exception is thrown.
+2. **Your `IStartupVerifier` instances run second**, once every gate has passed. Every registered verifier runs — a failure in one does not skip the rest — and every failure across the phase is aggregated into a single `ZeeKayDaConfigurationException` thrown once, after the loop. Warnings are logged as they are produced.
+3. **Your `IStartupActivator` instances run third**, and **only if the verifier phase produced no failure at all**. The phase aggregates the same way.
 
-Two consequences of this shape matter to you as an implementer:
+Three consequences of this shape matter to you as an implementer:
 
 - **You see every problem in one restart**, not one problem per restart. A host missing both the `openid` scope and an `IDistributedCache` registration gets both failures in one `AggregatedFailures` list.
-- **Your verifier cannot run before the internal gates have passed**, and nothing you register can reorder that. This is what guarantees the redaction layer is already trustworthy by the time your verifier's warnings are logged.
+- **Your check cannot run before the internal gates have passed**, and nothing you register can reorder that. This is what guarantees the redaction layer is already trustworthy by the time your warnings are logged.
+- **An activator sees a configuration that already passed every cheap check.** If your check is expensive, or reaches out over a network, that is where it belongs.
 
 ## Unexpected exceptions
 
 If `VerifyAsync` throws instead of reporting through the context, the runner distinguishes two cases:
 
 - **A thrown `ZeeKayDaConfigurationException`** is absorbed verbatim — its `AggregatedFailures` are added to the running failure list, preserving their original stable codes.
-- **Any other exception** is wrapped:
+- **Any other exception** is recorded as a failure and the phase continues:
 
   ```csharp
-  throw new ZeeKayDaConfigurationException(
-      new ZeeKayDaConfigurationFailure(
-          "startup.verifier_failed",
-          $"Verifier '{name}' threw {ex.GetType().FullName}. See the inner exception for the root cause."),
-      ex);
+  context.AddFailure(
+      "startup.verifier_failed",
+      $"Verifier '{name}' threw {ex.GetType().FullName}. See the inner exception for the root cause.");
   ```
+
+  The exception itself travels as the phase aggregate's `InnerException` — an `AggregateException` when more than one check threw. One check with a bug therefore no longer hides the genuine, fixable configuration errors reported beside it.
 
 > ⚠️ **Warning:** The wrapper names the exception's **type**, never `ex.Message`. An arbitrary underlying exception's message is untrusted text — a database connection string, a cloud SDK exception carrying a SAS-bearing URI, anything a lower layer decided to put in `Message`. `ZeeKayDaConfigurationFailure.Message` is a plain string on public API surface that the redaction layer cannot act on, so it must never carry raw exception text. The original exception is preserved as `InnerException`, where it stays available to an operator through their logging or crash-dump pipeline, redacted the same way any other logged exception is if it is ever logged through the framework's sanitizing logger. Apply the same rule in your own verifiers: if you must describe a caught exception in a failure or warning, name its type, not its message.
 
-Startup still aborts either way — there is no silent swallow — but the operator gets an attributed, legible failure naming the offending verifier rather than a bare stack trace from inside the host's startup pipeline.
+Startup still aborts either way — there is no silent swallow — but the operator gets an attributed, legible failure naming the offending check, alongside every other failure in that phase, rather than a bare stack trace from inside the host's startup pipeline.
 
 ## Worked examples
 
