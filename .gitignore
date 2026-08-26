@@ -39,3 +39,6 @@ coverage*.info
 .env
 .claude/worktrees/
 .tokensave
+
+# Stryker.NET mutation-testing reports (issue #308)
+StrykerOutput/
