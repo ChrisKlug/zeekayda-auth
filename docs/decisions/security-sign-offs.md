@@ -995,27 +995,32 @@ needs slot identity `SigningKeySet` does not carry — tracked by #553.
 
 ### 6.4 §4.3's side-effecting-verifier ordering mitigation is now implemented, not merely accepted
 
-**Recorded 2026-08-26, against `fix/499-startup-verification-phases`.**
+**Recorded 2026-08-26, against `fix/499-startup-verification-phases` at commit `d3a7276`, after both
+review rounds concluded.**
 
-§6.1 recorded that §4.3's claim — "side-effecting verifiers are registered **last**, after the cheap
-configuration checks, so a configuration failure is discovered before the expensive work" — was never
-implemented and could not be, since registration order is inoperative under aggregate-all. #499
-implements the guarantee rather than dropping it, so §4.3's stated property now holds by a different
-mechanism than the one it described.
+§6.1 recorded that §4.3's claim — side-effecting verifiers run after the cheap configuration checks —
+was never implemented and could not be under aggregate-all. #499 implements the property rather than
+dropping the claim: checks that resolve or call anything the framework did not itself register are
+`IStartupActivator`, drained in a phase that does not run at all when any `IStartupVerifier` failed.
+A separate collection, not a declarable priority, so the standing refusal of an ordering knob holds.
+Closed — proven by `A_failed_cheap_check_means_the_signing_key_source_is_never_touched`, which asserts
+on a real host that the source is never constructed, read, or asked for a signer.
 
-Checks that call into a caller-supplied extension point are `IStartupActivator`, drained in a phase
-that does not run at all when any `IStartupVerifier` failed — a separate collection, not an ordering
-knob, so the standing refusal of a declarable priority is intact. Closed — proven by
-`StartAsync_does_not_run_activators_when_a_verifier_failed`, which asserts the activator never runs,
-and by `StartAsync_runs_activators_when_every_verifier_passed`.
+§6.1's other correction is closed too: an unexpectedly throwing check no longer discards the aggregate
+— proven by `StartAsync_keeps_every_aggregated_failure_when_a_later_check_throws_unexpectedly`.
 
-§6.1's other correction is also closed: an unexpectedly throwing check no longer discards the
-aggregate — proven by `StartAsync_keeps_every_aggregated_failure_when_a_later_check_throws_unexpectedly`.
+Two controls this work nearly lost, both caught in review and fixed before merge, recorded because
+each was a control silently removed rather than a bug introduced. Dropping the ring activator from
+`AddZeeKayDaAuthCore` left a host-registered `ISigningKeyRing` never initialized or self-tested —
+closed, proven by `AddZeeKayDaAuthCore_registers_the_ring_activator_for_a_manually_registered_ring`.
+The gate-warning flush justified itself from the sanitizing-logger gate's registration position, so a
+gate inserted ahead of it would have logged through a logger proved shadowed — now tracked explicitly,
+proven by `StartAsync_discards_warnings_buffered_before_the_logger_gate_fails`.
 
-Residual: "cheap" is a claim an implementation makes about itself by choosing an interface. A
-third-party check that calls a database from `IStartupVerifier` defeats the phase for its own host.
-Not a security boundary — the position ahead of the sanitizing-logger gate remains structurally
-unreachable — and no framework check can be moved by a third party.
+Residual: "cheap" is a claim an implementation makes by choosing an interface. A third-party check
+doing I/O from `IStartupVerifier` defeats the phase for its own host. Not a security boundary — the
+position ahead of the gates stays structurally unreachable, and no framework check can be moved by a
+third party. A check registered as `IStartupCheck` fails startup rather than silently never running.
 
 ## 2026-08-25 — Azure Key Vault cached signing on ISigningKeySource (#520, commit 2b35193)
 
