@@ -212,28 +212,27 @@ public sealed class StaticSigningKeyRing : ISigningKeyRing, IDisposable, IAsyncD
     }
 
     /// <summary>
-    /// Performs the one initialization this ring will ever do, completing <paramref name="started"/>
-    /// so every concurrent caller observes the same outcome.
+    /// Performs the one initialization this ring will ever do, transferring its outcome to
+    /// <paramref name="started"/> so every concurrent caller observes the same result.
     /// </summary>
     /// <remarks>
+    /// <see cref="TaskCompletionSource.SetFromTask"/> rather than a try/catch: it carries success,
+    /// failure and cancellation across without a catch-all clause, and it preserves a cancelled task
+    /// as cancelled where catching <see cref="OperationCanceledException"/> and calling
+    /// <c>SetException</c> would have made it faulted.
+    /// <para>
     /// A failure is not reset for retry. Initialization runs at startup, where a failure aborts the
-    /// host — leaving the failed task in place is what makes a second caller see the original
+    /// host — leaving the completed task in place is what makes a second caller see the original
     /// failure rather than trigger a second attempt against a source that just refused.
+    /// </para>
     /// </remarks>
-    private async Task RunInitializationAsync(TaskCompletionSource started, CancellationToken cancellationToken)
-    {
-        try
-        {
-            await InitializeCoreAsync(cancellationToken).ConfigureAwait(false);
-            started.SetResult();
-        }
-        catch (Exception ex)
-        {
-            // Not rethrown: the exception reaches every caller through started.Task, and rethrowing
-            // here would fault a second task nobody awaits.
-            started.SetException(ex);
-        }
-    }
+    private Task RunInitializationAsync(TaskCompletionSource started, CancellationToken cancellationToken)
+        => InitializeCoreAsync(cancellationToken).ContinueWith(
+            static (initialization, state) => ((TaskCompletionSource)state!).SetFromTask(initialization),
+            started,
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
 
     private async Task InitializeCoreAsync(CancellationToken cancellationToken)
     {
