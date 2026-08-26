@@ -22,6 +22,14 @@ run for free forever.
 work is deferred, not started — say so and stop. (Exception: a genuine security hole in
 already-written code.)
 
+**And re-check it whenever scope grows.** The slice check above runs before work starts; scope that
+accretes mid-build escapes it. Folding in a neighbouring issue, half of another, or an addition that
+"may as well" ride along is a *recommendation with a size consequence* — state that consequence in
+the same message that proposes the expansion, and propose the split when it no longer fits one
+reviewable PR. Silent accretion is how a change becomes a diff too large to review well, and smaller
+diffs are the only lever here that does not cost the maintainer something they value: the reviewers
+stay, because they find real defects.
+
 ---
 
 ## Stage 1 — Talk the shape through ⛔
