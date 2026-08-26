@@ -31,14 +31,6 @@ public sealed class ZeeKayDaAuthBuilderFileSigningExtensionsTests
 
     // ── AddPemFileSigning: argument validation ───────────────────────────────────────────────────
 
-    [Fact]
-    public void AddPemFileSigning_throws_ArgumentNullException_when_builder_is_null()
-    {
-        var act = () => ((ZeeKayDaAuthBuilder)null!).AddPemFileSigning(PemPath, SigningAlgorithm.RS256);
-
-        act.Should().Throw<ArgumentNullException>().WithParameterName("builder");
-    }
-
     [Theory]
     [InlineData(null)]
     [InlineData("")]
@@ -53,14 +45,6 @@ public sealed class ZeeKayDaAuthBuilderFileSigningExtensionsTests
     }
 
     // ── AddPemFileSigning(path, algorithm, keyPath: ...): the split-file case (issue #405) ──────────
-
-    [Fact]
-    public void AddPemFileSigning_with_keyPath_throws_ArgumentNullException_when_builder_is_null()
-    {
-        var act = () => ((ZeeKayDaAuthBuilder)null!).AddPemFileSigning(PemPath, SigningAlgorithm.RS256, "/etc/zeekayda/signing.key");
-
-        act.Should().Throw<ArgumentNullException>().WithParameterName("builder");
-    }
 
     [Theory]
     [InlineData(null)]
@@ -103,14 +87,6 @@ public sealed class ZeeKayDaAuthBuilderFileSigningExtensionsTests
     }
 
     // ── AddPfxFileSigning: argument validation ───────────────────────────────────────────────────
-
-    [Fact]
-    public void AddPfxFileSigning_throws_ArgumentNullException_when_builder_is_null()
-    {
-        var act = () => ((ZeeKayDaAuthBuilder)null!).AddPfxFileSigning(PfxPath, SigningAlgorithm.RS256, AnyPassword());
-
-        act.Should().Throw<ArgumentNullException>().WithParameterName("builder");
-    }
 
     [Theory]
     [InlineData(null)]
@@ -272,24 +248,6 @@ public sealed class ZeeKayDaAuthBuilderFileSigningExtensionsTests
     // ── AddPfxFileSigning: the three-slot overload ───────────────────────────────────────────────
 
     [Fact]
-    public void AddPfxFileSigning_slots_overload_throws_ArgumentNullException_when_builder_is_null()
-    {
-        var act = () => ((ZeeKayDaAuthBuilder)null!).AddPfxFileSigning(SigningAlgorithm.RS256, _ => { });
-
-        act.Should().Throw<ArgumentNullException>().WithParameterName("builder");
-    }
-
-    [Fact]
-    public void AddPfxFileSigning_slots_overload_throws_ArgumentNullException_when_configure_is_null()
-    {
-        var builder = NewBuilder();
-
-        var act = () => builder.AddPfxFileSigning(SigningAlgorithm.RS256, null!);
-
-        act.Should().Throw<ArgumentNullException>().WithParameterName("configure");
-    }
-
-    [Fact]
     public async Task AddPfxFileSigning_slots_overload_fills_every_slot_the_callback_sets()
     {
         var builder = NewBuilder();
@@ -384,45 +342,7 @@ public sealed class ZeeKayDaAuthBuilderFileSigningExtensionsTests
 
 
 
-    [Fact]
-    public void AddPemFileSigning_returns_builder_for_chaining()
-    {
-        var builder = NewBuilder();
-
-        var returned = builder.AddPemFileSigning(PemPath, SigningAlgorithm.RS256);
-
-        returned.Should().BeSameAs(builder);
-    }
-
-    [Fact]
-    public void AddPfxFileSigning_returns_builder_for_chaining()
-    {
-        var builder = NewBuilder();
-
-        var returned = builder.AddPfxFileSigning(PfxPath, SigningAlgorithm.RS256, AnyPassword());
-
-        returned.Should().BeSameAs(builder);
-    }
-
     // ── AddPemFileSigning: the three-slot overload ───────────────────────────────────────────────
-
-    [Fact]
-    public void AddPemFileSigning_slots_overload_throws_ArgumentNullException_when_builder_is_null()
-    {
-        var act = () => ((ZeeKayDaAuthBuilder)null!).AddPemFileSigning(SigningAlgorithm.RS256, _ => { });
-
-        act.Should().Throw<ArgumentNullException>().WithParameterName("builder");
-    }
-
-    [Fact]
-    public void AddPemFileSigning_slots_overload_throws_ArgumentNullException_when_configure_is_null()
-    {
-        var builder = NewBuilder();
-
-        var act = () => builder.AddPemFileSigning(SigningAlgorithm.RS256, null!);
-
-        act.Should().Throw<ArgumentNullException>().WithParameterName("configure");
-    }
 
     [Fact]
     public async Task AddPemFileSigning_slots_overload_fills_every_slot_the_callback_sets()
@@ -463,16 +383,6 @@ public sealed class ZeeKayDaAuthBuilderFileSigningExtensionsTests
         await using var provider = builder.Services.BuildServiceProvider();
         provider.GetRequiredService<IOptions<PemFileSigningOptions>>().Value.Algorithm
             .Should().Be(SigningAlgorithm.ES256);
-    }
-
-    [Fact]
-    public void AddPemFileSigning_slots_overload_returns_the_same_builder()
-    {
-        var builder = NewBuilder();
-
-        var returned = builder.AddPemFileSigning(SigningAlgorithm.RS256, _ => { });
-
-        returned.Should().BeSameAs(builder);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────────────────────────

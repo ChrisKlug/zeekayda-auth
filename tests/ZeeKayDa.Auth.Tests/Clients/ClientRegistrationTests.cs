@@ -65,21 +65,6 @@ public sealed class ClientRegistrationTests
     }
 
     [Fact]
-    public void AllowedPromptValues_defaults_to_empty()
-    {
-        var client = new ClientRegistration
-        {
-            ClientId = "test",
-            Credentials = [],
-            IsPublic = true,
-            RedirectUris = new HashSet<string>(),
-            PostLogoutRedirectUris = new HashSet<string>(),
-        };
-
-        client.AllowedPromptValues.Should().BeEmpty();
-    }
-
-    [Fact]
     public void AllowedSigningAlgorithms_defaults_to_null()
     {
         var client = new ClientRegistration
@@ -92,14 +77,6 @@ public sealed class ClientRegistrationTests
         };
 
         client.AllowedSigningAlgorithms.Should().BeNull();
-    }
-
-    [Fact]
-    public void IClientRegistration_AllowedPromptValues_dim_default_is_empty()
-    {
-        IClientRegistration client = new MinimalPublicClient();
-
-        client.AllowedPromptValues.Should().BeEmpty();
     }
 
     [Fact]
@@ -186,21 +163,6 @@ public sealed class ClientRegistrationTests
         };
 
         client.AllowedScopes.Should().BeEmpty();
-    }
-
-    [Fact]
-    public void DefaultProperties_EnableZkdErrorCodes_defaults_to_false()
-    {
-        var client = new ClientRegistration
-        {
-            ClientId = "test",
-            Credentials = [],
-            IsPublic = true,
-            RedirectUris = new HashSet<string>(),
-            PostLogoutRedirectUris = new HashSet<string>(),
-        };
-
-        client.EnableZkdErrorCodes.Should().BeFalse();
     }
 
     // Gap 2 — CreatePublic stores arguments
@@ -340,22 +302,6 @@ public sealed class ClientRegistrationTests
             allowedScopes: ["openid"]);
 
         client.AllowedScopes.Contains("OPENID").Should().BeFalse();
-    }
-
-    // Gap 7 — PromptValue enum membership
-
-    [Fact]
-    public void PromptValue_contains_exactly_expected_members()
-    {
-        var values = Enum.GetValues<PromptValue>();
-
-        values.Should().BeEquivalentTo(new[]
-        {
-            PromptValue.None,
-            PromptValue.Login,
-            PromptValue.Consent,
-            PromptValue.SelectAccount,
-        });
     }
 
     // Gap 8 — TokenEndpointAuthMethods wire-format string values

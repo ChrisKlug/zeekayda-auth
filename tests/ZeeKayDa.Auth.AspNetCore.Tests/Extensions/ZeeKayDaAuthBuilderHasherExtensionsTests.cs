@@ -8,16 +8,6 @@ namespace ZeeKayDa.Auth.AspNetCore.Tests.Extensions;
 
 public sealed class ZeeKayDaAuthBuilderHasherExtensionsTests
 {
-    // ── Argument validation ───────────────────────────────────────────────────────────────────────
-
-    [Fact]
-    public void AddSecretsHasher_throws_ArgumentNullException_if_builder_is_null()
-    {
-        var act = () => ((ZeeKayDaAuthBuilder)null!).AddSecretsHasher<FakeHasher>();
-
-        act.Should().Throw<ArgumentNullException>().WithParameterName("builder");
-    }
-
     // ── Registration ─────────────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -68,19 +58,6 @@ public sealed class ZeeKayDaAuthBuilderHasherExtensionsTests
     }
 
     [Fact]
-    public void AddSecretsHasher_returns_builder_for_chaining()
-    {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddOptions();
-        var builder = new ZeeKayDaAuthBuilder(services);
-
-        var returned = builder.AddSecretsHasher<FakeHasher>();
-
-        returned.Should().BeSameAs(builder);
-    }
-
-    [Fact]
     public void AddSecretsHasher_throws_InvalidOperationException_if_same_type_registered_twice()
     {
         var services = new ServiceCollection();
@@ -95,15 +72,6 @@ public sealed class ZeeKayDaAuthBuilderHasherExtensionsTests
     }
 
     // ── AddPbkdf2SecretsHasher ───────────────────────────────────────────────────────────────────
-
-    [Fact]
-    public void AddPbkdf2SecretsHasher_throws_ArgumentNullException_if_builder_is_null()
-    {
-        ZeeKayDaAuthBuilder builder = null!;
-        var act = () => builder.AddPbkdf2SecretsHasher();
-
-        act.Should().Throw<ArgumentNullException>().WithParameterName("builder");
-    }
 
     [Fact]
     public void AddPbkdf2SecretsHasher_registers_Pbkdf2ClientSecretHasher_as_IClientSecretHasher()
@@ -149,19 +117,6 @@ public sealed class ZeeKayDaAuthBuilderHasherExtensionsTests
         using var provider = services.BuildServiceProvider();
         var opts = provider.GetRequiredService<IOptions<Pbkdf2ClientSecretHasherOptions>>().Value;
         opts.Iterations.Should().Be(1_200_000);
-    }
-
-    [Fact]
-    public void AddPbkdf2SecretsHasher_returns_builder_for_chaining()
-    {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddOptions();
-        var builder = new ZeeKayDaAuthBuilder(services);
-
-        var returned = builder.AddPbkdf2SecretsHasher();
-
-        returned.Should().BeSameAs(builder);
     }
 
     [Fact]

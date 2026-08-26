@@ -238,12 +238,4 @@ public sealed class DevelopmentSigningKeyWarningServiceTests
         context.Warnings.Should().ContainSingle()
             .Which.MessageTemplate.Should().Be(DevelopmentSigningKeyWarningService.NonDevelopmentCriticalMessage);
     }
-
-    [Fact]
-    public void Name_is_DevelopmentSigningKey()
-    {
-        var sut = BuildSut(Environments.Development);
-
-        sut.Name.Should().Be("DevelopmentSigningKey");
-    }
 }

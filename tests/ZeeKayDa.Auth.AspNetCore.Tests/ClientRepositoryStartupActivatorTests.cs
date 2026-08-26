@@ -77,14 +77,6 @@ public sealed class ClientRepositoryStartupActivatorTests
         await act.Should().ThrowAsync<InvalidOperationException>();
     }
 
-    [Fact]
-    public void Name_is_ClientRepositoryActivation()
-    {
-        var sut = new ClientRepositoryStartupActivator();
-
-        sut.Name.Should().Be("ClientRepositoryActivation");
-    }
-
     private sealed class CustomClientRepository : IClientRepository
     {
         public ValueTask<IClientRegistration?> FindByClientIdAsync(

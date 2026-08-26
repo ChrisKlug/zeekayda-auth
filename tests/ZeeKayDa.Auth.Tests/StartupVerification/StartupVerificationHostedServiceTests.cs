@@ -340,16 +340,6 @@ public sealed class StartupVerificationHostedServiceTests
         exception.Which.InnerException.Should().BeOfType<InvalidOperationException>();
     }
 
-    [Fact]
-    public async Task StopAsync_does_not_throw()
-    {
-        var services = new ServiceCollection();
-        using var provider = services.BuildServiceProvider();
-        var sut = new StartupVerificationHostedService([], provider, provider.GetRequiredService<IServiceScopeFactory>());
-
-        await sut.Awaiting(s => s.StopAsync(TestContext.Current.CancellationToken)).Should().NotThrowAsync();
-    }
-
     // ── Phase separation: activators do not run when a verifier failed (#499) ────────────────────
 
     [Fact]

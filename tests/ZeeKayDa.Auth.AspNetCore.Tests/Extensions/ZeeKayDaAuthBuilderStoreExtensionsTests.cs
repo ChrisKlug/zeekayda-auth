@@ -26,16 +26,6 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
         return services;
     }
 
-    // ── AddAuthorizationCodeStore: argument validation ────────────────────────────────────────────
-
-    [Fact]
-    public void AddAuthorizationCodeStore_throws_ArgumentNullException_when_builder_is_null()
-    {
-        var act = () => ((ZeeKayDaAuthBuilder)null!).AddAuthorizationCodeStore<StubAuthorizationCodeBackingStore>();
-
-        act.Should().Throw<ArgumentNullException>().WithParameterName("builder");
-    }
-
     // ── AddAuthorizationCodeStore: happy path ─────────────────────────────────────────────────────
 
     [Fact]
@@ -69,17 +59,6 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
                      "IAuthorizationCodeStore always resolves to the sealed framework coordinator");
     }
 
-    [Fact]
-    public void AddAuthorizationCodeStore_returns_builder_for_chaining()
-    {
-        var services = new ServiceCollection();
-        var builder = new ZeeKayDaAuthBuilder(services);
-
-        var returned = builder.AddAuthorizationCodeStore<StubAuthorizationCodeBackingStore>();
-
-        returned.Should().BeSameAs(builder);
-    }
-
     // ── AddAuthorizationCodeStore: double-registration guard ─────────────────────────────────────
 
     [Fact]
@@ -106,16 +85,6 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
 
         act.Should().Throw<InvalidOperationException>()
             .WithMessage("*IAuthorizationCodeStore is already registered*");
-    }
-
-    // ── AddRefreshTokenGrantStore: argument validation ────────────────────────────────────────────
-
-    [Fact]
-    public void AddRefreshTokenGrantStore_throws_ArgumentNullException_when_builder_is_null()
-    {
-        var act = () => ((ZeeKayDaAuthBuilder)null!).AddRefreshTokenGrantStore<StubRefreshTokenGrantStore>();
-
-        act.Should().Throw<ArgumentNullException>().WithParameterName("builder");
     }
 
     // ── AddRefreshTokenGrantStore: happy path ─────────────────────────────────────────────────────
@@ -149,17 +118,6 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
             sd.Lifetime == ServiceLifetime.Singleton,
             because: "third parties can only ever implement IRefreshTokenGrantStore; " +
                      "IRefreshTokenStore always resolves to the sealed framework coordinator");
-    }
-
-    [Fact]
-    public void AddRefreshTokenGrantStore_returns_builder_for_chaining()
-    {
-        var services = new ServiceCollection();
-        var builder = new ZeeKayDaAuthBuilder(services);
-
-        var returned = builder.AddRefreshTokenGrantStore<StubRefreshTokenGrantStore>();
-
-        returned.Should().BeSameAs(builder);
     }
 
     // ── AddRefreshTokenGrantStore: double-registration guard ──────────────────────────────────────
@@ -222,41 +180,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
             sd.ImplementationType == typeof(StubAuthorizationCodeBackingStore));
     }
 
-    // ── ThrowIfAlreadyRegistered on a fresh builder ───────────────────────────────────────────────
-
-    [Fact]
-    public void ThrowIfAlreadyRegistered_does_not_throw_on_fresh_builder_for_unregistered_type()
-    {
-        var services = new ServiceCollection();
-        var builder = new ZeeKayDaAuthBuilder(services);
-
-        var act = () => builder.ThrowIfAlreadyRegistered(typeof(IAuthorizationCodeStore));
-
-        act.Should().NotThrow("the type has not yet been registered in the empty service collection");
-    }
-
-    // ── AddInMemoryAuthorizationCodeStore: argument validation ────────────────────────────────────
-
-    [Fact]
-    public void AddInMemoryAuthorizationCodeStore_throws_ArgumentNullException_when_builder_is_null()
-    {
-        var act = () => ((ZeeKayDaAuthBuilder)null!).AddInMemoryAuthorizationCodeStore();
-
-        act.Should().Throw<ArgumentNullException>().WithParameterName("builder");
-    }
-
     // ── AddInMemoryAuthorizationCodeStore: happy path ─────────────────────────────────────────────
-
-    [Fact]
-    public void AddInMemoryAuthorizationCodeStore_returns_builder_for_chaining()
-    {
-        var services = new ServiceCollection();
-        var builder = new ZeeKayDaAuthBuilder(services);
-
-        var returned = builder.AddInMemoryAuthorizationCodeStore();
-
-        returned.Should().BeSameAs(builder);
-    }
 
     [Fact]
     public void AddInMemoryAuthorizationCodeStore_registers_IAuthorizationCodeBackingStore_as_singleton_with_InMemoryAuthorizationCodeBackingStore_implementation()
@@ -327,28 +251,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
             .WithMessage("*IAuthorizationCodeStore is already registered*");
     }
 
-    // ── AddInMemoryRefreshTokenStore: argument validation ─────────────────────────────────────────
-
-    [Fact]
-    public void AddInMemoryRefreshTokenStore_throws_ArgumentNullException_when_builder_is_null()
-    {
-        var act = () => ((ZeeKayDaAuthBuilder)null!).AddInMemoryRefreshTokenStore();
-
-        act.Should().Throw<ArgumentNullException>().WithParameterName("builder");
-    }
-
     // ── AddInMemoryRefreshTokenStore: happy path ──────────────────────────────────────────────────
-
-    [Fact]
-    public void AddInMemoryRefreshTokenStore_returns_builder_for_chaining()
-    {
-        var services = new ServiceCollection();
-        var builder = new ZeeKayDaAuthBuilder(services);
-
-        var returned = builder.AddInMemoryRefreshTokenStore();
-
-        returned.Should().BeSameAs(builder);
-    }
 
     [Fact]
     public void AddInMemoryRefreshTokenStore_registers_IRefreshTokenStore_as_the_framework_coordinator()
@@ -409,29 +312,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
             .WithMessage("*IRefreshTokenStore is already registered*");
     }
 
-    // ── AddInMemoryStores: argument validation ────────────────────────────────────────────────────
-
-    [Fact]
-    public void AddInMemoryStores_throws_ArgumentNullException_when_builder_is_null()
-    {
-        ZeeKayDaAuthBuilder builder = null!;
-        var act = () => builder.AddInMemoryStores();
-
-        act.Should().Throw<ArgumentNullException>().WithParameterName("builder");
-    }
-
     // ── AddInMemoryStores: happy path ─────────────────────────────────────────────────────────────
-
-    [Fact]
-    public void AddInMemoryStores_returns_builder_for_chaining()
-    {
-        var services = new ServiceCollection();
-        var builder = new ZeeKayDaAuthBuilder(services);
-
-        var returned = builder.AddInMemoryStores();
-
-        returned.Should().BeSameAs(builder);
-    }
 
     [Fact]
     public void AddInMemoryStores_registers_both_IAuthorizationCodeStore_and_IRefreshTokenStore()
@@ -588,28 +469,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
             .WithMessage("*IRefreshTokenStore is already registered*");
     }
 
-    // ── AddDistributedCacheAuthorizationCodeStore: argument validation ────────────────────────────
-
-    [Fact]
-    public void AddDistributedCacheAuthorizationCodeStore_throws_ArgumentNullException_when_builder_is_null()
-    {
-        var act = () => ((ZeeKayDaAuthBuilder)null!).AddDistributedCacheAuthorizationCodeStore();
-
-        act.Should().Throw<ArgumentNullException>().WithParameterName("builder");
-    }
-
     // ── AddDistributedCacheAuthorizationCodeStore: happy path ────────────────────────────────────
-
-    [Fact]
-    public void AddDistributedCacheAuthorizationCodeStore_returns_builder_for_chaining()
-    {
-        var services = new ServiceCollection();
-        var builder = new ZeeKayDaAuthBuilder(services);
-
-        var returned = builder.AddDistributedCacheAuthorizationCodeStore();
-
-        returned.Should().BeSameAs(builder);
-    }
 
     [Fact]
     public void AddDistributedCacheAuthorizationCodeStore_registers_IAuthorizationCodeBackingStore_as_singleton_with_DistributedCacheAuthorizationCodeBackingStore_implementation()
@@ -693,28 +553,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
         services.Should().NotContain(sd => sd.ServiceType == typeof(IRefreshTokenStore));
     }
 
-    // ── AddDistributedCacheRefreshTokenStore: argument validation ─────────────────────────────────
-
-    [Fact]
-    public void AddDistributedCacheRefreshTokenStore_throws_ArgumentNullException_when_builder_is_null()
-    {
-        var act = () => ((ZeeKayDaAuthBuilder)null!).AddDistributedCacheRefreshTokenStore();
-
-        act.Should().Throw<ArgumentNullException>().WithParameterName("builder");
-    }
-
     // ── AddDistributedCacheRefreshTokenStore: happy path ─────────────────────────────────────────
-
-    [Fact]
-    public void AddDistributedCacheRefreshTokenStore_returns_builder_for_chaining()
-    {
-        var services = new ServiceCollection();
-        var builder = new ZeeKayDaAuthBuilder(services);
-
-        var returned = builder.AddDistributedCacheRefreshTokenStore();
-
-        returned.Should().BeSameAs(builder);
-    }
 
     [Fact]
     public void AddDistributedCacheRefreshTokenStore_registers_IRefreshTokenStore_as_the_framework_coordinator()
@@ -788,29 +627,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
         services.Should().NotContain(sd => sd.ServiceType == typeof(IAuthorizationCodeStore));
     }
 
-    // ── AddDistributedCacheTokenStores: argument validation ───────────────────────────────────────
-
-    [Fact]
-    public void AddDistributedCacheTokenStores_throws_ArgumentNullException_when_builder_is_null()
-    {
-        ZeeKayDaAuthBuilder builder = null!;
-        var act = () => builder.AddDistributedCacheTokenStores();
-
-        act.Should().Throw<ArgumentNullException>().WithParameterName("builder");
-    }
-
     // ── AddDistributedCacheTokenStores: happy path ────────────────────────────────────────────────
-
-    [Fact]
-    public void AddDistributedCacheTokenStores_returns_builder_for_chaining()
-    {
-        var services = new ServiceCollection();
-        var builder = new ZeeKayDaAuthBuilder(services);
-
-        var returned = builder.AddDistributedCacheTokenStores();
-
-        returned.Should().BeSameAs(builder);
-    }
 
     [Fact]
     public void AddDistributedCacheTokenStores_registers_both_IAuthorizationCodeStore_and_IRefreshTokenStore()

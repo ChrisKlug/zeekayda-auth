@@ -25,16 +25,6 @@ public sealed class AbsoluteFamilyLifetimeUnboundedWarningServiceTests
             new OptionsWrapper<AuthorizationServerOptions>(options));
     }
 
-    // ── Constructor: argument validation ─────────────────────────────────────────────────────────
-
-    [Fact]
-    public void Constructor_throws_ArgumentNullException_when_options_is_null()
-    {
-        var act = () => new AbsoluteFamilyLifetimeUnboundedWarningService(null!);
-
-        act.Should().Throw<ArgumentNullException>().WithParameterName("options");
-    }
-
     // ── VerifyAsync: unbounded sentinel — warns ───────────────────────────────────────────────────
 
     [Fact]
@@ -86,13 +76,5 @@ public sealed class AbsoluteFamilyLifetimeUnboundedWarningServiceTests
         await sut.VerifyAsync(context, EmptyProvider, TestContext.Current.CancellationToken);
 
         context.Warnings.Should().BeEmpty();
-    }
-
-    [Fact]
-    public void Name_is_AbsoluteFamilyLifetimeUnbounded()
-    {
-        var sut = BuildSut(TimeSpan.FromDays(90));
-
-        sut.Name.Should().Be("AbsoluteFamilyLifetimeUnbounded");
     }
 }

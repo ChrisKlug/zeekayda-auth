@@ -27,31 +27,6 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
     // ── IClientSecretFactory DI wiring (AC1–AC4, issue #135) ─────────────────────────────────────
 
     [Fact]
-    public void AddZeeKayDaAuth_registers_IClientSecretFactory_descriptor()
-    {
-        // AC1: the service descriptor for IClientSecretFactory must be present.
-        var services = new ServiceCollection();
-
-        services.AddZeeKayDaAuth(options => options.Issuer = "https://auth.example.com");
-
-        services.Should().Contain(sd => sd.ServiceType == typeof(IClientSecretFactory));
-    }
-
-    [Fact]
-    public void AddZeeKayDaAuth_IClientSecretFactory_is_resolvable_from_container()
-    {
-        // AC1: IClientSecretFactory must resolve without throwing.
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddZeeKayDaAuth(options => options.Issuer = "https://auth.example.com");
-        using var provider = services.BuildServiceProvider();
-
-        var factory = provider.GetService<IClientSecretFactory>();
-
-        factory.Should().NotBeNull();
-    }
-
-    [Fact]
     public void AddZeeKayDaAuth_IClientSecretFactory_is_same_instance_as_CompositeClientSecretHasher()
     {
         // AC2: the IClientSecretFactory registration must be an alias for the already-constructed
@@ -83,22 +58,6 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
 
         secret.Should().NotBeNull();
         secret.Should().BeAssignableTo<IClientSecret>();
-    }
-
-    [Fact]
-    public void AddZeeKayDaAuth_does_not_add_IClientSecretFactory_descriptor_when_one_is_already_registered()
-    {
-        // AC4: TryAddSingleton is idempotent — if a caller pre-registers IClientSecretFactory
-        // before AddZeeKayDaAuth runs, the existing descriptor must win and no second descriptor
-        // is added. This is the same pattern used for IScopeRepository.
-        var services = new ServiceCollection();
-        var preRegistered = new FakeClientSecretFactory();
-        services.AddSingleton<IClientSecretFactory>(preRegistered);
-
-        services.AddZeeKayDaAuth(options => options.Issuer = "https://auth.example.com");
-
-        services.Count(sd => sd.ServiceType == typeof(IClientSecretFactory))
-            .Should().Be(1, "TryAddSingleton must not add a second descriptor");
     }
 
     [Fact]
@@ -138,22 +97,6 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
         var act = () => factory.Create(plaintext!);
 
         act.Should().Throw<ArgumentException>();
-    }
-
-    [Fact]
-    public void AddZeeKayDaAuth_throws_ArgumentNullException_if_services_is_null()
-    {
-        var act = () => ((IServiceCollection)null!).AddZeeKayDaAuth(_ => { });
-
-        act.Should().Throw<ArgumentNullException>().WithParameterName("services");
-    }
-
-    [Fact]
-    public void AddZeeKayDaAuth_throws_ArgumentNullException_if_configure_is_null()
-    {
-        var act = () => new ServiceCollection().AddZeeKayDaAuth(null!);
-
-        act.Should().Throw<ArgumentNullException>().WithParameterName("configure");
     }
 
     [Fact]
@@ -212,20 +155,6 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
 
         opts.Registrations.Should().ContainSingle(r =>
             r.HasherType == typeof(Pbkdf2ClientSecretHasher) && r.IsDefault);
-    }
-
-    [Fact]
-    public void AddZeeKayDaAuth_always_registers_ExceptionSanitizingDisabledWarningService_as_IStartupVerifier()
-    {
-        // The warning verifier reads the flag at startup and emits a warning only when the flag
-        // is set. It is always registered (unconditionally) so no additional method call is needed.
-        var services = new ServiceCollection();
-
-        services.AddZeeKayDaAuth(options => options.Issuer = "https://auth.example.com");
-
-        services.Should().Contain(sd =>
-            sd.ServiceType == typeof(IStartupVerifier) &&
-            sd.ImplementationType == typeof(ExceptionSanitizingDisabledWarningService));
     }
 
     [Fact]

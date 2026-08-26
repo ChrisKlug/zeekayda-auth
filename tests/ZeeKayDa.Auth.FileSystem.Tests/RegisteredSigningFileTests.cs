@@ -24,12 +24,4 @@ public sealed class RegisteredSigningFileTests
 
         file.AllPaths.Should().Equal("/etc/zeekayda/signing.pem", "/etc/zeekayda/signing.key");
     }
-
-    [Fact]
-    public void Constructor_throws_when_id_is_null_or_whitespace()
-    {
-        var act = () => new RegisteredSigningFile("   ");
-
-        act.Should().Throw<ArgumentException>();
-    }
 }

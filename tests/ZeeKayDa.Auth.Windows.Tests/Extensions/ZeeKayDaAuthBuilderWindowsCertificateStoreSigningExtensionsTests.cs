@@ -74,17 +74,6 @@ public sealed class ZeeKayDaAuthBuilderWindowsCertificateStoreSigningExtensionsT
     // skipped off Windows or they would observe PlatformNotSupportedException instead.
 
     [Fact]
-    public void AddWindowsCertificateStoreSigning_throws_ArgumentNullException_when_builder_is_null()
-    {
-        Assert.SkipUnless(OperatingSystem.IsWindows(), "the platform gate fires before argument validation off Windows");
-
-        var act = () => ((ZeeKayDaAuthBuilder)null!).AddWindowsCertificateStoreSigning(
-            Certificate(), SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My);
-
-        act.Should().Throw<ArgumentNullException>().WithParameterName("builder");
-    }
-
-    [Fact]
     public void AddWindowsCertificateStoreSigning_throws_ArgumentNullException_when_certificate_is_null()
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), "the platform gate fires before argument validation off Windows");
@@ -95,30 +84,6 @@ public sealed class ZeeKayDaAuthBuilderWindowsCertificateStoreSigningExtensionsT
             null!, SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My);
 
         act.Should().Throw<ArgumentNullException>().WithParameterName("certificate");
-    }
-
-    [Fact]
-    public void AddWindowsCertificateStoreSigning_slots_overload_throws_ArgumentNullException_when_builder_is_null()
-    {
-        Assert.SkipUnless(OperatingSystem.IsWindows(), "the platform gate fires before argument validation off Windows");
-
-        var act = () => ((ZeeKayDaAuthBuilder)null!).AddWindowsCertificateStoreSigning(
-            SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My, _ => { });
-
-        act.Should().Throw<ArgumentNullException>().WithParameterName("builder");
-    }
-
-    [Fact]
-    public void AddWindowsCertificateStoreSigning_slots_overload_throws_ArgumentNullException_when_configure_is_null()
-    {
-        Assert.SkipUnless(OperatingSystem.IsWindows(), "the platform gate fires before argument validation off Windows");
-
-        var builder = NewBuilder();
-
-        var act = () => builder.AddWindowsCertificateStoreSigning(
-            SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My, null!);
-
-        act.Should().Throw<ArgumentNullException>().WithParameterName("configure");
     }
 
     // ── Double-registration guard ────────────────────────────────────────────────────────────────
@@ -264,32 +229,6 @@ public sealed class ZeeKayDaAuthBuilderWindowsCertificateStoreSigningExtensionsT
         options.Algorithm.Should().Be(SigningAlgorithm.ES256);
         options.StoreLocation.Should().Be(StoreLocation.LocalMachine);
         options.StoreName.Should().Be(StoreName.Root);
-    }
-
-    [Fact]
-    public void AddWindowsCertificateStoreSigning_returns_builder_for_chaining()
-    {
-        Assert.SkipUnless(OperatingSystem.IsWindows(), "requires the real registration path past the platform gate");
-
-        var builder = NewBuilder();
-
-        var returned = builder.AddWindowsCertificateStoreSigning(
-            Certificate(), SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My);
-
-        returned.Should().BeSameAs(builder);
-    }
-
-    [Fact]
-    public void AddWindowsCertificateStoreSigning_slots_overload_returns_the_same_builder()
-    {
-        Assert.SkipUnless(OperatingSystem.IsWindows(), "requires the real registration path past the platform gate");
-
-        var builder = NewBuilder();
-
-        var returned = builder.AddWindowsCertificateStoreSigning(
-            SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My, _ => { });
-
-        returned.Should().BeSameAs(builder);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────────────────────────

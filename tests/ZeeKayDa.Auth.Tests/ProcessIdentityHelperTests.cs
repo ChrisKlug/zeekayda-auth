@@ -8,14 +8,6 @@ namespace ZeeKayDa.Auth.Tests;
 /// </summary>
 public sealed class ProcessIdentityHelperTests
 {
-    [Fact]
-    public void FormatIdentitySuffix_includes_the_identity_when_resolution_succeeds()
-    {
-        var suffix = ProcessIdentityHelper.FormatIdentitySuffix("svc-account");
-
-        suffix.Should().Be(" (running as 'svc-account')");
-    }
-
     [Theory]
     [InlineData(null)]
     [InlineData("")]

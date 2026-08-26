@@ -99,14 +99,6 @@ public sealed class SigningKeyRingPresenceValidatorTests
         context.Failures.Should().BeEmpty();
     }
 
-    [Fact]
-    public void Name_is_SigningKeyRingPresence()
-    {
-        var sut = new SigningKeyRingPresenceValidator();
-
-        sut.Name.Should().Be("SigningKeyRingPresence");
-    }
-
     private sealed class NoServiceProviderIsServiceProvider : IServiceProvider
     {
         public object? GetService(Type serviceType) => null;

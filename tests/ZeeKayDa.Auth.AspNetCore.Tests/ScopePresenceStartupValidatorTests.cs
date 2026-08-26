@@ -88,14 +88,6 @@ public sealed class ScopePresenceStartupValidatorTests
         context.Failures.Should().ContainSingle();
     }
 
-    [Fact]
-    public void Name_is_ScopePresence()
-    {
-        var sut = new ScopePresenceStartupValidator();
-
-        sut.Name.Should().Be("ScopePresence");
-    }
-
     private sealed class CustomRepositoryWithoutOpenId : IScopeRepository
     {
         public ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(

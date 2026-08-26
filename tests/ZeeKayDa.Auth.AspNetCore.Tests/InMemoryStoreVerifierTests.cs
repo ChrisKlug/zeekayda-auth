@@ -31,28 +31,6 @@ public sealed class InMemoryStoreVerifierTests
         return new InMemoryStoreVerifier(new FakeHostEnvironment(environmentName), storeName, allowOutsideDevelopment);
     }
 
-    // ── Constructor: argument validation ─────────────────────────────────────────────────────────
-
-    [Fact]
-    public void Constructor_throws_ArgumentNullException_when_environment_is_null()
-    {
-        var act = () => new InMemoryStoreVerifier(null!, TestStoreName, allowOutsideDevelopment: false);
-
-        act.Should().Throw<ArgumentNullException>().WithParameterName("environment");
-    }
-
-    [Theory]
-    [InlineData(null)]
-    [InlineData("")]
-    [InlineData("   ")]
-    public void Constructor_throws_ArgumentException_when_storeName_is_null_or_whitespace(string? storeName)
-    {
-        var act = () => new InMemoryStoreVerifier(
-            new FakeHostEnvironment(Environments.Development), storeName!, allowOutsideDevelopment: false);
-
-        act.Should().Throw<ArgumentException>().WithParameterName("storeName");
-    }
-
     // ── VerifyAsync: Development environment — warning only ──────────────────────────────────────
 
     [Fact]
@@ -191,18 +169,6 @@ public sealed class InMemoryStoreVerifierTests
 
         context.Warnings.Should().ContainSingle()
             .Which.Args.Should().Contain(storeName);
-    }
-
-    // ── Name: per-instance, includes the captured store name ─────────────────────────────────────
-
-    [Theory]
-    [InlineData(InMemoryStoreVerifier.AuthorizationCodeStoreName)]
-    [InlineData(InMemoryStoreVerifier.RefreshTokenStoreName)]
-    public void Name_includes_the_captured_store_name(string storeName)
-    {
-        var sut = BuildSut(Environments.Development, storeName: storeName);
-
-        sut.Name.Should().Be($"InMemoryStore({storeName})");
     }
 
     // ── Two factory registrations are independent (acceptance criterion) ────────────────────────

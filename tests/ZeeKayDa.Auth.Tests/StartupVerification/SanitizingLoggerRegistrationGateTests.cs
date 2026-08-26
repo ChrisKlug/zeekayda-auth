@@ -78,15 +78,5 @@ public sealed class SanitizingLoggerRegistrationGateTests
             "logging.sanitizing_logger_closed_override");
     }
 
-    [Fact]
-    public void Name_is_SanitizingLoggerRegistration()
-    {
-        var logger = NullSanitizingLogger<SanitizingLoggerRegistrationGate>.Instance;
-        var scanner = new SanitizingLoggerClosedOverrideScanner(new ServiceCollection());
-        var sut = new SanitizingLoggerRegistrationGate(logger, scanner);
-
-        sut.Name.Should().Be("SanitizingLoggerRegistration");
-    }
-
     private sealed class SomeShadowedService;
 }

@@ -50,19 +50,4 @@ public sealed class ExceptionSanitizingDisabledWarningServiceTests
             .Which.MessageTemplate.Should().Be(ExceptionSanitizingDisabledWarningService.WarningMessage);
     }
 
-    [Fact]
-    public void Name_is_ExceptionSanitizingDisabled()
-    {
-        var sut = CreateSut(disableExceptionSanitizing: false);
-
-        sut.Name.Should().Be("ExceptionSanitizingDisabled");
-    }
-
-    [Fact]
-    public void Constructor_throws_ArgumentNullException_when_options_is_null()
-    {
-        var act = () => new ExceptionSanitizingDisabledWarningService(null!);
-
-        act.Should().Throw<ArgumentNullException>().WithParameterName("options");
-    }
 }

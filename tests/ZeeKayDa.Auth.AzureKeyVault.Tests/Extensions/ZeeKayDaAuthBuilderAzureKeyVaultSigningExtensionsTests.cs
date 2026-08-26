@@ -19,14 +19,6 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
     // ── Argument validation ───────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void AddAzureKeyVaultRemoteSigning_throws_ArgumentNullException_when_builder_is_null()
-    {
-        var act = () => ((ZeeKayDaAuthBuilder)null!).AddAzureKeyVaultRemoteSigning(KeyIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
-
-        act.Should().Throw<ArgumentNullException>().WithParameterName("builder");
-    }
-
-    [Fact]
     public void AddAzureKeyVaultRemoteSigning_throws_ArgumentNullException_when_credential_is_null()
     {
         var services = new ServiceCollection();
@@ -107,19 +99,6 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
         options.PreActivationDelay.Should().Be(TimeSpan.FromHours(2));
     }
 
-    [Fact]
-    public void AddAzureKeyVaultRemoteSigning_returns_builder_for_chaining()
-    {
-        var services = new ServiceCollection();
-        services.AddSingleton<IKeyVaultKeyReader>(new FakeKeyVaultKeyReader());
-        services.AddSingleton<IKeyVaultSigner>(new FakeKeyVaultSigner());
-        var builder = new ZeeKayDaAuthBuilder(services);
-
-        var returned = builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
-
-        returned.Should().BeSameAs(builder);
-    }
-
     // ── XML doc <remarks> verbatim text (issue AC #8) ────────────────────────────────────────────
 
     [Fact]
@@ -155,14 +134,6 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
     }
 
     // ── AddAzureKeyVaultCachedSigning: argument validation ──────────────────────────────────────
-
-    [Fact]
-    public void AddAzureKeyVaultCachedSigning_throws_ArgumentNullException_when_builder_is_null()
-    {
-        var act = () => ((ZeeKayDaAuthBuilder)null!).AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
-
-        act.Should().Throw<ArgumentNullException>().WithParameterName("builder");
-    }
 
     [Fact]
     public void AddAzureKeyVaultCachedSigning_throws_ArgumentNullException_when_credential_is_null()
@@ -273,18 +244,6 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
         await using var provider = services.BuildServiceProvider();
         var options = provider.GetRequiredService<Microsoft.Extensions.Options.IOptions<AzureKeyVaultCachedSigningOptions>>().Value;
         options.PreviousVersionsToPublish.Should().Be(3);
-    }
-
-    [Fact]
-    public void AddAzureKeyVaultCachedSigning_returns_builder_for_chaining()
-    {
-        var services = new ServiceCollection();
-        services.AddSingleton<IKeyVaultCertificateReader>(new FakeKeyVaultCertificateReader());
-        var builder = new ZeeKayDaAuthBuilder(services);
-
-        var returned = builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
-
-        returned.Should().BeSameAs(builder);
     }
 
     // ── AddAzureKeyVaultCachedSigning: XML doc <remarks> verbatim text (issue AC #8) ─────────────

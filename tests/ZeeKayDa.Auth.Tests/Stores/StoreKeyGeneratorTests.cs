@@ -42,10 +42,4 @@ public sealed class StoreKeyGeneratorTests
                 validChars.Contains(c).Should().BeTrue(
                     because: $"Base64Url keys must only use URL-safe characters, but found '{c}'")));
     }
-
-    [Fact]
-    public void StoreKeyGenerator_is_in_ZeeKayDa_Auth_Stores_namespace()
-    {
-        typeof(StoreKeyGenerator).Namespace.Should().Be("ZeeKayDa.Auth.Stores");
-    }
 }

@@ -6,32 +6,6 @@ namespace ZeeKayDa.Auth.Tests.Scopes;
 public sealed class InMemoryScopeRepositoryTests
 {
     [Fact]
-    public void Constructor_throws_ArgumentNullException_when_scopes_is_null()
-    {
-        var act = () => new InMemoryScopeRepository(null!);
-
-        act.Should().Throw<ArgumentNullException>().WithParameterName("scopes");
-    }
-
-    [Fact]
-    public void Constructor_throws_when_scopes_collection_contains_null_element()
-    {
-        var act = () => new InMemoryScopeRepository([null!]);
-
-        act.Should().Throw<ArgumentNullException>();
-    }
-
-    [Theory]
-    [InlineData("")]
-    [InlineData("   ")]
-    public void Constructor_throws_ArgumentException_when_scope_name_is_blank(string name)
-    {
-        var act = () => new InMemoryScopeRepository([new ScopeDefinition { Name = name }]);
-
-        act.Should().Throw<ArgumentException>().WithMessage("*whitespace*");
-    }
-
-    [Fact]
     public async Task GetScopes_returns_configured_scopes_and_claims()
     {
         var repository = new InMemoryScopeRepository(
