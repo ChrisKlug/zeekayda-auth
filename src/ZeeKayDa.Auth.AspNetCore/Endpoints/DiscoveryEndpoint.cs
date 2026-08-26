@@ -47,10 +47,8 @@ internal sealed class DiscoveryEndpoint : IZeeKayDaEndpoint
     {
         // must-revalidate (not proxy-revalidate) so browser caches, not just CDN/proxy caches,
         // are required to revalidate after the TTL expires.
-        var maxAge = _options.Value.DiscoveryDocument.CacheMaxAgeSeconds;
-        context.Response.Headers.CacheControl = maxAge > 0
-            ? $"public, max-age={maxAge}, must-revalidate"
-            : "no-store";
+        context.Response.Headers.CacheControl =
+            CacheControlHeader.For(_options.Value.DiscoveryDocument.CacheMaxAge);
 
         if (_allowedOrigins.Count == 0)
         {

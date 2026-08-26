@@ -395,7 +395,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
         using var factory = new TestWebAppFactory(opts =>
         {
             opts.Issuer = "https://test.example.com";
-            opts.DiscoveryDocument.CacheMaxAgeSeconds = 300;
+            opts.DiscoveryDocument.CacheMaxAge = TimeSpan.FromSeconds(300);
         });
         using var client = CreateClient(factory);
 
@@ -410,7 +410,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
         using var factory = new TestWebAppFactory(opts =>
         {
             opts.Issuer = "https://test.example.com";
-            opts.DiscoveryDocument.CacheMaxAgeSeconds = 0;
+            opts.DiscoveryDocument.CacheMaxAge = TimeSpan.Zero;
         });
         using var client = CreateClient(factory);
 

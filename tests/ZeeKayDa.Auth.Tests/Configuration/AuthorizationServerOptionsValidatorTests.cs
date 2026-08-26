@@ -818,16 +818,29 @@ public sealed class AuthorizationServerOptionsValidatorTests
     // ── Cache-Control max-age ─────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Validate_fails_for_negative_cache_max_age()
+    public void Validate_fails_for_negative_discovery_cache_max_age()
     {
         var result = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
-            DiscoveryDocument = { CacheMaxAgeSeconds = -1 },
+            DiscoveryDocument = { CacheMaxAge = TimeSpan.FromSeconds(-1) },
         });
 
         result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("DiscoveryDocument.CacheMaxAgeSeconds");
+        result.FailureMessage.Should().Contain("DiscoveryDocument.CacheMaxAge");
+    }
+
+    [Fact]
+    public void Validate_fails_for_negative_jwks_cache_max_age()
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            JwksEndpoint = { CacheMaxAge = TimeSpan.FromSeconds(-1) },
+        });
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("JwksEndpoint.CacheMaxAge");
     }
 
     // ── CorsOrigins — scheme validation ──────────────────────────────────────────────────────────

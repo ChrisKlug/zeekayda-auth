@@ -6,16 +6,18 @@ namespace ZeeKayDa.Auth.Discovery;
 public sealed class DiscoveryOptions
 {
     /// <summary>
-    /// Gets or sets the <c>Cache-Control</c> <c>max-age</c> value (in seconds) for the OpenID Connect
-    /// discovery document response. Defaults to <c>3600</c> (one hour).
+    /// Gets or sets the <c>Cache-Control</c> <c>max-age</c> duration for the OpenID Connect
+    /// discovery document response. Defaults to one hour. The header's resolution is whole
+    /// seconds; fractional seconds are truncated.
     /// </summary>
     /// <remarks>
-    /// Set to <c>0</c> to disable public caching entirely (<c>Cache-Control: no-store</c>).
-    /// A shorter TTL reduces the window during which relying parties may serve a stale discovery
-    /// document — important for emergency key rotation scenarios. A value of zero is appropriate
-    /// for development environments where the document changes frequently.
+    /// Set to <see cref="TimeSpan.Zero"/> to disable public caching entirely
+    /// (<c>Cache-Control: no-store</c>). A shorter TTL reduces the window during which relying
+    /// parties may serve a stale discovery document — important for emergency key rotation
+    /// scenarios. A value of zero is appropriate for development environments where the document
+    /// changes frequently.
     /// </remarks>
-    public int CacheMaxAgeSeconds { get; set; } = 3600;
+    public TimeSpan CacheMaxAge { get; set; } = TimeSpan.FromHours(1);
 
     /// <summary>
     /// Gets the list of allowed CORS origins for the discovery endpoint. When empty (the default),

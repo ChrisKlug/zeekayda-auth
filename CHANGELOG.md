@@ -8,6 +8,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **`JwksEndpoint.CacheMaxAge` — a configurable `Cache-Control` TTL for the JWKS response** (#513)
+
+  `JwksEndpointOptions` gains `CacheMaxAge` (`TimeSpan`, default one hour), emitted on the JWKS
+  response as `Cache-Control: public, max-age=…, must-revalidate`, or `no-store` at
+  `TimeSpan.Zero` — the same treatment the discovery endpoint has always applied. The value governs
+  how long a relying party may keep trusting a cached key set, including a key that has since been
+  removed from configuration, so it is the operator's revocation-latency dial.
+
 - **`ITokenIssuer` — a shape-agnostic token issuance seam, with `JwtTokenIssuer` over the signing key ring** (#521)
 
   `ITokenIssuer.IssueAsync(TokenIssuanceContext, TokenPayload, ct)` returns an `IssuedToken` and is
@@ -73,6 +81,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   and is not detectable from this method.
 
 ### Changed
+
+- **BREAKING: `DiscoveryDocument.CacheMaxAgeSeconds` (`int`) is now `DiscoveryDocument.CacheMaxAge` (`TimeSpan`)** (#513)
+
+  The discovery endpoint's cache TTL is now a `TimeSpan`, matching every other duration option on
+  `AuthorizationServerOptions`. The default is unchanged (one hour), `TimeSpan.Zero` still emits
+  `no-store`, negative values still fail startup validation, and the header still carries whole
+  seconds — fractional seconds are truncated. The new `JwksEndpoint.CacheMaxAge` (see *Added*) uses
+  the same type and semantics.
 
 - **BREAKING: startup checks split into a cheap `IStartupVerifier` phase and an `IStartupActivator` phase, and the activator phase does not run when a verifier failed** (#499, #500)
 

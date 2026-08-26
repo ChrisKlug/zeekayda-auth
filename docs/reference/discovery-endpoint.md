@@ -73,7 +73,7 @@ app.Run();
 | Header | Value |
 |---|---|
 | `Content-Type` | `application/json` |
-| `Cache-Control` | `public, max-age=3600, must-revalidate` by default; `no-store` when `DiscoveryDocument.CacheMaxAgeSeconds` is `0` |
+| `Cache-Control` | `public, max-age=3600, must-revalidate` by default; `no-store` when `DiscoveryDocument.CacheMaxAge` is `TimeSpan.Zero` |
 | `Access-Control-Allow-Origin` | `*` when `DiscoveryDocument.CorsOrigins` is empty; the matched allowlist entry when non-empty |
 | `Vary` | `Origin` (only when `DiscoveryDocument.CorsOrigins` is non-empty), appended to any existing `Vary` value |
 | `X-Content-Type-Options` | `nosniff` (default; disable with `SecurityHeaders.ContentTypeOptionsNoSniff = false`) |

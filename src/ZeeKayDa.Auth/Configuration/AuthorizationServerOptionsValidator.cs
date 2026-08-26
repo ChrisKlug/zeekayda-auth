@@ -229,9 +229,14 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
         }
 
         // Validate Discovery group
-        if (options.DiscoveryDocument.CacheMaxAgeSeconds < 0)
+        if (options.DiscoveryDocument.CacheMaxAge < TimeSpan.Zero)
         {
-            errors.Add("AuthorizationServerOptions.DiscoveryDocument.CacheMaxAgeSeconds must not be negative.");
+            errors.Add("AuthorizationServerOptions.DiscoveryDocument.CacheMaxAge must not be negative.");
+        }
+
+        if (options.JwksEndpoint.CacheMaxAge < TimeSpan.Zero)
+        {
+            errors.Add("AuthorizationServerOptions.JwksEndpoint.CacheMaxAge must not be negative.");
         }
 
         // Validate DiscoveryDocument.CorsOrigins — each entry must be a strict absolute origin
