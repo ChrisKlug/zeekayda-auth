@@ -54,6 +54,47 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- **BREAKING: `id_token_signing_alg_values_supported` is derived from the signing key set, and `IdToken.SigningAlgValuesSupported` becomes the optional narrowing filter `IdToken.AdvertisedSigningAlgorithms`** (#515)
+
+  The discovery document no longer publishes an operator-declared list of signing algorithms. It
+  publishes the distinct algorithms of the **published key set** — every configured slot (`Previous`,
+  `Current`, `Next`), ascending by `SigningAlgorithm` value — read from `ISigningKeyRing.Current` on
+  each request. There is no configuration through which an algorithm the server holds no key for can
+  be advertised.
+
+  Deriving from the *published* set rather than from the signing key alone is deliberate: a
+  `Previous` key's algorithm stays advertised for as long as that key is published, so an algorithm
+  does not drop out of discovery the instant its key stops signing while tokens signed under it are
+  still live and its `kid` is still in the JWKS.
+
+  `IdToken.SigningAlgValuesSupported` (`ICollection<SigningAlgorithm>`, defaulting to `[RS256]`) is
+  replaced by `IdToken.AdvertisedSigningAlgorithms` (`ICollection<SigningAlgorithm>?`, defaulting to
+  `null`). It can only **withhold** an algorithm the server could otherwise advertise, never add one:
+
+  - `null` advertises the whole published set.
+  - A non-null empty collection fails options validation.
+  - A filter excluding the signing key's own algorithm fails startup with
+    `signing.advertised_algorithms.excludes_signing_key`, naming the key's source id and the algorithm
+    to add — it would advertise no algorithm the server actually issues tokens with.
+  - A filter naming an algorithm no configured key uses is a no-op and warns at startup with
+    `signing.advertised_algorithms.absent_from_key_set`.
+
+  A client registration's `AllowedSigningAlgorithms` is now checked against the **advertised** set —
+  the key set narrowed by the filter — instead of against the configured list. For in-memory clients
+  this is a startup failure naming the client; a custom `IClientRepository` that validates before the
+  ring has read its source is checked against the filter alone, as before.
+
+- **BREAKING: a host serving the protocol endpoints must register a signing key source** (#515)
+
+  `AddZeeKayDaAuth()` now registers a startup check that fails with `signing.key_ring.missing` when no
+  `ISigningKeySource` has been registered. The discovery document derives
+  `id_token_signing_alg_values_supported` from the signing key ring, and OpenID Connect Discovery 1.0
+  §3 requires that field, so there is no honest document to serve without one — failing at startup is
+  what keeps that from surfacing as a dependency-injection error on the first discovery request. The
+  failure names `AddInMemoryDevelopmentJwtSigningKeys()`, the provider packages' registrations, and
+  `AddZeeKayDaSigningKeySource<TSource>()`. A host that registers only the signing key health check
+  (`AddZeeKayDaSigningKeys()`) and no protocol endpoints is unaffected.
+
 - **BREAKING: Azure Key Vault cached signing is now an `ISigningKeySource`, downloading private material for exactly one certificate version** (#520)
 
   `AddAzureKeyVaultCachedSigning` no longer registers an `IJwtSigningService`. It registers an

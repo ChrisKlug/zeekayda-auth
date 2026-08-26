@@ -30,7 +30,6 @@ builder.Services.AddZeeKayDaAuth(options =>
     options.Response.ModesSupported = [ResponseMode.Query];
     options.GrantTypesSupported = [GrantType.AuthorizationCode];
     options.TokenEndpoint.AuthMethodsSupported = [TokenEndpointAuthMethods.ClientSecretBasic];
-    options.IdToken.SigningAlgValuesSupported = [SigningAlgorithm.RS256];
 });
 
 var app = builder.Build();
@@ -62,7 +61,6 @@ builder.Services.AddZeeKayDaAuth(options =>
 {
     options.Issuer = "https://id.example.com/tenant-a";
     options.Response.TypesSupported = [ResponseType.Code];
-    options.IdToken.SigningAlgValuesSupported = [SigningAlgorithm.RS256];
 });
 
 var app = builder.Build();

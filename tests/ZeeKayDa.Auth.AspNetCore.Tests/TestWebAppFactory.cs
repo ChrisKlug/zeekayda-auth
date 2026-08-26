@@ -1,4 +1,5 @@
 using System.Net;
+using System.Security.Cryptography;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -6,10 +7,61 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using ZeeKayDa.Auth.Extensions;
 using ZeeKayDa.Auth.Stores;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests;
+
+/// <summary>
+/// Registers the signing key source every test host needs: the discovery document derives
+/// <c>id_token_signing_alg_values_supported</c> from the signing key ring, so a host with no signing
+/// key source fails startup. A test-local source rather than
+/// <c>AddInMemoryDevelopmentJwtSigningKeys()</c>, because these hosts run as "Production" and the
+/// development keys refuse that environment by design.
+/// </summary>
+internal static class TestSigningKeyRegistration
+{
+    public static ZeeKayDaAuthBuilder AddTestSigningKeys(this ZeeKayDaAuthBuilder builder)
+    {
+        if (builder.Services.Any(d => d.ServiceType == typeof(ISigningKeyRing)))
+            return builder;
+
+        builder.Services.AddZeeKayDaSigningKeySource<TestSigningKeySource>();
+        return builder;
+    }
+}
+
+/// <summary>
+/// An <see cref="ISigningKeySource"/> over one freshly generated in-process RSA key. Real key
+/// material, so the ring's startup self-test signs and verifies for real, with nothing on disk.
+/// </summary>
+internal sealed class TestSigningKeySource : ISigningKeySource, IDisposable
+{
+    private static readonly SourceKeyId KeyId = new("test-signing-key");
+
+    private readonly RSA _rsa = RSA.Create(2048);
+
+    public ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+    {
+        var key = new SourceKey(
+            KeyId,
+            SigningAlgorithm.RS256,
+            PublicKeyParameters.FromRsa(_rsa.ExportParameters(includePrivateParameters: false)),
+            ExpiresAt: null);
+
+        return new ValueTask<SourceKeySet>(SourceKeySet.Create(previous: null, key, next: null));
+    }
+
+    public ValueTask<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
+    {
+        // A fresh private key instance per signer: the ring owns and disposes what it is handed.
+        var privateKey = RSA.Create(_rsa.ExportParameters(includePrivateParameters: true));
+        return new ValueTask<ISigner>(new LocalSigner(SigningAlgorithm.RS256, privateKey));
+    }
+
+    public void Dispose() => _rsa.Dispose();
+}
 
 /// <summary>
 /// A <see cref="WebApplicationFactory{TEntryPoint}"/> that stands up a minimal ASP.NET Core host
@@ -91,6 +143,8 @@ internal sealed class TestWebAppFactory : WebApplicationFactory<TestWebAppFactor
             // the startup guard does not block test startup.
             if (!authBuilder.Services.Any(d => d.ServiceType == typeof(IAuthorizationCodeStore)))
                 authBuilder.AddInMemoryStores(allowOutsideDevelopment: true);
+
+            authBuilder.AddTestSigningKeys();
         });
 
         builder.Configure(app =>
@@ -144,7 +198,8 @@ internal sealed class TestWebAppFactoryWithRemoteIp : WebApplicationFactory<Test
                     [],
                     ["openid"]))
               // Integration test hosts run as "Production" by default; allow in-memory stores.
-              .AddInMemoryStores(allowOutsideDevelopment: true);
+              .AddInMemoryStores(allowOutsideDevelopment: true)
+              .AddTestSigningKeys();
         });
 
         builder.Configure(app =>
@@ -187,7 +242,8 @@ internal sealed class TestWebAppFactoryWithPing : WebApplicationFactory<TestWebA
                     [],
                     ["openid"]))
               // Integration test hosts run as "Production" by default; allow in-memory stores.
-              .AddInMemoryStores(allowOutsideDevelopment: true);
+              .AddInMemoryStores(allowOutsideDevelopment: true)
+              .AddTestSigningKeys();
         });
 
         builder.Configure(app =>
@@ -241,7 +297,8 @@ internal sealed class TestWebAppFactoryWithVaryMiddleware : WebApplicationFactor
                     [],
                     ["openid"]))
               // Integration test hosts run as "Production" by default; allow in-memory stores.
-              .AddInMemoryStores(allowOutsideDevelopment: true);
+              .AddInMemoryStores(allowOutsideDevelopment: true)
+              .AddTestSigningKeys();
         });
 
         var varyToAdd = _varyToAdd;

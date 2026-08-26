@@ -24,11 +24,22 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
     private readonly IOptions<AuthorizationServerOptions> _options;
     private readonly CompositeClientSecretHasher _hasher;
     private readonly ISanitizingLogger<ClientRegistrationValidator> _logger;
+    private readonly ISigningKeyRing? _keyRing;
 
+    /// <param name="options">The authorization server options.</param>
+    /// <param name="hasher">The composite hasher used to validate client secrets.</param>
+    /// <param name="logger">The sanitizing logger.</param>
+    /// <param name="keyRing">
+    /// The signing key ring, or <see langword="null"/> when none is registered — a host that only
+    /// adds the signing key health check has no ring, and the protocol endpoints refuse to start
+    /// without one. Supplies the algorithms a client's <c>AllowedSigningAlgorithms</c> must be a
+    /// subset of, once the ring has read its source.
+    /// </param>
     public ClientRegistrationValidator(
         IOptions<AuthorizationServerOptions> options,
         CompositeClientSecretHasher hasher,
-        ISanitizingLogger<ClientRegistrationValidator> logger)
+        ISanitizingLogger<ClientRegistrationValidator> logger,
+        ISigningKeyRing? keyRing = null)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(hasher);
@@ -37,6 +48,7 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
         _options = options;
         _hasher = hasher;
         _logger = logger;
+        _keyRing = keyRing;
     }
 
     /// <inheritdoc/>
@@ -359,15 +371,42 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
             return;
         }
 
-        var serverAlgorithms = _options.Value.IdToken.SigningAlgValuesSupported;
+        var serverAlgorithms = ResolveServerAlgorithms();
+
+        // Nothing to be a subset of: no ring has read its source yet (a repository validating from
+        // its own constructor, before startup verification runs) and the operator has stated no
+        // ceiling either. The issuance path enforces the client's set against the key that actually
+        // signs regardless.
+        if (serverAlgorithms is null)
+            return;
 
         foreach (var algorithm in algorithms.Where(algorithm => !serverAlgorithms.Contains(algorithm)))
         {
             failures.Add(new ZeeKayDaConfigurationFailure(
                 "client.signing_algorithms.not_subset",
-                $"Client '{client.ClientId}' has AllowedSigningAlgorithms entry '{algorithm}' that is not " +
-                $"in the server's IdToken.SigningAlgValuesSupported: [{string.Join(", ", serverAlgorithms)}]."));
+                $"Client '{client.ClientId}' has AllowedSigningAlgorithms entry '{algorithm}' that the " +
+                $"server does not advertise. Advertised: [{string.Join(", ", serverAlgorithms)}]. The " +
+                "advertised set is the configured signing keys' algorithms, narrowed by " +
+                "IdToken.AdvertisedSigningAlgorithms when that filter is set — add a key for " +
+                $"'{algorithm}', or remove it from this client."));
         }
+    }
+
+    /// <summary>
+    /// The algorithms a client's <c>AllowedSigningAlgorithms</c> must be a subset of: the advertised
+    /// set once the ring has read its source, the operator's filter alone before that, and
+    /// <see langword="null"/> when neither exists.
+    /// </summary>
+    private IReadOnlyCollection<SigningAlgorithm>? ResolveServerAlgorithms()
+    {
+        var filter = _options.Value.IdToken.AdvertisedSigningAlgorithms;
+
+        // CurrentOrNull rather than Current: this validator runs from repository constructors, which
+        // a custom repository may drive before the ring has been initialized. Throwing there would
+        // turn "the check cannot run yet" into a startup crash.
+        return _keyRing?.CurrentOrNull is { } keySet
+            ? AdvertisedSigningAlgorithms.Resolve(keySet, filter)
+            : filter?.ToArray();
     }
 
     private static void ValidateAllowedScopes(

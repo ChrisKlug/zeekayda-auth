@@ -340,16 +340,28 @@ and verifier. Consult your OAuth client library's documentation for PKCE impleme
 
 ---
 
-### `IdToken.SigningAlgValuesSupported`
+### `IdToken.AdvertisedSigningAlgorithms`
 
 | Attribute | Value |
 |---|---|
-| Type | `ICollection<SigningAlgorithm>` |
-| Default | `[SigningAlgorithm.RS256]` |
-| Required | Yes (must not be null or empty) |
+| Type | `ICollection<SigningAlgorithm>?` |
+| Default | `null` |
+| Required | No (when set, must not be empty) |
 
-The signing algorithms supported for ID tokens. Published as
-`id_token_signing_alg_values_supported` in the discovery document.
+An optional **narrowing filter** on what `id_token_signing_alg_values_supported` publishes. The
+advertised set is derived from the configured signing keys — the distinct algorithms of every
+published key (`Previous`, `Current`, and `Next`), ascending by `SigningAlgorithm` value — so the
+server can never advertise an algorithm it holds no key for.
+
+Leave this `null` (the default) to advertise that whole set. Set it to withhold an algorithm the
+server could otherwise advertise; it can never add one. Naming an algorithm no configured key uses
+is a no-op and warns at startup, and a filter that excludes the signing key's own algorithm fails
+startup with `signing.advertised_algorithms.excludes_signing_key`.
+
+```csharp
+// Two keys are configured, RS256 and ES256, but only RS256 is advertised.
+options.IdToken.AdvertisedSigningAlgorithms = [SigningAlgorithm.RS256];
+```
 
 | Enum value | JSON serialization |
 |---|---|
@@ -516,7 +528,7 @@ only when all relying parties are co-hosted on the same origin or site as the au
 | `GrantTypesSupported` is required | `GrantTypesSupported` is `null` |
 | `TokenEndpoint.AuthMethodsSupported` is required | `TokenEndpoint.AuthMethodsSupported` is `null` or empty |
 | `client_credentials` requires non-`none` token auth method | `GrantTypesSupported` includes `ClientCredentials` and every `TokenEndpoint.AuthMethodsSupported` value is `None` |
-| `IdToken.SigningAlgValuesSupported` is required | `IdToken.SigningAlgValuesSupported` is `null` or empty |
+| `IdToken.AdvertisedSigningAlgorithms` must not be empty | `IdToken.AdvertisedSigningAlgorithms` is a non-null empty collection |
 | `IScopeRepository` must include `openid` | the configured scope repository does not include a scope named `openid` |
 | Cache max-age must not be negative | `DiscoveryDocument.CacheMaxAgeSeconds` is less than `0` |
 | `AuthorizationEndpoint.CodeChallengeMethodsSupported` must not be empty | `AuthorizationEndpoint.CodeChallengeMethodsSupported` is a non-null empty collection |

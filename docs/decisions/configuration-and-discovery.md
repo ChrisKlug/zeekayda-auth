@@ -77,13 +77,19 @@ an internal, freely-refactorable options class is never coupled to a spec-mandat
 provider is public and replaceable — that is the escape hatch for a host that must advertise something
 the framework does not model.
 
-**Discovery is a stable, cached contract, and advertised signing algorithms are statically
-configured.** Deriving `id_token_signing_alg_values_supported` from whichever keys happen to be loaded
-would make the document flicker during key rotation. Operators declare what the server supports; key
-state does not. The startup cross-check that asserted equality between the advertised list and what the
-signing provider could produce is gone with the provider contract it read (#511); #515 replaces
-detection with derivation — the advertised set becomes the published set's distinct algorithms,
-narrowable but never wideable — so the disagreement stops being representable rather than caught.
+**The advertised signing algorithms are derived from the key set, never configured beside it.**
+`id_token_signing_alg_values_supported` is the distinct algorithms of the published key set — every
+configured slot, ascending by `SigningAlgorithm` value — read from the ring on each request.
+Deriving from the *published* set rather than the producible one is what keeps the document stable
+across a rotation: a `Previous` key's algorithm stays advertised for as long as that key is
+published and tokens signed under it are still live.
+`IdToken.AdvertisedSigningAlgorithms` narrows that set and can never widen it; a filter excluding the
+signing key's own algorithm fails startup rather than advertising nothing usable. The cross-check
+that asserted equality between a configured list and what the provider could produce is gone with the
+contract it read (#511, #515) — the disagreement is unrepresentable rather than detected. A host
+serving the protocol endpoints must therefore register a signing key source: with no key set there is
+nothing to derive from, and startup fails with `signing.key_ring.missing` rather than the first
+discovery request failing.
 
 **Collection keys bind by replacement, not merge.** An operator who sets one entry of an
 `IConfiguration` collection key loses the rest of that key's defaults. The validator's
@@ -96,5 +102,10 @@ narrowed server.
   the per-client string set, then removed: with the enum as discovery's source, the document could
   not advertise a custom method a host had added through `IClientAuthenticator`, so the two halves of
   one vocabulary disagreed. Strings now carry it end to end.
+- **Statically configured advertised signing algorithms.** `IdToken.SigningAlgValuesSupported` was an
+  operator-declared list, on the reasoning that deriving from key state would make the document
+  flicker during rotation. It made the two sources of truth disagreeable instead, which is what the
+  deleted cross-check existed to catch; deriving from the published set — which a rotation grows
+  before it shrinks — has the stability the static list was chosen for.
 - **A flat options class.** The shipped shape before grouping. Reversed pre-1.0, moving every
   consumer's property paths and `IConfiguration` keys in one break.
