@@ -20,8 +20,9 @@ Please take a few minutes to read this guide before you start. It helps us revie
 10. [Building Locally](#building-locally)
 11. [Test Naming Convention](#test-naming-convention)
 12. [CI](#ci)
-13. [Release Process](#release-process)
-14. [Security Vulnerabilities](#security-vulnerabilities)
+13. [Mutation Testing (Stryker.NET)](#mutation-testing-strykernet)
+14. [Release Process](#release-process)
+15. [Security Vulnerabilities](#security-vulnerabilities)
 
 ---
 
@@ -440,6 +441,50 @@ _logger.LogDebug("Verifier: {code_verifier}", verifier); // log-hygiene-ok: (#17
 **Review requirement:**
 
 The hygiene checker (`.github/scripts/check_log_hygiene.cs`), its canary (`.github/scripts/canary/`), and their smoke tests are listed in CODEOWNERS. Any PR that modifies any of them requires approval from a security owner. This ensures that suppression format rules cannot be silently relaxed.
+
+---
+
+## Mutation Testing (Stryker.NET)
+
+Coverage measures what code tests execute; mutation score measures whether the tests would
+*notice the code being wrong*. For a security library the latter is the meaningful metric on
+critical paths. Mutation testing is **not** a CI gate (see #309, deferred) — it runs locally and,
+once #567 lands, on a weekly scheduled workflow.
+
+[Stryker.NET](https://stryker-mutator.io/docs/stryker-net/introduction/) is installed as a dotnet
+local tool. Each mutated target has a `stryker-config.json` in its paired test project. Run one
+target from its test project directory:
+
+```bash
+cd tests/ZeeKayDa.Auth.Tests && dotnet tool run dotnet-stryker
+```
+
+| Target (config location) | Mutated scope | Baseline (2026-08-27) |
+|---|---|---|
+| `tests/ZeeKayDa.Auth.Tests` | `Tokens/`, `Security/`, `Clients/`, `Authorization/` | **69.59 %** |
+| `tests/ZeeKayDa.Auth.AspNetCore.Tests` | `ClientAuthentication/` | **100.00 %** |
+| `tests/ZeeKayDa.Auth.AzureKeyVault.Tests` | whole project | **40.00 %** |
+| `tests/ZeeKayDa.Auth.FileSystem.Tests` | whole project | **74.50 %** |
+
+Reports land under `<test project>/StrykerOutput/` (gitignored) — open
+`reports/mutation-report.html` to inspect individual mutants.
+
+Notes on the setup, so its quirks aren't rediscovered:
+
+- **`"test-runner": "mtp"` is required.** The default VSTest runner cannot drive this repo's
+  xUnit v3 test hosts — coverage capture fails and every mutant falsely survives
+  ([stryker-net#3117](https://github.com/stryker-mutator/stryker-net/issues/3117)). The MTP
+  runner is correct but cannot yet filter tests per mutant
+  ([stryker-net#3629](https://github.com/stryker-mutator/stryker-net/issues/3629)), so covered
+  mutants run the full suite — fine for these fast suites.
+- **`Endpoints/**` in AspNetCore is excluded** (explicit negation glob in its config) while the
+  authorize/token endpoints are stubs. Add the glob when real implementations land.
+- **`ZeeKayDa.Auth.Windows` has no config**: a third of its tests skip off-Windows, which would
+  report false survivors. Its baseline comes from the Windows leg of the scheduled workflow
+  (#567).
+- A surviving mutant in signing/validation logic is a test gap worth an issue (see #569 for the
+  baseline triage). A surviving string mutation in message text is usually not — the
+  test standards deliberately don't want message-wording tests on non-security types.
 
 ---
 
