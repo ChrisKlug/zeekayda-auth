@@ -10,21 +10,14 @@ namespace ZeeKayDa.Auth.Tests.Tokens;
 /// <c>JwtSigningService&lt;TOptions&gt;</c> tests that reached the RSA/EC sign and verify arms
 /// through them; these cover the same arms against the contract that survives.
 /// </summary>
+/// <remarks>
+/// Each test creates and owns its own key under a <see langword="using"/> rather than taking one
+/// from a helper. A helper returning a live <see cref="AsymmetricAlgorithm"/> transfers ownership
+/// out of the method, which CodeQL cannot follow and reports as an undisposed local.
+/// </remarks>
 public sealed class SigningAlgorithmsTests
 {
     private static readonly byte[] SigningInput = Encoding.UTF8.GetBytes("signing-input");
-
-    private static (PublicKeyParameters Public, AsymmetricAlgorithm Private) NewRsa()
-    {
-        var rsa = RSA.Create(2048);
-        return (PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), rsa);
-    }
-
-    private static (PublicKeyParameters Public, AsymmetricAlgorithm Private) NewEc(ECCurve curve)
-    {
-        var ec = ECDsa.Create(curve);
-        return (PublicKeyParameters.FromEc(ec.ExportParameters(false)), ec);
-    }
 
     // ── Sign/verify round trip, every supported algorithm ────────────────────────────────────────
 
@@ -37,10 +30,10 @@ public sealed class SigningAlgorithmsTests
     [InlineData(SigningAlgorithm.PS512)]
     public void Sign_then_Verify_round_trips_for_every_RSA_algorithm(SigningAlgorithm algorithm)
     {
-        var (publicKey, privateKey) = NewRsa();
-        using var _ = privateKey;
+        using var rsa = RSA.Create(2048);
+        var publicKey = PublicKeyParameters.FromRsa(rsa.ExportParameters(false));
 
-        var signature = SigningAlgorithms.Sign(algorithm, SigningInput, privateKey);
+        var signature = SigningAlgorithms.Sign(algorithm, SigningInput, rsa);
 
         SigningAlgorithms.Verify(algorithm, publicKey, SigningInput, signature.Span).Should().BeTrue();
     }
@@ -51,20 +44,20 @@ public sealed class SigningAlgorithmsTests
     [InlineData(SigningAlgorithm.ES512, "nistP521")]
     public void Sign_then_Verify_round_trips_for_every_EC_algorithm(SigningAlgorithm algorithm, string curveName)
     {
-        var (publicKey, privateKey) = NewEc(ECCurve.CreateFromFriendlyName(curveName));
-        using var _ = privateKey;
+        using var ec = ECDsa.Create(ECCurve.CreateFromFriendlyName(curveName));
+        var publicKey = PublicKeyParameters.FromEc(ec.ExportParameters(false));
 
-        var signature = SigningAlgorithms.Sign(algorithm, SigningInput, privateKey);
+        var signature = SigningAlgorithms.Sign(algorithm, SigningInput, ec);
 
         SigningAlgorithms.Verify(algorithm, publicKey, SigningInput, signature.Span).Should().BeTrue();
     }
 
     [Fact]
-    public void Verify_returns_false_for_a_signature_over_different_input()
+    public void Verify_returns_false_for_an_RSA_signature_over_different_input()
     {
-        var (publicKey, privateKey) = NewRsa();
-        using var _ = privateKey;
-        var signature = SigningAlgorithms.Sign(SigningAlgorithm.RS256, SigningInput, privateKey);
+        using var rsa = RSA.Create(2048);
+        var publicKey = PublicKeyParameters.FromRsa(rsa.ExportParameters(false));
+        var signature = SigningAlgorithms.Sign(SigningAlgorithm.RS256, SigningInput, rsa);
 
         var tampered = Encoding.UTF8.GetBytes("different-input");
 
@@ -74,9 +67,9 @@ public sealed class SigningAlgorithmsTests
     [Fact]
     public void Verify_returns_false_for_an_EC_signature_over_different_input()
     {
-        var (publicKey, privateKey) = NewEc(ECCurve.NamedCurves.nistP256);
-        using var _ = privateKey;
-        var signature = SigningAlgorithms.Sign(SigningAlgorithm.ES256, SigningInput, privateKey);
+        using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var publicKey = PublicKeyParameters.FromEc(ec.ExportParameters(false));
+        var signature = SigningAlgorithms.Sign(SigningAlgorithm.ES256, SigningInput, ec);
 
         var tampered = Encoding.UTF8.GetBytes("different-input");
 
@@ -93,10 +86,9 @@ public sealed class SigningAlgorithmsTests
     [InlineData(SigningAlgorithm.ES512, "nistP521", 132)]
     public void Sign_produces_IEEE_P1363_EC_signatures(SigningAlgorithm algorithm, string curveName, int expectedLength)
     {
-        var (_, privateKey) = NewEc(ECCurve.CreateFromFriendlyName(curveName));
-        using var _disposable = privateKey;
+        using var ec = ECDsa.Create(ECCurve.CreateFromFriendlyName(curveName));
 
-        var signature = SigningAlgorithms.Sign(algorithm, SigningInput, privateKey);
+        var signature = SigningAlgorithms.Sign(algorithm, SigningInput, ec);
 
         signature.Length.Should().Be(expectedLength);
     }
@@ -106,8 +98,8 @@ public sealed class SigningAlgorithmsTests
     [Fact]
     public void Verify_throws_for_an_RSA_key_under_an_out_of_range_algorithm()
     {
-        var (publicKey, privateKey) = NewRsa();
-        using var _ = privateKey;
+        using var rsa = RSA.Create(2048);
+        var publicKey = PublicKeyParameters.FromRsa(rsa.ExportParameters(false));
 
         var act = () => SigningAlgorithms.Verify((SigningAlgorithm)9999, publicKey, SigningInput, SigningInput);
 
@@ -117,8 +109,8 @@ public sealed class SigningAlgorithmsTests
     [Fact]
     public void Verify_throws_for_an_EC_key_under_an_out_of_range_algorithm()
     {
-        var (publicKey, privateKey) = NewEc(ECCurve.NamedCurves.nistP256);
-        using var _ = privateKey;
+        using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var publicKey = PublicKeyParameters.FromEc(ec.ExportParameters(false));
 
         var act = () => SigningAlgorithms.Verify((SigningAlgorithm)9999, publicKey, SigningInput, SigningInput);
 
@@ -128,10 +120,9 @@ public sealed class SigningAlgorithmsTests
     [Fact]
     public void Sign_throws_for_an_out_of_range_algorithm()
     {
-        var (_, privateKey) = NewRsa();
-        using var _disposable = privateKey;
+        using var rsa = RSA.Create(2048);
 
-        var act = () => SigningAlgorithms.Sign((SigningAlgorithm)9999, SigningInput, privateKey);
+        var act = () => SigningAlgorithms.Sign((SigningAlgorithm)9999, SigningInput, rsa);
 
         act.Should().Throw<NotSupportedException>();
     }
