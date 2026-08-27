@@ -20,7 +20,9 @@ jobs:
     name: Stryker (${{ matrix.target }})
     if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'mutation'
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    # The core target needs ~2.5-3h on a 4-vCPU hosted runner: the MTP runner cannot yet filter
+    # tests per mutant, so every covered mutant runs the full suite. Generous but under the 6h cap.
+    timeout-minutes: 300
     strategy:
       fail-fast: false
       matrix:
