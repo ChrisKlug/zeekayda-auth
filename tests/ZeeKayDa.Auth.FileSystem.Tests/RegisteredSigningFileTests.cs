@@ -9,6 +9,19 @@ namespace ZeeKayDa.Auth.FileSystem.Tests;
 /// </summary>
 public sealed class RegisteredSigningFileTests
 {
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Constructor_rejects_a_null_or_whitespace_id(string? id)
+    {
+        // The Id is the entry's identity everywhere downstream — rotation ordering, KeyId,
+        // diagnostics — so an unusable one must fail at registration, not where it is first used.
+        var act = () => new RegisteredSigningFile(id!);
+
+        act.Should().Throw<ArgumentException>().WithParameterName("id");
+    }
+
     [Fact]
     public void AllPaths_returns_only_Id_when_there_are_no_additional_paths()
     {

@@ -464,11 +464,11 @@ cd tests/ZeeKayDa.Auth.Tests && dotnet tool run dotnet-stryker
 | `tests/ZeeKayDa.Auth.Tests` | `Tokens/`, `Security/`, `Clients/`, `Authorization/` | **75.77 %** |
 | `tests/ZeeKayDa.Auth.AspNetCore.Tests` | `ClientAuthentication/` | **100.00 %** |
 | `tests/ZeeKayDa.Auth.AzureKeyVault.Tests` | whole project | **43.55 %** |
-| `tests/ZeeKayDa.Auth.FileSystem.Tests` | whole project | **54.49 %** |
+| `tests/ZeeKayDa.Auth.FileSystem.Tests` | whole project | **62.78 %** |
 
 Baselines are recorded from the `mutation.yml` workflow on `ubuntu-latest` — that is the canonical
 environment. Local runs on macOS/Windows produce different numbers (platform-conditional tests
-skip differently; FileSystem scored 74.50 % on macOS against 54.49 % on Linux), so compare local
+skip differently; at the #308 baseline FileSystem scored 74.50 % on macOS against 54.49 % on Linux), so compare local
 results only against local results. In the workflow the core target runs as three per-directory
 slices for wall-clock reasons; the recorded core number is from a whole-target run.
 
