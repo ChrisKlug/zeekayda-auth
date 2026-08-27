@@ -1,0 +1,63 @@
+name: Mutation Testing
+
+# Mutation testing is NOT a PR gate (#309 is deferred). It runs on demand:
+# - workflow_dispatch for manual runs from main;
+# - on a pull request ONLY when the 'mutation' label is applied to it.
+# The weekly schedule and the windows-latest leg for ZeeKayDa.Auth.Windows arrive with #567.
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [labeled]
+
+permissions:
+  contents: read
+
+env:
+  NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+
+jobs:
+  stryker:
+    name: Stryker (${{ matrix.target }})
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'mutation'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - ZeeKayDa.Auth.Tests
+          - ZeeKayDa.Auth.AspNetCore.Tests
+          - ZeeKayDa.Auth.AzureKeyVault.Tests
+          - ZeeKayDa.Auth.FileSystem.Tests
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Cache NuGet packages
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ${{ env.NUGET_PACKAGES }}
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/Directory.Packages.props', '**/*.csproj', '**/global.json') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@9a946fdbd5fb07b82b2f5a4466058b876ab72bb2 # v5.3.0
+        with:
+          global-json-file: global.json
+
+      - name: Run Stryker
+        working-directory: tests/${{ matrix.target }}
+        run: |
+          dotnet tool restore
+          dotnet tool run dotnet-stryker | tee stryker.log
+          grep -E "final mutation score" stryker.log >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Upload mutation report
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: mutation-report-${{ matrix.target }}
+          path: tests/${{ matrix.target }}/StrykerOutput/**/reports/
+          if-no-files-found: warn

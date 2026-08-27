@@ -217,6 +217,26 @@ public sealed class JwkThumbprintTests
         return EncodeBase64Url(hash);
     }
 
+    // ── Minimal big-endian encoding (RFC 7518 §6.3.1.1) ──────────────────────────────────────────
+
+    [Fact]
+    public void TrimLeadingZeros_strips_leading_zero_bytes_down_to_the_first_significant_byte()
+    {
+        var value = new byte[] { 0x00, 0x00, 0x2A, 0x01 };
+
+        JwkThumbprint.TrimLeadingZeros(value).Should().Equal(0x2A, 0x01);
+    }
+
+    [Fact]
+    public void TrimLeadingZeros_reduces_an_all_zero_value_to_a_single_zero_byte()
+    {
+        // RFC 7518 §6.3.1.1's minimal encoding preserves exactly one octet for a zero value —
+        // never an empty string, and never a read past the end of the buffer.
+        var value = new byte[] { 0x00, 0x00, 0x00 };
+
+        JwkThumbprint.TrimLeadingZeros(value).Should().Equal(0x00);
+    }
+
     private static byte[] DecodeBase64Url(string base64Url)
     {
         var input = Encoding.ASCII.GetBytes(base64Url);

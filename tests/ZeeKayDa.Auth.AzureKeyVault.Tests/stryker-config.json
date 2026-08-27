@@ -2,6 +2,11 @@
   "stryker-config": {
     "project": "ZeeKayDa.Auth.AzureKeyVault.csproj",
     "test-runner": "mtp",
+    "ignore-methods": [
+      "ConfigureAwait",
+      "GC.SuppressFinalize",
+      "*Exception.ctor"
+    ],
     "mutate": [
       "**/*.cs"
     ],
