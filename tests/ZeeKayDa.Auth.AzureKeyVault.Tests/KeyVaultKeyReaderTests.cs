@@ -206,6 +206,45 @@ public sealed class KeyVaultKeyReaderTests
     }
 
     [Fact]
+    public async Task GetKeyMaterialAsync_never_exports_rsa_private_parameters_even_when_the_jwk_carries_them()
+    {
+        // Key Vault's keys/get never returns private halves, but this reader must not be the
+        // component that would forward one if it ever did: the mapped key is public-only by
+        // construction, so a private export from it must fail.
+        using var rsa = RSA.Create(2048);
+        var client = new FakeKeyClient
+        {
+            OnGetKey = _ => BuildKey(new JsonWebKey(rsa, includePrivateParameters: true)),
+        };
+
+        var (publicKey, _) = await BuildReader(client)
+            .GetKeyMaterialAsync("v1", TestContext.Current.CancellationToken);
+
+        using var key = publicKey;
+        var act = () => ((RSA)key).ExportParameters(includePrivateParameters: true);
+        act.Should().Throw<CryptographicException>(
+            "the reader maps only the public half, even from a JWK that carries private material");
+    }
+
+    [Fact]
+    public async Task GetKeyMaterialAsync_never_exports_ec_private_parameters_even_when_the_jwk_carries_them()
+    {
+        using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var client = new FakeKeyClient
+        {
+            OnGetKey = _ => BuildKey(new JsonWebKey(ecdsa, includePrivateParameters: true)),
+        };
+
+        var (publicKey, _) = await BuildReader(client)
+            .GetKeyMaterialAsync("v1", TestContext.Current.CancellationToken);
+
+        using var key = publicKey;
+        var act = () => ((ECDsa)key).ExportParameters(includePrivateParameters: true);
+        act.Should().Throw<CryptographicException>(
+            "the reader maps only the public half, even from a JWK that carries private material");
+    }
+
+    [Fact]
     public async Task GetKeyMaterialAsync_rejects_an_unsupported_key_type()
     {
         using var aes = Aes.Create();
