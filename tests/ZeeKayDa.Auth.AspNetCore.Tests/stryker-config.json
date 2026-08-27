@@ -1,0 +1,15 @@
+{
+  "stryker-config": {
+    "project": "ZeeKayDa.Auth.AspNetCore.csproj",
+    "test-runner": "mtp",
+    "mutate": [
+      "**/ClientAuthentication/**/*.cs",
+      "!**/Endpoints/**/*.cs"
+    ],
+    "reporters": [
+      "progress",
+      "html",
+      "json"
+    ]
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "stryker-config": {
+    "project": "ZeeKayDa.Auth.AzureKeyVault.csproj",
+    "test-runner": "mtp",
+    "mutate": [
+      "**/*.cs"
+    ],
+    "reporters": [
+      "progress",
+      "html",
+      "json"
+    ]
+  }
+}
