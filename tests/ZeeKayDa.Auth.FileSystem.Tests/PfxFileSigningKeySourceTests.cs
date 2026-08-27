@@ -50,6 +50,25 @@ public sealed class PfxFileSigningKeySourceTests
     private static X509Certificate2 CreateRsaCertificate() =>
         TestCertificateFactory.CreateRsaSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
 
+    // ── Construction ─────────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Constructor_throws_ArgumentNullException_when_options_is_null()
+    {
+        var act = () => new PfxFileSigningKeySource(
+            null!, new FileSigningKeyReader(NullSanitizingLogger<FileSigningKeyReader>.Instance));
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("options");
+    }
+
+    [Fact]
+    public void Constructor_throws_ArgumentNullException_when_reader_is_null()
+    {
+        var act = () => new PfxFileSigningKeySource(Options.Create(new PfxFileSigningOptions()), null!);
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("reader");
+    }
+
     // ── Happy path ───────────────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -756,5 +775,48 @@ public sealed class PfxFileSigningKeySourceTests
         var act = async () => await sut.CreateSignerAsync(new SourceKeyId(nextPath), ct);
 
         await act.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    // ── A Current bundle must actually carry a private key ───────────────────────────────────────
+
+    [Fact]
+    public async Task CreateSignerAsync_throws_private_key_not_found_when_the_Current_bundle_carries_no_key()
+    {
+        // A key-stripped bundle is the right shape for Previous/Next but can never sign; promoting
+        // one to Current by mistake must fail with the dedicated code, not sign garbage or NRE.
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        using var publicOnly = X509CertificateLoader.LoadCertificate(certificate.RawData);
+        var path = tempDir.WritePfxFile("current.pfx", publicOnly, CorrectPassword);
+        var sut = BuildSource(new PfxFile(path, Password()));
+
+        var act = async () => await sut.CreateSignerAsync(new SourceKeyId(path), ct);
+
+        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        exception.Which.AggregatedFailures.Should().ContainSingle(
+            f => f.Code == "signing.file_signing.private_key_not_found");
+        // Message, not just code: "carries no private key" (an operator supplied the wrong kind of
+        // file) and "could not be accessed" (the file is corrupt) share a failure code but ask for
+        // different fixes, and only the first is true here.
+        exception.Which.Message.Should().Contain("carries no private key");
+    }
+
+    [Fact]
+    public async Task CreateSignerAsync_throws_invalid_pfx_for_a_wrong_password_rather_than_leaking_the_raw_crypto_error()
+    {
+        // The signer-open path loads the bundle separately from ReadAsync, so its password failure
+        // must be wrapped into the same configuration failure the read path produces.
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        var path = tempDir.WritePfxFile("current.pfx", certificate, CorrectPassword);
+        var sut = BuildSource(new PfxFile(path, Password("not the password")));
+
+        var act = async () => await sut.CreateSignerAsync(new SourceKeyId(path), ct);
+
+        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        exception.Which.AggregatedFailures.Should().ContainSingle(
+            f => f.Code == "signing.file_signing.invalid_pfx");
     }
 }

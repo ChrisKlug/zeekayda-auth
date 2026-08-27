@@ -46,6 +46,81 @@ public sealed class PemFileSigningKeySourceTests
     private static X509Certificate2 CreateRsaCertificate() =>
         TestCertificateFactory.CreateRsaSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
 
+    /// <summary>
+    /// A DSA self-signed certificate (openssl-generated, valid for a century) — a key type this
+    /// library deliberately refuses to sign with. Checked in as text because
+    /// <see cref="System.Security.Cryptography.X509Certificates.CertificateRequest"/> can only
+    /// produce RSA and ECDSA certificates, so the shape cannot be generated at test run time.
+    /// </summary>
+    private const string DsaCertificatePem = """
+        -----BEGIN CERTIFICATE-----
+        MIIElTCCBEKgAwIBAgIUZ/wI0gCPxUhIqWpdcLL3roeD0IwwCwYJYIZIAWUDBAMC
+        MCwxKjAoBgNVBAMMIXprZGEtdW5zdXBwb3J0ZWQta2V5LXR5cGUtZml4dHVyZTAg
+        Fw0yNjA4MjcxNzU5MzBaGA8yMTI2MDgwMzE3NTkzMFowLDEqMCgGA1UEAwwhemtk
+        YS11bnN1cHBvcnRlZC1rZXktdHlwZS1maXh0dXJlMIIDQzCCAjYGByqGSM44BAEw
+        ggIpAoIBAQDv6fOMTzPI5adGpTaFuWakccaXuc6SQtlB3bUhfyf662ZemTmWo/Ls
+        3EUVGAzZFdbouNuTSHPVxbD5OI85TD1c5z2ne/dE5Wd+2jyKUrN0ZYWhWHCPz7dQ
+        vNaiiWAm+JX+ndXNuVSL+TwotwnhLd2z8dTTEIbr2ywL09vsw/8N55//P0mfY/kY
+        nWUVCAOqR6hVbjPAvGqtWrYpIVIBVZ9f37mI39cXI1aJXE5gYFigYJMYghHzEMvE
+        4WkrlA28TBCqskKFKYw/o2Idp4hxpIsYZ53VK6NrAk74qh92haWokXErgzjVCgoB
+        qQTSeM92s4FslzPeWYFyd4KPH6rX5GvHAh0AwrOMBSMLQp0cPVC0h6EFROtpKVLb
+        GwDFPgVVzQKCAQEAyfeCNUlrPEfGR4jc7Aep4akKdozKFqVzT+DxW0acdFJ1Oe7M
+        zZNButmzw8z6fdotWGt7u9KgmYX9wcs4Zvl2bEIxU5mAba3bPggdgfots+sM9aq6
+        DOt168/lWBX5PbsbUweM8u3jEIONaYsYlw6AMhPCR2gtd8vOlA7KnUGA+W6h+5Qp
+        bUW7yPIymXDRhw/ihe5iqEcltQAUL24YFtIErcYmxZeQdkziaAHkUclAUtfuKI16
+        XaNllYfdwr/Kjrmff+GFkxjk4YCSV3I5ANJ7UGFhm7Acabgaf/4y407SDwNMQ0NM
+        U/fMDLFMu5beccxX7egLZyxy2EpKLJqKolkUyAOCAQUAAoIBAA0qFz942DK40Yk5
+        7yhG8j6oWorxtE3oSFTgJ+moEEyPKUu4M2AO7yFL3RNOLWU59RU0kNCQTyDV7get
+        Q2eTHDbaTYADVzw5FiuBY3jTO6s2VrIMJSXveAmO5NVWU8VmNdek944Ymuu5BUg6
+        7wMqAEzHGu79jHrCmYry9KycvkmEic8qhQceuMseNLjNvf9IlpkRgnXc8tp7r7Kq
+        3MGQ3m6ec+J4jE0FNoYVHEL+5lpnSFKoW1EyG2QBSAbThMIH9s/HI4u6F2KeAc6n
+        q/IFESvn7yrKp+BJr3QydVxrzgit0+1l94t7KmbbNAgeKhQDM4vhM8eCooomwqz8
+        MaWVUXGjUzBRMB0GA1UdDgQWBBRvM48hp1aJB/YXYSgVzu9fTu+CKDAfBgNVHSME
+        GDAWgBRvM48hp1aJB/YXYSgVzu9fTu+CKDAPBgNVHRMBAf8EBTADAQH/MAsGCWCG
+        SAFlAwQDAgNAADA9AhxsR8W1AJ9rSGQb2fZfbBlYHTFK/ezeh6wP4+9GAh0AiqnN
+        nAJCNS2zwuZjpqaLnkmix9MkXCghY7eGuQ==
+        -----END CERTIFICATE-----
+        """;
+
+    // ── Construction ─────────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Constructor_throws_ArgumentNullException_when_options_is_null()
+    {
+        var act = () => new PemFileSigningKeySource(
+            null!, new FileSigningKeyReader(NullSanitizingLogger<FileSigningKeyReader>.Instance));
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("options");
+    }
+
+    [Fact]
+    public void Constructor_throws_ArgumentNullException_when_reader_is_null()
+    {
+        var act = () => new PemFileSigningKeySource(Options.Create(new PemFileSigningOptions()), null!);
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("reader");
+    }
+
+    // ── Unsupported key types ────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task ReadAsync_rejects_a_certificate_whose_key_is_neither_RSA_nor_EC()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "Windows' certificate stack may refuse to load a DSA certificate at all, which would surface as invalid_pem before the key-type check is reached.");
+
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        var path = tempDir.WriteTextFile("dsa.pem", DsaCertificatePem);
+        var sut = BuildSource(new PemSigningFile(path));
+
+        var act = () => sut.ReadAsync(ct).AsTask();
+
+        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>(
+            "a key type the signing pipeline cannot sign with must be rejected at read time, not when the first token is issued");
+        exception.Which.AggregatedFailures.Should().ContainSingle(
+            f => f.Code == "signing.file_signing.unsupported_key_type");
+    }
+
     // ── Happy path ───────────────────────────────────────────────────────────────────────────────
 
     [Fact]

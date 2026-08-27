@@ -31,6 +31,48 @@ public sealed class ZeeKayDaAuthBuilderFileSigningExtensionsTests
 
     // ── AddPemFileSigning: argument validation ───────────────────────────────────────────────────
 
+    // The path overloads are not tested for a null builder: they delegate to the slots overloads,
+    // whose own guard throws the same ArgumentNullException("builder") before anything else runs, so
+    // the path overloads' guards only change which of two invalid arguments is reported first.
+
+    [Fact]
+    public void AddPemFileSigning_slots_overload_throws_ArgumentNullException_when_builder_is_null()
+    {
+        var act = () => ((ZeeKayDaAuthBuilder)null!).AddPemFileSigning(SigningAlgorithm.RS256, _ => { });
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("builder");
+    }
+
+    [Fact]
+    public void AddPemFileSigning_slots_overload_throws_ArgumentNullException_when_configure_is_null()
+    {
+        // Without the eager guard the null callback would only surface when the options pipeline
+        // first materialises the value — far from the registration call that caused it.
+        var builder = NewBuilder();
+
+        var act = () => builder.AddPemFileSigning(SigningAlgorithm.RS256, configure: null!);
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("configure");
+    }
+
+    [Fact]
+    public void AddPfxFileSigning_slots_overload_throws_ArgumentNullException_when_builder_is_null()
+    {
+        var act = () => ((ZeeKayDaAuthBuilder)null!).AddPfxFileSigning(SigningAlgorithm.RS256, _ => { });
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("builder");
+    }
+
+    [Fact]
+    public void AddPfxFileSigning_slots_overload_throws_ArgumentNullException_when_configure_is_null()
+    {
+        var builder = NewBuilder();
+
+        var act = () => builder.AddPfxFileSigning(SigningAlgorithm.RS256, configure: null!);
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("configure");
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]
@@ -341,6 +383,35 @@ public sealed class ZeeKayDaAuthBuilderFileSigningExtensionsTests
     // as the DI-registration proof this test replaces would look from any out-of-assembly test.
 
 
+
+    // ── ValidateOnStart wiring: the validators must actually gate host startup ───────────────────
+
+    [Fact]
+    public async Task AddPemFileSigning_fails_startup_validation_when_no_Current_slot_is_configured()
+    {
+        // IStartupValidator is what ValidateOnStart registers and what Host.StartAsync runs before
+        // serving anything. Registering the options without their validator would leave it with
+        // nothing to run, and a misconfiguration would surface only on the first signing attempt.
+        var builder = NewBuilder();
+        builder.AddPemFileSigning(SigningAlgorithm.RS256, _ => { });
+
+        await using var provider = builder.Services.BuildServiceProvider();
+        var act = () => provider.GetRequiredService<IStartupValidator>().Validate();
+
+        act.Should().Throw<OptionsValidationException>().WithMessage("*Current must be set*");
+    }
+
+    [Fact]
+    public async Task AddPfxFileSigning_fails_startup_validation_when_no_Current_slot_is_configured()
+    {
+        var builder = NewBuilder();
+        builder.AddPfxFileSigning(SigningAlgorithm.RS256, _ => { });
+
+        await using var provider = builder.Services.BuildServiceProvider();
+        var act = () => provider.GetRequiredService<IStartupValidator>().Validate();
+
+        act.Should().Throw<OptionsValidationException>().WithMessage("*Current must be set*");
+    }
 
     // ── AddPemFileSigning: the three-slot overload ───────────────────────────────────────────────
 

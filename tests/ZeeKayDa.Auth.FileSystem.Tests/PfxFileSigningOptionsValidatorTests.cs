@@ -28,6 +28,17 @@ public sealed class PfxFileSigningOptionsValidatorTests
     }
 
     [Fact]
+    public void Reports_Succeeded_not_merely_zero_failures_for_a_valid_configuration()
+    {
+        // The Validate() helper above inspects only Failures, which a Fail result built over an
+        // empty error list would also satisfy — this pins the Succeeded flag itself, so a validator
+        // that never returns Success cannot pass startup on the strength of an empty failure list.
+        var result = new PfxFileSigningOptionsValidator().Validate(null, ValidOptions());
+
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Fact]
     public void Fails_when_Current_is_not_configured()
     {
         var options = new PfxFileSigningOptions { Current = null };

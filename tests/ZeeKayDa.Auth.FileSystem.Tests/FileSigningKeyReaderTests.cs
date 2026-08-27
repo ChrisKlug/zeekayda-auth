@@ -14,6 +14,34 @@ namespace ZeeKayDa.Auth.FileSystem.Tests;
 public sealed class FileSigningKeyReaderTests
 {
     [Fact]
+    public void Constructor_throws_ArgumentNullException_when_logger_is_null()
+    {
+        var act = () => new FileSigningKeyReader(null!);
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("logger");
+    }
+
+    [Fact]
+    public async Task ReadPemTextAsync_releases_the_open_handle_when_validation_rejects_the_file()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", DateTimeOffset.UtcNow - TimeSpan.FromDays(1), DateTimeOffset.UtcNow + TimeSpan.FromDays(365));
+        var path = tempDir.WritePemFile("key.pem", certificate);
+        tempDir.MakeTooPermissive(path);
+        var reader = new FileSigningKeyReader(NullSanitizingLogger<FileSigningKeyReader>.Instance);
+
+        var act = () => reader.ReadPemTextAsync(path, ct).AsTask();
+
+        await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        // FileShare is enforced between FileStreams of the same process on every platform (the OS
+        // sharing mode on Windows, .NET's advisory-lock emulation on Unix), so this exclusive
+        // reopen fails with a sharing violation if the rejected read's handle leaked.
+        var reopen = () => File.Open(path, FileMode.Open, FileAccess.Read, FileShare.None).Dispose();
+        reopen.Should().NotThrow("a handle held open on a rejected key file would block the operator from replacing it");
+    }
+
+    [Fact]
     public async Task ReadPemTextAsync_logs_a_warning_when_the_parent_directory_is_world_writable_on_Unix()
     {
         Assert.SkipWhen(OperatingSystem.IsWindows(), "world-writable-directory detection uses the Unix permission model here.");
