@@ -461,10 +461,16 @@ cd tests/ZeeKayDa.Auth.Tests && dotnet tool run dotnet-stryker
 
 | Target (config location) | Mutated scope | Baseline (2026-08-27) |
 |---|---|---|
-| `tests/ZeeKayDa.Auth.Tests` | `Tokens/`, `Security/`, `Clients/`, `Authorization/` | **69.59 %** |
+| `tests/ZeeKayDa.Auth.Tests` | `Tokens/`, `Security/`, `Clients/`, `Authorization/` | **75.77 %** |
 | `tests/ZeeKayDa.Auth.AspNetCore.Tests` | `ClientAuthentication/` | **100.00 %** |
-| `tests/ZeeKayDa.Auth.AzureKeyVault.Tests` | whole project | **40.00 %** |
-| `tests/ZeeKayDa.Auth.FileSystem.Tests` | whole project | **74.50 %** |
+| `tests/ZeeKayDa.Auth.AzureKeyVault.Tests` | whole project | **43.55 %** |
+| `tests/ZeeKayDa.Auth.FileSystem.Tests` | whole project | **54.49 %** |
+
+Baselines are recorded from the `mutation.yml` workflow on `ubuntu-latest` — that is the canonical
+environment. Local runs on macOS/Windows produce different numbers (platform-conditional tests
+skip differently; FileSystem scored 74.50 % on macOS against 54.49 % on Linux), so compare local
+results only against local results. In the workflow the core target runs as three per-directory
+slices for wall-clock reasons; the recorded core number is from a whole-target run.
 
 Reports land under `<test project>/StrykerOutput/` (gitignored) — open
 `reports/mutation-report.html` to inspect individual mutants.
