@@ -640,6 +640,53 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
+    public void Validate_reports_an_untrimmed_auth_method_entry_as_invalid_and_nothing_else()
+    {
+        // An invalid entry is reported once, as invalid — it must not additionally trip the
+        // duplicate or unsupported-method checks it was never eligible for.
+        var validator = MakeValidator();
+        var client = new ClientRegistration
+        {
+            ClientId = "client",
+            Credentials = [new FakeSecret()],
+            IsPublic = false,
+            RedirectUris = new HashSet<string>(["https://app.example.com/cb"], StringComparer.Ordinal),
+            PostLogoutRedirectUris = new HashSet<string>(StringComparer.Ordinal),
+            AllowedTokenEndpointAuthMethods = new HashSet<string>(
+                [" client_secret_basic "], StringComparer.Ordinal)
+        };
+
+        var act = () => validator.Validate(client);
+
+        var ex = act.Should().Throw<ZeeKayDaConfigurationException>().Which;
+        ex.AggregatedFailures.Should().ContainSingle(
+            f => f.Code.StartsWith("client.token_endpoint_auth_methods.", StringComparison.Ordinal))
+            .Which.Code.Should().Be("client.token_endpoint_auth_methods.invalid_entry");
+    }
+
+    [Fact]
+    public void Validate_reports_an_auth_method_entry_with_a_control_character_as_invalid()
+    {
+        var validator = MakeValidator();
+        var client = new ClientRegistration
+        {
+            ClientId = "client",
+            Credentials = [new FakeSecret()],
+            IsPublic = false,
+            RedirectUris = new HashSet<string>(["https://app.example.com/cb"], StringComparer.Ordinal),
+            PostLogoutRedirectUris = new HashSet<string>(StringComparer.Ordinal),
+            AllowedTokenEndpointAuthMethods = new HashSet<string>(
+                ["client\u0001secret", TokenEndpointAuthMethods.ClientSecretBasic], StringComparer.Ordinal)
+        };
+
+        var act = () => validator.Validate(client);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().Contain(
+                f => f.Code == "client.token_endpoint_auth_methods.invalid_entry");
+    }
+
+    [Fact]
     public void Validate_fails_with_none_on_confidential_code_for_confidential_client_with_none_auth_method()
     {
         // A confidential client with {"none","client_secret_basic"} passes the trinity check

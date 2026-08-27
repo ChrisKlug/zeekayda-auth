@@ -151,6 +151,23 @@ public sealed class Pbkdf2ClientSecretHasherTests
         logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Warning);
     }
 
+    [Fact]
+    public void Constructor_accepts_exactly_MaxIterations_without_clamping_or_warning()
+    {
+        // MaxIterations itself is inside the documented valid range: the clamp-and-warn path
+        // starts strictly above it, not at it.
+        var logger = new CapturingLogger<Pbkdf2ClientSecretHasher>();
+
+        _ = new Pbkdf2ClientSecretHasher(
+            Options.Create(new Pbkdf2ClientSecretHasherOptions
+            {
+                Iterations = Pbkdf2ClientSecretHasher.MaxIterations,
+            }),
+            logger);
+
+        logger.Entries.Should().NotContain(e => e.Level == LogLevel.Warning);
+    }
+
     // ── CanHandle ────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
