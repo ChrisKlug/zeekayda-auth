@@ -640,6 +640,22 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
+    public void Validate_accepts_exactly_32_redirect_uris()
+    {
+        // The documented cap is inclusive: rejection starts strictly above 32, not at it.
+        var validator = MakeValidator();
+        var uris = Enumerable.Range(1, 32).Select(i => $"https://app.example.com/cb{i}");
+        var client = MakeValidConfidentialClient() with
+        {
+            RedirectUris = new HashSet<string>(uris, StringComparer.Ordinal),
+        };
+
+        var act = () => validator.Validate(client);
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
     public void Validate_reports_an_untrimmed_auth_method_entry_as_invalid_and_nothing_else()
     {
         // An invalid entry is reported once, as invalid — it must not additionally trip the
