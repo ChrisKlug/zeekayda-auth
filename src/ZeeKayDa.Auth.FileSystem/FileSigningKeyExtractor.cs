@@ -101,20 +101,6 @@ internal static class FileSigningKeyExtractor
             ? PublicKeyParameters.FromRsa(((RSA)publicKey).ExportParameters(false))
             : PublicKeyParameters.FromEc(((ECDsa)publicKey).ExportParameters(false));
 
-    /// <summary>Best-effort key type/size description for the informational startup log line.</summary>
-    public static (string KeyType, int KeySizeBits) DescribeKeyForLogging(X509Certificate2 certificate)
-    {
-        using var rsa = certificate.GetRSAPublicKey();
-        if (rsa is not null)
-            return ("RSA", rsa.KeySize);
-
-        using var ec = certificate.GetECDsaPublicKey();
-        if (ec is not null)
-            return ("EC", ec.KeySize);
-
-        return ("unknown", 0);
-    }
-
     private static ZeeKayDaConfigurationException UnsupportedKeyType(string path) =>
         new(new ZeeKayDaConfigurationFailure(
             "signing.file_signing.unsupported_key_type",

@@ -273,7 +273,6 @@ public static class ZeeKayDaAuthBuilderFileSigningExtensions
 
     private static void AddSharedFileSigningServices(ZeeKayDaAuthBuilder builder)
     {
-        builder.Services.TryAddSingleton<TimeProvider>(TimeProvider.System);
         builder.Services.TryAddSingleton<FileSigningKeyReader>();
     }
 }
