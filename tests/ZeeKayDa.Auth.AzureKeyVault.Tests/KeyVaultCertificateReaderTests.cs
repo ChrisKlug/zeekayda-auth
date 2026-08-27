@@ -520,7 +520,10 @@ public sealed class KeyVaultCertificateReaderTests
 
     // ── Network-facing paths, via the internal test constructor ──────────────────────────────────
 
-    private static readonly Uri SecretIdUri = new("https://fake-vault.vault.azure.net/secrets/fake-cert/v1");
+    // Deliberately NOT the certificate's own name/version: the linked secret's identifier is what
+    // the download must follow, and a shared name would let a reader that wrongly reuses
+    // _certificateName/version pass the assertion below.
+    private static readonly Uri SecretIdUri = new("https://fake-vault.vault.azure.net/secrets/linked-secret/sv9");
 
     private static KeyVaultCertificateReader BuildReader(
         FakeCertificateClient certificateClient, FakeSecretClient? secretClient = null) =>
@@ -565,6 +568,8 @@ public sealed class KeyVaultCertificateReaderTests
         versions[0].Enabled.Should().BeTrue();
         versions[1].Enabled.Should().BeFalse();
         versions[1].CreatedOn.Should().Be(DateTimeOffset.Parse("2026-02-01T00:00:00Z"));
+        client.RequestedNames.Should().Equal(["fake-cert"],
+            "the listing must be for the configured certificate, nothing else");
     }
 
     [Theory]
@@ -638,6 +643,8 @@ public sealed class KeyVaultCertificateReaderTests
 
         using var _ = publicKey;
         requestedVersion.Should().Be("v3");
+        client.RequestedNames.Should().Equal(["fake-cert"],
+            "the material must be fetched for the configured certificate, nothing else");
         keyType.Should().Be(SigningKeyType.Rsa);
         publicKey.Should().BeAssignableTo<RSA>();
     }
@@ -663,8 +670,9 @@ public sealed class KeyVaultCertificateReaderTests
             .GetPrivateKeyMaterialAsync("v1", TestContext.Current.CancellationToken);
 
         using var _ = privateKey;
-        requestedSecret.Should().Be(("fake-cert", "v1"),
-            "the secret must be fetched by the identifier the certificate version links to");
+        requestedSecret.Should().Be(("linked-secret", "sv9"),
+            "the secret must be fetched by the identifier the certificate version links to, " +
+            "never by the certificate's own name and the requested version");
         keyType.Should().Be(SigningKeyType.Rsa);
         ((RSA)privateKey).ExportParameters(includePrivateParameters: true).D.Should().NotBeNull();
     }

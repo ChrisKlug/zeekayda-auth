@@ -139,6 +139,36 @@ public sealed class KeyVaultSignerTests
     }
 
     [Fact]
+    public async Task SignAsync_lets_cancellation_escape_unwrapped()
+    {
+        // A cancelled sign is the host shutting down, not a vault failure — wrapping it in
+        // AzureKeyVaultSigningException would send the operator to audit a healthy vault.
+        var signer = BuildSigner(new ThrowingCryptographyClient(new OperationCanceledException()));
+
+        var act = () => signer.SignAsync(
+            KeyVersionUri, "v1", SigningAlgorithm.RS256, SigningInput,
+            TestContext.Current.CancellationToken).AsTask();
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task SignAsync_tells_the_operator_to_back_off_when_throttled_with_no_raw_response_at_all()
+    {
+        // Distinct from the no-header case: here the SDK exception carries no raw response object
+        // whatsoever, so the Retry-After lookup must fail soft rather than dereference it.
+        var throttled = new RequestFailedException(429, "throttled");
+        var signer = BuildSigner(new ThrowingCryptographyClient(throttled));
+
+        var act = () => signer.SignAsync(
+            KeyVersionUri, "v1", SigningAlgorithm.RS256, SigningInput,
+            TestContext.Current.CancellationToken).AsTask();
+
+        (await act.Should().ThrowAsync<AzureKeyVaultSigningException>())
+            .Which.Message.Should().Contain("No Retry-After header");
+    }
+
+    [Fact]
     public async Task SignAsync_omits_the_error_code_clause_when_the_sdk_reports_none()
     {
         var failure = new RequestFailedException(500, "boom");

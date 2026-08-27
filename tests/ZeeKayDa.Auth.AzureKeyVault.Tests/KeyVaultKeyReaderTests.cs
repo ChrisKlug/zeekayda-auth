@@ -103,6 +103,8 @@ public sealed class KeyVaultKeyReaderTests
         versions[0].Enabled.Should().BeTrue();
         versions[1].CreatedOn.Should().Be(T0 + TimeSpan.FromDays(1));
         versions[1].Enabled.Should().BeFalse();
+        client.RequestedNames.Should().Equal(["fake-key"],
+            "the listing must be for the configured key, nothing else");
     }
 
     [Theory]
@@ -233,6 +235,8 @@ public sealed class KeyVaultKeyReaderTests
         await BuildReader(client).GetKeyMaterialAsync("v7", TestContext.Current.CancellationToken);
 
         requestedVersion.Should().Be("v7");
+        client.RequestedNames.Should().Equal(["fake-key"],
+            "the material must be fetched for the configured key, nothing else");
     }
 
     [Fact]

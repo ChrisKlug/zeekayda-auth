@@ -16,11 +16,20 @@ internal sealed class FakeCertificateClient : CertificateClient
     /// <summary>Receives the requested version; returns the certificate or throws.</summary>
     public Func<string, KeyVaultCertificate>? OnGetVersion { get; init; }
 
+    /// <summary>Every certificate name the reader asked for, in call order, across both operations.</summary>
+    public List<string> RequestedNames { get; } = [];
+
     public override AsyncPageable<CertificateProperties> GetPropertiesOfCertificateVersionsAsync(
-        string certificateName, CancellationToken cancellationToken = default) =>
-        OnGetVersions!();
+        string certificateName, CancellationToken cancellationToken = default)
+    {
+        RequestedNames.Add(certificateName);
+        return OnGetVersions!();
+    }
 
     public override Task<Response<KeyVaultCertificate>> GetCertificateVersionAsync(
-        string certificateName, string version, CancellationToken cancellationToken = default) =>
-        Task.FromResult(Response.FromValue(OnGetVersion!(version), new FakeAzureResponse(200)));
+        string certificateName, string version, CancellationToken cancellationToken = default)
+    {
+        RequestedNames.Add(certificateName);
+        return Task.FromResult(Response.FromValue(OnGetVersion!(version), new FakeAzureResponse(200)));
+    }
 }

@@ -16,11 +16,20 @@ internal sealed class FakeKeyClient : KeyClient
     /// <summary>Receives the requested version; returns the key or throws.</summary>
     public Func<string?, KeyVaultKey>? OnGetKey { get; init; }
 
+    /// <summary>Every key name the reader asked for, in call order, across both operations.</summary>
+    public List<string> RequestedNames { get; } = [];
+
     public override AsyncPageable<KeyProperties> GetPropertiesOfKeyVersionsAsync(
-        string name, CancellationToken cancellationToken = default) =>
-        OnGetVersions!();
+        string name, CancellationToken cancellationToken = default)
+    {
+        RequestedNames.Add(name);
+        return OnGetVersions!();
+    }
 
     public override Task<Response<KeyVaultKey>> GetKeyAsync(
-        string name, string? version = null, CancellationToken cancellationToken = default) =>
-        Task.FromResult(Response.FromValue(OnGetKey!(version), new FakeAzureResponse(200)));
+        string name, string? version = null, CancellationToken cancellationToken = default)
+    {
+        RequestedNames.Add(name);
+        return Task.FromResult(Response.FromValue(OnGetKey!(version), new FakeAzureResponse(200)));
+    }
 }
