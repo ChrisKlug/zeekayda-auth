@@ -94,6 +94,21 @@ public sealed class DevelopmentSigningKeySourceTests
         public bool FileExists(string path) => false;
     }
 
+    private sealed class ThrowOnAnyUseFileSystem : IDevelopmentSigningKeyFileSystem
+    {
+        public void EnsureDirectorySafe(string directory)
+            => throw new InvalidOperationException("The file system must not be touched in ephemeral mode.");
+
+        public ValueTask WriteKeyFileAsync(string keyPath, ReadOnlyMemory<char> pem, CancellationToken cancellationToken)
+            => throw new InvalidOperationException("The file system must not be touched in ephemeral mode.");
+
+        public ValueTask<KeyFileContent> ReadKeyFileAsync(string keyPath, CancellationToken cancellationToken)
+            => throw new InvalidOperationException("The file system must not be touched in ephemeral mode.");
+
+        public bool FileExists(string path)
+            => throw new InvalidOperationException("The file system must not be touched in ephemeral mode.");
+    }
+
     // ── Constructor validation ───────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -147,6 +162,18 @@ public sealed class DevelopmentSigningKeySourceTests
         using var rsa = RSA.Create();
         rsa.ImportParameters(set.SigningKey.PublicKey.RsaPublicParameters!.Value);
         rsa.KeySize.Should().BeGreaterThanOrEqualTo(3072);
+    }
+
+    [Fact]
+    public async Task ReadAsync_without_PersistToDirectory_never_touches_the_file_system()
+    {
+        // Ephemeral mode must not probe, create, or write anything on disk — the persisted path
+        // is taken only when PersistToDirectory is set.
+        using var sut = BuildEphemeral(new ThrowOnAnyUseFileSystem());
+
+        var set = await sut.ReadAsync(TestContext.Current.CancellationToken);
+
+        set.Keys.Should().ContainSingle();
     }
 
     [Fact]

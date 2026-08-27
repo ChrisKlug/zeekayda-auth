@@ -2,6 +2,11 @@
   "stryker-config": {
     "project": "ZeeKayDa.Auth.FileSystem.csproj",
     "test-runner": "mtp",
+    "ignore-methods": [
+      "ConfigureAwait",
+      "GC.SuppressFinalize",
+      "*Exception.ctor"
+    ],
     "mutate": [
       "**/*.cs"
     ],

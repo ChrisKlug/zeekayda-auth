@@ -93,6 +93,77 @@ public sealed class SigningAlgorithmsTests
         signature.Length.Should().Be(expectedLength);
     }
 
+    // ── Key strength: significant-bit counting ───────────────────────────────────────────────────
+
+    [Fact]
+    public void ValidateKeyStrength_rejects_an_all_zero_RSA_modulus()
+    {
+        // An all-zero modulus has zero significant bits however long its byte array is — a
+        // 384-byte buffer of zeros must not pass as a 3072-bit key.
+        var publicKey = PublicKeyParameters.FromRsa(new RSAParameters
+        {
+            Modulus = new byte[384],
+            Exponent = [1, 0, 1],
+        });
+
+        var act = () => SigningAlgorithms.ValidateKeyStrength(SigningAlgorithm.RS256, publicKey, "test-key");
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures[0].Code.Should().Be("signing.rsa_key_too_small");
+    }
+
+    [Fact]
+    public void ValidateKeyStrength_rejects_a_modulus_just_under_2048_significant_bits()
+    {
+        // 256 bytes whose leading byte is 0x01: 255 * 8 + 1 = 2041 significant bits. The count
+        // must come from the most-significant SET bit, not from the byte length (which would
+        // read as 2048) — a boundary an off-by-one in the bit counting walks straight past.
+        var modulus = new byte[256];
+        modulus[0] = 0x01;
+        modulus[255] = 0x01;
+        var publicKey = PublicKeyParameters.FromRsa(new RSAParameters
+        {
+            Modulus = modulus,
+            Exponent = [1, 0, 1],
+        });
+
+        var act = () => SigningAlgorithms.ValidateKeyStrength(SigningAlgorithm.RS256, publicKey, "test-key");
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures[0].Code.Should().Be("signing.rsa_key_too_small");
+    }
+
+    // ── Key/algorithm compatibility: EC curve pairing ────────────────────────────────────────────
+
+    [Theory]
+    [InlineData(SigningAlgorithm.ES256, "nistP256")]
+    [InlineData(SigningAlgorithm.ES384, "nistP384")]
+    [InlineData(SigningAlgorithm.ES512, "nistP521")]
+    public void ValidateKeyAlgorithmCompatibility_accepts_an_EC_key_on_its_matching_curve(
+        SigningAlgorithm algorithm, string curveName)
+    {
+        using var ec = ECDsa.Create(ECCurve.CreateFromFriendlyName(curveName));
+        var publicKey = PublicKeyParameters.FromEc(ec.ExportParameters(false));
+
+        var act = () => SigningAlgorithms.ValidateKeyAlgorithmCompatibility(algorithm, publicKey, "test-key");
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void ValidateKeyAlgorithmCompatibility_rejects_an_EC_key_whose_curve_does_not_match_the_algorithm()
+    {
+        // ES256 requires P-256 (RFC 7518 §3.4); a P-384 key under ES256 is a misconfiguration,
+        // reported with the stable failure code rather than accepted or crashed on.
+        using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP384);
+        var publicKey = PublicKeyParameters.FromEc(ec.ExportParameters(false));
+
+        var act = () => SigningAlgorithms.ValidateKeyAlgorithmCompatibility(SigningAlgorithm.ES256, publicKey, "test-key");
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures[0].Code.Should().Be("signing.ec_curve_algorithm_mismatch");
+    }
+
     // ── Unsupported algorithm values ─────────────────────────────────────────────────────────────
 
     [Fact]
