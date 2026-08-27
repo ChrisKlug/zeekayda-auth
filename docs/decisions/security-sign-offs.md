@@ -23,6 +23,9 @@ commit still under review. **Maximum ~15 lines.** Every claim cites the test tha
 name. Prose that a future reviewer would have to re-probe empirically does not go in this file — it
 goes in a test, which is then cited. Entries written before the code settled were falsified by
 later fixes three separate times, at a full review round each; these rules exist because of that.
+CI enforces the citations: every backticked, underscore-separated name in the entries below must be
+declared in some `tests/**/*.cs` file (`.github/scripts/check_sign_off_citations.sh`), so deleting
+or renaming a cited test cannot go green without updating the entry that relies on it.
 
 *Archaeology note:* these records were extracted from the numbered ADRs that preceded the decision
 register (ADRs 0011, 0013, 0014 and 0016 in particular). Those documents are being retired and
