@@ -472,6 +472,60 @@ public sealed class AzureKeyVaultRemoteSigningKeySourceTests
     }
 
     [Fact]
+    public async Task ReadAsync_no_eligible_version_error_names_the_earliest_of_several_ripening_instants()
+    {
+        // With more than one version waiting to ripen, the operator's wait ends at the EARLIEST
+        // eligibility instant — naming a later one would overstate the outage.
+        var ct = TestContext.Current.CancellationToken;
+        var now = T0 + TimeSpan.FromDays(10);
+        var reader = new FakeKeyVaultKeyReader();
+        reader.AddRsaVersion("v1", createdOn: T0, enabled: false);
+        reader.AddRsaVersion("v2", createdOn: now - TimeSpan.FromHours(2));
+        reader.AddRsaVersion("v3", createdOn: now - TimeSpan.FromHours(1));
+        var sut = BuildSource(reader, new FakeTimeProvider(now));
+
+        var act = async () => await sut.ReadAsync(ct);
+
+        var earliestRipensAt = now - TimeSpan.FromHours(2) + DefaultPreActivationDelay;
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .WithMessage($"*no_eligible_version*{earliestRipensAt:O}*");
+    }
+
+    [Fact]
+    public async Task ReadAsync_no_eligible_version_error_treats_a_version_expiring_exactly_as_it_ripens_as_futile()
+    {
+        // Boundary of the futile-wait rule: a version whose expiry falls on the very instant it
+        // would become eligible never gets a moment in which it may sign, so it must not be
+        // offered as a wait target.
+        var ct = TestContext.Current.CancellationToken;
+        var now = T0 + TimeSpan.FromDays(10);
+        var createdOn = now - TimeSpan.FromHours(1);
+        var reader = new FakeKeyVaultKeyReader();
+        reader.AddRsaVersion("v1", createdOn: T0, enabled: false);
+        reader.AddRsaVersion("v2", createdOn: createdOn, expiresOn: createdOn + DefaultPreActivationDelay);
+        var sut = BuildSource(reader, new FakeTimeProvider(now));
+
+        var act = async () => await sut.ReadAsync(ct);
+
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .WithMessage("*no_eligible_version*Create a new key version*");
+    }
+
+    [Fact]
+    public async Task CreateSignerAsync_honours_a_cancelled_token_before_opening_a_signer()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var reader = new FakeKeyVaultKeyReader();
+        reader.AddRsaVersion("v1", createdOn: T0);
+        var sut = BuildSource(reader, new FakeTimeProvider(T0));
+        var keySet = await sut.ReadAsync(ct);
+
+        var act = () => sut.CreateSignerAsync(keySet.SigningKey.Id, new CancellationToken(canceled: true)).AsTask();
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
     public async Task ReadAsync_no_eligible_version_error_says_create_a_new_version_when_every_enabled_version_has_expired()
     {
         // An already-expired version's PAST eligibility instant must not be presented as a wait

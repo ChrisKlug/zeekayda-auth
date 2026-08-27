@@ -54,6 +54,19 @@ internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
         _secretClient = new SecretClient(_vaultUri, credential);
     }
 
+    /// <summary>
+    /// Test seam: lets unit tests inject faked <see cref="CertificateClient"/>/<see cref="SecretClient"/>
+    /// instances, making the SDK fault-mapping paths reachable without a live vault.
+    /// </summary>
+    internal KeyVaultCertificateReader(
+        CertificateClient certificateClient, SecretClient secretClient, string certificateName, Uri vaultUri)
+    {
+        _certificateClient = certificateClient;
+        _secretClient = secretClient;
+        _certificateName = certificateName;
+        _vaultUri = vaultUri;
+    }
+
     /// <inheritdoc/>
     public async IAsyncEnumerable<KeyVaultCertificateVersionInfo> GetCertificateVersionsAsync(
         [EnumeratorCancellation] CancellationToken cancellationToken)

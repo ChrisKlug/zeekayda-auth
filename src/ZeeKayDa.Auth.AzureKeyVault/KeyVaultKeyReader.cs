@@ -35,6 +35,17 @@ internal sealed class KeyVaultKeyReader : IKeyVaultKeyReader
         _keyClient = new KeyClient(_vaultUri, credential);
     }
 
+    /// <summary>
+    /// Test seam: lets unit tests inject a faked <see cref="KeyClient"/>, making the SDK
+    /// fault-mapping paths reachable without a live vault.
+    /// </summary>
+    internal KeyVaultKeyReader(KeyClient keyClient, string keyName, Uri vaultUri)
+    {
+        _keyClient = keyClient;
+        _keyName = keyName;
+        _vaultUri = vaultUri;
+    }
+
     /// <inheritdoc/>
     public async IAsyncEnumerable<KeyVaultKeyVersionInfo> GetKeyVersionsAsync(
         [EnumeratorCancellation] CancellationToken cancellationToken)

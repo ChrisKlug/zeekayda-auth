@@ -4,6 +4,7 @@ using Azure.Security.KeyVault.Keys;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.AzureKeyVault.Tests.Fakes;
 using ZeeKayDa.Auth.Tokens;
 
@@ -287,6 +288,62 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
             "<c>AddAzureKeyVaultRemoteSigning</c> (which does)");
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────────────────────────
+    // ── Control presence: the startup validator and the real Key Vault seams ─────────────────────
+    //
+    // These are control-presence tests, not DI-resolution assertions: a missing validator
+    // registration lets a misconfigured provider fail open past ValidateOnStart, and a missing
+    // seam registration means the provider cannot reach the vault at all.
 
+    [Fact]
+    public async Task AddAzureKeyVaultRemoteSigning_registers_the_startup_options_validator()
+    {
+        var services = new ServiceCollection();
+        var builder = new ZeeKayDaAuthBuilder(services);
+
+        builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
+
+        await using var provider = services.BuildServiceProvider();
+        provider.GetServices<IValidateOptions<AzureKeyVaultRemoteSigningOptions>>()
+            .Should().ContainSingle(v => v is AzureKeyVaultRemoteSigningOptionsValidator);
+    }
+
+    [Fact]
+    public async Task AddAzureKeyVaultCachedSigning_registers_the_startup_options_validator()
+    {
+        var services = new ServiceCollection();
+        var builder = new ZeeKayDaAuthBuilder(services);
+
+        builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
+
+        await using var provider = services.BuildServiceProvider();
+        provider.GetServices<IValidateOptions<AzureKeyVaultCachedSigningOptions>>()
+            .Should().ContainSingle(v => v is AzureKeyVaultCachedSigningOptionsValidator);
+    }
+
+    [Fact]
+    public async Task AddAzureKeyVaultRemoteSigning_registers_the_real_key_vault_seams_by_default()
+    {
+        var services = new ServiceCollection();
+        var builder = new ZeeKayDaAuthBuilder(services);
+
+        builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
+
+        await using var provider = services.BuildServiceProvider();
+        provider.GetRequiredService<IKeyVaultKeyReader>().Should().BeOfType<KeyVaultKeyReader>();
+        provider.GetRequiredService<IKeyVaultSigner>().Should().BeOfType<KeyVaultSigner>();
+        provider.GetRequiredService<TimeProvider>().Should().BeSameAs(TimeProvider.System);
+    }
+
+    [Fact]
+    public async Task AddAzureKeyVaultCachedSigning_registers_the_real_key_vault_seams_by_default()
+    {
+        var services = new ServiceCollection();
+        var builder = new ZeeKayDaAuthBuilder(services);
+
+        builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
+
+        await using var provider = services.BuildServiceProvider();
+        provider.GetRequiredService<IKeyVaultCertificateReader>().Should().BeOfType<KeyVaultCertificateReader>();
+        provider.GetRequiredService<TimeProvider>().Should().BeSameAs(TimeProvider.System);
+    }
 }
