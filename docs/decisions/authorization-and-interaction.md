@@ -9,24 +9,29 @@ will be revised against the codebase that exists when the work is picked up.
 
 ## Decisions in force
 
-**The authorization endpoint and the per-provider callbacks cannot be `IZeeKayDaEndpoint`s.** They
-must short-circuit the pipeline before any downstream middleware observes the request, and that is
-the whole of the reason. (An earlier version of this entry also claimed a routed endpoint cannot
-serve both GET and POST as OIDC Core §3.1.2.1 requires — it can, via `MapMethods`, which the current
-`501` stub already does. That reason was wrong and is not load-bearing.) They are therefore
-intercepted ahead of routing, and everything `MapZeeKayDaAuth()`'s route group provides has to be
-re-applied at that interception point: the HTTPS/`421` guard, the security headers, and the
-issuer-host constraint. Discovery, JWKS and the token endpoint stay routed (`endpoints.md`).
+**Every ZeeKayDa endpoint is routed — `/connect/authorize` included — and ZeeKayDa is not an
+authentication scheme.** The authorize endpoint and the internal external-return endpoint are
+`IZeeKayDaEndpoint`s mapped by `MapZeeKayDaAuth()`, inheriting the route group's HTTPS/`421` guard,
+security headers, issuer-host constraint and `RequireRateLimiting()` (`endpoints.md`). GET and POST
+via `MapMethods` (OIDC Core §3.1.2.1). The framework registers internal *cookie* schemes and
+orchestrates existing handlers; no `AddScheme<ZeeKayDaHandler>` exists. Provider callback paths are
+intercepted by the providers' own remote handlers — natively, pre-routing — not by ZeeKayDa.
 
-**Consequences of intercepting before routing, stated so they are not rediscovered.**
-`RequireRateLimiting()` does not apply to these two paths — rate limiting for them has to be
-globally-scoped middleware placed ahead of the interception point. `UseForwardedHeaders()` must run
-before it in any reverse-proxy deployment, because HTTPS detection depends on it.
+**Callback dispatch never reads a user-supplied discriminator.** One callback path per registered
+provider, assigned by the framework and handled by that provider's own handler — never a single
+callback path selecting the provider from a query parameter. Dispatch that trusts attacker-visible
+request input is the failure this avoids; cleaner audit logs are a side benefit, not the reason.
 
-**Callback dispatch never reads a user-supplied discriminator.** One path per registered provider,
-resolved by the router from the route template — never a single callback path selecting the provider
-from a query parameter. Dispatch that trusts attacker-visible request input is the failure this
-avoids; cleaner audit logs are a side benefit, not the reason.
+**No host code ever contains a scheme name, cookie name, callback path or `ReturnUrl`.** The host's
+pages advance the flow only through the interaction services, whose terminal methods find the active
+interaction themselves. Any change that requires a host to name one of these has broken the design.
+
+**A client registration is validated by the framework at the point of use, not only at
+registration.** Endpoints resolve clients through an internal validating resolver wrapping
+`IClientRepository`; a registration failing `IClientRegistrationValidator` is served to the protocol
+as unknown-client and logged loudly for the operator. The repository XML-doc contract ("stores MUST
+validate before serving") remains, but nothing depends on an implementor honoring it — exact-match
+redirect validation is only as trustworthy as the set it matches against.
 
 **Authorization-request validation is two-phase, and collapsing the phases is a vulnerability.**
 Phase 1 authenticates `client_id` and the `redirect_uri` (shape, exact match, transport). Only once
@@ -99,4 +104,11 @@ step occurred goes only to clients that opted in (RFC 9700 information disclosur
 
 ## Tried, didn't work
 
-Nothing built here yet, so nothing reversed.
+- **Pre-routing interception via `IAuthenticationRequestHandler`** (ADR 0005, accepted and
+  reviewer-signed-off 2026-07-01; reversed 2026-08-28 in the S2 shape conversation before any code).
+  One stated reason was factually wrong (a routed endpoint *can* serve GET and POST — `MapMethods`),
+  the no-`MapZeeKayDaAuth()` ergonomic goal was mooted by the other endpoints requiring mapping
+  anyway, and hiding the request from middleware between `UseAuthentication` and the endpoint
+  protects little — while costing hand-rolled HTTPS/header/rate-limit reimplementation and a
+  meaningless scheme registration. Do not re-propose without new facts; the full analysis is in
+  `docs/design/authorization-endpoint-interaction.md`.
