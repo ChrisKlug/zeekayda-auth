@@ -133,6 +133,58 @@ on the next hop.
 `IDistributedCache`. The payload is internal and opaque, so that is a transport swap with no
 public-API consequence — which is what makes the cheap path now a reversible one.
 
+## The SSO session
+
+**The session is the cookie.** `zkd.session` holds it and there is no server-side session record in
+v1, on the same reasoning as the interaction context: without the cookie there is no way to know who
+the user is, so there is nothing left to store.
+
+**`SsoSessionId` is ZeeKayDa-minted, random and stable for the life of the session.** 128 bits from
+`StoreKeyGenerator`, created at promotion inside `ILoginInteraction.SignInAsync` and carried as a
+claim in `zkd.session`. The host neither supplies nor sees it. It is **not** the cookie value — that
+is regenerated on every sign-in promotion for fixation resistance, while the id is stable from
+sign-in to sign-out. Re-authentication (`prompt=login`, `max_age`) refreshes `auth_time` and keeps
+the id; a new id is minted on a fresh sign-in, or when the subject changes.
+
+Those three properties — ours, unguessable, stable — are what any later session feature is built on,
+and none may be traded away. An id derived from the cookie value breaks every token binding the
+moment the cookie rotates. An id that tracks authentication events rather than the session can never
+key a denylist or an index.
+
+The id flows session → interaction context → `AuthorizationCodeEntry.SsoSessionId` →
+`RefreshTokenEntry.SsoSessionId`. **Code issuance (#87) must not satisfy the `required` member with
+a per-code `Guid`.** That is the path of least resistance for a compiler error, it looks exactly
+like a session binding, and it is none.
+
+**`sid` is not emitted as an ID token claim in v1.** The claim is defined by the logout specs, and
+publishing it advertises a capability that does not exist. It is also a prerequisite for
+back-channel logout — the `sid` in a logout token must match one the RP saw in an ID token — so the
+two ship together or not at all (#103, #206). Adding a claim later is non-breaking.
+
+### What a cookie-only session reaches
+
+| | |
+|---|---|
+| `prompt=none`, `max_age`, session lookup | cookie |
+| RP-initiated logout (browser present) | cookie: delete it, revoke grants by `SsoSessionId` |
+| Back-channel logout to RPs | cookie, including the visited-RP list the spec suggests keeping there |
+| Admin or remote termination, logout-all | **needs server-side state** |
+
+Browser-absent termination is the only gap, and every spec-defined logout trigger is browser-present
+— RP-initiated logout is browser-mediated by design, and OIDC has no server-to-server "end this
+session" call, because that would hand one RP power over every other RP's session. The gap is
+deferred to #103/#104.
+
+Its shape when it lands is a **revoked-session denylist plus a `sub` → `sid` index, not a session
+store**: persist the sessions that ended, with a TTL of the maximum session lifetime, rather than
+every session that lives. That is additive — a row written at promotion, a check on read, the cookie
+unchanged — at the cost of a store round-trip on every session read where today there is only a
+decrypt.
+
+**Consent grants are not session state.** They outlive the session and the browser, so they need
+durable storage whatever is decided here (#86). `prompt=none` needs both: a live session *and* a
+prior consent grant.
+
 ## Interaction services
 
 One service per page the host builds; the service *is* the protocol knowledge, packaged. Terminal
