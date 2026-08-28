@@ -82,59 +82,9 @@ internal static class AuthorizationRequestContextSerializer
             if (reader.ReadByte() != Version)
                 return false;
 
-            var id = reader.ReadString();
-            var clientId = reader.ReadString();
-            var redirectUri = reader.ReadString();
-            var scopes = ReadStrings(reader);
-            var state = ReadNullableString(reader);
-            var nonce = reader.ReadString();
-            var codeChallenge = reader.ReadString();
-
-            var challengeMethod = (CodeChallengeMethod)reader.ReadByte();
-            if (!Enum.IsDefined(challengeMethod))
+            var decoded = ReadContext(reader);
+            if (decoded is null)
                 return false;
-
-            var promptCount = reader.Read7BitEncodedInt();
-            if (promptCount < 0)
-                return false;
-
-            var prompts = new HashSet<PromptValue>();
-            for (var i = 0; i < promptCount; i++)
-            {
-                var prompt = (PromptValue)reader.ReadByte();
-                if (!Enum.IsDefined(prompt))
-                    return false;
-
-                prompts.Add(prompt);
-            }
-
-            var maxAge = ReadNullableTimeSpan(reader);
-            var issuedAt = DateTimeOffset.FromUnixTimeSeconds(reader.ReadInt64());
-            var expiresAt = DateTimeOffset.FromUnixTimeSeconds(reader.ReadInt64());
-
-            var decoded = new AuthorizationRequestContext
-            {
-                Id = id,
-                ClientId = clientId,
-                RedirectUri = redirectUri,
-                Scopes = scopes,
-                State = state,
-                Nonce = nonce,
-                CodeChallenge = codeChallenge,
-                CodeChallengeMethod = challengeMethod,
-                Prompts = prompts,
-                MaxAge = maxAge,
-                IssuedAt = issuedAt,
-                ExpiresAt = expiresAt,
-                SsoSessionId = ReadNullableString(reader),
-                Subject = ReadNullableString(reader),
-                AuthTime = ReadNullableTimestamp(reader),
-                ProviderScheme = ReadNullableString(reader),
-                Acr = ReadNullableString(reader),
-                Amr = ReadNullableStrings(reader),
-                GrantedScopes = ReadNullableStrings(reader),
-                ConsentedAt = ReadNullableTimestamp(reader),
-            };
 
             // Trailing bytes mean the payload is not what this version writes, whatever else
             // decoded cleanly along the way.
@@ -155,6 +105,78 @@ internal static class AuthorizationRequestContextSerializer
         {
             return false;
         }
+    }
+
+    /// <summary>
+    /// Reads the fields in order, or <see langword="null"/> when one of them carries a value this
+    /// version does not recognise. Structural failures — a truncated payload, a malformed length
+    /// prefix — surface as exceptions for <see cref="TryDecode"/> to absorb.
+    /// </summary>
+    private static AuthorizationRequestContext? ReadContext(BinaryReader reader)
+    {
+        var id = reader.ReadString();
+        var clientId = reader.ReadString();
+        var redirectUri = reader.ReadString();
+        var scopes = ReadStrings(reader);
+        var state = ReadNullableString(reader);
+        var nonce = reader.ReadString();
+        var codeChallenge = reader.ReadString();
+
+        var challengeMethod = (CodeChallengeMethod)reader.ReadByte();
+        if (!Enum.IsDefined(challengeMethod))
+            return null;
+
+        var prompts = ReadPrompts(reader);
+        if (prompts is null)
+            return null;
+
+        return new AuthorizationRequestContext
+        {
+            Id = id,
+            ClientId = clientId,
+            RedirectUri = redirectUri,
+            Scopes = scopes,
+            State = state,
+            Nonce = nonce,
+            CodeChallenge = codeChallenge,
+            CodeChallengeMethod = challengeMethod,
+            Prompts = prompts,
+            MaxAge = ReadNullableTimeSpan(reader),
+            IssuedAt = DateTimeOffset.FromUnixTimeSeconds(reader.ReadInt64()),
+            ExpiresAt = DateTimeOffset.FromUnixTimeSeconds(reader.ReadInt64()),
+            SsoSessionId = ReadNullableString(reader),
+            Subject = ReadNullableString(reader),
+            AuthTime = ReadNullableTimestamp(reader),
+            ProviderScheme = ReadNullableString(reader),
+            Acr = ReadNullableString(reader),
+            Amr = ReadNullableStrings(reader),
+            GrantedScopes = ReadNullableStrings(reader),
+            ConsentedAt = ReadNullableTimestamp(reader),
+        };
+    }
+
+    /// <summary>
+    /// Reads the prompt set, or <see langword="null"/> for a negative count or a value outside the
+    /// enum. An unchecked cast would put an unrecognised prompt into the interaction stage's
+    /// decisions, where it reaches protocol behaviour.
+    /// </summary>
+    private static HashSet<PromptValue>? ReadPrompts(BinaryReader reader)
+    {
+        var count = reader.Read7BitEncodedInt();
+        if (count < 0)
+            return null;
+
+        var prompts = new HashSet<PromptValue>();
+        for (var i = 0; i < count; i++)
+        {
+            var prompt = (PromptValue)reader.ReadByte();
+            if (!Enum.IsDefined(prompt))
+                return null;
+
+            prompts.Add(prompt);
+        }
+
+        return prompts;
     }
 
     /// <summary>
