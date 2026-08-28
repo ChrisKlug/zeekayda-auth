@@ -678,11 +678,26 @@ public sealed class KeyVaultCertificateReaderTests
     }
 
     [Fact]
+    public async Task GetPrivateKeyMaterialAsync_fails_closed_when_the_certificate_has_no_linked_secret_id()
+    {
+        // The SDK's KeyVaultCertificate.SecretId getter itself throws when the certificate carries
+        // no sid at all, so the reader must not read it bare — an absent sid is the same
+        // operator-facing condition as an unusable one and must surface with the same code.
+        var client = new FakeCertificateClient
+        {
+            OnGetVersion = _ => BuildCertificate(secretId: null),
+        };
+
+        var act = () => BuildReader(client)
+            .GetPrivateKeyMaterialAsync("v1", TestContext.Current.CancellationToken).AsTask();
+
+        await act.Should().ThrowAsync<ZeeKayDaConfigurationException>()
+            .WithMessage("*certificate_missing_secret*");
+    }
+
+    [Fact]
     public async Task GetPrivateKeyMaterialAsync_fails_closed_when_the_linked_secret_id_is_not_a_secret_identifier()
     {
-        // A fully ABSENT sid cannot be tested here: the SDK's KeyVaultCertificate.SecretId getter
-        // itself throws ArgumentNullException before the reader's guard runs (tracked as its own
-        // issue). What the guard does own is a sid that is not a valid Key Vault secret identifier.
         var client = new FakeCertificateClient
         {
             OnGetVersion = _ => BuildCertificate(secretId: new Uri("https://fake-vault.vault.azure.net/")),
