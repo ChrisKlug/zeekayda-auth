@@ -16,11 +16,16 @@ namespace ZeeKayDa.Auth.Tokens;
 internal interface IDevelopmentSigningKeyFileSystem
 {
     /// <summary>
-    /// Ensures the given directory exists and is accessible only by the current user.
-    /// Creates it with restrictive permissions if it does not yet exist.
-    /// Throws <see cref="ZeeKayDaConfigurationException"/> if the directory already exists
-    /// but its permissions are broader than expected.
+    /// Ensures the given directory exists and is accessible only by the current user, creating it —
+    /// and every missing component above it — with restrictive permissions if it does not yet exist.
     /// </summary>
+    /// <remarks>
+    /// Throws <see cref="ZeeKayDaConfigurationException"/> when the directory itself has permissions
+    /// broader than expected, and also when any component of its path fails validation: one owned by
+    /// another user, one whose ownership cannot be read, a symlink, a component writable by group or
+    /// other without the sticky bit, or an entry that exists but is not a directory. The walk stops
+    /// at the first root-owned component, which is treated as OS-managed and trusted.
+    /// </remarks>
     /// <param name="directory">The directory path to create or validate.</param>
     void EnsureDirectorySafe(string directory);
 

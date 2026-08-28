@@ -7,19 +7,26 @@ using System.Security.Principal;
 namespace ZeeKayDa.Auth.Tokens;
 
 /// <summary>
-/// Provides interop access to <c>getuid()</c>, <c>stat()</c>, and <c>lstat()</c> for directory
-/// ownership validation on Unix platforms.
+/// Provides interop access to <c>getuid()</c> and <c>lstat()</c> for directory ownership validation
+/// on Unix platforms.
 /// </summary>
 /// <remarks>
 /// The current process UID from <c>getuid()</c> is compared against a directory's owner UID
-/// (<see cref="GetOwnerUid"/>, via <c>stat()</c>) to detect attacker-controlled directories that
-/// pass the <c>0700</c> permission check but are owned by a different user.
-/// <see cref="GetLinkOwnerUid"/> uses <c>lstat()</c> instead wherever the owner of the *link
-/// entry* itself, not whatever it points at, is the signal needed. Separate native stat structs
-/// are declared for macOS/BSD and Linux 64-bit because the kernel ABI differs between platforms;
-/// only the fields up to <c>st_uid</c> are bound, with the rest covered by blittable padding.
+/// (<see cref="GetLinkOwnerUid"/>, via <c>lstat()</c>) to detect attacker-controlled directories
+/// that pass the <c>0700</c> permission check but are owned by a different user.
+/// <para>
+/// There is deliberately no <c>stat()</c>-based counterpart. <c>stat()</c> follows a symlink and
+/// reports the owner of whatever it points at, which an attacker chooses by choosing where their
+/// link points — so every ownership decision in this assembly reads the link entry's own owner
+/// instead, and both callers reject a symlinked component outright rather than inspecting its
+/// target. A <c>stat()</c> helper existing here at all would be an invitation to reintroduce that
+/// bug; it was removed in issue #586 once the last caller stopped needing it.
+/// </para>
+/// Separate native stat-buffer structs are declared for macOS/BSD and Linux 64-bit because the kernel ABI
+/// differs between platforms; only the fields up to <c>st_uid</c> are bound, with the rest covered
+/// by blittable padding.
 /// </remarks>
-[ExcludeFromCodeCoverage(Justification = "Each architecture-specific stat/lstat branch is reachable only on the one architecture whose ABI it binds, so no single runner can cover them all. LocalSigningKeyFileSystemTests exercises whichever branch the runner's architecture selects.")]
+[ExcludeFromCodeCoverage(Justification = "Each architecture-specific lstat branch is reachable only on the one architecture whose ABI it binds, so no single runner can cover them all. LocalSigningKeyFileSystemTests exercises whichever branch the runner's architecture selects.")]
 internal static partial class PosixInterop
 {
     /// <summary>Returns the real UID of the calling process.</summary>
@@ -28,53 +35,16 @@ internal static partial class PosixInterop
     internal static partial uint GetCurrentUid();
 
     /// <summary>
-    /// Returns the UID of the owner of the file or directory at <paramref name="path"/>,
-    /// or <see langword="null"/> if <c>stat()</c> fails.
-    /// </summary>
-    [UnsupportedOSPlatform("windows")]
-    internal static uint? GetOwnerUid(string path)
-    {
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-        {
-            // macOS arm64 only — .NET 9 dropped macOS x64 support, so only arm64 is reachable.
-            return NativeStatMacOs(path, out var macBuf) == 0 ? macBuf.st_uid : null;
-        }
-
-        if (RuntimeInformation.OSArchitecture == Architecture.X64)
-            return NativeStatLinuxX64(path, out var x64Buf) == 0 ? x64Buf.st_uid : null;
-
-        // arm64 and riscv64 share the same stat ABI on Linux.
-        if (RuntimeInformation.OSArchitecture is Architecture.Arm64 or Architecture.RiscV64)
-            return NativeStatLinuxArm64(path, out var arm64Buf) == 0 ? arm64Buf.st_uid : null;
-
-        // Unknown architecture (e.g. s390x has a different struct layout): fail closed
-        // rather than reading st_uid from an incorrect offset.
-        return null;
-    }
-
-    [LibraryImport("libc", EntryPoint = "stat", StringMarshalling = StringMarshalling.Utf8, SetLastError = true)]
-    [UnsupportedOSPlatform("windows")]
-    private static partial int NativeStatMacOs(string path, out StatMacOs buf);
-
-    [LibraryImport("libc", EntryPoint = "stat", StringMarshalling = StringMarshalling.Utf8, SetLastError = true)]
-    [UnsupportedOSPlatform("windows")]
-    private static partial int NativeStatLinuxX64(string path, out StatLinuxX64 buf);
-
-    [LibraryImport("libc", EntryPoint = "stat", StringMarshalling = StringMarshalling.Utf8, SetLastError = true)]
-    [UnsupportedOSPlatform("windows")]
-    private static partial int NativeStatLinuxArm64(string path, out StatLinuxArm64 buf);
-
-    /// <summary>
     /// Returns the UID of the owner of the directory entry at <paramref name="path"/> itself — if
     /// that entry is a symlink, the symlink object's own owner, <strong>not</strong> the owner of
     /// whatever it points at — or <see langword="null"/> if <c>lstat()</c> fails.
     /// </summary>
     /// <remarks>
-    /// Deliberately distinct from <see cref="GetOwnerUid"/>, which calls <c>stat()</c> and therefore
-    /// follows a symlink to report the *target's* owner. An unprivileged attacker can create a
-    /// symlink that points at a root-owned directory, and <c>stat()</c> on that link would wrongly
-    /// report root ownership rather than the attacker's own ownership of the link they created.
-    /// <c>lstat()</c> reports the link entry's own owner regardless of what it points at.
+    /// Deliberately <c>lstat()</c> and never <c>stat()</c>, which follows a symlink to report the
+    /// *target's* owner. An unprivileged attacker can create a symlink that points at a root-owned
+    /// directory, and <c>stat()</c> on that link would wrongly report root ownership rather than the
+    /// attacker's own ownership of the link they created. <c>lstat()</c> reports the link entry's own
+    /// owner regardless of what it points at.
     /// </remarks>
     [UnsupportedOSPlatform("windows")]
     internal static uint? GetLinkOwnerUid(string path)
@@ -224,19 +194,71 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
             return;
         }
 
-        // Directory.CreateDirectory uses the process umask, leaving a narrow window before
-        // SetUnixFileMode where the directory has looser permissions. Acceptable for this dev-only
-        // provider since the key file itself is the true security boundary (atomic 0600 below).
-        Directory.CreateDirectory(fullPath);
+        // A component that exists but is not a directory has to be caught here: the walk below only
+        // sees ancestors, and CreateDirectory would otherwise surface it as a raw IOException.
+        ValidateAbsentComponentUnix(fullPath);
 
-        var mode = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
-        File.SetUnixFileMode(fullPath, mode);
-
-        // The leaf was just created by this process, so validate ancestors that pre-existed —
-        // an attacker who owns an ancestor can rename or replace the subtree.
+        // Ancestors are validated *before* anything is created. Creating first and validating after
+        // still rejects the configuration, but leaves a directory behind at whatever location the
+        // rejected path pointed at — which, for the attacker-planted shapes this walk exists to
+        // catch, is a location the attacker chose.
         var parent = Path.GetDirectoryName(fullPath);
         if (parent is not null)
             ValidateDirectoryChainOwnershipUnix(parent);
+
+        CreateDirectoryChainOwnerOnlyUnix(fullPath);
+
+        // Re-validated after creation, against the path that now exists. The walk above ran when
+        // some of these components did not exist yet, and an attacker racing to create one first
+        // would have had it skipped by the "does not exist, keep walking" branch — leaving an
+        // ancestor they own beneath a directory this method reported as safe.
+        ValidateDirectoryChainOwnershipUnix(fullPath);
+    }
+
+    /// <summary>
+    /// Creates <paramref name="directory"/> and every missing component above it, restricting each
+    /// one to the owner.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Deliberately not a bare <c>Directory.CreateDirectory</c>. That applies the process umask to
+    /// every component it creates, and the obvious follow-up — chmod the leaf — leaves the
+    /// *intermediate* directories at whatever the umask produced. Under Ubuntu's default umask of
+    /// 002 that is <c>0775</c>, so the provider would create a group-writable component and then
+    /// reject it on the next startup via <see cref="ChainVerdict.WritableByOthers"/>: an application that
+    /// starts once, writes a key, and can never start again — and in the meantime a component of the
+    /// signing key path really is group-writable.
+    /// </para>
+    /// <para>
+    /// The <c>UnixFileMode</c> overload only modes the <em>final</em> directory of whatever it
+    /// creates, which is why it cannot replace this loop — but it is exactly right for one component
+    /// at a time, and that is how it is used here. Creating with the mode rather than creating and
+    /// then chmod'ing also closes a window: between a bare <c>CreateDirectory</c> and a following
+    /// <c>SetUnixFileMode</c>, the component sits at the umask, and <c>SetUnixFileMode</c> follows a
+    /// symlink — so an attacker who won that race by planting a link at the next component could
+    /// redirect the chmod onto a directory of ours. The overload applies the mode at creation and
+    /// does not touch an entry it did not create.
+    /// </para>
+    /// </remarks>
+    [UnsupportedOSPlatform("windows")]
+    private static void CreateDirectoryChainOwnerOnlyUnix(string directory)
+    {
+        var missing = new List<string>();
+
+        for (var current = directory; !string.IsNullOrEmpty(current); current = Path.GetDirectoryName(current))
+        {
+            if (Directory.Exists(current))
+                break;
+
+            missing.Add(current);
+        }
+
+        // Deepest-last, so each parent exists before its child is created.
+        missing.Reverse();
+
+        var ownerOnly = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
+        foreach (var component in missing)
+            Directory.CreateDirectory(component, ownerOnly);
     }
 
     [UnsupportedOSPlatform("windows")]
@@ -262,9 +284,21 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
     [UnsupportedOSPlatform("windows")]
     private static void ValidateDirectoryChainOwnershipUnix(string startDirectory)
     {
-        // Walks from startDirectory upward, checking ownership on every existing component, so an
-        // attacker who owns an ancestor cannot rename or replace the signing-key subtree even if
-        // the leaf passes all checks. Stops at root-owned (uid 0) directories, which are trusted.
+        // Walks from startDirectory upward, checking every existing component, so an attacker who
+        // controls an ancestor cannot rename or replace the signing-key subtree even if the leaf
+        // passes all checks. Stops at the first root-owned entry, which is OS-managed and trusted.
+        //
+        // Ownership is read with lstat, never stat. stat() follows a symlink and reports the owner
+        // of whatever it points at, so an attacker's own symlink pointed at any root-owned directory
+        // (/tmp will do) would report uid 0, stop the walk, and take every component above it out of
+        // the check as well — while never being flagged as foreign-owned itself. lstat() reports the
+        // link entry's own owner, which is the half an attacker can repoint after validation.
+        //
+        // Because a symlinked component is then rejected outright, there is no need to also stat()
+        // the target: a link the current user owns is refused whatever it points at. That mirrors
+        // ValidateNoUntrustedSymlinkedAncestorUnix on the read path, so a directory this method
+        // accepts is one ReadKeyFileAsync will accept too — a config that starts once but cannot
+        // start again is worse than one that is refused up front.
         var currentUid = PosixInterop.GetCurrentUid();
         var current = startDirectory;
 
@@ -272,31 +306,157 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
         {
             if (!Directory.Exists(current))
             {
+                ValidateAbsentComponentUnix(current);
                 current = Path.GetDirectoryName(current);
                 continue;
             }
 
-            // Both reads here are stat()-based, which follows a symlink and reports the *target's*
-            // owner. That is the same laundering shape the ancestor-symlink walk below rejects, and
-            // it is not fixed here: see issue #586, which makes this whole method lstat-correct.
-            var ownerUid = PosixInterop.GetOwnerUid(current);
+            var verdict = JudgeComponent(
+                File.GetUnixFileMode(current),
+                PosixInterop.GetLinkOwnerUid(current),
+                currentUid,
+                IsSymlinkedDirectory(current));
 
-            if (ownerUid == 0)
-                break; // Root-owned: OS-managed and trusted.
+            if (verdict is ChainVerdict.TrustedRootOwned)
+                break;
 
-            if (ownerUid is null || ownerUid.Value != currentUid)
-            {
-                throw new ZeeKayDaConfigurationException(
-                    new ZeeKayDaConfigurationFailure(
-                        "signing.dev_keys.directory_not_owned_by_current_user",
-                        $"Signing key directory component '{current}' is not owned by the current user (UID {currentUid}). " +
-                        "Every component of the directory path must be owned by the current user " +
-                        "to prevent an attacker from controlling the signing key directory."));
-            }
+            if (verdict is not ChainVerdict.Accept)
+                throw ComponentFailure(verdict, current, currentUid);
 
             current = Path.GetDirectoryName(current);
         }
     }
+
+    /// <summary>The outcome of judging one component of the signing key directory chain.</summary>
+    internal enum ChainVerdict
+    {
+        /// <summary>The component is the current user's, and safe to walk past.</summary>
+        Accept,
+
+        /// <summary>Root owns the entry: OS-managed, trusted, and the walk stops here.</summary>
+        TrustedRootOwned,
+
+        /// <summary>Group or other can write to it, and it is not sticky.</summary>
+        WritableByOthers,
+
+        /// <summary>Ownership could not be read at all.</summary>
+        OwnershipUndetermined,
+
+        /// <summary>Some other user owns the entry.</summary>
+        NotOwnedByCurrentUser,
+
+        /// <summary>The current user owns it, but it is a symlink.</summary>
+        Symlink,
+    }
+
+    /// <summary>
+    /// Decides the fate of one chain component from the four facts that matter, with no file-system
+    /// access of its own.
+    /// </summary>
+    /// <remarks>
+    /// Extracted as a pure function because the interesting branches cannot be staged unprivileged:
+    /// a component owned by a <em>different non-root</em> user needs root to <c>chown</c> with, a
+    /// symlink's owner is fixed at <c>symlink(2)</c> so a foreign-owned link entry needs
+    /// <c>CAP_CHOWN</c>, an unreadable ownership has no unprivileged trigger, and a root-owned
+    /// world-writable directory is a misconfiguration no test should create. Against real
+    /// directories those branches could only ever be reasoned about; here they are asserted.
+    /// <para>
+    /// <strong>Order matters and is part of the contract.</strong> Writability is judged
+    /// <em>before</em> the root-owned trust break, because "root planted it" says nothing about who
+    /// can <em>rename</em> it — POSIX grants rename and unlink from the directory's own write bit, so
+    /// a root-owned <c>0777</c> non-sticky directory is replaceable by any local user. The sticky bit
+    /// exempts it, since sticky restricts rename and unlink to each entry's own owner.
+    /// </para>
+    /// </remarks>
+    internal static ChainVerdict JudgeComponent(
+        UnixFileMode mode, uint? linkOwnerUid, uint currentUid, bool isSymlink)
+    {
+        var writableByOthers = (mode & (UnixFileMode.GroupWrite | UnixFileMode.OtherWrite)) != 0;
+        var sticky = (mode & UnixFileMode.StickyBit) != 0;
+
+        if (writableByOthers && !sticky)
+            return ChainVerdict.WritableByOthers;
+
+        if (linkOwnerUid is null)
+            return ChainVerdict.OwnershipUndetermined;
+
+        if (linkOwnerUid.Value == 0)
+            return ChainVerdict.TrustedRootOwned;
+
+        if (linkOwnerUid.Value != currentUid)
+            return ChainVerdict.NotOwnedByCurrentUser;
+
+        return isSymlink ? ChainVerdict.Symlink : ChainVerdict.Accept;
+    }
+
+    /// <summary>
+    /// Guards the "component does not exist, keep walking upward" branch. A genuinely absent
+    /// component is fine — the walk simply continues past it — but an entry that exists and is not a
+    /// directory is not, and skipping it silently would be the one fail-open step in an otherwise
+    /// fail-closed walk.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="Path.Exists(string)"/> alone is the whole test: it reports <see langword="true"/>
+    /// for a regular file, a FIFO, a socket, a device node, and — verified, not assumed — for a
+    /// dangling symlink and a broken symlink chain, none of which can be a legitimate ancestor. A
+    /// permission-denied stat reads as absent and the walk continues, which is safe: EACCES implies
+    /// a non-searchable ancestor, and the walk checks that ancestor itself on the next iteration.
+    /// </remarks>
+    [UnsupportedOSPlatform("windows")]
+    private static void ValidateAbsentComponentUnix(string directory)
+    {
+        if (!Path.Exists(directory))
+            return;
+
+        if (Directory.Exists(directory))
+            return;
+
+        throw ChainFailure(
+            "signing.dev_keys.directory_component_not_a_directory",
+            $"Signing key directory component '{directory}' exists but is not a directory. " +
+            "Every component of the directory path must be a real directory owned by the current user.");
+    }
+
+    /// <summary>Turns a rejecting <see cref="ChainVerdict"/> into the failure an operator sees.</summary>
+    private static ZeeKayDaConfigurationException ComponentFailure(
+        ChainVerdict verdict, string directory, uint currentUid) => verdict switch
+        {
+            ChainVerdict.WritableByOthers => ChainFailure(
+                "signing.dev_keys.directory_component_writable_by_others",
+                $"Signing key directory component '{directory}' is writable by group or other, and is not sticky. " +
+                "Any user with write access to it can rename or replace the signing key directory. " +
+                $"Run 'chmod g-w,o-w {directory}', or configure a signing key directory outside it. " +
+                "On a file system that cannot represent Unix permissions — a Windows drive mounted under " +
+                "WSL, or some network mounts — configure a directory on a native Linux file system instead."),
+
+            // lstat failed, or the architecture's struct layout is unbound (see PosixInterop). Fail
+            // closed, and say so — reporting this as "not owned by the current user" would send an
+            // operator to check an ownership that was never actually read.
+            ChainVerdict.OwnershipUndetermined => ChainFailure(
+                "signing.dev_keys.directory_ownership_undetermined",
+                $"Ownership of signing key directory component '{directory}' could not be determined. " +
+                "The signing key directory is treated as untrusted when its ownership cannot be read."),
+
+            ChainVerdict.NotOwnedByCurrentUser => ChainFailure(
+                "signing.dev_keys.directory_not_owned_by_current_user",
+                $"Signing key directory component '{directory}' is not owned by the current user (UID {currentUid}). " +
+                "Every component of the directory path must be owned by the current user " +
+                "to prevent an attacker from controlling the signing key directory."),
+
+            // Owned by the current user, but still refused: a symlink is repointable, and the read
+            // path rejects it anyway — accepting it here yields a configuration that starts once and
+            // then fails on every subsequent startup.
+            ChainVerdict.Symlink => ChainFailure(
+                "signing.dev_keys.symlink_detected",
+                $"Signing key directory component '{directory}' is a symlink. " +
+                "Symlinks are not permitted anywhere in the key path to prevent redirect attacks. " +
+                "Configure the signing key directory as a real path."),
+
+            _ => throw new InvalidOperationException($"{verdict} is not a rejecting verdict."),
+        };
+
+    private static ZeeKayDaConfigurationException ChainFailure(string code, string message) =>
+        new(new ZeeKayDaConfigurationFailure(code, message));
 
     [ExcludeFromCodeCoverage(Justification = "Windows-only, so unreachable on the Linux runner whose coverage artifact feeds the regression gate. LocalSigningKeyFileSystemTests covers this on the windows-latest runner.")]
     [SupportedOSPlatform("windows")]

@@ -107,8 +107,59 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   while a non-root-owned symlinked ancestor is still rejected. Ownership is read with `lstat`, not
   `stat`, so pointing a symlink at a root-owned target does not launder it into a trusted one.
 
-  The sibling directory-chain ownership check still reads ownership with `stat` throughout and is
-  unchanged here; making that method `lstat`-correct is tracked separately as issue #586.
+- **BREAKING: the development signing key provider no longer accepts a signing key directory reached through a symlink, or one whose path is writable by group or other** (#586)
+
+  `EnsureDirectorySafe` walks the configured directory's ancestors and requires each to be owned by
+  the current user, stopping at the first root-owned one. Its ownership read used `stat`, which
+  follows a symlink and reports the owner of whatever it points at — and the target is not the half
+  an attacker controls. An unprivileged local user could plant their own symlink pointing at any
+  root-owned directory (`/tmp` will do): it reported uid 0, stopped the walk, and took every
+  component above it out of the check as well, while never being flagged as foreign-owned itself.
+
+  Ownership is now read with `lstat` throughout, and a symlinked component is rejected outright
+  rather than having its target inspected — which also means **a signing key directory reached
+  through a symlink the operator owns is now refused at startup**. That shape used to be accepted
+  here and then rejected by `ReadKeyFileAsync` on the next startup, so it produced an application
+  that started once, wrote a key, and could never start again. Refusing it up front is the behaviour
+  change most likely to be visible; point `PersistToDirectory` at a real directory.
+
+  **A path component writable by group or other is also now refused**, and this is the second
+  visible behaviour change. Ownership never prevented replacement: POSIX grants rename and unlink
+  from the *directory's* own write bit, so any group or world member could previously move the
+  signing key directory aside and have the provider mint a fresh key. A sticky directory is exempt
+  (`/tmp` at `1777` being the canonical one), since the sticky bit already restricts rename and
+  unlink to the entry's owner. The failure names the offending component and the `chmod g-w,o-w` that
+  fixes it. Operators on a umask-002 system whose project tree is group-writable are the most likely
+  to see this.
+
+  Two further gaps in the same walk are closed while it is being touched. A path component that
+  exists but is not a directory — a file, a FIFO, a dangling symlink — is now rejected rather than
+  silently skipped; the walk skips absent components so it can validate the ancestors of a directory
+  it is about to create, and that branch was the one fail-open step in an otherwise fail-closed walk.
+  And ancestors are validated *before* the directory is created, so a rejected configuration no
+  longer leaves an empty directory behind at whatever location the rejected path pointed at.
+
+  Every directory the provider creates is now restricted to its owner, not just the last one.
+  `Directory.CreateDirectory` applies the process umask to each component it creates, so on a
+  umask-002 system an intermediate component was left at `0775` — which the new writability rule
+  above would then reject on the *next* startup. The `UnixFileMode` overload does not help; it
+  applies the mode only to the final directory.
+
+  `PosixInterop.GetOwnerUid` and its three `stat` P/Invokes are removed, having no callers left. Every
+  ownership decision in the assembly now reads the link entry's own owner.
+
+  The walk raises four new failure codes alongside the existing
+  `signing.dev_keys.directory_not_owned_by_current_user`, three of them for shapes the old walk
+  accepted outright: `signing.dev_keys.directory_component_writable_by_others`,
+  `signing.dev_keys.directory_component_not_a_directory`, and `signing.dev_keys.symlink_detected`.
+  The fourth, `signing.dev_keys.directory_ownership_undetermined`, splits out the case where
+  ownership could not be read at all, which previously reported as though it had been read and found
+  to belong to someone else.
+
+  Impact of the original defect was bounded to key-placement redirect and denial of service rather
+  than disclosure — keys are created with `FileMode.CreateNew` and an atomic `0600` mode, and the read
+  path already rejected the shape. #541 made `ReadKeyFileAsync`'s ancestor walk `lstat`-correct and
+  left this one behind.
 
 - **BREAKING: `DiscoveryDocument.CacheMaxAgeSeconds` (`int`) is now `DiscoveryDocument.CacheMaxAge` (`TimeSpan`)** (#513)
 
