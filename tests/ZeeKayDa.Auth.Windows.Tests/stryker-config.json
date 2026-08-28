@@ -1,0 +1,19 @@
+{
+  "stryker-config": {
+    "project": "ZeeKayDa.Auth.Windows.csproj",
+    "test-runner": "mtp",
+    "ignore-methods": [
+      "ConfigureAwait",
+      "GC.SuppressFinalize",
+      "*Exception.ctor"
+    ],
+    "mutate": [
+      "**/*.cs"
+    ],
+    "reporters": [
+      "progress",
+      "html",
+      "json"
+    ]
+  }
+}
