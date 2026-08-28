@@ -12,7 +12,7 @@ namespace ZeeKayDa.Auth.AspNetCore.Endpoints;
 
 /// <summary>
 /// The authorization endpoint (<c>/connect/authorize</c>, GET and POST per OIDC Core 1.0
-/// §3.1.2.1). Currently implements request validation and the two-phase error model ;
+/// §3.1.2.1). Currently implements request validation and the two-phase error model;
 /// a fully valid request still answers <c>501</c> until the interaction stages land.
 /// </summary>
 /// <remarks>
