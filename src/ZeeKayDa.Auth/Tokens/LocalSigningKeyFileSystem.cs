@@ -289,10 +289,17 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
 
             if (ownerUid is null || ownerUid.Value != currentUid)
             {
+                // A symlinked component gets its own wording: saying "is not owned by the current
+                // user" about a link the operator does own is simply false, and sends them looking
+                // at the wrong thing. What is not theirs is whatever it points at.
+                var detail = IsSymlinkedDirectory(current)
+                    ? $"Signing key directory component '{current}' is a symlink to a directory that is not owned by the current user (UID {currentUid}). "
+                    : $"Signing key directory component '{current}' is not owned by the current user (UID {currentUid}). ";
+
                 throw new ZeeKayDaConfigurationException(
                     new ZeeKayDaConfigurationFailure(
                         "signing.dev_keys.directory_not_owned_by_current_user",
-                        $"Signing key directory component '{current}' is not owned by the current user (UID {currentUid}). " +
+                        detail +
                         "Every component of the directory path must be owned by the current user " +
                         "to prevent an attacker from controlling the signing key directory."));
             }

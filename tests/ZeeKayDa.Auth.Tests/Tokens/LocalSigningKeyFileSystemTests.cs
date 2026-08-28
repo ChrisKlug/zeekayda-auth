@@ -44,6 +44,27 @@ public sealed class LocalSigningKeyFileSystemTests : IDisposable
     private const string RequiresWindowsReason =
         "non-inherited ACL enforcement is the Windows permission model.";
 
+    /// <summary>
+    /// The literal <c>/tmp</c>, never <c>Path.GetTempPath()</c>. Root-owned by POSIX/FHS convention
+    /// on every mainstream Unix (and on every GitHub Actions runner this suite runs on), and on
+    /// macOS a root-owned <em>symlink</em> to <c>/private/tmp</c> — which is exactly the ancestor
+    /// shape the trust anchor exists for. <c>Path.GetTempPath()</c> resolves to a user-owned
+    /// directory under <c>/var/folders/...</c> on macOS and would collapse these tests into a case
+    /// that passes under both the correct and the broken implementation.
+    /// </summary>
+    private const string RootOwnedTarget = "/tmp";
+
+    /// <summary>
+    /// The enumeration <see cref="Dispose"/> walks the temp tree with. Shared with
+    /// <see cref="Teardown_enumeration_does_not_reach_through_a_planted_directory_symlink"/> so that
+    /// test pins the real object rather than a copy of it that could drift.
+    /// </summary>
+    private static readonly EnumerationOptions TeardownEnumeration = new()
+    {
+        RecurseSubdirectories = true,
+        AttributesToSkip = FileAttributes.ReparsePoint,
+    };
+
     private readonly LocalSigningKeyFileSystem _sut = new();
 
     /// <summary>
@@ -116,17 +137,15 @@ public sealed class LocalSigningKeyFileSystemTests : IDisposable
     [Fact]
     public void EnsureDirectorySafe_rejects_a_chain_whose_ancestor_is_a_symlink_to_a_root_owned_directory()
     {
-        Assert.SkipWhen(OperatingSystem.IsWindows(), "creating a symlink on Windows requires elevation.");
+        SkipUnlessRootOwnedTmpIsUsable();
 
         // The chain walk's own version of the laundering bypass: its "root-owned, therefore trusted"
         // break must read the ancestor's own owner with lstat(), or an attacker's user-owned symlink
         // pointing at /tmp reports root ownership through stat(), stops the walk, and takes every
         // component above it out of the check as well — while the symlink itself is never flagged as
         // foreign-owned either.
-        const string RootOwnedTarget = "/tmp";
-
         var attackerSymlink = Path.Join(_tempDirectory, "looks-like-root-owned");
-        Directory.CreateSymbolicLink(attackerSymlink, RootOwnedTarget);
+        PlantDirectorySymlink(attackerSymlink, RootOwnedTarget);
 
         var directory = Path.Join(attackerSymlink, $"zkda-chain-{Guid.NewGuid():N}");
 
@@ -231,8 +250,10 @@ public sealed class LocalSigningKeyFileSystemTests : IDisposable
 
         var act = () => _sut.ReadKeyFileAsync(linkPath, TestContext.Current.CancellationToken).AsTask();
 
+        // Asserts the *leaf* wording, not just the shared symlink_detected code, so this cannot
+        // silently start passing on an ancestor rejection instead.
         await act.Should().ThrowAsync<ZeeKayDaConfigurationException>()
-            .WithMessage("*symlink_detected*");
+            .WithMessage("*Symlinks are not permitted for key files*");
     }
 
     [Fact]
@@ -248,14 +269,14 @@ public sealed class LocalSigningKeyFileSystemTests : IDisposable
             Path.Join(realDirectory, KeyFileName), SamplePem.AsMemory(), TestContext.Current.CancellationToken);
 
         var linkedDirectory = Path.Join(_tempDirectory, "linked-keys");
-        Directory.CreateSymbolicLink(linkedDirectory, realDirectory);
+        PlantDirectorySymlink(linkedDirectory, realDirectory);
 
         var act = () => _sut
             .ReadKeyFileAsync(Path.Join(linkedDirectory, KeyFileName), TestContext.Current.CancellationToken)
             .AsTask();
 
         await act.Should().ThrowAsync<ZeeKayDaConfigurationException>()
-            .WithMessage("*symlink_detected*");
+            .WithMessage("*resolves through a symlinked directory*");
     }
 
     [Fact]
@@ -280,18 +301,13 @@ public sealed class LocalSigningKeyFileSystemTests : IDisposable
     public async Task ReadKeyFileAsync_accepts_a_key_file_under_a_root_owned_symlinked_ancestor()
     {
         Assert.SkipWhen(OperatingSystem.IsWindows(), RequiresUnixReason);
+        Assert.SkipWhen(!Directory.Exists(RootOwnedTarget), $"{RootOwnedTarget} does not exist on this machine.");
 
-        // Deliberately the literal "/tmp", NOT Path.GetTempPath(): on macOS /tmp is itself a
-        // root-owned symlink to /private/tmp, which is exactly the ancestor shape the carve-out
-        // exists for and the one no temp-subdirectory path reaches. Path.GetTempPath() resolves to
-        // a user-owned directory under /var/folders/... instead, where the walk breaks one level
-        // earlier on an ordinary root-owned directory and the symlink is never inspected.
-        //
-        // On Linux /tmp is a root-owned plain directory, so there this asserts only the root-owned
-        // break — the macOS runner is what makes it a test of the symlink carve-out.
-        const string RootOwnedSymlinkedAncestor = "/tmp";
-
-        var keyPath = Path.Join(RootOwnedSymlinkedAncestor, $"zkda-dev-key-{Guid.NewGuid():N}.pem");
+        // On macOS /tmp is itself a root-owned symlink to /private/tmp — exactly the ancestor shape
+        // the carve-out exists for, and one no temp-subdirectory path reaches. On Linux /tmp is a
+        // root-owned plain directory, so there this asserts only the root-owned break; the macOS
+        // runner is what makes it a test of the symlink carve-out.
+        var keyPath = Path.Join(RootOwnedTarget, $"zkda-dev-key-{Guid.NewGuid():N}.pem");
         await _sut.WriteKeyFileAsync(keyPath, SamplePem.AsMemory(), TestContext.Current.CancellationToken);
 
         try
@@ -309,7 +325,7 @@ public sealed class LocalSigningKeyFileSystemTests : IDisposable
     [Fact]
     public async Task ReadKeyFileAsync_rejects_a_non_root_owned_symlink_that_points_at_a_root_owned_directory()
     {
-        Assert.SkipWhen(OperatingSystem.IsWindows(), "creating a symlink on Windows requires elevation.");
+        SkipUnlessRootOwnedTmpIsUsable();
 
         // The bypass the trust anchor must close, and the reason it reads ownership with lstat()
         // rather than stat(). An unprivileged attacker cannot plant a root-owned directory, but can
@@ -320,10 +336,8 @@ public sealed class LocalSigningKeyFileSystemTests : IDisposable
         //
         // Swapping GetLinkOwnerUid for GetOwnerUid in ValidateNoUntrustedSymlinkedAncestorUnix
         // leaves every other test in this class green. This is the one that fails.
-        const string RootOwnedTarget = "/tmp";
-
         var attackerSymlink = Path.Join(_tempDirectory, "looks-like-root-owned");
-        Directory.CreateSymbolicLink(attackerSymlink, RootOwnedTarget);
+        PlantDirectorySymlink(attackerSymlink, RootOwnedTarget);
 
         var fileName = $"zkda-lstat-regression-{Guid.NewGuid():N}.pem";
         var realKeyPath = Path.Join(RootOwnedTarget, fileName);
@@ -336,11 +350,45 @@ public sealed class LocalSigningKeyFileSystemTests : IDisposable
                 .AsTask();
 
             await act.Should().ThrowAsync<ZeeKayDaConfigurationException>()
-                .WithMessage("*symlink_detected*");
+                .WithMessage("*resolves through a symlinked directory*");
         }
         finally
         {
             File.Delete(realKeyPath);
+        }
+    }
+
+    // ── This class's own teardown ────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Teardown_enumeration_does_not_reach_through_a_planted_directory_symlink()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "creating a symlink on Windows requires elevation.");
+
+        // Guards this class's own Dispose, not the code under test. Several tests here plant a
+        // directory symlink to the real /tmp, and Dispose chmods everything its walk returns —
+        // so if that walk ever follows a link again, the teardown re-permissions files outside its
+        // temp tree, up to and including /private/tmp itself. That regression is a one-word edit to
+        // the EnumerationOptions, and a comment is not a mitigation.
+        var outside = Directory.CreateTempSubdirectory("zkda-teardown-outside-").FullName;
+        File.WriteAllText(Path.Join(outside, "not-ours.txt"), "leave me alone");
+
+        var nested = Path.Join(_tempDirectory, "nested");
+        Directory.CreateDirectory(nested);
+        PlantDirectorySymlink(Path.Join(nested, "link-out"), outside);
+
+        try
+        {
+            var reached = Directory
+                .EnumerateFiles(_tempDirectory, "*", TeardownEnumeration)
+                .Select(Path.GetFileName)
+                .ToList();
+
+            reached.Should().NotContain("not-ours.txt");
+        }
+        finally
+        {
+            Directory.Delete(outside, recursive: true);
         }
     }
 
@@ -350,6 +398,43 @@ public sealed class LocalSigningKeyFileSystemTests : IDisposable
     // on the Assert.Skip* call at the top of each test: CA1416 cannot see that a skip aborts the
     // test, so a bare File.GetUnixFileMode/GetAccessControl call would fail the build. The
     // unreachable non-matching branch is inert — every caller is already skipped off-platform.
+
+    /// <summary>
+    /// Skips unless the machine can host the tests that plant a symlink at <see cref="RootOwnedTarget"/>.
+    /// </summary>
+    /// <remarks>
+    /// The root check is the important one. As root, a planted symlink is <em>itself</em> root-owned,
+    /// so the trust break fires legitimately and the test fails with a bare "no exception was thrown"
+    /// that says nothing about <c>lstat</c> versus <c>stat</c> — someone debugging that in a root
+    /// devcontainer could easily conclude the control is wrong and relax it.
+    /// </remarks>
+    private static void SkipUnlessRootOwnedTmpIsUsable()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "creating a symlink on Windows requires elevation.");
+        Assert.SkipWhen(!Directory.Exists(RootOwnedTarget), $"{RootOwnedTarget} does not exist on this machine.");
+        Assert.SkipWhen(
+            IsRunningAsRoot(),
+            $"running as root: a root-planted symlink is itself root-owned, so the trust break fires legitimately and this test cannot tell lstat from stat.");
+    }
+
+    private static bool IsRunningAsRoot() =>
+        !OperatingSystem.IsWindows() && PosixInterop.GetCurrentUid() == 0;
+
+    /// <summary>
+    /// Plants a directory symlink, skipping rather than failing where the platform will not create
+    /// one without elevation — the same guard the sibling suite's equivalent tests carry.
+    /// </summary>
+    private static void PlantDirectorySymlink(string linkPath, string target)
+    {
+        try
+        {
+            Directory.CreateSymbolicLink(linkPath, target);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Assert.Skip("Creating a directory symlink requires elevated privileges on this platform.");
+        }
+    }
 
     private static UnixFileMode GetUnixMode(string path) =>
         OperatingSystem.IsWindows() ? UnixFileMode.None : File.GetUnixFileMode(path);
@@ -398,23 +483,24 @@ public sealed class LocalSigningKeyFileSystemTests : IDisposable
                 // A test may have narrowed or widened a file's mode in a way that blocks deletion;
                 // restore owner write access across the tree before removing it.
                 //
-                // ReparsePoint MUST stay in AttributesToSkip. Two tests deliberately plant a
-                // directory symlink to the real /tmp, and a plain SearchOption.AllDirectories walk
-                // follows it — measured, not assumed: it enumerated a file under the link target and
-                // this loop chmod'd it from 0754 to 0600. That would silently re-permission every
-                // file directly in /tmp on the runner. Skipping reparse points stops both the match
-                // and the recursion; Directory.Delete(recursive) below already unlinks rather than
-                // follows, so the planted links still get cleaned up.
-                var withoutFollowingSymlinks = new EnumerationOptions
-                {
-                    RecurseSubdirectories = true,
-                    AttributesToSkip = FileAttributes.ReparsePoint,
-                };
-
-                foreach (var file in Directory.EnumerateFiles(_tempDirectory, "*", withoutFollowingSymlinks))
+                // ReparsePoint MUST stay in AttributesToSkip, and the consequence of dropping it is
+                // worse than "leaks into the link target". Two tests deliberately plant a directory
+                // symlink to the real /tmp, and a plain SearchOption.AllDirectories walk follows it.
+                // Measured, not assumed: the file walk chmod'd a file under the target from 0754 to
+                // 0600 — and the *directory* walk returned the planted symlink itself, which
+                // SetUnixFileMode follows, so it would have set /private/tmp from 1777 to 0700.
+                // That is machine-wide: every user and every process on the box loses the temp
+                // directory. Skipping reparse points stops both the match and the recursion, at any
+                // depth. Directory.Delete(recursive) below already unlinks rather than follows, so
+                // the planted links still get cleaned up.
+                //
+                // Note this deliberately replaces the default AttributesToSkip of Hidden | System
+                // rather than adding to it: the SearchOption overloads skip nothing, and these tests
+                // create dotted paths that must still be walked.
+                foreach (var file in Directory.EnumerateFiles(_tempDirectory, "*", TeardownEnumeration))
                     File.SetUnixFileMode(file, UnixFileMode.UserRead | UnixFileMode.UserWrite);
 
-                foreach (var directory in Directory.EnumerateDirectories(_tempDirectory, "*", withoutFollowingSymlinks))
+                foreach (var directory in Directory.EnumerateDirectories(_tempDirectory, "*", TeardownEnumeration))
                     File.SetUnixFileMode(directory, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
             }
 
