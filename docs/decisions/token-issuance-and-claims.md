@@ -7,7 +7,8 @@ What must be true when a grant becomes tokens. The stores underneath are `token-
 `ITokenIssuer` (#521): a shape-agnostic seam taking finalized claims and the client's metadata,
 resolved per `TokenKind` as a keyed DI service, with `JwsTokenIssuer` duties filled by
 `JwtTokenIssuer` over the signing key ring. Claim *selection* still has no seam — `TokenPayload`
-arrives finalized, and the entries below are the constraints that future claims layer inherits.
+arrives finalized, and the entries below are the constraints that future claims layer inherits. Its
+proposed shape is `docs/design/claims-resolution.md`.
 
 **A JWT's header is built inside the ring's signing callback, never asserted afterwards.**
 `JwtTokenIssuer` reads `kid`/`alg` from the `SigningKey` the ring resolved for that exact call, so a

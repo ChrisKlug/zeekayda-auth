@@ -50,8 +50,8 @@ prevent twice. Design-time "we considered X and didn't do it" is noise; leave it
 ## What doesn't belong here
 
 - **API reference** — interface listings, type shapes, contract tables, worked examples. Those go
-  in `docs/reference/`. If an entry is explaining *how to use* something rather than *what we
-  settled on*, it's in the wrong directory.
+  in `docs/reference/` for built API, and `docs/design/` for API that isn't built yet. If an entry is
+  explaining *how to use* something rather than *what we settled on*, it's in the wrong directory.
 - **Rationale essays.** State the decision and enough of the why to stop someone reversing it by
   accident. If it needs three paragraphs, write a `docs/explanation/` page and keep the entry short.
 - **Speculative API shapes for work that isn't built.** A proposed interface name, signature, or
@@ -63,6 +63,11 @@ prevent twice. Design-time "we considered X and didn't do it" is noise; leave it
   correctness properties, spec-mandated refusals, and rejected alternatives someone would otherwise
   re-propose. Those are true now — they constrain what exists — so they read correctly as decisions
   in force. **Drop the shape, keep the constraint.**
+
+  **The shape goes to `docs/design/`, not nowhere.** This is a framework: the API is the product, and
+  a shape can only be judged by looking at it. Dropping sketches on the floor is how two accepted
+  designs were lost in the ADR migration and had to be recovered from git. A sketch there is
+  explicitly provisional, is deleted when the work ships, and never overrides this register.
 
 ## The one exception: security sign-offs
 
