@@ -43,7 +43,6 @@ internal static class ClientRegistrationFingerprint
     public static Fingerprint Compute(IClientRegistration client)
     {
         var builder = new StringBuilder();
-        var contentAddressable = true;
 
         // Field separators are characters that cannot appear in the values themselves, so no
         // combination of values can be re-partitioned into a different but equal-looking record.
@@ -64,7 +63,7 @@ internal static class ClientRegistrationFingerprint
             client.AllowedSigningAlgorithms is null
                 ? [NullSentinel]
                 : client.AllowedSigningAlgorithms.Select(v => v.ToString()));
-        contentAddressable = AppendCredentials(builder, client.Credentials);
+        var contentAddressable = AppendCredentials(builder, client.Credentials);
 
         return new Fingerprint(
             Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString()))),

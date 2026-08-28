@@ -373,9 +373,7 @@ public class AuthorizeRequestValidatorTests
         // character set and it is redirected to a legitimate client.
         var error = result.Should().BeOfType<AuthorizeRequestValidationResult.RedirectError>().Subject;
         error.Description.Should().NotContain("<script>").And.NotContain("alert");
-        // RFC 6749 §4.1.2.1: %x20-21 / %x23-5B / %x5D-7E (space allowed, but no " \ or controls).
-        error.Description.ToCharArray().Should().OnlyContain(
-            c => (c >= '\x20' && c <= '\x21') || (c >= '\x23' && c <= '\x5B') || (c >= '\x5D' && c <= '\x7E'));
+        error.Description.ToCharArray().Should().OnlyContain(c => IsLegalErrorDescriptionCharacter(c));
     }
 
     [Theory]
@@ -465,6 +463,14 @@ public class AuthorizeRequestValidatorTests
 
     // ── Fixture ───────────────────────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// The character set RFC 6749 §4.1.2.1 permits in <c>error_description</c>:
+    /// %x20-21 / %x23-5B / %x5D-7E — space is allowed, but not a quote, a backslash, or any
+    /// control character.
+    /// </summary>
+    private static bool IsLegalErrorDescriptionCharacter(char c) =>
+        c is (>= '\x20' and <= '\x21') or (>= '\x23' and <= '\x5B') or (>= '\x5D' and <= '\x7E');
+
     private static ClientRegistration Client() =>
         ClientRegistration.CreatePublic(
             ClientId,
@@ -503,9 +509,8 @@ public class AuthorizeRequestValidatorTests
     {
         public ValueTask<IClientRegistration?> FindByClientIdAsync(
             string clientId, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(string.Equals(clientId, client.ClientId, StringComparison.Ordinal)
-                ? (IClientRegistration?)client
-                : null);
+            ValueTask.FromResult<IClientRegistration?>(
+                string.Equals(clientId, client.ClientId, StringComparison.Ordinal) ? client : null);
     }
 
     private sealed class PassingValidator : IClientRegistrationValidator

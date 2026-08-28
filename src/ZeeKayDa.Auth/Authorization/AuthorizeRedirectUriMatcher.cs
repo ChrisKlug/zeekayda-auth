@@ -32,13 +32,13 @@ internal static class AuthorizeRedirectUriMatcher
     /// </remarks>
     public static bool TryMatch(string presented, IReadOnlySet<string> registered, out string redirectTarget)
     {
-        foreach (var candidate in registered)
+        var exact = registered.FirstOrDefault(
+            candidate => string.Equals(presented, candidate, StringComparison.Ordinal));
+
+        if (exact is not null)
         {
-            if (string.Equals(presented, candidate, StringComparison.Ordinal))
-            {
-                redirectTarget = candidate;
-                return true;
-            }
+            redirectTarget = exact;
+            return true;
         }
 
         return TryMatchLoopback(presented, registered, out redirectTarget);
@@ -51,22 +51,19 @@ internal static class AuthorizeRedirectUriMatcher
         if (!TryParseLoopbackHttp(presented, out var presentedUri))
             return false;
 
-        foreach (var candidate in registered)
-        {
-            if (!TryParseLoopbackHttp(candidate, out var registeredUri))
-                continue;
+        var match = registered
+            .Select(candidate => TryParseLoopbackHttp(candidate, out var uri) ? uri : null)
+            .Where(uri => uri is not null)
+            .FirstOrDefault(uri => IsSameLoopbackTarget(presentedUri, uri!));
 
-            if (!IsSameLoopbackTarget(presentedUri, registeredUri))
-                continue;
+        if (match is null)
+            return false;
 
-            // Rebuild from the trusted registered URI, substituting only the presented port, so
-            // nothing from the raw presented string reaches the response.
-            redirectTarget = new UriBuilder(registeredUri) { Port = presentedUri.Port }
-                .Uri.GetComponents(UriComponents.AbsoluteUri, UriFormat.UriEscaped);
-            return true;
-        }
-
-        return false;
+        // Rebuild from the trusted registered URI, substituting only the presented port, so
+        // nothing from the raw presented string reaches the response.
+        redirectTarget = new UriBuilder(match) { Port = presentedUri.Port }
+            .Uri.GetComponents(UriComponents.AbsoluteUri, UriFormat.UriEscaped);
+        return true;
     }
 
     /// <summary>

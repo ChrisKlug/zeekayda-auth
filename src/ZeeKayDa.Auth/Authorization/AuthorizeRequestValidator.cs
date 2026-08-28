@@ -155,13 +155,9 @@ internal sealed partial class AuthorizeRequestValidator
         // The offending parameter name is attacker-controlled and must never be echoed into
         // error_description — it is redirected to a legitimate client and RFC 6749 §4.1.2.1
         // restricts the value's character set.
-        foreach (var (_, values) in context.Parameters)
-        {
-            if (values.Count > 1)
-                return InvalidRequest("A request parameter is duplicated.");
-        }
-
-        return null;
+        return context.Parameters.Any(parameter => parameter.Value.Count > 1)
+            ? InvalidRequest("A request parameter is duplicated.")
+            : null;
     }
 
     private static Problem? RequestObjectIsRefused(RequestContext context) =>
@@ -278,11 +274,11 @@ internal sealed partial class AuthorizeRequestValidator
         if (string.IsNullOrEmpty(prompt))
             return null;
 
-        foreach (var value in prompt.Split(' ', StringSplitOptions.RemoveEmptyEntries))
-        {
-            if (TryParsePrompt(value, out var parsed))
-                context.Prompts.Add(parsed);
-        }
+        context.Prompts.UnionWith(
+            prompt.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                .Select(value => TryParsePrompt(value, out var parsed) ? parsed : (PromptValue?)null)
+                .Where(parsed => parsed.HasValue)
+                .Select(parsed => parsed!.Value));
 
         return context.Prompts.Contains(PromptValue.None) && context.Prompts.Count > 1
             ? InvalidRequest("The prompt value none cannot be combined with other values.")
@@ -358,16 +354,8 @@ internal sealed partial class AuthorizeRequestValidator
         Description = LocalErrorDescription,
     };
 
-    private static bool ContainsControlOrWhitespace(string value)
-    {
-        foreach (var c in value)
-        {
-            if (char.IsControl(c) || char.IsWhiteSpace(c))
-                return true;
-        }
-
-        return false;
-    }
+    private static bool ContainsControlOrWhitespace(string value) =>
+        value.Any(c => char.IsControl(c) || char.IsWhiteSpace(c));
 
     private static bool TryGetSingle(
         IReadOnlyDictionary<string, IReadOnlyList<string?>> parameters,

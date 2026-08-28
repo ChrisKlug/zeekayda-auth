@@ -119,9 +119,8 @@ public class ValidatedClientResolverTests
     {
         public ValueTask<IClientRegistration?> FindByClientIdAsync(
             string clientId, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(string.Equals(clientId, client.ClientId, StringComparison.Ordinal)
-                ? (IClientRegistration?)client
-                : null);
+            ValueTask.FromResult<IClientRegistration?>(
+                string.Equals(clientId, client.ClientId, StringComparison.Ordinal) ? client : null);
     }
 
     private sealed class MutableRepository(IClientRegistration current) : IClientRepository
