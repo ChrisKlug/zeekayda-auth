@@ -488,6 +488,12 @@ Notes on the setup, so its quirks aren't rediscovered:
 - **`ZeeKayDa.Auth.Windows` has no config**: a third of its tests skip off-Windows, which would
   report false survivors. Its baseline comes from the Windows leg of the scheduled workflow
   (#567).
+- **A local run needs an exclusive working tree.** Stryker builds from the tree as it finds it,
+  so anything else touching the same checkout mid-run — an agent applying and reverting mutants
+  to verify a review finding, a format fix, a rebuild — silently corrupts which mutants are
+  recorded killed or survived, while the run still exits 0 and looks healthy (this happened
+  twice during #572). Sequence such work before or after the run, or give Stryker its own
+  worktree. Telltale sign of a corrupted report: survivors that a named test provably kills.
 - A surviving mutant in signing/validation logic is a test gap worth an issue (see #569 for the
   baseline triage). A surviving string mutation in message text is usually not — the
   test standards deliberately don't want message-wording tests on non-security types.
