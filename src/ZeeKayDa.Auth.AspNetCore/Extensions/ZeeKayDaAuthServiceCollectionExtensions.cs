@@ -136,16 +136,7 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IClientAuthenticator, ClientSecretAuthenticator>());
         services.TryAddSingleton<CompositeClientAuthenticator>();
-        services.AddHttpContextAccessor();
-        // The framework depends on Data Protection throughout (store payload encryption, the
-        // authorize error transport, and the interaction cookies to come). The default web host
-        // registers it already; this covers minimal hosts, and is idempotent everywhere else.
-        services.AddDataProtection();
-        services.TryAddSingleton<ValidatedClientResolver>();
-        services.TryAddSingleton<AuthorizeRequestValidator>();
-        services.TryAddSingleton<TimeProvider>(TimeProvider.System);
-        services.TryAddSingleton<AuthorizeErrorTransport>();
-        services.TryAddSingleton<IErrorInteraction, ErrorInteraction>();
+        AddAuthorizationRequestServices(services);
 
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<
@@ -156,4 +147,26 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         builder.AddSecretsHasher<Pbkdf2ClientSecretHasher>(isDefault: true);
         return builder;
     }
+
+    /// <summary>
+    /// Registers the services behind the authorization endpoint: the validating client resolver
+    /// every endpoint resolves clients through, request validation, and the error-interaction
+    /// handoff to the host's error page.
+    /// </summary>
+    private static void AddAuthorizationRequestServices(IServiceCollection services)
+    {
+        services.AddHttpContextAccessor();
+
+        // The framework depends on Data Protection throughout (store payload encryption, the
+        // authorize error transport, and the interaction cookies to come). The default web host
+        // registers it already; this covers minimal hosts, and is idempotent everywhere else.
+        services.AddDataProtection();
+
+        services.TryAddSingleton<ValidatedClientResolver>();
+        services.TryAddSingleton<AuthorizeRequestValidator>();
+        services.TryAddSingleton<TimeProvider>(TimeProvider.System);
+        services.TryAddSingleton<AuthorizeErrorTransport>();
+        services.TryAddSingleton<IErrorInteraction, ErrorInteraction>();
+    }
+
 }

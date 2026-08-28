@@ -78,18 +78,40 @@ internal sealed class AuthorizeErrorTransport
     }
 
     /// <summary>
+    /// Reads the two halves the transport needs — the cookie and the id from the redirect — or
+    /// returns <see langword="false"/> when either is absent.
+    /// </summary>
+    private static bool TryGetTransportInputs(HttpContext context, out string cookieValue, out string requestedId)
+    {
+        requestedId = string.Empty;
+
+        if (!context.Request.Cookies.TryGetValue(CookieName, out var cookie) || cookie is null)
+        {
+            cookieValue = string.Empty;
+            return false;
+        }
+
+        cookieValue = cookie;
+
+        if (context.Request.Query[QueryParameterName] is not [string id])
+            return false;
+
+        if (string.IsNullOrEmpty(id))
+            return false;
+
+        requestedId = id;
+        return true;
+    }
+
+    /// <summary>
     /// Reads and verifies the transport cookie against the request's error identifier. Returns
     /// <see langword="null"/> when absent, expired, undecipherable, or mismatched — never throws
     /// for a malformed inbound value.
     /// </summary>
     public AuthorizationErrorDetails? TryRead(HttpContext context)
     {
-        if (!context.Request.Cookies.TryGetValue(CookieName, out var cookieValue) ||
-            context.Request.Query[QueryParameterName] is not [string requestedId] ||
-            string.IsNullOrEmpty(requestedId))
-        {
+        if (!TryGetTransportInputs(context, out var cookieValue, out var requestedId))
             return null;
-        }
 
         string id;
         string error;

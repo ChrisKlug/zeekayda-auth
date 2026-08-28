@@ -30,40 +30,66 @@ internal static class AuthorizeRedirectUriMatcher
     /// </remarks>
     public static bool TryMatch(string presented, IReadOnlySet<string> registered, out string redirectTarget)
     {
-        foreach (var candidate in registered)
+        var exact = registered.FirstOrDefault(
+            candidate => string.Equals(presented, candidate, StringComparison.Ordinal),
+            null);
+
+        if (exact is not null)
         {
-            if (string.Equals(presented, candidate, StringComparison.Ordinal))
-            {
-                redirectTarget = candidate;
-                return true;
-            }
+            redirectTarget = exact;
+            return true;
         }
 
-        if (Uri.TryCreate(presented, UriKind.Absolute, out var presentedUri) &&
-            string.Equals(presentedUri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) &&
-            LoopbackHelper.IsLoopbackHost(presentedUri.Host))
-        {
-            foreach (var candidate in registered)
-            {
-                if (Uri.TryCreate(candidate, UriKind.Absolute, out var registeredUri) &&
-                    string.Equals(registeredUri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) &&
-                    LoopbackHelper.IsLoopbackHost(registeredUri.Host) &&
-                    string.Equals(presentedUri.Host, registeredUri.Host, StringComparison.Ordinal) &&
-                    string.Equals(
-                        presentedUri.GetComponents(UriComponents.Path | UriComponents.Query, UriFormat.UriEscaped),
-                        registeredUri.GetComponents(UriComponents.Path | UriComponents.Query, UriFormat.UriEscaped),
-                        StringComparison.Ordinal))
-                {
-                    // Rebuild from the trusted registered URI, substituting only the presented
-                    // port, so nothing from the raw presented string reaches the response.
-                    redirectTarget = new UriBuilder(registeredUri) { Port = presentedUri.Port }
-                        .Uri.GetComponents(UriComponents.AbsoluteUri, UriFormat.UriEscaped);
-                    return true;
-                }
-            }
-        }
-
-        redirectTarget = string.Empty;
-        return false;
+        return TryMatchLoopback(presented, registered, out redirectTarget);
     }
+
+    private static bool TryMatchLoopback(string presented, IReadOnlySet<string> registered, out string redirectTarget)
+    {
+        redirectTarget = string.Empty;
+
+        if (!TryParseLoopbackHttp(presented, out var presentedUri))
+            return false;
+
+        var match = registered
+            .Select(candidate => TryParseLoopbackHttp(candidate, out var uri) ? uri : null)
+            .FirstOrDefault(candidate => candidate is not null && IsSameLoopbackTarget(presentedUri, candidate));
+
+        if (match is null)
+            return false;
+
+        // Rebuild from the trusted registered URI, substituting only the presented port, so
+        // nothing from the raw presented string reaches the response.
+        redirectTarget = new UriBuilder(match) { Port = presentedUri.Port }
+            .Uri.GetComponents(UriComponents.AbsoluteUri, UriFormat.UriEscaped);
+        return true;
+    }
+
+    /// <summary>
+    /// Parses <paramref name="value"/> only when it is <c>http</c> on a loopback host — the sole
+    /// registrable combination whose port varies at runtime.
+    /// </summary>
+    private static bool TryParseLoopbackHttp(string value, out Uri uri)
+    {
+        uri = null!;
+
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var parsed))
+            return false;
+
+        if (!string.Equals(parsed.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        if (!LoopbackHelper.IsLoopbackHost(parsed.Host))
+            return false;
+
+        uri = parsed;
+        return true;
+    }
+
+    /// <summary>Compares everything except the port, which is allowed to vary.</summary>
+    private static bool IsSameLoopbackTarget(Uri presented, Uri registered) =>
+        string.Equals(presented.Host, registered.Host, StringComparison.Ordinal)
+        && string.Equals(
+            presented.GetComponents(UriComponents.Path | UriComponents.Query, UriFormat.UriEscaped),
+            registered.GetComponents(UriComponents.Path | UriComponents.Query, UriFormat.UriEscaped),
+            StringComparison.Ordinal);
 }

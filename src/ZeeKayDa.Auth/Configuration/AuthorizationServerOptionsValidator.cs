@@ -265,45 +265,7 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
                 $"'{(int)options.SecurityHeaders.CrossOriginResourcePolicy}' is not a valid {nameof(CrossOriginResourcePolicy)} enum member.");
         }
 
-        // Validate AuthorizationEndpoint group
-        if (options.AuthorizationEndpoint.CodeChallengeMethodsSupported is { Count: 0 })
-        {
-            errors.Add(
-                "AuthorizationServerOptions.AuthorizationEndpoint.CodeChallengeMethodsSupported " +
-                "must not be an empty collection. Either set it to null to omit the field from the " +
-                "discovery document, or provide at least one value (e.g. CodeChallengeMethod.S256). " +
-                "See RFC 7636 §4.3 and RFC 8414 §2.");
-        }
-
-        // RFC 9700 §2.1.1 requires authorization codes to be short-lived (max 10 minutes).
-        if (options.AuthorizationEndpoint.AuthorizationCodeLifetime > TimeSpan.FromSeconds(600))
-        {
-            errors.Add(
-                "AuthorizationServerOptions.AuthorizationEndpoint.AuthorizationCodeLifetime must not exceed " +
-                "600 seconds (10 minutes). Values above 600 seconds violate the short-lived code requirement " +
-                "of RFC 9700 §2.1.1.");
-        }
-
-        // A zero or negative lifetime is nonsensical and must be rejected at startup.
-        if (options.AuthorizationEndpoint.AuthorizationCodeLifetime <= TimeSpan.Zero)
-        {
-            errors.Add(
-                "AuthorizationServerOptions.AuthorizationEndpoint.AuthorizationCodeLifetime must be greater than zero.");
-        }
-
-        // A malformed ErrorPath would turn the local-error safety net into an open redirect.
-        if (options.AuthorizationEndpoint.Interaction.ErrorPath is { } errorPath &&
-            (!errorPath.StartsWith('/') ||
-             errorPath.StartsWith("//", StringComparison.Ordinal) ||
-             errorPath.Contains('?') ||
-             errorPath.Contains('#') ||
-             !Uri.TryCreate(errorPath, UriKind.Relative, out _)))
-        {
-            errors.Add(
-                "AuthorizationServerOptions.AuthorizationEndpoint.Interaction.ErrorPath must be an " +
-                "absolute path within the host application (starting with '/'), without scheme, " +
-                "authority, query, or fragment.");
-        }
+        ValidateAuthorizationEndpoint(options, errors);
 
         // A negative ClockSkewTolerance silently rejects tokens before their stated
         // expiry, producing false rejections with no surfaced error.
@@ -409,6 +371,46 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
             errors.Add(jwksError.FailureMessage!);
 
         return errors.Count > 0 ? ValidateOptionsResult.Fail(errors) : ValidateOptionsResult.Success;
+    }
+
+    /// <summary>Validates the <c>AuthorizationEndpoint</c> options group.</summary>
+    private static void ValidateAuthorizationEndpoint(
+        AuthorizationServerOptions options,
+        List<string> errors)
+    {
+        if (options.AuthorizationEndpoint.CodeChallengeMethodsSupported is { Count: 0 })
+        {
+            errors.Add(
+                "AuthorizationServerOptions.AuthorizationEndpoint.CodeChallengeMethodsSupported " +
+                "must not be an empty collection. Either set it to null to omit the field from the " +
+                "discovery document, or provide at least one value (e.g. CodeChallengeMethod.S256). " +
+                "See RFC 7636 §4.3 and RFC 8414 §2.");
+        }
+
+        // RFC 9700 §2.1.1 requires authorization codes to be short-lived (max 10 minutes).
+        if (options.AuthorizationEndpoint.AuthorizationCodeLifetime > TimeSpan.FromSeconds(600))
+        {
+            errors.Add(
+                "AuthorizationServerOptions.AuthorizationEndpoint.AuthorizationCodeLifetime must not exceed " +
+                "600 seconds (10 minutes). Values above 600 seconds violate the short-lived code requirement " +
+                "of RFC 9700 §2.1.1.");
+        }
+
+        // A zero or negative lifetime is nonsensical and must be rejected at startup.
+        if (options.AuthorizationEndpoint.AuthorizationCodeLifetime <= TimeSpan.Zero)
+        {
+            errors.Add(
+                "AuthorizationServerOptions.AuthorizationEndpoint.AuthorizationCodeLifetime must be greater than zero.");
+        }
+
+        if (options.AuthorizationEndpoint.Interaction.ErrorPath is { } errorPath
+            && !InteractionPath.IsSafe(errorPath))
+        {
+            errors.Add(
+                "AuthorizationServerOptions.AuthorizationEndpoint.Interaction.ErrorPath must be an " +
+                "absolute path within the host application (starting with '/'), without scheme, " +
+                "authority, query, or fragment.");
+        }
     }
 
     private static void ValidateCorsOrigins(
