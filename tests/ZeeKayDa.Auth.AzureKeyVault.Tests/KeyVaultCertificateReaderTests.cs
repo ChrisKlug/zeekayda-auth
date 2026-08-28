@@ -1,6 +1,8 @@
 using System.Reflection;
 using System.Security.Cryptography;
+using System.Security.Cryptography.Pkcs;
 using System.Security.Cryptography.X509Certificates;
+using Azure;
 using Azure.Security.KeyVault.Certificates;
 using Azure.Security.KeyVault.Secrets;
 using Microsoft.Extensions.Options;
@@ -18,14 +20,14 @@ namespace ZeeKayDa.Auth.AzureKeyVault.Tests;
 /// <see cref="ZeeKayDaConfigurationException"/>s rather than raw SDK or cryptography exceptions.
 /// </summary>
 /// <remarks>
-/// <see cref="KeyVaultCertificateReader"/> constructs real <c>CertificateClient</c>/<c>SecretClient</c>
-/// instances directly from options, with no injectable seam — this project's convention (see the
-/// documented KNOWN GAP in <c>AzureKeyVaultRemoteSigningIntegrationTests</c>) is to fake at the
-/// <c>IKeyVaultCertificateReader</c>/<c>IKeyVaultKeyReader</c> interface level rather than at the
-/// HTTP level, since there is no local Key Vault emulator. <c>ExtractPrivateKey</c>'s decision logic
-/// is, however, a pure function of an already-downloaded <see cref="KeyVaultSecret"/> and does not
-/// touch either SDK client, so it is exercised here directly via reflection against a reader
-/// instance whose constructor performs no network I/O.
+/// <c>ExtractPrivateKey</c>'s decision logic is a pure function of an already-downloaded
+/// <see cref="KeyVaultSecret"/> and does not touch either SDK client, so it is exercised here
+/// directly via reflection against a reader instance whose constructor performs no network I/O.
+/// The network-facing paths — version enumeration, public/private material retrieval, and the SDK
+/// fault mapping — are exercised via faked <c>CertificateClient</c>/<c>SecretClient</c> instances
+/// injected through the reader's internal test constructor. Only the real HTTP pipeline itself
+/// remains covered by nothing but the known-gap note in
+/// <c>Integration/AzureKeyVaultRemoteSigningIntegrationTests.cs</c>.
 /// </remarks>
 public sealed class KeyVaultCertificateReaderTests
 {
@@ -440,5 +442,307 @@ public sealed class KeyVaultCertificateReaderTests
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
             .WithMessage("*incomplete_version_metadata*");
+    }
+
+    // ── Key-bag shapes .NET's own PFX export never produces ──────────────────────────────────────
+
+    /// <summary>
+    /// Builds a PKCS#12 payload whose private key sits in a plain (unencrypted)
+    /// <see cref="Pkcs12KeyBag"/>. .NET's <c>Export(X509ContentType.Pfx)</c> always shrouds the
+    /// key, so this bag shape — which the reader's PKCS#12 walk explicitly supports — is only
+    /// reachable through a hand-built payload.
+    /// </summary>
+    private static byte[] CreatePlainKeyBagPfx(Action<Pkcs12SafeContents> addKey)
+    {
+        var contents = new Pkcs12SafeContents();
+        addKey(contents);
+        var builder = new Pkcs12Builder();
+        builder.AddSafeContentsUnencrypted(contents);
+        builder.SealWithoutIntegrity();
+        return builder.Encode();
+    }
+
+    // Well-formed ASN.1 (SEQUENCE { INTEGER 0 }) that is not a PrivateKeyInfo, so both the RSA and
+    // the EC import reject it.
+    private static readonly byte[] NotAPrivateKey = [0x30, 0x03, 0x02, 0x01, 0x00];
+
+    [Fact]
+    public void ExtractPrivateKey_imports_an_rsa_key_from_a_plain_unencrypted_key_bag()
+    {
+        using var rsa = RSA.Create(2048);
+        var pfx = CreatePlainKeyBagPfx(contents => contents.AddKeyUnencrypted(rsa));
+        var reader = BuildReader();
+
+        var (privateKey, keyType) = InvokeExtractPrivateKey(reader, BuildSecret(Convert.ToBase64String(pfx)));
+
+        using var _ = privateKey;
+        keyType.Should().Be(SigningKeyType.Rsa);
+        privateKey.Should().BeAssignableTo<RSA>();
+    }
+
+    [Fact]
+    public void ExtractPrivateKey_imports_an_ec_key_from_a_plain_unencrypted_key_bag()
+    {
+        using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var pfx = CreatePlainKeyBagPfx(contents => contents.AddKeyUnencrypted(ecdsa));
+        var reader = BuildReader();
+
+        var (privateKey, keyType) = InvokeExtractPrivateKey(reader, BuildSecret(Convert.ToBase64String(pfx)));
+
+        using var _ = privateKey;
+        keyType.Should().Be(SigningKeyType.Ec);
+        privateKey.Should().BeAssignableTo<ECDsa>();
+    }
+
+    [Fact]
+    public void ExtractPrivateKey_rejects_a_plain_key_bag_that_is_neither_rsa_nor_ec()
+    {
+        var pfx = CreatePlainKeyBagPfx(contents => contents.AddSafeBag(new Pkcs12KeyBag(NotAPrivateKey)));
+        var reader = BuildReader();
+
+        var act = () => InvokeExtractPrivateKey(reader, BuildSecret(Convert.ToBase64String(pfx)));
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .WithMessage("*unsupported_key_type*");
+    }
+
+    [Fact]
+    public void ExtractPrivateKey_rejects_a_shrouded_key_bag_that_is_neither_rsa_nor_ec()
+    {
+        var pfx = CreatePlainKeyBagPfx(contents => contents.AddSafeBag(new Pkcs12ShroudedKeyBag(NotAPrivateKey)));
+        var reader = BuildReader();
+
+        var act = () => InvokeExtractPrivateKey(reader, BuildSecret(Convert.ToBase64String(pfx)));
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .WithMessage("*unsupported_key_type*");
+    }
+
+    // ── Network-facing paths, via the internal test constructor ──────────────────────────────────
+
+    // Deliberately NOT the certificate's own name/version: the linked secret's identifier is what
+    // the download must follow, and a shared name would let a reader that wrongly reuses
+    // _certificateName/version pass the assertion below.
+    private static readonly Uri SecretIdUri = new("https://fake-vault.vault.azure.net/secrets/linked-secret/sv9");
+
+    private static KeyVaultCertificateReader BuildReader(
+        FakeCertificateClient certificateClient, FakeSecretClient? secretClient = null) =>
+        new(
+            certificateClient,
+            secretClient ?? new FakeSecretClient
+            {
+                OnGetSecret = (_, _) => throw new InvalidOperationException(
+                    "this test must never download the certificate's linked secret"),
+            },
+            "fake-cert",
+            VaultUri);
+
+    private static KeyVaultCertificate BuildCertificate(byte[]? cer = null, Uri? secretId = null) =>
+        CertificateModelFactory.KeyVaultCertificate(
+            BuildProperties(createdOn: DateTimeOffset.Parse("2026-01-01T00:00:00Z"), enabled: true),
+            keyId: null,
+            secretId: secretId,
+            cer: cer ?? CreateSelfSignedRsaCerWithoutPrivateKey());
+
+    private static async Task<List<KeyVaultCertificateVersionInfo>> Collect(KeyVaultCertificateReader reader)
+    {
+        var versions = new List<KeyVaultCertificateVersionInfo>();
+        await foreach (var version in reader.GetCertificateVersionsAsync(TestContext.Current.CancellationToken))
+            versions.Add(version);
+        return versions;
+    }
+
+    [Fact]
+    public async Task GetCertificateVersionsAsync_yields_every_listed_version_mapped()
+    {
+        var client = new FakeCertificateClient
+        {
+            OnGetVersions = () => FakeAsyncPageable<CertificateProperties>.Of(
+                BuildProperties(createdOn: DateTimeOffset.Parse("2026-01-01T00:00:00Z"), enabled: true),
+                BuildProperties(createdOn: DateTimeOffset.Parse("2026-02-01T00:00:00Z"), enabled: false)),
+        };
+
+        var versions = await Collect(BuildReader(client));
+
+        versions.Should().HaveCount(2);
+        versions[0].Enabled.Should().BeTrue();
+        versions[1].Enabled.Should().BeFalse();
+        versions[1].CreatedOn.Should().Be(DateTimeOffset.Parse("2026-02-01T00:00:00Z"));
+        client.RequestedNames.Should().Equal(["fake-cert"],
+            "the listing must be for the configured certificate, nothing else");
+    }
+
+    [Theory]
+    [InlineData(404, "certificate_not_found")]
+    [InlineData(401, "access_denied")]
+    [InlineData(403, "access_denied")]
+    [InlineData(500, "startup_failure")]
+    public async Task GetCertificateVersionsAsync_maps_a_failed_listing_to_a_stable_failure_code(
+        int status, string expectedCode)
+    {
+        var client = new FakeCertificateClient
+        {
+            OnGetVersions = () => FakeAsyncPageable<CertificateProperties>.Throwing(
+                new RequestFailedException(status, "boom")),
+        };
+
+        var act = () => Collect(BuildReader(client));
+
+        await act.Should().ThrowAsync<ZeeKayDaConfigurationException>()
+            .WithMessage($"*{expectedCode}*");
+    }
+
+    [Fact]
+    public async Task GetCertificateVersionsAsync_maps_an_unexpected_listing_exception_to_startup_failure()
+    {
+        var client = new FakeCertificateClient
+        {
+            OnGetVersions = () => FakeAsyncPageable<CertificateProperties>.Throwing(
+                new InvalidOperationException("SDK internal fault")),
+        };
+
+        var act = () => Collect(BuildReader(client));
+
+        await act.Should().ThrowAsync<ZeeKayDaConfigurationException>()
+            .WithMessage("*startup_failure*");
+    }
+
+    [Fact]
+    public async Task GetCertificateVersionsAsync_lets_cancellation_escape_unmapped()
+    {
+        // A cancelled read is the host shutting down, not a vault misconfiguration — mapping it
+        // to a configuration failure would tell the operator to go fix a vault that is fine.
+        var client = new FakeCertificateClient
+        {
+            OnGetVersions = () => FakeAsyncPageable<CertificateProperties>.Throwing(
+                new OperationCanceledException()),
+        };
+
+        var act = () => Collect(BuildReader(client));
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task GetPublicKeyMaterialAsync_reads_only_the_cer_and_never_the_linked_secret()
+    {
+        string? requestedVersion = null;
+        var client = new FakeCertificateClient
+        {
+            OnGetVersion = version =>
+            {
+                requestedVersion = version;
+                return BuildCertificate(secretId: SecretIdUri);
+            },
+        };
+
+        // BuildReader's default secret client throws on any call, so passing here proves the
+        // public read needs no secrets/get.
+        var (publicKey, keyType) = await BuildReader(client)
+            .GetPublicKeyMaterialAsync("v3", TestContext.Current.CancellationToken);
+
+        using var _ = publicKey;
+        requestedVersion.Should().Be("v3");
+        client.RequestedNames.Should().Equal(["fake-cert"],
+            "the material must be fetched for the configured certificate, nothing else");
+        keyType.Should().Be(SigningKeyType.Rsa);
+        publicKey.Should().BeAssignableTo<RSA>();
+    }
+
+    [Fact]
+    public async Task GetPrivateKeyMaterialAsync_downloads_the_linked_secret_and_returns_the_private_key()
+    {
+        var client = new FakeCertificateClient
+        {
+            OnGetVersion = _ => BuildCertificate(secretId: SecretIdUri),
+        };
+        (string Name, string? Version)? requestedSecret = null;
+        var secretClient = new FakeSecretClient
+        {
+            OnGetSecret = (name, version) =>
+            {
+                requestedSecret = (name, version);
+                return BuildSecret(Convert.ToBase64String(CreateSelfSignedRsaPfxWithPrivateKey()));
+            },
+        };
+
+        var (privateKey, keyType) = await BuildReader(client, secretClient)
+            .GetPrivateKeyMaterialAsync("v1", TestContext.Current.CancellationToken);
+
+        using var _ = privateKey;
+        requestedSecret.Should().Be(("linked-secret", "sv9"),
+            "the secret must be fetched by the identifier the certificate version links to, " +
+            "never by the certificate's own name and the requested version");
+        keyType.Should().Be(SigningKeyType.Rsa);
+        ((RSA)privateKey).ExportParameters(includePrivateParameters: true).D.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task GetPrivateKeyMaterialAsync_fails_closed_when_the_linked_secret_id_is_not_a_secret_identifier()
+    {
+        // A fully ABSENT sid cannot be tested here: the SDK's KeyVaultCertificate.SecretId getter
+        // itself throws ArgumentNullException before the reader's guard runs (tracked as its own
+        // issue). What the guard does own is a sid that is not a valid Key Vault secret identifier.
+        var client = new FakeCertificateClient
+        {
+            OnGetVersion = _ => BuildCertificate(secretId: new Uri("https://fake-vault.vault.azure.net/")),
+        };
+
+        var act = () => BuildReader(client)
+            .GetPrivateKeyMaterialAsync("v1", TestContext.Current.CancellationToken).AsTask();
+
+        await act.Should().ThrowAsync<ZeeKayDaConfigurationException>()
+            .WithMessage("*certificate_missing_secret*");
+    }
+
+    [Fact]
+    public async Task GetPrivateKeyMaterialAsync_maps_a_denied_secret_download_to_access_denied()
+    {
+        var client = new FakeCertificateClient
+        {
+            OnGetVersion = _ => BuildCertificate(secretId: SecretIdUri),
+        };
+        var secretClient = new FakeSecretClient
+        {
+            OnGetSecret = (_, _) => throw new RequestFailedException(403, "forbidden"),
+        };
+
+        var act = () => BuildReader(client, secretClient)
+            .GetPrivateKeyMaterialAsync("v1", TestContext.Current.CancellationToken).AsTask();
+
+        await act.Should().ThrowAsync<ZeeKayDaConfigurationException>()
+            .WithMessage("*access_denied*");
+    }
+
+    [Fact]
+    public async Task GetPublicKeyMaterialAsync_includes_the_sdk_error_code_in_the_failure_when_present()
+    {
+        var client = new FakeCertificateClient
+        {
+            OnGetVersion = _ => throw new RequestFailedException(
+                404, "not found", "CertificateNotFound", innerException: null),
+        };
+
+        var act = () => BuildReader(client)
+            .GetPublicKeyMaterialAsync("v1", TestContext.Current.CancellationToken).AsTask();
+
+        await act.Should().ThrowAsync<ZeeKayDaConfigurationException>()
+            .WithMessage("*certificate_not_found*ErrorCode: CertificateNotFound*");
+    }
+
+    [Fact]
+    public async Task GetPublicKeyMaterialAsync_omits_the_error_code_clause_when_the_sdk_reports_none()
+    {
+        var client = new FakeCertificateClient
+        {
+            OnGetVersion = _ => throw new RequestFailedException(404, "not found"),
+        };
+
+        var act = () => BuildReader(client)
+            .GetPublicKeyMaterialAsync("v1", TestContext.Current.CancellationToken).AsTask();
+
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .Which.Message.Should().NotContain("ErrorCode",
+                "an absent SDK error code must not leave a dangling 'ErrorCode:' clause in the operator message");
     }
 }

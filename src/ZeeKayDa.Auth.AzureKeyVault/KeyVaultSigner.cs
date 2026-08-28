@@ -32,7 +32,7 @@ internal sealed class KeyVaultSigner : IKeyVaultSigner
             [SigningAlgorithm.ES512] = SignatureAlgorithm.ES512,
         };
 
-    private readonly TokenCredential _credential;
+    private readonly Func<Uri, CryptographyClient> _clientFactory;
     private readonly ConcurrentDictionary<Uri, CryptographyClient> _clients = new();
 
     public KeyVaultSigner(IOptions<AzureKeyVaultRemoteSigningOptions> options)
@@ -41,7 +41,17 @@ internal sealed class KeyVaultSigner : IKeyVaultSigner
         var credential = options.Value.Credential;
         ArgumentNullException.ThrowIfNull(credential);
 
-        _credential = credential;
+        _clientFactory = uri => new CryptographyClient(uri, credential);
+    }
+
+    /// <summary>
+    /// Test seam: lets unit tests inject a factory producing faked
+    /// <see cref="CryptographyClient"/> instances, making the signing fault-mapping paths
+    /// reachable without a live vault.
+    /// </summary>
+    internal KeyVaultSigner(Func<Uri, CryptographyClient> clientFactory)
+    {
+        _clientFactory = clientFactory;
     }
 
     /// <inheritdoc/>
@@ -52,7 +62,7 @@ internal sealed class KeyVaultSigner : IKeyVaultSigner
         ArgumentException.ThrowIfNullOrEmpty(keyLabel);
         ArgumentNullException.ThrowIfNull(signingInput);
 
-        var client = _clients.GetOrAdd(keyVersionUri, uri => new CryptographyClient(uri, _credential));
+        var client = _clients.GetOrAdd(keyVersionUri, _clientFactory);
         var azureAlgorithm = ResolveAlgorithm(algorithm);
 
         try
