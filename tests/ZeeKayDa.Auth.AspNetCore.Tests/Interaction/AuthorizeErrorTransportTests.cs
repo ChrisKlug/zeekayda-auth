@@ -64,7 +64,7 @@ public class AuthorizeErrorTransportTests
     }
 
     [Fact]
-    public void Cookie_is_HttpOnly_and_scoped_to_the_error_path()
+    public void Cookie_is_HttpOnly_Secure_and_scoped_to_the_error_path()
     {
         var transport = Transport(out _);
         var write = new DefaultHttpContext();
@@ -72,7 +72,7 @@ public class AuthorizeErrorTransportTests
         transport.CreateAndAttach(write, "invalid_request", "The request is invalid.");
 
         var setCookie = write.Response.Headers.SetCookie.ToString();
-        setCookie.Should().Contain("httponly").And.Contain("path=/auth-error");
+        setCookie.Should().Contain("httponly").And.Contain("secure").And.Contain("path=/auth-error");
     }
 
     // ── Fixture ───────────────────────────────────────────────────────────────────────────────

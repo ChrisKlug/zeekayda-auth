@@ -359,6 +359,88 @@ public class AuthorizeRequestValidatorTests
         result.Should().BeOfType<AuthorizeRequestValidationResult.Valid>();
     }
 
+    // ── Review-round regressions ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Phase2_duplicate_parameter_error_never_echoes_the_parameter_name()
+    {
+        var parameters = ValidParameters();
+        parameters["<script>alert(1)</script>"] = ["a", "b"];
+
+        var result = await Validate(parameters);
+
+        // The offending name is attacker-controlled; RFC 6749 §4.1.2.1 restricts the value's
+        // character set and it is redirected to a legitimate client.
+        var error = result.Should().BeOfType<AuthorizeRequestValidationResult.RedirectError>().Subject;
+        error.Description.Should().NotContain("<script>").And.NotContain("alert");
+        // RFC 6749 §4.1.2.1: %x20-21 / %x23-5B / %x5D-7E (space allowed, but no " \ or controls).
+        error.Description.ToCharArray().Should().OnlyContain(
+            c => (c >= '\x20' && c <= '\x21') || (c >= '\x23' && c <= '\x5B') || (c >= '\x5D' && c <= '\x7E'));
+    }
+
+    [Theory]
+    [InlineData("999999999999999")]
+    [InlineData("9223372036854775807")] // long.MaxValue — would overflow TimeSpan.FromSeconds
+    public async Task Phase2_absurd_max_age_is_invalid_request_not_an_exception(string maxAge)
+    {
+        var parameters = ValidParameters();
+        parameters["max_age"] = [maxAge];
+
+        var result = await Validate(parameters);
+
+        result.Should().BeOfType<AuthorizeRequestValidationResult.RedirectError>()
+            .Subject.Error.Should().Be("invalid_request");
+    }
+
+    [Fact]
+    public async Task Phase1_client_without_query_response_mode_fails_even_when_mode_is_omitted()
+    {
+        var client = Client() with
+        {
+            AllowedResponseModes = new HashSet<ResponseMode> { ResponseMode.FormPost },
+        };
+
+        // No response_mode parameter — the effective mode is still query and must be checked, or a
+        // form_post-only client silently receives its code in the query string.
+        var result = await Validate(ValidParameters(), client);
+
+        result.Should().BeOfType<AuthorizeRequestValidationResult.RedirectError>()
+            .Subject.Error.Should().Be("unauthorized_client");
+    }
+
+    [Theory]
+    [InlineData("https://app.example.com/callback\r\n")]        // trailing CRLF
+    [InlineData("https://app.example.com/callback\t")]           // trailing tab
+    [InlineData("https://user:pw@app.example.com/callback")]      // userinfo
+    public async Task Phase1_redirect_uri_with_control_or_userinfo_is_a_local_error(string redirectUri)
+    {
+        // These forms would canonicalize to the registered URI but smuggle content into the
+        // Location header — response splitting / userinfo confusion.
+        var result = await Validate(ValidParameters(redirectUri: redirectUri.Replace("\\r\\n", "\r\n").Replace("\\t", "\t").Replace("\\r", "\r").Replace("\\n", "\n")));
+
+        result.Should().BeOfType<AuthorizeRequestValidationResult.LocalError>();
+    }
+
+    [Fact]
+    public async Task Phase1_loopback_redirect_target_comes_from_the_registration_not_the_raw_request()
+    {
+        var client = Client() with
+        {
+            RedirectUris = new HashSet<string>(StringComparer.Ordinal) { "http://127.0.0.1/cb" },
+        };
+
+        // A path-traversal form that canonicalizes to the registered path must not reach the
+        // Location header verbatim; the emitted target is rebuilt from the registration.
+        var parameters = ValidParameters(redirectUri: "http://127.0.0.1:49152/x/../cb");
+        parameters.Remove("code_challenge"); // force a phase-2 redirect so we can read the target
+
+        var result = await Validate(parameters, client);
+
+        var error = result.Should().BeOfType<AuthorizeRequestValidationResult.RedirectError>().Subject;
+        error.RedirectUri.Should().Be("http://127.0.0.1:49152/cb");
+        error.RedirectUri.Should().NotContain("..");
+    }
+
     // ── Valid request ─────────────────────────────────────────────────────────────────────────
 
     [Fact]

@@ -69,11 +69,17 @@ internal sealed class ValidatedClientResolver
         if (verdict.IsValid)
             return client;
 
-        _logger.LogCritical(
-            "Client registration for '{ClientId}' failed validation and was served to the protocol as an unknown client. " +
-            "Fix the registration in the client store. Violations: {Violations}",
-            client.ClientId,
-            verdict.Violations);
+        // Logged once per memoized verdict, not per request — a known-bad client_id must not be
+        // an unauthenticated log-amplification lever.
+        if (verdict.MarkLogged())
+        {
+            _logger.LogCritical(
+                "Client registration for '{ClientId}' failed validation and was served to the protocol as an unknown client. " +
+                "Fix the registration in the client store. Violations: {Violations}",
+                client.ClientId,
+                verdict.Violations);
+        }
+
         return null;
     }
 
@@ -88,16 +94,28 @@ internal sealed class ValidatedClientResolver
         {
             return new Verdict(string.Join("; ", ex.AggregatedFailures.Select(f => f.Message)));
         }
+        catch (Exception ex)
+        {
+            // A validator throwing anything else is a bug in the extension point, but the promise
+            // of this type is fail-closed: the registration must still answer as unknown rather
+            // than escape as a 500 from every protocol endpoint.
+            return new Verdict($"The registration validator threw {ex.GetType().Name}: {ex.Message}");
+        }
     }
 
     private sealed class Verdict
     {
         public static readonly Verdict Valid = new(null);
 
+        private int _logged;
+
         public Verdict(string? violations) => Violations = violations;
 
         public string? Violations { get; }
 
         public bool IsValid => Violations is null;
+
+        /// <summary>Returns <see langword="true"/> exactly once per verdict instance.</summary>
+        public bool MarkLogged() => Interlocked.Exchange(ref _logged, 1) == 0;
     }
 }

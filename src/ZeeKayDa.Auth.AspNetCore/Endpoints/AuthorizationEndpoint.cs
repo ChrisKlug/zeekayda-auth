@@ -3,7 +3,6 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.WebUtilities;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
@@ -13,7 +12,7 @@ namespace ZeeKayDa.Auth.AspNetCore.Endpoints;
 
 /// <summary>
 /// The authorization endpoint (<c>/connect/authorize</c>, GET and POST per OIDC Core 1.0
-/// §3.1.2.1). Currently implements request validation and the two-phase error model (#83);
+/// §3.1.2.1). Currently implements request validation and the two-phase error model ;
 /// a fully valid request still answers <c>501</c> until the interaction stages land.
 /// </summary>
 /// <remarks>
@@ -49,6 +48,7 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
 
     private async Task<IResult> Handle(
         AuthorizeRequestValidator validator,
+        AuthorizeErrorTransport errorTransport,
         HttpContext context)
     {
         // Authorization responses carry codes and errors that must never be cached or logged
@@ -59,6 +59,7 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
         if (parameters is null)
             return RenderLocalError(
                 context,
+                errorTransport,
                 AuthorizeRequestErrors.InvalidRequest,
                 "A POST authorization request must use application/x-www-form-urlencoded serialization.");
 
@@ -67,13 +68,13 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
         return result switch
         {
             AuthorizeRequestValidationResult.Valid =>
-                // Validation passed; interaction, consent and code issuance land in #85–#87.
+                // Validation passed; interaction, consent and code issuance are not built yet.
                 PreAlphaNotImplementedResult.Result,
 
             AuthorizeRequestValidationResult.RedirectError redirect => RedirectToClient(redirect),
 
             AuthorizeRequestValidationResult.LocalError local =>
-                RenderLocalError(context, local.Error, local.Description),
+                RenderLocalError(context, errorTransport, local.Error, local.Description),
 
             _ => throw new InvalidOperationException("Unknown validation result type."),
         };
@@ -127,15 +128,13 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
 
     private IResult RenderLocalError(
         HttpContext context,
+        AuthorizeErrorTransport errorTransport,
         string error,
         string description)
     {
         var errorPath = _options.Value.AuthorizationEndpoint.Interaction.ErrorPath;
         if (errorPath is not null)
         {
-            // Resolved lazily so hosts without a configured ErrorPath never need the transport's
-            // Data Protection dependency on this path.
-            var errorTransport = context.RequestServices.GetRequiredService<AuthorizeErrorTransport>();
             var id = errorTransport.CreateAndAttach(context, error, description);
             return Results.Redirect(QueryHelpers.AddQueryString(
                 errorPath, AuthorizeErrorTransport.QueryParameterName, id));

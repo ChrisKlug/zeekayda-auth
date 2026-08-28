@@ -53,26 +53,36 @@ internal sealed partial class AuthorizeRequestValidator
         if (!TryGetSingle(parameters, "redirect_uri", out var redirectUri) || string.IsNullOrEmpty(redirectUri))
             return LocalError();
 
+        // Reject anything the registration validator forbids and the canonicalizing match below
+        // might otherwise wave through — a fragment, userinfo, an IPv6 zone id, or a control/
+        // whitespace character that could survive into the Location header (response splitting).
         if (!Uri.TryCreate(redirectUri, UriKind.Absolute, out var redirectParsed) ||
-            !string.IsNullOrEmpty(redirectParsed.Fragment))
+            !string.IsNullOrEmpty(redirectParsed.Fragment) ||
+            !string.IsNullOrEmpty(redirectParsed.UserInfo) ||
+            RedirectUriValidator.HasIpv6ZoneId(redirectUri) ||
+            ContainsControlOrWhitespace(redirectUri))
         {
             return LocalError();
         }
 
-        if (!AuthorizeRedirectUriMatcher.Matches(redirectUri, client.RedirectUris))
+        if (!AuthorizeRedirectUriMatcher.TryMatch(redirectUri, client.RedirectUris, out var redirectTarget))
             return LocalError();
 
         // ---- Phase 2: the redirect target is trusted; failures redirect to it. ----
+        // redirectTarget is derived from the registration, never the raw presented string.
 
         TryGetSingle(parameters, "state", out var state);
 
         AuthorizeRequestValidationResult.RedirectError Error(string error, string description) =>
-            new() { RedirectUri = redirectUri, Error = error, Description = description, State = state };
+            new() { RedirectUri = redirectTarget, Error = error, Description = description, State = state };
 
-        foreach (var (name, values) in parameters)
+        foreach (var (_, values) in parameters)
         {
+            // The offending parameter name is attacker-controlled and must never be echoed into
+            // error_description — it is redirected to a legitimate client and RFC 6749 §4.1.2.1
+            // restricts the value's character set.
             if (values.Count > 1)
-                return Error(AuthorizeRequestErrors.InvalidRequest, $"The {name} parameter is duplicated.");
+                return Error(AuthorizeRequestErrors.InvalidRequest, "A request parameter is duplicated.");
         }
 
         if (parameters.ContainsKey("request"))
@@ -93,14 +103,17 @@ internal sealed partial class AuthorizeRequestValidator
             return Error(AuthorizeRequestErrors.UnauthorizedClient, "The client may not use the authorization code flow.");
         }
 
-        if (TryGetSingle(parameters, "response_mode", out var responseMode) && responseMode is not null)
+        if (TryGetSingle(parameters, "response_mode", out var responseMode) && responseMode is not null
+            && !string.Equals(responseMode, "query", StringComparison.Ordinal))
         {
-            if (!string.Equals(responseMode, "query", StringComparison.Ordinal))
-                return Error(AuthorizeRequestErrors.InvalidRequest, "Only the query response mode is supported.");
-
-            if (!client.AllowedResponseModes.Contains(ResponseMode.Query))
-                return Error(AuthorizeRequestErrors.UnauthorizedClient, "The client may not use the query response mode.");
+            return Error(AuthorizeRequestErrors.InvalidRequest, "Only the query response mode is supported.");
         }
+
+        // The effective response mode is always query in v1 — the check must run whether or not the
+        // parameter was sent, otherwise a client registered without query silently gets its code in
+        // the query string by simply omitting response_mode.
+        if (!client.AllowedResponseModes.Contains(ResponseMode.Query))
+            return Error(AuthorizeRequestErrors.UnauthorizedClient, "The client may not use the query response mode.");
 
         if (!TryGetSingle(parameters, "scope", out var scope) || string.IsNullOrEmpty(scope))
             return Error(AuthorizeRequestErrors.InvalidScope, "The scope parameter is required.");
@@ -159,7 +172,9 @@ internal sealed partial class AuthorizeRequestValidator
         TimeSpan? maxAge = null;
         if (TryGetSingle(parameters, "max_age", out var maxAgeRaw) && !string.IsNullOrEmpty(maxAgeRaw))
         {
-            if (!long.TryParse(maxAgeRaw, out var maxAgeSeconds) || maxAgeSeconds < 0)
+            // Capped at int.MaxValue seconds (~68 years): larger than any real max_age, and well
+            // below the point where TimeSpan.FromSeconds would overflow and throw out of the endpoint.
+            if (!long.TryParse(maxAgeRaw, out var maxAgeSeconds) || maxAgeSeconds < 0 || maxAgeSeconds > int.MaxValue)
                 return Error(AuthorizeRequestErrors.InvalidRequest, "The max_age parameter is malformed.");
 
             maxAge = TimeSpan.FromSeconds(maxAgeSeconds);
@@ -170,7 +185,7 @@ internal sealed partial class AuthorizeRequestValidator
             Request = new ValidatedAuthorizeRequest
             {
                 Client = client,
-                RedirectUri = redirectUri,
+                RedirectUri = redirectTarget,
                 Scopes = effectiveScopes,
                 State = state,
                 Nonce = nonce,
@@ -187,6 +202,17 @@ internal sealed partial class AuthorizeRequestValidator
         Error = AuthorizeRequestErrors.InvalidRequest,
         Description = LocalErrorDescription,
     };
+
+    private static bool ContainsControlOrWhitespace(string value)
+    {
+        foreach (var c in value)
+        {
+            if (char.IsControl(c) || char.IsWhiteSpace(c))
+                return true;
+        }
+
+        return false;
+    }
 
     private static bool TryGetSingle(
         IReadOnlyDictionary<string, IReadOnlyList<string?>> parameters,

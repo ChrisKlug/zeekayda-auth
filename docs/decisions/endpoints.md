@@ -67,7 +67,7 @@ isolation.
 
 **An advertised-but-unbuilt endpoint answers `501`, not `404`.** Routes are mapped and shaped
 before their implementations land so discovery is stable and the route surface does not shift.
-The token route answers `501` today. The authorization endpoint validates requests (#83) and
+The token route answers `501` today. The authorization endpoint validates requests and
 answers `501` only once validation has passed, until interaction and code issuance land. The JWKS
 endpoint is implemented.
 

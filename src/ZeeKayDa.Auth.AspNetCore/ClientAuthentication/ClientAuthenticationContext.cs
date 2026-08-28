@@ -4,7 +4,8 @@ namespace ZeeKayDa.Auth.AspNetCore.ClientAuthentication;
 
 /// <summary>
 /// Extends <see cref="TokenRequestContext"/> with the registered client that was resolved
-/// from <see cref="ZeeKayDa.Auth.Clients.IClientRepository"/> for the presented
+/// from the registered <see cref="ZeeKayDa.Auth.Clients.IClientRepository"/>, through the
+/// framework's validating resolver, for the presented
 /// <see cref="TokenRequestContext.ClientId"/>. Passed to
 /// <see cref="IClientAuthenticator.AuthenticateAsync"/> after all pre-authentication checks pass.
 /// </summary>

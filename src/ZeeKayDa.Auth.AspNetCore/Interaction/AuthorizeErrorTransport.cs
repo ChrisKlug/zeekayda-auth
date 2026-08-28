@@ -63,10 +63,14 @@ internal sealed class AuthorizeErrorTransport
         context.Response.Cookies.Append(CookieName, Convert.ToBase64String(protectedValue), new CookieOptions
         {
             HttpOnly = true,
-            Secure = context.Request.IsHttps,
+            // Unconditionally Secure: the route group already refuses non-HTTPS except loopback,
+            // and a TLS-terminating proxy without UseForwardedHeaders must not silently downgrade
+            // the cookie. Loopback development over plain HTTP loses the cookie, which is the
+            // visible failure mode we prefer to an invisible hardening loss.
+            Secure = true,
             SameSite = SameSiteMode.Lax,
             MaxAge = Lifetime,
-            Path = _errorPath ?? "/",
+            Path = _errorPath, // only invoked when ErrorPath is configured
             IsEssential = true,
         });
 
