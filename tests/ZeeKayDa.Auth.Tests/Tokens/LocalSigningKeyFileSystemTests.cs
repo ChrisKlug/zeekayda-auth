@@ -397,10 +397,24 @@ public sealed class LocalSigningKeyFileSystemTests : IDisposable
             {
                 // A test may have narrowed or widened a file's mode in a way that blocks deletion;
                 // restore owner write access across the tree before removing it.
-                foreach (var file in Directory.EnumerateFiles(_tempDirectory, "*", SearchOption.AllDirectories))
+                //
+                // ReparsePoint MUST stay in AttributesToSkip. Two tests deliberately plant a
+                // directory symlink to the real /tmp, and a plain SearchOption.AllDirectories walk
+                // follows it — measured, not assumed: it enumerated a file under the link target and
+                // this loop chmod'd it from 0754 to 0600. That would silently re-permission every
+                // file directly in /tmp on the runner. Skipping reparse points stops both the match
+                // and the recursion; Directory.Delete(recursive) below already unlinks rather than
+                // follows, so the planted links still get cleaned up.
+                var withoutFollowingSymlinks = new EnumerationOptions
+                {
+                    RecurseSubdirectories = true,
+                    AttributesToSkip = FileAttributes.ReparsePoint,
+                };
+
+                foreach (var file in Directory.EnumerateFiles(_tempDirectory, "*", withoutFollowingSymlinks))
                     File.SetUnixFileMode(file, UnixFileMode.UserRead | UnixFileMode.UserWrite);
 
-                foreach (var directory in Directory.EnumerateDirectories(_tempDirectory, "*", SearchOption.AllDirectories))
+                foreach (var directory in Directory.EnumerateDirectories(_tempDirectory, "*", withoutFollowingSymlinks))
                     File.SetUnixFileMode(directory, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
             }
 
