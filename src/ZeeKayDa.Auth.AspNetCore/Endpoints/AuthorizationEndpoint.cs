@@ -126,13 +126,18 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
         if (!_contextTransport.TryWrite(context, requestContext))
         {
             // The one phase-2 failure that renders locally rather than redirecting. `state` must
-            // round-trip byte for byte (RFC 6749 §4.1.2.1), so echoing an oversized one produces a
-            // Location the browser cannot follow and the client never receives — a redirect that
-            // fails silently is worse than an error page that does not.
-            return RenderLocalError(
+            // round-trip byte for byte (RFC 6749 §4.1.2.1), so echoing an oversized one builds a
+            // Location whose length depends on how the value percent-encodes — sometimes past what
+            // the client's server will accept, sometimes not. A deterministic error page beats a
+            // redirect that works or fails silently depending on the bytes in `state`. §4.1.2.1
+            // describes redirecting phase-2 errors rather than requiring it; the only MUST NOT is
+            // redirecting to an invalid URI, which this does not do.
+            return FailRequest(
                 context,
-                AuthorizeRequestErrors.InvalidRequest,
-                "The authorization request is too large to process.");
+                () => RenderLocalError(
+                    context,
+                    AuthorizeRequestErrors.InvalidRequest,
+                    "The authorization request is too large to process."));
         }
 
         return PreAlphaNotImplementedResult.Result;

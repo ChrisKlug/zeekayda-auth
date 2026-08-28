@@ -244,20 +244,29 @@ public class AuthorizationRequestContextTransportTests
     {
         DefaultHttpContext? accepted = null;
         AuthorizationRequestContext? acceptedContext = null;
+        var reachedTheGuard = false;
 
-        for (var length = 0; length <= 4_000; length += 50)
+        for (var length = 0; length <= 8_000; length += 50)
         {
             var candidate = new DefaultHttpContext();
             var context = ContextAt(Now) with { State = new string('s', length) };
 
             if (!transport.TryWrite(candidate, context))
+            {
+                reachedTheGuard = true;
                 break;
+            }
 
             accepted = candidate;
             acceptedContext = context;
         }
 
         accepted.Should().NotBeNull("the guard must accept a context of some size");
+        // Without this the search fails open: raise MaxProtectedPayloadBytes past what the loop's
+        // ceiling produces and every caller would quietly assert on a non-boundary case.
+        reachedTheGuard.Should().BeTrue(
+            "the search must actually reach the guard, not run out of candidates below it");
+
         return (accepted!, acceptedContext!);
     }
 

@@ -189,8 +189,12 @@ public sealed class AuthorizationEndpointTests : IDisposable
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         response.Headers.Location.Should().BeNull();
-        response.Headers.Contains("Set-Cookie").Should().BeFalse(
-            "nothing may be written when the context does not fit");
+
+        // No interaction may survive a failed request — including this one, which is the only
+        // failure path that does not redirect.
+        response.Headers.GetValues("Set-Cookie").Should().Contain(c =>
+            c.StartsWith(AuthorizationRequestContextTransport.CookieName + "=")
+            && c.Contains("expires=Thu, 01 Jan 1970"));
     }
 
     [Fact]
