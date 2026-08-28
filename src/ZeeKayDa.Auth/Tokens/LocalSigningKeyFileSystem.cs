@@ -204,7 +204,7 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
     /// <inheritdoc/>
     public bool FileExists(string path) => File.Exists(path);
 
-    [ExcludeFromCodeCoverage(Justification = "Windows-only. Covered by LocalSigningKeyFileSystemTests on the windows-latest runner, but unreachable on the Linux runner whose coverage artifact feeds the regression gate.")]
+    [ExcludeFromCodeCoverage(Justification = "Windows-only, so unreachable on the Linux runner whose coverage artifact feeds the regression gate. LocalSigningKeyFileSystemTests covers this on the windows-latest runner.")]
     [SupportedOSPlatform("windows")]
     private static void EnsureDirectorySafeWindows(string directory)
     {
@@ -301,7 +301,7 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
         }
     }
 
-    [ExcludeFromCodeCoverage(Justification = "Windows-only. Covered by LocalSigningKeyFileSystemTests on the windows-latest runner, but unreachable on the Linux runner whose coverage artifact feeds the regression gate.")]
+    [ExcludeFromCodeCoverage(Justification = "Windows-only, so unreachable on the Linux runner whose coverage artifact feeds the regression gate. LocalSigningKeyFileSystemTests covers this on the windows-latest runner.")]
     [SupportedOSPlatform("windows")]
     private static async ValueTask WriteKeyFileWindowsAsync(string keyPath, ReadOnlyMemory<char> pem, CancellationToken cancellationToken)
     {
@@ -380,7 +380,7 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
     /// unconditionally — Windows has no OS-owned-symlink convention to carve out, unlike the Unix
     /// walk below.
     /// </summary>
-    [ExcludeFromCodeCoverage(Justification = "Windows-only. Covered by LocalSigningKeyFileSystemTests on the windows-latest runner, but unreachable on the Linux runner whose coverage artifact feeds the regression gate.")]
+    [ExcludeFromCodeCoverage(Justification = "Windows-only, so unreachable on the Linux runner whose coverage artifact feeds the regression gate. Only partly covered on the windows-latest runner either: LocalSigningKeyFileSystemTests walks this whenever it reads a key, but its throwing branch is unexercised, because the tests that plant a symlink skip on Windows where creating one needs elevation.")]
     [SupportedOSPlatform("windows")]
     private static void ValidateNoSymlinkedAncestorWindows(string resolvedPath)
     {
@@ -449,7 +449,7 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
             "Symlinks are not permitted anywhere in the key path to prevent redirect attacks. " +
             "Remove the symlink and restart the application."));
 
-    [ExcludeFromCodeCoverage(Justification = "Windows-only. Covered by LocalSigningKeyFileSystemTests on the windows-latest runner, but unreachable on the Linux runner whose coverage artifact feeds the regression gate.")]
+    [ExcludeFromCodeCoverage(Justification = "Windows-only, so unreachable on the Linux runner whose coverage artifact feeds the regression gate. LocalSigningKeyFileSystemTests covers this on the windows-latest runner.")]
     [SupportedOSPlatform("windows")]
     private static void ApplyRestrictiveFileAclWindows(string filePath)
     {
@@ -465,7 +465,7 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
         new FileInfo(filePath).SetAccessControl(security);
     }
 
-    [ExcludeFromCodeCoverage(Justification = "Windows-only. Covered by LocalSigningKeyFileSystemTests on the windows-latest runner, but unreachable on the Linux runner whose coverage artifact feeds the regression gate.")]
+    [ExcludeFromCodeCoverage(Justification = "Windows-only, so unreachable on the Linux runner whose coverage artifact feeds the regression gate. LocalSigningKeyFileSystemTests covers this on the windows-latest runner.")]
     [SupportedOSPlatform("windows")]
     private static void ApplyRestrictiveDirectoryAclWindows(string directoryPath)
     {
