@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
+using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
 using ZeeKayDa.Auth.Authorization;
 
@@ -27,18 +29,33 @@ public class AuthorizationRequestContextTransportTests
     }
 
     [Fact]
-    public void Context_too_large_for_one_cookie_is_chunked_and_still_round_trips()
+    public void Largest_writable_context_still_round_trips()
     {
-        // Chunking is ChunkingCookieManager's job, not ours; this proves we actually delegate to
-        // it rather than silently writing an over-long cookie the browser would drop.
+        // Chunking is ChunkingCookieManager's job, not ours; at the guard the payload sits close
+        // to one cookie's capacity, so this proves we delegate rather than silently writing an
+        // over-long cookie the browser would drop.
         var transport = Transport(out _);
-        var write = new DefaultHttpContext();
-        var context = ContextAt(Now) with { State = new string('s', 5_000) };
+        var (write, context) = WriteLargestAcceptedContext(transport);
 
-        transport.TryWrite(write, context).Should().BeTrue();
-
-        write.Response.Headers.SetCookie.Count.Should().BeGreaterThan(1, "the payload exceeds one cookie");
         transport.TryRead(ReadContextFrom(write)).Should().BeEquivalentTo(context);
+    }
+
+    [Fact]
+    public void Largest_writable_context_stays_within_the_request_header_budget()
+    {
+        // The guard exists to bound the *request* header, not to fill a cookie. Everything written
+        // here is re-sent on every request to Path=/ beside the session, pending and host cookies,
+        // so an over-generous ceiling lets a hostile authorize request wedge the victim's browser
+        // against the issuer host for the interaction's full lifetime.
+        var transport = Transport(out _);
+        var (write, _) = WriteLargestAcceptedContext(transport);
+
+        var cookieHeaderBytes = write.Response.Headers.SetCookie
+            .Sum(header => header!.Split(';')[0].Length);
+
+        cookieHeaderBytes.Should().BeLessThan(4_608,
+            "the interaction cookie alone must fit inside the tightest common proxy header " +
+            "buffer with room left for the session, pending and host cookies");
     }
 
     [Fact]
@@ -150,12 +167,98 @@ public class AuthorizationRequestContextTransportTests
         setCookie.Should().NotContain("client.example.com").And.NotContain("n-0S6_WzA2Mj");
     }
 
+    [Fact]
+    public void Context_is_not_readable_at_the_expiry_instant()
+    {
+        var transport = Transport(out var time);
+        var write = new DefaultHttpContext();
+        transport.TryWrite(write, ContextAt(Now)).Should().BeTrue();
+
+        time.Advance(AuthorizationRequestContextTransport.Lifetime);
+
+        transport.TryRead(ReadContextFrom(write)).Should().BeNull(
+            "expiry is exclusive — the instant the window closes is outside it");
+    }
+
+    [Fact]
+    public void Error_transport_cookie_cannot_be_read_as_an_interaction_context()
+    {
+        // Both cookies are protected on the same key ring. Only the Data Protection purpose keeps
+        // one from being accepted as the other, so it is worth an assertion rather than trust.
+        var time = new FakeTimeProvider(Now);
+        var keyRing = new EphemeralDataProtectionProvider();
+
+        var options = new AuthorizationServerOptions();
+        options.AuthorizationEndpoint.Interaction.ErrorPath = "/auth-error";
+        var errorTransport = new AuthorizeErrorTransport(keyRing, Options.Create(options), time);
+
+        var write = new DefaultHttpContext();
+        errorTransport.CreateAndAttach(write, "invalid_request", "The request is invalid.");
+
+        var read = new DefaultHttpContext();
+        read.Request.Headers.Cookie =
+            $"{AuthorizationRequestContextTransport.CookieName}=" +
+            write.Response.Headers.SetCookie.ToString().Split('=')[1].Split(';')[0];
+
+        new AuthorizationRequestContextTransport(keyRing, time).TryRead(read).Should().BeNull();
+    }
+
+    [Fact]
+    public void Interaction_cookie_cannot_be_read_as_an_error_transport_cookie()
+    {
+        var time = new FakeTimeProvider(Now);
+        var keyRing = new EphemeralDataProtectionProvider();
+
+        var write = new DefaultHttpContext();
+        new AuthorizationRequestContextTransport(keyRing, time).TryWrite(write, ContextAt(Now))
+            .Should().BeTrue();
+
+        var options = new AuthorizationServerOptions();
+        options.AuthorizationEndpoint.Interaction.ErrorPath = "/auth-error";
+
+        var read = new DefaultHttpContext();
+        read.Request.Headers.Cookie =
+            $"{AuthorizeErrorTransport.CookieName}=" +
+            write.Response.Headers.SetCookie.ToString().Split('=')[1].Split(';')[0];
+        read.Request.QueryString = new QueryString($"?{AuthorizeErrorTransport.QueryParameterName}=any");
+
+        new AuthorizeErrorTransport(keyRing, Options.Create(options), time).TryRead(read)
+            .Should().BeNull();
+    }
+
     // ── Fixture ───────────────────────────────────────────────────────────────────────────────
 
     private static AuthorizationRequestContextTransport Transport(out FakeTimeProvider time)
     {
         time = new FakeTimeProvider(Now);
         return new AuthorizationRequestContextTransport(new EphemeralDataProtectionProvider(), time);
+    }
+
+    /// <summary>
+    /// Writes the largest context the size guard accepts, found by growing <c>state</c> until it
+    /// is refused. Derived rather than hard-coded: the encrypted payload's exact size depends on
+    /// the Data Protection version, and a constant here would silently stop testing the boundary.
+    /// </summary>
+    private static (DefaultHttpContext Written, AuthorizationRequestContext Context)
+        WriteLargestAcceptedContext(AuthorizationRequestContextTransport transport)
+    {
+        DefaultHttpContext? accepted = null;
+        AuthorizationRequestContext? acceptedContext = null;
+
+        for (var length = 0; length <= 4_000; length += 50)
+        {
+            var candidate = new DefaultHttpContext();
+            var context = ContextAt(Now) with { State = new string('s', length) };
+
+            if (!transport.TryWrite(candidate, context))
+                break;
+
+            accepted = candidate;
+            acceptedContext = context;
+        }
+
+        accepted.Should().NotBeNull("the guard must accept a context of some size");
+        return (accepted!, acceptedContext!);
     }
 
     private static DefaultHttpContext ReadContextFrom(HttpContext written)

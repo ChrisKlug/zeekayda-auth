@@ -27,15 +27,18 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
 {
     private readonly IOptions<AuthorizationServerOptions> _options;
     private readonly AuthorizationRequestContextTransport _contextTransport;
+    private readonly AuthorizeErrorTransport _errorTransport;
     private readonly TimeProvider _timeProvider;
 
     public AuthorizationEndpoint(
         IOptions<AuthorizationServerOptions> options,
         AuthorizationRequestContextTransport contextTransport,
+        AuthorizeErrorTransport errorTransport,
         TimeProvider timeProvider)
     {
         _options = options;
         _contextTransport = contextTransport;
+        _errorTransport = errorTransport;
         _timeProvider = timeProvider;
     }
 
@@ -55,10 +58,7 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
             .RequireIssuerHost(endpointUri);
     }
 
-    private async Task<IResult> Handle(
-        AuthorizeRequestValidator validator,
-        AuthorizeErrorTransport errorTransport,
-        HttpContext context)
+    private async Task<IResult> Handle(AuthorizeRequestValidator validator, HttpContext context)
     {
         // Authorization responses carry codes and errors that must never be cached or logged
         // from an intermediary cache (RFC 6749 §10.12 guidance, RFC 9700 §4.16).
@@ -68,7 +68,6 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
         if (parameters is null)
             return RenderLocalError(
                 context,
-                errorTransport,
                 AuthorizeRequestErrors.InvalidRequest,
                 "A POST authorization request must use application/x-www-form-urlencoded serialization.");
 
@@ -79,13 +78,25 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
             AuthorizeRequestValidationResult.Valid valid =>
                 BeginInteraction(context, valid.Request),
 
-            AuthorizeRequestValidationResult.RedirectError redirect => RedirectToClient(redirect),
+            AuthorizeRequestValidationResult.RedirectError redirect => FailRequest(
+                context, () => RedirectToClient(redirect)),
 
-            AuthorizeRequestValidationResult.LocalError local =>
-                RenderLocalError(context, errorTransport, local.Error, local.Description),
+            AuthorizeRequestValidationResult.LocalError local => FailRequest(
+                context, () => RenderLocalError(context, local.Error, local.Description)),
 
             _ => throw new InvalidOperationException("Unknown validation result type."),
         };
+    }
+
+    /// <summary>
+    /// Clears any interaction context before answering an error. A request that fails validation
+    /// must not leave an earlier interaction alive to be picked up by the next sign-in — including
+    /// one a cross-site request planted.
+    /// </summary>
+    private IResult FailRequest(HttpContext context, Func<IResult> respond)
+    {
+        _contextTransport.Delete(context);
+        return respond();
     }
 
     /// <summary>
@@ -114,15 +125,14 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
 
         if (!_contextTransport.TryWrite(context, requestContext))
         {
-            // The request is too large to carry through the flow. The redirect URI is already
-            // authenticated at this point, so this is a phase-2 failure and belongs to the client.
-            return RedirectToClient(new AuthorizeRequestValidationResult.RedirectError
-            {
-                RedirectUri = request.RedirectUri,
-                Error = AuthorizeRequestErrors.InvalidRequest,
-                Description = "The authorization request is too large to process.",
-                State = request.State,
-            });
+            // The one phase-2 failure that renders locally rather than redirecting. `state` must
+            // round-trip byte for byte (RFC 6749 §4.1.2.1), so echoing an oversized one produces a
+            // Location the browser cannot follow and the client never receives — a redirect that
+            // fails silently is worse than an error page that does not.
+            return RenderLocalError(
+                context,
+                AuthorizeRequestErrors.InvalidRequest,
+                "The authorization request is too large to process.");
         }
 
         return PreAlphaNotImplementedResult.Result;
@@ -174,16 +184,12 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
         return Results.Redirect(QueryHelpers.AddQueryString(error.RedirectUri, query));
     }
 
-    private IResult RenderLocalError(
-        HttpContext context,
-        AuthorizeErrorTransport errorTransport,
-        string error,
-        string description)
+    private IResult RenderLocalError(HttpContext context, string error, string description)
     {
         var errorPath = _options.Value.AuthorizationEndpoint.Interaction.ErrorPath;
         if (errorPath is not null)
         {
-            var id = errorTransport.CreateAndAttach(context, error, description);
+            var id = _errorTransport.CreateAndAttach(context, error, description);
             return Results.Redirect(QueryHelpers.AddQueryString(
                 errorPath, AuthorizeErrorTransport.QueryParameterName, id));
         }

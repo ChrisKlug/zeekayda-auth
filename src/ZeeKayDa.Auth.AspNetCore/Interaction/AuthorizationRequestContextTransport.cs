@@ -41,7 +41,17 @@ internal sealed class AuthorizationRequestContextTransport
     /// oversized request fails legibly at the request that caused it, rather than as a header some
     /// proxy rejects on the next hop.
     /// </summary>
-    internal const int MaxProtectedPayloadBytes = 8 * 1024;
+    /// <remarks>
+    /// The number is set from the <em>request</em> header budget, not from what one cookie holds.
+    /// Base64 inflates by a third and chunking adds a name per chunk, so the bytes this permits are
+    /// re-sent on every request to <c>Path=/</c> alongside the session, pending and host cookies.
+    /// At 3 KB the interaction cookie stays near 4 KB of <c>Cookie:</c> header, inside the
+    /// tightest common proxy buffer, while still carrying a <c>state</c> larger than any real
+    /// client sends. A higher ceiling turns a hostile authorize request into a wedged browser: the
+    /// victim's every subsequent request to the issuer host is rejected for the interaction's full
+    /// lifetime, with nothing to see and nothing to clear.
+    /// </remarks>
+    internal const int MaxProtectedPayloadBytes = 3 * 1024;
 
     private static readonly string DataProtectionPurpose = "ZeeKayDa.Auth:AuthorizationRequestContext";
 

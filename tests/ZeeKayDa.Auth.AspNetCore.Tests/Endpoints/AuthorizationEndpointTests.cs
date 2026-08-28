@@ -175,28 +175,38 @@ public sealed class AuthorizationEndpointTests : IDisposable
     }
 
     [Fact]
-    public async Task Request_too_large_to_carry_redirects_to_the_client_as_invalid_request()
+    public async Task Request_too_large_to_carry_renders_locally_rather_than_redirecting()
     {
-        // state is deliberately not length-capped: a cap taxes honest clients and merely
-        // relocates a careless one's failure. The guard is on the encoded context, and it must
-        // fail here — at the request that caused it — rather than as an unreadable header on the
-        // next hop. Phase 2, so the redirect URI is already authenticated and the error is the
-        // client's to see.
+        // state is deliberately not length-capped: a cap taxes honest clients and merely relocates
+        // a careless one's failure. The guard is on the encoded context. This is the one phase-2
+        // failure that does not redirect — state must round-trip byte for byte (RFC 6749
+        // §4.1.2.1), so echoing an oversized one produces a Location the browser cannot follow.
         var form = ValidQuery();
         form["state"] = new string('s', 20_000);
 
         using var content = new FormUrlEncodedContent(form!);
         var response = await _client.PostAsync("/connect/authorize", content, TestContext.Current.CancellationToken);
 
-        response.StatusCode.Should().Be(HttpStatusCode.Redirect);
-        response.Headers.Location!.OriginalString.Should().StartWith(RegisteredRedirect);
-
-        var parameters = QueryHelpers.ParseQuery(response.Headers.Location!.Query);
-        parameters["error"].ToString().Should().Be("invalid_request");
-        parameters["state"].ToString().Should().Be(form["state"]);
-
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.Headers.Location.Should().BeNull();
         response.Headers.Contains("Set-Cookie").Should().BeFalse(
             "nothing may be written when the context does not fit");
+    }
+
+    [Fact]
+    public async Task Failed_request_clears_any_interaction_context()
+    {
+        // A cross-site request can plant an interaction context that the victim's next sign-in
+        // would otherwise pick up. A request that fails validation must not leave one alive.
+        var query = ValidQuery();
+        query["response_type"] = "token";
+
+        var response = await _client.GetAsync(
+            AuthorizeUrl(query), TestContext.Current.CancellationToken);
+
+        response.Headers.GetValues("Set-Cookie").Should().Contain(c =>
+            c.StartsWith(AuthorizationRequestContextTransport.CookieName + "=")
+            && c.Contains("expires=Thu, 01 Jan 1970"));
     }
 
     // ── ErrorPath handoff ─────────────────────────────────────────────────────────────────────

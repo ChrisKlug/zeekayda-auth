@@ -142,6 +142,26 @@ public class AuthorizationRequestContextSerializerTests
         encoded.Length.Should().BeLessThan(400);
     }
 
+    [Fact]
+    public void Context_with_an_empty_redirect_uri_is_refused()
+    {
+        // An empty redirect target would make the client redirect relative — pointing back at the
+        // authorization server rather than at the client.
+        var payload = AuthorizationRequestContextSerializer.Encode(
+            MinimalContext() with { RedirectUri = "" });
+
+        AuthorizationRequestContextSerializer.TryDecode(payload, out var decoded).Should().BeFalse();
+        decoded.Should().BeNull();
+    }
+
+    [Fact]
+    public void Context_with_no_scopes_is_refused()
+    {
+        var payload = AuthorizationRequestContextSerializer.Encode(MinimalContext() with { Scopes = [] });
+
+        AuthorizationRequestContextSerializer.TryDecode(payload, out _).Should().BeFalse();
+    }
+
     private static AuthorizationRequestContext MinimalContext() => new()
     {
         Id = "interaction-id",

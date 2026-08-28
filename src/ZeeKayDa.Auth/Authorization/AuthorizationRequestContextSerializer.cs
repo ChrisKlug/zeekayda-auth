@@ -49,7 +49,7 @@ internal static class AuthorizationRequestContextSerializer
         writer.Write(context.CodeChallenge);
         writer.Write((byte)context.CodeChallengeMethod);
 
-        writer.Write((byte)context.Prompts.Count);
+        writer.Write7BitEncodedInt(context.Prompts.Count);
         foreach (var prompt in context.Prompts)
             writer.Write((byte)prompt);
 
@@ -94,7 +94,10 @@ internal static class AuthorizationRequestContextSerializer
             if (!Enum.IsDefined(challengeMethod))
                 return false;
 
-            var promptCount = reader.ReadByte();
+            var promptCount = reader.Read7BitEncodedInt();
+            if (promptCount < 0)
+                return false;
+
             var prompts = new HashSet<PromptValue>();
             for (var i = 0; i < promptCount; i++)
             {
@@ -138,6 +141,13 @@ internal static class AuthorizationRequestContextSerializer
             if (buffer.Position != buffer.Length)
                 return false;
 
+            // Every field validation guarantees non-empty must decode non-empty. Nothing should be
+            // able to produce a context the flow would act on with a blank redirect target — an
+            // empty RedirectUri turns the client redirect into a relative one, pointing back at
+            // the authorization server.
+            if (!IsComplete(decoded))
+                return false;
+
             context = decoded;
             return true;
         }
@@ -146,6 +156,19 @@ internal static class AuthorizationRequestContextSerializer
             return false;
         }
     }
+
+    /// <summary>
+    /// Rejects a decoded context missing a value the validator guarantees. The payload is
+    /// encrypted, so this is not a defence against a forged one — it is a floor under what the
+    /// rest of the flow may be handed if this format is ever written wrongly.
+    /// </summary>
+    private static bool IsComplete(AuthorizationRequestContext context) =>
+        !string.IsNullOrEmpty(context.Id) &&
+        !string.IsNullOrEmpty(context.ClientId) &&
+        !string.IsNullOrEmpty(context.RedirectUri) &&
+        !string.IsNullOrEmpty(context.Nonce) &&
+        !string.IsNullOrEmpty(context.CodeChallenge) &&
+        context.Scopes.Count > 0;
 
     private static void WriteStrings(BinaryWriter writer, IReadOnlyList<string> values)
     {
