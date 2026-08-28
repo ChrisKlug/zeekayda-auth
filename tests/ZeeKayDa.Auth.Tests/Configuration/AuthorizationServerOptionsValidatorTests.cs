@@ -1440,4 +1440,34 @@ public sealed class AuthorizationServerOptionsValidatorTests
         var prop = group.GetType().GetProperty(parts[1])!;
         prop.SetValue(group, value);
     }
+
+    [Theory]
+    [InlineData("auth-error")]                        // no leading slash
+    [InlineData("//evil.example.com/error")]          // protocol-relative — an open redirect
+    [InlineData("/auth-error?x=1")]                   // query not allowed
+    [InlineData("/auth-error#frag")]                  // fragment not allowed
+    public void Validate_rejects_malformed_interaction_ErrorPath(string errorPath)
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            AuthorizationEndpoint = { Interaction = { ErrorPath = errorPath } },
+        });
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("Interaction.ErrorPath");
+    }
+
+    [Fact]
+    public void Validate_accepts_an_absolute_path_ErrorPath()
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            AuthorizationEndpoint = { Interaction = { ErrorPath = "/auth-error" } },
+        });
+
+        result.Succeeded.Should().BeTrue();
+    }
 }
+

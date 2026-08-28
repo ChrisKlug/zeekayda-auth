@@ -43,6 +43,21 @@ public sealed class CompositeClientAuthenticatorTests
         public IClientSecret Create(ReadOnlySpan<char> plaintext) => new FakeSecret();
     }
 
+    private sealed class PassingRegistrationValidator : IClientRegistrationValidator
+    {
+        public void Validate(IClientRegistration client)
+        {
+            // Deliberately accepts everything: these tests exercise the composite's dispatch
+            // rules with minimal fake registrations, not registration validation, which has its
+            // own suites (ClientRegistrationValidatorTests, ValidatedClientResolverTests).
+        }
+    }
+
+    private static ValidatedClientResolver Resolver(IClientRegistration? client) => new(
+        new FakeClientRepository(client),
+        new PassingRegistrationValidator(),
+        NullSanitizingLogger<ValidatedClientResolver>());
+
     private sealed class FakeClientRepository : IClientRepository
     {
         private readonly IClientRegistration? _client;
@@ -177,7 +192,7 @@ public sealed class CompositeClientAuthenticatorTests
 
         var composite = new CompositeClientAuthenticator(
             [authenticator],
-            new FakeClientRepository(client),
+            Resolver(client),
             serverOptions,
             compositeHasher,
             NullSanitizingLogger<CompositeClientAuthenticator>());
@@ -306,7 +321,7 @@ public sealed class CompositeClientAuthenticatorTests
                 new AlwaysHandlesAuthenticator("method_a"),
                 new AlwaysHandlesAuthenticator("method_b"),
             ],
-            new FakeClientRepository(client),
+            Resolver(client),
             CreateServerOptions(TokenEndpointAuthMethods.ClientSecretBasic),
             compositeHasher,
             NullSanitizingLogger<CompositeClientAuthenticator>());
@@ -766,7 +781,7 @@ public sealed class CompositeClientAuthenticatorTests
         // and is suppressed, matches is empty → none fallback → rejected (none not in allowlist).
         var composite = new CompositeClientAuthenticator(
             [new ThrowingCanHandleAuthenticator()],
-            new FakeClientRepository(CreatePublicClient()),
+            Resolver(CreatePublicClient()),
             CreateServerOptions(TokenEndpointAuthMethods.ClientSecretBasic),
             compositeHasher,
             NullSanitizingLogger<CompositeClientAuthenticator>());
@@ -799,7 +814,7 @@ public sealed class CompositeClientAuthenticatorTests
 
         var composite = new CompositeClientAuthenticator(
             [new ThrowingCanHandleAuthenticator()],
-            new FakeClientRepository(CreatePublicClient()),
+            Resolver(CreatePublicClient()),
             CreateServerOptions(TokenEndpointAuthMethods.ClientSecretBasic),
             compositeHasher,
             logger);
@@ -837,7 +852,7 @@ public sealed class CompositeClientAuthenticatorTests
 
         var composite = new CompositeClientAuthenticator(
             [mismatchedAuthenticator],
-            new FakeClientRepository(client),
+            Resolver(client),
             CreateServerOptions("client_secret_basic", "undeclared_method"),
             compositeHasher,
             NullSanitizingLogger<CompositeClientAuthenticator>());
@@ -877,7 +892,7 @@ public sealed class CompositeClientAuthenticatorTests
 
         var composite = new CompositeClientAuthenticator(
             [customAuthenticator],
-            new FakeClientRepository(client),
+            Resolver(client),
             CreateServerOptions("client_secret_basic"),
             compositeHasher,
             NullSanitizingLogger<CompositeClientAuthenticator>());
@@ -905,7 +920,7 @@ public sealed class CompositeClientAuthenticatorTests
 
         var composite = new CompositeClientAuthenticator(
             [new ClientSecretAuthenticator(compositeHasher)],
-            new FakeClientRepository(null),
+            Resolver(null),
             CreateServerOptions(TokenEndpointAuthMethods.None),
             compositeHasher,
             NullSanitizingLogger<CompositeClientAuthenticator>());
@@ -939,7 +954,7 @@ public sealed class CompositeClientAuthenticatorTests
 
         var composite = new CompositeClientAuthenticator(
             [new ClientSecretAuthenticator(compositeHasher)],
-            new FakeClientRepository(corruptClient),
+            Resolver(corruptClient),
             CreateServerOptions(TokenEndpointAuthMethods.None),
             compositeHasher,
             NullSanitizingLogger<CompositeClientAuthenticator>());
@@ -977,7 +992,7 @@ public sealed class CompositeClientAuthenticatorTests
 
         var composite = new CompositeClientAuthenticator(
             [new ClientSecretAuthenticator(compositeHasher)],
-            new FakeClientRepository(corruptClient),
+            Resolver(corruptClient),
             CreateServerOptions(TokenEndpointAuthMethods.None),
             compositeHasher,
             NullSanitizingLogger<CompositeClientAuthenticator>());

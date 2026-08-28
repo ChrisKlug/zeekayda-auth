@@ -43,4 +43,9 @@ public sealed class AuthorizationEndpointOptions
     /// </para>
     /// </remarks>
     public TimeSpan AuthorizationCodeLifetime { get; set; } = TimeSpan.FromSeconds(60);
+
+    /// <summary>
+    /// Gets the paths of the host-owned interaction pages the authorization flow hands off to.
+    /// </summary>
+    public InteractionOptions Interaction { get; } = new();
 }

@@ -31,6 +31,19 @@ ZeeKayDa.Auth.AspNetCore.Clients.IInMemoryClientRegistrationBuilder
 ZeeKayDa.Auth.AspNetCore.Clients.IInMemoryClientRegistrationBuilder.Add(ZeeKayDa.Auth.Clients.IClientRegistration! registration) -> ZeeKayDa.Auth.AspNetCore.Clients.IInMemoryClientRegistrationBuilder!
 ZeeKayDa.Auth.AspNetCore.Clients.IInMemoryClientRegistrationBuilder.AddConfidential(string! clientId, string! clientSecret, System.Collections.Generic.IEnumerable<string!>! redirectUris, System.Collections.Generic.IEnumerable<string!>! postLogoutRedirectUris, System.Collections.Generic.IEnumerable<string!>! allowedScopes) -> ZeeKayDa.Auth.AspNetCore.Clients.IInMemoryClientRegistrationBuilder!
 ZeeKayDa.Auth.AspNetCore.Clients.IInMemoryClientRegistrationBuilder.AddPublic(string! clientId, System.Collections.Generic.IEnumerable<string!>! redirectUris, System.Collections.Generic.IEnumerable<string!>! postLogoutRedirectUris, System.Collections.Generic.IEnumerable<string!>! allowedScopes) -> ZeeKayDa.Auth.AspNetCore.Clients.IInMemoryClientRegistrationBuilder!
+ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails
+ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails.<Clone>$() -> ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails!
+ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails.AuthorizationErrorDetails() -> void
+ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails.Description.get -> string!
+ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails.Description.init -> void
+ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails.Equals(ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails? other) -> bool
+ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails.Error.get -> string!
+ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails.Error.init -> void
+ZeeKayDa.Auth.AspNetCore.Interaction.IErrorInteraction
+ZeeKayDa.Auth.AspNetCore.Interaction.IErrorInteraction.GetErrorAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails?>
+override ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails.Equals(object? obj) -> bool
+override ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails.GetHashCode() -> int
+override ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails.ToString() -> string!
 static Microsoft.AspNetCore.Builder.ZeeKayDaAuthEndpointRouteBuilderExtensions.MapZeeKayDaAuth(this Microsoft.AspNetCore.Routing.IEndpointRouteBuilder! endpoints) -> Microsoft.AspNetCore.Routing.IEndpointRouteBuilder!
 static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthBuilderAuthenticatorExtensions.AddClientAuthenticator<TAuthenticator>(this ZeeKayDa.Auth.ZeeKayDaAuthBuilder! builder) -> ZeeKayDa.Auth.ZeeKayDaAuthBuilder!
 static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthBuilderClientExtensions.AddInMemoryClients(this ZeeKayDa.Auth.ZeeKayDaAuthBuilder! builder, System.Action<ZeeKayDa.Auth.AspNetCore.Clients.IInMemoryClientRegistrationBuilder!>! configure) -> ZeeKayDa.Auth.ZeeKayDaAuthBuilder!
@@ -50,3 +63,5 @@ static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthBuilderStoreExtensio
 static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthServiceCollectionExtensions.AddZeeKayDaAuth(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Action<ZeeKayDa.Auth.AuthorizationServerOptions!>! configure) -> ZeeKayDa.Auth.ZeeKayDaAuthBuilder!
 static ZeeKayDa.Auth.AspNetCore.ClientAuthentication.ClientAuthenticationResult.NotValid() -> ZeeKayDa.Auth.AspNetCore.ClientAuthentication.ClientAuthenticationResult!
 static ZeeKayDa.Auth.AspNetCore.ClientAuthentication.ClientAuthenticationResult.Valid() -> ZeeKayDa.Auth.AspNetCore.ClientAuthentication.ClientAuthenticationResult!
+static ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails.operator !=(ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails? left, ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails? right) -> bool
+static ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails.operator ==(ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails? left, ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails? right) -> bool

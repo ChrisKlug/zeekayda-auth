@@ -291,6 +291,20 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
                 "AuthorizationServerOptions.AuthorizationEndpoint.AuthorizationCodeLifetime must be greater than zero.");
         }
 
+        // A malformed ErrorPath would turn the local-error safety net into an open redirect.
+        if (options.AuthorizationEndpoint.Interaction.ErrorPath is { } errorPath &&
+            (!errorPath.StartsWith('/') ||
+             errorPath.StartsWith("//", StringComparison.Ordinal) ||
+             errorPath.Contains('?') ||
+             errorPath.Contains('#') ||
+             !Uri.TryCreate(errorPath, UriKind.Relative, out _)))
+        {
+            errors.Add(
+                "AuthorizationServerOptions.AuthorizationEndpoint.Interaction.ErrorPath must be an " +
+                "absolute path within the host application (starting with '/'), without scheme, " +
+                "authority, query, or fragment.");
+        }
+
         // A negative ClockSkewTolerance silently rejects tokens before their stated
         // expiry, producing false rejections with no surfaced error.
         if (options.ClockSkewTolerance < TimeSpan.Zero)

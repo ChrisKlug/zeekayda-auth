@@ -14,8 +14,8 @@ public sealed class TokenIssuanceContextTests
         public IReadOnlySet<string> PostLogoutRedirectUris => new HashSet<string>();
         public IReadOnlySet<string> AllowedScopes => new HashSet<string>();
         public IReadOnlySet<GrantType> AllowedGrantTypes => new HashSet<GrantType>();
-        public IReadOnlySet<Authorization.ResponseType> AllowedResponseTypes => new HashSet<Authorization.ResponseType>();
-        public IReadOnlySet<Authorization.ResponseMode> AllowedResponseModes => new HashSet<Authorization.ResponseMode>();
+        public IReadOnlySet<ZeeKayDa.Auth.Authorization.ResponseType> AllowedResponseTypes => new HashSet<ZeeKayDa.Auth.Authorization.ResponseType>();
+        public IReadOnlySet<ZeeKayDa.Auth.Authorization.ResponseMode> AllowedResponseModes => new HashSet<ZeeKayDa.Auth.Authorization.ResponseMode>();
         public IReadOnlySet<string> AllowedTokenEndpointAuthMethods => new HashSet<string>();
         public bool EnableZkdErrorCodes => false;
     }

@@ -8,6 +8,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **The authorization endpoint validates requests: `/connect/authorize` implements the two-phase validation and error model** (#83)
+
+  The pre-alpha `501` stub is replaced by a routed endpoint (GET and POST) that validates every
+  request before anything else happens. Phase 1 authenticates the redirect target — `client_id`
+  looked up and `redirect_uri` matched exactly against the registration (loopback port variance
+  only, RFC 8252 §7.3) — and its failures render locally, never redirecting: a minimal 400 page
+  by default, or a redirect to the host's `AuthorizationEndpoint.Interaction.ErrorPath` carrying
+  only an opaque identifier, with details served to the page via the new `IErrorInteraction`
+  service from an encrypted, short-lived transport cookie. Phase 2 failures redirect to the
+  validated client with `error`, `state` echoed when present, and `iss` always (RFC 9207):
+  `response_type=code` only, PKCE `code_challenge` required with `S256` only, `nonce` required,
+  `request`/`request_uri` refused, duplicate parameters rejected, and scopes silently narrowed to
+  the client's allowed set (empty intersection is `invalid_scope`; `openid` is required in v1).
+  A fully valid request answers `501` until the interaction stages land (#85–#87).
+
+- **`ValidatedClientResolver` — client registrations are validated by the framework at the point of use** (#83)
+
+  Endpoints no longer consume `IClientRepository` directly. An internal resolver wraps it and runs
+  `IClientRegistrationValidator` on every served registration (memoized per instance): a
+  registration that fails answers as an unknown client — fail closed, enumeration-safe — while a
+  critical log entry names the client and the violated rules for the operator. A custom store fed
+  by a typo'd or malicious database row can no longer hand the protocol an unvalidated redirect
+  URI. Token-endpoint client authentication resolves through the same path.
+
 - **The JWKS endpoint is implemented: `connect/jwks` serves the signing key ring's published keys as an RFC 7517 JWK Set** (#514)
 
   The pre-alpha `501` stub is replaced by a real endpoint serving every configured slot
