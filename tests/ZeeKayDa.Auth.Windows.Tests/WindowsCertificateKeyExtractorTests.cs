@@ -114,18 +114,55 @@ public sealed class WindowsCertificateKeyExtractorTests
     [Fact]
     public void ExtractPrivateKey_throws_private_key_not_found_when_certificate_has_no_private_key()
     {
-        // Distinct from the "key exists but this process cannot access it" branch, which additionally
-        // includes the resolved process identity (exercised at the ProcessIdentityHelper.FormatIdentitySuffix
-        // level in ZeeKayDa.Auth.Tests — reproducing a real restrictive CNG key ACL is not practical in
-        // a portable unit test): this is the "no private key installed alongside the certificate"
-        // branch, which never mentions a process identity at all.
+        // Distinct from the "key exists but this process cannot access it" branch below, which
+        // additionally includes the resolved process identity: this is the "no private key installed
+        // alongside the certificate" branch, which never mentions a process identity at all.
         using var certificate = TestCertificateFactory.CreateRsaSelfSigned(
             "test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365), withPrivateKey: false);
 
         var act = () => WindowsCertificateKeyExtractor.ExtractPrivateKey(certificate, "AABBCC");
 
-        act.Should().Throw<ZeeKayDaConfigurationException>().WithMessage("*private_key_not_found*")
-            .Which.Message.Should().NotContain("running as");
+        var message = act.Should().Throw<ZeeKayDaConfigurationException>()
+            .WithMessage("*private_key_not_found*").Which.Message;
+        message.Should().Contain("AABBCC").And.Contain("no private key installed")
+            .And.Contain("AddWindowsCertificateStoreSigning")
+            .And.Contain("accessible private key");
+        message.Should().NotContain("running as");
+    }
+
+    [Fact]
+    public void ExtractPrivateKey_throws_private_key_not_found_when_the_private_key_cannot_be_accessed()
+    {
+        // The other half of the private_key_not_found code: HasPrivateKey is true, but neither
+        // accessor hands back a handle - in production that is a restrictive CNG key ACL, which no
+        // portable test can reproduce. A DSA private key produces the identical shape (present, but
+        // unreachable through GetRSAPrivateKey()/GetECDsaPrivateKey()), so it stands in for one.
+        Assert.SkipWhen(OperatingSystem.IsMacOS(), "DSA is not supported on macOS");
+        using var certificate = TestCertificateFactory.CreateDsaSelfSigned(
+            "test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+        certificate.HasPrivateKey.Should().BeTrue("the branch under test is only reached with a private key present");
+
+        var act = () => WindowsCertificateKeyExtractor.ExtractPrivateKey(certificate, "AABBCC");
+
+        var message = act.Should().Throw<ZeeKayDaConfigurationException>()
+            .WithMessage("*private_key_not_found*").Which.Message;
+        message.Should().Contain("AABBCC").And.Contain("could not be accessed by this process")
+            .And.Contain("running as", "an access failure must name the identity that was denied")
+            .And.Contain("Manage Private Keys");
+    }
+
+    [Fact]
+    public void ExtractPublicKey_throws_unsupported_key_type_for_a_certificate_that_is_neither_RSA_nor_EC()
+    {
+        using var certificate = TestCertificateFactory.CreateUnsupportedKeyTypeSelfSigned(
+            "test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+
+        var act = () => WindowsCertificateKeyExtractor.ExtractPublicKey(certificate, "AABBCC");
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .WithMessage("*unsupported_key_type*")
+            .Which.Message.Should().Contain("AABBCC").And.Contain("does not carry an RSA or EC public key")
+            .And.Contain("Only RSA and EC");
     }
 
     // FormatIdentitySuffix/TryResolveProcessIdentity now live in the shared
