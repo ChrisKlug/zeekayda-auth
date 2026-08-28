@@ -46,9 +46,12 @@ builder.Services
 `RemoteAuthenticationOptions`-derived handler it registered, *after* the host's configuration
 callback has run, so neither can be silently overridden.
 
-**Open question.** Whether providers stay on a separate builder call or move inside the options
-lambda (`o => o.AddFacebook(...)`), which reads better but cannot hand out an
-`AuthenticationBuilder`. Unresolved.
+**Settled: providers stay on `WithProviders`, not inside the options lambda.** The alternative
+(`o => o.AddFacebook(...)`) reads better at the call site, and that was the shape originally
+sketched, but it cannot hand out an `AuthenticationBuilder` — which would mean reimplementing every
+provider package rather than accepting the ones that already exist. Delegating to ASP.NET Core's
+own builder is the whole reason a host gets `AddFacebook`, `AddGoogle`, `AddOpenIdConnect` and
+anything else on NuGet for free.
 
 ## The flow, end to end
 
