@@ -76,7 +76,16 @@ internal sealed partial class AuthorizeRequestValidator
 
         // The redirect target is now trusted, so from here failures are delivered to the client.
         var context = new RequestContext(parameters, target.Client);
-        var problem = Phase2Rules.Select(rule => rule(context)).FirstOrDefault(p => p is not null);
+
+        // An explicit loop, not LINQ: the rules have side effects (they parse values onto the
+        // context), so short-circuiting must not depend on deferred execution.
+        Problem? problem = null;
+        foreach (var rule in Phase2Rules)
+        {
+            problem = rule(context);
+            if (problem is not null)
+                break;
+        }
 
         TryGetSingle(parameters, "state", out var state);
 
@@ -221,18 +230,28 @@ internal sealed partial class AuthorizeRequestValidator
             ? null
             : new Problem(AuthorizeRequestErrors.InvalidScope, "The openid scope is required.");
 
-    private static Problem? NonceIsPresent(RequestContext context) =>
-        string.IsNullOrEmpty(context.Single("nonce"))
-            ? InvalidRequest("The nonce parameter is required.")
-            : null;
+    private static Problem? NonceIsPresent(RequestContext context)
+    {
+        var nonce = context.Single("nonce");
+        if (string.IsNullOrEmpty(nonce))
+            return InvalidRequest("The nonce parameter is required.");
 
-    private static Problem? CodeChallengeIsPresent(RequestContext context) =>
-        string.IsNullOrEmpty(context.Single("code_challenge"))
-            ? InvalidRequest("The code_challenge parameter is required.")
-            : null;
+        context.Nonce = nonce;
+        return null;
+    }
+
+    private static Problem? CodeChallengeIsPresent(RequestContext context)
+    {
+        var challenge = context.Single("code_challenge");
+        if (string.IsNullOrEmpty(challenge))
+            return InvalidRequest("The code_challenge parameter is required.");
+
+        context.CodeChallenge = challenge;
+        return null;
+    }
 
     private static Problem? CodeChallengeIsWellFormed(RequestContext context) =>
-        CodeChallengePattern().IsMatch(context.Single("code_challenge")!)
+        CodeChallengePattern().IsMatch(context.CodeChallenge)
             ? null
             : InvalidRequest("The code_challenge parameter is malformed.");
 
@@ -306,8 +325,8 @@ internal sealed partial class AuthorizeRequestValidator
             RedirectUri = redirectUri,
             Scopes = context.EffectiveScopes,
             State = state,
-            Nonce = context.Single("nonce")!,
-            CodeChallenge = context.Single("code_challenge")!,
+            Nonce = context.Nonce,
+            CodeChallenge = context.CodeChallenge,
             CodeChallengeMethod = CodeChallengeMethod.S256,
             Prompts = context.Prompts,
             MaxAge = context.MaxAge,
@@ -388,6 +407,12 @@ internal sealed partial class AuthorizeRequestValidator
         public HashSet<PromptValue> Prompts { get; } = [];
 
         public TimeSpan? MaxAge { get; set; }
+
+        /// <summary>Set by <c>NonceIsPresent</c>; non-empty by the time <c>Build</c> runs.</summary>
+        public string Nonce { get; set; } = string.Empty;
+
+        /// <summary>Set by <c>CodeChallengeIsPresent</c>; non-empty by the time <c>Build</c> runs.</summary>
+        public string CodeChallenge { get; set; } = string.Empty;
 
         /// <summary>The single value of <paramref name="name"/>, or <see langword="null"/>.</summary>
         public string? Single(string name) => TryGetSingle(parameters, name, out var value) ? value : null;

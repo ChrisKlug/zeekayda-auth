@@ -409,7 +409,8 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
             errors.Add(
                 "AuthorizationServerOptions.AuthorizationEndpoint.Interaction.ErrorPath must be an " +
                 "absolute path within the host application (starting with '/'), without scheme, " +
-                "authority, query, or fragment.");
+                "authority, query, fragment, control characters, or a leading '//' or '/\\' " +
+                "that a browser would resolve to another origin.");
         }
     }
 

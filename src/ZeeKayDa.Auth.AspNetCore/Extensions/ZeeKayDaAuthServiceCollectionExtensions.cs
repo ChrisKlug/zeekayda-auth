@@ -168,5 +168,4 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         services.TryAddSingleton<AuthorizeErrorTransport>();
         services.TryAddSingleton<IErrorInteraction, ErrorInteraction>();
     }
-
 }

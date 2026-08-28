@@ -44,11 +44,13 @@ internal sealed class ValidatedClientResolver
     private readonly IClientRepository _repository;
     private readonly IClientRegistrationValidator _validator;
     private readonly ISanitizingLogger<ValidatedClientResolver> _logger;
-    private readonly ConcurrentDictionary<string, Verdict> _verdicts = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, Lazy<Verdict>> _verdicts = new(StringComparer.Ordinal);
 
-    // Generous next to any realistic client count, and bounded so a long-lived process that
-    // reconfigures clients repeatedly cannot grow the cache without limit.
-    private const int MaxCachedVerdicts = 1024;
+    // Sized for a multi-tenant deployment: each entry is a fingerprint string plus a verdict
+    // reference, so the ceiling costs on the order of a megabyte. Undersizing this is not a
+    // tidiness issue — past the cap the hit rate collapses and every miss is a full PBKDF2,
+    // re-arming the denial-of-service this cache exists to prevent.
+    private const int MaxCachedVerdicts = 16_384;
 
     public ValidatedClientResolver(
         IClientRepository repository,
@@ -99,17 +101,44 @@ internal sealed class ValidatedClientResolver
 
     private Verdict GetOrAddVerdict(IClientRegistration client)
     {
-        var fingerprint = ClientRegistrationFingerprint.Compute(client);
+        ClientRegistrationFingerprint.Fingerprint fingerprint;
+        try
+        {
+            fingerprint = ClientRegistrationFingerprint.Compute(client);
+        }
+        catch (Exception ex)
+        {
+            // A registration is an extension point: a property getter may throw, or a set may be
+            // mutated while it is being read. Either way this type's promise is to answer unknown
+            // rather than let a 500 escape from every protocol endpoint.
+            return new Verdict($"The registration could not be fingerprinted: {ex.GetType().Name}.");
+        }
 
-        if (_verdicts.TryGetValue(fingerprint, out var cached))
-            return cached;
+        // An instance-identity fallback (a custom IClientCredential) produces a different key for
+        // every instance of the same registration. Caching under it would let request volume grow
+        // the cache — the one thing the bound must not depend on — so it is validated uncached.
+        // The cost lands only on that registration, not on every other client's cached verdict.
+        if (!fingerprint.IsContentAddressable)
+            return Validate(client);
 
-        var verdict = Validate(client);
+        // Lazy with ExecutionAndPublication so a burst of concurrent first-requests for one
+        // client runs the 600,000-iteration derivation once rather than once per request.
+        var entry = _verdicts.GetOrAdd(
+            fingerprint.Value,
+            _ => new Lazy<Verdict>(() => Validate(client), LazyThreadSafetyMode.ExecutionAndPublication));
 
         if (_verdicts.Count >= MaxCachedVerdicts)
+        {
+            // Logged so the cliff is visible: after a clear, every client revalidates once, and a
+            // deployment hitting this repeatedly is paying PBKDF2 far more often than it should.
+            _logger.LogWarning(
+                "The client validation cache reached its {Cap}-entry limit and was cleared. " +
+                "Every registration will be revalidated once, which is CPU-intensive.",
+                MaxCachedVerdicts);
             _verdicts.Clear();
+        }
 
-        return _verdicts.GetOrAdd(fingerprint, verdict);
+        return entry.Value;
     }
 
     private Verdict Validate(IClientRegistration client)

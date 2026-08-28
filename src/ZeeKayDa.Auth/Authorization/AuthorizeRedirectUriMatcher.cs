@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace ZeeKayDa.Auth.Authorization;
 
 /// <summary>
@@ -30,14 +32,13 @@ internal static class AuthorizeRedirectUriMatcher
     /// </remarks>
     public static bool TryMatch(string presented, IReadOnlySet<string> registered, out string redirectTarget)
     {
-        var exact = registered.FirstOrDefault(
-            candidate => string.Equals(presented, candidate, StringComparison.Ordinal),
-            null);
-
-        if (exact is not null)
+        foreach (var candidate in registered)
         {
-            redirectTarget = exact;
-            return true;
+            if (string.Equals(presented, candidate, StringComparison.Ordinal))
+            {
+                redirectTarget = candidate;
+                return true;
+            }
         }
 
         return TryMatchLoopback(presented, registered, out redirectTarget);
@@ -50,27 +51,31 @@ internal static class AuthorizeRedirectUriMatcher
         if (!TryParseLoopbackHttp(presented, out var presentedUri))
             return false;
 
-        var match = registered
-            .Select(candidate => TryParseLoopbackHttp(candidate, out var uri) ? uri : null)
-            .FirstOrDefault(candidate => candidate is not null && IsSameLoopbackTarget(presentedUri, candidate));
+        foreach (var candidate in registered)
+        {
+            if (!TryParseLoopbackHttp(candidate, out var registeredUri))
+                continue;
 
-        if (match is null)
-            return false;
+            if (!IsSameLoopbackTarget(presentedUri, registeredUri))
+                continue;
 
-        // Rebuild from the trusted registered URI, substituting only the presented port, so
-        // nothing from the raw presented string reaches the response.
-        redirectTarget = new UriBuilder(match) { Port = presentedUri.Port }
-            .Uri.GetComponents(UriComponents.AbsoluteUri, UriFormat.UriEscaped);
-        return true;
+            // Rebuild from the trusted registered URI, substituting only the presented port, so
+            // nothing from the raw presented string reaches the response.
+            redirectTarget = new UriBuilder(registeredUri) { Port = presentedUri.Port }
+                .Uri.GetComponents(UriComponents.AbsoluteUri, UriFormat.UriEscaped);
+            return true;
+        }
+
+        return false;
     }
 
     /// <summary>
     /// Parses <paramref name="value"/> only when it is <c>http</c> on a loopback host — the sole
     /// registrable combination whose port varies at runtime.
     /// </summary>
-    private static bool TryParseLoopbackHttp(string value, out Uri uri)
+    private static bool TryParseLoopbackHttp(string value, [NotNullWhen(true)] out Uri? uri)
     {
-        uri = null!;
+        uri = null;
 
         if (!Uri.TryCreate(value, UriKind.Absolute, out var parsed))
             return false;
