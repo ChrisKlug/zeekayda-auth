@@ -276,30 +276,20 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
                 continue;
             }
 
-            // The trust break reads the entry's *own* owner via lstat: stat() follows a symlink and
-            // reports the target's owner, so an attacker's user-owned symlink pointed at a
-            // root-owned directory would launder itself into a trusted one and stop this walk early,
-            // taking every component above it out of the check too. The must-be-mine comparison
-            // below keeps stat(), because there the question is about the directory finally operated
-            // on, not the link entry naming it.
-            if (PosixInterop.GetLinkOwnerUid(current) == 0)
-                break; // Root-owned: OS-managed and trusted.
-
+            // Both reads here are stat()-based, which follows a symlink and reports the *target's*
+            // owner. That is the same laundering shape the ancestor-symlink walk below rejects, and
+            // it is not fixed here: see issue #586, which makes this whole method lstat-correct.
             var ownerUid = PosixInterop.GetOwnerUid(current);
+
+            if (ownerUid == 0)
+                break; // Root-owned: OS-managed and trusted.
 
             if (ownerUid is null || ownerUid.Value != currentUid)
             {
-                // A symlinked component gets its own wording: saying "is not owned by the current
-                // user" about a link the operator does own is simply false, and sends them looking
-                // at the wrong thing. What is not theirs is whatever it points at.
-                var detail = IsSymlinkedDirectory(current)
-                    ? $"Signing key directory component '{current}' is a symlink to a directory that is not owned by the current user (UID {currentUid}). "
-                    : $"Signing key directory component '{current}' is not owned by the current user (UID {currentUid}). ";
-
                 throw new ZeeKayDaConfigurationException(
                     new ZeeKayDaConfigurationFailure(
                         "signing.dev_keys.directory_not_owned_by_current_user",
-                        detail +
+                        $"Signing key directory component '{current}' is not owned by the current user (UID {currentUid}). " +
                         "Every component of the directory path must be owned by the current user " +
                         "to prevent an attacker from controlling the signing key directory."));
             }

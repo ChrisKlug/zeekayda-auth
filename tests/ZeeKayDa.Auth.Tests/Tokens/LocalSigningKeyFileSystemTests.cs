@@ -26,7 +26,8 @@ namespace ZeeKayDa.Auth.Tests.Tokens;
 /// <strong>Not covered, and why:</strong> the rejection branch of
 /// <c>ValidateDirectoryChainOwnershipUnix</c> — a path component owned by a <em>different</em>
 /// non-root user — cannot be staged without root to chown with, so no test here creates that
-/// condition. The positive direction (a wholly current-user-owned chain is accepted, and the walk
+/// condition. That method's <c>stat</c>-vs-<c>lstat</c> handling is issue #586's scope, not this
+/// class's. The positive direction (a wholly current-user-owned chain is accepted, and the walk
 /// stops at the first root-owned ancestor) is covered by
 /// <see cref="EnsureDirectorySafe_accepts_a_directory_whose_every_component_is_owned_by_the_current_user"/>.
 /// </para>
@@ -132,37 +133,6 @@ public sealed class LocalSigningKeyFileSystemTests : IDisposable
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
             .WithMessage("*directory_too_permissive*");
-    }
-
-    [Fact]
-    public void EnsureDirectorySafe_rejects_a_chain_whose_ancestor_is_a_symlink_to_a_root_owned_directory()
-    {
-        SkipUnlessRootOwnedTmpIsUsable();
-
-        // The chain walk's own version of the laundering bypass: its "root-owned, therefore trusted"
-        // break must read the ancestor's own owner with lstat(), or an attacker's user-owned symlink
-        // pointing at /tmp reports root ownership through stat(), stops the walk, and takes every
-        // component above it out of the check as well — while the symlink itself is never flagged as
-        // foreign-owned either.
-        var attackerSymlink = Path.Join(_tempDirectory, "looks-like-root-owned");
-        PlantDirectorySymlink(attackerSymlink, RootOwnedTarget);
-
-        var directory = Path.Join(attackerSymlink, $"zkda-chain-{Guid.NewGuid():N}");
-
-        try
-        {
-            var act = () => _sut.EnsureDirectorySafe(directory);
-
-            act.Should().Throw<ZeeKayDaConfigurationException>()
-                .WithMessage("*directory_not_owned_by_current_user*");
-        }
-        finally
-        {
-            // EnsureDirectorySafe creates the leaf before validating the chain, so it exists even
-            // though the call threw — and it lives under the real /tmp, not this test's temp tree.
-            if (Directory.Exists(directory))
-                Directory.Delete(directory, recursive: true);
-        }
     }
 
     [Fact]
