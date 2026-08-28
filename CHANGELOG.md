@@ -107,6 +107,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   while a non-root-owned symlinked ancestor is still rejected. Ownership is read with `lstat`, not
   `stat`, so pointing a symlink at a root-owned target does not launder it into a trusted one.
 
+  The directory-chain ownership check now reads its own "root-owned, therefore trusted" break the
+  same way. It previously used `stat`, so a user-owned symlink pointing at a root-owned directory
+  reported root ownership, stopped the walk, and took every component above it out of the check —
+  and was never flagged as foreign-owned itself. Both trust breaks are now `lstat`-based and both
+  are covered by a test that fails if the call is swapped back.
+
 - **BREAKING: `DiscoveryDocument.CacheMaxAgeSeconds` (`int`) is now `DiscoveryDocument.CacheMaxAge` (`TimeSpan`)** (#513)
 
   The discovery endpoint's cache TTL is now a `TimeSpan`, matching every other duration option on

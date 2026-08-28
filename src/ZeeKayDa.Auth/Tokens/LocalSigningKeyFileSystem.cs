@@ -276,10 +276,16 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
                 continue;
             }
 
-            var ownerUid = PosixInterop.GetOwnerUid(current);
-
-            if (ownerUid == 0)
+            // The trust break reads the entry's *own* owner via lstat: stat() follows a symlink and
+            // reports the target's owner, so an attacker's user-owned symlink pointed at a
+            // root-owned directory would launder itself into a trusted one and stop this walk early,
+            // taking every component above it out of the check too. The must-be-mine comparison
+            // below keeps stat(), because there the question is about the directory finally operated
+            // on, not the link entry naming it.
+            if (PosixInterop.GetLinkOwnerUid(current) == 0)
                 break; // Root-owned: OS-managed and trusted.
+
+            var ownerUid = PosixInterop.GetOwnerUid(current);
 
             if (ownerUid is null || ownerUid.Value != currentUid)
             {

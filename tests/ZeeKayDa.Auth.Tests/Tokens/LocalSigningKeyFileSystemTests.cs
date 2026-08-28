@@ -48,11 +48,16 @@ public sealed class LocalSigningKeyFileSystemTests : IDisposable
 
     /// <summary>
     /// A fresh OS temp subdirectory per test, deliberately <strong>not</strong> resolved to its real
-    /// path: on macOS <c>Path.GetTempPath()</c> sits under <c>/var/folders/...</c> and <c>/var</c> is
-    /// a root-owned symlink to <c>/private/var</c>, so leaving it unresolved is what makes
-    /// <see cref="ReadKeyFileAsync_accepts_a_key_file_under_the_OS_temp_directory_on_Unix"/> a real
-    /// test of the root-owned trust anchor rather than a tautology.
+    /// path, so that the ancestor walk runs over the path the provider would really be handed.
     /// </summary>
+    /// <remarks>
+    /// On macOS this sits under <c>/var/folders/&lt;xx&gt;/&lt;yyy&gt;/T/</c>. The walk breaks at
+    /// <c>/var/folders/&lt;xx&gt;</c>, which is root-owned but an ordinary directory — it never
+    /// reaches the <c>/var</c> symlink. So the OS-temp test below proves the root-owned break
+    /// fires; the <em>symlinked</em> ancestor carve-out is proven separately by
+    /// <see cref="ReadKeyFileAsync_accepts_a_key_file_under_a_root_owned_symlinked_ancestor"/>,
+    /// which uses the literal <c>/tmp</c>.
+    /// </remarks>
     private readonly string _tempDirectory = Directory.CreateTempSubdirectory("zkda-local-fs-tests-").FullName;
 
     // ── EnsureDirectorySafe ──────────────────────────────────────────────────────────────────────
@@ -109,6 +114,39 @@ public sealed class LocalSigningKeyFileSystemTests : IDisposable
     }
 
     [Fact]
+    public void EnsureDirectorySafe_rejects_a_chain_whose_ancestor_is_a_symlink_to_a_root_owned_directory()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "creating a symlink on Windows requires elevation.");
+
+        // The chain walk's own version of the laundering bypass: its "root-owned, therefore trusted"
+        // break must read the ancestor's own owner with lstat(), or an attacker's user-owned symlink
+        // pointing at /tmp reports root ownership through stat(), stops the walk, and takes every
+        // component above it out of the check as well — while the symlink itself is never flagged as
+        // foreign-owned either.
+        const string RootOwnedTarget = "/tmp";
+
+        var attackerSymlink = Path.Join(_tempDirectory, "looks-like-root-owned");
+        Directory.CreateSymbolicLink(attackerSymlink, RootOwnedTarget);
+
+        var directory = Path.Join(attackerSymlink, $"zkda-chain-{Guid.NewGuid():N}");
+
+        try
+        {
+            var act = () => _sut.EnsureDirectorySafe(directory);
+
+            act.Should().Throw<ZeeKayDaConfigurationException>()
+                .WithMessage("*directory_not_owned_by_current_user*");
+        }
+        finally
+        {
+            // EnsureDirectorySafe creates the leaf before validating the chain, so it exists even
+            // though the call threw — and it lives under the real /tmp, not this test's temp tree.
+            if (Directory.Exists(directory))
+                Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public void EnsureDirectorySafe_applies_a_non_inherited_owner_only_acl_on_Windows()
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), RequiresWindowsReason);
@@ -162,6 +200,7 @@ public sealed class LocalSigningKeyFileSystemTests : IDisposable
     [Theory]
     [InlineData(UnixFileMode.GroupRead)]
     [InlineData(UnixFileMode.GroupWrite)]
+    [InlineData(UnixFileMode.GroupExecute)]
     [InlineData(UnixFileMode.OtherRead)]
     [InlineData(UnixFileMode.OtherWrite)]
     [InlineData(UnixFileMode.OtherExecute)]
@@ -224,18 +263,85 @@ public sealed class LocalSigningKeyFileSystemTests : IDisposable
     {
         Assert.SkipWhen(OperatingSystem.IsWindows(), RequiresUnixReason);
 
-        // The counterpart to the test above, and the reason the ancestor walk stops at the first
-        // root-owned entry rather than rejecting every symlinked ancestor: on macOS the OS temp
-        // directory lives under /var, which the OS itself ships as a root-owned symlink to
-        // /private/var. A blanket rule would reject every key under it — including the default
-        // {ContentRootPath}/.zeekayda/signing-keys for anyone whose project sits under a symlinked
-        // path — for a symlink no unprivileged attacker could have planted.
+        // Proves the root-owned break fires at all: before it existed, the walk ran past every
+        // ancestor to the filesystem root and, on macOS, hit the /var symlink and rejected the key.
+        // What it does NOT prove is the symlinked-ancestor carve-out — on macOS the walk breaks at
+        // the root-owned but ordinary directory /var/folders/<xx> and never reaches /var, and on
+        // Linux /tmp is not a symlink at all. That half is the next test's job.
         var keyPath = Path.Join(_tempDirectory, KeyFileName);
         await _sut.WriteKeyFileAsync(keyPath, SamplePem.AsMemory(), TestContext.Current.CancellationToken);
 
         var act = () => _sut.ReadKeyFileAsync(keyPath, TestContext.Current.CancellationToken).AsTask();
 
         await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task ReadKeyFileAsync_accepts_a_key_file_under_a_root_owned_symlinked_ancestor()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), RequiresUnixReason);
+
+        // Deliberately the literal "/tmp", NOT Path.GetTempPath(): on macOS /tmp is itself a
+        // root-owned symlink to /private/tmp, which is exactly the ancestor shape the carve-out
+        // exists for and the one no temp-subdirectory path reaches. Path.GetTempPath() resolves to
+        // a user-owned directory under /var/folders/... instead, where the walk breaks one level
+        // earlier on an ordinary root-owned directory and the symlink is never inspected.
+        //
+        // On Linux /tmp is a root-owned plain directory, so there this asserts only the root-owned
+        // break — the macOS runner is what makes it a test of the symlink carve-out.
+        const string RootOwnedSymlinkedAncestor = "/tmp";
+
+        var keyPath = Path.Join(RootOwnedSymlinkedAncestor, $"zkda-dev-key-{Guid.NewGuid():N}.pem");
+        await _sut.WriteKeyFileAsync(keyPath, SamplePem.AsMemory(), TestContext.Current.CancellationToken);
+
+        try
+        {
+            var act = () => _sut.ReadKeyFileAsync(keyPath, TestContext.Current.CancellationToken).AsTask();
+
+            await act.Should().NotThrowAsync();
+        }
+        finally
+        {
+            File.Delete(keyPath);
+        }
+    }
+
+    [Fact]
+    public async Task ReadKeyFileAsync_rejects_a_non_root_owned_symlink_that_points_at_a_root_owned_directory()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "creating a symlink on Windows requires elevation.");
+
+        // The bypass the trust anchor must close, and the reason it reads ownership with lstat()
+        // rather than stat(). An unprivileged attacker cannot plant a root-owned directory, but can
+        // freely plant their own symlink — owned by themselves — that merely points at one. stat()
+        // follows the link and reports the target's root ownership, which would trust the
+        // attacker's symlink and stop the walk; lstat() sees the link entry's own non-root owner
+        // and keeps going, so the symlink is still rejected.
+        //
+        // Swapping GetLinkOwnerUid for GetOwnerUid in ValidateNoUntrustedSymlinkedAncestorUnix
+        // leaves every other test in this class green. This is the one that fails.
+        const string RootOwnedTarget = "/tmp";
+
+        var attackerSymlink = Path.Join(_tempDirectory, "looks-like-root-owned");
+        Directory.CreateSymbolicLink(attackerSymlink, RootOwnedTarget);
+
+        var fileName = $"zkda-lstat-regression-{Guid.NewGuid():N}.pem";
+        var realKeyPath = Path.Join(RootOwnedTarget, fileName);
+        await _sut.WriteKeyFileAsync(realKeyPath, SamplePem.AsMemory(), TestContext.Current.CancellationToken);
+
+        try
+        {
+            var act = () => _sut
+                .ReadKeyFileAsync(Path.Join(attackerSymlink, fileName), TestContext.Current.CancellationToken)
+                .AsTask();
+
+            await act.Should().ThrowAsync<ZeeKayDaConfigurationException>()
+                .WithMessage("*symlink_detected*");
+        }
+        finally
+        {
+            File.Delete(realKeyPath);
+        }
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────────────────────────
