@@ -1115,3 +1115,52 @@ or authorization endpoints, which carry no `AllowAnonymous` and still 401 under 
   `Validate_fails_with_named_list_for_an_origin_whose_host_is_not_a_valid_idn`.
 - Residual: revocation latency is bounded only by `JwksEndpoint.CacheMaxAge`, unwarned however long
   it is set (#562).
+
+## 2026-08-28 — `LocalSigningKeyFileSystem`'s real permission checks (#541, commit `dc5f1d1`)
+
+Scoped to the development provider's own file-system checks, tested directly for the first time;
+the provider's environment gate and key handling are unchanged and were not re-reviewed.
+
+- The key-file read rejects a broader-than-0600 mode, a symlinked leaf, and a non-root-owned
+  symlinked ancestor. Closed — proven by
+  `ReadKeyFileAsync_rejects_a_key_file_that_grants_any_group_or_other_access`,
+  `ReadKeyFileAsync_rejects_a_key_path_that_is_itself_a_symlink` and
+  `ReadKeyFileAsync_rejects_a_key_file_reached_through_a_non_root_owned_symlinked_ancestor`.
+- The ancestor walk stops at a root-owned entry, so an OS-managed symlink no longer false-positives
+  while an attacker-plantable one still fails. Closed — proven by
+  `ReadKeyFileAsync_accepts_a_key_file_under_a_root_owned_symlinked_ancestor` and
+  `ReadKeyFileAsync_accepts_a_key_file_under_the_OS_temp_directory_on_Unix`.
+- That trust anchor reads the link entry's own owner, so pointing a symlink at a root-owned target
+  does not launder it. Closed — proven by
+  `ReadKeyFileAsync_rejects_a_non_root_owned_symlink_that_points_at_a_root_owned_directory`, added
+  because mutating `lstat` back to `stat` left the whole suite green.
+- Residual: the Windows ancestor walk's throwing branch is unexercised — the symlink tests skip
+  where creating a link needs elevation.
+
+## 2026-08-28 — the signing key directory chain walk (#586, commit `5a25ded`)
+
+Scoped to `EnsureDirectorySafe`'s ancestor walk. Supersedes nothing above; §1.6's description of the
+shared interop as `stat`/`lstat` is now historical, since `stat` was removed with its last caller.
+
+- Ownership is read with `lstat` and a symlinked component is refused outright, so the walk accepts
+  only what the read path will also accept. Closed — proven by
+  `EnsureDirectorySafe_rejects_an_ancestor_that_is_a_symlink_to_a_root_owned_directory` and
+  `EnsureDirectorySafe_rejects_an_ancestor_that_is_a_symlink_the_current_user_owns`.
+- A component writable by group or other is refused, sticky exempt, and that rule is judged before
+  the root-owned trust break — ownership never prevented rename. Closed — proven by
+  `JudgeComponent_rejects_a_writable_directory_even_when_root_owns_it`,
+  `JudgeComponent_exempts_a_sticky_writable_directory` and
+  `JudgeComponent_still_checks_ownership_of_a_sticky_writable_directory`.
+- The branches needing a second user or root to stage are asserted as a pure function rather than
+  reasoned about. Closed — proven by `JudgeComponent_rejects_a_directory_owned_by_another_non_root_user`
+  and `JudgeComponent_rejects_a_directory_whose_ownership_could_not_be_read`.
+- Every component the provider creates is owner-only, closing a self-inflicted start-once-then-never
+  bug under umask 002. Closed — proven by `EnsureDirectorySafe_restricts_every_component_it_creates_to_the_owner`.
+- An entry that exists but is not a directory is refused rather than skipped — the walk's only
+  fail-open step. Closed — proven by `EnsureDirectorySafe_rejects_a_component_that_is_a_dangling_symlink`
+  and `EnsureDirectorySafe_rejects_a_leaf_that_exists_but_is_not_a_directory`.
+- Residual: an attacker-owned *intermediate* link in a multi-hop chain is not detected by the walk
+  itself; the read path rejects it, and `FileMode.CreateNew` plus atomic 0600 bound this to redirect
+  and denial of service, never disclosure.
+- Explicit negative: this sign-off covers the walk only. The round that produced these fixes did not
+  itself re-review them; all its findings were Low and it carried a sign-off.
