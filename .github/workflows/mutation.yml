@@ -19,6 +19,9 @@ permissions:
 
 env:
   NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+  # The long-lived issue the scheduled run reports into. Its body is rewritten every run; a
+  # comment is posted only when a score moves, so quiet weeks stay quiet.
+  TRACKING_ISSUE: "589"
 
 jobs:
   stryker:
@@ -100,3 +103,59 @@ jobs:
           name: mutation-report-${{ matrix.target }}${{ matrix.slice && format('-{0}', matrix.slice) || '' }}
           path: tests/${{ matrix.target }}/StrykerOutput/**/reports/
           if-no-files-found: warn
+
+  report:
+    name: Report mutation scores
+    needs: stryker
+    # always(): a leg that failed produces no score, and that is itself the news the report exists
+    # to carry — a skipped report job would hide it. Restricted to the unattended run and to a
+    # manual run from main, so a `mutation`-labelled PR never rewrites the tracking issue with
+    # scores measured on a branch.
+    if: >-
+      always()
+      && (github.event_name == 'schedule'
+          || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
+    runs-on: ubuntu-latest
+    # Scoped to this job only: the matrix legs above keep the workflow-level `contents: read` and
+    # never get write access to anything.
+    permissions:
+      contents: read
+      issues: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@9a946fdbd5fb07b82b2f5a4466058b876ab72bb2 # v5.3.0
+        with:
+          global-json-file: global.json
+
+      - name: Download mutation reports
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: mutation-report-*
+          path: ./mutation-artifacts
+
+      - name: Read the tracking issue's current body
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh issue view "$TRACKING_ISSUE" --json body --jq .body > ./previous-body.md
+
+      - name: Build the report
+        id: report
+        run: |
+          dotnet run .github/scripts/report_mutation_scores.cs -- \
+            ./mutation-artifacts ./previous-body.md ./mutation-report "$(date -u +%Y-%m-%d)"
+          cat ./mutation-report/body.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Update the tracking issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh issue edit "$TRACKING_ISSUE" --body-file ./mutation-report/body.md
+
+      - name: Comment when a score moved
+        if: steps.report.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh issue comment "$TRACKING_ISSUE" --body-file ./mutation-report/comment.md
