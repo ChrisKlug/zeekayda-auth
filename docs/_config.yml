@@ -55,7 +55,9 @@ callouts:
     title: Note
     color: blue
 
-# Exclude internal architecture decision records from the built site.
-# ADRs in docs/decisions/ are for contributors, not end-users.
+# Exclude internal contributor-facing directories from the built site.
+# docs/decisions/ (the decision register) and docs/design/ (provisional API sketches for
+# unbuilt work) are for contributors, not end-users.
 exclude:
   - decisions
+  - design

@@ -3,14 +3,17 @@
 **None of this is built.** `/connect/authorize` and the provider-callback paths answer `501` today,
 and no interaction service, interaction store or consent type exists. What follows is the set of
 constraints whoever builds it inherits — protocol refusals, security properties and structural cuts
-that are already true of the surrounding code. Interface shapes are deliberately absent; they will be
-designed against the codebase that exists when the work is picked up.
+that are already true of the surrounding code. Interface shapes are deliberately absent here — the
+proposed API lives in `docs/design/authorization-endpoint-interaction.md`, which is provisional and
+will be revised against the codebase that exists when the work is picked up.
 
 ## Decisions in force
 
 **The authorization endpoint and the per-provider callbacks cannot be `IZeeKayDaEndpoint`s.** They
-must short-circuit the pipeline before any downstream middleware observes the request, and must
-accept both GET and POST (OIDC Core §3.1.2.1), which a routed endpoint cannot do. They are therefore
+must short-circuit the pipeline before any downstream middleware observes the request, and that is
+the whole of the reason. (An earlier version of this entry also claimed a routed endpoint cannot
+serve both GET and POST as OIDC Core §3.1.2.1 requires — it can, via `MapMethods`, which the current
+`501` stub already does. That reason was wrong and is not load-bearing.) They are therefore
 intercepted ahead of routing, and everything `MapZeeKayDaAuth()`'s route group provides has to be
 re-applied at that interception point: the HTTPS/`421` guard, the security headers, and the
 issuer-host constraint. Discovery, JWKS and the token endpoint stay routed (`endpoints.md`).
