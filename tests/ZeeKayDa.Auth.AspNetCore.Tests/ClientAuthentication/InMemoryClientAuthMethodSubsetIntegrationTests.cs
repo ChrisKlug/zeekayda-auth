@@ -27,7 +27,7 @@ public sealed class InMemoryClientAuthMethodSubsetIntegrationTests
         var act = () => factory.CreateClient();
 
         var ex = act.Should().Throw<Exception>().Which;
-        var configEx = FindInChain<ZeeKayDaConfigurationException>(ex);
+        var configEx = ExceptionChain.FindInChain<ZeeKayDaConfigurationException>(ex);
 
         configEx.Should().NotBeNull(
             because: "a ZeeKayDaConfigurationException must be somewhere in the exception chain " +
@@ -50,37 +50,6 @@ public sealed class InMemoryClientAuthMethodSubsetIntegrationTests
 
         act.Should().NotThrow(
             because: "the client's auth method is present in AuthMethodsSupported so startup must succeed");
-    }
-
-    // ── Helpers ───────────────────────────────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Walks the exception chain (via <see cref="Exception.InnerException"/> and
-    /// <see cref="AggregateException.InnerExceptions"/>) looking for an exception of type
-    /// <typeparamref name="T"/>.  Returns <see langword="null"/> if none is found.
-    /// </summary>
-    private static T? FindInChain<T>(Exception? ex) where T : Exception
-    {
-        while (ex is not null)
-        {
-            if (ex is T typed)
-                return typed;
-
-            if (ex is AggregateException aggregate)
-            {
-                foreach (var found in aggregate.InnerExceptions
-                             .Select(FindInChain<T>)
-                             .Where(found => found is not null))
-                {
-                    return found!;
-                }
-                return null;
-            }
-
-            ex = ex.InnerException;
-        }
-
-        return null;
     }
 
     // ── Inline factories ──────────────────────────────────────────────────────────────────────────
