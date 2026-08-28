@@ -65,9 +65,11 @@ output-caching policy.** A policy would make the header depend on the host havin
 caching and subject it to the host's global caching rules, and it would stop being unit-testable in
 isolation.
 
-**An advertised-but-unbuilt endpoint answers `501`, not `404`.** The authorization and token
-routes are mapped and shaped now so discovery is stable and the route surface does not shift when
-they land; each returns a `501` problem response until it does. The JWKS endpoint is implemented.
+**An advertised-but-unbuilt endpoint answers `501`, not `404`.** Routes are mapped and shaped
+before their implementations land so discovery is stable and the route surface does not shift.
+The token route answers `501` today. The authorization endpoint validates requests and
+answers `501` only once validation has passed, until interaction and code issuance land. The JWKS
+endpoint is implemented.
 
 **The JWKS response is derived lazily from the ring's current key set, keyed by reference
 equality — not maintained by an observer.** Under the read-once ring the body is fixed for the

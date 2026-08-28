@@ -19,26 +19,26 @@ namespace ZeeKayDa.Auth.AspNetCore.ClientAuthentication;
 internal sealed class CompositeClientAuthenticator
 {
     private readonly IReadOnlyList<IClientAuthenticator> _authenticators;
-    private readonly IClientRepository _clientRepository;
+    private readonly ValidatedClientResolver _clientResolver;
     private readonly IOptions<AuthorizationServerOptions> _serverOptions;
     private readonly CompositeClientSecretHasher _secretHasher;
     private readonly ISanitizingLogger<CompositeClientAuthenticator> _logger;
 
     public CompositeClientAuthenticator(
         IEnumerable<IClientAuthenticator> authenticators,
-        IClientRepository clientRepository,
+        ValidatedClientResolver clientResolver,
         IOptions<AuthorizationServerOptions> serverOptions,
         CompositeClientSecretHasher secretHasher,
         ISanitizingLogger<CompositeClientAuthenticator> logger)
     {
         ArgumentNullException.ThrowIfNull(authenticators);
-        ArgumentNullException.ThrowIfNull(clientRepository);
+        ArgumentNullException.ThrowIfNull(clientResolver);
         ArgumentNullException.ThrowIfNull(serverOptions);
         ArgumentNullException.ThrowIfNull(secretHasher);
         ArgumentNullException.ThrowIfNull(logger);
 
         _authenticators = authenticators.ToList().AsReadOnly();
-        _clientRepository = clientRepository;
+        _clientResolver = clientResolver;
         _serverOptions = serverOptions;
         _secretHasher = secretHasher;
         _logger = logger;
@@ -97,7 +97,7 @@ internal sealed class CompositeClientAuthenticator
 
         // Repository lookup deferred past the early-reject check above so ambiguous or
         // conflicting requests never incur unnecessary I/O.
-        var client = await _clientRepository.FindByClientIdAsync(clientId, cancellationToken);
+        var client = await _clientResolver.FindByClientIdAsync(clientId, cancellationToken);
 
         // No mechanism → none fallback.
         if (matches.Count == 0)

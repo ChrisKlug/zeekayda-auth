@@ -451,8 +451,6 @@ public sealed class DiscoveryEndpointTests : IDisposable
     // ── Pre-alpha protocol endpoints ──────────────────────────────────────────────────────────────
 
     [Theory]
-    [InlineData("GET", "/connect/authorize")]
-    [InlineData("POST", "/connect/authorize")]
     [InlineData("POST", "/connect/token")]
     public async Task AdvertisedPreAlphaProtocolEndpoints_return_501(string method, string path)
     {
@@ -463,10 +461,25 @@ public sealed class DiscoveryEndpointTests : IDisposable
         response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
     }
 
+    // The authorization endpoint now validates requests (#83), so a parameterless request is a
+    // phase-1 validation failure (400), no longer a pre-alpha 501. AuthorizationEndpointTests
+    // owns its behaviour; these rows only pin that the route is mapped and reachable.
     [Theory]
-    [InlineData("GET", "/custom/authorize?prompt=login")]
-    [InlineData("POST", "/custom/token?tenant=1")]
-    public async Task AdvertisedPreAlphaProtocolEndpoints_return_501_at_published_URIs_when_explicit_overrides_are_configured(string method, string path)
+    [InlineData("GET", "/connect/authorize")]
+    [InlineData("POST", "/connect/authorize")]
+    public async Task AuthorizeEndpoint_is_mapped_and_validates(string method, string path)
+    {
+        using var request = new HttpRequestMessage(new HttpMethod(method), path);
+
+        var response = await _client.SendAsync(request, TestContext.Current.CancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Theory]
+    [InlineData("GET", "/custom/authorize?prompt=login", HttpStatusCode.BadRequest)]
+    [InlineData("POST", "/custom/token?tenant=1", HttpStatusCode.NotImplemented)]
+    public async Task AdvertisedProtocolEndpoints_answer_at_published_URIs_when_explicit_overrides_are_configured(string method, string path, HttpStatusCode expectedStatusCode)
     {
         using var factory = new TestWebAppFactory(opts =>
         {
@@ -479,7 +492,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
 
         var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+        response.StatusCode.Should().Be(expectedStatusCode);
     }
 
     [Theory]
@@ -500,8 +513,8 @@ public sealed class DiscoveryEndpointTests : IDisposable
 
     [Theory]
     [InlineData("GET", DiscoveryPath, HttpStatusCode.OK)]
-    [InlineData("GET", "/connect/authorize", HttpStatusCode.NotImplemented)]
-    [InlineData("POST", "/connect/authorize", HttpStatusCode.NotImplemented)]
+    [InlineData("GET", "/connect/authorize", HttpStatusCode.BadRequest)]
+    [InlineData("POST", "/connect/authorize", HttpStatusCode.BadRequest)]
     [InlineData("POST", "/connect/token", HttpStatusCode.NotImplemented)]
     [InlineData("GET", "/connect/jwks", HttpStatusCode.OK)]
     public async Task HttpRequests_are_allowed_for_loopback_with_AllowInsecureIssuer_flag(

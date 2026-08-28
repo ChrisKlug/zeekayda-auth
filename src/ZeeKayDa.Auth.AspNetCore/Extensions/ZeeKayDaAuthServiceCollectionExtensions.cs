@@ -4,6 +4,8 @@ using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.AspNetCore;
 using ZeeKayDa.Auth.AspNetCore.ClientAuthentication;
 using ZeeKayDa.Auth.AspNetCore.Endpoints;
+using ZeeKayDa.Auth.AspNetCore.Interaction;
+using ZeeKayDa.Auth.Authorization;
 using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Configuration;
 using ZeeKayDa.Auth.Discovery;
@@ -72,7 +74,7 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IZeeKayDaEndpoint, DiscoveryEndpoint>());
         services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IZeeKayDaEndpoint, PreAlphaAuthorizationEndpoint>());
+            ServiceDescriptor.Singleton<IZeeKayDaEndpoint, AuthorizationEndpoint>());
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IZeeKayDaEndpoint, PreAlphaTokenEndpoint>());
         services.TryAddEnumerable(
@@ -134,6 +136,7 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IClientAuthenticator, ClientSecretAuthenticator>());
         services.TryAddSingleton<CompositeClientAuthenticator>();
+        AddAuthorizationRequestServices(services);
 
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<
@@ -143,5 +146,26 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         var builder = new ZeeKayDaAuthBuilder(services);
         builder.AddSecretsHasher<Pbkdf2ClientSecretHasher>(isDefault: true);
         return builder;
+    }
+
+    /// <summary>
+    /// Registers the services behind the authorization endpoint: the validating client resolver
+    /// every endpoint resolves clients through, request validation, and the error-interaction
+    /// handoff to the host's error page.
+    /// </summary>
+    private static void AddAuthorizationRequestServices(IServiceCollection services)
+    {
+        services.AddHttpContextAccessor();
+
+        // The framework depends on Data Protection throughout (store payload encryption, the
+        // authorize error transport, and the interaction cookies to come). The default web host
+        // registers it already; this covers minimal hosts, and is idempotent everywhere else.
+        services.AddDataProtection();
+
+        services.TryAddSingleton<ValidatedClientResolver>();
+        services.TryAddSingleton<AuthorizeRequestValidator>();
+        services.TryAddSingleton<TimeProvider>(TimeProvider.System);
+        services.TryAddSingleton<AuthorizeErrorTransport>();
+        services.TryAddSingleton<IErrorInteraction, ErrorInteraction>();
     }
 }

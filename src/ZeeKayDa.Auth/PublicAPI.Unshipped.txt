@@ -5,10 +5,15 @@ ZeeKayDa.Auth.Authorization.AuthorizationEndpointOptions.AuthorizationCodeLifeti
 ZeeKayDa.Auth.Authorization.AuthorizationEndpointOptions.AuthorizationEndpointOptions() -> void
 ZeeKayDa.Auth.Authorization.AuthorizationEndpointOptions.CodeChallengeMethodsSupported.get -> System.Collections.Generic.ICollection<ZeeKayDa.Auth.Authorization.CodeChallengeMethod>?
 ZeeKayDa.Auth.Authorization.AuthorizationEndpointOptions.CodeChallengeMethodsSupported.set -> void
+ZeeKayDa.Auth.Authorization.AuthorizationEndpointOptions.Interaction.get -> ZeeKayDa.Auth.Authorization.InteractionOptions!
 ZeeKayDa.Auth.Authorization.AuthorizationEndpointOptions.Uri.get -> string?
 ZeeKayDa.Auth.Authorization.AuthorizationEndpointOptions.Uri.set -> void
 ZeeKayDa.Auth.Authorization.CodeChallengeMethod
 ZeeKayDa.Auth.Authorization.CodeChallengeMethod.S256 = 0 -> ZeeKayDa.Auth.Authorization.CodeChallengeMethod
+ZeeKayDa.Auth.Authorization.InteractionOptions
+ZeeKayDa.Auth.Authorization.InteractionOptions.ErrorPath.get -> string?
+ZeeKayDa.Auth.Authorization.InteractionOptions.ErrorPath.set -> void
+ZeeKayDa.Auth.Authorization.InteractionOptions.InteractionOptions() -> void
 ZeeKayDa.Auth.Authorization.PromptValue
 ZeeKayDa.Auth.Authorization.PromptValue.Consent = 2 -> ZeeKayDa.Auth.Authorization.PromptValue
 ZeeKayDa.Auth.Authorization.PromptValue.Login = 1 -> ZeeKayDa.Auth.Authorization.PromptValue

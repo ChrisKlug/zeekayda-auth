@@ -1,10 +1,12 @@
 # Authorization endpoint and user interaction
 
-**None of this is built.** `/connect/authorize` and the provider-callback paths answer `501` today,
-and no interaction service, interaction store or consent type exists. What follows is the set of
-constraints whoever builds it inherits — protocol refusals, security properties and structural cuts
-that are already true of the surrounding code. Interface shapes are deliberately absent here — the
-proposed API lives in `docs/design/authorization-endpoint-interaction.md`, which is provisional and
+**Partly built.** `/connect/authorize` is a routed endpoint that validates requests and applies the
+two-phase error model below; a fully valid request still answers `501` until interaction, consent
+and code issuance land. The error interaction service (`IErrorInteraction`) and its encrypted
+transport cookie exist; the login, consent and provider-selection services, the interaction store
+and the SSO session do not. The rest of this file is the set of constraints whoever finishes it
+inherits — protocol refusals, security properties and structural cuts. Interface shapes for the
+unbuilt part live in `docs/design/authorization-endpoint-interaction.md`, which is provisional and
 will be revised against the codebase that exists when the work is picked up.
 
 ## Decisions in force
