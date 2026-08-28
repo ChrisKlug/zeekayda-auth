@@ -3,7 +3,7 @@
 **Partly built.** `/connect/authorize` is a routed endpoint that validates requests and applies the
 two-phase error model below; a fully valid request still answers `501` until interaction, consent
 and code issuance land. The error interaction service (`IErrorInteraction`) and its encrypted
-transport cookie exist; the login, consent and provider-selection services, the interaction store
+transport cookie exist; the login, consent and provider-selection services, the interaction cookie
 and the SSO session do not. The rest of this file is the set of constraints whoever finishes it
 inherits — protocol refusals, security properties and structural cuts. Interface shapes for the
 unbuilt part live in `docs/design/authorization-endpoint-interaction.md`, which is provisional and
@@ -86,6 +86,24 @@ cookie is `HttpOnly` and Data-Protection encrypted. A session cookie needs `Same
 silent authentication is supported; anything read solely from same-site POSTs takes `Strict`.
 Multi-instance deployments must share one Data Protection key ring across all of them — the framework
 does not solve distributed key management.
+
+**The authorization request context lives in the interaction cookie, not a server-side store.**
+There is no `IAuthorizationRequestContextStore` and no in-memory default: the context is an
+internal, opaque, Data-Protection-encrypted payload, chunked by ASP.NET Core's own
+`ChunkingCookieManager`. It carries protocol state and a subject reference — **never claims or a
+`ClaimsPrincipal`**, which is what keeps it bounded; the authenticated user lives in the session and
+pending cookies. Replay protection belongs to the authorization code, which is already single-use
+and server-side; the context authenticates nothing on its own. Concurrent authorize requests in
+separate browser tabs are last-one-wins — a property of correlating through a cookie at all, not of
+where the payload is kept, and a store would not change it. A distributed backend, if ever needed,
+swaps the payload for an opaque handle without touching public API.
+
+**Authorization request parameters are not length-capped; the encoded context is size-guarded
+instead.** `state` and `nonce` stay formally unbounded — RFC 6749 sets no limit, a cap taxes the
+honest client, and the careless one just moves its failure elsewhere. The framework refuses at
+context-write time when the protected payload exceeds its guard, with `invalid_request`, so an
+oversized request fails legibly at the request that caused it rather than as a header some proxy
+rejects on the next hop.
 
 **ZeeKayDa owns no interaction UI.** Login, consent and provider selection are the host's pages, and
 the host brings its own user model, identity store, branding and MFA. The cost is real: a host writes

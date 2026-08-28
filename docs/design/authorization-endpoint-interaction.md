@@ -2,9 +2,9 @@
 
 **Status: provisional.** Nothing here is built — `/connect/authorize` answers `501`. Originally
 ADR 0005 (accepted 2026-07-01, issue #156); revised 2026-08-28 in the S2 shape conversation
-(#534/#83), which reversed the interception model and renamed the interaction services. The
-security properties and protocol refusals are in `docs/decisions/authorization-and-interaction.md`
-and are *not* repeated here.
+(#534/#83/#84), which reversed the interception model, renamed the interaction services and cut the
+interaction store. The security properties and protocol refusals are in
+`docs/decisions/authorization-and-interaction.md` and are *not* repeated here.
 
 ## Hosting: routed endpoints, and ZeeKayDa is not an authentication scheme
 
@@ -87,8 +87,51 @@ registering one fails at startup. All `HttpOnly`, Data-Protection encrypted.
 | `zkd.pending` | a half-authenticated external principal | hard 15 min, not sliding | `Strict` |
 
 `zkd.pending` is single-use (signed out on `SignInAsync`) and bound to its interaction via a
-`zkd:interaction_id` claim. Storage upgrade path: `.UseDistributedCacheInteractionStore()` swaps
-the `zkd.interaction` payload for an opaque handle in any `IDistributedCache`.
+`zkd:interaction_id` claim.
+
+## The interaction context
+
+What `/connect/authorize` writes and every later stage reads. **There is no store** — it is an
+opaque payload inside `zkd.interaction`, and no `IAuthorizationRequestContextStore` or in-memory
+default is built.
+
+| Written at `/connect/authorize` | |
+|---|---|
+| interaction id | correlates `zkd.pending`; the only value that ever leaves the server |
+| `client_id`, validated `redirect_uri` | the response target, authenticated in phase 1 |
+| effective scopes | `requested ∩ client.AllowedScopes` |
+| `state`, `nonce` | client-controlled, round-tripped untouched |
+| `code_challenge` + method | PKCE, carried through to the code |
+| `prompt` values, `max_age` | parsed here, behaviour owned by #85/#86 |
+| issued-at, hard expiry | 30 minutes |
+
+Accumulated as the flow advances: the authenticating provider scheme, `auth_time`, `amr`/`acr`, a
+**subject reference**, and the consent decision with its granted scopes.
+
+**Protocol state and a subject reference only — never claims, never a `ClaimsPrincipal`.** That rule
+is what keeps the payload bounded, and it is the one most likely to be broken by accident, by
+someone who wants the user right there on the consent page. The authenticated user lives in
+`zkd.session` and `zkd.pending`, which are chunked separately.
+
+**Encoding is positional and binary, not JSON** — a version byte then length-prefixed fields, the
+shape of ASP.NET Core's own `TicketSerializer`. Field names are ~200 bytes of pure overhead on a
+~400-byte payload, and the cookie is re-sent on every request to the path. Nothing is lost by
+dropping self-description from a payload only this framework reads. No compression before
+encryption: mixing attacker-controlled `state` into a compressed encrypted payload is a needless nod
+to CRIME-style length oracles.
+
+**Size: no parameter caps, one guard at the far end.** A typical context is ~400 bytes encoded, ~600
+after protection and base64 — a sixth of one cookie. `state` and `nonce` are the only unbounded
+fields; capping them would tax honest clients and merely relocate the careless one's failure.
+Overflow is `ChunkingCookieManager`'s job (public API, the default manager for any `AddCookie`
+scheme and usable standalone, so no chunking is hand-rolled), and a write-time guard on the
+protected payload answers `invalid_request` before a request can mint a cookie that a proxy rejects
+on the next hop.
+
+**Storage upgrade path**, if the cookie stops being enough:
+`.UseDistributedCacheInteractionStore()` swaps the payload for an opaque handle in any
+`IDistributedCache`. The payload is internal and opaque, so that is a transport swap with no
+public-API consequence — which is what makes the cheap path now a reversible one.
 
 ## Interaction services
 
@@ -167,7 +210,11 @@ non-breaking. `AuthorizationCodeEntry.Nonce` stays nullable for that day.
 - **Merging `zkd.external` and `zkd.pending`.** Forces binding-claim logic into the common path;
   the external handler signs in before ZeeKayDa can attach the binding claim.
 - **A `CompleteAsync` separate from `SignInAsync`.** Cognitive load, no benefit.
-- **A bespoke interaction-store interface.** `IDistributedCache` already covers the backends.
+- **`IAuthorizationRequestContextStore` + in-memory default** (the original #84 scope). The context
+  needs no server-side identity: it authenticates nothing on its own, replay protection belongs to
+  the single-use authorization code, and the concurrent-tab limit comes from correlating through a
+  cookie at all — a store does not lift it. A bespoke store interface on top would add public API
+  for backends `IDistributedCache` already covers.
 - **`Helper`/`Service` suffixes for the page services.** Terminal protocol operations are not
   optional conveniences; `*Interaction` says what they are and echoes the seam IdentityServer
   users already know.
