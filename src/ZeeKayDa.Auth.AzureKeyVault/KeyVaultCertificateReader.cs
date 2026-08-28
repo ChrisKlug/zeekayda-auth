@@ -171,7 +171,7 @@ internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
     {
         var certificate = await GetCertificateVersionAsync(version, cancellationToken).ConfigureAwait(false);
 
-        if (!KeyVaultSecretIdentifier.TryCreate(certificate.SecretId, out var secretIdentifier))
+        if (!TryGetSecretIdentifier(certificate, out var secretIdentifier))
         {
             throw new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure(
@@ -195,6 +195,34 @@ internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
         {
             throw MapUnexpectedFailure(ex);
         }
+    }
+
+    /// <summary>
+    /// Reads the certificate's linked secret identifier without letting an absent sid escape as a
+    /// raw SDK exception: <see cref="KeyVaultCertificate.SecretId"/> parses the sid on every read
+    /// and throws when the certificate carries none at all. A missing sid and an unusable one are
+    /// the same operator-facing condition, so both fail closed through the caller's guard.
+    /// </summary>
+    private static bool TryGetSecretIdentifier(
+        KeyVaultCertificate certificate, out KeyVaultSecretIdentifier secretIdentifier)
+    {
+        Uri? secretId;
+        try
+        {
+            secretId = certificate.SecretId;
+        }
+        catch (ArgumentException)
+        {
+            secretId = null;
+        }
+
+        if (secretId is null)
+        {
+            secretIdentifier = default;
+            return false;
+        }
+
+        return KeyVaultSecretIdentifier.TryCreate(secretId, out secretIdentifier);
     }
 
     /// <summary>
