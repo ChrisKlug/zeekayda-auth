@@ -5,8 +5,8 @@ using System.Runtime.CompilerServices;
 [assembly: InternalsVisibleTo("ZeeKayDa.Auth.AspNetCore.Tests")]
 // ZeeKayDa.Auth.FileSystem reuses PosixInterop.GetLinkOwnerUid (LocalSigningKeyFileSystem.cs) to
 // apply the same root-owned-directory trust anchor to its own symlink validation, rather than
-// duplicating the per-platform stat()/lstat() P/Invoke a second time. GetLinkOwnerUid (lstat), not
-// GetOwnerUid (stat), is load-bearing here — see FileSigningKeyReader.ValidateNoUntrustedSymlinkedAncestorUnix.
+// duplicating the per-platform lstat() P/Invoke a second time — see
+// FileSigningKeyReader.ValidateNoUntrustedSymlinkedAncestorUnix.
 [assembly: InternalsVisibleTo("ZeeKayDa.Auth.FileSystem")]
 // ZeeKayDa.Auth.Windows reuses ProcessIdentityHelper (ProcessIdentityHelper.cs) for its
 // access-denied diagnostic messages, so the best-effort process-identity resolution and

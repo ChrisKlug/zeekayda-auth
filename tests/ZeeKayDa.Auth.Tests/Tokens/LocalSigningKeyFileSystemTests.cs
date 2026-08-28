@@ -23,11 +23,16 @@ namespace ZeeKayDa.Auth.Tests.Tokens;
 /// the non-inherited ACL on Windows.
 /// </para>
 /// <para>
-/// <strong>Not covered, and why:</strong> the rejection branch of
-/// <c>ValidateDirectoryChainOwnershipUnix</c> — a path component owned by a <em>different</em>
-/// non-root user — cannot be staged without root to chown with, so no test here creates that
-/// condition. That method's <c>stat</c>-vs-<c>lstat</c> handling is issue #586's scope, not this
-/// class's. The positive direction (a wholly current-user-owned chain is accepted, and the walk
+/// <strong>Not covered, and why:</strong> two branches of
+/// <c>ValidateDirectoryChainOwnershipUnix</c> cannot be staged unprivileged. A path component owned
+/// by a <em>different</em> non-root user needs root to <c>chown</c> with — and a symlink's owner is
+/// fixed at <c>symlink(2)</c>, so a foreign-owned <em>link entry</em> that is not root's needs
+/// <c>CAP_CHOWN</c> too. The <c>linkOwnerUid is null</c> branch (an <c>lstat</c> failure, or an
+/// architecture whose struct layout <c>PosixInterop</c> does not bind) has no unprivileged trigger
+/// either. The mixed root/current-user shapes that <em>can</em> be staged are covered by
+/// <see cref="EnsureDirectorySafe_rejects_an_ancestor_that_is_a_symlink_to_a_root_owned_directory"/>
+/// and <see cref="EnsureDirectorySafe_accepts_a_sticky_world_writable_ancestor"/>.
+/// The positive direction (a wholly current-user-owned chain is accepted, and the walk
 /// stops at the first root-owned ancestor) is covered by
 /// <see cref="EnsureDirectorySafe_accepts_a_directory_whose_every_component_is_owned_by_the_current_user"/>.
 /// </para>
@@ -133,6 +138,182 @@ public sealed class LocalSigningKeyFileSystemTests : IDisposable
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
             .WithMessage("*directory_too_permissive*");
+    }
+
+    [Fact]
+    public void EnsureDirectorySafe_rejects_an_ancestor_that_is_a_symlink_to_a_root_owned_directory()
+    {
+        SkipUnlessRootOwnedTmpIsUsable();
+
+        // Pins the trust break specifically. Reading it with stat() instead of lstat() follows the
+        // link to root-owned /tmp, reports uid 0, and stops the walk before any other check runs —
+        // an unprivileged attacker cannot plant a root-owned directory, but can freely plant their
+        // own symlink pointing at one.
+        var attackerSymlink = Path.Join(_tempDirectory, "looks-like-root-owned");
+        PlantDirectorySymlink(attackerSymlink, RootOwnedTarget);
+
+        var directory = Path.Join(attackerSymlink, $"zkda-chain-{Guid.NewGuid():N}");
+
+        try
+        {
+            var act = () => _sut.EnsureDirectorySafe(directory);
+
+            act.Should().Throw<ZeeKayDaConfigurationException>()
+                .WithMessage("*is a symlink*");
+
+            // The chain is validated before anything is created, so a rejected path leaves nothing
+            // behind — least of all at a location the attacker chose by pointing the link.
+            Directory.Exists(directory).Should().BeFalse();
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+                Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void EnsureDirectorySafe_rejects_an_ancestor_that_is_a_symlink_the_current_user_owns()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "creating a symlink on Windows requires elevation.");
+
+        // Nothing about this one is attacker-planted: the link and its target both belong to the
+        // current user. It is refused because a symlink is repointable, and because ReadKeyFileAsync
+        // rejects any non-root-owned symlinked ancestor on the very next startup. Accepting it here
+        // produced a configuration that started once, wrote a key, and could never start again.
+        var realDirectory = Path.Join(_tempDirectory, "real-keys");
+        Directory.CreateDirectory(realDirectory);
+
+        var linkedDirectory = Path.Join(_tempDirectory, "linked-keys");
+        PlantDirectorySymlink(linkedDirectory, realDirectory);
+
+        var act = () => _sut.EnsureDirectorySafe(Path.Join(linkedDirectory, "signing-keys"));
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .WithMessage("*is a symlink*");
+    }
+
+    [Fact]
+    public void EnsureDirectorySafe_restricts_every_component_it_creates_to_the_owner()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), RequiresUnixReason);
+
+        // Regression: Directory.CreateDirectory applies the process umask to every component it
+        // creates, and chmod'ing only the leaf leaves the intermediates at whatever the umask gave.
+        // Under Ubuntu's default umask of 002 that is 0775 — so the provider created a
+        // group-writable component and then rejected it on the next startup, an application that
+        // started once, wrote a key, and could never start again. The Directory.CreateDirectory
+        // overload taking a UnixFileMode does not help: it applies the mode only to the leaf.
+        var ownerOnly = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
+        var intermediate = Path.Join(_tempDirectory, "dot-zeekayda");
+        var leaf = Path.Join(intermediate, "signing-keys");
+
+        _sut.EnsureDirectorySafe(leaf);
+
+        GetUnixMode(intermediate).Should().Be(ownerOnly, "an intermediate component is part of the key path too");
+        GetUnixMode(leaf).Should().Be(ownerOnly);
+
+        // And the second startup — the whole point — must not reject what the first one created.
+        var act = () => _sut.EnsureDirectorySafe(leaf);
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void EnsureDirectorySafe_rejects_an_ancestor_that_is_writable_by_group_or_other()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), RequiresUnixReason);
+
+        // Ownership alone does not stop replacement. POSIX grants rename and unlink from the
+        // *directory's* write bit, not from ownership of what is inside it, so any group or world
+        // member can move the signing key directory aside and have the provider mint a fresh key.
+        var ancestor = Path.Join(_tempDirectory, "world-writable");
+        Directory.CreateDirectory(ancestor);
+        SetUnixMode(
+            ancestor,
+            UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute | UnixFileMode.OtherWrite);
+
+        var act = () => _sut.EnsureDirectorySafe(Path.Join(ancestor, "signing-keys"));
+
+        // Names the offending component, so this cannot pass because some *other* ancestor of the
+        // temp tree happened to be group-writable.
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .WithMessage($"*{ancestor}*writable by group or other*");
+    }
+
+    [Fact]
+    public void EnsureDirectorySafe_accepts_a_sticky_world_writable_ancestor()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), RequiresUnixReason);
+        Assert.SkipWhen(!Directory.Exists(RootOwnedTarget), $"{RootOwnedTarget} does not exist on this machine.");
+
+        // The exemption that keeps the rule usable. /tmp is 1777: world-writable, but sticky, so a
+        // user may only rename or unlink entries they own — exactly the property the check wants.
+        // Without this carve-out every /tmp-hosted path is rejected, this suite's fixtures included.
+        var directory = Path.Join(RootOwnedTarget, $"zkda-sticky-{Guid.NewGuid():N}");
+
+        try
+        {
+            var act = () => _sut.EnsureDirectorySafe(directory);
+
+            act.Should().NotThrow();
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+                Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void EnsureDirectorySafe_rejects_a_component_that_is_a_dangling_symlink()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "creating a symlink on Windows requires elevation.");
+
+        // A dangling symlink is neither a file nor a directory, and an attacker can plant one
+        // freely — pointing it at a path they will create later. It must not read as "absent" and
+        // let the walk continue past it.
+        var dangling = Path.Join(_tempDirectory, "points-nowhere");
+        PlantDirectorySymlink(dangling, Path.Join(_tempDirectory, "does-not-exist"));
+
+        var act = () => _sut.EnsureDirectorySafe(Path.Join(dangling, "signing-keys"));
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .WithMessage("*exists but is not a directory*");
+    }
+
+    [Fact]
+    public void EnsureDirectorySafe_rejects_a_leaf_that_exists_but_is_not_a_directory()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), RequiresUnixReason);
+
+        // The chain walk only ever sees ancestors, so the leaf needs its own check — without it a
+        // file at the configured path surfaced as a raw IOException rather than a configuration
+        // failure the operator can act on.
+        var file = Path.Join(_tempDirectory, "signing-keys");
+        File.WriteAllText(file, "");
+
+        var act = () => _sut.EnsureDirectorySafe(file);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .WithMessage("*exists but is not a directory*");
+    }
+
+    [Fact]
+    public void EnsureDirectorySafe_rejects_a_path_whose_ancestor_exists_but_is_not_a_directory()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), RequiresUnixReason);
+
+        // The walk skips components that do not exist, so that it can validate the ancestors of a
+        // directory it is about to create. A component that *does* exist but is not a directory must
+        // not take that branch — that would be the one fail-open step in a fail-closed walk.
+        var file = Path.Join(_tempDirectory, "not-a-directory");
+        File.WriteAllText(file, "");
+
+        var act = () => _sut.EnsureDirectorySafe(Path.Join(file, "signing-keys"));
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .WithMessage("*exists but is not a directory*");
     }
 
     [Fact]
@@ -304,7 +485,7 @@ public sealed class LocalSigningKeyFileSystemTests : IDisposable
         // attacker's symlink and stop the walk; lstat() sees the link entry's own non-root owner
         // and keeps going, so the symlink is still rejected.
         //
-        // Swapping GetLinkOwnerUid for GetOwnerUid in ValidateNoUntrustedSymlinkedAncestorUnix
+        // Swapping GetLinkOwnerUid for a stat-based read in ValidateNoUntrustedSymlinkedAncestorUnix
         // leaves every other test in this class green. This is the one that fails.
         var attackerSymlink = Path.Join(_tempDirectory, "looks-like-root-owned");
         PlantDirectorySymlink(attackerSymlink, RootOwnedTarget);
@@ -326,6 +507,78 @@ public sealed class LocalSigningKeyFileSystemTests : IDisposable
         {
             File.Delete(realKeyPath);
         }
+    }
+
+    // ── The per-component decision, as a pure function ───────────────────────────────────────────
+
+    // LocalSigningKeyFileSystem.JudgeComponent takes the four facts the walk reads from the file
+    // system and returns a verdict, so the branches that need a second user or root to stage — and
+    // which against real directories could only ever be reasoned about — are asserted here instead.
+
+    private const uint Me = 501;
+    private const uint SomeoneElse = 502;
+    private const uint Root = 0;
+
+    private static readonly UnixFileMode OwnerOnly =
+        UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
+
+    [Fact]
+    public void JudgeComponent_accepts_an_owner_only_directory_owned_by_the_current_user() =>
+        LocalSigningKeyFileSystem.JudgeComponent(OwnerOnly, Me, Me, isSymlink: false)
+            .Should().Be(LocalSigningKeyFileSystem.ChainVerdict.Accept);
+
+    [Fact]
+    public void JudgeComponent_stops_the_walk_at_a_root_owned_directory() =>
+        LocalSigningKeyFileSystem.JudgeComponent(OwnerOnly, Root, Me, isSymlink: false)
+            .Should().Be(LocalSigningKeyFileSystem.ChainVerdict.TrustedRootOwned);
+
+    [Fact]
+    public void JudgeComponent_rejects_a_directory_owned_by_another_non_root_user() =>
+        LocalSigningKeyFileSystem.JudgeComponent(OwnerOnly, SomeoneElse, Me, isSymlink: false)
+            .Should().Be(LocalSigningKeyFileSystem.ChainVerdict.NotOwnedByCurrentUser);
+
+    [Fact]
+    public void JudgeComponent_rejects_a_symlink_the_current_user_owns() =>
+        LocalSigningKeyFileSystem.JudgeComponent(OwnerOnly, Me, Me, isSymlink: true)
+            .Should().Be(LocalSigningKeyFileSystem.ChainVerdict.Symlink);
+
+    [Fact]
+    public void JudgeComponent_rejects_a_directory_whose_ownership_could_not_be_read() =>
+        LocalSigningKeyFileSystem.JudgeComponent(OwnerOnly, linkOwnerUid: null, Me, isSymlink: false)
+            .Should().Be(LocalSigningKeyFileSystem.ChainVerdict.OwnershipUndetermined);
+
+    [Theory]
+    [InlineData(UnixFileMode.GroupWrite)]
+    [InlineData(UnixFileMode.OtherWrite)]
+    public void JudgeComponent_rejects_a_writable_directory_even_when_root_owns_it(UnixFileMode writeBit)
+    {
+        // The ordering the walk depends on: writability is judged BEFORE the root-owned trust break.
+        // "root planted it" says nothing about who can rename it — POSIX grants rename and unlink
+        // from the directory's own write bit — so a root-owned 0777 non-sticky directory is
+        // replaceable by any local user. Judging ownership first would trust it unconditionally.
+        LocalSigningKeyFileSystem.JudgeComponent(OwnerOnly | writeBit, Root, Me, isSymlink: false)
+            .Should().Be(LocalSigningKeyFileSystem.ChainVerdict.WritableByOthers);
+    }
+
+    [Theory]
+    [InlineData(UnixFileMode.GroupWrite)]
+    [InlineData(UnixFileMode.OtherWrite)]
+    public void JudgeComponent_exempts_a_sticky_writable_directory(UnixFileMode writeBit)
+    {
+        // /tmp at 1777. Sticky restricts rename and unlink to each entry's own owner, which is the
+        // property the write-bit rule is actually after.
+        LocalSigningKeyFileSystem.JudgeComponent(OwnerOnly | writeBit | UnixFileMode.StickyBit, Root, Me, isSymlink: false)
+            .Should().Be(LocalSigningKeyFileSystem.ChainVerdict.TrustedRootOwned);
+    }
+
+    [Fact]
+    public void JudgeComponent_still_checks_ownership_of_a_sticky_writable_directory()
+    {
+        // The exemption skips the write-bit rule only. An attacker-owned entry inside a sticky
+        // world-writable directory is still rejected on ownership.
+        LocalSigningKeyFileSystem.JudgeComponent(
+                OwnerOnly | UnixFileMode.OtherWrite | UnixFileMode.StickyBit, SomeoneElse, Me, isSymlink: false)
+            .Should().Be(LocalSigningKeyFileSystem.ChainVerdict.NotOwnedByCurrentUser);
     }
 
     // ── This class's own teardown ────────────────────────────────────────────────────────────────
