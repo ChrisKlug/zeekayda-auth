@@ -5,8 +5,13 @@ namespace ZeeKayDa.Auth.Tokens;
 /// </summary>
 /// <remarks>
 /// The default implementation, <see cref="LocalSigningKeyFileSystem"/>, calls real OS APIs
-/// (Unix file-mode bits, Windows ACLs). Tests substitute a fake implementation so that
-/// platform-specific code paths are never exercised on the test runner's OS.
+/// (Unix file-mode bits, Windows ACLs) and is tested directly against real temp directories by
+/// <c>LocalSigningKeyFileSystemTests</c>, with each assertion gated to the platform whose
+/// permission model it describes. This interface exists so that
+/// <see cref="DevelopmentSigningKeySource"/>'s own logic — the environment gate, the
+/// generate-vs-load decision, the ephemeral path that must never touch disk at all — can be tested
+/// with fakes that go nowhere near the file system, not because the real implementation is
+/// untestable.
 /// </remarks>
 internal interface IDevelopmentSigningKeyFileSystem
 {

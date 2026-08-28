@@ -95,6 +95,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- **The development signing key provider no longer rejects a key under an OS-owned symlinked path such as macOS's `/tmp`, `/var`, or `/etc`** (#541)
+
+  Loading a persisted development key walks every ancestor directory looking for a symlink an
+  attacker could have used to redirect the path. That walk previously rejected *any* symlinked
+  ancestor, including the root-owned ones macOS itself ships (`/var` is a symlink to
+  `/private/var`), so a key under such a path failed to load with
+  `signing.dev_keys.symlink_detected` for a symlink no unprivileged attacker could have planted.
+  The walk now stops at the first root-owned directory entry — the same trust anchor
+  `FileSigningKeyReader` already carried, and the same one the directory-ownership check uses —
+  while a non-root-owned symlinked ancestor is still rejected. Ownership is read with `lstat`, not
+  `stat`, so pointing a symlink at a root-owned target does not launder it into a trusted one.
+
 - **BREAKING: `DiscoveryDocument.CacheMaxAgeSeconds` (`int`) is now `DiscoveryDocument.CacheMaxAge` (`TimeSpan`)** (#513)
 
   The discovery endpoint's cache TTL is now a `TimeSpan`, matching every other duration option on

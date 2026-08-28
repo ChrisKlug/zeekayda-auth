@@ -68,8 +68,9 @@ the method name rather than a `null` argument. The allowed-environment list is r
 registration callback, never bindable configuration, so a committed `appsettings.json` cannot widen it;
 `Production` is rejected unconditionally, and any non-`Development` entry logs `Critical` on every startup.
 Persisted keys are plain PEM with permissions set atomically at creation (`0700`/`0600` POSIX, a restrictive
-non-inherited ACL on Windows), and loading fails closed on a broader mode, a symlink, or a foreign-owned
-directory.
+non-inherited ACL on Windows), and loading fails closed on a broader mode, a foreign-owned directory, or a
+symlink anywhere in the path — except a root-owned symlinked ancestor, which no unprivileged attacker can
+plant and which macOS ships as `/tmp`, `/var`, and `/etc`.
 
 **Extension contracts are public in core; ZeeKayDa's own crypto and redaction stay internal.**
 `InternalsVisibleTo` can only name first-party assemblies at build time, so it structurally cannot serve a
