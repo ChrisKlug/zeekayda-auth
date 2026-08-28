@@ -26,27 +26,8 @@ public sealed class ClientSigningAlgorithmStartupIntegrationTests
         var act = () => factory.CreateClient();
 
         var ex = act.Should().Throw<Exception>().Which;
-        FindInChain<ZeeKayDaConfigurationException>(ex)!
+        ExceptionChain.FindInChain<ZeeKayDaConfigurationException>(ex)!
             .AggregatedFailures.Should().Contain(f => f.Code == "client.signing_algorithms.not_subset");
-    }
-
-    private static T? FindInChain<T>(Exception? exception) where T : Exception
-    {
-        while (exception is not null)
-        {
-            if (exception is T match)
-                return match;
-
-            if (exception is AggregateException aggregate &&
-                aggregate.InnerExceptions.Select(FindInChain<T>).FirstOrDefault(m => m is not null) is { } found)
-            {
-                return found;
-            }
-
-            exception = exception.InnerException;
-        }
-
-        return null;
     }
 
     private sealed class UnadvertisedAlgorithmWebAppFactory
