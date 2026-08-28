@@ -460,13 +460,13 @@ target from its test project directory:
 cd tests/ZeeKayDa.Auth.Tests && dotnet tool run dotnet-stryker
 ```
 
-| Target (config location) | Mutated scope | Baseline (2026-08-27) |
-|---|---|---|
-| `tests/ZeeKayDa.Auth.Tests` | `Tokens/`, `Security/`, `Clients/`, `Authorization/` | **75.77 %** |
-| `tests/ZeeKayDa.Auth.AspNetCore.Tests` | `ClientAuthentication/` | **100.00 %** |
-| `tests/ZeeKayDa.Auth.AzureKeyVault.Tests` | whole project | **43.55 %** |
-| `tests/ZeeKayDa.Auth.FileSystem.Tests` | whole project | **62.78 %** |
-| `tests/ZeeKayDa.Auth.Windows.Tests` | whole project | *pending first scheduled run* |
+| Target (config location) | Mutated scope | Baseline | Recorded |
+|---|---|---|---|
+| `tests/ZeeKayDa.Auth.Tests` | `Tokens/`, `Security/`, `Clients/`, `Authorization/` | **75.77 %** | 2026-08-27 |
+| `tests/ZeeKayDa.Auth.AspNetCore.Tests` | `ClientAuthentication/` | **100.00 %** | 2026-08-28 |
+| `tests/ZeeKayDa.Auth.AzureKeyVault.Tests` | whole project | **78.25 %** | 2026-08-28 |
+| `tests/ZeeKayDa.Auth.FileSystem.Tests` | whole project | **62.78 %** | 2026-08-28 |
+| `tests/ZeeKayDa.Auth.Windows.Tests` | whole project | **63.33 %** | 2026-08-28 |
 
 Baselines are recorded from the `mutation.yml` workflow on `ubuntu-latest` — that is the canonical
 environment. The one exception is `ZeeKayDa.Auth.Windows`, whose leg runs on `windows-latest`
@@ -475,7 +475,13 @@ comparable with the others. Local runs on macOS/Windows produce different number
 (platform-conditional tests skip differently; at the #308 baseline FileSystem scored 74.50 % on
 macOS against 54.49 % on Linux), so compare local results only against local results. In the
 workflow the core target runs as three per-directory slices for wall-clock reasons; the recorded
-core number is from a whole-target run.
+core number is from a whole-target run, which is why its **Recorded** date lags the others — a
+sliced leg cannot refresh it.
+
+To refresh a row, take the score from the leg's `mutation-report.json` artifact rather than the
+job log, which GitHub withholds until every leg of the run has finished. The score is Stryker's
+own formula, `(Killed + Timeout) / (Killed + Timeout + Survived + NoCoverage)` — `Ignored`,
+`CompileError`, and `RuntimeError` mutants are excluded from both halves.
 
 Reports land under `<test project>/StrykerOutput/` (gitignored) — open
 `reports/mutation-report.html` to inspect individual mutants.
