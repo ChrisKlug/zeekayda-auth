@@ -11,6 +11,7 @@ public sealed class RedirectUriValidatorTests
     [InlineData("https://[::1%25eth0]/callback", true)]      // percent-encoded zone ID
     [InlineData("https://[::1%eth0]/callback", true)]      // literal % zone ID
     [InlineData("myapp:/callback", false)]      // no "://"
+    [InlineData("https://a]%25b[/cb", false)]   // ']' before '[': malformed, fails closed, never throws
     public void HasIpv6ZoneId_returns_expected_value(string uriString, bool expected)
         => RedirectUriValidator.HasIpv6ZoneId(uriString).Should().Be(expected);
 
@@ -56,6 +57,8 @@ public sealed class RedirectUriValidatorTests
     [InlineData("myapp:/callback", false)] // no path after ":/"
     [InlineData("https://example.com/callback/./other", true)]  // single-dot segment
     [InlineData("https://example.com/callback/%2E/other", true)]  // percent-encoded single dot
+    [InlineData("https:///..", true)]  // empty authority still yields a path to inspect
+    [InlineData("urn:example:animal", false)]  // neither "://" nor ":/" — no path form at all
     public void HasPathTraversal_returns_expected_value(string uriString, bool expected)
         => RedirectUriValidator.HasPathTraversal(uriString).Should().Be(expected);
 }

@@ -78,6 +78,18 @@ public sealed class CompositeClientSecretHasherTests
         return (composite, defaultHasher, altHasher);
     }
 
+    // ── CanHandle across hashers ─────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void CanHandleAny_returns_true_when_any_single_hasher_handles_the_secret()
+    {
+        // ANY hasher handling the secret suffices — the composite must not require every
+        // hasher to handle it.
+        var (composite, _, _) = CreateMultiHasherComposite();
+
+        composite.CanHandleAny(new AltSecret()).Should().BeTrue();
+    }
+
     // ── Dispatch ─────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
