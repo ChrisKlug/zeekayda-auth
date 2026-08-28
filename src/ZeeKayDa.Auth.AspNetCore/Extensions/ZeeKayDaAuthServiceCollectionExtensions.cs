@@ -166,6 +166,7 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         services.TryAddSingleton<AuthorizeRequestValidator>();
         services.TryAddSingleton<TimeProvider>(TimeProvider.System);
         services.TryAddSingleton<AuthorizeErrorTransport>();
+        services.TryAddSingleton<AuthorizationRequestContextTransport>();
         services.TryAddSingleton<IErrorInteraction, ErrorInteraction>();
     }
 }

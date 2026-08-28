@@ -150,6 +150,55 @@ public sealed class AuthorizationEndpointTests : IDisposable
         response.Headers.CacheControl!.NoStore.Should().BeTrue();
     }
 
+    // ── Interaction context (#84) ─────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Valid_request_writes_the_interaction_cookie()
+    {
+        var response = await _client.GetAsync(AuthorizeUrl(ValidQuery()), TestContext.Current.CancellationToken);
+
+        response.Headers.GetValues("Set-Cookie").Should().Contain(c =>
+            c.StartsWith(AuthorizationRequestContextTransport.CookieName + "=") && c.Contains("httponly"));
+    }
+
+    [Fact]
+    public async Task Interaction_cookie_never_carries_request_values_in_the_clear()
+    {
+        var query = ValidQuery();
+        query["state"] = "client-state-value";
+
+        var response = await _client.GetAsync(AuthorizeUrl(query), TestContext.Current.CancellationToken);
+
+        var cookie = response.Headers.GetValues("Set-Cookie")
+            .Single(c => c.StartsWith(AuthorizationRequestContextTransport.CookieName + "="));
+        cookie.Should().NotContain("client-state-value").And.NotContain(RegisteredRedirect);
+    }
+
+    [Fact]
+    public async Task Request_too_large_to_carry_redirects_to_the_client_as_invalid_request()
+    {
+        // state is deliberately not length-capped: a cap taxes honest clients and merely
+        // relocates a careless one's failure. The guard is on the encoded context, and it must
+        // fail here — at the request that caused it — rather than as an unreadable header on the
+        // next hop. Phase 2, so the redirect URI is already authenticated and the error is the
+        // client's to see.
+        var form = ValidQuery();
+        form["state"] = new string('s', 20_000);
+
+        using var content = new FormUrlEncodedContent(form!);
+        var response = await _client.PostAsync("/connect/authorize", content, TestContext.Current.CancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        response.Headers.Location!.OriginalString.Should().StartWith(RegisteredRedirect);
+
+        var parameters = QueryHelpers.ParseQuery(response.Headers.Location!.Query);
+        parameters["error"].ToString().Should().Be("invalid_request");
+        parameters["state"].ToString().Should().Be(form["state"]);
+
+        response.Headers.Contains("Set-Cookie").Should().BeFalse(
+            "nothing may be written when the context does not fit");
+    }
+
     // ── ErrorPath handoff ─────────────────────────────────────────────────────────────────────
 
     [Fact]

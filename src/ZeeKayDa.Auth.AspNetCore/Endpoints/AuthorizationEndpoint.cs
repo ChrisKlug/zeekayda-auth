@@ -7,13 +7,15 @@ using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
 using ZeeKayDa.Auth.Authorization;
+using ZeeKayDa.Auth.Stores;
 
 namespace ZeeKayDa.Auth.AspNetCore.Endpoints;
 
 /// <summary>
 /// The authorization endpoint (<c>/connect/authorize</c>, GET and POST per OIDC Core 1.0
-/// §3.1.2.1). Currently implements request validation and the two-phase error model;
-/// a fully valid request still answers <c>501</c> until the interaction stages land.
+/// §3.1.2.1). Currently implements request validation, the two-phase error model, and writing
+/// the interaction context; a fully valid request still answers <c>501</c> until the handoff,
+/// consent and code-issuance stages land.
 /// </summary>
 /// <remarks>
 /// Phase-1 failures render locally — a minimal framework-written 400 by default, or a redirect
@@ -49,6 +51,8 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
     private async Task<IResult> Handle(
         AuthorizeRequestValidator validator,
         AuthorizeErrorTransport errorTransport,
+        AuthorizationRequestContextTransport contextTransport,
+        TimeProvider timeProvider,
         HttpContext context)
     {
         // Authorization responses carry codes and errors that must never be cached or logged
@@ -67,9 +71,8 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
 
         return result switch
         {
-            AuthorizeRequestValidationResult.Valid =>
-                // Validation passed; interaction, consent and code issuance are not built yet.
-                PreAlphaNotImplementedResult.Result,
+            AuthorizeRequestValidationResult.Valid valid =>
+                BeginInteraction(context, contextTransport, timeProvider, valid.Request),
 
             AuthorizeRequestValidationResult.RedirectError redirect => RedirectToClient(redirect),
 
@@ -78,6 +81,50 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
 
             _ => throw new InvalidOperationException("Unknown validation result type."),
         };
+    }
+
+    /// <summary>
+    /// Writes the interaction context that the rest of the flow reads, then hands off. Handoff,
+    /// consent and code issuance are not built yet, so a request that gets this far still answers
+    /// <c>501</c> — but it answers it having persisted the state those stages will need.
+    /// </summary>
+    private IResult BeginInteraction(
+        HttpContext context,
+        AuthorizationRequestContextTransport contextTransport,
+        TimeProvider timeProvider,
+        ValidatedAuthorizeRequest request)
+    {
+        var now = timeProvider.GetUtcNow();
+        var requestContext = new AuthorizationRequestContext
+        {
+            Id = StoreKeyGenerator.Generate(),
+            ClientId = request.Client.ClientId,
+            RedirectUri = request.RedirectUri,
+            Scopes = request.Scopes,
+            State = request.State,
+            Nonce = request.Nonce,
+            CodeChallenge = request.CodeChallenge,
+            CodeChallengeMethod = request.CodeChallengeMethod,
+            Prompts = request.Prompts,
+            MaxAge = request.MaxAge,
+            IssuedAt = now,
+            ExpiresAt = now + AuthorizationRequestContextTransport.Lifetime,
+        };
+
+        if (!contextTransport.TryWrite(context, requestContext))
+        {
+            // The request is too large to carry through the flow. The redirect URI is already
+            // authenticated at this point, so this is a phase-2 failure and belongs to the client.
+            return RedirectToClient(new AuthorizeRequestValidationResult.RedirectError
+            {
+                RedirectUri = request.RedirectUri,
+                Error = AuthorizeRequestErrors.InvalidRequest,
+                Description = "The authorization request is too large to process.",
+                State = request.State,
+            });
+        }
+
+        return PreAlphaNotImplementedResult.Result;
     }
 
     /// <summary>
