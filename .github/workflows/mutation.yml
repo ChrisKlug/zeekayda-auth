@@ -1,10 +1,15 @@
 name: Mutation Testing
 
-# Mutation testing is NOT a PR gate (#309 is deferred). It runs on demand:
+# Mutation testing is NOT a PR gate (#309 is deferred). It runs:
+# - weekly on a schedule, so the baselines in CONTRIBUTING.md stay honest without anyone
+#   remembering to ask (GitHub disables scheduled workflows after 60 days of repo inactivity);
 # - workflow_dispatch for manual runs from main;
 # - on a pull request ONLY when the 'mutation' label is applied to it.
-# The weekly schedule and the windows-latest leg for ZeeKayDa.Auth.Windows arrive with #567.
 on:
+  schedule:
+    # Sundays 03:00 UTC — off-peak for hosted runners, and a full day of headroom for the
+    # 300-minute legs, so the reports are waiting on Monday morning.
+    - cron: '0 3 * * 0'
   workflow_dispatch:
   pull_request:
     types: [labeled]
@@ -18,8 +23,11 @@ env:
 jobs:
   stryker:
     name: Stryker (${{ matrix.target }}${{ matrix.slice && format(' / {0}', matrix.slice) || '' }})
-    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'mutation'
-    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'schedule'
+      || github.event_name == 'workflow_dispatch'
+      || github.event.label.name == 'mutation'
+    runs-on: ${{ matrix.os }}
     # A 4-vCPU hosted runner gives Stryker concurrency 3, and the MTP runner cannot yet filter
     # tests per mutant, so every covered mutant runs the full suite. The core target is split
     # into per-directory slices below to keep each leg's mutant count (and wall clock) bounded.
@@ -31,17 +39,29 @@ jobs:
           # ZeeKayDa.Auth is too large for one leg (~800 tested mutants ≈ 4.5h serial): the CLI
           # --mutate override narrows each leg to one directory of its config's mutate globs.
           - target: ZeeKayDa.Auth.Tests
+            os: ubuntu-latest
             slice: tokens
             mutate_args: --mutate "**/Tokens/**/*.cs"
           - target: ZeeKayDa.Auth.Tests
+            os: ubuntu-latest
             slice: clients
             mutate_args: --mutate "**/Clients/**/*.cs"
           - target: ZeeKayDa.Auth.Tests
+            os: ubuntu-latest
             slice: security-authorization
             mutate_args: --mutate "**/Security/**/*.cs" --mutate "**/Authorization/**/*.cs"
           - target: ZeeKayDa.Auth.AspNetCore.Tests
+            os: ubuntu-latest
           - target: ZeeKayDa.Auth.AzureKeyVault.Tests
+            os: ubuntu-latest
           - target: ZeeKayDa.Auth.FileSystem.Tests
+            os: ubuntu-latest
+          # ZeeKayDa.Auth.Windows targets net10.0-windows and a third of its tests skip off
+          # Windows, so windows-latest is the only runner that can produce an honest score for
+          # it — not a portability check of the other targets, which stay on ubuntu-latest as
+          # the single canonical baseline environment.
+          - target: ZeeKayDa.Auth.Windows.Tests
+            os: windows-latest
 
     steps:
       - name: Checkout
@@ -62,6 +82,9 @@ jobs:
 
       - name: Run Stryker
         working-directory: tests/${{ matrix.target }}
+        # Explicit bash: windows-latest defaults to pwsh, which has no tee/grep and treats
+        # `>>` on $GITHUB_STEP_SUMMARY as UTF-16 redirection.
+        shell: bash
         run: |
           dotnet tool restore
           dotnet tool run dotnet-stryker ${{ matrix.mutate_args }} | tee stryker.log

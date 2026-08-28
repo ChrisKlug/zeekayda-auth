@@ -448,8 +448,9 @@ The hygiene checker (`.github/scripts/check_log_hygiene.cs`), its canary (`.gith
 
 Coverage measures what code tests execute; mutation score measures whether the tests would
 *notice the code being wrong*. For a security library the latter is the meaningful metric on
-critical paths. Mutation testing is **not** a CI gate (see #309, deferred) — it runs locally and,
-once #567 lands, on a weekly scheduled workflow.
+critical paths. Mutation testing is **not** a CI gate (see #309, deferred) — it runs locally, and
+on the `mutation.yml` workflow weekly (Sundays 03:00 UTC), on demand via `workflow_dispatch`, and
+on a pull request labelled `mutation`.
 
 [Stryker.NET](https://stryker-mutator.io/docs/stryker-net/introduction/) is installed as a dotnet
 local tool. Each mutated target has a `stryker-config.json` in its paired test project. Run one
@@ -465,12 +466,16 @@ cd tests/ZeeKayDa.Auth.Tests && dotnet tool run dotnet-stryker
 | `tests/ZeeKayDa.Auth.AspNetCore.Tests` | `ClientAuthentication/` | **100.00 %** |
 | `tests/ZeeKayDa.Auth.AzureKeyVault.Tests` | whole project | **43.55 %** |
 | `tests/ZeeKayDa.Auth.FileSystem.Tests` | whole project | **62.78 %** |
+| `tests/ZeeKayDa.Auth.Windows.Tests` | whole project | *pending first scheduled run* |
 
 Baselines are recorded from the `mutation.yml` workflow on `ubuntu-latest` — that is the canonical
-environment. Local runs on macOS/Windows produce different numbers (platform-conditional tests
-skip differently; at the #308 baseline FileSystem scored 74.50 % on macOS against 54.49 % on Linux), so compare local
-results only against local results. In the workflow the core target runs as three per-directory
-slices for wall-clock reasons; the recorded core number is from a whole-target run.
+environment. The one exception is `ZeeKayDa.Auth.Windows`, whose leg runs on `windows-latest`
+because that is the only runner where none of its tests skip; its number is therefore not
+comparable with the others. Local runs on macOS/Windows produce different numbers
+(platform-conditional tests skip differently; at the #308 baseline FileSystem scored 74.50 % on
+macOS against 54.49 % on Linux), so compare local results only against local results. In the
+workflow the core target runs as three per-directory slices for wall-clock reasons; the recorded
+core number is from a whole-target run.
 
 Reports land under `<test project>/StrykerOutput/` (gitignored) — open
 `reports/mutation-report.html` to inspect individual mutants.
@@ -485,9 +490,9 @@ Notes on the setup, so its quirks aren't rediscovered:
   mutants run the full suite — fine for these fast suites.
 - **`Endpoints/**` in AspNetCore is excluded** (explicit negation glob in its config) while the
   authorize/token endpoints are stubs. Add the glob when real implementations land.
-- **`ZeeKayDa.Auth.Windows` has no config**: a third of its tests skip off-Windows, which would
-  report false survivors. Its baseline comes from the Windows leg of the scheduled workflow
-  (#567).
+- **`ZeeKayDa.Auth.Windows` is Windows-only.** A third of its tests skip off-Windows, so a run
+  from macOS or Linux reports false survivors and is worthless — don't record one. Its baseline
+  comes from the `windows-latest` leg of the scheduled workflow.
 - **A local run needs an exclusive working tree.** Stryker builds from the tree as it finds it,
   so anything else touching the same checkout mid-run — an agent applying and reverting mutants
   to verify a review finding, a format fix, a rebuild — silently corrupts which mutants are
