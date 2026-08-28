@@ -19,54 +19,64 @@ catch (Exception ex)
 
 static int Run(string[] args)
 {
-    if (args.Length is not (3 or 4))
+    if (ReportRequest.Parse(args) is not { } request)
     {
         Console.Error.WriteLine(
             "Usage: report_mutation_scores.cs <artifacts-dir> <previous-body-file> <output-dir> [run-date]");
         return 2;
     }
 
-    var runDate = args.Length == 4 && !string.IsNullOrWhiteSpace(args[3])
-        ? args[3]
-        : DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-
-    var legs = ReadLegs(args[0]);
-    var previous = ReadPreviousScores(args[1]);
-    var rows = BuildRows(legs, previous);
+    var rows = BuildRows(ReadLegs(request.ArtifactsDirectory), ReadPreviousScores(request.PreviousBodyFile));
 
     if (rows.Count == 0)
     {
-        return Fail($"No mutation reports found under {args[0]} and no previous scores to compare against.");
+        return Fail(
+            $"No mutation reports found under {request.ArtifactsDirectory} and no previous scores to compare against.");
     }
 
     var changes = rows.Where(static row => row.HasMoved).ToArray();
 
-    Directory.CreateDirectory(args[2]);
-    File.WriteAllText(Path.Combine(args[2], "body.md"), RenderBody(rows, runDate));
+    WriteReport(request, rows, changes);
+    WriteLog(rows, changes);
+    WriteOutput("changed", changes.Length > 0 ? "true" : "false");
 
-    if (changes.Length > 0)
+    return 0;
+}
+
+// The comment file is written only when something moved; its absence is what the workflow's
+// `changed` output guards against, so the two must not disagree.
+static void WriteReport(ReportRequest request, IReadOnlyList<ReportRow> rows, IReadOnlyList<ReportRow> changes)
+{
+    Directory.CreateDirectory(request.OutputDirectory);
+    File.WriteAllText(
+        Path.Combine(request.OutputDirectory, "body.md"),
+        RenderBody(rows, request.RunDate));
+
+    if (changes.Count > 0)
     {
-        File.WriteAllText(Path.Combine(args[2], "comment.md"), RenderComment(rows, changes, runDate));
+        File.WriteAllText(
+            Path.Combine(request.OutputDirectory, "comment.md"),
+            RenderComment(rows, changes, request.RunDate));
     }
+}
 
+static void WriteLog(IReadOnlyList<ReportRow> rows, IReadOnlyList<ReportRow> changes)
+{
     foreach (var row in rows)
     {
-        Console.WriteLine($"{row.Key}: {FormatScore(row.Current)} (previous {FormatScore(row.Previous)})");
+        Console.WriteLine($"{row.Key.Value}: {FormatScore(row.Current)} (previous {FormatScore(row.Previous)})");
     }
 
-    Console.WriteLine(changes.Length > 0
-        ? $"{changes.Length} row(s) moved since the previous run."
+    Console.WriteLine(changes.Count > 0
+        ? $"{changes.Count} row(s) moved since the previous run."
         : "No row moved since the previous run; the body is refreshed but no comment is posted.");
-
-    WriteOutput("changed", changes.Length > 0 ? "true" : "false");
-    return 0;
 }
 
 // A leg's artifact directory is named 'mutation-report-<target>[-<slice>]'. Target project names
 // never contain '-', so the first '-' after the prefix is the target/slice boundary.
-static IReadOnlyDictionary<string, MutantTotals?> ReadLegs(string artifactsDirectory)
+static IReadOnlyDictionary<LegKey, MutantTotals?> ReadLegs(string artifactsDirectory)
 {
-    var legs = new Dictionary<string, MutantTotals?>(StringComparer.Ordinal);
+    var legs = new Dictionary<LegKey, MutantTotals?>();
 
     if (!Directory.Exists(artifactsDirectory))
     {
@@ -79,9 +89,7 @@ static IReadOnlyDictionary<string, MutantTotals?> ReadLegs(string artifactsDirec
 
     foreach (var artifactDirectory in artifactDirectories)
     {
-        var key = Path.GetFileName(artifactDirectory)[Report.ArtifactPrefix.Length..];
-
-        if (key.Length > 0)
+        if (LegKey.Parse(Path.GetFileName(artifactDirectory)[Report.ArtifactPrefix.Length..]) is { } key)
         {
             legs[key] = ReadTotals(artifactDirectory);
         }
@@ -138,32 +146,25 @@ static IReadOnlyList<string> ReadStatuses(string reportPath)
     }
 
     // Materialised because the JsonDocument is disposed when this method returns.
-    var statuses = new List<string>();
-
-    foreach (var file in files.EnumerateObject())
-    {
-        if (!file.Value.TryGetProperty("mutants", out var mutants) || mutants.ValueKind != JsonValueKind.Array)
-        {
-            continue;
-        }
-
-        var mutantStatuses = mutants
-            .EnumerateArray()
-            .Select(static mutant => mutant.TryGetProperty("status", out var status)
-                && status.ValueKind == JsonValueKind.String
-                    ? status.GetString()
-                    : null)
-            .Where(static status => status is not null);
-
-        statuses.AddRange(mutantStatuses!);
-    }
-
-    return statuses;
+    return files
+        .EnumerateObject()
+        .SelectMany(static file => MutantStatuses(file.Value))
+        .ToArray();
 }
 
-static IReadOnlyDictionary<string, double?> ReadPreviousScores(string previousBodyFile)
+static IEnumerable<string> MutantStatuses(JsonElement file)
+    => file.TryGetProperty("mutants", out var mutants) && mutants.ValueKind == JsonValueKind.Array
+        ? mutants.EnumerateArray().Select(StatusOf).OfType<string>()
+        : [];
+
+static string? StatusOf(JsonElement mutant)
+    => mutant.TryGetProperty("status", out var status) && status.ValueKind == JsonValueKind.String
+        ? status.GetString()
+        : null;
+
+static IReadOnlyDictionary<LegKey, double?> ReadPreviousScores(string previousBodyFile)
 {
-    var empty = new Dictionary<string, double?>(StringComparer.Ordinal);
+    var empty = new Dictionary<LegKey, double?>();
 
     if (!File.Exists(previousBodyFile))
     {
@@ -189,11 +190,14 @@ static IReadOnlyDictionary<string, double?> ReadPreviousScores(string previousBo
     try
     {
         using var document = JsonDocument.Parse(body[start..end].Trim());
-        var scores = new Dictionary<string, double?>(StringComparer.Ordinal);
+        var scores = new Dictionary<LegKey, double?>();
 
         foreach (var entry in document.RootElement.EnumerateObject())
         {
-            scores[entry.Name] = entry.Value.ValueKind == JsonValueKind.Number ? entry.Value.GetDouble() : null;
+            if (LegKey.Parse(entry.Name) is { } key)
+            {
+                scores[key] = entry.Value.ValueKind == JsonValueKind.Number ? entry.Value.GetDouble() : null;
+            }
         }
 
         return scores;
@@ -212,57 +216,60 @@ static IReadOnlyDictionary<string, double?> ReadPreviousScores(string previousBo
 // whole-target score — which is what makes the target row a valid CONTRIBUTING.md baseline.
 // Summing the slices' *percentages* would not be, hence the counts rather than the scores.
 static List<ReportRow> BuildRows(
-    IReadOnlyDictionary<string, MutantTotals?> legs,
-    IReadOnlyDictionary<string, double?> previous)
+    IReadOnlyDictionary<LegKey, MutantTotals?> legs,
+    IReadOnlyDictionary<LegKey, double?> previous)
 {
     var legKeys = legs.Keys
         .Concat(previous.Keys)
-        .Distinct(StringComparer.Ordinal)
-        .Order(StringComparer.Ordinal)
+        .Distinct()
+        .OrderBy(static key => key.Value, StringComparer.Ordinal)
         .ToArray();
+
+    var targets = legKeys
+        .Select(static key => key.Target)
+        .Distinct(StringComparer.Ordinal)
+        .Order(StringComparer.Ordinal);
 
     var rows = new List<ReportRow>();
 
-    foreach (var target in legKeys.Select(TargetOf).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal))
+    foreach (var target in targets)
     {
-        var targetLegKeys = legKeys.Where(key => TargetOf(key) == target).ToArray();
+        var targetLegKeys = legKeys.Where(key => key.Target == target).ToArray();
 
-        // A target's roll-up is only honest when every one of its legs reported. If a leg failed
-        // or vanished, the sum would silently describe a smaller scope than the baseline it feeds.
-        var totals = targetLegKeys
-            .Select(key => legs.TryGetValue(key, out var legTotals) ? legTotals : null)
-            .ToArray();
-
-        var rolledUp = totals.Any(static total => total is null)
-            ? null
-            : new MutantTotals(totals.Sum(total => total!.Detected), totals.Sum(total => total!.Undetected));
-
-        rows.Add(NewRow(target, rolledUp?.Score, previous));
+        rows.Add(NewRow(new LegKey(target, Slice: null), RollUp(targetLegKeys, legs)?.Score, previous));
 
         // An unsliced target's only leg is the target row itself; do not repeat it.
-        foreach (var sliceKey in targetLegKeys.Where(key => key != target))
+        foreach (var sliceKey in targetLegKeys.Where(static key => !key.IsTarget))
         {
-            var slice = legs.TryGetValue(sliceKey, out var sliceTotals) ? sliceTotals : null;
-            rows.Add(NewRow(sliceKey, slice?.Score, previous));
+            rows.Add(NewRow(sliceKey, Score(sliceKey, legs), previous));
         }
     }
 
     return rows;
 }
 
-static ReportRow NewRow(string key, double? current, IReadOnlyDictionary<string, double?> previous)
+// A target's roll-up is only honest when every one of its legs reported. If a leg failed or
+// vanished, the sum would silently describe a smaller scope than the baseline it feeds.
+static MutantTotals? RollUp(IReadOnlyList<LegKey> legKeys, IReadOnlyDictionary<LegKey, MutantTotals?> legs)
+{
+    var totals = legKeys
+        .Select(key => legs.TryGetValue(key, out var legTotals) ? legTotals : null)
+        .ToArray();
+
+    return totals.Any(static total => total is null)
+        ? null
+        : new MutantTotals(totals.Sum(total => total!.Detected), totals.Sum(total => total!.Undetected));
+}
+
+static double? Score(LegKey key, IReadOnlyDictionary<LegKey, MutantTotals?> legs)
+    => legs.TryGetValue(key, out var totals) ? totals?.Score : null;
+
+static ReportRow NewRow(LegKey key, double? current, IReadOnlyDictionary<LegKey, double?> previous)
     => new(
         Key: key,
         Current: current,
         Previous: previous.TryGetValue(key, out var was) ? was : null,
         WasKnown: previous.ContainsKey(key));
-
-static string TargetOf(string legKey)
-{
-    var separator = legKey.IndexOf('-', StringComparison.Ordinal);
-
-    return separator < 0 ? legKey : legKey[..separator];
-}
 
 static string RenderBody(IReadOnlyList<ReportRow> rows, string runDate)
 {
@@ -308,11 +315,11 @@ static string SerializeState(IReadOnlyList<ReportRow> rows)
         {
             if (row.Current is null)
             {
-                writer.WriteNull(row.Key);
+                writer.WriteNull(row.Key.Value);
             }
             else
             {
-                writer.WriteNumber(row.Key, Math.Round(row.Current.Value, 2));
+                writer.WriteNumber(row.Key.Value, Math.Round(row.Current.Value, 2));
             }
         }
 
@@ -342,12 +349,12 @@ static string RenderComment(IReadOnlyList<ReportRow> rows, IReadOnlyList<ReportR
 
 static string DescribeChange(ReportRow row) => (row.Current, row.Previous, row.WasKnown) switch
 {
-    (null, _, false) => $"**{row.Key}** — new row, but it reported no score.",
-    (not null, _, false) => $"**{row.Key}** — new row, first score {FormatScore(row.Current)}.",
-    (null, null, true) => $"**{row.Key}** — still reporting no score.",
-    (null, not null, true) => $"**{row.Key}** — no score (was {FormatScore(row.Previous)}); a leg likely failed.",
-    (not null, null, true) => $"**{row.Key}** — reporting again at {FormatScore(row.Current)} after a run with no score.",
-    _ => $"**{row.Key}** — {FormatScore(row.Previous)} → {FormatScore(row.Current)} ({FormatDelta(row.Delta)}).",
+    (null, _, false) => $"**{row.Key.Value}** — new row, but it reported no score.",
+    (not null, _, false) => $"**{row.Key.Value}** — new row, first score {FormatScore(row.Current)}.",
+    (null, null, true) => $"**{row.Key.Value}** — still reporting no score.",
+    (null, not null, true) => $"**{row.Key.Value}** — no score (was {FormatScore(row.Previous)}); a leg likely failed.",
+    (not null, null, true) => $"**{row.Key.Value}** — reporting again at {FormatScore(row.Current)} after a run with no score.",
+    _ => $"**{row.Key.Value}** — {FormatScore(row.Previous)} → {FormatScore(row.Current)} ({FormatDelta(row.Delta)}).",
 };
 
 static string RenderTable(IReadOnlyList<ReportRow> rows)
@@ -360,7 +367,7 @@ static string RenderTable(IReadOnlyList<ReportRow> rows)
     foreach (var row in rows)
     {
         // Slice rows are indented so a target and its detail read apart at a glance.
-        var label = TargetOf(row.Key) == row.Key ? $"`{row.Key}`" : $"&nbsp;&nbsp;↳ `{row.Key}`";
+        var label = row.Key.IsTarget ? $"`{row.Key.Value}`" : $"&nbsp;&nbsp;↳ `{row.Key.Value}`";
         var score = row.Current is null ? FormatScore(row.Current) : $"**{FormatScore(row.Current)}**";
 
         var previous = row.WasKnown ? FormatScore(row.Previous) : "not recorded";
@@ -396,6 +403,29 @@ static int Fail(string message)
     return 1;
 }
 
+// Bundles the four loose paths/strings the entry point is given, so they travel as one value
+// rather than as positional strings threaded through the call chain.
+internal sealed record ReportRequest(
+    string ArtifactsDirectory,
+    string PreviousBodyFile,
+    string OutputDirectory,
+    string RunDate)
+{
+    public static ReportRequest? Parse(string[] args)
+    {
+        if (args.Length is not (3 or 4))
+        {
+            return null;
+        }
+
+        var runDate = args.Length == 4 && !string.IsNullOrWhiteSpace(args[3])
+            ? args[3]
+            : DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+        return new ReportRequest(args[0], args[1], args[2], runDate);
+    }
+}
+
 internal static class Report
 {
     // The artifact name mutation.yml uploads each leg under.
@@ -411,7 +441,31 @@ internal sealed record MutantTotals(int Detected, int Undetected)
     public double? Score => Detected + Undetected == 0 ? null : Detected / (double)(Detected + Undetected) * 100;
 }
 
-internal sealed record ReportRow(string Key, double? Current, double? Previous, bool WasKnown)
+// A leg's artifact directory is named 'mutation-report-<target>[-<slice>]'. Target project names
+// never contain '-', so the first '-' is the target/slice boundary. A key with no slice names the
+// whole target, which is both a leg of its own and the row a rolled-up target reports under.
+internal sealed record LegKey(string Target, string? Slice)
+{
+    public string Value => Slice is null ? Target : $"{Target}-{Slice}";
+
+    public bool IsTarget => Slice is null;
+
+    public static LegKey? Parse(string value)
+    {
+        if (value.Length == 0)
+        {
+            return null;
+        }
+
+        var separator = value.IndexOf('-', StringComparison.Ordinal);
+
+        return separator < 0
+            ? new LegKey(value, Slice: null)
+            : new LegKey(value[..separator], value[(separator + 1)..]);
+    }
+}
+
+internal sealed record ReportRow(LegKey Key, double? Current, double? Previous, bool WasKnown)
 {
     // Scores are compared at the precision the report renders them, so float noise below the
     // second decimal never fires a "score moved" comment.
