@@ -473,15 +473,24 @@ environment. The one exception is `ZeeKayDa.Auth.Windows`, whose leg runs on `wi
 because that is the only runner where none of its tests skip; its number is therefore not
 comparable with the others. Local runs on macOS/Windows produce different numbers
 (platform-conditional tests skip differently; at the #308 baseline FileSystem scored 74.50 % on
-macOS against 54.49 % on Linux), so compare local results only against local results. In the
-workflow the core target runs as three per-directory slices for wall-clock reasons; the recorded
-core number is from a whole-target run, which is why its **Recorded** date lags the others — a
-sliced leg cannot refresh it.
+macOS against 54.49 % on Linux), so compare local results only against local results.
 
-To refresh a row, take the score from the leg's `mutation-report.json` artifact rather than the
-job log, which GitHub withholds until every leg of the run has finished. The score is Stryker's
-own formula, `(Killed + Timeout) / (Killed + Timeout + Survived + NoCoverage)` — `Ignored`,
-`CompileError`, and `RuntimeError` mutants are excluded from both halves.
+To refresh a row, copy the score for that target from the [mutation-score tracking issue][scores]
+and set **Recorded** to the run date it names. The scheduled run rewrites that issue every week
+and comments on it only when a score moves, so a comment landing in your inbox is the signal that
+a row here needs revisiting. Scores are read from each leg's
+`mutation-report.json` artifact rather than the job log, which GitHub withholds until every leg
+of the run has finished, and use Stryker's own formula,
+`(Killed + Timeout) / (Killed + Timeout + Survived + NoCoverage)` — `Ignored`, `CompileError`,
+and `RuntimeError` mutants are excluded from both halves.
+
+In the workflow the core target runs as three per-directory slices for wall-clock reasons. Their
+`--mutate` globs partition the core config's four globs exactly and without overlap, so the report
+sums the slices' raw mutant counts back into a single `ZeeKayDa.Auth.Tests` score — that summed
+row is the one to copy here, not any individual slice. Note this is a sum of counts, not an
+average of the three percentages, which would be a different (and wrong) number.
+
+[scores]: https://github.com/ChrisKlug/zeekayda-auth/issues/589
 
 Reports land under `<test project>/StrykerOutput/` (gitignored) — open
 `reports/mutation-report.html` to inspect individual mutants.
@@ -505,6 +514,11 @@ Notes on the setup, so its quirks aren't rediscovered:
   recorded killed or survived, while the run still exits 0 and looks healthy (this happened
   twice during #572). Sequence such work before or after the run, or give Stryker its own
   worktree. Telltale sign of a corrupted report: survivors that a named test provably kills.
+- **The schedule stops itself if the repo goes quiet.** GitHub disables scheduled workflows after
+  60 days of repository inactivity, and says nothing when it does. The tracking issue's **Last
+  run** date is where that shows up; re-enable the workflow from the Actions tab. This is accepted
+  rather than worked around — every keepalive is itself a scheduled workflow subject to the same
+  rule.
 - A surviving mutant in signing/validation logic is a test gap worth an issue (see #569 for the
   baseline triage). A surviving string mutation in message text is usually not — the
   test standards deliberately don't want message-wording tests on non-security types.

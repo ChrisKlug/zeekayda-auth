@@ -280,6 +280,9 @@ jobs:
       - name: Run coverage-project-discovery script smoke tests
         run: bash .github/scripts/tests/discover_coverage_projects.tests.sh
 
+      - name: Run mutation-score report script smoke tests
+        run: bash .github/scripts/tests/report_mutation_scores.tests.sh
+
   log-hygiene:
     name: Log Hygiene Check
     needs: detect-changes
