@@ -1,4 +1,4 @@
-using System.Runtime.CompilerServices;
+using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 using ZeeKayDa.Auth.Logging;
 
@@ -24,9 +24,19 @@ namespace ZeeKayDa.Auth.Clients;
 /// it is, gets a critical log entry naming the client and the violated rules.
 /// </para>
 /// <para>
-/// Verdicts are memoized per registration <em>instance</em>: a repository that caches its
-/// objects pays validation once, and one returning fresh instances per lookup revalidates
-/// automatically when the underlying data changes.
+/// <strong>Verdicts are memoized by registration content, not by instance.</strong> Validation
+/// runs a full PBKDF2 derivation (the empty-secret probe), so revalidating on every lookup would
+/// make an unauthenticated request to a protocol endpoint cost hundreds of milliseconds of CPU —
+/// a denial-of-service amplifier keyed on a public <c>client_id</c>. Content keying means a store
+/// that hands out fresh instances per lookup still pays validation only once per distinct
+/// configuration, while a store that mutates a cached registration in place is picked up
+/// automatically because its fingerprint changes. See <see cref="ClientRegistrationFingerprint"/>.
+/// </para>
+/// <para>
+/// The verdict cache is bounded. Its keys come from registrations the store returns — never from
+/// request input — so its size follows the deployment's real client configurations and cannot be
+/// grown by a caller. On reaching the cap the cache is cleared wholesale rather than evicting
+/// selectively; at this size that is a rare event, and the cost is one revalidation per client.
 /// </para>
 /// </remarks>
 internal sealed class ValidatedClientResolver
@@ -34,7 +44,11 @@ internal sealed class ValidatedClientResolver
     private readonly IClientRepository _repository;
     private readonly IClientRegistrationValidator _validator;
     private readonly ISanitizingLogger<ValidatedClientResolver> _logger;
-    private readonly ConditionalWeakTable<IClientRegistration, Verdict> _verdicts = new();
+    private readonly ConcurrentDictionary<string, Verdict> _verdicts = new(StringComparer.Ordinal);
+
+    // Generous next to any realistic client count, and bounded so a long-lived process that
+    // reconfigures clients repeatedly cannot grow the cache without limit.
+    private const int MaxCachedVerdicts = 1024;
 
     public ValidatedClientResolver(
         IClientRepository repository,
@@ -65,7 +79,7 @@ internal sealed class ValidatedClientResolver
         if (client is null)
             return null;
 
-        var verdict = _verdicts.GetValue(client, Validate);
+        var verdict = GetOrAddVerdict(client);
         if (verdict.IsValid)
             return client;
 
@@ -81,6 +95,21 @@ internal sealed class ValidatedClientResolver
         }
 
         return null;
+    }
+
+    private Verdict GetOrAddVerdict(IClientRegistration client)
+    {
+        var fingerprint = ClientRegistrationFingerprint.Compute(client);
+
+        if (_verdicts.TryGetValue(fingerprint, out var cached))
+            return cached;
+
+        var verdict = Validate(client);
+
+        if (_verdicts.Count >= MaxCachedVerdicts)
+            _verdicts.Clear();
+
+        return _verdicts.GetOrAdd(fingerprint, verdict);
     }
 
     private Verdict Validate(IClientRegistration client)

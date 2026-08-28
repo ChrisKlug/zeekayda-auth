@@ -52,7 +52,7 @@ public class ValidatedClientResolverTests
     }
 
     [Fact]
-    public async Task Verdict_is_memoized_per_registration_instance()
+    public async Task Verdict_is_memoized_for_a_cached_registration()
     {
         var validator = new CountingValidator();
         var resolver = Resolver(Client(), validator);
@@ -65,7 +65,7 @@ public class ValidatedClientResolverTests
     }
 
     [Fact]
-    public async Task Fresh_registration_instances_are_revalidated()
+    public async Task Fresh_instances_with_equal_content_are_validated_once()
     {
         var validator = new CountingValidator();
         var resolver = new ValidatedClientResolver(
@@ -74,8 +74,30 @@ public class ValidatedClientResolverTests
         await resolver.FindByClientIdAsync("client-1", TestContext.Current.CancellationToken);
         await resolver.FindByClientIdAsync("client-1", TestContext.Current.CancellationToken);
 
-        validator.Calls.Should().Be(2,
-            "a repository returning fresh instances must be revalidated so data changes are seen");
+        // Validation runs a 600,000-iteration PBKDF2 (the empty-secret probe). Instance-keyed
+        // memoization made a store that hands out fresh instances per lookup — an EF Core
+        // repository, say — pay that on every unauthenticated authorize request, which is a
+        // CPU-exhaustion lever keyed on a public client_id. Content keying removes it.
+        validator.Calls.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task A_registration_mutated_in_place_is_revalidated()
+    {
+        var validator = new CountingValidator();
+        var mutable = new MutableRepository(Client());
+        var resolver = new ValidatedClientResolver(mutable, validator, NullLogger());
+
+        await resolver.FindByClientIdAsync("client-1", TestContext.Current.CancellationToken);
+        mutable.Current = Client() with
+        {
+            RedirectUris = new HashSet<string>(StringComparer.Ordinal) { "https://app.example.com/added" },
+        };
+        await resolver.FindByClientIdAsync("client-1", TestContext.Current.CancellationToken);
+
+        // A store that edits a cached registration must not keep the old verdict: the matcher
+        // reads the live redirect set, so a stale "valid" would bless a URI validation rejects.
+        validator.Calls.Should().Be(2);
     }
 
     // ── Fixture ───────────────────────────────────────────────────────────────────────────────
@@ -100,6 +122,15 @@ public class ValidatedClientResolverTests
             ValueTask.FromResult(string.Equals(clientId, client.ClientId, StringComparison.Ordinal)
                 ? (IClientRegistration?)client
                 : null);
+    }
+
+    private sealed class MutableRepository(IClientRegistration current) : IClientRepository
+    {
+        public IClientRegistration Current { get; set; } = current;
+
+        public ValueTask<IClientRegistration?> FindByClientIdAsync(
+            string clientId, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<IClientRegistration?>(Current);
     }
 
     private sealed class FreshInstanceRepository : IClientRepository

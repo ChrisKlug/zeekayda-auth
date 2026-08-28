@@ -1,0 +1,190 @@
+using FluentAssertions;
+using ZeeKayDa.Auth.Authorization;
+using ZeeKayDa.Auth.Clients;
+using ZeeKayDa.Auth.Tokens;
+
+namespace ZeeKayDa.Auth.Tests.Clients;
+
+public class ClientRegistrationFingerprintTests
+{
+    /// <summary>
+    /// The guard that makes the fingerprint's coverage rule enforceable rather than advisory.
+    /// A member added to <see cref="IClientRegistration"/> or <see cref="IClientMetadata"/> and
+    /// not added to <c>ClientRegistrationFingerprint.Compute</c> can be changed without
+    /// invalidating a cached validation verdict — so this test fails the build until both are
+    /// updated together. If you are here because it failed: add the member to the fingerprint,
+    /// then add its name below.
+    /// </summary>
+    [Fact]
+    public void Fingerprint_covers_every_IClientRegistration_member()
+    {
+        string[] covered =
+        [
+            nameof(IClientMetadata.ClientId),
+            nameof(IClientMetadata.IsPublic),
+            nameof(IClientMetadata.EnableZkdErrorCodes),
+            nameof(IClientMetadata.RedirectUris),
+            nameof(IClientMetadata.PostLogoutRedirectUris),
+            nameof(IClientMetadata.AllowedScopes),
+            nameof(IClientMetadata.AllowedTokenEndpointAuthMethods),
+            nameof(IClientMetadata.AllowedGrantTypes),
+            nameof(IClientMetadata.AllowedResponseTypes),
+            nameof(IClientMetadata.AllowedResponseModes),
+            nameof(IClientMetadata.AllowedPromptValues),
+            nameof(IClientMetadata.AllowedSigningAlgorithms),
+            nameof(IClientRegistration.Credentials),
+        ];
+
+        var declared = typeof(IClientRegistration).GetProperties()
+            .Concat(typeof(IClientMetadata).GetProperties())
+            .Select(p => p.Name)
+            .Distinct(StringComparer.Ordinal);
+
+        declared.Should().BeEquivalentTo(covered);
+    }
+
+    [Fact]
+    public void Equal_content_on_different_instances_produces_the_same_fingerprint()
+    {
+        // The property that removes the per-request PBKDF2 for a store handing out fresh
+        // instances (an EF Core repository, for example).
+        ClientRegistrationFingerprint.Compute(Client())
+            .Should().Be(ClientRegistrationFingerprint.Compute(Client()));
+    }
+
+    [Fact]
+    public void Set_ordering_does_not_change_the_fingerprint()
+    {
+        var forwards = Client() with
+        {
+            AllowedScopes = new HashSet<string>(StringComparer.Ordinal) { "openid", "profile", "email" },
+        };
+        var backwards = Client() with
+        {
+            AllowedScopes = new HashSet<string>(StringComparer.Ordinal) { "email", "profile", "openid" },
+        };
+
+        ClientRegistrationFingerprint.Compute(forwards)
+            .Should().Be(ClientRegistrationFingerprint.Compute(backwards));
+    }
+
+    public static TheoryData<string, ClientRegistration> MutatedRegistrations() => new()
+    {
+        { "ClientId", Client() with { ClientId = "other-client" } },
+        { "IsPublic", Client() with { IsPublic = false } },
+        { "EnableZkdErrorCodes", Client() with { EnableZkdErrorCodes = true } },
+        {
+            "RedirectUris",
+            Client() with { RedirectUris = new HashSet<string>(StringComparer.Ordinal) { "https://app.example.com/other" } }
+        },
+        {
+            "PostLogoutRedirectUris",
+            Client() with { PostLogoutRedirectUris = new HashSet<string>(StringComparer.Ordinal) { "https://app.example.com/bye" } }
+        },
+        {
+            "AllowedScopes",
+            Client() with { AllowedScopes = new HashSet<string>(StringComparer.Ordinal) { "openid", "admin" } }
+        },
+        {
+            "AllowedTokenEndpointAuthMethods",
+            Client() with { AllowedTokenEndpointAuthMethods = new HashSet<string>(StringComparer.Ordinal) { TokenEndpointAuthMethods.ClientSecretBasic } }
+        },
+        {
+            "AllowedGrantTypes",
+            Client() with { AllowedGrantTypes = new HashSet<GrantType> { GrantType.RefreshToken } }
+        },
+        {
+            "AllowedResponseTypes",
+            Client() with { AllowedResponseTypes = new HashSet<ResponseType>() }
+        },
+        {
+            "AllowedResponseModes",
+            Client() with { AllowedResponseModes = new HashSet<ResponseMode> { ResponseMode.FormPost } }
+        },
+        {
+            "AllowedPromptValues",
+            Client() with { AllowedPromptValues = new HashSet<PromptValue> { PromptValue.Login } }
+        },
+        {
+            "AllowedSigningAlgorithms",
+            Client() with { AllowedSigningAlgorithms = new HashSet<SigningAlgorithm> { SigningAlgorithm.RS256 } }
+        },
+    };
+
+    [Theory]
+    [MemberData(nameof(MutatedRegistrations))]
+    public void Changing_any_covered_member_changes_the_fingerprint(string member, ClientRegistration mutated)
+    {
+        // Given a registration that differs only in {member}, the fingerprint must differ —
+        // otherwise a stale verdict would keep serving a registration validation now rejects.
+        ClientRegistrationFingerprint.Compute(mutated)
+            .Should().NotBe(ClientRegistrationFingerprint.Compute(Client()), $"{member} is covered");
+    }
+
+    [Fact]
+    public void Null_and_empty_AllowedSigningAlgorithms_are_distinguished()
+    {
+        // Null means "inherit the server's advertised set"; empty means "none permitted". They
+        // validate differently, so they must not share a verdict.
+        var nullAlgs = Client() with { AllowedSigningAlgorithms = null };
+        var emptyAlgs = Client() with { AllowedSigningAlgorithms = new HashSet<SigningAlgorithm>() };
+
+        ClientRegistrationFingerprint.Compute(nullAlgs)
+            .Should().NotBe(ClientRegistrationFingerprint.Compute(emptyAlgs));
+    }
+
+    [Fact]
+    public void Changing_a_stored_secret_changes_the_fingerprint()
+    {
+        var original = Confidential(hash: [1, 2, 3]);
+        var rotated = Confidential(hash: [4, 5, 6]);
+
+        ClientRegistrationFingerprint.Compute(rotated)
+            .Should().NotBe(ClientRegistrationFingerprint.Compute(original),
+                "a rotated secret must not inherit the previous verdict's empty-secret probe result");
+    }
+
+    [Fact]
+    public void Equal_stored_secrets_on_different_instances_produce_the_same_fingerprint()
+    {
+        ClientRegistrationFingerprint.Compute(Confidential(hash: [1, 2, 3]))
+            .Should().Be(ClientRegistrationFingerprint.Compute(Confidential(hash: [1, 2, 3])));
+    }
+
+    [Fact]
+    public void A_custom_credential_type_falls_back_to_instance_identity()
+    {
+        // IClientCredential is a marker interface, so a custom credential exposes nothing to
+        // fingerprint by content. Distinct instances must therefore produce distinct
+        // fingerprints — conservative, and no worse than instance-keyed memoization.
+        var first = Client() with { Credentials = [new CustomCredential()] };
+        var second = Client() with { Credentials = [new CustomCredential()] };
+
+        ClientRegistrationFingerprint.Compute(first)
+            .Should().NotBe(ClientRegistrationFingerprint.Compute(second));
+    }
+
+    // ── Fixture ───────────────────────────────────────────────────────────────────────────────
+
+    private static ClientRegistration Client() =>
+        ClientRegistration.CreatePublic(
+            "client-1",
+            redirectUris: ["https://app.example.com/callback"],
+            postLogoutRedirectUris: [],
+            allowedScopes: ["openid", "profile"]);
+
+    private static ClientRegistration Confidential(byte[] hash) => Client() with
+    {
+        IsPublic = false,
+        Credentials = [new StubPbkdf2Secret(hash)],
+    };
+
+    private sealed class StubPbkdf2Secret(byte[] hash) : IPbkdf2ClientSecret
+    {
+        public int Iterations => 600_000;
+        public byte[] Salt => [9, 9, 9];
+        public byte[] Hash => hash;
+    }
+
+    private sealed class CustomCredential : IClientCredential;
+}
