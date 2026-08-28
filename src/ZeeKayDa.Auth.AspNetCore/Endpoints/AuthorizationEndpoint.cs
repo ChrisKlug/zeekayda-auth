@@ -26,10 +26,17 @@ namespace ZeeKayDa.Auth.AspNetCore.Endpoints;
 internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
 {
     private readonly IOptions<AuthorizationServerOptions> _options;
+    private readonly AuthorizationRequestContextTransport _contextTransport;
+    private readonly TimeProvider _timeProvider;
 
-    public AuthorizationEndpoint(IOptions<AuthorizationServerOptions> options)
+    public AuthorizationEndpoint(
+        IOptions<AuthorizationServerOptions> options,
+        AuthorizationRequestContextTransport contextTransport,
+        TimeProvider timeProvider)
     {
         _options = options;
+        _contextTransport = contextTransport;
+        _timeProvider = timeProvider;
     }
 
     /// <inheritdoc/>
@@ -51,8 +58,6 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
     private async Task<IResult> Handle(
         AuthorizeRequestValidator validator,
         AuthorizeErrorTransport errorTransport,
-        AuthorizationRequestContextTransport contextTransport,
-        TimeProvider timeProvider,
         HttpContext context)
     {
         // Authorization responses carry codes and errors that must never be cached or logged
@@ -72,7 +77,7 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
         return result switch
         {
             AuthorizeRequestValidationResult.Valid valid =>
-                BeginInteraction(context, contextTransport, timeProvider, valid.Request),
+                BeginInteraction(context, valid.Request),
 
             AuthorizeRequestValidationResult.RedirectError redirect => RedirectToClient(redirect),
 
@@ -88,13 +93,9 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
     /// consent and code issuance are not built yet, so a request that gets this far still answers
     /// <c>501</c> — but it answers it having persisted the state those stages will need.
     /// </summary>
-    private IResult BeginInteraction(
-        HttpContext context,
-        AuthorizationRequestContextTransport contextTransport,
-        TimeProvider timeProvider,
-        ValidatedAuthorizeRequest request)
+    private IResult BeginInteraction(HttpContext context, ValidatedAuthorizeRequest request)
     {
-        var now = timeProvider.GetUtcNow();
+        var now = _timeProvider.GetUtcNow();
         var requestContext = new AuthorizationRequestContext
         {
             Id = StoreKeyGenerator.Generate(),
@@ -111,7 +112,7 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
             ExpiresAt = now + AuthorizationRequestContextTransport.Lifetime,
         };
 
-        if (!contextTransport.TryWrite(context, requestContext))
+        if (!_contextTransport.TryWrite(context, requestContext))
         {
             // The request is too large to carry through the flow. The redirect URI is already
             // authenticated at this point, so this is a phase-2 failure and belongs to the client.
