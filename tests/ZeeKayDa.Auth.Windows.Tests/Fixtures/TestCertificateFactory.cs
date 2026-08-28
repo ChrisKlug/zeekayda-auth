@@ -32,6 +32,54 @@ internal static class TestCertificateFactory
         return withPrivateKey ? certificate : StripPrivateKey(certificate);
     }
 
+    /// <summary>
+    /// Fabricates a certificate whose subject public key is neither RSA nor EC — an Ed25519 key,
+    /// which .NET surfaces through neither <c>GetRSAPublicKey()</c> nor <c>GetECDsaPublicKey()</c>.
+    /// The certificate is signed with a throwaway RSA key; only the subject key algorithm matters.
+    /// </summary>
+    public static X509Certificate2 CreateUnsupportedKeyTypeSelfSigned(
+        string subjectName, DateTimeOffset notBefore, DateTimeOffset notAfter)
+    {
+        using var signingKey = RSA.Create(2048);
+        var subject = new X500DistinguishedName($"CN={subjectName}");
+        var ed25519PublicKey = new PublicKey(
+            new Oid("1.3.101.112"), parameters: null, keyValue: new AsnEncodedData(new byte[32]));
+        var request = new CertificateRequest(subject, ed25519PublicKey, HashAlgorithmName.SHA256);
+
+        return request.Create(
+            subject,
+            X509SignatureGenerator.CreateForRSA(signingKey, RSASignaturePadding.Pkcs1),
+            notBefore,
+            notAfter,
+            serialNumber: [1]);
+    }
+
+    /// <summary>
+    /// Fabricates a DSA certificate <em>with</em> a private key. DSA is the one asymmetric algorithm
+    /// .NET can attach to a certificate that neither <c>GetRSAPrivateKey()</c> nor
+    /// <c>GetECDsaPrivateKey()</c> understands, so the result reports <c>HasPrivateKey = true</c>
+    /// while both private-key accessors return <see langword="null"/> — the same shape a certificate
+    /// whose CNG key ACL denies this process presents. The key is never used to sign anything, and
+    /// 1024 bits is the only size every platform's DSA implementation will generate. macOS can import
+    /// DSA keys but not generate them, so callers must skip there.
+    /// </summary>
+    public static X509Certificate2 CreateDsaSelfSigned(
+        string subjectName, DateTimeOffset notBefore, DateTimeOffset notAfter)
+    {
+        using var signingKey = RSA.Create(2048);
+        using var dsa = DSA.Create(1024);
+        var subject = new X500DistinguishedName($"CN={subjectName}");
+        var request = new CertificateRequest(subject, new PublicKey(dsa), HashAlgorithmName.SHA256);
+        using var certificate = request.Create(
+            subject,
+            X509SignatureGenerator.CreateForRSA(signingKey, RSASignaturePadding.Pkcs1),
+            notBefore,
+            notAfter,
+            serialNumber: [2]);
+
+        return certificate.CopyWithPrivateKey(dsa);
+    }
+
     /// <summary>Returns an independent copy of <paramref name="certificate"/> — mirrors what a real store read returns.</summary>
     public static X509Certificate2 Copy(X509Certificate2 certificate) => new(certificate);
 
