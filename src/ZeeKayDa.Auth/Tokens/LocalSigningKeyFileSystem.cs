@@ -19,7 +19,7 @@ namespace ZeeKayDa.Auth.Tokens;
 /// are declared for macOS/BSD and Linux 64-bit because the kernel ABI differs between platforms;
 /// only the fields up to <c>st_uid</c> are bound, with the rest covered by blittable padding.
 /// </remarks>
-[ExcludeFromCodeCoverage(Justification = "Platform-specific OS APIs cannot all be exercised on a single OS. Tests inject a fake IDevelopmentSigningKeyFileSystem instead.")]
+[ExcludeFromCodeCoverage(Justification = "Each architecture-specific stat/lstat branch is reachable only on the one architecture whose ABI it binds, so no single runner can cover them all. LocalSigningKeyFileSystemTests exercises whichever branch the runner's architecture selects.")]
 internal static partial class PosixInterop
 {
     /// <summary>Returns the real UID of the calling process.</summary>
@@ -163,7 +163,6 @@ internal static partial class PosixInterop
 /// Default <see cref="IDevelopmentSigningKeyFileSystem"/> implementation that delegates to real OS APIs.
 /// On Unix, uses POSIX file-mode bits. On Windows, uses ACL-based access control.
 /// </summary>
-[ExcludeFromCodeCoverage(Justification = "Platform-specific OS APIs cannot all be exercised on a single OS. Tests inject a fake instead.")]
 internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSystem
 {
     /// <inheritdoc/>
@@ -205,6 +204,7 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
     /// <inheritdoc/>
     public bool FileExists(string path) => File.Exists(path);
 
+    [ExcludeFromCodeCoverage(Justification = "Windows-only, so unreachable on the Linux runner whose coverage artifact feeds the regression gate. LocalSigningKeyFileSystemTests covers this on the windows-latest runner.")]
     [SupportedOSPlatform("windows")]
     private static void EnsureDirectorySafeWindows(string directory)
     {
@@ -276,6 +276,9 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
                 continue;
             }
 
+            // Both reads here are stat()-based, which follows a symlink and reports the *target's*
+            // owner. That is the same laundering shape the ancestor-symlink walk below rejects, and
+            // it is not fixed here: see issue #586, which makes this whole method lstat-correct.
             var ownerUid = PosixInterop.GetOwnerUid(current);
 
             if (ownerUid == 0)
@@ -295,6 +298,7 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
         }
     }
 
+    [ExcludeFromCodeCoverage(Justification = "Windows-only, so unreachable on the Linux runner whose coverage artifact feeds the regression gate. LocalSigningKeyFileSystemTests covers this on the windows-latest runner.")]
     [SupportedOSPlatform("windows")]
     private static async ValueTask WriteKeyFileWindowsAsync(string keyPath, ReadOnlyMemory<char> pem, CancellationToken cancellationToken)
     {
@@ -360,26 +364,89 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
                     "Remove the symlink and restart the application."));
         }
 
-        // Walks every parent directory to catch a symlink an attacker with directory-write access
-        // could use to redirect a parent even when the leaf itself is not a symlink.
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            ValidateNoSymlinkedAncestorWindows(resolvedPath);
+        else
+            ValidateNoUntrustedSymlinkedAncestorUnix(resolvedPath);
+    }
+
+    /// <summary>
+    /// Walks every ancestor directory of <paramref name="resolvedPath"/> and rejects the first
+    /// symlinked one. A symlinked ancestor is as dangerous as a symlinked leaf: an attacker with
+    /// write access to a parent could redirect it elsewhere. Every ancestor is checked
+    /// unconditionally — Windows has no OS-owned-symlink convention to carve out, unlike the Unix
+    /// walk below.
+    /// </summary>
+    [ExcludeFromCodeCoverage(Justification = "Windows-only, so unreachable on the Linux runner whose coverage artifact feeds the regression gate. Only partly covered on the windows-latest runner either: LocalSigningKeyFileSystemTests walks this whenever it reads a key, but its throwing branch is unexercised, because the tests that plant a symlink skip on Windows where creating one needs elevation.")]
+    [SupportedOSPlatform("windows")]
+    private static void ValidateNoSymlinkedAncestorWindows(string resolvedPath)
+    {
         var directory = Path.GetDirectoryName(resolvedPath);
         while (!string.IsNullOrEmpty(directory))
         {
-            var dirInfo = new DirectoryInfo(directory);
-            if (dirInfo.LinkTarget is not null)
-            {
-                throw new ZeeKayDaConfigurationException(
-                    new ZeeKayDaConfigurationFailure(
-                        "signing.dev_keys.symlink_detected",
-                        $"Signing key path '{resolvedPath}' resolves through a symlinked directory '{directory}'. " +
-                        "Symlinks are not permitted anywhere in the key path to prevent redirect attacks. " +
-                        "Remove the symlink and restart the application."));
-            }
+            if (IsSymlinkedDirectory(directory))
+                throw SymlinkedAncestorDetected(resolvedPath, directory);
 
             directory = Path.GetDirectoryName(directory);
         }
     }
 
+    /// <summary>
+    /// Walks <paramref name="resolvedPath"/>'s ancestor directories, rejecting the first
+    /// non-root-owned symlinked one — a root-owned ancestor is trusted regardless of whether it is
+    /// itself a symlink, since an attacker without root cannot plant or replace a root-owned
+    /// directory entry. macOS ships <c>/tmp</c>, <c>/var</c>, and <c>/etc</c> as symlinks to
+    /// <c>/private/...</c>, so the blanket "any symlinked ancestor is unsafe" rule the Windows walk
+    /// above applies would reject a key under any of those paths on a platform where this dev-only
+    /// provider is routinely used. The walk stops at the first root-owned entry, since everything
+    /// above it is equally OS-managed.
+    /// </summary>
+    /// <remarks>
+    /// Mirrors <c>FileSigningKeyReader.ValidateNoUntrustedSymlinkedAncestorUnix</c>, which carries
+    /// the same trust anchor for the same reason.
+    /// </remarks>
+    [UnsupportedOSPlatform("windows")]
+    private static void ValidateNoUntrustedSymlinkedAncestorUnix(string resolvedPath)
+    {
+        var directory = Path.GetDirectoryName(resolvedPath);
+        while (!string.IsNullOrEmpty(directory))
+        {
+            if (IsRootOwnedDirectoryEntry(directory))
+                break;
+
+            if (IsSymlinkedDirectory(directory))
+                throw SymlinkedAncestorDetected(resolvedPath, directory);
+
+            directory = Path.GetDirectoryName(directory);
+        }
+    }
+
+    /// <summary>
+    /// Whether <paramref name="directoryPath"/>'s own directory entry — not the target it resolves
+    /// to, if it is itself a symlink — is owned by root (uid 0).
+    /// </summary>
+    /// <remarks>
+    /// Uses <see cref="PosixInterop.GetLinkOwnerUid"/> (<c>lstat</c>), never a <c>stat</c>-based
+    /// owner lookup: <c>stat()</c> follows a symlink and reports the target's owner, which an
+    /// attacker controls by choosing where their symlink points — pointing it at root-owned
+    /// <c>/tmp</c> would wrongly read as root-owned and short-circuit this check. <c>lstat()</c>
+    /// reports the link entry's own owner.
+    /// </remarks>
+    [UnsupportedOSPlatform("windows")]
+    private static bool IsRootOwnedDirectoryEntry(string directoryPath) =>
+        PosixInterop.GetLinkOwnerUid(directoryPath) == 0;
+
+    private static bool IsSymlinkedDirectory(string directoryPath) =>
+        new DirectoryInfo(directoryPath).LinkTarget is not null;
+
+    private static ZeeKayDaConfigurationException SymlinkedAncestorDetected(string resolvedPath, string symlinkedDirectory) =>
+        new(new ZeeKayDaConfigurationFailure(
+            "signing.dev_keys.symlink_detected",
+            $"Signing key path '{resolvedPath}' resolves through a symlinked directory '{symlinkedDirectory}'. " +
+            "Symlinks are not permitted anywhere in the key path to prevent redirect attacks. " +
+            "Remove the symlink and restart the application."));
+
+    [ExcludeFromCodeCoverage(Justification = "Windows-only, so unreachable on the Linux runner whose coverage artifact feeds the regression gate. LocalSigningKeyFileSystemTests covers this on the windows-latest runner.")]
     [SupportedOSPlatform("windows")]
     private static void ApplyRestrictiveFileAclWindows(string filePath)
     {
@@ -395,6 +462,7 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
         new FileInfo(filePath).SetAccessControl(security);
     }
 
+    [ExcludeFromCodeCoverage(Justification = "Windows-only, so unreachable on the Linux runner whose coverage artifact feeds the regression gate. LocalSigningKeyFileSystemTests covers this on the windows-latest runner.")]
     [SupportedOSPlatform("windows")]
     private static void ApplyRestrictiveDirectoryAclWindows(string directoryPath)
     {
