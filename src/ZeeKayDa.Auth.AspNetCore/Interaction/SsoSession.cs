@@ -153,8 +153,13 @@ internal sealed class SsoSession
     /// </summary>
     private static ClaimsPrincipal BuildSessionPrincipal(ClaimsPrincipal principal, SsoSessionState state)
     {
+        // Case-insensitively, because that is how the claims are read back: ClaimsPrincipal's
+        // FindFirst and FindAll match a claim type with OrdinalIgnoreCase. An ordinal strip would
+        // leave "ZKD:sid" in place and it would then win the lookup, since the host's claims are
+        // added ahead of the framework's.
         var claims = principal.Claims
-            .Where(claim => !claim.Type.StartsWith(SsoSessionClaimTypes.ReservedPrefix, StringComparison.Ordinal))
+            .Where(claim => !claim.Type.StartsWith(
+                SsoSessionClaimTypes.ReservedPrefix, StringComparison.OrdinalIgnoreCase))
             .ToList();
 
         claims.Add(new Claim(SsoSessionClaimTypes.SessionId, state.SessionId));

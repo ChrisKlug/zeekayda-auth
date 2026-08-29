@@ -68,9 +68,10 @@ public sealed class LoginInteractionTests : IDisposable
             var claims = new List<Claim> { new("sub", subject), new("name", "Test User") };
 
             // A host that copies claims from somewhere else could carry a framework-reserved one
-            // in with them. The test passes it deliberately.
-            if (form["forge_sid"].FirstOrDefault() is { Length: > 0 } forged)
-                claims.Add(new Claim(SsoSessionClaimTypes.SessionId, forged));
+            // in with them — under any casing, since claim types are matched case-insensitively.
+            // The test passes one deliberately.
+            if (form["forge_type"].FirstOrDefault() is { Length: > 0 } forgedType)
+                claims.Add(new Claim(forgedType, form["forge_value"].FirstOrDefault() ?? string.Empty));
 
             await login.SignInAsync(
                 new ClaimsPrincipal(new ClaimsIdentity(claims, "test")),
@@ -154,6 +155,14 @@ public sealed class LoginInteractionTests : IDisposable
 
         var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
         return System.Text.Json.JsonDocument.Parse(body).RootElement.GetProperty("sid").GetString();
+    }
+
+    private async Task<System.Text.Json.JsonElement> ReadSessionAsync()
+    {
+        var response = await _client.GetAsync("/test/session", TestContext.Current.CancellationToken);
+        var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+
+        return System.Text.Json.JsonDocument.Parse(body).RootElement.Clone();
     }
 
     // ── Handoff ───────────────────────────────────────────────────────────────────────────────
@@ -261,15 +270,73 @@ public sealed class LoginInteractionTests : IDisposable
 
     // ── The SSO session ───────────────────────────────────────────────────────────────────────
 
-    [Fact]
-    public async Task A_host_supplied_session_id_claim_is_stripped_rather_than_honoured()
+    [Theory]
+    [InlineData("zkd:sid")]
+    [InlineData("ZKD:sid")]
+    [InlineData("Zkd:Sid")]
+    public async Task A_host_supplied_session_id_claim_is_stripped_whatever_its_case(string claimType)
     {
         var handoff = await AuthorizeAsync();
 
-        await PostLoginAsync(InteractionIdFrom(handoff), ("sub", "user-1"), ("forge_sid", "chosen-by-the-host"));
+        await PostLoginAsync(
+            InteractionIdFrom(handoff),
+            ("sub", "user-1"),
+            ("forge_type", claimType),
+            ("forge_value", "chosen-by-the-host"));
 
         (await ReadSessionIdAsync()).Should().NotBe("chosen-by-the-host",
-            "a claim in the reserved namespace never survives promotion");
+            "claim types are matched case-insensitively, so the reserved namespace must be stripped that way too");
+    }
+
+    [Fact]
+    public async Task A_host_supplied_amr_claim_is_stripped_whatever_its_case()
+    {
+        var handoff = await AuthorizeAsync();
+
+        await PostLoginAsync(
+            InteractionIdFrom(handoff),
+            ("sub", "user-1"),
+            ("forge_type", "ZKD:amr"),
+            ("forge_value", "mfa"));
+
+        // An RP's step-up check reads amr, so a host must not be able to add to what the framework
+        // recorded — "mfa" arriving from the login form would be a lie the RP cannot detect.
+        (await ReadSessionAsync()).GetProperty("amr").EnumerateArray()
+            .Select(value => value.GetString())
+            .Should().Equal(["pwd"]);
+    }
+
+    [Fact]
+    public async Task A_host_supplied_auth_time_claim_cannot_defeat_max_age()
+    {
+        // A future auth_time would make (now - authTime) negative, so no max_age could ever
+        // exceed it and re-authentication would never be required again.
+        var handoff = await AuthorizeAsync();
+        await PostLoginAsync(
+            InteractionIdFrom(handoff),
+            ("sub", "user-1"),
+            ("forge_type", "ZKD:auth_time"),
+            ("forge_value", Now.AddYears(1).ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture)));
+
+        _time.Advance(TimeSpan.FromMinutes(10));
+        var query = ValidQuery();
+        query["max_age"] = "60";
+
+        (await AuthorizeAsync(query)).Headers.Location!.OriginalString.Should().StartWith($"{LoginPath}?");
+    }
+
+    [Fact]
+    public async Task A_refused_request_does_not_leave_an_interaction_behind()
+    {
+        // prompt=none is refused after the context is written, so the refusal must also clear it —
+        // otherwise the refused request's context is left for the next sign-in to pick up.
+        var query = ValidQuery();
+        query["prompt"] = "none";
+        await AuthorizeAsync(query);
+
+        var signIn = async () => await PostLoginAsync("any-interaction-id", ("sub", "user-1"));
+
+        await signIn.Should().ThrowAsync<ZeeKayDaInteractionException>();
     }
 
     [Fact]

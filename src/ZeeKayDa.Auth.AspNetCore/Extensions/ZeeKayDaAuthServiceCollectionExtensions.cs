@@ -191,45 +191,78 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
     /// </summary>
     /// <remarks>
     /// <para>
-    /// The host names none of these and none of them becomes a default scheme, so registering
-    /// them cannot change what <c>[Authorize]</c> or <c>HttpContext.User</c> mean in a host that
-    /// has its own authentication. Opting the host's own pages into the SSO session is a separate,
+    /// The host names none of these, and none of them may become a default scheme: a host with no
+    /// authentication of its own must keep failing closed rather than inheriting the SSO session
+    /// as the answer to <c>[Authorize]</c> or as the target of an unqualified
+    /// <c>HttpContext.SignInAsync</c>. Opting host pages into the SSO session is a separate,
     /// explicit feature (#593).
     /// </para>
     /// <para>
-    /// <c>zkd.external</c> and <c>zkd.pending</c> arrive with the external-provider leg; their
-    /// names are reserved from today so that a host cannot take one and break on upgrade.
+    /// <strong>All four are registered together, and that is load-bearing.</strong> ASP.NET Core
+    /// promotes a lone registered scheme to the automatic default, so registering only the schemes
+    /// in use today would hand a bare host exactly the silent grant described above.
+    /// <c>zkd.external</c> and <c>zkd.pending</c> are consumed by the external-provider leg;
+    /// registering them now also keeps their names from being taken.
     /// </para>
     /// </remarks>
     private static void AddInteractionCookies(IServiceCollection services)
     {
-        services.AddAuthentication().AddCookie(ZeeKayDaCookies.Session, options =>
+        var authentication = services.AddAuthentication();
+
+        authentication.AddCookie(ZeeKayDaCookies.Session, options =>
         {
-            options.Cookie.Name = ZeeKayDaCookies.Session;
-            options.Cookie.HttpOnly = true;
-            options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+            ConfigureFrameworkCookie(options, ZeeKayDaCookies.Session);
 
             // Lax, not Strict: the session is read while answering a top-level GET the user
             // arrived at from the client's site, which is exactly what Strict withholds.
             options.Cookie.SameSite = SameSiteMode.Lax;
-            options.Cookie.IsEssential = true;
 
-            // No sliding expiration: the cookie is a session cookie, and auth_time is a protocol
-            // value carried as a claim rather than inferred from the ticket's age.
-            options.SlidingExpiration = false;
+            // Stated rather than inherited. This is the ASP.NET Core default; making the SSO
+            // session's lifetime configurable is #604.
+            options.ExpireTimeSpan = TimeSpan.FromDays(14);
+        });
 
-            // Nothing redirects to a login page through this scheme — the authorization endpoint
-            // owns that decision and needs the interaction context written first. A challenge or
-            // forbid here is a bug, so it answers with a status code rather than a redirect that
-            // would silently work.
-            options.Events.OnRedirectToLogin = ReplaceRedirectWithStatusCode;
-            options.Events.OnRedirectToAccessDenied = ReplaceRedirectWithStatusCode;
+        authentication.AddCookie(ZeeKayDaCookies.External, options =>
+        {
+            // The provider handler's sign-in target, read back by /connect/resume in the same
+            // browser round trip and discarded — it exists for seconds.
+            ConfigureFrameworkCookie(options, ZeeKayDaCookies.External);
+            options.Cookie.SameSite = SameSiteMode.Lax;
+            options.ExpireTimeSpan = TimeSpan.FromMinutes(5);
+        });
+
+        authentication.AddCookie(ZeeKayDaCookies.Pending, options =>
+        {
+            // A half-authenticated principal, read only from same-site requests to the host's own
+            // pages, so it takes the strictest setting available.
+            ConfigureFrameworkCookie(options, ZeeKayDaCookies.Pending);
+            options.Cookie.SameSite = SameSiteMode.Strict;
+            options.ExpireTimeSpan = TimeSpan.FromMinutes(15);
         });
     }
 
-    private static Task ReplaceRedirectWithStatusCode(RedirectContext<CookieAuthenticationOptions> context)
+    private static void ConfigureFrameworkCookie(CookieAuthenticationOptions options, string name)
     {
-        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+        options.Cookie.Name = name;
+        options.Cookie.HttpOnly = true;
+        options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+        options.Cookie.IsEssential = true;
+
+        // No sliding expiration anywhere: auth_time is a protocol value carried as a claim, never
+        // inferred from a ticket's age, and a renewing window is not what any of these hold.
+        options.SlidingExpiration = false;
+
+        // Nothing redirects to a login page through these schemes — the authorization endpoint
+        // owns that decision and needs the interaction context written first. A challenge or
+        // forbid here is a bug, so it answers with a status code rather than a redirect that
+        // would silently appear to work.
+        options.Events.OnRedirectToLogin = context => WriteStatusCode(context, StatusCodes.Status401Unauthorized);
+        options.Events.OnRedirectToAccessDenied = context => WriteStatusCode(context, StatusCodes.Status403Forbidden);
+    }
+
+    private static Task WriteStatusCode(RedirectContext<CookieAuthenticationOptions> context, int statusCode)
+    {
+        context.Response.StatusCode = statusCode;
         return Task.CompletedTask;
     }
 }
