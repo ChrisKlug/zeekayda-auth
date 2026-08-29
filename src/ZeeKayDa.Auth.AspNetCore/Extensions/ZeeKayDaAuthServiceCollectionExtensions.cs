@@ -1,3 +1,6 @@
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth;
@@ -102,10 +105,43 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
                 IValidateOptions<AuthorizationServerOptions>,
                 ClientRepositoryPresenceValidator>());
 
-        // The sanitizing-logger shadow gate and the runner that drives it are registered by
-        // AddZeeKayDaAuthCore() above, so no ordering dependency exists here.
+        AddStartupChecks(services);
+
+        // The composite is registered as its concrete type, not IClientAuthenticator, so it is
+        // excluded from IEnumerable<IClientAuthenticator> and cannot dispatch recursively.
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IClientAuthenticator, ClientSecretAuthenticator>());
+        services.TryAddSingleton<CompositeClientAuthenticator>();
+        AddAuthorizationRequestServices(services);
+
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<
+                IValidateOptions<AuthorizationServerOptions>,
+                AuthenticatorCoverageValidator>());
+
+        var builder = new ZeeKayDaAuthBuilder(services);
+        builder.AddSecretsHasher<Pbkdf2ClientSecretHasher>(isDefault: true);
+        return builder;
+    }
+
+    /// <summary>
+    /// Registers everything that runs once at startup to fail or warn: an <see cref="IStartupVerifier"/>
+    /// where the check is pure configuration, an <see cref="IStartupActivator"/> where it calls
+    /// caller-supplied code or must be awaited. Each exists so a misconfiguration surfaces at
+    /// startup rather than as a DI resolution error or a wrong answer on the first request.
+    /// </summary>
+    /// <remarks>
+    /// Order-independent: the sanitizing-logger shadow gate and the runner that drives these are
+    /// registered by <c>AddZeeKayDaAuthCore()</c>, and nothing here observes another's result.
+    /// </remarks>
+    private static void AddStartupChecks(IServiceCollection services)
+    {
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IStartupVerifier, InsecureIssuerWarningService>());
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IStartupVerifier, MissingLoginPathWarningService>());
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IStartupActivator, ReservedCookieNameValidator>());
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IStartupVerifier, ExceptionSanitizingDisabledWarningService>());
         services.TryAddEnumerable(
@@ -130,22 +166,6 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         // rather than at first request.
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IStartupActivator, ClientRepositoryStartupActivator>());
-
-        // The composite is registered as its concrete type, not IClientAuthenticator, so it is
-        // excluded from IEnumerable<IClientAuthenticator> and cannot dispatch recursively.
-        services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IClientAuthenticator, ClientSecretAuthenticator>());
-        services.TryAddSingleton<CompositeClientAuthenticator>();
-        AddAuthorizationRequestServices(services);
-
-        services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<
-                IValidateOptions<AuthorizationServerOptions>,
-                AuthenticatorCoverageValidator>());
-
-        var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddSecretsHasher<Pbkdf2ClientSecretHasher>(isDefault: true);
-        return builder;
     }
 
     /// <summary>
@@ -167,6 +187,95 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         services.TryAddSingleton<TimeProvider>(TimeProvider.System);
         services.TryAddSingleton<AuthorizeErrorTransport>();
         services.TryAddSingleton<AuthorizationRequestContextTransport>();
+        services.TryAddSingleton<LocalErrorResponse>();
+        services.TryAddSingleton<SsoSession>();
+        services.TryAddSingleton<AuthorizationFlow>();
         services.TryAddSingleton<IErrorInteraction, ErrorInteraction>();
+        services.TryAddSingleton<ILoginInteraction, LoginInteraction>();
+
+        AddInteractionCookies(services);
+    }
+
+    /// <summary>
+    /// Registers the cookie schemes the framework owns. Plain <c>AddCookie</c> schemes, not a
+    /// ZeeKayDa handler: every authentication-shaped question here is already answered by a
+    /// handler that ships with ASP.NET Core, and a framework scheme would be a vehicle with no
+    /// cargo.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The host names none of these, and none of them may become a default scheme: a host with no
+    /// authentication of its own must keep failing closed rather than inheriting the SSO session
+    /// as the answer to <c>[Authorize]</c> or as the target of an unqualified
+    /// <c>HttpContext.SignInAsync</c>. Opting host pages into the SSO session is a separate,
+    /// explicit feature (#593).
+    /// </para>
+    /// <para>
+    /// <strong>All four are registered together, and that is load-bearing.</strong> ASP.NET Core
+    /// promotes a lone registered scheme to the automatic default, so registering only the schemes
+    /// in use today would hand a bare host exactly the silent grant described above.
+    /// <c>zkd.external</c> and <c>zkd.pending</c> are consumed by the external-provider leg;
+    /// registering them now also keeps their names from being taken.
+    /// </para>
+    /// </remarks>
+    private static void AddInteractionCookies(IServiceCollection services)
+    {
+        var authentication = services.AddAuthentication();
+
+        authentication.AddCookie(ZeeKayDaCookies.Session, options =>
+        {
+            ConfigureFrameworkCookie(options, ZeeKayDaCookies.Session);
+
+            // Lax, not Strict: the session is read while answering a top-level GET the user
+            // arrived at from the client's site, which is exactly what Strict withholds.
+            options.Cookie.SameSite = SameSiteMode.Lax;
+
+            // Stated rather than inherited. This is the ASP.NET Core default; making the SSO
+            // session's lifetime configurable is #604.
+            options.ExpireTimeSpan = TimeSpan.FromDays(14);
+        });
+
+        authentication.AddCookie(ZeeKayDaCookies.External, options =>
+        {
+            // The provider handler's sign-in target, read back by /connect/resume in the same
+            // browser round trip and discarded — it exists for seconds.
+            ConfigureFrameworkCookie(options, ZeeKayDaCookies.External);
+            options.Cookie.SameSite = SameSiteMode.Lax;
+            options.ExpireTimeSpan = TimeSpan.FromMinutes(5);
+        });
+
+        authentication.AddCookie(ZeeKayDaCookies.Pending, options =>
+        {
+            // A half-authenticated principal, read only from same-site requests to the host's own
+            // pages, so it takes the strictest setting available.
+            ConfigureFrameworkCookie(options, ZeeKayDaCookies.Pending);
+            options.Cookie.SameSite = SameSiteMode.Strict;
+            options.ExpireTimeSpan = TimeSpan.FromMinutes(15);
+        });
+    }
+
+    private static void ConfigureFrameworkCookie(CookieAuthenticationOptions options, string name)
+    {
+        options.Cookie.Name = name;
+        options.Cookie.HttpOnly = true;
+        options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+        options.Cookie.IsEssential = true;
+
+        // No sliding expiration anywhere: auth_time is a protocol value carried as a claim, never
+        // inferred from a ticket's age, and a renewing window is not what any of these hold.
+        options.SlidingExpiration = false;
+
+        // Nothing redirects to a login page through these schemes — the authorization endpoint
+        // owns that decision and needs the interaction context written first. A challenge or
+        // forbid here is a bug, so it answers with a status code rather than a redirect that
+        // would silently appear to work.
+        options.Events.OnRedirectToLogin = context => WriteStatusCode(context, StatusCodes.Status401Unauthorized);
+        options.Events.OnRedirectToAccessDenied = context => WriteStatusCode(context, StatusCodes.Status403Forbidden);
+    }
+
+    private static Task WriteStatusCode(RedirectContext<CookieAuthenticationOptions> context, int statusCode)
+    {
+        context.Response.StatusCode = statusCode;
+        return Task.CompletedTask;
     }
 }

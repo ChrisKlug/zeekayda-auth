@@ -1195,3 +1195,40 @@ clear paths. Nothing consumes the context yet, and consumption was not reviewed.
   #85/#86 own binding consumption to a user-initiated flow.
 - Residual: that clearing lets any page cancel an in-flight sign-in in another tab, accepted as
   safer than leaving a plant alive — behaviour is `Failed_request_clears_any_interaction_context`.
+
+## 2026-08-29 — the local login handoff and the SSO session (#85 local leg, commit `618f116`)
+
+Scoped to the local leg: handoff to the host's login page, `zkd_i`-bound resume, session minting and
+the cookie-scheme registration. The external provider leg — `/connect/resume`, `zkd.pending`,
+`OnProviderSignIn` — is **not built and was not reviewed**; its cookies are registered only so no
+scheme becomes the automatic default.
+
+- Consumption is addressed by `zkd_i` and refuses an unaddressed, mismatched or expired one, closing
+  the lingering seeding variant #84 left open. Closed — `SignInAsync_without_an_interaction_id_is_refused`,
+  `SignInAsync_naming_an_interaction_the_browser_is_not_carrying_is_refused`,
+  `SignInAsync_after_the_interaction_has_expired_is_refused`.
+- A host cannot choose the session identifier, `amr` or `auth_time`: reserved `zkd:` claims are
+  stripped as case-insensitively as they are read. Closed — `A_host_supplied_session_id_claim_is_stripped_whatever_its_case`,
+  `A_host_supplied_amr_claim_is_stripped_whatever_its_case`,
+  `A_host_supplied_auth_time_claim_cannot_defeat_max_age`.
+- The framework contributes no automatic default scheme, so an unqualified host `SignInAsync` cannot
+  write the session cookie past promotion. Closed — `The_framework_contributes_no_default_authenticate_scheme`,
+  `The_framework_contributes_no_default_sign_in_scheme`, `Every_principal_carrying_cookie_is_registered_as_a_scheme`.
+- The session identifier survives re-authentication while the cookie value rotates on every
+  promotion. Closed — `The_session_cookie_value_changes_on_every_promotion_while_the_session_id_does_not`,
+  `The_session_id_is_stable_across_a_prompt_login_re_authentication`, `The_session_id_changes_when_the_subject_changes`.
+- Reserved cookie names fail startup, `zkd.interaction` included despite no scheme backing it.
+  Closed — `A_host_scheme_taking_a_reserved_cookie_name_fails_startup`,
+  `A_host_scheme_named_for_the_one_reserved_cookie_with_no_scheme_is_still_reported`.
+- A refused sign-in leaves no interaction behind, and `zkd.session` answers 401 rather than
+  redirecting. Closed — `A_refused_request_does_not_leave_an_interaction_behind`,
+  `Challenging_the_session_scheme_answers_401_rather_than_redirecting`.
+- The one sink this leg adds is the unconfigured-`LoginPath` startup warning, a constant string with
+  no placeholders; nothing on the request path logs. Closed — `An_unconfigured_login_path_warns_at_startup`,
+  and the repo-wide `Log Hygiene Check`, whose pass A walks every `Log*`/`AddWarning` call site under
+  `/src/` and whose ZEEKAYDA0001/0002 sit at Error with no project-level downgrade. That gate, not
+  this entry, is what bounds #85's "no raw `state`, `nonce` or `code_challenge` reaches a log sink"
+  for anything added here later.
+- Residual: the immediate seeding variant stands — a victim navigated to an attacker's authorize who
+  signs in on the login page they land on completes it. Consent (#86) owns this; `zkd_i` cannot see
+  the difference. Industry-wide, and unchanged from #84's entry.

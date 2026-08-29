@@ -8,6 +8,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **An unauthenticated authorization request is handed off to the host's login page, and comes back a session** (#85, local leg)
+
+  `/connect/authorize` no longer stops at `501` for a request that needs a user. With no session it
+  redirects to the new `AuthorizationEndpoint.Interaction.LoginPath`, and the host's login page ends
+  by calling the new `ILoginInteraction.SignInAsync(principal, params authenticationMethods)` — a
+  terminal call that establishes the SSO session and continues the request. The methods are the
+  `amr` the client is told about; `AuthenticationMethods` names the RFC 8176 values, several may be
+  given for a multi-factor sign-in, and passing none omits the claim rather than assuming a
+  password. The page needs no `ReturnUrl`, no scheme
+  name and no cookie name; the one thing it must preserve is the `zkd_i` query parameter it was
+  reached with, which an ordinary `<form method="post">` does by default. A request that arrives on
+  a live session skips the login page altogether, `prompt=login` and an exceeded `max_age`
+  re-authenticate, and `prompt=none` without a session is refused with `login_required`.
+
+  **`SignInAsync` completes only the interaction it was addressed to.** The request must carry a
+  `zkd_i` matching the identifier inside the encrypted interaction context, or it throws
+  `ZeeKayDaInteractionException`. Without that binding a sign-in completes whatever context the
+  browser holds — which is what lets a malicious registered client *seed* one, navigating a victim
+  to an authorization request of its own and collecting a code it can redeem. It also turns two
+  concurrent sign-in tabs from silently completing the wrong client's request into a clean error.
+
+  The SSO session is minted here: a framework-generated identifier, carried as a reserved claim the
+  host neither supplies nor sees, stable across re-authentication while the cookie value is rewritten
+  on every promotion. Claims in the reserved `zkd:` namespace are stripped from the host's principal,
+  so a host cannot choose its own session identifier. The framework's four cookie names are reserved
+  from this release — a host authentication scheme taking one fails at startup — and a host with no
+  `LoginPath` configured is warned about at startup and answers `server_error` at runtime.
+
 - **The authorization endpoint validates requests: `/connect/authorize` implements the two-phase validation and error model** (#83)
 
   The pre-alpha `501` stub is replaced by a routed endpoint (GET and POST) that validates every

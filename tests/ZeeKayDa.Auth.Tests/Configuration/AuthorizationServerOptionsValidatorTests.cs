@@ -1469,5 +1469,35 @@ public sealed class AuthorizationServerOptionsValidatorTests
 
         result.Succeeded.Should().BeTrue();
     }
+
+    [Theory]
+    [InlineData("account/login")]                     // no leading slash
+    [InlineData("//evil.example.com/login")]          // protocol-relative — an open redirect
+    [InlineData("/\\evil.example.com/login")]         // backslash form of the same
+    [InlineData("/account/login?x=1")]                // query not allowed: the framework adds zkd_i
+    [InlineData("/account/login#frag")]               // fragment not allowed
+    public void Validate_rejects_malformed_interaction_LoginPath(string loginPath)
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            AuthorizationEndpoint = { Interaction = { LoginPath = loginPath } },
+        });
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("Interaction.LoginPath");
+    }
+
+    [Fact]
+    public void Validate_accepts_an_absolute_path_LoginPath()
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            AuthorizationEndpoint = { Interaction = { LoginPath = "/account/login" } },
+        });
+
+        result.Succeeded.Should().BeTrue();
+    }
 }
 

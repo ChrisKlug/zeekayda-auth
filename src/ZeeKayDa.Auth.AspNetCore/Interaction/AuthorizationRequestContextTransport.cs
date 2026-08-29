@@ -13,20 +13,21 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// </summary>
 /// <remarks>
 /// <para>
-/// There is no store behind this and no identifier addresses it. The context authenticates nothing
-/// on its own — replay protection belongs to the single-use authorization code — so it needs no
-/// server-side identity, and a store would add public API for backends
-/// <c>IDistributedCache</c> already covers.
+/// There is no store behind this. The context authenticates nothing on its own — replay protection
+/// belongs to the single-use authorization code — so it needs no server-side identity, and a store
+/// would add public API for backends <c>IDistributedCache</c> already covers.
 /// </para>
 /// <para>
-/// Concurrent authorization requests in separate browser tabs are last-one-wins. That follows from
-/// correlating through a cookie at all, which is what keeps <c>ReturnUrl</c> out of host code; it
-/// is not a consequence of where the payload is kept, and a store would not lift it.
+/// One cookie carries one interaction, so a second concurrent authorization request replaces the
+/// first. Completing the replaced one is then refused rather than silently misapplied, because
+/// every terminal interaction method is addressed by the interaction identifier it was handed
+/// (see <see cref="InteractionHandoff"/>). Lifting the one-at-a-time limit is what a store-backed
+/// payload would buy.
 /// </para>
 /// </remarks>
 internal sealed class AuthorizationRequestContextTransport
 {
-    internal const string CookieName = "zkd.interaction";
+    internal const string CookieName = ZeeKayDaCookies.Interaction;
 
     /// <summary>
     /// The hard lifetime of an interaction. Not sliding: a request gets one window to complete,

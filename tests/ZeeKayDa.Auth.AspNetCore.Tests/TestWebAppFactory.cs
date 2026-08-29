@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -76,6 +77,7 @@ internal sealed class TestWebAppFactory : WebApplicationFactory<TestWebAppFactor
 {
     private readonly Action<AuthorizationServerOptions>? _configureOptions;
     private readonly Action<ZeeKayDaAuthBuilder>? _configureBuilder;
+    private readonly Action<IEndpointRouteBuilder>? _mapEndpoints;
 
     /// <summary>
     /// Initialises a new factory instance.
@@ -88,12 +90,18 @@ internal sealed class TestWebAppFactory : WebApplicationFactory<TestWebAppFactor
     /// Optional delegate used to register additional ZeeKayDa.Auth components, such as an
     /// in-memory scope repository, after <c>AddZeeKayDaAuth()</c> has been called.
     /// </param>
+    /// <param name="mapEndpoints">
+    /// Optional delegate mapping host endpoints alongside the framework's own — a login page, for
+    /// instance, whose handler completes an interaction.
+    /// </param>
     public TestWebAppFactory(
         Action<AuthorizationServerOptions>? configureOptions = null,
-        Action<ZeeKayDaAuthBuilder>? configureBuilder = null)
+        Action<ZeeKayDaAuthBuilder>? configureBuilder = null,
+        Action<IEndpointRouteBuilder>? mapEndpoints = null)
     {
         _configureOptions = configureOptions;
         _configureBuilder = configureBuilder;
+        _mapEndpoints = mapEndpoints;
     }
 
     /// <inheritdoc/>
@@ -123,6 +131,10 @@ internal sealed class TestWebAppFactory : WebApplicationFactory<TestWebAppFactor
 
                 // Advertise "none" so the public test client passes the subset validation.
                 options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
+
+                // A login page, so the default host can hand an unauthenticated request off the
+                // way a real one does. Tests covering the unconfigured case clear it themselves.
+                options.AuthorizationEndpoint.Interaction.LoginPath = "/account/login";
 
                 // Allow per-test overrides (e.g. path-bearing issuer, AllowInsecureIssuer, etc.)
                 _configureOptions?.Invoke(options);
@@ -155,7 +167,11 @@ internal sealed class TestWebAppFactory : WebApplicationFactory<TestWebAppFactor
         builder.Configure(app =>
         {
             app.UseRouting();
-            app.UseEndpoints(endpoints => endpoints.MapZeeKayDaAuth());
+            app.UseEndpoints(endpoints =>
+            {
+                endpoints.MapZeeKayDaAuth();
+                _mapEndpoints?.Invoke(endpoints);
+            });
         });
     }
 }

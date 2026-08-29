@@ -52,12 +52,13 @@ public sealed class AuthorizationEndpointTests : IDisposable
     // ── Valid requests ────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task Valid_GET_request_passes_validation_and_reaches_the_unbuilt_stage()
+    public async Task Valid_GET_request_passes_validation_and_hands_off_to_the_login_page()
     {
         var response = await _client.GetAsync(AuthorizeUrl(ValidQuery()), TestContext.Current.CancellationToken);
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented,
-            "validation passed; interaction and code issuance are the next slices (#85–#87)");
+        response.StatusCode.Should().Be(HttpStatusCode.Redirect,
+            "validation passed and no session exists, so the user is sent to the host's login page");
+        response.Headers.Location!.OriginalString.Should().StartWith("/account/login?");
     }
 
     [Fact]
@@ -68,7 +69,8 @@ public sealed class AuthorizationEndpointTests : IDisposable
 
         var response = await _client.PostAsync("/connect/authorize", content, TestContext.Current.CancellationToken);
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+        response.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        response.Headers.Location!.OriginalString.Should().StartWith("/account/login?");
     }
 
     [Fact]

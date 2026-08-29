@@ -403,15 +403,25 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
                 "AuthorizationServerOptions.AuthorizationEndpoint.AuthorizationCodeLifetime must be greater than zero.");
         }
 
-        if (options.AuthorizationEndpoint.Interaction.ErrorPath is { } errorPath
-            && !InteractionPath.IsSafe(errorPath))
-        {
-            errors.Add(
-                "AuthorizationServerOptions.AuthorizationEndpoint.Interaction.ErrorPath must be an " +
-                "absolute path within the host application (starting with '/'), without scheme, " +
-                "authority, query, fragment, control characters, or a leading '//' or '/\\' " +
-                "that a browser would resolve to another origin.");
-        }
+        ValidateInteractionPath(options.AuthorizationEndpoint.Interaction.ErrorPath, "ErrorPath", errors);
+        ValidateInteractionPath(options.AuthorizationEndpoint.Interaction.LoginPath, "LoginPath", errors);
+    }
+
+    /// <summary>
+    /// Rejects an interaction path a browser could resolve to another origin. Every one of these
+    /// is a redirect destination the framework builds itself, so a malformed one would turn the
+    /// framework into the open redirect it exists to avoid.
+    /// </summary>
+    private static void ValidateInteractionPath(string? path, string optionName, List<string> errors)
+    {
+        if (path is null || InteractionPath.IsSafe(path))
+            return;
+
+        errors.Add(
+            $"AuthorizationServerOptions.AuthorizationEndpoint.Interaction.{optionName} must be an " +
+            "absolute path within the host application (starting with '/'), without scheme, " +
+            "authority, query, fragment, control characters, or a leading '//' or '/\\' " +
+            "that a browser would resolve to another origin.");
     }
 
     private static void ValidateCorsOrigins(

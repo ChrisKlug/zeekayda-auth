@@ -1,6 +1,8 @@
 # Authorization endpoint interaction
 
-**Status: provisional.** Nothing here is built — `/connect/authorize` answers `501`. Originally
+**Status: partly built.** Request validation (#83), the interaction context (#84) and the local
+login handoff (#85, local leg) have landed; external providers, consent and code issuance have not,
+so a request that reaches the end of what exists answers `501`. Originally
 ADR 0005 (accepted 2026-07-01, issue #156); revised 2026-08-28 in the S2 shape conversation
 (#534/#83/#84), which reversed the interception model, renamed the interaction services and cut the
 interaction store. The security properties and protocol refusals are in
@@ -57,7 +59,7 @@ anything else on NuGet for free.
 
 ```
 /connect/authorize          validates (two phases below), writes zkd.interaction; no session →
-  → redirect LoginPath      (local)   host page ends with ILoginInteraction.SignInAsync — terminal
+  → LoginPath?zkd_i=<id>    (local)   host page ends with ILoginInteraction.SignInAsync — terminal
   → ChallengeAsync("facebook") (external)  ZeeKayDa sets the handler's RedirectUri itself
       → facebook.com → /connect/callback/facebook   Facebook handler: OAuth mechanics,
                                                     signs into zkd.external
@@ -71,8 +73,21 @@ ZeeKayDa code. Every *host-facing* detour (login, consent, collect-more) instead
 terminal interaction-service call, which runs ZeeKayDa code in that same request — no bounce needed.
 
 Host code never contains a scheme name, cookie name, callback path or `ReturnUrl`. That is the
-invariant every future change is held to. The login page needs no `ReturnUrl` because
-`SignInAsync` finds the active interaction in `zkd.interaction` and decides what happens next.
+invariant every future change is held to, with one knowing concession: `zkd_i`, the interaction
+identifier the framework puts on every redirect to a host page. The login page still needs no
+`ReturnUrl` — `SignInAsync` reads the interaction context and decides what happens next — but it
+must carry `zkd_i` back, which an ordinary `<form method="post">` with no `action` does for free
+because the browser posts to the current URL including its query string. A form that regenerates
+its action from routing (`asp-page`, `asp-controller`) drops it and must pass it back with
+`asp-route-zkd_i`. That failure is loud and arrives on the first login test.
+
+**Why the identifier exists at all:** without it, `SignInAsync` completes whatever interaction the
+browser is carrying. A malicious registered client can *seed* one — navigate the victim to a valid
+authorization request of its own, wait for them to sign in, and collect a code it can redeem, since
+it chose the PKCE verifier, `state` and `nonce`. Requiring the identifier to come back through the
+page means a user who reached the login page on their own has nothing to attach a planted context
+to. It also turns the concurrent-tab case from silently completing the wrong client's request into
+a clean error.
 
 ## Internal cookie schemes
 
@@ -88,6 +103,14 @@ registering one fails at startup. All `HttpOnly`, Data-Protection encrypted.
 
 `zkd.pending` is single-use (signed out on `SignInAsync`) and bound to its interaction via a
 `zkd:interaction_id` claim.
+
+**Built so far:** `zkd.session` as a cookie scheme, and `zkd.interaction` as a Data-Protection
+payload written directly rather than through a handler — it carries no principal, so a cookie
+authentication scheme would be a ticket serializer wrapped around bytes that are not a ticket. All
+four names are reserved from today regardless, so a host cannot take one and break on upgrade.
+`zkd.session` takes `SameSite=Lax`: the session is read while answering a top-level GET the user
+arrived at from the client's site, which is what `Strict` withholds, and `None` buys nothing until
+iframe-based silent authentication is supported.
 
 ## The interaction context
 
@@ -195,8 +218,9 @@ public interface ILoginInteraction
 {
     // Promotes principal to SSO session, continues the flow (consent → code → redirect).
     // Auto-consumes a bound zkd.pending cookie. Terminal. Throws ZeeKayDaInteractionException
-    // if no interaction is active (see #593 for the future [Authorize]-driven mode).
-    Task SignInAsync(ClaimsPrincipal principal, string amr);
+    // when the request carries no zkd_i, when there is no interaction context, or when the two
+    // name different interactions (see #593 for the future [Authorize]-driven mode).
+    Task SignInAsync(ClaimsPrincipal principal, params string[] authenticationMethods);
 
     // Null if the pending cookie is absent, expired or misbound — recoverable.
     Task<PendingPrincipal?> GetPendingPrincipalAsync();
