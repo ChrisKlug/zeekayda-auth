@@ -11,12 +11,17 @@ namespace ZeeKayDa.Auth.Authorization;
 /// <c>ILoginInteraction.SignInAsync</c>: <c>SignInAsync(user, AuthenticationMethods.Password)</c>.
 /// </para>
 /// <para>
-/// The registry is not closed. A method with no registered value — an in-house factor, or one
-/// registered after this list was written — is passed as its own string, and nothing here
-/// validates against the list. What matters is that the value is the truth about how the user
-/// authenticated: a relying party may gate a sensitive operation on seeing
-/// <see cref="MultiFactor"/>, so reporting a method that was not actually used defeats a control
-/// on the other side of the wire.
+/// These are the values with real-world traction, not the whole of RFC 8176 — the registry also
+/// defines <c>iris</c>, <c>retina</c>, <c>vbm</c>, <c>geo</c>, <c>pop</c>, <c>mca</c>, <c>kba</c>,
+/// <c>rba</c> and <c>user</c>, which are omitted deliberately. Nothing validates against this list,
+/// so any of those is passed as its own string; a deployment using one knows what it is called.
+/// The point of the constants is that the common case is discoverable, not that the set is
+/// complete.
+/// </para>
+/// <para>
+/// What matters either way is that the value is the truth about how the user authenticated: a
+/// relying party may gate a sensitive operation on seeing <see cref="MultiFactor"/>, so reporting
+/// a method that was not actually used defeats a control on the other side of the wire.
 /// </para>
 /// </remarks>
 public static class AuthenticationMethods
@@ -25,14 +30,20 @@ public static class AuthenticationMethods
     public const string Password = "pwd";
 
     /// <summary>
-    /// Multiple-factor authentication (<c>mfa</c>). RFC 8176 §2 asks that the individual factors
-    /// be reported alongside it — <c>SignInAsync(user, AuthenticationMethods.MultiFactor,
-    /// AuthenticationMethods.Password, AuthenticationMethods.OneTimePassword)</c>.
+    /// Multiple-factor authentication (<c>mfa</c>). Report it <em>alongside</em> the individual
+    /// factors, never instead of them — RFC 8176 §2 asks for both, and a relying party that sees
+    /// only <c>mfa</c> cannot tell a password and an authenticator app from a password and an SMS.
+    /// There is deliberately no constant for a particular combination: the spec names none, the
+    /// set is open, and a named pair would hide the factors that are the useful part.
+    /// <code>
+    /// await login.SignInAsync(
+    ///     user,
+    ///     AuthenticationMethods.MultiFactor,
+    ///     AuthenticationMethods.Password,
+    ///     AuthenticationMethods.OneTimePassword);
+    /// </code>
     /// </summary>
     public const string MultiFactor = "mfa";
-
-    /// <summary>Multiple-channel authentication (<c>mca</c>): two or more distinct channels.</summary>
-    public const string MultiChannel = "mca";
 
     /// <summary>One-time password (<c>otp</c>).</summary>
     public const string OneTimePassword = "otp";
@@ -45,15 +56,6 @@ public static class AuthenticationMethods
 
     /// <summary>Personal identification number or pattern (<c>pin</c>).</summary>
     public const string Pin = "pin";
-
-    /// <summary>Knowledge-based authentication (<c>kba</c>).</summary>
-    public const string KnowledgeBased = "kba";
-
-    /// <summary>Risk-based authentication (<c>rba</c>).</summary>
-    public const string RiskBased = "rba";
-
-    /// <summary>Proof-of-possession of a key (<c>pop</c>).</summary>
-    public const string ProofOfPossession = "pop";
 
     /// <summary>Proof-of-possession of a hardware-secured key (<c>hwk</c>).</summary>
     public const string HardwareKey = "hwk";
@@ -72,21 +74,4 @@ public static class AuthenticationMethods
 
     /// <summary>Facial recognition (<c>face</c>).</summary>
     public const string FacialRecognition = "face";
-
-    /// <summary>Iris scan biometric (<c>iris</c>).</summary>
-    public const string IrisScan = "iris";
-
-    /// <summary>Retina scan biometric (<c>retina</c>).</summary>
-    public const string RetinaScan = "retina";
-
-    /// <summary>Voice biometric (<c>vbm</c>).</summary>
-    public const string VoiceBiometric = "vbm";
-
-    /// <summary>Geolocation information (<c>geo</c>).</summary>
-    public const string Geolocation = "geo";
-
-    /// <summary>
-    /// User presence test (<c>user</c>) — evidence a person was present, not which person.
-    /// </summary>
-    public const string UserPresence = "user";
 }
