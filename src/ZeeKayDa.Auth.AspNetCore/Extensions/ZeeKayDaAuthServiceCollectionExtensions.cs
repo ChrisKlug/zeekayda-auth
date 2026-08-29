@@ -105,8 +105,37 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
                 IValidateOptions<AuthorizationServerOptions>,
                 ClientRepositoryPresenceValidator>());
 
-        // The sanitizing-logger shadow gate and the runner that drives it are registered by
-        // AddZeeKayDaAuthCore() above, so no ordering dependency exists here.
+        AddStartupChecks(services);
+
+        // The composite is registered as its concrete type, not IClientAuthenticator, so it is
+        // excluded from IEnumerable<IClientAuthenticator> and cannot dispatch recursively.
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IClientAuthenticator, ClientSecretAuthenticator>());
+        services.TryAddSingleton<CompositeClientAuthenticator>();
+        AddAuthorizationRequestServices(services);
+
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<
+                IValidateOptions<AuthorizationServerOptions>,
+                AuthenticatorCoverageValidator>());
+
+        var builder = new ZeeKayDaAuthBuilder(services);
+        builder.AddSecretsHasher<Pbkdf2ClientSecretHasher>(isDefault: true);
+        return builder;
+    }
+
+    /// <summary>
+    /// Registers everything that runs once at startup to fail or warn: an <see cref="IStartupVerifier"/>
+    /// where the check is pure configuration, an <see cref="IStartupActivator"/> where it calls
+    /// caller-supplied code or must be awaited. Each exists so a misconfiguration surfaces at
+    /// startup rather than as a DI resolution error or a wrong answer on the first request.
+    /// </summary>
+    /// <remarks>
+    /// Order-independent: the sanitizing-logger shadow gate and the runner that drives these are
+    /// registered by <c>AddZeeKayDaAuthCore()</c>, and nothing here observes another's result.
+    /// </remarks>
+    private static void AddStartupChecks(IServiceCollection services)
+    {
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IStartupVerifier, InsecureIssuerWarningService>());
         services.TryAddEnumerable(
@@ -137,22 +166,6 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         // rather than at first request.
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IStartupActivator, ClientRepositoryStartupActivator>());
-
-        // The composite is registered as its concrete type, not IClientAuthenticator, so it is
-        // excluded from IEnumerable<IClientAuthenticator> and cannot dispatch recursively.
-        services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IClientAuthenticator, ClientSecretAuthenticator>());
-        services.TryAddSingleton<CompositeClientAuthenticator>();
-        AddAuthorizationRequestServices(services);
-
-        services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<
-                IValidateOptions<AuthorizationServerOptions>,
-                AuthenticatorCoverageValidator>());
-
-        var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddSecretsHasher<Pbkdf2ClientSecretHasher>(isDefault: true);
-        return builder;
     }
 
     /// <summary>
