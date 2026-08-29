@@ -77,6 +77,13 @@ public sealed class LoginInteractionTests : IDisposable
                 amr: "pwd");
         });
 
+        // Nothing should ever challenge the framework's session scheme: the authorization endpoint
+        // owns that decision and needs the interaction context written first.
+        endpoints.MapGet("/test/challenge-session", async (HttpContext context) =>
+        {
+            await context.ChallengeAsync(ZeeKayDaCookies.Session);
+        });
+
         endpoints.MapGet("/test/session", async (HttpContext context) =>
         {
             var result = await context.AuthenticateAsync(ZeeKayDaCookies.Session);
@@ -200,6 +207,16 @@ public sealed class LoginInteractionTests : IDisposable
         response.StatusCode.Should().Be(HttpStatusCode.Redirect);
         response.Headers.Location!.OriginalString.Should().StartWith(RegisteredRedirect)
             .And.Contain("error=server_error");
+    }
+
+    [Fact]
+    public async Task Challenging_the_session_scheme_answers_401_rather_than_redirecting()
+    {
+        var response = await _client.GetAsync("/test/challenge-session", TestContext.Current.CancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized,
+            "the scheme has no login page of its own to redirect to, and a redirect here would be a bug " +
+            "that silently appears to work");
     }
 
     // ── The zkd_i binding ─────────────────────────────────────────────────────────────────────
