@@ -1164,3 +1164,34 @@ shared interop as `stat`/`lstat` is now historical, since `stat` was removed wit
   and denial of service, never disclosure.
 - Explicit negative: this sign-off covers the walk only. The round that produced these fixes did not
   itself re-review them; all its findings were Low and it carried a sign-off.
+
+## 2026-08-28 — the authorization request interaction context (#84, commit `31d2152`)
+
+Scoped to the context's wire format, its encrypted cookie transport, and the endpoint's write and
+clear paths. Nothing consumes the context yet, and consumption was not reviewed.
+
+- No store: the context is opaque on the wire and authenticates nothing alone, so replay protection
+  stays with the single-use authorization code. Closed — `Cookie_value_is_opaque`,
+  `Interaction_cookie_never_carries_request_values_in_the_clear`.
+- The size guard comes from the request header budget, not one cookie's capacity, and an oversized
+  context writes nothing. Closed — `Largest_writable_context_stays_within_the_request_header_budget`
+  (which fails if the search stops short of the guard),
+  `Context_over_the_size_guard_is_refused_and_nothing_is_written`.
+- Decoding refuses rather than misreads a wrong version, trailing bytes, an undefined enum or an
+  empty required field. Closed — `Payload_written_by_another_version_is_refused`,
+  `Trailing_bytes_are_refused`, `Undefined_prompt_value_is_refused`,
+  `Context_with_an_empty_redirect_uri_is_refused`.
+- Data Protection purposes isolate this cookie from the error cookie on a shared key ring. Closed —
+  `Error_transport_cookie_cannot_be_read_as_an_interaction_context`,
+  `Interaction_cookie_cannot_be_read_as_an_error_transport_cookie`.
+- Expiry is read from the encrypted payload, never the cookie's own lifetime, and is exclusive.
+  Closed — `Expiry_is_read_from_the_payload_not_the_cookie`,
+  `Context_is_not_readable_at_the_expiry_instant`.
+- Every failure path clears the context, the oversized one included. Closed —
+  `Failed_request_clears_any_interaction_context`,
+  `Request_too_large_to_carry_renders_locally_rather_than_redirecting`.
+- Residual: seeding is unmitigated. A *successful* cross-site-initiated authorize plants a context
+  the victim's next sign-in consumes; clearing on failure does not touch it and no test bounds it.
+  #85/#86 own binding consumption to a user-initiated flow.
+- Residual: that clearing lets any page cancel an in-flight sign-in in another tab, accepted as
+  safer than leaving a plant alive — behaviour is `Failed_request_clears_any_interaction_context`.

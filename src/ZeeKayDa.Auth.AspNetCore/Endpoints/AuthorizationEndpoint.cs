@@ -7,13 +7,15 @@ using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
 using ZeeKayDa.Auth.Authorization;
+using ZeeKayDa.Auth.Stores;
 
 namespace ZeeKayDa.Auth.AspNetCore.Endpoints;
 
 /// <summary>
 /// The authorization endpoint (<c>/connect/authorize</c>, GET and POST per OIDC Core 1.0
-/// §3.1.2.1). Currently implements request validation and the two-phase error model;
-/// a fully valid request still answers <c>501</c> until the interaction stages land.
+/// §3.1.2.1). Currently implements request validation, the two-phase error model, and writing
+/// the interaction context; a fully valid request still answers <c>501</c> until the handoff,
+/// consent and code-issuance stages land.
 /// </summary>
 /// <remarks>
 /// Phase-1 failures render locally — a minimal framework-written 400 by default, or a redirect
@@ -24,10 +26,20 @@ namespace ZeeKayDa.Auth.AspNetCore.Endpoints;
 internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
 {
     private readonly IOptions<AuthorizationServerOptions> _options;
+    private readonly AuthorizationRequestContextTransport _contextTransport;
+    private readonly AuthorizeErrorTransport _errorTransport;
+    private readonly TimeProvider _timeProvider;
 
-    public AuthorizationEndpoint(IOptions<AuthorizationServerOptions> options)
+    public AuthorizationEndpoint(
+        IOptions<AuthorizationServerOptions> options,
+        AuthorizationRequestContextTransport contextTransport,
+        AuthorizeErrorTransport errorTransport,
+        TimeProvider timeProvider)
     {
         _options = options;
+        _contextTransport = contextTransport;
+        _errorTransport = errorTransport;
+        _timeProvider = timeProvider;
     }
 
     /// <inheritdoc/>
@@ -46,10 +58,7 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
             .RequireIssuerHost(endpointUri);
     }
 
-    private async Task<IResult> Handle(
-        AuthorizeRequestValidator validator,
-        AuthorizeErrorTransport errorTransport,
-        HttpContext context)
+    private async Task<IResult> Handle(AuthorizeRequestValidator validator, HttpContext context)
     {
         // Authorization responses carry codes and errors that must never be cached or logged
         // from an intermediary cache (RFC 6749 §10.12 guidance, RFC 9700 §4.16).
@@ -59,7 +68,6 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
         if (parameters is null)
             return RenderLocalError(
                 context,
-                errorTransport,
                 AuthorizeRequestErrors.InvalidRequest,
                 "A POST authorization request must use application/x-www-form-urlencoded serialization.");
 
@@ -67,17 +75,72 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
 
         return result switch
         {
-            AuthorizeRequestValidationResult.Valid =>
-                // Validation passed; interaction, consent and code issuance are not built yet.
-                PreAlphaNotImplementedResult.Result,
+            AuthorizeRequestValidationResult.Valid valid =>
+                BeginInteraction(context, valid.Request),
 
-            AuthorizeRequestValidationResult.RedirectError redirect => RedirectToClient(redirect),
+            AuthorizeRequestValidationResult.RedirectError redirect => FailRequest(
+                context, () => RedirectToClient(redirect)),
 
-            AuthorizeRequestValidationResult.LocalError local =>
-                RenderLocalError(context, errorTransport, local.Error, local.Description),
+            AuthorizeRequestValidationResult.LocalError local => FailRequest(
+                context, () => RenderLocalError(context, local.Error, local.Description)),
 
             _ => throw new InvalidOperationException("Unknown validation result type."),
         };
+    }
+
+    /// <summary>
+    /// Clears any interaction context before answering an error. A request that fails validation
+    /// must not leave an earlier interaction alive to be picked up by the next sign-in — including
+    /// one a cross-site request planted.
+    /// </summary>
+    private IResult FailRequest(HttpContext context, Func<IResult> respond)
+    {
+        _contextTransport.Delete(context);
+        return respond();
+    }
+
+    /// <summary>
+    /// Writes the interaction context that the rest of the flow reads, then hands off. Handoff,
+    /// consent and code issuance are not built yet, so a request that gets this far still answers
+    /// <c>501</c> — but it answers it having persisted the state those stages will need.
+    /// </summary>
+    private IResult BeginInteraction(HttpContext context, ValidatedAuthorizeRequest request)
+    {
+        var now = _timeProvider.GetUtcNow();
+        var requestContext = new AuthorizationRequestContext
+        {
+            Id = StoreKeyGenerator.Generate(),
+            ClientId = request.Client.ClientId,
+            RedirectUri = request.RedirectUri,
+            Scopes = request.Scopes,
+            State = request.State,
+            Nonce = request.Nonce,
+            CodeChallenge = request.CodeChallenge,
+            CodeChallengeMethod = request.CodeChallengeMethod,
+            Prompts = request.Prompts,
+            MaxAge = request.MaxAge,
+            IssuedAt = now,
+            ExpiresAt = now + AuthorizationRequestContextTransport.Lifetime,
+        };
+
+        if (!_contextTransport.TryWrite(context, requestContext))
+        {
+            // The one phase-2 failure that renders locally rather than redirecting. `state` must
+            // round-trip byte for byte (RFC 6749 §4.1.2.1), so echoing an oversized one builds a
+            // Location whose length depends on how the value percent-encodes — sometimes past what
+            // the client's server will accept, sometimes not. A deterministic error page beats a
+            // redirect that works or fails silently depending on the bytes in `state`. §4.1.2.1
+            // describes redirecting phase-2 errors rather than requiring it; the only MUST NOT is
+            // redirecting to an invalid URI, which this does not do.
+            return FailRequest(
+                context,
+                () => RenderLocalError(
+                    context,
+                    AuthorizeRequestErrors.InvalidRequest,
+                    "The authorization request is too large to process."));
+        }
+
+        return PreAlphaNotImplementedResult.Result;
     }
 
     /// <summary>
@@ -126,16 +189,12 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
         return Results.Redirect(QueryHelpers.AddQueryString(error.RedirectUri, query));
     }
 
-    private IResult RenderLocalError(
-        HttpContext context,
-        AuthorizeErrorTransport errorTransport,
-        string error,
-        string description)
+    private IResult RenderLocalError(HttpContext context, string error, string description)
     {
         var errorPath = _options.Value.AuthorizationEndpoint.Interaction.ErrorPath;
         if (errorPath is not null)
         {
-            var id = errorTransport.CreateAndAttach(context, error, description);
+            var id = _errorTransport.CreateAndAttach(context, error, description);
             return Results.Redirect(QueryHelpers.AddQueryString(
                 errorPath, AuthorizeErrorTransport.QueryParameterName, id));
         }
