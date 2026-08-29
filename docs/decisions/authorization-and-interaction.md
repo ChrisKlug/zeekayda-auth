@@ -1,13 +1,10 @@
 # Authorization endpoint and user interaction
 
-**Partly built.** `/connect/authorize` is a routed endpoint that validates requests and applies the
-two-phase error model below; a fully valid request still answers `501` until interaction, consent
-and code issuance land. The error interaction service (`IErrorInteraction`) and its encrypted
-transport cookie exist; the login, consent and provider-selection services, the interaction cookie
-and the SSO session do not. The rest of this file is the set of constraints whoever finishes it
-inherits — protocol refusals, security properties and structural cuts. Interface shapes for the
-unbuilt part live in `docs/design/authorization-endpoint-interaction.md`, which is provisional and
-will be revised against the codebase that exists when the work is picked up.
+**Partly built.** `/connect/authorize` validates requests, applies the two-phase error model, and
+hands an unauthenticated one to the host's login page, which returns through `ILoginInteraction`
+and establishes the SSO session. Consent, code issuance and external providers do not exist, so a
+request past authentication still answers `501`. Interface shapes for the unbuilt part live in
+`docs/design/authorization-endpoint-interaction.md`.
 
 ## Decisions in force
 
@@ -25,8 +22,21 @@ callback path selecting the provider from a query parameter. Dispatch that trust
 request input is the failure this avoids; cleaner audit logs are a side benefit, not the reason.
 
 **No host code ever contains a scheme name, cookie name, callback path or `ReturnUrl`.** The host's
-pages advance the flow only through the interaction services, whose terminal methods find the active
-interaction themselves. Any change that requires a host to name one of these has broken the design.
+pages advance the flow only through the interaction services. The one concession is `zkd_i`, the
+interaction identifier the framework puts on every redirect to a host page, which a page
+regenerating its form action from routing must pass back explicitly. It is opaque and never a URL,
+so it carries no open-redirect surface — what competing frameworks leave hosts to validate. Any
+change requiring a host to name more has broken the design.
+
+**A terminal interaction method completes the interaction it was addressed to, never "the active
+one",** and every read and write of interaction state is addressed by that identifier. Without the
+binding a sign-in completes whatever context the browser holds, which is what makes *seeding* an
+attack: a malicious registered client navigates the victim to an authorization request of its own,
+and the victim's later sign-in issues a code the attacker redeems with the PKCE verifier it chose.
+PKCE, `state` and `nonce` protect the client against a forged response, not the user against a
+request they never started. The lingering variant dies here; the immediate one is consent's answer,
+as it is industry-wide. Addressing by identifier also keeps the backing swappable, so no store
+interface is invented for a single implementation.
 
 **A client registration is validated by the framework at the point of use, not only at
 registration.** Endpoints resolve clients through an internal validating resolver wrapping
@@ -77,9 +87,15 @@ flag that can log secrets gets left on in production. A host wiring those events
 non-disclosure duty. `code` is a redaction key, so `{Code}` is a poisoned placeholder name here as
 everywhere (`errors-and-log-hygiene.md`).
 
-**The session cookie value is regenerated on every sign-in promotion**, so session-fixation
-resistance is a stated property rather than an incidental consequence of whatever
-`HttpContext.SignInAsync` does today.
+**The SSO session identifier is framework-minted, unguessable and stable for the life of the
+session — and is not the cookie value, which is regenerated on every promotion so that
+session-fixation resistance is a stated property rather than an accident of what `SignInAsync` does
+today.** The identifier is carried as a reserved claim the host neither supplies nor sees and kept
+across re-authentication (`prompt=login` and `max_age` refresh `auth_time` only); a fresh sign-in
+or a changed subject mints a new one. None of those properties may be traded away: one derived from
+the cookie value breaks every binding the moment the cookie rotates, and one tracking authentication
+events could never key a denylist. Claims in the reserved `zkd:` namespace are stripped from the
+host's principal, or a host copying claims from an inbound token could choose its own identifier.
 
 **Framework cookie names are reserved, and a host registering one fails at startup.** Every internal
 cookie is `HttpOnly` and Data-Protection encrypted. A session cookie needs `SameSite=None` only if
@@ -93,10 +109,10 @@ internal, opaque, Data-Protection-encrypted payload, chunked by ASP.NET Core's o
 `ChunkingCookieManager`. It carries protocol state and a subject reference — **never claims or a
 `ClaimsPrincipal`**, which is what keeps it bounded; the authenticated user lives in the session and
 pending cookies. Replay protection belongs to the authorization code, which is already single-use
-and server-side; the context authenticates nothing on its own. Concurrent authorize requests in
-separate browser tabs are last-one-wins — a property of correlating through a cookie at all, not of
-where the payload is kept, and a store would not change it. A distributed backend, if ever needed,
-swaps the payload for an opaque handle without touching public API.
+and server-side; the context authenticates nothing on its own. One cookie holds one interaction, so
+a concurrent request in another tab replaces the first, and completing the replaced one is then
+refused rather than silently misapplied. A distributed backend, if ever needed, swaps the payload
+for an opaque handle without touching public API, lifting that limit with it.
 
 **Authorization request parameters are not length-capped; the encoded context is size-guarded
 instead.** `state` and `nonce` stay formally unbounded — RFC 6749 sets no limit, a cap taxes the

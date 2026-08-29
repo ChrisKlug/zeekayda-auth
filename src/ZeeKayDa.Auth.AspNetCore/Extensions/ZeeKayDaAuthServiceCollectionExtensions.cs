@@ -1,3 +1,6 @@
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth;
@@ -107,6 +110,10 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IStartupVerifier, InsecureIssuerWarningService>());
         services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IStartupVerifier, MissingLoginPathWarningService>());
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IStartupActivator, ReservedCookieNameValidator>());
+        services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IStartupVerifier, ExceptionSanitizingDisabledWarningService>());
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IStartupVerifier, AbsoluteFamilyLifetimeUnboundedWarningService>());
@@ -167,6 +174,62 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         services.TryAddSingleton<TimeProvider>(TimeProvider.System);
         services.TryAddSingleton<AuthorizeErrorTransport>();
         services.TryAddSingleton<AuthorizationRequestContextTransport>();
+        services.TryAddSingleton<LocalErrorResponse>();
+        services.TryAddSingleton<SsoSession>();
+        services.TryAddSingleton<AuthorizationFlow>();
         services.TryAddSingleton<IErrorInteraction, ErrorInteraction>();
+        services.TryAddSingleton<ILoginInteraction, LoginInteraction>();
+
+        AddInteractionCookies(services);
+    }
+
+    /// <summary>
+    /// Registers the cookie schemes the framework owns. Plain <c>AddCookie</c> schemes, not a
+    /// ZeeKayDa handler: every authentication-shaped question here is already answered by a
+    /// handler that ships with ASP.NET Core, and a framework scheme would be a vehicle with no
+    /// cargo.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The host names none of these and none of them becomes a default scheme, so registering
+    /// them cannot change what <c>[Authorize]</c> or <c>HttpContext.User</c> mean in a host that
+    /// has its own authentication. Opting the host's own pages into the SSO session is a separate,
+    /// explicit feature (#593).
+    /// </para>
+    /// <para>
+    /// <c>zkd.external</c> and <c>zkd.pending</c> arrive with the external-provider leg; their
+    /// names are reserved from today so that a host cannot take one and break on upgrade.
+    /// </para>
+    /// </remarks>
+    private static void AddInteractionCookies(IServiceCollection services)
+    {
+        services.AddAuthentication().AddCookie(ZeeKayDaCookies.Session, options =>
+        {
+            options.Cookie.Name = ZeeKayDaCookies.Session;
+            options.Cookie.HttpOnly = true;
+            options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+
+            // Lax, not Strict: the session is read while answering a top-level GET the user
+            // arrived at from the client's site, which is exactly what Strict withholds.
+            options.Cookie.SameSite = SameSiteMode.Lax;
+            options.Cookie.IsEssential = true;
+
+            // No sliding expiration: the cookie is a session cookie, and auth_time is a protocol
+            // value carried as a claim rather than inferred from the ticket's age.
+            options.SlidingExpiration = false;
+
+            // Nothing redirects to a login page through this scheme — the authorization endpoint
+            // owns that decision and needs the interaction context written first. A challenge or
+            // forbid here is a bug, so it answers with a status code rather than a redirect that
+            // would silently work.
+            options.Events.OnRedirectToLogin = ReplaceRedirectWithStatusCode;
+            options.Events.OnRedirectToAccessDenied = ReplaceRedirectWithStatusCode;
+        });
+    }
+
+    private static Task ReplaceRedirectWithStatusCode(RedirectContext<CookieAuthenticationOptions> context)
+    {
+        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+        return Task.CompletedTask;
     }
 }
