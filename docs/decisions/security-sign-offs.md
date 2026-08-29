@@ -1223,8 +1223,12 @@ scheme becomes the automatic default.
 - A refused sign-in leaves no interaction behind, and `zkd.session` answers 401 rather than
   redirecting. Closed — `A_refused_request_does_not_leave_an_interaction_behind`,
   `Challenging_the_session_scheme_answers_401_rather_than_redirecting`.
-- Scope negative: the handoff path writes no log sink at all, so this sign-off asserts nothing about
-  log hygiene and no test bounds it. A sink added here inherits the `errors-and-log-hygiene.md` duty.
+- The one sink this leg adds is the unconfigured-`LoginPath` startup warning, a constant string with
+  no placeholders; nothing on the request path logs. Closed — `An_unconfigured_login_path_warns_at_startup`,
+  and the repo-wide `Log Hygiene Check`, whose pass A walks every `Log*`/`AddWarning` call site under
+  `/src/` and whose ZEEKAYDA0001/0002 sit at Error with no project-level downgrade. That gate, not
+  this entry, is what bounds #85's "no raw `state`, `nonce` or `code_challenge` reaches a log sink"
+  for anything added here later.
 - Residual: the immediate seeding variant stands — a victim navigated to an attacker's authorize who
   signs in on the login page they land on completes it. Consent (#86) owns this; `zkd_i` cannot see
   the difference. Industry-wide, and unchanged from #84's entry.
