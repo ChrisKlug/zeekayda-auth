@@ -67,11 +67,26 @@ public sealed class ReservedCookieNameValidatorTests
     }
 
     [Fact]
+    public async Task A_host_scheme_named_for_the_one_reserved_cookie_with_no_scheme_is_still_reported()
+    {
+        // zkd.interaction is a reserved cookie name the framework never registers a scheme for, so
+        // skipping "the framework's own schemes" must not skip a host scheme that took that name.
+        var context = await VerifyAsync(auth => auth.AddCookie(
+            ZeeKayDaCookies.Interaction,
+            options => options.Cookie.Name = ZeeKayDaCookies.Interaction));
+
+        context.Failures.Should().ContainSingle()
+            .Which.Code.Should().Be("cookie.reserved_name");
+    }
+
+    [Fact]
     public async Task The_frameworks_own_schemes_are_not_reported_against_themselves()
     {
-        var context = await VerifyAsync(auth => auth.AddCookie(
-            ZeeKayDaCookies.Session,
-            options => options.Cookie.Name = ZeeKayDaCookies.Session));
+        var context = await VerifyAsync(auth =>
+        {
+            foreach (var scheme in ZeeKayDaCookies.SchemeNames)
+                auth.AddCookie(scheme, options => options.Cookie.Name = scheme);
+        });
 
         context.Failures.Should().BeEmpty();
     }

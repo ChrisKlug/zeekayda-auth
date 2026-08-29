@@ -37,4 +37,13 @@ internal static class ZeeKayDaCookies
     /// startup is a better place to learn that than production.
     /// </summary>
     public static readonly string[] ReservedNames = [Session, Interaction, External, Pending];
+
+    /// <summary>
+    /// The reserved names that are also authentication scheme names. <see cref="Interaction"/> is
+    /// absent: it carries protocol state rather than a principal, so it is a Data-Protection
+    /// payload written directly and no scheme backs it. Keeping the two lists apart is what lets
+    /// the startup check skip the framework's own schemes without also skipping a host scheme that
+    /// took the one reserved name the framework never registers.
+    /// </summary>
+    public static readonly string[] SchemeNames = [Session, External, Pending];
 }

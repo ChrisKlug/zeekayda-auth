@@ -61,6 +61,11 @@ internal sealed class ReservedCookieNameValidator : IStartupActivator
         }
     }
 
+    /// <summary>
+    /// Only the schemes the framework actually registers are skipped — deliberately not every
+    /// reserved name. <c>zkd.interaction</c> is a reserved cookie name with no scheme behind it,
+    /// so a host scheme carrying that name is a real collision and must still be reported.
+    /// </summary>
     private static bool IsFrameworkScheme(string schemeName) =>
-        ZeeKayDaCookies.ReservedNames.Contains(schemeName, StringComparer.Ordinal);
+        ZeeKayDaCookies.SchemeNames.Contains(schemeName, StringComparer.Ordinal);
 }
