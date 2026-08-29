@@ -31,10 +31,10 @@ internal static class ZeeKayDaCookies
     public const string Pending = "zkd.pending";
 
     /// <summary>
-    /// Every reserved name, including the two whose schemes are not registered until the external
-    /// provider leg lands. A name is reserved because the framework will use it, not because it
-    /// already does — a host that takes <c>zkd.external</c> today would break on upgrade, and
-    /// startup is a better place to learn that than production.
+    /// Every reserved name, whether or not a scheme backs it. A name is reserved because the
+    /// framework uses it, not because a scheme registers it — <see cref="Interaction"/> is written
+    /// directly and has no scheme, and a host taking that name collides just as squarely as one
+    /// taking <see cref="Session"/>. Startup is a better place to learn that than production.
     /// </summary>
     public static readonly string[] ReservedNames = [Session, Interaction, External, Pending];
 
