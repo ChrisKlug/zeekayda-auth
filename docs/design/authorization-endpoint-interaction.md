@@ -5,8 +5,10 @@ login handoff (#85, local leg) have landed; external providers, consent and code
 so a request that reaches the end of what exists answers `501`. Originally
 ADR 0005 (accepted 2026-07-01, issue #156); revised 2026-08-28 in the S2 shape conversation
 (#534/#83/#84), which reversed the interception model, renamed the interaction services and cut the
-interaction store. The security properties and protocol refusals are in
-`docs/decisions/authorization-and-interaction.md` and are *not* repeated here.
+interaction store; login dispatch between local sign-in and external providers settled
+2026-08-29 (#607). The security properties and protocol refusals are in
+`docs/decisions/authorization-and-interaction.md` and `docs/decisions/interaction-and-session.md`
+and are *not* repeated here.
 
 ## Hosting: routed endpoints, and ZeeKayDa is not an authentication scheme
 
@@ -34,6 +36,7 @@ builder.Services
     {
         o.Issuer = "https://id.example.com";
         o.AuthorizationEndpoint.Interaction.LoginPath = "/auth/login";
+        o.AuthorizationEndpoint.Interaction.SupportsLocalSignIn = true;  // the default
         o.AuthorizationEndpoint.Interaction.ConsentPath = "/consent";
         o.OnSigningIn = async ctx => { /* fires for ALL sign-ins; no interrupt */ };
     })
@@ -88,6 +91,55 @@ it chose the PKCE verifier, `state` and `nonce`. Requiring the identifier to com
 page means a user who reached the login page on their own has nothing to attach a planted context
 to. It also turns the concurrent-tab case from silently completing the wrong client's request into
 a clean error.
+
+## Login dispatch (#607)
+
+**Local sign-in is not a provider.** An external provider is a redirect out and back — a scheme
+registered through `WithProviders`, a remote handler, `zkd.external`, `/connect/resume`. Local
+sign-in is an in-process form post that shares none of that lifecycle, so it is a flag —
+`InteractionOptions.SupportsLocalSignIn`, default `true` — not a list entry. Modelling it as a
+provider would mean a fake scheme or a null object, and the abstraction leaks immediately.
+
+**One page, not two.** The login page is also the provider-selection page: `ILoginInteraction`
+exposes `LocalLoginEnabled` and the configured `Providers`, and the host renders a credential form,
+a row of provider buttons, or both. No second path option, no second interaction service.
+
+**`LoginPath` presence is the dispatch override — the framework never skips a page the host
+built.** An authorization request that needs authentication dispatches:
+
+1. `LoginPath` set → redirect there, always.
+2. `LoginPath` unset, local off, exactly one provider → challenge that provider directly. The
+   user never sees a ZeeKayDa-controlled page, so cancellation happens at the provider and
+   returns through `/connect/resume` (#606 interplay).
+3. `LoginPath` unset but the page is needed — local on, or two or more providers → `server_error`
+   at the client's redirect, and a startup warning said so first.
+4. Local off, no providers → startup **error**.
+
+A host that wants a branding or terms landing page with a single provider sets `LoginPath`; one
+that wants the straight-to-provider redirect leaves it unset. Intent is stated by building the
+page, which cannot be done by accident. Note the consequence: adding a second provider to a
+`LoginPath`-less, local-off host moves it from rule 2 to rule 3 — the framework cannot choose
+between two providers, and the startup warning says so.
+
+**Startup checks are gated on `GrantTypesSupported` — there is no separate machine-to-machine
+flag.** `GrantTypesSupported` already declares what the server does. When it lacks
+`AuthorizationCode`, the interactive machinery is declared unused and none of these checks fire —
+that is the clean startup for a `client_credentials`-only host. When it contains
+`AuthorizationCode`: rule 4 is a startup error (the message offers all three exits — add a
+provider, enable local sign-in, or remove `authorization_code`); rule 3 is a startup warning;
+everything else is silent. The conditions are exact, so the warning cries wolf for nobody and has
+no built-in expiry date.
+
+### Home realm discovery: decided, deferred (#608)
+
+The framework will offer **configuration-based domain matching only**: a provider registration may
+declare the domains it serves, and the framework answers "which configured provider(s) serve this
+address" by matching the domain part against that configuration — never by consulting the host's
+user store. A per-user lookup is an unauthenticated user-enumeration oracle on the login page
+(type an address, learn whether an account exists) and will not become framework API; domain
+matching leaks only tenant configuration, which the matched provider's own sign-in page reveals
+anyway. A host that wants per-user HRD writes it in its own page against its own store,
+deliberately unassisted. The build is #608; nothing in the dispatch shape above precludes it.
 
 ## Internal cookie schemes
 
@@ -214,13 +266,28 @@ One service per page the host builds; the service *is* the protocol knowledge, p
 methods write the redirect response and must be the caller's last action.
 
 ```csharp
-public interface ILoginInteraction
+public interface ILoginInteraction   // scoped, as are all the page services
 {
+    // Pure configuration — what the page should render. Frozen at startup.
+    bool LocalLoginEnabled { get; }                       // InteractionOptions.SupportsLocalSignIn
+    IReadOnlyList<ProviderDescriptor> Providers { get; }  // Id + DisplayName, from WithProviders
+
+    // The client asking to be signed in to — ClientId plus the registration's optional
+    // DisplayName. Reads the interaction context, so it is zkd_i-bound on SignInAsync's exact
+    // terms; a page that dropped the query string fails on its first GET, not at post time.
+    Task<ClientInformation> GetClientInformationAsync();
+
     // Promotes principal to SSO session, continues the flow (consent → code → redirect).
     // Auto-consumes a bound zkd.pending cookie. Terminal. Throws ZeeKayDaInteractionException
     // when the request carries no zkd_i, when there is no interaction context, or when the two
     // name different interactions (see #593 for the future [Authorize]-driven mode).
     Task SignInAsync(ClaimsPrincipal principal, params string[] authenticationMethods);
+
+    // Starts the external round trip for one configured provider. Terminal, zkd_i-bound on
+    // SignInAsync's terms. The id is validated against the configured provider set before any
+    // challenge — it selects from a known list, it does not name a target — and an unknown id
+    // throws. The endpoint's single-provider auto-redirect runs through this same path.
+    Task ChallengeAsync(string provider);
 
     // Null if the pending cookie is absent, expired or misbound — recoverable.
     Task<PendingPrincipal?> GetPendingPrincipalAsync();
@@ -233,6 +300,14 @@ public interface IConsentInteraction
     Task DenyAsync();                                    // terminal; error=access_denied
 }
 ```
+
+`ProviderDescriptor.Id` is opaque to the host: it happens to equal the scheme name, but the page
+reads it from `Providers` and posts it back, never writes it. The invariant is that no host code
+*contains* a scheme name, and round-tripping a framework-handed value does not.
+`ClientInformation.DisplayName` is the nullable `ClientRegistration.DisplayName` pulled forward
+from consent (#86), which inherits it. Configuration lives on properties and request-bound data
+behind async methods — a property getter that decrypted cookies and threw on a bad `zkd_i` would
+be bad .NET API, so anything read from the interaction context stays a method.
 
 Event model: `OnProviderSignIn` (external only) may `RedirectToAsync(path)` (pending principal) or
 `DenyAsync(error)`; calling neither promotes automatically. `OnSigningIn` fires for every sign-in
@@ -296,3 +371,13 @@ non-breaking. `AuthorizationCodeEntry.Nonce` stays nullable for that day.
   users already know.
 - **`redirect_uri` optional for single-URI clients.** A second path through the most
   security-sensitive matching logic, to save one line.
+- **Local sign-in as a provider list entry.** Requires a fake scheme or a null-object provider for
+  an in-process form post that shares nothing with the redirect-out-and-back lifecycle; the
+  abstraction leaks immediately. It is a flag (#607).
+- **A dedicated option to suppress the single-provider auto-redirect.** `LoginPath` presence
+  already states the intent; a flag would add a second way to say it and a contradiction to
+  resolve (#607).
+- **A separate machine-to-machine capability flag.** `GrantTypesSupported` already declares it,
+  and a second flag could contradict the first (#607).
+- **A per-user home-realm-discovery callback.** An unauthenticated user-enumeration oracle on the
+  login page; see the HRD section above (#607).
