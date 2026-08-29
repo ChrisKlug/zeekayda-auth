@@ -113,11 +113,14 @@ internal sealed class SsoSession
     /// <exception cref="ZeeKayDaInteractionException">
     /// The principal carries no subject claim, so there is no user to establish a session for.
     /// </exception>
-    public async Task<SsoSessionState> PromoteAsync(HttpContext context, ClaimsPrincipal principal, string amr)
+    public async Task<SsoSessionState> PromoteAsync(
+        HttpContext context,
+        ClaimsPrincipal principal,
+        IReadOnlyList<string> authenticationMethods)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(principal);
-        ArgumentException.ThrowIfNullOrWhiteSpace(amr);
+        ArgumentNullException.ThrowIfNull(authenticationMethods);
 
         var subject = ReadSubject(principal)
             ?? throw new ZeeKayDaInteractionException(
@@ -135,7 +138,7 @@ internal sealed class SsoSession
             SessionId = sessionId,
             Subject = subject,
             AuthTime = authTime,
-            Amr = [amr],
+            Amr = [.. authenticationMethods],
         };
 
         await context.SignInAsync(

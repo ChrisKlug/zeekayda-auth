@@ -1,4 +1,26 @@
 #nullable enable
+ZeeKayDa.Auth.Authorization.AuthenticationMethods
+const ZeeKayDa.Auth.Authorization.AuthenticationMethods.FacialRecognition = "face" -> string!
+const ZeeKayDa.Auth.Authorization.AuthenticationMethods.Fingerprint = "fpt" -> string!
+const ZeeKayDa.Auth.Authorization.AuthenticationMethods.Geolocation = "geo" -> string!
+const ZeeKayDa.Auth.Authorization.AuthenticationMethods.HardwareKey = "hwk" -> string!
+const ZeeKayDa.Auth.Authorization.AuthenticationMethods.IrisScan = "iris" -> string!
+const ZeeKayDa.Auth.Authorization.AuthenticationMethods.KnowledgeBased = "kba" -> string!
+const ZeeKayDa.Auth.Authorization.AuthenticationMethods.MultiChannel = "mca" -> string!
+const ZeeKayDa.Auth.Authorization.AuthenticationMethods.MultiFactor = "mfa" -> string!
+const ZeeKayDa.Auth.Authorization.AuthenticationMethods.OneTimePassword = "otp" -> string!
+const ZeeKayDa.Auth.Authorization.AuthenticationMethods.Password = "pwd" -> string!
+const ZeeKayDa.Auth.Authorization.AuthenticationMethods.Pin = "pin" -> string!
+const ZeeKayDa.Auth.Authorization.AuthenticationMethods.ProofOfPossession = "pop" -> string!
+const ZeeKayDa.Auth.Authorization.AuthenticationMethods.RetinaScan = "retina" -> string!
+const ZeeKayDa.Auth.Authorization.AuthenticationMethods.RiskBased = "rba" -> string!
+const ZeeKayDa.Auth.Authorization.AuthenticationMethods.SmartCard = "sc" -> string!
+const ZeeKayDa.Auth.Authorization.AuthenticationMethods.Sms = "sms" -> string!
+const ZeeKayDa.Auth.Authorization.AuthenticationMethods.SoftwareKey = "swk" -> string!
+const ZeeKayDa.Auth.Authorization.AuthenticationMethods.Telephone = "tel" -> string!
+const ZeeKayDa.Auth.Authorization.AuthenticationMethods.UserPresence = "user" -> string!
+const ZeeKayDa.Auth.Authorization.AuthenticationMethods.VoiceBiometric = "vbm" -> string!
+const ZeeKayDa.Auth.Authorization.AuthenticationMethods.WindowsIntegrated = "wia" -> string!
 ZeeKayDa.Auth.Authorization.AuthorizationEndpointOptions
 ZeeKayDa.Auth.Authorization.AuthorizationEndpointOptions.AuthorizationCodeLifetime.get -> System.TimeSpan
 ZeeKayDa.Auth.Authorization.AuthorizationEndpointOptions.AuthorizationCodeLifetime.set -> void

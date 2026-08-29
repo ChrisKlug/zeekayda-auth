@@ -45,8 +45,11 @@ internal sealed class AuthorizationFlow
     public Task<SsoSessionState?> ReadSessionAsync(HttpContext context) => _session.ReadAsync(context);
 
     /// <summary>Establishes the SSO session for an authenticated principal.</summary>
-    public Task<SsoSessionState> PromoteAsync(HttpContext context, ClaimsPrincipal principal, string amr) =>
-        _session.PromoteAsync(context, principal, amr);
+    public Task<SsoSessionState> PromoteAsync(
+        HttpContext context,
+        ClaimsPrincipal principal,
+        IReadOnlyList<string> authenticationMethods) =>
+        _session.PromoteAsync(context, principal, authenticationMethods);
 
     /// <summary>
     /// Whether the request must be authenticated before it can continue: no session at all, a

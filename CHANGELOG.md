@@ -12,8 +12,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
   `/connect/authorize` no longer stops at `501` for a request that needs a user. With no session it
   redirects to the new `AuthorizationEndpoint.Interaction.LoginPath`, and the host's login page ends
-  by calling the new `ILoginInteraction.SignInAsync(principal, amr)` — a terminal call that
-  establishes the SSO session and continues the request. The page needs no `ReturnUrl`, no scheme
+  by calling the new `ILoginInteraction.SignInAsync(principal, params authenticationMethods)` — a
+  terminal call that establishes the SSO session and continues the request. The methods are the
+  `amr` the client is told about; `AuthenticationMethods` names the RFC 8176 values, several may be
+  given for a multi-factor sign-in, and passing none omits the claim rather than assuming a
+  password. The page needs no `ReturnUrl`, no scheme
   name and no cookie name; the one thing it must preserve is the `zkd_i` query parameter it was
   reached with, which an ordinary `<form method="post">` does by default. A request that arrives on
   a live session skips the login page altogether, `prompt=login` and an exceeded `max_age`

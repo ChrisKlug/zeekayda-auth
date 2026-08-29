@@ -38,10 +38,18 @@ internal sealed class LoginInteraction : ILoginInteraction
     }
 
     /// <inheritdoc/>
-    public async Task SignInAsync(ClaimsPrincipal principal, string amr)
+    public async Task SignInAsync(ClaimsPrincipal principal, params string[] authenticationMethods)
     {
         ArgumentNullException.ThrowIfNull(principal);
-        ArgumentException.ThrowIfNullOrWhiteSpace(amr);
+        ArgumentNullException.ThrowIfNull(authenticationMethods);
+
+        // Caught here rather than at the claim write so the blame lands on the caller's
+        // argument, not on a malformed session cookie several frames later.
+        if (authenticationMethods.Any(string.IsNullOrWhiteSpace))
+            throw new ArgumentException(
+                "An authentication method reference is null or blank. Pass a value such as "
+                + "AuthenticationMethods.Password, or pass none to omit the amr claim.",
+                nameof(authenticationMethods));
 
         var context = _httpContextAccessor.HttpContext
             ?? throw new InvalidOperationException(
@@ -54,7 +62,7 @@ internal sealed class LoginInteraction : ILoginInteraction
         // cached sign-in response is a stolen one.
         context.Response.Headers.CacheControl = "no-store";
 
-        var state = await _flow.PromoteAsync(context, principal, amr).ConfigureAwait(false);
+        var state = await _flow.PromoteAsync(context, principal, authenticationMethods).ConfigureAwait(false);
 
         var authenticated = requestContext with
         {

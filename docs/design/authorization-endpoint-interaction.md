@@ -220,7 +220,7 @@ public interface ILoginInteraction
     // Auto-consumes a bound zkd.pending cookie. Terminal. Throws ZeeKayDaInteractionException
     // when the request carries no zkd_i, when there is no interaction context, or when the two
     // name different interactions (see #593 for the future [Authorize]-driven mode).
-    Task SignInAsync(ClaimsPrincipal principal, string amr);
+    Task SignInAsync(ClaimsPrincipal principal, params string[] authenticationMethods);
 
     // Null if the pending cookie is absent, expired or misbound — recoverable.
     Task<PendingPrincipal?> GetPendingPrincipalAsync();

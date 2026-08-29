@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Time.Testing;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
+using ZeeKayDa.Auth.Authorization;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests.Interaction;
 
@@ -73,9 +74,17 @@ public sealed class LoginInteractionTests : IDisposable
             if (form["forge_type"].FirstOrDefault() is { Length: > 0 } forgedType)
                 claims.Add(new Claim(forgedType, form["forge_value"].FirstOrDefault() ?? string.Empty));
 
+            // Absent, the page reports a password — the ordinary case, and what most tests here
+            // want. "amr_omit" drives the report-nothing case; repeated "amr" fields drive the
+            // multi-factor one.
+            string[] methods =
+                form.ContainsKey("amr_omit") ? []
+                : form.ContainsKey("amr") ? [.. form["amr"].Select(value => value ?? string.Empty)]
+                : [AuthenticationMethods.Password];
+
             await login.SignInAsync(
                 new ClaimsPrincipal(new ClaimsIdentity(claims, "test")),
-                amr: "pwd");
+                methods);
         });
 
         // Nothing should ever challenge the framework's session scheme: the authorization endpoint
@@ -304,6 +313,53 @@ public sealed class LoginInteractionTests : IDisposable
         (await ReadSessionAsync()).GetProperty("amr").EnumerateArray()
             .Select(value => value.GetString())
             .Should().Equal(["pwd"]);
+    }
+
+    [Fact]
+    public async Task Every_authentication_method_reported_reaches_the_session()
+    {
+        var handoff = await AuthorizeAsync();
+
+        // RFC 8176 §2 asks that a multi-factor sign-in name the factors alongside "mfa", so the
+        // signature has to carry more than one value — the string parameter it replaced could not.
+        await PostLoginAsync(
+            InteractionIdFrom(handoff),
+            ("sub", "user-1"),
+            ("amr", AuthenticationMethods.MultiFactor),
+            ("amr", AuthenticationMethods.Password),
+            ("amr", AuthenticationMethods.OneTimePassword));
+
+        (await ReadSessionAsync()).GetProperty("amr").EnumerateArray()
+            .Select(value => value.GetString())
+            .Should().Equal(["mfa", "pwd", "otp"]);
+    }
+
+    [Fact]
+    public async Task A_sign_in_reporting_no_authentication_method_claims_none()
+    {
+        var handoff = await AuthorizeAsync();
+
+        await PostLoginAsync(InteractionIdFrom(handoff), ("sub", "user-1"), ("amr_omit", "1"));
+
+        // Not "pwd" by default: amr is optional, and inventing a method for a host that named
+        // none would put a claim an RP may gate on into a token on no evidence at all.
+        (await ReadSessionAsync()).GetProperty("amr").EnumerateArray().Should().BeEmpty();
+
+        // Omitting the method is not a failed sign-in — the session is still established.
+        (await ReadSessionIdAsync()).Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task A_blank_authentication_method_is_refused()
+    {
+        var handoff = await AuthorizeAsync();
+
+        // A blank amr claim would reach the RP as a method it cannot interpret. Caught at the
+        // argument, so the blame lands on the caller rather than on the session cookie.
+        var signIn = async () => await PostLoginAsync(
+            InteractionIdFrom(handoff), ("sub", "user-1"), ("amr", "  "));
+
+        await signIn.Should().ThrowAsync<ArgumentException>();
     }
 
     [Fact]
