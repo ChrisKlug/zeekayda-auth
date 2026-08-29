@@ -74,4 +74,34 @@ public static class AuthenticationMethods
 
     /// <summary>Facial recognition (<c>face</c>).</summary>
     public const string FacialRecognition = "face";
+
+    /// <summary>
+    /// A multiple-factor sign-in: <see cref="MultiFactor"/> followed by the factors it was made
+    /// of, which is the pairing RFC 8176 §2 asks for and the one that is easy to get half right
+    /// by hand.
+    /// </summary>
+    /// <param name="first">The first factor used.</param>
+    /// <param name="second">
+    /// The second factor. Two is the minimum because one factor is not multiple-factor, and the
+    /// signature is what enforces that rather than a remark asking the caller to remember.
+    /// </param>
+    /// <param name="rest">Any further factors.</param>
+    /// <returns>
+    /// <see cref="MultiFactor"/> followed by every factor given, in order, ready to pass straight
+    /// to <c>ILoginInteraction.SignInAsync</c>:
+    /// <code>
+    /// await login.SignInAsync(
+    ///     user,
+    ///     AuthenticationMethods.Mfa(
+    ///         AuthenticationMethods.Password,
+    ///         AuthenticationMethods.OneTimePassword));
+    /// </code>
+    /// </returns>
+    /// <exception cref="ArgumentNullException"><paramref name="rest"/> is <see langword="null"/>.</exception>
+    public static string[] Mfa(string first, string second, params string[] rest)
+    {
+        ArgumentNullException.ThrowIfNull(rest);
+
+        return [MultiFactor, first, second, .. rest];
+    }
 }

@@ -12,6 +12,7 @@ const ZeeKayDa.Auth.Authorization.AuthenticationMethods.Sms = "sms" -> string!
 const ZeeKayDa.Auth.Authorization.AuthenticationMethods.SoftwareKey = "swk" -> string!
 const ZeeKayDa.Auth.Authorization.AuthenticationMethods.Telephone = "tel" -> string!
 const ZeeKayDa.Auth.Authorization.AuthenticationMethods.WindowsIntegrated = "wia" -> string!
+static ZeeKayDa.Auth.Authorization.AuthenticationMethods.Mfa(string! first, string! second, params string![]! rest) -> string![]!
 ZeeKayDa.Auth.Authorization.AuthorizationEndpointOptions
 ZeeKayDa.Auth.Authorization.AuthorizationEndpointOptions.AuthorizationCodeLifetime.get -> System.TimeSpan
 ZeeKayDa.Auth.Authorization.AuthorizationEndpointOptions.AuthorizationCodeLifetime.set -> void
