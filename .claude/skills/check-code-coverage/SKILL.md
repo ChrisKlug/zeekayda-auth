@@ -43,14 +43,21 @@ dotnet test tests/ZeeKayDa.Auth.FileSystem.Tests/ \
 
 ### 2. Get main's coverage
 
-Rather than checking out and rebuilding `main` in a worktree, download the `coverage-Linux` artifact from `main`'s most recent successful CI run (the same one `coverage-regression` itself now uses — see `.github/workflows/ci.yml`). This requires the `gh` CLI to be authenticated:
+Rather than checking out and rebuilding `main` in a worktree, download the `coverage-Linux` artifact from `main`'s most recent CI run **that produced one** (the same artifact `coverage-regression` itself uses — see `.github/workflows/ci.yml`). This requires the `gh` CLI to be authenticated.
+
+**Not simply the most recent successful run.** `detect-changes` skips the coverage jobs on a docs-only push, so a run can be green and still have no artifact — and docs-only merges landing ahead of code is normal here. Taking `--limit 1` then fails with "no valid artifacts found" and the comparison never runs. Walk back until a run actually has it:
 
 ```sh
-gh run download --repo ChrisKlug/zeekayda-auth \
-  -n coverage-Linux \
-  -D ./TestResults/base \
-  $(gh run list --repo ChrisKlug/zeekayda-auth --workflow ci.yml --branch main --event push --status success --limit 1 --json databaseId --jq '.[0].databaseId')
+for id in $(gh run list --repo ChrisKlug/zeekayda-auth --workflow ci.yml --branch main --event push --status success --limit 15 --json databaseId --jq '.[].databaseId'); do
+  if gh api repos/ChrisKlug/zeekayda-auth/actions/runs/$id/artifacts --jq '[.artifacts[].name] | join(",")' | grep -q coverage-Linux; then
+    gh run download --repo ChrisKlug/zeekayda-auth -n coverage-Linux -D ./TestResults/base "$id"
+    echo "baseline from run $id"
+    break
+  fi
+done
 ```
+
+If the loop finds nothing in 15 runs, the artifacts have aged out — raise the limit, or fall back to building `main` in a worktree.
 
 ### 3. Compare the results
 
