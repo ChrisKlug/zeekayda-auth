@@ -2,7 +2,7 @@
 
 How protocol endpoints are hosted, and the issuer/URI hygiene every one of them inherits. Options
 shape and the discovery document's contents are `configuration-and-discovery.md`; the authorization
-endpoint's interaction flow is `authorization-and-interaction.md`.
+endpoint's interaction flow is `authorization-and-interaction.md` and `interaction-and-session.md`.
 
 ## Decisions in force
 
