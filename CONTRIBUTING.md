@@ -462,11 +462,11 @@ cd tests/ZeeKayDa.Auth.Tests && dotnet tool run dotnet-stryker
 
 | Target (config location) | Mutated scope | Baseline | Recorded |
 |---|---|---|---|
-| `tests/ZeeKayDa.Auth.Tests` | `Tokens/`, `Security/`, `Clients/`, `Authorization/` | **75.77 %** | 2026-08-27 |
-| `tests/ZeeKayDa.Auth.AspNetCore.Tests` | `ClientAuthentication/` | **100.00 %** | 2026-08-28 |
-| `tests/ZeeKayDa.Auth.AzureKeyVault.Tests` | whole project | **78.25 %** | 2026-08-28 |
-| `tests/ZeeKayDa.Auth.FileSystem.Tests` | whole project | **62.78 %** | 2026-08-28 |
-| `tests/ZeeKayDa.Auth.Windows.Tests` | whole project | **63.33 %** | 2026-08-28 |
+| `tests/ZeeKayDa.Auth.Tests` | `Tokens/`, `Security/`, `Clients/`, `Authorization/` | **76.83 %** | 2026-08-30 |
+| `tests/ZeeKayDa.Auth.AspNetCore.Tests` | `ClientAuthentication/` | **100.00 %** | 2026-08-30 |
+| `tests/ZeeKayDa.Auth.AzureKeyVault.Tests` | whole project | **63.84 %** | 2026-08-30 |
+| `tests/ZeeKayDa.Auth.FileSystem.Tests` | whole project | **62.78 %** | 2026-08-30 |
+| `tests/ZeeKayDa.Auth.Windows.Tests` | whole project | **75.56 %** | 2026-08-30 |
 
 Baselines are recorded from the `mutation.yml` workflow on `ubuntu-latest` — that is the canonical
 environment. The one exception is `ZeeKayDa.Auth.Windows`, whose leg runs on `windows-latest`
