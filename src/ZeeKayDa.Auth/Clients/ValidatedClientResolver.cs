@@ -111,7 +111,7 @@ internal sealed class ValidatedClientResolver
             // A registration is an extension point: a property getter may throw, or a set may be
             // mutated while it is being read. Either way this type's promise is to answer unknown
             // rather than let a 500 escape from every protocol endpoint.
-            return new Verdict($"The registration could not be fingerprinted: {ex.GetType().Name}.");
+            return new Verdict($"The registration could not be fingerprinted: {ex.GetType().FullName}.");
         }
 
         // An instance-identity fallback (a custom IClientCredential) produces a different key for
@@ -158,8 +158,9 @@ internal sealed class ValidatedClientResolver
             // of this type is fail-closed: the registration must still answer as unknown rather
             // than escape as a 500 from every protocol endpoint.
             // The exception TYPE is named, never ex.Message. A caller-supplied validator can throw
-            // anything, and a Verdict's text is surfaced and logged. Matches the fingerprint arm above.
-            return new Verdict($"The registration validator threw {ex.GetType().Name}.");
+            // anything, and a Verdict's text is surfaced and logged. FullName, not Name: two vendors'
+            // ValidationException would otherwise be indistinguishable to the operator reading it.
+            return new Verdict($"The registration validator threw {ex.GetType().FullName}.");
         }
     }
 

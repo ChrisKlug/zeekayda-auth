@@ -962,6 +962,50 @@ public sealed class KeyVaultCertificateReaderTests
             .WithMessage("*unsupported_key_type*");
     }
 
+    /// <summary>
+    /// Builds a CER carrying the RSA algorithm OID over key bytes that are not a valid
+    /// <c>RSAPublicKey</c> structure. The certificate itself parses, so
+    /// <c>X509CertificateLoader.LoadCertificate</c> succeeds and the failure surfaces later, from
+    /// <c>GetRSAPublicKey</c> — the accessor arm, which no other test reaches.
+    /// </summary>
+    private static byte[] CreateCerWithMalformedRsaPublicKey()
+    {
+        var malformed = new PublicKey(
+            new Oid("1.2.840.113549.1.1.1"),
+            parameters: new AsnEncodedData([0x05, 0x00]),
+            keyValue: new AsnEncodedData([0x30, 0x03, 0x02, 0x01, 0x01]));
+        var request = new CertificateRequest(new X500DistinguishedName("CN=test"), malformed, HashAlgorithmName.SHA256);
+        using var issuerKey = RSA.Create(2048);
+        var generator = X509SignatureGenerator.CreateForRSA(issuerKey, RSASignaturePadding.Pkcs1);
+        using var cert = request.Create(
+            new X500DistinguishedName("CN=issuer"), generator,
+            DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(30), serialNumber: [1, 2, 3, 4]);
+        return cert.RawData;
+    }
+
+    [Fact]
+    public void ExtractPublicKey_maps_a_public_key_accessor_failure_without_leaking_its_message()
+    {
+        // The accessor arm, distinct from the LoadCertificate arm: here the CER parses and the
+        // failure comes from importing the key. Without this the redaction claim went untested on
+        // this path, so a regression reintroducing ex.Message here would have stayed green.
+        var reader = BuildReader();
+
+        var act = () => InvokeExtractPublicKey(reader, CreateCerWithMalformedRsaPublicKey());
+
+        var thrown = act.Should().Throw<ZeeKayDaConfigurationException>()
+            .WithMessage("*invalid_certificate_public_key*");
+        thrown.Which.Message.Should().Contain("carries a public key that could not be read",
+            "this must reach the accessor arm, not LoadCertificate's — the two share a failure code "
+            + "and the whole point of this test is the arm the other one cannot reach");
+        thrown.Which.InnerException.Should().NotBeNull(
+            "the root cause stays available to operators as InnerException");
+        thrown.Which.Message.Should().NotContain(thrown.Which.InnerException!.Message,
+            "a cryptographic exception can echo the key material it failed to parse");
+        thrown.Which.Message.Should().Contain(thrown.Which.InnerException.GetType().FullName!,
+            "the operator still needs the exception type to diagnose the failure");
+    }
+
     // ── Private-key import: a handle that fails to import never leaks ────────────────────────────
     //
     // The RSA/ECDsa handles are created and disposed entirely inside the reader, so the disposal
