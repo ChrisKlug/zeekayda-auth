@@ -27,10 +27,12 @@ public sealed class KeyVaultSignerTests
     //
     // Every test below builds the signer through the internal client-factory seam, so the public
     // constructor's guards and SignAsync's three parameter guards were unexercised — each could be
-    // deleted with the suite green. Each of these was checked by deleting the guard it names and
-    // confirming the test fails, rather than by trusting a mutation report: #612 shipped a guard
-    // test that passed either way because the SDK raised the same exception with the same parameter
-    // name (see the correction on PR #621).
+    // deleted with the suite green.
+    //
+    // Each was checked by deleting the guard it names and confirming the test fails, rather than by
+    // trusting a mutation report. A guard test can easily pass whether or not the guard exists: if
+    // the SDK call downstream raises the same exception type with the same parameter name, asserting
+    // type and name proves nothing. That has happened here before.
 
     [Fact]
     public void Constructor_rejects_null_options()
