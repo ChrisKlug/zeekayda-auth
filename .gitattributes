@@ -1,0 +1,23 @@
+# Line endings.
+#
+# The repository stores LF for every text file and checks LF out on every platform, including
+# Windows. This is deliberate rather than the git default: .editorconfig sets `end_of_line = lf`,
+# and CI's Format Check runs `dotnet format --verify-no-changes`, which reads the working tree. On a
+# Windows clone with core.autocrlf=true — the git-for-windows default — the working tree would be
+# CRLF while .editorconfig demands LF, and the check reports tens of thousands of ENDOFLINE errors
+# on a clean checkout. CI does not see this because it runs on Linux, so without this file the
+# check is only runnable on half the machines that develop here.
+#
+# `text=auto` still lets git detect binary content, so assets/icon.png and anything like it are
+# left untouched.
+* text=auto eol=lf
+
+# Binary, stated explicitly so detection is never the thing standing between an image and a
+# corrupting newline translation.
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.pfx binary
+*.snk binary
+*.zip binary
