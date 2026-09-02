@@ -55,6 +55,31 @@ assertion, even though it looks like one.
 
 When in doubt, keep the test.
 
+## Acting on a mutation report
+
+A Stryker result is a lead, not evidence. **Before writing a test for a survivor, and before
+claiming one is killed, make the mutation by hand and run the suite** — edit the source as the
+report describes, confirm the tests fail (or don't), restore. The tool's status has been wrong in
+both directions in this repository:
+
+- **A reported survivor may already be covered.** Two `_ => false` arms guarding a certificate
+  secret/`Cer` self-test were reported survived; two existing tests kill them, one an integration
+  test. Writing tests for those would have been a day spent duplicating tests that existed.
+- **A reported kill may be a test that proves nothing.** Asserting `ArgumentNullException` with a
+  parameter name is worthless if the call downstream raises the same type with the same name — the
+  test passes with the guard deleted, and the report calls the mutant killed.
+
+**An equivalent mutant is not a coverage gap.** A mutation that cannot change observable behaviour
+has no test that can close it: a `First()` after a non-empty guard, a `>` where both branches return
+the same value on a tie, a `TryAdd` the caller already performed. Say so in the PR and move on.
+Contorting a test to chase one produces a test that asserts nothing, and its uncoverable branch then
+survives every future run.
+
+**A mutation report does not override the section above.** Guard-clause and DI-resolution mutants on
+a non-security type stay unkilled and are justified in the PR; closing them is not a reason to write
+a test this repository does not want. On a security surface — a signer, a key source, the
+registration of a security control — those same tests are wanted, and the carve-out is why.
+
 ## Quality Standards
 
 - Test method naming: readable English sentence style using underscores as word separators (e.g. `CreateConfidential_sets_IsPublic_to_false`, `Validate_returns_error_when_redirect_uri_is_missing`)
