@@ -158,7 +158,7 @@ internal sealed class StartupVerificationHostedService(
         // A check's throw is recorded as a failure so the phase can continue, but the root cause
         // behind it would then be lost — ZeeKayDaConfigurationFailure carries only strings. The
         // root causes are collected here and travel as the aggregate's InnerException.
-        var unexpected = new List<Exception>();
+        var rootCauses = new List<Exception>();
 
         foreach (var check in checks)
         {
@@ -171,7 +171,7 @@ internal sealed class StartupVerificationHostedService(
                     ct => check.VerifyAsync(context, scope.ServiceProvider, ct),
                     cancellationToken) is { } thrown)
             {
-                unexpected.Add(thrown);
+                rootCauses.Add(thrown);
             }
 
             failures.AddRange(LogWarnings(check, context));
@@ -188,15 +188,15 @@ internal sealed class StartupVerificationHostedService(
         if (failures.Count == 0)
             return;
 
-        if (unexpected.Count == 0)
+        if (rootCauses.Count == 0)
             throw new ZeeKayDaConfigurationException([.. failures]);
 
-        // The aggregate of actionable messages is what an operator must see, and the root causes of
-        // any unexpected throws are what a developer needs. Both travel: the failures as
-        // AggregatedFailures, the throws as InnerException.
+        // The aggregate of actionable messages is what an operator must see, and the root cause
+        // behind each throw is what a developer needs. Both travel: the failures as
+        // AggregatedFailures, the root causes as InnerException.
         throw new ZeeKayDaConfigurationException(
             failures,
-            unexpected.Count == 1 ? unexpected[0] : new AggregateException(unexpected));
+            rootCauses.Count == 1 ? rootCauses[0] : new AggregateException(rootCauses));
     }
 
     /// <inheritdoc/>
@@ -301,7 +301,7 @@ internal sealed class StartupVerificationHostedService(
             // a failure cannot carry it. Six failure messages in the Key Vault readers end with
             // "See the inner exception for the root cause" — dropping this leaves that pointer
             // aimed at nothing on the startup path. It takes the same route as an unexpected
-            // throw's root cause: the caller's unexpected list, then the phase aggregate. Null when
+            // throw's root cause: the caller's rootCauses list, then the phase aggregate. Null when
             // the check threw a plain configuration exception, which contributes nothing.
             return ex.InnerException;
         }
