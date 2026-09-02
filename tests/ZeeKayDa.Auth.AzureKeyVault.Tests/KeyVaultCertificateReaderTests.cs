@@ -32,11 +32,13 @@ namespace ZeeKayDa.Auth.AzureKeyVault.Tests;
 public sealed class KeyVaultCertificateReaderTests
 {
     private static readonly Uri VaultUri = new("https://fake-vault.vault.azure.net/");
+    private static readonly KeyVaultCertificateIdentifier CertificateIdentifier =
+        new(new Uri(VaultUri, "certificates/fake-cert"));
 
     private static KeyVaultCertificateReader BuildReader() =>
         new(Options.Create(new AzureKeyVaultCachedSigningOptions
         {
-            CertificateIdentifier = new KeyVaultCertificateIdentifier(new Uri(VaultUri, "certificates/fake-cert")),
+            CertificateIdentifier = CertificateIdentifier,
             Credential = new FakeTokenCredential(),
             Algorithm = SigningAlgorithm.RS256,
         }));
@@ -534,8 +536,7 @@ public sealed class KeyVaultCertificateReaderTests
                 OnGetSecret = (_, _) => throw new InvalidOperationException(
                     "this test must never download the certificate's linked secret"),
             },
-            "fake-cert",
-            VaultUri);
+            CertificateIdentifier);
 
     private static KeyVaultCertificate BuildCertificate(byte[]? cer = null, Uri? secretId = null) =>
         CertificateModelFactory.KeyVaultCertificate(
@@ -883,8 +884,7 @@ public sealed class KeyVaultCertificateReaderTests
         new(
             new FakeCertificateClient { OnGetVersion = _ => BuildCertificate(secretId: SecretIdUri) },
             new FakeSecretClient { OnGetSecret = (_, _) => BuildSecret(Convert.ToBase64String(pfx)) },
-            "fake-cert",
-            VaultUri,
+            CertificateIdentifier,
             createRsa,
             createEcdsa);
 

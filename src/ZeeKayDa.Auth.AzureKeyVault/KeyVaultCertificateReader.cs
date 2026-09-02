@@ -65,13 +65,13 @@ internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
     /// observable — a handle that fails to import is created and disposed entirely inside this class.
     /// </summary>
     internal KeyVaultCertificateReader(
-        CertificateClient certificateClient, SecretClient secretClient, string certificateName, Uri vaultUri,
+        CertificateClient certificateClient, SecretClient secretClient, KeyVaultCertificateIdentifier identifier,
         Func<RSA>? createRsa = null, Func<ECDsa>? createEcdsa = null)
     {
         _certificateClient = certificateClient;
         _secretClient = secretClient;
-        _certificateName = certificateName;
-        _vaultUri = vaultUri;
+        _certificateName = identifier.Name;
+        _vaultUri = identifier.VaultUri;
         _createRsa = createRsa ?? RSA.Create;
         _createEcdsa = createEcdsa ?? ECDsa.Create;
     }
