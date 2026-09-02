@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using Azure;
 using Azure.Security.KeyVault.Keys;
+using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.AzureKeyVault.Tests.Fakes;
 using ZeeKayDa.Auth.Tokens;
 
@@ -77,6 +78,70 @@ public sealed class KeyVaultKeyReaderTests
 
     private static KeyVaultKeyReader BuildReader(FakeKeyClient client) =>
         new(client, "fake-key", VaultUri);
+
+    // ── The public constructor, the one DI actually calls ────────────────────────────────────────
+    //
+    // Every other test here builds the reader through the internal test seam, which left the
+    // production constructor unexercised: both of its argument guards could be deleted and the
+    // suite stayed green.
+
+    private static readonly Uri KeyIdentifierUri = new("https://fake-vault.vault.azure.net/keys/fake-key");
+
+    [Fact]
+    public void Constructor_rejects_null_options()
+    {
+        var act = () => new KeyVaultKeyReader(null!);
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("options");
+    }
+
+    [Fact]
+    public void Constructor_rejects_options_carrying_no_credential()
+    {
+        // Credential is nullable on the options type, so the reader cannot rely on the validator
+        // having run — a host constructing options by hand reaches this guard.
+        var options = Options.Create(new AzureKeyVaultRemoteSigningOptions
+        {
+            KeyIdentifier = new KeyVaultKeyIdentifier(KeyIdentifierUri),
+            Credential = null,
+            Algorithm = SigningAlgorithm.RS256,
+        });
+
+        var act = () => new KeyVaultKeyReader(options);
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("credential");
+    }
+
+    [Fact]
+    public void Constructor_accepts_a_complete_options_instance()
+    {
+        var options = Options.Create(new AzureKeyVaultRemoteSigningOptions
+        {
+            KeyIdentifier = new KeyVaultKeyIdentifier(KeyIdentifierUri),
+            Credential = new FakeTokenCredential(),
+            Algorithm = SigningAlgorithm.RS256,
+        });
+
+        var act = () => new KeyVaultKeyReader(options);
+
+        act.Should().NotThrow("constructing the reader must not require a reachable vault");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    public async Task GetKeyMaterialAsync_rejects_a_missing_version(string? version)
+    {
+        var client = new FakeKeyClient
+        {
+            OnGetKey = _ => throw new InvalidOperationException("the guard must run before the client is touched"),
+        };
+
+        var act = () => BuildReader(client)
+            .GetKeyMaterialAsync(version!, TestContext.Current.CancellationToken).AsTask();
+
+        await act.Should().ThrowAsync<ArgumentException>().WithParameterName("version");
+    }
 
     private static async Task<List<KeyVaultKeyVersionInfo>> Collect(KeyVaultKeyReader reader)
     {
@@ -278,34 +343,46 @@ public sealed class KeyVaultKeyReaderTests
             "the material must be fetched for the configured key, nothing else");
     }
 
-    [Fact]
-    public async Task GetKeyMaterialAsync_includes_the_sdk_error_code_in_the_failure_when_present()
+    // Every mapping arm builds its own ErrorCode clause, so each status class is exercised: the
+    // not-found arm, the denied arm, and the catch-all arm. Pinned as a Fact on 404 alone, these
+    // left the denied and catch-all ternaries unexercised — the clause could invert or vanish on
+    // either and no test noticed. KeyVaultCertificateReaderTests already parameterises its pair;
+    // this matches it.
+    [Theory]
+    [InlineData(404, "key_not_found")]
+    [InlineData(403, "access_denied")]
+    [InlineData(500, "startup_failure")]
+    public async Task GetKeyMaterialAsync_includes_the_sdk_error_code_in_the_failure_when_present(
+        int status, string expectedCode)
     {
         var client = new FakeKeyClient
         {
             OnGetKey = _ => throw new RequestFailedException(
-                404, "not found", "KeyNotFound", innerException: null),
+                status, "boom", "VaultErrorCode", innerException: null),
         };
 
         var act = () => BuildReader(client)
             .GetKeyMaterialAsync("v1", TestContext.Current.CancellationToken).AsTask();
 
         await act.Should().ThrowAsync<ZeeKayDaConfigurationException>()
-            .WithMessage("*key_not_found*ErrorCode: KeyNotFound*");
+            .WithMessage($"*{expectedCode}*(HTTP {status}, ErrorCode: VaultErrorCode)*");
     }
 
-    [Fact]
-    public async Task GetKeyMaterialAsync_omits_the_error_code_clause_when_the_sdk_reports_none()
+    [Theory]
+    [InlineData(404)]
+    [InlineData(403)]
+    [InlineData(500)]
+    public async Task GetKeyMaterialAsync_omits_the_error_code_clause_when_the_sdk_reports_none(int status)
     {
         var client = new FakeKeyClient
         {
-            OnGetKey = _ => throw new RequestFailedException(404, "not found"),
+            OnGetKey = _ => throw new RequestFailedException(status, "boom"),
         };
 
         var act = () => BuildReader(client)
             .GetKeyMaterialAsync("v1", TestContext.Current.CancellationToken).AsTask();
 
-        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>().WithMessage($"*(HTTP {status})*"))
             .Which.Message.Should().NotContain("ErrorCode",
                 "an absent SDK error code must not leave a dangling 'ErrorCode:' clause in the operator message");
     }
