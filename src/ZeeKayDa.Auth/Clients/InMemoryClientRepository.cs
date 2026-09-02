@@ -46,33 +46,7 @@ internal sealed class InMemoryClientRepository : IClientRepository
         var allFailures = new List<ZeeKayDaConfigurationFailure>();
 
         // Build confidential clients from pending specs (hash plaintext secrets now)
-        foreach (var spec in opts.Pending)
-        {
-            IClientSecret hashedSecret;
-            try
-            {
-                hashedSecret = hasher.Create(spec.PlaintextSecret);
-            }
-            catch (ArgumentException)
-            {
-                // ClientSecretHasher<T>.Create throws on a null/empty/whitespace secret. Convert it
-                // to an aggregated failure and skip this spec so the remaining clients are still
-                // validated and reported.
-                allFailures.Add(new ZeeKayDaConfigurationFailure(
-                    "client.credentials.empty_plaintext_secret",
-                    $"Client '{spec.ClientId}' was registered with a null, empty, or whitespace plaintext secret. " +
-                    "Use a strong random secret loaded from a secrets manager or environment variable."));
-                continue;
-            }
-
-            var reg = ClientRegistration.CreateConfidential(
-                spec.ClientId,
-                hashedSecret,
-                spec.RedirectUris,
-                spec.PostLogoutRedirectUris,
-                spec.AllowedScopes);
-            allRegistrations.Add(reg);
-        }
+        AddPending(opts.Pending, hasher, allRegistrations, allFailures);
 
         // All pending specs have been processed (hashed or converted to a failure). Clear the list
         // so the PendingConfidentialClientSpec objects — and the plaintext secrets they contain —
@@ -97,6 +71,12 @@ internal sealed class InMemoryClientRepository : IClientRepository
                 "Each client must have a unique ClientId (ordinal comparison)."));
         }
 
+        // A validator's failures are absorbed so every registration is still validated, but the root
+        // cause behind one of them is on the exception and ZeeKayDaConfigurationFailure carries only
+        // strings. The absorbed exceptions are kept whole so their root causes survive the re-throw
+        // below, and a failure message that defers its detail to the inner exception still resolves.
+        var absorbed = new List<ZeeKayDaConfigurationException>();
+
         // Validate each registration, accumulating failures
         foreach (var reg in allRegistrations)
         {
@@ -107,11 +87,12 @@ internal sealed class InMemoryClientRepository : IClientRepository
             catch (ZeeKayDaConfigurationException ex)
             {
                 allFailures.AddRange(ex.AggregatedFailures);
+                absorbed.Add(ex);
             }
         }
 
         if (allFailures.Count > 0)
-            throw new ZeeKayDaConfigurationException([.. allFailures]);
+            throw Aggregate(allFailures, absorbed);
 
         _clients = allRegistrations.ToDictionary(r => r.ClientId, StringComparer.Ordinal);
 
@@ -126,6 +107,61 @@ internal sealed class InMemoryClientRepository : IClientRepository
                 "but no public clients (IsPublic=true) are registered. Consider removing " +
                 "TokenEndpointAuthMethods.None from AuthMethodsSupported if no public clients are expected.");
         }
+    }
+
+    // Turns each pending spec into a confidential registration, hashing its plaintext secret now.
+    // Both lists are the constructor's accumulators: a spec whose secret cannot be hashed adds a
+    // failure and is skipped rather than aborting, so the remaining clients are still built,
+    // validated, and reported in the same pass.
+    private static void AddPending(
+        IEnumerable<PendingConfidentialClientSpec> pending,
+        CompositeClientSecretHasher hasher,
+        List<IClientRegistration> registrations,
+        List<ZeeKayDaConfigurationFailure> failures)
+    {
+        foreach (var spec in pending)
+        {
+            IClientSecret hashedSecret;
+            try
+            {
+                hashedSecret = hasher.Create(spec.PlaintextSecret);
+            }
+            catch (ArgumentException)
+            {
+                // ClientSecretHasher<T>.Create throws on a null/empty/whitespace secret. Convert it
+                // to an aggregated failure and skip this spec so the remaining clients are still
+                // validated and reported.
+                failures.Add(new ZeeKayDaConfigurationFailure(
+                    "client.credentials.empty_plaintext_secret",
+                    $"Client '{spec.ClientId}' was registered with a null, empty, or whitespace plaintext secret. " +
+                    "Use a strong random secret loaded from a secrets manager or environment variable."));
+                continue;
+            }
+
+            registrations.Add(ClientRegistration.CreateConfidential(
+                spec.ClientId,
+                hashedSecret,
+                spec.RedirectUris,
+                spec.PostLogoutRedirectUris,
+                spec.AllowedScopes));
+        }
+    }
+
+    // Re-throws every accumulated failure as one exception, carrying whatever root causes the
+    // absorbed validator exceptions supplied. An absorbed exception with no InnerException
+    // contributes nothing, so a validator reporting a plain configuration failure is unchanged.
+    private static ZeeKayDaConfigurationException Aggregate(
+        IReadOnlyList<ZeeKayDaConfigurationFailure> failures,
+        IEnumerable<ZeeKayDaConfigurationException> absorbed)
+    {
+        var causes = absorbed.Select(ex => ex.InnerException).OfType<Exception>().ToList();
+
+        return causes.Count switch
+        {
+            0 => new ZeeKayDaConfigurationException([.. failures]),
+            1 => new ZeeKayDaConfigurationException(failures, causes[0]),
+            _ => new ZeeKayDaConfigurationException(failures, new AggregateException(causes))
+        };
     }
 
     /// <inheritdoc/>

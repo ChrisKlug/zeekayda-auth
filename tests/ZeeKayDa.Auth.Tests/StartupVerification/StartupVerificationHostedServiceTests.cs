@@ -300,6 +300,68 @@ public sealed class StartupVerificationHostedServiceTests
         exception.Which.AggregatedFailures.Should().ContainSingle().Which.Code.Should().Be("signing.self_test_failed");
     }
 
+    // A failure message that says "See the inner exception for the root cause" — the convention the
+    // Key Vault readers follow — must resolve to that root cause after the runner has absorbed the
+    // codes, not to nothing (#618).
+    [Fact]
+    public async Task StartAsync_preserves_the_root_cause_of_an_absorbed_ZeeKayDaConfigurationException()
+    {
+        var rootCause = new UnauthorizedAccessException("denied");
+        var thrown = new ZeeKayDaConfigurationException(
+            new ZeeKayDaConfigurationFailure("keyvault.read_failed", "See the inner exception."), rootCause);
+        var services = new ServiceCollection();
+        services.AddSingleton<IStartupVerifier>(new DelegatingVerifier("V", _ => throw thrown));
+        using var provider = services.BuildServiceProvider();
+
+        var sut = new StartupVerificationHostedService([], provider, provider.GetRequiredService<IServiceScopeFactory>());
+
+        var act = async () => await sut.StartAsync(TestContext.Current.CancellationToken);
+
+        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        exception.Which.AggregatedFailures.Should().ContainSingle().Which.Code.Should().Be("keyvault.read_failed");
+        exception.Which.InnerException.Should().BeSameAs(rootCause);
+    }
+
+    [Fact]
+    public async Task StartAsync_leaves_the_aggregate_without_an_inner_exception_when_the_absorbed_exception_had_none()
+    {
+        var thrown = new ZeeKayDaConfigurationException(
+            new ZeeKayDaConfigurationFailure("signing.self_test_failed", "boom"));
+        var services = new ServiceCollection();
+        services.AddSingleton<IStartupVerifier>(new DelegatingVerifier("V", _ => throw thrown));
+        using var provider = services.BuildServiceProvider();
+
+        var sut = new StartupVerificationHostedService([], provider, provider.GetRequiredService<IServiceScopeFactory>());
+
+        var act = async () => await sut.StartAsync(TestContext.Current.CancellationToken);
+
+        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        exception.Which.InnerException.Should().BeNull(
+            "a configuration exception with no root cause behind it contributes nothing to carry");
+    }
+
+    [Fact]
+    public async Task StartAsync_wraps_an_absorbed_root_cause_and_an_unexpected_throw_in_one_AggregateException()
+    {
+        var rootCause = new UnauthorizedAccessException("denied");
+        var absorbed = new ZeeKayDaConfigurationException(
+            new ZeeKayDaConfigurationFailure("keyvault.read_failed", "See the inner exception."), rootCause);
+        var unexpected = new InvalidOperationException("boom");
+        var services = new ServiceCollection();
+        services.AddSingleton<IStartupVerifier>(new DelegatingVerifier("Absorbed", _ => throw absorbed));
+        services.AddSingleton<IStartupVerifier>(new DelegatingVerifier("Unexpected", _ => throw unexpected));
+        using var provider = services.BuildServiceProvider();
+
+        var sut = new StartupVerificationHostedService([], provider, provider.GetRequiredService<IServiceScopeFactory>());
+
+        var act = async () => await sut.StartAsync(TestContext.Current.CancellationToken);
+
+        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        var causes = exception.Which.InnerException.Should().BeOfType<AggregateException>().Which.InnerExceptions;
+        causes.Should().HaveCount(2);
+        causes.Should().Contain(rootCause).And.Contain(unexpected);
+    }
+
     [Fact]
     public async Task StartAsync_rethrows_OperationCanceledException_unchanged_when_the_token_is_signalled()
     {
