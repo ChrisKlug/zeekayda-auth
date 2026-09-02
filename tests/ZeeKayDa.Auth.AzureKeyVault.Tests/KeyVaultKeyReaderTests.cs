@@ -383,6 +383,25 @@ public sealed class KeyVaultKeyReaderTests
     }
 
     [Fact]
+    public async Task GetKeyMaterialAsync_maps_a_malformed_jwk_to_startup_failure()
+    {
+        // The JWK conversion stays inside the fault-mapping try for this reason: a vault that
+        // returns an RSA-typed key with unusable parameters makes ToRSA throw, and that must reach
+        // the operator as a stable failure code, not as a raw CryptographicException from the SDK.
+        using var rsa = RSA.Create(2048);
+        var jsonWebKey = new JsonWebKey(rsa, includePrivateParameters: false);
+        jsonWebKey.N = [];
+        jsonWebKey.E = [];
+        var client = new FakeKeyClient { OnGetKey = _ => BuildKey(jsonWebKey) };
+
+        var act = () => BuildReader(client)
+            .GetKeyMaterialAsync("v1", TestContext.Current.CancellationToken).AsTask();
+
+        await act.Should().ThrowAsync<ZeeKayDaConfigurationException>()
+            .WithMessage("*startup_failure*");
+    }
+
+    [Fact]
     public async Task GetKeyMaterialAsync_does_not_reclassify_an_unsupported_key_type_as_startup_failure()
     {
         // MapJsonWebKey is called outside the try for this reason: the broad catch that maps SDK

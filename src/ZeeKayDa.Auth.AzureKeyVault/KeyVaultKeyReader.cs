@@ -108,26 +108,29 @@ internal sealed class KeyVaultKeyReader : IKeyVaultKeyReader
     {
         ArgumentException.ThrowIfNullOrEmpty(version);
 
-        JsonWebKey key;
         try
         {
             var response = await _keyClient.GetKeyAsync(_keyName, version, cancellationToken).ConfigureAwait(false);
-            key = response.Value.Key;
+            return MapJsonWebKey(response.Value.Key);
         }
         catch (RequestFailedException ex)
         {
             throw MapRequestFailedException(ex);
         }
+        catch (ZeeKayDaConfigurationException)
+        {
+            // Re-throw before re-classifying. MapJsonWebKey raises its own well-formed failure for an
+            // unsupported key type; without this arm the broad catch below flattens it into a generic
+            // startup_failure and sends the operator to investigate a vault that is working fine.
+            // The mapping stays inside the try so that a malformed JWK — where ToRSA or ToECDsa
+            // throws — is still mapped to a stable failure code rather than escaping as a raw
+            // CryptographicException.
+            throw;
+        }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             throw MapUnexpectedFailure(ex);
         }
-
-        // Mapped outside the try. MapJsonWebKey throws its own ZeeKayDaConfigurationException for an
-        // unsupported key type, and the broad catch above would re-classify that well-formed failure
-        // as a generic startup_failure. Every other call site in this reader and in
-        // KeyVaultCertificateReader already maps outside the try; this one did not.
-        return MapJsonWebKey(key);
     }
 
     private static (AsymmetricAlgorithm, SigningKeyType) MapJsonWebKey(JsonWebKey key)
