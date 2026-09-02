@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Primitives;
 using Microsoft.Extensions.Time.Testing;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
 using ZeeKayDa.Auth.Authorization;
@@ -28,6 +29,7 @@ public sealed class LoginInteractionTests : IDisposable
     private const string RegisteredRedirect = "https://test.example.com/callback";
     private const string Challenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
     private const string LoginPath = "/account/login";
+    private const string CancelPath = "/account/login/cancel";
 
     private static readonly DateTimeOffset Now = new(2026, 8, 29, 12, 0, 0, TimeSpan.Zero);
 
@@ -85,6 +87,18 @@ public sealed class LoginInteractionTests : IDisposable
             await login.SignInAsync(
                 new ClaimsPrincipal(new ClaimsIdentity(claims, "test")),
                 methods);
+        });
+
+        // The Cancel button. A "reason" field drives the overload that says why; without it the
+        // page cancels the way the issue's sample host does.
+        endpoints.MapPost(CancelPath, async (HttpContext context, ILoginInteraction login) =>
+        {
+            var form = await context.Request.ReadFormAsync(context.RequestAborted);
+
+            if (form["reason"].FirstOrDefault() is { Length: > 0 } reason)
+                await login.DenyAsync(reason);
+            else
+                await login.DenyAsync();
         });
 
         // Nothing should ever challenge the framework's session scheme: the authorization endpoint
@@ -147,6 +161,36 @@ public sealed class LoginInteractionTests : IDisposable
             fields.Select(field => KeyValuePair.Create(field.Key, field.Value)));
 
         return await _client.PostAsync(url, content, TestContext.Current.CancellationToken);
+    }
+
+    private async Task<HttpResponseMessage> PostCancelAsync(
+        string? interactionId,
+        params (string Key, string Value)[] fields)
+    {
+        var url = interactionId is null
+            ? CancelPath
+            : QueryHelpers.AddQueryString(CancelPath, InteractionHandoff.InteractionIdParameter, interactionId);
+
+        using var content = new FormUrlEncodedContent(
+            fields.Select(field => KeyValuePair.Create(field.Key, field.Value)));
+
+        return await _client.PostAsync(url, content, TestContext.Current.CancellationToken);
+    }
+
+    /// <summary>Runs a full authorize → login page → cancelled round trip.</summary>
+    private async Task<HttpResponseMessage> CancelAsync(
+        Dictionary<string, string?>? query = null,
+        params (string Key, string Value)[] fields)
+    {
+        var handoff = await AuthorizeAsync(query);
+        return await PostCancelAsync(InteractionIdFrom(handoff), fields);
+    }
+
+    /// <summary>The parsed query of a redirect back to the client.</summary>
+    private static Dictionary<string, StringValues> RedirectQueryOf(HttpResponseMessage response)
+    {
+        var location = response.Headers.Location!.OriginalString;
+        return QueryHelpers.ParseQuery(location[location.IndexOf('?')..]);
     }
 
     /// <summary>Runs a full authorize → login → signed-in round trip.</summary>
@@ -275,6 +319,138 @@ public sealed class LoginInteractionTests : IDisposable
         var signIn = async () => await PostLoginAsync(interactionId, ("sub", "user-1"));
 
         await signIn.Should().ThrowAsync<ZeeKayDaInteractionException>();
+    }
+
+    // ── Cancelling at the login page ──────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task DenyAsync_answers_the_client_with_access_denied_at_its_registered_redirect_uri()
+    {
+        var query = ValidQuery();
+        query["state"] = "opaque-client-state";
+
+        var response = await CancelAsync(query);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        response.Headers.Location!.OriginalString.Should().StartWith(RegisteredRedirect);
+
+        var parameters = RedirectQueryOf(response);
+        parameters["error"].Should().Equal(["access_denied"]);
+        parameters["state"].Should().Equal(["opaque-client-state"],
+            "state round-trips byte for byte on every authorization response, errors included");
+        parameters["iss"].Should().Equal(["https://test.example.com"],
+            "iss is unconditional on every authorization response (RFC 9207)");
+    }
+
+    [Fact]
+    public async Task DenyAsync_tells_the_client_the_user_cancelled_rather_than_only_that_access_was_denied()
+    {
+        // access_denied alone cannot separate a user who pressed Cancel from one refused by
+        // policy, and a client offering "try again" for the first but not the second has to be
+        // able to tell. error_description is the only field in the response that can say so.
+        var response = await CancelAsync();
+
+        RedirectQueryOf(response)["error_description"].ToString()
+            .Should().Contain("cancelled").And.Contain("sign-in");
+    }
+
+    [Fact]
+    public async Task DenyAsync_carries_the_hosts_own_description_when_it_supplies_one()
+    {
+        var response = await CancelAsync(fields: ("reason", "The account is locked out."));
+
+        RedirectQueryOf(response)["error_description"].Should().Equal(["The account is locked out."]);
+    }
+
+    [Theory]
+    [InlineData("Contains a \" quote")]
+    [InlineData("Contains a \\ backslash")]
+    [InlineData("Contains a \n newline")]
+    [InlineData("Contains a non-ASCII å")]
+    public async Task DenyAsync_refuses_a_description_the_response_cannot_legally_carry(string description)
+    {
+        // RFC 6749 §4.1.2.1 confines error_description to %x20-21 / %x23-5B / %x5D-7E. Caught at
+        // the argument so the blame lands on the host's call, not on a malformed redirect.
+        var cancel = async () => await CancelAsync(fields: ("reason", description));
+
+        await cancel.Should().ThrowAsync<ArgumentException>();
+    }
+
+    [Fact]
+    public async Task DenyAsync_establishes_no_session()
+    {
+        await CancelAsync();
+
+        (await ReadSessionIdAsync()).Should().BeNull("cancelling is not signing in");
+    }
+
+    [Fact]
+    public async Task DenyAsync_leaves_an_existing_session_untouched()
+    {
+        await SignInAsync();
+        var established = await ReadSessionIdAsync();
+
+        // prompt=login is how a second client's request reaches the login page while a session
+        // already exists. Cancelling it must not sign the user out of the first.
+        var query = ValidQuery();
+        query["prompt"] = "login";
+        await CancelAsync(query);
+
+        (await ReadSessionIdAsync()).Should().Be(established,
+            "a user cancelling one client's request is not signed out of another's");
+    }
+
+    [Fact]
+    public async Task A_cancelled_request_cannot_afterwards_be_signed_in()
+    {
+        var handoff = await AuthorizeAsync();
+        var interactionId = InteractionIdFrom(handoff);
+
+        await PostCancelAsync(interactionId);
+
+        // The context is discarded on the way out, so there is nothing left for a later sign-in
+        // to pick up and complete.
+        var signIn = async () => await PostLoginAsync(interactionId, ("sub", "user-1"));
+
+        await signIn.Should().ThrowAsync<ZeeKayDaInteractionException>();
+    }
+
+    [Fact]
+    public async Task DenyAsync_without_an_interaction_id_is_refused()
+    {
+        await AuthorizeAsync();
+
+        var cancel = async () => await PostCancelAsync(interactionId: null);
+
+        await cancel.Should().ThrowAsync<ZeeKayDaInteractionException>();
+    }
+
+    [Fact]
+    public async Task DenyAsync_naming_an_interaction_the_browser_is_not_carrying_is_refused()
+    {
+        // Aiming a deny at another tab's request would be a cross-tab denial of service.
+        var firstTab = await AuthorizeAsync();
+        await AuthorizeAsync();
+
+        var cancel = async () => await PostCancelAsync(InteractionIdFrom(firstTab));
+
+        await cancel.Should().ThrowAsync<ZeeKayDaInteractionException>();
+    }
+
+    [Fact]
+    public async Task DenyAsync_after_the_interaction_has_expired_recovers_no_redirect_uri()
+    {
+        var handoff = await AuthorizeAsync();
+        var interactionId = InteractionIdFrom(handoff);
+
+        _time.Advance(TimeSpan.FromMinutes(31));
+
+        // The destination comes from the decrypted context and nothing else. With no context there
+        // is no destination, and the request fails where it stands rather than redirecting
+        // somewhere derived from what this request happened to carry.
+        var cancel = async () => await PostCancelAsync(interactionId);
+
+        await cancel.Should().ThrowAsync<ZeeKayDaInteractionException>();
     }
 
     // ── The SSO session ───────────────────────────────────────────────────────────────────────

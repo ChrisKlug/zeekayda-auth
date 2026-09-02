@@ -1,8 +1,8 @@
 # User interaction and the SSO session
 
-**Partly built.** The local login handoff, `ILoginInteraction.SignInAsync`, the SSO session and the
-interaction-context cookie exist; external providers, provider selection, consent and home realm
-discovery do not. The authorize endpoint's protocol rules are in
+**Partly built.** The local login handoff, `ILoginInteraction.SignInAsync` and `DenyAsync`, the SSO
+session and the interaction-context cookie exist; external providers, provider selection, consent
+and home realm discovery do not. The authorize endpoint's protocol rules are in
 `authorization-and-interaction.md`; interface shapes for the unbuilt part are in
 `docs/design/authorization-endpoint-interaction.md`.
 
@@ -31,6 +31,17 @@ PKCE, `state` and `nonce` protect the client against a forged response, not the 
 request they never started. The lingering variant dies here; the immediate one is consent's answer,
 as it is industry-wide. Addressing by identifier also keeps the backing swappable, so no store
 interface is invented for a single implementation.
+
+**A denial says which kind of denial it was, in `error_description`.** `access_denied` is the only
+code RFC 6749 §4.1.2.1 offers for a cancelled sign-in, a refused consent and a policy refusal
+alike, so the code alone cannot tell a client whether "try again" is worth offering. The optional
+description field is the only place in the response that can, so every terminal denial populates
+it: the framework's own text names the stage when the host says nothing, and a host that knows
+better supplies its own. Host-supplied text is checked against the charset the field is confined to
+before it is written, because a description the response cannot legally carry is one the client
+cannot read. The denial never becomes a redirect primitive: the destination is the registered URI
+from the decrypted interaction context, so an expired context has no destination and the request
+fails where it stands.
 
 **The SSO session identifier is framework-minted, unguessable and stable for the life of the
 session — and is not the cookie value, which is regenerated on every promotion so that

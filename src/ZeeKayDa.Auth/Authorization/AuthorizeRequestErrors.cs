@@ -20,6 +20,12 @@ internal static class AuthorizeRequestErrors
     public const string LoginRequired = "login_required";
 
     /// <summary>
+    /// The user, or the authorization server on their behalf, refused the request
+    /// (RFC 6749 §4.1.2.1). What kind of refusal it was travels in <c>error_description</c>.
+    /// </summary>
+    public const string AccessDenied = "access_denied";
+
+    /// <summary>
     /// The server cannot complete the request through a fault of its own — a configuration gap
     /// rather than anything the client sent (RFC 6749 §4.1.2.1).
     /// </summary>

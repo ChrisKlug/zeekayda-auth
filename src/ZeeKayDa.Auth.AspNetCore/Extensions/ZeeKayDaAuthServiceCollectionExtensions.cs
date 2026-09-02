@@ -188,6 +188,7 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         services.TryAddSingleton<AuthorizeErrorTransport>();
         services.TryAddSingleton<AuthorizationRequestContextTransport>();
         services.TryAddSingleton<LocalErrorResponse>();
+        services.TryAddSingleton<ClientErrorRedirect>();
         services.TryAddSingleton<SsoSession>();
         services.TryAddSingleton<AuthorizationFlow>();
         services.TryAddSingleton<IErrorInteraction, ErrorInteraction>();
