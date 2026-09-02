@@ -337,11 +337,14 @@ public sealed class KeyVaultCertificateReaderTests
         var act = () => InvokeExtractPublicKey(reader, "not a valid certificate"u8.ToArray());
 
         var thrown = act.Should().Throw<ZeeKayDaConfigurationException>();
-        thrown.Which.InnerException.Should().BeOfType<CryptographicException>(
+        // Assignability, not identity, and the type name is read back off the exception rather than
+        // written out: macOS raises Interop+AppleCrypto+AppleCommonCryptoCryptographicException, a
+        // platform-specific subclass whose FullName shares no prefix with the base type's.
+        thrown.Which.InnerException.Should().BeAssignableTo<CryptographicException>(
             "the root cause stays available to operators as InnerException");
         thrown.Which.Message.Should().NotContain(thrown.Which.InnerException!.Message,
             "a cryptographic exception can echo the input it failed to parse");
-        thrown.Which.Message.Should().Contain("System.Security.Cryptography.CryptographicException",
+        thrown.Which.Message.Should().Contain(thrown.Which.InnerException.GetType().FullName!,
             "the operator still needs the exception type to diagnose the failure");
     }
 
