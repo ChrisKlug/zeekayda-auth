@@ -729,35 +729,224 @@ public sealed class KeyVaultCertificateReaderTests
             .WithMessage("*access_denied*");
     }
 
-    [Fact]
-    public async Task GetPublicKeyMaterialAsync_includes_the_sdk_error_code_in_the_failure_when_present()
+    // Every mapping arm builds its own ErrorCode clause, so each status class is exercised: the
+    // not-found arm, the denied arm, and the catch-all arm.
+    [Theory]
+    [InlineData(404, "certificate_not_found")]
+    [InlineData(403, "access_denied")]
+    [InlineData(500, "startup_failure")]
+    public async Task GetPublicKeyMaterialAsync_includes_the_sdk_error_code_in_the_failure_when_present(
+        int status, string expectedCode)
     {
         var client = new FakeCertificateClient
         {
             OnGetVersion = _ => throw new RequestFailedException(
-                404, "not found", "CertificateNotFound", innerException: null),
+                status, "boom", "VaultErrorCode", innerException: null),
         };
 
         var act = () => BuildReader(client)
             .GetPublicKeyMaterialAsync("v1", TestContext.Current.CancellationToken).AsTask();
 
         await act.Should().ThrowAsync<ZeeKayDaConfigurationException>()
-            .WithMessage("*certificate_not_found*ErrorCode: CertificateNotFound*");
+            .WithMessage($"*{expectedCode}*(HTTP {status}, ErrorCode: VaultErrorCode)*");
     }
 
-    [Fact]
-    public async Task GetPublicKeyMaterialAsync_omits_the_error_code_clause_when_the_sdk_reports_none()
+    [Theory]
+    [InlineData(404)]
+    [InlineData(403)]
+    [InlineData(500)]
+    public async Task GetPublicKeyMaterialAsync_omits_the_error_code_clause_when_the_sdk_reports_none(int status)
     {
         var client = new FakeCertificateClient
         {
-            OnGetVersion = _ => throw new RequestFailedException(404, "not found"),
+            OnGetVersion = _ => throw new RequestFailedException(status, "boom"),
         };
 
         var act = () => BuildReader(client)
             .GetPublicKeyMaterialAsync("v1", TestContext.Current.CancellationToken).AsTask();
 
-        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>().WithMessage($"*(HTTP {status})*"))
             .Which.Message.Should().NotContain("ErrorCode",
                 "an absent SDK error code must not leave a dangling 'ErrorCode:' clause in the operator message");
+    }
+
+    // ── Unexpected SDK faults on the download paths ──────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetPublicKeyMaterialAsync_maps_an_unexpected_certificate_read_exception_to_startup_failure()
+    {
+        var client = new FakeCertificateClient
+        {
+            OnGetVersion = _ => throw new InvalidOperationException("SDK internal fault"),
+        };
+
+        var act = () => BuildReader(client)
+            .GetPublicKeyMaterialAsync("v1", TestContext.Current.CancellationToken).AsTask();
+
+        await act.Should().ThrowAsync<ZeeKayDaConfigurationException>()
+            .WithMessage("*startup_failure*");
+    }
+
+    [Fact]
+    public async Task GetPublicKeyMaterialAsync_lets_a_cancelled_certificate_read_escape_unmapped()
+    {
+        var client = new FakeCertificateClient
+        {
+            OnGetVersion = _ => throw new OperationCanceledException(),
+        };
+
+        var act = () => BuildReader(client)
+            .GetPublicKeyMaterialAsync("v1", TestContext.Current.CancellationToken).AsTask();
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task GetPrivateKeyMaterialAsync_maps_an_unexpected_secret_download_exception_to_startup_failure()
+    {
+        var client = new FakeCertificateClient
+        {
+            OnGetVersion = _ => BuildCertificate(secretId: SecretIdUri),
+        };
+        var secretClient = new FakeSecretClient
+        {
+            OnGetSecret = (_, _) => throw new InvalidOperationException("SDK internal fault"),
+        };
+
+        var act = () => BuildReader(client, secretClient)
+            .GetPrivateKeyMaterialAsync("v1", TestContext.Current.CancellationToken).AsTask();
+
+        await act.Should().ThrowAsync<ZeeKayDaConfigurationException>()
+            .WithMessage("*startup_failure*");
+    }
+
+    [Fact]
+    public async Task GetPrivateKeyMaterialAsync_lets_a_cancelled_secret_download_escape_unmapped()
+    {
+        var client = new FakeCertificateClient
+        {
+            OnGetVersion = _ => BuildCertificate(secretId: SecretIdUri),
+        };
+        var secretClient = new FakeSecretClient
+        {
+            OnGetSecret = (_, _) => throw new OperationCanceledException(),
+        };
+
+        var act = () => BuildReader(client, secretClient)
+            .GetPrivateKeyMaterialAsync("v1", TestContext.Current.CancellationToken).AsTask();
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    // ── ExtractPublicKey: neither RSA nor EC ─────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Builds a DER certificate whose SubjectPublicKeyInfo carries an Ed25519 key (OID 1.3.101.112),
+    /// signed by a throwaway RSA issuer. .NET's typed <see cref="CertificateRequest"/> constructors
+    /// only mint RSA and EC subjects, so the public key is assembled from its raw ASN.1 parts. The
+    /// reader inspects nothing but the key's algorithm OID, which is exactly what this shape varies.
+    /// </summary>
+    private static byte[] CreateCerWithNeitherRsaNorEcPublicKey()
+    {
+        var ed25519 = new PublicKey(new Oid("1.3.101.112"), parameters: null, keyValue: new AsnEncodedData(new byte[32]));
+        var request = new CertificateRequest(new X500DistinguishedName("CN=test"), ed25519, HashAlgorithmName.SHA256);
+        using var issuerKey = RSA.Create(2048);
+        var generator = X509SignatureGenerator.CreateForRSA(issuerKey, RSASignaturePadding.Pkcs1);
+        using var cert = request.Create(
+            new X500DistinguishedName("CN=issuer"), generator,
+            DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(30), serialNumber: [1, 2, 3, 4]);
+        return cert.RawData;
+    }
+
+    [Fact]
+    public void ExtractPublicKey_rejects_a_certificate_whose_public_key_is_neither_rsa_nor_ec()
+    {
+        var reader = BuildReader();
+
+        var act = () => InvokeExtractPublicKey(reader, CreateCerWithNeitherRsaNorEcPublicKey());
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .WithMessage("*unsupported_key_type*");
+    }
+
+    // ── Private-key import: a handle that fails to import never leaks ────────────────────────────
+    //
+    // The RSA/ECDsa handles are created and disposed entirely inside the reader, so the disposal
+    // arms are observable only through injected factories. Each case runs for both key-bag shapes
+    // the PKCS#12 walk supports, since each has its own import method and its own set of arms.
+
+    private static byte[] CreateKeyBagPfx(bool shrouded) =>
+        CreatePlainKeyBagPfx(contents => contents.AddSafeBag(
+            shrouded ? new Pkcs12ShroudedKeyBag(NotAPrivateKey) : new Pkcs12KeyBag(NotAPrivateKey)));
+
+    private static KeyVaultCertificateReader BuildReader(byte[] pfx, Func<RSA> createRsa, Func<ECDsa> createEcdsa) =>
+        new(
+            new FakeCertificateClient { OnGetVersion = _ => BuildCertificate(secretId: SecretIdUri) },
+            new FakeSecretClient { OnGetSecret = (_, _) => BuildSecret(Convert.ToBase64String(pfx)) },
+            "fake-cert",
+            VaultUri,
+            createRsa,
+            createEcdsa);
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GetPrivateKeyMaterialAsync_disposes_both_handles_when_neither_rsa_nor_ec_can_import_the_key(bool shrouded)
+    {
+        var rsa = new ThrowingRsa(new CryptographicException("not an RSA key"));
+        var ecdsa = new ThrowingEcdsa(new CryptographicException("not an EC key"));
+        var reader = BuildReader(CreateKeyBagPfx(shrouded), () => rsa, () => ecdsa);
+
+        var act = () => reader.GetPrivateKeyMaterialAsync("v1", TestContext.Current.CancellationToken).AsTask();
+
+        await act.Should().ThrowAsync<ZeeKayDaConfigurationException>()
+            .WithMessage("*unsupported_key_type*");
+        rsa.Disposed.Should().BeTrue("an RSA handle that failed to import must not leak");
+        ecdsa.Disposed.Should().BeTrue("an EC handle that failed to import must not leak");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GetPrivateKeyMaterialAsync_disposes_the_rsa_handle_and_rethrows_when_the_rsa_import_fails_unexpectedly(bool shrouded)
+    {
+        // Only a CryptographicException means "not an RSA key, try EC". Anything else is a fault
+        // in the platform's crypto stack, which must surface as itself — after the handle is gone.
+        var failure = new PlatformNotSupportedException("RSA PKCS#8 import is unavailable on this platform");
+        var rsa = new ThrowingRsa(failure);
+        var ecdsaCreated = false;
+        var reader = BuildReader(
+            CreateKeyBagPfx(shrouded),
+            () => rsa,
+            () =>
+            {
+                ecdsaCreated = true;
+                return new ThrowingEcdsa(new CryptographicException("must not be reached"));
+            });
+
+        var act = () => reader.GetPrivateKeyMaterialAsync("v1", TestContext.Current.CancellationToken).AsTask();
+
+        (await act.Should().ThrowAsync<PlatformNotSupportedException>())
+            .Which.Should().BeSameAs(failure, "the original exception is rethrown, not wrapped or replaced");
+        rsa.Disposed.Should().BeTrue("an RSA handle that failed to import must not leak");
+        ecdsaCreated.Should().BeFalse("an unexpected RSA failure is not a signal to try EC");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GetPrivateKeyMaterialAsync_disposes_the_ec_handle_and_rethrows_when_the_ec_import_fails_unexpectedly(bool shrouded)
+    {
+        var failure = new PlatformNotSupportedException("EC PKCS#8 import is unavailable on this platform");
+        var rsa = new ThrowingRsa(new CryptographicException("not an RSA key"));
+        var ecdsa = new ThrowingEcdsa(failure);
+        var reader = BuildReader(CreateKeyBagPfx(shrouded), () => rsa, () => ecdsa);
+
+        var act = () => reader.GetPrivateKeyMaterialAsync("v1", TestContext.Current.CancellationToken).AsTask();
+
+        (await act.Should().ThrowAsync<PlatformNotSupportedException>())
+            .Which.Should().BeSameAs(failure, "the original exception is rethrown, not wrapped or replaced");
+        rsa.Disposed.Should().BeTrue("an RSA handle that failed to import must not leak");
+        ecdsa.Disposed.Should().BeTrue("an EC handle that failed to import must not leak");
     }
 }
