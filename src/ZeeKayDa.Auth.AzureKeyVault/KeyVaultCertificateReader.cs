@@ -40,6 +40,8 @@ internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
     private readonly SecretClient _secretClient;
     private readonly string _certificateName;
     private readonly Uri _vaultUri;
+    private readonly Func<RSA> _createRsa;
+    private readonly Func<ECDsa> _createEcdsa;
 
     public KeyVaultCertificateReader(IOptions<AzureKeyVaultCachedSigningOptions> options)
     {
@@ -52,19 +54,26 @@ internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
         _certificateName = value.CertificateIdentifier.Name;
         _certificateClient = new CertificateClient(_vaultUri, credential);
         _secretClient = new SecretClient(_vaultUri, credential);
+        _createRsa = RSA.Create;
+        _createEcdsa = ECDsa.Create;
     }
 
     /// <summary>
     /// Test seam: lets unit tests inject faked <see cref="CertificateClient"/>/<see cref="SecretClient"/>
-    /// instances, making the SDK fault-mapping paths reachable without a live vault.
+    /// instances, making the SDK fault-mapping paths reachable without a live vault, and faked
+    /// <see cref="RSA"/>/<see cref="ECDsa"/> factories, making the private-key import failure arms
+    /// observable — a handle that fails to import is created and disposed entirely inside this class.
     /// </summary>
     internal KeyVaultCertificateReader(
-        CertificateClient certificateClient, SecretClient secretClient, string certificateName, Uri vaultUri)
+        CertificateClient certificateClient, SecretClient secretClient, KeyVaultCertificateIdentifier identifier,
+        Func<RSA>? createRsa = null, Func<ECDsa>? createEcdsa = null)
     {
         _certificateClient = certificateClient;
         _secretClient = secretClient;
-        _certificateName = certificateName;
-        _vaultUri = vaultUri;
+        _certificateName = identifier.Name;
+        _vaultUri = identifier.VaultUri;
+        _createRsa = createRsa ?? RSA.Create;
+        _createEcdsa = createEcdsa ?? ECDsa.Create;
     }
 
     /// <inheritdoc/>
@@ -352,7 +361,7 @@ internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
 
     private (AsymmetricAlgorithm, SigningKeyType) ImportPrivateKey(ReadOnlySpan<byte> pkcs8PrivateKey, string version)
     {
-        var rsa = RSA.Create();
+        var rsa = _createRsa();
         try
         {
             rsa.ImportPkcs8PrivateKey(pkcs8PrivateKey, out _);
@@ -369,7 +378,7 @@ internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
             throw;
         }
 
-        var ecdsa = ECDsa.Create();
+        var ecdsa = _createEcdsa();
         try
         {
             ecdsa.ImportPkcs8PrivateKey(pkcs8PrivateKey, out _);
@@ -390,7 +399,7 @@ internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
     private (AsymmetricAlgorithm, SigningKeyType) ImportShroudedPrivateKey(
         ReadOnlySpan<byte> encryptedPkcs8PrivateKey, string version)
     {
-        var rsa = RSA.Create();
+        var rsa = _createRsa();
         try
         {
             rsa.ImportEncryptedPkcs8PrivateKey(ReadOnlySpan<char>.Empty, encryptedPkcs8PrivateKey, out _);
@@ -407,7 +416,7 @@ internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
             throw;
         }
 
-        var ecdsa = ECDsa.Create();
+        var ecdsa = _createEcdsa();
         try
         {
             ecdsa.ImportEncryptedPkcs8PrivateKey(ReadOnlySpan<char>.Empty, encryptedPkcs8PrivateKey, out _);
