@@ -163,18 +163,28 @@ public sealed class LoginInteractionTests : IDisposable
         return await _client.PostAsync(url, content, TestContext.Current.CancellationToken);
     }
 
+    private Task<HttpResponseMessage> PostCancelAsync(
+        string? interactionId,
+        params (string Key, string Value)[] fields) =>
+        PostCancelAsync(interactionId, extraQuery: null, fields);
+
     private async Task<HttpResponseMessage> PostCancelAsync(
         string? interactionId,
+        Dictionary<string, string?>? extraQuery,
         params (string Key, string Value)[] fields)
     {
-        var url = interactionId is null
-            ? CancelPath
-            : QueryHelpers.AddQueryString(CancelPath, InteractionHandoff.InteractionIdParameter, interactionId);
+        var query = new Dictionary<string, string?>(StringComparer.Ordinal);
+        if (interactionId is not null)
+            query[InteractionHandoff.InteractionIdParameter] = interactionId;
+
+        foreach (var (key, value) in extraQuery ?? [])
+            query[key] = value;
 
         using var content = new FormUrlEncodedContent(
             fields.Select(field => KeyValuePair.Create(field.Key, field.Value)));
 
-        return await _client.PostAsync(url, content, TestContext.Current.CancellationToken);
+        return await _client.PostAsync(
+            QueryHelpers.AddQueryString(CancelPath, query), content, TestContext.Current.CancellationToken);
     }
 
     /// <summary>Runs a full authorize → login page → cancelled round trip.</summary>
@@ -192,6 +202,14 @@ public sealed class LoginInteractionTests : IDisposable
         var location = response.Headers.Location!.OriginalString;
         return QueryHelpers.ParseQuery(location[location.IndexOf('?')..]);
     }
+
+    /// <summary>
+    /// Where a redirect actually points — scheme, authority and path, with the protocol query
+    /// stripped. A prefix check would accept an attacker-chosen host that merely starts the same
+    /// way, and would not notice a destination assembled from request input at all.
+    /// </summary>
+    private static string DestinationOf(HttpResponseMessage response) =>
+        new Uri(response.Headers.Location!.OriginalString).GetLeftPart(UriPartial.Path);
 
     /// <summary>Runs a full authorize → login → signed-in round trip.</summary>
     private async Task<HttpResponseMessage> SignInAsync(Dictionary<string, string?>? query = null, string sub = "user-1")
@@ -332,7 +350,7 @@ public sealed class LoginInteractionTests : IDisposable
         var response = await CancelAsync(query);
 
         response.StatusCode.Should().Be(HttpStatusCode.Redirect);
-        response.Headers.Location!.OriginalString.Should().StartWith(RegisteredRedirect);
+        DestinationOf(response).Should().Be(RegisteredRedirect);
 
         var parameters = RedirectQueryOf(response);
         parameters["error"].Should().Equal(["access_denied"]);
@@ -340,6 +358,36 @@ public sealed class LoginInteractionTests : IDisposable
             "state round-trips byte for byte on every authorization response, errors included");
         parameters["iss"].Should().Equal(["https://test.example.com"],
             "iss is unconditional on every authorization response (RFC 9207)");
+    }
+
+    [Fact]
+    public async Task DenyAsync_ignores_every_destination_the_cancelling_request_tries_to_supply()
+    {
+        // The invariant this protects is that no return URL is ever taken from the request — the
+        // reason the interaction identifier is an opaque id and not a URL in the first place. A
+        // test that only checks the destination's prefix would still pass if the destination were
+        // read from request input whenever it happened to be present, so hostile values are
+        // supplied here on both the query string and the form, under the names a host or a
+        // careless future change would most plausibly reach for.
+        const string Attacker = "https://attacker.example.net/collect";
+
+        var handoff = await AuthorizeAsync();
+
+        var response = await PostCancelAsync(
+            InteractionIdFrom(handoff),
+            extraQuery: new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["redirect_uri"] = Attacker,
+                ["ReturnUrl"] = Attacker,
+            },
+            ("redirect_uri", Attacker),
+            ("ReturnUrl", Attacker),
+            ("returnUrl", Attacker));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        DestinationOf(response).Should().Be(RegisteredRedirect,
+            "the destination comes from the decrypted interaction context, never from the request");
+        response.Headers.Location!.OriginalString.Should().NotContain("attacker.example.net");
     }
 
     [Fact]
