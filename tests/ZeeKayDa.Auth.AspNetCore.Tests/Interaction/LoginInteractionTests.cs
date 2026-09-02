@@ -388,10 +388,30 @@ public sealed class LoginInteractionTests : IDisposable
         // policy. The description is what says so — framework-owned, echoing no value, and pinned
         // here because a client developer reads it. A client that needs to branch in code gets
         // the opt-in zkd_error sub-code instead, so this text is a courtesy, not a contract.
-        var response = await CancelAsync();
+        //
+        // Hostile text is supplied on both the query string and the form under the names a
+        // reintroduced host-text path would most plausibly read. Non-disclosure is the property
+        // that removing the host-supplied overload existed to guarantee, and a test that sends
+        // nothing would still pass against a description sourced from input whenever present.
+        const string HostText = "The account is locked out.";
+
+        var handoff = await AuthorizeAsync();
+
+        var response = await PostCancelAsync(
+            InteractionIdFrom(handoff),
+            extraQuery: new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["reason"] = HostText,
+                ["error_description"] = HostText,
+            },
+            ("reason", HostText),
+            ("description", HostText),
+            ("error_description", HostText));
 
         RedirectQueryOf(response)["error_description"]
             .Should().Equal(["The user cancelled the request at the sign-in page."]);
+        response.Headers.Location!.OriginalString.Should().NotContain("locked",
+            "nothing the cancelling request carried may reach the client");
     }
 
     [Fact]

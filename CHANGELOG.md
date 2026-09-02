@@ -31,9 +31,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   cancelled sign-in, a refused consent and a policy refusal alike, so the code alone does not tell
   a client developer what happened. `DenyAsync` fills the optional `error_description` with
   framework-owned text naming a cancellation at the sign-in page. That text is a courtesy to
-  someone reading their error page, not a contract to branch on: it echoes no value, and a client
-  that needs a stable machine-readable discriminator gets the opt-in `zkd_error` sub-code, which is
-  not built for this endpoint yet.
+  someone reading their error page, not a contract to branch on: it echoes no value. A stable
+  machine-readable discriminator would be the opt-in `zkd_error` sub-code, which today governs
+  token-endpoint responses only — an authorization denial carries no such sub-code yet.
 
 - **An unauthenticated authorization request is handed off to the host's login page, and comes back a session** (#85, local leg)
 
