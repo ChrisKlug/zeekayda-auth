@@ -31,6 +31,7 @@
       "Bash(gh repo view *)",
       "Bash(grep *)",
       "Bash(rg *)",
+      "Bash(bash .claude/skills/adversarial-review/run.sh *)",
       "mcp__plugin_microsoft-docs_microsoft-learn__microsoft_docs_search",
       "mcp__plugin_codescene_codescene__analyze_change_set"
     ],

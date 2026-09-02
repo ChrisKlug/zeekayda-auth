@@ -2,7 +2,7 @@
 name: architect
 description: Software architect for ZeeKayDa.Auth — an independent structural REVIEWER. Reviews changes to public API surface, extension points, and structure against .NET API-design standards and the OpenID Connect / OAuth 2.1 specs. Design itself happens in the main session's conversation with the maintainer — do not spawn this agent to propose or design a shape.
 tools: Read, Write, Edit, Grep, Glob, Bash, LSP, ToolSearch, Skill, WebFetch
-model: opus
+model: fable
 effort: high
 skills:
   - code-navigation

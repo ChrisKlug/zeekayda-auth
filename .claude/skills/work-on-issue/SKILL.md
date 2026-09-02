@@ -75,14 +75,22 @@ blocked-by graphs, no design prose. Off-scope fixes are not made, however easy t
 
 ## Stage 3 — One review round
 
-Scope the reviewer(s) by surface:
+**Copilot code lens first, as a gate.** Run `/adversarial-review code` on the committed branch
+before any other reviewer. It is the cheap, independent, non-Claude pass that catches what should
+never reach an expensive review. It gates on **High/Critical only**: fix those as their own commit,
+re-run the lens against that fix diff (`--base <round-1 sha>`), and only then start the reviewers
+below. Its Medium/Low findings go straight into the Stage 4 list — no fix cycle, no re-run. On a
+change with no security or architecture surface, this lens is the whole review.
 
-| Reviewer | When |
-|---|---|
-| `security` | tokens, crypto, endpoints, or storage |
-| `architect` | public API surface, extension point, or structure |
-| both (parallel, one message) | only when the change genuinely has **both** surfaces *and* exceeds ~150 lines of implementation logic |
-| neither | mechanical — bug fix, refactor, test, chore |
+Then scope the reviewer(s) by surface. Each Claude agent runs alongside its Copilot lens, in
+parallel, launched in one message; neither sees the other's findings:
+
+| Surface | Claude reviewer | Copilot lens |
+|---|---|---|
+| tokens, crypto, endpoints, or storage | `security` | `/adversarial-review security` |
+| public API surface, extension point, or structure | `architect` | `/adversarial-review architecture` |
+| both surfaces **and** more than ~150 lines of implementation logic | both | both |
+| mechanical — bug fix, refactor, test, chore | neither | code lens only, already run |
 
 Reviewers run **foreground**. Alongside them, run CodeScene `analyze_change_set` yourself (agents
 cannot reach MCP tools) — **production files only. Findings on `tests/` are ignored entirely, not
@@ -137,9 +145,9 @@ read** — never folded into the commit that prompted the question. The reviewer
 it touches their findings.
 
 On approval: push, `gh pr create` (the permission prompt is this gate — never work around it), then
-post each reviewer's **existing verdict** on the PR with `gh pr comment` as the durable record. That
-is a paste, not a re-review. A genuine re-review happens only if commits landed after the reviewer
-last looked at the branch.
+post each reviewer's **existing verdict** on the PR with `gh pr comment` as the durable record —
+the Copilot lenses included, each headed with its lens and model. That is a paste, not a re-review.
+A genuine re-review happens only if commits landed after the reviewer last looked at the branch.
 
 ## Stage 5 — Merge ⛔
 
