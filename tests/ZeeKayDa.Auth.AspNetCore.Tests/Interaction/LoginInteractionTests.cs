@@ -89,17 +89,8 @@ public sealed class LoginInteractionTests : IDisposable
                 methods);
         });
 
-        // The Cancel button. A "reason" field drives the overload that says why; without it the
-        // page cancels the way the issue's sample host does.
-        endpoints.MapPost(CancelPath, async (HttpContext context, ILoginInteraction login) =>
-        {
-            var form = await context.Request.ReadFormAsync(context.RequestAborted);
-
-            if (form["reason"].FirstOrDefault() is { Length: > 0 } reason)
-                await login.DenyAsync(reason);
-            else
-                await login.DenyAsync();
-        });
+        // The Cancel button, exactly as the issue's sample host writes it.
+        endpoints.MapPost(CancelPath, (ILoginInteraction login) => login.DenyAsync());
 
         // Nothing should ever challenge the framework's session scheme: the authorization endpoint
         // owns that decision and needs the interaction context written first.
@@ -391,37 +382,24 @@ public sealed class LoginInteractionTests : IDisposable
     }
 
     [Fact]
-    public async Task DenyAsync_tells_the_client_the_user_cancelled_rather_than_only_that_access_was_denied()
+    public async Task DenyAsync_names_the_cancellation_in_a_framework_owned_description()
     {
         // access_denied alone cannot separate a user who pressed Cancel from one refused by
-        // policy, and a client offering "try again" for the first but not the second has to be
-        // able to tell. error_description is the only field in the response that can say so.
+        // policy. The description is what says so — framework-owned, echoing no value, and pinned
+        // here because a client developer reads it. A client that needs to branch in code gets
+        // the opt-in zkd_error sub-code instead, so this text is a courtesy, not a contract.
         var response = await CancelAsync();
 
-        RedirectQueryOf(response)["error_description"].ToString()
-            .Should().Contain("cancelled").And.Contain("sign-in");
+        RedirectQueryOf(response)["error_description"]
+            .Should().Equal(["The user cancelled the request at the sign-in page."]);
     }
 
     [Fact]
-    public async Task DenyAsync_carries_the_hosts_own_description_when_it_supplies_one()
+    public async Task DenyAsync_forbids_the_client_from_caching_the_response()
     {
-        var response = await CancelAsync(fields: ("reason", "The account is locked out."));
+        var response = await CancelAsync();
 
-        RedirectQueryOf(response)["error_description"].Should().Equal(["The account is locked out."]);
-    }
-
-    [Theory]
-    [InlineData("Contains a \" quote")]
-    [InlineData("Contains a \\ backslash")]
-    [InlineData("Contains a \n newline")]
-    [InlineData("Contains a non-ASCII å")]
-    public async Task DenyAsync_refuses_a_description_the_response_cannot_legally_carry(string description)
-    {
-        // RFC 6749 §4.1.2.1 confines error_description to %x20-21 / %x23-5B / %x5D-7E. Caught at
-        // the argument so the blame lands on the host's call, not on a malformed redirect.
-        var cancel = async () => await CancelAsync(fields: ("reason", description));
-
-        await cancel.Should().ThrowAsync<ArgumentException>();
+        response.Headers.CacheControl!.NoStore.Should().BeTrue();
     }
 
     [Fact]
@@ -478,11 +456,18 @@ public sealed class LoginInteractionTests : IDisposable
     {
         // Aiming a deny at another tab's request would be a cross-tab denial of service.
         var firstTab = await AuthorizeAsync();
-        await AuthorizeAsync();
+        var secondTab = await AuthorizeAsync();
 
         var cancel = async () => await PostCancelAsync(InteractionIdFrom(firstTab));
 
         await cancel.Should().ThrowAsync<ZeeKayDaInteractionException>();
+
+        // Refusing is only half of it: the interaction the browser *is* carrying must survive the
+        // refused deny, or a rejected cross-tab attempt would still have killed the live request.
+        var signIn = await PostLoginAsync(InteractionIdFrom(secondTab), ("sub", "user-1"));
+
+        signIn.StatusCode.Should().Be(HttpStatusCode.NotImplemented,
+            "the live interaction is untouched by a deny that named a different one");
     }
 
     [Fact]

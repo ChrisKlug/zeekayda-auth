@@ -20,9 +20,10 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 internal sealed class LoginInteraction : ILoginInteraction
 {
     /// <summary>
-    /// What the client is told when the host cancels without saying why. Names the stage as well
-    /// as the outcome, so a client can tell this apart from a consent denial or a policy refusal —
-    /// all three are <c>access_denied</c> on the wire.
+    /// What a cancelled request tells the client. Names the stage as well as the outcome, so this
+    /// reads differently from a consent denial or a policy refusal — all three are
+    /// <c>access_denied</c> on the wire. Generic by construction: it echoes no value, and a client
+    /// needing a stable discriminator gets the opt-in <c>zkd_error</c> sub-code, not this prose.
     /// </summary>
     private const string CancelledAtSignIn = "The user cancelled the request at the sign-in page.";
 
@@ -105,34 +106,13 @@ internal sealed class LoginInteraction : ILoginInteraction
         await PreAlphaNotImplementedResult.Result.ExecuteAsync(context).ConfigureAwait(false);
     }
 
-    /// <inheritdoc/>
-    public Task DenyAsync() => DenyCoreAsync(CancelledAtSignIn);
-
-    /// <inheritdoc/>
-    public Task DenyAsync(string description)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(description);
-
-        // Guarded here, at the public boundary, rather than where it is written onto the query
-        // string: a host that supplies an unusable description has made a mistake at this call,
-        // and finding out at the redirect would blame the framework's own error path.
-        if (!IsLegalErrorDescription(description))
-            throw new ArgumentException(
-                "An error_description may only carry printable US-ASCII, excluding the double quote " +
-                "and the backslash (RFC 6749 §4.1.2.1). Rewrite the text without the offending " +
-                "characters — a client cannot read what the response cannot legally carry.",
-                nameof(description));
-
-        return DenyCoreAsync(description);
-    }
-
     /// <summary>
     /// Ends the interaction the request is addressed to, telling the client the user did not
     /// authorize it. Resolution and the <c>zkd_i</c> binding are exactly as they are for a
     /// sign-in: a deny that could be aimed at another tab's request is a cross-tab denial of
     /// service.
     /// </summary>
-    private async Task DenyCoreAsync(string description)
+    public async Task DenyAsync()
     {
         var context = _httpContextAccessor.HttpContext
             ?? throw new InvalidOperationException(
@@ -152,17 +132,10 @@ internal sealed class LoginInteraction : ILoginInteraction
         // promoted and none is read: a user cancelling here is not signed in, and a user who was
         // already signed in elsewhere stays that way.
         await _clientError
-            .To(requestContext.RedirectUri, AuthorizeRequestErrors.AccessDenied, description, requestContext.State)
+            .To(requestContext.RedirectUri, AuthorizeRequestErrors.AccessDenied, CancelledAtSignIn, requestContext.State)
             .ExecuteAsync(context)
             .ConfigureAwait(false);
     }
-
-    /// <summary>
-    /// RFC 6749 §4.1.2.1 confines <c>error_description</c> to %x20-21 / %x23-5B / %x5D-7E —
-    /// printable US-ASCII without the double quote or the backslash.
-    /// </summary>
-    private static bool IsLegalErrorDescription(string description) =>
-        description.All(c => c is >= ' ' and <= '~' and not '"' and not '\\');
 
     /// <summary>
     /// Resolves the interaction this request is entitled to complete: the one the framework sent

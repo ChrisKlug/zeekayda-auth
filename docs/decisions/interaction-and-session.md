@@ -32,14 +32,17 @@ request they never started. The lingering variant dies here; the immediate one i
 as it is industry-wide. Addressing by identifier also keeps the backing swappable, so no store
 interface is invented for a single implementation.
 
-**A denial says which kind of denial it was, in `error_description`.** `access_denied` is the only
-code RFC 6749 §4.1.2.1 offers for a cancelled sign-in, a refused consent and a policy refusal
-alike, so the code alone cannot tell a client whether "try again" is worth offering. The optional
-description field is the only place in the response that can, so every terminal denial populates
-it: the framework's own text names the stage when the host says nothing, and a host that knows
-better supplies its own. Host-supplied text is checked against the charset the field is confined to
-before it is written, because a description the response cannot legally carry is one the client
-cannot read. The denial never becomes a redirect primitive: the destination is the registered URI
+**A denial carries a fixed `error_description` naming the stage; the machine-readable
+discriminator is the opt-in `zkd_error` sub-code, not the prose.** `access_denied` is the only code
+RFC 6749 §4.1.2.1 offers for a cancelled sign-in, a refused consent and a policy refusal alike, so
+`DenyAsync()` populates the optional description with framework-owned text naming a cancellation at
+sign-in. That text is a courtesy to a developer reading their error page, never a contract: a
+client needing to branch gets `zkd_error` per `authorization-and-interaction.md`, which is opt-in
+per client precisely because which interaction step occurred is a distinction not every client is
+entitled to. The description is framework-owned for the same reason — host-supplied text on this
+channel is a disclosure primitive, since it reaches the client, browser history and proxy logs, and
+the phase-2 rule that a description stays generic and echoes no value would have no enforcement
+left. The denial never becomes a redirect primitive either: the destination is the registered URI
 from the decrypted interaction context, so an expired context has no destination and the request
 fails where it stands.
 

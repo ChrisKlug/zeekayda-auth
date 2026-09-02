@@ -27,14 +27,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   It is bound by `zkd_i` on `SignInAsync`'s exact terms — missing, mismatched or expired throws —
   because a deny that could be aimed at another tab's request is a cross-tab denial of service.
 
-  **The client is told which kind of denial it was.** `access_denied` is the one code the spec
-  offers for a cancelled sign-in, a refused consent and a policy refusal alike, so a client that
-  wants to offer "try again" for the first but "contact support" for the third cannot act on the
-  code by itself. `DenyAsync()` populates `error_description` with the framework's own text naming
-  a cancellation at the sign-in page; `DenyAsync(string description)` lets a host say something more
-  specific. Host-supplied text is validated against the character set RFC 6749 §4.1.2.1 confines
-  `error_description` to — printable US-ASCII without `"` or `\` — and an illegal one throws
-  `ArgumentException` at the call rather than producing a response the client cannot read.
+  **The response names the cancellation.** `access_denied` is the one code the spec offers for a
+  cancelled sign-in, a refused consent and a policy refusal alike, so the code alone does not tell
+  a client developer what happened. `DenyAsync` fills the optional `error_description` with
+  framework-owned text naming a cancellation at the sign-in page. That text is a courtesy to
+  someone reading their error page, not a contract to branch on: it echoes no value, and a client
+  that needs a stable machine-readable discriminator gets the opt-in `zkd_error` sub-code, which is
+  not built for this endpoint yet.
 
 - **An unauthenticated authorization request is handed off to the host's login page, and comes back a session** (#85, local leg)
 

@@ -43,7 +43,6 @@ ZeeKayDa.Auth.AspNetCore.Interaction.IErrorInteraction
 ZeeKayDa.Auth.AspNetCore.Interaction.IErrorInteraction.GetErrorAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails?>
 ZeeKayDa.Auth.AspNetCore.Interaction.ILoginInteraction
 ZeeKayDa.Auth.AspNetCore.Interaction.ILoginInteraction.DenyAsync() -> System.Threading.Tasks.Task!
-ZeeKayDa.Auth.AspNetCore.Interaction.ILoginInteraction.DenyAsync(string! description) -> System.Threading.Tasks.Task!
 ZeeKayDa.Auth.AspNetCore.Interaction.ILoginInteraction.SignInAsync(System.Security.Claims.ClaimsPrincipal! principal, params string![]! authenticationMethods) -> System.Threading.Tasks.Task!
 override ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails.Equals(object? obj) -> bool
 override ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails.GetHashCode() -> int

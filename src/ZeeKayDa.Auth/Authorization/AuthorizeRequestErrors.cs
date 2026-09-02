@@ -21,7 +21,7 @@ internal static class AuthorizeRequestErrors
 
     /// <summary>
     /// The user, or the authorization server on their behalf, refused the request
-    /// (RFC 6749 §4.1.2.1). What kind of refusal it was travels in <c>error_description</c>.
+    /// (RFC 6749 §4.1.2.1).
     /// </summary>
     public const string AccessDenied = "access_denied";
 

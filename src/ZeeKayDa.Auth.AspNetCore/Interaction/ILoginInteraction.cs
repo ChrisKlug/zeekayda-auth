@@ -72,44 +72,22 @@ public interface ILoginInteraction
     /// cancelled request cannot afterwards be resumed.
     /// </para>
     /// <para>
-    /// The client is told <em>why</em> in <c>error_description</c>: <c>access_denied</c> alone
-    /// cannot distinguish a user who pressed Cancel from one refused by policy, and a client that
-    /// wants to offer "try again" for the first and "contact support" for the second needs to tell
-    /// them apart. The parameterless call reports a cancellation at the sign-in page; use
-    /// <see cref="DenyAsync(string)"/> to say something more specific.
+    /// The client receives an <c>error_description</c> stating that the user cancelled at the
+    /// sign-in page, so it can tell this apart from the other refusals that also answer
+    /// <c>access_denied</c>.
+    /// </para>
+    /// <para>
+    /// Reach this only from a state-changing request — a form post, not a link. A cancel wired to
+    /// a <c>GET</c> anchor is triggerable cross-site by anyone who learns the interaction
+    /// identifier, and ends the user's in-flight sign-in.
     /// </para>
     /// </remarks>
     /// <exception cref="ZeeKayDaInteractionException">
     /// There is no interaction to end: the request carries no <c>zkd_i</c>, the interaction context
     /// cookie is absent or expired, or the two do not name the same interaction.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// There is no active HTTP request — the service was resolved outside one.
     /// </exception>
     Task DenyAsync();
-
-    /// <summary>
-    /// Ends the authorization request without signing anyone in, answering the client with
-    /// <c>access_denied</c> and <paramref name="description"/> at its registered redirect URI.
-    /// </summary>
-    /// <param name="description">
-    /// What the client is told in <c>error_description</c> — why this request was refused, in a
-    /// form a client developer reading their error page can act on. It reaches the client
-    /// application, not the user, so write it for a developer. Never put anything in it you would
-    /// not show the client: it travels in the query string of the redirect, where it also reaches
-    /// browser history and proxy logs.
-    /// </param>
-    /// <remarks>
-    /// <para>
-    /// <strong>Terminal.</strong> The same session, interaction and resumption rules as
-    /// <see cref="DenyAsync()"/> apply.
-    /// </para>
-    /// </remarks>
-    /// <exception cref="ZeeKayDaInteractionException">
-    /// There is no interaction to end: the request carries no <c>zkd_i</c>, the interaction context
-    /// cookie is absent or expired, or the two do not name the same interaction.
-    /// </exception>
-    /// <exception cref="ArgumentException">
-    /// <paramref name="description"/> is null, blank, or carries a character RFC 6749 §4.1.2.1
-    /// does not permit in <c>error_description</c> — anything outside printable US-ASCII, or a
-    /// double quote or backslash.
-    /// </exception>
-    Task DenyAsync(string description);
 }
