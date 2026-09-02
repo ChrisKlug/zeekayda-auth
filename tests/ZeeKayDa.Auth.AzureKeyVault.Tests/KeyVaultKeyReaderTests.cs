@@ -404,11 +404,12 @@ public sealed class KeyVaultKeyReaderTests
     [Fact]
     public async Task GetKeyMaterialAsync_does_not_reclassify_an_unsupported_key_type_as_startup_failure()
     {
-        // MapJsonWebKey is called outside the try for this reason: the broad catch that maps SDK
-        // faults would otherwise flatten this well-formed failure into a generic startup_failure,
-        // and the operator would be told to go investigate a vault that is working correctly.
-        // Before the ex.Message leak was removed, this was hidden — the unsupported_key_type code
-        // reached the operator only by riding along inside the interpolated inner message.
+        // A catch(ZeeKayDaConfigurationException) re-throw arm sits ahead of the broad SDK-fault
+        // catch for this reason: without it that catch flattens this well-formed failure into a
+        // generic startup_failure, and the operator is told to go investigate a vault that is
+        // working correctly. Before the ex.Message leak was removed this was hidden — the
+        // unsupported_key_type code reached the operator only by riding along inside the
+        // interpolated inner message, so the older test passed for the wrong reason.
         using var aes = Aes.Create();
         var client = new FakeKeyClient { OnGetKey = _ => BuildKey(new JsonWebKey(aes)) };
 
