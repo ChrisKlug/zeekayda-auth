@@ -147,6 +147,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- **The Azure Key Vault readers no longer copy a caught exception's message into the failure they report** (#614)
+
+  `KeyVaultCertificateReader` and `KeyVaultKeyReader` built six operator-facing
+  `ZeeKayDaConfigurationFailure` messages by interpolating `ex.Message`: the CER load failure, the
+  PKCS#12 parse failure, and both readers' `startup_failure` mappings for an unexpected SDK fault
+  and for a `RequestFailedException` that was neither 404 nor 401/403. A configuration failure's
+  `Message` is a plain public-API string that neither by-key redaction nor exception wrapping can
+  reach, and `Azure.RequestFailedException.Message` carries the response content and headers while a
+  cryptographic exception can echo the input it failed to parse. Each site now names
+  `ex.GetType().FullName` and passes the original as `InnerException`, where
+  `RedactedExceptionWrapper` does apply if it is ever logged. The failure `Code` — the SemVer-governed
+  contract — is unchanged at every site, as are the HTTP status, SDK error code, vault URI and object
+  name, all of which are operator-owned configuration or numeric status rather than response content.
+
+  Removing the interpolation exposed a second defect in `GetKeyMaterialAsync`. Its broad SDK-fault
+  catch was re-classifying `MapJsonWebKey`'s own `signing.azure_key_vault.unsupported_key_type`
+  failure as a generic `signing.azure_key_vault.startup_failure`, so a vault holding an unsupported
+  key type sent the operator to investigate transport instead. The real code had been reaching them
+  only by riding along inside the interpolated message this change removes. A
+  `catch (ZeeKayDaConfigurationException)` re-throw arm now sits ahead of the broad catch, while the
+  mapping stays inside it so a malformed JWK is still mapped rather than escaping as a raw
+  `CryptographicException`.
+
 - **The development signing key provider no longer rejects a key under an OS-owned symlinked path such as macOS's `/tmp`, `/var`, or `/etc`** (#541)
 
   Loading a persisted development key walks every ancestor directory looking for a symlink an
