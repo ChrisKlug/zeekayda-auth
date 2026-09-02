@@ -325,6 +325,83 @@ public sealed class KeyVaultKeyReaderTests
             .WithMessage("*startup_failure*");
     }
 
+    // ZeeKayDaConfigurationFailure.Message is a plain string on public API surface that
+    // SecretSanitizingLogger cannot redact, so no caught exception's own Message may reach it.
+    // RequestFailedException.Message carries the response content and headers; a cryptographic
+    // exception can echo the input it failed to parse. The type is named instead, and the original
+    // travels as InnerException. See docs/decisions and .claude/agents/developer.md.
+
+    [Fact]
+    public async Task GetKeyMaterialAsync_does_not_leak_the_sdk_exception_message_into_the_failure()
+    {
+        var thrown = new RequestFailedException(500, "vault-secret-in-response-body");
+        var client = new FakeKeyClient { OnGetKey = _ => throw thrown };
+
+        var act = () => BuildReader(client)
+            .GetKeyMaterialAsync("v1", TestContext.Current.CancellationToken).AsTask();
+
+        var thrownAssertion = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        thrownAssertion.Which.Message.Should().NotContain("vault-secret-in-response-body",
+            "RequestFailedException.Message carries the response content and headers");
+        thrownAssertion.Which.Message.Should().Contain("Azure.RequestFailedException",
+            "the operator still needs the exception type to diagnose the failure");
+        thrownAssertion.Which.InnerException.Should().BeSameAs(thrown,
+            "the root cause stays available to operators as InnerException");
+    }
+
+    [Fact]
+    public async Task GetKeyMaterialAsync_does_not_leak_an_unexpected_exception_message_into_the_failure()
+    {
+        var thrown = new InvalidOperationException("connection-string-in-message");
+        var client = new FakeKeyClient { OnGetKey = _ => throw thrown };
+
+        var act = () => BuildReader(client)
+            .GetKeyMaterialAsync("v1", TestContext.Current.CancellationToken).AsTask();
+
+        var thrownAssertion = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        thrownAssertion.Which.Message.Should().NotContain("connection-string-in-message",
+            "an arbitrary provider exception message may carry credential material");
+        thrownAssertion.Which.Message.Should().Contain("System.InvalidOperationException");
+        thrownAssertion.Which.InnerException.Should().BeSameAs(thrown);
+    }
+
+    [Fact]
+    public async Task GetKeyVersionsAsync_does_not_leak_an_unexpected_exception_message_into_the_failure()
+    {
+        var thrown = new InvalidOperationException("connection-string-in-message");
+        var client = new FakeKeyClient
+        {
+            OnGetVersions = () => FakeAsyncPageable<KeyProperties>.Throwing(thrown),
+        };
+
+        var act = () => Collect(BuildReader(client));
+
+        var thrownAssertion = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        thrownAssertion.Which.Message.Should().NotContain("connection-string-in-message");
+        thrownAssertion.Which.Message.Should().Contain("System.InvalidOperationException");
+        thrownAssertion.Which.InnerException.Should().BeSameAs(thrown);
+    }
+
+    [Fact]
+    public async Task GetKeyMaterialAsync_does_not_reclassify_an_unsupported_key_type_as_startup_failure()
+    {
+        // MapJsonWebKey is called outside the try for this reason: the broad catch that maps SDK
+        // faults would otherwise flatten this well-formed failure into a generic startup_failure,
+        // and the operator would be told to go investigate a vault that is working correctly.
+        // Before the ex.Message leak was removed, this was hidden — the unsupported_key_type code
+        // reached the operator only by riding along inside the interpolated inner message.
+        using var aes = Aes.Create();
+        var client = new FakeKeyClient { OnGetKey = _ => BuildKey(new JsonWebKey(aes)) };
+
+        var act = () => BuildReader(client)
+            .GetKeyMaterialAsync("v1", TestContext.Current.CancellationToken).AsTask();
+
+        var thrownAssertion = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        thrownAssertion.Which.Message.Should().Contain("unsupported_key_type");
+        thrownAssertion.Which.Message.Should().NotContain("startup_failure",
+            "a well-formed failure must not be re-classified by the SDK fault handler");
+    }
+
     [Fact]
     public async Task GetKeyMaterialAsync_lets_cancellation_escape_unmapped()
     {

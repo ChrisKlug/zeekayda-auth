@@ -108,10 +108,11 @@ internal sealed class KeyVaultKeyReader : IKeyVaultKeyReader
     {
         ArgumentException.ThrowIfNullOrEmpty(version);
 
+        JsonWebKey key;
         try
         {
             var response = await _keyClient.GetKeyAsync(_keyName, version, cancellationToken).ConfigureAwait(false);
-            return MapJsonWebKey(response.Value.Key);
+            key = response.Value.Key;
         }
         catch (RequestFailedException ex)
         {
@@ -121,6 +122,12 @@ internal sealed class KeyVaultKeyReader : IKeyVaultKeyReader
         {
             throw MapUnexpectedFailure(ex);
         }
+
+        // Mapped outside the try. MapJsonWebKey throws its own ZeeKayDaConfigurationException for an
+        // unsupported key type, and the broad catch above would re-classify that well-formed failure
+        // as a generic startup_failure. Every other call site in this reader and in
+        // KeyVaultCertificateReader already maps outside the try; this one did not.
+        return MapJsonWebKey(key);
     }
 
     private static (AsymmetricAlgorithm, SigningKeyType) MapJsonWebKey(JsonWebKey key)
@@ -153,16 +160,29 @@ internal sealed class KeyVaultKeyReader : IKeyVaultKeyReader
                     (ex.ErrorCode is null ? "" : $", ErrorCode: {ex.ErrorCode}") +
                     "). Verify the configured credential has 'Key Vault Crypto User' (or an access-policy grant " +
                     "of 'get' and 'sign' key permissions) on this vault.")),
+            // The exception TYPE is named, never ex.Message. RequestFailedException.Message carries
+            // the response content and headers, and ZeeKayDaConfigurationFailure.Message is a plain
+            // string on public API surface that SecretSanitizingLogger cannot redact. The status and
+            // ErrorCode above are the safe, operator-actionable parts; the root cause stays available
+            // as InnerException.
             _ => new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure(
                     "signing.azure_key_vault.startup_failure",
                     $"An unexpected error occurred reading Key Vault key '{_keyName}' in vault '{_vaultUri}' " +
                     $"(HTTP {ex.Status}" + (ex.ErrorCode is null ? "" : $", ErrorCode: {ex.ErrorCode}") +
-                    $"): {ex.Message}")),
+                    $"): {ex.GetType().FullName}. See the inner exception for the root cause."),
+                ex),
         };
 
+    // The exception TYPE is named, never ex.Message. An arbitrary underlying provider exception may
+    // carry credential material, and ZeeKayDaConfigurationFailure.Message is a plain string on public
+    // API surface that SecretSanitizingLogger cannot redact. The root cause stays available to
+    // operators as InnerException.
     private ZeeKayDaConfigurationException MapUnexpectedFailure(Exception ex) =>
-        new(new ZeeKayDaConfigurationFailure(
-            "signing.azure_key_vault.startup_failure",
-            $"An unexpected error occurred reading Key Vault key '{_keyName}' in vault '{_vaultUri}': {ex.Message}"));
+        new(
+            new ZeeKayDaConfigurationFailure(
+                "signing.azure_key_vault.startup_failure",
+                $"An unexpected error occurred reading Key Vault key '{_keyName}' in vault '{_vaultUri}': " +
+                $"{ex.GetType().FullName}. See the inner exception for the root cause."),
+            ex);
 }

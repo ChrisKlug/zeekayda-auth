@@ -321,6 +321,98 @@ public sealed class KeyVaultCertificateReaderTests
             .WithMessage("*invalid_certificate_public_key*");
     }
 
+    // ── No caught exception's Message reaches the operator-facing failure ─────────────────────────
+    //
+    // ZeeKayDaConfigurationFailure.Message is a plain string on public API surface that
+    // SecretSanitizingLogger cannot redact, so no caught exception's own Message may reach it.
+    // RequestFailedException.Message carries the response content and headers; a cryptographic
+    // exception can echo the input it failed to parse. The type is named instead, and the original
+    // travels as InnerException. See .claude/agents/developer.md.
+
+    [Fact]
+    public void ExtractPublicKey_does_not_leak_the_cryptographic_exception_message_into_the_failure()
+    {
+        var reader = BuildReader();
+
+        var act = () => InvokeExtractPublicKey(reader, "not a valid certificate"u8.ToArray());
+
+        var thrown = act.Should().Throw<ZeeKayDaConfigurationException>();
+        thrown.Which.InnerException.Should().BeOfType<CryptographicException>(
+            "the root cause stays available to operators as InnerException");
+        thrown.Which.Message.Should().NotContain(thrown.Which.InnerException!.Message,
+            "a cryptographic exception can echo the input it failed to parse");
+        thrown.Which.Message.Should().Contain("System.Security.Cryptography.CryptographicException",
+            "the operator still needs the exception type to diagnose the failure");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GetPrivateKeyMaterialAsync_does_not_leak_the_pkcs12_parse_exception_message_into_the_failure(bool shrouded)
+    {
+        var inner = new InvalidOperationException("pfx-passphrase-in-message");
+        var rsa = new ThrowingRsa(inner);
+        var reader = BuildReader(
+            CreateKeyBagPfx(shrouded),
+            () => rsa,
+            () => new ThrowingEcdsa(new CryptographicException("must not be reached")));
+
+        var act = () => reader.GetPrivateKeyMaterialAsync("v1", TestContext.Current.CancellationToken).AsTask();
+
+        var thrown = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        thrown.Which.Message.Should().NotContain("pfx-passphrase-in-message");
+        thrown.Which.Message.Should().Contain("System.InvalidOperationException");
+        thrown.Which.InnerException.Should().BeSameAs(inner);
+    }
+
+    [Fact]
+    public async Task GetPublicKeyMaterialAsync_does_not_leak_the_sdk_exception_message_into_the_failure()
+    {
+        var inner = new RequestFailedException(500, "vault-secret-in-response-body");
+        var client = new FakeCertificateClient { OnGetVersion = _ => throw inner };
+
+        var act = () => BuildReader(client)
+            .GetPublicKeyMaterialAsync("v1", TestContext.Current.CancellationToken).AsTask();
+
+        var thrown = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        thrown.Which.Message.Should().NotContain("vault-secret-in-response-body",
+            "RequestFailedException.Message carries the response content and headers");
+        thrown.Which.Message.Should().Contain("Azure.RequestFailedException");
+        thrown.Which.InnerException.Should().BeSameAs(inner);
+    }
+
+    [Fact]
+    public async Task GetPublicKeyMaterialAsync_does_not_leak_an_unexpected_exception_message_into_the_failure()
+    {
+        var inner = new InvalidOperationException("connection-string-in-message");
+        var client = new FakeCertificateClient { OnGetVersion = _ => throw inner };
+
+        var act = () => BuildReader(client)
+            .GetPublicKeyMaterialAsync("v1", TestContext.Current.CancellationToken).AsTask();
+
+        var thrown = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        thrown.Which.Message.Should().NotContain("connection-string-in-message",
+            "an arbitrary provider exception message may carry credential material");
+        thrown.Which.Message.Should().Contain("System.InvalidOperationException");
+        thrown.Which.InnerException.Should().BeSameAs(inner);
+    }
+
+    [Fact]
+    public async Task GetPrivateKeyMaterialAsync_does_not_leak_an_unexpected_secret_download_exception_message()
+    {
+        var inner = new InvalidOperationException("connection-string-in-message");
+        var client = new FakeCertificateClient { OnGetVersion = _ => BuildCertificate(secretId: SecretIdUri) };
+        var secretClient = new FakeSecretClient { OnGetSecret = (_, _) => throw inner };
+
+        var act = () => BuildReader(client, secretClient)
+            .GetPrivateKeyMaterialAsync("v1", TestContext.Current.CancellationToken).AsTask();
+
+        var thrown = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        thrown.Which.Message.Should().NotContain("connection-string-in-message");
+        thrown.Which.Message.Should().Contain("System.InvalidOperationException");
+        thrown.Which.InnerException.Should().BeSameAs(inner);
+    }
+
     // ── Real Key Vault-exported fixtures (PR #312 architect finding) ───────────────────────────
     //
     // Every test above builds its PKCS#12 payloads with .NET's own CertificateRequest/Export —

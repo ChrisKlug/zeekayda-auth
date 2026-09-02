@@ -261,11 +261,17 @@ internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
         }
         catch (CryptographicException ex)
         {
+            // The exception TYPE is named, never ex.Message. A cryptographic exception can echo the
+            // input it failed to parse, and ZeeKayDaConfigurationFailure.Message is a plain string on
+            // public API surface that SecretSanitizingLogger cannot redact. The root cause stays
+            // available to operators as InnerException.
             throw new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure(
                     "signing.azure_key_vault.invalid_certificate_public_key",
                     $"Key Vault certificate '{_certificateName}' version '{version}' in vault '{_vaultUri}' did " +
-                    $"not contain a valid public certificate (Cer): {ex.Message}"));
+                    $"not contain a valid public certificate (Cer): {ex.GetType().FullName}. See the inner " +
+                    "exception for the root cause."),
+                ex);
         }
     }
 
@@ -311,11 +317,17 @@ internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
         }
         catch (Exception ex) when (ex is CryptographicException or InvalidOperationException)
         {
+            // The exception TYPE is named, never ex.Message. A cryptographic exception can echo the
+            // input it failed to parse, and ZeeKayDaConfigurationFailure.Message is a plain string on
+            // public API surface that SecretSanitizingLogger cannot redact. The root cause stays
+            // available to operators as InnerException.
             throw new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure(
                     "signing.azure_key_vault.invalid_certificate_secret",
                     $"Key Vault certificate '{_certificateName}' version '{version}' in vault '{_vaultUri}' could " +
-                    $"not be parsed as a PKCS#12 certificate: {ex.Message}"));
+                    $"not be parsed as a PKCS#12 certificate: {ex.GetType().FullName}. See the inner exception " +
+                    "for the root cause."),
+                ex);
         }
     }
 
@@ -459,17 +471,29 @@ internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
                     "access policy, or the 'Key Vault Certificate User' built-in RBAC role) on this vault: " +
                     "every included version requires 'certificates/get', and the active signing version " +
                     "additionally requires 'secrets/get' to download its private key.")),
+            // The exception TYPE is named, never ex.Message. RequestFailedException.Message carries
+            // the response content and headers, and ZeeKayDaConfigurationFailure.Message is a plain
+            // string on public API surface that SecretSanitizingLogger cannot redact. The status and
+            // ErrorCode above are the safe, operator-actionable parts; the root cause stays available
+            // as InnerException.
             _ => new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure(
                     "signing.azure_key_vault.startup_failure",
                     $"An unexpected error occurred reading Key Vault certificate '{_certificateName}' in vault " +
                     $"'{_vaultUri}' (HTTP {ex.Status}" + (ex.ErrorCode is null ? "" : $", ErrorCode: {ex.ErrorCode}") +
-                    $"): {ex.Message}")),
+                    $"): {ex.GetType().FullName}. See the inner exception for the root cause."),
+                ex),
         };
 
+    // The exception TYPE is named, never ex.Message. An arbitrary underlying provider exception may
+    // carry credential material, and ZeeKayDaConfigurationFailure.Message is a plain string on public
+    // API surface that SecretSanitizingLogger cannot redact. The root cause stays available to
+    // operators as InnerException.
     private ZeeKayDaConfigurationException MapUnexpectedFailure(Exception ex) =>
-        new(new ZeeKayDaConfigurationFailure(
-            "signing.azure_key_vault.startup_failure",
-            $"An unexpected error occurred reading Key Vault certificate '{_certificateName}' in vault " +
-            $"'{_vaultUri}': {ex.Message}"));
+        new(
+            new ZeeKayDaConfigurationFailure(
+                "signing.azure_key_vault.startup_failure",
+                $"An unexpected error occurred reading Key Vault certificate '{_certificateName}' in vault " +
+                $"'{_vaultUri}': {ex.GetType().FullName}. See the inner exception for the root cause."),
+            ex);
 }
