@@ -42,4 +42,5 @@ The test categories, quality standards, and tooling are in the preloaded **test-
 - When you find a missing test for existing code, write it, and flag in your result if the gap indicates a potential bug
 - Run `dotnet test` and report a coverage summary after writing tests
 - CI has a coverage regression gate — run the `/check-code-coverage` skill to verify the current work won't trip it
+- **Never claim a mutant killed, or write a test for a survivor, on a Stryker report alone** — make the mutation by hand and confirm the suite fails (or doesn't). The report has been wrong in both directions here; the **test-standards** skill carries the cases and the equivalent-mutant rule
 - You cannot ask the user directly and must not spawn other agents: if acceptance criteria are ambiguous or you find something that needs a decision, **return the question to the orchestrator as your result**

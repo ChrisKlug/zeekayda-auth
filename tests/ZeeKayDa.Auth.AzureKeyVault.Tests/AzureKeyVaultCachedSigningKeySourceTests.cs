@@ -41,6 +41,48 @@ public sealed class AzureKeyVaultCachedSigningKeySourceTests
         return new AzureKeyVaultCachedSigningKeySource(options, reader, timeProvider);
     }
 
+    // ── Argument guards ──────────────────────────────────────────────────────────────────────────
+    //
+    // Every test below goes through BuildSource, which always supplies all three dependencies, so
+    // each guard could be deleted with the suite green. Without them a null is stored and surfaces
+    // later as a NullReferenceException from whichever call happens to touch it first. Each guard
+    // was verified by deleting it and confirming the matching test fails.
+
+    private static IOptions<AzureKeyVaultCachedSigningOptions> ValidOptions() =>
+        Options.Create(new AzureKeyVaultCachedSigningOptions
+        {
+            CertificateIdentifier = new KeyVaultCertificateIdentifier(CertificateIdentifierUri),
+            Credential = new FakeTokenCredential(),
+            Algorithm = SigningAlgorithm.RS256,
+        });
+
+    [Fact]
+    public void Constructor_rejects_null_options()
+    {
+        var act = () => new AzureKeyVaultCachedSigningKeySource(
+            null!, new FakeKeyVaultCertificateReader(), TimeProvider.System);
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("options");
+    }
+
+    [Fact]
+    public void Constructor_rejects_a_null_certificate_reader()
+    {
+        var act = () => new AzureKeyVaultCachedSigningKeySource(
+            ValidOptions(), null!, TimeProvider.System);
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("certificateReader");
+    }
+
+    [Fact]
+    public void Constructor_rejects_a_null_time_provider()
+    {
+        var act = () => new AzureKeyVaultCachedSigningKeySource(
+            ValidOptions(), new FakeKeyVaultCertificateReader(), null!);
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("timeProvider");
+    }
+
     private static string[] PublishedIds(SourceKeySet keySet) => [.. keySet.Keys.Select(k => k.Id.Value)];
 
     // ── Happy path ───────────────────────────────────────────────────────────────────────────────

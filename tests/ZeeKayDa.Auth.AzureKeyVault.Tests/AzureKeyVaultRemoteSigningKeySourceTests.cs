@@ -43,6 +43,57 @@ public sealed class AzureKeyVaultRemoteSigningKeySourceTests
             options, reader, signer ?? new FakeKeyVaultSigner(), timeProvider);
     }
 
+    // ── Argument guards ──────────────────────────────────────────────────────────────────────────
+    //
+    // Every test below goes through BuildSource, which always supplies all four dependencies, so
+    // each guard could be deleted with the suite green. Without them a null is stored and surfaces
+    // later as a NullReferenceException from whichever call happens to touch it first. Each guard
+    // was verified by deleting it and confirming the matching test fails.
+
+    private static IOptions<AzureKeyVaultRemoteSigningOptions> ValidOptions() =>
+        Options.Create(new AzureKeyVaultRemoteSigningOptions
+        {
+            KeyIdentifier = new KeyVaultKeyIdentifier(KeyIdentifierUri),
+            Credential = new FakeTokenCredential(),
+            Algorithm = SigningAlgorithm.RS256,
+        });
+
+    [Fact]
+    public void Constructor_rejects_null_options()
+    {
+        var act = () => new AzureKeyVaultRemoteSigningKeySource(
+            null!, new FakeKeyVaultKeyReader(), new FakeKeyVaultSigner(), TimeProvider.System);
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("options");
+    }
+
+    [Fact]
+    public void Constructor_rejects_a_null_key_reader()
+    {
+        var act = () => new AzureKeyVaultRemoteSigningKeySource(
+            ValidOptions(), null!, new FakeKeyVaultSigner(), TimeProvider.System);
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("keyReader");
+    }
+
+    [Fact]
+    public void Constructor_rejects_a_null_signer()
+    {
+        var act = () => new AzureKeyVaultRemoteSigningKeySource(
+            ValidOptions(), new FakeKeyVaultKeyReader(), null!, TimeProvider.System);
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("signer");
+    }
+
+    [Fact]
+    public void Constructor_rejects_a_null_time_provider()
+    {
+        var act = () => new AzureKeyVaultRemoteSigningKeySource(
+            ValidOptions(), new FakeKeyVaultKeyReader(), new FakeKeyVaultSigner(), null!);
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("timeProvider");
+    }
+
     /// <summary>
     /// A <see cref="FakeKeyVaultSigner.SignFunc"/> that signs with the real private key material
     /// <paramref name="reader"/> retained for whichever key version the URI targets, so a test can

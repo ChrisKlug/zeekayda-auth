@@ -495,6 +495,32 @@ average of the three percentages, which would be a different (and wrong) number.
 Reports land under `<test project>/StrykerOutput/` (gitignored) — open
 `reports/mutation-report.html` to inspect individual mutants.
 
+### The report is a lead, not evidence
+
+**Before writing a test for a survivor, and before claiming one is killed, make the mutation by hand
+and run the suite.** Edit the source as the report describes, confirm the tests fail (or don't),
+then restore. Stryker's own status has been wrong in both directions here, and both errors cost real
+work:
+
+- **False survivors.** The two `_ => false` arms in
+  `AzureKeyVaultCachedSigningKeySource.VerifyPrivateKeyMatchesPublishedPublicKey` were reported as
+  survived. Both are killed by existing tests, one of them an integration test. Anyone trusting the
+  report would have spent a day writing tests that already existed.
+- **False kills.** A guard test can pass whether or not the guard exists. Asserting
+  `ArgumentNullException` with a parameter name proves nothing if the SDK call downstream raises the
+  same type with the same name — which is how #612 shipped a `ThrowIfNull` test that passed with the
+  guard deleted, and reported the mutant as killed.
+
+**Distinguish an equivalent mutant from an untested one.** A mutation that cannot change observable
+behaviour is not a coverage gap and no test can close it: a `First()` after a non-empty guard, a `>`
+where both branches return the same value on a tie, a `TryAdd` the caller has already performed.
+Say so in the PR. Contorting a test to chase one produces a test that asserts nothing — and, being
+uncoverable, adds a branch that will itself show up as a survivor forever.
+
+**Treat the score as a direction, not a figure.** Identical code has produced a 5.5 pp swing between
+runs minutes apart on the same machine — 19 mutants flipping status out of 365. Quote per-file
+counts and headline scores as approximate, and don't record a local number as a baseline.
+
 Notes on the setup, so its quirks aren't rediscovered:
 
 - **`"test-runner": "mtp"` is required.** The default VSTest runner cannot drive this repo's

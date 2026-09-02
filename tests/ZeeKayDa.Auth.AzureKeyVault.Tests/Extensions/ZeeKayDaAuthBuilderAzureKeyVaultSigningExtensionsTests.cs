@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
 using ZeeKayDa.Auth.AzureKeyVault.Tests.Fakes;
 using ZeeKayDa.Auth.Tokens;
 
@@ -28,6 +29,70 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
         var act = () => builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, SigningAlgorithm.RS256, null!);
 
         act.Should().Throw<ArgumentNullException>().WithParameterName("credential");
+    }
+
+    [Fact]
+    public void AddAzureKeyVaultRemoteSigning_throws_ArgumentNullException_when_builder_is_null()
+    {
+        // An extension method is callable on a null receiver, so the guard is the only thing between
+        // a null builder and a NullReferenceException from builder.Services one line later.
+        ZeeKayDaAuthBuilder builder = null!;
+
+        var act = () => builder.AddAzureKeyVaultRemoteSigning(
+            KeyIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("builder");
+    }
+
+    [Fact]
+    public void AddAzureKeyVaultCachedSigning_throws_ArgumentNullException_when_builder_is_null()
+    {
+        ZeeKayDaAuthBuilder builder = null!;
+
+        var act = () => builder.AddAzureKeyVaultCachedSigning(
+            CertificateIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("builder");
+    }
+
+    // ── A host's own TimeProvider survives registration ──────────────────────────────────────────
+    //
+    // Deliberately NOT a test that "the extension registers a TimeProvider". It does contain such a
+    // line, but AddZeeKayDaSigningKeySource — called earlier in the same method — has already
+    // TryAdd-registered one, so deleting the extension's own line changes nothing observable. A test
+    // asserting TimeProvider resolves would pass either way and imply coverage it does not have.
+    // Those two statements are equivalent mutants; they are justified in the PR, not faked closed.
+    //
+    // What is worth pinning is the TryAdd semantics a host actually depends on.
+
+    [Fact]
+    public void AddAzureKeyVaultRemoteSigning_keeps_a_TimeProvider_the_host_already_registered()
+    {
+        // TryAddSingleton, not AddSingleton: a host driving a simulated clock must not have it
+        // silently replaced by the system clock.
+        var services = new ServiceCollection();
+        var hostProvider = new FakeTimeProvider();
+        services.AddSingleton<TimeProvider>(hostProvider);
+        var builder = new ZeeKayDaAuthBuilder(services);
+
+        builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
+
+        using var provider = services.BuildServiceProvider();
+        provider.GetRequiredService<TimeProvider>().Should().BeSameAs(hostProvider);
+    }
+
+    [Fact]
+    public void AddAzureKeyVaultCachedSigning_keeps_a_TimeProvider_the_host_already_registered()
+    {
+        var services = new ServiceCollection();
+        var hostProvider = new FakeTimeProvider();
+        services.AddSingleton<TimeProvider>(hostProvider);
+        var builder = new ZeeKayDaAuthBuilder(services);
+
+        builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
+
+        using var provider = services.BuildServiceProvider();
+        provider.GetRequiredService<TimeProvider>().Should().BeSameAs(hostProvider);
     }
 
     // ── Double-registration guard ─────────────────────────────────────────────────────────────────

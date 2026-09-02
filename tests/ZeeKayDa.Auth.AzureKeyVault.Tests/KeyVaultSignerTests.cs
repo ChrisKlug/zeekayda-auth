@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using Azure;
 using Azure.Security.KeyVault.Keys;
 using Azure.Security.KeyVault.Keys.Cryptography;
+using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.AzureKeyVault.Tests.Fakes;
 using ZeeKayDa.Auth.Tokens;
 
@@ -21,6 +22,81 @@ public sealed class KeyVaultSignerTests
 
     private static KeyVaultSigner BuildSigner(CryptographyClient client) =>
         new(_ => client);
+
+    // ── Argument guards ──────────────────────────────────────────────────────────────────────────
+    //
+    // Every test below builds the signer through the internal client-factory seam, so the public
+    // constructor's guards and SignAsync's three parameter guards were unexercised — each could be
+    // deleted with the suite green.
+    //
+    // Each was checked by deleting the guard it names and confirming the test fails, rather than by
+    // trusting a mutation report. A guard test can easily pass whether or not the guard exists: if
+    // the SDK call downstream raises the same exception type with the same parameter name, asserting
+    // type and name proves nothing. That has happened here before.
+
+    [Fact]
+    public void Constructor_rejects_null_options()
+    {
+        // Cast required: null is ambiguous between this constructor and the internal factory seam.
+        var act = () => new KeyVaultSigner((IOptions<AzureKeyVaultRemoteSigningOptions>)null!);
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("options");
+    }
+
+    [Fact]
+    public void Constructor_rejects_options_carrying_no_credential()
+    {
+        // The credential is captured by the client factory rather than used immediately, so without
+        // this guard construction succeeds and the null surfaces only on the first signing call —
+        // at runtime, on a request, instead of at startup.
+        var options = Options.Create(new AzureKeyVaultRemoteSigningOptions
+        {
+            Credential = null,
+            Algorithm = SigningAlgorithm.RS256,
+        });
+
+        var act = () => new KeyVaultSigner(options);
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("credential");
+    }
+
+    [Fact]
+    public async Task SignAsync_rejects_a_null_key_version_uri()
+    {
+        using var rsa = RSA.Create(2048);
+        var signer = BuildSigner(new CryptographyClient(new JsonWebKey(rsa, includePrivateParameters: true)));
+
+        var act = () => signer.SignAsync(
+            null!, "v1", SigningAlgorithm.RS256, SigningInput, TestContext.Current.CancellationToken).AsTask();
+
+        await act.Should().ThrowAsync<ArgumentNullException>().WithParameterName("keyVersionUri");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    public async Task SignAsync_rejects_a_missing_key_label(string? keyLabel)
+    {
+        using var rsa = RSA.Create(2048);
+        var signer = BuildSigner(new CryptographyClient(new JsonWebKey(rsa, includePrivateParameters: true)));
+
+        var act = () => signer.SignAsync(
+            KeyVersionUri, keyLabel!, SigningAlgorithm.RS256, SigningInput, TestContext.Current.CancellationToken).AsTask();
+
+        await act.Should().ThrowAsync<ArgumentException>().WithParameterName("keyLabel");
+    }
+
+    [Fact]
+    public async Task SignAsync_rejects_a_null_signing_input()
+    {
+        using var rsa = RSA.Create(2048);
+        var signer = BuildSigner(new CryptographyClient(new JsonWebKey(rsa, includePrivateParameters: true)));
+
+        var act = () => signer.SignAsync(
+            KeyVersionUri, "v1", SigningAlgorithm.RS256, null!, TestContext.Current.CancellationToken).AsTask();
+
+        await act.Should().ThrowAsync<ArgumentNullException>().WithParameterName("signingInput");
+    }
 
     [Theory]
     [InlineData(SigningAlgorithm.RS256, "SHA256", false)]

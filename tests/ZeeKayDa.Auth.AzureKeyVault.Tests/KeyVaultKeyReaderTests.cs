@@ -100,16 +100,23 @@ public sealed class KeyVaultKeyReaderTests
     {
         // Credential is nullable on the options type, so the reader cannot rely on the validator
         // having run — a host constructing options by hand reaches this guard.
+        //
+        // KeyIdentifier is left unset deliberately, and that is what gives this test teeth. With a
+        // valid identifier the assertion proves nothing: KeyClient's own constructor also raises
+        // ArgumentNullException for "credential", so deleting the reader's guard leaves the test
+        // green. Unset, the two orders are distinguishable — the reader's guard reports "credential"
+        // while the SDK, reached first on vaultUri, would report "vaultUri" and misdiagnose which
+        // option the operator actually left out.
         var options = Options.Create(new AzureKeyVaultRemoteSigningOptions
         {
-            KeyIdentifier = new KeyVaultKeyIdentifier(KeyIdentifierUri),
             Credential = null,
             Algorithm = SigningAlgorithm.RS256,
         });
 
         var act = () => new KeyVaultKeyReader(options);
 
-        act.Should().Throw<ArgumentNullException>().WithParameterName("credential");
+        act.Should().Throw<ArgumentNullException>().WithParameterName("credential",
+            "the reader's own guard must run before the SDK's, so the operator is told which option is missing");
     }
 
     [Fact]
