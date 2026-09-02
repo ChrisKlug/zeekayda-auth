@@ -99,9 +99,9 @@ internal sealed class InMemoryClientRepository : IClientRepository
 
         // A validator's failures are absorbed so every registration is still validated, but the root
         // cause behind one of them is on the exception and ZeeKayDaConfigurationFailure carries only
-        // strings. The root causes are collected here so a failure message that defers its detail to
-        // the inner exception still resolves to something once the failures are re-thrown together.
-        var causes = new List<Exception>();
+        // strings. The absorbed exceptions are kept whole so their root causes survive the re-throw
+        // below, and a failure message that defers its detail to the inner exception still resolves.
+        var absorbed = new List<ZeeKayDaConfigurationException>();
 
         // Validate each registration, accumulating failures
         foreach (var reg in allRegistrations)
@@ -113,19 +113,12 @@ internal sealed class InMemoryClientRepository : IClientRepository
             catch (ZeeKayDaConfigurationException ex)
             {
                 allFailures.AddRange(ex.AggregatedFailures);
-
-                if (ex.InnerException is { } cause)
-                    causes.Add(cause);
+                absorbed.Add(ex);
             }
         }
 
         if (allFailures.Count > 0)
-        {
-            throw causes.Count == 0
-                ? new ZeeKayDaConfigurationException([.. allFailures])
-                : new ZeeKayDaConfigurationException(
-                    [.. allFailures], causes.Count == 1 ? causes[0] : new AggregateException(causes));
-        }
+            throw Aggregate(allFailures, absorbed);
 
         _clients = allRegistrations.ToDictionary(r => r.ClientId, StringComparer.Ordinal);
 
@@ -140,6 +133,23 @@ internal sealed class InMemoryClientRepository : IClientRepository
                 "but no public clients (IsPublic=true) are registered. Consider removing " +
                 "TokenEndpointAuthMethods.None from AuthMethodsSupported if no public clients are expected.");
         }
+    }
+
+    // Re-throws every accumulated failure as one exception, carrying whatever root causes the
+    // absorbed validator exceptions supplied. An absorbed exception with no InnerException
+    // contributes nothing, so a validator reporting a plain configuration failure is unchanged.
+    private static ZeeKayDaConfigurationException Aggregate(
+        IReadOnlyList<ZeeKayDaConfigurationFailure> failures,
+        IEnumerable<ZeeKayDaConfigurationException> absorbed)
+    {
+        var causes = absorbed.Select(ex => ex.InnerException).OfType<Exception>().ToList();
+
+        return causes.Count switch
+        {
+            0 => new ZeeKayDaConfigurationException([.. failures]),
+            1 => new ZeeKayDaConfigurationException(failures, causes[0]),
+            _ => new ZeeKayDaConfigurationException(failures, new AggregateException(causes))
+        };
     }
 
     /// <inheritdoc/>
