@@ -147,6 +147,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- **A failure that defers its detail to the inner exception now has one to defer to** (#618)
+
+  Six Key Vault reader failures — and every future failure following the same convention — end with
+  "See the inner exception for the root cause" and pass the original as `InnerException`. On the
+  startup path that pointer aimed at nothing: `StartupVerificationHostedService` absorbed a check's
+  `ZeeKayDaConfigurationException` by copying only each failure's `Code` and `Message` into the
+  phase context, and the phase aggregate was re-thrown without an `InnerException`. The root cause
+  was dropped rather than leaked — nothing was disclosed — but an operator following the pointer
+  found nothing there. The absorbed exception's own `InnerException` now travels the same route an
+  unexpected throw's root cause already did: the phase's unexpected list, then the aggregate's
+  `InnerException`, or one entry of its `AggregateException` when several checks contributed one.
+
+  `InMemoryClientRepository` dropped the same thing for the same reason: it absorbs each
+  registration validator's `AggregatedFailures` so every registration is still validated, then
+  re-threw them as a fresh exception with no inner. A caller-supplied validator's root cause now
+  survives that re-throw on the same terms.
+
+  No public API change, and no change for a configuration exception that carried no root cause of
+  its own.
+
 - **The Azure Key Vault readers no longer copy a caught exception's message into the failure they report** (#614)
 
   `KeyVaultCertificateReader` and `KeyVaultKeyReader` built six operator-facing

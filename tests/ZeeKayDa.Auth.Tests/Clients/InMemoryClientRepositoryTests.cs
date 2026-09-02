@@ -50,6 +50,18 @@ public sealed class InMemoryClientRepositoryTests
         }
     }
 
+    // A caller-supplied validator is an extension point, so it can throw a configuration exception
+    // that carries a root cause of its own.
+    private sealed class DelegatingValidator(Func<IClientRegistration, Exception?> onValidate)
+        : IClientRegistrationValidator
+    {
+        public void Validate(IClientRegistration client)
+        {
+            if (onValidate(client) is { } ex)
+                throw ex;
+        }
+    }
+
     private static CompositeClientSecretHasher MakeHasher()
         => new CompositeClientSecretHasher(
             [new FakeHasher()],
@@ -83,6 +95,18 @@ public sealed class InMemoryClientRepositoryTests
             MakeValidator(so),
             Options.Create(so),
             logger ?? NullSanitizingLogger<InMemoryClientRepository>.Instance);
+    }
+
+    private static InMemoryClientRepository MakeRepositoryWithValidator(
+        InMemoryClientRegistrationOptions opts, IClientRegistrationValidator validator)
+    {
+        var so = DefaultServerOptions();
+        return new InMemoryClientRepository(
+            Options.Create(opts),
+            MakeHasher(),
+            validator,
+            Options.Create(so),
+            NullSanitizingLogger<InMemoryClientRepository>.Instance);
     }
 
     private static ClientRegistration ValidPublicClient(string clientId = "test-client") =>
@@ -305,6 +329,61 @@ public sealed class InMemoryClientRepositoryTests
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
             .Which.AggregatedFailures.Count.Should().BeGreaterThanOrEqualTo(2);
+    }
+
+    // ── A validator's root cause survives the re-throw (#618) ─────────────────────────────────────
+
+    [Fact]
+    public void Constructor_preserves_the_root_cause_behind_a_validators_configuration_exception()
+    {
+        var rootCause = new UnauthorizedAccessException("denied");
+        var opts = new InMemoryClientRegistrationOptions();
+        opts.PreBuilt.Add(ValidPublicClient("c1"));
+        var validator = new DelegatingValidator(_ => new ZeeKayDaConfigurationException(
+            new ZeeKayDaConfigurationFailure("client.validator_failed", "See the inner exception."),
+            rootCause));
+
+        var act = () => MakeRepositoryWithValidator(opts, validator);
+
+        var ex = act.Should().Throw<ZeeKayDaConfigurationException>().Which;
+        ex.AggregatedFailures.Should().ContainSingle().Which.Code.Should().Be("client.validator_failed");
+        ex.InnerException.Should().BeSameAs(rootCause);
+    }
+
+    [Fact]
+    public void Constructor_leaves_the_aggregate_without_an_inner_exception_when_the_validator_supplied_none()
+    {
+        var opts = new InMemoryClientRegistrationOptions();
+        opts.PreBuilt.Add(ValidPublicClient("c1"));
+        var validator = new DelegatingValidator(_ => new ZeeKayDaConfigurationException(
+            new ZeeKayDaConfigurationFailure("client.validator_failed", "Simulated.")));
+
+        var act = () => MakeRepositoryWithValidator(opts, validator);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.InnerException.Should().BeNull(
+                "a configuration exception with no root cause behind it contributes nothing to carry");
+    }
+
+    [Fact]
+    public void Constructor_wraps_several_validator_root_causes_in_one_AggregateException()
+    {
+        var firstCause = new UnauthorizedAccessException("first");
+        var secondCause = new NotSupportedException("second");
+        var opts = new InMemoryClientRegistrationOptions();
+        opts.PreBuilt.Add(ValidPublicClient("c1"));
+        opts.PreBuilt.Add(ValidPublicClient("c2"));
+        var validator = new DelegatingValidator(client => new ZeeKayDaConfigurationException(
+            new ZeeKayDaConfigurationFailure("client.validator_failed", $"Failed for {client.ClientId}."),
+            client.ClientId == "c1" ? firstCause : secondCause));
+
+        var act = () => MakeRepositoryWithValidator(opts, validator);
+
+        var ex = act.Should().Throw<ZeeKayDaConfigurationException>().Which;
+        ex.AggregatedFailures.Should().HaveCount(2);
+        var causes = ex.InnerException.Should().BeOfType<AggregateException>().Which.InnerExceptions;
+        causes.Should().HaveCount(2);
+        causes.Should().Contain(firstCause).And.Contain(secondCause);
     }
 
     // ── Empty plaintext secret is aggregated, not thrown bare ─────────────────────────────────────

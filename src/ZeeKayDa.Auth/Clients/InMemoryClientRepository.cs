@@ -97,6 +97,12 @@ internal sealed class InMemoryClientRepository : IClientRepository
                 "Each client must have a unique ClientId (ordinal comparison)."));
         }
 
+        // A validator's failures are absorbed so every registration is still validated, but the root
+        // cause behind one of them is on the exception and ZeeKayDaConfigurationFailure carries only
+        // strings. The root causes are collected here so a failure message that defers its detail to
+        // the inner exception still resolves to something once the failures are re-thrown together.
+        var causes = new List<Exception>();
+
         // Validate each registration, accumulating failures
         foreach (var reg in allRegistrations)
         {
@@ -107,11 +113,19 @@ internal sealed class InMemoryClientRepository : IClientRepository
             catch (ZeeKayDaConfigurationException ex)
             {
                 allFailures.AddRange(ex.AggregatedFailures);
+
+                if (ex.InnerException is { } cause)
+                    causes.Add(cause);
             }
         }
 
         if (allFailures.Count > 0)
-            throw new ZeeKayDaConfigurationException([.. allFailures]);
+        {
+            throw causes.Count == 0
+                ? new ZeeKayDaConfigurationException([.. allFailures])
+                : new ZeeKayDaConfigurationException(
+                    [.. allFailures], causes.Count == 1 ? causes[0] : new AggregateException(causes));
+        }
 
         _clients = allRegistrations.ToDictionary(r => r.ClientId, StringComparer.Ordinal);
 
