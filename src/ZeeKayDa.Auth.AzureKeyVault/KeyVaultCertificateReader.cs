@@ -242,15 +242,39 @@ internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
     {
         using var certificate = LoadCertificate(cerBytes, version);
 
-        var rsaPublicKey = certificate.GetRSAPublicKey();
-        if (rsaPublicKey is not null)
-            return (rsaPublicKey, SigningKeyType.Rsa);
+        try
+        {
+            var rsaPublicKey = certificate.GetRSAPublicKey();
+            if (rsaPublicKey is not null)
+                return (rsaPublicKey, SigningKeyType.Rsa);
 
-        var ecdsaPublicKey = certificate.GetECDsaPublicKey();
-        if (ecdsaPublicKey is not null)
-            return (ecdsaPublicKey, SigningKeyType.Ec);
+            var ecdsaPublicKey = certificate.GetECDsaPublicKey();
+            if (ecdsaPublicKey is not null)
+                return (ecdsaPublicKey, SigningKeyType.Ec);
 
-        throw UnsupportedKeyTypeException(version);
+            throw UnsupportedKeyTypeException(version);
+        }
+        catch (ZeeKayDaConfigurationException)
+        {
+            // Re-throw before re-classifying, as GetKeyMaterialAsync does: UnsupportedKeyTypeException
+            // above is a well-formed failure and must keep its own code. Proven by
+            // ExtractPublicKey_rejects_a_certificate_whose_public_key_is_neither_rsa_nor_ec, which
+            // fails without this arm.
+            throw;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // A public-key accessor on a certificate that loaded can still throw — an unreadable or
+            // unsupported key algorithm surfaces as a CryptographicException. Without this the raw
+            // BCL exception escapes the reader instead of reaching the operator as a stable code.
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "signing.azure_key_vault.invalid_certificate_public_key",
+                    $"Key Vault certificate '{_certificateName}' version '{version}' in vault '{_vaultUri}' " +
+                    $"carries a public key that could not be read: {ex.GetType().FullName}. See the inner " +
+                    "exception for the root cause."),
+                ex);
+        }
     }
 
     private X509Certificate2 LoadCertificate(byte[] cerBytes, string version)
