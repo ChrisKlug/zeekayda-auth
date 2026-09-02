@@ -910,8 +910,9 @@ public sealed class KeyVaultCertificateReaderTests
     [InlineData(true)]
     public async Task GetPrivateKeyMaterialAsync_disposes_the_rsa_handle_and_rethrows_when_the_rsa_import_fails_unexpectedly(bool shrouded)
     {
-        // Only a CryptographicException means "not an RSA key, try EC". Anything else is a fault
-        // in the platform's crypto stack, which must surface as itself — after the handle is gone.
+        // Only a CryptographicException means "not an RSA key, try EC". Anything else escapes the
+        // import arm as itself, after the handle is gone; whether the caller's PKCS#12 parser catch
+        // then normalises it is that catch's business, and is covered separately below.
         var failure = new PlatformNotSupportedException("RSA PKCS#8 import is unavailable on this platform");
         var rsa = new ThrowingRsa(failure);
         var ecdsaCreated = false;
@@ -946,6 +947,49 @@ public sealed class KeyVaultCertificateReaderTests
 
         (await act.Should().ThrowAsync<PlatformNotSupportedException>())
             .Which.Should().BeSameAs(failure, "the original exception is rethrown, not wrapped or replaced");
+        rsa.Disposed.Should().BeTrue("an RSA handle that failed to import must not leak");
+        ecdsa.Disposed.Should().BeTrue("an EC handle that failed to import must not leak");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GetPrivateKeyMaterialAsync_disposes_the_rsa_handle_before_the_parser_catch_normalises_an_invalid_operation(bool shrouded)
+    {
+        // InvalidOperationException is the one non-cryptographic failure the outer PKCS#12 catch
+        // does normalise, so this proves the import arm still disposes on the way to that mapping.
+        var rsa = new ThrowingRsa(new InvalidOperationException("import state fault"));
+        var ecdsaCreated = false;
+        var reader = BuildReader(
+            CreateKeyBagPfx(shrouded),
+            () => rsa,
+            () =>
+            {
+                ecdsaCreated = true;
+                return new ThrowingEcdsa(new CryptographicException("must not be reached"));
+            });
+
+        var act = () => reader.GetPrivateKeyMaterialAsync("v1", TestContext.Current.CancellationToken).AsTask();
+
+        await act.Should().ThrowAsync<ZeeKayDaConfigurationException>()
+            .WithMessage("*invalid_certificate_secret*");
+        rsa.Disposed.Should().BeTrue("an RSA handle that failed to import must not leak");
+        ecdsaCreated.Should().BeFalse("an unexpected RSA failure is not a signal to try EC");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GetPrivateKeyMaterialAsync_disposes_the_ec_handle_before_the_parser_catch_normalises_an_invalid_operation(bool shrouded)
+    {
+        var rsa = new ThrowingRsa(new CryptographicException("not an RSA key"));
+        var ecdsa = new ThrowingEcdsa(new InvalidOperationException("import state fault"));
+        var reader = BuildReader(CreateKeyBagPfx(shrouded), () => rsa, () => ecdsa);
+
+        var act = () => reader.GetPrivateKeyMaterialAsync("v1", TestContext.Current.CancellationToken).AsTask();
+
+        await act.Should().ThrowAsync<ZeeKayDaConfigurationException>()
+            .WithMessage("*invalid_certificate_secret*");
         rsa.Disposed.Should().BeTrue("an RSA handle that failed to import must not leak");
         ecdsa.Disposed.Should().BeTrue("an EC handle that failed to import must not leak");
     }
