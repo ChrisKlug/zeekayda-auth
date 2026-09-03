@@ -559,8 +559,14 @@ public sealed class LoginInteractionTests : IDisposable
         // cause, which is the same for both.
         var thrown = (await post.Should().ThrowAsync<Exception>()).Which;
 
-        Causes(thrown).Should().Contain(ex => ex.Message.Contains("response has already started"),
-            "committing the response is what stops the host's own result from landing");
+        // Narrowed to the type as well as the wording: matching the message alone would accept any
+        // failure that happened to carry the phrase, and matching the type alone would accept any
+        // InvalidOperationException from anywhere in the request — including the interaction
+        // refusals this class exercises next door. If a framework upgrade rewords this, the test
+        // fails loudly and the substring is what needs editing.
+        Causes(thrown).OfType<InvalidOperationException>()
+            .Should().Contain(ex => ex.Message.Contains("already started", StringComparison.Ordinal),
+                "committing the response is what stops the host's own result from landing");
     }
 
     /// <summary>An exception and everything it wraps, innermost included.</summary>
