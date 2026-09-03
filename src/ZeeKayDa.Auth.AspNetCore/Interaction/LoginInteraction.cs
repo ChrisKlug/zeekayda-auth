@@ -90,12 +90,12 @@ internal sealed class LoginInteraction : ILoginInteraction
             // were added to it. The session is established either way — what cannot continue is
             // this authorization request, so it fails where the oversize did.
             _flow.Clear(context);
-            await _localError
-                .Render(
+            await WriteTerminalAsync(
+                context,
+                _localError.Render(
                     context,
                     AuthorizeRequestErrors.InvalidRequest,
-                    "The authorization request is too large to process.")
-                .ExecuteAsync(context)
+                    "The authorization request is too large to process."))
                 .ConfigureAwait(false);
 
             return;
@@ -103,7 +103,7 @@ internal sealed class LoginInteraction : ILoginInteraction
 
         // Consent (#86) and code issuance (#87) replace this. The session and the authenticated
         // context are already written, so what those slices add is the response, not the state.
-        await PreAlphaNotImplementedResult.Result.ExecuteAsync(context).ConfigureAwait(false);
+        await WriteTerminalAsync(context, PreAlphaNotImplementedResult.Result).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -131,10 +131,32 @@ internal sealed class LoginInteraction : ILoginInteraction
         // out of the encrypted context — never anything this request supplied. No session is
         // promoted and none is read: a user cancelling here is not signed in, and a user who was
         // already signed in elsewhere stays that way.
-        await _clientError
-            .To(requestContext.RedirectUri, AuthorizeRequestErrors.AccessDenied, CancelledAtSignIn, requestContext.State)
-            .ExecuteAsync(context)
+        await WriteTerminalAsync(
+            context,
+            _clientError.To(
+                requestContext.RedirectUri,
+                AuthorizeRequestErrors.AccessDenied,
+                CancelledAtSignIn,
+                requestContext.State))
             .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Writes a terminal response and commits it, so that this really is the last word on the
+    /// request.
+    /// </summary>
+    /// <remarks>
+    /// Executing the result is not enough. A redirect sets the status and <c>Location</c> without
+    /// flushing, leaving <see cref="HttpResponse.HasStarted"/> false, so a page that returns a
+    /// result of its own after calling a terminal method silently replaces both — which for a deny
+    /// is the open redirect the interaction identifier exists to prevent, written in host code
+    /// where nothing validates it. Starting the response commits the headers, turning that mistake
+    /// into an exception the first time the page is exercised.
+    /// </remarks>
+    private static async Task WriteTerminalAsync(HttpContext context, IResult result)
+    {
+        await result.ExecuteAsync(context).ConfigureAwait(false);
+        await context.Response.StartAsync().ConfigureAwait(false);
     }
 
     /// <summary>

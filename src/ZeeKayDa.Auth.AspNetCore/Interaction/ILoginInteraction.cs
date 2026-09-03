@@ -36,8 +36,9 @@ public interface ILoginInteraction
     /// </param>
     /// <remarks>
     /// <para>
-    /// <strong>Terminal.</strong> This writes the response, so it must be the last thing the page
-    /// does. Returning a result of your own after calling it will not reach the browser.
+    /// <strong>Terminal.</strong> This writes and commits the response, so it must be the last
+    /// thing the page does. Returning a result of your own after calling it does not reach the
+    /// browser — it throws, because the response has already started.
     /// </para>
     /// <para>
     /// Passing none omits the <c>amr</c> claim rather than assuming a password. The claim is
@@ -63,8 +64,9 @@ public interface ILoginInteraction
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <strong>Terminal.</strong> This writes the response, so it must be the last thing the page
-    /// does. Returning a result of your own after calling it will not reach the browser.
+    /// <strong>Terminal.</strong> This writes and commits the response, so it must be the last
+    /// thing the page does. Returning a result of your own after calling it does not reach the
+    /// browser — it throws, because the response has already started.
     /// </para>
     /// <para>
     /// No SSO session is established, and an existing one is left alone — cancelling one client's

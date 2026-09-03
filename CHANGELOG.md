@@ -8,6 +8,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **A terminal interaction method now commits the response, so a host page cannot replace it** (#625)
+
+  `SignInAsync` and `DenyAsync` are documented as terminal — the last thing the page does. That was
+  a rule, not an enforcement: executing a redirect result sets the status and `Location` without
+  flushing, so a page written as `await login.DenyAsync(); return Results.Redirect(somewhereElse);`
+  silently sent the user to `somewhereElse` instead. For a cancel that is the open-redirect surface
+  the interaction identifier exists to remove, reintroduced in host code where the framework cannot
+  validate it.
+
+  Both methods now start the response after writing it. A page written that way throws the first
+  time it is exercised rather than working and being unsafe, and the XML docs say so. In practice
+  only `DenyAsync` was reachable: `SignInAsync` currently ends in a `501` whose body commits the
+  response as a side effect, which is exactly the kind of accident that stops holding when consent
+  and code issuance (#86, #87) replace that `501` with a redirect.
+
 - **The host login page can cancel the authorization request: `ILoginInteraction.DenyAsync`** (#606)
 
   A user who reaches the login page and decides not to sign in now has a protocol-correct way out.

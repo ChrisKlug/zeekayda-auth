@@ -32,6 +32,16 @@ request they never started. The lingering variant dies here; the immediate one i
 as it is industry-wide. Addressing by identifier also keeps the backing swappable, so no store
 interface is invented for a single implementation.
 
+**Terminal means the response is committed, not merely written.** Executing a redirect result sets
+the status and `Location` without flushing, so a page that calls a terminal method and then returns
+a result of its own replaces both — silently, and for a deny that is the open redirect the
+interaction identifier exists to prevent, relocated into host code where nothing validates it. Every
+terminal exit therefore starts the response, which turns that page into an exception the first time
+it runs. `CompleteAsync` does not do this and `HasStarted` stays false; only `StartAsync` does. The
+protection must be explicit rather than inherited from whatever the result happens to write: a
+response with a body commits itself, so a terminal path that ends in one is safe by accident and
+stops being safe the moment it becomes a redirect.
+
 **A denial carries a fixed `error_description` naming the stage; the machine-readable
 discriminator is the opt-in `zkd_error` sub-code, not the prose.** `access_denied` is the only code
 RFC 6749 §4.1.2.1 offers for a cancelled sign-in, a refused consent and a policy refusal alike, so
