@@ -56,4 +56,38 @@ public interface ILoginInteraction
     /// An entry in <paramref name="authenticationMethods"/> is null or blank.
     /// </exception>
     Task SignInAsync(ClaimsPrincipal principal, params string[] authenticationMethods);
+
+    /// <summary>
+    /// Ends the authorization request without signing anyone in, answering the client with
+    /// <c>access_denied</c> at its registered redirect URI. This is the Cancel button.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <strong>Terminal.</strong> This writes the response, so it must be the last thing the page
+    /// does. Returning a result of your own after calling it will not reach the browser.
+    /// </para>
+    /// <para>
+    /// No SSO session is established, and an existing one is left alone — cancelling one client's
+    /// request does not sign the user out of another's. The interaction is discarded, so the
+    /// cancelled request cannot afterwards be resumed.
+    /// </para>
+    /// <para>
+    /// The client receives an <c>error_description</c> stating that the user cancelled at the
+    /// sign-in page, so it can tell this apart from the other refusals that also answer
+    /// <c>access_denied</c>.
+    /// </para>
+    /// <para>
+    /// Reach this only from a state-changing request — a form post, not a link. A cancel wired to
+    /// a <c>GET</c> anchor is triggerable cross-site by anyone who learns the interaction
+    /// identifier, and ends the user's in-flight sign-in.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="ZeeKayDaInteractionException">
+    /// There is no interaction to end: the request carries no <c>zkd_i</c>, the interaction context
+    /// cookie is absent or expired, or the two do not name the same interaction.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// There is no active HTTP request — the service was resolved outside one.
+    /// </exception>
+    Task DenyAsync();
 }

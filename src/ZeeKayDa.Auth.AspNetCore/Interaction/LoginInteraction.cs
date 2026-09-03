@@ -19,22 +19,34 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// </remarks>
 internal sealed class LoginInteraction : ILoginInteraction
 {
+    /// <summary>
+    /// What a cancelled request tells the client. Names the stage as well as the outcome, so this
+    /// reads differently from a consent denial or a policy refusal — all three are
+    /// <c>access_denied</c> on the wire. Generic by construction: it echoes no value, and a client
+    /// needing a stable discriminator gets the opt-in <c>zkd_error</c> sub-code, not this prose.
+    /// </summary>
+    private const string CancelledAtSignIn = "The user cancelled the request at the sign-in page.";
+
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly AuthorizationFlow _flow;
     private readonly LocalErrorResponse _localError;
+    private readonly ClientErrorRedirect _clientError;
 
     public LoginInteraction(
         IHttpContextAccessor httpContextAccessor,
         AuthorizationFlow flow,
-        LocalErrorResponse localError)
+        LocalErrorResponse localError,
+        ClientErrorRedirect clientError)
     {
         ArgumentNullException.ThrowIfNull(httpContextAccessor);
         ArgumentNullException.ThrowIfNull(flow);
         ArgumentNullException.ThrowIfNull(localError);
+        ArgumentNullException.ThrowIfNull(clientError);
 
         _httpContextAccessor = httpContextAccessor;
         _flow = flow;
         _localError = localError;
+        _clientError = clientError;
     }
 
     /// <inheritdoc/>
@@ -92,6 +104,37 @@ internal sealed class LoginInteraction : ILoginInteraction
         // Consent (#86) and code issuance (#87) replace this. The session and the authenticated
         // context are already written, so what those slices add is the response, not the state.
         await PreAlphaNotImplementedResult.Result.ExecuteAsync(context).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Ends the interaction the request is addressed to, telling the client the user did not
+    /// authorize it. Resolution and the <c>zkd_i</c> binding are exactly as they are for a
+    /// sign-in: a deny that could be aimed at another tab's request is a cross-tab denial of
+    /// service.
+    /// </summary>
+    public async Task DenyAsync()
+    {
+        var context = _httpContextAccessor.HttpContext
+            ?? throw new InvalidOperationException(
+                "ILoginInteraction requires an active HTTP request. Resolve it from request services " +
+                "inside the login page, not from a background service.");
+
+        var requestContext = await ResolveInteractionAsync(context).ConfigureAwait(false);
+
+        context.Response.Headers.CacheControl = "no-store";
+
+        // Discarded before the response is written, so a cancelled request cannot be resumed by a
+        // later sign-in picking the context back up.
+        _flow.Clear(context);
+
+        // The destination is the redirect URI phase 1 matched against the registration, read back
+        // out of the encrypted context — never anything this request supplied. No session is
+        // promoted and none is read: a user cancelling here is not signed in, and a user who was
+        // already signed in elsewhere stays that way.
+        await _clientError
+            .To(requestContext.RedirectUri, AuthorizeRequestErrors.AccessDenied, CancelledAtSignIn, requestContext.State)
+            .ExecuteAsync(context)
+            .ConfigureAwait(false);
     }
 
     /// <summary>

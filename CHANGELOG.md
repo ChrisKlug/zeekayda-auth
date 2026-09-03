@@ -8,6 +8,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **The host login page can cancel the authorization request: `ILoginInteraction.DenyAsync`** (#606)
+
+  A user who reaches the login page and decides not to sign in now has a protocol-correct way out.
+  `DenyAsync()` is terminal, like `SignInAsync`: it ends the request with `error=access_denied` at
+  the client's *registered* redirect URI, echoing `state` and carrying `iss`. It establishes no SSO
+  session and leaves an existing one alone — cancelling one client's request does not sign the user
+  out of another's — and it discards the interaction, so a cancelled request cannot afterwards be
+  resumed by a sign-in.
+
+  Without this the gap was more than a missing convenience. A host wanting a working Cancel button
+  would have built one, and the obvious way to build one is to stash the client's return URL and
+  redirect to it — reintroducing in host code exactly the open-redirect surface the `zkd_i` design
+  exists to avoid. The destination here comes from the decrypted interaction context and the
+  matched registration, never from request input, so an expired context recovers no destination and
+  the call throws `ZeeKayDaInteractionException` rather than redirecting anywhere.
+
+  It is bound by `zkd_i` on `SignInAsync`'s exact terms — missing, mismatched or expired throws —
+  because a deny that could be aimed at another tab's request is a cross-tab denial of service.
+
+  **The response names the cancellation.** `access_denied` is the one code the spec offers for a
+  cancelled sign-in, a refused consent and a policy refusal alike, so the code alone does not tell
+  a client developer what happened. `DenyAsync` fills the optional `error_description` with
+  framework-owned text naming a cancellation at the sign-in page. That text is a courtesy to
+  someone reading their error page, not a contract to branch on: it echoes no value. A stable
+  machine-readable discriminator would be the opt-in `zkd_error` sub-code, which today governs
+  token-endpoint responses only — an authorization denial carries no such sub-code yet.
+
 - **An unauthenticated authorization request is handed off to the host's login page, and comes back a session** (#85, local leg)
 
   `/connect/authorize` no longer stops at `501` for a request that needs a user. With no session it

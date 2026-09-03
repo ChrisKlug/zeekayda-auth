@@ -1,8 +1,8 @@
 # User interaction and the SSO session
 
-**Partly built.** The local login handoff, `ILoginInteraction.SignInAsync`, the SSO session and the
-interaction-context cookie exist; external providers, provider selection, consent and home realm
-discovery do not. The authorize endpoint's protocol rules are in
+**Partly built.** The local login handoff, `ILoginInteraction.SignInAsync` and `DenyAsync`, the SSO
+session and the interaction-context cookie exist; external providers, provider selection, consent
+and home realm discovery do not. The authorize endpoint's protocol rules are in
 `authorization-and-interaction.md`; interface shapes for the unbuilt part are in
 `docs/design/authorization-endpoint-interaction.md`.
 
@@ -31,6 +31,27 @@ PKCE, `state` and `nonce` protect the client against a forged response, not the 
 request they never started. The lingering variant dies here; the immediate one is consent's answer,
 as it is industry-wide. Addressing by identifier also keeps the backing swappable, so no store
 interface is invented for a single implementation.
+
+**A denial carries a fixed `error_description` naming the stage; the machine-readable
+discriminator is the opt-in `zkd_error` sub-code, not the prose.** `access_denied` is the only code
+RFC 6749 §4.1.2.1 offers for a cancelled sign-in, a refused consent and a policy refusal alike, so
+`DenyAsync()` populates the optional description with framework-owned text naming a cancellation at
+sign-in. That text is a courtesy to a developer reading their error page, never a contract. A
+client that needs to branch in code will get the `zkd_error` sub-code decision instead — opt-in per
+client precisely because which interaction step occurred is a distinction not every client is
+entitled to — and that is **not built for authorization responses**: `EnableZkdErrorCodes` governs
+token-endpoint responses today, so an authorization denial carries no machine-readable
+discriminator at all. Whoever adds one adds it there, not by making the description host-writable.
+Naming the stage in prose while gating it in the sub-code is a tension held open deliberately, not
+an oversight: a cancelled sign-in that reads as an unqualified refusal is the thing a client most
+needs to tell apart, and the wording is the maintainer's to revisit. The description is
+framework-owned for the same reason the sub-code is gated — host-supplied text on this channel is a
+disclosure primitive, since it reaches the client, browser history and proxy logs, and the phase-2
+rule in `docs/design/authorization-endpoint-interaction.md` that a description stays generic and
+echoes no value would have no enforcement
+left. The denial never becomes a redirect primitive either: the destination is the registered URI
+from the decrypted interaction context, so an expired context has no destination and the request
+fails where it stands.
 
 **The SSO session identifier is framework-minted, unguessable and stable for the life of the
 session — and is not the cookie value, which is regenerated on every promotion so that

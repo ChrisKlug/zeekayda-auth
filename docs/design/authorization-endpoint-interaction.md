@@ -283,6 +283,12 @@ public interface ILoginInteraction   // scoped, as are all the page services
     // name different interactions (see #593 for the future [Authorize]-driven mode).
     Task SignInAsync(ClaimsPrincipal principal, params string[] authenticationMethods);
 
+    // The Cancel button. Ends the request with error=access_denied at the registered redirect
+    // URI, establishing no session and leaving an existing one alone. Terminal, zkd_i-bound on
+    // SignInAsync's exact terms. Carries a fixed framework error_description naming a cancellation
+    // at sign-in; a client needing to branch gets the opt-in zkd_error sub-code, not the prose.
+    Task DenyAsync();
+
     // Starts the external round trip for one configured provider. Terminal, zkd_i-bound on
     // SignInAsync's terms. The id is validated against the configured provider set before any
     // challenge — it selects from a known list, it does not name a target — and an unknown id

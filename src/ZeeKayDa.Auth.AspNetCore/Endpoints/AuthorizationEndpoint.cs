@@ -26,15 +26,18 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
     private readonly IOptions<AuthorizationServerOptions> _options;
     private readonly AuthorizationFlow _flow;
     private readonly LocalErrorResponse _localError;
+    private readonly ClientErrorRedirect _clientError;
 
     public AuthorizationEndpoint(
         IOptions<AuthorizationServerOptions> options,
         AuthorizationFlow flow,
-        LocalErrorResponse localError)
+        LocalErrorResponse localError,
+        ClientErrorRedirect clientError)
     {
         _options = options;
         _flow = flow;
         _localError = localError;
+        _clientError = clientError;
     }
 
     /// <inheritdoc/>
@@ -202,23 +205,8 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
             State = request.State,
         });
 
-    private IResult RedirectToClient(AuthorizeRequestValidationResult.RedirectError error)
-    {
-        var query = new Dictionary<string, string?>(StringComparer.Ordinal)
-        {
-            ["error"] = error.Error,
-            ["error_description"] = error.Description,
-        };
-
-        if (error.State is not null)
-            query["state"] = error.State;
-
-        // iss on every authorization response, unconditionally — mix-up attack mitigation
-        // (RFC 9207, RFC 9700 §4.4).
-        query["iss"] = _options.Value.Issuer!;
-
-        return Results.Redirect(QueryHelpers.AddQueryString(error.RedirectUri, query));
-    }
+    private IResult RedirectToClient(AuthorizeRequestValidationResult.RedirectError error) =>
+        _clientError.To(error.RedirectUri, error.Error, error.Description, error.State);
 
     private IResult RenderLocalError(HttpContext context, string error, string description) =>
         _localError.Render(context, error, description);
