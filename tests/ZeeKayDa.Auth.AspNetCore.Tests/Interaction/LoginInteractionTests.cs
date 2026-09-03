@@ -29,6 +29,9 @@ public sealed class LoginInteractionTests : IDisposable
     private const string RegisteredRedirect = "https://test.example.com/callback";
     private const string Challenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
     private const string LoginPath = "/account/login";
+    private const string SignInThenReturnPath = "/account/login/sign-in-then-return";
+    private const string CancelThenReturnPath = "/account/login/cancel-then-return";
+    private const string HijackTarget = "https://attacker.example.net/collect";
     private const string CancelPath = "/account/login/cancel";
 
     private static readonly DateTimeOffset Now = new(2026, 8, 29, 12, 0, 0, TimeSpan.Zero);
@@ -91,6 +94,23 @@ public sealed class LoginInteractionTests : IDisposable
 
         // The Cancel button, exactly as the issue's sample host writes it.
         endpoints.MapPost(CancelPath, (ILoginInteraction login) => login.DenyAsync());
+
+        // Pages that do the thing the XML docs tell hosts not to do: call a terminal method and
+        // then return a result of their own. The framework must not let the second one land.
+        endpoints.MapPost(SignInThenReturnPath, async (ILoginInteraction login) =>
+        {
+            await login.SignInAsync(
+                new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", "user-1")], "test")),
+                AuthenticationMethods.Password);
+
+            return Results.Redirect(HijackTarget);
+        });
+
+        endpoints.MapPost(CancelThenReturnPath, async (ILoginInteraction login) =>
+        {
+            await login.DenyAsync();
+            return Results.Redirect(HijackTarget);
+        });
 
         // Nothing should ever challenge the framework's session scheme: the authorization endpoint
         // owns that decision and needs the interaction context written first.
@@ -504,6 +524,56 @@ public sealed class LoginInteractionTests : IDisposable
         var cancel = async () => await PostCancelAsync(interactionId);
 
         await cancel.Should().ThrowAsync<ZeeKayDaInteractionException>();
+    }
+
+    // ── A terminal method really is the last word ─────────────────────────────────────────────
+
+    [Theory]
+    [InlineData(SignInThenReturnPath)]
+    [InlineData(CancelThenReturnPath)]
+    public async Task A_result_returned_after_a_terminal_call_cannot_replace_the_response(string path)
+    {
+        // Executing a redirect result sets the status and Location without flushing, so before the
+        // response was committed a page written this way silently sent the user wherever it liked
+        // — for a deny, the open redirect the interaction identifier exists to prevent, in host
+        // code where nothing validates it. The page is wrong either way; what matters is that it
+        // fails loudly the first time it runs instead of working and being unsafe.
+        //
+        // The two cases do not carry equal weight today. The deny case is the proof: its response
+        // is a bodyless redirect, and it fails without the explicit commit. The sign-in case
+        // currently passes either way, because the pre-alpha 501 it ends in writes a body and so
+        // commits the response as a side effect. It is here as a guard for when consent and code
+        // issuance replace that 501 with a redirect and the accident stops holding — at which
+        // point this case starts failing if the commit is ever dropped.
+        var handoff = await AuthorizeAsync();
+
+        using var content = new FormUrlEncodedContent([]);
+        var post = async () => await _client.PostAsync(
+            QueryHelpers.AddQueryString(
+                path, InteractionHandoff.InteractionIdParameter, InteractionIdFrom(handoff)),
+            content,
+            TestContext.Current.CancellationToken);
+
+        // The outer type differs by path — a response with a body surfaces the failure while its
+        // content is copied, a bodyless redirect surfaces it directly — so the assertion is on the
+        // cause, which is the same for both.
+        var thrown = (await post.Should().ThrowAsync<Exception>()).Which;
+
+        // Narrowed to the type as well as the wording: matching the message alone would accept any
+        // failure that happened to carry the phrase, and matching the type alone would accept any
+        // InvalidOperationException from anywhere in the request — including the interaction
+        // refusals this class exercises next door. If a framework upgrade rewords this, the test
+        // fails loudly and the substring is what needs editing.
+        Causes(thrown).OfType<InvalidOperationException>()
+            .Should().Contain(ex => ex.Message.Contains("already started", StringComparison.Ordinal),
+                "committing the response is what stops the host's own result from landing");
+    }
+
+    /// <summary>An exception and everything it wraps, innermost included.</summary>
+    private static IEnumerable<Exception> Causes(Exception exception)
+    {
+        for (var current = exception; current is not null; current = current.InnerException)
+            yield return current;
     }
 
     // ── The SSO session ───────────────────────────────────────────────────────────────────────
