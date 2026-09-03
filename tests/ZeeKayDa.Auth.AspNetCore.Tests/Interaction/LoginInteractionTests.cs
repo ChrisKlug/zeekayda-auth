@@ -538,6 +538,13 @@ public sealed class LoginInteractionTests : IDisposable
         // — for a deny, the open redirect the interaction identifier exists to prevent, in host
         // code where nothing validates it. The page is wrong either way; what matters is that it
         // fails loudly the first time it runs instead of working and being unsafe.
+        //
+        // The two cases do not carry equal weight today. The deny case is the proof: its response
+        // is a bodyless redirect, and it fails without the explicit commit. The sign-in case
+        // currently passes either way, because the pre-alpha 501 it ends in writes a body and so
+        // commits the response as a side effect. It is here as a guard for when consent and code
+        // issuance replace that 501 with a redirect and the accident stops holding — at which
+        // point this case starts failing if the commit is ever dropped.
         var handoff = await AuthorizeAsync();
 
         using var content = new FormUrlEncodedContent([]);
