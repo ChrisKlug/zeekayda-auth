@@ -76,15 +76,18 @@ cannot reach it. Everything else the builder registered — the handler type, th
 their validation and post-configuration — stays in the shared container, which is exactly and only
 what the handler needs to run. Provider schemes live in a framework-owned scheme map and nowhere else.
 
-**What the framework pins, by name, and then asserts.** On every `RemoteAuthenticationOptions`-derived
-options object whose name is a registered provider: `CallbackPath` set to `/connect/callback/{scheme}`
-under the issuer path, derived exactly as every other endpoint's route is; `SignInScheme = zkd.external`;
-every `Forward*` member cleared, since a forward would divert the challenge or the sign-in
-around the pinned `RedirectUri` and `SignInScheme`; and `AccessDeniedPath` cleared, so a provider
-refusal reaches the callback endpoint as a failure instead of escaping to a host page. The pin is one
-open-generic `IPostConfigureOptions<>` constrained to `RemoteAuthenticationOptions` — the container
-skips it for every other options type — registered after the callback so it runs after the
-provider's own post-configuration, including the one that defaults `SignInScheme`.
+**What the framework pins, by name, and then asserts.** On every options object whose name is a
+registered provider, every `Forward*` member is cleared, since a forward would divert the challenge
+or the sign-in around the pinned `RedirectUri` and `SignInScheme` into a scheme the host can see.
+On a `RemoteAuthenticationOptions`-derived one, additionally: `CallbackPath` set to
+`/connect/callback/{scheme}` under the issuer path, derived exactly as every other endpoint's route
+is; `SignInScheme = zkd.external`; and `AccessDeniedPath` cleared, so a provider refusal reaches the
+callback endpoint as a failure instead of escaping to a host page. The pin is one open-generic
+`IPostConfigureOptions<>` constrained to `AuthenticationSchemeOptions` — the container skips it for
+every other options type — registered once, when the first `WithProviders` window closes, so it
+runs after the provider's own post-configuration, including the one that defaults `SignInScheme`,
+and never moved afterwards: a post-configurer registered later that changes a pinned member is meant
+to fail startup, not to be overridden.
 
 The pin alone promises nothing: post-configurers run in registration order, so a
 `PostConfigure<GoogleOptions>("Google", …)` registered later by the host or a library would win,

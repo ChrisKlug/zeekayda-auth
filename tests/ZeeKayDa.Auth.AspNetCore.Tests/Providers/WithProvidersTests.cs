@@ -19,13 +19,16 @@ public sealed class WithProvidersTests
 {
     private const string Issuer = "https://auth.example.com";
 
+    /// <summary>
+    /// Deliberately without <c>AddAuthentication()</c>: a builder constructed outside
+    /// <c>AddZeeKayDaAuth</c> must still produce a provider that can resolve its options.
+    /// </summary>
     private static IServiceCollection NewServices()
     {
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddDataProtection();
         services.Configure<AuthorizationServerOptions>(options => options.Issuer = Issuer);
-        services.AddAuthentication();
         return services;
     }
 
@@ -175,6 +178,45 @@ public sealed class WithProvidersTests
     }
 
     [Fact]
+    public void A_provider_outside_the_remote_hierarchy_has_its_forwarding_cleared()
+    {
+        // A policy scheme is nothing but forwarding, so as a provider it becomes inert — which is
+        // the point: its forward would have carried the challenge into a scheme the host can see.
+        var services = NewServices();
+        new ZeeKayDaAuthBuilder(services).WithProviders(auth =>
+            auth.AddPolicyScheme("policy", "Policy", options =>
+            {
+                options.ForwardDefault = "host-cookie";
+                options.ForwardChallenge = "host-cookie";
+            }));
+        using var provider = services.BuildServiceProvider();
+
+        var options = provider.GetRequiredService<IOptionsMonitor<PolicySchemeOptions>>().Get("policy");
+
+        options.ForwardDefault.Should().BeNull();
+        options.ForwardChallenge.Should().BeNull();
+    }
+
+    [Fact]
+    public void The_pin_stays_where_the_first_window_left_it_so_a_later_post_configurer_still_wins_for_the_validator_to_catch()
+    {
+        var services = NewServices();
+        var builder = new ZeeKayDaAuthBuilder(services);
+        builder.WithProviders(auth => auth.AddOAuth("first", ConfigureAcme));
+        services.PostConfigure<OAuthOptions>("first", options => options.CallbackPath = "/signin-first");
+        builder.WithProviders(auth => auth.AddOAuth("second", ConfigureAcme));
+
+        services.Count(descriptor => !descriptor.IsKeyedService
+                && descriptor.ImplementationType == typeof(ProviderOptionsPin<>))
+            .Should().Be(1);
+        var pinIndex = services.ToList().FindIndex(descriptor => !descriptor.IsKeyedService
+            && descriptor.ImplementationType == typeof(ProviderOptionsPin<>));
+        var hostIndex = services.ToList().FindLastIndex(descriptor =>
+            descriptor.ServiceType == typeof(IPostConfigureOptions<OAuthOptions>) && descriptor.ImplementationInstance is not null);
+        pinIndex.Should().BeLessThan(hostIndex, "the host's later post-configurer must still run after the pin");
+    }
+
+    [Fact]
     public void A_provider_registered_in_a_later_call_is_pinned_too()
     {
         var services = NewServices();
@@ -221,6 +263,62 @@ public sealed class WithProvidersTests
         new ZeeKayDaAuthBuilder(services).WithProviders(auth => auth.AddOAuth(name, ConfigureAcme));
 
         ProviderRegistry.FindIn(services).Contains(name).Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(ZeeKayDaCookies.Session)]
+    [InlineData(ZeeKayDaCookies.Interaction)]
+    [InlineData(ZeeKayDaCookies.External)]
+    [InlineData(ZeeKayDaCookies.Pending)]
+    [InlineData("ZKD.Interaction")]
+    public void A_reserved_framework_name_is_refused_as_a_provider_name(string name)
+    {
+        var services = NewServices();
+
+        var register = () => new ZeeKayDaAuthBuilder(services).WithProviders(auth => auth.AddOAuth(name, ConfigureAcme));
+
+        register.Should().Throw<InvalidOperationException>().WithMessage("*reserved*");
+    }
+
+    [Fact]
+    public void A_scheme_map_configurer_that_adds_no_scheme_is_refused()
+    {
+        var services = NewServices();
+
+        var register = () => new ZeeKayDaAuthBuilder(services).WithProviders(auth =>
+            auth.Services.Configure<AuthenticationOptions>(options => options.SchemeMap.Remove("host-cookie")));
+
+        register.Should().Throw<InvalidOperationException>().WithMessage("*without adding a scheme*");
+    }
+
+    [Fact]
+    public void An_open_generic_configurer_in_the_window_is_refused()
+    {
+        var services = NewServices();
+
+        var register = () => new ZeeKayDaAuthBuilder(services).WithProviders(auth =>
+            auth.Services.AddSingleton(typeof(IConfigureOptions<>), typeof(OpenGenericConfigurer<>)));
+
+        register.Should().Throw<InvalidOperationException>().WithMessage("*open-generic*");
+    }
+
+    [Fact]
+    public void A_failed_call_leaves_the_service_collection_exactly_as_it_was()
+    {
+        var services = NewServices();
+        var builder = new ZeeKayDaAuthBuilder(services);
+        builder.WithProviders(auth => auth.AddOAuth("first", ConfigureAcme));
+        var before = services.ToArray();
+
+        var register = () => builder.WithProviders(auth =>
+        {
+            auth.AddOAuth("second", ConfigureAcme);
+            auth.Services.AddAuthentication("second");
+        });
+
+        register.Should().Throw<InvalidOperationException>();
+        services.Should().Equal(before, "a caller that catches the failure must not be left with a half-registered provider");
+        ProviderRegistry.FindIn(services).Contains("second").Should().BeFalse();
     }
 
     [Fact]
@@ -310,5 +408,13 @@ public sealed class WithProvidersTests
     private sealed class OpaqueSchemeConfigurer : IConfigureOptions<AuthenticationOptions>
     {
         public void Configure(AuthenticationOptions options) => options.AddScheme<PlainHandler>("opaque", null);
+    }
+
+    private sealed class OpenGenericConfigurer<TOptions> : IConfigureOptions<TOptions>
+        where TOptions : class
+    {
+        public void Configure(TOptions options)
+        {
+        }
     }
 }

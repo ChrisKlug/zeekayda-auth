@@ -200,9 +200,8 @@ public sealed class ProviderHostIntegrationTests
     [Fact]
     public void A_provider_whose_own_options_are_incomplete_fails_startup_rather_than_at_first_sign_in()
     {
-        // OAuthOptions.Validate throws rather than reporting, so this surfaces as the activator
-        // having thrown — with the provider's own exception as the root cause — not as a
-        // provider.options_invalid failure. Either way the host does not start.
+        // OAuthOptions.Validate throws ArgumentNullException rather than reporting a validation
+        // failure; the provider is named in the failure and the exception travels as its root cause.
         using var factory = NewFactory(configureBuilder: builder =>
             builder.WithProviders(auth => auth.AddOAuth("acme", options => options.ClientId = "acme-client")));
 
@@ -210,8 +209,75 @@ public sealed class ProviderHostIntegrationTests
 
         start.Should().Throw<Exception>()
             .Where(ex => ExceptionChain.FindInChain<ZeeKayDaConfigurationException>(ex)!
-                .AggregatedFailures.Any(failure => failure.Code == "startup.verifier_failed"))
+                .AggregatedFailures.Any(failure => failure.Code == "provider.options_invalid" && failure.Message.Contains("'acme'")))
             .Where(ex => ExceptionChain.FindInChain<ArgumentNullException>(ex) != null);
+    }
+
+    [Fact]
+    public void Every_provider_is_checked_even_after_an_earlier_one_failed()
+    {
+        using var factory = NewFactory(configureBuilder: builder =>
+        {
+            builder.WithProviders(auth =>
+            {
+                auth.AddOAuth("broken", options => options.ClientId = "only-a-client-id");
+                auth.AddOAuth("drifted", ConfigureAcme);
+            });
+            builder.Services.PostConfigure<OAuthOptions>("drifted", options => options.CallbackPath = "/signin-drifted");
+        });
+
+        var start = () => factory.CreateClient();
+
+        start.Should().Throw<Exception>()
+            .Where(ex => ExceptionChain.FindInChain<ZeeKayDaConfigurationException>(ex)!
+                .AggregatedFailures.Count(failure => failure.Code == "provider.options_invalid") == 2);
+    }
+
+    [Fact]
+    public void A_startup_failure_repeats_the_framework_pin_assertions_but_not_the_provider_validators_text()
+    {
+        const string Sentinel = "s3cr3t-that-must-not-be-copied";
+        using var factory = NewFactory(configureBuilder: builder =>
+        {
+            builder.WithProviders(auth => auth.AddOAuth("acme", ConfigureAcme));
+            builder.Services.AddOptions<OAuthOptions>("acme")
+                .Validate(_ => false, $"Provider validator text mentioning {Sentinel}");
+            builder.Services.PostConfigure<OAuthOptions>("acme", options => options.SignInScheme = "host-cookie");
+        });
+
+        var start = () => factory.CreateClient();
+
+        var thrown = start.Should().Throw<Exception>().Which;
+        var message = ExceptionChain.FindInChain<ZeeKayDaConfigurationException>(thrown)!
+            .AggregatedFailures.Single(failure => failure.Code == "provider.options_invalid").Message;
+
+        message.Should().Contain("SignInScheme").And.NotContain(Sentinel);
+        thrown.ToString().Should().Contain(Sentinel, "the provider's own text still reaches the operator as the root cause");
+    }
+
+    [Fact]
+    public void A_post_configurer_registered_between_two_WithProviders_calls_still_fails_startup()
+    {
+        using var factory = NewFactory(configureBuilder: builder =>
+        {
+            builder.WithProviders(auth => auth.AddOAuth("first", ConfigureAcme));
+            builder.Services.PostConfigure<OAuthOptions>("first", options => options.CallbackPath = "/signin-first");
+            builder.WithProviders(auth => auth.AddOAuth("second", ConfigureAcme));
+        });
+
+        ShouldFailStartupWith(factory, "provider.options_invalid");
+    }
+
+    [Fact]
+    public void A_remote_options_handler_outside_the_remote_base_class_is_asserted_at_startup_too()
+    {
+        using var factory = NewFactory(configureBuilder: builder =>
+        {
+            builder.WithProviders(auth => auth.AddScheme<OddRemoteOptions, OddRemoteHandler>("odd", "Odd", _ => { }));
+            builder.Services.PostConfigure<OddRemoteOptions>("odd", options => options.CallbackPath = "/signin-odd");
+        });
+
+        ShouldFailStartupWith(factory, "provider.options_invalid");
     }
 
     [Fact]
@@ -294,6 +360,22 @@ public sealed class ProviderHostIntegrationTests
         response.StatusCode.Should().Be(HttpStatusCode.Redirect);
         response.Headers.Location!.OriginalString.Should().StartWith(RegisteredRedirect)
             .And.Contain("error=server_error");
+    }
+
+    /// <summary>
+    /// Remote-shaped options on a handler that does not derive from the remote base class: the
+    /// pin and validator key on the options type, so the startup assertion must find it too.
+    /// </summary>
+    private sealed class OddRemoteOptions : RemoteAuthenticationOptions;
+
+    private sealed class OddRemoteHandler(
+        IOptionsMonitor<OddRemoteOptions> options,
+        ILoggerFactory logger,
+        UrlEncoder encoder)
+        : AuthenticationHandler<OddRemoteOptions>(options, logger, encoder)
+    {
+        protected override Task<AuthenticateResult> HandleAuthenticateAsync()
+            => Task.FromResult(AuthenticateResult.NoResult());
     }
 
     /// <summary>A handler outside the remote hierarchy — supported, with nothing to pin.</summary>

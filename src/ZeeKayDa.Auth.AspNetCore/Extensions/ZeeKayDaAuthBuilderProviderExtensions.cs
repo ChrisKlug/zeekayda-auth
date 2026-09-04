@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.AspNetCore.Providers;
@@ -23,8 +24,8 @@ public static class ZeeKayDaAuthBuilderProviderExtensions
     /// <para>
     /// The host names the providers it wants and nothing else. Callback paths, sign-in schemes and
     /// the correlation back to the authorization request are the framework's: it pins each remote
-    /// handler's <c>CallbackPath</c> and <c>SignInScheme</c>, refuses a later change to them at
-    /// startup, and drives the round trip itself.
+    /// handler's <c>CallbackPath</c> and <c>SignInScheme</c>, clears every provider's forwarding,
+    /// refuses a later change to any of them at startup, and drives the round trip itself.
     /// </para>
     /// <para>
     /// The schemes registered here are the framework's, not the host's. They do not appear in the
@@ -36,18 +37,21 @@ public static class ZeeKayDaAuthBuilderProviderExtensions
     /// <para>
     /// May be called more than once. Provider names must be unique ignoring case across calls, and
     /// each must be 1 to 64 ASCII letters, digits, <c>-</c>, <c>_</c> or <c>.</c>, since the name
-    /// becomes a segment of the provider's callback route.
+    /// becomes a segment of the provider's callback route. A call that fails leaves the service
+    /// collection exactly as it was.
     /// </para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="builder"/> or <paramref name="configure"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// A registered scheme's name is outside the grammar above or duplicates a registered
-    /// provider ignoring case; the callback set an <see cref="AuthenticationOptions"/> default,
-    /// which belongs on <c>AddAuthentication</c>; the callback registered a scheme-map configurer
-    /// the framework cannot replay, or a post-configurer for <see cref="AuthenticationOptions"/>;
-    /// or the callback removed or reordered registrations that existed before it ran.
+    /// A registered scheme's name is outside the grammar above, is a name the framework reserves,
+    /// or duplicates a registered provider ignoring case; the callback set an
+    /// <see cref="AuthenticationOptions"/> default, which belongs on <c>AddAuthentication</c>; the
+    /// callback registered a scheme-map configurer the framework cannot replay or that adds no
+    /// scheme, or a post-configurer or open-generic configurer for
+    /// <see cref="AuthenticationOptions"/>; or the callback removed or reordered registrations that
+    /// existed before it ran.
     /// </exception>
     public static ZeeKayDaAuthBuilder WithProviders(
         this ZeeKayDaAuthBuilder builder,
@@ -57,29 +61,35 @@ public static class ZeeKayDaAuthBuilderProviderExtensions
         ArgumentNullException.ThrowIfNull(configure);
 
         var services = builder.Services;
-        var observed = ProviderRegistrationWindow.Observe(services, configure);
-        var registry = ProviderRegistry.FindIn(services).Add(observed);
-        ProviderRegistry.RegisterIn(services, registry);
 
-        // The pin must be the last post-configurer for a provider's options, so it is re-appended
-        // after every window: a provider registered in this window may have brought a
-        // post-configurer of its own for an options type no earlier window used.
-        MoveToTail(services, ServiceDescriptor.Singleton(typeof(IPostConfigureOptions<>), typeof(ProviderOptionsPin<>)));
+        // What every provider package's handler needs at runtime, for a builder constructed outside
+        // AddZeeKayDaAuth. Guarded rather than relied on to be idempotent — AddAuthentication adds
+        // a descriptor per call — and done before the snapshot so it is not mistaken for something
+        // the callback registered.
+        if (!services.Any(descriptor => descriptor.ServiceType == typeof(IAuthenticationSchemeProvider)))
+            services.AddAuthentication();
+
+        var before = services.ToArray();
+        try
+        {
+            var observed = ProviderRegistrationWindow.Observe(services, configure);
+            var registry = ProviderRegistry.FindIn(services).Add(observed);
+            ProviderRegistry.RegisterIn(services, registry);
+        }
+        catch
+        {
+            services.Clear();
+            foreach (var descriptor in before)
+                services.Add(descriptor);
+            throw;
+        }
+
+        // Registered once, when the first window closes, and never moved: it then follows every
+        // provider's own post-configuration, and anything registered after it that changes a
+        // pinned member fails startup rather than being silently overridden.
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton(typeof(IPostConfigureOptions<>), typeof(ProviderOptionsPin<>)));
 
         return builder;
-    }
-
-    private static void MoveToTail(IServiceCollection services, ServiceDescriptor descriptor)
-    {
-        var existing = services
-            .Where(candidate => !candidate.IsKeyedService
-                && candidate.ServiceType == descriptor.ServiceType
-                && candidate.ImplementationType == descriptor.ImplementationType)
-            .ToArray();
-
-        foreach (var candidate in existing)
-            services.Remove(candidate);
-
-        services.Add(descriptor);
     }
 }

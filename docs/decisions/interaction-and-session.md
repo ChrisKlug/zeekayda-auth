@@ -110,8 +110,8 @@ appended, records the schemes, and removes the configurers, so a provider is abs
 `AuthenticationOptions`: not enumerable, not challengeable by name, never dispatched by the
 middleware. Invisibility is a guarantee rather than a convention, which is why a provider name the
 host also registers as a scheme of its own is a startup error and not a shadowing rule. The
-framework pins each remote handler's callback path, sign-in scheme, access-denied path and
-forwarding by name, and *asserts* the pins with a validator resolved at startup, because a
+framework pins every provider's forwarding and each remote handler's callback path, sign-in scheme
+and access-denied path by name, and *asserts* the pins with a validator resolved at startup, because a
 post-configurer registered later would otherwise win silently and send the sign-in to the wrong
 cookie or the callback to a path nothing serves.
 

@@ -22,12 +22,14 @@ internal static class ProviderRegistrationWindow
 {
     /// <summary>
     /// Runs <paramref name="configure"/> against <paramref name="services"/> and returns the
-    /// schemes it registered, having removed their scheme-map descriptors.
+    /// schemes it registered, having removed their scheme-map descriptors. A failure leaves the
+    /// collection partly changed; the caller restores it.
     /// </summary>
     /// <exception cref="InvalidOperationException">
     /// The callback did something other than append to the collection, registered a scheme-map
-    /// configurer that cannot be replayed, registered a post-configurer for
-    /// <see cref="AuthenticationOptions"/>, or set an <see cref="AuthenticationOptions"/> default.
+    /// configurer that cannot be replayed or that adds no scheme, registered a post-configurer or
+    /// an open-generic configurer for <see cref="AuthenticationOptions"/>, or set an
+    /// <see cref="AuthenticationOptions"/> default.
     /// </exception>
     public static IReadOnlyList<ProviderRegistration> Observe(
         IServiceCollection services,
@@ -41,14 +43,21 @@ internal static class ProviderRegistrationWindow
         EnsureOnlyAppended(services, before);
 
         var window = services.Skip(before.Length).ToArray();
-        RefusePostConfiguration(window);
+        RefuseUnreadableConfiguration(window);
 
         var configurers = window
             .Where(descriptor => descriptor.ServiceType == typeof(IConfigureOptions<AuthenticationOptions>))
             .ToArray();
 
-        var observed = Replay(configurers);
+        var (observed, everyConfigurerAddedAScheme) = Replay(configurers);
         RefuseDefaults(observed);
+        if (!everyConfigurerAddedAScheme)
+        {
+            throw new InvalidOperationException(
+                "The WithProviders callback configured AuthenticationOptions without adding a scheme. " +
+                "Only scheme registrations belong inside WithProviders; anything else for " +
+                "AuthenticationOptions belongs on AddAuthentication, outside it.");
+        }
 
         foreach (var descriptor in configurers)
             services.Remove(descriptor);
@@ -79,7 +88,13 @@ internal static class ProviderRegistrationWindow
         }
     }
 
-    private static void RefusePostConfiguration(ServiceDescriptor[] window)
+    /// <summary>
+    /// A post-configurer for the scheme map can neither be replayed nor safely removed, and an
+    /// open-generic configurer would close over <see cref="AuthenticationOptions"/> without ever
+    /// matching the filter the replay reads — both would put something in the host's map the
+    /// framework never saw.
+    /// </summary>
+    private static void RefuseUnreadableConfiguration(ServiceDescriptor[] window)
     {
         if (window.Any(descriptor => descriptor.ServiceType == typeof(IPostConfigureOptions<AuthenticationOptions>)))
         {
@@ -89,17 +104,30 @@ internal static class ProviderRegistrationWindow
                 "post-configured; register it outside WithProviders if it is meant for the host's own " +
                 "schemes.");
         }
+
+        if (window.Any(descriptor => descriptor.ServiceType == typeof(IConfigureOptions<>)
+            || descriptor.ServiceType == typeof(IPostConfigureOptions<>)))
+        {
+            throw new InvalidOperationException(
+                "The WithProviders callback registered an open-generic IConfigureOptions<> or " +
+                "IPostConfigureOptions<>, which would configure AuthenticationOptions without the " +
+                "framework being able to read what it adds. Register it outside WithProviders.");
+        }
     }
 
     /// <summary>
     /// Replays each scheme-map configurer into a throwaway options object. Only an instance
     /// registration can be replayed — a factory or type registration can neither be read here nor
     /// safely removed — and <c>AuthenticationBuilder</c> registers instances, so a host hits this
-    /// only by registering the interface itself.
+    /// only by registering the interface itself. Also reports whether every configurer added a
+    /// scheme: one that did not is refused by the caller, since removing it would silently discard
+    /// whatever else it did — after the defaults check, whose message is the more specific one.
     /// </summary>
-    private static AuthenticationOptions Replay(ServiceDescriptor[] configurers)
+    private static (AuthenticationOptions Observed, bool EveryConfigurerAddedAScheme) Replay(
+        ServiceDescriptor[] configurers)
     {
         var observed = new AuthenticationOptions();
+        var everyConfigurerAddedAScheme = true;
 
         foreach (var descriptor in configurers)
         {
@@ -112,10 +140,12 @@ internal static class ProviderRegistrationWindow
                     "Register provider schemes through the AuthenticationBuilder the callback receives.");
             }
 
+            var schemesBefore = observed.Schemes.Count();
             configurer.Configure(observed);
+            everyConfigurerAddedAScheme &= observed.Schemes.Count() > schemesBefore;
         }
 
-        return observed;
+        return (observed, everyConfigurerAddedAScheme);
     }
 
     /// <summary>

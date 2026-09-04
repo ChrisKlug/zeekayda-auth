@@ -8,8 +8,8 @@ namespace ZeeKayDa.Auth.AspNetCore.Providers;
 /// <summary>
 /// Asserts what <see cref="ProviderOptionsPin{TOptions}"/> pinned. Validation runs after every
 /// post-configurer, so this sees the final values and fails any registered provider's options
-/// whose callback path, sign-in scheme, access-denied path or forwarding differ from the pins —
-/// naming the scheme and the member.
+/// whose forwarding — or, on a remote one, callback path, sign-in scheme or access-denied path —
+/// differ from the pins, naming the scheme and the member.
 /// </summary>
 /// <remarks>
 /// Without this, a <c>PostConfigure</c> for the same scheme registered later by the host or a
@@ -18,8 +18,15 @@ namespace ZeeKayDa.Auth.AspNetCore.Providers;
 /// <see cref="ProviderOptionsStartupActivator"/> resolves each provider's options once.
 /// </remarks>
 internal sealed class ProviderOptionsValidator<TOptions> : IValidateOptions<TOptions>
-    where TOptions : RemoteAuthenticationOptions
+    where TOptions : AuthenticationSchemeOptions
 {
+    /// <summary>
+    /// Every failure this validator produces starts with this, so the startup activator can tell
+    /// the framework's own text — safe to surface, it names only a scheme and a member — from a
+    /// provider's or host's validation text, which it never copies.
+    /// </summary>
+    public const string FailurePrefix = "Pinned by ZeeKayDa.Auth: ";
+
     private readonly ProviderRegistry _registry;
     private readonly IOptions<AuthorizationServerOptions> _options;
 
@@ -40,22 +47,29 @@ internal sealed class ProviderOptionsValidator<TOptions> : IValidateOptions<TOpt
         if (name is null || !_registry.Contains(name))
             return ValidateOptionsResult.Skip;
 
-        var failures = new List<string>();
-        var callbackPath = ProviderCallbackRoute.For(EndpointRouteHelper.GetIssuerUri(_options), name);
+        var failures = Forwards(options)
+            .Where(forward => forward.Value is not null)
+            .Select(forward => Cleared(name, forward.Member))
+            .ToList();
 
-        if (options.CallbackPath != callbackPath)
-            failures.Add(Drifted(name, nameof(options.CallbackPath), callbackPath.Value!));
-
-        if (!string.Equals(options.SignInScheme, ZeeKayDaCookies.External, StringComparison.Ordinal))
-            failures.Add(Drifted(name, nameof(options.SignInScheme), ZeeKayDaCookies.External));
-
-        if (options.AccessDeniedPath.HasValue)
-            failures.Add(Cleared(name, nameof(options.AccessDeniedPath)));
-
-        foreach (var (member, value) in Forwards(options).Where(forward => forward.Value is not null))
-            failures.Add(Cleared(name, member));
+        if (options is RemoteAuthenticationOptions remote)
+            failures.AddRange(RemoteFailures(name, remote));
 
         return failures.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(failures);
+    }
+
+    private IEnumerable<string> RemoteFailures(string name, RemoteAuthenticationOptions remote)
+    {
+        var callbackPath = ProviderCallbackRoute.For(EndpointRouteHelper.GetIssuerUri(_options), name);
+
+        if (remote.CallbackPath != callbackPath)
+            yield return Drifted(name, nameof(remote.CallbackPath), callbackPath.Value!);
+
+        if (!string.Equals(remote.SignInScheme, ZeeKayDaCookies.External, StringComparison.Ordinal))
+            yield return Drifted(name, nameof(remote.SignInScheme), ZeeKayDaCookies.External);
+
+        if (remote.AccessDeniedPath.HasValue)
+            yield return Cleared(name, nameof(remote.AccessDeniedPath));
     }
 
     private static IEnumerable<(string Member, object? Value)> Forwards(TOptions options) =>
@@ -70,10 +84,12 @@ internal sealed class ProviderOptionsValidator<TOptions> : IValidateOptions<TOpt
     ];
 
     private static string Drifted(string name, string member, string expected) =>
-        $"The options for provider '{name}' were changed after ZeeKayDa.Auth pinned them: {member} " +
-        $"must be '{expected}'. The framework owns this member; remove the configuration that sets it.";
+        $"{FailurePrefix}the options for provider '{name}' were changed after the framework pinned " +
+        $"them: {member} must be '{expected}'. The framework owns this member; remove the " +
+        "configuration that sets it.";
 
     private static string Cleared(string name, string member) =>
-        $"The options for provider '{name}' were changed after ZeeKayDa.Auth pinned them: {member} " +
-        "must not be set. The framework owns this member; remove the configuration that sets it.";
+        $"{FailurePrefix}the options for provider '{name}' were changed after the framework pinned " +
+        $"them: {member} must not be set. The framework owns this member; remove the configuration " +
+        "that sets it.";
 }

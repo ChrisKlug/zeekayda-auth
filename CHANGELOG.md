@@ -25,9 +25,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   clears `AccessDeniedPath` and every `Forward*` member. The pin is asserted, not trusted: an
   options validator fails any provider whose final values differ, and a startup activator resolves
   each provider's options once so the failure is a startup error rather than a first-sign-in
-  surprise. Also refused at startup: a provider name outside the route grammar, a duplicate
-  ignoring case, a callback that sets an `AuthenticationOptions` default or mutates earlier
-  registrations, and a provider name the host also registered as a scheme of its own.
+  surprise. Forwarding is cleared and asserted on every provider, remote or not. Refused when
+  `WithProviders` runs: a provider name outside the route grammar, a reserved one, a duplicate
+  ignoring case, and a callback that sets an `AuthenticationOptions` default or mutates earlier
+  registrations — leaving the service collection as it was. Refused at startup: a provider name
+  the host also registered as a scheme of its own.
 
   The login page is also the provider-selection page. `ILoginInteraction` gains
   `LocalLoginEnabled` and `Providers` — one `ProviderDescriptor` (`Id`, `DisplayName`) per

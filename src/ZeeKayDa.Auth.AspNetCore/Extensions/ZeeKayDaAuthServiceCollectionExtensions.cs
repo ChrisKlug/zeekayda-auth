@@ -216,7 +216,7 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
     {
         services.TryAddSingleton(ProviderRegistry.Empty);
 
-        // Open generic, constrained to RemoteAuthenticationOptions: the container skips it for
+        // Open generic, constrained to AuthenticationSchemeOptions: the container skips it for
         // every other options type, and it skips itself for every name that is not a provider.
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton(typeof(IValidateOptions<>), typeof(ProviderOptionsValidator<>)));

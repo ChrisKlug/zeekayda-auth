@@ -63,11 +63,13 @@ internal sealed class ProviderRegistry
 
     /// <summary>
     /// Returns a registry holding these registrations and <paramref name="added"/>, refusing a
-    /// name outside the grammar or one already registered, ignoring case.
+    /// name outside the grammar, a reserved framework name, or one already registered, ignoring
+    /// case.
     /// </summary>
     /// <exception cref="InvalidOperationException">
-    /// A name in <paramref name="added"/> does not satisfy <see cref="ProviderName"/>, or
-    /// collides with a registered one ignoring case.
+    /// A name in <paramref name="added"/> does not satisfy <see cref="ProviderName"/>, is one of
+    /// the framework's reserved cookie or scheme names, or collides with a registered one ignoring
+    /// case.
     /// </exception>
     public ProviderRegistry Add(IEnumerable<ProviderRegistration> added)
     {
@@ -85,6 +87,15 @@ internal sealed class ProviderRegistry
                 throw new InvalidOperationException(
                     $"The provider name '{registration.Name}' is not valid. A provider name is " +
                     $"{ProviderName.Grammar}: it becomes a segment of the provider's callback route.");
+            }
+
+            // The scheme-backed reserved names would be caught at startup as a collision with the
+            // framework's own schemes; zkd.interaction has no scheme behind it and would not be.
+            // Refusing all four here is one rule instead of two.
+            if (ZeeKayDaCookies.ReservedNames.Contains(registration.Name, StringComparer.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    $"The provider name '{registration.Name}' is reserved by ZeeKayDa.Auth. Choose another name.");
             }
 
             if (!seen.Add(registration.Name))
