@@ -286,10 +286,12 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
 
         authentication.AddCookie(ZeeKayDaCookies.Pending, options =>
         {
-            // A half-authenticated principal, read only from same-site requests to the host's own
-            // pages, so it takes the strictest setting available.
+            // A half-authenticated principal, first read on the GET that renders the host's page
+            // at the end of the provider's redirect chain. That navigation was initiated
+            // cross-site, and a Strict cookie is withheld from it, so Strict would hand the page
+            // nothing on its first render. Lax still withholds it from cross-site POSTs.
             ConfigureFrameworkCookie(options, ZeeKayDaCookies.Pending);
-            options.Cookie.SameSite = SameSiteMode.Strict;
+            options.Cookie.SameSite = SameSiteMode.Lax;
             options.ExpireTimeSpan = TimeSpan.FromMinutes(15);
         });
     }

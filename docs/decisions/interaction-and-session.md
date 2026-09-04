@@ -76,7 +76,9 @@ host's principal, or a host copying claims from an inbound token could choose it
 
 **Framework cookie names are reserved, and a host registering one fails at startup.** Every internal
 cookie is `HttpOnly` and Data-Protection encrypted. A session cookie needs `SameSite=None` only if
-silent authentication is supported; anything read solely from same-site POSTs takes `Strict`.
+silent authentication is supported; the rest take `Lax`, `zkd.pending` included, because its first
+read is the page at the end of the provider's redirect chain and `Strict` is withheld from a
+navigation initiated cross-site — a control that silently breaks the feature is no control.
 Multi-instance deployments must share one Data Protection key ring across all of them — the framework
 does not solve distributed key management.
 

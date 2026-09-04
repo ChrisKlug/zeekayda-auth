@@ -286,8 +286,10 @@ internal static class ProviderTestHost
             if (settings.StampAnotherScheme)
                 properties.Items[".AuthScheme"] = "someone-else";
 
+            // The literal, as a handler outside this repository would write it: the scheme name is
+            // the documented contract, not an internal constant.
             await _context.SignInAsync(
-                ZeeKayDaCookies.External,
+                "zkd.external",
                 principal,
                 settings.DropProperties ? new AuthenticationProperties() : properties);
 

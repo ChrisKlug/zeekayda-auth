@@ -287,7 +287,7 @@ registering one fails at startup. All `HttpOnly`, Data-Protection encrypted.
 | `zkd.session` | the SSO session | session | `None` only if `prompt=none` silent auth is supported, else `Lax` |
 | `zkd.interaction` | the authorization request context | hard 30 min | `Lax` |
 | `zkd.external` | the raw provider callback, before ZeeKayDa reads it | seconds | `Lax` |
-| `zkd.pending` | a half-authenticated external principal | hard 15 min, not sliding | `Strict` |
+| `zkd.pending` | a half-authenticated external principal | hard 15 min, not sliding | `Lax` — first read at the end of the provider's redirect chain, which `Strict` withholds it from |
 
 `zkd.pending` is single-use (signed out on `SignInAsync`) and bound to its interaction via a
 `zkd:interaction_id` claim.

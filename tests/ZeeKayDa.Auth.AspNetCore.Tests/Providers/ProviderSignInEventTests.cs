@@ -1,4 +1,5 @@
 using System.Net;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
@@ -85,13 +86,19 @@ public sealed class ProviderSignInEventTests
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var proceed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var observedCancellation = false;
+        var isTheRequestsToken = false;
+        IHttpContextAccessor accessor = null!;
         using var factory = NewFactory(async context =>
         {
+            // The handler runs on the request's own async flow, so the accessor sees the resume
+            // request; a token from anywhere else would not compare equal.
+            isTheRequestsToken = context.RequestAborted == accessor.HttpContext!.RequestAborted;
             entered.SetResult();
             await proceed.Task;
             observedCancellation = context.RequestAborted.IsCancellationRequested;
         });
         using var client = NewClient(factory);
+        accessor = factory.Services.GetRequiredService<IHttpContextAccessor>();
         var (_, resumeUrl) = await ReachResumeAsync(client);
 
         // The test server links the request's abort token to the client's: cancelling the
@@ -110,7 +117,8 @@ public sealed class ProviderSignInEventTests
             // How the aborted request surfaces on the client side is not what is under test.
         }
 
-        observedCancellation.Should().BeTrue("the handler's token is the request's own");
+        isTheRequestsToken.Should().BeTrue("the handler's token is the request's own");
+        observedCancellation.Should().BeTrue("the disconnect reached the handler");
     }
 
     [Fact]
