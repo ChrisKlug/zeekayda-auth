@@ -21,8 +21,8 @@ public sealed class ProviderSignInEventTests
                 options => options.OnProviderSignIn = onProviderSignIn),
             mapEndpoints: MapHostPages);
 
-    /// <summary>Authorize, pick the provider, complete the callback, and return through resume.</summary>
-    private static async Task<(string InteractionId, HttpResponseMessage Resume)> ResumeAsync(HttpClient client)
+    /// <summary>Authorize, pick the provider and complete the callback: the resume URL to return through.</summary>
+    private static async Task<(string InteractionId, string ResumeUrl)> ReachResumeAsync(HttpClient client)
     {
         var handoff = await client.GetAsync(AuthorizeUrl(), Cancellation);
         var interactionId = InteractionIdFrom(handoff);
@@ -34,7 +34,15 @@ public sealed class ProviderSignInEventTests
         });
         var callback = await client.GetAsync(callbackUrl, Cancellation);
 
-        return (interactionId, await client.GetAsync(callback.Headers.Location!.OriginalString, Cancellation));
+        return (interactionId, callback.Headers.Location!.OriginalString);
+    }
+
+    /// <summary>Authorize, pick the provider, complete the callback, and return through resume.</summary>
+    private static async Task<(string InteractionId, HttpResponseMessage Resume)> ResumeAsync(HttpClient client)
+    {
+        var (interactionId, resumeUrl) = await ReachResumeAsync(client);
+
+        return (interactionId, await client.GetAsync(resumeUrl, Cancellation));
     }
 
     private static async Task<System.Text.Json.JsonElement?> ReadJsonAsync(HttpClient client, string url)
@@ -69,7 +77,40 @@ public sealed class ProviderSignInEventTests
         seen.Provider.DisplayName.Should().Be("Acme");
         seen.Client.ClientId.Should().Be("test-client");
         seen.EffectiveScopes.Should().Equal("openid");
-        seen.RequestAborted.CanBeCanceled.Should().BeTrue("it is the request's own token");
+    }
+
+    [Fact]
+    public async Task RequestAborted_is_signalled_when_the_browser_disconnects_during_the_handler()
+    {
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var proceed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var observedCancellation = false;
+        using var factory = NewFactory(async context =>
+        {
+            entered.SetResult();
+            await proceed.Task;
+            observedCancellation = context.RequestAborted.IsCancellationRequested;
+        });
+        using var client = NewClient(factory);
+        var (_, resumeUrl) = await ReachResumeAsync(client);
+
+        // The test server links the request's abort token to the client's: cancelling the
+        // client's request mid-handler is the browser going away.
+        using var browser = new CancellationTokenSource();
+        var resume = client.GetAsync(resumeUrl, browser.Token);
+        await entered.Task.WaitAsync(Cancellation);
+        await browser.CancelAsync();
+        proceed.SetResult();
+        try
+        {
+            await resume;
+        }
+        catch (Exception)
+        {
+            // How the aborted request surfaces on the client side is not what is under test.
+        }
+
+        observedCancellation.Should().BeTrue("the handler's token is the request's own");
     }
 
     [Fact]
