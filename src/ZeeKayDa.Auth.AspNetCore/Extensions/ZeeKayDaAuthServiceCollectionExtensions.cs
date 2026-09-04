@@ -199,6 +199,8 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         services.TryAddSingleton<ClientErrorRedirect>();
         services.TryAddSingleton<SsoSession>();
         services.TryAddSingleton<AuthorizationFlow>();
+        services.TryAddSingleton<SignInCompletion>();
+        services.TryAddSingleton<PendingPrincipalCookie>();
         services.TryAddSingleton<IErrorInteraction, ErrorInteraction>();
         services.TryAddSingleton<ILoginInteraction, LoginInteraction>();
 
@@ -208,13 +210,21 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
 
     /// <summary>
     /// Registers what external providers need before any is registered: an empty scheme map that
-    /// <c>WithProviders</c> replaces, and the validator that asserts the framework's pins on every
-    /// registered provider's options. The pin itself is registered by <c>WithProviders</c>, at the
-    /// tail of the collection, so it runs after the provider's own post-configuration.
+    /// <c>WithProviders</c> replaces, the validator that asserts the framework's pins on every
+    /// registered provider's options, and the round trip — the challenge, one callback endpoint
+    /// per provider, and the resume endpoint, each of which maps nothing while the map is empty.
+    /// The pin itself is registered by <c>WithProviders</c>, at the tail of the collection, so it
+    /// runs after the provider's own post-configuration.
     /// </summary>
     private static void AddProviderServices(IServiceCollection services)
     {
         services.TryAddSingleton(ProviderRegistry.Empty);
+        services.TryAddSingleton<ProviderHandlerActivator>();
+        services.TryAddSingleton<ProviderChallenge>();
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IZeeKayDaEndpoint, ProviderCallbackEndpoint>());
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IZeeKayDaEndpoint, ResumeEndpoint>());
 
         // Open generic, constrained to AuthenticationSchemeOptions: the container skips it for
         // every other options type, and it skips itself for every name that is not a provider.
@@ -240,8 +250,8 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
     /// <strong>All four are registered together, and that is load-bearing.</strong> ASP.NET Core
     /// promotes a lone registered scheme to the automatic default, so registering only the schemes
     /// in use today would hand a bare host exactly the silent grant described above.
-    /// <c>zkd.external</c> and <c>zkd.pending</c> are consumed by the external-provider leg;
-    /// registering them now also keeps their names from being taken.
+    /// <c>zkd.external</c> and <c>zkd.pending</c> serve the external-provider round trip, and are
+    /// registered whether or not a provider is.
     /// </para>
     /// </remarks>
     private static void AddInteractionCookies(IServiceCollection services)
@@ -268,6 +278,10 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
             ConfigureFrameworkCookie(options, ZeeKayDaCookies.External);
             options.Cookie.SameSite = SameSiteMode.Lax;
             options.ExpireTimeSpan = TimeSpan.FromMinutes(5);
+
+            // Only a provider's callback endpoint may sign in here, and the provider is what that
+            // endpoint's route says: recorded from the request, refused without it.
+            options.Events.OnSigningIn = ExternalTicket.RecordProvider;
         });
 
         authentication.AddCookie(ZeeKayDaCookies.Pending, options =>

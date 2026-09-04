@@ -29,19 +29,22 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
     private readonly LocalErrorResponse _localError;
     private readonly ClientErrorRedirect _clientError;
     private readonly ProviderRegistry _providers;
+    private readonly ProviderChallenge _challenge;
 
     public AuthorizationEndpoint(
         IOptions<AuthorizationServerOptions> options,
         AuthorizationFlow flow,
         LocalErrorResponse localError,
         ClientErrorRedirect clientError,
-        ProviderRegistry providers)
+        ProviderRegistry providers,
+        ProviderChallenge challenge)
     {
         _options = options;
         _flow = flow;
         _localError = localError;
         _clientError = clientError;
         _providers = providers;
+        _challenge = challenge;
     }
 
     /// <inheritdoc/>
@@ -160,9 +163,10 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
                 return Results.Redirect(InteractionHandoff.BuildRedirectUrl(loginPath, requestContext.Id));
 
             case LoginDispatchRule.SingleProvider:
-                // The challenge to that provider lands with the external round trip. The context
-                // is already written, so what that stage adds is the redirect, not the state.
-                return PreAlphaNotImplementedResult.Result;
+                // The framework can choose, so the user never sees a page of the host's: the
+                // handler writes the redirect to the provider itself.
+                await _challenge.ChallengeAsync(context, requestContext, _providers.Registrations[0]).ConfigureAwait(false);
+                return Results.Empty;
 
             default:
                 // A configuration failure, reported to the client rather than rendered at the

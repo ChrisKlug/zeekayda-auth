@@ -111,4 +111,61 @@ public interface ILoginInteraction
     /// There is no active HTTP request — the service was resolved outside one.
     /// </exception>
     Task DenyAsync();
+
+    /// <summary>
+    /// Sends the user out to one of the external providers in <see cref="Providers"/> to be
+    /// authenticated there, and continues the authorization request when they return.
+    /// </summary>
+    /// <param name="provider">
+    /// The <see cref="ProviderDescriptor.Id"/> of the provider the user picked, as the page
+    /// received it from <see cref="Providers"/>.
+    /// </param>
+    /// <remarks>
+    /// <para>
+    /// <strong>Terminal.</strong> This writes and commits the response, so it must be the last
+    /// thing the page does. Returning a result of your own after calling it does not reach the
+    /// browser — it throws, because the response has already started.
+    /// </para>
+    /// <para>
+    /// The page names no scheme, callback path or return URL. The framework activates the
+    /// provider's handler, serves its callback, and brings the user back to establish the SSO
+    /// session — through <c>ProviderOptions.OnProviderSignIn</c> first, when the host registered
+    /// one. Reach this only from a state-changing request — a form post, not a link.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="ZeeKayDaInteractionException">
+    /// There is no interaction to continue: the request carries no <c>zkd_i</c>, the interaction
+    /// context cookie is absent or expired, or the two do not name the same interaction. Or
+    /// <paramref name="provider"/> is not the identifier of a registered provider.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="provider"/> is null or empty.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// There is no active HTTP request — the service was resolved outside one.
+    /// </exception>
+    Task ChallengeAsync(string provider);
+
+    /// <summary>
+    /// The principal an external provider authenticated that
+    /// <c>ProviderSignInContext.RedirectToAsync</c> parked for this page, or
+    /// <see langword="null"/> when there is none: the redirect did not come from there, the
+    /// parked principal has expired, or it belongs to another interaction. A page that gets
+    /// <see langword="null"/> has nothing to link and should say so, not fail.
+    /// </summary>
+    /// <remarks>
+    /// The parked principal is single-use: the <see cref="SignInAsync"/> that completes its
+    /// interaction consumes it, whatever principal the page passes. A page that links the external
+    /// identity to a local account passes its own principal; one that merely collected more passes
+    /// this one, with what it collected added.
+    /// </remarks>
+    /// <exception cref="ZeeKayDaInteractionException">
+    /// The request carries no <c>zkd_i</c>, so there is no interaction to read a parked principal
+    /// for. The framework adds it to the URL it redirects the page to; a form that regenerates its
+    /// action from routing drops it.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// There is no active HTTP request — the service was resolved outside one.
+    /// </exception>
+    Task<PendingPrincipal?> GetPendingPrincipalAsync();
 }

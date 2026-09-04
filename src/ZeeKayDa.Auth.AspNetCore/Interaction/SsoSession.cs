@@ -22,9 +22,6 @@ internal static class SsoSessionClaimTypes
 
     /// <summary>An authentication method reference. One claim per value.</summary>
     public const string Amr = "zkd:amr";
-
-    /// <summary>The prefix reserved for framework-minted claims.</summary>
-    public const string ReservedPrefix = "zkd:";
 }
 
 /// <summary>
@@ -156,13 +153,10 @@ internal sealed class SsoSession
     /// </summary>
     private static ClaimsPrincipal BuildSessionPrincipal(ClaimsPrincipal principal, SsoSessionState state)
     {
-        // Case-insensitively, because that is how the claims are read back: ClaimsPrincipal's
-        // FindFirst and FindAll match a claim type with OrdinalIgnoreCase. An ordinal strip would
-        // leave "ZKD:sid" in place and it would then win the lookup, since the host's claims are
-        // added ahead of the framework's.
+        // The host's claims are added ahead of the framework's, so a reserved one left in place
+        // would win the lookup.
         var claims = principal.Claims
-            .Where(claim => !claim.Type.StartsWith(
-                SsoSessionClaimTypes.ReservedPrefix, StringComparison.OrdinalIgnoreCase))
+            .Where(claim => !ReservedClaims.IsReserved(claim))
             .ToList();
 
         claims.Add(new Claim(SsoSessionClaimTypes.SessionId, state.SessionId));

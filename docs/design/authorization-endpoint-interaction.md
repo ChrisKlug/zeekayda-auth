@@ -1,9 +1,9 @@
 # Authorization endpoint interaction
 
 **Status: partly built.** Request validation (#83), the interaction context (#84), the local
-login handoff (#85, local leg), provider registration with its pins and the login dispatch rules
-(#85, provider registration) have landed; the external round trip, consent and code issuance have
-not, so a request that reaches the end of what exists answers `501`. Originally
+login handoff, provider registration with its pins, the login dispatch rules and the external
+round trip (#85) have landed; consent and code issuance have not, so a request that reaches the
+end of what exists answers `501`. Originally
 ADR 0005 (accepted 2026-07-01, issue #156); revised 2026-08-28 in the S2 shape conversation
 (#534/#83/#84), which reversed the interception model, renamed the interaction services and cut the
 interaction store; login dispatch between local sign-in and external providers settled
@@ -292,13 +292,15 @@ registering one fails at startup. All `HttpOnly`, Data-Protection encrypted.
 `zkd.pending` is single-use (signed out on `SignInAsync`) and bound to its interaction via a
 `zkd:interaction_id` claim.
 
-**Built so far:** `zkd.session` as a cookie scheme, and `zkd.interaction` as a Data-Protection
-payload written directly rather than through a handler — it carries no principal, so a cookie
-authentication scheme would be a ticket serializer wrapped around bytes that are not a ticket. All
-four names are reserved from today regardless, so a host cannot take one and break on upgrade.
-`zkd.session` takes `SameSite=Lax`: the session is read while answering a top-level GET the user
-arrived at from the client's site, which is what `Strict` withholds, and `None` buys nothing until
-iframe-based silent authentication is supported.
+**As built:** `zkd.session`, `zkd.external` and `zkd.pending` are cookie schemes; `zkd.interaction`
+is a Data-Protection payload written directly rather than through a handler — it carries no
+principal, so a cookie authentication scheme would be a ticket serializer wrapped around bytes that
+are not a ticket. `zkd.session` takes `SameSite=Lax`: the session is read while answering a
+top-level GET the user arrived at from the client's site, which is what `Strict` withholds, and
+`None` buys nothing until iframe-based silent authentication is supported. `zkd.external` accepts a
+sign-in only from a request a provider callback endpoint marked, records that provider into the
+ticket, and is consumed by `/connect/resume` whether or not the resume succeeds. `zkd.pending` is
+also consumed by a `DenyAsync` at the login page, and carries the provider as a second reserved claim.
 
 ## The interaction context
 
@@ -476,8 +478,8 @@ public sealed class PendingPrincipal                     // GetPendingPrincipalA
 `ProviderDescriptor.Id` is opaque to the host: it happens to equal the scheme name, but the page
 reads it from `Providers` and posts it back, never writes it. The invariant is that no host code
 *contains* a scheme name, and round-tripping a framework-handed value does not.
-`ClientInformation.DisplayName` is the nullable `ClientRegistration.DisplayName` pulled forward
-from consent (#86), which inherits it. Configuration lives on properties and request-bound data
+`ClientInformation` carries `ClientId` only until consent (#86) gives the registration a display
+name; adding the member then is non-breaking. Configuration lives on properties and request-bound data
 behind async methods — a property getter that decrypted cookies and threw on a bad `zkd_i` would
 be bad .NET API, so anything read from the interaction context stays a method.
 

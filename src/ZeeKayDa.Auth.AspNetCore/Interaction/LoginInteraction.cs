@@ -1,18 +1,14 @@
 using System.Security.Claims;
-using System.Security.Cryptography;
-using System.Text;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
-using ZeeKayDa.Auth.AspNetCore.Endpoints;
 using ZeeKayDa.Auth.AspNetCore.Providers;
 using ZeeKayDa.Auth.Authorization;
 
 namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 
 /// <summary>
-/// Default <see cref="ILoginInteraction"/> implementation: verifies the handoff, promotes the
-/// principal to an SSO session, records the authentication on the interaction context, and
-/// continues the flow.
+/// Default <see cref="ILoginInteraction"/> implementation: verifies the handoff, then signs the
+/// user in, cancels the request, or sends the user out to an external provider.
 /// </summary>
 /// <remarks>
 /// Every read and write here is addressed by the interaction identifier the request carried —
@@ -29,34 +25,46 @@ internal sealed class LoginInteraction : ILoginInteraction
     /// </summary>
     private const string CancelledAtSignIn = "The user cancelled the request at the sign-in page.";
 
+    private const string NoHttpContext =
+        "ILoginInteraction requires an active HTTP request. Resolve it from request services " +
+        "inside the login page, not from a background service.";
+
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly AuthorizationFlow _flow;
-    private readonly LocalErrorResponse _localError;
     private readonly ClientErrorRedirect _clientError;
     private readonly IOptions<AuthorizationServerOptions> _options;
     private readonly ProviderRegistry _providers;
+    private readonly SignInCompletion _completion;
+    private readonly ProviderChallenge _challenge;
+    private readonly PendingPrincipalCookie _pending;
 
     public LoginInteraction(
         IHttpContextAccessor httpContextAccessor,
         AuthorizationFlow flow,
-        LocalErrorResponse localError,
         ClientErrorRedirect clientError,
         IOptions<AuthorizationServerOptions> options,
-        ProviderRegistry providers)
+        ProviderRegistry providers,
+        SignInCompletion completion,
+        ProviderChallenge challenge,
+        PendingPrincipalCookie pending)
     {
         ArgumentNullException.ThrowIfNull(httpContextAccessor);
         ArgumentNullException.ThrowIfNull(flow);
-        ArgumentNullException.ThrowIfNull(localError);
         ArgumentNullException.ThrowIfNull(clientError);
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(providers);
+        ArgumentNullException.ThrowIfNull(completion);
+        ArgumentNullException.ThrowIfNull(challenge);
+        ArgumentNullException.ThrowIfNull(pending);
 
         _httpContextAccessor = httpContextAccessor;
         _flow = flow;
-        _localError = localError;
         _clientError = clientError;
         _options = options;
         _providers = providers;
+        _completion = completion;
+        _challenge = challenge;
+        _pending = pending;
     }
 
     /// <inheritdoc/>
@@ -73,47 +81,16 @@ internal sealed class LoginInteraction : ILoginInteraction
                 + "AuthenticationMethods.Password, or pass none to omit the amr claim.",
                 nameof(authenticationMethods));
 
-        var context = _httpContextAccessor.HttpContext
-            ?? throw new InvalidOperationException(
-                "ILoginInteraction requires an active HTTP request. Resolve it from request services " +
-                "inside the login page, not from a background service.");
-
+        var context = RequireHttpContext();
         var requestContext = await ResolveInteractionAsync(context).ConfigureAwait(false);
 
-        // Responses on this path carry protocol material once code issuance lands (#87), and a
-        // cached sign-in response is a stolen one.
-        context.Response.Headers.CacheControl = "no-store";
+        // A parked external principal is single-use and consumed by whichever sign-in completes
+        // its interaction. The host's principal is what the session holds; the provider that
+        // started the sign-in is still recorded on the request.
+        var pending = await _pending.ConsumeAsync(context, requestContext.Id).ConfigureAwait(false);
 
-        var state = await _flow.PromoteAsync(context, principal, authenticationMethods).ConfigureAwait(false);
-
-        var authenticated = requestContext with
-        {
-            SsoSessionId = state.SessionId,
-            Subject = state.Subject,
-            AuthTime = state.AuthTime,
-            Amr = state.Amr,
-        };
-
-        if (!_flow.TryPersist(context, authenticated))
-        {
-            // Only reachable for a context already near the size ceiling before four small fields
-            // were added to it. The session is established either way — what cannot continue is
-            // this authorization request, so it fails where the oversize did.
-            _flow.Clear(context);
-            await WriteTerminalAsync(
-                context,
-                _localError.Render(
-                    context,
-                    AuthorizeRequestErrors.InvalidRequest,
-                    "The authorization request is too large to process."))
-                .ConfigureAwait(false);
-
-            return;
-        }
-
-        // Consent (#86) and code issuance (#87) replace this. The session and the authenticated
-        // context are already written, so what those slices add is the response, not the state.
-        await WriteTerminalAsync(context, PreAlphaNotImplementedResult.Result).ConfigureAwait(false);
+        await _completion.CompleteAsync(context, requestContext, principal, authenticationMethods, pending?.Provider)
+            .ConfigureAwait(false);
     }
 
     /// <summary>
@@ -124,24 +101,21 @@ internal sealed class LoginInteraction : ILoginInteraction
     /// </summary>
     public async Task DenyAsync()
     {
-        var context = _httpContextAccessor.HttpContext
-            ?? throw new InvalidOperationException(
-                "ILoginInteraction requires an active HTTP request. Resolve it from request services " +
-                "inside the login page, not from a background service.");
-
+        var context = RequireHttpContext();
         var requestContext = await ResolveInteractionAsync(context).ConfigureAwait(false);
 
         context.Response.Headers.CacheControl = "no-store";
 
         // Discarded before the response is written, so a cancelled request cannot be resumed by a
-        // later sign-in picking the context back up.
+        // later sign-in picking the context back up — nor by a parked principal bound to it.
         _flow.Clear(context);
+        await _pending.ConsumeAsync(context, requestContext.Id).ConfigureAwait(false);
 
         // The destination is the redirect URI phase 1 matched against the registration, read back
         // out of the encrypted context — never anything this request supplied. No session is
         // promoted and none is read: a user cancelling here is not signed in, and a user who was
         // already signed in elsewhere stays that way.
-        await WriteTerminalAsync(
+        await TerminalResponse.WriteAsync(
             context,
             _clientError.To(
                 requestContext.RedirectUri,
@@ -151,23 +125,42 @@ internal sealed class LoginInteraction : ILoginInteraction
             .ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Writes a terminal response and commits it, so that this really is the last word on the
-    /// request.
-    /// </summary>
-    /// <remarks>
-    /// Executing the result is not enough. A redirect sets the status and <c>Location</c> without
-    /// flushing, leaving <see cref="HttpResponse.HasStarted"/> false, so a page that returns a
-    /// result of its own after calling a terminal method silently replaces both — which for a deny
-    /// is the open redirect the interaction identifier exists to prevent, written in host code
-    /// where nothing validates it. Starting the response commits the headers, turning that mistake
-    /// into an exception the first time the page is exercised.
-    /// </remarks>
-    private static async Task WriteTerminalAsync(HttpContext context, IResult result)
+    /// <inheritdoc/>
+    public async Task ChallengeAsync(string provider)
     {
-        await result.ExecuteAsync(context).ConfigureAwait(false);
+        ArgumentException.ThrowIfNullOrEmpty(provider);
+
+        var context = RequireHttpContext();
+        var requestContext = await ResolveInteractionAsync(context).ConfigureAwait(false);
+
+        // The identifier selects from the configured set; it never names a target. The value is
+        // request input, so the message does not echo it.
+        var registration = _providers.Find(provider)
+            ?? throw new ZeeKayDaInteractionException(
+                "The provider identifier is not one of the registered providers. Pass the Id of an " +
+                "entry in ILoginInteraction.Providers, as the login page received it.");
+
+        context.Response.Headers.CacheControl = "no-store";
+
+        await _challenge.ChallengeAsync(context, requestContext, registration).ConfigureAwait(false);
         await context.Response.StartAsync().ConfigureAwait(false);
     }
+
+    /// <inheritdoc/>
+    public async Task<PendingPrincipal?> GetPendingPrincipalAsync()
+    {
+        var context = RequireHttpContext();
+        var interactionId = await RequireInteractionIdAsync(context).ConfigureAwait(false);
+
+        var pending = await _pending.ReadAsync(context, interactionId).ConfigureAwait(false);
+        if (pending is null || _providers.Find(pending.Provider) is not { } registration)
+            return null;
+
+        return new PendingPrincipal(pending.Principal, registration.Descriptor);
+    }
+
+    private HttpContext RequireHttpContext() =>
+        _httpContextAccessor.HttpContext ?? throw new InvalidOperationException(NoHttpContext);
 
     /// <summary>
     /// Resolves the interaction this request is entitled to complete: the one the framework sent
@@ -176,19 +169,14 @@ internal sealed class LoginInteraction : ILoginInteraction
     /// </summary>
     private async ValueTask<AuthorizationRequestContext> ResolveInteractionAsync(HttpContext context)
     {
-        var interactionId = await InteractionHandoff.ReadInteractionIdAsync(context.Request).ConfigureAwait(false)
-            ?? throw new ZeeKayDaInteractionException(
-                $"This request carries no '{InteractionHandoff.InteractionIdParameter}' parameter, so there " +
-                "is no interaction to complete. The framework adds it to the URL it redirects the login " +
-                "page to; a form that regenerates its action from routing drops it, and must pass it back " +
-                $"explicitly (asp-route-{InteractionHandoff.InteractionIdParameter}).");
+        var interactionId = await RequireInteractionIdAsync(context).ConfigureAwait(false);
 
         var requestContext = _flow.Read(context)
             ?? throw new ZeeKayDaInteractionException(
                 "There is no active interaction to complete. The authorization request has expired, or " +
                 "the login page was reached without going through /connect/authorize.");
 
-        if (!IdentifiersMatch(requestContext.Id, interactionId))
+        if (!InteractionHandoff.IdentifiersMatch(requestContext.Id, interactionId))
             throw new ZeeKayDaInteractionException(
                 "The interaction this request names is not the one this browser is carrying. This is what " +
                 "a second sign-in tab looks like: complete the authorization request that was started " +
@@ -197,15 +185,13 @@ internal sealed class LoginInteraction : ILoginInteraction
         return requestContext;
     }
 
-    /// <summary>
-    /// Compares in fixed time. The identifier is never published — it lives inside the encrypted
-    /// context and on the URL of the page the framework redirected to — so a comparison that
-    /// leaked its bytes through timing would leak something the caller is not otherwise given.
-    /// </summary>
-    private static bool IdentifiersMatch(string expected, string supplied) =>
-        CryptographicOperations.FixedTimeEquals(
-            Encoding.UTF8.GetBytes(expected),
-            Encoding.UTF8.GetBytes(supplied));
+    private static async ValueTask<string> RequireInteractionIdAsync(HttpContext context) =>
+        await InteractionHandoff.ReadInteractionIdAsync(context.Request).ConfigureAwait(false)
+            ?? throw new ZeeKayDaInteractionException(
+                $"This request carries no '{InteractionHandoff.InteractionIdParameter}' parameter, so there " +
+                "is no interaction to complete. The framework adds it to the URL it redirects the login " +
+                "page to; a form that regenerates its action from routing drops it, and must pass it back " +
+                $"explicitly (asp-route-{InteractionHandoff.InteractionIdParameter}).");
 
     /// <inheritdoc/>
     public bool LocalLoginEnabled => _options.Value.AuthorizationEndpoint.Interaction.SupportsLocalSignIn;

@@ -8,6 +8,42 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **The external provider round trip: challenge, callback, resume, and the host's say in it** (#85)
+
+  The login page starts it with `ILoginInteraction.ChallengeAsync(providerId)`, passing back the
+  `ProviderDescriptor.Id` it was handed; a host with local sign-in off, no login page and exactly
+  one provider is sent there by the authorization endpoint without a page. The framework
+  activates the provider's handler itself and challenges it with properties it wrote — the return
+  address `/connect/resume?zkd_i=…` and the interaction identifier stamped into the properties.
+  One routed endpoint per provider serves `/connect/callback/{provider}`, marks the request with
+  the provider the route names, and hands it to the handler, which completes the protocol and
+  signs into the framework's external cookie; that cookie refuses a sign-in from anywhere else.
+  `/connect/resume` consumes the ticket, refuses one that names another interaction or an
+  unregistered provider, and promotes the principal into the SSO session under a subject derived
+  from the provider, the subject claim's issuer and the upstream value — never the upstream value
+  itself, so two providers returning the same identifier can never share a session, and a subject
+  claim without an issuer is refused. Every `IAuthenticationHandler` is supported; one outside the
+  remote base class carries the challenge properties through its round trip and finishes with a
+  sign-in to the external scheme followed by a redirect to the properties' return URL.
+
+  The host takes part through the new second argument of `WithProviders`:
+  `ProviderOptions.OnProviderSignIn` fires at resume with a `ProviderSignInContext` — the
+  principal, the provider, the client (`ClientInformation.ClientId`) and the effective scopes.
+  `RedirectToAsync(path)` parks the principal in the pending cookie, bound to its interaction, and
+  sends the user to a host-relative page carrying `zkd_i`; that page reads it back with
+  `ILoginInteraction.GetPendingPrincipalAsync()` — `null` when absent, expired or bound to another
+  interaction — and finishes with `SignInAsync`, which consumes it. `DenyAsync()` answers the
+  client with `access_denied` naming the provider stage. Calling neither promotes; calling both,
+  or a path outside the host, throws.
+
+  Only a refusal by the user at the provider reaches the client, as `access_denied`, and only when
+  the refused challenge names the interaction the browser is carrying: the framework pins its own
+  `OnAccessDenied` on every remote provider and refuses a host-set one or an `EventsType` at
+  startup. Every other callback failure — a correlation failure, an outage, a replayed URL —
+  renders the local error page, logged by exception type and never by message, and leaves the
+  interaction alive for another attempt. A handler declining its own callback answers an empty
+  404. Also refused at startup: a host remote scheme whose `CallbackPath` is a provider's route.
+
 - **External providers are registered through `WithProviders`, and the login page sees them** (#85, provider registration)
 
   `ZeeKayDaAuthBuilder.WithProviders(auth => auth.AddGoogle(...))` hands the host a real
@@ -42,8 +78,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   so a `client_credentials`-only host starts clean.
 
   The round trip itself — the challenge, the callback endpoints, `/connect/resume` and the
-  pending principal — is the next slice. Until it lands, a single-provider host without a login
-  page answers `501` at the point the challenge will be issued.
+  pending principal — is the entry above.
 
 - **A terminal interaction method now commits the response, so a host page cannot replace it** (#625)
 

@@ -24,7 +24,7 @@ internal sealed class ProviderRegistry
     {
         _registrations = registrations;
         Descriptors = registrations
-            .Select(registration => new ProviderDescriptor(registration.Name, registration.DisplayName))
+            .Select(registration => registration.Descriptor)
             .ToImmutableArray();
     }
 

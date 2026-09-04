@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Authentication;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
 namespace ZeeKayDa.Auth.AspNetCore.Providers;
@@ -54,7 +53,7 @@ internal sealed class ProviderOptionsStartupActivator : IStartupActivator
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (OptionsType(registration.HandlerType) is not { } optionsType)
+            if (HandlerOptions.TypeOf(registration.HandlerType) is not { } optionsType)
                 continue;
 
             if (Resolve(scopedServices, optionsType, registration.Name) is { } failed)
@@ -83,7 +82,7 @@ internal sealed class ProviderOptionsStartupActivator : IStartupActivator
     {
         try
         {
-            OptionsResolver.For(optionsType).Resolve(services, name);
+            HandlerOptions.Resolve(services, optionsType, name);
             return null;
         }
         catch (OptionsValidationException ex)
@@ -128,40 +127,5 @@ internal sealed class ProviderOptionsStartupActivator : IStartupActivator
             message += $" {others} further validation failure(s) came from the provider's or the host's own rules; see the inner exception.";
 
         return message;
-    }
-
-    /// <summary>
-    /// The <c>TOptions</c> of the <see cref="AuthenticationHandler{TOptions}"/> in the handler's
-    /// base chain, or <see langword="null"/> for a handler outside that hierarchy.
-    /// </summary>
-    private static Type? OptionsType(Type handlerType)
-    {
-        for (var type = handlerType; type is not null; type = type.BaseType)
-        {
-            if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(AuthenticationHandler<>))
-                return type.GenericTypeArguments[0];
-        }
-
-        return null;
-    }
-
-    /// <summary>
-    /// Resolves <c>IOptionsMonitor&lt;TOptions&gt;</c> for an options type known only at runtime,
-    /// through a virtual call rather than a reflective invoke, so a validation failure surfaces as
-    /// itself and not wrapped in a <see cref="System.Reflection.TargetInvocationException"/>.
-    /// </summary>
-    private abstract class OptionsResolver
-    {
-        public static OptionsResolver For(Type optionsType) =>
-            (OptionsResolver)Activator.CreateInstance(typeof(OptionsResolver<>).MakeGenericType(optionsType))!;
-
-        public abstract void Resolve(IServiceProvider services, string name);
-    }
-
-    private sealed class OptionsResolver<TOptions> : OptionsResolver
-        where TOptions : class
-    {
-        public override void Resolve(IServiceProvider services, string name) =>
-            services.GetRequiredService<IOptionsMonitor<TOptions>>().Get(name);
     }
 }
