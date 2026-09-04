@@ -57,29 +57,10 @@ internal sealed class ProviderOptionsStartupActivator : IStartupActivator
             if (OptionsType(registration.HandlerType) is not { } optionsType)
                 continue;
 
-            try
+            if (Resolve(scopedServices, optionsType, registration.Name) is { } failed)
             {
-                OptionsResolver.For(optionsType).Resolve(scopedServices, registration.Name);
-            }
-            catch (OptionsValidationException ex)
-            {
-                failures.Add(new ZeeKayDaConfigurationFailure("provider.options_invalid", Describe(registration.Name, ex)));
-                causes.Add(ex);
-            }
-            catch (ZeeKayDaConfigurationException ex)
-            {
-                // A well-formed failure from a provider's or a host's own configuration code keeps
-                // its stable codes; re-classifying it would flatten what an operator alerts on.
-                failures.AddRange(ex.AggregatedFailures);
-                causes.Add(ex);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                failures.Add(new ZeeKayDaConfigurationFailure(
-                    "provider.options_invalid",
-                    $"The options for provider '{registration.Name}' could not be resolved: " +
-                    $"{ex.GetType().FullName} was thrown. See the inner exception for the root cause."));
-                causes.Add(ex);
+                failures.AddRange(failed.Failures);
+                causes.Add(failed.Cause);
             }
         }
 
@@ -89,6 +70,43 @@ internal sealed class ProviderOptionsStartupActivator : IStartupActivator
             throw new ZeeKayDaConfigurationException(failures, causes.Count == 1 ? causes[0] : new AggregateException(causes));
 
         return ValueTask.CompletedTask;
+    }
+
+    /// <summary>
+    /// Resolves one provider's named options, returning <see langword="null"/> when they are
+    /// valid and otherwise the failures to report with the exception behind them.
+    /// </summary>
+    private static (IReadOnlyList<ZeeKayDaConfigurationFailure> Failures, Exception Cause)? Resolve(
+        IServiceProvider services,
+        Type optionsType,
+        string name)
+    {
+        try
+        {
+            OptionsResolver.For(optionsType).Resolve(services, name);
+            return null;
+        }
+        catch (OptionsValidationException ex)
+        {
+            return ([new ZeeKayDaConfigurationFailure("provider.options_invalid", Describe(name, ex))], ex);
+        }
+        catch (ZeeKayDaConfigurationException ex)
+        {
+            // A well-formed failure from a provider's or a host's own configuration code keeps
+            // its stable codes; re-classifying it would flatten what an operator alerts on.
+            return (ex.AggregatedFailures, ex);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return (
+                [
+                    new ZeeKayDaConfigurationFailure(
+                        "provider.options_invalid",
+                        $"The options for provider '{name}' could not be resolved: {ex.GetType().FullName} " +
+                        "was thrown. See the inner exception for the root cause."),
+                ],
+                ex);
+        }
     }
 
     /// <summary>
