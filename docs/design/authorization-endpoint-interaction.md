@@ -51,9 +51,11 @@ builder.Services
 every existing provider package (`AddFacebook`, `AddGoogle`, `AddOpenIdConnect`, …) works
 unchanged. Nothing is subclassed, wrapped, renamed or moved to another container. `WithProviders`
 may be called more than once; each call takes its own window, and the collision checks run across
-calls. The window is the count-based tail of the collection, so a callback that inserts or removes
-descriptors rather than appending is unsupported: a scheme registered that way is simply not ours,
-visible to the host and never offered, and nothing on NuGet does it.
+calls. The window is the tail of the collection, and the framework checks that it is only that:
+it snapshots the descriptors present before the callback and fails registration if any of them was
+removed, reordered, or had something inserted ahead of it. A callback that mutates the collection
+rather than appending to it could otherwise leave a scheme in the host's map that the replay never
+saw, and "unsupported" is not a guarantee — the check is.
 
 ### Observe, then take (settled 2026-09-04)
 
@@ -111,21 +113,31 @@ which fails closed at request time rather than at startup — accepted.
   into `zkd.external` with the properties it was challenged with, and redirects to the
   `RedirectUri` ZeeKayDa set: `/connect/resume`. The endpoint owns the other two outcomes. A
   `false` return is a handler declining its own callback — logged at error level, answered with
-  an empty 404, never fallen through to the next middleware. An exception — a remote failure, or
-  the user refusing at the provider, which `RemoteAuthenticationHandler` surfaces as an
-  `AuthenticationFailureException` once `AccessDeniedPath` is cleared — is logged by type, never
-  by message, since the message embeds the provider's `error_description`; the endpoint then
-  answers `access_denied` at the client's registered redirect URI when the interaction context is
-  recoverable, and the local error page when it is not (a `form_post` callback is a cross-site
-  POST that `zkd.interaction`'s `Lax` cookie does not accompany).
+  an empty 404, never fallen through to the next middleware. An exception is logged by type,
+  never by message, since the message embeds the provider's `error_description`, and is then
+  classified — only an explicit refusal by the user at the provider becomes `access_denied`. The
+  pin chains onto the remote handler's `OnAccessDenied` event, which fires before the handler
+  turns the refusal into an `AuthenticationFailureException`, and records a refusal mark on the
+  same request feature that carries the provider; an exception with that mark is `access_denied`,
+  and every other one — a correlation failure, a provider outage, a misconfiguration, a handler
+  bug — is `server_error`. Either answer goes to the client's registered redirect URI only when
+  the failure is **bound**: the handler authenticated its state, and the properties it surfaced
+  carry the interaction id `ChallengeAsync` stamped, matching the `zkd.interaction` cookie. An
+  unbound failure — a missing or invalid correlation, no properties at all — renders the local
+  error page and touches no interaction, so a stray or attacker-driven request to a callback route
+  cannot cancel a live authorization request through the ambient cookie. A bound failure whose
+  cookie is absent (a `form_post` callback is a cross-site POST that the `Lax` cookie does not
+  accompany) also renders locally. A handler outside the base class has no refusal channel, so
+  its failures are `server_error`.
 - *Challenge.* `ILoginInteraction.ChallengeAsync` activates the handler and calls its
   `ChallengeAsync` with a `RedirectUri` of `/connect/resume?zkd_i=<id>` under the issuer path,
   derived through the same route helper as the callback, so a path-based issuer completes.
 
 **Startup errors, not silent tolerance.** Invisibility is now a guarantee, so what would break it
-fails at startup with a message naming the fix: a provider name that is not path-safe, or that
-collides with another ignoring case, since routing and `PathString` comparison are case-insensitive
-while scheme names are ordinal; a configure lambda in the window that also sets
+fails at startup with a message naming the fix: a provider name outside the grammar — 1 to 64
+ASCII letters, digits, `-`, `_` or `.`, compared ordinally, unique ignoring case, since routing and
+`PathString` comparison are case-insensitive while scheme names are ordinal — checked before any
+route is built; a configure lambda in the window that also sets
 `AuthenticationOptions` defaults (they belong on `AddAuthentication`); and any
 `IConfigureOptions<AuthenticationOptions>` or `IPostConfigureOptions<AuthenticationOptions>` in the
 window that is not a replayable instance — a factory or type registration — because it can neither
@@ -472,7 +484,15 @@ their issuer, so the session subject of an auto-promoted external principal is d
 base64url(SHA-256(len(provider id) ‖ provider id ‖ len(upstream sub) ‖ upstream sub)): injective,
 because the length prefixes leave no separator to collide on; fixed-length, well inside the
 255-character `sub` limit; stable for the life of the upstream account. Two providers returning
-the same value cannot share a session or a `sub`. A host
+the same value cannot share a session or a `sub`. The derivation assumes what a provider
+registration *is*: one identity namespace. A scheme is one OpenID Connect authority or one OAuth
+provider, so its subjects are unique within it. A hand-written handler that accepts identities
+from several issuers behind one scheme breaks that assumption and must either register one scheme
+per issuer or qualify the subject it returns itself; the framework cannot see an issuer the handler
+did not surface. The scheme name is that namespace's durable identity: re-registering the same
+name keeps every subject, which is what an operator rotating a secret or an endpoint wants, and
+what an operator moving the name to a *different* upstream must not do — that is a new provider
+and needs a new name, or the old upstream's subjects would be handed to the new one's users. A host
 that maps external identities onto its own users does so on the page `RedirectToAsync` leads to and
 calls `ILoginInteraction.SignInAsync` with its own principal, which consumes the pending one.
 `OnSigningIn` fires for every sign-in
