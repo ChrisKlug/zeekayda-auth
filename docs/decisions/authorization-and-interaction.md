@@ -13,8 +13,13 @@ authentication scheme.** The authorize endpoint and the internal external-return
 `IZeeKayDaEndpoint`s mapped by `MapZeeKayDaAuth()`, inheriting the route group's HTTPS/`421` guard,
 security headers, issuer-host constraint and `RequireRateLimiting()` (`endpoints.md`). GET and POST
 via `MapMethods` (OIDC Core §3.1.2.1). The framework registers internal *cookie* schemes and
-orchestrates existing handlers; no `AddScheme<ZeeKayDaHandler>` exists. Provider callback paths are
-intercepted by the providers' own remote handlers — natively, pre-routing — not by ZeeKayDa.
+orchestrates existing handlers; no `AddScheme<ZeeKayDaHandler>` exists. Provider schemes are never
+registered with the host's `AuthenticationOptions`: `WithProviders` replays what the host's callback
+added, keeps it in a framework-owned scheme map, and removes the registration, so the host cannot
+enumerate, challenge or authorize against a provider. Each provider's callback is a routed ZeeKayDa
+endpoint of its own that hands the request to that provider's handler, and every remote handler's
+callback path, sign-in scheme and forwarding are pinned by the framework after host configuration
+and asserted at startup, so a later registration that changes them fails the host, not the flow.
 
 **A client registration is validated by the framework at the point of use, not only at
 registration.** Endpoints resolve clients through an internal validating resolver wrapping
