@@ -98,7 +98,7 @@ public static class ZeeKayDaAuthBuilderProviderExtensions
         // provider's own post-configuration, and anything registered after it that changes a
         // pinned member fails startup rather than being silently overridden.
         services.TryAddEnumerable(
-            ServiceDescriptor.Singleton(typeof(IPostConfigureOptions<>), typeof(ProviderOptionsPin<>)));
+            ServiceDescriptor.Singleton(typeof(IPostConfigureOptions<>), typeof(HandlerOptionsPin<>)));
 
         if (options is not null)
             services.Configure(options);

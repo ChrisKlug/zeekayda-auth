@@ -4,10 +4,12 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
 using ZeeKayDa.Auth.AspNetCore.Providers;
 using ZeeKayDa.Auth.Authorization;
+using ZeeKayDa.Auth.Logging;
 
 namespace ZeeKayDa.Auth.AspNetCore.Endpoints;
 
@@ -29,6 +31,9 @@ internal sealed class ResumeEndpoint : IZeeKayDaEndpoint
     private const string NothingToResume =
         "There is no external sign-in to resume. Return to the application and try again.";
 
+    private const string DidNotComplete =
+        "Sign-in through the external identity provider did not complete. Return to the application and try again.";
+
     /// <summary>
     /// What a refusal after the provider tells the client. Names the stage, as the sign-in page's
     /// cancellation does, so a client can tell the two apart; framework-owned, so nothing a host
@@ -45,6 +50,7 @@ internal sealed class ResumeEndpoint : IZeeKayDaEndpoint
     private readonly ClientErrorRedirect _clientError;
     private readonly SignInCompletion _completion;
     private readonly PendingPrincipalCookie _pending;
+    private readonly ISanitizingLogger<ResumeEndpoint> _logger;
 
     public ResumeEndpoint(
         IOptions<AuthorizationServerOptions> options,
@@ -54,7 +60,8 @@ internal sealed class ResumeEndpoint : IZeeKayDaEndpoint
         LocalErrorResponse localError,
         ClientErrorRedirect clientError,
         SignInCompletion completion,
-        PendingPrincipalCookie pending)
+        PendingPrincipalCookie pending,
+        ISanitizingLogger<ResumeEndpoint> logger)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(providerOptions);
@@ -64,6 +71,7 @@ internal sealed class ResumeEndpoint : IZeeKayDaEndpoint
         ArgumentNullException.ThrowIfNull(clientError);
         ArgumentNullException.ThrowIfNull(completion);
         ArgumentNullException.ThrowIfNull(pending);
+        ArgumentNullException.ThrowIfNull(logger);
 
         _options = options;
         _providerOptions = providerOptions;
@@ -73,6 +81,7 @@ internal sealed class ResumeEndpoint : IZeeKayDaEndpoint
         _clientError = clientError;
         _completion = completion;
         _pending = pending;
+        _logger = logger;
     }
 
     /// <summary>The route under the issuer path, derived as every other endpoint's route is.</summary>
@@ -127,10 +136,14 @@ internal sealed class ResumeEndpoint : IZeeKayDaEndpoint
         if (requestContext is null || !InteractionHandoff.IdentifiersMatch(requestContext.Id, interactionId))
             return Refuse(context);
 
-        // The provider is what the callback endpoint recorded from its route. What the remote
-        // handler stamped is a cross-check against a handler that signed in under another name.
+        // The provider is what the callback endpoint recorded from its route. It must be the one
+        // the challenge was issued to — a callback carried to another provider's route, with a
+        // handler that accepts the state, cannot complete as that provider — and what the remote
+        // handler stamped is a further cross-check.
         if (Item(items, ExternalTicket.ProviderItem) is not { } providerName
-            || _providers.Find(providerName) is not { } registration)
+            || _providers.Find(providerName) is not { } registration
+            || Item(items, ExternalTicket.ChallengedProviderItem) is not { } challenged
+            || !string.Equals(challenged, providerName, StringComparison.Ordinal))
         {
             return Refuse(context);
         }
@@ -154,24 +167,65 @@ internal sealed class ResumeEndpoint : IZeeKayDaEndpoint
             path => RedirectToAsync(context, requestContext, registration, principal, path),
             () => DenyAsync(context, requestContext));
 
-        if (_providerOptions.Value.OnProviderSignIn is { } onProviderSignIn)
+        ClaimsPrincipal promoted;
+        try
         {
-            await onProviderSignIn(signIn).ConfigureAwait(false);
-            if (signIn.Completed)
-                return Results.Empty;
+            if (_providerOptions.Value.OnProviderSignIn is { } onProviderSignIn)
+            {
+                await onProviderSignIn(signIn).ConfigureAwait(false);
+                if (signIn.Completed)
+                    return Results.Empty;
+            }
+
+            promoted = ExternalSubject.ForPromotion(registration.Name, principal);
         }
+        catch (Exception ex) when (ex is not OperationCanceledException && !context.Response.HasStarted)
+        {
+            // The host's handler and the handler's principal are caller-supplied; a failure in
+            // either renders locally like a callback failure does, and leaves the interaction
+            // alive. A failure after a terminal call has committed the response cannot be
+            // rendered over and propagates.
+            return Fail(context, registration, ex);
+        }
+
+        // A parked principal bound to this interaction is consumed by whichever sign-in
+        // completes it, the automatic one included.
+        await _pending.ConsumeAsync(context, requestContext.Id).ConfigureAwait(false);
 
         // The framework states nothing about how the user proved who they are at the provider —
         // it was told nothing — so no amr is reported for an auto-promoted external sign-in.
         await _completion.CompleteAsync(
                 context,
                 requestContext,
-                ExternalSubject.ForPromotion(registration.Name, principal),
+                promoted,
                 authenticationMethods: [],
                 providerScheme: registration.Name)
             .ConfigureAwait(false);
 
         return Results.Empty;
+    }
+
+    private IResult Fail(HttpContext context, ProviderRegistration registration, Exception exception)
+    {
+        // The framework's own interaction exception carries framework text — which claim was
+        // missing, and why — and goes through the sanitizing logger whole; anything else is
+        // logged by type, since a host's or a provider's message may carry anything.
+        if (exception is ZeeKayDaInteractionException interaction)
+        {
+            _logger.LogError(
+                interaction,
+                "Signing in through provider {Provider} was refused at promotion.",
+                registration.Name);
+        }
+        else
+        {
+            _logger.LogError(
+                "The sign-in handler for provider {Provider} failed with {ExceptionType}.",
+                registration.Name,
+                exception.GetType().FullName);
+        }
+
+        return _localError.Render(context, AuthorizeRequestErrors.ServerError, DidNotComplete);
     }
 
     private async Task RedirectToAsync(
@@ -194,9 +248,11 @@ internal sealed class ResumeEndpoint : IZeeKayDaEndpoint
     private async Task DenyAsync(HttpContext context, AuthorizationRequestContext requestContext)
     {
         // Discarded before the response is written, so a denied request cannot be resumed by a
-        // later sign-in picking the context back up. The destination is the redirect URI read out
-        // of the encrypted context, never anything this request supplied.
+        // later sign-in picking the context back up — nor by a parked principal bound to it. The
+        // destination is the redirect URI read out of the encrypted context, never anything this
+        // request supplied.
         _flow.Clear(context);
+        await _pending.ConsumeAsync(context, requestContext.Id).ConfigureAwait(false);
 
         await TerminalResponse.WriteAsync(
                 context,

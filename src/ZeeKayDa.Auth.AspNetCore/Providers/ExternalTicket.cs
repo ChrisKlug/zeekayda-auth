@@ -13,6 +13,13 @@ internal static class ExternalTicket
     /// <summary>The interaction the challenge was issued for.</summary>
     public const string InteractionIdItem = "zkd:interaction_id";
 
+    /// <summary>
+    /// The provider the challenge was issued to. Compared at resume with the provider whose
+    /// callback endpoint signed the ticket in, so a callback carried to another provider's route
+    /// — two custom handlers sharing a state format — cannot complete as that provider.
+    /// </summary>
+    public const string ChallengedProviderItem = "zkd:challenged_provider";
+
     /// <summary>The provider whose callback endpoint signed the ticket in.</summary>
     public const string ProviderItem = "zkd:provider";
 

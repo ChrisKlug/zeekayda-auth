@@ -6,7 +6,7 @@ namespace ZeeKayDa.Auth.AspNetCore.Providers;
 /// <summary>
 /// Resolves each registered provider's options once at startup, so that a provider whose options
 /// fail validation — its own rules, or the framework's pins asserted by
-/// <see cref="ProviderOptionsValidator{TOptions}"/> — fails the application before its first
+/// <see cref="HandlerOptionsValidator{TOptions}"/> — fails the application before its first
 /// sign-in rather than during it.
 /// </summary>
 /// <remarks>
@@ -23,11 +23,11 @@ namespace ZeeKayDa.Auth.AspNetCore.Providers;
 /// message, so those travel as the root cause behind the failure, never inside it.
 /// </para>
 /// </remarks>
-internal sealed class ProviderOptionsStartupActivator : IStartupActivator
+internal sealed class HandlerOptionsStartupActivator : IStartupActivator
 {
     private readonly ProviderRegistry _registry;
 
-    public ProviderOptionsStartupActivator(ProviderRegistry registry)
+    public HandlerOptionsStartupActivator(ProviderRegistry registry)
     {
         ArgumentNullException.ThrowIfNull(registry);
 
@@ -115,8 +115,8 @@ internal sealed class ProviderOptionsStartupActivator : IStartupActivator
     private static string Describe(string name, OptionsValidationException ex)
     {
         var pinned = ex.Failures
-            .Where(failure => failure.StartsWith(ProviderOptionsValidator<AuthenticationSchemeOptions>.FailurePrefix, StringComparison.Ordinal))
-            .Select(failure => failure[ProviderOptionsValidator<AuthenticationSchemeOptions>.FailurePrefix.Length..])
+            .Where(failure => failure.StartsWith(HandlerOptionsValidator<AuthenticationSchemeOptions>.FailurePrefix, StringComparison.Ordinal))
+            .Select(failure => failure[HandlerOptionsValidator<AuthenticationSchemeOptions>.FailurePrefix.Length..])
             .ToArray();
         var others = ex.Failures.Count() - pinned.Length;
 

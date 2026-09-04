@@ -147,7 +147,7 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         // Both read what the host's own configuration code produces — a provider's options, the
         // resolved scheme map — so both are activators.
         services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupActivator, ProviderOptionsStartupActivator>());
+            ServiceDescriptor.Singleton<IStartupActivator, HandlerOptionsStartupActivator>());
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IStartupActivator, ProviderSchemeCollisionValidator>());
         services.TryAddEnumerable(
@@ -229,7 +229,7 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         // Open generic, constrained to AuthenticationSchemeOptions: the container skips it for
         // every other options type, and it skips itself for every name that is not a provider.
         services.TryAddEnumerable(
-            ServiceDescriptor.Singleton(typeof(IValidateOptions<>), typeof(ProviderOptionsValidator<>)));
+            ServiceDescriptor.Singleton(typeof(IValidateOptions<>), typeof(HandlerOptionsValidator<>)));
     }
 
     /// <summary>

@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.AspNetCore.Endpoints;
@@ -102,8 +103,21 @@ internal sealed class ProviderSchemeCollisionValidator : IStartupActivator
             return;
         }
 
-        var callbackPath = ((RemoteAuthenticationOptions)HandlerOptions.Resolve(scopedServices, optionsType, scheme.Name))
-            .CallbackPath;
+        PathString callbackPath;
+        try
+        {
+            callbackPath = ((RemoteAuthenticationOptions)HandlerOptions.Resolve(scopedServices, optionsType, scheme.Name))
+                .CallbackPath;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // The host's own scheme failing its own configuration — an options validation
+            // failure, or the argument exception a remote handler's Validate throws — is the
+            // host's failure to hear about, on the host's own path. There is no callback path to
+            // compare, and nothing to report here.
+            return;
+        }
+
         var issuerUri = EndpointRouteHelper.GetIssuerUri(_options);
 
         foreach (var registration in _registry.Registrations

@@ -6,7 +6,7 @@ using ZeeKayDa.Auth.AspNetCore.Interaction;
 namespace ZeeKayDa.Auth.AspNetCore.Providers;
 
 /// <summary>
-/// Asserts what <see cref="ProviderOptionsPin{TOptions}"/> pinned. Validation runs after every
+/// Asserts what <see cref="HandlerOptionsPin{TOptions}"/> pinned. Validation runs after every
 /// post-configurer, so this sees the final values and fails any registered provider's options
 /// whose forwarding — or, on a remote one, callback path, sign-in scheme, access-denied path,
 /// access-denied event or events type — differ from the pins, naming the scheme and the member.
@@ -15,9 +15,9 @@ namespace ZeeKayDa.Auth.AspNetCore.Providers;
 /// Without this, a <c>PostConfigure</c> for the same scheme registered later by the host or a
 /// library would win silently, and the provider would sign into the wrong cookie or call back to
 /// a path nothing serves. The failure surfaces at startup because
-/// <see cref="ProviderOptionsStartupActivator"/> resolves each provider's options once.
+/// <see cref="HandlerOptionsStartupActivator"/> resolves each provider's options once.
 /// </remarks>
-internal sealed class ProviderOptionsValidator<TOptions> : IValidateOptions<TOptions>
+internal sealed class HandlerOptionsValidator<TOptions> : IValidateOptions<TOptions>
     where TOptions : AuthenticationSchemeOptions
 {
     /// <summary>
@@ -30,7 +30,7 @@ internal sealed class ProviderOptionsValidator<TOptions> : IValidateOptions<TOpt
     private readonly ProviderRegistry _registry;
     private readonly IOptions<AuthorizationServerOptions> _options;
 
-    public ProviderOptionsValidator(ProviderRegistry registry, IOptions<AuthorizationServerOptions> options)
+    public HandlerOptionsValidator(ProviderRegistry registry, IOptions<AuthorizationServerOptions> options)
     {
         ArgumentNullException.ThrowIfNull(registry);
         ArgumentNullException.ThrowIfNull(options);

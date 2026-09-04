@@ -47,7 +47,7 @@ ZeeKayDa.Auth.AspNetCore.Interaction.ClientInformation.ClientId.get -> string!
 ZeeKayDa.Auth.AspNetCore.Interaction.ILoginInteraction
 ZeeKayDa.Auth.AspNetCore.Interaction.ILoginInteraction.ChallengeAsync(string! provider) -> System.Threading.Tasks.Task!
 ZeeKayDa.Auth.AspNetCore.Interaction.ILoginInteraction.DenyAsync() -> System.Threading.Tasks.Task!
-ZeeKayDa.Auth.AspNetCore.Interaction.ILoginInteraction.GetPendingPrincipalAsync() -> System.Threading.Tasks.Task<ZeeKayDa.Auth.AspNetCore.Interaction.PendingPrincipal?>!
+ZeeKayDa.Auth.AspNetCore.Interaction.ILoginInteraction.GetPendingPrincipalAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ZeeKayDa.Auth.AspNetCore.Interaction.PendingPrincipal?>!
 ZeeKayDa.Auth.AspNetCore.Interaction.ILoginInteraction.LocalLoginEnabled.get -> bool
 ZeeKayDa.Auth.AspNetCore.Interaction.ILoginInteraction.Providers.get -> System.Collections.Generic.IReadOnlyList<ZeeKayDa.Auth.AspNetCore.Interaction.ProviderDescriptor!>!
 ZeeKayDa.Auth.AspNetCore.Interaction.ILoginInteraction.SignInAsync(System.Security.Claims.ClaimsPrincipal! principal, params string![]! authenticationMethods) -> System.Threading.Tasks.Task!

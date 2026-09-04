@@ -122,9 +122,11 @@ which fails closed at request time rather than at startup — accepted.
   classified — only an explicit refusal by the user at the provider becomes `access_denied`. The
   pin installs a framework-owned `OnAccessDenied` on the remote handler, which fires before the
   handler turns the refusal into an `AuthenticationFailureException`; its only effect is to record
-  a refusal mark on the same request feature that carries the provider, and nothing of the host's
-  runs after it. A host-set `OnAccessDenied` or `EventsType` inside the window fails startup,
-  since either would put the refusal outcome outside the framework's control. An exception with
+  a refusal mark on the same request feature that carries the provider. A host-set
+  `OnAccessDenied` or `EventsType` inside the window fails startup, since either would put the
+  refusal outcome outside the framework's control. `OnRemoteFailure` is deliberately not pinned:
+  it runs after the mark is recorded, and a host that handles the response there owns its own
+  failure page — legitimate, and the host's to keep free of the provider's message. An exception with
   that mark is a refusal and goes to the client's registered redirect URI as `access_denied`. The
   mark is trustworthy because the handler validates its correlation cookie before it looks at the
   provider's error, so a replayed callback URL cannot produce it; the redirect also requires the
@@ -156,7 +158,10 @@ removal took away. That last check reads the resolved `IAuthenticationSchemeProv
 window, so it sees the map as the application will run it.
 
 **The framework trusts no handler for provider identity or interaction binding.** `ChallengeAsync`
-stamps the interaction id into the `AuthenticationProperties` it hands the handler. The callback
+stamps the interaction id and the provider it is challenging into the `AuthenticationProperties`
+it hands the handler; at resume the stamped provider must be the one the callback route recorded,
+so a callback carried to another provider's route by a handler that accepts the same state cannot
+complete as that provider. The callback
 endpoint knows which provider it is, and marks the request before invoking the handler — a feature
 set on the `HttpContext` after routing, never a claim or a property a handler could write;
 `zkd.external`, a framework-owned cookie scheme, records that mark as the provider on sign-in and
@@ -410,9 +415,9 @@ public interface ILoginInteraction   // scoped, as are all the page services
     bool LocalLoginEnabled { get; }                       // InteractionOptions.SupportsLocalSignIn
     IReadOnlyList<ProviderDescriptor> Providers { get; }  // Id + DisplayName, from WithProviders
 
-    // The client asking to be signed in to — ClientId plus the registration's optional
-    // DisplayName. Reads the interaction context, so it is zkd_i-bound on SignInAsync's exact
-    // terms; a page that dropped the query string fails on its first GET, not at post time.
+    // UNBUILT (consent, #86). The client asking to be signed in to — ClientId plus the
+    // registration's optional DisplayName. Reads the interaction context, so it is zkd_i-bound on
+    // SignInAsync's exact terms; a page that dropped the query string fails on its first GET.
     Task<ClientInformation> GetClientInformationAsync();
 
     // Promotes principal to SSO session, continues the flow (consent → code → redirect).
@@ -454,7 +459,7 @@ public sealed class ProviderSignInContext                // what OnProviderSignI
 {
     public ClaimsPrincipal Principal { get; }            // as the provider returned it, zkd:* stripped
     public ProviderDescriptor Provider { get; }
-    public ClientInformation Client { get; }             // the same object GetClientInformationAsync returns
+    public ClientInformation Client { get; }             // ClientId today; DisplayName with #86
     public IReadOnlyList<string> EffectiveScopes { get; } // requested ∩ allowed, from the interaction context
 
     // Terminal. Parks Principal — the principal only; the ticket's properties and any saved
@@ -507,9 +512,12 @@ an endpoint wants, and what an operator moving the name to a *different* upstrea
 that is a new provider and needs a new name. A host
 that maps external identities onto its own users does so on the page `RedirectToAsync` leads to and
 calls `ILoginInteraction.SignInAsync` with its own principal, which consumes the pending one.
-`OnSigningIn` fires for every sign-in
-just before promotion, no interrupt; reserved protocol claims (`iss`, `sub`, `aud`, `exp`, `nonce`,
-`acr`, `amr`, `zkd:*`) are stripped regardless.
+`OnSigningIn` — **unbuilt**, the planned claim-shaping hook — will fire for every sign-in just
+before promotion, no interrupt; reserved protocol claims (`iss`, `sub`, `aud`, `exp`, `nonce`,
+`acr`, `amr`, `zkd:*`) are stripped regardless. Until it exists, a host that wants the session to
+hold something other than what the provider returned redirects to a page of its own and signs in
+from there; a change to the principal `OnProviderSignIn` receives is not promoted, since the
+framework promotes its own copy.
 
 ## Request validation (#83)
 

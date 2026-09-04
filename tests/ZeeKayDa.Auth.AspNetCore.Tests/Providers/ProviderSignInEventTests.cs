@@ -243,12 +243,17 @@ public sealed class ProviderSignInEventTests
     [Fact]
     public async Task RedirectToAsync_refuses_a_path_outside_the_host()
     {
+        // The context throws before touching the response; the endpoint then renders the host
+        // handler's failure locally, as it does any other. Nothing is parked and nothing redirects.
         using var factory = NewFactory(context => context.RedirectToAsync("//attacker.example.net/collect"));
         using var client = NewClient(factory);
 
-        var resume = async () => await ResumeAsync(client);
+        var (_, resume) = await ResumeAsync(client);
 
-        await resume.Should().ThrowAsync<ArgumentException>();
+        resume.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        resume.Headers.Location.Should().BeNull();
+        resume.Headers.TryGetValues("Set-Cookie", out var cookies);
+        (cookies ?? []).Should().NotContain(cookie => cookie.StartsWith("zkd.pending=") && !cookie.Contains("expires=Thu, 01 Jan 1970"));
     }
 
     [Fact]
@@ -264,6 +269,52 @@ public sealed class ProviderSignInEventTests
         var resume = async () => await ResumeAsync(client);
 
         await resume.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [Fact]
+    public async Task A_handler_that_throws_renders_locally_and_leaves_the_interaction_alive()
+    {
+        using var factory = NewFactory(_ => throw new InvalidOperationException("provisioning store down: secret-dsn"));
+        using var client = NewClient(factory);
+
+        var (interactionId, resume) = await ResumeAsync(client);
+
+        resume.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await resume.Content.ReadAsStringAsync(Cancellation)).Should().Contain("server_error").And.NotContain("secret-dsn");
+        var signIn = await client.PostAsync(WithInteractionId(LoginPath, interactionId), Form(("sub", "user-1")), Cancellation);
+        signIn.StatusCode.Should().Be(HttpStatusCode.NotImplemented, "the interaction survived the failed handler");
+    }
+
+    [Fact]
+    public async Task Automatic_promotion_consumes_a_parked_principal_bound_to_the_interaction()
+    {
+        // The first return parks the principal; the user goes round again for the same
+        // interaction and the handler lets the framework promote this time.
+        var calls = 0;
+        using var factory = NewFactory(context => ++calls == 1 ? context.RedirectToAsync(CollectMorePath) : Task.CompletedTask);
+        using var client = NewClient(factory);
+        await ResumeAsync(client);
+
+        var (_, resume) = await ResumeAsync(client);
+
+        resume.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+        resume.Headers.GetValues("Set-Cookie").Should().Contain(cookie =>
+            cookie.StartsWith("zkd.pending=") && cookie.Contains("expires=Thu, 01 Jan 1970"));
+    }
+
+    [Fact]
+    public async Task DenyAsync_consumes_a_parked_principal_bound_to_the_interaction()
+    {
+        var calls = 0;
+        using var factory = NewFactory(context => ++calls == 1 ? context.RedirectToAsync(CollectMorePath) : context.DenyAsync());
+        using var client = NewClient(factory);
+        await ResumeAsync(client);
+
+        var (_, resume) = await ResumeAsync(client);
+
+        resume.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        resume.Headers.GetValues("Set-Cookie").Should().Contain(cookie =>
+            cookie.StartsWith("zkd.pending=") && cookie.Contains("expires=Thu, 01 Jan 1970"));
     }
 
     // ── DenyAsync ─────────────────────────────────────────────────────────────────────────────

@@ -362,6 +362,29 @@ public sealed class ProviderHostIntegrationTests
     }
 
     [Fact]
+    public void A_host_remote_scheme_whose_own_options_are_invalid_is_left_to_its_own_validation()
+    {
+        // The collision check reads the host scheme's callback path, which means resolving its
+        // options. A host scheme failing its own validation is the host's failure, on the host's
+        // own path — not a startup failure the framework reports.
+        using var factory = NewFactory(configureBuilder: builder =>
+        {
+            builder.WithProviders(auth => auth.AddOAuth("acme", ConfigureAcme));
+            builder.Services.AddAuthentication()
+                .AddCookie("host-cookie")
+                .AddOAuth("host-acme", options =>
+                {
+                    options.ClientId = "only-a-client-id";
+                    options.SignInScheme = "host-cookie";
+                });
+        });
+
+        var start = () => factory.CreateClient();
+
+        start.Should().NotThrow();
+    }
+
+    [Fact]
     public void A_running_host_has_pinned_the_framework_access_denied_event()
     {
         using var factory = NewFactory(configureBuilder: builder => builder.WithProviders(auth => auth.AddOAuth("acme", ConfigureAcme)));

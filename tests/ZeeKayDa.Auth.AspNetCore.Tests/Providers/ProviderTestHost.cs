@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
@@ -67,12 +68,13 @@ internal static class ProviderTestHost
     public static void AddHandWritten(
         AuthenticationBuilder auth,
         Action<HandWrittenOptions>? configure = null,
-        bool registerHandler = true)
+        bool registerHandler = true,
+        string name = "hand")
     {
-        auth.Services.Configure<AuthenticationOptions>(options => options.AddScheme<HandWrittenHandler>("hand", "Hand"));
+        auth.Services.Configure<AuthenticationOptions>(options => options.AddScheme<HandWrittenHandler>(name, "Hand"));
         if (registerHandler)
-            auth.Services.AddTransient<HandWrittenHandler>();
-        auth.Services.Configure("hand", configure ?? (_ => { }));
+            auth.Services.TryAddTransient<HandWrittenHandler>();
+        auth.Services.Configure(name, configure ?? (_ => { }));
     }
 
     public static HttpClient NewClient(TestWebAppFactory factory) => factory.CreateClient(new()
@@ -232,6 +234,9 @@ internal static class ProviderTestHost
 
         /// <summary>Throw while being initialised for the request.</summary>
         public bool ThrowOnInitialize { get; set; }
+
+        /// <summary>Sign in, then fail before redirecting — a handler that breaks after its sign-in.</summary>
+        public bool ThrowAfterSignIn { get; set; }
     }
 
     /// <summary>
@@ -292,6 +297,9 @@ internal static class ProviderTestHost
                 "zkd.external",
                 principal,
                 settings.DropProperties ? new AuthenticationProperties() : properties);
+
+            if (settings.ThrowAfterSignIn)
+                throw new InvalidOperationException("The audit call after sign-in failed.");
 
             _context.Response.Redirect(properties.RedirectUri ?? "/");
             return true;

@@ -449,9 +449,48 @@ public sealed class ProviderRoundTripTests
             AddHandWritten(auth, options => options.SubjectWithoutIssuer = true)));
         using var client = NewClient(factory);
 
-        var resume = async () => await RoundTripAsync(client, "hand");
+        var resume = await RoundTripAsync(client, "hand");
 
-        await resume.Should().ThrowAsync<ZeeKayDaInteractionException>().WithMessage("*issuer*");
+        resume.StatusCode.Should().Be(HttpStatusCode.BadRequest, "a handler bug renders locally, like a callback failure");
+        (await resume.Content.ReadAsStringAsync(Cancellation)).Should().Contain("server_error");
+        (await ReadSessionAsync(client)).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task A_handler_that_signs_in_and_then_fails_leaves_no_ticket_to_resume()
+    {
+        using var factory = NewFactory(configureBuilder: builder => builder.WithProviders(auth =>
+            AddHandWritten(auth, options => options.ThrowAfterSignIn = true)));
+        using var client = NewClient(factory);
+        var (interactionId, challenge) = await ChallengeAsync(client, "hand");
+
+        var callback = await client.GetAsync(CallbackUrlOf(challenge, "hand"), Cancellation);
+
+        callback.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var resume = await client.GetAsync(WithInteractionId("/connect/resume", interactionId), Cancellation);
+        resume.StatusCode.Should().Be(HttpStatusCode.BadRequest, "the ticket the handler wrote was discarded with the failure");
+        (await ReadSessionAsync(client)).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task A_callback_carried_to_another_providers_route_is_refused_at_resume()
+    {
+        // Two custom handlers sharing a state format: the state the first was challenged with
+        // unprotects at the second's route. The route records the second provider, the challenge
+        // named the first, and resume refuses the mismatch.
+        using var factory = NewFactory(configureBuilder: builder => builder.WithProviders(auth =>
+        {
+            AddHandWritten(auth, name: "hand");
+            AddHandWritten(auth, name: "hand2");
+        }));
+        using var client = NewClient(factory);
+        var (_, challenge) = await ChallengeAsync(client, "hand");
+
+        var callback = await client.GetAsync(CallbackUrlOf(challenge, "hand2"), Cancellation);
+        var resume = await client.GetAsync(callback.Headers.Location!.OriginalString, Cancellation);
+
+        resume.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await ReadSessionAsync(client)).Should().BeNull();
     }
 
     // ── Resume refusals ───────────────────────────────────────────────────────────────────────

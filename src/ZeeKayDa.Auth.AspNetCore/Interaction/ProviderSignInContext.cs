@@ -10,8 +10,9 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// the request instead of letting the framework promote the principal.
 /// </summary>
 /// <remarks>
-/// The raw provider ticket and any tokens it saved are not exposed. A host that needs them keeps
-/// them where the provider package put them.
+/// The raw provider ticket is not exposed, and tokens a provider saved into it with
+/// <c>SaveTokens</c> are discarded with it when the user returns: nothing here carries a
+/// provider's access or refresh token into the session or the parked principal.
 /// </remarks>
 public sealed class ProviderSignInContext
 {

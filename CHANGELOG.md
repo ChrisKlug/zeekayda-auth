@@ -41,8 +41,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   `OnAccessDenied` on every remote provider and refuses a host-set one or an `EventsType` at
   startup. Every other callback failure — a correlation failure, an outage, a replayed URL —
   renders the local error page, logged by exception type and never by message, and leaves the
-  interaction alive for another attempt. A handler declining its own callback answers an empty
-  404. Also refused at startup: a host remote scheme whose `CallbackPath` is a provider's route.
+  interaction alive for another attempt; so does a host handler throwing at resume, or a provider
+  principal the framework cannot promote. A handler declining its own callback answers an empty
+  404, and a callback that did not complete leaves no ticket behind, whatever the handler wrote
+  before it failed. The challenge stamps the provider it was issued to, and resume refuses a
+  ticket whose route disagrees, so a callback carried to another provider's route cannot complete
+  as that provider. Also refused at startup: a host remote scheme whose `CallbackPath` is a
+  provider's route.
 
 - **External providers are registered through `WithProviders`, and the login page sees them** (#85, provider registration)
 

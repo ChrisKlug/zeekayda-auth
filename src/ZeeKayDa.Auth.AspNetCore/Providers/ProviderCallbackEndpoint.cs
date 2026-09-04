@@ -116,25 +116,48 @@ internal sealed class ProviderCallbackEndpoint : IZeeKayDaEndpoint
                 _logger.LogError(
                     "The handler for provider {Provider} does not handle requests, so its callback cannot be completed.",
                     registration.Name);
-                return Results.NotFound();
+                return await DeclineAsync(context).ConfigureAwait(false);
             }
 
             handled = await requestHandler.HandleRequestAsync().ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            return Fail(context, feature, ex);
+            return await FailAsync(context, feature, ex).ConfigureAwait(false);
         }
 
         if (handled)
             return Results.Empty;
 
         _logger.LogError("The handler for provider {Provider} declined its own callback.", registration.Name);
+        return await DeclineAsync(context).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// A callback that did not complete leaves no ticket behind: a handler that signed in and
+    /// then failed, or declined, must not have produced something resume would promote. Only a
+    /// ticket this request wrote is discarded — a stray or replayed callback that fails must not
+    /// take a ticket an earlier, completed callback left the browser with.
+    /// </summary>
+    private static async Task DiscardTicketAsync(HttpContext context)
+    {
+        var wroteTicket = context.Response.Headers.SetCookie
+            .Any(cookie => cookie is not null && cookie.StartsWith(ZeeKayDaCookies.External, StringComparison.Ordinal));
+
+        if (wroteTicket)
+            await context.SignOutAsync(ZeeKayDaCookies.External).ConfigureAwait(false);
+    }
+
+    private static async Task<IResult> DeclineAsync(HttpContext context)
+    {
+        await DiscardTicketAsync(context).ConfigureAwait(false);
         return Results.NotFound();
     }
 
-    private IResult Fail(HttpContext context, ProviderCallbackFeature feature, Exception exception)
+    private async Task<IResult> FailAsync(HttpContext context, ProviderCallbackFeature feature, Exception exception)
     {
+        await DiscardTicketAsync(context).ConfigureAwait(false);
+
         if (!feature.Refused)
         {
             _logger.LogError(

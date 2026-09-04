@@ -33,12 +33,19 @@ internal static class ExternalSubject
         ArgumentException.ThrowIfNullOrEmpty(providerId);
         ArgumentNullException.ThrowIfNull(principal);
 
+        // Only an authenticated identity may name the subject: a provider can attach an
+        // unauthenticated auxiliary identity, and a subject taken from there would let its value
+        // win over the one the provider actually authenticated.
+        var authenticated = principal.Identities.Where(identity => identity.IsAuthenticated).ToArray();
         var subject = SubjectClaimTypes
-            .Select(principal.FindFirst)
-            .FirstOrDefault(claim => !string.IsNullOrEmpty(claim?.Value))
+            .Select(type => authenticated
+                .Select(identity => identity.FindFirst(type))
+                .FirstOrDefault(claim => !string.IsNullOrEmpty(claim?.Value)))
+            .FirstOrDefault(claim => claim is not null)
             ?? throw new ZeeKayDaInteractionException(
-                $"The principal provider '{providerId}' returned carries no subject. A provider handler " +
-                $"must add a 'sub' or '{ClaimTypes.NameIdentifier}' claim identifying the user at the provider.");
+                $"The principal provider '{providerId}' returned carries no subject on an authenticated " +
+                $"identity. A provider handler must add a 'sub' or '{ClaimTypes.NameIdentifier}' claim " +
+                "identifying the user at the provider.");
 
         // A JWT-validating handler stamps the token issuer, an OAuth handler stamps ClaimsIssuer,
         // and a hand-written handler sets it when it creates the claim; the default issuer names

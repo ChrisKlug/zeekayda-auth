@@ -159,6 +159,7 @@ public interface ILoginInteraction
     /// identity to a local account passes its own principal; one that merely collected more passes
     /// this one, with what it collected added.
     /// </remarks>
+    /// <param name="cancellationToken">Cancels the read; pass the request's own token.</param>
     /// <exception cref="ZeeKayDaInteractionException">
     /// The request carries no <c>zkd_i</c>, so there is no interaction to read a parked principal
     /// for. The framework adds it to the URL it redirects the page to; a form that regenerates its
@@ -167,5 +168,8 @@ public interface ILoginInteraction
     /// <exception cref="InvalidOperationException">
     /// There is no active HTTP request — the service was resolved outside one.
     /// </exception>
-    Task<PendingPrincipal?> GetPendingPrincipalAsync();
+    /// <exception cref="OperationCanceledException">
+    /// <paramref name="cancellationToken"/> was cancelled.
+    /// </exception>
+    Task<PendingPrincipal?> GetPendingPrincipalAsync(CancellationToken cancellationToken = default);
 }

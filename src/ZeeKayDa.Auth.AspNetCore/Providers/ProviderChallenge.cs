@@ -43,6 +43,7 @@ internal sealed class ProviderChallenge
             RedirectUri = InteractionHandoff.BuildRedirectUrl(resume, requestContext.Id),
         };
         properties.Items[ExternalTicket.InteractionIdItem] = requestContext.Id;
+        properties.Items[ExternalTicket.ChallengedProviderItem] = registration.Name;
 
         var handler = await _activator.ActivateAsync(context, registration).ConfigureAwait(false);
         await handler.ChallengeAsync(properties).ConfigureAwait(false);

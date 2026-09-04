@@ -147,11 +147,14 @@ internal sealed class LoginInteraction : ILoginInteraction
     }
 
     /// <inheritdoc/>
-    public async Task<PendingPrincipal?> GetPendingPrincipalAsync()
+    public async Task<PendingPrincipal?> GetPendingPrincipalAsync(CancellationToken cancellationToken = default)
     {
         var context = RequireHttpContext();
         var interactionId = await RequireInteractionIdAsync(context).ConfigureAwait(false);
 
+        // The cookie read itself takes no token; honoured here, before the decrypt, which is the
+        // only work there is to skip.
+        cancellationToken.ThrowIfCancellationRequested();
         var pending = await _pending.ReadAsync(context, interactionId).ConfigureAwait(false);
         if (pending is null || _providers.Find(pending.Provider) is not { } registration)
             return null;

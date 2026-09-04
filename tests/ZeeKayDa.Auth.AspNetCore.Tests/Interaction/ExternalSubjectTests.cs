@@ -67,6 +67,33 @@ public sealed class ExternalSubjectTests
     }
 
     [Fact]
+    public void ForPromotion_takes_the_subject_from_an_authenticated_identity_only()
+    {
+        // An unauthenticated auxiliary identity carrying a sub must not outrank the identity the
+        // provider authenticated, whichever claim type that one uses.
+        var upstream = new ClaimsPrincipal(
+        [
+            new ClaimsIdentity([new Claim("sub", "attacker-chosen", ClaimValueTypes.String, "https://acme.example.net")]),
+            new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, "42", ClaimValueTypes.String, "https://acme.example.net")], "acme"),
+        ]);
+
+        var promoted = ExternalSubject.ForPromotion("acme", upstream);
+
+        promoted.FindFirst("sub")!.Value.Should().Be(ExternalSubject.Derive("acme", "https://acme.example.net", "42"));
+    }
+
+    [Fact]
+    public void ForPromotion_refuses_a_subject_carried_only_by_an_unauthenticated_identity()
+    {
+        var upstream = new ClaimsPrincipal(
+            new ClaimsIdentity([new Claim("sub", "42", ClaimValueTypes.String, "https://acme.example.net")]));
+
+        var promote = () => ExternalSubject.ForPromotion("acme", upstream);
+
+        promote.Should().Throw<ZeeKayDaInteractionException>().WithMessage("*authenticated identity*");
+    }
+
+    [Fact]
     public void ForPromotion_refuses_a_principal_without_a_subject()
     {
         var upstream = new ClaimsPrincipal(new ClaimsIdentity(
