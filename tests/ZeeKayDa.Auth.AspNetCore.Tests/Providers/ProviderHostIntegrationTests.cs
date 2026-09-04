@@ -174,6 +174,30 @@ public sealed class ProviderHostIntegrationTests
     }
 
     [Fact]
+    public void A_post_configurer_registered_after_WithProviders_that_sets_an_access_denied_page_fails_startup()
+    {
+        using var factory = NewFactory(configureBuilder: builder =>
+        {
+            builder.WithProviders(auth => auth.AddOAuth("acme", ConfigureAcme));
+            builder.Services.PostConfigure<OAuthOptions>("acme", options => options.AccessDeniedPath = "/denied");
+        });
+
+        ShouldFailStartupWith(factory, "provider.options_invalid");
+    }
+
+    [Fact]
+    public void A_post_configurer_registered_after_WithProviders_that_forwards_the_challenge_fails_startup()
+    {
+        using var factory = NewFactory(configureBuilder: builder =>
+        {
+            builder.WithProviders(auth => auth.AddOAuth("acme", ConfigureAcme));
+            builder.Services.PostConfigure<OAuthOptions>("acme", options => options.ForwardChallenge = "host-cookie");
+        });
+
+        ShouldFailStartupWith(factory, "provider.options_invalid");
+    }
+
+    [Fact]
     public void A_provider_whose_own_options_are_incomplete_fails_startup_rather_than_at_first_sign_in()
     {
         // OAuthOptions.Validate throws rather than reporting, so this surfaces as the activator
