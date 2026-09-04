@@ -49,7 +49,11 @@ builder.Services
 
 `WithProviders` hands out a real `AuthenticationBuilder` over the host's service collection, so
 every existing provider package (`AddFacebook`, `AddGoogle`, `AddOpenIdConnect`, …) works
-unchanged. Nothing is subclassed, wrapped, renamed or moved to another container.
+unchanged. Nothing is subclassed, wrapped, renamed or moved to another container. `WithProviders`
+may be called more than once; each call takes its own window, and the collision checks run across
+calls. The window is the count-based tail of the collection, so a callback that inserts or removes
+descriptors rather than appending is unsupported: a scheme registered that way is simply not ours,
+visible to the host and never offered, and nothing on NuGet does it.
 
 ### Observe, then take (settled 2026-09-04)
 
@@ -72,8 +76,9 @@ what the handler needs to run. Provider schemes live in a framework-owned scheme
 **What the framework pins, by name, and then asserts.** On every `RemoteAuthenticationOptions`-derived
 options object whose name is a registered provider: `CallbackPath` set to `/connect/callback/{scheme}`
 under the issuer path, derived exactly as every other endpoint's route is; `SignInScheme = zkd.external`;
-and every `Forward*` member cleared, since a forward would divert the challenge or the sign-in
-around the pinned `RedirectUri` and `SignInScheme`. The pin is one
+every `Forward*` member cleared, since a forward would divert the challenge or the sign-in
+around the pinned `RedirectUri` and `SignInScheme`; and `AccessDeniedPath` cleared, so a provider
+refusal reaches the callback endpoint as a failure instead of escaping to a host page. The pin is one
 open-generic `IPostConfigureOptions<>` constrained to `RemoteAuthenticationOptions` — the container
 skips it for every other options type — registered after the callback so it runs after the
 provider's own post-configuration, including the one that defaults `SignInScheme`.
@@ -82,11 +87,15 @@ The pin alone promises nothing: post-configurers run in registration order, so a
 `PostConfigure<GoogleOptions>("Google", …)` registered later by the host or a library would win,
 and the provider would sign into the wrong cookie or call back to a path nothing serves. The
 promise comes from a matching open-generic `IValidateOptions<>`. Validation always runs after every
-post-configurer, and it fails any provider options whose final `CallbackPath`, `SignInScheme` or
-`Forward*` differ from the pins, naming the scheme and the member. The startup check that already
-gates the dispatch rules resolves each registered provider's options once, so the failure surfaces
-at startup rather than on the first sign-in. Nothing in the request path uses reflection; the
-startup resolution reads the options type off the handler's base chain, once.
+post-configurer, and it fails any provider options whose final `CallbackPath`, `SignInScheme`,
+`AccessDeniedPath` or `Forward*` differ from the pins, naming the scheme and the member. A startup
+activator resolves each registered provider's options once, so the failure surfaces at startup
+rather than on the first sign-in. It is an `IStartupActivator`, not a verifier: resolving the
+options runs the provider's and the host's own configuration code, which `startup-verification.md`
+classes as work, while the verifier that gates the dispatch rules reads only the framework's scheme
+map. Nothing in the request path uses reflection; the activator reads the options type off the
+handler's base chain, once. A configuration reload re-runs the validator on the next options read,
+which fails closed at request time rather than at startup — accepted.
 
 **What the framework does itself, because the middleware no longer does it for these schemes:**
 
@@ -96,16 +105,27 @@ startup resolution reads the options type off the handler's base chain, once.
 - *Callback dispatch.* One routed endpoint **per registered provider** at
   `/connect/callback/{scheme}` under the issuer path, mapped at startup from the scheme map — never
   a pattern matched against request input, and the same route the pin wrote into `CallbackPath`,
-  so the handler's own `CallbackPath == Request.Path` check passes by construction. It activates
-  the handler and calls `HandleRequestAsync`, which completes
-  the protocol, signs into `zkd.external` with the properties it was challenged with, and redirects
-  to the `RedirectUri` ZeeKayDa set: `/connect/resume`.
+  so the handler's own `CallbackPath == Request.Path` check passes by construction. The endpoints
+  allow anonymous access, as discovery and JWKS do, so a host fallback policy cannot block them.
+  It activates the handler and calls `HandleRequestAsync`, which completes the protocol, signs
+  into `zkd.external` with the properties it was challenged with, and redirects to the
+  `RedirectUri` ZeeKayDa set: `/connect/resume`. The endpoint owns the other two outcomes. A
+  `false` return is a handler declining its own callback — logged at error level, answered with
+  an empty 404, never fallen through to the next middleware. An exception — a remote failure, or
+  the user refusing at the provider, which `RemoteAuthenticationHandler` surfaces as an
+  `AuthenticationFailureException` once `AccessDeniedPath` is cleared — is logged by type, never
+  by message, since the message embeds the provider's `error_description`; the endpoint then
+  answers `access_denied` at the client's registered redirect URI when the interaction context is
+  recoverable, and the local error page when it is not (a `form_post` callback is a cross-site
+  POST that `zkd.interaction`'s `Lax` cookie does not accompany).
 - *Challenge.* `ILoginInteraction.ChallengeAsync` activates the handler and calls its
   `ChallengeAsync` with a `RedirectUri` of `/connect/resume?zkd_i=<id>` under the issuer path,
   derived through the same route helper as the callback, so a path-based issuer completes.
 
 **Startup errors, not silent tolerance.** Invisibility is now a guarantee, so what would break it
-fails at startup with a message naming the fix: a configure lambda in the window that also sets
+fails at startup with a message naming the fix: a provider name that is not path-safe, or that
+collides with another ignoring case, since routing and `PathString` comparison are case-insensitive
+while scheme names are ordinal; a configure lambda in the window that also sets
 `AuthenticationOptions` defaults (they belong on `AddAuthentication`); and any
 `IConfigureOptions<AuthenticationOptions>` or `IPostConfigureOptions<AuthenticationOptions>` in the
 window that is not a replayable instance — a factory or type registration — because it can neither
@@ -117,7 +137,8 @@ window, so it sees the map as the application will run it.
 
 **The framework trusts no handler for provider identity or interaction binding.** `ChallengeAsync`
 stamps the interaction id into the `AuthenticationProperties` it hands the handler. The callback
-endpoint knows which provider it is, and marks the request before invoking the handler;
+endpoint knows which provider it is, and marks the request before invoking the handler — a feature
+set on the `HttpContext` after routing, never a claim or a property a handler could write;
 `zkd.external`, a framework-owned cookie scheme, records that mark as the provider on sign-in and
 refuses a sign-in that carries no mark. `/connect/resume` signs `zkd.external` out first, then
 refuses when the ticket's interaction id differs from the one it was asked to resume or the recorded
@@ -139,6 +160,10 @@ the round trip; one with a handler that drops its properties proves the refusal.
 **Unsupported, by consequence:** a provider package that resolves its own scheme through
 `IAuthenticationSchemeProvider` (Microsoft.Identity.Web does, and also registers a cookie scheme
 of its own inside the callback). Such packages want to own the session; ZeeKayDa is that owner.
+Also by consequence: `OpenIdConnectHandler` serves `RemoteSignOutPath` and `SignedOutCallbackPath`
+only through middleware dispatch, so upstream front-channel logout and the post-logout return are
+unrouted until the logout work (#103, #104) maps per-provider endpoints for them, pinned the same
+way. Lost rather than regressed — nothing served them before.
 
 **Settled: providers stay on `WithProviders`, not inside the options lambda.** The alternative
 (`o => o.AddFacebook(...)`) reads better at the call site, and that was the shape originally
@@ -200,7 +225,8 @@ built.** An authorization request that needs authentication dispatches:
 1. `LoginPath` set → redirect there, always.
 2. `LoginPath` unset, local off, exactly one provider → challenge that provider directly. The
    user never sees a ZeeKayDa-controlled page, so cancellation happens at the provider and
-   returns through `/connect/resume` (#606 interplay).
+   arrives at the callback endpoint as a failure, answered as `access_denied` at the client's
+   registered redirect URI (the callback failure path under Host registration; #606 interplay).
 3. `LoginPath` unset but the page is needed — local on, or two or more providers → `server_error`
    at the client's redirect, and a startup warning said so first.
 4. Local off, no providers → startup **error**.
@@ -407,9 +433,10 @@ public sealed class ProviderSignInContext                // what OnProviderSignI
     public ClaimsPrincipal Principal { get; }            // as the provider returned it, zkd:* stripped
     public ProviderDescriptor Provider { get; }
     public ClientInformation Client { get; }             // the same object GetClientInformationAsync returns
-    public IReadOnlyList<string> RequestedScopes { get; } // the effective scopes from the interaction context
+    public IReadOnlyList<string> EffectiveScopes { get; } // requested ∩ allowed, from the interaction context
 
-    // Terminal. Parks Principal in zkd.pending and redirects to a host-local path carrying zkd_i.
+    // Terminal. Parks Principal — the principal only; the ticket's properties and any saved
+    // tokens stay behind — in zkd.pending and redirects to a host-local path carrying zkd_i.
     // The path is validated on LoginPath's terms (InteractionPath.IsSafe): an absolute or
     // protocol-relative value throws before the response is touched.
     public Task RedirectToAsync(PathString path);
@@ -441,8 +468,11 @@ the interaction context, so it carries the client and the effective scopes rathe
 page fetch them; it does not expose the raw provider ticket or tokens.
 
 **Promotion never uses the provider's subject verbatim.** Upstream subjects are unique only within
-their issuer, so the session subject of an auto-promoted external principal is qualified by the
-provider's id, and two providers returning the same value cannot share a session or a `sub`. A host
+their issuer, so the session subject of an auto-promoted external principal is derived as
+base64url(SHA-256(len(provider id) ‖ provider id ‖ len(upstream sub) ‖ upstream sub)): injective,
+because the length prefixes leave no separator to collide on; fixed-length, well inside the
+255-character `sub` limit; stable for the life of the upstream account. Two providers returning
+the same value cannot share a session or a `sub`. A host
 that maps external identities onto its own users does so on the page `RedirectToAsync` leads to and
 calls `ILoginInteraction.SignInAsync` with its own principal, which consumes the pending one.
 `OnSigningIn` fires for every sign-in
