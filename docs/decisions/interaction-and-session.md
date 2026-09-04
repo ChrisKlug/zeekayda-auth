@@ -1,8 +1,9 @@
 # User interaction and the SSO session
 
 **Partly built.** The local login handoff, `ILoginInteraction.SignInAsync` and `DenyAsync`, the SSO
-session and the interaction-context cookie exist; external providers, provider selection, consent
-and home realm discovery do not. The authorize endpoint's protocol rules are in
+session, the interaction-context cookie, provider registration through `WithProviders` and the
+login dispatch rules exist; the external round trip, consent and home realm discovery do not.
+The authorize endpoint's protocol rules are in
 `authorization-and-interaction.md`; interface shapes for the unbuilt part are in
 `docs/design/authorization-endpoint-interaction.md`.
 
@@ -102,6 +103,17 @@ the host brings its own user model, identity store, branding and MFA. The cost i
 more code than a framework-shipped default page would need. The framework also cannot enforce
 `frame-ancestors 'none'` / `X-Frame-Options: DENY` on host-rendered pages, and those pages are
 clickjacking targets — an unresolved gap, not a solved one.
+
+**Provider schemes exist only in the framework's scheme map, and what would make them visible to
+the host fails at startup.** `WithProviders` replays the scheme-map configurers the host's callback
+appended, records the schemes, and removes the configurers, so a provider is absent from the host's
+`AuthenticationOptions`: not enumerable, not challengeable by name, never dispatched by the
+middleware. Invisibility is a guarantee rather than a convention, which is why a provider name the
+host also registers as a scheme of its own is a startup error and not a shadowing rule. The
+framework pins each remote handler's callback path, sign-in scheme, access-denied path and
+forwarding by name, and *asserts* the pins with a validator resolved at startup, because a
+post-configurer registered later would otherwise win silently and send the sign-in to the wrong
+cookie or the callback to a path nothing serves.
 
 **Local sign-in is a flag (`SupportsLocalSignIn`, default `true`), not a provider, and `LoginPath`
 presence is the dispatch override.** The login page is also the provider-selection page, and the

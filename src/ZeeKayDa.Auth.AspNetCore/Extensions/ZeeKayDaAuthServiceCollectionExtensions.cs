@@ -8,6 +8,7 @@ using ZeeKayDa.Auth.AspNetCore;
 using ZeeKayDa.Auth.AspNetCore.ClientAuthentication;
 using ZeeKayDa.Auth.AspNetCore.Endpoints;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
+using ZeeKayDa.Auth.AspNetCore.Providers;
 using ZeeKayDa.Auth.Authorization;
 using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Configuration;
@@ -139,9 +140,16 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IStartupVerifier, InsecureIssuerWarningService>());
         services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupVerifier, MissingLoginPathWarningService>());
+            ServiceDescriptor.Singleton<IStartupVerifier, LoginDispatchVerifier>());
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IStartupActivator, ReservedCookieNameValidator>());
+
+        // Both read what the host's own configuration code produces — a provider's options, the
+        // resolved scheme map — so both are activators.
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IStartupActivator, ProviderOptionsStartupActivator>());
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IStartupActivator, ProviderSchemeCollisionValidator>());
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IStartupVerifier, ExceptionSanitizingDisabledWarningService>());
         services.TryAddEnumerable(
@@ -195,6 +203,23 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         services.TryAddSingleton<ILoginInteraction, LoginInteraction>();
 
         AddInteractionCookies(services);
+        AddProviderServices(services);
+    }
+
+    /// <summary>
+    /// Registers what external providers need before any is registered: an empty scheme map that
+    /// <c>WithProviders</c> replaces, and the validator that asserts the framework's pins on every
+    /// registered provider's options. The pin itself is registered by <c>WithProviders</c>, at the
+    /// tail of the collection, so it runs after the provider's own post-configuration.
+    /// </summary>
+    private static void AddProviderServices(IServiceCollection services)
+    {
+        services.TryAddSingleton(ProviderRegistry.Empty);
+
+        // Open generic, constrained to RemoteAuthenticationOptions: the container skips it for
+        // every other options type, and it skips itself for every name that is not a provider.
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton(typeof(IValidateOptions<>), typeof(ProviderOptionsValidator<>)));
     }
 
     /// <summary>

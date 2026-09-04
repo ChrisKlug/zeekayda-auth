@@ -1,8 +1,9 @@
 # Authorization endpoint interaction
 
-**Status: partly built.** Request validation (#83), the interaction context (#84) and the local
-login handoff (#85, local leg) have landed; external providers, consent and code issuance have not,
-so a request that reaches the end of what exists answers `501`. Originally
+**Status: partly built.** Request validation (#83), the interaction context (#84), the local
+login handoff (#85, local leg), provider registration with its pins and the login dispatch rules
+(#85, provider registration) have landed; the external round trip, consent and code issuance have
+not, so a request that reaches the end of what exists answers `501`. Originally
 ADR 0005 (accepted 2026-07-01, issue #156); revised 2026-08-28 in the S2 shape conversation
 (#534/#83/#84), which reversed the interception model, renamed the interaction services and cut the
 interaction store; login dispatch between local sign-in and external providers settled

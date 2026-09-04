@@ -26,7 +26,9 @@ public sealed class InteractionOptions
     /// Gets or sets the host-relative path of the host's login page. The framework redirects an
     /// authorization request that needs authentication here, and the page completes the flow by
     /// calling <c>ILoginInteraction.SignInAsync</c>. When <see langword="null"/> (the default),
-    /// an authorization request that needs local authentication fails with a local error.
+    /// a host with <see cref="SupportsLocalSignIn"/> off and exactly one external provider sends
+    /// the request straight to that provider; any other host needs the page, is warned at
+    /// startup, and answers the client with <c>server_error</c>.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -43,4 +45,18 @@ public sealed class InteractionOptions
     /// </para>
     /// </remarks>
     public string? LoginPath { get; set; }
+
+    /// <summary>
+    /// Gets or sets whether the host's login page signs users in itself, with a credential form
+    /// whose handler calls <c>ILoginInteraction.SignInAsync</c>. Defaults to <see langword="true"/>.
+    /// Set it to <see langword="false"/> for a host that authenticates only through external
+    /// providers; with exactly one provider registered and no <see cref="LoginPath"/>, an
+    /// authorization request is then sent straight to that provider.
+    /// </summary>
+    /// <remarks>
+    /// Local sign-in is a flag rather than a provider because it shares nothing with the
+    /// redirect-out-and-back lifecycle of an external provider. A host with local sign-in off and
+    /// no providers has no way to authenticate anyone, and fails at startup saying so.
+    /// </remarks>
+    public bool SupportsLocalSignIn { get; set; } = true;
 }

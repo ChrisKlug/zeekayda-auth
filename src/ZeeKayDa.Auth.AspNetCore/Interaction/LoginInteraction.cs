@@ -2,7 +2,9 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.AspNetCore.Endpoints;
+using ZeeKayDa.Auth.AspNetCore.Providers;
 using ZeeKayDa.Auth.Authorization;
 
 namespace ZeeKayDa.Auth.AspNetCore.Interaction;
@@ -31,22 +33,30 @@ internal sealed class LoginInteraction : ILoginInteraction
     private readonly AuthorizationFlow _flow;
     private readonly LocalErrorResponse _localError;
     private readonly ClientErrorRedirect _clientError;
+    private readonly IOptions<AuthorizationServerOptions> _options;
+    private readonly ProviderRegistry _providers;
 
     public LoginInteraction(
         IHttpContextAccessor httpContextAccessor,
         AuthorizationFlow flow,
         LocalErrorResponse localError,
-        ClientErrorRedirect clientError)
+        ClientErrorRedirect clientError,
+        IOptions<AuthorizationServerOptions> options,
+        ProviderRegistry providers)
     {
         ArgumentNullException.ThrowIfNull(httpContextAccessor);
         ArgumentNullException.ThrowIfNull(flow);
         ArgumentNullException.ThrowIfNull(localError);
         ArgumentNullException.ThrowIfNull(clientError);
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(providers);
 
         _httpContextAccessor = httpContextAccessor;
         _flow = flow;
         _localError = localError;
         _clientError = clientError;
+        _options = options;
+        _providers = providers;
     }
 
     /// <inheritdoc/>
@@ -196,4 +206,10 @@ internal sealed class LoginInteraction : ILoginInteraction
         CryptographicOperations.FixedTimeEquals(
             Encoding.UTF8.GetBytes(expected),
             Encoding.UTF8.GetBytes(supplied));
+
+    /// <inheritdoc/>
+    public bool LocalLoginEnabled => _options.Value.AuthorizationEndpoint.Interaction.SupportsLocalSignIn;
+
+    /// <inheritdoc/>
+    public IReadOnlyList<ProviderDescriptor> Providers => _providers.Descriptors;
 }
