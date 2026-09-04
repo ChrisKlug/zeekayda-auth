@@ -256,6 +256,20 @@ public sealed class ProviderHostIntegrationTests
     }
 
     [Fact]
+    public void A_configuration_exception_thrown_by_a_provider_validator_keeps_its_own_code()
+    {
+        using var factory = NewFactory(configureBuilder: builder =>
+        {
+            builder.WithProviders(auth => auth.AddOAuth("acme", ConfigureAcme));
+            builder.Services.AddOptions<OAuthOptions>("acme").Validate(_ =>
+                throw new ZeeKayDaConfigurationException(
+                    new ZeeKayDaConfigurationFailure("acme.tenant_missing", "The Acme tenant is not configured.")));
+        });
+
+        ShouldFailStartupWith(factory, "acme.tenant_missing");
+    }
+
+    [Fact]
     public void A_post_configurer_registered_between_two_WithProviders_calls_still_fails_startup()
     {
         using var factory = NewFactory(configureBuilder: builder =>

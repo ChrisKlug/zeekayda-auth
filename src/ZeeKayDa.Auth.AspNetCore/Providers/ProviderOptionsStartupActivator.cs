@@ -66,6 +66,13 @@ internal sealed class ProviderOptionsStartupActivator : IStartupActivator
                 failures.Add(new ZeeKayDaConfigurationFailure("provider.options_invalid", Describe(registration.Name, ex)));
                 causes.Add(ex);
             }
+            catch (ZeeKayDaConfigurationException ex)
+            {
+                // A well-formed failure from a provider's or a host's own configuration code keeps
+                // its stable codes; re-classifying it would flatten what an operator alerts on.
+                failures.AddRange(ex.AggregatedFailures);
+                causes.Add(ex);
+            }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 failures.Add(new ZeeKayDaConfigurationFailure(

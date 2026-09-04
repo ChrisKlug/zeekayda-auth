@@ -61,17 +61,18 @@ public static class ZeeKayDaAuthBuilderProviderExtensions
         ArgumentNullException.ThrowIfNull(configure);
 
         var services = builder.Services;
-
-        // What every provider package's handler needs at runtime, for a builder constructed outside
-        // AddZeeKayDaAuth. Guarded rather than relied on to be idempotent — AddAuthentication adds
-        // a descriptor per call — and done before the snapshot so it is not mistaken for something
-        // the callback registered.
-        if (!services.Any(descriptor => descriptor.ServiceType == typeof(IAuthenticationSchemeProvider)))
-            services.AddAuthentication();
-
         var before = services.ToArray();
+
         try
         {
+            // What every provider package's handler needs at runtime, for a builder constructed
+            // outside AddZeeKayDaAuth. Guarded rather than relied on to be idempotent, since
+            // AddAuthentication adds a descriptor per call; inside the rollback, so a failed first
+            // call leaves nothing behind; and ahead of the window, so it is not mistaken for
+            // something the callback registered.
+            if (!services.Any(descriptor => descriptor.ServiceType == typeof(IAuthenticationSchemeProvider)))
+                services.AddAuthentication();
+
             var observed = ProviderRegistrationWindow.Observe(services, configure);
             var registry = ProviderRegistry.FindIn(services).Add(observed);
             ProviderRegistry.RegisterIn(services, registry);

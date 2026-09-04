@@ -322,6 +322,18 @@ public sealed class WithProvidersTests
     }
 
     [Fact]
+    public void A_failed_first_call_leaves_nothing_behind_not_even_the_authentication_services()
+    {
+        var services = NewServices();
+        var before = services.ToArray();
+
+        var register = () => new ZeeKayDaAuthBuilder(services).WithProviders(auth => auth.AddOAuth("a/b", ConfigureAcme));
+
+        register.Should().Throw<InvalidOperationException>();
+        services.Should().Equal(before);
+    }
+
+    [Fact]
     public void A_provider_name_taken_by_an_earlier_call_is_refused_ignoring_case()
     {
         var services = NewServices();
