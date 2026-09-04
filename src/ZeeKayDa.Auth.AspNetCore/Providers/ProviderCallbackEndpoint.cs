@@ -104,18 +104,21 @@ internal sealed class ProviderCallbackEndpoint : IZeeKayDaEndpoint
         var feature = new ProviderCallbackFeature(registration);
         context.Features.Set(feature);
 
-        var handler = await _activator.ActivateAsync(context, registration).ConfigureAwait(false);
-        if (handler is not IAuthenticationRequestHandler requestHandler)
-        {
-            _logger.LogError(
-                "The handler for provider {Provider} does not handle requests, so its callback cannot be completed.",
-                registration.Name);
-            return Results.NotFound();
-        }
-
+        // Activation is inside the guarded path too: a handler's constructor or InitializeAsync
+        // is caller-supplied code, and a failure there is the provider not completing, not a
+        // server fault to surface unsanitized.
         bool handled;
         try
         {
+            var handler = await _activator.ActivateAsync(context, registration).ConfigureAwait(false);
+            if (handler is not IAuthenticationRequestHandler requestHandler)
+            {
+                _logger.LogError(
+                    "The handler for provider {Provider} does not handle requests, so its callback cannot be completed.",
+                    registration.Name);
+                return Results.NotFound();
+            }
+
             handled = await requestHandler.HandleRequestAsync().ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

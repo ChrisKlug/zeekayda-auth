@@ -229,6 +229,9 @@ internal static class ProviderTestHost
 
         /// <summary>Stamp another scheme's name where a remote handler stamps its own.</summary>
         public bool StampAnotherScheme { get; set; }
+
+        /// <summary>Throw while being initialised for the request.</summary>
+        public bool ThrowOnInitialize { get; set; }
     }
 
     /// <summary>
@@ -249,6 +252,10 @@ internal static class ProviderTestHost
         {
             _scheme = scheme;
             _context = context;
+
+            if (options.Get(scheme.Name).ThrowOnInitialize)
+                throw new InvalidOperationException("The handler could not read its request-specific state: secret-value-not-for-the-page.");
+
             return Task.CompletedTask;
         }
 

@@ -68,6 +68,7 @@ ZeeKayDa.Auth.AspNetCore.Interaction.ProviderSignInContext.EffectiveScopes.get -
 ZeeKayDa.Auth.AspNetCore.Interaction.ProviderSignInContext.Principal.get -> System.Security.Claims.ClaimsPrincipal!
 ZeeKayDa.Auth.AspNetCore.Interaction.ProviderSignInContext.Provider.get -> ZeeKayDa.Auth.AspNetCore.Interaction.ProviderDescriptor!
 ZeeKayDa.Auth.AspNetCore.Interaction.ProviderSignInContext.RedirectToAsync(Microsoft.AspNetCore.Http.PathString path) -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.AspNetCore.Interaction.ProviderSignInContext.RequestAborted.get -> System.Threading.CancellationToken
 override ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails.Equals(object? obj) -> bool
 override ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails.GetHashCode() -> int
 override ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails.ToString() -> string!

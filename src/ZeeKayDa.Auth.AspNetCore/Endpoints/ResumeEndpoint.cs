@@ -141,12 +141,16 @@ internal sealed class ResumeEndpoint : IZeeKayDaEndpoint
             return Refuse(context);
         }
 
+        // The host's callback gets a copy — of the identities, since ClaimsPrincipal.Clone shares
+        // them. What is parked or promoted is the framework's own principal, so a reference the
+        // host kept cannot change the session after the fact.
         var principal = ReservedClaims.Strip(result.Principal);
         var signIn = new ProviderSignInContext(
-            principal,
+            new ClaimsPrincipal(principal.Identities.Select(identity => identity.Clone())),
             registration.Descriptor,
             new ClientInformation(requestContext.ClientId),
             requestContext.Scopes.ToImmutableArray(),
+            context.RequestAborted,
             path => RedirectToAsync(context, requestContext, registration, principal, path),
             () => DenyAsync(context, requestContext));
 

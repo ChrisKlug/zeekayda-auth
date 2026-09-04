@@ -316,6 +316,24 @@ public sealed class ProviderRoundTripTests
     // ── The callback endpoint's own outcomes ──────────────────────────────────────────────────
 
     [Fact]
+    public async Task A_handler_that_fails_to_initialise_renders_locally_and_leaves_the_interaction_alive()
+    {
+        using var factory = NewFactory(configureBuilder: builder => builder.WithProviders(auth =>
+            AddHandWritten(auth, options => options.ThrowOnInitialize = true)));
+        using var client = NewClient(factory);
+        var handoff = await client.GetAsync(AuthorizeUrl(), Cancellation);
+        var interactionId = InteractionIdFrom(handoff);
+
+        // The challenge activates the handler too, so the callback is reached directly here.
+        var callback = await client.GetAsync("/connect/callback/hand?state=anything", Cancellation);
+
+        callback.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await callback.Content.ReadAsStringAsync(Cancellation)).Should().Contain("server_error").And.NotContain("secret-value");
+        var signIn = await client.PostAsync(WithInteractionId(LoginPath, interactionId), Form(("sub", "user-1")), Cancellation);
+        signIn.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+    }
+
+    [Fact]
     public async Task A_handler_that_declines_its_own_callback_answers_404()
     {
         using var factory = NewFactory(configureBuilder: builder => builder.WithProviders(auth =>

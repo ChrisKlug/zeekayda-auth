@@ -69,6 +69,28 @@ public sealed class ProviderSignInEventTests
         seen.Provider.DisplayName.Should().Be("Acme");
         seen.Client.ClientId.Should().Be("test-client");
         seen.EffectiveScopes.Should().Equal("openid");
+        seen.RequestAborted.CanBeCanceled.Should().BeTrue("it is the request's own token");
+    }
+
+    [Fact]
+    public async Task A_handler_that_changes_the_principal_it_was_handed_does_not_change_what_is_promoted()
+    {
+        using var factory = NewFactory(context =>
+        {
+            // What a host keeping a reference and mutating it later could do, done synchronously
+            // so the test is deterministic: the framework must promote its own copy regardless.
+            context.Principal.Identities.First().AddClaim(new System.Security.Claims.Claim("role", "admin"));
+            context.Principal.Identities.First().RemoveClaim(context.Principal.FindFirst("sub"));
+            context.Principal.Identities.First().AddClaim(new System.Security.Claims.Claim("sub", "chosen", "s", "acme"));
+            return Task.CompletedTask;
+        });
+        using var client = NewClient(factory);
+
+        var (_, resume) = await ResumeAsync(client);
+
+        resume.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+        var session = (await ReadJsonAsync(client, "/test/session"))!.Value;
+        session.GetProperty("sub").GetString().Should().Be(ExternalSubject.Derive("acme", "acme", UpstreamSubject));
     }
 
     [Fact]

@@ -24,6 +24,7 @@ public sealed class ProviderSignInContext
         ProviderDescriptor provider,
         ClientInformation client,
         IReadOnlyList<string> effectiveScopes,
+        CancellationToken requestAborted,
         Func<PathString, Task> redirect,
         Func<Task> deny)
     {
@@ -38,6 +39,7 @@ public sealed class ProviderSignInContext
         Provider = provider;
         Client = client;
         EffectiveScopes = effectiveScopes;
+        RequestAborted = requestAborted;
         _redirect = redirect;
         _deny = deny;
     }
@@ -113,7 +115,12 @@ public sealed class ProviderSignInContext
         }
     }
 
-    /// <summary>The principal as the provider returned it, with the framework's reserved claims removed.</summary>
+    /// <summary>
+    /// The principal as the provider returned it, with the framework's reserved claims removed.
+    /// A copy: what the framework parks or promotes is its own, so a change made here is not
+    /// carried into the session. A host that wants the session to hold something else redirects
+    /// to a page of its own and passes that principal to <c>SignInAsync</c>.
+    /// </summary>
     public ClaimsPrincipal Principal { get; }
 
     /// <summary>The provider that authenticated the user.</summary>
@@ -124,6 +131,12 @@ public sealed class ProviderSignInContext
 
     /// <summary>The most the request will be granted: the requested scopes the client is allowed.</summary>
     public IReadOnlyList<string> EffectiveScopes { get; }
+
+    /// <summary>
+    /// Signalled when the browser disconnects, for a handler that reads a store or provisions an
+    /// account before it decides. The same token as <c>HttpContext.RequestAborted</c>.
+    /// </summary>
+    public CancellationToken RequestAborted { get; }
 
     /// <summary>Whether a terminal method has been called.</summary>
     internal bool Completed => Volatile.Read(ref _completed) != 0;
