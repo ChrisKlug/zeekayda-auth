@@ -69,15 +69,23 @@ cannot reach it. Everything else the builder registered — the handler type, th
 their validation and post-configuration — stays in the shared container, which is exactly and only
 what the handler needs to run. Provider schemes live in a framework-owned scheme map and nowhere else.
 
-**What the framework pins, by name, after the host's configuration has run** so that nothing can
-be silently overridden: on every `RemoteAuthenticationOptions`-derived options object whose name is
-a registered provider, `CallbackPath = /connect/callback/{scheme}`, `SignInScheme = zkd.external`,
-and every `Forward*` member cleared, since forwarding resolves through the host's
-`IAuthenticationService`, which cannot see the scheme. The pin is one open-generic
-`IPostConfigureOptions<>` constrained to `RemoteAuthenticationOptions` — the container skips it
-for every other options type — registered after the callback so it runs after the provider's own
-post-configuration, including the one that defaults `SignInScheme`. It needs no reflection and no
-knowledge of the provider's options type.
+**What the framework pins, by name, and then asserts.** On every `RemoteAuthenticationOptions`-derived
+options object whose name is a registered provider: `CallbackPath = /connect/callback/{scheme}`,
+`SignInScheme = zkd.external`, and every `Forward*` member cleared, since forwarding resolves
+through the host's `IAuthenticationService`, which cannot see the scheme. The pin is one
+open-generic `IPostConfigureOptions<>` constrained to `RemoteAuthenticationOptions` — the container
+skips it for every other options type — registered after the callback so it runs after the
+provider's own post-configuration, including the one that defaults `SignInScheme`.
+
+The pin alone promises nothing: post-configurers run in registration order, so a
+`PostConfigure<GoogleOptions>("Google", …)` registered later by the host or a library would win,
+and the provider would sign into the wrong cookie or call back to a path nothing serves. The
+promise comes from a matching open-generic `IValidateOptions<>`. Validation always runs after every
+post-configurer, and it fails any provider options whose final `CallbackPath`, `SignInScheme` or
+`Forward*` differ from the pins, naming the scheme and the member. The startup check that already
+gates the dispatch rules resolves each registered provider's options once, so the failure surfaces
+at startup rather than on the first sign-in. Nothing in the request path uses reflection; the
+startup resolution reads the options type off the handler's base chain, once.
 
 **What the framework does itself, because the middleware no longer does it for these schemes:**
 

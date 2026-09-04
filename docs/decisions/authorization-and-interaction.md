@@ -18,7 +18,8 @@ registered with the host's `AuthenticationOptions`: `WithProviders` replays what
 added, keeps it in a framework-owned scheme map, and removes the registration, so the host cannot
 enumerate, challenge or authorize against a provider. Each provider's callback is a routed ZeeKayDa
 endpoint of its own that hands the request to that provider's handler, and every remote handler's
-callback path, sign-in scheme and forwarding are pinned by the framework after host configuration.
+callback path, sign-in scheme and forwarding are pinned by the framework after host configuration
+and asserted at startup, so a later registration that changes them fails the host, not the flow.
 
 **A client registration is validated by the framework at the point of use, not only at
 registration.** Endpoints resolve clients through an internal validating resolver wrapping
