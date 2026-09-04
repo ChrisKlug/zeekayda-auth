@@ -116,28 +116,32 @@ which fails closed at request time rather than at startup — accepted.
   an empty 404, never fallen through to the next middleware. An exception is logged by type,
   never by message, since the message embeds the provider's `error_description`, and is then
   classified — only an explicit refusal by the user at the provider becomes `access_denied`. The
-  pin chains onto the remote handler's `OnAccessDenied` event, which fires before the handler
-  turns the refusal into an `AuthenticationFailureException`, and records a refusal mark on the
-  same request feature that carries the provider; an exception with that mark is `access_denied`,
-  and every other one — a correlation failure, a provider outage, a misconfiguration, a handler
-  bug — is `server_error`. Either answer goes to the client's registered redirect URI only when
-  the failure is **bound**: the handler authenticated its state, and the properties it surfaced
-  carry the interaction id `ChallengeAsync` stamped, matching the `zkd.interaction` cookie. An
-  unbound failure — a missing or invalid correlation, no properties at all — renders the local
-  error page and touches no interaction, so a stray or attacker-driven request to a callback route
-  cannot cancel a live authorization request through the ambient cookie. A bound failure whose
-  cookie is absent (a `form_post` callback is a cross-site POST that the `Lax` cookie does not
-  accompany) also renders locally. A handler outside the base class has no refusal channel, so
-  its failures are `server_error`.
+  pin installs a framework-owned `OnAccessDenied` on the remote handler, which fires before the
+  handler turns the refusal into an `AuthenticationFailureException`; its only effect is to record
+  a refusal mark on the same request feature that carries the provider, and nothing of the host's
+  runs after it. A host-set `OnAccessDenied` or `EventsType` inside the window fails startup,
+  since either would put the refusal outcome outside the framework's control. An exception with
+  that mark is a refusal and goes to the client's registered redirect URI as `access_denied`. The
+  mark is trustworthy because the handler validates its correlation cookie before it looks at the
+  provider's error, so a replayed callback URL cannot produce it; the redirect also requires the
+  properties to carry the interaction id `ChallengeAsync` stamped and that id to match the
+  `zkd.interaction` cookie, and without the cookie (a `form_post` callback is a cross-site POST
+  the `Lax` cookie does not accompany) the refusal renders locally. **Nothing else reaches the
+  client from a callback.** Every other exception — a correlation failure, a provider outage, a
+  misconfiguration, a handler bug — renders the local error page and leaves the interaction
+  untouched, so the user can try again, and a stray or replayed request to a callback route can
+  neither complete nor cancel a live authorization request. `server_error` is never sent from
+  here: a client that does not hear back is in the same position as one whose user closed the
+  tab. A handler outside the base class has no refusal channel, so its failures render locally.
 - *Challenge.* `ILoginInteraction.ChallengeAsync` activates the handler and calls its
   `ChallengeAsync` with a `RedirectUri` of `/connect/resume?zkd_i=<id>` under the issuer path,
   derived through the same route helper as the callback, so a path-based issuer completes.
 
 **Startup errors, not silent tolerance.** Invisibility is now a guarantee, so what would break it
 fails at startup with a message naming the fix: a provider name outside the grammar — 1 to 64
-ASCII letters, digits, `-`, `_` or `.`, compared ordinally, unique ignoring case, since routing and
-`PathString` comparison are case-insensitive while scheme names are ordinal — checked before any
-route is built; a configure lambda in the window that also sets
+ASCII letters, digits, `-`, `_` or `.`, never the dot-segments `.` or `..`, compared ordinally,
+unique ignoring case, since routing and `PathString` comparison are case-insensitive while scheme
+names are ordinal — checked before any route is built; a configure lambda in the window that also sets
 `AuthenticationOptions` defaults (they belong on `AddAuthentication`); and any
 `IConfigureOptions<AuthenticationOptions>` or `IPostConfigureOptions<AuthenticationOptions>` in the
 window that is not a replayable instance — a factory or type registration — because it can neither
@@ -481,18 +485,20 @@ page fetch them; it does not expose the raw provider ticket or tokens.
 
 **Promotion never uses the provider's subject verbatim.** Upstream subjects are unique only within
 their issuer, so the session subject of an auto-promoted external principal is derived as
-base64url(SHA-256(len(provider id) ‖ provider id ‖ len(upstream sub) ‖ upstream sub)): injective,
-because the length prefixes leave no separator to collide on; fixed-length, well inside the
-255-character `sub` limit; stable for the life of the upstream account. Two providers returning
-the same value cannot share a session or a `sub`. The derivation assumes what a provider
-registration *is*: one identity namespace. A scheme is one OpenID Connect authority or one OAuth
-provider, so its subjects are unique within it. A hand-written handler that accepts identities
-from several issuers behind one scheme breaks that assumption and must either register one scheme
-per issuer or qualify the subject it returns itself; the framework cannot see an issuer the handler
-did not surface. The scheme name is that namespace's durable identity: re-registering the same
-name keeps every subject, which is what an operator rotating a secret or an endpoint wants, and
-what an operator moving the name to a *different* upstream must not do — that is a new provider
-and needs a new name, or the old upstream's subjects would be handed to the new one's users. A host
+base64url(SHA-256 over the length-prefixed triple of provider id, the subject claim's `Issuer`,
+and the upstream sub)): collision-resistant, with length prefixes leaving no separator to collide
+on; fixed-length, well inside the 255-character `sub` limit; stable for the life of the upstream
+account. The issuer is framework-visible for every handler: a JWT-validating handler stamps the
+validated token issuer onto each claim, an OAuth handler stamps `ClaimsIssuer`, which defaults to
+the scheme name, and a hand-written handler sets it when it creates the claim. A registration that
+validates several issuers therefore separates its users by issuer rather than by promise. A
+subject claim carrying `ClaimsIdentity.DefaultIssuer` names no namespace, and promotion refuses it
+with a message saying so — a handler that constructs claims without an issuer is one line away
+from compliant. Two providers returning the same value cannot share a session or a `sub`. The
+provider id is in the hash because the scheme name is the registration's durable identity:
+re-registering the same name keeps every subject, which is what an operator rotating a secret or
+an endpoint wants, and what an operator moving the name to a *different* upstream must not do —
+that is a new provider and needs a new name. A host
 that maps external identities onto its own users does so on the page `RedirectToAsync` leads to and
 calls `ILoginInteraction.SignInAsync` with its own principal, which consumes the pending one.
 `OnSigningIn` fires for every sign-in
