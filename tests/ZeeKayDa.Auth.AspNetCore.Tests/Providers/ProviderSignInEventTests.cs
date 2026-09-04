@@ -227,6 +227,18 @@ public sealed class ProviderSignInEventTests
     }
 
     [Fact]
+    public async Task GetPendingPrincipalAsync_honours_a_cancelled_token()
+    {
+        using var factory = NewFactory(context => context.RedirectToAsync(CollectMorePath));
+        using var client = NewClient(factory);
+        var (interactionId, _) = await ResumeAsync(client);
+
+        var read = async () => await client.GetAsync(WithInteractionId(CollectMorePath + "/cancelled", interactionId), Cancellation);
+
+        await read.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
     public async Task Cancelling_at_the_host_page_discards_the_parked_principal()
     {
         using var factory = NewFactory(context => context.RedirectToAsync(CollectMorePath));

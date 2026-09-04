@@ -123,6 +123,13 @@ internal static class ProviderTestHost
                 });
         });
 
+        // The same read with a token the caller has already cancelled.
+        endpoints.MapGet(CollectMorePath + "/cancelled", async (ILoginInteraction login) =>
+        {
+            await login.GetPendingPrincipalAsync(new CancellationToken(canceled: true));
+            return Results.Ok();
+        });
+
         endpoints.MapPost(CollectMorePath, async (ILoginInteraction login) =>
         {
             var pending = await login.GetPendingPrincipalAsync()

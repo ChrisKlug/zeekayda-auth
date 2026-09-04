@@ -152,10 +152,10 @@ internal sealed class LoginInteraction : ILoginInteraction
         var context = RequireHttpContext();
         var interactionId = await RequireInteractionIdAsync(context).ConfigureAwait(false);
 
-        // The cookie read itself takes no token; honoured here, before the decrypt, which is the
-        // only work there is to skip.
+        // The cookie read itself takes no token, so cancellation is honoured around it: nothing
+        // is returned once the caller has stopped waiting.
         cancellationToken.ThrowIfCancellationRequested();
-        var pending = await _pending.ReadAsync(context, interactionId).ConfigureAwait(false);
+        var pending = await _pending.ReadAsync(context, interactionId).WaitAsync(cancellationToken).ConfigureAwait(false);
         if (pending is null || _providers.Find(pending.Provider) is not { } registration)
             return null;
 

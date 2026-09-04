@@ -137,15 +137,36 @@ internal sealed class ProviderCallbackEndpoint : IZeeKayDaEndpoint
     /// A callback that did not complete leaves no ticket behind: a handler that signed in and
     /// then failed, or declined, must not have produced something resume would promote. Only a
     /// ticket this request wrote is discarded — a stray or replayed callback that fails must not
-    /// take a ticket an earlier, completed callback left the browser with.
+    /// take a ticket an earlier, completed callback left the browser with. A handler that
+    /// committed its response before failing has delivered its ticket and its redirect; nothing
+    /// here can retract them, and resume still checks that ticket like any other.
     /// </summary>
     private static async Task DiscardTicketAsync(HttpContext context)
     {
+        if (context.Response.HasStarted)
+            return;
+
         var wroteTicket = context.Response.Headers.SetCookie
-            .Any(cookie => cookie is not null && cookie.StartsWith(ZeeKayDaCookies.External, StringComparison.Ordinal));
+            .Any(cookie => cookie is not null && IsExternalTicketCookie(cookie));
 
         if (wroteTicket)
             await context.SignOutAsync(ZeeKayDaCookies.External).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The external ticket cookie, or one of its chunks (<c>zkd.externalC1</c>, …) — and not a
+    /// host cookie whose name merely begins the same way.
+    /// </summary>
+    private static bool IsExternalTicketCookie(string setCookie)
+    {
+        var name = setCookie.AsSpan()[..Math.Max(0, setCookie.IndexOf('='))];
+        if (name.SequenceEqual(ZeeKayDaCookies.External))
+            return true;
+
+        var chunkPrefix = ZeeKayDaCookies.External + "C";
+        return name.StartsWith(chunkPrefix, StringComparison.Ordinal)
+            && name.Length > chunkPrefix.Length
+            && name[chunkPrefix.Length..].ToString().All(char.IsAsciiDigit);
     }
 
     private static async Task<IResult> DeclineAsync(HttpContext context)
