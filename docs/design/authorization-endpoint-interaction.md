@@ -6,7 +6,8 @@ so a request that reaches the end of what exists answers `501`. Originally
 ADR 0005 (accepted 2026-07-01, issue #156); revised 2026-08-28 in the S2 shape conversation
 (#534/#83/#84), which reversed the interception model, renamed the interaction services and cut the
 interaction store; login dispatch between local sign-in and external providers settled
-2026-08-29 (#607). The security properties and protocol refusals are in
+2026-08-29 (#607); provider registration and callback ownership settled 2026-09-04 (#85). The
+security properties and protocol refusals are in
 `docs/decisions/authorization-and-interaction.md` and `docs/decisions/interaction-and-session.md`
 and are *not* repeated here.
 
@@ -15,13 +16,14 @@ and are *not* repeated here.
 Every ZeeKayDa endpoint — `/connect/authorize` included — is a routed `IZeeKayDaEndpoint` mapped by
 `MapZeeKayDaAuth()`, inheriting the route group's HTTPS/421 guard, security headers, issuer-host
 constraint and `RequireRateLimiting()` support. GET and POST via `MapMethods`. When interaction is
-needed the endpoint calls `ChallengeAsync` on the *provider's* scheme or redirects to the host's
-login page — the ordinary ASP.NET Core pattern.
+needed the endpoint redirects to the host's login page, or hands the request to the provider's
+own handler and lets it challenge.
 
 There is no `AddScheme<ZeeKayDaHandler>` anywhere. ZeeKayDa *registers* internal cookie schemes and
 *orchestrates* them; every authentication-shaped question is answered by an existing handler
 (the cookies answer "who is this?", the provider handlers answer "go get authenticated" and
-intercept their own callbacks). A framework scheme would be a vehicle with no cargo.
+complete their own callbacks, invoked from ZeeKayDa's callback endpoints). A framework scheme
+would be a vehicle with no cargo.
 
 ## Host registration
 
@@ -45,11 +47,68 @@ builder.Services
         o => o.OnProviderSignIn = async ctx => await ctx.RedirectToAsync("/collect-more"));
 ```
 
-`WithProviders` hands out a real `AuthenticationBuilder`, so every existing provider package
-(`AddFacebook`, `AddGoogle`, `AddOpenIdConnect`, …) works unchanged. It then forces
-`SignInScheme = "zkd.external"` and a `/connect/callback/{scheme}` callback path on every
-`RemoteAuthenticationOptions`-derived handler it registered, *after* the host's configuration
-callback has run, so neither can be silently overridden.
+`WithProviders` hands out a real `AuthenticationBuilder` over the host's service collection, so
+every existing provider package (`AddFacebook`, `AddGoogle`, `AddOpenIdConnect`, …) works
+unchanged. Nothing is subclassed, wrapped, renamed or moved to another container.
+
+### Observe, then take (settled 2026-09-04)
+
+The framework never learns what a callback registered by intercepting it. It counts the service
+collection before the callback, and afterwards replays every `IConfigureOptions<AuthenticationOptions>`
+instance that appeared into a throwaway `AuthenticationOptions`. Every route into the scheme map —
+`builder.AddScheme`, `AddRemoteScheme`, `AddPolicyScheme`, and a raw `IAuthenticationHandler`
+added by writing `AuthenticationOptions.AddScheme` directly — ends as that one descriptor, so the
+replay sees them identically (verified against ASP.NET Core 10.0 with one of each). What the replay
+found is the provider set: `ILoginInteraction.Providers`, and the only names `ChallengeAsync`
+will accept.
+
+Then the descriptors are **removed** from the collection. The host's `AuthenticationOptions` never
+learns the scheme existed: it is absent from `IAuthenticationSchemeProvider`, `AuthenticationMiddleware`
+never dispatches it, `HttpContext.ChallengeAsync("google")` and `[Authorize(AuthenticationSchemes = …)]`
+cannot reach it. Everything else the builder registered — the handler type, the named options,
+their validation and post-configuration — stays in the shared container, which is exactly and only
+what the handler needs to run. Provider schemes live in a framework-owned scheme map and nowhere else.
+
+**What the framework pins, by name, after the host's configuration has run** so that nothing can
+be silently overridden: on every `RemoteAuthenticationOptions`-derived options object whose name is
+a registered provider, `CallbackPath = /connect/callback/{scheme}`, `SignInScheme = zkd.external`,
+and every `Forward*` member cleared, since forwarding resolves through the host's
+`IAuthenticationService`, which cannot see the scheme. The pin is one open-generic
+`IPostConfigureOptions<>` constrained to `RemoteAuthenticationOptions` — the container skips it
+for every other options type — registered after the callback so it runs after the provider's own
+post-configuration, including the one that defaults `SignInScheme`. It needs no reflection and no
+knowledge of the provider's options type.
+
+**What the framework does itself, because the middleware no longer does it for these schemes:**
+
+- *Handler activation.* Resolve the handler type from `HttpContext.RequestServices`, falling back
+  to `ActivatorUtilities`, then `InitializeAsync(scheme, context)` — the six lines of
+  `AuthenticationHandlerProvider.GetHandlerAsync`, without its per-request cache.
+- *Callback dispatch.* One routed endpoint **per registered provider** at
+  `/connect/callback/{scheme}`, mapped at startup from the scheme map — never a pattern matched
+  against request input. It activates the handler and calls `HandleRequestAsync`, which completes
+  the protocol, signs into `zkd.external` with the properties it was challenged with, and redirects
+  to the `RedirectUri` ZeeKayDa set: `/connect/resume`.
+- *Challenge.* `ILoginInteraction.ChallengeAsync` activates the handler and calls its
+  `ChallengeAsync` with a `RedirectUri` of `/connect/resume?zkd_i=<id>`.
+
+**Startup errors, not silent tolerance.** Invisibility is now a guarantee, so what would break it
+fails at startup with a message naming the fix: a configure lambda in the window that also sets
+`AuthenticationOptions` defaults (they belong on `AddAuthentication`); and any
+`IConfigureOptions<AuthenticationOptions>` or `IPostConfigureOptions<AuthenticationOptions>` in the
+window that is not a replayable instance — a factory or type registration — because it can neither
+be read nor safely removed.
+
+**Handlers that do not derive from `RemoteAuthenticationHandler`** are supported by the same
+machinery; only the pin does not apply, because there is no options object to pin. Such a handler
+must behave as the base class does: implement `IAuthenticationRequestHandler`, answer at
+`/connect/callback/{its-scheme-name}`, carry the `AuthenticationProperties` it was challenged with
+through the round trip, and finish with `SignInAsync(zkd.external, principal, properties)` followed
+by a redirect to `properties.RedirectUri`. One test with a hand-written handler proves the contract.
+
+**Unsupported, by consequence:** a provider package that resolves its own scheme through
+`IAuthenticationSchemeProvider` (Microsoft.Identity.Web does, and also registers a cookie scheme
+of its own inside the callback). Such packages want to own the session; ZeeKayDa is that owner.
 
 **Settled: providers stay on `WithProviders`, not inside the options lambda.** The alternative
 (`o => o.AddFacebook(...)`) reads better at the call site, and that was the shape originally
@@ -63,9 +122,10 @@ anything else on NuGet for free.
 ```
 /connect/authorize          validates (two phases below), writes zkd.interaction; no session →
   → LoginPath?zkd_i=<id>    (local)   host page ends with ILoginInteraction.SignInAsync — terminal
-  → ChallengeAsync("facebook") (external)  ZeeKayDa sets the handler's RedirectUri itself
-      → facebook.com → /connect/callback/facebook   Facebook handler: OAuth mechanics,
-                                                    signs into zkd.external
+  → ChallengeAsync("facebook") (external)  ZeeKayDa activates the Facebook handler and sets its RedirectUri
+      → facebook.com → /connect/callback/facebook   ZeeKayDa endpoint hands the request to the
+                                                    Facebook handler: OAuth mechanics, signs into
+                                                    zkd.external
         → /connect/resume   ZeeKayDa endpoint: reads zkd.external, fires OnProviderSignIn,
                             promotes to zkd.session, then consent check → code → client
 ```
@@ -305,6 +365,29 @@ public interface IConsentInteraction
     Task GrantAsync(IEnumerable<string> grantedScopes);  // terminal; re-intersects
     Task DenyAsync();                                    // terminal; error=access_denied
 }
+
+public sealed class ProviderDescriptor                   // one per scheme WithProviders observed
+{
+    public string Id { get; }                            // opaque to the host; equals the scheme name
+    public string? DisplayName { get; }                  // the scheme's DisplayName, as registered
+}
+
+public sealed class ProviderSignInContext                // what OnProviderSignIn receives
+{
+    public ClaimsPrincipal Principal { get; }            // as the provider returned it, zkd:* stripped
+    public ProviderDescriptor Provider { get; }
+    public ClientInformation Client { get; }             // the same object GetClientInformationAsync returns
+    public IReadOnlyList<string> RequestedScopes { get; } // the effective scopes from the interaction context
+
+    Task RedirectToAsync(string path);                   // terminal: parks Principal in zkd.pending, redirects with zkd_i
+    Task DenyAsync(string error);                        // terminal: error at the client's registered redirect URI
+}
+
+public sealed class PendingPrincipal                     // GetPendingPrincipalAsync, on the collect-more page
+{
+    public ClaimsPrincipal Principal { get; }
+    public ProviderDescriptor Provider { get; }
+}
 ```
 
 `ProviderDescriptor.Id` is opaque to the host: it happens to equal the scheme name, but the page
@@ -315,8 +398,11 @@ from consent (#86), which inherits it. Configuration lives on properties and req
 behind async methods — a property getter that decrypted cookies and threw on a bad `zkd_i` would
 be bad .NET API, so anything read from the interaction context stays a method.
 
-Event model: `OnProviderSignIn` (external only) may `RedirectToAsync(path)` (pending principal) or
-`DenyAsync(error)`; calling neither promotes automatically. `OnSigningIn` fires for every sign-in
+Event model: `OnProviderSignIn` (external only) fires at `/connect/resume` with the context above.
+It may `RedirectToAsync(path)` (pending principal) or `DenyAsync(error)`; calling neither promotes
+the principal as it stands, so a host with nothing to collect writes no handler. The context reads
+the interaction context, so it carries the client and the effective scopes rather than making the
+page fetch them; it does not expose the raw provider ticket or tokens. `OnSigningIn` fires for every sign-in
 just before promotion, no interrupt; reserved protocol claims (`iss`, `sub`, `aud`, `exp`, `nonce`,
 `acr`, `amr`, `zkd:*`) are stripped regardless.
 
@@ -358,8 +444,8 @@ non-breaking. `AuthorizationCodeEntry.Nonce` stays nullable for that day.
   ergonomic goal became moot once other endpoints required mapping anyway, and hiding the request
   from the band between `UseAuthentication` and the endpoint protects little — while costing
   hand-rolled HTTPS/header/rate-limit reimplementation and a meaningless scheme registration.
-  Provider callbacks never needed ZeeKayDa interception at all: remote handlers intercept their
-  own `CallbackPath` natively.
+  Provider callbacks are routed ZeeKayDa endpoints too, one per provider, but the protocol work in
+  them is the provider's own handler, invoked — not reimplemented.
 - **A single callback path with `?scheme=X`.** Dispatch on attacker-visible input.
 - **ZeeKayDa owning the interaction UI.** Takes away the host's user model, branding, MFA.
 - **Full delegation to `ChallengeAsync` + a session cookie, no owned interaction context.** Cannot
@@ -387,3 +473,25 @@ non-breaking. `AuthorizationCodeEntry.Nonce` stays nullable for that day.
   and a second flag could contradict the first (#607).
 - **A per-user home-realm-discovery callback.** An unauthenticated user-enumeration oracle on the
   login page; see the HRD section above (#607).
+- **Prefixing provider scheme names as `zkd.<name>`.** Handler options are keyed by scheme name
+  (`OptionsMonitor.Get(Scheme.Name)`), so a rename must re-key every name-scoped registration or the
+  handler silently receives defaults — an empty `ClientId` failing on first sign-in, not at
+  startup — and a provider's own `IValidateOptions` stays bound to the old name and stops running.
+  The name is only meaningful inside the framework's scheme map now, so the prefix would buy
+  nothing (#85, 2026-09-04).
+- **A custom `AuthenticationBuilder` subclass handed to the callback.** Its `AddScheme` overloads
+  are virtual, but `AddPolicyScheme` calls the private helper directly and a raw
+  `IAuthenticationHandler` registration never touches the builder at all — both land as the same
+  descriptor the replay already reads, so the subclass is two holes and a re-implementation of the
+  helper for no gain (#85, 2026-09-04).
+- **A private service container for provider schemes.** Handlers reach back into
+  `HttpContext.RequestServices` for `EventsType`, `SignInAsync` and every `Forward*`, and provider
+  packages register arbitrary infrastructure into the collection they are handed; the container has
+  no fallback resolution, so isolation means forking the authentication stack and still leaking.
+  Removing the scheme-map descriptor gives the same invisibility in the shared container
+  (#85, 2026-09-04).
+- **Hiding provider schemes behind a decorated `IAuthenticationSchemeProvider`.** Concealment, not
+  absence: `GetSchemeAsync(name)` still resolves and every enumerator sees a picture the framework
+  authored. Superseded by never registering the scheme with the host (#85, 2026-09-04).
+- **Decorating `IAuthenticationService` to refuse provider schemes.** Moot once the schemes are
+  not in the host's map (#85, 2026-09-04).
