@@ -52,8 +52,7 @@ internal sealed class ProviderSchemeCollisionValidator : IStartupActivator
 
         var hostSchemes = (await schemeProvider.GetAllSchemesAsync().ConfigureAwait(false))
             .Select(scheme => scheme.Name)
-            .ToHashSet(StringComparer.Ordinal);
-
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (var registration in _registry.Registrations.Where(registration => hostSchemes.Contains(registration.Name)))
         {
             cancellationToken.ThrowIfCancellationRequested();
