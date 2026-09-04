@@ -70,9 +70,10 @@ their validation and post-configuration — stays in the shared container, which
 what the handler needs to run. Provider schemes live in a framework-owned scheme map and nowhere else.
 
 **What the framework pins, by name, and then asserts.** On every `RemoteAuthenticationOptions`-derived
-options object whose name is a registered provider: `CallbackPath = /connect/callback/{scheme}`,
-`SignInScheme = zkd.external`, and every `Forward*` member cleared, since forwarding resolves
-through the host's `IAuthenticationService`, which cannot see the scheme. The pin is one
+options object whose name is a registered provider: `CallbackPath` set to `/connect/callback/{scheme}`
+under the issuer path, derived exactly as every other endpoint's route is; `SignInScheme = zkd.external`;
+and every `Forward*` member cleared, since a forward would divert the challenge or the sign-in
+around the pinned `RedirectUri` and `SignInScheme`. The pin is one
 open-generic `IPostConfigureOptions<>` constrained to `RemoteAuthenticationOptions` — the container
 skips it for every other options type — registered after the callback so it runs after the
 provider's own post-configuration, including the one that defaults `SignInScheme`.
@@ -93,8 +94,10 @@ startup resolution reads the options type off the handler's base chain, once.
   to `ActivatorUtilities`, then `InitializeAsync(scheme, context)` — the six lines of
   `AuthenticationHandlerProvider.GetHandlerAsync`, without its per-request cache.
 - *Callback dispatch.* One routed endpoint **per registered provider** at
-  `/connect/callback/{scheme}`, mapped at startup from the scheme map — never a pattern matched
-  against request input. It activates the handler and calls `HandleRequestAsync`, which completes
+  `/connect/callback/{scheme}` under the issuer path, mapped at startup from the scheme map — never
+  a pattern matched against request input, and the same route the pin wrote into `CallbackPath`,
+  so the handler's own `CallbackPath == Request.Path` check passes by construction. It activates
+  the handler and calls `HandleRequestAsync`, which completes
   the protocol, signs into `zkd.external` with the properties it was challenged with, and redirects
   to the `RedirectUri` ZeeKayDa set: `/connect/resume`.
 - *Challenge.* `ILoginInteraction.ChallengeAsync` activates the handler and calls its
@@ -105,14 +108,32 @@ fails at startup with a message naming the fix: a configure lambda in the window
 `AuthenticationOptions` defaults (they belong on `AddAuthentication`); and any
 `IConfigureOptions<AuthenticationOptions>` or `IPostConfigureOptions<AuthenticationOptions>` in the
 window that is not a replayable instance — a factory or type registration — because it can neither
-be read nor safely removed.
+be read nor safely removed; and a provider name that also exists in the host's **final** scheme
+map, registered before or after `WithProviders` by the host or a library, because the middleware
+would then serve that name's callback and the host could challenge it, reintroducing exactly what
+removal took away. That last check reads the resolved `IAuthenticationSchemeProvider`, not the
+window, so it sees the map as the application will run it.
+
+**The framework trusts no handler for provider identity or interaction binding.** `ChallengeAsync`
+stamps the interaction id into the `AuthenticationProperties` it hands the handler. The callback
+endpoint knows which provider it is, and marks the request before invoking the handler;
+`zkd.external`, a framework-owned cookie scheme, records that mark as the provider on sign-in and
+refuses a sign-in that carries no mark. `/connect/resume` signs `zkd.external` out first, then
+refuses when the ticket's interaction id differs from the one it was asked to resume or the recorded
+provider is not a registered one. The `.AuthScheme` item `RemoteAuthenticationHandler` stamps into
+the properties is a cross-check, never the source. A handler that drops the properties therefore
+fails loudly at resume; it cannot complete another interaction or pass as another provider, whatever
+it does with the state it was given.
 
 **Handlers that do not derive from `RemoteAuthenticationHandler`** are supported by the same
-machinery; only the pin does not apply, because there is no options object to pin. Such a handler
-must behave as the base class does: implement `IAuthenticationRequestHandler`, answer at
-`/connect/callback/{its-scheme-name}`, carry the `AuthenticationProperties` it was challenged with
-through the round trip, and finish with `SignInAsync(zkd.external, principal, properties)` followed
-by a redirect to `properties.RedirectUri`. One test with a hand-written handler proves the contract.
+machinery; only the pin does not apply, because there is no options object to pin. To *complete* a
+sign-in such a handler must behave as the base class does: implement
+`IAuthenticationRequestHandler`, answer at its callback route, carry the `AuthenticationProperties`
+it was challenged with through the round trip, and finish with
+`SignInAsync(zkd.external, principal, properties)` followed by a redirect to
+`properties.RedirectUri`. That contract is about working, not about safety — the paragraph above is
+what keeps a careless handler from breaking a guarantee. One test with a hand-written handler proves
+the round trip; one with a handler that drops its properties proves the refusal.
 
 **Unsupported, by consequence:** a provider package that resolves its own scheme through
 `IAuthenticationSchemeProvider` (Microsoft.Identity.Web does, and also registers a cookie scheme
@@ -387,8 +408,14 @@ public sealed class ProviderSignInContext                // what OnProviderSignI
     public ClientInformation Client { get; }             // the same object GetClientInformationAsync returns
     public IReadOnlyList<string> RequestedScopes { get; } // the effective scopes from the interaction context
 
-    Task RedirectToAsync(string path);                   // terminal: parks Principal in zkd.pending, redirects with zkd_i
-    Task DenyAsync(string error);                        // terminal: error at the client's registered redirect URI
+    // Terminal. Parks Principal in zkd.pending and redirects to a host-local path carrying zkd_i.
+    // The path is validated on LoginPath's terms (InteractionPath.IsSafe): an absolute or
+    // protocol-relative value throws before the response is touched.
+    public Task RedirectToAsync(PathString path);
+
+    // Terminal. error=access_denied at the client's registered redirect URI with a fixed framework
+    // error_description naming the provider stage — ILoginInteraction.DenyAsync's exact terms.
+    public Task DenyAsync();
 }
 
 public sealed class PendingPrincipal                     // GetPendingPrincipalAsync, on the collect-more page
@@ -407,10 +434,17 @@ behind async methods — a property getter that decrypted cookies and threw on a
 be bad .NET API, so anything read from the interaction context stays a method.
 
 Event model: `OnProviderSignIn` (external only) fires at `/connect/resume` with the context above.
-It may `RedirectToAsync(path)` (pending principal) or `DenyAsync(error)`; calling neither promotes
-the principal as it stands, so a host with nothing to collect writes no handler. The context reads
+It may `RedirectToAsync(path)` (pending principal) or `DenyAsync()`; calling neither promotes
+the principal, so a host with nothing to collect writes no handler. The context reads
 the interaction context, so it carries the client and the effective scopes rather than making the
-page fetch them; it does not expose the raw provider ticket or tokens. `OnSigningIn` fires for every sign-in
+page fetch them; it does not expose the raw provider ticket or tokens.
+
+**Promotion never uses the provider's subject verbatim.** Upstream subjects are unique only within
+their issuer, so the session subject of an auto-promoted external principal is qualified by the
+provider's id, and two providers returning the same value cannot share a session or a `sub`. A host
+that maps external identities onto its own users does so on the page `RedirectToAsync` leads to and
+calls `ILoginInteraction.SignInAsync` with its own principal, which consumes the pending one.
+`OnSigningIn` fires for every sign-in
 just before promotion, no interrupt; reserved protocol claims (`iss`, `sub`, `aud`, `exp`, `nonce`,
 `acr`, `amr`, `zkd:*`) are stripped regardless.
 
