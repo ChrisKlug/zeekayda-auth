@@ -30,6 +30,8 @@ ZeeKayDa.Auth.Authorization.InteractionOptions.ErrorPath.set -> void
 ZeeKayDa.Auth.Authorization.InteractionOptions.InteractionOptions() -> void
 ZeeKayDa.Auth.Authorization.InteractionOptions.LoginPath.get -> string?
 ZeeKayDa.Auth.Authorization.InteractionOptions.LoginPath.set -> void
+ZeeKayDa.Auth.Authorization.InteractionOptions.SupportsLocalSignIn.get -> bool
+ZeeKayDa.Auth.Authorization.InteractionOptions.SupportsLocalSignIn.set -> void
 ZeeKayDa.Auth.Authorization.PromptValue
 ZeeKayDa.Auth.Authorization.PromptValue.Consent = 2 -> ZeeKayDa.Auth.Authorization.PromptValue
 ZeeKayDa.Auth.Authorization.PromptValue.Login = 1 -> ZeeKayDa.Auth.Authorization.PromptValue

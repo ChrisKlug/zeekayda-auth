@@ -1232,3 +1232,33 @@ scheme becomes the automatic default.
 - Residual: the immediate seeding variant stands — a victim navigated to an attacker's authorize who
   signs in on the login page they land on completes it. Consent (#86) owns this; `zkd_i` cannot see
   the difference. Industry-wide, and unchanged from #84's entry.
+
+## 2026-09-04 — external provider registration and login dispatch (#85, PR A, commit `dc9cd41`)
+
+Scoped to `WithProviders`, the framework-owned scheme map, the pins and their assertion, and the
+login dispatch rules. The round trip — the challenge, the callback endpoints, `/connect/resume`,
+`zkd.pending` — is **not built and was not reviewed**.
+
+- A provider scheme never reaches the host: absent from its scheme map and not challengeable by
+  name, whichever route registered it. Closed — `A_provider_scheme_is_absent_from_the_host_scheme_map_of_a_running_host`,
+  `A_provider_scheme_cannot_be_challenged_by_name_from_host_code`, `Every_route_into_the_scheme_map_is_observed_identically`.
+- What could put a scheme in the host's map unseen fails when `WithProviders` runs and leaves the
+  collection as it was. Closed — `A_callback_that_touches_earlier_registrations_is_refused`,
+  `A_scheme_map_configurer_that_cannot_be_replayed_is_refused`, `A_post_configurer_for_the_scheme_map_is_refused`,
+  `An_open_generic_configurer_in_the_window_is_refused`, `A_scheme_map_configurer_that_adds_no_scheme_is_refused`,
+  `A_failed_first_call_leaves_nothing_behind_not_even_the_authentication_services`.
+- The pins are asserted at startup, on every provider, whatever registered the drift. Closed —
+  `A_post_configurer_registered_after_WithProviders_that_*_fails_startup` (four members),
+  `A_post_configurer_registered_between_two_WithProviders_calls_still_fails_startup`,
+  `A_remote_options_handler_outside_the_remote_base_class_is_asserted_at_startup_too`,
+  `A_provider_outside_the_remote_hierarchy_has_its_forwarding_cleared`.
+- A provider name the host also registers, or a reserved one, is refused; a host with no way to
+  sign anyone in does not start; provider validator text never reaches a failure message. Closed —
+  `A_provider_name_the_host_also_registered_as_a_scheme_fails_startup`, `A_reserved_framework_name_is_refused_as_a_provider_name`,
+  `A_real_host_with_no_way_to_sign_anyone_in_does_not_start`,
+  `A_startup_failure_repeats_the_framework_pin_assertions_but_not_the_provider_validators_text`.
+- Residual: a host remote scheme whose `CallbackPath` equals a provider's route would let the
+  middleware claim it. The route is unmapped until PR B, which extends the collision check to paths.
+- Residual: a scheme added to the host's scheme provider after startup under a provider name, or a
+  replaced options monitor, is in-process code and outside the threat model; the guarantee is checked
+  at startup only, by `A_provider_name_the_host_also_registered_as_a_scheme_fails_startup`.

@@ -8,6 +8,43 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **External providers are registered through `WithProviders`, and the login page sees them** (#85, provider registration)
+
+  `ZeeKayDaAuthBuilder.WithProviders(auth => auth.AddGoogle(...))` hands the host a real
+  `AuthenticationBuilder`, so every existing provider package works unchanged. The host names the
+  providers it wants and nothing else: the framework observes what the callback registered by
+  replaying the scheme-map configurers it appended, records the schemes in a scheme map of its
+  own, and removes those configurers. A provider scheme therefore never reaches the host's
+  `AuthenticationOptions` — it is not enumerable, cannot be challenged by name from host code,
+  and is never dispatched by the authentication middleware — while the handler type and its named
+  options stay in the shared container, which is all the handler needs. Every
+  `IAuthenticationHandler` is accepted, not only the remote base class.
+
+  On every remote handler's options the framework pins `CallbackPath` to
+  `/connect/callback/{provider}` under the issuer, `SignInScheme` to its own external cookie, and
+  clears `AccessDeniedPath` and every `Forward*` member. The pin is asserted, not trusted: an
+  options validator fails any provider whose final values differ, and a startup activator resolves
+  each provider's options once so the failure is a startup error rather than a first-sign-in
+  surprise. Forwarding is cleared and asserted on every provider, remote or not. Refused when
+  `WithProviders` runs: a provider name outside the route grammar, a reserved one, a duplicate
+  ignoring case, and a callback that sets an `AuthenticationOptions` default or mutates earlier
+  registrations — leaving the service collection as it was. Refused at startup: a provider name
+  the host also registered as a scheme of its own.
+
+  The login page is also the provider-selection page. `ILoginInteraction` gains
+  `LocalLoginEnabled` and `Providers` — one `ProviderDescriptor` (`Id`, `DisplayName`) per
+  registered provider — and the new `Interaction.SupportsLocalSignIn` option (default `true`)
+  says whether the page has a credential form of its own. `LoginPath` presence is the dispatch
+  override: set, the request always goes there; unset with local sign-in off and exactly one
+  provider, the request goes straight to that provider; unset when the page is needed, the client
+  gets `server_error` and startup warned about it; local sign-in off with no providers is a
+  startup error. The checks fire only when `GrantTypesSupported` contains `authorization_code`,
+  so a `client_credentials`-only host starts clean.
+
+  The round trip itself — the challenge, the callback endpoints, `/connect/resume` and the
+  pending principal — is the next slice. Until it lands, a single-provider host without a login
+  page answers `501` at the point the challenge will be issued.
+
 - **A terminal interaction method now commits the response, so a host page cannot replace it** (#625)
 
   `SignInAsync` and `DenyAsync` are documented as terminal — the last thing the page does. That was

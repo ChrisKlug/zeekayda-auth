@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
+using ZeeKayDa.Auth.AspNetCore.Providers;
 using ZeeKayDa.Auth.Authorization;
 
 namespace ZeeKayDa.Auth.AspNetCore.Endpoints;
@@ -27,17 +28,20 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
     private readonly AuthorizationFlow _flow;
     private readonly LocalErrorResponse _localError;
     private readonly ClientErrorRedirect _clientError;
+    private readonly ProviderRegistry _providers;
 
     public AuthorizationEndpoint(
         IOptions<AuthorizationServerOptions> options,
         AuthorizationFlow flow,
         LocalErrorResponse localError,
-        ClientErrorRedirect clientError)
+        ClientErrorRedirect clientError,
+        ProviderRegistry providers)
     {
         _options = options;
         _flow = flow;
         _localError = localError;
         _clientError = clientError;
+        _providers = providers;
     }
 
     /// <inheritdoc/>
@@ -149,19 +153,26 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
                 "The request specified prompt=none but no authenticated session is available."));
         }
 
-        var loginPath = _options.Value.AuthorizationEndpoint.Interaction.LoginPath;
-        if (loginPath is null)
+        var interaction = _options.Value.AuthorizationEndpoint.Interaction;
+        switch (LoginDispatch.Decide(interaction, _providers.Count))
         {
-            // A configuration failure, reported to the client rather than rendered at the user:
-            // the redirect target is authenticated by this point, and the client's own error page
-            // is where a developer will be looking. Startup warns about this too.
-            return FailRequest(context, () => RedirectToClient(
-                request,
-                AuthorizeRequestErrors.ServerError,
-                "The authorization server is not configured to authenticate users."));
-        }
+            case LoginDispatchRule.LoginPage when interaction.LoginPath is { } loginPath:
+                return Results.Redirect(InteractionHandoff.BuildRedirectUrl(loginPath, requestContext.Id));
 
-        return Results.Redirect(InteractionHandoff.BuildRedirectUrl(loginPath, requestContext.Id));
+            case LoginDispatchRule.SingleProvider:
+                // The challenge to that provider lands with the external round trip. The context
+                // is already written, so what that stage adds is the redirect, not the state.
+                return PreAlphaNotImplementedResult.Result;
+
+            default:
+                // A configuration failure, reported to the client rather than rendered at the
+                // user: the redirect target is authenticated by this point, and the client's own
+                // error page is where a developer will be looking. Startup warned about this too.
+                return FailRequest(context, () => RedirectToClient(
+                    request,
+                    AuthorizeRequestErrors.ServerError,
+                    "The authorization server is not configured to authenticate users."));
+        }
     }
 
     /// <summary>

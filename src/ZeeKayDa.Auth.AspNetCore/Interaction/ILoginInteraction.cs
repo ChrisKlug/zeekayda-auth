@@ -19,6 +19,25 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 public interface ILoginInteraction
 {
     /// <summary>
+    /// Whether the page should render a credential form of its own — the value of
+    /// <c>AuthorizationEndpoint.Interaction.SupportsLocalSignIn</c>. Configuration, frozen at
+    /// startup.
+    /// </summary>
+    bool LocalLoginEnabled { get; }
+
+    /// <summary>
+    /// The external providers the host registered through <c>WithProviders</c>, in registration
+    /// order, for the page to render as a choice. Configuration, frozen at startup; empty when
+    /// none are registered.
+    /// </summary>
+    /// <remarks>
+    /// The page renders a credential form, a row of provider buttons, or both — the login page is
+    /// also the provider-selection page. A <see cref="ProviderDescriptor.Id"/> is handed back to
+    /// the framework to select that provider, never written by the page.
+    /// </remarks>
+    IReadOnlyList<ProviderDescriptor> Providers { get; }
+
+    /// <summary>
     /// Establishes the SSO session for <paramref name="principal"/> and continues the
     /// authorization request that led here.
     /// </summary>
