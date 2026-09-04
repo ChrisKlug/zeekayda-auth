@@ -101,7 +101,8 @@ startup resolution reads the options type off the handler's base chain, once.
   the protocol, signs into `zkd.external` with the properties it was challenged with, and redirects
   to the `RedirectUri` ZeeKayDa set: `/connect/resume`.
 - *Challenge.* `ILoginInteraction.ChallengeAsync` activates the handler and calls its
-  `ChallengeAsync` with a `RedirectUri` of `/connect/resume?zkd_i=<id>`.
+  `ChallengeAsync` with a `RedirectUri` of `/connect/resume?zkd_i=<id>` under the issuer path,
+  derived through the same route helper as the callback, so a path-based issuer completes.
 
 **Startup errors, not silent tolerance.** Invisibility is now a guarantee, so what would break it
 fails at startup with a message naming the fix: a configure lambda in the window that also sets
