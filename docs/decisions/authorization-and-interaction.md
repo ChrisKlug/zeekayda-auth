@@ -112,7 +112,9 @@ anything from the value.
 **Nothing raw is logged, and there is no toggle that relaxes it.** Raw `state`, `nonce`,
 `code_challenge`, authorization codes, tokens and full callback URIs never reach a log sink
 (RFC 9700 §4.16), and the framework redacts the callback URI itself rather than relying on the
-host's pipeline. Diagnostics that genuinely need raw values are strongly-typed events a host wires
+host's pipeline. A response to the client is written as two headers by the framework, never
+through `Results.Redirect`, whose executor logs the full `Location` — code and `state` included —
+at `Information`. Diagnostics that genuinely need raw values are strongly-typed events a host wires
 up **in code**, never a configuration flag — a flag that can log secrets gets left on in
 production, and a host wiring the events takes on the same non-disclosure duty. `code` is a
 redaction key, so `{Code}` is a poisoned placeholder name here as everywhere

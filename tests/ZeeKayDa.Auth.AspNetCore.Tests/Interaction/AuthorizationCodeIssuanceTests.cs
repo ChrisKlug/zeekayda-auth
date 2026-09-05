@@ -249,6 +249,24 @@ public sealed class AuthorizationCodeIssuanceTests : IDisposable
     private static string DestinationOf(HttpResponseMessage response) =>
         new Uri(response.Headers.Location!.OriginalString).GetLeftPart(UriPartial.Path);
 
+    /// <summary>
+    /// Nothing raw reached a log from anything the framework controls: not the code when one was
+    /// issued, not the client's state, and not the nonce. Hosting's own request log — which
+    /// prints the authorize URL as it arrived, nonce and state included — is the host's pipeline,
+    /// not the framework's, and is excluded; every other category, ASP.NET Core's result
+    /// executors included, is in scope.
+    /// </summary>
+    private void LogsShouldCarryNoProtocolMaterial(string? code, string? state)
+    {
+        var material = new[] { code, state, Nonce }.Where(value => !string.IsNullOrEmpty(value)).ToArray();
+
+        _logs.Entries
+            .Where(entry => !entry.Category.StartsWith("Microsoft.AspNetCore.Hosting", StringComparison.Ordinal))
+            .Should().NotContain(
+                entry => material.Any(value => entry.Message.Contains(value!, StringComparison.Ordinal)),
+                "codes, state and nonces never reach a log sink");
+    }
+
     // ── The response to the client ────────────────────────────────────────────────────────────
 
     [Fact]
@@ -265,6 +283,7 @@ public sealed class AuthorizationCodeIssuanceTests : IDisposable
         parameters["state"].Should().Equal(["opaque-client-state"]);
         parameters["iss"].Should().Equal(["https://test.example.com"]);
         response.Headers.CacheControl!.NoStore.Should().BeTrue("the response carries the code");
+        LogsShouldCarryNoProtocolMaterial(code, "opaque-client-state");
     }
 
     [Fact]
@@ -525,6 +544,7 @@ public sealed class AuthorizationCodeIssuanceTests : IDisposable
         parameters["iss"].Should().Equal(["https://test.example.com"]);
         parameters.Should().NotContainKey("code", "nothing was stored, so nothing is handed out");
         _logs.Entries.Should().Contain(entry => entry.Level == LogLevel.Error && entry.Message.Contains(ConsentingClient, StringComparison.Ordinal));
+        LogsShouldCarryNoProtocolMaterial(code: null, "opaque-client-state");
         var replay = async () => await GrantAsync(client, interactionId, "openid");
         await replay.Should().ThrowAsync<ZeeKayDaInteractionException>("a request that failed at issuance is not resumed");
     }
@@ -598,32 +618,32 @@ public sealed class AuthorizationCodeIssuanceTests : IDisposable
     /// <summary>Captures every log entry the host writes, after the framework's redaction.</summary>
     private sealed class CapturingLoggerProvider : ILoggerProvider
     {
-        private readonly List<(LogLevel Level, string Message)> _entries = [];
+        private readonly List<(string Category, LogLevel Level, string Message)> _entries = [];
 
-        public IReadOnlyList<(LogLevel Level, string Message)> Entries
+        public IReadOnlyList<(string Category, LogLevel Level, string Message)> Entries
         {
             get { lock (_entries) return [.. _entries]; }
         }
 
-        public ILogger CreateLogger(string categoryName) => new Logger(this);
+        public ILogger CreateLogger(string categoryName) => new Logger(this, categoryName);
 
         public void Dispose()
         {
         }
 
-        private void Add(LogLevel level, string message)
+        private void Add(string category, LogLevel level, string message)
         {
-            lock (_entries) _entries.Add((level, message));
+            lock (_entries) _entries.Add((category, level, message));
         }
 
-        private sealed class Logger(CapturingLoggerProvider owner) : ILogger
+        private sealed class Logger(CapturingLoggerProvider owner, string category) : ILogger
         {
             public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
 
             public bool IsEnabled(LogLevel logLevel) => true;
 
             public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
-                owner.Add(logLevel, formatter(state, exception));
+                owner.Add(category, logLevel, formatter(state, exception));
         }
     }
 }
