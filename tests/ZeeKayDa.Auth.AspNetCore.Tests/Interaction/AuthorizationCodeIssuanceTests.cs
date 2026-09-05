@@ -316,6 +316,21 @@ public sealed class AuthorizationCodeIssuanceTests : IDisposable
     }
 
     [Fact]
+    public async Task Issuance_straight_from_sign_in_discards_the_interaction_too()
+    {
+        // On this path the session cookie and the interaction cookie's deletion land in the same
+        // response; a replayed login POST for the same interaction must find nothing to complete.
+        var handoff = await AuthorizeAsync(ValidQuery(TrustedClient, "openid profile"));
+        var interactionId = InteractionIdFrom(handoff);
+        (await PostLoginAsync(interactionId)).ShouldHaveIssuedCodeTo(RegisteredRedirect);
+
+        var replay = async () => await PostLoginAsync(interactionId);
+
+        await replay.Should().ThrowAsync<ZeeKayDaInteractionException>();
+        (await InteractionIsAliveAsync()).Should().BeFalse();
+    }
+
+    [Fact]
     public async Task A_replayed_consent_post_after_issuance_is_refused_and_issues_nothing()
     {
         // The consent decision is not persisted: it is taken, the code issued and the

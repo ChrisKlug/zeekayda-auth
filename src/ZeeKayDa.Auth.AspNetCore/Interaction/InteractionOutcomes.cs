@@ -35,8 +35,7 @@ internal sealed class InteractionOutcomes
     private const string TooLarge = "The authorization request is too large to process.";
 
     private readonly AuthorizationFlow _flow;
-    private readonly LocalErrorResponse _localError;
-    private readonly ClientErrorRedirect _clientError;
+    private readonly AuthorizationResponses _responses;
     private readonly ProviderHandlerActivator _activator;
     private readonly AuthorizationCodeIssuer _issuer;
     private readonly IOptions<AuthorizationServerOptions> _options;
@@ -44,24 +43,21 @@ internal sealed class InteractionOutcomes
 
     public InteractionOutcomes(
         AuthorizationFlow flow,
-        LocalErrorResponse localError,
-        ClientErrorRedirect clientError,
+        AuthorizationResponses responses,
         ProviderHandlerActivator activator,
         AuthorizationCodeIssuer issuer,
         IOptions<AuthorizationServerOptions> options,
         ISanitizingLogger<InteractionOutcomes> logger)
     {
         ArgumentNullException.ThrowIfNull(flow);
-        ArgumentNullException.ThrowIfNull(localError);
-        ArgumentNullException.ThrowIfNull(clientError);
+        ArgumentNullException.ThrowIfNull(responses);
         ArgumentNullException.ThrowIfNull(activator);
         ArgumentNullException.ThrowIfNull(issuer);
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(logger);
 
         _flow = flow;
-        _localError = localError;
-        _clientError = clientError;
+        _responses = responses;
         _activator = activator;
         _issuer = issuer;
         _options = options;
@@ -70,14 +66,14 @@ internal sealed class InteractionOutcomes
 
     /// <summary>An error that must not reach the client: the host's error page, or the framework's minimal one.</summary>
     public IResult LocalError(HttpContext context, string error, string description) =>
-        _localError.Render(context, error, description);
+        _responses.Local(context, error, description);
 
     /// <summary>
     /// An error at a redirect URI authenticated in phase 1, for a request whose interaction
     /// context was never written or is cleared by the caller.
     /// </summary>
     public IResult ClientError(string redirectUri, string error, string description, string? state) =>
-        _clientError.To(redirectUri, error, description, state);
+        _responses.ErrorAtClient(redirectUri, error, description, state);
 
     /// <summary>
     /// An error at the client's registered redirect URI, read out of the encrypted context. The
@@ -89,7 +85,7 @@ internal sealed class InteractionOutcomes
         ArgumentNullException.ThrowIfNull(requestContext);
 
         _flow.Clear(context);
-        return _clientError.To(requestContext.RedirectUri, error, description, requestContext.State);
+        return _responses.ErrorAtClient(requestContext.RedirectUri, error, description, requestContext.State);
     }
 
     /// <summary>
@@ -111,7 +107,7 @@ internal sealed class InteractionOutcomes
 
         await WriteAsync(
                 context,
-                _clientError.To(requestContext.RedirectUri, AuthorizeRequestErrors.AccessDenied, description, requestContext.State))
+                _responses.ErrorAtClient(requestContext.RedirectUri, AuthorizeRequestErrors.AccessDenied, description, requestContext.State))
             .ConfigureAwait(false);
     }
 
@@ -193,7 +189,7 @@ internal sealed class InteractionOutcomes
             // The redirect URI was authenticated against a registration that no longer answers,
             // so nothing is sent there.
             _flow.Clear(context);
-            return _localError.Render(context, AuthorizeRequestErrors.InvalidRequest, AuthorizationCodeIssuer.ClientNoLongerAnswers);
+            return _responses.Local(context, AuthorizeRequestErrors.InvalidRequest, AuthorizationCodeIssuer.ClientNoLongerAnswers);
         }
 
         var asked = requestContext.Prompts.Contains(PromptValue.Consent);
@@ -268,7 +264,7 @@ internal sealed class InteractionOutcomes
     private IResult FailTooLarge(HttpContext context)
     {
         _flow.Clear(context);
-        return _localError.Render(context, AuthorizeRequestErrors.InvalidRequest, TooLarge);
+        return _responses.Local(context, AuthorizeRequestErrors.InvalidRequest, TooLarge);
     }
 
     /// <summary>

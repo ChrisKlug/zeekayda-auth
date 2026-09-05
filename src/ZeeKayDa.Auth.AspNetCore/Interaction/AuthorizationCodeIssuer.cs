@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -49,30 +48,26 @@ internal sealed class AuthorizationCodeIssuer
     private const string CouldNotIssue = "The authorization server could not issue an authorization code.";
 
     private readonly AuthorizationFlow _flow;
-    private readonly LocalErrorResponse _localError;
-    private readonly ClientErrorRedirect _clientError;
+    private readonly AuthorizationResponses _responses;
     private readonly IOptions<AuthorizationServerOptions> _options;
     private readonly TimeProvider _timeProvider;
     private readonly ISanitizingLogger<AuthorizationCodeIssuer> _logger;
 
     public AuthorizationCodeIssuer(
         AuthorizationFlow flow,
-        LocalErrorResponse localError,
-        ClientErrorRedirect clientError,
+        AuthorizationResponses responses,
         IOptions<AuthorizationServerOptions> options,
         TimeProvider timeProvider,
         ISanitizingLogger<AuthorizationCodeIssuer> logger)
     {
         ArgumentNullException.ThrowIfNull(flow);
-        ArgumentNullException.ThrowIfNull(localError);
-        ArgumentNullException.ThrowIfNull(clientError);
+        ArgumentNullException.ThrowIfNull(responses);
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(timeProvider);
         ArgumentNullException.ThrowIfNull(logger);
 
         _flow = flow;
-        _localError = localError;
-        _clientError = clientError;
+        _responses = responses;
         _options = options;
         _timeProvider = timeProvider;
         _logger = logger;
@@ -107,7 +102,7 @@ internal sealed class AuthorizationCodeIssuer
         if (!scopes.Contains(StandardScopes.OpenId.Name, StringComparer.Ordinal))
         {
             _flow.Clear(context);
-            return _localError.Render(context, AuthorizeRequestErrors.InvalidRequest, ClientNoLongerAnswers);
+            return _responses.Local(context, AuthorizeRequestErrors.InvalidRequest, ClientNoLongerAnswers);
         }
 
         var now = _timeProvider.GetUtcNow();
@@ -147,11 +142,11 @@ internal sealed class AuthorizationCodeIssuer
             _logger.LogError(ex, "Storing the authorization code for client {ClientId} failed.", client.ClientId);
 
             _flow.Clear(context);
-            return _clientError.To(requestContext.RedirectUri, AuthorizeRequestErrors.ServerError, CouldNotIssue, requestContext.State);
+            return _responses.ErrorAtClient(requestContext.RedirectUri, AuthorizeRequestErrors.ServerError, CouldNotIssue, requestContext.State);
         }
 
         _flow.Clear(context);
-        return Results.Redirect(BuildResponseUrl(requestContext, code));
+        return _responses.CodeAtClient(requestContext.RedirectUri, code, requestContext.State);
     }
 
     /// <summary>
@@ -193,25 +188,4 @@ internal sealed class AuthorizationCodeIssuer
     /// <summary>Whether this request had to go through the consent page: the registration says so, or the request asked.</summary>
     private static bool ConsentWasRequired(AuthorizationRequestContext requestContext, IClientMetadata client) =>
         client.RequireConsent || requestContext.Prompts.Contains(PromptValue.Consent);
-
-    /// <summary>
-    /// The successful authorization response: <c>code</c>, the client's <c>state</c> when it sent
-    /// one, and <c>iss</c> unconditionally, at the redirect URI authenticated in phase 1.
-    /// </summary>
-    private string BuildResponseUrl(AuthorizationRequestContext requestContext, string code)
-    {
-        var query = new Dictionary<string, string?>(StringComparer.Ordinal)
-        {
-            ["code"] = code,
-        };
-
-        if (requestContext.State is not null)
-            query["state"] = requestContext.State;
-
-        // iss on every authorization response, unconditionally — mix-up attack mitigation
-        // (RFC 9207, RFC 9700 §4.4).
-        query["iss"] = _options.Value.Issuer!;
-
-        return QueryHelpers.AddQueryString(requestContext.RedirectUri, query);
-    }
 }
