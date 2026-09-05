@@ -673,6 +673,20 @@ public sealed class ConsentInteractionTests : IDisposable
             "the form post still completes it");
     }
 
+    [Theory]
+    [InlineData(GrantByLinkPath)]
+    [InlineData(DenyByLinkPath)]
+    public async Task A_decision_taken_from_a_GET_is_refused_before_any_interaction_state_is_read(string path)
+    {
+        // No zkd_i and no interaction at all: had the service resolved the interaction first, the
+        // refusal would be the interaction one. Seeing the POST refusal instead proves the method
+        // check runs before anything is read.
+        var byLink = async () => await _client.GetAsync(path, Cancellation);
+
+        await byLink.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*POST*");
+    }
+
     // ── A terminal method really is the last word ─────────────────────────────────────────────
 
     [Theory]
