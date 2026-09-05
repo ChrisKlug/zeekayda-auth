@@ -23,10 +23,18 @@ public interface IConsentInteraction
     /// What the page should ask: the client, the scopes it wants, and who is being asked.
     /// </summary>
     /// <param name="cancellationToken">Cancels the read; pass the request's own token.</param>
+    /// <remarks>
+    /// The page takes a one-click decision, so the response this is called from is marked
+    /// unframeable (<c>Content-Security-Policy: frame-ancestors 'none'</c>, appended alongside
+    /// any policy of the host's, and <c>X-Frame-Options: DENY</c>) and uncacheable
+    /// (<c>Cache-Control: no-store</c>). A page renders nothing meaningful without this call, so
+    /// the protection is a guarantee rather than guidance.
+    /// </remarks>
     /// <exception cref="ZeeKayDaInteractionException">
     /// There is no interaction to ask about: the request carries no <c>zkd_i</c>, the interaction
-    /// context cookie is absent or expired, the two do not name the same interaction, or the
-    /// session that authenticated the request is no longer the one the browser holds.
+    /// context cookie is absent or expired, the two do not name the same interaction, the session
+    /// that authenticated the request is no longer the one the browser holds, or the client that
+    /// sent the request is no longer registered.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// There is no active HTTP request — the service was resolved outside one.
@@ -64,8 +72,9 @@ public interface IConsentInteraction
     /// </remarks>
     /// <exception cref="ZeeKayDaInteractionException">
     /// There is no interaction to complete: the request carries no <c>zkd_i</c>, the interaction
-    /// context cookie is absent or expired, the two do not name the same interaction, or the
-    /// session that authenticated the request is no longer the one the browser holds.
+    /// context cookie is absent or expired, the two do not name the same interaction, the session
+    /// that authenticated the request is no longer the one the browser holds, or the client that
+    /// sent the request is no longer registered.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// An entry in <paramref name="scopes"/> is null or blank.
@@ -101,8 +110,9 @@ public interface IConsentInteraction
     /// </remarks>
     /// <exception cref="ZeeKayDaInteractionException">
     /// There is no interaction to end: the request carries no <c>zkd_i</c>, the interaction
-    /// context cookie is absent or expired, the two do not name the same interaction, or the
-    /// session that authenticated the request is no longer the one the browser holds.
+    /// context cookie is absent or expired, the two do not name the same interaction, the session
+    /// that authenticated the request is no longer the one the browser holds, or the client that
+    /// sent the request is no longer registered.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// The request is not a <c>POST</c>, or there is no active HTTP request — the service was

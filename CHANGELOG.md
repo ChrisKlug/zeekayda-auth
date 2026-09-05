@@ -23,9 +23,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   another user's is refused.
 
   Consent is required for every client by default. The new `IClientMetadata.RequireConsent`
-  (default `true`, a default interface member so existing implementations keep it) turns it off
-  per registration, for an operator's own applications; a client with it off goes straight on
-  from sign-in. Remembered grants are not built: every request prompts, and `prompt=none` for a
+  (default `true`, a default interface member: requiring consent is what a registration means
+  unless it says otherwise) turns it off per registration, for an operator's own applications; a
+  client with it off goes straight on from sign-in. The consent page's response is stamped
+  unframeable and uncacheable by `GetRequestAsync`, and every consent call reads the registration
+  again, refusing for a client removed since the handoff. Remembered grants are not built: every request prompts, and `prompt=none` for a
   client that requires consent answers `consent_required`. A host without a consent page whose
   client requires one answers the client `server_error` and logs an error naming the option;
   there is no startup warning, since whether the page is needed depends on the registered

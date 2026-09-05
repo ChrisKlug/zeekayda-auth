@@ -69,9 +69,9 @@ method is `zkd_i`-bound on the login service's terms and additionally refuses wh
 cookie no longer names the session and subject that authenticated the request — a sign-out, or a
 sign-in as someone else, between the handoff and the answer. A grant can only narrow the request:
 it is re-intersected with the effective scopes, and one that drops `openid` is a refusal to be
-identified, answered `access_denied` as a deny is. The client is resolved at the point of use, so a
-registration removed mid-flow ends the request at the local error page, not at a redirect URI that
-no longer belongs to anyone.
+identified, answered `access_denied` as a deny is. The client is resolved again at every step — the
+post-authentication dispatch and each consent call — so a registration removed mid-flow ends the
+request where it stands, never at a redirect URI that no longer belongs to anyone.
 
 **A missing `ConsentPath` is a request-time `server_error` with an error log, not a startup
 warning.** Whether the page is needed depends on client data the framework does not enumerate at

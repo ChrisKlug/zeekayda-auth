@@ -115,9 +115,12 @@ public sealed class ConsentInteractionTests : IDisposable
 
         // The consent page, exactly as the issue's sample host writes it: the GET renders what
         // the framework says to ask, the POST hands back the boxes the user ticked.
-        endpoints.MapGet(ConsentPath, async (IConsentInteraction consent, CancellationToken cancellationToken) =>
+        endpoints.MapGet(ConsentPath, async (HttpContext context, IConsentInteraction consent) =>
         {
-            var request = await consent.GetRequestAsync(cancellationToken);
+            // A host with a content security policy of its own sets it as it always did.
+            context.Response.Headers.Append("Content-Security-Policy", "default-src 'self'");
+
+            var request = await consent.GetRequestAsync(context.RequestAborted);
 
             return Results.Ok(new
             {
@@ -404,25 +407,46 @@ public sealed class ConsentInteractionTests : IDisposable
     }
 
     [Fact]
-    public async Task GetRequestAsync_reports_the_client_id_alone_when_the_registration_has_vanished()
+    public async Task Every_consent_operation_for_a_client_removed_after_the_handoff_is_refused()
     {
-        // The page still renders what the request named — the identifier is protocol state the
-        // context carries — and the display name, which lives only on the registration, is gone
-        // with it. The decision the page then records is judged again when the code is issued.
+        // The registration is read again at every consent call. A client removed since the
+        // handoff has no page worth rendering and no redirect URI anyone vouches for any more, so
+        // nothing is rendered, granted, or sent there.
         var repository = new RemovableClientRepository(ConsentingRegistration());
         using var factory = NewFactory(ConsentPath, repository);
         using var client = NewClient(factory);
         var handoff = await AuthorizeAsync(client);
         var signIn = await PostLoginAsync(client, InteractionIdFrom(handoff));
         signIn.ShouldHaveReachedConsent();
+        var url = WithInteractionId(ConsentPath, InteractionIdFrom(signIn));
+        using var grantForm = Form(("scope", "openid"));
+        using var denyForm = Form(("action", "deny"));
 
         repository.Removed = true;
-        var response = await client.GetAsync(WithInteractionId(ConsentPath, InteractionIdFrom(signIn)), Cancellation);
+
+        var read = async () => await client.GetAsync(url, Cancellation);
+        await read.Should().ThrowAsync<ZeeKayDaInteractionException>();
+        var grant = async () => await client.PostAsync(url, grantForm, Cancellation);
+        await grant.Should().ThrowAsync<ZeeKayDaInteractionException>();
+        var deny = async () => await client.PostAsync(url, denyForm, Cancellation);
+        await deny.Should().ThrowAsync<ZeeKayDaInteractionException>();
+    }
+
+    [Fact]
+    public async Task GetRequestAsync_makes_the_rendered_page_unframeable_and_uncacheable()
+    {
+        // The page takes a one-click decision, so an attacker who can frame it can steer that
+        // click. No consent page renders without this call, which is what makes the stamp a
+        // guarantee — alongside a policy the host set itself, not instead of it.
+        var signIn = await ReachConsentAsync();
+
+        var response = await GetConsentPageAsync(InteractionIdFrom(signIn));
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var page = await ReadJsonAsync(response);
-        page.GetProperty("clientId").GetString().Should().Be(ConsentingClient);
-        page.GetProperty("displayName").ValueKind.Should().Be(JsonValueKind.Null);
+        response.Headers.GetValues("Content-Security-Policy")
+            .Should().BeEquivalentTo(["default-src 'self'", "frame-ancestors 'none'"]);
+        response.Headers.GetValues("X-Frame-Options").Should().Equal("DENY");
+        response.Headers.CacheControl!.NoStore.Should().BeTrue();
     }
 
     [Fact]

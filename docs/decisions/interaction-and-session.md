@@ -102,9 +102,9 @@ rejects on the next hop.
 
 **ZeeKayDa owns no interaction UI.** Login, consent and provider selection are the host's pages, and
 the host brings its own user model, identity store, branding and MFA. The cost is real: a host writes
-more code than a framework-shipped default page would need. The framework also cannot enforce
-`frame-ancestors 'none'` / `X-Frame-Options: DENY` on host-rendered pages, and those pages are
-clickjacking targets — an unresolved gap, not a solved one.
+more code than a framework-shipped default page would need. The consent page is stamped
+`frame-ancestors 'none'`, `X-Frame-Options: DENY` and `no-store` by the `GetRequestAsync` no such
+page renders without; the login page has no such call and stays a clickjacking target — an open gap.
 
 **Provider schemes exist only in the framework's scheme map, and what would make them visible to
 the host fails at startup.** `WithProviders` replays the scheme-map configurers the host's callback

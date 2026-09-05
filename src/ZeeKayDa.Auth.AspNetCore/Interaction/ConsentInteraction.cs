@@ -1,13 +1,15 @@
 using System.Collections.Immutable;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Net.Http.Headers;
 using ZeeKayDa.Auth.Authorization;
+using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Scopes;
 
 namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 
 /// <summary>
-/// Default <see cref="IConsentInteraction"/> implementation: verifies the handoff and the session
-/// behind it, then records the decision or ends the request.
+/// Default <see cref="IConsentInteraction"/> implementation: verifies the handoff, the session
+/// behind it and the client it is for, then records the decision or ends the request.
 /// </summary>
 internal sealed class ConsentInteraction : IConsentInteraction
 {
@@ -45,14 +47,18 @@ internal sealed class ConsentInteraction : IConsentInteraction
     public async Task<ConsentRequest> GetRequestAsync(CancellationToken cancellationToken = default)
     {
         var context = RequireHttpContext();
-        var requestContext = await ResolveAsync(context).ConfigureAwait(false);
 
         cancellationToken.ThrowIfCancellationRequested();
-        var client = await _flow.DescribeClientAsync(context, requestContext, cancellationToken).ConfigureAwait(false);
+        var (requestContext, client) = await ResolveAsync(context, cancellationToken).ConfigureAwait(false);
+
+        ProtectRenderedPage(context.Response);
 
         // The subject was written by the same promotion that wrote the session identifier
         // ResolveAsync just matched, so it is present whenever that check passed.
-        return new ConsentRequest(client, requestContext.Scopes.ToImmutableArray(), requestContext.Subject!);
+        return new ConsentRequest(
+            new ClientInformation(requestContext.ClientId, client.DisplayName),
+            requestContext.Scopes.ToImmutableArray(),
+            requestContext.Subject!);
     }
 
     /// <inheritdoc/>
@@ -67,7 +73,7 @@ internal sealed class ConsentInteraction : IConsentInteraction
             throw new ArgumentException("An entry in scopes is null or blank.", nameof(scopes));
 
         var context = RequireStateChangingRequest();
-        var requestContext = await ResolveAsync(context).ConfigureAwait(false);
+        var (requestContext, _) = await ResolveAsync(context, context.RequestAborted).ConfigureAwait(false);
 
         // The page's answer can only narrow what was asked: intersected in request order, over
         // ordinal comparison, so a page cannot grant a scope the request never carried.
@@ -88,16 +94,24 @@ internal sealed class ConsentInteraction : IConsentInteraction
     public async Task DenyAsync()
     {
         var context = RequireStateChangingRequest();
-        var requestContext = await ResolveAsync(context).ConfigureAwait(false);
+        var (requestContext, _) = await ResolveAsync(context, context.RequestAborted).ConfigureAwait(false);
 
         await _outcomes.DenyAsync(context, requestContext, DeclinedAtConsent).ConfigureAwait(false);
     }
 
     /// <summary>
-    /// The interaction this request may decide consent for: addressed by <c>zkd_i</c> on the
-    /// login service's exact terms, and authenticated by the session this browser still holds.
+    /// The interaction this request may decide consent for, and the client it is for: addressed
+    /// by <c>zkd_i</c> on the login service's exact terms, authenticated by the session this
+    /// browser still holds, and sent by a client that is still registered.
     /// </summary>
-    private async ValueTask<AuthorizationRequestContext> ResolveAsync(HttpContext context)
+    /// <remarks>
+    /// The registration is read again here rather than remembered from the handoff. A client
+    /// removed or invalidated since then has no page worth rendering and no redirect URI anyone
+    /// vouches for any more, so the request ends where it stands.
+    /// </remarks>
+    private async ValueTask<(AuthorizationRequestContext RequestContext, IClientMetadata Client)> ResolveAsync(
+        HttpContext context,
+        CancellationToken cancellationToken)
     {
         var requestContext = await _flow.ResolveAddressedAsync(context).ConfigureAwait(false);
 
@@ -109,7 +123,26 @@ internal sealed class ConsentInteraction : IConsentInteraction
                 "consent page. Start the authorization request again.");
         }
 
-        return requestContext;
+        var client = await _flow.ResolveClientAsync(context, requestContext, cancellationToken).ConfigureAwait(false)
+            ?? throw new ZeeKayDaInteractionException(
+                "The client that sent this authorization request is no longer registered, so there is " +
+                "nothing to consent to. Start the authorization request again.");
+
+        return (requestContext, client);
+    }
+
+    /// <summary>
+    /// The consent page takes a one-click decision, so the response that renders it is framed by
+    /// nobody and cached by nothing. No consent page can render without the call that stamps
+    /// this, which is what makes it a guarantee rather than guidance. The frame-ancestors policy
+    /// is appended, so a policy the host set of its own still applies alongside it.
+    /// </summary>
+    private static void ProtectRenderedPage(HttpResponse response)
+    {
+        var headers = response.Headers;
+        headers.CacheControl = "no-store";
+        headers.Append(HeaderNames.ContentSecurityPolicy, "frame-ancestors 'none'");
+        headers.XFrameOptions = "DENY";
     }
 
     private HttpContext RequireHttpContext() =>

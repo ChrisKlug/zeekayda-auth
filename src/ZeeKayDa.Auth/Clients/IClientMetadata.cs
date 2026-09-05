@@ -129,8 +129,8 @@ public interface IClientMetadata
     /// collect the code the victim's sign-in produces, and the consent page is the only thing
     /// between that sign-in and the code. Setting this to <see langword="false"/> removes that
     /// protection for this client, which is a deliberate choice for an operator's own
-    /// first-party applications and nothing else. It is a default interface member so that an
-    /// implementation that never heard of consent keeps it.
+    /// first-party applications and nothing else. It is a default interface member because
+    /// requiring consent is what a registration means unless it says otherwise.
     /// </remarks>
     bool RequireConsent => true;
 

@@ -27,9 +27,11 @@ set's own comparer is not trusted — a custom repository's entity type is free 
 **`IsPublic` is declared, never derived, and the three-way consistency rule is enforced at
 registration:** public ⇔ no credentials ⇔ auth methods are exactly `{ "none" }`. A default
 interface method computing it would let a configuration omission quietly change security behaviour
-instead of failing a startup check. Exactly one member on the interface *is* a default interface
-method — the per-client signing-algorithm allowlist, where `null` means "inherit the server default"
-and there is no security-relevant thing to omit.
+instead of failing a startup check. A default interface method is used only where the default is
+the safe or the forward-compatible answer, never to excuse an omission: the signing-algorithm
+allowlist (`null` inherits the server default), `AllowedPromptValues` (empty permits every value, so
+a new one needs no change), `DisplayName` (`null`: none) and `RequireConsent` (`true`: an
+implementation that says nothing requires consent).
 
 **Credential type identity is the algorithm; there is no string discriminator and no
 `string? ClientSecret`.** A bare string is ambiguous about plaintext versus hash and pushes fixed-time
