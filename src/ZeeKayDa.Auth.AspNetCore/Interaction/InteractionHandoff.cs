@@ -1,5 +1,5 @@
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
-using System.Text;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.WebUtilities;
 
@@ -72,9 +72,12 @@ internal static class InteractionHandoff
         ArgumentNullException.ThrowIfNull(expected);
         ArgumentNullException.ThrowIfNull(supplied);
 
+        // Compared over the strings' own UTF-16 bytes, so a request-supplied value of any length
+        // costs no allocation, and a length mismatch answers false before any byte is compared —
+        // the length of an identifier is not a secret, its bytes are.
         return CryptographicOperations.FixedTimeEquals(
-            Encoding.UTF8.GetBytes(expected),
-            Encoding.UTF8.GetBytes(supplied));
+            MemoryMarshal.AsBytes(expected.AsSpan()),
+            MemoryMarshal.AsBytes(supplied.AsSpan()));
     }
 
     /// <summary>

@@ -87,5 +87,6 @@ internal sealed class HandlerOptionsPin<TOptions> : IPostConfigureOptions<TOptio
     }
 
     private static bool IsDefault(Func<AccessDeniedContext, Task>? handler) =>
-        handler is null || (handler.Method == DefaultOnAccessDenied.Method && handler.Target == DefaultOnAccessDenied.Target);
+        handler is null
+        || (handler.Method == DefaultOnAccessDenied.Method && ReferenceEquals(handler.Target, DefaultOnAccessDenied.Target));
 }

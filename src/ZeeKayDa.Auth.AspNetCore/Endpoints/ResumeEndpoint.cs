@@ -158,31 +158,37 @@ internal sealed class ResumeEndpoint : IZeeKayDaEndpoint
     /// </summary>
     private async Task<ResolvedTicket?> ResolveTicketAsync(HttpContext context)
     {
-        var interactionId = await InteractionHandoff.ReadInteractionIdAsync(context.Request).ConfigureAwait(false);
-        var result = await context.AuthenticateAsync(ZeeKayDaCookies.External).ConfigureAwait(false);
-
-        // Single use, consumed whether or not it can be resumed.
-        await context.SignOutAsync(ZeeKayDaCookies.External).ConfigureAwait(false);
-
-        if (interactionId is null || !result.Succeeded || result.Ticket is not { } ticket)
+        var (interactionId, ticket) = await ConsumeTicketAsync(context).ConfigureAwait(false);
+        if (interactionId is null || ticket is null || !IsBoundTo(ticket, interactionId))
             return null;
-
-        var items = ticket.Properties.Items;
-        if (Item(items, ExternalTicket.InteractionIdItem) is not { } boundId
-            || !InteractionHandoff.IdentifiersMatch(boundId, interactionId))
-        {
-            return null;
-        }
 
         var requestContext = _flow.Read(context);
         if (requestContext is null || !InteractionHandoff.IdentifiersMatch(requestContext.Id, interactionId))
             return null;
 
-        if (ProviderOf(items) is not { } registration)
+        if (ProviderOf(ticket.Properties.Items) is not { } registration)
             return null;
 
         return new ResolvedTicket(registration, requestContext, ReservedClaims.Strip(ticket.Principal));
     }
+
+    /// <summary>
+    /// The interaction this request is addressed with and the external ticket it carries. The
+    /// ticket is single use, consumed whether or not it can be resumed.
+    /// </summary>
+    private static async Task<(string? InteractionId, AuthenticationTicket? Ticket)> ConsumeTicketAsync(HttpContext context)
+    {
+        var interactionId = await InteractionHandoff.ReadInteractionIdAsync(context.Request).ConfigureAwait(false);
+        var result = await context.AuthenticateAsync(ZeeKayDaCookies.External).ConfigureAwait(false);
+        await context.SignOutAsync(ZeeKayDaCookies.External).ConfigureAwait(false);
+
+        return (interactionId, result.Succeeded ? result.Ticket : null);
+    }
+
+    /// <summary>Whether the ticket names the interaction the request was addressed with.</summary>
+    private static bool IsBoundTo(AuthenticationTicket ticket, string interactionId) =>
+        Item(ticket.Properties.Items, ExternalTicket.InteractionIdItem) is { } bound
+        && InteractionHandoff.IdentifiersMatch(bound, interactionId);
 
     /// <summary>
     /// The provider is what the callback endpoint recorded from its route. It must be the one the
