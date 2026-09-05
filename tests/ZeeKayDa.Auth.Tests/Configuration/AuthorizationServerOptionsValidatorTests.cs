@@ -1491,7 +1491,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     [Theory]
     [InlineData("account/consent")]
     [InlineData("//evil.example.com/consent")]
-    [InlineData("/\evil.example.com/consent")]
+    [InlineData("/\\evil.example.com/consent")]
     [InlineData("/account/consent?x=1")]
     [InlineData("/account/consent#frag")]
     public void Validate_rejects_malformed_interaction_ConsentPath(string consentPath)
