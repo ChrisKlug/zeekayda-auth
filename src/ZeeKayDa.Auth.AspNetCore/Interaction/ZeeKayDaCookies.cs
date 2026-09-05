@@ -24,8 +24,12 @@ internal static class ZeeKayDaCookies
     /// <summary>The authorization request context, carried across the flow's redirects.</summary>
     public const string Interaction = "zkd.interaction";
 
-    /// <summary>The raw provider callback, before ZeeKayDa reads it. Lives for seconds.</summary>
-    public const string External = "zkd.external";
+    /// <summary>
+    /// The raw provider callback, before ZeeKayDa reads it. Lives for seconds. The one name a
+    /// host may need, to configure a handler the framework cannot, so it is public as
+    /// <see cref="ZeeKayDaSchemes.External"/>.
+    /// </summary>
+    public const string External = ZeeKayDaSchemes.External;
 
     /// <summary>A half-authenticated external principal, single-use and bound to its interaction.</summary>
     public const string Pending = "zkd.pending";

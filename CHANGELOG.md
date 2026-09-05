@@ -24,7 +24,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   itself, so two providers returning the same identifier can never share a session, and a subject
   claim without an issuer is refused. Every `IAuthenticationHandler` is supported; one outside the
   remote base class carries the challenge properties through its round trip and finishes with a
-  sign-in to the external scheme followed by a redirect to the properties' return URL.
+  sign-in to its configured sign-in scheme followed by a redirect to the properties' return URL.
+  Such a handler's author need know nothing of this framework: the host sets the handler's own
+  sign-in scheme option to the new public `ZeeKayDaSchemes.External`, the one framework name a
+  host ever has to write.
 
   The host takes part through the new second argument of `WithProviders`:
   `ProviderOptions.OnProviderSignIn` fires at resume with a `ProviderSignInContext` — the
@@ -32,7 +35,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   `RedirectToAsync(path)` parks the principal in the pending cookie, bound to its interaction, and
   sends the user to a host-relative page carrying `zkd_i`; that page reads it back with
   `ILoginInteraction.GetPendingPrincipalAsync()` — `null` when absent, expired or bound to another
-  interaction — and finishes with `SignInAsync`, which consumes it. `DenyAsync()` answers the
+  interaction — and finishes with `SignInAsync`, which consumes it. The parked principal keeps
+  every identity the provider returned. `DenyAsync()` answers the
   client with `access_denied` naming the provider stage. Calling neither promotes; calling both,
   or a path outside the host, throws.
 

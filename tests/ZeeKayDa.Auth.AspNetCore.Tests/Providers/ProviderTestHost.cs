@@ -63,7 +63,9 @@ internal static class ProviderTestHost
     /// <summary>
     /// Registers the hand-written handler the way a raw <see cref="IAuthenticationHandler"/> is
     /// registered: straight into the scheme map, since the typed <c>AddScheme</c> is reserved for
-    /// handlers deriving from the base class.
+    /// handlers deriving from the base class. The host sets the handler's own sign-in scheme
+    /// option to the framework's public scheme name — the one thing a host wiring a handler that
+    /// knows nothing of the framework has to do.
     /// </summary>
     public static void AddHandWritten(
         AuthenticationBuilder auth,
@@ -74,7 +76,25 @@ internal static class ProviderTestHost
         auth.Services.Configure<AuthenticationOptions>(options => options.AddScheme<HandWrittenHandler>(name, "Hand"));
         if (registerHandler)
             auth.Services.TryAddTransient<HandWrittenHandler>();
-        auth.Services.Configure(name, configure ?? (_ => { }));
+        auth.Services.Configure<HandWrittenOptions>(name, options =>
+        {
+            options.SignInScheme = ZeeKayDaSchemes.External;
+            configure?.Invoke(options);
+        });
+    }
+
+    /// <summary>The working provider, returning a second identity alongside the authenticated one.</summary>
+    public static void ConfigureAcmeWithSecondaryIdentity(OAuthOptions options)
+    {
+        ConfigureAcme(options);
+        var creatingTicket = options.Events.OnCreatingTicket;
+        options.Events.OnCreatingTicket = async context =>
+        {
+            await creatingTicket(context);
+            context.Principal!.AddIdentity(new ClaimsIdentity(
+                [new Claim("dept", "sales", ClaimValueTypes.String, context.Scheme.Name)],
+                "acme-directory"));
+        };
     }
 
     public static HttpClient NewClient(TestWebAppFactory factory) => factory.CreateClient(new()
@@ -120,6 +140,7 @@ internal static class ProviderTestHost
                     sub = pending.Principal.FindFirstValue("sub"),
                     provider = pending.Provider.Id,
                     reservedClaims = pending.Principal.Claims.Count(claim => claim.Type.StartsWith("zkd:", StringComparison.OrdinalIgnoreCase)),
+                    identities = pending.Principal.Identities.Select(identity => identity.AuthenticationType).ToArray(),
                 });
         });
 
@@ -224,9 +245,16 @@ internal static class ProviderTestHost
                 });
     }
 
-    /// <summary>How a hand-written handler misbehaves, one way per test.</summary>
+    /// <summary>
+    /// What a hand-written handler's own options look like — a sign-in scheme setting the host
+    /// fills in, as any handler written for ASP.NET Core would have — and how it misbehaves, one
+    /// way per test.
+    /// </summary>
     public sealed class HandWrittenOptions : AuthenticationSchemeOptions
     {
+        /// <summary>The scheme to sign the authenticated user into; the host sets it.</summary>
+        public string? SignInScheme { get; set; }
+
         /// <summary>Sign in with fresh properties instead of the ones the challenge carried.</summary>
         public bool DropProperties { get; set; }
 
@@ -298,10 +326,10 @@ internal static class ProviderTestHost
             if (settings.StampAnotherScheme)
                 properties.Items[".AuthScheme"] = "someone-else";
 
-            // The literal, as a handler outside this repository would write it: the scheme name is
-            // the documented contract, not an internal constant.
+            // Into whatever scheme the host configured, as a handler written without knowledge of
+            // this framework would: the handler names nothing of the framework's.
             await _context.SignInAsync(
-                "zkd.external",
+                settings.SignInScheme ?? throw new InvalidOperationException("The host did not set a sign-in scheme."),
                 principal,
                 settings.DropProperties ? new AuthenticationProperties() : properties);
 

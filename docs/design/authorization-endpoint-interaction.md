@@ -176,9 +176,11 @@ it does with the state it was given.
 machinery; only the pin does not apply, because there is no options object to pin. To *complete* a
 sign-in such a handler must behave as the base class does: implement
 `IAuthenticationRequestHandler`, answer at its callback route, carry the `AuthenticationProperties`
-it was challenged with through the round trip, and finish with
-`SignInAsync(zkd.external, principal, properties)` followed by a redirect to
-`properties.RedirectUri`. That contract is about working, not about safety — the paragraph above is
+it was challenged with through the round trip, and finish with a sign-in to its configured
+sign-in scheme followed by a redirect to `properties.RedirectUri`. Its author need know nothing of
+this framework: the host sets the handler's own sign-in scheme option to the public
+`ZeeKayDaSchemes.External`, the one framework name a host ever writes, and the handler signs in
+there as it would into any cookie. That contract is about working, not about safety — the paragraph above is
 what keeps a careless handler from breaking a guarantee. One test with a hand-written handler proves
 the round trip; one with a handler that drops its properties proves the refusal.
 
@@ -294,8 +296,10 @@ registering one fails at startup. All `HttpOnly`, Data-Protection encrypted.
 | `zkd.external` | the raw provider callback, before ZeeKayDa reads it | seconds | `Lax` |
 | `zkd.pending` | a half-authenticated external principal | hard 15 min, not sliding | `Lax` — first read at the end of the provider's redirect chain, which `Strict` withholds it from |
 
-`zkd.pending` is single-use (signed out on `SignInAsync`) and bound to its interaction via a
-`zkd:interaction_id` claim.
+`zkd.pending` is single-use (signed out on `SignInAsync`) and bound to its interaction through
+its ticket's properties, as the external ticket is — never a claim the host could see or a
+provider could have written. The principal is stored as the provider returned it, every identity
+intact, minus the framework's reserved claims.
 
 **As built:** `zkd.session`, `zkd.external` and `zkd.pending` are cookie schemes; `zkd.interaction`
 is a Data-Protection payload written directly rather than through a handler — it carries no
@@ -305,7 +309,8 @@ top-level GET the user arrived at from the client's site, which is what `Strict`
 `None` buys nothing until iframe-based silent authentication is supported. `zkd.external` accepts a
 sign-in only from a request a provider callback endpoint marked, records that provider into the
 ticket, and is consumed by `/connect/resume` whether or not the resume succeeds. `zkd.pending` is
-also consumed by a `DenyAsync` at the login page, and carries the provider as a second reserved claim.
+also consumed by a `DenyAsync` at the login page and by resume's own exits, and records the
+provider alongside the interaction in its ticket's properties.
 
 ## The interaction context
 

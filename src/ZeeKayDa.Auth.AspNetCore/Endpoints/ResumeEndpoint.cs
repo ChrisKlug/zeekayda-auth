@@ -17,9 +17,9 @@ namespace ZeeKayDa.Auth.AspNetCore.Endpoints;
 /// The external-return landing pad, <c>/connect/resume</c>: routed, internal, never published in
 /// discovery. A provider's handler ends its callback with a redirect here, carrying the ticket it
 /// signed into <c>zkd.external</c>. This endpoint consumes that ticket, checks that it names the
-/// interaction it was asked to resume and a registered provider, gives the host its say through
-/// <c>OnProviderSignIn</c>, and promotes the principal when the host does not end the request
-/// itself.
+/// interaction it was asked to resume and the registered provider it was issued to, gives the
+/// host its say through <c>OnProviderSignIn</c>, and promotes the principal when the host does
+/// not end the request itself.
 /// </summary>
 /// <remarks>
 /// The ticket is signed out before anything is checked, so a refused one cannot be presented
@@ -46,10 +46,7 @@ internal sealed class ResumeEndpoint : IZeeKayDaEndpoint
     private readonly IOptions<ProviderOptions> _providerOptions;
     private readonly ProviderRegistry _providers;
     private readonly AuthorizationFlow _flow;
-    private readonly LocalErrorResponse _localError;
-    private readonly ClientErrorRedirect _clientError;
-    private readonly SignInCompletion _completion;
-    private readonly PendingPrincipalCookie _pending;
+    private readonly InteractionOutcomes _outcomes;
     private readonly ISanitizingLogger<ResumeEndpoint> _logger;
 
     public ResumeEndpoint(
@@ -57,30 +54,21 @@ internal sealed class ResumeEndpoint : IZeeKayDaEndpoint
         IOptions<ProviderOptions> providerOptions,
         ProviderRegistry providers,
         AuthorizationFlow flow,
-        LocalErrorResponse localError,
-        ClientErrorRedirect clientError,
-        SignInCompletion completion,
-        PendingPrincipalCookie pending,
+        InteractionOutcomes outcomes,
         ISanitizingLogger<ResumeEndpoint> logger)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(providerOptions);
         ArgumentNullException.ThrowIfNull(providers);
         ArgumentNullException.ThrowIfNull(flow);
-        ArgumentNullException.ThrowIfNull(localError);
-        ArgumentNullException.ThrowIfNull(clientError);
-        ArgumentNullException.ThrowIfNull(completion);
-        ArgumentNullException.ThrowIfNull(pending);
+        ArgumentNullException.ThrowIfNull(outcomes);
         ArgumentNullException.ThrowIfNull(logger);
 
         _options = options;
         _providerOptions = providerOptions;
         _providers = providers;
         _flow = flow;
-        _localError = localError;
-        _clientError = clientError;
-        _completion = completion;
-        _pending = pending;
+        _outcomes = outcomes;
         _logger = logger;
     }
 
@@ -116,56 +104,22 @@ internal sealed class ResumeEndpoint : IZeeKayDaEndpoint
     {
         context.Response.Headers.CacheControl = "no-store";
 
-        var interactionId = await InteractionHandoff.ReadInteractionIdAsync(context.Request).ConfigureAwait(false);
-        var result = await context.AuthenticateAsync(ZeeKayDaCookies.External).ConfigureAwait(false);
+        if (await ResolveTicketAsync(context).ConfigureAwait(false) is not { } resolved)
+            return _outcomes.LocalError(context, AuthorizeRequestErrors.InvalidRequest, NothingToResume);
 
-        // Single use, consumed whether or not it can be resumed.
-        await context.SignOutAsync(ZeeKayDaCookies.External).ConfigureAwait(false);
-
-        if (interactionId is null || !result.Succeeded || result.Ticket is null || result.Principal is null)
-            return Refuse(context);
-
-        var items = result.Ticket.Properties.Items;
-        if (Item(items, ExternalTicket.InteractionIdItem) is not { } boundId
-            || !InteractionHandoff.IdentifiersMatch(boundId, interactionId))
-        {
-            return Refuse(context);
-        }
-
-        var requestContext = _flow.Read(context);
-        if (requestContext is null || !InteractionHandoff.IdentifiersMatch(requestContext.Id, interactionId))
-            return Refuse(context);
-
-        // The provider is what the callback endpoint recorded from its route. It must be the one
-        // the challenge was issued to — a callback carried to another provider's route, with a
-        // handler that accepts the state, cannot complete as that provider — and what the remote
-        // handler stamped is a further cross-check.
-        if (Item(items, ExternalTicket.ProviderItem) is not { } providerName
-            || _providers.Find(providerName) is not { } registration
-            || Item(items, ExternalTicket.ChallengedProviderItem) is not { } challenged
-            || !string.Equals(challenged, providerName, StringComparison.Ordinal))
-        {
-            return Refuse(context);
-        }
-
-        if (Item(items, ExternalTicket.RemoteAuthenticationSchemeItem) is { } stamped
-            && !string.Equals(stamped, providerName, StringComparison.Ordinal))
-        {
-            return Refuse(context);
-        }
+        var (registration, requestContext, principal) = resolved;
 
         // The host's callback gets a copy — of the identities, since ClaimsPrincipal.Clone shares
         // them. What is parked or promoted is the framework's own principal, so a reference the
         // host kept cannot change the session after the fact.
-        var principal = ReservedClaims.Strip(result.Principal);
         var signIn = new ProviderSignInContext(
             new ClaimsPrincipal(principal.Identities.Select(identity => identity.Clone())),
             registration.Descriptor,
             new ClientInformation(requestContext.ClientId),
             requestContext.Scopes.ToImmutableArray(),
             context.RequestAborted,
-            path => RedirectToAsync(context, requestContext, registration, principal, path),
-            () => DenyAsync(context, requestContext));
+            path => _outcomes.ParkAsync(context, requestContext, registration, principal, path),
+            () => _outcomes.DenyAsync(context, requestContext, DeniedAfterProvider));
 
         ClaimsPrincipal promoted;
         try
@@ -188,21 +142,70 @@ internal sealed class ResumeEndpoint : IZeeKayDaEndpoint
             return Fail(context, registration, ex);
         }
 
-        // A parked principal bound to this interaction is consumed by whichever sign-in
-        // completes it, the automatic one included.
-        await _pending.ConsumeAsync(context, requestContext.Id).ConfigureAwait(false);
-
         // The framework states nothing about how the user proved who they are at the provider —
         // it was told nothing — so no amr is reported for an auto-promoted external sign-in.
-        await _completion.CompleteAsync(
-                context,
-                requestContext,
-                promoted,
-                authenticationMethods: [],
-                providerScheme: registration.Name)
+        await _outcomes.CompleteSignInAsync(context, requestContext, promoted, authenticationMethods: [], registration.Name)
             .ConfigureAwait(false);
 
         return Results.Empty;
+    }
+
+    /// <summary>
+    /// Consumes the external ticket and checks what it names: the interaction this request was
+    /// addressed with and the browser is carrying, and a registered provider that is both the one
+    /// the challenge was issued to and the one whose callback route recorded it. Anything short of
+    /// that is <see langword="null"/>, whatever else the ticket says.
+    /// </summary>
+    private async Task<ResolvedTicket?> ResolveTicketAsync(HttpContext context)
+    {
+        var interactionId = await InteractionHandoff.ReadInteractionIdAsync(context.Request).ConfigureAwait(false);
+        var result = await context.AuthenticateAsync(ZeeKayDaCookies.External).ConfigureAwait(false);
+
+        // Single use, consumed whether or not it can be resumed.
+        await context.SignOutAsync(ZeeKayDaCookies.External).ConfigureAwait(false);
+
+        if (interactionId is null || !result.Succeeded || result.Ticket is not { } ticket)
+            return null;
+
+        var items = ticket.Properties.Items;
+        if (Item(items, ExternalTicket.InteractionIdItem) is not { } boundId
+            || !InteractionHandoff.IdentifiersMatch(boundId, interactionId))
+        {
+            return null;
+        }
+
+        var requestContext = _flow.Read(context);
+        if (requestContext is null || !InteractionHandoff.IdentifiersMatch(requestContext.Id, interactionId))
+            return null;
+
+        if (ProviderOf(items) is not { } registration)
+            return null;
+
+        return new ResolvedTicket(registration, requestContext, ReservedClaims.Strip(ticket.Principal));
+    }
+
+    /// <summary>
+    /// The provider is what the callback endpoint recorded from its route. It must be the one the
+    /// challenge was issued to — a callback carried to another provider's route, with a handler
+    /// that accepts the state, cannot complete as that provider — and what a remote handler
+    /// stamped for itself is a further cross-check.
+    /// </summary>
+    private ProviderRegistration? ProviderOf(IDictionary<string, string?> items)
+    {
+        if (Item(items, ExternalTicket.ProviderItem) is not { } providerName
+            || Item(items, ExternalTicket.ChallengedProviderItem) is not { } challenged
+            || !string.Equals(challenged, providerName, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        if (Item(items, ExternalTicket.RemoteAuthenticationSchemeItem) is { } stamped
+            && !string.Equals(stamped, providerName, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        return _providers.Find(providerName);
     }
 
     private IResult Fail(HttpContext context, ProviderRegistration registration, Exception exception)
@@ -225,48 +228,15 @@ internal sealed class ResumeEndpoint : IZeeKayDaEndpoint
                 exception.GetType().FullName);
         }
 
-        return _localError.Render(context, AuthorizeRequestErrors.ServerError, DidNotComplete);
+        return _outcomes.LocalError(context, AuthorizeRequestErrors.ServerError, DidNotComplete);
     }
-
-    private async Task RedirectToAsync(
-        HttpContext context,
-        AuthorizationRequestContext requestContext,
-        ProviderRegistration registration,
-        ClaimsPrincipal principal,
-        PathString path)
-    {
-        // The principal only: the ticket's properties and any tokens the provider saved into them
-        // stay behind with the consumed external ticket.
-        await _pending.WriteAsync(context, principal, requestContext.Id, registration.Name).ConfigureAwait(false);
-
-        await TerminalResponse.WriteAsync(
-                context,
-                Results.Redirect(InteractionHandoff.BuildRedirectUrl(path.Value!, requestContext.Id)))
-            .ConfigureAwait(false);
-    }
-
-    private async Task DenyAsync(HttpContext context, AuthorizationRequestContext requestContext)
-    {
-        // Discarded before the response is written, so a denied request cannot be resumed by a
-        // later sign-in picking the context back up — nor by a parked principal bound to it. The
-        // destination is the redirect URI read out of the encrypted context, never anything this
-        // request supplied.
-        _flow.Clear(context);
-        await _pending.ConsumeAsync(context, requestContext.Id).ConfigureAwait(false);
-
-        await TerminalResponse.WriteAsync(
-                context,
-                _clientError.To(
-                    requestContext.RedirectUri,
-                    AuthorizeRequestErrors.AccessDenied,
-                    DeniedAfterProvider,
-                    requestContext.State))
-            .ConfigureAwait(false);
-    }
-
-    private IResult Refuse(HttpContext context) =>
-        _localError.Render(context, AuthorizeRequestErrors.InvalidRequest, NothingToResume);
 
     private static string? Item(IDictionary<string, string?> items, string key) =>
         items.TryGetValue(key, out var value) && !string.IsNullOrEmpty(value) ? value : null;
+
+    /// <summary>A ticket that passed every check: who it is for, who returned it, and what they returned.</summary>
+    private sealed record ResolvedTicket(
+        ProviderRegistration Registration,
+        AuthorizationRequestContext RequestContext,
+        ClaimsPrincipal Principal);
 }

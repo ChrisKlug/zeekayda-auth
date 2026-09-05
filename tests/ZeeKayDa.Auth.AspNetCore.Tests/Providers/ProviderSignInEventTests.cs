@@ -15,10 +15,12 @@ public sealed class ProviderSignInEventTests
 {
     private static CancellationToken Cancellation => TestContext.Current.CancellationToken;
 
-    private static TestWebAppFactory NewFactory(Func<ProviderSignInContext, Task>? onProviderSignIn) =>
+    private static TestWebAppFactory NewFactory(
+        Func<ProviderSignInContext, Task>? onProviderSignIn,
+        Action<Microsoft.AspNetCore.Authentication.OAuth.OAuthOptions>? configureAcme = null) =>
         new(
             configureBuilder: builder => builder.WithProviders(
-                auth => auth.AddOAuth("acme", "Acme", ConfigureAcme),
+                auth => auth.AddOAuth("acme", "Acme", configureAcme ?? ConfigureAcme),
                 options => options.OnProviderSignIn = onProviderSignIn),
             mapEndpoints: MapHostPages);
 
@@ -181,6 +183,22 @@ public sealed class ProviderSignInEventTests
 
         pending.GetProperty("sub").GetString().Should().Be(UpstreamSubject);
         pending.GetProperty("provider").GetString().Should().Be("acme");
+        pending.GetProperty("reservedClaims").GetInt32().Should().Be(0);
+    }
+
+    [Fact]
+    public async Task The_parked_principal_keeps_the_providers_identities()
+    {
+        // Every identity the provider returned, with its authentication type, comes back as it
+        // was: the binding lives in the ticket, not in a flattened identity.
+        using var factory = NewFactory(context => context.RedirectToAsync(CollectMorePath), ConfigureAcmeWithSecondaryIdentity);
+        using var client = NewClient(factory);
+        var (_, resume) = await ResumeAsync(client);
+
+        var pending = (await ReadJsonAsync(client, resume.Headers.Location!.OriginalString))!.Value;
+
+        pending.GetProperty("identities").EnumerateArray().Select(element => element.GetString())
+            .Should().Equal("acme", "acme-directory");
         pending.GetProperty("reservedClaims").GetInt32().Should().Be(0);
     }
 

@@ -198,9 +198,9 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         services.TryAddSingleton<LocalErrorResponse>();
         services.TryAddSingleton<ClientErrorRedirect>();
         services.TryAddSingleton<SsoSession>();
-        services.TryAddSingleton<AuthorizationFlow>();
-        services.TryAddSingleton<SignInCompletion>();
         services.TryAddSingleton<PendingPrincipalCookie>();
+        services.TryAddSingleton<AuthorizationFlow>();
+        services.TryAddSingleton<InteractionOutcomes>();
         services.TryAddSingleton<IErrorInteraction, ErrorInteraction>();
         services.TryAddSingleton<ILoginInteraction, LoginInteraction>();
 
@@ -220,7 +220,6 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
     {
         services.TryAddSingleton(ProviderRegistry.Empty);
         services.TryAddSingleton<ProviderHandlerActivator>();
-        services.TryAddSingleton<ProviderChallenge>();
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IZeeKayDaEndpoint, ProviderCallbackEndpoint>());
         services.TryAddEnumerable(

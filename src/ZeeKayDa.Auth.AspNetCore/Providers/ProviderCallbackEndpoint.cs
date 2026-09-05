@@ -45,8 +45,7 @@ internal sealed class ProviderCallbackEndpoint : IZeeKayDaEndpoint
     private readonly ProviderRegistry _providers;
     private readonly ProviderHandlerActivator _activator;
     private readonly AuthorizationFlow _flow;
-    private readonly LocalErrorResponse _localError;
-    private readonly ClientErrorRedirect _clientError;
+    private readonly InteractionOutcomes _outcomes;
     private readonly ISanitizingLogger<ProviderCallbackEndpoint> _logger;
 
     public ProviderCallbackEndpoint(
@@ -54,24 +53,21 @@ internal sealed class ProviderCallbackEndpoint : IZeeKayDaEndpoint
         ProviderRegistry providers,
         ProviderHandlerActivator activator,
         AuthorizationFlow flow,
-        LocalErrorResponse localError,
-        ClientErrorRedirect clientError,
+        InteractionOutcomes outcomes,
         ISanitizingLogger<ProviderCallbackEndpoint> logger)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(providers);
         ArgumentNullException.ThrowIfNull(activator);
         ArgumentNullException.ThrowIfNull(flow);
-        ArgumentNullException.ThrowIfNull(localError);
-        ArgumentNullException.ThrowIfNull(clientError);
+        ArgumentNullException.ThrowIfNull(outcomes);
         ArgumentNullException.ThrowIfNull(logger);
 
         _options = options;
         _providers = providers;
         _activator = activator;
         _flow = flow;
-        _localError = localError;
-        _clientError = clientError;
+        _outcomes = outcomes;
         _logger = logger;
     }
 
@@ -185,7 +181,7 @@ internal sealed class ProviderCallbackEndpoint : IZeeKayDaEndpoint
                 "The handler for provider {Provider} failed its callback with {ExceptionType}.",
                 feature.Provider.Name,
                 exception.GetType().FullName);
-            return _localError.Render(context, AuthorizeRequestErrors.ServerError, DidNotComplete);
+            return _outcomes.LocalError(context, AuthorizeRequestErrors.ServerError, DidNotComplete);
         }
 
         _logger.LogInformation("The user declined to sign in at provider {Provider}.", feature.Provider.Name);
@@ -199,14 +195,9 @@ internal sealed class ProviderCallbackEndpoint : IZeeKayDaEndpoint
             || feature.RefusedInteractionId is null
             || !InteractionHandoff.IdentifiersMatch(requestContext.Id, feature.RefusedInteractionId))
         {
-            return _localError.Render(context, AuthorizeRequestErrors.AccessDenied, DeclinedAtProvider);
+            return _outcomes.LocalError(context, AuthorizeRequestErrors.AccessDenied, DeclinedAtProvider);
         }
 
-        _flow.Clear(context);
-        return _clientError.To(
-            requestContext.RedirectUri,
-            AuthorizeRequestErrors.AccessDenied,
-            DeclinedAtProvider,
-            requestContext.State);
+        return _outcomes.ClientError(context, requestContext, AuthorizeRequestErrors.AccessDenied, DeclinedAtProvider);
     }
 }

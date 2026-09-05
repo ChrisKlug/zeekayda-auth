@@ -4,8 +4,8 @@ using Microsoft.AspNetCore.Http;
 
 namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 
-/// <summary>The claims that bind a parked principal to its interaction and record its provider.</summary>
-internal static class PendingPrincipalClaimTypes
+/// <summary>The ticket properties that bind a parked principal to its interaction and record its provider.</summary>
+internal static class PendingTicketItems
 {
     public const string InteractionId = "zkd:interaction_id";
 
@@ -22,12 +22,15 @@ internal sealed record PendingTicket(ClaimsPrincipal Principal, string Provider)
 /// the host's page collects more, bound to the interaction it belongs to and consumed by the
 /// sign-in that completes that interaction.
 /// </summary>
+/// <remarks>
+/// The principal is stored as the provider returned it — every identity, with its authentication
+/// type and its name and role claim types — minus the framework's reserved claims. The binding
+/// lives in the ticket's properties, as it does for the external ticket, so it is never a claim
+/// the host could see or a provider could have written.
+/// </remarks>
 internal sealed class PendingPrincipalCookie
 {
-    /// <summary>
-    /// Parks <paramref name="principal"/>, bound to <paramref name="interactionId"/>. The
-    /// framework's reserved claims are stripped first, so the binding is the framework's alone.
-    /// </summary>
+    /// <summary>Parks <paramref name="principal"/>, bound to <paramref name="interactionId"/>.</summary>
     public Task WriteAsync(HttpContext context, ClaimsPrincipal principal, string interactionId, string provider)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -35,14 +38,11 @@ internal sealed class PendingPrincipalCookie
         ArgumentException.ThrowIfNullOrEmpty(interactionId);
         ArgumentException.ThrowIfNullOrEmpty(provider);
 
-        var claims = principal.Claims.Where(claim => !ReservedClaims.IsReserved(claim)).ToList();
-        claims.Add(new Claim(PendingPrincipalClaimTypes.InteractionId, interactionId));
-        claims.Add(new Claim(PendingPrincipalClaimTypes.Provider, provider));
+        var properties = new AuthenticationProperties { IsPersistent = false };
+        properties.Items[PendingTicketItems.InteractionId] = interactionId;
+        properties.Items[PendingTicketItems.Provider] = provider;
 
-        return context.SignInAsync(
-            ZeeKayDaCookies.Pending,
-            new ClaimsPrincipal(new ClaimsIdentity(claims, provider)),
-            new AuthenticationProperties { IsPersistent = false });
+        return context.SignInAsync(ZeeKayDaCookies.Pending, ReservedClaims.Strip(principal), properties);
     }
 
     /// <summary>
@@ -55,7 +55,7 @@ internal sealed class PendingPrincipalCookie
         ArgumentException.ThrowIfNullOrEmpty(interactionId);
 
         var result = await context.AuthenticateAsync(ZeeKayDaCookies.Pending).ConfigureAwait(false);
-        return result.Succeeded && result.Principal is { } principal ? Bound(principal, interactionId) : null;
+        return result.Succeeded && result.Ticket is { } ticket ? Bound(ticket, interactionId) : null;
     }
 
     /// <summary>
@@ -69,24 +69,23 @@ internal sealed class PendingPrincipalCookie
         ArgumentException.ThrowIfNullOrEmpty(interactionId);
 
         var result = await context.AuthenticateAsync(ZeeKayDaCookies.Pending).ConfigureAwait(false);
-        if (!result.Succeeded || result.Principal is null)
+        if (!result.Succeeded || result.Ticket is not { } ticket)
             return null;
 
         await context.SignOutAsync(ZeeKayDaCookies.Pending).ConfigureAwait(false);
-        return Bound(result.Principal, interactionId);
+        return Bound(ticket, interactionId);
     }
 
-    private static PendingTicket? Bound(ClaimsPrincipal principal, string interactionId)
+    private static PendingTicket? Bound(AuthenticationTicket ticket, string interactionId)
     {
-        var bound = principal.FindFirstValue(PendingPrincipalClaimTypes.InteractionId);
-        var provider = principal.FindFirstValue(PendingPrincipalClaimTypes.Provider);
+        var items = ticket.Properties.Items;
+        var isBound = items.TryGetValue(PendingTicketItems.InteractionId, out var bound)
+            && !string.IsNullOrEmpty(bound)
+            && InteractionHandoff.IdentifiersMatch(bound, interactionId);
 
-        if (string.IsNullOrEmpty(bound) || string.IsNullOrEmpty(provider)
-            || !InteractionHandoff.IdentifiersMatch(bound, interactionId))
-        {
+        if (!isBound || !items.TryGetValue(PendingTicketItems.Provider, out var provider) || string.IsNullOrEmpty(provider))
             return null;
-        }
 
-        return new PendingTicket(ReservedClaims.Strip(principal), provider);
+        return new PendingTicket(ReservedClaims.Strip(ticket.Principal), provider);
     }
 }
