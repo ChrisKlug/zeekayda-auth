@@ -66,7 +66,7 @@ internal sealed class ConsentInteraction : IConsentInteraction
         if (answered.Any(string.IsNullOrWhiteSpace))
             throw new ArgumentException("An entry in scopes is null or blank.", nameof(scopes));
 
-        var context = RequireHttpContext();
+        var context = RequireStateChangingRequest();
         var requestContext = await ResolveAsync(context).ConfigureAwait(false);
 
         // The page's answer can only narrow what was asked: intersected in request order, over
@@ -87,7 +87,7 @@ internal sealed class ConsentInteraction : IConsentInteraction
     /// <inheritdoc/>
     public async Task DenyAsync()
     {
-        var context = RequireHttpContext();
+        var context = RequireStateChangingRequest();
         var requestContext = await ResolveAsync(context).ConfigureAwait(false);
 
         await _outcomes.DenyAsync(context, requestContext, DeclinedAtConsent).ConfigureAwait(false);
@@ -116,4 +116,24 @@ internal sealed class ConsentInteraction : IConsentInteraction
         _httpContextAccessor.HttpContext ?? throw new InvalidOperationException(
             "IConsentInteraction requires an active HTTP request. Resolve it from request services " +
             "inside the consent page, not from a background service.");
+
+    /// <summary>
+    /// A decision is taken only from a form post. The framework itself arrives at the consent
+    /// page with a GET, so a page whose GET handler decided would grant every request the moment
+    /// the user landed on it — with no user action, which is the very thing consent exists to
+    /// require. Checked before any state is read, so a wrongly wired page changes nothing.
+    /// </summary>
+    private HttpContext RequireStateChangingRequest()
+    {
+        var context = RequireHttpContext();
+
+        if (!HttpMethods.IsPost(context.Request.Method))
+        {
+            throw new InvalidOperationException(
+                "A consent decision must come from a POST — the consent form's submission — not from the " +
+                "request that renders the page. Wire GrantAsync and DenyAsync to the form's post handler.");
+        }
+
+        return context;
+    }
 }

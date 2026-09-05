@@ -34,6 +34,8 @@ public sealed class ConsentInteractionTests : IDisposable
     private const string LoginPath = "/account/login";
     private const string ConsentPath = FlowAssertions.ConsentPath;
     private const string SignOutPath = "/account/sign-out";
+    private const string GrantByLinkPath = "/account/consent/grant-by-link";
+    private const string DenyByLinkPath = "/account/consent/deny-by-link";
     private const string GrantThenReturnPath = "/account/consent/grant-then-return";
     private const string DenyThenReturnPath = "/account/consent/deny-then-return";
     private const string HijackTarget = "https://attacker.example.net/collect";
@@ -135,6 +137,11 @@ public sealed class ConsentInteractionTests : IDisposable
             else
                 await consent.GrantAsync(form["scope"].Select(scope => scope ?? string.Empty));
         });
+
+        // Pages wired the way the XML docs say not to: a decision taken from the request that
+        // renders the page, which is the request the framework itself arrives with.
+        endpoints.MapGet(GrantByLinkPath, (IConsentInteraction consent) => consent.GrantAsync(["openid"]));
+        endpoints.MapGet(DenyByLinkPath, (IConsentInteraction consent) => consent.DenyAsync());
 
         // Pages that do the thing the XML docs tell hosts not to do: call a terminal method and
         // then return a result of their own.
@@ -641,6 +648,29 @@ public sealed class ConsentInteractionTests : IDisposable
         var deny = async () => await DenyAsync(InteractionIdFrom(handoff));
 
         await deny.Should().ThrowAsync<ZeeKayDaInteractionException>();
+    }
+
+    // ── A decision comes only from a form post ────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData(GrantByLinkPath)]
+    [InlineData(DenyByLinkPath)]
+    public async Task A_decision_taken_from_a_GET_is_refused_and_changes_nothing(string path)
+    {
+        // The framework redirects to the consent page with a GET. A page that granted in its
+        // render handler would consent to every request the moment the user arrived, with no
+        // action of theirs — the immediate seeding attack, reopened by a wiring mistake. The
+        // refusal happens before anything is read, so the interaction is still there to answer.
+        var signIn = await ReachConsentAsync();
+        var interactionId = InteractionIdFrom(signIn);
+
+        var byLink = async () => await _client.GetAsync(WithInteractionId(path, interactionId), Cancellation);
+
+        await byLink.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*POST*");
+        (await ReadInteractionAsync()).Should().NotBeNull("a refused decision leaves the request alive");
+        (await GrantAsync(interactionId, "openid")).StatusCode.Should().Be(HttpStatusCode.NotImplemented,
+            "the form post still completes it");
     }
 
     // ── A terminal method really is the last word ─────────────────────────────────────────────

@@ -57,7 +57,9 @@ public interface IConsentInteraction
     /// A page that does not want to offer that choice renders <c>openid</c> as required.
     /// </para>
     /// <para>
-    /// Reach this only from a state-changing request — a form post, not a link.
+    /// Only a <c>POST</c> — the consent form's submission — is accepted, and that is checked
+    /// before anything is read. The framework arrives at the page with a <c>GET</c>, so a page
+    /// that decided in its render handler would grant every request on arrival.
     /// </para>
     /// </remarks>
     /// <exception cref="ZeeKayDaInteractionException">
@@ -69,7 +71,8 @@ public interface IConsentInteraction
     /// An entry in <paramref name="scopes"/> is null or blank.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// There is no active HTTP request — the service was resolved outside one.
+    /// The request is not a <c>POST</c>, or there is no active HTTP request — the service was
+    /// resolved outside one.
     /// </exception>
     Task GrantAsync(IEnumerable<string> scopes);
 
@@ -91,7 +94,9 @@ public interface IConsentInteraction
     /// <c>access_denied</c>.
     /// </para>
     /// <para>
-    /// Reach this only from a state-changing request — a form post, not a link.
+    /// Only a <c>POST</c> — the form's submission — is accepted, and that is checked before
+    /// anything is read. A deny reachable by a link could be triggered cross-site by anyone who
+    /// learned the interaction identifier, ending the user's in-flight request.
     /// </para>
     /// </remarks>
     /// <exception cref="ZeeKayDaInteractionException">
@@ -100,7 +105,8 @@ public interface IConsentInteraction
     /// session that authenticated the request is no longer the one the browser holds.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// There is no active HTTP request — the service was resolved outside one.
+    /// The request is not a <c>POST</c>, or there is no active HTTP request — the service was
+    /// resolved outside one.
     /// </exception>
     Task DenyAsync();
 }
