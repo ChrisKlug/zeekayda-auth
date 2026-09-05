@@ -67,6 +67,7 @@ Never guess on an ambiguous requirement and present the guess as settled. Return
 - Mark all implementation classes `internal` unless they are part of the public API surface
 - Follow SOLID where feasible and reasonable — benefit, not law
 - Keep classes and methods short; no god classes or god methods. Keep cyclomatic complexity down (10–15 is the warning zone) — favour small, intent-revealing methods over complex multi-part conditionals
+- **A condition with two or more clauses is a named predicate, not an inline expression.** `if (client.DisplayName is { } name && !IsValidDisplayName(name))` reads as a sentence; `if (string.IsNullOrWhiteSpace(x) || x.Length > 200 || x.Any(char.IsControl))` does not, and trips CodeScene's complex-conditional rule besides. Worth it in nearly every case; the exception is a guard so short a name would only restate it
 - At 5+ parameters on a method or constructor, consider a parameter object
 
 ### Rules that exist because review found them repeatedly
