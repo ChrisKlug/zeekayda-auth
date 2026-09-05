@@ -23,6 +23,8 @@ public static class ZeeKayDaAuthBuilderProviderExtensions
     /// <param name="options">
     /// How the host takes part in a provider sign-in — <see cref="ProviderOptions.OnProviderSignIn"/>
     /// — or <see langword="null"/> to let the framework promote every provider's principal as it is.
+    /// One <see cref="ProviderOptions"/> serves every provider: a later call's delegate runs after
+    /// an earlier one's, so a member set by both takes the later value, as options do everywhere.
     /// </param>
     /// <returns>The <paramref name="builder"/>, for chaining.</returns>
     /// <remarks>
