@@ -1339,3 +1339,35 @@ lenses, CodeScene) plus fix-diff verification of every High.
   replacement cannot reach the internal continuation, so it can complete nothing — no test.
 - Residual: a granted context persists until code issuance (#87) clears it, so a replayed consent
   POST re-records the same decision — no test.
+
+## 2026-09-05 — authorization code issuance, the end of the authorize flow (#87, commit `5cfad55`)
+
+Scoped to `AuthorizationCodeIssuer` and the two seams that reach it; the store was signed off under
+token stores. One round (security agent, Copilot code and security lenses, CodeScene) plus
+fix-diff verification of one High, found by a test the round asked for.
+
+- The code binds the session, subject, auth time, PKCE, nonce and interaction from the context,
+  never a per-code value. Closed — `The_issued_code_redeems_to_an_entry_bound_to_the_request_and_the_session`.
+- Single-use, expires as configured, bound to its client. Closed — `A_code_is_single_use`,
+  `A_code_expires_as_configured`, `A_code_presented_by_another_client_is_not_redeemed`.
+- Scopes re-intersected against the live registration; one without `openid` ends locally. Closed —
+  `The_scopes_are_narrowed_by_the_registration_as_it_is_when_the_code_is_issued`,
+  `A_registration_that_no_longer_allows_openid_ends_the_request_locally`.
+- The decision is never persisted, so a replayed consent `POST` issues nothing — the #86 residual,
+  closed; `A_re_sign_in_on_the_same_interaction_discards_an_earlier_grant` and
+  `GrantAsync_drops_scopes_the_request_never_asked_for` superseded. Closed —
+  `A_replayed_consent_post_after_issuance_is_refused_and_issues_nothing`,
+  `Issuance_straight_from_sign_in_discards_the_interaction_too`,
+  `A_second_sign_in_after_a_grant_finds_no_interaction_to_complete`,
+  `A_grant_naming_scopes_the_request_never_carried_issues_only_what_was_asked`.
+- Issuance asserts its preconditions rather than re-reading the session. Closed —
+  `Issuance_for_a_context_that_was_never_authenticated_is_a_caller_error`,
+  `Issuance_for_a_consent_requiring_client_without_a_decision_is_a_caller_error`.
+- A store failure issues nothing and answers `server_error`. Closed —
+  `A_store_failure_answers_the_client_with_server_error_and_discards_the_interaction`.
+- High, fixed in `c06d65c`: `Results.Redirect` logged the full `Location` — code and `state` — at
+  `Information`. Closed — `LogsShouldCarryNoProtocolMaterial`, on the success and store-failure paths.
+- Residual: the interaction is a cookie, so two consent `POST`s racing before its deletion lands can
+  each mint a code from one decision; #603 owns it — no test.
+- Residual: `max_age` is checked at the request, not at issuance; the entry carries the true
+  `AuthTime` — no test.
