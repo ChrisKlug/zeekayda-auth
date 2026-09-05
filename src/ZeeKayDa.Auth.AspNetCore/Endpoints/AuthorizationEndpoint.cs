@@ -26,21 +26,18 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
 {
     private readonly IOptions<AuthorizationServerOptions> _options;
     private readonly AuthorizationFlow _flow;
-    private readonly LocalErrorResponse _localError;
-    private readonly ClientErrorRedirect _clientError;
+    private readonly InteractionOutcomes _outcomes;
     private readonly ProviderRegistry _providers;
 
     public AuthorizationEndpoint(
         IOptions<AuthorizationServerOptions> options,
         AuthorizationFlow flow,
-        LocalErrorResponse localError,
-        ClientErrorRedirect clientError,
+        InteractionOutcomes outcomes,
         ProviderRegistry providers)
     {
         _options = options;
         _flow = flow;
-        _localError = localError;
-        _clientError = clientError;
+        _outcomes = outcomes;
         _providers = providers;
     }
 
@@ -134,7 +131,7 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
             // redirecting to an invalid URI, which this does not do.
             return FailRequest(
                 context,
-                () => _localError.Render(
+                () => RenderLocalError(
                     context,
                     AuthorizeRequestErrors.InvalidRequest,
                     "The authorization request is too large to process."));
@@ -160,9 +157,10 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
                 return Results.Redirect(InteractionHandoff.BuildRedirectUrl(loginPath, requestContext.Id));
 
             case LoginDispatchRule.SingleProvider:
-                // The challenge to that provider lands with the external round trip. The context
-                // is already written, so what that stage adds is the redirect, not the state.
-                return PreAlphaNotImplementedResult.Result;
+                // The framework can choose, so the user never sees a page of the host's: the
+                // handler writes the redirect to the provider itself.
+                await _outcomes.ChallengeAsync(context, requestContext, _providers.Registrations[0]).ConfigureAwait(false);
+                return Results.Empty;
 
             default:
                 // A configuration failure, reported to the client rather than rendered at the
@@ -217,8 +215,8 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
         });
 
     private IResult RedirectToClient(AuthorizeRequestValidationResult.RedirectError error) =>
-        _clientError.To(error.RedirectUri, error.Error, error.Description, error.State);
+        _outcomes.ClientError(error.RedirectUri, error.Error, error.Description, error.State);
 
     private IResult RenderLocalError(HttpContext context, string error, string description) =>
-        _localError.Render(context, error, description);
+        _outcomes.LocalError(context, error, description);
 }

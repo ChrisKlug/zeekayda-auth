@@ -288,6 +288,13 @@ internal sealed class TestWebAppFactoryWithPing : WebApplicationFactory<TestWebA
 /// </summary>
 internal sealed class TestWebAppFactoryWithFallbackAuthorizationPolicy : WebApplicationFactory<TestWebAppFactory>
 {
+    private readonly Action<ZeeKayDaAuthBuilder>? _configureBuilder;
+
+    public TestWebAppFactoryWithFallbackAuthorizationPolicy(Action<ZeeKayDaAuthBuilder>? configureBuilder = null)
+    {
+        _configureBuilder = configureBuilder;
+    }
+
     protected override IHostBuilder CreateHostBuilder()
         => Host.CreateDefaultBuilder()
                .ConfigureWebHostDefaults(webBuilder => webBuilder.UseTestServer());
@@ -304,7 +311,7 @@ internal sealed class TestWebAppFactoryWithFallbackAuthorizationPolicy : WebAppl
             services.AddAuthorization(options => options.FallbackPolicy =
                 new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build());
 
-            services.AddZeeKayDaAuth(options =>
+            var authBuilder = services.AddZeeKayDaAuth(options =>
             {
                 options.Issuer = "https://test.example.com";
                 options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
@@ -316,6 +323,8 @@ internal sealed class TestWebAppFactoryWithFallbackAuthorizationPolicy : WebAppl
               // Integration test hosts run as "Production" by default; allow in-memory stores.
               .AddInMemoryStores(allowOutsideDevelopment: true)
               .AddTestSigningKeys();
+
+            _configureBuilder?.Invoke(authBuilder);
         });
 
         builder.Configure(app =>

@@ -1,3 +1,5 @@
+using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.WebUtilities;
 
@@ -57,6 +59,25 @@ internal static class InteractionHandoff
 
         var form = await request.ReadFormAsync(request.HttpContext.RequestAborted).ConfigureAwait(false);
         return Single(form[InteractionIdParameter]);
+    }
+
+    /// <summary>
+    /// Compares two interaction identifiers in fixed time. The identifier is never published — it
+    /// lives inside the encrypted context and on the URL of the page the framework redirected to —
+    /// so a comparison that leaked its bytes through timing would leak something the caller is not
+    /// otherwise given.
+    /// </summary>
+    public static bool IdentifiersMatch(string expected, string supplied)
+    {
+        ArgumentNullException.ThrowIfNull(expected);
+        ArgumentNullException.ThrowIfNull(supplied);
+
+        // Compared over the strings' own UTF-16 bytes, so a request-supplied value of any length
+        // costs no allocation, and a length mismatch answers false before any byte is compared —
+        // the length of an identifier is not a secret, its bytes are.
+        return CryptographicOperations.FixedTimeEquals(
+            MemoryMarshal.AsBytes(expected.AsSpan()),
+            MemoryMarshal.AsBytes(supplied.AsSpan()));
     }
 
     /// <summary>

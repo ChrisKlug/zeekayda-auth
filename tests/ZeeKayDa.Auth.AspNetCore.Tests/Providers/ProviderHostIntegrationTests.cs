@@ -10,6 +10,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
+using ZeeKayDa.Auth.AspNetCore.Providers;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests.Providers;
 
@@ -307,6 +308,130 @@ public sealed class ProviderHostIntegrationTests
     }
 
     [Fact]
+    public void A_provider_name_the_host_also_registered_in_another_case_fails_startup()
+    {
+        // Routing and PathString comparison are case-insensitive, so a host scheme differing only
+        // by case would still have the middleware serve the provider's callback route.
+        using var factory = NewFactory(configureBuilder: builder =>
+        {
+            builder.WithProviders(auth => auth.AddOAuth("acme", ConfigureAcme));
+            builder.Services.AddAuthentication().AddCookie("ACME");
+        });
+
+        ShouldFailStartupWith(factory, "provider.scheme_visible_to_host");
+    }
+
+    [Fact]
+    public void A_host_remote_scheme_whose_callback_path_is_a_provider_route_fails_startup()
+    {
+        using var factory = NewFactory(configureBuilder: builder =>
+        {
+            builder.WithProviders(auth => auth.AddOAuth("acme", ConfigureAcme));
+            builder.Services.AddAuthentication()
+                .AddCookie("host-cookie")
+                .AddOAuth("host-acme", options =>
+                {
+                    ConfigureAcme(options);
+                    options.SignInScheme = "host-cookie";
+                    options.CallbackPath = "/connect/callback/acme";
+                });
+        });
+
+        ShouldFailStartupWith(factory, "provider.callback_path_taken");
+    }
+
+    [Fact]
+    public void A_host_remote_scheme_with_a_callback_path_of_its_own_starts()
+    {
+        using var factory = NewFactory(configureBuilder: builder =>
+        {
+            builder.WithProviders(auth => auth.AddOAuth("acme", ConfigureAcme));
+            builder.Services.AddAuthentication()
+                .AddCookie("host-cookie")
+                .AddOAuth("host-acme", options =>
+                {
+                    ConfigureAcme(options);
+                    options.SignInScheme = "host-cookie";
+                    options.CallbackPath = "/signin-host-acme";
+                });
+        });
+
+        var start = () => factory.CreateClient();
+
+        start.Should().NotThrow();
+    }
+
+    [Fact]
+    public void A_host_remote_scheme_whose_own_options_are_invalid_is_left_to_its_own_validation()
+    {
+        // The collision check reads the host scheme's callback path, which means resolving its
+        // options. A host scheme failing its own validation is the host's failure, on the host's
+        // own path — not a startup failure the framework reports.
+        using var factory = NewFactory(configureBuilder: builder =>
+        {
+            builder.WithProviders(auth => auth.AddOAuth("acme", ConfigureAcme));
+            builder.Services.AddAuthentication()
+                .AddCookie("host-cookie")
+                .AddOAuth("host-acme", options =>
+                {
+                    options.ClientId = "only-a-client-id";
+                    options.SignInScheme = "host-cookie";
+                });
+        });
+
+        var start = () => factory.CreateClient();
+
+        start.Should().NotThrow();
+    }
+
+    [Fact]
+    public void A_running_host_has_pinned_the_framework_access_denied_event()
+    {
+        using var factory = NewFactory(configureBuilder: builder => builder.WithProviders(auth => auth.AddOAuth("acme", ConfigureAcme)));
+        using var client = NewClient(factory);
+
+        var options = factory.Services.GetRequiredService<IOptionsMonitor<OAuthOptions>>().Get("acme");
+
+        options.Events.OnAccessDenied.Should().BeSameAs(ProviderAccessDenied.Handler);
+    }
+
+    [Fact]
+    public void A_host_set_access_denied_event_inside_the_window_fails_startup()
+    {
+        using var factory = NewFactory(configureBuilder: builder => builder.WithProviders(auth => auth.AddOAuth("acme", options =>
+        {
+            ConfigureAcme(options);
+            options.Events.OnAccessDenied = _ => Task.CompletedTask;
+        })));
+
+        ShouldFailStartupWith(factory, "provider.options_invalid");
+    }
+
+    [Fact]
+    public void A_post_configurer_registered_after_WithProviders_that_replaces_the_access_denied_event_fails_startup()
+    {
+        using var factory = NewFactory(configureBuilder: builder =>
+        {
+            builder.WithProviders(auth => auth.AddOAuth("acme", ConfigureAcme));
+            builder.Services.PostConfigure<OAuthOptions>("acme", options => options.Events.OnAccessDenied = _ => Task.CompletedTask);
+        });
+
+        ShouldFailStartupWith(factory, "provider.options_invalid");
+    }
+
+    [Fact]
+    public void An_events_type_on_a_provider_fails_startup()
+    {
+        using var factory = NewFactory(configureBuilder: builder => builder.WithProviders(auth => auth.AddOAuth("acme", options =>
+        {
+            ConfigureAcme(options);
+            options.EventsType = typeof(OAuthEvents);
+        })));
+
+        ShouldFailStartupWith(factory, "provider.options_invalid");
+    }
+
+    [Fact]
     public async Task A_handler_outside_the_remote_hierarchy_is_a_provider_with_nothing_to_pin()
     {
         using var factory = NewFactory(configureBuilder: builder => builder.WithProviders(auth =>
@@ -348,9 +473,8 @@ public sealed class ProviderHostIntegrationTests
 
         var response = await client.GetAsync(AuthorizeUrl(), TestContext.Current.CancellationToken);
 
-        // The challenge itself lands with the external round trip; until then the request stops
-        // here rather than being reported to the client as a configuration failure.
-        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+        response.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        response.Headers.Location!.OriginalString.Should().StartWith("https://acme.example.net/authorize?");
     }
 
     [Fact]

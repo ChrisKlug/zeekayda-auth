@@ -207,10 +207,10 @@ public sealed class WithProvidersTests
         builder.WithProviders(auth => auth.AddOAuth("second", ConfigureAcme));
 
         services.Count(descriptor => !descriptor.IsKeyedService
-                && descriptor.ImplementationType == typeof(ProviderOptionsPin<>))
+                && descriptor.ImplementationType == typeof(HandlerOptionsPin<>))
             .Should().Be(1);
         var pinIndex = services.ToList().FindIndex(descriptor => !descriptor.IsKeyedService
-            && descriptor.ImplementationType == typeof(ProviderOptionsPin<>));
+            && descriptor.ImplementationType == typeof(HandlerOptionsPin<>));
         var hostIndex = services.ToList().FindLastIndex(descriptor =>
             descriptor.ServiceType == typeof(IPostConfigureOptions<OAuthOptions>) && descriptor.ImplementationInstance is not null);
         pinIndex.Should().BeLessThan(hostIndex, "the host's later post-configurer must still run after the pin");

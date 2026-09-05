@@ -42,14 +42,35 @@ ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails.Error.get -> stri
 ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails.Error.init -> void
 ZeeKayDa.Auth.AspNetCore.Interaction.IErrorInteraction
 ZeeKayDa.Auth.AspNetCore.Interaction.IErrorInteraction.GetErrorAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails?>
+ZeeKayDa.Auth.AspNetCore.Interaction.ClientInformation
+ZeeKayDa.Auth.AspNetCore.Interaction.ClientInformation.ClientId.get -> string!
+ZeeKayDa.Auth.AspNetCore.ZeeKayDaSchemes
+const ZeeKayDa.Auth.AspNetCore.ZeeKayDaSchemes.External = "zkd.external" -> string!
 ZeeKayDa.Auth.AspNetCore.Interaction.ILoginInteraction
+ZeeKayDa.Auth.AspNetCore.Interaction.ILoginInteraction.ChallengeAsync(string! provider) -> System.Threading.Tasks.Task!
 ZeeKayDa.Auth.AspNetCore.Interaction.ILoginInteraction.DenyAsync() -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.AspNetCore.Interaction.ILoginInteraction.GetPendingPrincipalAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ZeeKayDa.Auth.AspNetCore.Interaction.PendingPrincipal?>!
 ZeeKayDa.Auth.AspNetCore.Interaction.ILoginInteraction.LocalLoginEnabled.get -> bool
 ZeeKayDa.Auth.AspNetCore.Interaction.ILoginInteraction.Providers.get -> System.Collections.Generic.IReadOnlyList<ZeeKayDa.Auth.AspNetCore.Interaction.ProviderDescriptor!>!
 ZeeKayDa.Auth.AspNetCore.Interaction.ILoginInteraction.SignInAsync(System.Security.Claims.ClaimsPrincipal! principal, params string![]! authenticationMethods) -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.AspNetCore.Interaction.PendingPrincipal
+ZeeKayDa.Auth.AspNetCore.Interaction.PendingPrincipal.Principal.get -> System.Security.Claims.ClaimsPrincipal!
+ZeeKayDa.Auth.AspNetCore.Interaction.PendingPrincipal.Provider.get -> ZeeKayDa.Auth.AspNetCore.Interaction.ProviderDescriptor!
 ZeeKayDa.Auth.AspNetCore.Interaction.ProviderDescriptor
 ZeeKayDa.Auth.AspNetCore.Interaction.ProviderDescriptor.DisplayName.get -> string?
 ZeeKayDa.Auth.AspNetCore.Interaction.ProviderDescriptor.Id.get -> string!
+ZeeKayDa.Auth.AspNetCore.Interaction.ProviderOptions
+ZeeKayDa.Auth.AspNetCore.Interaction.ProviderOptions.OnProviderSignIn.get -> System.Func<ZeeKayDa.Auth.AspNetCore.Interaction.ProviderSignInContext!, System.Threading.Tasks.Task!>?
+ZeeKayDa.Auth.AspNetCore.Interaction.ProviderOptions.OnProviderSignIn.set -> void
+ZeeKayDa.Auth.AspNetCore.Interaction.ProviderOptions.ProviderOptions() -> void
+ZeeKayDa.Auth.AspNetCore.Interaction.ProviderSignInContext
+ZeeKayDa.Auth.AspNetCore.Interaction.ProviderSignInContext.Client.get -> ZeeKayDa.Auth.AspNetCore.Interaction.ClientInformation!
+ZeeKayDa.Auth.AspNetCore.Interaction.ProviderSignInContext.DenyAsync() -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.AspNetCore.Interaction.ProviderSignInContext.EffectiveScopes.get -> System.Collections.Generic.IReadOnlyList<string!>!
+ZeeKayDa.Auth.AspNetCore.Interaction.ProviderSignInContext.Principal.get -> System.Security.Claims.ClaimsPrincipal!
+ZeeKayDa.Auth.AspNetCore.Interaction.ProviderSignInContext.Provider.get -> ZeeKayDa.Auth.AspNetCore.Interaction.ProviderDescriptor!
+ZeeKayDa.Auth.AspNetCore.Interaction.ProviderSignInContext.RedirectToAsync(Microsoft.AspNetCore.Http.PathString path) -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.AspNetCore.Interaction.ProviderSignInContext.RequestAborted.get -> System.Threading.CancellationToken
 override ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails.Equals(object? obj) -> bool
 override ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails.GetHashCode() -> int
 override ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails.ToString() -> string!
@@ -58,7 +79,7 @@ static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthBuilderAuthenticator
 static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthBuilderClientExtensions.AddInMemoryClients(this ZeeKayDa.Auth.ZeeKayDaAuthBuilder! builder, System.Action<ZeeKayDa.Auth.AspNetCore.Clients.IInMemoryClientRegistrationBuilder!>! configure) -> ZeeKayDa.Auth.ZeeKayDaAuthBuilder!
 static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthBuilderHasherExtensions.AddPbkdf2SecretsHasher(this ZeeKayDa.Auth.ZeeKayDaAuthBuilder! builder, System.Action<ZeeKayDa.Auth.Clients.Pbkdf2ClientSecretHasherOptions!>? configure = null) -> ZeeKayDa.Auth.ZeeKayDaAuthBuilder!
 static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthBuilderHasherExtensions.AddSecretsHasher<THasher>(this ZeeKayDa.Auth.ZeeKayDaAuthBuilder! builder, bool isDefault = false) -> ZeeKayDa.Auth.ZeeKayDaAuthBuilder!
-static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthBuilderProviderExtensions.WithProviders(this ZeeKayDa.Auth.ZeeKayDaAuthBuilder! builder, System.Action<Microsoft.AspNetCore.Authentication.AuthenticationBuilder!>! configure) -> ZeeKayDa.Auth.ZeeKayDaAuthBuilder!
+static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthBuilderProviderExtensions.WithProviders(this ZeeKayDa.Auth.ZeeKayDaAuthBuilder! builder, System.Action<Microsoft.AspNetCore.Authentication.AuthenticationBuilder!>! configure, System.Action<ZeeKayDa.Auth.AspNetCore.Interaction.ProviderOptions!>? options = null) -> ZeeKayDa.Auth.ZeeKayDaAuthBuilder!
 static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthBuilderScopeExtensions.AddInMemoryScopes(this ZeeKayDa.Auth.ZeeKayDaAuthBuilder! builder, System.Collections.Generic.IEnumerable<ZeeKayDa.Auth.Scopes.ScopeDefinition!>! scopes) -> ZeeKayDa.Auth.ZeeKayDaAuthBuilder!
 static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthBuilderSigningExtensions.AddInMemoryDevelopmentJwtSigningKeys(this ZeeKayDa.Auth.ZeeKayDaAuthBuilder! builder, System.Action<ZeeKayDa.Auth.Tokens.InMemoryDevelopmentSigningKeyOptions!>? configure = null) -> ZeeKayDa.Auth.ZeeKayDaAuthBuilder!
 static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthBuilderSigningExtensions.AddPersistedDevelopmentJwtSigningKeys(this ZeeKayDa.Auth.ZeeKayDaAuthBuilder! builder, string? persistTo = null, System.Action<ZeeKayDa.Auth.Tokens.DevelopmentSigningKeyOptions!>? configure = null) -> ZeeKayDa.Auth.ZeeKayDaAuthBuilder!

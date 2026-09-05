@@ -1,5 +1,8 @@
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests.Interaction;
@@ -55,5 +58,27 @@ public sealed class InteractionCookieSchemeTests
         registered.Should().Contain(
             [ZeeKayDaCookies.Session, ZeeKayDaCookies.External, ZeeKayDaCookies.Pending],
             "registering a single scheme would hand ASP.NET Core an automatic default");
+    }
+
+    [Theory]
+    [InlineData(ZeeKayDaCookies.Session)]
+    [InlineData(ZeeKayDaCookies.External)]
+    [InlineData(ZeeKayDaCookies.Pending)]
+    public void Every_framework_cookie_is_HttpOnly_Secure_Lax_and_not_sliding(string scheme)
+    {
+        // Lax for all three: each is first read while answering a top-level navigation that
+        // started elsewhere — the client's site for the session, the provider's for the external
+        // ticket and for the parked principal — which Strict would withhold it from. TestServer
+        // enforces no SameSite, so this is the only test a Strict regression can fail.
+        using var provider = BuildHost();
+        var options = provider
+            .GetRequiredService<IOptionsMonitor<CookieAuthenticationOptions>>()
+            .Get(scheme);
+
+        options.Cookie.Name.Should().Be(scheme);
+        options.Cookie.HttpOnly.Should().BeTrue();
+        options.Cookie.SecurePolicy.Should().Be(CookieSecurePolicy.Always);
+        options.Cookie.SameSite.Should().Be(SameSiteMode.Lax);
+        options.SlidingExpiration.Should().BeFalse();
     }
 }

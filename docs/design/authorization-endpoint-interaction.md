@@ -1,9 +1,9 @@
 # Authorization endpoint interaction
 
 **Status: partly built.** Request validation (#83), the interaction context (#84), the local
-login handoff (#85, local leg), provider registration with its pins and the login dispatch rules
-(#85, provider registration) have landed; the external round trip, consent and code issuance have
-not, so a request that reaches the end of what exists answers `501`. Originally
+login handoff, provider registration with its pins, the login dispatch rules and the external
+round trip (#85) have landed; consent and code issuance have not, so a request that reaches the
+end of what exists answers `501`. Originally
 ADR 0005 (accepted 2026-07-01, issue #156); revised 2026-08-28 in the S2 shape conversation
 (#534/#83/#84), which reversed the interception model, renamed the interaction services and cut the
 interaction store; login dispatch between local sign-in and external providers settled
@@ -122,9 +122,11 @@ which fails closed at request time rather than at startup — accepted.
   classified — only an explicit refusal by the user at the provider becomes `access_denied`. The
   pin installs a framework-owned `OnAccessDenied` on the remote handler, which fires before the
   handler turns the refusal into an `AuthenticationFailureException`; its only effect is to record
-  a refusal mark on the same request feature that carries the provider, and nothing of the host's
-  runs after it. A host-set `OnAccessDenied` or `EventsType` inside the window fails startup,
-  since either would put the refusal outcome outside the framework's control. An exception with
+  a refusal mark on the same request feature that carries the provider. A host-set
+  `OnAccessDenied` or `EventsType` inside the window fails startup, since either would put the
+  refusal outcome outside the framework's control. `OnRemoteFailure` is deliberately not pinned:
+  it runs after the mark is recorded, and a host that handles the response there owns its own
+  failure page — legitimate, and the host's to keep free of the provider's message. An exception with
   that mark is a refusal and goes to the client's registered redirect URI as `access_denied`. The
   mark is trustworthy because the handler validates its correlation cookie before it looks at the
   provider's error, so a replayed callback URL cannot produce it; the redirect also requires the
@@ -156,7 +158,10 @@ removal took away. That last check reads the resolved `IAuthenticationSchemeProv
 window, so it sees the map as the application will run it.
 
 **The framework trusts no handler for provider identity or interaction binding.** `ChallengeAsync`
-stamps the interaction id into the `AuthenticationProperties` it hands the handler. The callback
+stamps the interaction id and the provider it is challenging into the `AuthenticationProperties`
+it hands the handler; at resume the stamped provider must be the one the callback route recorded,
+so a callback carried to another provider's route by a handler that accepts the same state cannot
+complete as that provider. The callback
 endpoint knows which provider it is, and marks the request before invoking the handler — a feature
 set on the `HttpContext` after routing, never a claim or a property a handler could write;
 `zkd.external`, a framework-owned cookie scheme, records that mark as the provider on sign-in and
@@ -171,9 +176,11 @@ it does with the state it was given.
 machinery; only the pin does not apply, because there is no options object to pin. To *complete* a
 sign-in such a handler must behave as the base class does: implement
 `IAuthenticationRequestHandler`, answer at its callback route, carry the `AuthenticationProperties`
-it was challenged with through the round trip, and finish with
-`SignInAsync(zkd.external, principal, properties)` followed by a redirect to
-`properties.RedirectUri`. That contract is about working, not about safety — the paragraph above is
+it was challenged with through the round trip, and finish with a sign-in to its configured
+sign-in scheme followed by a redirect to `properties.RedirectUri`. Its author need know nothing of
+this framework: the host sets the handler's own sign-in scheme option to the public
+`ZeeKayDaSchemes.External`, the one framework name a host ever writes, and the handler signs in
+there as it would into any cookie. That contract is about working, not about safety — the paragraph above is
 what keeps a careless handler from breaking a guarantee. One test with a hand-written handler proves
 the round trip; one with a handler that drops its properties proves the refusal.
 
@@ -287,18 +294,23 @@ registering one fails at startup. All `HttpOnly`, Data-Protection encrypted.
 | `zkd.session` | the SSO session | session | `None` only if `prompt=none` silent auth is supported, else `Lax` |
 | `zkd.interaction` | the authorization request context | hard 30 min | `Lax` |
 | `zkd.external` | the raw provider callback, before ZeeKayDa reads it | seconds | `Lax` |
-| `zkd.pending` | a half-authenticated external principal | hard 15 min, not sliding | `Strict` |
+| `zkd.pending` | a half-authenticated external principal | hard 15 min, not sliding | `Lax` — first read at the end of the provider's redirect chain, which `Strict` withholds it from |
 
-`zkd.pending` is single-use (signed out on `SignInAsync`) and bound to its interaction via a
-`zkd:interaction_id` claim.
+`zkd.pending` is single-use (signed out on `SignInAsync`) and bound to its interaction through
+its ticket's properties, as the external ticket is — never a claim the host could see or a
+provider could have written. The principal is stored as the provider returned it, every identity
+intact, minus the framework's reserved claims.
 
-**Built so far:** `zkd.session` as a cookie scheme, and `zkd.interaction` as a Data-Protection
-payload written directly rather than through a handler — it carries no principal, so a cookie
-authentication scheme would be a ticket serializer wrapped around bytes that are not a ticket. All
-four names are reserved from today regardless, so a host cannot take one and break on upgrade.
-`zkd.session` takes `SameSite=Lax`: the session is read while answering a top-level GET the user
-arrived at from the client's site, which is what `Strict` withholds, and `None` buys nothing until
-iframe-based silent authentication is supported.
+**As built:** `zkd.session`, `zkd.external` and `zkd.pending` are cookie schemes; `zkd.interaction`
+is a Data-Protection payload written directly rather than through a handler — it carries no
+principal, so a cookie authentication scheme would be a ticket serializer wrapped around bytes that
+are not a ticket. `zkd.session` takes `SameSite=Lax`: the session is read while answering a
+top-level GET the user arrived at from the client's site, which is what `Strict` withholds, and
+`None` buys nothing until iframe-based silent authentication is supported. `zkd.external` accepts a
+sign-in only from a request a provider callback endpoint marked, records that provider into the
+ticket, and is consumed by `/connect/resume` whether or not the resume succeeds. `zkd.pending` is
+also consumed by a `DenyAsync` at the login page and by resume's own exits, and records the
+provider alongside the interaction in its ticket's properties.
 
 ## The interaction context
 
@@ -408,9 +420,9 @@ public interface ILoginInteraction   // scoped, as are all the page services
     bool LocalLoginEnabled { get; }                       // InteractionOptions.SupportsLocalSignIn
     IReadOnlyList<ProviderDescriptor> Providers { get; }  // Id + DisplayName, from WithProviders
 
-    // The client asking to be signed in to — ClientId plus the registration's optional
-    // DisplayName. Reads the interaction context, so it is zkd_i-bound on SignInAsync's exact
-    // terms; a page that dropped the query string fails on its first GET, not at post time.
+    // UNBUILT (consent, #86). The client asking to be signed in to — ClientId plus the
+    // registration's optional DisplayName. Reads the interaction context, so it is zkd_i-bound on
+    // SignInAsync's exact terms; a page that dropped the query string fails on its first GET.
     Task<ClientInformation> GetClientInformationAsync();
 
     // Promotes principal to SSO session, continues the flow (consent → code → redirect).
@@ -452,7 +464,7 @@ public sealed class ProviderSignInContext                // what OnProviderSignI
 {
     public ClaimsPrincipal Principal { get; }            // as the provider returned it, zkd:* stripped
     public ProviderDescriptor Provider { get; }
-    public ClientInformation Client { get; }             // the same object GetClientInformationAsync returns
+    public ClientInformation Client { get; }             // ClientId today; DisplayName with #86
     public IReadOnlyList<string> EffectiveScopes { get; } // requested ∩ allowed, from the interaction context
 
     // Terminal. Parks Principal — the principal only; the ticket's properties and any saved
@@ -476,8 +488,8 @@ public sealed class PendingPrincipal                     // GetPendingPrincipalA
 `ProviderDescriptor.Id` is opaque to the host: it happens to equal the scheme name, but the page
 reads it from `Providers` and posts it back, never writes it. The invariant is that no host code
 *contains* a scheme name, and round-tripping a framework-handed value does not.
-`ClientInformation.DisplayName` is the nullable `ClientRegistration.DisplayName` pulled forward
-from consent (#86), which inherits it. Configuration lives on properties and request-bound data
+`ClientInformation` carries `ClientId` only until consent (#86) gives the registration a display
+name; adding the member then is non-breaking. Configuration lives on properties and request-bound data
 behind async methods — a property getter that decrypted cookies and threw on a bad `zkd_i` would
 be bad .NET API, so anything read from the interaction context stays a method.
 
@@ -505,9 +517,12 @@ an endpoint wants, and what an operator moving the name to a *different* upstrea
 that is a new provider and needs a new name. A host
 that maps external identities onto its own users does so on the page `RedirectToAsync` leads to and
 calls `ILoginInteraction.SignInAsync` with its own principal, which consumes the pending one.
-`OnSigningIn` fires for every sign-in
-just before promotion, no interrupt; reserved protocol claims (`iss`, `sub`, `aud`, `exp`, `nonce`,
-`acr`, `amr`, `zkd:*`) are stripped regardless.
+`OnSigningIn` — **unbuilt**, the planned claim-shaping hook — will fire for every sign-in just
+before promotion, no interrupt; reserved protocol claims (`iss`, `sub`, `aud`, `exp`, `nonce`,
+`acr`, `amr`, `zkd:*`) are stripped regardless. Until it exists, a host that wants the session to
+hold something other than what the provider returned redirects to a page of its own and signs in
+from there; a change to the principal `OnProviderSignIn` receives is not promoted, since the
+framework promotes its own copy.
 
 ## Request validation (#83)
 

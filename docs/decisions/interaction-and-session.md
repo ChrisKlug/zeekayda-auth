@@ -1,8 +1,8 @@
 # User interaction and the SSO session
 
-**Partly built.** The local login handoff, `ILoginInteraction.SignInAsync` and `DenyAsync`, the SSO
-session, the interaction-context cookie, provider registration through `WithProviders` and the
-login dispatch rules exist; the external round trip, consent and home realm discovery do not.
+**Partly built.** The local login handoff, the SSO session, the interaction-context cookie,
+provider registration through `WithProviders`, the login dispatch rules and the external round
+trip exist; consent and home realm discovery do not.
 The authorize endpoint's protocol rules are in
 `authorization-and-interaction.md`; interface shapes for the unbuilt part are in
 `docs/design/authorization-endpoint-interaction.md`.
@@ -76,7 +76,9 @@ host's principal, or a host copying claims from an inbound token could choose it
 
 **Framework cookie names are reserved, and a host registering one fails at startup.** Every internal
 cookie is `HttpOnly` and Data-Protection encrypted. A session cookie needs `SameSite=None` only if
-silent authentication is supported; anything read solely from same-site POSTs takes `Strict`.
+silent authentication is supported; the rest take `Lax`, `zkd.pending` included, because its first
+read is the page at the end of the provider's redirect chain and `Strict` is withheld from a
+navigation initiated cross-site — a control that silently breaks the feature is no control.
 Multi-instance deployments must share one Data Protection key ring across all of them — the framework
 does not solve distributed key management.
 
@@ -113,7 +115,20 @@ host also registers as a scheme of its own is a startup error and not a shadowin
 framework pins every provider's forwarding and each remote handler's callback path, sign-in scheme
 and access-denied path by name, and *asserts* the pins with a validator resolved at startup, because a
 post-configurer registered later would otherwise win silently and send the sign-in to the wrong
-cookie or the callback to a path nothing serves.
+cookie or the callback to a path nothing serves. A host remote scheme whose callback path is a
+provider's route is refused for the same reason: the middleware would claim the callback first.
+
+**No handler is trusted for provider identity or interaction binding.** The challenge stamps the
+interaction identifier into the properties it hands the handler; the callback endpoint marks the
+request with the provider its route names before the handler runs; `zkd.external` records that
+mark at sign-in and refuses a sign-in without one; `/connect/resume` consumes the ticket first and
+refuses one naming another interaction or an unregistered provider. A handler that drops its
+properties fails loudly there and can complete nothing else. Only a refusal by the user at the
+provider reaches the client — recorded by the framework's own pinned access-denied event, and only
+for the interaction the browser carries; every other callback failure renders locally, logged by
+type never by message, and leaves the interaction alive. The session subject of an auto-promoted
+external principal is derived from provider, claim issuer and upstream subject together, never the
+upstream value: two providers can never share a session, and a subject without an issuer is refused.
 
 **Local sign-in is a flag (`SupportsLocalSignIn`, default `true`), not a provider, and `LoginPath`
 presence is the dispatch override.** The login page is also the provider-selection page, and the

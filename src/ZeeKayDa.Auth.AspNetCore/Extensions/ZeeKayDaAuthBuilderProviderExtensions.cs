@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth;
+using ZeeKayDa.Auth.AspNetCore.Interaction;
 using ZeeKayDa.Auth.AspNetCore.Providers;
 
 namespace Microsoft.Extensions.DependencyInjection;
@@ -19,13 +20,22 @@ public static class ZeeKayDaAuthBuilderProviderExtensions
     /// </summary>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
     /// <param name="configure">Registers the providers on the supplied <see cref="AuthenticationBuilder"/>.</param>
+    /// <param name="options">
+    /// How the host takes part in a provider sign-in — <see cref="ProviderOptions.OnProviderSignIn"/>
+    /// — or <see langword="null"/> to let the framework promote every provider's principal as it is.
+    /// One <see cref="ProviderOptions"/> serves every provider: a later call's delegate runs after
+    /// an earlier one's, so a member set by both takes the later value, as options do everywhere.
+    /// </param>
     /// <returns>The <paramref name="builder"/>, for chaining.</returns>
     /// <remarks>
     /// <para>
     /// The host names the providers it wants and nothing else. Callback paths, sign-in schemes and
     /// the correlation back to the authorization request are the framework's: it pins each remote
-    /// handler's <c>CallbackPath</c> and <c>SignInScheme</c>, clears every provider's forwarding,
-    /// refuses a later change to any of them at startup, and drives the round trip itself.
+    /// handler's <c>CallbackPath</c>, <c>SignInScheme</c> and access-denied event, clears every
+    /// provider's forwarding, refuses a later change to any of them at startup, and drives the
+    /// round trip itself — the login page starts it with <c>ILoginInteraction.ChallengeAsync</c>,
+    /// the framework serves each provider's callback, and the user returns through
+    /// <c>/connect/resume</c> to be signed in.
     /// </para>
     /// <para>
     /// The schemes registered here are the framework's, not the host's. They do not appear in the
@@ -55,7 +65,8 @@ public static class ZeeKayDaAuthBuilderProviderExtensions
     /// </exception>
     public static ZeeKayDaAuthBuilder WithProviders(
         this ZeeKayDaAuthBuilder builder,
-        Action<AuthenticationBuilder> configure)
+        Action<AuthenticationBuilder> configure,
+        Action<ProviderOptions>? options = null)
     {
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(configure);
@@ -89,7 +100,10 @@ public static class ZeeKayDaAuthBuilderProviderExtensions
         // provider's own post-configuration, and anything registered after it that changes a
         // pinned member fails startup rather than being silently overridden.
         services.TryAddEnumerable(
-            ServiceDescriptor.Singleton(typeof(IPostConfigureOptions<>), typeof(ProviderOptionsPin<>)));
+            ServiceDescriptor.Singleton(typeof(IPostConfigureOptions<>), typeof(HandlerOptionsPin<>)));
+
+        if (options is not null)
+            services.Configure(options);
 
         return builder;
     }
