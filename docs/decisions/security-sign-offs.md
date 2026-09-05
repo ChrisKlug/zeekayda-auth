@@ -1304,3 +1304,38 @@ ran alongside.
   provider's message to its own page; host code, documented rather than pinned — no test.
 - Residual: the immediate seeding variant stands, unchanged from the local-leg entry; consent (#86)
   owns it.
+
+## 2026-09-05 — in-flow consent, the mitigation for the immediate seeding attack (#86, commit `48cee29`)
+
+Scoped to the consent handoff, `IConsentInteraction`, the `RequireConsent` opt-out and the POST
+guard on both page services. Remembered grants and code issuance are unbuilt and were not reviewed;
+a granted request still answers `501`. One round (security and architect agents, three Copilot
+lenses, CodeScene) plus fix-diff verification of every High.
+
+- Every authenticated entry reaches the consent page unless the resolved registration opts out,
+  and a decision comes only from a POST, checked before any state is read. Closed —
+  `After_sign_in_the_user_is_sent_to_the_consent_page_carrying_the_same_interaction_id`,
+  `A_request_an_existing_session_answers_for_goes_straight_to_the_consent_page`,
+  `A_decision_taken_from_a_GET_is_refused_before_any_interaction_state_is_read`,
+  `A_terminal_step_taken_from_a_GET_is_refused_and_changes_nothing`.
+- A decision is recorded by the session it was asked of, and a re-sign-in discards an earlier
+  grant. Closed — `GrantAsync_by_a_session_other_than_the_one_that_signed_in_is_refused`,
+  `GrantAsync_after_the_user_signed_out_is_refused`, `A_re_sign_in_on_the_same_interaction_discards_an_earlier_grant`.
+- A grant only narrows the request, and one without `openid` is a denial. Closed —
+  `GrantAsync_drops_scopes_the_request_never_asked_for`, `GrantAsync_without_openid_answers_the_client_with_access_denied`.
+- The registration is read again at every step and must still list the request's redirect URI;
+  otherwise the request ends where it stands. Closed — `Every_consent_operation_for_a_client_removed_after_the_handoff_is_refused`,
+  `Every_consent_operation_for_a_client_that_dropped_the_redirect_uri_is_refused`,
+  `A_request_whose_redirect_uri_was_removed_from_the_registration_renders_locally`.
+- `prompt=none` never reaches the page; `prompt=consent` reaches it even for an opt-out client.
+  Closed — `prompt_none_with_a_session_but_no_remembered_consent_is_refused_with_consent_required`,
+  `prompt_consent_sends_even_an_opt_out_client_to_the_consent_page`.
+- The rendered consent page is unframeable and uncacheable, alongside the host's own policy.
+  Closed — `GetRequestAsync_makes_the_rendered_page_unframeable_and_uncacheable`.
+- The opt-out defaults to requiring consent and is fingerprinted, so a flip revalidates. Closed —
+  `An_implementation_that_never_heard_of_consent_requires_it`, `Changing_any_covered_member_changes_the_fingerprint`.
+- Residual: the login page has no render-time call to stamp, so it is not made unframeable — no test.
+- Residual, accepted: `IConsentInteraction` is a public interface a host could replace; a
+  replacement cannot reach the internal continuation, so it can complete nothing — no test.
+- Residual: a granted context persists until code issuance (#87) clears it, so a replayed consent
+  POST re-records the same decision — no test.
