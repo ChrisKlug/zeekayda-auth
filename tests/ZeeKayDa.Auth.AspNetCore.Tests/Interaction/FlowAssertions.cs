@@ -1,4 +1,5 @@
 using System.Net;
+using Microsoft.AspNetCore.WebUtilities;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests.Interaction;
@@ -22,5 +23,23 @@ internal static class FlowAssertions
         response.StatusCode.Should().Be(HttpStatusCode.Redirect, because);
         response.Headers.Location!.OriginalString
             .Should().StartWith($"{ConsentPath}?{InteractionHandoff.InteractionIdParameter}=", because);
+    }
+
+    /// <summary>
+    /// The response ended the authorization request with a code at <paramref name="redirectUri"/>
+    /// — what a completed flow looks like from the client's side. Returns the code.
+    /// </summary>
+    public static string ShouldHaveIssuedCodeTo(this HttpResponseMessage response, string redirectUri, string because = "")
+    {
+        response.StatusCode.Should().Be(HttpStatusCode.Redirect, because);
+
+        var location = response.Headers.Location!.OriginalString;
+        new Uri(location).GetLeftPart(UriPartial.Path).Should().Be(redirectUri, because);
+
+        var query = QueryHelpers.ParseQuery(location[location.IndexOf('?')..]);
+        query.Should().NotContainKey("error", because);
+        query.Should().ContainKey("code", because);
+
+        return query["code"].Single()!;
     }
 }

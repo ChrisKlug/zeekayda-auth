@@ -200,6 +200,7 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         services.TryAddSingleton<SsoSession>();
         services.TryAddSingleton<PendingPrincipalCookie>();
         services.TryAddSingleton<AuthorizationFlow>();
+        services.TryAddSingleton<AuthorizationCodeIssuer>();
         services.TryAddSingleton<InteractionOutcomes>();
         services.TryAddSingleton<IErrorInteraction, ErrorInteraction>();
         services.TryAddSingleton<ILoginInteraction, LoginInteraction>();

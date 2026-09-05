@@ -6,6 +6,7 @@ using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.AspNetCore.Endpoints;
 using ZeeKayDa.Auth.AspNetCore.Providers;
 using ZeeKayDa.Auth.Authorization;
+using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Logging;
 
 namespace ZeeKayDa.Auth.AspNetCore.Interaction;
@@ -37,6 +38,7 @@ internal sealed class InteractionOutcomes
     private readonly LocalErrorResponse _localError;
     private readonly ClientErrorRedirect _clientError;
     private readonly ProviderHandlerActivator _activator;
+    private readonly AuthorizationCodeIssuer _issuer;
     private readonly IOptions<AuthorizationServerOptions> _options;
     private readonly ISanitizingLogger<InteractionOutcomes> _logger;
 
@@ -45,6 +47,7 @@ internal sealed class InteractionOutcomes
         LocalErrorResponse localError,
         ClientErrorRedirect clientError,
         ProviderHandlerActivator activator,
+        AuthorizationCodeIssuer issuer,
         IOptions<AuthorizationServerOptions> options,
         ISanitizingLogger<InteractionOutcomes> logger)
     {
@@ -52,6 +55,7 @@ internal sealed class InteractionOutcomes
         ArgumentNullException.ThrowIfNull(localError);
         ArgumentNullException.ThrowIfNull(clientError);
         ArgumentNullException.ThrowIfNull(activator);
+        ArgumentNullException.ThrowIfNull(issuer);
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(logger);
 
@@ -59,6 +63,7 @@ internal sealed class InteractionOutcomes
         _localError = localError;
         _clientError = clientError;
         _activator = activator;
+        _issuer = issuer;
         _options = options;
         _logger = logger;
     }
@@ -132,8 +137,8 @@ internal sealed class InteractionOutcomes
         ArgumentNullException.ThrowIfNull(principal);
         ArgumentNullException.ThrowIfNull(authenticationMethods);
 
-        // Responses on this path carry protocol material once code issuance lands, and a cached
-        // sign-in response is a stolen one.
+        // A sign-in for a client that skips consent ends with the code in this response, and a
+        // cached sign-in response is a stolen one.
         context.Response.Headers.CacheControl = "no-store";
 
         var pending = await _flow.ConsumePendingAsync(context, requestContext.Id).ConfigureAwait(false);
@@ -188,15 +193,12 @@ internal sealed class InteractionOutcomes
             // The redirect URI was authenticated against a registration that no longer answers,
             // so nothing is sent there.
             _flow.Clear(context);
-            return _localError.Render(
-                context,
-                AuthorizeRequestErrors.InvalidRequest,
-                "The client that sent the authorization request is no longer registered, or no longer lists its redirect URI.");
+            return _localError.Render(context, AuthorizeRequestErrors.InvalidRequest, AuthorizationCodeIssuer.ClientNoLongerAnswers);
         }
 
         var asked = requestContext.Prompts.Contains(PromptValue.Consent);
         if (!client.RequireConsent && !asked)
-            return PreAlphaNotImplementedResult.Result;
+            return await _issuer.IssueAsync(context, requestContext, client).ConfigureAwait(false);
 
         if (requestContext.Prompts.Contains(PromptValue.None))
         {
@@ -238,25 +240,27 @@ internal sealed class InteractionOutcomes
     }
 
     /// <summary>
-    /// Terminal. Records the user's consent on the interaction context and continues to code
-    /// issuance.
+    /// Terminal. Records the user's consent on the interaction context and issues the code to
+    /// <paramref name="client"/>, the registration the consent service resolved for this
+    /// request. The decision is never persisted: it is taken, the code issued and the
+    /// interaction discarded in the one response, so there is no recorded grant for a later
+    /// request to pick up.
     /// </summary>
     public async Task CompleteConsentAsync(
         HttpContext context,
         AuthorizationRequestContext requestContext,
+        IClientMetadata client,
         IReadOnlyList<string> grantedScopes)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(requestContext);
+        ArgumentNullException.ThrowIfNull(client);
         ArgumentNullException.ThrowIfNull(grantedScopes);
 
         context.Response.Headers.CacheControl = "no-store";
 
         var consented = _flow.RecordConsent(requestContext, grantedScopes);
-
-        var result = _flow.TryPersist(context, consented)
-            ? PreAlphaNotImplementedResult.Result
-            : FailTooLarge(context);
+        var result = await _issuer.IssueAsync(context, consented, client).ConfigureAwait(false);
 
         await WriteAsync(context, result).ConfigureAwait(false);
     }

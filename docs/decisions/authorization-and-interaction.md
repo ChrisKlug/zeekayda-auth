@@ -1,11 +1,12 @@
 # Authorization endpoint and user interaction
 
-**Partly built.** `/connect/authorize` validates requests, applies the two-phase error model, hands
-an unauthenticated one to the host's login page or an external provider, and an authenticated one
-to the host's consent page, which returns through `IConsentInteraction`. Code issuance does not
-exist, so a request past consent still answers `501`. Interface shapes for the unbuilt part:
+**Built through code issuance.** `/connect/authorize` validates requests, applies the two-phase
+error model, hands an unauthenticated one to the host's login page or an external provider, an
+authenticated one to the host's consent page, which returns through `IConsentInteraction`, and
+answers a request past both with an authorization code at the registered redirect URI. Remembered
+consent grants are the unbuilt part (#632). Interface shapes:
 `docs/design/authorization-endpoint-interaction.md`; the interaction surface, cookies and SSO
-session: `interaction-and-session.md`.
+session: `interaction-and-session.md`; the code store: `token-stores.md`.
 
 ## Decisions in force
 
@@ -74,6 +75,22 @@ identified, answered `access_denied` as a deny is. The client is resolved again 
 post-authentication dispatch and each consent call — and must still list the request's redirect
 URI, so a registration removed or narrowed mid-flow ends the request where it stands, never at a
 redirect URI that no longer belongs to anyone.
+
+**A consent decision is never persisted: it is taken, the code issued and the interaction
+discarded in the one response.** Nothing is left on the interaction for a replayed consent `POST`
+to re-record or for a later sign-in to pick up; the second `POST` finds no interaction at all. The
+code binds what the interaction context carries — the SSO session identifier, the subject, the
+authentication time, the PKCE challenge, the nonce — and never a value minted at issuance; a
+per-code identifier in the session's place would look like a session binding and be none. The
+scopes written into the code are those present in all of the request's effective scopes, the
+allowed scopes of the registration as it is at issuance, and the user's grant when consent was
+asked; a registration that no longer allows `openid` ends the request as one that dropped its
+redirect URI does. Issuance asserts its preconditions rather than re-establishing them: a context
+without a session, or one for a consent-requiring client without a decision, is a caller error
+and throws, because every path that reaches issuance bound the session and recorded the decision
+first, and re-reading the session cookie there would see the cookie the sign-in request arrived
+with rather than the one its response is writing. A store failure answers the client
+`server_error` with nothing issued, and discards the interaction like every other failure.
 
 **A terminal page-service method accepts only a `POST`, checked before any state is read.** The
 framework arrives at a host page with a `GET`, and its `Lax` cookies accompany a top-level `GET`

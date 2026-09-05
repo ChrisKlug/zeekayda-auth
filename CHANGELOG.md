@@ -8,6 +8,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **Authorization code issuance: a completed flow ends with a code at the client** (#87)
+
+  A request that has been authenticated and, where the client requires it, consented to is now
+  answered with an authorization code at the registered redirect URI, carrying `code`, `state`
+  when the client sent one, and `iss`. The code is a 256-bit CSPRNG handle, stored through the
+  registered `IAuthorizationCodeStore` for `AuthorizationEndpoint.AuthorizationCodeLifetime`
+  (60 seconds by default), single-use, and bound to the client, redirect URI, subject, SSO
+  session, PKCE challenge, nonce, authentication time and the interaction that produced it. The
+  scopes it carries are those present in all of the request's effective scopes, the allowed
+  scopes of the registration as it is at issuance, and the user's grant when consent was asked.
+  A consent decision is no longer persisted on the interaction: it is taken, the code issued and
+  the interaction discarded in one response, so a replayed consent form finds no request to
+  answer. A registration that no longer allows `openid` ends the request locally, as one that
+  dropped its redirect URI does; a store failure answers the client `server_error` with nothing
+  issued. The token endpoint still answers `501`, so the code cannot yet be redeemed for tokens.
+
 - **Consent: the host's consent page and the contract behind it** (#86)
 
   After sign-in, an authorization request for a client that requires consent is sent to the
@@ -35,8 +51,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   there is no startup warning, since whether the page is needed depends on the registered
   clients. The login page's terminal methods, like the consent page's, accept only a `POST`,
   checked before anything is read. A registration's `DisplayName` is validated: null or a
-  non-blank string of at most 200 characters with no control characters. Code issuance is still
-  unbuilt, so a granted request answers `501`.
+  non-blank string of at most 200 characters with no control characters. A granted request
+  continues to code issuance (#87, above).
 
 - **The external provider round trip: challenge, callback, resume, and the host's say in it** (#85)
 

@@ -13,8 +13,8 @@ namespace ZeeKayDa.Auth.AspNetCore.Endpoints;
 /// <summary>
 /// The authorization endpoint (<c>/connect/authorize</c>, GET and POST per OIDC Core 1.0
 /// §3.1.2.1). Validates the request, applies the two-phase error model, writes the interaction
-/// context and hands off to authentication and consent; a request past both still answers
-/// <c>501</c> until code issuance lands.
+/// context and hands off to authentication and consent; a request past both is answered with an
+/// authorization code at the client's registered redirect URI.
 /// </summary>
 /// <remarks>
 /// Phase-1 failures render locally — a minimal framework-written 400 by default, or a redirect
