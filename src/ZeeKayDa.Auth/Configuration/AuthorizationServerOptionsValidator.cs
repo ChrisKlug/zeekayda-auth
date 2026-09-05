@@ -405,6 +405,7 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
 
         ValidateInteractionPath(options.AuthorizationEndpoint.Interaction.ErrorPath, "ErrorPath", errors);
         ValidateInteractionPath(options.AuthorizationEndpoint.Interaction.LoginPath, "LoginPath", errors);
+        ValidateInteractionPath(options.AuthorizationEndpoint.Interaction.ConsentPath, "ConsentPath", errors);
     }
 
     /// <summary>

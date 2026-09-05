@@ -115,7 +115,7 @@ internal sealed class ResumeEndpoint : IZeeKayDaEndpoint
         var signIn = new ProviderSignInContext(
             new ClaimsPrincipal(principal.Identities.Select(identity => identity.Clone())),
             registration.Descriptor,
-            new ClientInformation(requestContext.ClientId),
+            await _flow.DescribeClientAsync(context, requestContext, context.RequestAborted).ConfigureAwait(false),
             requestContext.Scopes.ToImmutableArray(),
             context.RequestAborted,
             path => _outcomes.ParkAsync(context, requestContext, registration, principal, path),

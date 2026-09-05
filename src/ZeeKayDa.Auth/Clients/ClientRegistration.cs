@@ -65,6 +65,12 @@ public sealed record ClientRegistration : IClientRegistration
     public bool EnableZkdErrorCodes { get; init; }
 
     /// <inheritdoc/>
+    public string? DisplayName { get; init; }
+
+    /// <inheritdoc/>
+    public bool RequireConsent { get; init; } = true;
+
+    /// <inheritdoc/>
     public IReadOnlySet<SigningAlgorithm>? AllowedSigningAlgorithms { get; init; }
 
     /// <summary>

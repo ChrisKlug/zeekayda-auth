@@ -96,3 +96,12 @@ static ZeeKayDa.Auth.AspNetCore.ClientAuthentication.ClientAuthenticationResult.
 static ZeeKayDa.Auth.AspNetCore.ClientAuthentication.ClientAuthenticationResult.Valid() -> ZeeKayDa.Auth.AspNetCore.ClientAuthentication.ClientAuthenticationResult!
 static ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails.operator !=(ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails? left, ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails? right) -> bool
 static ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails.operator ==(ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails? left, ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails? right) -> bool
+ZeeKayDa.Auth.AspNetCore.Interaction.ClientInformation.DisplayName.get -> string?
+ZeeKayDa.Auth.AspNetCore.Interaction.ConsentRequest
+ZeeKayDa.Auth.AspNetCore.Interaction.ConsentRequest.Client.get -> ZeeKayDa.Auth.AspNetCore.Interaction.ClientInformation!
+ZeeKayDa.Auth.AspNetCore.Interaction.ConsentRequest.Scopes.get -> System.Collections.Generic.IReadOnlyList<string!>!
+ZeeKayDa.Auth.AspNetCore.Interaction.ConsentRequest.Subject.get -> string!
+ZeeKayDa.Auth.AspNetCore.Interaction.IConsentInteraction
+ZeeKayDa.Auth.AspNetCore.Interaction.IConsentInteraction.DenyAsync() -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.AspNetCore.Interaction.IConsentInteraction.GetRequestAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ZeeKayDa.Auth.AspNetCore.Interaction.ConsentRequest!>!
+ZeeKayDa.Auth.AspNetCore.Interaction.IConsentInteraction.GrantAsync(System.Collections.Generic.IEnumerable<string!>! scopes) -> System.Threading.Tasks.Task!

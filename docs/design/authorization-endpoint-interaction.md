@@ -1,9 +1,9 @@
 # Authorization endpoint interaction
 
 **Status: partly built.** Request validation (#83), the interaction context (#84), the local
-login handoff, provider registration with its pins, the login dispatch rules and the external
-round trip (#85) have landed; consent and code issuance have not, so a request that reaches the
-end of what exists answers `501`. Originally
+login handoff, provider registration with its pins, the login dispatch rules, the external
+round trip (#85) and in-flow consent (#86) have landed; remembered consent grants and code
+issuance have not, so a request that reaches the end of what exists answers `501`. Originally
 ADR 0005 (accepted 2026-07-01, issue #156); revised 2026-08-28 in the S2 shape conversation
 (#534/#83/#84), which reversed the interception model, renamed the interaction services and cut the
 interaction store; login dispatch between local sign-in and external providers settled
@@ -209,7 +209,9 @@ anything else on NuGet for free.
                                                     Facebook handler: OAuth mechanics, signs into
                                                     zkd.external
         → /connect/resume   ZeeKayDa endpoint: reads zkd.external, fires OnProviderSignIn,
-                            promotes to zkd.session, then consent check → code → client
+                            promotes to zkd.session, then the consent check below
+  → ConsentPath?zkd_i=<id>  (client requires consent)  host page ends with IConsentInteraction
+                            .GrantAsync or .DenyAsync — terminal → code → client
 ```
 
 `/connect/resume` is the **external-return landing pad only** — routed, internal, never published
@@ -325,7 +327,7 @@ default is built.
 | effective scopes | `requested ∩ client.AllowedScopes` |
 | `state`, `nonce` | client-controlled, round-tripped untouched |
 | `code_challenge` + method | PKCE, carried through to the code |
-| `prompt` values, `max_age` | parsed here, behaviour owned by #85/#86 |
+| `prompt` values, `max_age` | parsed here, acted on at the login and consent stages |
 | issued-at, hard expiry | 30 minutes |
 
 Accumulated as the flow advances: the authenticating provider scheme, `auth_time`, `amr`/`acr`, a
@@ -405,8 +407,10 @@ unchanged — at the cost of a store round-trip on every session read where toda
 decrypt.
 
 **Consent grants are not session state.** They outlive the session and the browser, so they need
-durable storage whatever is decided here (#86). `prompt=none` needs both: a live session *and* a
-prior consent grant.
+durable storage whatever is decided here — a host seam with an in-memory default, settled as its
+own issue; in-flow consent (#86) records the decision on the interaction context only. `prompt=none`
+needs both: a live session *and* a prior consent grant, so until the store lands it answers
+`consent_required` for every client that requires consent.
 
 ## Interaction services
 
@@ -420,9 +424,10 @@ public interface ILoginInteraction   // scoped, as are all the page services
     bool LocalLoginEnabled { get; }                       // InteractionOptions.SupportsLocalSignIn
     IReadOnlyList<ProviderDescriptor> Providers { get; }  // Id + DisplayName, from WithProviders
 
-    // UNBUILT (consent, #86). The client asking to be signed in to — ClientId plus the
-    // registration's optional DisplayName. Reads the interaction context, so it is zkd_i-bound on
-    // SignInAsync's exact terms; a page that dropped the query string fails on its first GET.
+    // UNBUILT. The client asking to be signed in to — ClientId plus the registration's optional
+    // DisplayName, as the consent page already gets. Reads the interaction context, so it is
+    // zkd_i-bound on SignInAsync's exact terms; a page that dropped the query string fails on its
+    // first GET.
     Task<ClientInformation> GetClientInformationAsync();
 
     // Promotes principal to SSO session, continues the flow (consent → code → redirect).
@@ -447,11 +452,18 @@ public interface ILoginInteraction   // scoped, as are all the page services
     Task<PendingPrincipal?> GetPendingPrincipalAsync();
 }
 
-public interface IConsentInteraction
+public interface IConsentInteraction                     // built (#86); every method is zkd_i-bound on
+{                                                        // SignInAsync's terms AND refuses when the session
+    Task<ConsentRequest> GetRequestAsync(CancellationToken cancellationToken = default);
+    Task GrantAsync(IEnumerable<string> scopes);         // terminal; re-intersects, no openid == deny
+    Task DenyAsync();                                    // terminal; error=access_denied naming the stage
+}
+
+public sealed class ConsentRequest                       // what the page asks
 {
-    Task<ConsentRequest> GetRequestAsync();              // client name, requested scopes, user
-    Task GrantAsync(IEnumerable<string> grantedScopes);  // terminal; re-intersects
-    Task DenyAsync();                                    // terminal; error=access_denied
+    public ClientInformation Client { get; }             // ClientId + DisplayName
+    public IReadOnlyList<string> Scopes { get; }         // requested ∩ allowed, request order
+    public string Subject { get; }                       // who is being asked
 }
 
 public sealed class ProviderDescriptor                   // one per scheme WithProviders observed
@@ -464,7 +476,7 @@ public sealed class ProviderSignInContext                // what OnProviderSignI
 {
     public ClaimsPrincipal Principal { get; }            // as the provider returned it, zkd:* stripped
     public ProviderDescriptor Provider { get; }
-    public ClientInformation Client { get; }             // ClientId today; DisplayName with #86
+    public ClientInformation Client { get; }             // ClientId and the registration's DisplayName
     public IReadOnlyList<string> EffectiveScopes { get; } // requested ∩ allowed, from the interaction context
 
     // Terminal. Parks Principal — the principal only; the ticket's properties and any saved
@@ -488,8 +500,8 @@ public sealed class PendingPrincipal                     // GetPendingPrincipalA
 `ProviderDescriptor.Id` is opaque to the host: it happens to equal the scheme name, but the page
 reads it from `Providers` and posts it back, never writes it. The invariant is that no host code
 *contains* a scheme name, and round-tripping a framework-handed value does not.
-`ClientInformation` carries `ClientId` only until consent (#86) gives the registration a display
-name; adding the member then is non-breaking. Configuration lives on properties and request-bound data
+`ClientInformation` carries `ClientId` and the registration's `DisplayName`, null when it has
+none. Configuration lives on properties and request-bound data
 behind async methods — a property getter that decrypted cookies and threw on a bad `zkd_i` would
 be bad .NET API, so anything read from the interaction context stays a method.
 

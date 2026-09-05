@@ -203,6 +203,7 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         services.TryAddSingleton<InteractionOutcomes>();
         services.TryAddSingleton<IErrorInteraction, ErrorInteraction>();
         services.TryAddSingleton<ILoginInteraction, LoginInteraction>();
+        services.TryAddSingleton<IConsentInteraction, ConsentInteraction>();
 
         AddInteractionCookies(services);
         AddProviderServices(services);

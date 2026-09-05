@@ -1,8 +1,8 @@
 # User interaction and the SSO session
 
 **Partly built.** The local login handoff, the SSO session, the interaction-context cookie,
-provider registration through `WithProviders`, the login dispatch rules and the external round
-trip exist; consent and home realm discovery do not.
+provider registration through `WithProviders`, the login dispatch rules, the external round
+trip and in-flow consent exist; remembered consent grants and home realm discovery do not.
 The authorize endpoint's protocol rules are in
 `authorization-and-interaction.md`; interface shapes for the unbuilt part are in
 `docs/design/authorization-endpoint-interaction.md`.

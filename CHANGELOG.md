@@ -8,6 +8,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **Consent: the host's consent page and the contract behind it** (#86)
+
+  After sign-in, an authorization request for a client that requires consent is sent to the
+  host's consent page at the new `AuthorizationEndpoint.Interaction.ConsentPath`, carrying
+  `zkd_i` exactly as the login page does. The page reads what to ask with
+  `IConsentInteraction.GetRequestAsync()` — a `ConsentRequest` carrying the client (a
+  `ClientInformation`, which now also carries the registration's new `DisplayName`), the
+  effective scopes in request order, and the subject — and ends with `GrantAsync(scopes)` or
+  `DenyAsync()`, both terminal. A grant can only narrow the request: scopes it never carried are
+  dropped, and a grant without `openid` is answered as `access_denied`, as a deny is, with a
+  description naming the consent page. Every method is bound to the interaction the request names
+  and to the session that signed in for it; a request whose session was signed out or replaced by
+  another user's is refused.
+
+  Consent is required for every client by default. The new `IClientMetadata.RequireConsent`
+  (default `true`, a default interface member so existing implementations keep it) turns it off
+  per registration, for an operator's own applications; a client with it off goes straight on
+  from sign-in. Remembered grants are not built: every request prompts, and `prompt=none` for a
+  client that requires consent answers `consent_required`. A host without a consent page whose
+  client requires one answers the client `server_error` and logs an error naming the option;
+  there is no startup warning, since whether the page is needed depends on the registered
+  clients. Code issuance is still unbuilt, so a granted request answers `501`.
+
 - **The external provider round trip: challenge, callback, resume, and the host's say in it** (#85)
 
   The login page starts it with `ILoginInteraction.ChallengeAsync(providerId)`, passing back the

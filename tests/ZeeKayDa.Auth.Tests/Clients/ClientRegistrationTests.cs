@@ -65,6 +65,15 @@ public sealed class ClientRegistrationTests
     }
 
     [Fact]
+    public void RequireConsent_defaults_to_true_and_DisplayName_to_null()
+    {
+        var client = ClientRegistration.CreatePublic("app", ["https://app.example.com/cb"], [], ["openid"]);
+
+        client.RequireConsent.Should().BeTrue();
+        client.DisplayName.Should().BeNull();
+    }
+
+    [Fact]
     public void AllowedSigningAlgorithms_defaults_to_null()
     {
         var client = new ClientRegistration

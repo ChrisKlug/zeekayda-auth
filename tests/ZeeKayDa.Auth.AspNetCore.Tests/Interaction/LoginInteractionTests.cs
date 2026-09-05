@@ -264,8 +264,7 @@ public sealed class LoginInteractionTests : IDisposable
     {
         var response = await SignInAsync();
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented,
-            "the session is established; consent (#86) and code issuance (#87) are what remain");
+        response.ShouldHaveReachedConsent("the session is established and the flow moves on to consent");
         (await ReadSessionIdAsync()).Should().NotBeNullOrEmpty();
     }
 
@@ -276,8 +275,7 @@ public sealed class LoginInteractionTests : IDisposable
 
         var response = await AuthorizeAsync();
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented,
-            "the session answers for the user, so there is nothing to hand off");
+        response.ShouldHaveReachedConsent("the session answers for the user, so the flow moves straight to consent");
     }
 
     [Fact]
@@ -506,8 +504,7 @@ public sealed class LoginInteractionTests : IDisposable
         // refused deny, or a rejected cross-tab attempt would still have killed the live request.
         var signIn = await PostLoginAsync(InteractionIdFrom(secondTab), ("sub", "user-1"));
 
-        signIn.StatusCode.Should().Be(HttpStatusCode.NotImplemented,
-            "the live interaction is untouched by a deny that named a different one");
+        signIn.ShouldHaveReachedConsent("the live interaction is untouched by a deny that named a different one");
     }
 
     [Fact]
@@ -539,12 +536,9 @@ public sealed class LoginInteractionTests : IDisposable
         // code where nothing validates it. The page is wrong either way; what matters is that it
         // fails loudly the first time it runs instead of working and being unsafe.
         //
-        // The two cases do not carry equal weight today. The deny case is the proof: its response
-        // is a bodyless redirect, and it fails without the explicit commit. The sign-in case
-        // currently passes either way, because the pre-alpha 501 it ends in writes a body and so
-        // commits the response as a side effect. It is here as a guard for when consent and code
-        // issuance replace that 501 with a redirect and the accident stops holding — at which
-        // point this case starts failing if the commit is ever dropped.
+        // Both cases end in a bodyless redirect — to the client for the deny, to the consent
+        // page for the sign-in — so neither commits the response by accident, and both fail
+        // without the explicit commit.
         var handoff = await AuthorizeAsync();
 
         using var content = new FormUrlEncodedContent([]);
@@ -757,16 +751,6 @@ public sealed class LoginInteractionTests : IDisposable
             .And.Contain("error=login_required");
     }
 
-    [Fact]
-    public async Task prompt_none_with_a_session_continues_without_interacting()
-    {
-        await SignInAsync();
-
-        var query = ValidQuery();
-        query["prompt"] = "none";
-
-        (await AuthorizeAsync(query)).StatusCode.Should().Be(HttpStatusCode.NotImplemented);
-    }
 
     [Fact]
     public async Task prompt_login_re_authenticates_a_user_who_already_has_a_session()
@@ -795,6 +779,6 @@ public sealed class LoginInteractionTests : IDisposable
         if (expectsLogin)
             response.Headers.Location!.OriginalString.Should().StartWith($"{LoginPath}?");
         else
-            response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+            response.ShouldHaveReachedConsent();
     }
 }
