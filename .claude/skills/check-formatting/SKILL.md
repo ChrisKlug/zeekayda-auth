@@ -1,6 +1,6 @@
 ---
 name: check-formatting
-description: Run everything CI's Format Check job runs — dotnet format and the decision register line cap. Run before opening any PR, and whenever formatting errors are reported by CI or the Stop hook.
+description: Run everything CI's Format Check job runs — dotnet format, the decision register line cap, and the sign-off citation check. Run before opening any PR, and whenever formatting errors are reported by CI or the Stop hook.
 allowed-tools:
   - Bash(git rev-parse *)
   - Bash(dotnet format)
@@ -12,9 +12,9 @@ allowed-tools:
 
 A Stop hook (`.claude/hooks/scripts/check-format.sh`) enforces formatting at the end of every turn — this skill is the fix-it procedure.
 
-**This skill must run everything CI's `Format Check` job runs.** That job is two checks, not one, and
-a branch that passes only the `dotnet format` half still fails the PR. If a step is ever added to
-that job in `.github/workflows/ci.yml`, add it here in the same change.
+**This skill must run everything CI's `Format Check` job runs.** That job is three checks, not one,
+and a branch that passes only the `dotnet format` third still fails the PR. If a step is ever added
+to that job in `.github/workflows/ci.yml`, add it here in the same change.
 
 ## Steps
 
@@ -33,6 +33,18 @@ that job in `.github/workflows/ci.yml`, add it here in the same change.
 
    Over the cap: cut words or split the topic. **Do not raise the cap** — it exists because a written
    "half a page" target didn't hold the old ADRs, which reached 4,270 lines across 14 documents.
+
+   Then check that every test the sign-off register cites still exists:
+
+   ```sh
+   bash .github/scripts/check_sign_off_citations.sh .
+   ```
+
+   A backticked identifier with an underscore in `docs/decisions/security-sign-offs.md` is a
+   test citation, and the check fails when no `tests/**/*.cs` file declares it. A test this
+   branch renamed or removed must have its citation repointed at the successor — in the old entry
+   too, with a bracketed note — or written without backticks where the old name is only being
+   mentioned as superseded.
 
 2. Then run:
 

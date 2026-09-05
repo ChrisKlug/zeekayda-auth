@@ -1320,9 +1320,9 @@ lenses, CodeScene) plus fix-diff verification of every High.
   `A_terminal_step_taken_from_a_GET_is_refused_and_changes_nothing`.
 - A decision is recorded by the session it was asked of, and a re-sign-in discards an earlier
   grant. Closed — `GrantAsync_by_a_session_other_than_the_one_that_signed_in_is_refused`,
-  `GrantAsync_after_the_user_signed_out_is_refused`, `A_re_sign_in_on_the_same_interaction_discards_an_earlier_grant`.
+  `GrantAsync_after_the_user_signed_out_is_refused`, `A_second_sign_in_after_a_grant_finds_no_interaction_to_complete` (renamed under #87).
 - A grant only narrows the request, and one without `openid` is a denial. Closed —
-  `GrantAsync_drops_scopes_the_request_never_asked_for`, `GrantAsync_without_openid_answers_the_client_with_access_denied`.
+  `A_grant_naming_scopes_the_request_never_carried_issues_only_what_was_asked` (moved under #87), `GrantAsync_without_openid_answers_the_client_with_access_denied`.
 - The registration is read again at every step and must still list the request's redirect URI;
   otherwise the request ends where it stands. Closed — `Every_consent_operation_for_a_client_removed_after_the_handoff_is_refused`,
   `Every_consent_operation_for_a_client_that_dropped_the_redirect_uri_is_refused`,
@@ -1354,8 +1354,8 @@ fix-diff verification of one High, found by a test the round asked for.
   `The_scopes_are_narrowed_by_the_registration_as_it_is_when_the_code_is_issued`,
   `A_registration_that_no_longer_allows_openid_ends_the_request_locally`.
 - The decision is never persisted, so a replayed consent `POST` issues nothing — the #86 residual,
-  closed; `A_re_sign_in_on_the_same_interaction_discards_an_earlier_grant` and
-  `GrantAsync_drops_scopes_the_request_never_asked_for` superseded. Closed —
+  closed; A_re_sign_in_on_the_same_interaction_discards_an_earlier_grant and
+  GrantAsync_drops_scopes_the_request_never_asked_for superseded (their citations below now name the successors). Closed —
   `A_replayed_consent_post_after_issuance_is_refused_and_issues_nothing`,
   `Issuance_straight_from_sign_in_discards_the_interaction_too`,
   `A_second_sign_in_after_a_grant_finds_no_interaction_to_complete`,
