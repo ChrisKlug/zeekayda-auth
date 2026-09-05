@@ -210,11 +210,7 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
         IClientRegistration client,
         List<ZeeKayDaConfigurationFailure> failures)
     {
-        var displayName = client.DisplayName;
-        if (displayName is null)
-            return;
-
-        if (string.IsNullOrWhiteSpace(displayName) || displayName.Length > 200 || displayName.Any(char.IsControl))
+        if (client.DisplayName is { } displayName && !IsValidDisplayName(displayName))
         {
             failures.Add(new ZeeKayDaConfigurationFailure(
                 "client.display_name.invalid",
@@ -222,6 +218,12 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
                 "DisplayName must be null or a non-blank string of at most 200 characters with no control characters."));
         }
     }
+
+    /// <summary>Non-blank, at most 200 characters, and nothing a page would have to escape or hide.</summary>
+    private static bool IsValidDisplayName(string displayName) =>
+        !string.IsNullOrWhiteSpace(displayName)
+        && displayName.Length <= 200
+        && !displayName.Any(char.IsControl);
 
     private static void ValidateIsPublicTrinity(
         IClientRegistration client,
