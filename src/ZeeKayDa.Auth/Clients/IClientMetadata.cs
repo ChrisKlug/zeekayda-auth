@@ -113,6 +113,28 @@ public interface IClientMetadata
     bool EnableZkdErrorCodes { get; }
 
     /// <summary>
+    /// The name shown to the user where the framework hands a host page the client's identity —
+    /// the consent page above all. <see langword="null"/> (the default) when the registration
+    /// carries none; the page then falls back to <see cref="ClientId"/>.
+    /// </summary>
+    string? DisplayName => null;
+
+    /// <summary>
+    /// Whether the user must consent on the host's consent page before an authorization code is
+    /// issued to this client. Defaults to <see langword="true"/>.
+    /// </summary>
+    /// <remarks>
+    /// Consent is what lets a user notice an authorization request they never started: a
+    /// malicious or compromised client can navigate a victim to a valid request of its own and
+    /// collect the code the victim's sign-in produces, and the consent page is the only thing
+    /// between that sign-in and the code. Setting this to <see langword="false"/> removes that
+    /// protection for this client, which is a deliberate choice for an operator's own
+    /// first-party applications and nothing else. It is a default interface member because
+    /// requiring consent is what a registration means unless it says otherwise.
+    /// </remarks>
+    bool RequireConsent => true;
+
+    /// <summary>
     /// JWS signing algorithms permitted for ID tokens issued to this client.
     /// <see langword="null"/> means inherit the server's advertised set.
     /// </summary>

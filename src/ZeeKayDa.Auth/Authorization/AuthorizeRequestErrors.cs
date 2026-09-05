@@ -20,6 +20,12 @@ internal static class AuthorizeRequestErrors
     public const string LoginRequired = "login_required";
 
     /// <summary>
+    /// The request cannot be completed without the user's consent, and the client asked for no
+    /// interaction (OIDC Core 1.0 §3.1.2.6).
+    /// </summary>
+    public const string ConsentRequired = "consent_required";
+
+    /// <summary>
     /// The user, or the authorization server on their behalf, refused the request
     /// (RFC 6749 §4.1.2.1).
     /// </summary>

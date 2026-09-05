@@ -708,3 +708,11 @@ virtual ZeeKayDa.Auth.Clients.ClientSecretHasher<TSecret>.CreateCore(System.Read
 ~override ZeeKayDa.Auth.Tokens.SourceKeyId.ToString() -> string
 ~override ZeeKayDa.Auth.Tokens.TokenIssuanceContext.Equals(object obj) -> bool
 ~override ZeeKayDa.Auth.Tokens.TokenIssuanceContext.ToString() -> string
+ZeeKayDa.Auth.Authorization.InteractionOptions.ConsentPath.get -> string?
+ZeeKayDa.Auth.Authorization.InteractionOptions.ConsentPath.set -> void
+ZeeKayDa.Auth.Clients.ClientRegistration.DisplayName.get -> string?
+ZeeKayDa.Auth.Clients.ClientRegistration.DisplayName.init -> void
+ZeeKayDa.Auth.Clients.ClientRegistration.RequireConsent.get -> bool
+ZeeKayDa.Auth.Clients.ClientRegistration.RequireConsent.init -> void
+ZeeKayDa.Auth.Clients.IClientMetadata.DisplayName.get -> string?
+ZeeKayDa.Auth.Clients.IClientMetadata.RequireConsent.get -> bool

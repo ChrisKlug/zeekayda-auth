@@ -12,9 +12,9 @@ namespace ZeeKayDa.Auth.AspNetCore.Endpoints;
 
 /// <summary>
 /// The authorization endpoint (<c>/connect/authorize</c>, GET and POST per OIDC Core 1.0
-/// §3.1.2.1). Currently implements request validation, the two-phase error model, and writing
-/// the interaction context; a fully valid request still answers <c>501</c> until the handoff,
-/// consent and code-issuance stages land.
+/// §3.1.2.1). Validates the request, applies the two-phase error model, writes the interaction
+/// context and hands off to authentication and consent; a request past both still answers
+/// <c>501</c> until code issuance lands.
 /// </summary>
 /// <remarks>
 /// Phase-1 failures render locally — a minimal framework-written 400 by default, or a redirect
@@ -103,11 +103,6 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
     /// login page when the request must be authenticated, or straight on when an SSO session
     /// already answers for the user.
     /// </summary>
-    /// <remarks>
-    /// Consent (#86) and code issuance (#87) are not built, so a request that needs neither
-    /// authentication nor them still answers <c>501</c> — having persisted the state those stages
-    /// will read.
-    /// </remarks>
     private async Task<IResult> BeginInteractionAsync(HttpContext context, ValidatedAuthorizeRequest request)
     {
         var session = await _flow.ReadSessionAsync(context).ConfigureAwait(false);
@@ -138,7 +133,7 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
         }
 
         if (!needsAuthentication)
-            return PreAlphaNotImplementedResult.Result;
+            return await _outcomes.ContinueAsync(context, requestContext).ConfigureAwait(false);
 
         if (request.Prompts.Contains(PromptValue.None))
         {

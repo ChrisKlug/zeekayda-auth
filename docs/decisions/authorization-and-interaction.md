@@ -1,10 +1,11 @@
 # Authorization endpoint and user interaction
 
-**Partly built.** `/connect/authorize` validates requests, applies the two-phase error model, and
-hands an unauthenticated one to the host's login page, which returns through `ILoginInteraction`.
-Consent, code issuance and external providers do not exist, so a request past authentication still
-answers `501`. Interface shapes for the unbuilt part: `docs/design/authorization-endpoint-interaction.md`;
-the interaction surface, cookies and SSO session: `interaction-and-session.md`.
+**Partly built.** `/connect/authorize` validates requests, applies the two-phase error model, hands
+an unauthenticated one to the host's login page or an external provider, and an authenticated one
+to the host's consent page, which returns through `IConsentInteraction`. Code issuance does not
+exist, so a request past consent still answers `501`. Interface shapes for the unbuilt part:
+`docs/design/authorization-endpoint-interaction.md`; the interaction surface, cookies and SSO
+session: `interaction-and-session.md`.
 
 ## Decisions in force
 
@@ -52,6 +53,36 @@ unconditionally, as mix-up-attack mitigation (RFC 9207, RFC 9700 §4.4).
 relying party's silent-auth iframe is a clickjacking vector. It succeeds only against an existing
 session plus a prior consent grant covering the requested scopes, and otherwise returns
 `login_required` / `consent_required` / `account_selection_required` / `interaction_required`.
+
+**Consent is asked of every user for every client on first use, and only a remembered grant or a
+per-registration opt-out skips it.** The consent page is the one thing between a sign-in and an
+issued code for a request the user never started — a malicious registered client navigating a
+victim to a valid request of its own — so no default skips it. `IClientMetadata.RequireConsent`
+(default `true`, a default interface member so an implementation that never heard of it keeps it)
+is the opt-out, for an operator's own first-party applications and nothing else; a registration
+that sets it false accepts that attack unmitigated for that client. `prompt=consent` sends even an
+opt-out client to the page, and answers `consent_required` when the host has none. Remembered
+grants are unbuilt: every request prompts, and `prompt=none` for a client requiring consent
+answers `consent_required` — not yet, rather than a reversal of the paragraph above.
+
+**A consent decision is recorded by the session it was asked of.** Every `IConsentInteraction`
+method is `zkd_i`-bound on the login service's terms and additionally refuses when the session
+cookie no longer names the session and subject that authenticated the request — a sign-out, or a
+sign-in as someone else, between the handoff and the answer. A grant can only narrow the request:
+it is re-intersected with the effective scopes, and one that drops `openid` is a refusal to be
+identified, answered `access_denied` as a deny is. The client is resolved again at every step — the
+post-authentication dispatch and each consent call — and must still list the request's redirect
+URI, so a registration removed or narrowed mid-flow ends the request where it stands, never at a
+redirect URI that no longer belongs to anyone.
+
+**A terminal page-service method accepts only a `POST`, checked before any state is read.** The
+framework arrives at a host page with a `GET`, and its `Lax` cookies accompany a top-level `GET`
+from anywhere, so a decision wired to the rendering request would be taken on arrival, and a
+cancel wired to a link could be triggered by a page that never showed the user anything.
+
+**A missing `ConsentPath` is a request-time `server_error` with an error log, not a startup
+warning.** Whether the page is needed depends on client data the framework does not enumerate at
+startup, and a warning that fires for every all-first-party host is one that gets ignored.
 
 **JAR (RFC 9101) and PAR (RFC 9126) are refused in v1**, with `request` and `request_uri` answered
 `request_not_supported` / `request_uri_not_supported`. Accepting `request_uri` without implementing

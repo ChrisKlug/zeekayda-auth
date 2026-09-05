@@ -1,10 +1,12 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.AspNetCore.Endpoints;
 using ZeeKayDa.Auth.AspNetCore.Providers;
 using ZeeKayDa.Auth.Authorization;
+using ZeeKayDa.Auth.Logging;
 
 namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 
@@ -29,30 +31,36 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// </remarks>
 internal sealed class InteractionOutcomes
 {
+    private const string TooLarge = "The authorization request is too large to process.";
+
     private readonly AuthorizationFlow _flow;
     private readonly LocalErrorResponse _localError;
     private readonly ClientErrorRedirect _clientError;
     private readonly ProviderHandlerActivator _activator;
     private readonly IOptions<AuthorizationServerOptions> _options;
+    private readonly ISanitizingLogger<InteractionOutcomes> _logger;
 
     public InteractionOutcomes(
         AuthorizationFlow flow,
         LocalErrorResponse localError,
         ClientErrorRedirect clientError,
         ProviderHandlerActivator activator,
-        IOptions<AuthorizationServerOptions> options)
+        IOptions<AuthorizationServerOptions> options,
+        ISanitizingLogger<InteractionOutcomes> logger)
     {
         ArgumentNullException.ThrowIfNull(flow);
         ArgumentNullException.ThrowIfNull(localError);
         ArgumentNullException.ThrowIfNull(clientError);
         ArgumentNullException.ThrowIfNull(activator);
         ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(logger);
 
         _flow = flow;
         _localError = localError;
         _clientError = clientError;
         _activator = activator;
         _options = options;
+        _logger = logger;
     }
 
     /// <summary>An error that must not reach the client: the host's error page, or the framework's minimal one.</summary>
@@ -109,9 +117,8 @@ internal sealed class InteractionOutcomes
     /// <paramref name="providerScheme"/> names none.
     /// </summary>
     /// <remarks>
-    /// Consent and code issuance replace the <c>501</c> this currently ends in. The session and
-    /// the authenticated context are already written, so what those stages add is the response,
-    /// not the state.
+    /// The session and the authenticated context are written before the flow continues, so the
+    /// consent page reads a request that already knows who answered it.
     /// </remarks>
     public async Task CompleteSignInAsync(
         HttpContext context,
@@ -139,23 +146,125 @@ internal sealed class InteractionOutcomes
             AuthTime = state.AuthTime,
             Amr = state.Amr,
             ProviderScheme = providerScheme ?? pending?.Provider,
+
+            // A decision recorded by whoever signed in earlier on this interaction is theirs, not
+            // this sign-in's: the consent page asks again.
+            GrantedScopes = null,
+            ConsentedAt = null,
         };
 
-        if (!_flow.TryPersist(context, authenticated))
-        {
-            // Only reachable for a context already near the size ceiling before a few small
-            // fields were added to it. The session is established either way — what cannot
-            // continue is this authorization request, so it fails where the oversize did.
-            _flow.Clear(context);
-            await WriteAsync(
-                    context,
-                    _localError.Render(context, AuthorizeRequestErrors.InvalidRequest, "The authorization request is too large to process."))
-                .ConfigureAwait(false);
+        // Only unpersistable for a context already near the size ceiling before a few small
+        // fields were added to it. The session is established either way — what cannot continue
+        // is this authorization request, so it fails where the oversize did.
+        var result = _flow.TryPersist(context, authenticated)
+            ? await ContinueAsync(context, authenticated).ConfigureAwait(false)
+            : FailTooLarge(context);
 
-            return;
+        await WriteAsync(context, result).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The step after authentication, for a request just signed in or one an existing session
+    /// answered for: to the host's consent page when the client requires consent, or straight on
+    /// to code issuance when it does not. Not terminal — the caller writes the result.
+    /// </summary>
+    /// <remarks>
+    /// No remembered grant exists yet, so a client that requires consent is asked every time,
+    /// and <c>prompt=none</c> — a promise to show the user nothing — is answered
+    /// <c>consent_required</c> for it. A client that opted out is still asked when its request
+    /// says <c>prompt=consent</c>: the server should prompt when asked to, and must answer
+    /// <c>consent_required</c> when it cannot. The client is resolved here, at the point of use,
+    /// so a registration that vanished, stopped validating or dropped the request's redirect URI
+    /// since the request was accepted ends the request rather than being remembered as it was.
+    /// </remarks>
+    public async Task<IResult> ContinueAsync(HttpContext context, AuthorizationRequestContext requestContext)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(requestContext);
+
+        var client = await _flow.ResolveClientAsync(context, requestContext, context.RequestAborted).ConfigureAwait(false);
+        if (client is null)
+        {
+            // The redirect URI was authenticated against a registration that no longer answers,
+            // so nothing is sent there.
+            _flow.Clear(context);
+            return _localError.Render(
+                context,
+                AuthorizeRequestErrors.InvalidRequest,
+                "The client that sent the authorization request is no longer registered, or no longer lists its redirect URI.");
         }
 
-        await WriteAsync(context, PreAlphaNotImplementedResult.Result).ConfigureAwait(false);
+        var asked = requestContext.Prompts.Contains(PromptValue.Consent);
+        if (!client.RequireConsent && !asked)
+            return PreAlphaNotImplementedResult.Result;
+
+        if (requestContext.Prompts.Contains(PromptValue.None))
+        {
+            return ClientError(
+                context,
+                requestContext,
+                AuthorizeRequestErrors.ConsentRequired,
+                "The request specified prompt=none but the user's consent is required.");
+        }
+
+        if (_options.Value.AuthorizationEndpoint.Interaction.ConsentPath is not { } consentPath)
+        {
+            if (!client.RequireConsent)
+            {
+                // The client asked for a page this host deliberately does not have for its
+                // opt-out clients: a refusal the client can act on, not a configuration gap.
+                return ClientError(
+                    context,
+                    requestContext,
+                    AuthorizeRequestErrors.ConsentRequired,
+                    "The request specified prompt=consent but the authorization server has no consent page.");
+            }
+
+            // A configuration gap, reported where a developer is looking — the client's error
+            // page and the server log — since the redirect target is authenticated by now.
+            _logger.LogError(
+                "Client {ClientId} requires consent but AuthorizationEndpoint.Interaction.ConsentPath is not " +
+                "configured. Configure the consent page, or set RequireConsent to false on the registration.",
+                client.ClientId);
+
+            return ClientError(
+                context,
+                requestContext,
+                AuthorizeRequestErrors.ServerError,
+                "The authorization server is not configured to obtain the user's consent.");
+        }
+
+        return Results.Redirect(InteractionHandoff.BuildRedirectUrl(consentPath, requestContext.Id));
+    }
+
+    /// <summary>
+    /// Terminal. Records the user's consent on the interaction context and continues to code
+    /// issuance.
+    /// </summary>
+    public async Task CompleteConsentAsync(
+        HttpContext context,
+        AuthorizationRequestContext requestContext,
+        IReadOnlyList<string> grantedScopes)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(requestContext);
+        ArgumentNullException.ThrowIfNull(grantedScopes);
+
+        context.Response.Headers.CacheControl = "no-store";
+
+        var consented = _flow.RecordConsent(requestContext, grantedScopes);
+
+        var result = _flow.TryPersist(context, consented)
+            ? PreAlphaNotImplementedResult.Result
+            : FailTooLarge(context);
+
+        await WriteAsync(context, result).ConfigureAwait(false);
+    }
+
+    private IResult FailTooLarge(HttpContext context)
+    {
+        _flow.Clear(context);
+        return _localError.Render(context, AuthorizeRequestErrors.InvalidRequest, TooLarge);
     }
 
     /// <summary>

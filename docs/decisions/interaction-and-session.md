@@ -1,8 +1,8 @@
 # User interaction and the SSO session
 
 **Partly built.** The local login handoff, the SSO session, the interaction-context cookie,
-provider registration through `WithProviders`, the login dispatch rules and the external round
-trip exist; consent and home realm discovery do not.
+provider registration through `WithProviders`, the login dispatch rules, the external round
+trip and in-flow consent exist; remembered consent grants and home realm discovery do not.
 The authorize endpoint's protocol rules are in
 `authorization-and-interaction.md`; interface shapes for the unbuilt part are in
 `docs/design/authorization-endpoint-interaction.md`.
@@ -102,9 +102,9 @@ rejects on the next hop.
 
 **ZeeKayDa owns no interaction UI.** Login, consent and provider selection are the host's pages, and
 the host brings its own user model, identity store, branding and MFA. The cost is real: a host writes
-more code than a framework-shipped default page would need. The framework also cannot enforce
-`frame-ancestors 'none'` / `X-Frame-Options: DENY` on host-rendered pages, and those pages are
-clickjacking targets — an unresolved gap, not a solved one.
+more code than a framework-shipped default page would need. The response a consent page calls
+`GetRequestAsync` from — it cannot render without — is stamped `frame-ancestors 'none'`,
+`X-Frame-Options: DENY` and `no-store`; the login page has no such call and is still frameable.
 
 **Provider schemes exist only in the framework's scheme map, and what would make them visible to
 the host fails at startup.** `WithProviders` replays the scheme-map configurers the host's callback

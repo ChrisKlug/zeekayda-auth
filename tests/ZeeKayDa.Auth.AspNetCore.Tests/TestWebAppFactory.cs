@@ -136,6 +136,10 @@ internal sealed class TestWebAppFactory : WebApplicationFactory<TestWebAppFactor
                 // way a real one does. Tests covering the unconfigured case clear it themselves.
                 options.AuthorizationEndpoint.Interaction.LoginPath = "/account/login";
 
+                // And a consent page, since the default client requires consent. Tests covering
+                // the unconfigured case clear it themselves.
+                options.AuthorizationEndpoint.Interaction.ConsentPath = "/account/consent";
+
                 // Allow per-test overrides (e.g. path-bearing issuer, AllowInsecureIssuer, etc.)
                 _configureOptions?.Invoke(options);
             });

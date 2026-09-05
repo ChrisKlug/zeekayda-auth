@@ -1,6 +1,8 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using ZeeKayDa.Auth.Authorization;
+using ZeeKayDa.Auth.Clients;
 
 namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 
@@ -103,6 +105,93 @@ internal sealed class AuthorizationFlow
             Subject = session?.Subject,
             AuthTime = session?.AuthTime,
             Amr = session?.Amr,
+        };
+    }
+
+    /// <summary>
+    /// Whether the session this browser holds is the one that authenticated the request — the
+    /// same session identifier and the same subject. False before authentication, after a
+    /// sign-out, and after a sign-in as someone else.
+    /// </summary>
+    /// <remarks>
+    /// Both values come from framework-written encrypted state, so this is an ordinary ordinal
+    /// comparison: nothing here is request input whose bytes a timing difference could leak.
+    /// </remarks>
+    public async Task<bool> IsAuthenticatedByCurrentSessionAsync(HttpContext context, AuthorizationRequestContext requestContext)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(requestContext);
+
+        // The subject is written by the same promotion as the session identifier, so a context
+        // with the identifier has the subject too; the equality below fails for a missing one.
+        if (requestContext.SsoSessionId is null)
+            return false;
+
+        var session = await ReadSessionAsync(context).ConfigureAwait(false);
+
+        return session is not null
+            && string.Equals(session.SessionId, requestContext.SsoSessionId, StringComparison.Ordinal)
+            && string.Equals(session.Subject, requestContext.Subject, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The validated registration of the client that sent the request, or <see langword="null"/>
+    /// when it is no longer registered, no longer validates, or no longer lists the redirect URI
+    /// the request was accepted with — resolved at the point of use, as every endpoint resolves
+    /// clients, never remembered from when the request was accepted. An operator who removes a
+    /// redirect URI from a live registration means nothing more to be sent there, error included.
+    /// </summary>
+    /// <remarks>
+    /// The resolver comes from the request's services rather than this singleton's constructor:
+    /// the endpoints are constructed when they are mapped, before startup verification runs, and
+    /// the client repository behind the resolver validates its registrations against the signing
+    /// key ring when it is built. Taking it eagerly would make endpoint mapping the first thing to
+    /// touch the ring, which is startup verification's job to do, and to refuse to do when a
+    /// cheaper check has already failed.
+    /// </remarks>
+    public async ValueTask<IClientMetadata?> ResolveClientAsync(
+        HttpContext context,
+        AuthorizationRequestContext requestContext,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(requestContext);
+
+        var clients = context.RequestServices.GetRequiredService<ValidatedClientResolver>();
+        var client = await clients.FindByClientIdAsync(requestContext.ClientId, cancellationToken).ConfigureAwait(false);
+
+        return client is not null
+            && AuthorizeRedirectUriMatcher.TryMatch(requestContext.RedirectUri, client.RedirectUris, out _)
+            ? client
+            : null;
+    }
+
+    /// <summary>
+    /// The client as a host page sees it: the identifier the request named, and the display name
+    /// its registration carries today, if it still has one.
+    /// </summary>
+    public async ValueTask<ClientInformation> DescribeClientAsync(
+        HttpContext context,
+        AuthorizationRequestContext requestContext,
+        CancellationToken cancellationToken)
+    {
+        var client = await ResolveClientAsync(context, requestContext, cancellationToken).ConfigureAwait(false);
+
+        return new ClientInformation(requestContext.ClientId, client?.DisplayName);
+    }
+
+    /// <summary>Records the user's consent on the context, stamped with the current time.</summary>
+    public AuthorizationRequestContext RecordConsent(
+        AuthorizationRequestContext requestContext,
+        IReadOnlyList<string> grantedScopes)
+    {
+        ArgumentNullException.ThrowIfNull(requestContext);
+        ArgumentNullException.ThrowIfNull(grantedScopes);
+
+        return requestContext with
+        {
+            GrantedScopes = grantedScopes,
+            ConsentedAt = _timeProvider.GetUtcNow(),
         };
     }
 

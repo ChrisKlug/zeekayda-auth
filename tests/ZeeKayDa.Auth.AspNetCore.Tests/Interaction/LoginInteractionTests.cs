@@ -33,6 +33,9 @@ public sealed class LoginInteractionTests : IDisposable
     private const string CancelThenReturnPath = "/account/login/cancel-then-return";
     private const string HijackTarget = "https://attacker.example.net/collect";
     private const string CancelPath = "/account/login/cancel";
+    private const string SignInByLinkPath = "/account/login/sign-in-by-link";
+    private const string CancelByLinkPath = "/account/login/cancel-by-link";
+    private const string ChallengeByLinkPath = "/account/login/challenge-by-link";
 
     private static readonly DateTimeOffset Now = new(2026, 8, 29, 12, 0, 0, TimeSpan.Zero);
 
@@ -94,6 +97,14 @@ public sealed class LoginInteractionTests : IDisposable
 
         // The Cancel button, exactly as the issue's sample host writes it.
         endpoints.MapPost(CancelPath, (ILoginInteraction login) => login.DenyAsync());
+
+        // Pages wired the way the XML docs say not to: a terminal step taken from a GET — the
+        // request the framework itself arrives with, and one a link from anywhere can make.
+        endpoints.MapGet(SignInByLinkPath, (ILoginInteraction login) => login.SignInAsync(
+            new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", "user-1")], "test")),
+            AuthenticationMethods.Password));
+        endpoints.MapGet(CancelByLinkPath, (ILoginInteraction login) => login.DenyAsync());
+        endpoints.MapGet(ChallengeByLinkPath, (ILoginInteraction login) => login.ChallengeAsync("acme"));
 
         // Pages that do the thing the XML docs tell hosts not to do: call a terminal method and
         // then return a result of their own. The framework must not let the second one land.
@@ -264,8 +275,7 @@ public sealed class LoginInteractionTests : IDisposable
     {
         var response = await SignInAsync();
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented,
-            "the session is established; consent (#86) and code issuance (#87) are what remain");
+        response.ShouldHaveReachedConsent("the session is established and the flow moves on to consent");
         (await ReadSessionIdAsync()).Should().NotBeNullOrEmpty();
     }
 
@@ -276,8 +286,7 @@ public sealed class LoginInteractionTests : IDisposable
 
         var response = await AuthorizeAsync();
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented,
-            "the session answers for the user, so there is nothing to hand off");
+        response.ShouldHaveReachedConsent("the session answers for the user, so the flow moves straight to consent");
     }
 
     [Fact]
@@ -506,8 +515,7 @@ public sealed class LoginInteractionTests : IDisposable
         // refused deny, or a rejected cross-tab attempt would still have killed the live request.
         var signIn = await PostLoginAsync(InteractionIdFrom(secondTab), ("sub", "user-1"));
 
-        signIn.StatusCode.Should().Be(HttpStatusCode.NotImplemented,
-            "the live interaction is untouched by a deny that named a different one");
+        signIn.ShouldHaveReachedConsent("the live interaction is untouched by a deny that named a different one");
     }
 
     [Fact]
@@ -526,6 +534,43 @@ public sealed class LoginInteractionTests : IDisposable
         await cancel.Should().ThrowAsync<ZeeKayDaInteractionException>();
     }
 
+    // ── A terminal step comes only from a form post ───────────────────────────────────────────
+
+    [Theory]
+    [InlineData(SignInByLinkPath)]
+    [InlineData(CancelByLinkPath)]
+    [InlineData(ChallengeByLinkPath)]
+    public async Task A_terminal_step_taken_from_a_GET_is_refused_and_changes_nothing(string path)
+    {
+        // The framework's cookies are Lax, so they accompany a top-level GET from any site. A
+        // cancel wired to a link could be triggered by a page that never showed the user
+        // anything; a sign-in wired to one would complete on arrival. The refusal happens before
+        // anything is read, so the interaction survives for the form post that follows.
+        var handoff = await AuthorizeAsync();
+        var interactionId = InteractionIdFrom(handoff);
+
+        var byLink = async () => await _client.GetAsync(
+            QueryHelpers.AddQueryString(path, InteractionHandoff.InteractionIdParameter, interactionId),
+            TestContext.Current.CancellationToken);
+
+        await byLink.Should().ThrowAsync<InvalidOperationException>().WithMessage("*POST*");
+        (await PostLoginAsync(interactionId, ("sub", "user-1"))).ShouldHaveReachedConsent(
+            "the form post still completes the interaction the link could not touch");
+    }
+
+    [Theory]
+    [InlineData(SignInByLinkPath)]
+    [InlineData(CancelByLinkPath)]
+    [InlineData(ChallengeByLinkPath)]
+    public async Task A_terminal_step_taken_from_a_GET_is_refused_before_any_interaction_state_is_read(string path)
+    {
+        // No zkd_i and no interaction: had the service resolved the interaction first, the
+        // refusal would be the interaction one. Seeing the POST refusal proves the ordering.
+        var byLink = async () => await _client.GetAsync(path, TestContext.Current.CancellationToken);
+
+        await byLink.Should().ThrowAsync<InvalidOperationException>().WithMessage("*POST*");
+    }
+
     // ── A terminal method really is the last word ─────────────────────────────────────────────
 
     [Theory]
@@ -539,12 +584,9 @@ public sealed class LoginInteractionTests : IDisposable
         // code where nothing validates it. The page is wrong either way; what matters is that it
         // fails loudly the first time it runs instead of working and being unsafe.
         //
-        // The two cases do not carry equal weight today. The deny case is the proof: its response
-        // is a bodyless redirect, and it fails without the explicit commit. The sign-in case
-        // currently passes either way, because the pre-alpha 501 it ends in writes a body and so
-        // commits the response as a side effect. It is here as a guard for when consent and code
-        // issuance replace that 501 with a redirect and the accident stops holding — at which
-        // point this case starts failing if the commit is ever dropped.
+        // Both cases end in a bodyless redirect — to the client for the deny, to the consent
+        // page for the sign-in — so neither commits the response by accident, and both fail
+        // without the explicit commit.
         var handoff = await AuthorizeAsync();
 
         using var content = new FormUrlEncodedContent([]);
@@ -757,16 +799,6 @@ public sealed class LoginInteractionTests : IDisposable
             .And.Contain("error=login_required");
     }
 
-    [Fact]
-    public async Task prompt_none_with_a_session_continues_without_interacting()
-    {
-        await SignInAsync();
-
-        var query = ValidQuery();
-        query["prompt"] = "none";
-
-        (await AuthorizeAsync(query)).StatusCode.Should().Be(HttpStatusCode.NotImplemented);
-    }
 
     [Fact]
     public async Task prompt_login_re_authenticates_a_user_who_already_has_a_session()
@@ -795,6 +827,6 @@ public sealed class LoginInteractionTests : IDisposable
         if (expectsLogin)
             response.Headers.Location!.OriginalString.Should().StartWith($"{LoginPath}?");
         else
-            response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+            response.ShouldHaveReachedConsent();
     }
 }

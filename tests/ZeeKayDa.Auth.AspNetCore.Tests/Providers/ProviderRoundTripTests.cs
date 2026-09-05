@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
+using ZeeKayDa.Auth.AspNetCore.Tests.Interaction;
 using static ZeeKayDa.Auth.AspNetCore.Tests.Providers.ProviderTestHost;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests.Providers;
@@ -155,7 +156,7 @@ public sealed class ProviderRoundTripTests
 
         var resume = await RoundTripAsync(client);
 
-        resume.StatusCode.Should().Be(HttpStatusCode.NotImplemented, "consent and code issuance are not built");
+        resume.ShouldHaveReachedConsent("the promoted session moves the request on to consent");
         var session = (await ReadSessionAsync(client))!.Value;
         session.GetProperty("sub").GetString().Should().Be(ExternalSubject.Derive("acme", "acme", UpstreamSubject),
             "the upstream subject is never used verbatim");
@@ -212,7 +213,7 @@ public sealed class ProviderRoundTripTests
 
         callback.Headers.Location!.OriginalString.Should().Be($"/id/connect/resume?zkd_i={interactionId}");
         var resume = await client.GetAsync(callback.Headers.Location.OriginalString, Cancellation);
-        resume.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+        resume.ShouldHaveReachedConsent();
     }
 
     // ── Refusal at the provider ───────────────────────────────────────────────────────────────
@@ -281,7 +282,7 @@ public sealed class ProviderRoundTripTests
         callback.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         (await callback.Content.ReadAsStringAsync(Cancellation)).Should().Contain("server_error").And.NotContain("upstream outage");
         var signIn = await client.PostAsync(WithInteractionId(LoginPath, interactionId), Form(("sub", "user-1")), Cancellation);
-        signIn.StatusCode.Should().Be(HttpStatusCode.NotImplemented, "the interaction survived the failed callback");
+        signIn.ShouldHaveReachedConsent("the interaction survived the failed callback");
     }
 
     [Fact]
@@ -296,7 +297,7 @@ public sealed class ProviderRoundTripTests
 
         replay.StatusCode.Should().Be(HttpStatusCode.BadRequest, "the correlation cookie was consumed by the first callback");
         var resume = await client.GetAsync(callback.Headers.Location!.OriginalString, Cancellation);
-        resume.StatusCode.Should().Be(HttpStatusCode.NotImplemented, "the first callback's return still completes");
+        resume.ShouldHaveReachedConsent("the first callback's return still completes");
     }
 
     [Fact]
@@ -330,7 +331,7 @@ public sealed class ProviderRoundTripTests
         callback.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         (await callback.Content.ReadAsStringAsync(Cancellation)).Should().Contain("server_error").And.NotContain("secret-value");
         var signIn = await client.PostAsync(WithInteractionId(LoginPath, interactionId), Form(("sub", "user-1")), Cancellation);
-        signIn.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+        signIn.ShouldHaveReachedConsent();
     }
 
     [Fact]
@@ -397,7 +398,7 @@ public sealed class ProviderRoundTripTests
 
         var resume = await RoundTripAsync(client, "hand");
 
-        resume.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+        resume.ShouldHaveReachedConsent();
         (await ReadSessionAsync(client))!.Value.GetProperty("sub").GetString()
             .Should().Be(ExternalSubject.Derive("hand", HandWrittenIssuer, HandWrittenSubject));
     }
@@ -439,7 +440,7 @@ public sealed class ProviderRoundTripTests
 
         var resume = await RoundTripAsync(client, "hand");
 
-        resume.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+        resume.ShouldHaveReachedConsent();
     }
 
     [Fact]

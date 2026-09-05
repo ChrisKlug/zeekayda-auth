@@ -1094,6 +1094,50 @@ public sealed class ClientRegistrationValidatorTests
             .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.client_id.invalid");
     }
 
+    [Theory]
+    [InlineData("   ")]
+    [InlineData(" x")]
+    [InlineData("Example\tApp")]
+    [InlineData("Example\nApp")]
+    public void Validate_fails_with_display_name_invalid_code_for_a_blank_or_unprintable_DisplayName(string displayName)
+    {
+        // The name is rendered by the host's pages; a registration is the wrong place to carry
+        // something a page would have to defend itself against.
+        var validator = MakeValidator();
+        var client = MakeValidPublicClient() with { DisplayName = displayName };
+
+        var act = () => validator.Validate(client);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.display_name.invalid");
+    }
+
+    [Fact]
+    public void Validate_fails_with_display_name_invalid_code_if_DisplayName_is_too_long()
+    {
+        var validator = MakeValidator();
+        var client = MakeValidPublicClient() with { DisplayName = new string('a', 201) };
+
+        var act = () => validator.Validate(client);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.display_name.invalid");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("Example App")]
+    [InlineData("Ångström & Söhne — 顧客ポータル")]
+    public void Validate_accepts_an_absent_or_printable_DisplayName(string? displayName)
+    {
+        var validator = MakeValidator();
+        var client = MakeValidPublicClient() with { DisplayName = displayName };
+
+        var act = () => validator.Validate(client);
+
+        act.Should().NotThrow();
+    }
+
     [Fact]
     public void Validate_fails_with_client_id_invalid_code_if_ClientId_is_too_long()
     {

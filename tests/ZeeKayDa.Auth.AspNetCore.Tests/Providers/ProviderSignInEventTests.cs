@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
+using ZeeKayDa.Auth.AspNetCore.Tests.Interaction;
 using static ZeeKayDa.Auth.AspNetCore.Tests.Providers.ProviderTestHost;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests.Providers;
@@ -139,7 +140,7 @@ public sealed class ProviderSignInEventTests
 
         var (_, resume) = await ResumeAsync(client);
 
-        resume.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+        resume.ShouldHaveReachedConsent();
         var session = (await ReadJsonAsync(client, "/test/session"))!.Value;
         session.GetProperty("sub").GetString().Should().Be(ExternalSubject.Derive("acme", "acme", UpstreamSubject));
     }
@@ -152,7 +153,7 @@ public sealed class ProviderSignInEventTests
 
         var (_, resume) = await ResumeAsync(client);
 
-        resume.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+        resume.ShouldHaveReachedConsent();
         (await ReadJsonAsync(client, "/test/session")).Should().NotBeNull();
     }
 
@@ -213,7 +214,7 @@ public sealed class ProviderSignInEventTests
 
         var signIn = await client.PostAsync(collectMore, Form(), Cancellation);
 
-        signIn.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+        signIn.ShouldHaveReachedConsent();
         (await ReadJsonAsync(client, "/test/session"))!.Value.GetProperty("sub").GetString().Should().Be("mapped-" + UpstreamSubject);
         signIn.Headers.GetValues("Set-Cookie").Should().Contain(cookie =>
             cookie.StartsWith("zkd.pending=") && cookie.Contains("expires=Thu, 01 Jan 1970"));
@@ -313,7 +314,7 @@ public sealed class ProviderSignInEventTests
         resume.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         (await resume.Content.ReadAsStringAsync(Cancellation)).Should().Contain("server_error").And.NotContain("secret-dsn");
         var signIn = await client.PostAsync(WithInteractionId(LoginPath, interactionId), Form(("sub", "user-1")), Cancellation);
-        signIn.StatusCode.Should().Be(HttpStatusCode.NotImplemented, "the interaction survived the failed handler");
+        signIn.ShouldHaveReachedConsent("the interaction survived the failed handler");
     }
 
     [Fact]
@@ -328,7 +329,7 @@ public sealed class ProviderSignInEventTests
 
         var (_, resume) = await ResumeAsync(client);
 
-        resume.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+        resume.ShouldHaveReachedConsent();
         resume.Headers.GetValues("Set-Cookie").Should().Contain(cookie =>
             cookie.StartsWith("zkd.pending=") && cookie.Contains("expires=Thu, 01 Jan 1970"));
     }

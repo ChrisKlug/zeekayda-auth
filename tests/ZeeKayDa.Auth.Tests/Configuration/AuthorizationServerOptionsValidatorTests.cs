@@ -1488,6 +1488,36 @@ public sealed class AuthorizationServerOptionsValidatorTests
         result.FailureMessage.Should().Contain("Interaction.LoginPath");
     }
 
+    [Theory]
+    [InlineData("account/consent")]
+    [InlineData("//evil.example.com/consent")]
+    [InlineData("/\\evil.example.com/consent")]
+    [InlineData("/account/consent?x=1")]
+    [InlineData("/account/consent#frag")]
+    public void Validate_rejects_malformed_interaction_ConsentPath(string consentPath)
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            AuthorizationEndpoint = { Interaction = { ConsentPath = consentPath } },
+        });
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("Interaction.ConsentPath");
+    }
+
+    [Fact]
+    public void Validate_accepts_an_absolute_path_ConsentPath()
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            AuthorizationEndpoint = { Interaction = { ConsentPath = "/account/consent" } },
+        });
+
+        result.Succeeded.Should().BeTrue();
+    }
+
     [Fact]
     public void Validate_accepts_an_absolute_path_LoginPath()
     {
