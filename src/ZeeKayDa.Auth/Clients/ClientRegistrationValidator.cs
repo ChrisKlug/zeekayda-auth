@@ -63,6 +63,7 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
         ValidateRedirectUriSet(client.ClientId, client.RedirectUris, "RedirectUris", failures);
         ValidateRedirectUriSet(client.ClientId, client.PostLogoutRedirectUris, "PostLogoutRedirectUris", failures);
         ValidateClientId(client, failures);
+        ValidateDisplayName(client, failures);
         ValidateIsPublicTrinity(client, failures);
         ValidateAllowedTokenEndpointAuthMethods(client, failures);
         ValidateEmptySecretProbe(client, failures);
@@ -198,6 +199,27 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
                 "client.client_id.invalid",
                 $"Client has an invalid ClientId: '{clientId}'. " +
                 "ClientId must match [A-Za-z0-9_\\-.]+, be non-empty, and be at most 200 characters."));
+        }
+    }
+
+    /// <summary>
+    /// A display name is shown to users on the host's pages, so it is either absent or a
+    /// printable, bounded string — never something a page has to defend itself against.
+    /// </summary>
+    private static void ValidateDisplayName(
+        IClientRegistration client,
+        List<ZeeKayDaConfigurationFailure> failures)
+    {
+        var displayName = client.DisplayName;
+        if (displayName is null)
+            return;
+
+        if (string.IsNullOrWhiteSpace(displayName) || displayName.Length > 200 || displayName.Any(char.IsControl))
+        {
+            failures.Add(new ZeeKayDaConfigurationFailure(
+                "client.display_name.invalid",
+                $"Client '{client.ClientId}' has an invalid DisplayName. " +
+                "DisplayName must be null or a non-blank string of at most 200 characters with no control characters."));
         }
     }
 

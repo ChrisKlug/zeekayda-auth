@@ -106,8 +106,9 @@ internal sealed class ConsentInteraction : IConsentInteraction
     /// </summary>
     /// <remarks>
     /// The registration is read again here rather than remembered from the handoff. A client
-    /// removed or invalidated since then has no page worth rendering and no redirect URI anyone
-    /// vouches for any more, so the request ends where it stands.
+    /// removed or invalidated since then, or one that no longer lists the request's redirect URI,
+    /// has no page worth rendering and no redirect URI anyone vouches for any more, so the
+    /// request ends where it stands.
     /// </remarks>
     private async ValueTask<(AuthorizationRequestContext RequestContext, IClientMetadata Client)> ResolveAsync(
         HttpContext context,
@@ -125,8 +126,9 @@ internal sealed class ConsentInteraction : IConsentInteraction
 
         var client = await _flow.ResolveClientAsync(context, requestContext, cancellationToken).ConfigureAwait(false)
             ?? throw new ZeeKayDaInteractionException(
-                "The client that sent this authorization request is no longer registered, so there is " +
-                "nothing to consent to. Start the authorization request again.");
+                "The client that sent this authorization request is no longer registered, or no longer " +
+                "lists its redirect URI, so there is nothing to consent to. Start the authorization " +
+                "request again.");
 
         return (requestContext, client);
     }

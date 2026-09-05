@@ -59,7 +59,7 @@ internal sealed class LoginInteraction : ILoginInteraction
                 + "AuthenticationMethods.Password, or pass none to omit the amr claim.",
                 nameof(authenticationMethods));
 
-        var context = RequireHttpContext();
+        var context = RequireStateChangingRequest();
         var requestContext = await _flow.ResolveAddressedAsync(context).ConfigureAwait(false);
 
         // The host's principal is what the session holds; a provider that parked one for this
@@ -76,7 +76,7 @@ internal sealed class LoginInteraction : ILoginInteraction
     /// </summary>
     public async Task DenyAsync()
     {
-        var context = RequireHttpContext();
+        var context = RequireStateChangingRequest();
         var requestContext = await _flow.ResolveAddressedAsync(context).ConfigureAwait(false);
 
         await _outcomes.DenyAsync(context, requestContext, CancelledAtSignIn).ConfigureAwait(false);
@@ -87,7 +87,7 @@ internal sealed class LoginInteraction : ILoginInteraction
     {
         ArgumentException.ThrowIfNullOrEmpty(provider);
 
-        var context = RequireHttpContext();
+        var context = RequireStateChangingRequest();
         var requestContext = await _flow.ResolveAddressedAsync(context).ConfigureAwait(false);
 
         // The identifier selects from the configured set; it never names a target. The value is
@@ -120,6 +120,27 @@ internal sealed class LoginInteraction : ILoginInteraction
         _httpContextAccessor.HttpContext ?? throw new InvalidOperationException(
             "ILoginInteraction requires an active HTTP request. Resolve it from request services " +
             "inside the login page, not from a background service.");
+
+    /// <summary>
+    /// A terminal step is taken only from a form post. The framework arrives at the login page
+    /// with a GET, and the framework's cookies accompany a top-level GET from anywhere, so a
+    /// cancel or a sign-in wired to a link would be triggerable by a page that never showed the
+    /// user anything. Checked before any state is read, so a wrongly wired page changes nothing.
+    /// </summary>
+    private HttpContext RequireStateChangingRequest()
+    {
+        var context = RequireHttpContext();
+
+        if (!HttpMethods.IsPost(context.Request.Method))
+        {
+            throw new InvalidOperationException(
+                "A sign-in, cancellation or provider choice must come from a POST — the login form's " +
+                "submission — not from the request that renders the page. Wire SignInAsync, DenyAsync " +
+                "and ChallengeAsync to the form's post handlers.");
+        }
+
+        return context;
+    }
 
     /// <inheritdoc/>
     public bool LocalLoginEnabled => _options.Value.AuthorizationEndpoint.Interaction.SupportsLocalSignIn;

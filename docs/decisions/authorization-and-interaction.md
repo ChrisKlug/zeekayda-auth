@@ -60,9 +60,10 @@ issued code for a request the user never started — a malicious registered clie
 victim to a valid request of its own — so no default skips it. `IClientMetadata.RequireConsent`
 (default `true`, a default interface member so an implementation that never heard of it keeps it)
 is the opt-out, for an operator's own first-party applications and nothing else; a registration
-that sets it false accepts that attack unmitigated for that client. Remembered grants are unbuilt:
-every request prompts, `prompt=consent` changes nothing, and `prompt=none` for a client requiring
-consent answers `consent_required` — not yet, rather than a reversal of the paragraph above.
+that sets it false accepts that attack unmitigated for that client. `prompt=consent` sends even an
+opt-out client to the page, and answers `consent_required` when the host has none. Remembered
+grants are unbuilt: every request prompts, and `prompt=none` for a client requiring consent
+answers `consent_required` — not yet, rather than a reversal of the paragraph above.
 
 **A consent decision is recorded by the session it was asked of.** Every `IConsentInteraction`
 method is `zkd_i`-bound on the login service's terms and additionally refuses when the session
@@ -70,8 +71,14 @@ cookie no longer names the session and subject that authenticated the request �
 sign-in as someone else, between the handoff and the answer. A grant can only narrow the request:
 it is re-intersected with the effective scopes, and one that drops `openid` is a refusal to be
 identified, answered `access_denied` as a deny is. The client is resolved again at every step — the
-post-authentication dispatch and each consent call — so a registration removed mid-flow ends the
-request where it stands, never at a redirect URI that no longer belongs to anyone.
+post-authentication dispatch and each consent call — and must still list the request's redirect
+URI, so a registration removed or narrowed mid-flow ends the request where it stands, never at a
+redirect URI that no longer belongs to anyone.
+
+**A terminal page-service method accepts only a `POST`, checked before any state is read.** The
+framework arrives at a host page with a `GET`, and its `Lax` cookies accompany a top-level `GET`
+from anywhere, so a decision wired to the rendering request would be taken on arrival, and a
+cancel wired to a link could be triggered by a page that never showed the user anything.
 
 **A missing `ConsentPath` is a request-time `server_error` with an error log, not a startup
 warning.** Whether the page is needed depends on client data the framework does not enumerate at

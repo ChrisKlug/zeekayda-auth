@@ -363,18 +363,41 @@ public sealed class ConsentInteractionTests : IDisposable
     {
         // The redirect URI was authenticated against a registration that no longer answers, so
         // the request ends at the local error page rather than being sent there.
-        var repository = new RemovableClientRepository(ConsentingRegistration());
+        var repository = new MutableClientRepository(ConsentingRegistration());
         using var factory = NewFactory(ConsentPath, repository);
         using var client = NewClient(factory);
         var handoff = await AuthorizeAsync(client);
 
-        repository.Removed = true;
+        repository.Current = null;
         var signIn = await PostLoginAsync(client, InteractionIdFrom(handoff));
 
         signIn.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         signIn.Headers.Location.Should().BeNull();
         (await signIn.Content.ReadAsStringAsync(Cancellation)).Should().Contain("invalid_request");
     }
+
+    [Fact]
+    public async Task A_request_whose_redirect_uri_was_removed_from_the_registration_renders_locally()
+    {
+        // The operator removed the URI the request was accepted with while keeping the client.
+        // Nothing — an error included — is sent to a URI the registration no longer vouches for.
+        var repository = new MutableClientRepository(ConsentingRegistration());
+        using var factory = NewFactory(ConsentPath, repository);
+        using var client = NewClient(factory);
+        var handoff = await AuthorizeAsync(client);
+
+        repository.Current = WithOtherRedirectUri(ConsentingRegistration());
+        var signIn = await PostLoginAsync(client, InteractionIdFrom(handoff));
+
+        signIn.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        signIn.Headers.Location.Should().BeNull();
+    }
+
+    private static ClientRegistration WithOtherRedirectUri(ClientRegistration registration) =>
+        registration with
+        {
+            RedirectUris = new HashSet<string>(StringComparer.Ordinal) { "https://test.example.com/elsewhere" },
+        };
 
     // ── What the page is told to ask ──────────────────────────────────────────────────────────
 
@@ -412,17 +435,44 @@ public sealed class ConsentInteractionTests : IDisposable
         // The registration is read again at every consent call. A client removed since the
         // handoff has no page worth rendering and no redirect URI anyone vouches for any more, so
         // nothing is rendered, granted, or sent there.
-        var repository = new RemovableClientRepository(ConsentingRegistration());
+        var repository = new MutableClientRepository(ConsentingRegistration());
         using var factory = NewFactory(ConsentPath, repository);
         using var client = NewClient(factory);
         var handoff = await AuthorizeAsync(client);
         var signIn = await PostLoginAsync(client, InteractionIdFrom(handoff));
         signIn.ShouldHaveReachedConsent();
-        var url = WithInteractionId(ConsentPath, InteractionIdFrom(signIn));
+
+        repository.Current = null;
+
+        await EveryConsentOperationIsRefusedAsync(client, InteractionIdFrom(signIn));
+    }
+
+    [Fact]
+    public async Task Every_consent_operation_for_a_client_that_dropped_the_redirect_uri_is_refused()
+    {
+        // The client still exists, but the URI the request was accepted with is no longer its. A
+        // deny sent there would hand the authorization response to whoever holds it now.
+        var repository = new MutableClientRepository(ConsentingRegistration());
+        using var factory = NewFactory(ConsentPath, repository);
+        using var client = NewClient(factory);
+        var handoff = await AuthorizeAsync(client);
+        var signIn = await PostLoginAsync(client, InteractionIdFrom(handoff));
+        signIn.ShouldHaveReachedConsent();
+
+        repository.Current = WithOtherRedirectUri(ConsentingRegistration());
+
+        await EveryConsentOperationIsRefusedAsync(client, InteractionIdFrom(signIn));
+    }
+
+    /// <summary>
+    /// The read, the grant and the deny all throw, nothing is redirected anywhere, and the
+    /// interaction is left exactly where it was.
+    /// </summary>
+    private static async Task EveryConsentOperationIsRefusedAsync(HttpClient client, string interactionId)
+    {
+        var url = WithInteractionId(ConsentPath, interactionId);
         using var grantForm = Form(("scope", "openid"));
         using var denyForm = Form(("action", "deny"));
-
-        repository.Removed = true;
 
         var read = async () => await client.GetAsync(url, Cancellation);
         await read.Should().ThrowAsync<ZeeKayDaInteractionException>();
@@ -430,6 +480,9 @@ public sealed class ConsentInteractionTests : IDisposable
         await grant.Should().ThrowAsync<ZeeKayDaInteractionException>();
         var deny = async () => await client.PostAsync(url, denyForm, Cancellation);
         await deny.Should().ThrowAsync<ZeeKayDaInteractionException>();
+
+        var probe = await client.GetAsync("/test/interaction", Cancellation);
+        probe.StatusCode.Should().Be(HttpStatusCode.OK, "a refused call leaves the interaction where it was");
     }
 
     [Fact]
@@ -486,6 +539,22 @@ public sealed class ConsentInteractionTests : IDisposable
         interaction.GetProperty("grantedScopes").EnumerateArray().Select(scope => scope.GetString())
             .Should().Equal("openid", "profile");
         interaction.GetProperty("consentedAt").GetDateTimeOffset().Should().Be(Now);
+    }
+
+    [Fact]
+    public async Task A_re_sign_in_on_the_same_interaction_discards_an_earlier_grant()
+    {
+        // The login page stays answerable after the consent handoff, so a second user can sign
+        // in on the same interaction. The first user's decision must not ride along into theirs.
+        var signIn = await ReachConsentAsync(sub: "user-1");
+        var interactionId = InteractionIdFrom(signIn);
+        await GrantAsync(interactionId, "openid");
+        (await ReadInteractionAsync())!.Value.GetProperty("grantedScopes").ValueKind.Should().Be(JsonValueKind.Array);
+
+        var reSignIn = await PostLoginAsync(interactionId, sub: "user-2");
+
+        reSignIn.ShouldHaveReachedConsent("the new user is asked afresh");
+        (await ReadInteractionAsync())!.Value.GetProperty("grantedScopes").ValueKind.Should().Be(JsonValueKind.Null);
     }
 
     [Fact]
@@ -758,6 +827,41 @@ public sealed class ConsentInteractionTests : IDisposable
     }
 
     [Fact]
+    public async Task prompt_consent_sends_even_an_opt_out_client_to_the_consent_page()
+    {
+        // The server should prompt when asked to (OIDC Core §3.1.2.1), whatever the registration
+        // says about the ordinary case.
+        var query = ValidQuery(TrustedClient, "openid profile");
+        query["prompt"] = "consent";
+        var handoff = await AuthorizeAsync(query);
+
+        var signIn = await PostLoginAsync(InteractionIdFrom(handoff));
+
+        signIn.ShouldHaveReachedConsent();
+        var page = await ReadConsentPageAsync(InteractionIdFrom(signIn));
+        page.GetProperty("clientId").GetString().Should().Be(TrustedClient);
+    }
+
+    [Fact]
+    public async Task prompt_consent_for_an_opt_out_client_on_a_host_with_no_consent_page_answers_consent_required()
+    {
+        // A host whose clients all opt out is correctly configured without a page; a client that
+        // asks for one anyway is told it cannot be obtained, and nothing is logged as a gap.
+        using var factory = NewFactory(consentPath: null);
+        using var client = NewClient(factory);
+        var query = ValidQuery(TrustedClient, "openid profile");
+        query["prompt"] = "consent";
+        var handoff = await AuthorizeAsync(client, query);
+
+        var signIn = await PostLoginAsync(client, InteractionIdFrom(handoff));
+
+        signIn.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        DestinationOf(signIn).Should().Be(RegisteredRedirect);
+        RedirectQueryOf(signIn)["error"].Should().Equal(["consent_required"]);
+        _logs.Entries.Should().NotContain(entry => entry.Level == LogLevel.Error);
+    }
+
+    [Fact]
     public async Task prompt_none_for_a_client_that_does_not_require_consent_continues_without_interacting()
     {
         await ReachConsentAsync();
@@ -768,16 +872,14 @@ public sealed class ConsentInteractionTests : IDisposable
         (await AuthorizeAsync(query)).StatusCode.Should().Be(HttpStatusCode.NotImplemented);
     }
 
-    /// <summary>A repository whose clients can vanish mid-flow.</summary>
-    private sealed class RemovableClientRepository(params IClientRegistration[] clients) : IClientRepository
+    /// <summary>A repository holding one registration an operator can change or remove mid-flow.</summary>
+    private sealed class MutableClientRepository(IClientRegistration initial) : IClientRepository
     {
-        private readonly Dictionary<string, IClientRegistration> _clients =
-            clients.ToDictionary(client => client.ClientId, StringComparer.Ordinal);
-
-        public bool Removed { get; set; }
+        /// <summary>The registration as it is now; <see langword="null"/> once removed.</summary>
+        public IClientRegistration? Current { get; set; } = initial;
 
         public ValueTask<IClientRegistration?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default) =>
-            new(Removed ? null : _clients.GetValueOrDefault(clientId));
+            new(Current is { } current && string.Equals(current.ClientId, clientId, StringComparison.Ordinal) ? current : null);
     }
 
     /// <summary>Captures every log entry the host writes, after the framework's redaction.</summary>

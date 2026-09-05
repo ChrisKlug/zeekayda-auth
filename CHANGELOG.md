@@ -25,13 +25,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   Consent is required for every client by default. The new `IClientMetadata.RequireConsent`
   (default `true`, a default interface member: requiring consent is what a registration means
   unless it says otherwise) turns it off per registration, for an operator's own applications; a
-  client with it off goes straight on from sign-in. The consent page's response is stamped
-  unframeable and uncacheable by `GetRequestAsync`, and every consent call reads the registration
-  again, refusing for a client removed since the handoff. Remembered grants are not built: every request prompts, and `prompt=none` for a
+  client with it off goes straight on from sign-in unless its request says `prompt=consent`,
+  which sends it to the page too. The consent page's response is stamped unframeable and
+  uncacheable by `GetRequestAsync`, and every consent call reads the registration again,
+  refusing for a client removed since the handoff or one that no longer lists the request's
+  redirect URI. Remembered grants are not built: every request prompts, and `prompt=none` for a
   client that requires consent answers `consent_required`. A host without a consent page whose
   client requires one answers the client `server_error` and logs an error naming the option;
   there is no startup warning, since whether the page is needed depends on the registered
-  clients. Code issuance is still unbuilt, so a granted request answers `501`.
+  clients. The login page's terminal methods, like the consent page's, accept only a `POST`,
+  checked before anything is read. A registration's `DisplayName` is validated: null or a
+  non-blank string of at most 200 characters with no control characters. Code issuance is still
+  unbuilt, so a granted request answers `501`.
 
 - **The external provider round trip: challenge, callback, resume, and the host's say in it** (#85)
 

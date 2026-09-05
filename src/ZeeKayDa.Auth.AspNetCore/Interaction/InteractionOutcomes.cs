@@ -146,6 +146,11 @@ internal sealed class InteractionOutcomes
             AuthTime = state.AuthTime,
             Amr = state.Amr,
             ProviderScheme = providerScheme ?? pending?.Provider,
+
+            // A decision recorded by whoever signed in earlier on this interaction is theirs, not
+            // this sign-in's: the consent page asks again.
+            GrantedScopes = null,
+            ConsentedAt = null,
         };
 
         // Only unpersistable for a context already near the size ceiling before a few small
@@ -166,9 +171,11 @@ internal sealed class InteractionOutcomes
     /// <remarks>
     /// No remembered grant exists yet, so a client that requires consent is asked every time,
     /// and <c>prompt=none</c> — a promise to show the user nothing — is answered
-    /// <c>consent_required</c> for it. The client is resolved here, at the point of use, so a
-    /// registration that vanished or stopped validating since the request was accepted ends the
-    /// request rather than being remembered as it was.
+    /// <c>consent_required</c> for it. A client that opted out is still asked when its request
+    /// says <c>prompt=consent</c>: the server should prompt when asked to, and must answer
+    /// <c>consent_required</c> when it cannot. The client is resolved here, at the point of use,
+    /// so a registration that vanished, stopped validating or dropped the request's redirect URI
+    /// since the request was accepted ends the request rather than being remembered as it was.
     /// </remarks>
     public async Task<IResult> ContinueAsync(HttpContext context, AuthorizationRequestContext requestContext)
     {
@@ -184,10 +191,11 @@ internal sealed class InteractionOutcomes
             return _localError.Render(
                 context,
                 AuthorizeRequestErrors.InvalidRequest,
-                "The client that sent the authorization request is no longer registered.");
+                "The client that sent the authorization request is no longer registered, or no longer lists its redirect URI.");
         }
 
-        if (!client.RequireConsent)
+        var asked = requestContext.Prompts.Contains(PromptValue.Consent);
+        if (!client.RequireConsent && !asked)
             return PreAlphaNotImplementedResult.Result;
 
         if (requestContext.Prompts.Contains(PromptValue.None))
@@ -201,6 +209,17 @@ internal sealed class InteractionOutcomes
 
         if (_options.Value.AuthorizationEndpoint.Interaction.ConsentPath is not { } consentPath)
         {
+            if (!client.RequireConsent)
+            {
+                // The client asked for a page this host deliberately does not have for its
+                // opt-out clients: a refusal the client can act on, not a configuration gap.
+                return ClientError(
+                    context,
+                    requestContext,
+                    AuthorizeRequestErrors.ConsentRequired,
+                    "The request specified prompt=consent but the authorization server has no consent page.");
+            }
+
             // A configuration gap, reported where a developer is looking — the client's error
             // page and the server log — since the redirect target is authenticated by now.
             _logger.LogError(

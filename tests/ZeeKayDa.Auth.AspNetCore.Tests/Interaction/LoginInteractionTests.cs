@@ -33,6 +33,9 @@ public sealed class LoginInteractionTests : IDisposable
     private const string CancelThenReturnPath = "/account/login/cancel-then-return";
     private const string HijackTarget = "https://attacker.example.net/collect";
     private const string CancelPath = "/account/login/cancel";
+    private const string SignInByLinkPath = "/account/login/sign-in-by-link";
+    private const string CancelByLinkPath = "/account/login/cancel-by-link";
+    private const string ChallengeByLinkPath = "/account/login/challenge-by-link";
 
     private static readonly DateTimeOffset Now = new(2026, 8, 29, 12, 0, 0, TimeSpan.Zero);
 
@@ -94,6 +97,14 @@ public sealed class LoginInteractionTests : IDisposable
 
         // The Cancel button, exactly as the issue's sample host writes it.
         endpoints.MapPost(CancelPath, (ILoginInteraction login) => login.DenyAsync());
+
+        // Pages wired the way the XML docs say not to: a terminal step taken from a GET — the
+        // request the framework itself arrives with, and one a link from anywhere can make.
+        endpoints.MapGet(SignInByLinkPath, (ILoginInteraction login) => login.SignInAsync(
+            new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", "user-1")], "test")),
+            AuthenticationMethods.Password));
+        endpoints.MapGet(CancelByLinkPath, (ILoginInteraction login) => login.DenyAsync());
+        endpoints.MapGet(ChallengeByLinkPath, (ILoginInteraction login) => login.ChallengeAsync("acme"));
 
         // Pages that do the thing the XML docs tell hosts not to do: call a terminal method and
         // then return a result of their own. The framework must not let the second one land.
@@ -521,6 +532,43 @@ public sealed class LoginInteractionTests : IDisposable
         var cancel = async () => await PostCancelAsync(interactionId);
 
         await cancel.Should().ThrowAsync<ZeeKayDaInteractionException>();
+    }
+
+    // ── A terminal step comes only from a form post ───────────────────────────────────────────
+
+    [Theory]
+    [InlineData(SignInByLinkPath)]
+    [InlineData(CancelByLinkPath)]
+    [InlineData(ChallengeByLinkPath)]
+    public async Task A_terminal_step_taken_from_a_GET_is_refused_and_changes_nothing(string path)
+    {
+        // The framework's cookies are Lax, so they accompany a top-level GET from any site. A
+        // cancel wired to a link could be triggered by a page that never showed the user
+        // anything; a sign-in wired to one would complete on arrival. The refusal happens before
+        // anything is read, so the interaction survives for the form post that follows.
+        var handoff = await AuthorizeAsync();
+        var interactionId = InteractionIdFrom(handoff);
+
+        var byLink = async () => await _client.GetAsync(
+            QueryHelpers.AddQueryString(path, InteractionHandoff.InteractionIdParameter, interactionId),
+            TestContext.Current.CancellationToken);
+
+        await byLink.Should().ThrowAsync<InvalidOperationException>().WithMessage("*POST*");
+        (await PostLoginAsync(interactionId, ("sub", "user-1"))).ShouldHaveReachedConsent(
+            "the form post still completes the interaction the link could not touch");
+    }
+
+    [Theory]
+    [InlineData(SignInByLinkPath)]
+    [InlineData(CancelByLinkPath)]
+    [InlineData(ChallengeByLinkPath)]
+    public async Task A_terminal_step_taken_from_a_GET_is_refused_before_any_interaction_state_is_read(string path)
+    {
+        // No zkd_i and no interaction: had the service resolved the interaction first, the
+        // refusal would be the interaction one. Seeing the POST refusal proves the ordering.
+        var byLink = async () => await _client.GetAsync(path, TestContext.Current.CancellationToken);
+
+        await byLink.Should().ThrowAsync<InvalidOperationException>().WithMessage("*POST*");
     }
 
     // ── A terminal method really is the last word ─────────────────────────────────────────────

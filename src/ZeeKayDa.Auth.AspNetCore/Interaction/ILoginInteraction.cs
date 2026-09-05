@@ -75,6 +75,10 @@ public interface ILoginInteraction
     /// <exception cref="ArgumentException">
     /// An entry in <paramref name="authenticationMethods"/> is null or blank.
     /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// The request is not a <c>POST</c> — only the login form's submission may sign in, and that
+    /// is checked before anything is read — or there is no active HTTP request.
+    /// </exception>
     Task SignInAsync(ClaimsPrincipal principal, params string[] authenticationMethods);
 
     /// <summary>
@@ -98,9 +102,9 @@ public interface ILoginInteraction
     /// <c>access_denied</c>.
     /// </para>
     /// <para>
-    /// Reach this only from a state-changing request — a form post, not a link. A cancel wired to
-    /// a <c>GET</c> anchor is triggerable cross-site by anyone who learns the interaction
-    /// identifier, and ends the user's in-flight sign-in.
+    /// Only a <c>POST</c> — the form's submission — is accepted, and that is checked before
+    /// anything is read. A cancel wired to a <c>GET</c> anchor would be triggerable cross-site by
+    /// anyone who learned the interaction identifier, ending the user's in-flight sign-in.
     /// </para>
     /// </remarks>
     /// <exception cref="ZeeKayDaInteractionException">
@@ -108,7 +112,8 @@ public interface ILoginInteraction
     /// cookie is absent or expired, or the two do not name the same interaction.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// There is no active HTTP request — the service was resolved outside one.
+    /// The request is not a <c>POST</c>, or there is no active HTTP request — the service was
+    /// resolved outside one.
     /// </exception>
     Task DenyAsync();
 
@@ -130,7 +135,8 @@ public interface ILoginInteraction
     /// The page names no scheme, callback path or return URL. The framework activates the
     /// provider's handler, serves its callback, and brings the user back to establish the SSO
     /// session — through <c>ProviderOptions.OnProviderSignIn</c> first, when the host registered
-    /// one. Reach this only from a state-changing request — a form post, not a link.
+    /// one. Only a <c>POST</c> — the form's submission — is accepted, and that is checked before
+    /// anything is read.
     /// </para>
     /// </remarks>
     /// <exception cref="ZeeKayDaInteractionException">
@@ -142,7 +148,8 @@ public interface ILoginInteraction
     /// <paramref name="provider"/> is null or empty.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// There is no active HTTP request — the service was resolved outside one.
+    /// The request is not a <c>POST</c>, or there is no active HTTP request — the service was
+    /// resolved outside one.
     /// </exception>
     Task ChallengeAsync(string provider);
 

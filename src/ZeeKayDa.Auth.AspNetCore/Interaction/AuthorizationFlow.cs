@@ -136,8 +136,10 @@ internal sealed class AuthorizationFlow
 
     /// <summary>
     /// The validated registration of the client that sent the request, or <see langword="null"/>
-    /// when it is no longer registered or no longer validates — resolved at the point of use, as
-    /// every endpoint resolves clients, never remembered from when the request was accepted.
+    /// when it is no longer registered, no longer validates, or no longer lists the redirect URI
+    /// the request was accepted with — resolved at the point of use, as every endpoint resolves
+    /// clients, never remembered from when the request was accepted. An operator who removes a
+    /// redirect URI from a live registration means nothing more to be sent there, error included.
     /// </summary>
     /// <remarks>
     /// The resolver comes from the request's services rather than this singleton's constructor:
@@ -156,8 +158,12 @@ internal sealed class AuthorizationFlow
         ArgumentNullException.ThrowIfNull(requestContext);
 
         var clients = context.RequestServices.GetRequiredService<ValidatedClientResolver>();
+        var client = await clients.FindByClientIdAsync(requestContext.ClientId, cancellationToken).ConfigureAwait(false);
 
-        return await clients.FindByClientIdAsync(requestContext.ClientId, cancellationToken).ConfigureAwait(false);
+        return client is not null
+            && AuthorizeRedirectUriMatcher.TryMatch(requestContext.RedirectUri, client.RedirectUris, out _)
+            ? client
+            : null;
     }
 
     /// <summary>
