@@ -1262,3 +1262,45 @@ login dispatch rules. The round trip — the challenge, the callback endpoints, 
 - Residual: a scheme added to the host's scheme provider after startup under a provider name, or a
   replaced options monitor, is in-process code and outside the threat model; the guarantee is checked
   at startup only, by `A_provider_name_the_host_also_registered_as_a_scheme_fails_startup`.
+
+## 2026-09-05 — the external provider round trip (#85, PR B, commit `6ed3a3a`)
+
+Scoped to the challenge, the per-provider callback endpoints, `/connect/resume`, `zkd.external`,
+`zkd.pending` and `OnProviderSignIn`. Consent and code issuance were not built; a completed sign-in
+still answered `501`. One security round plus two fix-diff verifications; the Copilot security lens
+ran alongside.
+
+- No handler is trusted for provider identity or interaction binding: resume refuses a ticket
+  naming another interaction, a route the challenge was not issued to, a disagreeing scheme stamp,
+  or no properties at all. Closed — `Resume_naming_an_interaction_the_ticket_was_not_issued_for_is_refused`,
+  `A_callback_carried_to_another_providers_route_is_refused_at_resume`,
+  `A_handler_that_stamps_another_scheme_into_its_ticket_is_refused_at_resume`,
+  `A_hand_written_handler_that_drops_its_properties_is_refused_at_resume`.
+- The external cookie accepts a sign-in only from a callback route and is consumed once; a callback
+  that signed in and then failed leaves nothing to resume. Closed — `A_host_page_cannot_sign_into_the_external_scheme`,
+  `Resume_consumes_the_external_ticket`, `A_handler_that_signs_in_and_then_fails_leaves_no_ticket_to_resume`,
+  `A_replayed_callback_neither_completes_nor_cancels_the_live_request`.
+- Only a refusal by the user at the provider reaches the client, and only for the interaction the
+  browser carries; every other failure renders locally and leaves the interaction alive. Closed —
+  `A_refusal_by_the_user_at_the_provider_reaches_the_client_as_access_denied`,
+  `A_refusal_without_the_interaction_cookie_renders_locally_and_reaches_no_client`,
+  `A_provider_outage_renders_locally_and_the_user_can_still_sign_in`,
+  `A_handler_that_throws_renders_locally_and_leaves_the_interaction_alive`.
+- The session subject is derived from provider, issuer and upstream subject, and a subject without
+  an issuer is refused. Closed — `Two_providers_returning_the_same_upstream_subject_get_different_session_subjects`,
+  `A_subject_claim_without_an_issuer_is_refused_at_promotion`.
+- A parked principal is bound to its interaction, consumed on every exit, and handed to the host as
+  a copy. Closed — `A_parked_principal_bound_to_another_interaction_is_refused`,
+  `Automatic_promotion_consumes_a_parked_principal_bound_to_the_interaction`,
+  `DenyAsync_consumes_a_parked_principal_bound_to_the_interaction`,
+  `A_handler_that_changes_the_principal_it_was_handed_does_not_change_what_is_promoted`.
+- The refusal channel stays framework-owned and a provider route cannot be claimed by a host scheme.
+  Closed — `A_host_set_access_denied_event_inside_the_window_fails_startup`,
+  `An_events_type_on_a_provider_fails_startup`, `A_host_remote_scheme_whose_callback_path_is_a_provider_route_fails_startup`.
+- Residual, accepted by the maintainer: the anonymous callback carries no framework rate limiter,
+  so a manufactured code costs one outbound token exchange; the route group's `RequireRateLimiting()`
+  is the host's control — no test.
+- Residual: a host `OnRemoteFailure` runs after the framework's refusal mark and may hand the
+  provider's message to its own page; host code, documented rather than pinned — no test.
+- Residual: the immediate seeding variant stands, unchanged from the local-leg entry; consent (#86)
+  owns it.
