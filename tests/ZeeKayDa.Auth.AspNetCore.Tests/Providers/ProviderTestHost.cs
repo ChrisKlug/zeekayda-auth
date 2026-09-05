@@ -141,6 +141,7 @@ internal static class ProviderTestHost
                     provider = pending.Provider.Id,
                     reservedClaims = pending.Principal.Claims.Count(claim => claim.Type.StartsWith("zkd:", StringComparison.OrdinalIgnoreCase)),
                     identities = pending.Principal.Identities.Select(identity => identity.AuthenticationType).ToArray(),
+                    dept = pending.Principal.Identities.LastOrDefault()?.FindFirst("dept")?.Value,
                 });
         });
 

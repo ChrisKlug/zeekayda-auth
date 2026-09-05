@@ -199,6 +199,7 @@ public sealed class ProviderSignInEventTests
 
         pending.GetProperty("identities").EnumerateArray().Select(element => element.GetString())
             .Should().Equal("acme", "acme-directory");
+        pending.GetProperty("dept").GetString().Should().Be("sales", "the secondary identity keeps its claims, not only its type");
         pending.GetProperty("reservedClaims").GetInt32().Should().Be(0);
     }
 
