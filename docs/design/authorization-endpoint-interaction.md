@@ -1,9 +1,9 @@
 # Authorization endpoint interaction
 
-**Status: partly built.** Request validation (#83), the interaction context (#84), the local
-login handoff, provider registration with its pins, the login dispatch rules, the external
-round trip (#85) and in-flow consent (#86) have landed; remembered consent grants and code
-issuance have not, so a request that reaches the end of what exists answers `501`. Originally
+**Status: built through code issuance.** Request validation (#83), the interaction context (#84),
+the local login handoff, provider registration with its pins, the login dispatch rules, the
+external round trip (#85), in-flow consent (#86) and code issuance (#87) have landed; remembered
+consent grants (#632) have not, so every request that requires consent prompts. Originally
 ADR 0005 (accepted 2026-07-01, issue #156); revised 2026-08-28 in the S2 shape conversation
 (#534/#83/#84), which reversed the interception model, renamed the interaction services and cut the
 interaction store; login dispatch between local sign-in and external providers settled
@@ -408,7 +408,8 @@ decrypt.
 
 **Consent grants are not session state.** They outlive the session and the browser, so they need
 durable storage whatever is decided here — a host seam with an in-memory default, settled as its
-own issue; in-flow consent (#86) records the decision on the interaction context only. `prompt=none`
+own issue; in-flow consent (#86) records nothing — the decision is taken, the code issued (#87)
+and the interaction discarded in the one response. `prompt=none`
 needs both: a live session *and* a prior consent grant, so until the store lands it answers
 `consent_required` for every client that requires consent.
 

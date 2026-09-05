@@ -73,7 +73,7 @@ internal sealed class ConsentInteraction : IConsentInteraction
             throw new ArgumentException("An entry in scopes is null or blank.", nameof(scopes));
 
         var context = RequireStateChangingRequest();
-        var (requestContext, _) = await ResolveAsync(context, context.RequestAborted).ConfigureAwait(false);
+        var (requestContext, client) = await ResolveAsync(context, context.RequestAborted).ConfigureAwait(false);
 
         // The page's answer can only narrow what was asked: intersected in request order, over
         // ordinal comparison, so a page cannot grant a scope the request never carried.
@@ -87,7 +87,7 @@ internal sealed class ConsentInteraction : IConsentInteraction
             return;
         }
 
-        await _outcomes.CompleteConsentAsync(context, requestContext, granted).ConfigureAwait(false);
+        await _outcomes.CompleteConsentAsync(context, requestContext, client, granted).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>

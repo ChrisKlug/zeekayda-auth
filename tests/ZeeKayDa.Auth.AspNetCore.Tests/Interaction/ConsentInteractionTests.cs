@@ -323,8 +323,7 @@ public sealed class ConsentInteractionTests : IDisposable
 
         var signIn = await PostLoginAsync(InteractionIdFrom(handoff));
 
-        signIn.StatusCode.Should().Be(HttpStatusCode.NotImplemented,
-            "the request goes straight to code issuance, which is what remains unbuilt");
+        signIn.ShouldHaveIssuedCodeTo(RegisteredRedirect, "the request goes straight to code issuance");
     }
 
     [Fact]
@@ -355,7 +354,7 @@ public sealed class ConsentInteractionTests : IDisposable
 
         var signIn = await PostLoginAsync(client, InteractionIdFrom(handoff));
 
-        signIn.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+        signIn.ShouldHaveIssuedCodeTo(RegisteredRedirect);
     }
 
     [Fact]
@@ -527,48 +526,31 @@ public sealed class ConsentInteractionTests : IDisposable
     // ── Granting ──────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task GrantAsync_records_the_granted_scopes_and_the_time_on_the_interaction()
+    public async Task GrantAsync_ends_the_request_with_a_code_and_discards_the_interaction()
     {
+        // What the code carries is AuthorizationCodeIssuanceTests' subject; here, that a grant
+        // is the end of the interaction rather than a decision left on it for later.
         var signIn = await ReachConsentAsync();
 
         var grant = await GrantAsync(InteractionIdFrom(signIn), "openid", "profile");
 
-        grant.StatusCode.Should().Be(HttpStatusCode.NotImplemented,
-            "consent is recorded; code issuance is what remains unbuilt");
-        var interaction = (await ReadInteractionAsync())!.Value;
-        interaction.GetProperty("grantedScopes").EnumerateArray().Select(scope => scope.GetString())
-            .Should().Equal("openid", "profile");
-        interaction.GetProperty("consentedAt").GetDateTimeOffset().Should().Be(Now);
+        grant.ShouldHaveIssuedCodeTo(RegisteredRedirect);
+        (await ReadInteractionAsync()).Should().BeNull("the decision is taken and the code issued in the one response");
     }
 
     [Fact]
-    public async Task A_re_sign_in_on_the_same_interaction_discards_an_earlier_grant()
+    public async Task A_second_sign_in_after_a_grant_finds_no_interaction_to_complete()
     {
-        // The login page stays answerable after the consent handoff, so a second user can sign
-        // in on the same interaction. The first user's decision must not ride along into theirs.
+        // The login page stays answerable after the consent handoff, so a second user could sign
+        // in on the same interaction. Once a grant has ended it, there is nothing for them to
+        // complete, and the first user's decision cannot ride along into theirs.
         var signIn = await ReachConsentAsync(sub: "user-1");
         var interactionId = InteractionIdFrom(signIn);
-        await GrantAsync(interactionId, "openid");
-        (await ReadInteractionAsync())!.Value.GetProperty("grantedScopes").ValueKind.Should().Be(JsonValueKind.Array);
+        (await GrantAsync(interactionId, "openid")).ShouldHaveIssuedCodeTo(RegisteredRedirect);
 
-        var reSignIn = await PostLoginAsync(interactionId, sub: "user-2");
+        var reSignIn = async () => await PostLoginAsync(interactionId, sub: "user-2");
 
-        reSignIn.ShouldHaveReachedConsent("the new user is asked afresh");
-        (await ReadInteractionAsync())!.Value.GetProperty("grantedScopes").ValueKind.Should().Be(JsonValueKind.Null);
-    }
-
-    [Fact]
-    public async Task GrantAsync_drops_scopes_the_request_never_asked_for()
-    {
-        // The page's answer can only narrow the request: a scope the client is not allowed, and
-        // one the request never carried, are both dropped without comment.
-        var signIn = await ReachConsentAsync(ValidQuery(scope: "openid email"));
-
-        await GrantAsync(InteractionIdFrom(signIn), "openid", "email", "profile", "admin", "offline_access");
-
-        var interaction = (await ReadInteractionAsync())!.Value;
-        interaction.GetProperty("grantedScopes").EnumerateArray().Select(scope => scope.GetString())
-            .Should().Equal("openid", "email");
+        await reSignIn.Should().ThrowAsync<ZeeKayDaInteractionException>();
     }
 
     [Fact]
@@ -675,7 +657,7 @@ public sealed class ConsentInteractionTests : IDisposable
         // The control: the same request under the session that did sign in is accepted, so the
         // refusal above is the binding and not the hand-built cookie header.
         var control = await raw.SendAsync(GrantRequest(url, [.. secondInteraction, secondSession]), Cancellation);
-        control.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+        control.ShouldHaveIssuedCodeTo(RegisteredRedirect);
     }
 
     private static HttpRequestMessage GrantRequest(string url, IEnumerable<string> cookies)
@@ -762,8 +744,7 @@ public sealed class ConsentInteractionTests : IDisposable
         await byLink.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*POST*");
         (await ReadInteractionAsync()).Should().NotBeNull("a refused decision leaves the request alive");
-        (await GrantAsync(interactionId, "openid")).StatusCode.Should().Be(HttpStatusCode.NotImplemented,
-            "the form post still completes it");
+        (await GrantAsync(interactionId, "openid")).ShouldHaveIssuedCodeTo(RegisteredRedirect, "the form post still completes it");
     }
 
     [Theory]
@@ -869,7 +850,7 @@ public sealed class ConsentInteractionTests : IDisposable
         var query = ValidQuery(TrustedClient, "openid profile");
         query["prompt"] = "none";
 
-        (await AuthorizeAsync(query)).StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+        (await AuthorizeAsync(query)).ShouldHaveIssuedCodeTo(RegisteredRedirect);
     }
 
     /// <summary>A repository holding one registration an operator can change or remove mid-flow.</summary>
