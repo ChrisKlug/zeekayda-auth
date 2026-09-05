@@ -6,6 +6,7 @@ allowed-tools:
   - Bash(dotnet format)
   - Bash(dotnet format *)
   - Bash(wc -l *)
+  - Bash(bash .github/scripts/check_sign_off_citations.sh *)
 ---
 
 # Check and Fix Formatting
