@@ -186,6 +186,23 @@ public sealed class AuthorizationRequestContextStoreTests
     }
 
     [Fact]
+    public async Task Deleting_removes_the_binding_cookie_even_when_the_store_refuses_the_removal()
+    {
+        // The cookie is the only thing that lets the browser address the entry; once it is gone the
+        // entry is unreachable whatever the store did, and the failure is reported rather than hidden.
+        var (contexts, _, _) = Store(new ThrowingStore());
+        var delete = new DefaultHttpContext();
+        delete.Request.Headers.Cookie = $"{InteractionBindingCookie.NamePrefix}{InteractionId}=1.secret";
+
+        var act = async () => await contexts.DeleteAsync(delete, InteractionId, None);
+
+        await act.Should().ThrowAsync<ZeeKayDaStoreException>();
+        delete.Response.Headers.SetCookie.ToString()
+            .Should().StartWith(InteractionBindingCookie.NamePrefix + InteractionId + "=")
+            .And.Contain("expires=Thu, 01 Jan 1970");
+    }
+
+    [Fact]
     public async Task Deleting_from_another_browser_leaves_the_entry_alone()
     {
         // A deny or an error in a browser that never held the binding cannot end someone else's

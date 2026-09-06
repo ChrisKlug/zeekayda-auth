@@ -16,8 +16,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   keyed by the interaction identifier and a random secret held in a small per-interaction
   `zkd.interaction.<id>` cookie, so any number of requests can be in flight in one browser, each
   completing with its own `zkd_i`, and `state` has no ceiling. The binding cookie expires with
-  its interaction, is deleted when it ends, and is capped at ten per browser with the oldest
-  evicted first. A request that fails validation no longer clears any interaction.
+  its interaction, is deleted when it ends, and is capped at ten per browser in sequence with the
+  oldest evicted first. A request that fails validation no longer clears any interaction.
 
   Registration mirrors the token stores: `AddInMemoryStores()` now covers the interaction store
   too, `AddInMemoryInteractionStore()` registers it alone, and

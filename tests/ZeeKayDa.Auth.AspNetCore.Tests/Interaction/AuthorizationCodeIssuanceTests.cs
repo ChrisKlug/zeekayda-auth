@@ -693,12 +693,33 @@ public sealed class AuthorizationCodeIssuanceTests : IDisposable
         _logs.Entries.Should().Contain(entry => entry.Level == LogLevel.Error && entry.Message.Contains(TrustedClient, StringComparison.Ordinal));
     }
 
-    private void StoresWithFailingInteractionStore(ZeeKayDaAuthBuilder builder, int failFromWrite)
+    [Fact]
+    public async Task A_stored_code_is_delivered_even_when_discarding_the_interaction_fails()
+    {
+        // Once the code is in the store it is redeemable; a response that dropped it for a cleanup
+        // failure would leave a live code the client never learns about. The binding cookie still
+        // goes, so the browser cannot resubmit against the entry the store kept.
+        using var factory = NewFactory(configureStores: builder => StoresWithFailingInteractionStore(builder, failFromWrite: int.MaxValue, failRemoval: true));
+        using var client = NewClient(factory);
+        var interactionId = await ReachConsentAsync(client);
+
+        var response = await GrantAsync(client, interactionId, "openid");
+
+        var code = response.ShouldHaveIssuedCodeTo(RegisteredRedirect);
+        (await RedeemAsync(factory, code)).Should().BeOfType<AuthorizationCodeRedemptionResult.Redeemed>();
+        response.Headers.GetValues("Set-Cookie").Should().Contain(cookie =>
+            cookie.StartsWith(InteractionBindingCookie.NamePrefix + interactionId + "=") && cookie.Contains("expires=Thu, 01 Jan 1970"));
+        _logs.Entries.Should().Contain(entry => entry.Level == LogLevel.Error && entry.Message.Contains("left to expire", StringComparison.Ordinal));
+        var replay = async () => await GrantAsync(client, interactionId, "openid");
+        await replay.Should().ThrowAsync<ZeeKayDaInteractionException>("the binding is gone even though the entry is not");
+    }
+
+    private void StoresWithFailingInteractionStore(ZeeKayDaAuthBuilder builder, int failFromWrite, bool failRemoval = false)
     {
         builder
             .AddInMemoryAuthorizationCodeStore(allowOutsideDevelopment: true)
             .AddInMemoryRefreshTokenStore(allowOutsideDevelopment: true);
-        builder.Services.AddSingleton<IInteractionBackingStore>(new FailingInteractionStore(failFromWrite, _time));
+        builder.Services.AddSingleton<IInteractionBackingStore>(new FailingInteractionStore(failFromWrite, failRemoval, _time));
     }
 
     // ── Preconditions the callers establish ───────────────────────────────────────────────────
@@ -714,6 +735,31 @@ public sealed class AuthorizationCodeIssuanceTests : IDisposable
         var issue = async () => await issuer.IssueAsync(context, UnauthenticatedContext(), TrustedRegistration());
 
         await issue.Should().ThrowAsync<InvalidOperationException>().WithMessage("*not been authenticated*");
+    }
+
+    [Fact]
+    public async Task Issuance_for_an_interaction_that_expired_while_the_response_was_prepared_is_refused()
+    {
+        // The claim on the interaction lasts only as long as the interaction. A response that
+        // resolved the context alive but reaches issuance after it expired must not mint a code
+        // that nothing stops a second late response from minting again.
+        var issuer = _factory.Services.GetRequiredService<AuthorizationCodeIssuer>();
+        var context = new DefaultHttpContext { RequestServices = _factory.Services };
+        var expired = UnauthenticatedContext() with
+        {
+            ClientId = TrustedClient,
+            SsoSessionId = "session-1",
+            Subject = "user-1",
+            AuthTime = Now,
+            ExpiresAt = Now,
+        };
+
+        var issue = async () => await issuer.IssueAsync(context, expired, TrustedRegistration());
+
+        await issue.Should().ThrowAsync<ZeeKayDaInteractionException>().WithMessage("*expired*");
+        (await _factory.Services.GetRequiredService<IAuthorizationCodeStore>()
+            .TryReserveInteractionAsync(expired.Id, expired.ExpiresAt.AddMinutes(1), Cancellation))
+            .Should().BeTrue("nothing was claimed and nothing was minted");
     }
 
     [Fact]
@@ -751,7 +797,7 @@ public sealed class AuthorizationCodeIssuanceTests : IDisposable
     /// fail as an unreachable cache would: the first write is the authorize request's, the second
     /// the sign-in's.
     /// </summary>
-    private sealed class FailingInteractionStore(int failFromWrite, TimeProvider time) : IInteractionBackingStore
+    private sealed class FailingInteractionStore(int failFromWrite, bool failRemoval, TimeProvider time) : IInteractionBackingStore
     {
         private readonly InMemoryInteractionBackingStore _inner = new(time);
         private int _writes;
@@ -765,7 +811,9 @@ public sealed class AuthorizationCodeIssuanceTests : IDisposable
             _inner.GetAsync(key, cancellationToken);
 
         public ValueTask RemoveAsync(StoreKey key, CancellationToken cancellationToken) =>
-            _inner.RemoveAsync(key, cancellationToken);
+            failRemoval
+                ? throw new IOException("The cache is unreachable.")
+                : _inner.RemoveAsync(key, cancellationToken);
     }
 
     /// <summary>A backing store on which every interaction claim has already been taken by someone else.</summary>

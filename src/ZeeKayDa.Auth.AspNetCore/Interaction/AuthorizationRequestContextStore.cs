@@ -121,24 +121,29 @@ internal sealed class AuthorizationRequestContextStore
     }
 
     /// <summary>
-    /// Discards the interaction: the entry, when this browser can address it, and the binding
-    /// cookie. Called when the flow terminates — the code is issued, consent is denied, or the
-    /// request errors out.
+    /// Discards the interaction: the binding cookie, and the entry when this browser can address
+    /// it. Called when the flow terminates — the code is issued, consent is denied, or the request
+    /// errors out.
     /// </summary>
+    /// <remarks>
+    /// The cookie goes first and cannot fail. Should the store then refuse the removal, the browser
+    /// has already lost the only thing that could address the entry, which is left to its TTL.
+    /// </remarks>
     /// <exception cref="ZeeKayDaStoreException">The backing store could not complete the removal.</exception>
     public async ValueTask DeleteAsync(HttpContext context, string interactionId, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentException.ThrowIfNullOrEmpty(interactionId);
 
-        if (_binding.Read(context, interactionId) is { } secret)
+        var secret = _binding.Read(context, interactionId);
+        _binding.Delete(context, interactionId);
+
+        if (secret is not null)
         {
             await Guarded(
                 () => _store.RemoveAsync(KeyFor(interactionId, secret), cancellationToken),
                 "remove the interaction context").ConfigureAwait(false);
         }
-
-        _binding.Delete(context, interactionId);
     }
 
     private static StoreKey KeyFor(string interactionId, string secret)

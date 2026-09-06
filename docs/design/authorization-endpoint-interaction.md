@@ -356,7 +356,10 @@ that merely learned the identifier does not have; deriving the key from both mea
 forged cookie finds nothing. Per interaction rather than per browser, so each dies with its own
 request and concurrent tabs share nothing; capped so a run of planted requests cannot grow the
 `Cookie` header — the reason a per-interaction *payload* cookie was rejected does not apply to a
-ninety-byte binding.
+ninety-byte binding. The cap is enforced per response from the request's own cookie snapshot, so
+simultaneous requests overshoot it by their own count: intended for a user's tabs, and not something
+cross-site content can force, since a browser stores a `Lax` cookie only from a same-site request or
+a top-level navigation, never from a cross-site image or frame.
 
 ## The SSO session
 

@@ -29,8 +29,11 @@ internal sealed class InteractionBindingCookie
     internal const string NamePrefix = ZeeKayDaCookies.Interaction + ".";
 
     /// <summary>
-    /// The most binding cookies one browser holds at once. Generous for a person — two or three
-    /// tabs is a busy sign-in — and, at under a hundred bytes each, a header cost of about 1 KB.
+    /// The most binding cookies one browser accumulates in sequence. Generous for a person — two or
+    /// three tabs is a busy sign-in — and, at under a hundred bytes each, a header cost of about
+    /// 1 KB. Enforced per response from the request's own cookies, so requests made simultaneously
+    /// overshoot it by their own count; that is a user's tabs, since a browser stores these cookies
+    /// only from a top-level navigation and cross-site content cannot make several at once.
     /// </summary>
     internal const int MaxPerBrowser = 10;
 
