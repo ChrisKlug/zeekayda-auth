@@ -120,7 +120,11 @@ public sealed class AuthorizationCodeIssuanceTests : IDisposable
         endpoints.MapPost(ConsentPath, async (HttpContext context, IConsentInteraction consent) =>
         {
             var form = await context.Request.ReadFormAsync(context.RequestAborted);
-            await consent.GrantAsync(form["scope"].Select(scope => scope ?? string.Empty));
+
+            if (form["action"].FirstOrDefault() == "deny")
+                await consent.DenyAsync();
+            else
+                await consent.GrantAsync(form["scope"].Select(scope => scope ?? string.Empty));
         });
 
         endpoints.MapGet("/test/session", async (HttpContext context) =>
@@ -187,6 +191,14 @@ public sealed class AuthorizationCodeIssuanceTests : IDisposable
     private static async Task<HttpResponseMessage> GrantAsync(HttpClient client, string interactionId, params string[] scopes)
     {
         using var content = Form([.. scopes.Select(scope => ("scope", scope))]);
+        return await client.PostAsync(WithInteractionId(ConsentPath, interactionId), content, Cancellation);
+    }
+
+    private Task<HttpResponseMessage> DenyAsync(string interactionId) => DenyAsync(_client, interactionId);
+
+    private static async Task<HttpResponseMessage> DenyAsync(HttpClient client, string interactionId)
+    {
+        using var content = Form(("action", "deny"));
         return await client.PostAsync(WithInteractionId(ConsentPath, interactionId), content, Cancellation);
     }
 
@@ -370,6 +382,40 @@ public sealed class AuthorizationCodeIssuanceTests : IDisposable
     }
 
     [Fact]
+    public async Task A_deny_and_a_grant_racing_for_one_interaction_produce_exactly_one_outcome()
+    {
+        // The user's denial and a grant sent together — a page with two handlers firing — must
+        // not end as both an access_denied and a valid code at the client.
+        var interactionId = await ReachConsentAsync();
+
+        var grant = GrantAsync(interactionId, "openid");
+        var deny = DenyAsync(interactionId);
+        var outcomes = await Task.WhenAll(Settle(grant), Settle(deny));
+
+        outcomes.Count(outcome => outcome.Response is not null).Should().Be(1, "exactly one response reaches the client");
+        var delivered = RedirectQueryOf(outcomes.Single(outcome => outcome.Response is not null).Response!);
+        (delivered.ContainsKey("code") ^ delivered.ContainsKey("error")).Should().BeTrue("a code or a denial, never both");
+        outcomes.Single(outcome => outcome.Response is null).Error.Should().BeOfType<ZeeKayDaInteractionException>();
+    }
+
+    [Fact]
+    public async Task Denial_is_refused_when_another_response_already_completed_the_interaction()
+    {
+        using var factory = NewFactory(configureStores: builder => builder
+            .AddAuthorizationCodeStore<AlreadyClaimedBackingStore>()
+            .AddInMemoryRefreshTokenStore(allowOutsideDevelopment: true)
+            .AddInMemoryInteractionStore(allowOutsideDevelopment: true));
+        using var client = NewClient(factory);
+        var interactionId = await ReachConsentAsync(client);
+
+        var deny = async () => await DenyAsync(client, interactionId);
+
+        (await deny.Should().ThrowAsync<ZeeKayDaInteractionException>()).WithMessage("*already been completed*");
+        var replay = async () => await GrantAsync(client, interactionId, "openid");
+        await replay.Should().ThrowAsync<ZeeKayDaInteractionException>("the interaction was discarded with the refusal");
+    }
+
+    [Fact]
     public async Task Issuance_is_refused_when_another_response_already_claimed_the_interaction()
     {
         // The deterministic form of the race above: the store reports the interaction claimed, so
@@ -383,7 +429,7 @@ public sealed class AuthorizationCodeIssuanceTests : IDisposable
 
         var grant = async () => await GrantAsync(client, interactionId, "openid");
 
-        (await grant.Should().ThrowAsync<ZeeKayDaInteractionException>()).WithMessage("*already been issued*");
+        (await grant.Should().ThrowAsync<ZeeKayDaInteractionException>()).WithMessage("*already been completed*");
         var replay = async () => await GrantAsync(client, interactionId, "openid");
         await replay.Should().ThrowAsync<ZeeKayDaInteractionException>("the interaction was discarded with the refusal");
     }

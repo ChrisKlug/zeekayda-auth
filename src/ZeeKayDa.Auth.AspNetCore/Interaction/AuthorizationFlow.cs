@@ -239,6 +239,26 @@ internal sealed class AuthorizationFlow
                 $"explicitly (asp-route-{InteractionHandoff.InteractionIdParameter}).");
     }
 
+    /// <summary>
+    /// Claims the interaction's one terminal outcome for this response. Every path that ends an
+    /// interaction at the client — a code or a denial — takes the claim first, so two responses that
+    /// both resolved the request alive cannot both end it.
+    /// </summary>
+    /// <returns><see langword="false"/> when another response already completed, or is completing, the interaction.</returns>
+    /// <exception cref="ZeeKayDaStoreException">The authorization code store could not record the claim.</exception>
+    /// <remarks>
+    /// The claim lives in the authorization code store, whose atomic insert every backend already
+    /// has to provide; resolved per request for the reason <see cref="ResolveClientAsync"/> is.
+    /// </remarks>
+    public async ValueTask<bool> TryClaimCompletionAsync(HttpContext context, AuthorizationRequestContext requestContext)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(requestContext);
+
+        var store = context.RequestServices.GetRequiredService<Stores.IAuthorizationCodeStore>();
+        return await store.TryReserveInteractionAsync(requestContext.Id, requestContext.ExpiresAt, context.RequestAborted).ConfigureAwait(false);
+    }
+
     /// <summary>Persists the context, bound to this browser.</summary>
     /// <exception cref="ZeeKayDaStoreException">The interaction store could not be written.</exception>
     public ValueTask PersistAsync(HttpContext context, AuthorizationRequestContext requestContext) =>

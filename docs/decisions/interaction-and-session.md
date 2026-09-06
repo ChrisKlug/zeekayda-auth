@@ -95,10 +95,10 @@ do not reopen the header-budget finding a 3 KB payload per cookie would have. Si
 by their count, which cross-site content cannot force: a browser stores these cookies only on a top-level
 navigation. A failed request never wrote an interaction and clears none.
 
-**One code per interaction, decided by the authorization code store.** Before minting a code, issuance
-claims the interaction through the code store's atomic insert-if-absent, expiring with the interaction
-plus skew, then re-checks its expiry — after the claim, so a stalled response cannot claim again once the
-winner's claim lapsed. A loser or a late response issues nothing and refuses as a replayed form is refused.
+**One terminal outcome per interaction — a code or a denial — decided by the authorization code store.**
+Issuance and denial both claim the interaction first, through the code store's atomic insert-if-absent,
+expiring with the interaction plus skew; issuance then re-checks expiry after the claim, so a stalled
+response cannot claim again once the winner's claim lapsed. A loser refuses as a replayed form is refused.
 
 **ZeeKayDa owns no interaction UI.** Login, consent and provider selection are the host's pages, and
 the host brings its own user model, identity store, branding and MFA. The cost is real: a host writes

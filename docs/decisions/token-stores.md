@@ -79,10 +79,11 @@ method that needs it, never a bindable option — it is meaningless without the 
 `AddInMemoryStores` covers all three stores; the distributed-cache interaction store is its own
 call, because its production story differs from the token stores' (below).
 
-**One code per interaction is the code store's invariant, keyed `zkd:code:i:{hex(sha256(id))}`.**
-`IAuthorizationCodeStore.TryReserveInteractionAsync` writes the claim through the same atomic
-insert-if-absent that makes a code single-use, so any backend on which redemption is single-use
-decides the consent-POST race too, and no new backing member or conformance test was needed.
+**One terminal outcome per interaction is the code store's invariant, keyed `zkd:code:i:{hex(sha256(id))}`.**
+`IAuthorizationCodeStore.TryReserveInteractionAsync` writes the claim — taken by issuance and by
+denial alike — through the same atomic insert-if-absent that makes a code single-use, so any backend
+on which redemption is single-use decides the consent-POST and grant-versus-deny races too, and no
+new backing member or conformance test was needed.
 
 **Options placement.** `AuthorizationCodeLifetime` (60s) on `AuthorizationEndpoint`;
 `RefreshTokenLifetime` (14 days, no enforced upper bound — operators own that trade-off) on

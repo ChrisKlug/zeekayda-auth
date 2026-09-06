@@ -21,7 +21,7 @@ namespace ZeeKayDa.Auth.Stores;
 /// </para>
 /// <para>
 /// Key layout: entries are keyed <c>zkd:code:e:{hex(sha256(handle))}</c>,
-/// tombstones <c>zkd:code:t:{hex(sha256(handle))}</c>, and the one-code-per-interaction claim
+/// tombstones <c>zkd:code:t:{hex(sha256(handle))}</c>, and the one-outcome-per-interaction claim
 /// <c>zkd:code:i:{hex(sha256(interactionId))}</c>. Raw handles and identifiers are never
 /// persisted as keys or embedded in stored values.
 /// </para>

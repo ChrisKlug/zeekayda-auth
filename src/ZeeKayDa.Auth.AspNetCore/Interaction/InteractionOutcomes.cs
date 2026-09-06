@@ -94,12 +94,27 @@ internal sealed class InteractionOutcomes
     /// URI, discarding the interaction and any principal parked for it. No session is promoted
     /// and none is read.
     /// </summary>
+    /// <exception cref="ZeeKayDaInteractionException">
+    /// Another response — a grant, a sign-in that issued, or an earlier denial — completed the
+    /// interaction first.
+    /// </exception>
     public async Task DenyAsync(HttpContext context, AuthorizationRequestContext requestContext, string description)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(requestContext);
 
         context.Response.Headers.CacheControl = "no-store";
+
+        // A denial competes for the interaction's one terminal outcome exactly as issuance does:
+        // a grant and a deny that both resolved the request alive must not end as a code and an
+        // access_denied both delivered to the client.
+        if (!await _flow.TryClaimCompletionAsync(context, requestContext).ConfigureAwait(false))
+        {
+            await _flow.ClearAsync(context, requestContext.Id).ConfigureAwait(false);
+            throw new ZeeKayDaInteractionException(
+                "This authorization request has already been completed by another response. The same " +
+                "request was answered twice; the first answer stands.");
+        }
 
         // Discarded before the response is written, so a denied request cannot be resumed by a
         // later sign-in picking the context back up — nor by a parked principal bound to it.

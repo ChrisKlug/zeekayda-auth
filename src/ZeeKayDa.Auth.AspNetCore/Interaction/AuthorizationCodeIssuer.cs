@@ -34,10 +34,10 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// allows <c>openid</c> ends the request as one that dropped its redirect URI does.
 /// </para>
 /// <para>
-/// One code per interaction. Two responses racing to complete the same interaction — a consent
-/// form posted twice before the first response landed — each read the interaction alive, so the
-/// store decides: the code store's atomic claim on the interaction is taken before a code is
-/// minted, and the response that loses it issues nothing.
+/// One terminal outcome per interaction. Two responses racing to complete the same interaction —
+/// a consent form posted twice before the first response landed, or a grant and a deny together —
+/// each read the interaction alive, so the store decides: the code store's atomic claim on the
+/// interaction is taken before a code is minted, and the response that loses it issues nothing.
 /// </para>
 /// </remarks>
 internal sealed class AuthorizationCodeIssuer
@@ -124,7 +124,7 @@ internal sealed class AuthorizationCodeIssuer
         string code;
         try
         {
-            if (!await store.TryReserveInteractionAsync(requestContext.Id, requestContext.ExpiresAt, context.RequestAborted).ConfigureAwait(false))
+            if (!await _flow.TryClaimCompletionAsync(context, requestContext).ConfigureAwait(false))
                 return await RefuseSecondIssuanceAsync(context, requestContext).ConfigureAwait(false);
 
             // Checked after the claim, not before: the claim lasts only as long as the interaction,
@@ -195,17 +195,18 @@ internal sealed class AuthorizationCodeIssuer
     }
 
     /// <summary>
-    /// The interaction was claimed by another response first. Refused the way a replayed form is,
-    /// since from the page's side that is what it is: a decision for a request that no longer
-    /// has one to take.
+    /// The interaction was claimed by another response first — a code or a denial. Refused the way
+    /// a replayed form is, since from the page's side that is what it is: a decision for a request
+    /// that no longer has one to take.
     /// </summary>
     private async Task<IResult> RefuseSecondIssuanceAsync(HttpContext context, AuthorizationRequestContext requestContext)
     {
         await _flow.ClearAsync(context, requestContext.Id).ConfigureAwait(false);
 
         throw new ZeeKayDaInteractionException(
-            "An authorization code has already been issued for this interaction. The same decision " +
-            "was submitted twice; the first submission completed the authorization request.");
+            "This authorization request has already been completed by another response — an authorization " +
+            "code was issued, or the request was denied. The same request was answered twice; the first " +
+            "answer stands.");
     }
 
     /// <summary>The interaction ran out while this response was being prepared; refused as an expired request is.</summary>
