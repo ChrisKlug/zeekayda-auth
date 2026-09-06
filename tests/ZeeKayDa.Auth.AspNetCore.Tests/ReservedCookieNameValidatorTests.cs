@@ -80,6 +80,19 @@ public sealed class ReservedCookieNameValidatorTests
     }
 
     [Fact]
+    public async Task A_host_scheme_taking_a_name_under_the_interaction_prefix_is_reported()
+    {
+        // The binding cookies are named zkd.interaction.<id>, so a host cookie in that space would
+        // be read as one of them.
+        var context = await VerifyAsync(auth => auth.AddCookie(
+            "host-scheme",
+            options => options.Cookie.Name = InteractionBindingCookie.NamePrefix + "mine"));
+
+        context.Failures.Should().ContainSingle()
+            .Which.Code.Should().Be("cookie.reserved_name");
+    }
+
+    [Fact]
     public async Task The_frameworks_own_schemes_are_not_reported_against_themselves()
     {
         var context = await VerifyAsync(auth =>

@@ -4,17 +4,18 @@ using Microsoft.Extensions.Logging;
 namespace ZeeKayDa.Auth.AspNetCore;
 
 /// <summary>
-/// Emits a startup warning when an in-memory token store is active, alerting operators that
-/// tokens will be lost on process restart and that single-use enforcement and reuse detection
-/// are disabled across multiple instances.
+/// Emits a startup warning when an in-memory store is active, alerting operators that its
+/// contents are lost on process restart and invisible to other instances — tokens, single-use
+/// enforcement and reuse detection for the token stores, in-flight authorization requests for the
+/// interaction store.
 /// </summary>
 /// <remarks>
 /// One instance is registered per in-memory store registration call, each capturing its own
 /// <c>storeName</c> and <c>allowOutsideDevelopment</c> value, so the gate is enforced
 /// independently per store. Outside <c>Development</c>, startup fails unless the captured
-/// <c>allowOutsideDevelopment</c> is <see langword="true"/>. Both registrations share this
+/// <c>allowOutsideDevelopment</c> is <see langword="true"/>. The registrations share this
 /// implementation type but are added via plain <c>AddSingleton&lt;IStartupVerifier&gt;</c> rather
-/// than <c>TryAddEnumerable</c>, which would otherwise deduplicate the two registrations away.
+/// than <c>TryAddEnumerable</c>, which would otherwise deduplicate them away.
 /// </remarks>
 internal sealed class InMemoryStoreVerifier : IStartupVerifier
 {
@@ -24,19 +25,22 @@ internal sealed class InMemoryStoreVerifier : IStartupVerifier
     /// <summary>The store name passed for the refresh token store registration.</summary>
     internal const string RefreshTokenStoreName = "refresh token store";
 
+    /// <summary>The store name passed for the interaction store registration.</summary>
+    internal const string InteractionStoreName = "interaction store";
+
     /// <summary>Named-placeholder template for the mandatory startup warning.</summary>
     internal const string WarningMessageFormat =
-        "ZeeKayDa.Auth: in-memory token stores are active. All issued tokens will be lost on " +
-        "process restart, and single-use enforcement and reuse detection are disabled across " +
-        "multiple instances. This configuration is intended for development and testing only " +
-        "and must not be used in production. Store: {StoreName}.";
+        "ZeeKayDa.Auth: the in-memory {StoreName} is active. Its contents are lost on process " +
+        "restart and invisible to other instances: issued tokens, single-use enforcement and reuse " +
+        "detection do not survive a restart or span a multi-instance deployment, and an in-flight " +
+        "authorization request cannot be completed by another instance. This configuration is " +
+        "intended for development and testing only and must not be used in production.";
 
     /// <summary>Named-placeholder template for the non-Development override warning.</summary>
     internal const string NonDevelopmentOverrideWarningMessageFormat =
-        "ZeeKayDa.Auth: in-memory token stores are active outside a Development environment. " +
-        "allowOutsideDevelopment has been set to true for this registration ({StoreName}) — ensure " +
-        "this is intentional (e.g. an integration test host). Do not use in-memory stores in " +
-        "production.";
+        "ZeeKayDa.Auth: the in-memory {StoreName} is active outside a Development environment. " +
+        "allowOutsideDevelopment has been set to true for this registration — ensure this is " +
+        "intentional (e.g. an integration test host). Do not use in-memory stores in production.";
 
     private readonly IHostEnvironment _environment;
     private readonly string _storeName;
@@ -57,10 +61,10 @@ internal sealed class InMemoryStoreVerifier : IStartupVerifier
 
     /// <inheritdoc/>
     /// <remarks>
-    /// Both <see cref="InMemoryStoreVerifier"/> instances share the category
+    /// Every <see cref="InMemoryStoreVerifier"/> instance shares the category
     /// <see cref="InMemoryStoreVerifier"/> — this instance <see cref="Name"/> (e.g.
     /// <c>InMemoryStore(authorization code store)</c>) is what still lets an operator or log query
-    /// tell the two registrations apart.
+    /// tell the registrations apart.
     /// </remarks>
     public string Name => $"InMemoryStore({_storeName})";
 
@@ -78,15 +82,15 @@ internal sealed class InMemoryStoreVerifier : IStartupVerifier
 
         if (!_allowOutsideDevelopment)
         {
-            // Names its own store: one instance is registered per in-memory store, both report in
+            // Names its own store: one instance is registered per in-memory store, all report in
             // the same phase, and the runner collapses failures that are identical in code and
-            // message — so a message naming no store would report one of two broken registrations
-            // and send the operator round the restart cycle for the other.
+            // message — so a message naming no store would report one of several broken
+            // registrations and send the operator round the restart cycle for the others.
             context.AddFailure(
                 "stores.inmemory.non_development",
                 $"The in-memory {_storeName} is active outside a Development environment. " +
-                "This is a configuration error: in-memory stores lose all tokens on restart " +
-                "and disable single-use enforcement across instances. " +
+                "This is a configuration error: in-memory stores lose their contents on restart " +
+                "and are invisible to other instances. " +
                 "Replace this registration with a persistent store implementation, or pass " +
                 "allowOutsideDevelopment: true if this host is an intentional " +
                 "non-Development test host.");

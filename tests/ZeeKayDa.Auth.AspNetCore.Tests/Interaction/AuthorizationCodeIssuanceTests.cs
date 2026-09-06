@@ -136,8 +136,10 @@ public sealed class AuthorizationCodeIssuanceTests : IDisposable
                 : Results.NotFound();
         });
 
-        endpoints.MapGet("/test/interaction", (HttpContext context, AuthorizationFlow flow) =>
-            flow.Read(context) is { } requestContext ? Results.Ok(new { id = requestContext.Id }) : Results.NotFound());
+        endpoints.MapGet("/test/interaction", async (HttpContext context, AuthorizationFlow flow) =>
+            await flow.ReadAsync(context, context.Request.Query[InteractionHandoff.InteractionIdParameter]!) is { } requestContext
+                ? Results.Ok(new { id = requestContext.Id })
+                : Results.NotFound());
     }
 
     private static Dictionary<string, string?> ValidQuery(string clientId = ConsentingClient, string scope = "openid profile email") => new()
@@ -224,9 +226,9 @@ public sealed class AuthorizationCodeIssuanceTests : IDisposable
         return JsonDocument.Parse(body).RootElement.Clone();
     }
 
-    private async Task<bool> InteractionIsAliveAsync()
+    private async Task<bool> InteractionIsAliveAsync(string interactionId)
     {
-        var response = await _client.GetAsync("/test/interaction", Cancellation);
+        var response = await _client.GetAsync(WithInteractionId("/test/interaction", interactionId), Cancellation);
         return response.StatusCode != HttpStatusCode.NotFound;
     }
 
@@ -328,10 +330,12 @@ public sealed class AuthorizationCodeIssuanceTests : IDisposable
     [Fact]
     public async Task Issuance_discards_the_interaction()
     {
-        var response = await CompleteFlowAsync();
+        var interactionId = await ReachConsentAsync();
+
+        var response = await GrantAsync(interactionId, "openid", "profile", "email");
 
         response.ShouldHaveIssuedCodeTo(RegisteredRedirect);
-        (await InteractionIsAliveAsync()).Should().BeFalse("a request that reached issuance is never resumed");
+        (await InteractionIsAliveAsync(interactionId)).Should().BeFalse("a request that reached issuance is never resumed");
     }
 
     [Fact]
@@ -346,7 +350,100 @@ public sealed class AuthorizationCodeIssuanceTests : IDisposable
         var replay = async () => await PostLoginAsync(interactionId);
 
         await replay.Should().ThrowAsync<ZeeKayDaInteractionException>();
-        (await InteractionIsAliveAsync()).Should().BeFalse();
+        (await InteractionIsAliveAsync(interactionId)).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Two_consent_posts_racing_for_one_interaction_issue_exactly_one_code()
+    {
+        // Both POSTs can read the interaction alive before either response lands; the code store's
+        // claim on the interaction is what decides between them.
+        var interactionId = await ReachConsentAsync();
+
+        var first = GrantAsync(interactionId, "openid");
+        var second = GrantAsync(interactionId, "openid");
+        var outcomes = await Task.WhenAll(Settle(first), Settle(second));
+
+        outcomes.Count(outcome => outcome.Response is not null).Should().Be(1, "exactly one response carries a code");
+        outcomes.Single(outcome => outcome.Response is not null).Response!.ShouldHaveIssuedCodeTo(RegisteredRedirect);
+        outcomes.Single(outcome => outcome.Response is null).Error.Should().BeOfType<ZeeKayDaInteractionException>();
+    }
+
+    [Fact]
+    public async Task Issuance_is_refused_when_another_response_already_claimed_the_interaction()
+    {
+        // The deterministic form of the race above: the store reports the interaction claimed, so
+        // this response issues nothing, discards the interaction, and tells the page so.
+        using var factory = NewFactory(configureStores: builder => builder
+            .AddAuthorizationCodeStore<AlreadyClaimedBackingStore>()
+            .AddInMemoryRefreshTokenStore(allowOutsideDevelopment: true)
+            .AddInMemoryInteractionStore(allowOutsideDevelopment: true));
+        using var client = NewClient(factory);
+        var interactionId = await ReachConsentAsync(client);
+
+        var grant = async () => await GrantAsync(client, interactionId, "openid");
+
+        (await grant.Should().ThrowAsync<ZeeKayDaInteractionException>()).WithMessage("*already been issued*");
+        var replay = async () => await GrantAsync(client, interactionId, "openid");
+        await replay.Should().ThrowAsync<ZeeKayDaInteractionException>("the interaction was discarded with the refusal");
+    }
+
+    // ── Concurrent tabs ───────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Two_tabs_each_sign_in_and_each_receive_their_own_code_on_one_session()
+    {
+        var firstTab = InteractionIdFrom(await AuthorizeAsync(ValidQuery(TrustedClient, "openid profile")));
+        var secondTab = InteractionIdFrom(await AuthorizeAsync(ValidQuery(TrustedClient, "openid profile")));
+
+        var firstCode = (await PostLoginAsync(firstTab)).ShouldHaveIssuedCodeTo(RegisteredRedirect);
+        var secondCode = (await PostLoginAsync(secondTab)).ShouldHaveIssuedCodeTo(RegisteredRedirect);
+
+        firstCode.Should().NotBe(secondCode);
+        var first = (await RedeemAsync(firstCode, TrustedClient)).Should().BeOfType<AuthorizationCodeRedemptionResult.Redeemed>().Subject.Entry;
+        var second = (await RedeemAsync(secondCode, TrustedClient)).Should().BeOfType<AuthorizationCodeRedemptionResult.Redeemed>().Subject.Entry;
+        first.InteractionId.Should().Be(firstTab);
+        second.InteractionId.Should().Be(secondTab);
+        second.SsoSessionId.Should().Be(first.SsoSessionId, "the second sign-in as the same user joins the session the first established");
+        second.SsoSessionId.Should().Be(await ReadSessionIdAsync());
+    }
+
+    [Fact]
+    public async Task Two_tabs_each_reach_consent_and_each_complete_with_their_own_code()
+    {
+        var firstTab = await ReachConsentAsync();
+        var secondTab = await ReachConsentAsync();
+
+        var firstCode = (await GrantAsync(firstTab, "openid")).ShouldHaveIssuedCodeTo(RegisteredRedirect);
+        var secondCode = (await GrantAsync(secondTab, "openid")).ShouldHaveIssuedCodeTo(RegisteredRedirect);
+
+        firstCode.Should().NotBe(secondCode);
+        (await InteractionIsAliveAsync(firstTab)).Should().BeFalse();
+        (await InteractionIsAliveAsync(secondTab)).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Completing_one_tab_leaves_the_other_tabs_interaction_alive()
+    {
+        var firstTab = await ReachConsentAsync();
+        var secondTab = await ReachConsentAsync();
+
+        (await GrantAsync(firstTab, "openid")).ShouldHaveIssuedCodeTo(RegisteredRedirect);
+
+        (await InteractionIsAliveAsync(firstTab)).Should().BeFalse();
+        (await InteractionIsAliveAsync(secondTab)).Should().BeTrue("ending one interaction touches no other");
+    }
+
+    private static async Task<(HttpResponseMessage? Response, Exception? Error)> Settle(Task<HttpResponseMessage> request)
+    {
+        try
+        {
+            return (await request, null);
+        }
+        catch (Exception ex)
+        {
+            return (null, ex);
+        }
     }
 
     [Fact]
@@ -528,7 +625,8 @@ public sealed class AuthorizationCodeIssuanceTests : IDisposable
     {
         using var factory = NewFactory(configureStores: builder => builder
             .AddAuthorizationCodeStore<FailingBackingStore>()
-            .AddInMemoryRefreshTokenStore(allowOutsideDevelopment: true));
+            .AddInMemoryRefreshTokenStore(allowOutsideDevelopment: true)
+            .AddInMemoryInteractionStore(allowOutsideDevelopment: true));
         using var client = NewClient(factory);
         var query = ValidQuery();
         query["state"] = "opaque-client-state";
@@ -547,6 +645,60 @@ public sealed class AuthorizationCodeIssuanceTests : IDisposable
         LogsShouldCarryNoProtocolMaterial(code: null, "opaque-client-state");
         var replay = async () => await GrantAsync(client, interactionId, "openid");
         await replay.Should().ThrowAsync<ZeeKayDaInteractionException>("a request that failed at issuance is not resumed");
+    }
+
+    // ── The interaction store fails ───────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task An_interaction_store_that_cannot_hold_the_request_answers_the_client_with_server_error()
+    {
+        // The redirect URI is authenticated by the time the context is written, so the client's
+        // error page is where the failure is reported, with the operator's log naming the store.
+        using var factory = NewFactory(configureStores: builder => StoresWithFailingInteractionStore(builder, failFromWrite: 1));
+        using var client = NewClient(factory);
+        var query = ValidQuery();
+        query["state"] = "opaque-client-state";
+
+        var response = await AuthorizeAsync(client, query);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        DestinationOf(response).Should().Be(RegisteredRedirect);
+        var parameters = RedirectQueryOf(response);
+        parameters["error"].Should().Equal(["server_error"]);
+        parameters["state"].Should().Equal(["opaque-client-state"]);
+        _logs.Entries.Should().Contain(entry => entry.Level == LogLevel.Error && entry.Message.Contains(ConsentingClient, StringComparison.Ordinal));
+        LogsShouldCarryNoProtocolMaterial(code: null, "opaque-client-state");
+    }
+
+    [Fact]
+    public async Task An_interaction_store_that_fails_at_sign_in_keeps_the_session_and_ends_the_request_with_server_error()
+    {
+        // The session is established either way — what cannot continue is this authorization
+        // request, which the client learns about at its redirect URI.
+        using var factory = NewFactory(configureStores: builder => StoresWithFailingInteractionStore(builder, failFromWrite: 2));
+        using var client = NewClient(factory);
+        var query = ValidQuery(TrustedClient, "openid profile");
+        query["state"] = "opaque-client-state";
+        var interactionId = InteractionIdFrom(await AuthorizeAsync(client, query));
+
+        var signIn = await PostLoginAsync(client, interactionId);
+
+        signIn.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        DestinationOf(signIn).Should().Be(RegisteredRedirect);
+        var parameters = RedirectQueryOf(signIn);
+        parameters["error"].Should().Equal(["server_error"]);
+        parameters["state"].Should().Equal(["opaque-client-state"]);
+        parameters.Should().NotContainKey("code");
+        (await client.GetAsync("/test/session", Cancellation)).StatusCode.Should().Be(HttpStatusCode.OK, "the user did sign in");
+        _logs.Entries.Should().Contain(entry => entry.Level == LogLevel.Error && entry.Message.Contains(TrustedClient, StringComparison.Ordinal));
+    }
+
+    private void StoresWithFailingInteractionStore(ZeeKayDaAuthBuilder builder, int failFromWrite)
+    {
+        builder
+            .AddInMemoryAuthorizationCodeStore(allowOutsideDevelopment: true)
+            .AddInMemoryRefreshTokenStore(allowOutsideDevelopment: true);
+        builder.Services.AddSingleton<IInteractionBackingStore>(new FailingInteractionStore(failFromWrite, _time));
     }
 
     // ── Preconditions the callers establish ───────────────────────────────────────────────────
@@ -593,6 +745,40 @@ public sealed class AuthorizationCodeIssuanceTests : IDisposable
         IssuedAt = Now,
         ExpiresAt = Now + TimeSpan.FromMinutes(10),
     };
+
+    /// <summary>
+    /// An interaction store whose writes succeed until the <paramref name="failFromWrite"/>th, then
+    /// fail as an unreachable cache would: the first write is the authorize request's, the second
+    /// the sign-in's.
+    /// </summary>
+    private sealed class FailingInteractionStore(int failFromWrite, TimeProvider time) : IInteractionBackingStore
+    {
+        private readonly InMemoryInteractionBackingStore _inner = new(time);
+        private int _writes;
+
+        public ValueTask SetAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken) =>
+            Interlocked.Increment(ref _writes) >= failFromWrite
+                ? throw new IOException("The cache is unreachable.")
+                : _inner.SetAsync(key, value, expiresAt, cancellationToken);
+
+        public ValueTask<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken) =>
+            _inner.GetAsync(key, cancellationToken);
+
+        public ValueTask RemoveAsync(StoreKey key, CancellationToken cancellationToken) =>
+            _inner.RemoveAsync(key, cancellationToken);
+    }
+
+    /// <summary>A backing store on which every interaction claim has already been taken by someone else.</summary>
+    private sealed class AlreadyClaimedBackingStore : IAuthorizationCodeBackingStore
+    {
+        public ValueTask<bool> TryInsertAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken) =>
+            new(!key.ToString().StartsWith("zkd:code:i:", StringComparison.Ordinal));
+
+        public ValueTask<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken) =>
+            new((ReadOnlyMemory<byte>?)null);
+
+        public ValueTask RemoveAsync(StoreKey key, CancellationToken cancellationToken) => ValueTask.CompletedTask;
+    }
 
     /// <summary>A backing store whose every write fails, as an unreachable cache would.</summary>
     private sealed class FailingBackingStore : IAuthorizationCodeBackingStore

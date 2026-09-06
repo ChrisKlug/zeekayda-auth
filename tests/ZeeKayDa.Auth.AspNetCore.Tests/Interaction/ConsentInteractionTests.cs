@@ -172,8 +172,8 @@ public sealed class ConsentInteractionTests : IDisposable
                 : Results.NotFound();
         });
 
-        endpoints.MapGet("/test/interaction", (HttpContext context, AuthorizationFlow flow) =>
-            flow.Read(context) is { } requestContext
+        endpoints.MapGet("/test/interaction", async (HttpContext context, AuthorizationFlow flow) =>
+            await flow.ReadAsync(context, context.Request.Query[InteractionHandoff.InteractionIdParameter]!) is { } requestContext
                 ? Results.Ok(new { grantedScopes = requestContext.GrantedScopes, consentedAt = requestContext.ConsentedAt })
                 : Results.NotFound());
     }
@@ -258,9 +258,9 @@ public sealed class ConsentInteractionTests : IDisposable
         return JsonDocument.Parse(body).RootElement.Clone();
     }
 
-    private async Task<JsonElement?> ReadInteractionAsync()
+    private async Task<JsonElement?> ReadInteractionAsync(string interactionId)
     {
-        var response = await _client.GetAsync("/test/interaction", Cancellation);
+        var response = await _client.GetAsync(WithInteractionId("/test/interaction", interactionId), Cancellation);
         return response.StatusCode == HttpStatusCode.NotFound ? null : await ReadJsonAsync(response);
     }
 
@@ -285,7 +285,7 @@ public sealed class ConsentInteractionTests : IDisposable
 
     /// <summary>
     /// The <c>name=value</c> pairs a response set for cookies whose name starts with
-    /// <paramref name="prefix"/>, deletions excluded — the interaction cookie may be chunked.
+    /// <paramref name="prefix"/>, deletions excluded.
     /// </summary>
     private static string[] CookiesFrom(HttpResponseMessage response, string prefix) =>
         [.. response.Headers.GetValues("Set-Cookie")
@@ -480,7 +480,7 @@ public sealed class ConsentInteractionTests : IDisposable
         var deny = async () => await client.PostAsync(url, denyForm, Cancellation);
         await deny.Should().ThrowAsync<ZeeKayDaInteractionException>();
 
-        var probe = await client.GetAsync("/test/interaction", Cancellation);
+        var probe = await client.GetAsync(WithInteractionId("/test/interaction", interactionId), Cancellation);
         probe.StatusCode.Should().Be(HttpStatusCode.OK, "a refused call leaves the interaction where it was");
     }
 
@@ -535,7 +535,7 @@ public sealed class ConsentInteractionTests : IDisposable
         var grant = await GrantAsync(InteractionIdFrom(signIn), "openid", "profile");
 
         grant.ShouldHaveIssuedCodeTo(RegisteredRedirect);
-        (await ReadInteractionAsync()).Should().BeNull("the decision is taken and the code issued in the one response");
+        (await ReadInteractionAsync(InteractionIdFrom(signIn))).Should().BeNull("the decision is taken and the code issued in the one response");
     }
 
     [Fact]
@@ -569,7 +569,7 @@ public sealed class ConsentInteractionTests : IDisposable
         parameters["error_description"].ToString().Should().Contain("identified");
         parameters["state"].Should().Equal(["opaque-client-state"]);
         parameters["iss"].Should().Equal(["https://test.example.com"]);
-        (await ReadInteractionAsync()).Should().BeNull("a refused request is not resumed later");
+        (await ReadInteractionAsync(InteractionIdFrom(signIn))).Should().BeNull("a refused request is not resumed later");
     }
 
     [Fact]
@@ -595,14 +595,30 @@ public sealed class ConsentInteractionTests : IDisposable
     [Fact]
     public async Task GrantAsync_naming_an_interaction_the_browser_is_not_carrying_is_refused()
     {
-        // Two tabs: the second authorization request replaced the first's context. Completing
-        // the first would record consent for a request the browser no longer holds.
-        var firstTab = await ReachConsentAsync();
-        await AuthorizeAsync();
+        // The interaction identifier travels in the consent page's URL, and URLs leak. Another
+        // browser that learned it must not be able to answer for the request.
+        var signIn = await ReachConsentAsync();
+        using var otherBrowser = NewClient(_factory);
 
-        var grant = async () => await GrantAsync(InteractionIdFrom(firstTab), "openid");
+        var grant = async () => await otherBrowser.PostAsync(
+            WithInteractionId(ConsentPath, InteractionIdFrom(signIn)), Form(("scope", "openid")), Cancellation);
 
         await grant.Should().ThrowAsync<ZeeKayDaInteractionException>();
+    }
+
+    [Fact]
+    public async Task A_second_tabs_authorization_request_does_not_end_the_firsts()
+    {
+        // Two tabs, each with its own interaction: the second request replaces nothing, and each
+        // completes with its own identifier.
+        var firstTab = await ReachConsentAsync();
+        var secondTab = await ReachConsentAsync();
+
+        var first = await GrantAsync(InteractionIdFrom(firstTab), "openid");
+        var second = await GrantAsync(InteractionIdFrom(secondTab), "openid");
+
+        first.ShouldHaveIssuedCodeTo(RegisteredRedirect);
+        second.ShouldHaveIssuedCodeTo(RegisteredRedirect);
     }
 
     [Fact]
@@ -645,7 +661,7 @@ public sealed class ConsentInteractionTests : IDisposable
         var secondHandoff = await AuthorizeAsync(query);
         var secondSignIn = await PostLoginAsync(InteractionIdFrom(secondHandoff), sub: "user-2");
         secondSignIn.ShouldHaveReachedConsent();
-        var secondInteraction = CookiesFrom(secondSignIn, ZeeKayDaCookies.Interaction);
+        var secondInteraction = CookiesFrom(secondHandoff, InteractionBindingCookie.NamePrefix);
         var secondSession = CookiesFrom(secondSignIn, ZeeKayDaCookies.Session).Single();
         var url = WithInteractionId(ConsentPath, InteractionIdFrom(secondSignIn));
 
@@ -698,7 +714,7 @@ public sealed class ConsentInteractionTests : IDisposable
         await DenyAsync(interactionId);
 
         (await ReadSessionSubjectAsync()).Should().Be("alice", "declining one client does not sign the user out");
-        (await ReadInteractionAsync()).Should().BeNull();
+        (await ReadInteractionAsync(interactionId)).Should().BeNull();
         var grant = async () => await GrantAsync(interactionId, "openid");
         await grant.Should().ThrowAsync<ZeeKayDaInteractionException>("a declined request cannot be resumed");
     }
@@ -743,7 +759,7 @@ public sealed class ConsentInteractionTests : IDisposable
 
         await byLink.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*POST*");
-        (await ReadInteractionAsync()).Should().NotBeNull("a refused decision leaves the request alive");
+        (await ReadInteractionAsync(interactionId)).Should().NotBeNull("a refused decision leaves the request alive");
         (await GrantAsync(interactionId, "openid")).ShouldHaveIssuedCodeTo(RegisteredRedirect, "the form post still completes it");
     }
 
@@ -804,7 +820,9 @@ public sealed class ConsentInteractionTests : IDisposable
         response.StatusCode.Should().Be(HttpStatusCode.Redirect);
         DestinationOf(response).Should().Be(RegisteredRedirect);
         RedirectQueryOf(response)["error"].Should().Equal(["consent_required"]);
-        (await ReadInteractionAsync()).Should().BeNull("a refused request is not left behind for a later sign-in");
+        response.Headers.GetValues("Set-Cookie").Should().Contain(
+            cookie => cookie.StartsWith(InteractionBindingCookie.NamePrefix) && cookie.Contains("expires=Thu, 01 Jan 1970"),
+            "a refused request is not left behind for a later sign-in");
     }
 
     [Fact]

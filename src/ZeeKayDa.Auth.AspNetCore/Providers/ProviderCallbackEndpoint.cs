@@ -187,17 +187,17 @@ internal sealed class ProviderCallbackEndpoint : IZeeKayDaEndpoint
         _logger.LogInformation("The user declined to sign in at provider {Provider}.", feature.Provider.Name);
 
         // The refusal reaches the client only for the interaction this browser is carrying and
-        // the refused challenge was issued for. Without the interaction cookie — a form_post
-        // callback is a cross-site POST the Lax cookie does not accompany — or with a mismatch,
-        // the refusal renders locally and the interaction, if any, survives.
-        var requestContext = _flow.Read(context);
-        if (requestContext is null
-            || feature.RefusedInteractionId is null
-            || !InteractionHandoff.IdentifiersMatch(requestContext.Id, feature.RefusedInteractionId))
-        {
-            return _outcomes.LocalError(context, AuthorizeRequestErrors.AccessDenied, DeclinedAtProvider);
-        }
+        // the refused challenge was issued for. Without the binding cookie — a form_post callback
+        // is a cross-site POST the Lax cookie does not accompany — the refusal renders locally and
+        // the interaction, if any, survives.
+        var requestContext = feature.RefusedInteractionId is { } refusedInteractionId
+            ? await _flow.ReadAsync(context, refusedInteractionId).ConfigureAwait(false)
+            : null;
 
-        return _outcomes.ClientError(context, requestContext, AuthorizeRequestErrors.AccessDenied, DeclinedAtProvider);
+        if (requestContext is null)
+            return _outcomes.LocalError(context, AuthorizeRequestErrors.AccessDenied, DeclinedAtProvider);
+
+        return await _outcomes.ClientErrorAsync(context, requestContext, AuthorizeRequestErrors.AccessDenied, DeclinedAtProvider)
+            .ConfigureAwait(false);
     }
 }

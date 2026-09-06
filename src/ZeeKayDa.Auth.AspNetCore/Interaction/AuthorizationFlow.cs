@@ -14,8 +14,8 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// <remarks>
 /// <para>
 /// Everything here is addressed by the interaction, never by "the current request's interaction as
-/// a global". That is deliberate: replacing the cookie with a store (#603) changes what is behind
-/// these methods and nothing about their callers.
+/// a global". Any number of interactions can be in flight in one browser, and each stage names
+/// the one it is working on.
 /// </para>
 /// <para>
 /// It is not an interface and does not want to be one. A single implementation does not justify
@@ -25,23 +25,23 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// </remarks>
 internal sealed class AuthorizationFlow
 {
-    private readonly AuthorizationRequestContextTransport _transport;
+    private readonly AuthorizationRequestContextStore _contexts;
     private readonly SsoSession _session;
     private readonly PendingPrincipalCookie _pending;
     private readonly TimeProvider _timeProvider;
 
     public AuthorizationFlow(
-        AuthorizationRequestContextTransport transport,
+        AuthorizationRequestContextStore contexts,
         SsoSession session,
         PendingPrincipalCookie pending,
         TimeProvider timeProvider)
     {
-        ArgumentNullException.ThrowIfNull(transport);
+        ArgumentNullException.ThrowIfNull(contexts);
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(pending);
         ArgumentNullException.ThrowIfNull(timeProvider);
 
-        _transport = transport;
+        _contexts = contexts;
         _session = session;
         _pending = pending;
         _timeProvider = timeProvider;
@@ -100,7 +100,7 @@ internal sealed class AuthorizationFlow
             Prompts = request.Prompts,
             MaxAge = request.MaxAge,
             IssuedAt = now,
-            ExpiresAt = now + AuthorizationRequestContextTransport.Lifetime,
+            ExpiresAt = now + AuthorizationRequestContextStore.Lifetime,
             SsoSessionId = session?.SessionId,
             Subject = session?.Subject,
             AuthTime = session?.AuthTime,
@@ -195,36 +195,34 @@ internal sealed class AuthorizationFlow
         };
     }
 
-    /// <summary>Reads the interaction context this request is carrying, if any.</summary>
-    public AuthorizationRequestContext? Read(HttpContext context) => _transport.TryRead(context);
+    /// <summary>
+    /// Reads the interaction <paramref name="interactionId"/> names, if this browser started it
+    /// and it is still alive.
+    /// </summary>
+    /// <exception cref="ZeeKayDaStoreException">The interaction store could not be read.</exception>
+    public ValueTask<AuthorizationRequestContext?> ReadAsync(HttpContext context, string interactionId) =>
+        _contexts.ReadAsync(context, interactionId, context.RequestAborted);
 
     /// <summary>
     /// Resolves the interaction this request is entitled to complete: the one the framework sent
-    /// the user to a host page for, named by <c>zkd_i</c> and confirmed against the identifier
-    /// inside the encrypted context. Never "the current interaction".
+    /// the user to a host page for, named by <c>zkd_i</c> and bound to this browser. Never "the
+    /// current interaction".
     /// </summary>
     /// <exception cref="ZeeKayDaInteractionException">
-    /// The request carries no <c>zkd_i</c>, there is no interaction context, or the two do not
-    /// name the same interaction.
+    /// The request carries no <c>zkd_i</c>, or names an interaction this browser is not carrying.
     /// </exception>
+    /// <exception cref="ZeeKayDaStoreException">The interaction store could not be read.</exception>
     public async ValueTask<AuthorizationRequestContext> ResolveAddressedAsync(HttpContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
 
         var interactionId = await RequireInteractionIdAsync(context).ConfigureAwait(false);
 
-        var requestContext = Read(context)
+        return await ReadAsync(context, interactionId).ConfigureAwait(false)
             ?? throw new ZeeKayDaInteractionException(
-                "There is no active interaction to complete. The authorization request has expired, or " +
-                "the login page was reached without going through /connect/authorize.");
-
-        if (!InteractionHandoff.IdentifiersMatch(requestContext.Id, interactionId))
-            throw new ZeeKayDaInteractionException(
-                "The interaction this request names is not the one this browser is carrying. This is what " +
-                "a second sign-in tab looks like: complete the authorization request that was started " +
-                "most recently, or start a new one.");
-
-        return requestContext;
+                "There is no active interaction with this identifier for this browser. The authorization " +
+                "request has expired or already completed, the page was reached without going through " +
+                "/connect/authorize, or the request was started in another browser.");
     }
 
     /// <summary>The interaction identifier the request was addressed with.</summary>
@@ -241,19 +239,18 @@ internal sealed class AuthorizationFlow
                 $"explicitly (asp-route-{InteractionHandoff.InteractionIdParameter}).");
     }
 
-    /// <summary>
-    /// Persists the context. Returns <see langword="false"/> when the encoded form exceeds what
-    /// may safely be carried, in which case nothing is written and the caller must fail the
-    /// request.
-    /// </summary>
-    public bool TryPersist(HttpContext context, AuthorizationRequestContext requestContext) =>
-        _transport.TryWrite(context, requestContext);
+    /// <summary>Persists the context, bound to this browser.</summary>
+    /// <exception cref="ZeeKayDaStoreException">The interaction store could not be written.</exception>
+    public ValueTask PersistAsync(HttpContext context, AuthorizationRequestContext requestContext) =>
+        _contexts.WriteAsync(context, requestContext, context.RequestAborted);
 
     /// <summary>
-    /// Discards the interaction. Called whenever a request fails, so that a failed or planted
-    /// interaction is never left alive for a later sign-in to pick up.
+    /// Discards the interaction. Called whenever a request ends, so that a completed, failed or
+    /// planted interaction is never left alive for a later sign-in to pick up.
     /// </summary>
-    public void Clear(HttpContext context) => _transport.Delete(context);
+    /// <exception cref="ZeeKayDaStoreException">The interaction store could not be written.</exception>
+    public ValueTask ClearAsync(HttpContext context, string interactionId) =>
+        _contexts.DeleteAsync(context, interactionId, context.RequestAborted);
 
     /// <summary>Parks a principal an external provider returned, bound to <paramref name="interactionId"/>.</summary>
     public Task ParkPendingAsync(HttpContext context, ClaimsPrincipal principal, string interactionId, string provider) =>

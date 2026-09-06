@@ -511,8 +511,10 @@ public sealed class ProviderRoundTripTests
     }
 
     [Fact]
-    public async Task Resume_after_the_interaction_was_replaced_by_another_tab_is_refused()
+    public async Task Resume_still_completes_after_another_tab_started_a_request()
     {
+        // Concurrent tabs: the second authorization request replaces nothing, so the provider
+        // round trip the first tab is in the middle of still lands.
         using var factory = NewFactory();
         using var client = NewClient(factory);
         var (_, challenge) = await ChallengeAsync(client);
@@ -521,9 +523,34 @@ public sealed class ProviderRoundTripTests
 
         var resume = await client.GetAsync(callback.Headers.Location!.OriginalString, Cancellation);
 
-        resume.StatusCode.Should().Be(HttpStatusCode.BadRequest, "the browser now carries a different interaction");
-        (await ReadSessionAsync(client)).Should().BeNull();
+        resume.ShouldHaveReachedConsent("the first tab's interaction is untouched by the second tab's request");
+        (await ReadSessionAsync(client)).Should().NotBeNull();
     }
+
+    [Fact]
+    public async Task Resume_from_a_browser_without_the_binding_cookie_is_refused_and_the_request_survives()
+    {
+        // The external ticket alone — the resume URL and its cookie replayed from another browser —
+        // names an interaction that browser never started, so there is nothing for it to resume.
+        using var factory = NewFactory();
+        using var browser = NewClient(factory);
+        var (interactionId, challenge) = await ChallengeAsync(browser);
+        var callback = await browser.GetAsync(CallbackUrlOf(challenge), Cancellation);
+        using var otherBrowser = factory.CreateClient(new() { BaseAddress = new Uri("https://test.example.com"), AllowAutoRedirect = false, HandleCookies = false });
+        using var request = new HttpRequestMessage(HttpMethod.Get, callback.Headers.Location!.OriginalString);
+        request.Headers.Add("Cookie", ExternalCookieOf(callback));
+
+        var resume = await otherBrowser.SendAsync(request, Cancellation);
+
+        resume.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var signIn = await browser.PostAsync(WithInteractionId(LoginPath, interactionId), Form(("sub", "user-1")), Cancellation);
+        signIn.ShouldHaveReachedConsent("the interaction survived the refused resume and the original browser can still complete it");
+    }
+
+    private static string ExternalCookieOf(HttpResponseMessage callback) =>
+        callback.Headers.GetValues("Set-Cookie")
+            .Select(header => header[..header.IndexOf(';')])
+            .Single(pair => pair.StartsWith("zkd.external=", StringComparison.Ordinal));
 
     [Fact]
     public async Task Resume_without_an_external_ticket_is_refused()

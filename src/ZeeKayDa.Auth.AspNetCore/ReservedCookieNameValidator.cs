@@ -50,7 +50,7 @@ internal sealed class ReservedCookieNameValidator : IStartupActivator
             // Every cookie handler resolves CookieAuthenticationOptions; a scheme backed by any
             // other handler resolves the default instance, whose cookie name is null.
             var name = cookieOptions.Get(scheme.Name).Cookie.Name;
-            if (name is not null && ZeeKayDaCookies.ReservedNames.Contains(name, StringComparer.Ordinal))
+            if (name is not null && IsReserved(name))
             {
                 context.AddFailure(
                     "cookie.reserved_name",
@@ -68,4 +68,13 @@ internal sealed class ReservedCookieNameValidator : IStartupActivator
     /// </summary>
     private static bool IsFrameworkScheme(string schemeName) =>
         ZeeKayDaCookies.SchemeNames.Contains(schemeName, StringComparer.Ordinal);
+
+    /// <summary>
+    /// A reserved name exactly, or anything under the interaction prefix: the binding cookies are
+    /// named <c>zkd.interaction.&lt;id&gt;</c>, and a host cookie in that space would be read as
+    /// one of them.
+    /// </summary>
+    private static bool IsReserved(string name) =>
+        ZeeKayDaCookies.ReservedNames.Contains(name, StringComparer.Ordinal)
+        || name.StartsWith(InteractionBindingCookie.NamePrefix, StringComparison.Ordinal);
 }

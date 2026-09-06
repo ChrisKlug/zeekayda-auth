@@ -4,8 +4,9 @@ using ZeeKayDa.Auth.Stores;
 namespace ZeeKayDa.Auth.AspNetCore;
 
 /// <summary>
-/// Verifies at application startup that both <see cref="IAuthorizationCodeStore"/> and
-/// <see cref="IRefreshTokenStore"/> have been registered in the dependency injection container.
+/// Verifies at application startup that every store the framework needs has been registered in
+/// the dependency injection container: <see cref="IAuthorizationCodeStore"/>,
+/// <see cref="IRefreshTokenStore"/>, and the interaction store behind the authorize flow.
 /// </summary>
 /// <remarks>
 /// Uses <see cref="IServiceProviderIsService"/> to inspect the DI container without resolving the
@@ -41,6 +42,12 @@ internal sealed class TokenStorePresenceValidator : IStartupVerifier
                 "No IRefreshTokenStore has been registered. " +
                 "Call builder.AddInMemoryRefreshTokenStore(), builder.AddRefreshTokenGrantStore<T>(), " +
                 "or builder.AddDistributedCacheRefreshTokenStore().");
+
+        if (!isService.IsService(typeof(IInteractionBackingStore)))
+            context.AddFailure(
+                "stores.interaction_store.missing",
+                "No interaction store has been registered. " +
+                "Call builder.AddInMemoryInteractionStore() or builder.AddDistributedCacheInteractionStore().");
 
         return ValueTask.CompletedTask;
     }

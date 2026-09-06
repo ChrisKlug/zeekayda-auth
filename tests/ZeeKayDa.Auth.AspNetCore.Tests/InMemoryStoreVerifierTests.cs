@@ -61,6 +61,7 @@ public sealed class InMemoryStoreVerifierTests
     [Theory]
     [InlineData(InMemoryStoreVerifier.AuthorizationCodeStoreName)]
     [InlineData(InMemoryStoreVerifier.RefreshTokenStoreName)]
+    [InlineData(InMemoryStoreVerifier.InteractionStoreName)]
     public async Task VerifyAsync_names_the_store_in_the_warning_args_in_Development_environment(string storeName)
     {
         var sut = BuildSut(Environments.Development, storeName: storeName);
@@ -160,6 +161,7 @@ public sealed class InMemoryStoreVerifierTests
     [Theory]
     [InlineData(InMemoryStoreVerifier.AuthorizationCodeStoreName)]
     [InlineData(InMemoryStoreVerifier.RefreshTokenStoreName)]
+    [InlineData(InMemoryStoreVerifier.InteractionStoreName)]
     public async Task VerifyAsync_names_the_store_in_the_Critical_override_warning_args(string storeName)
     {
         var sut = BuildSut(Environments.Production, allowOutsideDevelopment: true, storeName: storeName);

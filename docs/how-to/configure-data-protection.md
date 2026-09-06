@@ -47,7 +47,7 @@ ZeeKayDa.Auth registers four internal named cookie authentication schemes:
   for returning users — their `zkd.session` cookie was encrypted by a key that the new
   instance does not yet hold, forcing a silent re-authentication even though the user
   successfully signed in previously.
-- `zkd.interaction` — carries the authorization interaction context between redirects
+- `zkd.interaction.<id>` — binds one in-flight authorization request to the browser that started it; the request itself is a Data-Protection-encrypted entry in the interaction store, so a key-ring gap loses in-flight requests as well as sessions
 - `zkd.pending` — carries the half-authenticated principal during multi-step sign-in
 - `zkd.external` — carries the result of an external provider callback
 

@@ -1,18 +1,19 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
-using Microsoft.AspNetCore.WebUtilities;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
 using ZeeKayDa.Auth.AspNetCore.Providers;
 using ZeeKayDa.Auth.Authorization;
+using ZeeKayDa.Auth.Logging;
 
 namespace ZeeKayDa.Auth.AspNetCore.Endpoints;
 
 /// <summary>
 /// The authorization endpoint (<c>/connect/authorize</c>, GET and POST per OIDC Core 1.0
-/// §3.1.2.1). Validates the request, applies the two-phase error model, writes the interaction
+/// §3.1.2.1). Validates the request, applies the two-phase error model, stores the interaction
 /// context and hands off to authentication and consent; a request past both is answered with an
 /// authorization code at the client's registered redirect URI.
 /// </summary>
@@ -28,17 +29,20 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
     private readonly AuthorizationFlow _flow;
     private readonly InteractionOutcomes _outcomes;
     private readonly ProviderRegistry _providers;
+    private readonly ISanitizingLogger<AuthorizationEndpoint> _logger;
 
     public AuthorizationEndpoint(
         IOptions<AuthorizationServerOptions> options,
         AuthorizationFlow flow,
         InteractionOutcomes outcomes,
-        ProviderRegistry providers)
+        ProviderRegistry providers,
+        ISanitizingLogger<AuthorizationEndpoint> logger)
     {
         _options = options;
         _flow = flow;
         _outcomes = outcomes;
         _providers = providers;
+        _logger = logger;
     }
 
     /// <inheritdoc/>
@@ -72,34 +76,23 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
 
         var result = await validator.ValidateAsync(parameters, context.RequestAborted).ConfigureAwait(false);
 
+        // A request that fails validation never wrote an interaction, and touches none that
+        // another tab has in flight.
         return result switch
         {
             AuthorizeRequestValidationResult.Valid valid =>
                 await BeginInteractionAsync(context, valid.Request).ConfigureAwait(false),
 
-            AuthorizeRequestValidationResult.RedirectError redirect => FailRequest(
-                context, () => RedirectToClient(redirect)),
+            AuthorizeRequestValidationResult.RedirectError redirect => RedirectToClient(redirect),
 
-            AuthorizeRequestValidationResult.LocalError local => FailRequest(
-                context, () => RenderLocalError(context, local.Error, local.Description)),
+            AuthorizeRequestValidationResult.LocalError local => RenderLocalError(context, local.Error, local.Description),
 
             _ => throw new InvalidOperationException("Unknown validation result type."),
         };
     }
 
     /// <summary>
-    /// Clears any interaction context before answering an error. A request that fails validation
-    /// must not leave an earlier interaction alive to be picked up by the next sign-in — including
-    /// one a cross-site request planted.
-    /// </summary>
-    private IResult FailRequest(HttpContext context, Func<IResult> respond)
-    {
-        _flow.Clear(context);
-        return respond();
-    }
-
-    /// <summary>
-    /// Writes the interaction context the rest of the flow reads, then hands off: to the host's
+    /// Stores the interaction context the rest of the flow reads, then hands off: to the host's
     /// login page when the request must be authenticated, or straight on when an SSO session
     /// already answers for the user.
     /// </summary>
@@ -108,28 +101,21 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
         var session = await _flow.ReadSessionAsync(context).ConfigureAwait(false);
         var needsAuthentication = _flow.NeedsAuthentication(request, session);
 
-        // The context is written before any handoff decision: a request that cannot be carried at
-        // all is a fact about the request, and answering it with a decision about the user's
-        // session would report the second problem this request has rather than the first.
         // A continuing request carries the session it continues on; a request about to be
         // authenticated carries no subject, because it has none yet.
         var requestContext = _flow.CreateContext(request, needsAuthentication ? null : session);
 
-        if (!_flow.TryPersist(context, requestContext))
+        try
         {
-            // The one phase-2 failure that renders locally rather than redirecting. `state` must
-            // round-trip byte for byte (RFC 6749 §4.1.2.1), so echoing an oversized one builds a
-            // Location whose length depends on how the value percent-encodes — sometimes past what
-            // the client's server will accept, sometimes not. A deterministic error page beats a
-            // redirect that works or fails silently depending on the bytes in `state`. §4.1.2.1
-            // describes redirecting phase-2 errors rather than requiring it; the only MUST NOT is
-            // redirecting to an invalid URI, which this does not do.
-            return FailRequest(
-                context,
-                () => RenderLocalError(
-                    context,
-                    AuthorizeRequestErrors.InvalidRequest,
-                    "The authorization request is too large to process."));
+            await _flow.PersistAsync(context, requestContext).ConfigureAwait(false);
+        }
+        catch (ZeeKayDaStoreException ex)
+        {
+            // The redirect target is authenticated by now, so the client learns the server failed
+            // and the operator learns which store operation did.
+            _logger.LogError(ex, "Storing the authorization request for client {ClientId} failed.", request.Client.ClientId);
+
+            return RedirectToClient(request, AuthorizeRequestErrors.ServerError, InteractionOutcomes.CouldNotStoreRequest);
         }
 
         if (!needsAuthentication)
@@ -139,10 +125,10 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
         {
             // prompt=none is a promise not to show the user anything. The only honest answer to
             // "authenticate without interacting" is that authentication is required.
-            return FailRequest(context, () => RedirectToClient(
+            return await FailRequestAsync(context, requestContext, () => RedirectToClient(
                 request,
                 AuthorizeRequestErrors.LoginRequired,
-                "The request specified prompt=none but no authenticated session is available."));
+                "The request specified prompt=none but no authenticated session is available.")).ConfigureAwait(false);
         }
 
         var interaction = _options.Value.AuthorizationEndpoint.Interaction;
@@ -161,11 +147,21 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
                 // A configuration failure, reported to the client rather than rendered at the
                 // user: the redirect target is authenticated by this point, and the client's own
                 // error page is where a developer will be looking. Startup warned about this too.
-                return FailRequest(context, () => RedirectToClient(
+                return await FailRequestAsync(context, requestContext, () => RedirectToClient(
                     request,
                     AuthorizeRequestErrors.ServerError,
-                    "The authorization server is not configured to authenticate users."));
+                    "The authorization server is not configured to authenticate users.")).ConfigureAwait(false);
         }
+    }
+
+    /// <summary>
+    /// Discards the interaction just written before answering an error: a request that ends here
+    /// must not leave its interaction alive for a later sign-in to pick up.
+    /// </summary>
+    private async Task<IResult> FailRequestAsync(HttpContext context, AuthorizationRequestContext requestContext, Func<IResult> respond)
+    {
+        await _flow.ClearAsync(context, requestContext.Id).ConfigureAwait(false);
+        return respond();
     }
 
     /// <summary>
@@ -198,16 +194,10 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
 
     /// <summary>
     /// Delivers an error raised after validation passed — the interaction stage's own refusals —
-    /// through the same phase-2 channel validation failures use.
+    /// to the redirect URI phase 1 authenticated.
     /// </summary>
     private IResult RedirectToClient(ValidatedAuthorizeRequest request, string error, string description) =>
-        RedirectToClient(new AuthorizeRequestValidationResult.RedirectError
-        {
-            RedirectUri = request.RedirectUri,
-            Error = error,
-            Description = description,
-            State = request.State,
-        });
+        _outcomes.ClientError(request.RedirectUri, error, description, request.State);
 
     private IResult RedirectToClient(AuthorizeRequestValidationResult.RedirectError error) =>
         _outcomes.ClientError(error.RedirectUri, error.Error, error.Description, error.State);

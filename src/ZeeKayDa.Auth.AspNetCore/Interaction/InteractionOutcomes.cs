@@ -32,7 +32,8 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// </remarks>
 internal sealed class InteractionOutcomes
 {
-    private const string TooLarge = "The authorization request is too large to process.";
+    /// <summary>What the client is told when the interaction store refused to hold its request.</summary>
+    internal const string CouldNotStoreRequest = "The authorization server could not store the authorization request.";
 
     private readonly AuthorizationFlow _flow;
     private readonly AuthorizationResponses _responses;
@@ -76,15 +77,15 @@ internal sealed class InteractionOutcomes
         _responses.ErrorAtClient(redirectUri, error, description, state);
 
     /// <summary>
-    /// An error at the client's registered redirect URI, read out of the encrypted context. The
+    /// An error at the client's registered redirect URI, read out of the stored context. The
     /// interaction is discarded first: a request that ends in an error is not resumed later.
     /// </summary>
-    public IResult ClientError(HttpContext context, AuthorizationRequestContext requestContext, string error, string description)
+    public async Task<IResult> ClientErrorAsync(HttpContext context, AuthorizationRequestContext requestContext, string error, string description)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(requestContext);
 
-        _flow.Clear(context);
+        await _flow.ClearAsync(context, requestContext.Id).ConfigureAwait(false);
         return _responses.ErrorAtClient(requestContext.RedirectUri, error, description, requestContext.State);
     }
 
@@ -102,7 +103,7 @@ internal sealed class InteractionOutcomes
 
         // Discarded before the response is written, so a denied request cannot be resumed by a
         // later sign-in picking the context back up — nor by a parked principal bound to it.
-        _flow.Clear(context);
+        await _flow.ClearAsync(context, requestContext.Id).ConfigureAwait(false);
         await _flow.ConsumePendingAsync(context, requestContext.Id).ConfigureAwait(false);
 
         await WriteAsync(
@@ -154,12 +155,21 @@ internal sealed class InteractionOutcomes
             ConsentedAt = null,
         };
 
-        // Only unpersistable for a context already near the size ceiling before a few small
-        // fields were added to it. The session is established either way — what cannot continue
-        // is this authorization request, so it fails where the oversize did.
-        var result = _flow.TryPersist(context, authenticated)
-            ? await ContinueAsync(context, authenticated).ConfigureAwait(false)
-            : FailTooLarge(context);
+        IResult result;
+        try
+        {
+            await _flow.PersistAsync(context, authenticated).ConfigureAwait(false);
+            result = await ContinueAsync(context, authenticated).ConfigureAwait(false);
+        }
+        catch (ZeeKayDaStoreException ex)
+        {
+            // The session is established either way — what cannot continue is this authorization
+            // request. The client learns the server failed; the operator learns which store
+            // operation did, through the sanitizing logger.
+            _logger.LogError(ex, "Storing the authenticated authorization request for client {ClientId} failed.", requestContext.ClientId);
+
+            result = await ClientErrorAsync(context, requestContext, AuthorizeRequestErrors.ServerError, CouldNotStoreRequest).ConfigureAwait(false);
+        }
 
         await WriteAsync(context, result).ConfigureAwait(false);
     }
@@ -188,7 +198,7 @@ internal sealed class InteractionOutcomes
         {
             // The redirect URI was authenticated against a registration that no longer answers,
             // so nothing is sent there.
-            _flow.Clear(context);
+            await _flow.ClearAsync(context, requestContext.Id).ConfigureAwait(false);
             return _responses.Local(context, AuthorizeRequestErrors.InvalidRequest, AuthorizationCodeIssuer.ClientNoLongerAnswers);
         }
 
@@ -198,11 +208,11 @@ internal sealed class InteractionOutcomes
 
         if (requestContext.Prompts.Contains(PromptValue.None))
         {
-            return ClientError(
+            return await ClientErrorAsync(
                 context,
                 requestContext,
                 AuthorizeRequestErrors.ConsentRequired,
-                "The request specified prompt=none but the user's consent is required.");
+                "The request specified prompt=none but the user's consent is required.").ConfigureAwait(false);
         }
 
         if (_options.Value.AuthorizationEndpoint.Interaction.ConsentPath is not { } consentPath)
@@ -211,11 +221,11 @@ internal sealed class InteractionOutcomes
             {
                 // The client asked for a page this host deliberately does not have for its
                 // opt-out clients: a refusal the client can act on, not a configuration gap.
-                return ClientError(
+                return await ClientErrorAsync(
                     context,
                     requestContext,
                     AuthorizeRequestErrors.ConsentRequired,
-                    "The request specified prompt=consent but the authorization server has no consent page.");
+                    "The request specified prompt=consent but the authorization server has no consent page.").ConfigureAwait(false);
             }
 
             // A configuration gap, reported where a developer is looking — the client's error
@@ -225,11 +235,11 @@ internal sealed class InteractionOutcomes
                 "configured. Configure the consent page, or set RequireConsent to false on the registration.",
                 client.ClientId);
 
-            return ClientError(
+            return await ClientErrorAsync(
                 context,
                 requestContext,
                 AuthorizeRequestErrors.ServerError,
-                "The authorization server is not configured to obtain the user's consent.");
+                "The authorization server is not configured to obtain the user's consent.").ConfigureAwait(false);
         }
 
         return Results.Redirect(InteractionHandoff.BuildRedirectUrl(consentPath, requestContext.Id));
@@ -259,12 +269,6 @@ internal sealed class InteractionOutcomes
         var result = await _issuer.IssueAsync(context, consented, client).ConfigureAwait(false);
 
         await WriteAsync(context, result).ConfigureAwait(false);
-    }
-
-    private IResult FailTooLarge(HttpContext context)
-    {
-        _flow.Clear(context);
-        return _responses.Local(context, AuthorizeRequestErrors.InvalidRequest, TooLarge);
     }
 
     /// <summary>

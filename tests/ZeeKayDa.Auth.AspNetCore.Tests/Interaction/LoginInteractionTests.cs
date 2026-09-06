@@ -336,14 +336,38 @@ public sealed class LoginInteractionTests : IDisposable
     [Fact]
     public async Task SignInAsync_naming_an_interaction_the_browser_is_not_carrying_is_refused()
     {
-        // Two tabs: the first starts an authorization request, the second replaces the context.
-        // Without the binding, completing the first would issue a code for the second's client.
-        var firstTab = await AuthorizeAsync();
-        await AuthorizeAsync();
+        // The identifier travels in the login page's URL, and URLs leak. Another browser that
+        // learned it holds no binding for the request, and must not be able to complete it.
+        var handoff = await AuthorizeAsync();
+        using var otherBrowser = _factory.CreateClient(new()
+        {
+            BaseAddress = new Uri("https://test.example.com"),
+            AllowAutoRedirect = false,
+            HandleCookies = true,
+        });
+        using var content = new FormUrlEncodedContent([KeyValuePair.Create("sub", "user-1")]);
 
-        var signIn = async () => await PostLoginAsync(InteractionIdFrom(firstTab), ("sub", "user-1"));
+        var signIn = async () => await otherBrowser.PostAsync(
+            QueryHelpers.AddQueryString(LoginPath, InteractionHandoff.InteractionIdParameter, InteractionIdFrom(handoff)),
+            content,
+            TestContext.Current.CancellationToken);
 
         await signIn.Should().ThrowAsync<ZeeKayDaInteractionException>();
+    }
+
+    [Fact]
+    public async Task A_second_tab_starting_a_request_does_not_stop_the_first_tab_signing_in()
+    {
+        // Concurrent tabs: each interaction has its own entry and its own binding, so the second
+        // authorization request replaces nothing.
+        var firstTab = await AuthorizeAsync();
+        var secondTab = await AuthorizeAsync();
+
+        var first = await PostLoginAsync(InteractionIdFrom(firstTab), ("sub", "user-1"));
+        var second = await PostLoginAsync(InteractionIdFrom(secondTab), ("sub", "user-1"));
+
+        first.ShouldHaveReachedConsent();
+        second.ShouldHaveReachedConsent();
     }
 
     [Fact]
@@ -503,19 +527,30 @@ public sealed class LoginInteractionTests : IDisposable
     [Fact]
     public async Task DenyAsync_naming_an_interaction_the_browser_is_not_carrying_is_refused()
     {
-        // Aiming a deny at another tab's request would be a cross-tab denial of service.
-        var firstTab = await AuthorizeAsync();
-        var secondTab = await AuthorizeAsync();
+        // Aiming a deny at a request from a browser that never held it would be a cross-browser
+        // denial of service on anyone whose login URL leaked.
+        var handoff = await AuthorizeAsync();
+        var interactionId = InteractionIdFrom(handoff);
+        using var otherBrowser = _factory.CreateClient(new()
+        {
+            BaseAddress = new Uri("https://test.example.com"),
+            AllowAutoRedirect = false,
+            HandleCookies = true,
+        });
+        using var content = new FormUrlEncodedContent([]);
 
-        var cancel = async () => await PostCancelAsync(InteractionIdFrom(firstTab));
+        var cancel = async () => await otherBrowser.PostAsync(
+            QueryHelpers.AddQueryString(CancelPath, InteractionHandoff.InteractionIdParameter, interactionId),
+            content,
+            TestContext.Current.CancellationToken);
 
         await cancel.Should().ThrowAsync<ZeeKayDaInteractionException>();
 
-        // Refusing is only half of it: the interaction the browser *is* carrying must survive the
-        // refused deny, or a rejected cross-tab attempt would still have killed the live request.
-        var signIn = await PostLoginAsync(InteractionIdFrom(secondTab), ("sub", "user-1"));
+        // Refusing is only half of it: the interaction must survive the refused deny, or a
+        // rejected attempt would still have killed the live request.
+        var signIn = await PostLoginAsync(interactionId, ("sub", "user-1"));
 
-        signIn.ShouldHaveReachedConsent("the live interaction is untouched by a deny that named a different one");
+        signIn.ShouldHaveReachedConsent("the live interaction is untouched by a deny from a browser that never held it");
     }
 
     [Fact]

@@ -52,6 +52,33 @@ public interface IAuthorizationCodeStore
     Task StoreAsync(string code, AuthorizationCodeEntry entry, CancellationToken cancellationToken);
 
     /// <summary>
+    /// Claims the right to issue the one authorization code an interaction may produce. Called by
+    /// the authorization endpoint before a code is generated for the interaction identified by
+    /// <paramref name="interactionId"/>.
+    /// </summary>
+    /// <param name="interactionId">The identifier of the interaction a code is about to be issued for.</param>
+    /// <param name="interactionExpiresAt">
+    /// When the interaction expires. The claim outlives it, so a second response for the same
+    /// interaction is refused for as long as the interaction could still be read.
+    /// </param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>
+    /// <see langword="true"/> when this caller holds the claim and may issue; <see langword="false"/>
+    /// when a code has already been issued, or is being issued, for the interaction.
+    /// </returns>
+    /// <remarks>
+    /// Two responses racing to complete one interaction — a consent form posted twice before the
+    /// first response landed — would each mint a code from one decision. The claim is written
+    /// through the same atomic insert-if-absent that makes a code single-use, so exactly one of
+    /// them wins on any backend where redemption is single-use.
+    /// </remarks>
+    /// <exception cref="ZeeKayDaStoreException">
+    /// Thrown when the underlying store cannot complete the write due to an infrastructure
+    /// failure (network, cache, database).
+    /// </exception>
+    ValueTask<bool> TryReserveInteractionAsync(string interactionId, DateTimeOffset interactionExpiresAt, CancellationToken cancellationToken);
+
+    /// <summary>
     /// Attempts to atomically redeem the authorization code identified by
     /// <paramref name="code"/> on behalf of <paramref name="clientId"/>.
     /// </summary>

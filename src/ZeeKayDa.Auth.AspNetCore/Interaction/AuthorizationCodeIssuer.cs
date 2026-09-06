@@ -11,9 +11,9 @@ using ZeeKayDa.Auth.Stores;
 namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 
 /// <summary>
-/// The last step of a successful authorization request: mints the authorization code, stores
-/// the entry the token endpoint will redeem, discards the interaction, and delivers the code to
-/// the client's registered redirect URI.
+/// The last step of a successful authorization request: claims the interaction, mints the
+/// authorization code, stores the entry the token endpoint will redeem, discards the
+/// interaction, and delivers the code to the client's registered redirect URI.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -32,6 +32,12 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// consent was asked. The registration is the one the caller resolved in this same request, so a
 /// client narrowed since the request was accepted issues a narrower code, and one that no longer
 /// allows <c>openid</c> ends the request as one that dropped its redirect URI does.
+/// </para>
+/// <para>
+/// One code per interaction. Two responses racing to complete the same interaction — a consent
+/// form posted twice before the first response landed — each read the interaction alive, so the
+/// store decides: the code store's atomic claim on the interaction is taken before a code is
+/// minted, and the response that loses it issues nothing.
 /// </para>
 /// </remarks>
 internal sealed class AuthorizationCodeIssuer
@@ -84,6 +90,9 @@ internal sealed class AuthorizationCodeIssuer
     /// carries no decision. Both are caller errors: every path that reaches issuance binds the
     /// session and records the decision first.
     /// </exception>
+    /// <exception cref="ZeeKayDaInteractionException">
+    /// A code has already been issued for this interaction by a response that completed it first.
+    /// </exception>
     public async Task<IResult> IssueAsync(
         HttpContext context,
         AuthorizationRequestContext requestContext,
@@ -101,7 +110,7 @@ internal sealed class AuthorizationCodeIssuer
 
         if (!scopes.Contains(StandardScopes.OpenId.Name, StringComparer.Ordinal))
         {
-            _flow.Clear(context);
+            await _flow.ClearAsync(context, requestContext.Id).ConfigureAwait(false);
             return _responses.Local(context, AuthorizeRequestErrors.InvalidRequest, ClientNoLongerAnswers);
         }
 
@@ -124,15 +133,19 @@ internal sealed class AuthorizationCodeIssuer
             ExpiresAt = now + _options.Value.AuthorizationEndpoint.AuthorizationCodeLifetime,
         };
 
-        var code = StoreKeyGenerator.Generate();
+        // Resolved from the request's services rather than the constructor, for the reason
+        // AuthorizationFlow resolves the client resolver that way: this singleton is built when
+        // the endpoints are mapped, before startup verification has said whether a store is
+        // registered at all.
+        var store = context.RequestServices.GetRequiredService<IAuthorizationCodeStore>();
 
+        string code;
         try
         {
-            // Resolved from the request's services rather than the constructor, for the reason
-            // AuthorizationFlow resolves the client resolver that way: this singleton is built
-            // when the endpoints are mapped, before startup verification has said whether a
-            // store is registered at all.
-            var store = context.RequestServices.GetRequiredService<IAuthorizationCodeStore>();
+            if (!await store.TryReserveInteractionAsync(requestContext.Id, requestContext.ExpiresAt, context.RequestAborted).ConfigureAwait(false))
+                return await RefuseSecondIssuanceAsync(context, requestContext).ConfigureAwait(false);
+
+            code = StoreKeyGenerator.Generate();
             await store.StoreAsync(code, entry, context.RequestAborted).ConfigureAwait(false);
         }
         catch (ZeeKayDaStoreException ex)
@@ -141,12 +154,26 @@ internal sealed class AuthorizationCodeIssuer
             // failed; the operator learns which store operation did, through the sanitizing logger.
             _logger.LogError(ex, "Storing the authorization code for client {ClientId} failed.", client.ClientId);
 
-            _flow.Clear(context);
+            await _flow.ClearAsync(context, requestContext.Id).ConfigureAwait(false);
             return _responses.ErrorAtClient(requestContext.RedirectUri, AuthorizeRequestErrors.ServerError, CouldNotIssue, requestContext.State);
         }
 
-        _flow.Clear(context);
+        await _flow.ClearAsync(context, requestContext.Id).ConfigureAwait(false);
         return _responses.CodeAtClient(requestContext.RedirectUri, code, requestContext.State);
+    }
+
+    /// <summary>
+    /// The interaction was claimed by another response first. Refused the way a replayed form is,
+    /// since from the page's side that is what it is: a decision for a request that no longer
+    /// has one to take.
+    /// </summary>
+    private async Task<IResult> RefuseSecondIssuanceAsync(HttpContext context, AuthorizationRequestContext requestContext)
+    {
+        await _flow.ClearAsync(context, requestContext.Id).ConfigureAwait(false);
+
+        throw new ZeeKayDaInteractionException(
+            "An authorization code has already been issued for this interaction. The same decision " +
+            "was submitted twice; the first submission completed the authorization request.");
     }
 
     /// <summary>

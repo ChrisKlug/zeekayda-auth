@@ -315,7 +315,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     // ── AddInMemoryStores: happy path ─────────────────────────────────────────────────────────────
 
     [Fact]
-    public void AddInMemoryStores_registers_both_IAuthorizationCodeStore_and_IRefreshTokenStore()
+    public void AddInMemoryStores_registers_the_code_refresh_token_and_interaction_stores()
     {
         var services = new ServiceCollection();
         var builder = new ZeeKayDaAuthBuilder(services);
@@ -331,6 +331,9 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
         services.Should().Contain(sd =>
             sd.ServiceType == typeof(IRefreshTokenGrantStore) &&
             sd.ImplementationType == typeof(InMemoryRefreshTokenGrantStore));
+        services.Should().Contain(sd =>
+            sd.ServiceType == typeof(IInteractionBackingStore) &&
+            sd.ImplementationType == typeof(InMemoryInteractionBackingStore));
     }
 
     [Fact]
@@ -343,7 +346,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
 
         using var provider = services.BuildServiceProvider();
         provider.GetServices<IStartupVerifier>().OfType<InMemoryStoreVerifier>()
-            .Should().HaveCount(2, "each of the two stores registers its own independently-gated verifier");
+            .Should().HaveCount(3, "each of the three stores registers its own independently-gated verifier");
     }
 
     [Fact]
@@ -361,7 +364,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     }
 
     [Fact]
-    public async Task AddInMemoryStores_produces_two_distinctly_worded_warnings_not_the_same_warning_twice()
+    public async Task AddInMemoryStores_produces_a_distinctly_worded_warning_per_store_not_the_same_warning_repeated()
     {
         var services = CreateServicesWithWarningServiceDependencies();
         var builder = new ZeeKayDaAuthBuilder(services);
@@ -378,10 +381,11 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
         }
 
         var allArgs = contexts.SelectMany(c => c.Warnings).SelectMany(w => w.Args).ToList();
-        allArgs.Distinct().Should().HaveCount(2,
+        allArgs.Distinct().Should().HaveCount(3,
             "each store's warning must name its own store, not repeat an identical value");
         allArgs.Should().Contain(InMemoryStoreVerifier.AuthorizationCodeStoreName);
         allArgs.Should().Contain(InMemoryStoreVerifier.RefreshTokenStoreName);
+        allArgs.Should().Contain(InMemoryStoreVerifier.InteractionStoreName);
     }
 
     // ── AddInMemoryStores: allowOutsideDevelopment parameter ──────────────────────────────────────
@@ -467,6 +471,116 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
 
         act.Should().Throw<InvalidOperationException>()
             .WithMessage("*IRefreshTokenStore is already registered*");
+    }
+
+    [Fact]
+    public void AddInMemoryStores_throws_InvalidOperationException_when_an_interaction_store_is_already_registered()
+    {
+        var services = new ServiceCollection();
+        var builder = new ZeeKayDaAuthBuilder(services);
+        builder.AddDistributedCacheInteractionStore();
+
+        var act = () => builder.AddInMemoryStores();
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*IInteractionBackingStore is already registered*");
+    }
+
+    // ── AddInMemoryInteractionStore ───────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void AddInMemoryInteractionStore_registers_the_per_process_store_and_its_gate()
+    {
+        // Control-presence: the gate on a per-process store outside Development is only a control
+        // if the registration that creates the store also registers it.
+        var services = CreateServicesWithWarningServiceDependencies();
+        var builder = new ZeeKayDaAuthBuilder(services);
+
+        builder.AddInMemoryInteractionStore();
+
+        services.Should().Contain(sd =>
+            sd.ServiceType == typeof(IInteractionBackingStore) &&
+            sd.ImplementationType == typeof(InMemoryInteractionBackingStore) &&
+            sd.Lifetime == ServiceLifetime.Singleton);
+        using var provider = services.BuildServiceProvider();
+        provider.GetServices<IStartupVerifier>().OfType<InMemoryStoreVerifier>()
+            .Should().ContainSingle().Which.Name.Should().Be($"InMemoryStore({InMemoryStoreVerifier.InteractionStoreName})");
+    }
+
+    [Fact]
+    public void AddInMemoryInteractionStore_throws_InvalidOperationException_when_an_interaction_store_is_already_registered()
+    {
+        var services = new ServiceCollection();
+        var builder = new ZeeKayDaAuthBuilder(services);
+        builder.AddInMemoryInteractionStore();
+
+        var act = () => builder.AddInMemoryInteractionStore();
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*IInteractionBackingStore is already registered*");
+    }
+
+    // ── AddDistributedCacheInteractionStore ───────────────────────────────────────────────────────
+
+    [Fact]
+    public void AddDistributedCacheInteractionStore_registers_the_cache_backed_store_and_its_gate()
+    {
+        var services = CreateServicesWithWarningServiceDependencies();
+        var builder = new ZeeKayDaAuthBuilder(services);
+
+        builder.AddDistributedCacheInteractionStore();
+
+        services.Should().Contain(sd =>
+            sd.ServiceType == typeof(IInteractionBackingStore) &&
+            sd.ImplementationType == typeof(DistributedCacheInteractionBackingStore) &&
+            sd.Lifetime == ServiceLifetime.Singleton);
+        using var provider = services.BuildServiceProvider();
+        provider.GetServices<IStartupActivator>()
+            .Should().ContainSingle(activator => activator is DistributedCacheInteractionStoreStartupValidator);
+    }
+
+    [Fact]
+    public async Task AddDistributedCacheInteractionStore_passes_the_memory_cache_override_through_to_its_gate()
+    {
+        var services = CreateServicesWithWarningServiceDependencies(Environments.Production);
+        services.AddDistributedMemoryCache();
+        var builder = new ZeeKayDaAuthBuilder(services);
+
+        builder.AddDistributedCacheInteractionStore(allowMemoryCacheOutsideDevelopment: true);
+
+        using var provider = services.BuildServiceProvider();
+        var gate = provider.GetServices<IStartupActivator>().OfType<DistributedCacheInteractionStoreStartupValidator>().Single();
+        var context = new StartupVerificationContext();
+        await gate.VerifyAsync(context, provider, CancellationToken.None);
+        context.Failures.Should().BeEmpty();
+        context.Warnings.Should().ContainSingle().Which.Code.Should().Be("stores.interaction.per_process_cache_override");
+    }
+
+    [Fact]
+    public void AddDistributedCacheInteractionStore_throws_InvalidOperationException_when_an_interaction_store_is_already_registered()
+    {
+        var services = new ServiceCollection();
+        var builder = new ZeeKayDaAuthBuilder(services);
+        builder.AddInMemoryInteractionStore();
+
+        var act = () => builder.AddDistributedCacheInteractionStore();
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*IInteractionBackingStore is already registered*");
+    }
+
+    [Fact]
+    public void Registering_an_interaction_store_does_not_block_the_token_store_registrations()
+    {
+        var services = new ServiceCollection();
+        var builder = new ZeeKayDaAuthBuilder(services);
+        builder.AddDistributedCacheInteractionStore();
+
+        var act = () => builder
+            .AddAuthorizationCodeStore<StubAuthorizationCodeBackingStore>()
+            .AddRefreshTokenGrantStore<StubRefreshTokenGrantStore>();
+
+        act.Should().NotThrow();
     }
 
     // ── AddDistributedCacheAuthorizationCodeStore: happy path ────────────────────────────────────

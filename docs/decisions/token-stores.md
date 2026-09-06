@@ -1,7 +1,8 @@
 # Token stores
 
 Rules shared by the authorization-code store and the refresh-token store, plus the code store's own
-redemption protocol. The refresh-token grant model is `refresh-token-grants.md`.
+redemption protocol and the interaction store's registration. The refresh-token grant model is
+`refresh-token-grants.md`; the interaction store's contents are `interaction-and-session.md`.
 
 ## Decisions in force
 
@@ -69,12 +70,19 @@ is not one. The cleartext-`FamilyId` sign-off is predicated on one code mapping 
 reusing an id across codes extends a per-code correlation surface into a chain nobody assessed.
 
 **No store is auto-registered, and absence fails startup.** A startup validator fails the host when
-either coordinator interface is unregistered, and every registration method throws
-`InvalidOperationException` on a second registration for the same interface rather than letting an
-earlier call silently win. In-memory registrations warn in `Development`; outside it they fail
-startup unless the call passed `allowOutsideDevelopment: true`, which downgrades the failure to a
-`Critical` warning on every startup. That flag is a parameter on the one registration method that
-needs it, never a bindable option — it is meaningless without the call it qualifies.
+either coordinator interface or the interaction store is unregistered, and every registration
+method throws `InvalidOperationException` on a second registration for the same interface rather
+than letting an earlier call silently win. In-memory registrations warn in `Development`; outside it
+they fail startup unless the call passed `allowOutsideDevelopment: true`, which downgrades the
+failure to a `Critical` warning on every startup. That flag is a parameter on the one registration
+method that needs it, never a bindable option — it is meaningless without the call it qualifies.
+`AddInMemoryStores` covers all three stores; the distributed-cache interaction store is its own
+call, because its production story differs from the token stores' (below).
+
+**One code per interaction is the code store's invariant, keyed `zkd:code:i:{hex(sha256(id))}`.**
+`IAuthorizationCodeStore.TryReserveInteractionAsync` writes the claim through the same atomic
+insert-if-absent that makes a code single-use, so any backend on which redemption is single-use
+decides the consent-POST race too, and no new backing member or conformance test was needed.
 
 **Options placement.** `AuthorizationCodeLifetime` (60s) on `AuthorizationEndpoint`;
 `RefreshTokenLifetime` (14 days, no enforced upper bound — operators own that trade-off) on
@@ -86,11 +94,14 @@ removed from the ring before every token it protected has expired makes those to
 undecryptable; because a failed decrypt is fail-closed to `NotFound`, the visible symptom is users
 being logged out with no error at all.
 
-**Nothing that ships today is a production store.** The in-memory and `IDistributedCache`-backed
-stores are development and test only. `IDistributedCache` has no atomic check-and-set, so
-insert-if-absent and the grant-store compare-and-set are both read-then-write with a real TOCTOU
-window, and an evicting cache can drop a tombstone before its TTL. Production means a backend with a
-native atomic primitive, registered through the typed path.
+**No token store that ships today is a production store; the distributed-cache interaction store
+is.** The in-memory and `IDistributedCache`-backed token stores are development and test only.
+`IDistributedCache` has no atomic check-and-set, so insert-if-absent and the grant-store
+compare-and-set are both read-then-write with a real TOCTOU window, and an evicting cache can drop a
+tombstone before its TTL. Production means a backend with a native atomic primitive, registered
+through the typed path. The interaction store is the asymmetry: it needs no atomic operation — the
+one race is decided by the code store — and eviction only fails a flow closed, so a shared cache is
+a complete answer for it and no Redis-specific interaction store is wanted.
 
 **The conformance kit is the last resort, not the sanctioned path.** `ZeeKayDa.Auth.TestKit` ships
 derive-and-run fixtures for both backing contracts, in its own package so a third party needs no

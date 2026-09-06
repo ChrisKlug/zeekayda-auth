@@ -7,7 +7,7 @@ nav_order: 6
 
 *Added in Unreleased.*
 
-ZeeKayDa.Auth requires an `IAuthorizationCodeStore` and an `IRefreshTokenStore` to be registered before the application starts. Neither is registered automatically; you must opt in using the builder methods on `ZeeKayDaAuthBuilder`.
+ZeeKayDa.Auth requires an `IAuthorizationCodeStore`, an `IRefreshTokenStore` and an interaction store to be registered before the application starts. None is registered automatically; you must opt in using the builder methods on `ZeeKayDaAuthBuilder`. The two token stores are covered first; the interaction store, which holds authorization requests while the user signs in, has its own section [below](#the-interaction-store).
 
 For the full API reference, see [Token stores](../reference/token-stores.md).
 
@@ -31,7 +31,7 @@ For the full API reference, see [Token stores](../reference/token-stores.md).
 
 ## Option 1 — In-memory stores (development and testing only)
 
-Call `.AddInMemoryStores()` on the builder to register both stores in one step:
+Call `.AddInMemoryStores()` on the builder to register all three stores — codes, refresh tokens and interactions — in one step:
 
 ```csharp
 using ZeeKayDa.Auth;
@@ -129,9 +129,31 @@ See [Implementing a custom store](../reference/token-stores.md#implementing-a-cu
 
 ---
 
+## The interaction store
+
+An authorization request lives in the interaction store from the moment `/connect/authorize` accepts it until the user has signed in and, where required, consented. Each request is one entry, bound to the browser that started it by a small `zkd.interaction.<id>` cookie, so any number of sign-ins can be in flight in one browser at once.
+
+The interaction store needs only set, get and remove. That is exactly what a distributed cache provides, so unlike the token stores there is nothing bespoke to write for production: register a shared `IDistributedCache` and point the interaction store at it.
+
+```csharp
+builder.Services.AddStackExchangeRedisCache(o => o.Configuration = "...");
+
+builder.Services
+    .AddZeeKayDaAuth(options => { options.Issuer = "https://id.example.com"; })
+    .AddAuthorizationCodeStore<MyAtomicAuthorizationCodeStore>()
+    .AddRefreshTokenGrantStore<MyAtomicRefreshTokenStore>()
+    .AddDistributedCacheInteractionStore();
+```
+
+In development, `.AddInMemoryStores()` already registers a per-process interaction store; `.AddInMemoryInteractionStore()` registers it on its own, with the same `allowOutsideDevelopment` gate as the other in-memory stores.
+
+> ⚠️ **Warning:** `AddDistributedMemoryCache()` registers a cache that, despite its name, is shared with nothing. Behind a load balancer the login POST can land on an instance that never saw the authorize request, and the failure looks like an intermittent bug in your login page. Outside a `Development` environment the framework therefore refuses to start when `.AddDistributedCacheInteractionStore()` resolves that cache, unless you pass `allowMemoryCacheOutsideDevelopment: true` for an integration test host — in which case a `Critical` log entry is emitted on every start.
+
+---
+
 ## Mixing stores
 
-The two stores are independently replaceable. A common pattern during a migration is to use the in-memory authorization code store (acceptable because codes are short-lived) alongside a custom persistent refresh token store:
+The two token stores are independently replaceable. A common pattern during a migration is to use the in-memory authorization code store (acceptable because codes are short-lived) alongside a custom persistent refresh token store:
 
 ```csharp
 builder.Services
