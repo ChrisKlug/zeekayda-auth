@@ -738,28 +738,27 @@ public sealed class AuthorizationCodeIssuanceTests : IDisposable
     }
 
     [Fact]
-    public async Task Issuance_for_an_interaction_that_expired_while_the_response_was_prepared_is_refused()
+    public async Task Issuance_for_an_interaction_that_expires_while_it_is_being_claimed_is_refused()
     {
         // The claim on the interaction lasts only as long as the interaction. A response that
-        // resolved the context alive but reaches issuance after it expired must not mint a code
-        // that nothing stops a second late response from minting again.
+        // resolved the context alive, then stalled inside the store past the interaction's expiry,
+        // would otherwise mint a code after an earlier response's claim had already lapsed. The
+        // store here moves the clock past expiry during the claim itself.
         var issuer = _factory.Services.GetRequiredService<AuthorizationCodeIssuer>();
-        var context = new DefaultHttpContext { RequestServices = _factory.Services };
-        var expired = UnauthenticatedContext() with
+        var stalling = new StallingCodeStore(_factory.Services.GetRequiredService<IAuthorizationCodeStore>(), _time, TimeSpan.FromMinutes(11));
+        var context = new DefaultHttpContext { RequestServices = new OverridingServiceProvider(_factory.Services, stalling) };
+        var alive = UnauthenticatedContext() with
         {
             ClientId = TrustedClient,
             SsoSessionId = "session-1",
             Subject = "user-1",
             AuthTime = Now,
-            ExpiresAt = Now,
         };
 
-        var issue = async () => await issuer.IssueAsync(context, expired, TrustedRegistration());
+        var issue = async () => await issuer.IssueAsync(context, alive, TrustedRegistration());
 
         await issue.Should().ThrowAsync<ZeeKayDaInteractionException>().WithMessage("*expired*");
-        (await _factory.Services.GetRequiredService<IAuthorizationCodeStore>()
-            .TryReserveInteractionAsync(expired.Id, expired.ExpiresAt.AddMinutes(1), Cancellation))
-            .Should().BeTrue("nothing was claimed and nothing was minted");
+        stalling.Stored.Should().BeFalse("no code is minted for an interaction that ran out while it was being claimed");
     }
 
     [Fact]
@@ -814,6 +813,41 @@ public sealed class AuthorizationCodeIssuanceTests : IDisposable
             failRemoval
                 ? throw new IOException("The cache is unreachable.")
                 : _inner.RemoveAsync(key, cancellationToken);
+    }
+
+    /// <summary>
+    /// A code store whose claim on the interaction takes long enough for the clock to move by
+    /// <paramref name="stall"/> — a slow cache round trip — and which records whether a code was
+    /// then stored.
+    /// </summary>
+    private sealed class StallingCodeStore(IAuthorizationCodeStore inner, FakeTimeProvider time, TimeSpan stall) : IAuthorizationCodeStore
+    {
+        public bool Stored { get; private set; }
+
+        public async ValueTask<bool> TryReserveInteractionAsync(string interactionId, DateTimeOffset interactionExpiresAt, CancellationToken cancellationToken)
+        {
+            var reserved = await inner.TryReserveInteractionAsync(interactionId, interactionExpiresAt, cancellationToken);
+            time.Advance(stall);
+            return reserved;
+        }
+
+        public Task StoreAsync(string code, AuthorizationCodeEntry entry, CancellationToken cancellationToken)
+        {
+            Stored = true;
+            return inner.StoreAsync(code, entry, cancellationToken);
+        }
+
+        public ValueTask<AuthorizationCodeRedemptionResult> TryRedeemAsync(string code, string clientId, string familyId, CancellationToken cancellationToken) =>
+            inner.TryRedeemAsync(code, clientId, familyId, cancellationToken);
+
+        void IAuthorizationCodeStore.SealAsFrameworkOwnedProtocol() { }
+    }
+
+    /// <summary>The host's services, with one <see cref="IAuthorizationCodeStore"/> swapped in for a single request.</summary>
+    private sealed class OverridingServiceProvider(IServiceProvider inner, IAuthorizationCodeStore store) : IServiceProvider
+    {
+        public object? GetService(Type serviceType) =>
+            serviceType == typeof(IAuthorizationCodeStore) ? store : inner.GetService(serviceType);
     }
 
     /// <summary>A backing store on which every interaction claim has already been taken by someone else.</summary>

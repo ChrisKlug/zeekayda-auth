@@ -115,15 +115,50 @@ internal sealed class AuthorizationCodeIssuer
             return _responses.Local(context, AuthorizeRequestErrors.InvalidRequest, ClientNoLongerAnswers);
         }
 
-        var now = _timeProvider.GetUtcNow();
+        // Resolved from the request's services rather than the constructor, for the reason
+        // AuthorizationFlow resolves the client resolver that way: this singleton is built when
+        // the endpoints are mapped, before startup verification has said whether a store is
+        // registered at all.
+        var store = context.RequestServices.GetRequiredService<IAuthorizationCodeStore>();
 
-        // Resolved alive some time ago; issued now. The claim on the interaction only lasts as long
-        // as the interaction itself, so a response that outlived it must not mint a code the claim
-        // no longer guards against a second one.
-        if (now >= requestContext.ExpiresAt)
-            return await RefuseExpiredAsync(context, requestContext).ConfigureAwait(false);
+        string code;
+        try
+        {
+            if (!await store.TryReserveInteractionAsync(requestContext.Id, requestContext.ExpiresAt, context.RequestAborted).ConfigureAwait(false))
+                return await RefuseSecondIssuanceAsync(context, requestContext).ConfigureAwait(false);
 
-        var entry = new AuthorizationCodeEntry
+            // Checked after the claim, not before: the claim lasts only as long as the interaction,
+            // so a response that outlived it could otherwise claim again once the first response's
+            // claim had expired. Two claims can both succeed only if both landed before the
+            // interaction expired, and the atomic insert already forbids that.
+            var now = _timeProvider.GetUtcNow();
+            if (now >= requestContext.ExpiresAt)
+                return await RefuseExpiredAsync(context, requestContext).ConfigureAwait(false);
+
+            code = StoreKeyGenerator.Generate();
+            await store.StoreAsync(code, BuildEntry(requestContext, session, scopes, now), context.RequestAborted).ConfigureAwait(false);
+        }
+        catch (ZeeKayDaStoreException ex)
+        {
+            // Nothing was handed out, so nothing needs revoking. The client learns the server
+            // failed; the operator learns which store operation did, through the sanitizing logger.
+            _logger.LogError(ex, "Storing the authorization code for client {ClientId} failed.", client.ClientId);
+
+            await _flow.ClearAsync(context, requestContext.Id).ConfigureAwait(false);
+            return _responses.ErrorAtClient(requestContext.RedirectUri, AuthorizeRequestErrors.ServerError, CouldNotIssue, requestContext.State);
+        }
+
+        await DiscardIssuedInteractionAsync(context, requestContext, client).ConfigureAwait(false);
+        return _responses.CodeAtClient(requestContext.RedirectUri, code, requestContext.State);
+    }
+
+    /// <summary>The entry the token endpoint will redeem: everything it binds comes from the context and the session that authenticated it.</summary>
+    private AuthorizationCodeEntry BuildEntry(
+        AuthorizationRequestContext requestContext,
+        (string SessionId, string Subject, DateTimeOffset AuthTime) session,
+        string[] scopes,
+        DateTimeOffset now) =>
+        new()
         {
             ClientId = requestContext.ClientId,
             RedirectUri = requestContext.RedirectUri,
@@ -140,35 +175,6 @@ internal sealed class AuthorizationCodeIssuer
             IssuedAt = now,
             ExpiresAt = now + _options.Value.AuthorizationEndpoint.AuthorizationCodeLifetime,
         };
-
-        // Resolved from the request's services rather than the constructor, for the reason
-        // AuthorizationFlow resolves the client resolver that way: this singleton is built when
-        // the endpoints are mapped, before startup verification has said whether a store is
-        // registered at all.
-        var store = context.RequestServices.GetRequiredService<IAuthorizationCodeStore>();
-
-        string code;
-        try
-        {
-            if (!await store.TryReserveInteractionAsync(requestContext.Id, requestContext.ExpiresAt, context.RequestAborted).ConfigureAwait(false))
-                return await RefuseSecondIssuanceAsync(context, requestContext).ConfigureAwait(false);
-
-            code = StoreKeyGenerator.Generate();
-            await store.StoreAsync(code, entry, context.RequestAborted).ConfigureAwait(false);
-        }
-        catch (ZeeKayDaStoreException ex)
-        {
-            // Nothing was handed out, so nothing needs revoking. The client learns the server
-            // failed; the operator learns which store operation did, through the sanitizing logger.
-            _logger.LogError(ex, "Storing the authorization code for client {ClientId} failed.", client.ClientId);
-
-            await _flow.ClearAsync(context, requestContext.Id).ConfigureAwait(false);
-            return _responses.ErrorAtClient(requestContext.RedirectUri, AuthorizeRequestErrors.ServerError, CouldNotIssue, requestContext.State);
-        }
-
-        await DiscardIssuedInteractionAsync(context, requestContext, client).ConfigureAwait(false);
-        return _responses.CodeAtClient(requestContext.RedirectUri, code, requestContext.State);
-    }
 
     /// <summary>
     /// The code is stored, so the response must carry it whatever else happens. The binding

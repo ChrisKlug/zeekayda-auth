@@ -96,9 +96,9 @@ by their count, which cross-site content cannot force: a browser stores these co
 navigation. A failed request never wrote an interaction and clears none.
 
 **One code per interaction, decided by the authorization code store.** Before minting a code, issuance
-re-checks the interaction's expiry, then claims it through the code store's atomic insert-if-absent,
-expiring with the interaction plus skew; a loser or a late response issues nothing and refuses as a
-replayed form is refused. The claim lives there, not in the interaction store, which stays atomicity-free.
+claims the interaction through the code store's atomic insert-if-absent, expiring with the interaction
+plus skew, then re-checks its expiry — after the claim, so a stalled response cannot claim again once the
+winner's claim lapsed. A loser or a late response issues nothing and refuses as a replayed form is refused.
 
 **ZeeKayDa owns no interaction UI.** Login, consent and provider selection are the host's pages, and
 the host brings its own user model, identity store, branding and MFA. The cost is real: a host writes
