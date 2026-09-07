@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Authorization;
 using ZeeKayDa.Auth.Clients;
 
@@ -28,22 +29,26 @@ internal sealed class AuthorizationFlow
     private readonly AuthorizationRequestContextStore _contexts;
     private readonly SsoSession _session;
     private readonly PendingPrincipalCookie _pending;
+    private readonly IOptions<AuthorizationServerOptions> _options;
     private readonly TimeProvider _timeProvider;
 
     public AuthorizationFlow(
         AuthorizationRequestContextStore contexts,
         SsoSession session,
         PendingPrincipalCookie pending,
+        IOptions<AuthorizationServerOptions> options,
         TimeProvider timeProvider)
     {
         ArgumentNullException.ThrowIfNull(contexts);
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(pending);
+        ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(timeProvider);
 
         _contexts = contexts;
         _session = session;
         _pending = pending;
+        _options = options;
         _timeProvider = timeProvider;
     }
 
@@ -309,7 +314,7 @@ internal sealed class AuthorizationFlow
     /// </summary>
     /// <exception cref="ZeeKayDaStoreException">The interaction store could not be written.</exception>
     public ValueTask<bool> TryPersistAsync(HttpContext context, AuthorizationRequestContext requestContext) =>
-        _contexts.TryStoreAsync(context, requestContext, context.RequestAborted);
+        _contexts.TryStoreAsync(context, requestContext, _options.Value.AuthorizationEndpoint.MaxRequestContextBytes, context.RequestAborted);
 
     /// <summary>Replaces the stored context in place, under the binding this request carries.</summary>
     /// <exception cref="ZeeKayDaStoreException">The interaction store could not be written.</exception>

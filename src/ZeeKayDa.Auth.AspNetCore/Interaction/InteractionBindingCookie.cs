@@ -67,13 +67,24 @@ internal sealed class InteractionBindingCookie
 
         var value = string.Concat(now.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture), Separator, secret);
         context.Response.Cookies.Append(NamePrefix + interactionId, value, BuildCookieOptions(expiresAt - now));
+
+        // The browser has not seen the cookie yet. A request that stores an interaction and then
+        // ends it — prompt=none with no session, a configuration gap — must still be able to
+        // address the entry it just wrote, so the secret stays with the request as well.
+        context.Items[ItemKey(interactionId)] = secret;
     }
 
-    /// <summary>The secret bound to <paramref name="interactionId"/> in this request, or <see langword="null"/> when the browser holds none.</summary>
+    /// <summary>
+    /// The secret bound to <paramref name="interactionId"/>: the one this request issued, or the
+    /// one the browser sent. <see langword="null"/> when there is neither.
+    /// </summary>
     public string? Read(HttpContext context, string interactionId)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentException.ThrowIfNullOrEmpty(interactionId);
+
+        if (context.Items.TryGetValue(ItemKey(interactionId), out var issued) && issued is string issuedSecret)
+            return issuedSecret;
 
         return context.Request.Cookies.TryGetValue(NamePrefix + interactionId, out var value)
             && TryParse(value, out _, out var secret)
@@ -87,8 +98,11 @@ internal sealed class InteractionBindingCookie
         ArgumentNullException.ThrowIfNull(context);
         ArgumentException.ThrowIfNullOrEmpty(interactionId);
 
+        context.Items.Remove(ItemKey(interactionId));
         context.Response.Cookies.Delete(NamePrefix + interactionId, BuildCookieOptions(null));
     }
+
+    private static string ItemKey(string interactionId) => "ZeeKayDa.Auth:Binding:" + interactionId;
 
     /// <summary>
     /// Deletes enough of the oldest bindings the request carries that one more fits under the

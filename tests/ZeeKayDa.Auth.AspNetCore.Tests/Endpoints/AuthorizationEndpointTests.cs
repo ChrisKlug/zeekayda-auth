@@ -1,6 +1,8 @@
 using System.Net;
 using Microsoft.AspNetCore.WebUtilities;
+using Microsoft.Extensions.DependencyInjection;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
+using ZeeKayDa.Auth.Stores;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests.Endpoints;
 
@@ -224,6 +226,31 @@ public sealed class AuthorizationEndpointTests : IDisposable
 
         failed.Headers.TryGetValues("Set-Cookie", out var cookies);
         (cookies ?? []).Should().NotContain(c => c.StartsWith(InteractionBindingCookie.NamePrefix + firstInteraction + "="));
+    }
+
+    [Fact]
+    public async Task A_request_refused_after_it_was_stored_leaves_no_entry_behind()
+    {
+        // prompt=none with no session is accepted, stored, and then refused in the same request.
+        // The browser never saw the binding cookie, so the request itself must still be able to
+        // remove what it wrote — otherwise every such request would cost the store an entry for
+        // 30 minutes.
+        var interactions = new InMemoryInteractionBackingStore(TimeProvider.System);
+        using var factory = new TestWebAppFactory(configureBuilder: builder =>
+        {
+            builder.AddInMemoryAuthorizationCodeStore(allowOutsideDevelopment: true)
+                .AddInMemoryRefreshTokenStore(allowOutsideDevelopment: true);
+            builder.Services.AddSingleton<IInteractionBackingStore>(interactions);
+        });
+        using var client = factory.CreateClient(new() { BaseAddress = new Uri("https://test.example.com"), AllowAutoRedirect = false });
+        var query = ValidQuery();
+        query["prompt"] = "none";
+
+        var response = await client.GetAsync(AuthorizeUrl(query), TestContext.Current.CancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        response.Headers.Location!.OriginalString.Should().Contain("error=login_required");
+        interactions.Count.Should().Be(0, "the refused request removed the entry it had just stored");
     }
 
     /// <summary>The interaction identifier the framework put on a redirect to a host page.</summary>

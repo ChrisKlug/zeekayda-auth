@@ -3,7 +3,6 @@ using System.Text;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Authorization;
 using ZeeKayDa.Auth.Logging;
 using ZeeKayDa.Auth.Stores;
@@ -22,8 +21,8 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// <para>
 /// Each interaction is its own entry and its own cookie, so any number can be in flight in one
 /// browser at once. The one bound is on what an unauthenticated request may make the store hold:
-/// a context whose encoding exceeds <c>AuthorizationEndpoint.MaxRequestContextBytes</c> is
-/// refused before anything is written.
+/// a context whose encoding exceeds the cap the caller passes is refused before anything is
+/// written.
 /// </para>
 /// <para>
 /// The store never holds the identifier or the secret, only a hash of the pair, and the bytes it
@@ -44,7 +43,6 @@ internal sealed class AuthorizationRequestContextStore
     private readonly IInteractionBackingStore _store;
     private readonly InteractionBindingCookie _binding;
     private readonly IDataProtector _protector;
-    private readonly IOptions<AuthorizationServerOptions> _options;
     private readonly TimeProvider _timeProvider;
     private readonly ISanitizingLogger<AuthorizationRequestContextStore> _logger;
 
@@ -52,21 +50,18 @@ internal sealed class AuthorizationRequestContextStore
         IInteractionBackingStore store,
         InteractionBindingCookie binding,
         IDataProtectionProvider dataProtectionProvider,
-        IOptions<AuthorizationServerOptions> options,
         TimeProvider timeProvider,
         ISanitizingLogger<AuthorizationRequestContextStore> logger)
     {
         ArgumentNullException.ThrowIfNull(store);
         ArgumentNullException.ThrowIfNull(binding);
         ArgumentNullException.ThrowIfNull(dataProtectionProvider);
-        ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(timeProvider);
         ArgumentNullException.ThrowIfNull(logger);
 
         _store = store;
         _binding = binding;
         _protector = dataProtectionProvider.CreateProtector(DataProtectionPurpose);
-        _options = options;
         _timeProvider = timeProvider;
         _logger = logger;
     }
@@ -74,19 +69,26 @@ internal sealed class AuthorizationRequestContextStore
     /// <summary>
     /// Stores a freshly accepted request and binds it to this browser with a new binding cookie.
     /// </summary>
+    /// <param name="context">The request that accepted the authorization request.</param>
+    /// <param name="requestContext">The context to store.</param>
+    /// <param name="maxEncodedBytes">
+    /// The most the encoded context may occupy — <c>AuthorizationEndpoint.MaxRequestContextBytes</c>,
+    /// passed by the caller that owns the policy.
+    /// </param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>
-    /// <see langword="false"/> when the encoded context exceeds
-    /// <c>AuthorizationEndpoint.MaxRequestContextBytes</c>, in which case nothing is written, no
-    /// cookie is issued, and the caller must answer <c>invalid_request</c>.
+    /// <see langword="false"/> when the encoded context exceeds <paramref name="maxEncodedBytes"/>,
+    /// in which case nothing is written, no cookie is issued, and the caller must answer
+    /// <c>invalid_request</c>.
     /// </returns>
     /// <exception cref="ZeeKayDaStoreException">The backing store could not complete the write.</exception>
-    public async ValueTask<bool> TryStoreAsync(HttpContext context, AuthorizationRequestContext requestContext, CancellationToken cancellationToken)
+    public async ValueTask<bool> TryStoreAsync(HttpContext context, AuthorizationRequestContext requestContext, int maxEncodedBytes, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(requestContext);
 
         var encoded = AuthorizationRequestContextSerializer.Encode(requestContext);
-        if (encoded.Length > _options.Value.AuthorizationEndpoint.MaxRequestContextBytes)
+        if (encoded.Length > maxEncodedBytes)
             return false;
 
         // The entry first, the cookie second: a write the store refused leaves the browser with no

@@ -28,8 +28,6 @@ public sealed class InteractionBindingCookieTests
     [Fact]
     public void Secret_is_random_and_never_reused()
     {
-        var binding = Binding();
-
         var first = InteractionBindingCookie.NewSecret();
         var second = InteractionBindingCookie.NewSecret();
 
