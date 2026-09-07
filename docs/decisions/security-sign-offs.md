@@ -1374,3 +1374,32 @@ fix-diff verification of one High, found by a test the round asked for.
   each mint a code from one decision; #603 owns it — no test.
 - Residual: `max_age` is checked at the request, not at issuance; the entry carries the true
   `AuthTime` — no test.
+
+## 2026-09-07 — the store-backed interaction context (#603, PR 1, commit `9b46903`)
+
+Scoped to the interaction store and its binding cookie, the claim on an interaction's terminal
+outcome, and the registration gates. One round (Copilot code, security and architecture lenses,
+security and architect agents, CodeScene) plus fix-diff verification of one Critical and three Highs.
+The #87 consent-`POST` residual is closed here; the #84 clear-on-failure residual is closed by removal.
+
+- A leaked `zkd_i`, a forged cookie, or a store copy addresses nothing. Closed —
+  `Another_browser_reads_nothing_even_knowing_the_identifier`, `A_forged_binding_cookie_reads_nothing`,
+  `Stored_bytes_are_opaque_and_the_key_names_neither_identifier_nor_secret`,
+  `Valid_ciphertext_moved_under_another_interactions_key_reads_nothing`.
+- One terminal outcome per interaction, expiry re-checked around the claim. Closed —
+  `Two_consent_posts_racing_for_one_interaction_issue_exactly_one_code`,
+  `A_deny_and_a_grant_racing_for_one_interaction_produce_exactly_one_outcome`,
+  `Issuance_for_an_interaction_that_expires_while_it_is_being_claimed_is_refused`,
+  `TryClaimInteractionAsync_exactly_one_of_many_concurrent_reservations_succeeds`.
+- A stored code is delivered whatever the discard does; a store fault never reads as absence. Closed —
+  `A_stored_code_is_delivered_even_when_discarding_the_interaction_fails`,
+  `A_backing_store_fault_surfaces_as_a_store_exception_not_as_absence`.
+- An unauthenticated request stores at most `MaxRequestContextBytes`; a failed request touches no other
+  tab's interaction; the per-process cache and a missing store fail startup. Closed —
+  `A_request_over_the_store_cap_renders_locally_and_stores_nothing`,
+  `A_failed_request_leaves_an_interaction_in_flight_in_another_tab_alone`,
+  `The_per_process_cache_outside_Development_fails_startup`,
+  `VerifyAsync_adds_a_failure_when_the_interaction_store_is_missing`.
+- Residuals, accepted: simultaneous tabs overshoot the ten-cookie cap by their count; ten top-level
+  navigations evict a tab's binding; a decorated per-process cache passes the startup gate; an
+  oversized request renders locally rather than redirecting with `state` — no tests.
