@@ -240,23 +240,66 @@ internal sealed class AuthorizationFlow
     }
 
     /// <summary>
-    /// Claims the interaction's one terminal outcome for this response. Every path that ends an
-    /// interaction at the client — a code or a denial — takes the claim first, so two responses that
-    /// both resolved the request alive cannot both end it.
+    /// Claims the interaction's one terminal outcome for this response, or refuses. Every path that
+    /// ends an interaction at the client — a code or a denial — takes the claim first, so two
+    /// responses that both resolved the request alive cannot both end it. A refused claim discards
+    /// the interaction: whichever way, this request has nothing left to complete.
     /// </summary>
-    /// <returns><see langword="false"/> when another response already completed, or is completing, the interaction.</returns>
+    /// <returns>The time the claim was taken, for the outcome to be stamped with.</returns>
+    /// <exception cref="ZeeKayDaInteractionException">
+    /// Another response already completed, or is completing, the interaction — or it expired while
+    /// this response was being prepared.
+    /// </exception>
     /// <exception cref="ZeeKayDaStoreException">The authorization code store could not record the claim.</exception>
     /// <remarks>
+    /// <para>
     /// The claim lives in the authorization code store, whose atomic insert every backend already
     /// has to provide; resolved per request for the reason <see cref="ResolveClientAsync"/> is.
+    /// </para>
+    /// <para>
+    /// Expiry is checked before the claim, so a request that ran out is refused as expired rather
+    /// than handing the store a claim already past its lifetime, and again after it: the claim
+    /// lasts only as long as the interaction, so a response that outlived it could otherwise claim
+    /// again once the first response's claim had lapsed. Two claims can both succeed only if both
+    /// landed before the interaction expired, and the atomic insert already forbids that.
+    /// </para>
     /// </remarks>
-    public async ValueTask<bool> TryClaimCompletionAsync(HttpContext context, AuthorizationRequestContext requestContext)
+    public async ValueTask<DateTimeOffset> ClaimCompletionAsync(HttpContext context, AuthorizationRequestContext requestContext)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(requestContext);
 
+        if (IsExpired(requestContext))
+            await RefuseAsync(context, requestContext, ExpiredBeforeCompletion).ConfigureAwait(false);
+
         var store = context.RequestServices.GetRequiredService<Stores.IAuthorizationCodeStore>();
-        return await store.TryClaimInteractionAsync(requestContext.Id, requestContext.ExpiresAt, context.RequestAborted).ConfigureAwait(false);
+        var claimed = await store.TryClaimInteractionAsync(requestContext.Id, requestContext.ExpiresAt, context.RequestAborted).ConfigureAwait(false);
+
+        if (!claimed)
+            await RefuseAsync(context, requestContext, AlreadyCompleted).ConfigureAwait(false);
+
+        var now = _timeProvider.GetUtcNow();
+        if (now >= requestContext.ExpiresAt)
+            await RefuseAsync(context, requestContext, ExpiredBeforeCompletion).ConfigureAwait(false);
+
+        return now;
+    }
+
+    private const string AlreadyCompleted =
+        "This authorization request has already been completed by another response — an authorization " +
+        "code was issued, or the request was denied. The same request was answered twice; the first " +
+        "answer stands.";
+
+    private const string ExpiredBeforeCompletion =
+        "The authorization request expired before it could be completed. Start the authorization request again.";
+
+    private bool IsExpired(AuthorizationRequestContext requestContext) =>
+        _timeProvider.GetUtcNow() >= requestContext.ExpiresAt;
+
+    private async ValueTask RefuseAsync(HttpContext context, AuthorizationRequestContext requestContext, string reason)
+    {
+        await ClearAsync(context, requestContext.Id).ConfigureAwait(false);
+        throw new ZeeKayDaInteractionException(reason);
     }
 
     /// <summary>
@@ -275,9 +318,9 @@ internal sealed class AuthorizationFlow
 
     /// <summary>
     /// Discards the interaction. Called whenever a request ends, so that a completed, failed or
-    /// planted interaction is never left alive for a later sign-in to pick up.
+    /// planted interaction is never left alive for a later sign-in to pick up. Best-effort: the
+    /// binding cookie always goes; a store that refuses the removal is logged, not thrown.
     /// </summary>
-    /// <exception cref="ZeeKayDaStoreException">The interaction store could not be written.</exception>
     public ValueTask ClearAsync(HttpContext context, string interactionId) =>
         _contexts.DeleteAsync(context, interactionId, context.RequestAborted);
 

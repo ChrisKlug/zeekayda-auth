@@ -48,24 +48,25 @@ internal sealed class InteractionBindingCookie
         _timeProvider = timeProvider;
     }
 
+    /// <summary>A fresh binding secret: 256 bits from the CSPRNG, Base64Url-encoded.</summary>
+    public static string NewSecret() => StoreKeyGenerator.Generate();
+
     /// <summary>
-    /// Writes a fresh binding cookie for <paramref name="interactionId"/>, expiring at
-    /// <paramref name="expiresAt"/>, and returns its secret. Evicts the oldest bindings first when
-    /// the browser already holds the maximum.
+    /// Writes the binding cookie for <paramref name="interactionId"/> carrying
+    /// <paramref name="secret"/>, expiring at <paramref name="expiresAt"/>. Evicts the oldest
+    /// bindings first when the browser already holds the maximum.
     /// </summary>
-    public string Issue(HttpContext context, string interactionId, DateTimeOffset expiresAt)
+    public void Issue(HttpContext context, string interactionId, DateTimeOffset expiresAt, string secret)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentException.ThrowIfNullOrEmpty(interactionId);
+        ArgumentException.ThrowIfNullOrEmpty(secret);
 
         var now = _timeProvider.GetUtcNow();
         EvictOldest(context);
 
-        var secret = StoreKeyGenerator.Generate();
         var value = string.Concat(now.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture), Separator, secret);
         context.Response.Cookies.Append(NamePrefix + interactionId, value, BuildCookieOptions(expiresAt - now));
-
-        return secret;
     }
 
     /// <summary>The secret bound to <paramref name="interactionId"/> in this request, or <see langword="null"/> when the browser holds none.</summary>

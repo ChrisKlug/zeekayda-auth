@@ -2,8 +2,10 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Authorization;
+using ZeeKayDa.Auth.Logging;
 using ZeeKayDa.Auth.Stores;
 
 using static ZeeKayDa.Auth.Stores.StoreGuard;
@@ -44,25 +46,29 @@ internal sealed class AuthorizationRequestContextStore
     private readonly IDataProtector _protector;
     private readonly IOptions<AuthorizationServerOptions> _options;
     private readonly TimeProvider _timeProvider;
+    private readonly ISanitizingLogger<AuthorizationRequestContextStore> _logger;
 
     public AuthorizationRequestContextStore(
         IInteractionBackingStore store,
         InteractionBindingCookie binding,
         IDataProtectionProvider dataProtectionProvider,
         IOptions<AuthorizationServerOptions> options,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        ISanitizingLogger<AuthorizationRequestContextStore> logger)
     {
         ArgumentNullException.ThrowIfNull(store);
         ArgumentNullException.ThrowIfNull(binding);
         ArgumentNullException.ThrowIfNull(dataProtectionProvider);
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(timeProvider);
+        ArgumentNullException.ThrowIfNull(logger);
 
         _store = store;
         _binding = binding;
         _protector = dataProtectionProvider.CreateProtector(DataProtectionPurpose);
         _options = options;
         _timeProvider = timeProvider;
+        _logger = logger;
     }
 
     /// <summary>
@@ -83,8 +89,11 @@ internal sealed class AuthorizationRequestContextStore
         if (encoded.Length > _options.Value.AuthorizationEndpoint.MaxRequestContextBytes)
             return false;
 
-        var secret = _binding.Issue(context, requestContext.Id, requestContext.ExpiresAt);
+        // The entry first, the cookie second: a write the store refused leaves the browser with no
+        // binding to a nothing, and evicts no other tab's binding for it.
+        var secret = InteractionBindingCookie.NewSecret();
         await SetAsync(requestContext, secret, encoded, cancellationToken).ConfigureAwait(false);
+        _binding.Issue(context, requestContext.Id, requestContext.ExpiresAt, secret);
 
         return true;
     }
@@ -124,8 +133,8 @@ internal sealed class AuthorizationRequestContextStore
     /// <summary>
     /// Reads the context for <paramref name="interactionId"/>. Returns <see langword="null"/> when
     /// this browser holds no binding for it, when there is no entry, when the entry has expired,
-    /// or when it is protected under a key this application cannot read — never throws for a
-    /// value it cannot make sense of.
+    /// when it is protected under a key this application cannot read, or when it names another
+    /// interaction — never throws for a value it cannot make sense of.
     /// </summary>
     /// <exception cref="ZeeKayDaStoreException">The backing store could not complete the read.</exception>
     public async ValueTask<AuthorizationRequestContext?> ReadAsync(HttpContext context, string interactionId, CancellationToken cancellationToken)
@@ -156,21 +165,28 @@ internal sealed class AuthorizationRequestContextStore
         if (!AuthorizationRequestContextSerializer.TryDecode(payload, out var requestContext))
             return null;
 
+        // Data Protection authenticates the bytes, not which row they sit in. Whoever can write to
+        // the store without holding the keys could still move one interaction's valid ciphertext
+        // under another's key; the identifier inside the payload is what ties the two together.
+        if (!InteractionHandoff.IdentifiersMatch(requestContext!.Id, interactionId))
+            return null;
+
         // The expiry inside the payload is authoritative, not the store's TTL or the cookie's
         // MaxAge: neither of those is checked by anything this framework controls.
-        return _timeProvider.GetUtcNow() >= requestContext!.ExpiresAt ? null : requestContext;
+        return _timeProvider.GetUtcNow() >= requestContext.ExpiresAt ? null : requestContext;
     }
 
     /// <summary>
     /// Discards the interaction: the binding cookie, and the entry when this browser can address
     /// it. Called when the flow terminates — the code is issued, consent is denied, or the request
-    /// errors out.
+    /// errors out. Best-effort by construction: the cookie goes first and cannot fail, and a store
+    /// that refuses the removal is logged rather than thrown, since the browser has already lost
+    /// the only thing that could address the entry, which is left to its lifetime.
     /// </summary>
     /// <remarks>
-    /// The cookie goes first and cannot fail. Should the store then refuse the removal, the browser
-    /// has already lost the only thing that could address the entry, which is left to its TTL.
+    /// Every caller is ending a request — with a code already stored, an error already decided, or
+    /// a denial — and none of those outcomes should be replaced by a failure to tidy up.
     /// </remarks>
-    /// <exception cref="ZeeKayDaStoreException">The backing store could not complete the removal.</exception>
     public async ValueTask DeleteAsync(HttpContext context, string interactionId, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -179,11 +195,18 @@ internal sealed class AuthorizationRequestContextStore
         var secret = _binding.Read(context, interactionId);
         _binding.Delete(context, interactionId);
 
-        if (secret is not null)
+        if (secret is null)
+            return;
+
+        try
         {
             await Guarded(
                 () => _store.RemoveAsync(KeyFor(interactionId, secret), cancellationToken),
                 "remove the interaction context").ConfigureAwait(false);
+        }
+        catch (ZeeKayDaStoreException ex)
+        {
+            _logger.LogError(ex, "Removing a completed interaction from the store failed; the entry is left to expire.");
         }
     }
 

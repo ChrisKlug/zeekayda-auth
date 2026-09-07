@@ -483,7 +483,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
         var act = () => builder.AddInMemoryStores();
 
         act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*IInteractionBackingStore is already registered*");
+            .WithMessage("*interaction store is already registered*");
     }
 
     // ── AddInMemoryInteractionStore ───────────────────────────────────────────────────────────────
@@ -517,7 +517,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
         var act = () => builder.AddInMemoryInteractionStore();
 
         act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*IInteractionBackingStore is already registered*");
+            .WithMessage("*interaction store is already registered*");
     }
 
     // ── AddDistributedCacheInteractionStore ───────────────────────────────────────────────────────
@@ -566,7 +566,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
         var act = () => builder.AddDistributedCacheInteractionStore();
 
         act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*IInteractionBackingStore is already registered*");
+            .WithMessage("*interaction store is already registered*");
     }
 
     [Fact]

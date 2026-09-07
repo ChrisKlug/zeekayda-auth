@@ -83,21 +83,21 @@ share one Data Protection key ring across all of them — the framework does not
 **The authorization request context lives in the interaction store, one encrypted entry per
 interaction, so any number can be in flight in one browser.** An unauthenticated request may store at
 most `MaxRequestContextBytes` (16 KB) of encoded context, refused locally above that — a bound on the
-store, not a header budget. It carries protocol state and a subject reference — **never claims or a
-`ClaimsPrincipal`**. The seam is internal, with a per-process dictionary and the host's
-`IDistributedCache` behind it; set, get and remove is the whole contract (registration: `token-stores.md`).
+store, not a header budget; that a valid request costs the store an entry for 30 minutes is accepted,
+rate limiting being the host's. It carries protocol state and a subject reference — **never claims or a
+`ClaimsPrincipal`**. The seam is internal; set, get and remove is the whole contract (`token-stores.md`).
 
 **Each interaction is bound to its browser by `zkd.interaction.<id>`, a random secret; the store key
 is derived from identifier and secret together.** The identifier travels in URLs and URLs leak; a
 browser without the cookie, or with a forged one, finds nothing. Each cookie expires with its interaction
 and is deleted when it ends; capped at ten per browser in sequence, oldest first, so ninety-byte bindings
 do not reopen the header-budget finding a 3 KB payload per cookie would have. Simultaneous tabs overshoot
-by their count, which cross-site content cannot force: a browser stores these cookies only on a top-level
-navigation. A failed request never wrote an interaction and clears none.
+by their count, which cross-site content cannot force; ten top-level navigations evicting a tab's live
+binding is accepted. A failed request wrote nothing and clears nothing.
 
 **One terminal outcome per interaction — a code or a denial — decided by the authorization code store.**
 Issuance and denial both claim the interaction first, through the code store's atomic insert-if-absent,
-expiring with the interaction plus skew; issuance then re-checks expiry after the claim, so a stalled
+expiring with the interaction plus skew, with expiry re-checked before and after the claim so a stalled
 response cannot claim again once the winner's claim lapsed. A loser refuses as a replayed form is refused.
 
 **ZeeKayDa owns no interaction UI.** Login, consent and provider selection are the host's pages, and

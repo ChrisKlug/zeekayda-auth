@@ -229,20 +229,41 @@ public sealed class AuthorizationRequestContextStoreTests
     }
 
     [Fact]
-    public async Task Deleting_removes_the_binding_cookie_even_when_the_store_refuses_the_removal()
+    public async Task Deleting_removes_the_binding_cookie_and_does_not_throw_when_the_store_refuses_the_removal()
     {
-        // The cookie is the only thing that lets the browser address the entry; once it is gone the
-        // entry is unreachable whatever the store did, and the failure is reported rather than hidden.
+        // Every caller is ending a request — a code already stored, an error decided, a denial —
+        // and none of those outcomes should be replaced by a failure to tidy up. The cookie is the
+        // only thing that lets the browser address the entry, so once it is gone the entry is
+        // unreachable whatever the store did.
         var (contexts, _, _) = Store(new ThrowingStore());
         var delete = new DefaultHttpContext();
         delete.Request.Headers.Cookie = $"{InteractionBindingCookie.NamePrefix}{InteractionId}=1.secret";
 
         var act = async () => await contexts.DeleteAsync(delete, InteractionId, None);
 
-        await act.Should().ThrowAsync<ZeeKayDaStoreException>();
+        await act.Should().NotThrowAsync();
         delete.Response.Headers.SetCookie.ToString()
             .Should().StartWith(InteractionBindingCookie.NamePrefix + InteractionId + "=")
             .And.Contain("expires=Thu, 01 Jan 1970");
+    }
+
+    [Fact]
+    public async Task Valid_ciphertext_moved_under_another_interactions_key_reads_nothing()
+    {
+        // Data Protection authenticates the bytes, not the row they sit in. Whoever can write to the
+        // store without holding the keys could move one interaction's protected context under
+        // another's key; the identifier inside the payload is what ties the two together.
+        var backing = new NeverEvictingStore();
+        var (contexts, _, _) = Store(backing);
+        var victim = new DefaultHttpContext();
+        await contexts.TryStoreAsync(victim, ContextAt(Now), None);
+        var attackerContext = ContextAt(Now) with { Id = "attackers-interaction", RedirectUri = "https://attacker.example.net/callback" };
+        await contexts.TryStoreAsync(new DefaultHttpContext(), attackerContext, None);
+
+        backing.Swap();
+
+        (await contexts.ReadAsync(RequestCarrying(victim), InteractionId, None)).Should().BeNull(
+            "the substituted entry names another interaction, so it is not this one");
     }
 
     [Fact]
@@ -309,7 +330,8 @@ public sealed class AuthorizationRequestContextStoreTests
                 new InteractionBindingCookie(time),
                 keyRing ?? new EphemeralDataProtectionProvider(),
                 Options.Create(options ?? new AuthorizationServerOptions()),
-                time),
+                time,
+                NullSanitizingLogger<AuthorizationRequestContextStore>.Instance),
             time,
             store as NeverEvictingStore ?? new NeverEvictingStore());
     }
@@ -349,6 +371,13 @@ public sealed class AuthorizationRequestContextStoreTests
         {
             var (key, value) = _entries.Single();
             return (key, value);
+        }
+
+        /// <summary>Exchanges the values of the two entries held: what an attacker with write access to the store could do.</summary>
+        public void Swap()
+        {
+            var (first, second) = (_entries.Keys.First(), _entries.Keys.Last());
+            (_entries[first], _entries[second]) = (_entries[second], _entries[first]);
         }
 
         public ValueTask SetAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken)

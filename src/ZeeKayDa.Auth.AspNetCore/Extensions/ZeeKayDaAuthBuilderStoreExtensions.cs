@@ -42,15 +42,11 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
     {
         ArgumentNullException.ThrowIfNull(builder);
 
-        builder.ThrowIfAlreadyRegistered(typeof(IInteractionBackingStore));
-        builder.Services.TryAddSingleton<TimeProvider>(TimeProvider.System);
-        builder.Services.AddSingleton<IInteractionBackingStore, InMemoryInteractionBackingStore>();
-        builder.Services.AddSingleton<IStartupVerifier>(sp => new InMemoryStoreVerifier(
-            sp.GetRequiredService<IHostEnvironment>(),
-            InMemoryStoreVerifier.InteractionStoreName,
-            allowOutsideDevelopment));
-
-        return builder;
+        return builder.AddInteractionStore<InMemoryInteractionBackingStore>(services =>
+            services.AddSingleton<IStartupVerifier>(sp => new InMemoryStoreVerifier(
+                sp.GetRequiredService<IHostEnvironment>(),
+                InMemoryStoreVerifier.InteractionStoreName,
+                allowOutsideDevelopment)));
     }
 
     /// <summary>
@@ -85,12 +81,30 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
     {
         ArgumentNullException.ThrowIfNull(builder);
 
-        builder.ThrowIfAlreadyRegistered(typeof(IInteractionBackingStore));
+        return builder.AddInteractionStore<DistributedCacheInteractionBackingStore>(services =>
+            services.AddSingleton<IStartupActivator>(sp => new DistributedCacheInteractionStoreStartupValidator(
+                sp.GetRequiredService<IHostEnvironment>(),
+                allowMemoryCacheOutsideDevelopment)));
+    }
+
+    /// <summary>
+    /// Registers <typeparamref name="TStore"/> as the one interaction store, with the startup gate
+    /// <paramref name="addGate"/> registers alongside it. The guard names the public methods rather
+    /// than the internal seam, since those are what the host called.
+    /// </summary>
+    private static ZeeKayDaAuthBuilder AddInteractionStore<TStore>(this ZeeKayDaAuthBuilder builder, Action<IServiceCollection> addGate)
+        where TStore : class, IInteractionBackingStore
+    {
+        if (builder.Services.Any(descriptor => descriptor.ServiceType == typeof(IInteractionBackingStore)))
+        {
+            throw new InvalidOperationException(
+                "An interaction store is already registered. Only one of AddInMemoryInteractionStore, " +
+                "AddDistributedCacheInteractionStore or AddInMemoryStores may register it.");
+        }
+
         builder.Services.TryAddSingleton<TimeProvider>(TimeProvider.System);
-        builder.Services.AddSingleton<IInteractionBackingStore, DistributedCacheInteractionBackingStore>();
-        builder.Services.AddSingleton<IStartupActivator>(sp => new DistributedCacheInteractionStoreStartupValidator(
-            sp.GetRequiredService<IHostEnvironment>(),
-            allowMemoryCacheOutsideDevelopment));
+        builder.Services.AddSingleton<IInteractionBackingStore, TStore>();
+        addGate(builder.Services);
 
         return builder;
     }

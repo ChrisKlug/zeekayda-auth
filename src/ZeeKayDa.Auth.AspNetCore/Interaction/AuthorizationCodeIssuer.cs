@@ -91,8 +91,8 @@ internal sealed class AuthorizationCodeIssuer
     /// session and records the decision first.
     /// </exception>
     /// <exception cref="ZeeKayDaInteractionException">
-    /// A code has already been issued for this interaction by a response that completed it first,
-    /// or the interaction expired while this response was being prepared.
+    /// Another response completed the interaction first, or it expired while this response was
+    /// being prepared.
     /// </exception>
     public async Task<IResult> IssueAsync(
         HttpContext context,
@@ -124,16 +124,7 @@ internal sealed class AuthorizationCodeIssuer
         string code;
         try
         {
-            if (!await _flow.TryClaimCompletionAsync(context, requestContext).ConfigureAwait(false))
-                return await RefuseSecondIssuanceAsync(context, requestContext).ConfigureAwait(false);
-
-            // Checked after the claim, not before: the claim lasts only as long as the interaction,
-            // so a response that outlived it could otherwise claim again once the first response's
-            // claim had expired. Two claims can both succeed only if both landed before the
-            // interaction expired, and the atomic insert already forbids that.
-            var now = _timeProvider.GetUtcNow();
-            if (now >= requestContext.ExpiresAt)
-                return await RefuseExpiredAsync(context, requestContext).ConfigureAwait(false);
+            var now = await _flow.ClaimCompletionAsync(context, requestContext).ConfigureAwait(false);
 
             code = StoreKeyGenerator.Generate();
             await store.StoreAsync(code, BuildEntry(requestContext, session, scopes, now), context.RequestAborted).ConfigureAwait(false);
@@ -148,7 +139,9 @@ internal sealed class AuthorizationCodeIssuer
             return _responses.ErrorAtClient(requestContext.RedirectUri, AuthorizeRequestErrors.ServerError, CouldNotIssue, requestContext.State);
         }
 
-        await DiscardIssuedInteractionAsync(context, requestContext, client).ConfigureAwait(false);
+        // The code is stored, so the response carries it whatever the discard does: a store that
+        // refuses the removal is logged by the discard itself and the entry left to expire.
+        await _flow.ClearAsync(context, requestContext.Id).ConfigureAwait(false);
         return _responses.CodeAtClient(requestContext.RedirectUri, code, requestContext.State);
     }
 
@@ -175,49 +168,6 @@ internal sealed class AuthorizationCodeIssuer
             IssuedAt = now,
             ExpiresAt = now + _options.Value.AuthorizationEndpoint.AuthorizationCodeLifetime,
         };
-
-    /// <summary>
-    /// The code is stored, so the response must carry it whatever else happens. The binding
-    /// cookie is deleted regardless; a store that refuses to remove the entry is logged and the
-    /// entry left to its lifetime, since the browser can no longer address it and the claim on the
-    /// interaction already refuses a second code.
-    /// </summary>
-    private async Task DiscardIssuedInteractionAsync(HttpContext context, AuthorizationRequestContext requestContext, IClientMetadata client)
-    {
-        try
-        {
-            await _flow.ClearAsync(context, requestContext.Id).ConfigureAwait(false);
-        }
-        catch (ZeeKayDaStoreException ex)
-        {
-            _logger.LogError(ex, "Discarding the completed interaction for client {ClientId} failed; the entry is left to expire.", client.ClientId);
-        }
-    }
-
-    /// <summary>
-    /// The interaction was claimed by another response first — a code or a denial. Refused the way
-    /// a replayed form is, since from the page's side that is what it is: a decision for a request
-    /// that no longer has one to take.
-    /// </summary>
-    private async Task<IResult> RefuseSecondIssuanceAsync(HttpContext context, AuthorizationRequestContext requestContext)
-    {
-        await _flow.ClearAsync(context, requestContext.Id).ConfigureAwait(false);
-
-        throw new ZeeKayDaInteractionException(
-            "This authorization request has already been completed by another response — an authorization " +
-            "code was issued, or the request was denied. The same request was answered twice; the first " +
-            "answer stands.");
-    }
-
-    /// <summary>The interaction ran out while this response was being prepared; refused as an expired request is.</summary>
-    private async Task<IResult> RefuseExpiredAsync(HttpContext context, AuthorizationRequestContext requestContext)
-    {
-        await _flow.ClearAsync(context, requestContext.Id).ConfigureAwait(false);
-
-        throw new ZeeKayDaInteractionException(
-            "The authorization request expired before a code could be issued for it. Start the " +
-            "authorization request again.");
-    }
 
     /// <summary>
     /// The session the context was authenticated by. A context without one has not been through

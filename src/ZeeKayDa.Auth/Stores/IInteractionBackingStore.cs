@@ -25,7 +25,10 @@ internal interface IInteractionBackingStore
     /// <summary>Writes <paramref name="value"/> at <paramref name="key"/>, replacing any value already there.</summary>
     /// <param name="key">The framework-derived key.</param>
     /// <param name="value">The opaque bytes to store.</param>
-    /// <param name="expiresAt">When the value may be evicted by a backend with native TTL support.</param>
+    /// <param name="expiresAt">
+    /// When the value may be evicted by a backend with native TTL support. The framework never
+    /// writes a value already past it; an implementation may store or refuse one.
+    /// </param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     ValueTask SetAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken);
 
