@@ -808,6 +808,30 @@ public sealed class AuthorizationCodeIssuanceTests : IDisposable
     }
 
     [Fact]
+    public async Task Issuance_for_an_interaction_that_already_expired_is_refused_before_anything_is_claimed()
+    {
+        // A response that reaches issuance with a request already past its lifetime is refused as
+        // expired, without handing the store a claim it would reject for a past expiry.
+        var issuer = _factory.Services.GetRequiredService<AuthorizationCodeIssuer>();
+        var recording = new StallingCodeStore(_factory.Services.GetRequiredService<IAuthorizationCodeStore>(), _time, TimeSpan.Zero);
+        var context = new DefaultHttpContext { RequestServices = new OverridingServiceProvider(_factory.Services, recording) };
+        var expired = UnauthenticatedContext() with
+        {
+            ClientId = TrustedClient,
+            SsoSessionId = "session-1",
+            Subject = "user-1",
+            AuthTime = Now,
+            ExpiresAt = Now,
+        };
+
+        var issue = async () => await issuer.IssueAsync(context, expired, TrustedRegistration());
+
+        await issue.Should().ThrowAsync<ZeeKayDaInteractionException>().WithMessage("*expired*");
+        recording.Claimed.Should().BeFalse("an expired request is refused before the store is asked");
+        recording.Stored.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task Issuance_for_a_consent_requiring_client_without_a_decision_is_a_caller_error()
     {
         // The dispatch sends a consent-requiring client to the page and the page records the
@@ -870,8 +894,11 @@ public sealed class AuthorizationCodeIssuanceTests : IDisposable
     {
         public bool Stored { get; private set; }
 
+        public bool Claimed { get; private set; }
+
         async ValueTask<bool> IAuthorizationCodeStore.TryClaimInteractionAsync(string interactionId, DateTimeOffset interactionExpiresAt, CancellationToken cancellationToken)
         {
+            Claimed = true;
             var reserved = await inner.TryClaimInteractionAsync(interactionId, interactionExpiresAt, cancellationToken);
             time.Advance(stall);
             return reserved;
