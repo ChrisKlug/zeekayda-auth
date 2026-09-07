@@ -452,41 +452,41 @@ public sealed class AuthorizationCodeStoreTests
     // ── One code per interaction ──────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task TryReserveInteractionAsync_returns_true_for_an_interaction_no_code_was_issued_for()
+    public async Task TryClaimInteractionAsync_returns_true_for_an_interaction_no_code_was_issued_for()
     {
         var store = CreateStore();
 
-        var reserved = await store.TryReserveInteractionAsync("interaction-1", FarFuture, CancellationToken.None);
+        var reserved = await ClaimAsync(store, "interaction-1", FarFuture, CancellationToken.None);
 
         reserved.Should().BeTrue();
     }
 
     [Fact]
-    public async Task TryReserveInteractionAsync_returns_false_the_second_time_for_the_same_interaction()
+    public async Task TryClaimInteractionAsync_returns_false_the_second_time_for_the_same_interaction()
     {
         // Two consent POSTs racing before the first response lands: whichever reserves second
         // issues nothing.
         var store = CreateStore();
-        await store.TryReserveInteractionAsync("interaction-1", FarFuture, CancellationToken.None);
+        await ClaimAsync(store, "interaction-1", FarFuture, CancellationToken.None);
 
-        var second = await store.TryReserveInteractionAsync("interaction-1", FarFuture, CancellationToken.None);
+        var second = await ClaimAsync(store, "interaction-1", FarFuture, CancellationToken.None);
 
         second.Should().BeFalse();
     }
 
     [Fact]
-    public async Task TryReserveInteractionAsync_for_another_interaction_is_independent()
+    public async Task TryClaimInteractionAsync_for_another_interaction_is_independent()
     {
         var store = CreateStore();
-        await store.TryReserveInteractionAsync("interaction-1", FarFuture, CancellationToken.None);
+        await ClaimAsync(store, "interaction-1", FarFuture, CancellationToken.None);
 
-        var other = await store.TryReserveInteractionAsync("interaction-2", FarFuture, CancellationToken.None);
+        var other = await ClaimAsync(store, "interaction-2", FarFuture, CancellationToken.None);
 
         other.Should().BeTrue();
     }
 
     [Fact]
-    public async Task TryReserveInteractionAsync_exactly_one_of_many_concurrent_reservations_succeeds()
+    public async Task TryClaimInteractionAsync_exactly_one_of_many_concurrent_reservations_succeeds()
     {
         var store = CreateStore();
         const int concurrency = 50;
@@ -496,7 +496,7 @@ public sealed class AuthorizationCodeStoreTests
             .Select(_ => Task.Run(async () =>
             {
                 await gate.WaitAsync();
-                return await store.TryReserveInteractionAsync("interaction-1", FarFuture, CancellationToken.None);
+                return await ClaimAsync(store, "interaction-1", FarFuture, CancellationToken.None);
             }))
             .ToArray();
 
@@ -507,7 +507,7 @@ public sealed class AuthorizationCodeStoreTests
     }
 
     [Fact]
-    public async Task TryReserveInteractionAsync_keeps_the_claim_for_the_interactions_lifetime_plus_tolerance()
+    public async Task TryClaimInteractionAsync_keeps_the_claim_for_the_interactions_lifetime_plus_tolerance()
     {
         // The claim must outlive the interaction: a second response is refused for as long as the
         // interaction could still be read, and the same skew tolerance that keeps a code alive
@@ -517,54 +517,58 @@ public sealed class AuthorizationCodeStoreTests
         var store = CreateStore(backingStore: backing, serverOptions: options);
         var expiresAt = new DateTimeOffset(2026, 9, 6, 12, 30, 0, TimeSpan.Zero);
 
-        await store.TryReserveInteractionAsync("interaction-1", expiresAt, CancellationToken.None);
+        await ClaimAsync(store, "interaction-1", expiresAt, CancellationToken.None);
 
         backing.LastExpiresAt.Should().Be(expiresAt.AddSeconds(5));
     }
 
     [Fact]
-    public async Task TryReserveInteractionAsync_never_persists_the_interaction_identifier()
+    public async Task TryClaimInteractionAsync_never_persists_the_interaction_identifier()
     {
         var backing = new RecordingBackingStore();
         var store = CreateStore(backingStore: backing);
 
-        await store.TryReserveInteractionAsync("interaction-1", FarFuture, CancellationToken.None);
+        await ClaimAsync(store, "interaction-1", FarFuture, CancellationToken.None);
 
         backing.LastKey.ToString().Should().StartWith("zkd:code:i:").And.NotContain("interaction-1");
     }
 
     [Fact]
-    public async Task TryReserveInteractionAsync_wraps_backingStore_exception_in_ZeeKayDaStoreException()
+    public async Task TryClaimInteractionAsync_wraps_backingStore_exception_in_ZeeKayDaStoreException()
     {
         var store = CreateStore(backingStore: new ThrowingBackingStore());
 
-        var act = async () => await store.TryReserveInteractionAsync("interaction-1", FarFuture, CancellationToken.None);
+        var act = async () => await ClaimAsync(store, "interaction-1", FarFuture, CancellationToken.None);
 
         var assertion = await act.Should().ThrowAsync<ZeeKayDaStoreException>();
         assertion.Which.InnerException.Should().BeOfType<InvalidOperationException>();
     }
 
     [Fact]
-    public async Task TryReserveInteractionAsync_rethrows_OperationCanceledException_unwrapped()
+    public async Task TryClaimInteractionAsync_rethrows_OperationCanceledException_unwrapped()
     {
         var store = CreateStore(backingStore: new CancellationThrowingBackingStore());
 
-        var act = async () => await store.TryReserveInteractionAsync("interaction-1", FarFuture, CancellationToken.None);
+        var act = async () => await ClaimAsync(store, "interaction-1", FarFuture, CancellationToken.None);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
 
     [Fact]
-    public async Task TryReserveInteractionAsync_throws_ArgumentException_for_an_empty_interactionId()
+    public async Task TryClaimInteractionAsync_throws_ArgumentException_for_an_empty_interactionId()
     {
         var store = CreateStore();
 
-        var act = async () => await store.TryReserveInteractionAsync(string.Empty, FarFuture, CancellationToken.None);
+        var act = async () => await ClaimAsync(store, string.Empty, FarFuture, CancellationToken.None);
 
         await act.Should().ThrowAsync<ArgumentException>();
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>The claim is an internal interface member, so it is reached through the interface, as the framework reaches it.</summary>
+    private static ValueTask<bool> ClaimAsync(IAuthorizationCodeStore store, string interactionId, DateTimeOffset expiresAt, CancellationToken cancellationToken) =>
+        store.TryClaimInteractionAsync(interactionId, expiresAt, cancellationToken);
 
     private sealed class RecordingBackingStore : IAuthorizationCodeBackingStore
     {

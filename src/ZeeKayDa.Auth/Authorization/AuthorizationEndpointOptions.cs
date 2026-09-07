@@ -45,6 +45,21 @@ public sealed class AuthorizationEndpointOptions
     public TimeSpan AuthorizationCodeLifetime { get; set; } = TimeSpan.FromSeconds(60);
 
     /// <summary>
+    /// Gets or sets the most an authorization request may occupy in the interaction store, in
+    /// bytes of encoded request context, before it is refused with <c>invalid_request</c>.
+    /// Defaults to 16 KB — far above what any real client sends: a typical request encodes to a
+    /// few hundred bytes, and <c>state</c> and <c>nonce</c> are the only unbounded fields.
+    /// </summary>
+    /// <remarks>
+    /// An authorization request needs no authentication, and every valid one is stored for the
+    /// interaction's lifetime. This bounds what one request can make the store hold. A host whose
+    /// clients legitimately send larger <c>state</c> values raises it; the value applies to the
+    /// request as accepted, not to what sign-in later adds. Must be greater than zero; rejected at
+    /// startup otherwise.
+    /// </remarks>
+    public int MaxRequestContextBytes { get; set; } = 16 * 1024;
+
+    /// <summary>
     /// Gets the paths of the host-owned interaction pages the authorization flow hands off to.
     /// </summary>
     public InteractionOptions Interaction { get; } = new();

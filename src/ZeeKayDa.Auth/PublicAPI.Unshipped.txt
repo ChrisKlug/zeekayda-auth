@@ -20,6 +20,8 @@ ZeeKayDa.Auth.Authorization.AuthorizationEndpointOptions.AuthorizationEndpointOp
 ZeeKayDa.Auth.Authorization.AuthorizationEndpointOptions.CodeChallengeMethodsSupported.get -> System.Collections.Generic.ICollection<ZeeKayDa.Auth.Authorization.CodeChallengeMethod>?
 ZeeKayDa.Auth.Authorization.AuthorizationEndpointOptions.CodeChallengeMethodsSupported.set -> void
 ZeeKayDa.Auth.Authorization.AuthorizationEndpointOptions.Interaction.get -> ZeeKayDa.Auth.Authorization.InteractionOptions!
+ZeeKayDa.Auth.Authorization.AuthorizationEndpointOptions.MaxRequestContextBytes.get -> int
+ZeeKayDa.Auth.Authorization.AuthorizationEndpointOptions.MaxRequestContextBytes.set -> void
 ZeeKayDa.Auth.Authorization.AuthorizationEndpointOptions.Uri.get -> string?
 ZeeKayDa.Auth.Authorization.AuthorizationEndpointOptions.Uri.set -> void
 ZeeKayDa.Auth.Authorization.CodeChallengeMethod
@@ -313,7 +315,6 @@ ZeeKayDa.Auth.Stores.IAuthorizationCodeBackingStore.RemoveAsync(ZeeKayDa.Auth.St
 ZeeKayDa.Auth.Stores.IAuthorizationCodeBackingStore.TryInsertAsync(ZeeKayDa.Auth.Stores.StoreKey key, System.ReadOnlyMemory<byte> value, System.DateTimeOffset expiresAt, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<bool>
 ZeeKayDa.Auth.Stores.IAuthorizationCodeStore
 ZeeKayDa.Auth.Stores.IAuthorizationCodeStore.StoreAsync(string! code, ZeeKayDa.Auth.Stores.AuthorizationCodeEntry! entry, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
-ZeeKayDa.Auth.Stores.IAuthorizationCodeStore.TryReserveInteractionAsync(string! interactionId, System.DateTimeOffset interactionExpiresAt, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<bool>
 ZeeKayDa.Auth.Stores.IAuthorizationCodeStore.TryRedeemAsync(string! code, string! clientId, string! familyId, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<ZeeKayDa.Auth.Stores.AuthorizationCodeRedemptionResult!>
 ZeeKayDa.Auth.Stores.IRefreshTokenGrantStore
 ZeeKayDa.Auth.Stores.IRefreshTokenGrantStore.FindByHandleAsync(ZeeKayDa.Auth.Stores.StoreKey handleHash, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<ZeeKayDa.Auth.Stores.RefreshTokenGrant?>

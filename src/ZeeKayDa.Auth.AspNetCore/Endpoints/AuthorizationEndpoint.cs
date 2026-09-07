@@ -107,7 +107,17 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
 
         try
         {
-            await _flow.PersistAsync(context, requestContext).ConfigureAwait(false);
+            if (!await _flow.TryPersistAsync(context, requestContext).ConfigureAwait(false))
+            {
+                // The one phase-2 failure that renders locally rather than redirecting. `state`
+                // must round-trip byte for byte (RFC 6749 §4.1.2.1), so echoing an oversized one
+                // builds a Location whose length depends on how the value percent-encodes —
+                // sometimes past what the client's server will accept, sometimes not. A
+                // deterministic error page beats a redirect that works or fails depending on the
+                // bytes in `state`; §4.1.2.1 describes redirecting phase-2 errors rather than
+                // requiring it.
+                return RenderLocalError(context, AuthorizeRequestErrors.InvalidRequest, InteractionOutcomes.TooLarge);
+            }
         }
         catch (ZeeKayDaStoreException ex)
         {

@@ -15,7 +15,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   that capped `state` in practice. It is now an encrypted entry in the new interaction store,
   keyed by the interaction identifier and a random secret held in a small per-interaction
   `zkd.interaction.<id>` cookie, so any number of requests can be in flight in one browser, each
-  completing with its own `zkd_i`, and `state` has no ceiling. The binding cookie expires with
+  completing with its own `zkd_i`. The header ceiling is replaced by a bound on the store: the new
+  `AuthorizationEndpoint.MaxRequestContextBytes` (16 KB of encoded request by default) refuses a
+  larger request locally with `invalid_request`. The binding cookie expires with
   its interaction, is deleted when it ends, and is capped at ten per browser in sequence with the
   oldest evicted first. A request that fails validation no longer clears any interaction.
 
@@ -28,12 +30,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   entry per start. Startup fails when no interaction store is registered.
 
   The one race the cookie design left open — two consent forms posted before the first response
-  landed, each minting a code — is closed in the authorization code store: the new
-  `IAuthorizationCodeStore.TryReserveInteractionAsync` claims the interaction through the same
+  landed, each minting a code, or a grant and a deny sent together — is closed in the
+  authorization code store: issuance and denial both claim the interaction through the same
   atomic insert-if-absent that makes a code single-use, and the response that loses issues
-  nothing and refuses as a replayed form is refused. Existing `IAuthorizationCodeBackingStore`
-  implementations need no change. The `zkd.interaction` name stays reserved, and now covers
-  every cookie under that prefix.
+  nothing and refuses as a replayed form is refused. The claim is an internal member of
+  `IAuthorizationCodeStore`, callable only by the framework; existing
+  `IAuthorizationCodeBackingStore` implementations need no change. The `zkd.interaction` name
+  stays reserved, and now covers every cookie under that prefix.
 
 - **Authorization code issuance: a completed flow ends with a code at the client** (#87)
 

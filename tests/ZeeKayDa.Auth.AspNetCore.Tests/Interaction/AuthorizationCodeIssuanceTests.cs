@@ -870,9 +870,9 @@ public sealed class AuthorizationCodeIssuanceTests : IDisposable
     {
         public bool Stored { get; private set; }
 
-        public async ValueTask<bool> TryReserveInteractionAsync(string interactionId, DateTimeOffset interactionExpiresAt, CancellationToken cancellationToken)
+        async ValueTask<bool> IAuthorizationCodeStore.TryClaimInteractionAsync(string interactionId, DateTimeOffset interactionExpiresAt, CancellationToken cancellationToken)
         {
-            var reserved = await inner.TryReserveInteractionAsync(interactionId, interactionExpiresAt, cancellationToken);
+            var reserved = await inner.TryClaimInteractionAsync(interactionId, interactionExpiresAt, cancellationToken);
             time.Advance(stall);
             return reserved;
         }

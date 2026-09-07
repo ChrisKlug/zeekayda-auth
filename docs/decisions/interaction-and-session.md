@@ -81,11 +81,11 @@ cross-site — a control that silently breaks the feature is no control. Multi-i
 share one Data Protection key ring across all of them — the framework does not solve distributed key management.
 
 **The authorization request context lives in the interaction store, one encrypted entry per
-interaction, so any number can be in flight in one browser and none has a size ceiling.** It carries
-protocol state and a subject reference — **never claims or a `ClaimsPrincipal`**. The seam is internal
-with two implementations, a per-process dictionary and the host's `IDistributedCache`; set, get and
-remove is the whole contract, so a shared cache is a complete answer for a multi-instance host, while
-the per-process `MemoryDistributedCache` fails startup outside `Development` unless opted out (`Critical`).
+interaction, so any number can be in flight in one browser.** An unauthenticated request may store at
+most `MaxRequestContextBytes` (16 KB) of encoded context, refused locally above that — a bound on the
+store, not a header budget. It carries protocol state and a subject reference — **never claims or a
+`ClaimsPrincipal`**. The seam is internal, with a per-process dictionary and the host's
+`IDistributedCache` behind it; set, get and remove is the whole contract (registration: `token-stores.md`).
 
 **Each interaction is bound to its browser by `zkd.interaction.<id>`, a random secret; the store key
 is derived from identifier and secret together.** The identifier travels in URLs and URLs leak; a

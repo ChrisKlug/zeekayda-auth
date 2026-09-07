@@ -77,10 +77,12 @@ they fail startup unless the call passed `allowOutsideDevelopment: true`, which 
 failure to a `Critical` warning on every startup. That flag is a parameter on the one registration
 method that needs it, never a bindable option — it is meaningless without the call it qualifies.
 `AddInMemoryStores` covers all three stores; the distributed-cache interaction store is its own
-call, because its production story differs from the token stores' (below).
+call, because its production story differs from the token stores' (below): a shared cache is a
+complete answer, while the per-process `MemoryDistributedCache` fails startup outside `Development`
+unless the call opts out, which downgrades to a `Critical` warning on every start.
 
 **One terminal outcome per interaction is the code store's invariant, keyed `zkd:code:i:{hex(sha256(id))}`.**
-`IAuthorizationCodeStore.TryReserveInteractionAsync` writes the claim — taken by issuance and by
+`IAuthorizationCodeStore.TryClaimInteractionAsync` writes the claim — taken by issuance and by
 denial alike — through the same atomic insert-if-absent that makes a code single-use, so any backend
 on which redemption is single-use decides the consent-POST and grant-versus-deny races too, and no
 new backing member or conformance test was needed.

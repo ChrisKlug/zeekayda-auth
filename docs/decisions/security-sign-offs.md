@@ -1175,8 +1175,10 @@ clear paths. Nothing consumes the context yet, and consumption was not reviewed.
   #603; the successors are] `Stored_bytes_are_opaque_and_the_key_names_neither_identifier_nor_secret`,
   `Binding_cookie_never_carries_request_values_in_the_clear`.
 - The size guard comes from the request header budget, not one cookie's capacity, and an oversized
-  context writes nothing. Closed — [superseded by #603: the context is no longer a header, the
-  guard is gone, and a request of any size is accepted; see the #603 entry.]
+  context writes nothing. Closed — [superseded by #603: the context is no longer a header; the
+  guard is now a bound on the store, `MaxRequestContextBytes`, and the successors are
+  `A_context_over_the_cap_is_refused_and_nothing_is_written`,
+  `A_request_over_the_store_cap_renders_locally_and_stores_nothing`.]
 - Decoding refuses rather than misreads a wrong version, trailing bytes, an undefined enum or an
   empty required field. Closed — `Payload_written_by_another_version_is_refused`,
   `Trailing_bytes_are_refused`, `Undefined_prompt_value_is_refused`,

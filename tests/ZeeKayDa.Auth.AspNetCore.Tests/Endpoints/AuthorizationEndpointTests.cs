@@ -178,18 +178,36 @@ public sealed class AuthorizationEndpointTests : IDisposable
     }
 
     [Fact]
-    public async Task A_request_with_a_very_large_state_is_accepted()
+    public async Task A_request_with_a_state_larger_than_any_header_could_carry_is_accepted()
     {
-        // state is deliberately not length-capped, and with the context in a store rather than a
-        // header there is no longer any ceiling on the far side either.
+        // state is deliberately not length-capped; the store's cap is 16 KB by default, far above
+        // the 3 KB the cookie transport could carry.
         var form = ValidQuery();
-        form["state"] = new string('s', 20_000);
+        form["state"] = new string('s', 10_000);
 
         using var content = new FormUrlEncodedContent(form!);
         var response = await _client.PostAsync("/connect/authorize", content, TestContext.Current.CancellationToken);
 
         response.StatusCode.Should().Be(HttpStatusCode.Redirect);
         response.Headers.Location!.OriginalString.Should().StartWith("/account/login?");
+    }
+
+    [Fact]
+    public async Task A_request_over_the_store_cap_renders_locally_and_stores_nothing()
+    {
+        // An authorize request needs no authentication and is stored for 30 minutes, so what one
+        // may make the store hold is bounded. Rendered locally rather than redirected: echoing an
+        // oversized state builds a Location the client's server may not accept.
+        var form = ValidQuery();
+        form["state"] = new string('s', 20_000);
+
+        using var content = new FormUrlEncodedContent(form!);
+        var response = await _client.PostAsync("/connect/authorize", content, TestContext.Current.CancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.Headers.Location.Should().BeNull();
+        response.Headers.TryGetValues("Set-Cookie", out var cookies);
+        (cookies ?? []).Should().NotContain(c => c.StartsWith(InteractionBindingCookie.NamePrefix), "nothing was stored, so nothing is bound");
     }
 
     [Fact]

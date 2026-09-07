@@ -35,6 +35,9 @@ internal sealed class InteractionOutcomes
     /// <summary>What the client is told when the interaction store refused to hold its request.</summary>
     internal const string CouldNotStoreRequest = "The authorization server could not store the authorization request.";
 
+    /// <summary>What the user is told when the request is larger than the interaction store may hold.</summary>
+    internal const string TooLarge = "The authorization request is too large to process.";
+
     private readonly AuthorizationFlow _flow;
     private readonly AuthorizationResponses _responses;
     private readonly ProviderHandlerActivator _activator;
@@ -173,7 +176,7 @@ internal sealed class InteractionOutcomes
         IResult result;
         try
         {
-            await _flow.PersistAsync(context, authenticated).ConfigureAwait(false);
+            await _flow.UpdateAsync(context, authenticated).ConfigureAwait(false);
             result = await ContinueAsync(context, authenticated).ConfigureAwait(false);
         }
         catch (ZeeKayDaStoreException ex)

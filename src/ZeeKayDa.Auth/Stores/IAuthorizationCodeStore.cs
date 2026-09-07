@@ -54,7 +54,8 @@ public interface IAuthorizationCodeStore
     /// <summary>
     /// Claims the one terminal outcome an interaction may have — an authorization code or a
     /// denial. Called by the authorization endpoint before a code is generated for, or a denial
-    /// is delivered for, the interaction identified by <paramref name="interactionId"/>.
+    /// is delivered for, the interaction identified by <paramref name="interactionId"/>. Internal:
+    /// a claim taken from anywhere else would suppress the interaction's outcome for good.
     /// </summary>
     /// <param name="interactionId">The identifier of the interaction about to be completed.</param>
     /// <param name="interactionExpiresAt">
@@ -76,7 +77,7 @@ public interface IAuthorizationCodeStore
     /// Thrown when the underlying store cannot complete the write due to an infrastructure
     /// failure (network, cache, database).
     /// </exception>
-    ValueTask<bool> TryReserveInteractionAsync(string interactionId, DateTimeOffset interactionExpiresAt, CancellationToken cancellationToken);
+    internal ValueTask<bool> TryClaimInteractionAsync(string interactionId, DateTimeOffset interactionExpiresAt, CancellationToken cancellationToken);
 
     /// <summary>
     /// Attempts to atomically redeem the authorization code identified by
@@ -141,6 +142,7 @@ public interface IAuthorizationCodeStore
         CancellationToken cancellationToken);
 
     // Reserved: satisfying this member requires internal access, so only assemblies named in
-    // [InternalsVisibleTo] can implement IAuthorizationCodeStore.
+    // [InternalsVisibleTo] can implement IAuthorizationCodeStore. TryClaimInteractionAsync is
+    // internal for the same reason and one more — it must not be callable from host code either.
     internal void SealAsFrameworkOwnedProtocol();
 }

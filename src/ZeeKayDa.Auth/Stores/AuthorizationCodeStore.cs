@@ -82,7 +82,7 @@ internal sealed class AuthorizationCodeStore : IAuthorizationCodeStore
     }
 
     /// <inheritdoc/>
-    public async ValueTask<bool> TryReserveInteractionAsync(
+    async ValueTask<bool> IAuthorizationCodeStore.TryClaimInteractionAsync(
         string interactionId,
         DateTimeOffset interactionExpiresAt,
         CancellationToken cancellationToken)
@@ -96,7 +96,7 @@ internal sealed class AuthorizationCodeStore : IAuthorizationCodeStore
                 ReservationMarker,
                 interactionExpiresAt + _clockSkewTolerance,
                 cancellationToken),
-            "reserve the interaction for code issuance").ConfigureAwait(false);
+            "claim the interaction's terminal outcome").ConfigureAwait(false);
     }
 
     /// <inheritdoc/>

@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Authorization;
 using ZeeKayDa.Auth.Stores;
 
@@ -18,8 +19,9 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// <remarks>
 /// <para>
 /// Each interaction is its own entry and its own cookie, so any number can be in flight in one
-/// browser at once, and the payload has no size ceiling: a <c>state</c> the client made large is
-/// the store's problem, not a header's.
+/// browser at once. The one bound is on what an unauthenticated request may make the store hold:
+/// a context whose encoding exceeds <c>AuthorizationEndpoint.MaxRequestContextBytes</c> is
+/// refused before anything is written.
 /// </para>
 /// <para>
 /// The store never holds the identifier or the secret, only a hash of the pair, and the bytes it
@@ -40,40 +42,79 @@ internal sealed class AuthorizationRequestContextStore
     private readonly IInteractionBackingStore _store;
     private readonly InteractionBindingCookie _binding;
     private readonly IDataProtector _protector;
+    private readonly IOptions<AuthorizationServerOptions> _options;
     private readonly TimeProvider _timeProvider;
 
     public AuthorizationRequestContextStore(
         IInteractionBackingStore store,
         InteractionBindingCookie binding,
         IDataProtectionProvider dataProtectionProvider,
+        IOptions<AuthorizationServerOptions> options,
         TimeProvider timeProvider)
     {
         ArgumentNullException.ThrowIfNull(store);
         ArgumentNullException.ThrowIfNull(binding);
         ArgumentNullException.ThrowIfNull(dataProtectionProvider);
+        ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(timeProvider);
 
         _store = store;
         _binding = binding;
         _protector = dataProtectionProvider.CreateProtector(DataProtectionPurpose);
+        _options = options;
         _timeProvider = timeProvider;
     }
 
     /// <summary>
-    /// Stores the context, binding it to this browser. A first write issues the binding cookie; a
-    /// rewrite — the sign-in adding the authenticated session — reuses the one the request
-    /// carries, so the entry is replaced in place.
+    /// Stores a freshly accepted request and binds it to this browser with a new binding cookie.
     /// </summary>
+    /// <returns>
+    /// <see langword="false"/> when the encoded context exceeds
+    /// <c>AuthorizationEndpoint.MaxRequestContextBytes</c>, in which case nothing is written, no
+    /// cookie is issued, and the caller must answer <c>invalid_request</c>.
+    /// </returns>
     /// <exception cref="ZeeKayDaStoreException">The backing store could not complete the write.</exception>
-    public async ValueTask WriteAsync(HttpContext context, AuthorizationRequestContext requestContext, CancellationToken cancellationToken)
+    public async ValueTask<bool> TryStoreAsync(HttpContext context, AuthorizationRequestContext requestContext, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(requestContext);
+
+        var encoded = AuthorizationRequestContextSerializer.Encode(requestContext);
+        if (encoded.Length > _options.Value.AuthorizationEndpoint.MaxRequestContextBytes)
+            return false;
+
+        var secret = _binding.Issue(context, requestContext.Id, requestContext.ExpiresAt);
+        await SetAsync(requestContext, secret, encoded, cancellationToken).ConfigureAwait(false);
+
+        return true;
+    }
+
+    /// <summary>
+    /// Replaces a stored context in place — the sign-in adding the authenticated session — under
+    /// the binding the request carries. Not size-guarded: the request was accepted under the cap,
+    /// and what an authenticated sign-in adds is small and bounded.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// The request carries no binding for this interaction. Every caller reads the context first,
+    /// so the binding is present; a rewrite without one would otherwise become an unbound copy.
+    /// </exception>
+    /// <exception cref="ZeeKayDaStoreException">The backing store could not complete the write.</exception>
+    public async ValueTask UpdateAsync(HttpContext context, AuthorizationRequestContext requestContext, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(requestContext);
 
         var secret = _binding.Read(context, requestContext.Id)
-            ?? _binding.Issue(context, requestContext.Id, requestContext.ExpiresAt);
+            ?? throw new InvalidOperationException(
+                "The interaction context cannot be updated from a request that carries no binding for it. " +
+                "Read the context first; a rewrite is only ever of a context this browser holds.");
 
-        var protectedValue = _protector.Protect(AuthorizationRequestContextSerializer.Encode(requestContext));
+        await SetAsync(requestContext, secret, AuthorizationRequestContextSerializer.Encode(requestContext), cancellationToken).ConfigureAwait(false);
+    }
+
+    private async ValueTask SetAsync(AuthorizationRequestContext requestContext, string secret, byte[] encoded, CancellationToken cancellationToken)
+    {
+        var protectedValue = _protector.Protect(encoded);
 
         await Guarded(
             () => _store.SetAsync(KeyFor(requestContext.Id, secret), protectedValue, requestContext.ExpiresAt, cancellationToken),

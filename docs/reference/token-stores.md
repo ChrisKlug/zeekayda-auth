@@ -69,7 +69,7 @@ Registers the per-process interaction store. An authorization request started on
 
 ### `.AddDistributedCacheInteractionStore(bool allowMemoryCacheOutsideDevelopment = false)`
 
-Registers the interaction store over the host's `IDistributedCache`. Requires an `IDistributedCache`; startup fails without one. The interaction store needs only set, get and remove, so a shared cache — Redis, SQL Server, any `IDistributedCache` implementation — is a complete production answer: the one race in the flow, two responses completing one request, is decided by `IAuthorizationCodeStore.TryReserveInteractionAsync`, not here.
+Registers the interaction store over the host's `IDistributedCache`. Requires an `IDistributedCache`; startup fails without one. The interaction store needs only set, get and remove, so a shared cache — Redis, SQL Server, any `IDistributedCache` implementation — is a complete production answer: the one race in the flow, two responses completing one request, is decided by `IAuthorizationCodeStore.TryClaimInteractionAsync`, not here.
 
 The exception is the per-process `MemoryDistributedCache` from `AddDistributedMemoryCache()`, which is shared with nothing. Outside a `Development` environment startup fails when the store resolves that cache, unless `allowMemoryCacheOutsideDevelopment` is `true`, which downgrades the failure to a `LogLevel.Critical` warning on every start.
 

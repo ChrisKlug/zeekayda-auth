@@ -347,8 +347,13 @@ shape of ASP.NET Core's own `TicketSerializer`. Nothing is lost by dropping self
 payload only this framework reads. No compression before encryption: mixing attacker-controlled
 `state` into a compressed encrypted payload is a needless nod to CRIME-style length oracles.
 
-**Size: no parameter caps and no ceiling.** `state` and `nonce` are formally unbounded and stay so;
-with the context in a store rather than a header there is nothing on the far side to guard either.
+**Size: no parameter caps, one guard on the store.** `state` and `nonce` are formally unbounded and
+stay so, but an authorize request needs no authentication and every valid one is stored for 30
+minutes, so what one request may make the store hold is bounded:
+`AuthorizationEndpoint.MaxRequestContextBytes`, 16 KB of encoded context by default, refused
+locally with `invalid_request` above that (a redirect echoing an oversized `state` builds a
+`Location` the client's server may not accept). The sign-in rewrite is not guarded: the request was
+accepted under the cap and what an authenticated sign-in adds is small and bounded.
 
 **Binding.** The identifier is in the URL of every host page the framework redirects to, and URLs
 leak into `Referer` headers, history and logs. The binding cookie's random secret is what a browser

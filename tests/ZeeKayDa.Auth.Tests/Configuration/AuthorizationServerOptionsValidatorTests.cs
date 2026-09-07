@@ -1211,6 +1211,29 @@ public sealed class AuthorizationServerOptionsValidatorTests
         result.FailureMessage.Should().Contain("greater than zero");
     }
 
+    // ── MaxRequestContextBytes ────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void MaxRequestContextBytes_defaults_to_16_KB()
+    {
+        new AuthorizationServerOptions().AuthorizationEndpoint.MaxRequestContextBytes.Should().Be(16 * 1024);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Validate_fails_when_MaxRequestContextBytes_is_not_positive(int bytes)
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            AuthorizationEndpoint = { MaxRequestContextBytes = bytes },
+        });
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("MaxRequestContextBytes must be greater than zero");
+    }
+
     // ── RefreshTokenLifetime defaults and validation ──────────────────────────────────────────────
 
     [Fact]

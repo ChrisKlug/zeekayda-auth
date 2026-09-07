@@ -1,6 +1,7 @@
 using System.Text;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
 using ZeeKayDa.Auth.Authorization;
@@ -25,23 +26,65 @@ public sealed class AuthorizationRequestContextStoreTests
         var write = new DefaultHttpContext();
         var context = ContextAt(Now);
 
-        await contexts.WriteAsync(write, context, None);
+        await contexts.TryStoreAsync(write, context, None);
 
         (await contexts.ReadAsync(RequestCarrying(write), InteractionId, None)).Should().BeEquivalentTo(context);
     }
 
     [Fact]
-    public async Task A_context_of_any_size_round_trips()
+    public async Task A_context_far_larger_than_any_header_could_carry_round_trips()
     {
-        // The size ceiling went with the cookie: a state parameter far past what any header
-        // would carry is simply stored.
+        // The header ceiling went with the cookie; the store's own cap is 16 KB by default.
         var (contexts, _, _) = Store();
         var write = new DefaultHttpContext();
-        var context = ContextAt(Now) with { State = new string('s', 100_000) };
+        var context = ContextAt(Now) with { State = new string('s', 10_000) };
 
-        await contexts.WriteAsync(write, context, None);
+        (await contexts.TryStoreAsync(write, context, None)).Should().BeTrue();
 
         (await contexts.ReadAsync(RequestCarrying(write), InteractionId, None)).Should().BeEquivalentTo(context);
+    }
+
+    [Fact]
+    public async Task A_context_over_the_cap_is_refused_and_nothing_is_written()
+    {
+        // An authorize request needs no authentication, so what one may make the store hold is
+        // bounded; nothing is stored and no binding cookie is issued for a refused one.
+        var backing = new NeverEvictingStore();
+        var (contexts, _, _) = Store(backing);
+        var write = new DefaultHttpContext();
+        var context = ContextAt(Now) with { State = new string('s', 17_000) };
+
+        (await contexts.TryStoreAsync(write, context, None)).Should().BeFalse();
+
+        backing.Count.Should().Be(0);
+        write.Response.Headers.SetCookie.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task The_cap_is_the_hosts_to_set()
+    {
+        var options = new AuthorizationServerOptions();
+        options.AuthorizationEndpoint.MaxRequestContextBytes = 100_000;
+        var (contexts, _, _) = Store(options: options);
+        var write = new DefaultHttpContext();
+        var context = ContextAt(Now) with { State = new string('s', 50_000) };
+
+        (await contexts.TryStoreAsync(write, context, None)).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task An_update_from_a_request_without_the_binding_is_refused_rather_than_creating_a_second_copy()
+    {
+        // Every caller reads the context first, so the binding is present; a rewrite without one
+        // would otherwise silently become an unbound entry under a new key.
+        var backing = new NeverEvictingStore();
+        var (contexts, _, _) = Store(backing);
+        await contexts.TryStoreAsync(new DefaultHttpContext(), ContextAt(Now), None);
+
+        var act = async () => await contexts.UpdateAsync(new DefaultHttpContext(), ContextAt(Now), None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        backing.Count.Should().Be(1);
     }
 
     [Fact]
@@ -50,7 +93,7 @@ public sealed class AuthorizationRequestContextStoreTests
         var (contexts, _, _) = Store();
         var write = new DefaultHttpContext();
 
-        await contexts.WriteAsync(write, ContextAt(Now), None);
+        await contexts.TryStoreAsync(write, ContextAt(Now), None);
 
         write.Response.Headers.SetCookie.ToString()
             .Should().StartWith(InteractionBindingCookie.NamePrefix + InteractionId + "=");
@@ -63,11 +106,11 @@ public sealed class AuthorizationRequestContextStoreTests
         // same binding, or the next page would read the pre-authentication copy.
         var (contexts, _, _) = Store();
         var first = new DefaultHttpContext();
-        await contexts.WriteAsync(first, ContextAt(Now), None);
+        await contexts.TryStoreAsync(first, ContextAt(Now), None);
 
         var rewrite = RequestCarrying(first);
         var authenticated = ContextAt(Now) with { SsoSessionId = "session-1", Subject = "user-1", AuthTime = Now };
-        await contexts.WriteAsync(rewrite, authenticated, None);
+        await contexts.UpdateAsync(rewrite, authenticated, None);
 
         rewrite.Response.Headers.SetCookie.Should().BeEmpty("the existing binding is reused, not reissued");
         (await contexts.ReadAsync(RequestCarrying(first), InteractionId, None)).Should().BeEquivalentTo(authenticated);
@@ -80,7 +123,7 @@ public sealed class AuthorizationRequestContextStoreTests
         // to act on.
         var (contexts, _, _) = Store();
         var write = new DefaultHttpContext();
-        await contexts.WriteAsync(write, ContextAt(Now), None);
+        await contexts.TryStoreAsync(write, ContextAt(Now), None);
 
         (await contexts.ReadAsync(new DefaultHttpContext(), InteractionId, None)).Should().BeNull();
     }
@@ -92,7 +135,7 @@ public sealed class AuthorizationRequestContextStoreTests
         // the one the entry was keyed under.
         var (contexts, _, _) = Store();
         var write = new DefaultHttpContext();
-        await contexts.WriteAsync(write, ContextAt(Now), None);
+        await contexts.TryStoreAsync(write, ContextAt(Now), None);
 
         var forged = new DefaultHttpContext();
         forged.Request.Headers.Cookie =
@@ -106,7 +149,7 @@ public sealed class AuthorizationRequestContextStoreTests
     {
         var (contexts, time, _) = Store();
         var write = new DefaultHttpContext();
-        await contexts.WriteAsync(write, ContextAt(Now), None);
+        await contexts.TryStoreAsync(write, ContextAt(Now), None);
 
         time.Advance(AuthorizationRequestContextStore.Lifetime + TimeSpan.FromSeconds(1));
 
@@ -118,7 +161,7 @@ public sealed class AuthorizationRequestContextStoreTests
     {
         var (contexts, time, _) = Store();
         var write = new DefaultHttpContext();
-        await contexts.WriteAsync(write, ContextAt(Now), None);
+        await contexts.TryStoreAsync(write, ContextAt(Now), None);
 
         time.Advance(AuthorizationRequestContextStore.Lifetime);
 
@@ -133,7 +176,7 @@ public sealed class AuthorizationRequestContextStoreTests
         // is the one nothing outside this framework controls, so that is the one enforced.
         var (contexts, time, backing) = Store(new NeverEvictingStore());
         var write = new DefaultHttpContext();
-        await contexts.WriteAsync(write, ContextAt(Now) with { ExpiresAt = Now.AddMinutes(1) }, None);
+        await contexts.TryStoreAsync(write, ContextAt(Now) with { ExpiresAt = Now.AddMinutes(1) }, None);
 
         time.Advance(TimeSpan.FromMinutes(2));
 
@@ -146,7 +189,7 @@ public sealed class AuthorizationRequestContextStoreTests
     {
         var backing = new NeverEvictingStore();
         var write = new DefaultHttpContext();
-        await Store(backing).Contexts.WriteAsync(write, ContextAt(Now), None);
+        await Store(backing).Contexts.TryStoreAsync(write, ContextAt(Now), None);
 
         // A second application on the same store, or the same one after a key-ring loss.
         (await Store(backing).Contexts.ReadAsync(RequestCarrying(write), InteractionId, None)).Should().BeNull();
@@ -159,7 +202,7 @@ public sealed class AuthorizationRequestContextStoreTests
         var backing = new NeverEvictingStore();
         var (contexts, _, _) = Store(backing);
         var write = new DefaultHttpContext();
-        await contexts.WriteAsync(write, ContextAt(Now) with { State = "client-state-value" }, None);
+        await contexts.TryStoreAsync(write, ContextAt(Now) with { State = "client-state-value" }, None);
         var secret = write.Response.Headers.SetCookie.ToString().Split(';')[0].Split('.')[^1];
 
         var (key, value) = backing.Single();
@@ -174,7 +217,7 @@ public sealed class AuthorizationRequestContextStoreTests
         var backing = new NeverEvictingStore();
         var (contexts, _, _) = Store(backing);
         var write = new DefaultHttpContext();
-        await contexts.WriteAsync(write, ContextAt(Now), None);
+        await contexts.TryStoreAsync(write, ContextAt(Now), None);
 
         var delete = RequestCarrying(write);
         await contexts.DeleteAsync(delete, InteractionId, None);
@@ -209,7 +252,7 @@ public sealed class AuthorizationRequestContextStoreTests
         // request.
         var backing = new NeverEvictingStore();
         var (contexts, _, _) = Store(backing);
-        await contexts.WriteAsync(new DefaultHttpContext(), ContextAt(Now), None);
+        await contexts.TryStoreAsync(new DefaultHttpContext(), ContextAt(Now), None);
 
         await contexts.DeleteAsync(new DefaultHttpContext(), InteractionId, None);
 
@@ -240,7 +283,7 @@ public sealed class AuthorizationRequestContextStoreTests
         var backing = new NeverEvictingStore();
         var (contexts, _, _) = Store(backing, keyRing);
         var write = new DefaultHttpContext();
-        await contexts.WriteAsync(write, ContextAt(Now), None);
+        await contexts.TryStoreAsync(write, ContextAt(Now), None);
         var (key, _) = backing.Single();
 
         var foreign = keyRing.CreateProtector("ZeeKayDa.Auth:AuthorizeErrorTransport")
@@ -254,13 +297,19 @@ public sealed class AuthorizationRequestContextStoreTests
 
     private static (AuthorizationRequestContextStore Contexts, FakeTimeProvider Time, NeverEvictingStore Backing) Store(
         IInteractionBackingStore? backing = null,
-        IDataProtectionProvider? keyRing = null)
+        IDataProtectionProvider? keyRing = null,
+        AuthorizationServerOptions? options = null)
     {
         var time = new FakeTimeProvider(Now);
         var store = backing ?? new NeverEvictingStore();
 
         return (
-            new AuthorizationRequestContextStore(store, new InteractionBindingCookie(time), keyRing ?? new EphemeralDataProtectionProvider(), time),
+            new AuthorizationRequestContextStore(
+                store,
+                new InteractionBindingCookie(time),
+                keyRing ?? new EphemeralDataProtectionProvider(),
+                Options.Create(options ?? new AuthorizationServerOptions()),
+                time),
             time,
             store as NeverEvictingStore ?? new NeverEvictingStore());
     }

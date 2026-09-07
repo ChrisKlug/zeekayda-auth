@@ -256,13 +256,22 @@ internal sealed class AuthorizationFlow
         ArgumentNullException.ThrowIfNull(requestContext);
 
         var store = context.RequestServices.GetRequiredService<Stores.IAuthorizationCodeStore>();
-        return await store.TryReserveInteractionAsync(requestContext.Id, requestContext.ExpiresAt, context.RequestAborted).ConfigureAwait(false);
+        return await store.TryClaimInteractionAsync(requestContext.Id, requestContext.ExpiresAt, context.RequestAborted).ConfigureAwait(false);
     }
 
-    /// <summary>Persists the context, bound to this browser.</summary>
+    /// <summary>
+    /// Persists a freshly accepted request, bound to this browser. Returns <see langword="false"/>
+    /// when the request is larger than the interaction store may hold, in which case nothing was
+    /// written and the caller must fail the request.
+    /// </summary>
     /// <exception cref="ZeeKayDaStoreException">The interaction store could not be written.</exception>
-    public ValueTask PersistAsync(HttpContext context, AuthorizationRequestContext requestContext) =>
-        _contexts.WriteAsync(context, requestContext, context.RequestAborted);
+    public ValueTask<bool> TryPersistAsync(HttpContext context, AuthorizationRequestContext requestContext) =>
+        _contexts.TryStoreAsync(context, requestContext, context.RequestAborted);
+
+    /// <summary>Replaces the stored context in place, under the binding this request carries.</summary>
+    /// <exception cref="ZeeKayDaStoreException">The interaction store could not be written.</exception>
+    public ValueTask UpdateAsync(HttpContext context, AuthorizationRequestContext requestContext) =>
+        _contexts.UpdateAsync(context, requestContext, context.RequestAborted);
 
     /// <summary>
     /// Discards the interaction. Called whenever a request ends, so that a completed, failed or
