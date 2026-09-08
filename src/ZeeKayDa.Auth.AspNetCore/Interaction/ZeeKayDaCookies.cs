@@ -35,7 +35,12 @@ internal static class ZeeKayDaCookies
     /// </summary>
     public const string External = ZeeKayDaSchemes.External;
 
-    /// <summary>A half-authenticated external principal, single-use and bound to its interaction.</summary>
+    /// <summary>
+    /// Reserved and no longer written. The half-authenticated external principal this cookie held
+    /// is now an entry in the interaction store, addressed by the same binding as the context;
+    /// the name stays reserved so that a host cannot take it, and names the ticket the entry is
+    /// serialised as.
+    /// </summary>
     public const string Pending = "zkd.pending";
 
     /// <summary>
@@ -47,11 +52,11 @@ internal static class ZeeKayDaCookies
     public static readonly string[] ReservedNames = [Session, Interaction, External, Pending];
 
     /// <summary>
-    /// The reserved names that are also authentication scheme names. <see cref="Interaction"/> is
-    /// absent: it carries protocol state rather than a principal, so it is a Data-Protection
-    /// payload written directly and no scheme backs it. Keeping the two lists apart is what lets
-    /// the startup check skip the framework's own schemes without also skipping a host scheme that
-    /// took the one reserved name the framework never registers.
+    /// The reserved names that are also authentication scheme names. <see cref="Interaction"/> and
+    /// <see cref="Pending"/> are absent: what they name lives in the interaction store, so no
+    /// scheme backs either. Keeping the two lists apart is what lets the startup check skip the
+    /// framework's own schemes without also skipping a host scheme that took a reserved name the
+    /// framework never registers.
     /// </summary>
-    public static readonly string[] SchemeNames = [Session, External, Pending];
+    public static readonly string[] SchemeNames = [Session, External];
 }

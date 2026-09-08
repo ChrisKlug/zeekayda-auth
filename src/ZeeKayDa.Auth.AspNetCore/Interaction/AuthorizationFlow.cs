@@ -28,14 +28,14 @@ internal sealed class AuthorizationFlow
 {
     private readonly AuthorizationRequestContextStore _contexts;
     private readonly SsoSession _session;
-    private readonly PendingPrincipalCookie _pending;
+    private readonly PendingPrincipalStore _pending;
     private readonly IOptions<AuthorizationServerOptions> _options;
     private readonly TimeProvider _timeProvider;
 
     public AuthorizationFlow(
         AuthorizationRequestContextStore contexts,
         SsoSession session,
-        PendingPrincipalCookie pending,
+        PendingPrincipalStore pending,
         IOptions<AuthorizationServerOptions> options,
         TimeProvider timeProvider)
     {
@@ -324,24 +324,31 @@ internal sealed class AuthorizationFlow
     /// <summary>
     /// Discards the interaction. Called whenever a request ends, so that a completed, failed or
     /// planted interaction is never left alive for a later sign-in to pick up. Best-effort: the
-    /// binding cookie always goes; a store that refuses the removal is logged, not thrown.
+    /// binding cookie always goes; a store that refuses the removal is logged, not thrown. A
+    /// principal still parked for the interaction shares that binding, so it becomes unreachable
+    /// here and is left to its own lifetime.
     /// </summary>
     public ValueTask ClearAsync(HttpContext context, string interactionId) =>
         _contexts.DeleteAsync(context, interactionId, context.RequestAborted);
 
-    /// <summary>Parks a principal an external provider returned, bound to <paramref name="interactionId"/>.</summary>
-    public Task ParkPendingAsync(HttpContext context, ClaimsPrincipal principal, string interactionId, string provider) =>
-        _pending.WriteAsync(context, principal, interactionId, provider);
+    /// <summary>
+    /// Parks a principal an external provider returned for <paramref name="requestContext"/>'s
+    /// interaction, under the binding this request carries.
+    /// </summary>
+    /// <exception cref="ZeeKayDaStoreException">The interaction store could not be written.</exception>
+    public ValueTask ParkPendingAsync(HttpContext context, ClaimsPrincipal principal, AuthorizationRequestContext requestContext, string provider) =>
+        _pending.ParkAsync(context, principal, requestContext, provider, context.RequestAborted);
 
     /// <summary>The parked principal bound to <paramref name="interactionId"/>, or <see langword="null"/>.</summary>
-    public Task<PendingTicket?> ReadPendingAsync(HttpContext context, string interactionId) =>
-        _pending.ReadAsync(context, interactionId);
+    /// <exception cref="ZeeKayDaStoreException">The interaction store could not be read.</exception>
+    public ValueTask<PendingTicket?> ReadPendingAsync(HttpContext context, string interactionId, CancellationToken cancellationToken) =>
+        _pending.ReadAsync(context, interactionId, cancellationToken);
 
     /// <summary>
-    /// Reads and removes the parked principal. Single-use: whichever sign-in completes the
-    /// interaction consumes it, and one bound to another interaction is removed without being
-    /// returned.
+    /// Reads and removes the parked principal: whichever sign-in or denial completes the
+    /// interaction takes it with it. Removal is best-effort; the read is not.
     /// </summary>
-    public Task<PendingTicket?> ConsumePendingAsync(HttpContext context, string interactionId) =>
-        _pending.ConsumeAsync(context, interactionId);
+    /// <exception cref="ZeeKayDaStoreException">The interaction store could not be read.</exception>
+    public ValueTask<PendingTicket?> ConsumePendingAsync(HttpContext context, string interactionId) =>
+        _pending.ConsumeAsync(context, interactionId, context.RequestAborted);
 }

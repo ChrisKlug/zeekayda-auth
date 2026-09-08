@@ -106,10 +106,7 @@ internal sealed class LoginInteraction : ILoginInteraction
         var context = RequireHttpContext();
         var interactionId = await AuthorizationFlow.RequireInteractionIdAsync(context).ConfigureAwait(false);
 
-        // The cookie read itself takes no token, so cancellation is honoured around it: nothing
-        // is returned once the caller has stopped waiting.
-        cancellationToken.ThrowIfCancellationRequested();
-        var pending = await _flow.ReadPendingAsync(context, interactionId).WaitAsync(cancellationToken).ConfigureAwait(false);
+        var pending = await _flow.ReadPendingAsync(context, interactionId, cancellationToken).ConfigureAwait(false);
         if (pending is null || _providers.Find(pending.Provider) is not { } registration)
             return null;
 

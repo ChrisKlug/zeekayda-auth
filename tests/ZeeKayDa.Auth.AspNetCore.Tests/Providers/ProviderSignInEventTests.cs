@@ -2,8 +2,10 @@ using System.Net;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Time.Testing;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
 using ZeeKayDa.Auth.AspNetCore.Tests.Interaction;
+using ZeeKayDa.Auth.Stores;
 using static ZeeKayDa.Auth.AspNetCore.Tests.Providers.ProviderTestHost;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests.Providers;
@@ -18,11 +20,17 @@ public sealed class ProviderSignInEventTests
 
     private static TestWebAppFactory NewFactory(
         Func<ProviderSignInContext, Task>? onProviderSignIn,
-        Action<Microsoft.AspNetCore.Authentication.OAuth.OAuthOptions>? configureAcme = null) =>
+        Action<Microsoft.AspNetCore.Authentication.OAuth.OAuthOptions>? configureAcme = null,
+        TimeProvider? time = null) =>
         new(
-            configureBuilder: builder => builder.WithProviders(
-                auth => auth.AddOAuth("acme", "Acme", configureAcme ?? ConfigureAcme),
-                options => options.OnProviderSignIn = onProviderSignIn),
+            configureBuilder: builder =>
+            {
+                builder.WithProviders(
+                    auth => auth.AddOAuth("acme", "Acme", configureAcme ?? ConfigureAcme),
+                    options => options.OnProviderSignIn = onProviderSignIn);
+                if (time is not null)
+                    builder.Services.AddSingleton(time);
+            },
             mapEndpoints: MapHostPages);
 
     /// <summary>Authorize, pick the provider and complete the callback: the resume URL to return through.</summary>
@@ -30,6 +38,13 @@ public sealed class ProviderSignInEventTests
     {
         var handoff = await client.GetAsync(AuthorizeUrl(), Cancellation);
         var interactionId = InteractionIdFrom(handoff);
+
+        return (interactionId, await ReachResumeAgainAsync(client, interactionId));
+    }
+
+    /// <summary>Pick the provider again for an interaction already in flight, and complete the callback.</summary>
+    private static async Task<string> ReachResumeAgainAsync(HttpClient client, string interactionId)
+    {
         var challenge = await client.PostAsync(WithInteractionId(LoginPath, interactionId), Form(("provider", "acme")), Cancellation);
         var callbackUrl = QueryHelpers.AddQueryString("/connect/callback/acme", new Dictionary<string, string?>
         {
@@ -38,7 +53,7 @@ public sealed class ProviderSignInEventTests
         });
         var callback = await client.GetAsync(callbackUrl, Cancellation);
 
-        return (interactionId, callback.Headers.Location!.OriginalString);
+        return callback.Headers.Location!.OriginalString;
     }
 
     /// <summary>Authorize, pick the provider, complete the callback, and return through resume.</summary>
@@ -48,6 +63,14 @@ public sealed class ProviderSignInEventTests
 
         return (interactionId, await client.GetAsync(resumeUrl, Cancellation));
     }
+
+    /// <summary>The user goes round the provider again for the same interaction and returns through resume.</summary>
+    private static async Task<HttpResponseMessage> ResumeAgainAsync(HttpClient client, string interactionId) =>
+        await client.GetAsync(await ReachResumeAgainAsync(client, interactionId), Cancellation);
+
+    /// <summary>How many entries the interaction store holds: one per live context, one per parked principal.</summary>
+    private static int StoreEntryCount(TestWebAppFactory factory) =>
+        ((InMemoryInteractionBackingStore)factory.Services.GetRequiredService<IInteractionBackingStore>()).Count;
 
     private static async Task<System.Text.Json.JsonElement?> ReadJsonAsync(HttpClient client, string url)
     {
@@ -169,7 +192,9 @@ public sealed class ProviderSignInEventTests
 
         resume.StatusCode.Should().Be(HttpStatusCode.Redirect);
         resume.Headers.Location!.OriginalString.Should().Be($"{CollectMorePath}?zkd_i={interactionId}");
-        resume.Headers.GetValues("Set-Cookie").Should().Contain(cookie => cookie.StartsWith("zkd.pending="));
+        resume.Headers.TryGetValues("Set-Cookie", out var cookies);
+        (cookies ?? []).Should().NotContain(cookie => cookie.StartsWith("zkd.pending="), "the principal lives in the interaction store, not in a cookie");
+        StoreEntryCount(factory).Should().Be(2, "the context and the parked principal");
         (await ReadJsonAsync(client, "/test/session")).Should().BeNull("nothing is promoted until the page signs in");
     }
 
@@ -216,9 +241,8 @@ public sealed class ProviderSignInEventTests
 
         signIn.ShouldHaveReachedConsent();
         (await ReadJsonAsync(client, "/test/session"))!.Value.GetProperty("sub").GetString().Should().Be("mapped-" + UpstreamSubject);
-        signIn.Headers.GetValues("Set-Cookie").Should().Contain(cookie =>
-            cookie.StartsWith("zkd.pending=") && cookie.Contains("expires=Thu, 01 Jan 1970"));
         (await ReadJsonAsync(client, collectMore)).Should().BeNull("the parked principal is single-use");
+        StoreEntryCount(factory).Should().Be(1, "the context stays until the flow ends; the parked principal is gone");
     }
 
     [Fact]
@@ -268,8 +292,7 @@ public sealed class ProviderSignInEventTests
         var cancel = await client.PostAsync(WithInteractionId("/account/login/cancel", interactionId), Form(), Cancellation);
 
         cancel.StatusCode.Should().Be(HttpStatusCode.Redirect);
-        cancel.Headers.GetValues("Set-Cookie").Should().Contain(cookie =>
-            cookie.StartsWith("zkd.pending=") && cookie.Contains("expires=Thu, 01 Jan 1970"));
+        StoreEntryCount(factory).Should().Be(0, "the context and the parked principal both go with the denial");
     }
 
     [Fact]
@@ -284,8 +307,7 @@ public sealed class ProviderSignInEventTests
 
         resume.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         resume.Headers.Location.Should().BeNull();
-        resume.Headers.TryGetValues("Set-Cookie", out var cookies);
-        (cookies ?? []).Should().NotContain(cookie => cookie.StartsWith("zkd.pending=") && !cookie.Contains("expires=Thu, 01 Jan 1970"));
+        StoreEntryCount(factory).Should().Be(1, "only the context: nothing was parked");
     }
 
     [Fact]
@@ -325,13 +347,13 @@ public sealed class ProviderSignInEventTests
         var calls = 0;
         using var factory = NewFactory(context => ++calls == 1 ? context.RedirectToAsync(CollectMorePath) : Task.CompletedTask);
         using var client = NewClient(factory);
-        await ResumeAsync(client);
+        var (interactionId, _) = await ResumeAsync(client);
 
-        var (_, resume) = await ResumeAsync(client);
+        var resume = await ResumeAgainAsync(client, interactionId);
 
         resume.ShouldHaveReachedConsent();
-        resume.Headers.GetValues("Set-Cookie").Should().Contain(cookie =>
-            cookie.StartsWith("zkd.pending=") && cookie.Contains("expires=Thu, 01 Jan 1970"));
+        (await ReadJsonAsync(client, WithInteractionId(CollectMorePath, interactionId))).Should().BeNull();
+        StoreEntryCount(factory).Should().Be(1, "the context stays until the flow ends; the parked principal is gone");
     }
 
     [Fact]
@@ -340,13 +362,95 @@ public sealed class ProviderSignInEventTests
         var calls = 0;
         using var factory = NewFactory(context => ++calls == 1 ? context.RedirectToAsync(CollectMorePath) : context.DenyAsync());
         using var client = NewClient(factory);
-        await ResumeAsync(client);
+        var (interactionId, _) = await ResumeAsync(client);
 
-        var (_, resume) = await ResumeAsync(client);
+        var resume = await ResumeAgainAsync(client, interactionId);
 
         resume.StatusCode.Should().Be(HttpStatusCode.Redirect);
-        resume.Headers.GetValues("Set-Cookie").Should().Contain(cookie =>
-            cookie.StartsWith("zkd.pending=") && cookie.Contains("expires=Thu, 01 Jan 1970"));
+        StoreEntryCount(factory).Should().Be(0, "the context and the parked principal both go with the denial");
+    }
+
+    // ── Concurrent tabs ───────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Two_tabs_parked_at_the_host_page_each_read_back_their_own_principal_and_each_complete()
+    {
+        // Concurrent tabs: each interaction parks its own principal, so the second tab's park
+        // replaces nothing, and the first tab's sign-in consumes only its own.
+        using var factory = NewFactory(context => context.RedirectToAsync(CollectMorePath));
+        using var client = NewClient(factory);
+        var (firstTab, firstResume) = await ResumeAsync(client);
+        var (secondTab, secondResume) = await ResumeAsync(client);
+
+        (await ReadJsonAsync(client, firstResume.Headers.Location!.OriginalString)).Should().NotBeNull("the first tab reads its own parked principal");
+        (await ReadJsonAsync(client, secondResume.Headers.Location!.OriginalString)).Should().NotBeNull("the second tab reads its own parked principal");
+        var first = await client.PostAsync(WithInteractionId(CollectMorePath, firstTab), Form(), Cancellation);
+        first.ShouldHaveReachedConsent();
+        (await ReadJsonAsync(client, secondResume.Headers.Location!.OriginalString)).Should().NotBeNull("the first tab's sign-in consumed only its own principal");
+        var second = await client.PostAsync(WithInteractionId(CollectMorePath, secondTab), Form(), Cancellation);
+        second.ShouldHaveReachedConsent();
+        (await ReadJsonAsync(client, "/test/session"))!.Value.GetProperty("sub").GetString().Should().Be("mapped-" + UpstreamSubject);
+    }
+
+    [Fact]
+    public async Task Automatic_promotion_in_another_tab_leaves_a_parked_principal_alone()
+    {
+        var calls = 0;
+        using var factory = NewFactory(context => ++calls == 1 ? context.RedirectToAsync(CollectMorePath) : Task.CompletedTask);
+        using var client = NewClient(factory);
+        var (_, firstResume) = await ResumeAsync(client);
+
+        var (_, secondResume) = await ResumeAsync(client);
+
+        secondResume.ShouldHaveReachedConsent();
+        (await ReadJsonAsync(client, firstResume.Headers.Location!.OriginalString)).Should().NotBeNull("the second tab completed its own interaction, not the first tab's");
+    }
+
+    [Fact]
+    public async Task DenyAsync_in_another_tab_leaves_a_parked_principal_alone()
+    {
+        var calls = 0;
+        using var factory = NewFactory(context => ++calls == 1 ? context.RedirectToAsync(CollectMorePath) : context.DenyAsync());
+        using var client = NewClient(factory);
+        var (_, firstResume) = await ResumeAsync(client);
+
+        var (_, secondResume) = await ResumeAsync(client);
+
+        secondResume.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        (await ReadJsonAsync(client, firstResume.Headers.Location!.OriginalString)).Should().NotBeNull("the second tab denied its own interaction, not the first tab's");
+    }
+
+    // ── Lifetime ──────────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task A_parked_principal_expires_after_fifteen_minutes()
+    {
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var factory = NewFactory(context => context.RedirectToAsync(CollectMorePath), time: time);
+        using var client = NewClient(factory);
+        var (_, resume) = await ResumeAsync(client);
+
+        time.Advance(PendingPrincipalStore.Lifetime + TimeSpan.FromSeconds(1));
+
+        (await ReadJsonAsync(client, resume.Headers.Location!.OriginalString)).Should().BeNull("the interaction is still alive, but the parked principal is not");
+    }
+
+    [Fact]
+    public async Task A_parked_principal_never_outlives_its_interaction()
+    {
+        // Parked twenty minutes into a thirty-minute interaction, the principal gets the ten
+        // minutes the interaction has left, not fifteen of its own.
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var factory = NewFactory(context => context.RedirectToAsync(CollectMorePath), time: time);
+        using var client = NewClient(factory);
+        var handoff = await client.GetAsync(AuthorizeUrl(), Cancellation);
+        var interactionId = InteractionIdFrom(handoff);
+        time.Advance(TimeSpan.FromMinutes(20));
+        var resume = await ResumeAgainAsync(client, interactionId);
+
+        time.Advance(TimeSpan.FromMinutes(11));
+
+        (await ReadJsonAsync(client, resume.Headers.Location!.OriginalString)).Should().BeNull();
     }
 
     // ── DenyAsync ─────────────────────────────────────────────────────────────────────────────

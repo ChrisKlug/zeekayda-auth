@@ -38,6 +38,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   `IAuthorizationCodeBackingStore` implementations need no change. The `zkd.interaction` name
   stays reserved, and now covers every cookie under that prefix.
 
+  The principal an external provider returned, parked by `RedirectToAsync` while the host's page
+  collects more, moves into the same store as a second entry per interaction, under the same
+  binding, so a second tab on that page parks its own and reads back its own with
+  `GetPendingPrincipalAsync`. It keeps its fifteen-minute lifetime and now never outlives its
+  interaction. The `zkd.pending` cookie scheme is no longer registered — a host cannot have
+  named it, and a key-ring gap now loses the parked principal the way it loses the request — and
+  the name stays reserved.
+
 - **Authorization code issuance: a completed flow ends with a code at the client** (#87)
 
   A request that has been authenticated and, where the client requires it, consented to is now

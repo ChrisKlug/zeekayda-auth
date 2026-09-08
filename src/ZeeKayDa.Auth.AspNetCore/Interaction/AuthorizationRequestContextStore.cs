@@ -1,5 +1,4 @@
 using System.Security.Cryptography;
-using System.Text;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
@@ -212,9 +211,5 @@ internal sealed class AuthorizationRequestContextStore
         }
     }
 
-    private static StoreKey KeyFor(string interactionId, string secret)
-    {
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(string.Concat(interactionId, ".", secret)));
-        return new StoreKey($"zkd:interaction:c:{Convert.ToHexStringLower(hash)}");
-    }
+    private static StoreKey KeyFor(string interactionId, string secret) => InteractionStoreKeys.Context(interactionId, secret);
 }

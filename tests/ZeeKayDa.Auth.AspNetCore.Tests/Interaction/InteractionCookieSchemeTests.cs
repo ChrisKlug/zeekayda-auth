@@ -53,23 +53,23 @@ public sealed class InteractionCookieSchemeTests
 
         var registered = (await schemes.GetAllSchemesAsync()).Select(scheme => scheme.Name);
 
-        // zkd.interaction is absent by design: it carries protocol state rather than a principal,
-        // so it is a Data-Protection payload written directly, not a cookie authentication ticket.
+        // zkd.interaction and zkd.pending are absent by design: the context and the parked
+        // principal live in the interaction store, so neither is a cookie authentication ticket.
         registered.Should().Contain(
-            [ZeeKayDaCookies.Session, ZeeKayDaCookies.External, ZeeKayDaCookies.Pending],
+            [ZeeKayDaCookies.Session, ZeeKayDaCookies.External],
             "registering a single scheme would hand ASP.NET Core an automatic default");
+        registered.Should().NotContain(ZeeKayDaCookies.Pending, "the parked principal moved into the interaction store");
     }
 
     [Theory]
     [InlineData(ZeeKayDaCookies.Session)]
     [InlineData(ZeeKayDaCookies.External)]
-    [InlineData(ZeeKayDaCookies.Pending)]
     public void Every_framework_cookie_is_HttpOnly_Secure_Lax_and_not_sliding(string scheme)
     {
-        // Lax for all three: each is first read while answering a top-level navigation that
-        // started elsewhere — the client's site for the session, the provider's for the external
-        // ticket and for the parked principal — which Strict would withhold it from. TestServer
-        // enforces no SameSite, so this is the only test a Strict regression can fail.
+        // Lax for both: each is first read while answering a top-level navigation that started
+        // elsewhere — the client's site for the session, the provider's for the external ticket —
+        // which Strict would withhold it from. TestServer enforces no SameSite, so this is the
+        // only test a Strict regression can fail.
         using var provider = BuildHost();
         var options = provider
             .GetRequiredService<IOptionsMonitor<CookieAuthenticationOptions>>()

@@ -114,9 +114,10 @@ internal sealed class InteractionOutcomes
         await _flow.ClaimCompletionAsync(context, requestContext).ConfigureAwait(false);
 
         // Discarded before the response is written, so a denied request cannot be resumed by a
-        // later sign-in picking the context back up — nor by a parked principal bound to it.
-        await _flow.ClearAsync(context, requestContext.Id).ConfigureAwait(false);
+        // later sign-in picking the context back up — nor by a parked principal bound to it. The
+        // principal goes first, while the binding that addresses it is still in hand.
         await _flow.ConsumePendingAsync(context, requestContext.Id).ConfigureAwait(false);
+        await _flow.ClearAsync(context, requestContext.Id).ConfigureAwait(false);
 
         await WriteAsync(
                 context,
@@ -330,7 +331,7 @@ internal sealed class InteractionOutcomes
 
         context.Response.Headers.CacheControl = "no-store";
 
-        await _flow.ParkPendingAsync(context, principal, requestContext.Id, registration.Name).ConfigureAwait(false);
+        await _flow.ParkPendingAsync(context, principal, requestContext, registration.Name).ConfigureAwait(false);
         await WriteAsync(context, Results.Redirect(InteractionHandoff.BuildRedirectUrl(path.Value!, requestContext.Id)))
             .ConfigureAwait(false);
     }

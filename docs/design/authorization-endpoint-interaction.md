@@ -289,30 +289,35 @@ deliberately unassisted. The build is #608; nothing in the dispatch shape above 
 
 ## Internal cookie schemes
 
-`AddZeeKayDaAuth` registers three plain `AddCookie(...)` schemes and one family of binding
-cookies. Names reserved — a host registering one fails at startup. All `HttpOnly`.
+`AddZeeKayDaAuth` registers two plain `AddCookie(...)` schemes and one family of binding
+cookies. Names reserved — a host registering one fails at startup, `zkd.pending` included though
+nothing writes it any more. All `HttpOnly`.
 
 | Cookie | Holds | Lifetime | `SameSite` |
 |---|---|---|---|
 | `zkd.session` | the SSO session | session | `None` only if `prompt=none` silent auth is supported, else `Lax` |
 | `zkd.interaction.<id>` | the binding of one interaction to this browser: a random secret | hard 30 min, deleted when the interaction ends | `Lax` |
 | `zkd.external` | the raw provider callback, before ZeeKayDa reads it | seconds | `Lax` |
-| `zkd.pending` | a half-authenticated external principal | hard 15 min, not sliding | `Lax` — first read at the end of the provider's redirect chain, which `Strict` withholds it from |
 
-`zkd.pending` is single-use (signed out on `SignInAsync`) and bound to its interaction through
-its ticket's properties, as the external ticket is — never a claim the host could see or a
-provider could have written. The principal is stored as the provider returned it, every identity
-intact, minus the framework's reserved claims.
+**The parked principal** — a half-authenticated external principal, parked while the host's page
+collects more — is not a cookie. It is a second entry in the interaction store, keyed like the
+context by the interaction id and the binding secret, so a second tab on the host's page parks its
+own and reads back its own. Hard 15 minutes, never past the interaction's own expiry, not sliding.
+Bound to its interaction through its ticket's properties, as the external ticket is — never a
+claim the host could see or a provider could have written. The principal is stored as the provider
+returned it, every identity intact, minus the framework's reserved claims. Single-use as a matter
+of tidiness, not of safety: consuming is a read then a remove, and the one-completion guarantee is
+the code store's claim on the interaction.
 
-**As built:** `zkd.session`, `zkd.external` and `zkd.pending` are cookie schemes; the binding
-cookies are written directly, one per interaction, capped at ten per browser with the oldest
-evicted first. `zkd.session` takes `SameSite=Lax`: the session is read while answering a
-top-level GET the user arrived at from the client's site, which is what `Strict` withholds, and
-`None` buys nothing until iframe-based silent authentication is supported. `zkd.external` accepts a
-sign-in only from a request a provider callback endpoint marked, records that provider into the
-ticket, and is consumed by `/connect/resume` whether or not the resume succeeds. `zkd.pending` is
-also consumed by a `DenyAsync` at the login page and by resume's own exits, and records the
-provider alongside the interaction in its ticket's properties.
+**As built:** `zkd.session` and `zkd.external` are cookie schemes; the binding cookies are written
+directly, one per interaction, capped at ten per browser with the oldest evicted first.
+`zkd.session` takes `SameSite=Lax`: the session is read while answering a top-level GET the user
+arrived at from the client's site, which is what `Strict` withholds, and `None` buys nothing until
+iframe-based silent authentication is supported. `zkd.external` accepts a sign-in only from a
+request a provider callback endpoint marked, records that provider into the ticket, and is consumed
+by `/connect/resume` whether or not the resume succeeds. The parked principal is consumed by the
+sign-in that completes its interaction and by a `DenyAsync` at the login page; an interaction that
+ends any other way deletes the binding that addresses it, and the entry is left to its lifetime.
 
 ## The interaction context
 
@@ -326,7 +331,7 @@ code store's atomic claim on the interaction before a code is minted.
 
 | Written at `/connect/authorize` | |
 |---|---|
-| interaction id | names the store entry and the binding cookie, correlates `zkd.pending`; the only value that ever leaves the server |
+| interaction id | names the store entries and the binding cookie; the only value that ever leaves the server |
 | `client_id`, validated `redirect_uri` | the response target, authenticated in phase 1 |
 | effective scopes | `requested ∩ client.AllowedScopes` |
 | `state`, `nonce` | client-controlled, round-tripped untouched |
@@ -338,7 +343,7 @@ Accumulated as the flow advances: the authenticating provider scheme, `auth_time
 **subject reference**, and the consent decision with its granted scopes.
 
 **Protocol state and a subject reference only — never claims, never a `ClaimsPrincipal`.** The
-authenticated user lives in `zkd.session` and `zkd.pending`. The rule outlived the size ceiling it
+authenticated user lives in `zkd.session` and the parked principal. The rule outlived the size ceiling it
 was written for: a context that carried claims would be a second copy of the user for the consent
 page to drift from.
 
@@ -440,7 +445,7 @@ public interface ILoginInteraction   // scoped, as are all the page services
     Task<ClientInformation> GetClientInformationAsync();
 
     // Promotes principal to SSO session, continues the flow (consent → code → redirect).
-    // Auto-consumes a bound zkd.pending cookie. Terminal. Throws ZeeKayDaInteractionException
+    // Auto-consumes a principal parked for the interaction. Terminal. Throws ZeeKayDaInteractionException
     // when the request carries no zkd_i, when there is no interaction context, or when the two
     // name different interactions (see #593 for the future [Authorize]-driven mode).
     Task SignInAsync(ClaimsPrincipal principal, params string[] authenticationMethods);
@@ -489,7 +494,7 @@ public sealed class ProviderSignInContext                // what OnProviderSignI
     public IReadOnlyList<string> EffectiveScopes { get; } // requested ∩ allowed, from the interaction context
 
     // Terminal. Parks Principal — the principal only; the ticket's properties and any saved
-    // tokens stay behind — in zkd.pending and redirects to a host-local path carrying zkd_i.
+    // tokens stay behind — in the interaction store and redirects to a host-local path carrying zkd_i.
     // The path is validated on LoginPath's terms (InteractionPath.IsSafe): an absolute or
     // protocol-relative value throws before the response is touched.
     public Task RedirectToAsync(PathString path);
