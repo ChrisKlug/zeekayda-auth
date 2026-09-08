@@ -331,7 +331,7 @@ internal sealed class InteractionOutcomes
 
         context.Response.Headers.CacheControl = "no-store";
 
-        await _flow.ParkPendingAsync(context, principal, requestContext, registration.Name).ConfigureAwait(false);
+        await _flow.ParkPendingAsync(context, new PendingTicket(principal, registration.Name), requestContext).ConfigureAwait(false);
         await WriteAsync(context, Results.Redirect(InteractionHandoff.BuildRedirectUrl(path.Value!, requestContext.Id)))
             .ConfigureAwait(false);
     }

@@ -90,8 +90,9 @@ internal sealed class PendingPrincipalStore
     }
 
     /// <summary>
-    /// Parks <paramref name="principal"/> for <paramref name="requestContext"/>'s interaction,
-    /// replacing any principal already parked for it, under the binding this request carries.
+    /// Parks <paramref name="ticket"/> — the principal and the provider that returned it — for
+    /// <paramref name="requestContext"/>'s interaction, replacing any principal already parked for
+    /// it, under the binding this request carries.
     /// </summary>
     /// <exception cref="InvalidOperationException">
     /// The request carries no binding for the interaction. The resume endpoint reads the context
@@ -101,15 +102,14 @@ internal sealed class PendingPrincipalStore
     /// <exception cref="ZeeKayDaStoreException">The backing store could not complete the write.</exception>
     public async ValueTask ParkAsync(
         HttpContext context,
-        ClaimsPrincipal principal,
+        PendingTicket ticket,
         AuthorizationRequestContext requestContext,
-        string provider,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
-        ArgumentNullException.ThrowIfNull(principal);
+        ArgumentNullException.ThrowIfNull(ticket);
         ArgumentNullException.ThrowIfNull(requestContext);
-        ArgumentException.ThrowIfNullOrEmpty(provider);
+        ArgumentException.ThrowIfNullOrEmpty(ticket.Provider);
 
         var secret = _binding.Read(context, requestContext.Id)
             ?? throw new InvalidOperationException(
@@ -121,10 +121,10 @@ internal sealed class PendingPrincipalStore
 
         var properties = new AuthenticationProperties { IsPersistent = false, ExpiresUtc = expiresAt };
         properties.Items[PendingTicketItems.InteractionId] = requestContext.Id;
-        properties.Items[PendingTicketItems.Provider] = provider;
+        properties.Items[PendingTicketItems.Provider] = ticket.Provider;
 
-        var ticket = new AuthenticationTicket(ReservedClaims.Strip(principal), properties, ZeeKayDaCookies.Pending);
-        var protectedValue = ProtectorFor(requestContext.Id, secret).Protect(TicketSerializer.Default.Serialize(ticket));
+        var stored = new AuthenticationTicket(ReservedClaims.Strip(ticket.Principal), properties, ZeeKayDaCookies.Pending);
+        var protectedValue = ProtectorFor(requestContext.Id, secret).Protect(TicketSerializer.Default.Serialize(stored));
 
         await Guarded(
             () => _store.SetAsync(InteractionStoreKeys.PendingPrincipal(requestContext.Id, secret), protectedValue, expiresAt, cancellationToken),
@@ -217,19 +217,25 @@ internal sealed class PendingPrincipalStore
     /// </summary>
     private PendingTicket? Bound(AuthenticationTicket ticket, string interactionId)
     {
-        var items = ticket.Properties.Items;
-        var isBound = items.TryGetValue(PendingTicketItems.InteractionId, out var bound)
-            && !string.IsNullOrEmpty(bound)
-            && InteractionHandoff.IdentifiersMatch(bound, interactionId);
-
-        if (!isBound || !items.TryGetValue(PendingTicketItems.Provider, out var provider) || string.IsNullOrEmpty(provider))
+        if (!IsBoundTo(ticket, interactionId) || IsExpired(ticket))
             return null;
 
-        if (ticket.Properties.ExpiresUtc is not { } expiresAt || _timeProvider.GetUtcNow() >= expiresAt)
-            return null;
-
-        return new PendingTicket(ReservedClaims.Strip(ticket.Principal), provider);
+        var provider = ProviderOf(ticket);
+        return provider is null ? null : new PendingTicket(ReservedClaims.Strip(ticket.Principal), provider);
     }
+
+    private static bool IsBoundTo(AuthenticationTicket ticket, string interactionId) =>
+        ticket.Properties.Items.TryGetValue(PendingTicketItems.InteractionId, out var bound)
+        && !string.IsNullOrEmpty(bound)
+        && InteractionHandoff.IdentifiersMatch(bound, interactionId);
+
+    private bool IsExpired(AuthenticationTicket ticket) =>
+        ticket.Properties.ExpiresUtc is not { } expiresAt || _timeProvider.GetUtcNow() >= expiresAt;
+
+    private static string? ProviderOf(AuthenticationTicket ticket) =>
+        ticket.Properties.Items.TryGetValue(PendingTicketItems.Provider, out var provider) && !string.IsNullOrEmpty(provider)
+            ? provider
+            : null;
 
     private static DateTimeOffset Earliest(DateTimeOffset first, DateTimeOffset second) => first < second ? first : second;
 }

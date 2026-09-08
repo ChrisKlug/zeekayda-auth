@@ -332,12 +332,12 @@ internal sealed class AuthorizationFlow
         _contexts.DeleteAsync(context, interactionId, context.RequestAborted);
 
     /// <summary>
-    /// Parks a principal an external provider returned for <paramref name="requestContext"/>'s
-    /// interaction, under the binding this request carries.
+    /// Parks a principal an external provider returned, with that provider, for
+    /// <paramref name="requestContext"/>'s interaction, under the binding this request carries.
     /// </summary>
     /// <exception cref="ZeeKayDaStoreException">The interaction store could not be written.</exception>
-    public ValueTask ParkPendingAsync(HttpContext context, ClaimsPrincipal principal, AuthorizationRequestContext requestContext, string provider) =>
-        _pending.ParkAsync(context, principal, requestContext, provider, context.RequestAborted);
+    public ValueTask ParkPendingAsync(HttpContext context, PendingTicket ticket, AuthorizationRequestContext requestContext) =>
+        _pending.ParkAsync(context, ticket, requestContext, context.RequestAborted);
 
     /// <summary>The parked principal bound to <paramref name="interactionId"/>, or <see langword="null"/>.</summary>
     /// <exception cref="ZeeKayDaStoreException">The interaction store could not be read.</exception>

@@ -27,7 +27,7 @@ public sealed class PendingPrincipalStoreTests
         var (pending, _, _) = Store();
         var bound = BoundRequest();
 
-        await pending.ParkAsync(bound, ProviderPrincipal(), ContextAt(Now), Provider, None);
+        await pending.ParkAsync(bound, Ticket(), ContextAt(Now), None);
         var read = await pending.ReadAsync(RequestCarrying(bound), InteractionId, None);
 
         read.Should().NotBeNull();
@@ -47,7 +47,7 @@ public sealed class PendingPrincipalStoreTests
         var principal = ProviderPrincipal();
         principal.Identities.First().AddClaim(new Claim(ReservedClaims.Prefix + "sid", "forged"));
 
-        await pending.ParkAsync(bound, principal, ContextAt(Now), Provider, None);
+        await pending.ParkAsync(bound, new PendingTicket(principal, Provider), ContextAt(Now), None);
 
         (await pending.ReadAsync(RequestCarrying(bound), InteractionId, None))!.Principal.Claims
             .Should().NotContain(claim => claim.Type.StartsWith(ReservedClaims.Prefix));
@@ -58,7 +58,7 @@ public sealed class PendingPrincipalStoreTests
     {
         var (pending, _, backing) = Store();
 
-        var park = async () => await pending.ParkAsync(new DefaultHttpContext(), ProviderPrincipal(), ContextAt(Now), Provider, None);
+        var park = async () => await pending.ParkAsync(new DefaultHttpContext(), Ticket(), ContextAt(Now), None);
 
         await park.Should().ThrowAsync<InvalidOperationException>();
         backing.Count.Should().Be(0);
@@ -69,9 +69,9 @@ public sealed class PendingPrincipalStoreTests
     {
         var (pending, _, backing) = Store();
         var bound = BoundRequest();
-        await pending.ParkAsync(bound, ProviderPrincipal(), ContextAt(Now), Provider, None);
+        await pending.ParkAsync(bound, Ticket(), ContextAt(Now), None);
 
-        await pending.ParkAsync(bound, ProviderPrincipal("upstream-99"), ContextAt(Now), Provider, None);
+        await pending.ParkAsync(bound, Ticket("upstream-99"), ContextAt(Now), None);
 
         backing.Count.Should().Be(1);
         (await pending.ReadAsync(RequestCarrying(bound), InteractionId, None))!.Principal.FindFirst("sub")!.Value.Should().Be("upstream-99");
@@ -82,7 +82,7 @@ public sealed class PendingPrincipalStoreTests
     {
         var (pending, _, _) = Store();
         var bound = BoundRequest();
-        await pending.ParkAsync(bound, ProviderPrincipal(), ContextAt(Now), Provider, None);
+        await pending.ParkAsync(bound, Ticket(), ContextAt(Now), None);
 
         (await pending.ReadAsync(new DefaultHttpContext(), InteractionId, None)).Should().BeNull();
     }
@@ -92,7 +92,7 @@ public sealed class PendingPrincipalStoreTests
     {
         var (pending, _, _) = Store();
         var bound = BoundRequest();
-        await pending.ParkAsync(bound, ProviderPrincipal(), ContextAt(Now), Provider, None);
+        await pending.ParkAsync(bound, Ticket(), ContextAt(Now), None);
 
         var forged = new DefaultHttpContext();
         forged.Request.Headers.Cookie =
@@ -108,7 +108,7 @@ public sealed class PendingPrincipalStoreTests
         // tab's.
         var (pending, _, _) = Store();
         var bound = BoundRequest();
-        await pending.ParkAsync(bound, ProviderPrincipal(), ContextAt(Now), Provider, None);
+        await pending.ParkAsync(bound, Ticket(), ContextAt(Now), None);
         var secondTab = BoundRequest("second-interaction");
 
         (await pending.ReadAsync(RequestCarrying(secondTab), "second-interaction", None)).Should().BeNull();
@@ -119,7 +119,7 @@ public sealed class PendingPrincipalStoreTests
     {
         var (pending, time, _) = Store();
         var bound = BoundRequest();
-        await pending.ParkAsync(bound, ProviderPrincipal(), ContextAt(Now), Provider, None);
+        await pending.ParkAsync(bound, Ticket(), ContextAt(Now), None);
 
         time.Advance(PendingPrincipalStore.Lifetime + TimeSpan.FromSeconds(1));
 
@@ -131,7 +131,7 @@ public sealed class PendingPrincipalStoreTests
     {
         var (pending, time, _) = Store();
         var bound = BoundRequest();
-        await pending.ParkAsync(bound, ProviderPrincipal(), ContextAt(Now), Provider, None);
+        await pending.ParkAsync(bound, Ticket(), ContextAt(Now), None);
 
         time.Advance(PendingPrincipalStore.Lifetime);
 
@@ -146,7 +146,7 @@ public sealed class PendingPrincipalStoreTests
         // own fifteen.
         var (pending, time, _) = Store();
         var bound = BoundRequest();
-        await pending.ParkAsync(bound, ProviderPrincipal(), ContextAt(Now) with { ExpiresAt = Now.AddMinutes(5) }, Provider, None);
+        await pending.ParkAsync(bound, Ticket(), ContextAt(Now) with { ExpiresAt = Now.AddMinutes(5) }, None);
 
         time.Advance(TimeSpan.FromMinutes(5));
 
@@ -160,7 +160,7 @@ public sealed class PendingPrincipalStoreTests
         // is the one nothing outside this framework controls, so that is the one enforced.
         var (pending, time, backing) = Store();
         var bound = BoundRequest();
-        await pending.ParkAsync(bound, ProviderPrincipal(), ContextAt(Now), Provider, None);
+        await pending.ParkAsync(bound, Ticket(), ContextAt(Now), None);
 
         time.Advance(PendingPrincipalStore.Lifetime + TimeSpan.FromMinutes(1));
 
@@ -173,7 +173,7 @@ public sealed class PendingPrincipalStoreTests
     {
         var backing = new NeverEvictingStore();
         var bound = BoundRequest();
-        await Store(backing).Pending.ParkAsync(bound, ProviderPrincipal(), ContextAt(Now), Provider, None);
+        await Store(backing).Pending.ParkAsync(bound, Ticket(), ContextAt(Now), None);
 
         // A second application on the same store, or the same one after a key-ring loss.
         (await Store(backing).Pending.ReadAsync(RequestCarrying(bound), InteractionId, None)).Should().BeNull();
@@ -184,7 +184,7 @@ public sealed class PendingPrincipalStoreTests
     {
         var (pending, _, backing) = Store();
         var bound = BoundRequest();
-        await pending.ParkAsync(bound, ProviderPrincipal(), ContextAt(Now), Provider, None);
+        await pending.ParkAsync(bound, Ticket(), ContextAt(Now), None);
 
         var (key, value) = backing.Single();
 
@@ -203,7 +203,7 @@ public sealed class PendingPrincipalStoreTests
         var write = new DefaultHttpContext();
         await contexts.TryStoreAsync(write, ContextAt(Now), 16 * 1024, None);
 
-        await pending.ParkAsync(write, ProviderPrincipal(), ContextAt(Now), Provider, None);
+        await pending.ParkAsync(write, Ticket(), ContextAt(Now), None);
 
         backing.Count.Should().Be(2);
         (await contexts.ReadAsync(RequestCarrying(write), InteractionId, None)).Should().BeEquivalentTo(ContextAt(Now));
@@ -219,7 +219,7 @@ public sealed class PendingPrincipalStoreTests
         var backing = new NeverEvictingStore();
         var (pending, _, _) = Store(backing, keyRing);
         var bound = BoundRequest();
-        await pending.ParkAsync(bound, ProviderPrincipal(), ContextAt(Now), Provider, None);
+        await pending.ParkAsync(bound, Ticket(), ContextAt(Now), None);
         var (key, _) = backing.Single();
 
         var ticket = new AuthenticationTicket(ProviderPrincipal(), new AuthenticationProperties(), ZeeKayDaCookies.Pending);
@@ -241,9 +241,9 @@ public sealed class PendingPrincipalStoreTests
         var backing = new NeverEvictingStore();
         var (pending, _, _) = Store(backing);
         var victim = BoundRequest();
-        await pending.ParkAsync(victim, ProviderPrincipal(), ContextAt(Now), Provider, None);
+        await pending.ParkAsync(victim, Ticket(), ContextAt(Now), None);
         var attacker = BoundRequest("attackers-interaction");
-        await pending.ParkAsync(attacker, ProviderPrincipal("attacker"), ContextAt(Now) with { Id = "attackers-interaction" }, Provider, None);
+        await pending.ParkAsync(attacker, Ticket("attacker"), ContextAt(Now) with { Id = "attackers-interaction" }, None);
 
         backing.Swap();
 
@@ -261,7 +261,7 @@ public sealed class PendingPrincipalStoreTests
         // right interaction, so only the purpose the bytes were sealed under can refuse it.
         var (pending, _, backing) = Store();
         var bound = BoundRequest();
-        await pending.ParkAsync(bound, ProviderPrincipal(), ContextAt(Now), Provider, None);
+        await pending.ParkAsync(bound, Ticket(), ContextAt(Now), None);
         var (_, ciphertext) = backing.Single();
         var chosenSecret = InteractionBindingCookie.NewSecret();
         await backing.SetAsync(InteractionStoreKeys.PendingPrincipal(InteractionId, chosenSecret), ciphertext, Now.AddMinutes(15), None);
@@ -276,7 +276,7 @@ public sealed class PendingPrincipalStoreTests
     {
         var (pending, _, backing) = Store();
         var bound = BoundRequest();
-        await pending.ParkAsync(bound, ProviderPrincipal(), ContextAt(Now), Provider, None);
+        await pending.ParkAsync(bound, Ticket(), ContextAt(Now), None);
 
         var consumed = await pending.ConsumeAsync(RequestCarrying(bound), InteractionId, None);
 
@@ -290,7 +290,7 @@ public sealed class PendingPrincipalStoreTests
     {
         var (pending, _, backing) = Store();
         var bound = BoundRequest();
-        await pending.ParkAsync(bound, ProviderPrincipal(), ContextAt(Now), Provider, None);
+        await pending.ParkAsync(bound, Ticket(), ContextAt(Now), None);
 
         (await pending.ConsumeAsync(new DefaultHttpContext(), InteractionId, None)).Should().BeNull();
 
@@ -305,7 +305,7 @@ public sealed class PendingPrincipalStoreTests
         var backing = new NeverEvictingStore { RefuseRemoval = true };
         var (pending, _, _) = Store(backing);
         var bound = BoundRequest();
-        await pending.ParkAsync(bound, ProviderPrincipal(), ContextAt(Now), Provider, None);
+        await pending.ParkAsync(bound, Ticket(), ContextAt(Now), None);
 
         var consumed = await pending.ConsumeAsync(RequestCarrying(bound), InteractionId, None);
 
@@ -373,6 +373,9 @@ public sealed class PendingPrincipalStoreTests
 
     private static string SecretOf(HttpContext written) =>
         written.Response.Headers.SetCookie.Single()!.Split(';')[0].Split('=')[1].Split('.')[1];
+
+    /// <summary>What resume parks: the provider's principal, and the provider that returned it.</summary>
+    private static PendingTicket Ticket(string subject = "upstream-42") => new(ProviderPrincipal(subject), Provider);
 
     /// <summary>What a provider returns: two identities, each with its authentication type and issuer.</summary>
     private static ClaimsPrincipal ProviderPrincipal(string subject = "upstream-42")
