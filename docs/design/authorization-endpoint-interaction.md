@@ -323,7 +323,9 @@ ends any other way deletes the binding that addresses it, and the entry is left 
 
 What `/connect/authorize` writes and every later stage reads: an encrypted entry in the
 **interaction store**, one per interaction, keyed by a hash of the interaction id and the secret in
-that interaction's binding cookie. The store seam is internal with two implementations — a
+that interaction's binding cookie, and sealed under a Data Protection purpose derived from the same
+pair — so a writer to the store cannot relocate an entry under a secret of their own and read it
+back with a forged cookie. The store seam is internal with two implementations — a
 per-process dictionary (`AddInMemoryInteractionStore`, part of `AddInMemoryStores`) and the host's
 `IDistributedCache` (`AddDistributedCacheInteractionStore`). Set, get and remove is the whole
 contract: the one race in the flow, two responses completing one interaction, is decided by the

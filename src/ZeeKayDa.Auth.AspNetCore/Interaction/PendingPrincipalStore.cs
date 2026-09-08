@@ -41,9 +41,11 @@ internal sealed record PendingTicket(ClaimsPrincipal Principal, string Provider)
 /// <para>
 /// The principal is stored as the provider returned it — every identity, with its authentication
 /// type and its name and role claim types — minus the framework's reserved claims, in the ticket
-/// format the cookie handler would have used, protected on the host's key ring. The binding and
-/// the provider live in the ticket's properties, as they do for the external ticket, so neither
-/// is a claim the host could see or a provider could have written.
+/// format the cookie handler would have used, protected on the host's key ring under a purpose
+/// derived from the interaction and its secret, so that a writer to the store cannot move it
+/// under a secret of their own. The binding and the provider live in the ticket's properties, as
+/// they do for the external ticket, so neither is a claim the host could see or a provider could
+/// have written.
 /// </para>
 /// <para>
 /// Consuming is a read followed by a remove, not an atomic take. The parked principal is not
@@ -122,7 +124,7 @@ internal sealed class PendingPrincipalStore
         properties.Items[PendingTicketItems.Provider] = provider;
 
         var ticket = new AuthenticationTicket(ReservedClaims.Strip(principal), properties, ZeeKayDaCookies.Pending);
-        var protectedValue = _protector.Protect(TicketSerializer.Default.Serialize(ticket));
+        var protectedValue = ProtectorFor(requestContext.Id, secret).Protect(TicketSerializer.Default.Serialize(ticket));
 
         await Guarded(
             () => _store.SetAsync(InteractionStoreKeys.PendingPrincipal(requestContext.Id, secret), protectedValue, expiresAt, cancellationToken),
@@ -193,7 +195,7 @@ internal sealed class PendingPrincipalStore
         byte[] payload;
         try
         {
-            payload = _protector.Unprotect(stored.Value.ToArray());
+            payload = ProtectorFor(interactionId, secret).Unprotect(stored.Value.ToArray());
         }
         catch (CryptographicException)
         {
@@ -203,12 +205,15 @@ internal sealed class PendingPrincipalStore
         return TicketSerializer.Default.Deserialize(payload) is { } ticket ? Bound(ticket, interactionId) : null;
     }
 
+    private IDataProtector ProtectorFor(string interactionId, string secret) => InteractionStoreKeys.ProtectorFor(_protector, interactionId, secret);
+
     /// <summary>
     /// The ticket as a parked principal, or <see langword="null"/> when it is bound to another
-    /// interaction, names no provider, or has expired. Data Protection authenticates the bytes,
-    /// not which row they sit in, so the identifier inside the ticket is what ties it to the
-    /// entry it was read from; and the expiry inside is authoritative, since the store's TTL is
-    /// not checked by anything this framework controls.
+    /// interaction, names no provider, or has expired. The purpose already refuses bytes sealed
+    /// for another interaction; the identifier inside the ticket is checked as well, so that a
+    /// ticket which unprotects is never trusted on the strength of the purpose alone. The expiry
+    /// inside is authoritative, since the store's TTL is not checked by anything this framework
+    /// controls.
     /// </summary>
     private PendingTicket? Bound(AuthenticationTicket ticket, string interactionId)
     {

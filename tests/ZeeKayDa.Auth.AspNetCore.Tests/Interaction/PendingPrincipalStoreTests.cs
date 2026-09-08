@@ -252,6 +252,26 @@ public sealed class PendingPrincipalStoreTests
     }
 
     [Fact]
+    public async Task Valid_ciphertext_relocated_under_a_chosen_secret_for_the_same_interaction_reads_nothing()
+    {
+        // The identifier leaks; the secret does not. A writer to the store who knows the
+        // identifier could copy the victim's parked principal under the key for that identifier
+        // and a secret of their own, then present that secret in a forged cookie and have the
+        // host's page link the victim's provider identity to their account. The ticket names the
+        // right interaction, so only the purpose the bytes were sealed under can refuse it.
+        var (pending, _, backing) = Store();
+        var bound = BoundRequest();
+        await pending.ParkAsync(bound, ProviderPrincipal(), ContextAt(Now), Provider, None);
+        var (_, ciphertext) = backing.Single();
+        var chosenSecret = InteractionBindingCookie.NewSecret();
+        await backing.SetAsync(InteractionStoreKeys.PendingPrincipal(InteractionId, chosenSecret), ciphertext, Now.AddMinutes(15), None);
+        var attacker = new DefaultHttpContext();
+        attacker.Request.Headers.Cookie = $"{InteractionBindingCookie.NamePrefix}{InteractionId}={Now.ToUnixTimeSeconds()}.{chosenSecret}";
+
+        (await pending.ReadAsync(attacker, InteractionId, None)).Should().BeNull();
+    }
+
+    [Fact]
     public async Task Consuming_returns_the_principal_and_removes_the_entry()
     {
         var (pending, _, backing) = Store();
