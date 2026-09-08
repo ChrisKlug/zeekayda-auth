@@ -72,6 +72,23 @@ public sealed class ProviderSignInEventTests
     private static int StoreEntryCount(TestWebAppFactory factory) =>
         ((InMemoryInteractionBackingStore)factory.Services.GetRequiredService<IInteractionBackingStore>()).Count;
 
+    /// <summary>A working in-memory store whose reads can be made to fail mid-test: the backend going away.</summary>
+    private sealed class FaultableInteractionStore : IInteractionBackingStore
+    {
+        private readonly InMemoryInteractionBackingStore _inner = new(TimeProvider.System);
+
+        public bool FailReads { get; set; }
+
+        public ValueTask SetAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken) =>
+            _inner.SetAsync(key, value, expiresAt, cancellationToken);
+
+        public ValueTask<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken) =>
+            FailReads ? throw new InvalidOperationException("store is down") : _inner.GetAsync(key, cancellationToken);
+
+        public ValueTask RemoveAsync(StoreKey key, CancellationToken cancellationToken) =>
+            _inner.RemoveAsync(key, cancellationToken);
+    }
+
     private static async Task<System.Text.Json.JsonElement?> ReadJsonAsync(HttpClient client, string url)
     {
         var response = await client.GetAsync(url, Cancellation);
@@ -280,6 +297,31 @@ public sealed class ProviderSignInEventTests
         var read = async () => await client.GetAsync(WithInteractionId(CollectMorePath + "/cancelled", interactionId), Cancellation);
 
         await read.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task GetPendingPrincipalAsync_surfaces_a_store_fault_rather_than_reporting_nothing_parked()
+    {
+        // The page must not tell the user there is nothing to link because the store is down.
+        var store = new FaultableInteractionStore();
+        using var factory = new TestWebAppFactory(
+            configureBuilder: builder =>
+            {
+                builder.WithProviders(
+                    auth => auth.AddOAuth("acme", "Acme", ConfigureAcme),
+                    options => options.OnProviderSignIn = context => context.RedirectToAsync(CollectMorePath));
+                builder.AddInMemoryAuthorizationCodeStore(allowOutsideDevelopment: true);
+                builder.AddInMemoryRefreshTokenStore(allowOutsideDevelopment: true);
+                builder.Services.AddSingleton<IInteractionBackingStore>(store);
+            },
+            mapEndpoints: MapHostPages);
+        using var client = NewClient(factory);
+        var (_, resume) = await ResumeAsync(client);
+        store.FailReads = true;
+
+        var read = async () => await client.GetAsync(resume.Headers.Location!.OriginalString, Cancellation);
+
+        await read.Should().ThrowAsync<ZeeKayDaStoreException>();
     }
 
     [Fact]
