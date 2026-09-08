@@ -21,13 +21,18 @@ namespace ZeeKayDa.Auth.Stores;
 /// </para>
 /// <para>
 /// Key layout: entries are keyed <c>zkd:code:e:{hex(sha256(handle))}</c>,
-/// tombstones <c>zkd:code:t:{hex(sha256(handle))}</c>. Raw handles are never persisted as keys
-/// or embedded in stored values.
+/// tombstones <c>zkd:code:t:{hex(sha256(handle))}</c>, and the one-outcome-per-interaction claim
+/// <c>zkd:code:i:{hex(sha256(interactionId))}</c>. Raw handles and identifiers are never
+/// persisted as keys or embedded in stored values.
 /// </para>
 /// </remarks>
 internal sealed class AuthorizationCodeStore : IAuthorizationCodeStore
 {
     private static readonly string DataProtectionPurpose = "ZeeKayDa.Auth:AuthorizationCodeStore";
+
+    // The claim carries no information — its presence is the fact — so a single byte is stored
+    // rather than an empty value some backends refuse.
+    private static readonly ReadOnlyMemory<byte> ReservationMarker = new byte[] { 1 };
 
     private readonly IAuthorizationCodeBackingStore _backingStore;
     private readonly IDataProtector _protector;
@@ -74,6 +79,24 @@ internal sealed class AuthorizationCodeStore : IAuthorizationCodeStore
         if (!inserted)
             throw new ZeeKayDaStoreException(
                 "The authorization code handle collided with an existing store entry.");
+    }
+
+    /// <inheritdoc/>
+    async ValueTask<bool> IAuthorizationCodeStore.TryClaimInteractionAsync(
+        string interactionId,
+        DateTimeOffset interactionExpiresAt,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(interactionId);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        return await Guarded(
+            () => _backingStore.TryInsertAsync(
+                BuildInteractionKey(interactionId),
+                ReservationMarker,
+                interactionExpiresAt + _clockSkewTolerance,
+                cancellationToken),
+            "claim the interaction's terminal outcome").ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -211,6 +234,8 @@ internal sealed class AuthorizationCodeStore : IAuthorizationCodeStore
     private static StoreKey BuildEntryKey(string code) => new($"zkd:code:e:{HashHex(code)}");
 
     private static StoreKey BuildTombstoneKey(string code) => new($"zkd:code:t:{HashHex(code)}");
+
+    private static StoreKey BuildInteractionKey(string interactionId) => new($"zkd:code:i:{HashHex(interactionId)}");
 
     private static string HashHex(string handle) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(handle)));
 }

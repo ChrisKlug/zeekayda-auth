@@ -67,10 +67,15 @@ public interface ILoginInteraction
     /// </para>
     /// </remarks>
     /// <exception cref="ZeeKayDaInteractionException">
-    /// There is no interaction to resume: the request carries no <c>zkd_i</c>, the interaction
-    /// context cookie is absent or expired, or the two do not name the same interaction. The last
-    /// case is what a login page that dropped the query parameter looks like — see
-    /// <c>Interaction.LoginPath</c> for the fix.
+    /// There is no interaction to resume: the request carries no <c>zkd_i</c>, or names an
+    /// interaction this browser is not carrying — it expired, was already completed, was started
+    /// in another browser, or the login page dropped the query parameter (see
+    /// <c>Interaction.LoginPath</c> for the fix). Or another response completed the interaction
+    /// while this one was being prepared.
+    /// </exception>
+    /// <exception cref="ZeeKayDaStoreException">
+    /// The interaction store or the authorization code store could not be reached. Fail-closed:
+    /// nothing was signed in or issued.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// An entry in <paramref name="authenticationMethods"/> is null or blank.
@@ -108,8 +113,13 @@ public interface ILoginInteraction
     /// </para>
     /// </remarks>
     /// <exception cref="ZeeKayDaInteractionException">
-    /// There is no interaction to end: the request carries no <c>zkd_i</c>, the interaction context
-    /// cookie is absent or expired, or the two do not name the same interaction.
+    /// There is no interaction to end: the request carries no <c>zkd_i</c>, or names an interaction
+    /// this browser is not carrying — it expired, was already completed, or was started in another
+    /// browser. Or another response completed the interaction while this one was being prepared.
+    /// </exception>
+    /// <exception cref="ZeeKayDaStoreException">
+    /// The interaction store or the authorization code store could not be reached. Fail-closed:
+    /// the client was told nothing.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// The request is not a <c>POST</c>, or there is no active HTTP request — the service was
@@ -140,9 +150,13 @@ public interface ILoginInteraction
     /// </para>
     /// </remarks>
     /// <exception cref="ZeeKayDaInteractionException">
-    /// There is no interaction to continue: the request carries no <c>zkd_i</c>, the interaction
-    /// context cookie is absent or expired, or the two do not name the same interaction. Or
-    /// <paramref name="provider"/> is not the identifier of a registered provider.
+    /// There is no interaction to continue: the request carries no <c>zkd_i</c>, or names an
+    /// interaction this browser is not carrying — it expired, was already completed, or was started
+    /// in another browser. Or <paramref name="provider"/> is not the identifier of a registered
+    /// provider.
+    /// </exception>
+    /// <exception cref="ZeeKayDaStoreException">
+    /// The interaction store could not be reached. Fail-closed: no challenge was issued.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="provider"/> is null or empty.

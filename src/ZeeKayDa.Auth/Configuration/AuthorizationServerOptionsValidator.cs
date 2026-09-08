@@ -403,6 +403,12 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
                 "AuthorizationServerOptions.AuthorizationEndpoint.AuthorizationCodeLifetime must be greater than zero.");
         }
 
+        if (options.AuthorizationEndpoint.MaxRequestContextBytes <= 0)
+        {
+            errors.Add(
+                "AuthorizationServerOptions.AuthorizationEndpoint.MaxRequestContextBytes must be greater than zero.");
+        }
+
         ValidateInteractionPath(options.AuthorizationEndpoint.Interaction.ErrorPath, "ErrorPath", errors);
         ValidateInteractionPath(options.AuthorizationEndpoint.Interaction.LoginPath, "LoginPath", errors);
         ValidateInteractionPath(options.AuthorizationEndpoint.Interaction.ConsentPath, "ConsentPath", errors);

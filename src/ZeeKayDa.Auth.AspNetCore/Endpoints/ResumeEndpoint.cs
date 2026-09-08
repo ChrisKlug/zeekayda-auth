@@ -162,8 +162,8 @@ internal sealed class ResumeEndpoint : IZeeKayDaEndpoint
         if (interactionId is null || ticket is null || !IsBoundTo(ticket, interactionId))
             return null;
 
-        var requestContext = _flow.Read(context);
-        if (requestContext is null || !InteractionHandoff.IdentifiersMatch(requestContext.Id, interactionId))
+        var requestContext = await _flow.ReadAsync(context, interactionId).ConfigureAwait(false);
+        if (requestContext is null)
             return null;
 
         if (ProviderOf(ticket.Properties.Items) is not { } registration)

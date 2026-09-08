@@ -20,6 +20,8 @@ ZeeKayDa.Auth.Authorization.AuthorizationEndpointOptions.AuthorizationEndpointOp
 ZeeKayDa.Auth.Authorization.AuthorizationEndpointOptions.CodeChallengeMethodsSupported.get -> System.Collections.Generic.ICollection<ZeeKayDa.Auth.Authorization.CodeChallengeMethod>?
 ZeeKayDa.Auth.Authorization.AuthorizationEndpointOptions.CodeChallengeMethodsSupported.set -> void
 ZeeKayDa.Auth.Authorization.AuthorizationEndpointOptions.Interaction.get -> ZeeKayDa.Auth.Authorization.InteractionOptions!
+ZeeKayDa.Auth.Authorization.AuthorizationEndpointOptions.MaxRequestContextBytes.get -> int
+ZeeKayDa.Auth.Authorization.AuthorizationEndpointOptions.MaxRequestContextBytes.set -> void
 ZeeKayDa.Auth.Authorization.AuthorizationEndpointOptions.Uri.get -> string?
 ZeeKayDa.Auth.Authorization.AuthorizationEndpointOptions.Uri.set -> void
 ZeeKayDa.Auth.Authorization.CodeChallengeMethod

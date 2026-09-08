@@ -32,10 +32,14 @@ public interface IConsentInteraction
     /// on its own.
     /// </remarks>
     /// <exception cref="ZeeKayDaInteractionException">
-    /// There is no interaction to ask about: the request carries no <c>zkd_i</c>, the interaction
-    /// context cookie is absent or expired, the two do not name the same interaction, the session
-    /// that authenticated the request is no longer the one the browser holds, or the client that
-    /// sent the request is no longer registered or no longer lists its redirect URI.
+    /// There is no interaction to ask about: the request carries no <c>zkd_i</c>, or names an
+    /// interaction this browser is not carrying — it expired, was already completed, or was started
+    /// in another browser; or the session that authenticated the request is no longer the one the
+    /// browser holds; or the client that sent the request is no longer registered or no longer
+    /// lists its redirect URI.
+    /// </exception>
+    /// <exception cref="ZeeKayDaStoreException">
+    /// The interaction store could not be reached. Fail-closed: nothing is reported as absent.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// There is no active HTTP request — the service was resolved outside one.
@@ -72,10 +76,16 @@ public interface IConsentInteraction
     /// </para>
     /// </remarks>
     /// <exception cref="ZeeKayDaInteractionException">
-    /// There is no interaction to complete: the request carries no <c>zkd_i</c>, the interaction
-    /// context cookie is absent or expired, the two do not name the same interaction, the session
-    /// that authenticated the request is no longer the one the browser holds, or the client that
-    /// sent the request is no longer registered or no longer lists its redirect URI.
+    /// There is no interaction to complete: the request carries no <c>zkd_i</c>, or names an
+    /// interaction this browser is not carrying — it expired, was already completed, or was started
+    /// in another browser; or the session that authenticated the request is no longer the one the
+    /// browser holds; or the client that sent the request is no longer registered or no longer
+    /// lists its redirect URI. Or another response — a second grant, or a denial — completed the
+    /// interaction while this one was being prepared.
+    /// </exception>
+    /// <exception cref="ZeeKayDaStoreException">
+    /// The interaction store or the authorization code store could not be reached. Fail-closed:
+    /// nothing was issued.
     /// </exception>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="scopes"/> is null.
@@ -113,10 +123,16 @@ public interface IConsentInteraction
     /// </para>
     /// </remarks>
     /// <exception cref="ZeeKayDaInteractionException">
-    /// There is no interaction to end: the request carries no <c>zkd_i</c>, the interaction
-    /// context cookie is absent or expired, the two do not name the same interaction, the session
-    /// that authenticated the request is no longer the one the browser holds, or the client that
-    /// sent the request is no longer registered or no longer lists its redirect URI.
+    /// There is no interaction to end: the request carries no <c>zkd_i</c>, or names an interaction
+    /// this browser is not carrying — it expired, was already completed, or was started in another
+    /// browser; or the session that authenticated the request is no longer the one the browser
+    /// holds; or the client that sent the request is no longer registered or no longer lists its
+    /// redirect URI. Or another response — a grant, or an earlier denial — completed the
+    /// interaction while this one was being prepared.
+    /// </exception>
+    /// <exception cref="ZeeKayDaStoreException">
+    /// The interaction store or the authorization code store could not be reached. Fail-closed:
+    /// the client was told nothing.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// The request is not a <c>POST</c>, or there is no active HTTP request — the service was

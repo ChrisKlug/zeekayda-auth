@@ -7,12 +7,13 @@ nav_order: 5
 
 *Added in Unreleased.*
 
-ZeeKayDa.Auth requires two stores to be registered before the application starts:
+ZeeKayDa.Auth requires three stores to be registered before the application starts:
 
-- `IAuthorizationCodeStore` — persists short-lived authorization codes and enforces single-use redemption per [RFC 9700 §2.1.1](https://www.rfc-editor.org/rfc/rfc9700#section-2.1.1).
+- `IAuthorizationCodeStore` — persists short-lived authorization codes, enforces single-use redemption per [RFC 9700 §2.1.1](https://www.rfc-editor.org/rfc/rfc9700#section-2.1.1), and guarantees at most one code per authorization request.
 - `IRefreshTokenStore` — persists long-lived refresh tokens, enforces rotation and reuse detection per [RFC 9700 §4.13](https://www.rfc-editor.org/rfc/rfc9700#section-4.13), and supports family-level revocation.
+- The interaction store — holds each in-flight authorization request between `/connect/authorize` and the response to the client, one entry per request, so any number can be in flight in one browser. It has no public interface: register the per-process implementation or the one over your `IDistributedCache`.
 
-Neither store is registered automatically by `AddZeeKayDaAuth`. You must choose an implementation for each using the builder methods below, or register a custom type. If either store is missing at startup, the application fails with `ZeeKayDaConfigurationException` naming the missing interface.
+None is registered automatically by `AddZeeKayDaAuth`. You must choose an implementation for each using the builder methods below, or register a custom type for the token stores. If any store is missing at startup, the application fails with `ZeeKayDaConfigurationException` naming what is missing.
 
 For step-by-step registration instructions, see [Configure token stores](../how-to/configure-token-stores.md).
 
@@ -39,7 +40,7 @@ All store registration goes through the `ZeeKayDaAuthBuilder` returned by `AddZe
 
 ### `.AddInMemoryStores(bool allowOutsideDevelopment = false)`
 
-Registers both in-memory backing stores — `InMemoryAuthorizationCodeBackingStore` and `InMemoryRefreshTokenGrantStore` — wired underneath the framework's sealed `AuthorizationCodeStore` and `RefreshTokenStore` coordinators. Emits a `LogLevel.Warning` at startup. Outside a `Development` environment, startup fails with `ZeeKayDaConfigurationException` unless `allowOutsideDevelopment` is `true`. The value is passed through to both `.AddInMemoryAuthorizationCodeStore()` and `.AddInMemoryRefreshTokenStore()`, each of which gates on it independently.
+Registers all three in-memory stores — `InMemoryAuthorizationCodeBackingStore` and `InMemoryRefreshTokenGrantStore` wired underneath the framework's sealed `AuthorizationCodeStore` and `RefreshTokenStore` coordinators, and the per-process interaction store. Emits a `LogLevel.Warning` per store at startup. Outside a `Development` environment, startup fails with `ZeeKayDaConfigurationException` unless `allowOutsideDevelopment` is `true`. The value is passed through to `.AddInMemoryAuthorizationCodeStore()`, `.AddInMemoryRefreshTokenStore()` and `.AddInMemoryInteractionStore()`, each of which gates on it independently.
 
 ```csharp
 builder.Services
@@ -61,6 +62,25 @@ builder.Services
 ### `.AddInMemoryRefreshTokenStore(bool allowOutsideDevelopment = false)`
 
 Registers `InMemoryRefreshTokenGrantStore` as the backing store, wired underneath the framework's sealed `RefreshTokenStore` coordinator, which is registered as `IRefreshTokenStore`. Emits the same startup warning as `.AddInMemoryStores()`. The environment check applies, gated on this method's own `allowOutsideDevelopment` value — independent of any other in-memory store registration on the same builder.
+
+### `.AddInMemoryInteractionStore(bool allowOutsideDevelopment = false)`
+
+Registers the per-process interaction store. An authorization request started on one instance cannot be completed by another, so this is for development and testing only, with the same environment gate and `allowOutsideDevelopment` override as the in-memory token stores. Included in `.AddInMemoryStores()`.
+
+### `.AddDistributedCacheInteractionStore(bool allowMemoryCacheOutsideDevelopment = false)`
+
+Registers the interaction store over the host's `IDistributedCache`. Requires an `IDistributedCache`; startup fails without one. The interaction store needs only set, get and remove, so a shared cache — Redis, SQL Server, any `IDistributedCache` implementation — is a complete production answer: the one race in the flow, two responses completing one request, is decided by `IAuthorizationCodeStore.TryClaimInteractionAsync`, not here.
+
+The exception is the per-process `MemoryDistributedCache` from `AddDistributedMemoryCache()`, which is shared with nothing. Outside a `Development` environment startup fails when the store resolves that cache, unless `allowMemoryCacheOutsideDevelopment` is `true`, which downgrades the failure to a `LogLevel.Critical` warning on every start.
+
+```csharp
+builder.Services.AddStackExchangeRedisCache(o => o.Configuration = "...");
+builder.Services
+    .AddZeeKayDaAuth(options => { options.Issuer = "https://id.example.com"; })
+    .AddAuthorizationCodeStore<MyRedisAuthorizationCodeBackingStore>()
+    .AddRefreshTokenGrantStore<MyRedisRefreshTokenGrantStore>()
+    .AddDistributedCacheInteractionStore();
+```
 
 ### `.AddDistributedCacheTokenStores()`
 
@@ -164,13 +184,15 @@ The default is intentionally small. Values approaching half of `AuthorizationCod
 - **Entries are never evicted while the process runs.** Neither backing store removes expired data on a timer or on read. An authorization code's entry is removed only when it is successfully redeemed; a redemption tombstone, once written, is never removed at all. Refresh token grants (including consumed, revoked, and family-revocation sentinel rows) are likewise never removed. On a long-running process this means the in-memory dictionaries grow monotonically with the number of codes and tokens ever issued — acceptable for development and short-lived test hosts, but a memory-growth characteristic to be aware of before using these stores for anything longer-running.
 - **Development and testing only.** In-memory stores are never an acceptable production choice. Outside a `Development` host environment the framework refuses to start unless the registration call's `allowOutsideDevelopment` parameter is set to `true` (intended only for integration test hosts that intentionally run under a non-`Development` environment name). Each of `.AddInMemoryStores()`, `.AddInMemoryAuthorizationCodeStore()`, and `.AddInMemoryRefreshTokenStore()` gates on its own `allowOutsideDevelopment` value independently.
 
-**Startup warning text (emitted at `LogLevel.Warning`):**
+**Startup warning text (emitted at `LogLevel.Warning`, once per store, naming it):**
 
 ```text
-ZeeKayDa.Auth: in-memory token stores are active. All issued tokens will be lost on
-process restart, and single-use enforcement and reuse detection are disabled across
-multiple instances. This configuration is intended for development and testing only
-and must not be used in production.
+ZeeKayDa.Auth: the in-memory authorization code store is active. Its contents are lost
+on process restart and invisible to other instances: issued tokens, single-use
+enforcement and reuse detection do not survive a restart or span a multi-instance
+deployment, and an in-flight authorization request cannot be completed by another
+instance. This configuration is intended for development and testing only and must not
+be used in production.
 ```
 
 **Data Protection.** Authorization code entries are serialised to JSON and encrypted using `IDataProtectionProvider` (purposes: `ZeeKayDa.Auth:AuthorizationCodeStore` and `ZeeKayDa.Auth:RefreshTokenStore`). Refresh token grants are only partially encrypted: `FamilyId`, `Subject`, `ClientId`, the expiry timestamps, and — critically — the `Status` column (`Active`/`Consumed`/`Revoked`) are stored as cleartext columns on the grant row; only the `ProtectedPayload` field (the serialized `RefreshTokenEntry`) is Data-Protection-encrypted. This is deliberate: family revocation is decided by reading the cleartext `Status` column, so a Data Protection failure can never cause a revoked family to silently appear unrevoked — there is no encrypted revocation state to fail to decrypt.

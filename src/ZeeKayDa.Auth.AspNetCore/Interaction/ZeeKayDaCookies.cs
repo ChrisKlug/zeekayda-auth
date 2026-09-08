@@ -21,7 +21,11 @@ internal static class ZeeKayDaCookies
     /// <summary>The SSO session. Written at sign-in promotion; the session <em>is</em> this cookie.</summary>
     public const string Session = "zkd.session";
 
-    /// <summary>The authorization request context, carried across the flow's redirects.</summary>
+    /// <summary>
+    /// The prefix of the binding cookies, one per interaction, named
+    /// <c>zkd.interaction.&lt;id&gt;</c>. Each binds one in-flight authorization request to the
+    /// browser that started it; the request itself lives in the interaction store.
+    /// </summary>
     public const string Interaction = "zkd.interaction";
 
     /// <summary>

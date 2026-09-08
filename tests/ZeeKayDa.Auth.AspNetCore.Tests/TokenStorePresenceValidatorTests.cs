@@ -16,7 +16,7 @@ public sealed class TokenStorePresenceValidatorTests
         => new(services);
 
     [Fact]
-    public async Task VerifyAsync_completes_without_failures_when_both_stores_are_registered()
+    public async Task VerifyAsync_completes_without_failures_when_every_store_is_registered()
     {
         var services = new ServiceCollection();
         CreateBuilder(services).AddInMemoryStores(allowOutsideDevelopment: true);
@@ -33,7 +33,9 @@ public sealed class TokenStorePresenceValidatorTests
     public async Task VerifyAsync_adds_a_failure_when_IAuthorizationCodeStore_is_missing()
     {
         var services = new ServiceCollection();
-        CreateBuilder(services).AddInMemoryRefreshTokenStore(allowOutsideDevelopment: true);
+        CreateBuilder(services)
+            .AddInMemoryRefreshTokenStore(allowOutsideDevelopment: true)
+            .AddInMemoryInteractionStore(allowOutsideDevelopment: true);
         using var provider = services.BuildServiceProvider();
         var sut = new TokenStorePresenceValidator();
         var context = new StartupVerificationContext();
@@ -50,7 +52,9 @@ public sealed class TokenStorePresenceValidatorTests
     public async Task VerifyAsync_adds_a_failure_when_IRefreshTokenStore_is_missing()
     {
         var services = new ServiceCollection();
-        CreateBuilder(services).AddInMemoryAuthorizationCodeStore(allowOutsideDevelopment: true);
+        CreateBuilder(services)
+            .AddInMemoryAuthorizationCodeStore(allowOutsideDevelopment: true)
+            .AddInMemoryInteractionStore(allowOutsideDevelopment: true);
         using var provider = services.BuildServiceProvider();
         var sut = new TokenStorePresenceValidator();
         var context = new StartupVerificationContext();
@@ -64,7 +68,28 @@ public sealed class TokenStorePresenceValidatorTests
     }
 
     [Fact]
-    public async Task VerifyAsync_adds_two_failures_when_both_stores_are_missing()
+    public async Task VerifyAsync_adds_a_failure_when_the_interaction_store_is_missing()
+    {
+        // A host that registered only the token stores would fail on its first authorize request;
+        // startup is where it learns that instead.
+        var services = new ServiceCollection();
+        CreateBuilder(services)
+            .AddInMemoryAuthorizationCodeStore(allowOutsideDevelopment: true)
+            .AddInMemoryRefreshTokenStore(allowOutsideDevelopment: true);
+        using var provider = services.BuildServiceProvider();
+        var sut = new TokenStorePresenceValidator();
+        var context = new StartupVerificationContext();
+
+        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+
+        context.Failures.Should().ContainSingle()
+            .Which.Code.Should().Be("stores.interaction_store.missing");
+
+        context.Failures.Single().Message.Should().Contain("AddDistributedCacheInteractionStore");
+    }
+
+    [Fact]
+    public async Task VerifyAsync_adds_a_failure_per_store_when_every_store_is_missing()
     {
         var services = new ServiceCollection();
         using var provider = services.BuildServiceProvider();
@@ -73,9 +98,10 @@ public sealed class TokenStorePresenceValidatorTests
 
         await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
 
-        context.Failures.Should().HaveCount(2);
+        context.Failures.Should().HaveCount(3);
         context.Failures.Should().Contain(f => f.Code == "stores.authorization_code_store.missing");
         context.Failures.Should().Contain(f => f.Code == "stores.refresh_token_store.missing");
+        context.Failures.Should().Contain(f => f.Code == "stores.interaction_store.missing");
     }
 
     [Fact]

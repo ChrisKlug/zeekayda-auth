@@ -1,6 +1,8 @@
 using System.Net;
 using Microsoft.AspNetCore.WebUtilities;
+using Microsoft.Extensions.DependencyInjection;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
+using ZeeKayDa.Auth.Stores;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests.Endpoints;
 
@@ -152,19 +154,20 @@ public sealed class AuthorizationEndpointTests : IDisposable
         response.Headers.CacheControl!.NoStore.Should().BeTrue();
     }
 
-    // ── Interaction context (#84) ─────────────────────────────────────────────────────────────
+    // ── Interaction context ───────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task Valid_request_writes_the_interaction_cookie()
+    public async Task Valid_request_writes_a_binding_cookie_named_for_its_interaction()
     {
         var response = await _client.GetAsync(AuthorizeUrl(ValidQuery()), TestContext.Current.CancellationToken);
 
+        var interactionId = InteractionIdFrom(response);
         response.Headers.GetValues("Set-Cookie").Should().Contain(c =>
-            c.StartsWith(AuthorizationRequestContextTransport.CookieName + "=") && c.Contains("httponly"));
+            c.StartsWith(InteractionBindingCookie.NamePrefix + interactionId + "=") && c.Contains("httponly"));
     }
 
     [Fact]
-    public async Task Interaction_cookie_never_carries_request_values_in_the_clear()
+    public async Task Binding_cookie_never_carries_request_values_in_the_clear()
     {
         var query = ValidQuery();
         query["state"] = "client-state-value";
@@ -172,17 +175,31 @@ public sealed class AuthorizationEndpointTests : IDisposable
         var response = await _client.GetAsync(AuthorizeUrl(query), TestContext.Current.CancellationToken);
 
         var cookie = response.Headers.GetValues("Set-Cookie")
-            .Single(c => c.StartsWith(AuthorizationRequestContextTransport.CookieName + "="));
+            .Single(c => c.StartsWith(InteractionBindingCookie.NamePrefix));
         cookie.Should().NotContain("client-state-value").And.NotContain(RegisteredRedirect);
     }
 
     [Fact]
-    public async Task Request_too_large_to_carry_renders_locally_rather_than_redirecting()
+    public async Task A_request_with_a_state_larger_than_any_header_could_carry_is_accepted()
     {
-        // state is deliberately not length-capped: a cap taxes honest clients and merely relocates
-        // a careless one's failure. The guard is on the encoded context. This is the one phase-2
-        // failure that does not redirect — state must round-trip byte for byte (RFC 6749
-        // §4.1.2.1), so echoing an oversized one produces a Location the browser cannot follow.
+        // state is deliberately not length-capped; the store's cap is 16 KB by default, far above
+        // the 3 KB the cookie transport could carry.
+        var form = ValidQuery();
+        form["state"] = new string('s', 10_000);
+
+        using var content = new FormUrlEncodedContent(form!);
+        var response = await _client.PostAsync("/connect/authorize", content, TestContext.Current.CancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        response.Headers.Location!.OriginalString.Should().StartWith("/account/login?");
+    }
+
+    [Fact]
+    public async Task A_request_over_the_store_cap_renders_locally_and_stores_nothing()
+    {
+        // An authorize request needs no authentication and is stored for 30 minutes, so what one
+        // may make the store hold is bounded. Rendered locally rather than redirected: echoing an
+        // oversized state builds a Location the client's server may not accept.
         var form = ValidQuery();
         form["state"] = new string('s', 20_000);
 
@@ -191,28 +208,56 @@ public sealed class AuthorizationEndpointTests : IDisposable
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         response.Headers.Location.Should().BeNull();
-
-        // No interaction may survive a failed request — including this one, which is the only
-        // failure path that does not redirect.
-        response.Headers.GetValues("Set-Cookie").Should().Contain(c =>
-            c.StartsWith(AuthorizationRequestContextTransport.CookieName + "=")
-            && c.Contains("expires=Thu, 01 Jan 1970"));
+        response.Headers.TryGetValues("Set-Cookie", out var cookies);
+        (cookies ?? []).Should().NotContain(c => c.StartsWith(InteractionBindingCookie.NamePrefix), "nothing was stored, so nothing is bound");
     }
 
     [Fact]
-    public async Task Failed_request_clears_any_interaction_context()
+    public async Task A_failed_request_leaves_an_interaction_in_flight_in_another_tab_alone()
     {
-        // A cross-site request can plant an interaction context that the victim's next sign-in
-        // would otherwise pick up. A request that fails validation must not leave one alive.
+        // Concurrent tabs share nothing: a request that fails validation never wrote an
+        // interaction of its own, and must not end the one another tab is completing.
+        var first = await _client.GetAsync(AuthorizeUrl(ValidQuery()), TestContext.Current.CancellationToken);
+        var firstInteraction = InteractionIdFrom(first);
         var query = ValidQuery();
         query["response_type"] = "token";
 
-        var response = await _client.GetAsync(
-            AuthorizeUrl(query), TestContext.Current.CancellationToken);
+        var failed = await _client.GetAsync(AuthorizeUrl(query), TestContext.Current.CancellationToken);
 
-        response.Headers.GetValues("Set-Cookie").Should().Contain(c =>
-            c.StartsWith(AuthorizationRequestContextTransport.CookieName + "=")
-            && c.Contains("expires=Thu, 01 Jan 1970"));
+        failed.Headers.TryGetValues("Set-Cookie", out var cookies);
+        (cookies ?? []).Should().NotContain(c => c.StartsWith(InteractionBindingCookie.NamePrefix + firstInteraction + "="));
+    }
+
+    [Fact]
+    public async Task A_request_refused_after_it_was_stored_leaves_no_entry_behind()
+    {
+        // prompt=none with no session is accepted, stored, and then refused in the same request.
+        // The browser never saw the binding cookie, so the request itself must still be able to
+        // remove what it wrote — otherwise every such request would cost the store an entry for
+        // 30 minutes.
+        var interactions = new InMemoryInteractionBackingStore(TimeProvider.System);
+        using var factory = new TestWebAppFactory(configureBuilder: builder =>
+        {
+            builder.AddInMemoryAuthorizationCodeStore(allowOutsideDevelopment: true)
+                .AddInMemoryRefreshTokenStore(allowOutsideDevelopment: true);
+            builder.Services.AddSingleton<IInteractionBackingStore>(interactions);
+        });
+        using var client = factory.CreateClient(new() { BaseAddress = new Uri("https://test.example.com"), AllowAutoRedirect = false });
+        var query = ValidQuery();
+        query["prompt"] = "none";
+
+        var response = await client.GetAsync(AuthorizeUrl(query), TestContext.Current.CancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        response.Headers.Location!.OriginalString.Should().Contain("error=login_required");
+        interactions.Count.Should().Be(0, "the refused request removed the entry it had just stored");
+    }
+
+    /// <summary>The interaction identifier the framework put on a redirect to a host page.</summary>
+    private static string InteractionIdFrom(HttpResponseMessage response)
+    {
+        var location = response.Headers.Location!.OriginalString;
+        return QueryHelpers.ParseQuery(location[location.IndexOf('?')..])[InteractionHandoff.InteractionIdParameter]!;
     }
 
     // ── ErrorPath handoff ─────────────────────────────────────────────────────────────────────

@@ -1,9 +1,10 @@
 # Authorization endpoint interaction
 
-**Status: built through code issuance.** Request validation (#83), the interaction context (#84),
-the local login handoff, provider registration with its pins, the login dispatch rules, the
-external round trip (#85), in-flow consent (#86) and code issuance (#87) have landed; remembered
-consent grants (#632) have not, so every request that requires consent prompts. Originally
+**Status: built through code issuance.** Request validation (#83), the interaction context (#84,
+moved into a store for concurrent tabs by #603), the local login handoff, provider registration with
+its pins, the login dispatch rules, the external round trip (#85), in-flow consent (#86) and code
+issuance (#87) have landed; remembered consent grants (#632) have not, so every request that
+requires consent prompts. Originally
 ADR 0005 (accepted 2026-07-01, issue #156); revised 2026-08-28 in the S2 shape conversation
 (#534/#83/#84), which reversed the interception model, renamed the interaction services and cut the
 interaction store; login dispatch between local sign-in and external providers settled
@@ -130,8 +131,8 @@ which fails closed at request time rather than at startup — accepted.
   that mark is a refusal and goes to the client's registered redirect URI as `access_denied`. The
   mark is trustworthy because the handler validates its correlation cookie before it looks at the
   provider's error, so a replayed callback URL cannot produce it; the redirect also requires the
-  properties to carry the interaction id `ChallengeAsync` stamped and that id to match the
-  `zkd.interaction` cookie, and without the cookie (a `form_post` callback is a cross-site POST
+  properties to carry the interaction id `ChallengeAsync` stamped and the browser to hold that
+  interaction's binding cookie, and without the cookie (a `form_post` callback is a cross-site POST
   the `Lax` cookie does not accompany) the refusal renders locally. **Nothing else reaches the
   client from a callback.** Every other exception — a correlation failure, a provider outage, a
   misconfiguration, a handler bug — renders the local error page and leaves the interaction
@@ -202,7 +203,7 @@ anything else on NuGet for free.
 ## The flow, end to end
 
 ```
-/connect/authorize          validates (two phases below), writes zkd.interaction; no session →
+/connect/authorize          validates (two phases below), stores the context, writes zkd.interaction.<id>; no session →
   → LoginPath?zkd_i=<id>    (local)   host page ends with ILoginInteraction.SignInAsync — terminal
   → ChallengeAsync("facebook") (external)  ZeeKayDa activates the Facebook handler and sets its RedirectUri
       → facebook.com → /connect/callback/facebook   ZeeKayDa endpoint hands the request to the
@@ -288,13 +289,13 @@ deliberately unassisted. The build is #608; nothing in the dispatch shape above 
 
 ## Internal cookie schemes
 
-`AddZeeKayDaAuth` registers four plain `AddCookie(...)` schemes. Names reserved — a host
-registering one fails at startup. All `HttpOnly`, Data-Protection encrypted.
+`AddZeeKayDaAuth` registers three plain `AddCookie(...)` schemes and one family of binding
+cookies. Names reserved — a host registering one fails at startup. All `HttpOnly`.
 
-| Scheme | Holds | Lifetime | `SameSite` |
+| Cookie | Holds | Lifetime | `SameSite` |
 |---|---|---|---|
 | `zkd.session` | the SSO session | session | `None` only if `prompt=none` silent auth is supported, else `Lax` |
-| `zkd.interaction` | the authorization request context | hard 30 min | `Lax` |
+| `zkd.interaction.<id>` | the binding of one interaction to this browser: a random secret | hard 30 min, deleted when the interaction ends | `Lax` |
 | `zkd.external` | the raw provider callback, before ZeeKayDa reads it | seconds | `Lax` |
 | `zkd.pending` | a half-authenticated external principal | hard 15 min, not sliding | `Lax` — first read at the end of the provider's redirect chain, which `Strict` withholds it from |
 
@@ -303,10 +304,9 @@ its ticket's properties, as the external ticket is — never a claim the host co
 provider could have written. The principal is stored as the provider returned it, every identity
 intact, minus the framework's reserved claims.
 
-**As built:** `zkd.session`, `zkd.external` and `zkd.pending` are cookie schemes; `zkd.interaction`
-is a Data-Protection payload written directly rather than through a handler — it carries no
-principal, so a cookie authentication scheme would be a ticket serializer wrapped around bytes that
-are not a ticket. `zkd.session` takes `SameSite=Lax`: the session is read while answering a
+**As built:** `zkd.session`, `zkd.external` and `zkd.pending` are cookie schemes; the binding
+cookies are written directly, one per interaction, capped at ten per browser with the oldest
+evicted first. `zkd.session` takes `SameSite=Lax`: the session is read while answering a
 top-level GET the user arrived at from the client's site, which is what `Strict` withholds, and
 `None` buys nothing until iframe-based silent authentication is supported. `zkd.external` accepts a
 sign-in only from a request a provider callback endpoint marked, records that provider into the
@@ -316,13 +316,17 @@ provider alongside the interaction in its ticket's properties.
 
 ## The interaction context
 
-What `/connect/authorize` writes and every later stage reads. **There is no store** — it is an
-opaque payload inside `zkd.interaction`, and no `IAuthorizationRequestContextStore` or in-memory
-default is built.
+What `/connect/authorize` writes and every later stage reads: an encrypted entry in the
+**interaction store**, one per interaction, keyed by a hash of the interaction id and the secret in
+that interaction's binding cookie. The store seam is internal with two implementations — a
+per-process dictionary (`AddInMemoryInteractionStore`, part of `AddInMemoryStores`) and the host's
+`IDistributedCache` (`AddDistributedCacheInteractionStore`). Set, get and remove is the whole
+contract: the one race in the flow, two responses completing one interaction, is decided by the
+code store's atomic claim on the interaction before a code is minted.
 
 | Written at `/connect/authorize` | |
 |---|---|
-| interaction id | correlates `zkd.pending`; the only value that ever leaves the server |
+| interaction id | names the store entry and the binding cookie, correlates `zkd.pending`; the only value that ever leaves the server |
 | `client_id`, validated `redirect_uri` | the response target, authenticated in phase 1 |
 | effective scopes | `requested ∩ client.AllowedScopes` |
 | `state`, `nonce` | client-controlled, round-tripped untouched |
@@ -333,30 +337,34 @@ default is built.
 Accumulated as the flow advances: the authenticating provider scheme, `auth_time`, `amr`/`acr`, a
 **subject reference**, and the consent decision with its granted scopes.
 
-**Protocol state and a subject reference only — never claims, never a `ClaimsPrincipal`.** That rule
-is what keeps the payload bounded, and it is the one most likely to be broken by accident, by
-someone who wants the user right there on the consent page. The authenticated user lives in
-`zkd.session` and `zkd.pending`, which are chunked separately.
+**Protocol state and a subject reference only — never claims, never a `ClaimsPrincipal`.** The
+authenticated user lives in `zkd.session` and `zkd.pending`. The rule outlived the size ceiling it
+was written for: a context that carried claims would be a second copy of the user for the consent
+page to drift from.
 
 **Encoding is positional and binary, not JSON** — a version byte then length-prefixed fields, the
-shape of ASP.NET Core's own `TicketSerializer`. Field names are ~200 bytes of pure overhead on a
-~400-byte payload, and the cookie is re-sent on every request to the path. Nothing is lost by
-dropping self-description from a payload only this framework reads. No compression before
-encryption: mixing attacker-controlled `state` into a compressed encrypted payload is a needless nod
-to CRIME-style length oracles.
+shape of ASP.NET Core's own `TicketSerializer`. Nothing is lost by dropping self-description from a
+payload only this framework reads. No compression before encryption: mixing attacker-controlled
+`state` into a compressed encrypted payload is a needless nod to CRIME-style length oracles.
 
-**Size: no parameter caps, one guard at the far end.** A typical context is ~400 bytes encoded, ~600
-after protection and base64 — a sixth of one cookie. `state` and `nonce` are the only unbounded
-fields; capping them would tax honest clients and merely relocate the careless one's failure.
-Overflow is `ChunkingCookieManager`'s job (public API, the default manager for any `AddCookie`
-scheme and usable standalone, so no chunking is hand-rolled), and a write-time guard on the
-protected payload answers `invalid_request` before a request can mint a cookie that a proxy rejects
-on the next hop.
+**Size: no parameter caps, one guard on the store.** `state` and `nonce` are formally unbounded and
+stay so, but an authorize request needs no authentication and every valid one is stored for 30
+minutes, so what one request may make the store hold is bounded:
+`AuthorizationEndpoint.MaxRequestContextBytes`, 16 KB of encoded context by default, refused
+locally with `invalid_request` above that (a redirect echoing an oversized `state` builds a
+`Location` the client's server may not accept). The sign-in rewrite is not guarded: the request was
+accepted under the cap and what an authenticated sign-in adds is small and bounded.
 
-**Storage upgrade path**, if the cookie stops being enough:
-`.UseDistributedCacheInteractionStore()` swaps the payload for an opaque handle in any
-`IDistributedCache`. The payload is internal and opaque, so that is a transport swap with no
-public-API consequence — which is what makes the cheap path now a reversible one.
+**Binding.** The identifier is in the URL of every host page the framework redirects to, and URLs
+leak into `Referer` headers, history and logs. The binding cookie's random secret is what a browser
+that merely learned the identifier does not have; deriving the key from both means a missing or
+forged cookie finds nothing. Per interaction rather than per browser, so each dies with its own
+request and concurrent tabs share nothing; capped so a run of planted requests cannot grow the
+`Cookie` header — the reason a per-interaction *payload* cookie was rejected does not apply to a
+ninety-byte binding. The cap is enforced per response from the request's own cookie snapshot, so
+simultaneous requests overshoot it by their own count: intended for a user's tabs, and not something
+cross-site content can force, since a browser stores a `Lax` cookie only from a same-site request or
+a top-level navigation, never from a cross-site image or frame.
 
 ## The SSO session
 
@@ -584,11 +592,17 @@ non-breaking. `AuthorizationCodeEntry.Nonce` stays nullable for that day.
 - **Merging `zkd.external` and `zkd.pending`.** Forces binding-claim logic into the common path;
   the external handler signs in before ZeeKayDa can attach the binding claim.
 - **A `CompleteAsync` separate from `SignInAsync`.** Cognitive load, no benefit.
-- **`IAuthorizationRequestContextStore` + in-memory default** (the original #84 scope). The context
-  needs no server-side identity: it authenticates nothing on its own, replay protection belongs to
-  the single-use authorization code, and the concurrent-tab limit comes from correlating through a
-  cookie at all — a store does not lift it. A bespoke store interface on top would add public API
-  for backends `IDistributedCache` already covers.
+- **The context as a cookie payload, no store** (#84 through #87). Shipped, then replaced by the
+  store: one cookie held one interaction, so a second tab replaced the first, and the payload had a
+  size ceiling that put an effective cap on `state`. Kept from it: the encoding, the purpose
+  isolation, and the rule that the context carries no claims.
+- **A public `IAuthorizationRequestContextStore` with a generic registration.** Not yet: the seam
+  has two implementations and both are the framework's, and the only backend a host needs to bring
+  is an `IDistributedCache`, which already has a registration. Added the day a non-cache backend
+  turns up.
+- **One binding cookie per browser instead of one per interaction.** Bounded by construction, but
+  it cannot expire with an interaction while another tab still needs it, and rotating it would end
+  every tab's request at once. Per-interaction cookies with a count cap keep the bound.
 - **`Helper`/`Service` suffixes for the page services.** Terminal protocol operations are not
   optional conveniences; `*Interaction` says what they are and echoes the seam IdentityServer
   users already know.

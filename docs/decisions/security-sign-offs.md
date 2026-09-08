@@ -1171,30 +1171,33 @@ Scoped to the context's wire format, its encrypted cookie transport, and the end
 clear paths. Nothing consumes the context yet, and consumption was not reviewed.
 
 - No store: the context is opaque on the wire and authenticates nothing alone, so replay protection
-  stays with the single-use authorization code. Closed — `Cookie_value_is_opaque`,
-  `Interaction_cookie_never_carries_request_values_in_the_clear`.
+  stays with the single-use authorization code. Closed — [the context moved into a store under
+  #603; the successors are] `Stored_bytes_are_opaque_and_the_key_names_neither_identifier_nor_secret`,
+  `Binding_cookie_never_carries_request_values_in_the_clear`.
 - The size guard comes from the request header budget, not one cookie's capacity, and an oversized
-  context writes nothing. Closed — `Largest_writable_context_stays_within_the_request_header_budget`
-  (which fails if the search stops short of the guard),
-  `Context_over_the_size_guard_is_refused_and_nothing_is_written`.
+  context writes nothing. Closed — [superseded by #603: the context is no longer a header; the
+  guard is now a bound on the store, `MaxRequestContextBytes`, and the successors are
+  `A_context_over_the_cap_is_refused_and_nothing_is_written`,
+  `A_request_over_the_store_cap_renders_locally_and_stores_nothing`.]
 - Decoding refuses rather than misreads a wrong version, trailing bytes, an undefined enum or an
   empty required field. Closed — `Payload_written_by_another_version_is_refused`,
   `Trailing_bytes_are_refused`, `Undefined_prompt_value_is_refused`,
   `Context_with_an_empty_redirect_uri_is_refused`.
 - Data Protection purposes isolate this cookie from the error cookie on a shared key ring. Closed —
-  `Error_transport_cookie_cannot_be_read_as_an_interaction_context`,
-  `Interaction_cookie_cannot_be_read_as_an_error_transport_cookie`.
+  [renamed under #603] `Error_transport_bytes_cannot_be_read_as_an_interaction_context`; the reverse
+  direction is moot now that the context never travels on the wire.
 - Expiry is read from the encrypted payload, never the cookie's own lifetime, and is exclusive.
-  Closed — `Expiry_is_read_from_the_payload_not_the_cookie`,
+  Closed — [renamed under #603] `Expiry_is_read_from_the_payload_not_the_store`,
   `Context_is_not_readable_at_the_expiry_instant`.
-- Every failure path clears the context, the oversized one included. Closed —
-  `Failed_request_clears_any_interaction_context`,
-  `Request_too_large_to_carry_renders_locally_rather_than_redirecting`.
+- Every failure path clears the context, the oversized one included. Closed — [reversed under #603:
+  a failed request never wrote an interaction and clears none, so that a failing request cannot end
+  another tab's; see the #603 entry.]
 - Residual: seeding is unmitigated. A *successful* cross-site-initiated authorize plants a context
   the victim's next sign-in consumes; clearing on failure does not touch it and no test bounds it.
   #85/#86 own binding consumption to a user-initiated flow.
 - Residual: that clearing lets any page cancel an in-flight sign-in in another tab, accepted as
-  safer than leaving a plant alive — behaviour is `Failed_request_clears_any_interaction_context`.
+  safer than leaving a plant alive — [closed under #603 by removing the clearing; the plant is
+  bound to its own `zkd_i` since #85 and cannot be consumed by an unrelated sign-in.]
 
 ## 2026-08-29 — the local login handoff and the SSO session (#85 local leg, commit `618f116`)
 
@@ -1371,3 +1374,32 @@ fix-diff verification of one High, found by a test the round asked for.
   each mint a code from one decision; #603 owns it — no test.
 - Residual: `max_age` is checked at the request, not at issuance; the entry carries the true
   `AuthTime` — no test.
+
+## 2026-09-07 — the store-backed interaction context (#603, PR 1, commit `9b46903`)
+
+Scoped to the interaction store and its binding cookie, the claim on an interaction's terminal
+outcome, and the registration gates. One round (Copilot code, security and architecture lenses,
+security and architect agents, CodeScene) plus fix-diff verification of one Critical and three Highs.
+The #87 consent-`POST` residual is closed here; the #84 clear-on-failure residual is closed by removal.
+
+- A leaked `zkd_i`, a forged cookie, or a store copy addresses nothing. Closed —
+  `Another_browser_reads_nothing_even_knowing_the_identifier`, `A_forged_binding_cookie_reads_nothing`,
+  `Stored_bytes_are_opaque_and_the_key_names_neither_identifier_nor_secret`,
+  `Valid_ciphertext_moved_under_another_interactions_key_reads_nothing`.
+- One terminal outcome per interaction, expiry re-checked around the claim. Closed —
+  `Two_consent_posts_racing_for_one_interaction_issue_exactly_one_code`,
+  `A_deny_and_a_grant_racing_for_one_interaction_produce_exactly_one_outcome`,
+  `Issuance_for_an_interaction_that_expires_while_it_is_being_claimed_is_refused`,
+  `TryClaimInteractionAsync_exactly_one_of_many_concurrent_reservations_succeeds`.
+- A stored code is delivered whatever the discard does; a store fault never reads as absence. Closed —
+  `A_stored_code_is_delivered_even_when_discarding_the_interaction_fails`,
+  `A_backing_store_fault_surfaces_as_a_store_exception_not_as_absence`.
+- An unauthenticated request stores at most `MaxRequestContextBytes`; a failed request touches no other
+  tab's interaction; the per-process cache and a missing store fail startup. Closed —
+  `A_request_over_the_store_cap_renders_locally_and_stores_nothing`,
+  `A_failed_request_leaves_an_interaction_in_flight_in_another_tab_alone`,
+  `The_per_process_cache_outside_Development_fails_startup`,
+  `VerifyAsync_adds_a_failure_when_the_interaction_store_is_missing`.
+- Residuals, accepted: simultaneous tabs overshoot the ten-cookie cap by their count; ten top-level
+  navigations evict a tab's binding; a decorated per-process cache passes the startup gate; an
+  oversized request renders locally rather than redirecting with `state` — no tests.

@@ -22,6 +22,11 @@ internal sealed class DistributedCacheStoreStartupValidator : IStartupActivator
         "exposed to TOCTOU double-redemption/double-consumption. Replace these stores with an " +
         "atomic implementation before going to production. See docs/reference/token-stores.md for guidance.";
 
+    internal const string MissingCacheMessage =
+        "IDistributedCache is not registered. Call services.AddDistributedMemoryCache() " +
+        "(dev/test) or register a production-grade distributed cache before adding " +
+        "distributed-cache-backed stores.";
+
     /// <inheritdoc/>
     public string Name => "DistributedCacheStore";
 
@@ -35,11 +40,7 @@ internal sealed class DistributedCacheStoreStartupValidator : IStartupActivator
 
         if (cache is null)
         {
-            context.AddFailure(
-                "stores.idistributedcache.missing",
-                "IDistributedCache is not registered. Call services.AddDistributedMemoryCache() " +
-                "(dev/test) or register a production-grade distributed cache before adding " +
-                "distributed-cache-backed stores.");
+            context.AddFailure("stores.idistributedcache.missing", MissingCacheMessage);
         }
         else if (cache is not MemoryDistributedCache)
         {

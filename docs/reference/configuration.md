@@ -122,6 +122,32 @@ options.AuthorizationEndpoint.Uri = "https://id.example.com/tenant-a/custom/auth
 
 ---
 
+### `AuthorizationEndpoint.MaxRequestContextBytes`
+
+| Attribute | Value |
+|---|---|
+| Type | `int` |
+| Default | `16384` (16 KB) |
+| Required | No |
+
+The most an authorization request may occupy in the interaction store, in bytes of encoded request
+context, before it is refused. An authorization request needs no authentication, and every valid one
+is stored for the interaction's lifetime, so this bounds what one request can make the store hold. A
+typical request encodes to a few hundred bytes; `state` and `nonce` are the only unbounded fields, so
+the default is far above what any real client sends. A request over the cap is answered locally with
+`invalid_request` — never redirected, since echoing an oversized `state` builds a `Location` the
+client's server may not accept.
+
+Raise it only for clients that legitimately send larger `state` values:
+
+```csharp
+options.AuthorizationEndpoint.MaxRequestContextBytes = 64 * 1024;
+```
+
+Must be greater than zero; rejected at startup otherwise.
+
+---
+
 ### `AuthorizationEndpoint.CodeChallengeMethodsSupported`
 
 | Attribute | Value |
@@ -562,6 +588,7 @@ only when all relying parties are co-hosted on the same origin or site as the au
 | `IScopeRepository` must include `openid` | the configured scope repository does not include a scope named `openid` |
 | Cache max-age must not be negative | `DiscoveryDocument.CacheMaxAge` or `JwksEndpoint.CacheMaxAge` is negative |
 | `AuthorizationEndpoint.CodeChallengeMethodsSupported` must not be empty | `AuthorizationEndpoint.CodeChallengeMethodsSupported` is a non-null empty collection |
+| `AuthorizationEndpoint.MaxRequestContextBytes` must be greater than zero | `AuthorizationEndpoint.MaxRequestContextBytes` is zero or negative |
 | CORS origins must use HTTPS by default | a `DiscoveryDocument.CorsOrigins` or `JwksEndpoint.CorsOrigins` entry uses HTTP while `AllowInsecureIssuer` is `false` |
 | HTTP CORS origins must be loopback when allowed | a `DiscoveryDocument.CorsOrigins` or `JwksEndpoint.CorsOrigins` entry uses HTTP with a non-loopback host |
 | `SecurityHeaders.ReferrerPolicy` must be a defined enum value | `SecurityHeaders.ReferrerPolicy` is set via an out-of-range cast |

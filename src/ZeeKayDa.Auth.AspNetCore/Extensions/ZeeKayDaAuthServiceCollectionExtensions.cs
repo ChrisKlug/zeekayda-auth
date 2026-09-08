@@ -194,7 +194,8 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         services.TryAddSingleton<AuthorizeRequestValidator>();
         services.TryAddSingleton<TimeProvider>(TimeProvider.System);
         services.TryAddSingleton<AuthorizeErrorTransport>();
-        services.TryAddSingleton<AuthorizationRequestContextTransport>();
+        services.TryAddSingleton<InteractionBindingCookie>();
+        services.TryAddSingleton<AuthorizationRequestContextStore>();
         services.TryAddSingleton<AuthorizationResponses>();
         services.TryAddSingleton<SsoSession>();
         services.TryAddSingleton<PendingPrincipalCookie>();

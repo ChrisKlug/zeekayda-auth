@@ -11,9 +11,9 @@ using ZeeKayDa.Auth.Stores;
 namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 
 /// <summary>
-/// The last step of a successful authorization request: mints the authorization code, stores
-/// the entry the token endpoint will redeem, discards the interaction, and delivers the code to
-/// the client's registered redirect URI.
+/// The last step of a successful authorization request: claims the interaction, mints the
+/// authorization code, stores the entry the token endpoint will redeem, discards the
+/// interaction, and delivers the code to the client's registered redirect URI.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -32,6 +32,12 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// consent was asked. The registration is the one the caller resolved in this same request, so a
 /// client narrowed since the request was accepted issues a narrower code, and one that no longer
 /// allows <c>openid</c> ends the request as one that dropped its redirect URI does.
+/// </para>
+/// <para>
+/// One terminal outcome per interaction. Two responses racing to complete the same interaction —
+/// a consent form posted twice before the first response landed, or a grant and a deny together —
+/// each read the interaction alive, so the store decides: the code store's atomic claim on the
+/// interaction is taken before a code is minted, and the response that loses it issues nothing.
 /// </para>
 /// </remarks>
 internal sealed class AuthorizationCodeIssuer
@@ -84,6 +90,10 @@ internal sealed class AuthorizationCodeIssuer
     /// carries no decision. Both are caller errors: every path that reaches issuance binds the
     /// session and records the decision first.
     /// </exception>
+    /// <exception cref="ZeeKayDaInteractionException">
+    /// Another response completed the interaction first, or it expired while this response was
+    /// being prepared.
+    /// </exception>
     public async Task<IResult> IssueAsync(
         HttpContext context,
         AuthorizationRequestContext requestContext,
@@ -101,12 +111,47 @@ internal sealed class AuthorizationCodeIssuer
 
         if (!scopes.Contains(StandardScopes.OpenId.Name, StringComparer.Ordinal))
         {
-            _flow.Clear(context);
+            await _flow.ClearAsync(context, requestContext.Id).ConfigureAwait(false);
             return _responses.Local(context, AuthorizeRequestErrors.InvalidRequest, ClientNoLongerAnswers);
         }
 
-        var now = _timeProvider.GetUtcNow();
-        var entry = new AuthorizationCodeEntry
+        // Resolved from the request's services rather than the constructor, for the reason
+        // AuthorizationFlow resolves the client resolver that way: this singleton is built when
+        // the endpoints are mapped, before startup verification has said whether a store is
+        // registered at all.
+        var store = context.RequestServices.GetRequiredService<IAuthorizationCodeStore>();
+
+        string code;
+        try
+        {
+            var now = await _flow.ClaimCompletionAsync(context, requestContext).ConfigureAwait(false);
+
+            code = StoreKeyGenerator.Generate();
+            await store.StoreAsync(code, BuildEntry(requestContext, session, scopes, now), context.RequestAborted).ConfigureAwait(false);
+        }
+        catch (ZeeKayDaStoreException ex)
+        {
+            // Nothing was handed out, so nothing needs revoking. The client learns the server
+            // failed; the operator learns which store operation did, through the sanitizing logger.
+            _logger.LogError(ex, "Storing the authorization code for client {ClientId} failed.", client.ClientId);
+
+            await _flow.ClearAsync(context, requestContext.Id).ConfigureAwait(false);
+            return _responses.ErrorAtClient(requestContext.RedirectUri, AuthorizeRequestErrors.ServerError, CouldNotIssue, requestContext.State);
+        }
+
+        // The code is stored, so the response carries it whatever the discard does: a store that
+        // refuses the removal is logged by the discard itself and the entry left to expire.
+        await _flow.ClearAsync(context, requestContext.Id).ConfigureAwait(false);
+        return _responses.CodeAtClient(requestContext.RedirectUri, code, requestContext.State);
+    }
+
+    /// <summary>The entry the token endpoint will redeem: everything it binds comes from the context and the session that authenticated it.</summary>
+    private AuthorizationCodeEntry BuildEntry(
+        AuthorizationRequestContext requestContext,
+        (string SessionId, string Subject, DateTimeOffset AuthTime) session,
+        string[] scopes,
+        DateTimeOffset now) =>
+        new()
         {
             ClientId = requestContext.ClientId,
             RedirectUri = requestContext.RedirectUri,
@@ -123,31 +168,6 @@ internal sealed class AuthorizationCodeIssuer
             IssuedAt = now,
             ExpiresAt = now + _options.Value.AuthorizationEndpoint.AuthorizationCodeLifetime,
         };
-
-        var code = StoreKeyGenerator.Generate();
-
-        try
-        {
-            // Resolved from the request's services rather than the constructor, for the reason
-            // AuthorizationFlow resolves the client resolver that way: this singleton is built
-            // when the endpoints are mapped, before startup verification has said whether a
-            // store is registered at all.
-            var store = context.RequestServices.GetRequiredService<IAuthorizationCodeStore>();
-            await store.StoreAsync(code, entry, context.RequestAborted).ConfigureAwait(false);
-        }
-        catch (ZeeKayDaStoreException ex)
-        {
-            // Nothing was handed out, so nothing needs revoking. The client learns the server
-            // failed; the operator learns which store operation did, through the sanitizing logger.
-            _logger.LogError(ex, "Storing the authorization code for client {ClientId} failed.", client.ClientId);
-
-            _flow.Clear(context);
-            return _responses.ErrorAtClient(requestContext.RedirectUri, AuthorizeRequestErrors.ServerError, CouldNotIssue, requestContext.State);
-        }
-
-        _flow.Clear(context);
-        return _responses.CodeAtClient(requestContext.RedirectUri, code, requestContext.State);
-    }
 
     /// <summary>
     /// The session the context was authenticated by. A context without one has not been through
