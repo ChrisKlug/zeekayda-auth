@@ -334,6 +334,21 @@ public sealed class PendingPrincipalStoreTests
     }
 
     [Fact]
+    public async Task A_cancelled_read_throws_even_when_the_browser_holds_no_binding()
+    {
+        // The binding check answers without the store, so it must not answer ahead of the token:
+        // a caller that stopped waiting gets the cancellation, not an absence.
+        var (pending, _, _) = Store();
+        var cancelled = new CancellationToken(canceled: true);
+
+        var read = async () => await pending.ReadAsync(new DefaultHttpContext(), InteractionId, cancelled);
+        var consume = async () => await pending.ConsumeAsync(new DefaultHttpContext(), InteractionId, cancelled);
+
+        await read.Should().ThrowAsync<OperationCanceledException>();
+        await consume.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
     public async Task A_backing_store_fault_surfaces_as_a_store_exception_not_as_absence()
     {
         var (pending, _, _) = Store(new ThrowingStore());

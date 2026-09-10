@@ -144,6 +144,10 @@ internal sealed class PendingPrincipalStore
         ArgumentNullException.ThrowIfNull(context);
         ArgumentException.ThrowIfNullOrEmpty(interactionId);
 
+        // Before the binding check, which answers without the store: a caller that has stopped
+        // waiting gets the cancellation it asked for, not an absence it might act on.
+        cancellationToken.ThrowIfCancellationRequested();
+
         if (_binding.Read(context, interactionId) is not { } secret)
             return null;
 
@@ -162,6 +166,8 @@ internal sealed class PendingPrincipalStore
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentException.ThrowIfNullOrEmpty(interactionId);
+
+        cancellationToken.ThrowIfCancellationRequested();
 
         if (_binding.Read(context, interactionId) is not { } secret)
             return null;
