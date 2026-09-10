@@ -1408,7 +1408,7 @@ The #87 consent-`POST` residual is closed here; the #84 clear-on-failure residua
 
 Scoped to the parked principal's move from the `zkd.pending` cookie into the interaction store, and the
 purpose binding that closes store-writer relocation for both entry kinds. One round (Copilot code and
-security lenses, security agent, CodeScene) plus fix-diff verification of two Highs. Closes #603.
+security lenses, security agent, CodeScene) plus fix-diff verification of two Highs. PR 3 of #603 follows.
 
 - Each tab parks and reads back its own principal; a leaked `zkd_i`, a forged cookie, or another tab's
   binding addresses nothing. Closed — `Another_interactions_binding_reads_nothing`,
