@@ -372,6 +372,26 @@ public sealed class ProviderSignInEventTests
     }
 
     [Fact]
+    public async Task A_store_that_refuses_the_park_renders_locally_leaves_the_interaction_alive_and_logs_the_outage()
+    {
+        // The write inside RedirectToAsync fails: the user sees the local error and can still
+        // sign in another way, and the operator sees a store outage, not a host-handler failure.
+        var store = new FaultableInteractionStore { FailPendingWrites = true };
+        var logs = new CapturingLoggerProvider();
+        using var factory = NewFaultableFactory(store, logs);
+        using var client = NewClient(factory);
+
+        var (interactionId, resume) = await ResumeAsync(client);
+
+        resume.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await resume.Content.ReadAsStringAsync(Cancellation)).Should().Contain("server_error");
+        var signIn = await client.PostAsync(WithInteractionId(LoginPath, interactionId), Form(("sub", "user-1")), Cancellation);
+        signIn.ShouldHaveReachedConsent("the interaction survived the failed park");
+        logs.Entries.Should().Contain(entry =>
+            entry.Level == LogLevel.Error && entry.Message.Contains("the interaction store could not be written"));
+    }
+
+    [Fact]
     public async Task DenyAsync_still_answers_access_denied_when_the_parked_principal_cannot_be_read()
     {
         // The denial is decided and the interaction already claimed by the time the parked

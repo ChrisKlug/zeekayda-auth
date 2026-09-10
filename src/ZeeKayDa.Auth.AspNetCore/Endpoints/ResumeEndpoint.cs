@@ -216,22 +216,33 @@ internal sealed class ResumeEndpoint : IZeeKayDaEndpoint
 
     private IResult Fail(HttpContext context, ProviderRegistration registration, Exception exception)
     {
-        // The framework's own interaction exception carries framework text — which claim was
-        // missing, and why — and goes through the sanitizing logger whole; anything else is
-        // logged by type, since a host's or a provider's message may carry anything.
-        if (exception is ZeeKayDaInteractionException interaction)
+        // The framework's own exceptions carry framework text — which claim was missing, or
+        // which store operation failed — and go through the sanitizing logger whole; anything
+        // else is logged by type, since a host's or a provider's message may carry anything.
+        switch (exception)
         {
-            _logger.LogError(
-                interaction,
-                "Signing in through provider {Provider} was refused at promotion.",
-                registration.Name);
-        }
-        else
-        {
-            _logger.LogError(
-                "The sign-in handler for provider {Provider} failed with {ExceptionType}.",
-                registration.Name,
-                exception.GetType().FullName);
+            case ZeeKayDaInteractionException interaction:
+                _logger.LogError(
+                    interaction,
+                    "Signing in through provider {Provider} was refused at promotion.",
+                    registration.Name);
+                break;
+
+            case ZeeKayDaStoreException store:
+                // The park write inside the host's RedirectToAsync: an outage, not a handler
+                // failure, and the operator should see it as one.
+                _logger.LogError(
+                    store,
+                    "Signing in through provider {Provider} failed because the interaction store could not be written.",
+                    registration.Name);
+                break;
+
+            default:
+                _logger.LogError(
+                    "The sign-in handler for provider {Provider} failed with {ExceptionType}.",
+                    registration.Name,
+                    exception.GetType().FullName);
+                break;
         }
 
         return _outcomes.LocalError(context, AuthorizeRequestErrors.ServerError, DidNotComplete);
