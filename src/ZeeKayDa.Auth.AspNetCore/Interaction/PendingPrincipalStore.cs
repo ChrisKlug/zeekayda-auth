@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using Microsoft.AspNetCore.Authentication;
@@ -202,7 +203,28 @@ internal sealed class PendingPrincipalStore
             return null;
         }
 
-        return TicketSerializer.Default.Deserialize(payload) is { } ticket ? Bound(ticket, interactionId) : null;
+        return TryDeserialize(payload, out var ticket) ? Bound(ticket, interactionId) : null;
+    }
+
+    /// <summary>
+    /// The ticket in <paramref name="payload"/>, or <see langword="false"/> when the bytes are
+    /// not one: a version the serializer does not know, or a stream that ends or misreads
+    /// partway. The bytes were authenticated before they got here, so this guards against the
+    /// framework's own writes going wrong, not against an attacker — but a value the store
+    /// cannot make sense of reads as absent, never as an exception, whatever put it there.
+    /// </summary>
+    private static bool TryDeserialize(byte[] payload, [NotNullWhen(true)] out AuthenticationTicket? ticket)
+    {
+        try
+        {
+            ticket = TicketSerializer.Default.Deserialize(payload);
+        }
+        catch (Exception ex) when (ex is EndOfStreamException or IOException or ArgumentException or FormatException)
+        {
+            ticket = null;
+        }
+
+        return ticket is not null;
     }
 
     private IDataProtector ProtectorFor(string interactionId, string secret) => InteractionStoreKeys.ProtectorFor(_protector, interactionId, secret);

@@ -233,6 +233,26 @@ public sealed class PendingPrincipalStoreTests
     }
 
     [Fact]
+    public async Task Corrupt_bytes_under_a_valid_seal_read_nothing_rather_than_throwing()
+    {
+        // Sealed under the right purpose, so they unprotect — and then end partway through the
+        // ticket. Only the framework's own writes could produce this; it still reads as absent.
+        var keyRing = new EphemeralDataProtectionProvider();
+        var backing = new NeverEvictingStore();
+        var (pending, _, _) = Store(backing, keyRing);
+        var bound = BoundRequest();
+        await pending.ParkAsync(bound, Ticket(), ContextAt(Now), None);
+        var (key, _) = backing.Single();
+        var whole = TicketSerializer.Default.Serialize(new AuthenticationTicket(ProviderPrincipal(), ZeeKayDaCookies.Pending));
+        var truncated = keyRing.CreateProtector("ZeeKayDa.Auth:PendingPrincipal").CreateProtector(InteractionId, SecretOf(bound)).Protect(whole[..(whole.Length / 2)]);
+        await backing.SetAsync(key, truncated, Now.AddMinutes(10), None);
+
+        var read = async () => await pending.ReadAsync(RequestCarrying(bound), InteractionId, None);
+
+        (await read.Should().NotThrowAsync()).Which.Should().BeNull();
+    }
+
+    [Fact]
     public async Task Valid_ciphertext_moved_under_another_interactions_key_reads_nothing()
     {
         // Data Protection authenticates the bytes, not the row they sit in. Whoever can write to the
