@@ -1421,7 +1421,10 @@ security lenses, security agent, CodeScene) plus fix-diff verification of two Hi
   `A_parked_principal_never_outlives_its_interaction`, `Principal_is_not_readable_at_the_expiry_instant`,
   `GetPendingPrincipalAsync_surfaces_a_store_fault_rather_than_reporting_nothing_parked`,
   `Reserved_claims_are_stripped_before_parking`, `Context_bytes_cannot_be_read_as_a_parked_principal`.
-- Residuals, maintainer's ruling pending: a consume read that faults inside `DenyAsync` escapes after the
-  claim, so the client gets no `access_denied`; a store fault at park is logged by type only; an interaction
-  ending by any path but sign-in or deny leaves its principal entry to its TTL; and, from #630, the
-  `GetPendingPrincipalAsync` remark invites passing the raw upstream `sub` to `SignInAsync` — no tests.
+- A denial completes when the parked principal cannot be read; a store fault at park is logged as an
+  outage. Closed — `DenyAsync_still_answers_access_denied_when_the_parked_principal_cannot_be_read`,
+  `A_store_that_refuses_the_park_renders_locally_leaves_the_interaction_alive_and_logs_the_outage`.
+- Residual, accepted: an interaction ending by any path but sign-in or deny leaves its unreachable
+  principal entry to its TTL — no test. Residual, deferred to PR 3 (an interaction service of the
+  collect-more page's own): the `GetPendingPrincipalAsync` remark invites passing the raw upstream `sub`
+  to `SignInAsync`, bypassing the derived subject — no test.
