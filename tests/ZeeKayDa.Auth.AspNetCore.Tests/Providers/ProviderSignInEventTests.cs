@@ -2,6 +2,7 @@ using System.Net;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
 using ZeeKayDa.Auth.AspNetCore.Tests.Interaction;
@@ -72,21 +73,61 @@ public sealed class ProviderSignInEventTests
     private static int StoreEntryCount(TestWebAppFactory factory) =>
         ((InMemoryInteractionBackingStore)factory.Services.GetRequiredService<IInteractionBackingStore>()).Count;
 
-    /// <summary>A working in-memory store whose reads can be made to fail mid-test: the backend going away.</summary>
+    /// <summary>
+    /// A working in-memory store whose parked-principal operations can be made to fail mid-test:
+    /// the backend going away between one step of the flow and the next. The context entries keep
+    /// working, so the failure lands on exactly the read or write under test.
+    /// </summary>
     private sealed class FaultableInteractionStore : IInteractionBackingStore
     {
         private readonly InMemoryInteractionBackingStore _inner = new(TimeProvider.System);
 
-        public bool FailReads { get; set; }
+        public bool FailPendingReads { get; set; }
+
+        public bool FailPendingWrites { get; set; }
 
         public ValueTask SetAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken) =>
-            _inner.SetAsync(key, value, expiresAt, cancellationToken);
+            FailPendingWrites && IsPending(key) ? throw new InvalidOperationException("store is down") : _inner.SetAsync(key, value, expiresAt, cancellationToken);
 
         public ValueTask<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken) =>
-            FailReads ? throw new InvalidOperationException("store is down") : _inner.GetAsync(key, cancellationToken);
+            FailPendingReads && IsPending(key) ? throw new InvalidOperationException("store is down") : _inner.GetAsync(key, cancellationToken);
 
         public ValueTask RemoveAsync(StoreKey key, CancellationToken cancellationToken) =>
             _inner.RemoveAsync(key, cancellationToken);
+
+        private static bool IsPending(StoreKey key) => key.ToString().StartsWith("zkd:interaction:p:", StringComparison.Ordinal);
+    }
+
+    /// <summary>Captures every log entry the host writes, after the framework's redaction.</summary>
+    private sealed class CapturingLoggerProvider : ILoggerProvider
+    {
+        private readonly List<(LogLevel Level, string Message)> _entries = [];
+
+        public IReadOnlyList<(LogLevel Level, string Message)> Entries
+        {
+            get { lock (_entries) return [.. _entries]; }
+        }
+
+        public ILogger CreateLogger(string categoryName) => new Logger(this);
+
+        public void Dispose()
+        {
+        }
+
+        private void Add(LogLevel level, string message)
+        {
+            lock (_entries) _entries.Add((level, message));
+        }
+
+        private sealed class Logger(CapturingLoggerProvider owner) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+            public bool IsEnabled(LogLevel logLevel) => true;
+
+            public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
+                owner.Add(logLevel, formatter(state, exception));
+        }
     }
 
     private static async Task<System.Text.Json.JsonElement?> ReadJsonAsync(HttpClient client, string url)
@@ -299,12 +340,9 @@ public sealed class ProviderSignInEventTests
         await read.Should().ThrowAsync<OperationCanceledException>();
     }
 
-    [Fact]
-    public async Task GetPendingPrincipalAsync_surfaces_a_store_fault_rather_than_reporting_nothing_parked()
-    {
-        // The page must not tell the user there is nothing to link because the store is down.
-        var store = new FaultableInteractionStore();
-        using var factory = new TestWebAppFactory(
+    /// <summary>A host on a store whose parked-principal operations can be made to fail, with its log captured.</summary>
+    private static TestWebAppFactory NewFaultableFactory(FaultableInteractionStore store, CapturingLoggerProvider? logs = null) =>
+        new(
             configureBuilder: builder =>
             {
                 builder.WithProviders(
@@ -313,15 +351,43 @@ public sealed class ProviderSignInEventTests
                 builder.AddInMemoryAuthorizationCodeStore(allowOutsideDevelopment: true);
                 builder.AddInMemoryRefreshTokenStore(allowOutsideDevelopment: true);
                 builder.Services.AddSingleton<IInteractionBackingStore>(store);
+                if (logs is not null)
+                    builder.Services.AddLogging(logging => logging.AddProvider(logs));
             },
             mapEndpoints: MapHostPages);
+
+    [Fact]
+    public async Task GetPendingPrincipalAsync_surfaces_a_store_fault_rather_than_reporting_nothing_parked()
+    {
+        // The page must not tell the user there is nothing to link because the store is down.
+        var store = new FaultableInteractionStore();
+        using var factory = NewFaultableFactory(store);
         using var client = NewClient(factory);
         var (_, resume) = await ResumeAsync(client);
-        store.FailReads = true;
+        store.FailPendingReads = true;
 
         var read = async () => await client.GetAsync(resume.Headers.Location!.OriginalString, Cancellation);
 
         await read.Should().ThrowAsync<ZeeKayDaStoreException>();
+    }
+
+    [Fact]
+    public async Task DenyAsync_still_answers_access_denied_when_the_parked_principal_cannot_be_read()
+    {
+        // The denial is decided and the interaction already claimed by the time the parked
+        // principal is discarded; a store fault there must not leave the client waiting and the
+        // user's retry refused as already completed.
+        var store = new FaultableInteractionStore();
+        using var factory = NewFaultableFactory(store);
+        using var client = NewClient(factory);
+        var (interactionId, _) = await ResumeAsync(client);
+        store.FailPendingReads = true;
+
+        var cancel = await client.PostAsync(WithInteractionId("/account/login/cancel", interactionId), Form(), Cancellation);
+
+        cancel.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        DestinationOf(cancel).Should().Be(RegisteredRedirect);
+        RedirectQueryOf(cancel)["error"].ToString().Should().Be("access_denied");
     }
 
     [Fact]

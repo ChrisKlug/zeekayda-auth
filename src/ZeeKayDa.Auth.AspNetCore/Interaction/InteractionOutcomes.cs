@@ -116,13 +116,32 @@ internal sealed class InteractionOutcomes
         // Discarded before the response is written, so a denied request cannot be resumed by a
         // later sign-in picking the context back up — nor by a parked principal bound to it. The
         // principal goes first, while the binding that addresses it is still in hand.
-        await _flow.ConsumePendingAsync(context, requestContext.Id).ConfigureAwait(false);
+        await DiscardPendingAsync(context, requestContext.Id).ConfigureAwait(false);
         await _flow.ClearAsync(context, requestContext.Id).ConfigureAwait(false);
 
         await WriteAsync(
                 context,
                 _responses.ErrorAtClient(requestContext.RedirectUri, AuthorizeRequestErrors.AccessDenied, description, requestContext.State))
             .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Removes a principal parked for a denied interaction, best-effort. A denial has no use for
+    /// the principal, and the claim on the interaction is already taken by the time this runs: a
+    /// store that cannot read the entry must not turn a decided denial into a failed response
+    /// that the client never sees and a retry cannot repeat. The binding goes next, after which
+    /// the entry is unreachable and left to its lifetime.
+    /// </summary>
+    private async Task DiscardPendingAsync(HttpContext context, string interactionId)
+    {
+        try
+        {
+            await _flow.ConsumePendingAsync(context, interactionId).ConfigureAwait(false);
+        }
+        catch (ZeeKayDaStoreException ex)
+        {
+            _logger.LogError(ex, "Discarding the external principal parked for a denied interaction failed; the entry is left to expire.");
+        }
     }
 
     /// <summary>
