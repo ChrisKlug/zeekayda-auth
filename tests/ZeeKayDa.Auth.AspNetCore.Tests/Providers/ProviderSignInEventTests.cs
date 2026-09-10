@@ -2,8 +2,11 @@ using System.Net;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Time.Testing;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
 using ZeeKayDa.Auth.AspNetCore.Tests.Interaction;
+using ZeeKayDa.Auth.Stores;
 using static ZeeKayDa.Auth.AspNetCore.Tests.Providers.ProviderTestHost;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests.Providers;
@@ -18,11 +21,17 @@ public sealed class ProviderSignInEventTests
 
     private static TestWebAppFactory NewFactory(
         Func<ProviderSignInContext, Task>? onProviderSignIn,
-        Action<Microsoft.AspNetCore.Authentication.OAuth.OAuthOptions>? configureAcme = null) =>
+        Action<Microsoft.AspNetCore.Authentication.OAuth.OAuthOptions>? configureAcme = null,
+        TimeProvider? time = null) =>
         new(
-            configureBuilder: builder => builder.WithProviders(
-                auth => auth.AddOAuth("acme", "Acme", configureAcme ?? ConfigureAcme),
-                options => options.OnProviderSignIn = onProviderSignIn),
+            configureBuilder: builder =>
+            {
+                builder.WithProviders(
+                    auth => auth.AddOAuth("acme", "Acme", configureAcme ?? ConfigureAcme),
+                    options => options.OnProviderSignIn = onProviderSignIn);
+                if (time is not null)
+                    builder.Services.AddSingleton(time);
+            },
             mapEndpoints: MapHostPages);
 
     /// <summary>Authorize, pick the provider and complete the callback: the resume URL to return through.</summary>
@@ -30,6 +39,13 @@ public sealed class ProviderSignInEventTests
     {
         var handoff = await client.GetAsync(AuthorizeUrl(), Cancellation);
         var interactionId = InteractionIdFrom(handoff);
+
+        return (interactionId, await ReachResumeAgainAsync(client, interactionId));
+    }
+
+    /// <summary>Pick the provider again for an interaction already in flight, and complete the callback.</summary>
+    private static async Task<string> ReachResumeAgainAsync(HttpClient client, string interactionId)
+    {
         var challenge = await client.PostAsync(WithInteractionId(LoginPath, interactionId), Form(("provider", "acme")), Cancellation);
         var callbackUrl = QueryHelpers.AddQueryString("/connect/callback/acme", new Dictionary<string, string?>
         {
@@ -38,7 +54,7 @@ public sealed class ProviderSignInEventTests
         });
         var callback = await client.GetAsync(callbackUrl, Cancellation);
 
-        return (interactionId, callback.Headers.Location!.OriginalString);
+        return callback.Headers.Location!.OriginalString;
     }
 
     /// <summary>Authorize, pick the provider, complete the callback, and return through resume.</summary>
@@ -47,6 +63,71 @@ public sealed class ProviderSignInEventTests
         var (interactionId, resumeUrl) = await ReachResumeAsync(client);
 
         return (interactionId, await client.GetAsync(resumeUrl, Cancellation));
+    }
+
+    /// <summary>The user goes round the provider again for the same interaction and returns through resume.</summary>
+    private static async Task<HttpResponseMessage> ResumeAgainAsync(HttpClient client, string interactionId) =>
+        await client.GetAsync(await ReachResumeAgainAsync(client, interactionId), Cancellation);
+
+    /// <summary>How many entries the interaction store holds: one per live context, one per parked principal.</summary>
+    private static int StoreEntryCount(TestWebAppFactory factory) =>
+        ((InMemoryInteractionBackingStore)factory.Services.GetRequiredService<IInteractionBackingStore>()).Count;
+
+    /// <summary>
+    /// A working in-memory store whose parked-principal operations can be made to fail mid-test:
+    /// the backend going away between one step of the flow and the next. The context entries keep
+    /// working, so the failure lands on exactly the read or write under test.
+    /// </summary>
+    private sealed class FaultableInteractionStore : IInteractionBackingStore
+    {
+        private readonly InMemoryInteractionBackingStore _inner = new(TimeProvider.System);
+
+        public bool FailPendingReads { get; set; }
+
+        public bool FailPendingWrites { get; set; }
+
+        public ValueTask SetAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken) =>
+            FailPendingWrites && IsPending(key) ? throw new InvalidOperationException("store is down") : _inner.SetAsync(key, value, expiresAt, cancellationToken);
+
+        public ValueTask<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken) =>
+            FailPendingReads && IsPending(key) ? throw new InvalidOperationException("store is down") : _inner.GetAsync(key, cancellationToken);
+
+        public ValueTask RemoveAsync(StoreKey key, CancellationToken cancellationToken) =>
+            _inner.RemoveAsync(key, cancellationToken);
+
+        private static bool IsPending(StoreKey key) => key.ToString().StartsWith("zkd:interaction:p:", StringComparison.Ordinal);
+    }
+
+    /// <summary>Captures every log entry the host writes, after the framework's redaction.</summary>
+    private sealed class CapturingLoggerProvider : ILoggerProvider
+    {
+        private readonly List<(LogLevel Level, string Message)> _entries = [];
+
+        public IReadOnlyList<(LogLevel Level, string Message)> Entries
+        {
+            get { lock (_entries) return [.. _entries]; }
+        }
+
+        public ILogger CreateLogger(string categoryName) => new Logger(this);
+
+        public void Dispose()
+        {
+        }
+
+        private void Add(LogLevel level, string message)
+        {
+            lock (_entries) _entries.Add((level, message));
+        }
+
+        private sealed class Logger(CapturingLoggerProvider owner) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+            public bool IsEnabled(LogLevel logLevel) => true;
+
+            public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
+                owner.Add(logLevel, formatter(state, exception));
+        }
     }
 
     private static async Task<System.Text.Json.JsonElement?> ReadJsonAsync(HttpClient client, string url)
@@ -169,7 +250,9 @@ public sealed class ProviderSignInEventTests
 
         resume.StatusCode.Should().Be(HttpStatusCode.Redirect);
         resume.Headers.Location!.OriginalString.Should().Be($"{CollectMorePath}?zkd_i={interactionId}");
-        resume.Headers.GetValues("Set-Cookie").Should().Contain(cookie => cookie.StartsWith("zkd.pending="));
+        resume.Headers.TryGetValues("Set-Cookie", out var cookies);
+        (cookies ?? []).Should().NotContain(cookie => cookie.StartsWith("zkd.pending="), "the principal lives in the interaction store, not in a cookie");
+        StoreEntryCount(factory).Should().Be(2, "the context and the parked principal");
         (await ReadJsonAsync(client, "/test/session")).Should().BeNull("nothing is promoted until the page signs in");
     }
 
@@ -216,9 +299,8 @@ public sealed class ProviderSignInEventTests
 
         signIn.ShouldHaveReachedConsent();
         (await ReadJsonAsync(client, "/test/session"))!.Value.GetProperty("sub").GetString().Should().Be("mapped-" + UpstreamSubject);
-        signIn.Headers.GetValues("Set-Cookie").Should().Contain(cookie =>
-            cookie.StartsWith("zkd.pending=") && cookie.Contains("expires=Thu, 01 Jan 1970"));
         (await ReadJsonAsync(client, collectMore)).Should().BeNull("the parked principal is single-use");
+        StoreEntryCount(factory).Should().Be(1, "the context stays until the flow ends; the parked principal is gone");
     }
 
     [Fact]
@@ -258,6 +340,76 @@ public sealed class ProviderSignInEventTests
         await read.Should().ThrowAsync<OperationCanceledException>();
     }
 
+    /// <summary>A host on a store whose parked-principal operations can be made to fail, with its log captured.</summary>
+    private static TestWebAppFactory NewFaultableFactory(FaultableInteractionStore store, CapturingLoggerProvider? logs = null) =>
+        new(
+            configureBuilder: builder =>
+            {
+                builder.WithProviders(
+                    auth => auth.AddOAuth("acme", "Acme", ConfigureAcme),
+                    options => options.OnProviderSignIn = context => context.RedirectToAsync(CollectMorePath));
+                builder.AddInMemoryAuthorizationCodeStore(allowOutsideDevelopment: true);
+                builder.AddInMemoryRefreshTokenStore(allowOutsideDevelopment: true);
+                builder.Services.AddSingleton<IInteractionBackingStore>(store);
+                if (logs is not null)
+                    builder.Services.AddLogging(logging => logging.AddProvider(logs));
+            },
+            mapEndpoints: MapHostPages);
+
+    [Fact]
+    public async Task GetPendingPrincipalAsync_surfaces_a_store_fault_rather_than_reporting_nothing_parked()
+    {
+        // The page must not tell the user there is nothing to link because the store is down.
+        var store = new FaultableInteractionStore();
+        using var factory = NewFaultableFactory(store);
+        using var client = NewClient(factory);
+        var (_, resume) = await ResumeAsync(client);
+        store.FailPendingReads = true;
+
+        var read = async () => await client.GetAsync(resume.Headers.Location!.OriginalString, Cancellation);
+
+        await read.Should().ThrowAsync<ZeeKayDaStoreException>();
+    }
+
+    [Fact]
+    public async Task A_store_that_refuses_the_park_renders_locally_leaves_the_interaction_alive_and_logs_the_outage()
+    {
+        // The write inside RedirectToAsync fails: the user sees the local error and can still
+        // sign in another way, and the operator sees a store outage, not a host-handler failure.
+        var store = new FaultableInteractionStore { FailPendingWrites = true };
+        var logs = new CapturingLoggerProvider();
+        using var factory = NewFaultableFactory(store, logs);
+        using var client = NewClient(factory);
+
+        var (interactionId, resume) = await ResumeAsync(client);
+
+        resume.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await resume.Content.ReadAsStringAsync(Cancellation)).Should().Contain("server_error");
+        var signIn = await client.PostAsync(WithInteractionId(LoginPath, interactionId), Form(("sub", "user-1")), Cancellation);
+        signIn.ShouldHaveReachedConsent("the interaction survived the failed park");
+        logs.Entries.Should().Contain(entry =>
+            entry.Level == LogLevel.Error && entry.Message.Contains("the interaction store could not be written"));
+    }
+
+    [Fact]
+    public async Task DenyAsync_still_answers_access_denied_when_the_parked_principal_cannot_be_read()
+    {
+        // The denial is decided and the interaction already claimed by the time the parked
+        // principal is discarded; a store fault there must not leave the client waiting and the
+        // user's retry refused as already completed.
+        var store = new FaultableInteractionStore();
+        using var factory = NewFaultableFactory(store);
+        using var client = NewClient(factory);
+        var (interactionId, _) = await ResumeAsync(client);
+        store.FailPendingReads = true;
+
+        var cancel = await client.PostAsync(WithInteractionId("/account/login/cancel", interactionId), Form(), Cancellation);
+
+        cancel.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        DestinationOf(cancel).Should().Be(RegisteredRedirect);
+        RedirectQueryOf(cancel)["error"].ToString().Should().Be("access_denied");
+    }
+
     [Fact]
     public async Task Cancelling_at_the_host_page_discards_the_parked_principal()
     {
@@ -268,8 +420,7 @@ public sealed class ProviderSignInEventTests
         var cancel = await client.PostAsync(WithInteractionId("/account/login/cancel", interactionId), Form(), Cancellation);
 
         cancel.StatusCode.Should().Be(HttpStatusCode.Redirect);
-        cancel.Headers.GetValues("Set-Cookie").Should().Contain(cookie =>
-            cookie.StartsWith("zkd.pending=") && cookie.Contains("expires=Thu, 01 Jan 1970"));
+        StoreEntryCount(factory).Should().Be(0, "the context and the parked principal both go with the denial");
     }
 
     [Fact]
@@ -284,8 +435,7 @@ public sealed class ProviderSignInEventTests
 
         resume.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         resume.Headers.Location.Should().BeNull();
-        resume.Headers.TryGetValues("Set-Cookie", out var cookies);
-        (cookies ?? []).Should().NotContain(cookie => cookie.StartsWith("zkd.pending=") && !cookie.Contains("expires=Thu, 01 Jan 1970"));
+        StoreEntryCount(factory).Should().Be(1, "only the context: nothing was parked");
     }
 
     [Fact]
@@ -325,13 +475,13 @@ public sealed class ProviderSignInEventTests
         var calls = 0;
         using var factory = NewFactory(context => ++calls == 1 ? context.RedirectToAsync(CollectMorePath) : Task.CompletedTask);
         using var client = NewClient(factory);
-        await ResumeAsync(client);
+        var (interactionId, _) = await ResumeAsync(client);
 
-        var (_, resume) = await ResumeAsync(client);
+        var resume = await ResumeAgainAsync(client, interactionId);
 
         resume.ShouldHaveReachedConsent();
-        resume.Headers.GetValues("Set-Cookie").Should().Contain(cookie =>
-            cookie.StartsWith("zkd.pending=") && cookie.Contains("expires=Thu, 01 Jan 1970"));
+        (await ReadJsonAsync(client, WithInteractionId(CollectMorePath, interactionId))).Should().BeNull();
+        StoreEntryCount(factory).Should().Be(1, "the context stays until the flow ends; the parked principal is gone");
     }
 
     [Fact]
@@ -340,13 +490,95 @@ public sealed class ProviderSignInEventTests
         var calls = 0;
         using var factory = NewFactory(context => ++calls == 1 ? context.RedirectToAsync(CollectMorePath) : context.DenyAsync());
         using var client = NewClient(factory);
-        await ResumeAsync(client);
+        var (interactionId, _) = await ResumeAsync(client);
 
-        var (_, resume) = await ResumeAsync(client);
+        var resume = await ResumeAgainAsync(client, interactionId);
 
         resume.StatusCode.Should().Be(HttpStatusCode.Redirect);
-        resume.Headers.GetValues("Set-Cookie").Should().Contain(cookie =>
-            cookie.StartsWith("zkd.pending=") && cookie.Contains("expires=Thu, 01 Jan 1970"));
+        StoreEntryCount(factory).Should().Be(0, "the context and the parked principal both go with the denial");
+    }
+
+    // ── Concurrent tabs ───────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Two_tabs_parked_at_the_host_page_each_read_back_their_own_principal_and_each_complete()
+    {
+        // Concurrent tabs: each interaction parks its own principal, so the second tab's park
+        // replaces nothing, and the first tab's sign-in consumes only its own.
+        using var factory = NewFactory(context => context.RedirectToAsync(CollectMorePath));
+        using var client = NewClient(factory);
+        var (firstTab, firstResume) = await ResumeAsync(client);
+        var (secondTab, secondResume) = await ResumeAsync(client);
+
+        (await ReadJsonAsync(client, firstResume.Headers.Location!.OriginalString)).Should().NotBeNull("the first tab reads its own parked principal");
+        (await ReadJsonAsync(client, secondResume.Headers.Location!.OriginalString)).Should().NotBeNull("the second tab reads its own parked principal");
+        var first = await client.PostAsync(WithInteractionId(CollectMorePath, firstTab), Form(), Cancellation);
+        first.ShouldHaveReachedConsent();
+        (await ReadJsonAsync(client, secondResume.Headers.Location!.OriginalString)).Should().NotBeNull("the first tab's sign-in consumed only its own principal");
+        var second = await client.PostAsync(WithInteractionId(CollectMorePath, secondTab), Form(), Cancellation);
+        second.ShouldHaveReachedConsent();
+        (await ReadJsonAsync(client, "/test/session"))!.Value.GetProperty("sub").GetString().Should().Be("mapped-" + UpstreamSubject);
+    }
+
+    [Fact]
+    public async Task Automatic_promotion_in_another_tab_leaves_a_parked_principal_alone()
+    {
+        var calls = 0;
+        using var factory = NewFactory(context => ++calls == 1 ? context.RedirectToAsync(CollectMorePath) : Task.CompletedTask);
+        using var client = NewClient(factory);
+        var (_, firstResume) = await ResumeAsync(client);
+
+        var (_, secondResume) = await ResumeAsync(client);
+
+        secondResume.ShouldHaveReachedConsent();
+        (await ReadJsonAsync(client, firstResume.Headers.Location!.OriginalString)).Should().NotBeNull("the second tab completed its own interaction, not the first tab's");
+    }
+
+    [Fact]
+    public async Task DenyAsync_in_another_tab_leaves_a_parked_principal_alone()
+    {
+        var calls = 0;
+        using var factory = NewFactory(context => ++calls == 1 ? context.RedirectToAsync(CollectMorePath) : context.DenyAsync());
+        using var client = NewClient(factory);
+        var (_, firstResume) = await ResumeAsync(client);
+
+        var (_, secondResume) = await ResumeAsync(client);
+
+        secondResume.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        (await ReadJsonAsync(client, firstResume.Headers.Location!.OriginalString)).Should().NotBeNull("the second tab denied its own interaction, not the first tab's");
+    }
+
+    // ── Lifetime ──────────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task A_parked_principal_expires_after_fifteen_minutes()
+    {
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var factory = NewFactory(context => context.RedirectToAsync(CollectMorePath), time: time);
+        using var client = NewClient(factory);
+        var (_, resume) = await ResumeAsync(client);
+
+        time.Advance(PendingPrincipalStore.Lifetime + TimeSpan.FromSeconds(1));
+
+        (await ReadJsonAsync(client, resume.Headers.Location!.OriginalString)).Should().BeNull("the interaction is still alive, but the parked principal is not");
+    }
+
+    [Fact]
+    public async Task A_parked_principal_never_outlives_its_interaction()
+    {
+        // Parked twenty minutes into a thirty-minute interaction, the principal gets the ten
+        // minutes the interaction has left, not fifteen of its own.
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var factory = NewFactory(context => context.RedirectToAsync(CollectMorePath), time: time);
+        using var client = NewClient(factory);
+        var handoff = await client.GetAsync(AuthorizeUrl(), Cancellation);
+        var interactionId = InteractionIdFrom(handoff);
+        time.Advance(TimeSpan.FromMinutes(20));
+        var resume = await ResumeAgainAsync(client, interactionId);
+
+        time.Advance(TimeSpan.FromMinutes(11));
+
+        (await ReadJsonAsync(client, resume.Headers.Location!.OriginalString)).Should().BeNull();
     }
 
     // ── DenyAsync ─────────────────────────────────────────────────────────────────────────────

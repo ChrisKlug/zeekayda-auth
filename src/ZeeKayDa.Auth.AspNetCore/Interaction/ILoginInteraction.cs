@@ -189,6 +189,11 @@ public interface ILoginInteraction
     /// <exception cref="InvalidOperationException">
     /// There is no active HTTP request — the service was resolved outside one.
     /// </exception>
+    /// <exception cref="ZeeKayDaStoreException">
+    /// The interaction store could not be reached. Fail-closed: a parked principal that cannot
+    /// be read is not reported as absent, since the page would then tell the user there is
+    /// nothing to link.
+    /// </exception>
     /// <exception cref="OperationCanceledException">
     /// <paramref name="cancellationToken"/> was cancelled.
     /// </exception>

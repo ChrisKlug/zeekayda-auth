@@ -281,6 +281,25 @@ public sealed class AuthorizationRequestContextStoreTests
     }
 
     [Fact]
+    public async Task Valid_ciphertext_relocated_under_a_chosen_secret_for_the_same_interaction_reads_nothing()
+    {
+        // The identifier leaks; the secret does not. A writer to the store who knows the
+        // identifier could copy the victim's entry under the key for that identifier and a secret
+        // of their own, then present that secret in a forged cookie. The payload names the right
+        // interaction, so only the purpose the bytes were sealed under can refuse it.
+        var backing = new NeverEvictingStore();
+        var (contexts, _, _) = Store(backing);
+        await contexts.TryStoreAsync(new DefaultHttpContext(), ContextAt(Now), DefaultCap, None);
+        var (_, ciphertext) = backing.Single();
+        var chosenSecret = InteractionBindingCookie.NewSecret();
+        await backing.SetAsync(InteractionStoreKeys.Context(InteractionId, chosenSecret), ciphertext, Now.AddMinutes(30), None);
+        var attacker = new DefaultHttpContext();
+        attacker.Request.Headers.Cookie = $"{InteractionBindingCookie.NamePrefix}{InteractionId}={Now.ToUnixTimeSeconds()}.{chosenSecret}";
+
+        (await contexts.ReadAsync(attacker, InteractionId, None)).Should().BeNull();
+    }
+
+    [Fact]
     public async Task Deleting_from_another_browser_leaves_the_entry_alone()
     {
         // A deny or an error in a browser that never held the binding cannot end someone else's

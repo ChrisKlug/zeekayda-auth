@@ -198,7 +198,7 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         services.TryAddSingleton<AuthorizationRequestContextStore>();
         services.TryAddSingleton<AuthorizationResponses>();
         services.TryAddSingleton<SsoSession>();
-        services.TryAddSingleton<PendingPrincipalCookie>();
+        services.TryAddSingleton<PendingPrincipalStore>();
         services.TryAddSingleton<AuthorizationFlow>();
         services.TryAddSingleton<AuthorizationCodeIssuer>();
         services.TryAddSingleton<InteractionOutcomes>();
@@ -248,11 +248,12 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
     /// explicit feature (#593).
     /// </para>
     /// <para>
-    /// <strong>All four are registered together, and that is load-bearing.</strong> ASP.NET Core
-    /// promotes a lone registered scheme to the automatic default, so registering only the schemes
-    /// in use today would hand a bare host exactly the silent grant described above.
-    /// <c>zkd.external</c> and <c>zkd.pending</c> serve the external-provider round trip, and are
-    /// registered whether or not a provider is.
+    /// <strong>Both are registered together, and that is load-bearing.</strong> ASP.NET Core
+    /// promotes a lone registered scheme to the automatic default, so registering only the
+    /// session scheme would hand a bare host exactly the silent grant described above.
+    /// <c>zkd.external</c> serves the external-provider round trip, and is registered whether or
+    /// not a provider is. The parked principal that <c>zkd.pending</c> once carried lives in the
+    /// interaction store, so no scheme backs that name.
     /// </para>
     /// </remarks>
     private static void AddInteractionCookies(IServiceCollection services)
@@ -283,17 +284,6 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
             // Only a provider's callback endpoint may sign in here, and the provider is what that
             // endpoint's route says: recorded from the request, refused without it.
             options.Events.OnSigningIn = ExternalTicket.RecordProvider;
-        });
-
-        authentication.AddCookie(ZeeKayDaCookies.Pending, options =>
-        {
-            // A half-authenticated principal, first read on the GET that renders the host's page
-            // at the end of the provider's redirect chain. That navigation was initiated
-            // cross-site, and a Strict cookie is withheld from it, so Strict would hand the page
-            // nothing on its first render. Lax still withholds it from cross-site POSTs.
-            ConfigureFrameworkCookie(options, ZeeKayDaCookies.Pending);
-            options.Cookie.SameSite = SameSiteMode.Lax;
-            options.ExpireTimeSpan = TimeSpan.FromMinutes(15);
         });
     }
 

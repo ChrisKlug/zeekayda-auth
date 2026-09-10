@@ -73,12 +73,12 @@ events could never key a denylist. Claims in the reserved `zkd:` namespace are s
 host's principal, or a host copying claims from an inbound token could choose its own identifier.
 
 **Framework cookie names are reserved, the `zkd.interaction.` prefix included; a host registering one
-fails at startup.** Every internal cookie is `HttpOnly`; tickets are Data-Protection encrypted, and
-the binding cookies hold a random secret. A session cookie needs `SameSite=None` only if silent
-authentication is supported; the rest take `Lax`, `zkd.pending` included, because its first read is the
-page at the end of the provider's redirect chain and `Strict` is withheld from a navigation initiated
-cross-site — a control that silently breaks the feature is no control. Multi-instance deployments must
-share one Data Protection key ring across all of them — the framework does not solve distributed key management.
+fails at startup.** Every internal cookie is `HttpOnly`; tickets are Data-Protection encrypted, and the
+binding cookies hold a random secret. A session cookie needs `SameSite=None` only if silent authentication
+is supported; the rest take `Lax`: each is first read on a cross-site navigation, which `Strict` is withheld
+from — a control that silently breaks the feature is no control. The parked external principal is no cookie
+but a second store entry under the interaction's binding, one per tab; `zkd.pending` stays reserved, unwritten.
+Multi-instance deployments must share one Data Protection key ring — the framework does not solve distributed key management.
 
 **The authorization request context lives in the interaction store, one encrypted entry per
 interaction, so any number can be in flight in one browser.** An unauthenticated request may store at

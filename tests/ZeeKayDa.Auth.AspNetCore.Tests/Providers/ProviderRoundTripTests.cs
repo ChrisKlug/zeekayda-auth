@@ -528,6 +528,28 @@ public sealed class ProviderRoundTripTests
     }
 
     [Fact]
+    public async Task Two_tabs_each_completing_a_provider_round_trip_both_reach_consent()
+    {
+        // Concurrent tabs, both at the provider: each returns through its own callback and
+        // resume — one redirect chain per tab, which is how a browser does it — and each
+        // completes its own interaction. zkd.external is one cookie, consumed by the very next
+        // request, so the chains interleave at the tab level and nowhere finer.
+        using var factory = NewFactory();
+        using var client = NewClient(factory);
+        var (_, firstChallenge) = await ChallengeAsync(client);
+        var (_, secondChallenge) = await ChallengeAsync(client);
+
+        var firstCallback = await client.GetAsync(CallbackUrlOf(firstChallenge), Cancellation);
+        var firstResume = await client.GetAsync(firstCallback.Headers.Location!.OriginalString, Cancellation);
+        var secondCallback = await client.GetAsync(CallbackUrlOf(secondChallenge), Cancellation);
+        var secondResume = await client.GetAsync(secondCallback.Headers.Location!.OriginalString, Cancellation);
+
+        firstResume.ShouldHaveReachedConsent();
+        secondResume.ShouldHaveReachedConsent();
+        (await ReadSessionAsync(client))!.Value.GetProperty("sub").GetString().Should().Be(ExternalSubject.Derive("acme", "acme", UpstreamSubject));
+    }
+
+    [Fact]
     public async Task Resume_from_a_browser_without_the_binding_cookie_is_refused_and_the_request_survives()
     {
         // The external ticket alone — the resume URL and its cookie replayed from another browser —

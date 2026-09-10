@@ -38,7 +38,7 @@ re-authenticate.
 
 ### Authentication-state cookies
 
-ZeeKayDa.Auth registers three internal named cookie authentication schemes and one family of
+ZeeKayDa.Auth registers two internal named cookie authentication schemes and one family of
 binding cookies:
 
 - `zkd.session` — SSO session cookie, shared across all authentication methods. This is the
@@ -48,14 +48,15 @@ binding cookies:
   for returning users — their `zkd.session` cookie was encrypted by a key that the new
   instance does not yet hold, forcing a silent re-authentication even though the user
   successfully signed in previously.
-- `zkd.pending` — carries the half-authenticated principal during multi-step sign-in
 - `zkd.external` — carries the result of an external provider callback
 - `zkd.interaction.<id>` — not a scheme: one small cookie per in-flight authorization request,
   holding a random secret that binds the request to the browser that started it. The request
-  itself is a Data-Protection-encrypted entry in the interaction store, so a key-ring gap loses
-  in-flight requests as well as sessions.
+  itself is a Data-Protection-encrypted entry in the interaction store, and so is the
+  half-authenticated principal parked during a multi-step external sign-in, so a key-ring gap
+  loses in-flight requests as well as sessions. (`zkd.pending` is a reserved name that once
+  carried that principal; nothing writes it.)
 
-The three scheme cookies are encrypted by ASP.NET Core's cookie authentication middleware using
+The two scheme cookies are encrypted by ASP.NET Core's cookie authentication middleware using
 `IDataProtectionProvider`. If a user's browser sends a cookie that was written by instance A
 to instance B, instance B must be able to decrypt it. A decryption failure causes a silent
 re-prompt: the user sees the login page again with no error message, even though their

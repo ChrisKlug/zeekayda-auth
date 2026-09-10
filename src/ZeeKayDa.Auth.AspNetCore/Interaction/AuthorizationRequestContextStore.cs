@@ -1,5 +1,4 @@
 using System.Security.Cryptography;
-using System.Text;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
@@ -26,8 +25,9 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// </para>
 /// <para>
 /// The store never holds the identifier or the secret, only a hash of the pair, and the bytes it
-/// holds are protected on the host's key ring. A copy of the store alone cannot be used to act on
-/// an interaction, and cannot be read.
+/// holds are protected on the host's key ring under a purpose derived from the same pair. A copy
+/// of the store alone cannot be used to act on an interaction, and cannot be read; a writer to
+/// it cannot move an entry under a secret of their own and read it back through that.
 /// </para>
 /// </remarks>
 internal sealed class AuthorizationRequestContextStore
@@ -125,7 +125,7 @@ internal sealed class AuthorizationRequestContextStore
 
     private async ValueTask SetAsync(AuthorizationRequestContext requestContext, string secret, byte[] encoded, CancellationToken cancellationToken)
     {
-        var protectedValue = _protector.Protect(encoded);
+        var protectedValue = ProtectorFor(requestContext.Id, secret).Protect(encoded);
 
         await Guarded(
             () => _store.SetAsync(KeyFor(requestContext.Id, secret), protectedValue, requestContext.ExpiresAt, cancellationToken),
@@ -157,7 +157,7 @@ internal sealed class AuthorizationRequestContextStore
         byte[] payload;
         try
         {
-            payload = _protector.Unprotect(stored.Value.ToArray());
+            payload = ProtectorFor(interactionId, secret).Unprotect(stored.Value.ToArray());
         }
         catch (CryptographicException)
         {
@@ -167,9 +167,9 @@ internal sealed class AuthorizationRequestContextStore
         if (!AuthorizationRequestContextSerializer.TryDecode(payload, out var requestContext))
             return null;
 
-        // Data Protection authenticates the bytes, not which row they sit in. Whoever can write to
-        // the store without holding the keys could still move one interaction's valid ciphertext
-        // under another's key; the identifier inside the payload is what ties the two together.
+        // The purpose already refuses bytes sealed for another interaction or secret. The
+        // identifier inside the payload is checked as well, so that an entry which unprotects is
+        // never trusted to be the interaction asked for on the strength of the purpose alone.
         if (!InteractionHandoff.IdentifiersMatch(requestContext!.Id, interactionId))
             return null;
 
@@ -212,9 +212,7 @@ internal sealed class AuthorizationRequestContextStore
         }
     }
 
-    private static StoreKey KeyFor(string interactionId, string secret)
-    {
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(string.Concat(interactionId, ".", secret)));
-        return new StoreKey($"zkd:interaction:c:{Convert.ToHexStringLower(hash)}");
-    }
+    private static StoreKey KeyFor(string interactionId, string secret) => InteractionStoreKeys.Context(interactionId, secret);
+
+    private IDataProtector ProtectorFor(string interactionId, string secret) => InteractionStoreKeys.ProtectorFor(_protector, interactionId, secret);
 }

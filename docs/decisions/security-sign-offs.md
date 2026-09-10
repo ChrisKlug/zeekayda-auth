@@ -1403,3 +1403,28 @@ The #87 consent-`POST` residual is closed here; the #84 clear-on-failure residua
 - Residuals, accepted: simultaneous tabs overshoot the ten-cookie cap by their count; ten top-level
   navigations evict a tab's binding; a decorated per-process cache passes the startup gate; an
   oversized request renders locally rather than redirecting with `state` — no tests.
+
+## 2026-09-08 — the store-backed parked external principal (#603, PR 2, commit `566a43c`)
+
+Scoped to the parked principal's move from the `zkd.pending` cookie into the interaction store, and the
+purpose binding that closes store-writer relocation for both entry kinds. One round (Copilot code and
+security lenses, security agent, CodeScene) plus fix-diff verification of two Highs. PR 3 of #603 follows.
+
+- Each tab parks and reads back its own principal; a leaked `zkd_i`, a forged cookie, or another tab's
+  binding addresses nothing. Closed — `Another_interactions_binding_reads_nothing`,
+  `Two_tabs_parked_at_the_host_page_each_read_back_their_own_principal_and_each_complete`,
+  `Two_tabs_each_completing_a_provider_round_trip_both_reach_consent`.
+- A store writer relocating valid ciphertext under a chosen secret for the same id reads nothing, context
+  and principal alike. Closed — `Valid_ciphertext_relocated_under_a_chosen_secret_for_the_same_interaction_reads_nothing`.
+- Expiry is the ticket's, exclusive, never past the interaction; a store fault at the page is a fault, not
+  absence; reserved claims never enter the store; the two entry kinds are separate purposes. Closed —
+  `A_parked_principal_never_outlives_its_interaction`, `Principal_is_not_readable_at_the_expiry_instant`,
+  `GetPendingPrincipalAsync_surfaces_a_store_fault_rather_than_reporting_nothing_parked`,
+  `Reserved_claims_are_stripped_before_parking`, `Context_bytes_cannot_be_read_as_a_parked_principal`.
+- A denial completes when the parked principal cannot be read; a store fault at park is logged as an
+  outage. Closed — `DenyAsync_still_answers_access_denied_when_the_parked_principal_cannot_be_read`,
+  `A_store_that_refuses_the_park_renders_locally_leaves_the_interaction_alive_and_logs_the_outage`.
+- Residual, accepted: an interaction ending by any path but sign-in or deny leaves its unreachable
+  principal entry to its TTL — no test. Residual, deferred to PR 3 (an interaction service of the
+  collect-more page's own): the `GetPendingPrincipalAsync` remark invites passing the raw upstream `sub`
+  to `SignInAsync`, bypassing the derived subject — no test.
