@@ -147,6 +147,25 @@ public sealed class DiscoveryEndpointTests : IDisposable
     }
 
     [Fact]
+    public async Task The_document_a_host_without_the_code_grant_publishes_reads_back_into_the_public_type()
+    {
+        // The omitted fields are optional on the way in as well: a consumer binding the document
+        // to OpenIdConfigurationDocument must not be told a required member is missing.
+        using var factory = new TestWebAppFactory(opts => opts.GrantTypesSupported = [GrantType.ClientCredentials]);
+        using var client = CreateClient(factory);
+        var json = await client.GetStringAsync(DiscoveryPath, TestContext.Current.CancellationToken);
+
+        var document = JsonSerializer.Deserialize(json, ZeeKayDaJsonSerializerContext.Default.OpenIdConfigurationDocument);
+
+        document.Should().NotBeNull();
+        document!.AuthorizationEndpoint.Should().BeNull();
+        document.ResponseTypesSupported.Should().BeNull();
+        document.ResponseModesSupported.Should().BeNull();
+        document.TokenEndpoint.Should().Be("https://test.example.com/connect/token");
+        document.GrantTypesSupported.Should().Equal(GrantType.ClientCredentials);
+    }
+
+    [Fact]
     public async Task GetDiscoveryDocument_serializes_default_metadata_collections_as_expected_strings()
     {
         var doc = await _client.GetFromJsonAsync<JsonDocument>(
