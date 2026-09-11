@@ -64,9 +64,10 @@ for an implementor reducing identity-store round trips — and a cache miss on i
 `ClaimRecord` holds a JSON value, not an object. The constructors are the closed set of things a
 claim can be: a string, a boolean, a number, or any JSON value already built — `address` is
 `new ClaimRecord("address", JsonSerializer.SerializeToElement(new { formatted, country }))`. There
-is no `object` overload, so `null`, a `DateTimeOffset` or a domain entity does not compile; a
-`JsonElement` of kind `Null` or `Undefined` throws at construction, because an unavailable claim is
-expressed by not returning the record (OIDC Core §5.3.2). The element is cloned on receipt, so
+is no `object` overload, so a `DateTimeOffset` or a domain entity does not compile. A `null`
+literal binds to the string overload, which throws on `null` and on empty, and a `JsonElement` of
+kind `Null` or `Undefined` throws too: an unavailable claim is expressed by not returning the record,
+and OIDC Core §5.3.2 forbids both a null and an empty-string value. The element is cloned on receipt, so
 nothing the provider still holds can change a token afterwards, and `TokenPayload` writes it raw by
 its runtime type with nothing left to convert. A struct is still default-constructible, so
 `default(ClaimRecord)` is guarded the way `TokenIssuanceContext` guards it: `Type` and `Value` throw
