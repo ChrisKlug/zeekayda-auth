@@ -44,7 +44,9 @@ public interface ILoginInteraction
     /// <param name="principal">
     /// The authenticated user. Must carry a <c>sub</c> or
     /// <see cref="ClaimTypes.NameIdentifier"/> claim; claims in the framework's reserved
-    /// <c>zkd:</c> namespace are stripped.
+    /// <c>zkd:</c> namespace are stripped. Copied when the call is made, as
+    /// <paramref name="authenticationMethods"/> is: what was validated is what is signed in,
+    /// whatever the page does to either afterwards.
     /// </param>
     /// <param name="authenticationMethods">
     /// How the user proved who they are, reported to the client in the <c>amr</c> claim. Use

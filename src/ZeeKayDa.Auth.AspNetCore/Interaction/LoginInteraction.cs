@@ -51,13 +51,20 @@ internal sealed class LoginInteraction : ILoginInteraction
         ArgumentNullException.ThrowIfNull(principal);
         ArgumentNullException.ThrowIfNull(authenticationMethods);
 
-        // Caught here rather than at the claim write so the blame lands on the caller's
-        // argument, not on a malformed session cookie several frames later.
-        if (authenticationMethods.Any(string.IsNullOrWhiteSpace))
+        // Copies, validated and then used: both arguments are the caller's, and what was checked
+        // before the store is awaited must be what is signed in after it — as the provider
+        // sign-in service does. Caught here rather than at the claim write so the blame lands on
+        // the caller's argument, not on a malformed session cookie several frames later.
+        var methods = authenticationMethods.ToArray();
+        if (methods.Any(string.IsNullOrWhiteSpace))
             throw new ArgumentException(
                 "An authentication method reference is null or blank. Pass a value such as "
                 + "AuthenticationMethods.Password, or pass none to omit the amr claim.",
                 nameof(authenticationMethods));
+
+        // Rebuilt on the framework's own identity type, not cloned: a copy that shares nothing
+        // with the caller and calls none of the caller's virtuals.
+        var user = ReservedClaims.Snapshot(principal);
 
         var context = RequireStateChangingRequest();
         var requestContext = await _flow.ResolveAddressedAsync(context).ConfigureAwait(false);
@@ -65,7 +72,7 @@ internal sealed class LoginInteraction : ILoginInteraction
         // A principal an external provider parked for this interaction is discarded, not adopted:
         // the login page signs in the host's own principal, and a local sign-in records no provider.
         await _flow.ConsumePendingAsync(context, requestContext.Id).ConfigureAwait(false);
-        await _outcomes.CompleteSignInAsync(context, requestContext, new SignIn(principal, authenticationMethods, ProviderScheme: null))
+        await _outcomes.CompleteSignInAsync(context, requestContext, new SignIn(user, methods, ProviderScheme: null))
             .ConfigureAwait(false);
     }
 

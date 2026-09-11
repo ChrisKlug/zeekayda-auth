@@ -446,6 +446,54 @@ public sealed class ProviderSignInEventTests
     }
 
     [Fact]
+    public async Task SignInWithReplacedPrincipalAsync_copies_an_identity_whose_Clone_returns_itself()
+    {
+        // As above, for the replacement a page passes: rebuilt from the claims, so a host
+        // identity that overrides Clone cannot change what is promoted after the call.
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var proceed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var store = new FaultableInteractionStore();
+        using var factory = new TestWebAppFactory(
+            configureBuilder: builder =>
+            {
+                builder.WithProviders(
+                    auth => auth.AddOAuth("acme", "Acme", ConfigureAcme),
+                    options => options.OnProviderSignIn = context => context.RedirectToAsync(CollectMorePath));
+                builder.AddInMemoryAuthorizationCodeStore(allowOutsideDevelopment: true);
+                builder.AddInMemoryRefreshTokenStore(allowOutsideDevelopment: true);
+                builder.Services.AddSingleton<IInteractionBackingStore>(store);
+            },
+            mapEndpoints: endpoints =>
+            {
+                MapHostPages(endpoints);
+                endpoints.MapPost(CollectMorePath + "/link-self-cloning", async (IProviderSignInInteraction signIn) =>
+                {
+                    var identity = new SelfCloningIdentity([new System.Security.Claims.Claim("sub", "local-1")], "test");
+                    var principal = new System.Security.Claims.ClaimsPrincipal(identity);
+
+                    var signingIn = signIn.SignInWithReplacedPrincipalAsync(principal, ZeeKayDa.Auth.Authorization.AuthenticationMethods.Password);
+                    await entered.Task;
+                    identity.RemoveClaim(identity.FindFirst("sub"));
+                    identity.AddClaim(new System.Security.Claims.Claim("sub", "hijacked"));
+                    proceed.SetResult();
+                    await signingIn;
+                });
+            });
+        using var client = NewClient(factory);
+        var (interactionId, _) = await ResumeAsync(client);
+        store.BeforePendingRead = async () =>
+        {
+            entered.TrySetResult();
+            await proceed.Task;
+        };
+
+        var signIn = await client.PostAsync(WithInteractionId(CollectMorePath + "/link-self-cloning", interactionId), Form(), Cancellation);
+
+        signIn.ShouldHaveReachedConsent();
+        (await ReadJsonAsync(client, "/test/session"))!.Value.GetProperty("sub").GetString().Should().Be("local-1");
+    }
+
+    [Fact]
     public async Task SignInWithReplacedPrincipalAsync_promotes_the_principal_as_validated_not_as_later_changed()
     {
         // A host that keeps a reference to the principal it passed and changes it while the

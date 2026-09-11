@@ -97,6 +97,12 @@ internal static class ProviderTestHost
         };
     }
 
+    /// <summary>An identity whose <c>Clone</c> returns itself — a copy site that trusts the virtual gets an alias.</summary>
+    public sealed class SelfCloningIdentity(IEnumerable<Claim> claims, string authenticationType) : ClaimsIdentity(claims, authenticationType)
+    {
+        public override ClaimsIdentity Clone() => this;
+    }
+
     public static HttpClient NewClient(TestWebAppFactory factory) => factory.CreateClient(new()
     {
         BaseAddress = new Uri("https://test.example.com"),

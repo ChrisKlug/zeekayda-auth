@@ -25,14 +25,45 @@ internal static class ReservedClaims
     }
 
     /// <summary>The same identities with every reserved claim removed.</summary>
+    /// <remarks>
+    /// Also the framework's copy of a caller's principal. The identities are rebuilt on the base
+    /// <see cref="ClaimsIdentity"/>, and each claim on the base <see cref="Claim"/> from its
+    /// non-virtual members, so the result shares no object with the caller and depends on none
+    /// of the caller's virtual members. <c>ClaimsIdentity.Clone</c> and <c>Claim.Clone</c> are
+    /// both virtual — the identity constructor itself clones a foreign claim through the latter —
+    /// and an override returning the same instance would hand back the original, so that a change
+    /// the caller made after the call would be what the framework signed in.
+    /// </remarks>
     public static ClaimsPrincipal Strip(ClaimsPrincipal principal)
     {
         ArgumentNullException.ThrowIfNull(principal);
 
         return new ClaimsPrincipal(principal.Identities.Select(identity => new ClaimsIdentity(
-            identity.Claims.Where(claim => !IsReserved(claim)),
+            identity.Claims.Where(claim => !IsReserved(claim)).Select(Materialize),
             identity.AuthenticationType,
             identity.NameClaimType,
             identity.RoleClaimType)));
     }
+
+    /// <summary>
+    /// A base <see cref="Claim"/> with the same type, value, value type, issuers and properties,
+    /// built without calling the claim's own <c>Clone</c>. The copy constructors are protected,
+    /// so the members are read one by one; the properties dictionary is copied, since it is the
+    /// one mutable part of a claim.
+    /// </summary>
+    private static Claim Materialize(Claim claim)
+    {
+        var copy = new Claim(claim.Type, claim.Value, claim.ValueType, claim.Issuer, claim.OriginalIssuer);
+        foreach (var (key, value) in claim.Properties)
+            copy.Properties[key] = value;
+
+        return copy;
+    }
+
+    /// <summary>
+    /// A copy of <paramref name="principal"/> that the caller cannot change afterwards: what
+    /// was validated is what is used once the store has been awaited. The same rebuild as
+    /// <see cref="Strip"/>, named for what the caller wants from it.
+    /// </summary>
+    public static ClaimsPrincipal Snapshot(ClaimsPrincipal principal) => Strip(principal);
 }
