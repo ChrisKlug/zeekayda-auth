@@ -234,12 +234,18 @@ static List<ReportRow> BuildRows(
 
     foreach (var target in targets)
     {
-        var targetLegKeys = legKeys.Where(key => key.Target == target).ToArray();
+        var targetKeys = legKeys.Where(key => key.Target == target).ToArray();
+        var sliceKeys = targetKeys.Where(static key => !key.IsTarget).ToArray();
 
-        rows.Add(NewRow(new LegKey(target, Slice: null), RollUp(targetLegKeys, legs)?.Score, previous));
+        // A sliced target's own key is its roll-up row, never a leg. It still reaches legKeys from
+        // the previous run's state block, and counting it would find no report behind it and void
+        // the roll-up on every run after the first.
+        var rollUpKeys = sliceKeys.Length > 0 ? sliceKeys : targetKeys;
+
+        rows.Add(NewRow(new LegKey(target, Slice: null), RollUp(rollUpKeys, legs)?.Score, previous));
 
         // An unsliced target's only leg is the target row itself; do not repeat it.
-        foreach (var sliceKey in targetLegKeys.Where(static key => !key.IsTarget))
+        foreach (var sliceKey in sliceKeys)
         {
             rows.Add(NewRow(sliceKey, Score(sliceKey, legs), previous));
         }
