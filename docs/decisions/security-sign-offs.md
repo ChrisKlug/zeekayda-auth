@@ -1427,4 +1427,31 @@ security lenses, security agent, CodeScene) plus fix-diff verification of two Hi
 - Residual, accepted: an interaction ending by any path but sign-in or deny leaves its unreachable
   principal entry to its TTL — no test. Residual, deferred to PR 3 (an interaction service of the
   collect-more page's own): the `GetPendingPrincipalAsync` remark invites passing the raw upstream `sub`
-  to `SignInAsync`, bypassing the derived subject — no test.
+  to `SignInAsync`, bypassing the derived subject — no test. [Closed by PR 3, below.]
+
+## 2026-09-11 — the collect-more page's own interaction service (#603, PR 3, commit `ba0b42f`)
+
+Scoped to `IProviderSignInInteraction`, which closes the PR 2 residual: the page that `RedirectToAsync`
+leads to can no longer put the raw upstream `sub` into the session. One round (Copilot code, security
+and architecture lenses, security and architect agents, CodeScene), fix-diff verification of six code-lens
+Highs across two fix commits, then the maintainer's rulings verified by both agents and the code lens.
+
+- The framework builds the promoted principal; a collected subject claim is refused before any read, and
+  a replacement whose subject is the upstream one is refused, on the principal read and again on the one
+  taken. Closed — `SignInAsync_with_collected_claims_refuses_a_subject_claim_before_anything_is_read`,
+  `SignInWithReplacedPrincipalAsync_refuses_the_parked_principal_passed_straight_back`,
+  `SignInWithReplacedPrincipalAsync_refuses_a_copy_of_the_upstream_subject`,
+  `SignInWithReplacedPrincipalAsync_holds_a_principal_parked_between_the_read_and_the_take_to_the_same_rule`.
+- The parked principal is taken once and what was taken is promoted; refusals are decided before the take;
+  caller-owned input is snapshotted; terminal calls are POST-only before any read. Closed —
+  `SignInAsync_reads_the_parked_principal_to_validate_it_then_takes_it_once`,
+  `SignInAsync_promotes_the_principal_parked_at_the_time_of_the_post_not_the_one_the_page_read`,
+  `SignInAsync_with_collected_claims_refuses_a_parked_subject_without_an_issuer`,
+  `SignInWithReplacedPrincipalAsync_promotes_the_principal_as_validated_not_as_later_changed`,
+  `A_terminal_call_from_a_GET_is_refused_before_anything_is_read`.
+- A local sign-in at the login page discards a parked principal and records no provider. Closed —
+  `A_local_sign_in_at_the_login_page_discards_a_parked_principal_and_records_no_provider`.
+- Residuals, accepted: the store's get-then-remove take is not atomic, so two posts can both take and
+  both promote, the completion claim deciding issuance; a parked principal from a provider removed from
+  the registration is refused but untested; a best-effort remove that fails leaves a discarded principal
+  readable — no tests.

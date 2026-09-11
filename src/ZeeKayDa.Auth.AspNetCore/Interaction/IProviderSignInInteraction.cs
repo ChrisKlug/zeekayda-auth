@@ -77,7 +77,9 @@ public interface IProviderSignInInteraction
     /// <para>
     /// Every refusal of the sign-in itself is decided before the parked principal is taken, so
     /// a refused page can try again, or send the user back to the login page, with the principal
-    /// still parked. Only another response completing the interaction first is found later.
+    /// still parked. Two things are found later: another response completing the interaction
+    /// first, and a principal parked by a second provider return while this sign-in was in flight,
+    /// which is promoted in place of the one read and, if it cannot be, is gone with the refusal.
     /// </para>
     /// </remarks>
     /// <exception cref="ZeeKayDaInteractionException">
@@ -138,8 +140,10 @@ public interface IProviderSignInInteraction
     /// </para>
     /// <para>
     /// Every refusal of the sign-in itself is decided before the parked principal is taken, so
-    /// a refused page can try again with the principal still parked. Only another response
-    /// completing the interaction first is found later.
+    /// a refused page can try again with the principal still parked. Two things are found later:
+    /// another response completing the interaction first, and a principal parked by a second
+    /// provider return while this sign-in was in flight, which is held to the same subject rule
+    /// and, when refused, is gone with the refusal.
     /// </para>
     /// </remarks>
     /// <exception cref="ZeeKayDaInteractionException">
