@@ -140,6 +140,8 @@ public sealed class DiscoveryEndpointTests : IDisposable
         var doc = await client.GetFromJsonAsync<JsonDocument>(DiscoveryPath, TestContext.Current.CancellationToken);
 
         doc!.RootElement.TryGetProperty("authorization_endpoint", out _).Should().BeFalse();
+        doc.RootElement.GetProperty("response_types_supported").GetArrayLength().Should().Be(0, "required by RFC 8414, and nothing serves a response type");
+        doc.RootElement.TryGetProperty("code_challenge_methods_supported", out _).Should().BeFalse();
         doc.RootElement.TryGetProperty("token_endpoint", out _).Should().BeTrue("the token endpoint is what such a host serves");
     }
 

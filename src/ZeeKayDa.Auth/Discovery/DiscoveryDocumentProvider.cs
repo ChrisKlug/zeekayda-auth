@@ -55,31 +55,35 @@ internal sealed class DiscoveryDocumentProvider : IDiscoveryDocumentProvider
         var issuerUri = new Uri(options.Issuer!);
 
         var scopes = await _scopeRepository.GetScopesAsync(cancellationToken).ConfigureAwait(false);
+        var servesAuthorization = options.GrantTypesSupported.Contains(GrantType.AuthorizationCode);
 
         return new OpenIdConfigurationDocument
         {
             Issuer = options.Issuer!,
 
-            // Advertised only when a supported grant uses it; the endpoint is not served otherwise,
-            // and metadata naming an endpoint that answers 404 is worse than metadata without it.
-            AuthorizationEndpoint = options.GrantTypesSupported.Contains(GrantType.AuthorizationCode)
+            // The authorization endpoint and everything that describes it are advertised only when
+            // a supported grant uses the endpoint; it is not served otherwise. RFC 8414 §2 lets the
+            // endpoint be omitted on that condition and requires response_types_supported always,
+            // so that one is honestly empty: metadata naming an endpoint that answers 404, or a
+            // response type nothing serves, is worse than metadata without them.
+            AuthorizationEndpoint = servesAuthorization
                 ? options.AuthorizationEndpoint.Uri ?? IssuerUriHelper.Combine(issuerUri, ConnectAuthorize).AbsoluteUri
                 : null,
             TokenEndpoint = options.TokenEndpoint.Uri
                 ?? IssuerUriHelper.Combine(issuerUri, ConnectToken).AbsoluteUri,
             JwksUri = options.JwksEndpoint.Uri
                 ?? IssuerUriHelper.Combine(issuerUri, ConnectJwks).AbsoluteUri,
-            ResponseTypesSupported = [.. options.Response.TypesSupported],
+            ResponseTypesSupported = servesAuthorization ? [.. options.Response.TypesSupported] : [],
             ScopesSupported = [.. scopes
                 .Where(scope => scope.IsDiscoverable)
                 .Select(scope => scope.Name)],
-            ResponseModesSupported = [.. options.Response.ModesSupported],
+            ResponseModesSupported = servesAuthorization ? [.. options.Response.ModesSupported] : [],
             GrantTypesSupported = [.. options.GrantTypesSupported],
             TokenEndpointAuthMethodsSupported = [.. options.TokenEndpoint.AuthMethodsSupported
                 .Distinct(StringComparer.Ordinal)],
             IdTokenSigningAlgValuesSupported = [.. AdvertisedSigningAlgorithms.Resolve(
                 _keyRing.Current, options.IdToken.AdvertisedSigningAlgorithms)],
-            CodeChallengeMethodsSupported = options.AuthorizationEndpoint.CodeChallengeMethodsSupported is { } methods
+            CodeChallengeMethodsSupported = servesAuthorization && options.AuthorizationEndpoint.CodeChallengeMethodsSupported is { } methods
                 ? [.. methods]
                 : null,
         };

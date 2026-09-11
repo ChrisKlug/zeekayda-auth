@@ -375,8 +375,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   while discovery listed a grant set that could not use the endpoint it advertised. `GrantTypesSupported`
   is the declaration that the interactive machinery is unused — the startup checks were already gated on
   it — so the endpoint now maps nothing and the discovery document omits `authorization_endpoint`, as
-  RFC 8414 §2 allows when no supported grant uses it. `OpenIdConfigurationDocument.AuthorizationEndpoint`
-  is nullable accordingly. Client credentials is unaffected: it never touched the endpoint.
+  RFC 8414 §2 allows when no supported grant uses it, publishes `response_types_supported` and
+  `response_modes_supported` empty, and omits `code_challenge_methods_supported`.
+  `OpenIdConfigurationDocument.AuthorizationEndpoint` is nullable accordingly. Client credentials is
+  unaffected: it never touched the endpoint.
 
 ### Changed
 
