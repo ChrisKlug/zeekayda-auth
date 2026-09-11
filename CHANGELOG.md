@@ -367,6 +367,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   *after* `AddZeeKayDaSigningKeySource` wins outright under MS DI's last-registration-wins resolution
   and is not detectable from this method.
 
+### Fixed
+
+- **`/connect/authorize` is not served, and not advertised, on a host whose `GrantTypesSupported` lacks
+  `authorization_code`** (#629). Such a host had the endpoint mapped anyway: it accepted
+  `response_type=code`, wrote an interaction context and answered `server_error` at the login dispatch,
+  while discovery listed a grant set that could not use the endpoint it advertised. `GrantTypesSupported`
+  is the declaration that the interactive machinery is unused — the startup checks were already gated on
+  it — so the endpoint now maps nothing and the discovery document omits `authorization_endpoint`, as
+  RFC 8414 §2 allows when no supported grant uses it. `OpenIdConfigurationDocument.AuthorizationEndpoint`
+  is nullable accordingly. Client credentials is unaffected: it never touched the endpoint.
+
 ### Changed
 
 - **A failure that defers its detail to the inner exception now has one to defer to** (#618)

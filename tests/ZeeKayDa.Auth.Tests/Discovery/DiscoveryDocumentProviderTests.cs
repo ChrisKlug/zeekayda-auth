@@ -124,6 +124,21 @@ public sealed class DiscoveryDocumentProviderTests
     // ── Explicit URI overrides ────────────────────────────────────────────────────────────────────
 
     [Fact]
+    public async Task GetDocument_omits_AuthorizationEndpoint_when_no_supported_grant_uses_it()
+    {
+        // A client_credentials-only host does not serve the endpoint, so the metadata does not
+        // name it (RFC 8414 §2) — not even when the host configured an explicit URI for it.
+        var doc = await GetDocumentAsync(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            GrantTypesSupported = [GrantType.ClientCredentials],
+            AuthorizationEndpoint = { Uri = "https://auth.example.com/custom/authorize" },
+        });
+
+        doc.AuthorizationEndpoint.Should().BeNull();
+    }
+
+    [Fact]
     public async Task GetDocument_uses_override_not_derived_value_when_explicit_AuthorizationEndpoint_is_configured()
     {
         const string explicitUri = "https://other.example.com/custom/authorize";

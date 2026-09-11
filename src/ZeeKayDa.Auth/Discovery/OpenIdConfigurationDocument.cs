@@ -20,9 +20,14 @@ public sealed record OpenIdConfigurationDocument
     [JsonPropertyName("issuer")]
     public required string Issuer { get; init; }
 
-    /// <summary>Gets the URL of the authorization endpoint.</summary>
+    /// <summary>
+    /// Gets the URL of the authorization endpoint. Absent from the document when
+    /// <see langword="null"/>: a host whose <c>GrantTypesSupported</c> includes no grant that uses
+    /// the endpoint — <c>client_credentials</c> only — does not serve it (RFC 8414 §2).
+    /// </summary>
     [JsonPropertyName("authorization_endpoint")]
-    public required string AuthorizationEndpoint { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public required string? AuthorizationEndpoint { get; init; }
 
     /// <summary>Gets the URL of the token endpoint.</summary>
     [JsonPropertyName("token_endpoint")]

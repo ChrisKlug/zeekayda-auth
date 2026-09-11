@@ -130,6 +130,20 @@ public sealed class DiscoveryEndpointTests : IDisposable
     }
 
     [Fact]
+    public async Task GetDiscoveryDocument_omits_authorization_endpoint_on_a_host_without_the_code_grant()
+    {
+        // The endpoint is not served on such a host, so the metadata does not name it: a document
+        // pointing at a 404 is worse than one without the field (RFC 8414 §2).
+        using var factory = new TestWebAppFactory(opts => opts.GrantTypesSupported = [GrantType.ClientCredentials]);
+        using var client = CreateClient(factory);
+
+        var doc = await client.GetFromJsonAsync<JsonDocument>(DiscoveryPath, TestContext.Current.CancellationToken);
+
+        doc!.RootElement.TryGetProperty("authorization_endpoint", out _).Should().BeFalse();
+        doc.RootElement.TryGetProperty("token_endpoint", out _).Should().BeTrue("the token endpoint is what such a host serves");
+    }
+
+    [Fact]
     public async Task GetDiscoveryDocument_serializes_default_metadata_collections_as_expected_strings()
     {
         var doc = await _client.GetFromJsonAsync<JsonDocument>(

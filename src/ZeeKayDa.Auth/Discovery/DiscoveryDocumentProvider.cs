@@ -59,8 +59,12 @@ internal sealed class DiscoveryDocumentProvider : IDiscoveryDocumentProvider
         return new OpenIdConfigurationDocument
         {
             Issuer = options.Issuer!,
-            AuthorizationEndpoint = options.AuthorizationEndpoint.Uri
-                ?? IssuerUriHelper.Combine(issuerUri, ConnectAuthorize).AbsoluteUri,
+
+            // Advertised only when a supported grant uses it; the endpoint is not served otherwise,
+            // and metadata naming an endpoint that answers 404 is worse than metadata without it.
+            AuthorizationEndpoint = options.GrantTypesSupported.Contains(GrantType.AuthorizationCode)
+                ? options.AuthorizationEndpoint.Uri ?? IssuerUriHelper.Combine(issuerUri, ConnectAuthorize).AbsoluteUri
+                : null,
             TokenEndpoint = options.TokenEndpoint.Uri
                 ?? IssuerUriHelper.Combine(issuerUri, ConnectToken).AbsoluteUri,
             JwksUri = options.JwksEndpoint.Uri

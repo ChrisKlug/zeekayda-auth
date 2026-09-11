@@ -167,7 +167,7 @@ ZeeKayDa.Auth.Discovery.JwksEndpointOptions.Uri.get -> string?
 ZeeKayDa.Auth.Discovery.JwksEndpointOptions.Uri.set -> void
 ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument
 ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.<Clone>$() -> ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument!
-ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.AuthorizationEndpoint.get -> string!
+ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.AuthorizationEndpoint.get -> string?
 ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.AuthorizationEndpoint.init -> void
 ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.CodeChallengeMethodsSupported.get -> System.Collections.Generic.IReadOnlyCollection<ZeeKayDa.Auth.Authorization.CodeChallengeMethod>?
 ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.CodeChallengeMethodsSupported.init -> void
