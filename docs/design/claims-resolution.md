@@ -40,7 +40,7 @@ public abstract class ClaimsResolutionResult
     public sealed class SubjectInvalid : ClaimsResolutionResult { }
 }
 
-public readonly record struct ClaimRecord(string Type, string Value);
+public readonly record struct ClaimRecord(string Type, object? Value);
 ```
 
 `ClaimsProviderContext` carries exactly `Sub`, `Scopes`, `ClaimTypes` and `FamilyId`. `ClaimTypes`
@@ -50,6 +50,13 @@ alone, never a filter: returning more is fine, selection drops it. It was added 
 (issue #92); `ClientId` is still deliberately absent. `FamilyId` is stable across
 every rotation of a grant, which makes it the natural cache key for an implementor reducing
 identity-store round trips — and a cache miss on it is structurally "first issuance".
+
+`ClaimRecord.Value` is `object?`, serialised by its runtime type under the same rule as
+`TokenPayload`: a provider returns `email_verified` as a `bool`, `updated_at` as a `long`, and
+`address` as an object carrying the OIDC Core §5.1.1 member names — never as pre-encoded strings.
+Repeated records for one type are written as one JSON array under that name, in the order returned.
+(Changed 2026-09-11, issue #92: the original `string Value` could not represent the standard
+boolean, number and object claims.)
 
 ## Rejected
 
@@ -70,3 +77,6 @@ identity-store round trips — and a cache miss on it is structurally "first iss
   client-varying claims belong in a downstream transformation pipeline.
 - **`System.Security.Claims.Claim` as the transfer type.** Not reliably serialisable, carries a
   back-reference to `ClaimsIdentity`, and has mutable properties with no meaning here.
+- **A string-only claim value.** The original `ClaimRecord` shape. `email_verified`, `updated_at`
+  and `address` are boolean, number and object on the wire, so a string value forced either a
+  nonconforming token or claim-specific reconstruction inside the writer.

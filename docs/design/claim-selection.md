@@ -127,7 +127,10 @@ internal sealed record SelectedClaims(
 1. `identityTypes` = union of `IdentityClaims` over `granted`, plus `client.AdditionalIdentityClaims`.
    `accessTypes` likewise from `AccessTokenClaims` and `AdditionalAccessTokenClaims`.
 2. `Identity` = every record in `pool` whose type is in `identityTypes`; `AccessToken` the same over
-   `accessTypes`. Multi-valued claims keep every record. Order is the provider's.
+   `accessTypes`. Values keep the JSON type the provider returned (`claims-resolution.md`):
+   `email_verified` is a boolean, `address` an object. Multi-valued claims keep every record, in
+   the provider's order, and are written as one JSON array under that name, because
+   `TokenPayload` is keyed by claim name.
 3. A type that is selected but absent from the pool is simply absent from the token. Never `null`,
    never an empty string — OIDC Core §5.3.2 says an unavailable claim is omitted.
 4. Protocol claims (`iss`, `sub`, `aud`, `exp`, `iat`, `auth_time`, `nonce`, `scope`, `client_id`,
@@ -174,6 +177,12 @@ when no `resource` parameter is present:
 4. Wire form follows RFC 7519 §4.1.3: a single string when there is one recipient, an array when
    there are two. `TokenPayload` serialises the value by its runtime type, so the array needs
    nothing new.
+5. Every scope string in the access token's `scope` claim correlates to exactly one audience: an
+   identity scope to the issuer, an API scope to its `Audience`. RFC 9068 §2.2.3 requires that the
+   scope strings "MUST have meaning for the resources indicated in the aud claim", and §5 says what
+   that means with more than one audience: each scope "can be unambiguously correlated to a
+   specific resource among the ones listed". Step 2 is what makes it hold — with one API per token
+   there is never a scope two audiences could both claim.
 
 ```json
 { "aud": "https://id.example.com" }                                        // openid profile

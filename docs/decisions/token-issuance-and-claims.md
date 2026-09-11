@@ -81,6 +81,10 @@ into this seam as an implementation assumption.
 carries a back-reference to its identity, and has mutable properties with no meaning in a resolution
 result.
 
+**Claim values travel in their wire type, never pre-encoded.** `email_verified` is a boolean,
+`updated_at` a number and `address` an object (OIDC Core §5.1.1); a string-only transfer value cannot
+represent them. Repeated records for one name are written as one JSON array.
+
 **Claim selection is configuration, not a seam.** A scope names the claim types it unlocks in the ID
 token and userinfo, and separately in the access token; a client registration may add types to
 either list and never remove any. Removal is `AllowedScopes`. Neither list is a source: a type that
@@ -100,6 +104,7 @@ endpoint from the grant, so a provider cannot re-assert a subject or an audience
 the absolute URI of the resource server it is for; the token's `aud` is the one distinct such value.
 Two distinct values in one effective scope is `invalid_scope` at the authorization endpoint, before
 any interaction. Consent and refresh only narrow scope, so nothing later can introduce a second one.
+Every scope string then correlates to exactly one audience, which is what RFC 9068 §2.2.3 and §5 ask.
 
 **The issuer is always an audience when `openid` is granted, and there is no switch to drop it.**
 Userinfo is a protected resource hosted by the issuer, and RFC 9068 §4 obliges a resource server to
