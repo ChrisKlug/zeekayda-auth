@@ -19,7 +19,7 @@ internal static class ExternalSubject
     /// The claim the upstream subject is read from, in order: <c>sub</c> from a provider that
     /// thinks in OpenID Connect, the .NET name identifier from one that maps claims.
     /// </summary>
-    private static readonly string[] SubjectClaimTypes = ["sub", ClaimTypes.NameIdentifier];
+    internal static readonly string[] SubjectClaimTypes = ["sub", ClaimTypes.NameIdentifier];
 
     /// <summary>
     /// Builds the principal to promote: the provider's claims with the upstream subject replaced

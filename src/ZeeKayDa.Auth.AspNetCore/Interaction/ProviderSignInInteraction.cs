@@ -99,7 +99,7 @@ internal sealed class ProviderSignInInteraction : IProviderSignInInteraction
                 + "AuthenticationMethods.Password, or pass none to omit the amr claim.",
                 nameof(authenticationMethods));
 
-        // A snapshot, of the identities since Clone shares them: what is validated is what is
+        // A snapshot of the identities, since Clone shares them: what is validated is what is
         // promoted. Checked before the parked principal is taken: a principal the session would
         // refuse must not cost the page the one thing it needs to try again.
         var replacement = new ClaimsPrincipal(principal.Identities.Select(identity => identity.Clone()));
@@ -195,8 +195,12 @@ internal sealed class ProviderSignInInteraction : IProviderSignInInteraction
         }
     }
 
+    /// <summary>
+    /// Selected as the session selects it — the first claim of each type, in order — so a
+    /// principal that passes here is one the session will accept after the take.
+    /// </summary>
     private static bool HasSubject(ClaimsPrincipal principal) =>
-        SubjectValues(principal).Any();
+        ExternalSubject.SubjectClaimTypes.Any(type => !string.IsNullOrEmpty(principal.FindFirstValue(type)));
 
     /// <summary>
     /// Whether the replacement names, as its subject, a subject the provider returned — the

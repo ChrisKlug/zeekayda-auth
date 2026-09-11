@@ -477,6 +477,24 @@ public sealed class ProviderSignInEventTests
     }
 
     [Fact]
+    public async Task SignInWithReplacedPrincipalAsync_selects_the_subject_as_the_session_does()
+    {
+        // An empty first sub claim ahead of a valid one is what the session sees as no subject:
+        // refused here, before the take, not by the session after it.
+        var store = new FaultableInteractionStore();
+        using var factory = NewFaultableFactory(store);
+        using var client = NewClient(factory);
+        var (interactionId, resume) = await ResumeAsync(client);
+        store.FailPendingReads = true;
+
+        var signIn = async () => await client.PostAsync(WithInteractionId(CollectMorePath + "/link-direct", interactionId), Form(("sub", ""), ("sub", "local-1")), Cancellation);
+
+        await signIn.Should().ThrowAsync<ZeeKayDaInteractionException>().WithMessage("*subject*");
+        store.FailPendingReads = false;
+        (await ReadJsonAsync(client, resume.Headers.Location!.OriginalString)).Should().NotBeNull();
+    }
+
+    [Fact]
     public async Task SignInWithReplacedPrincipalAsync_refuses_the_parked_principal_passed_straight_back()
     {
         // The bug this service exists to close, written the obvious way: the replacement is the

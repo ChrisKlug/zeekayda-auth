@@ -156,7 +156,7 @@ internal static class ProviderTestHost
         endpoints.MapPost(CollectMorePath, async (HttpContext context, IProviderSignInInteraction signIn) =>
         {
             var form = await context.Request.ReadFormAsync(context.RequestAborted);
-            await signIn.SignInAsync(form.Select(field => new Claim(field.Key, field.Value.ToString())).ToArray());
+            await signIn.SignInAsync(form.SelectMany(field => field.Value.Select(value => new Claim(field.Key, value ?? string.Empty))).ToArray());
         });
 
         // The linking page: maps the parked principal onto a local account and signs that in.
@@ -184,7 +184,7 @@ internal static class ProviderTestHost
         endpoints.MapPost(CollectMorePath + "/link-direct", async (HttpContext context, IProviderSignInInteraction signIn) =>
         {
             var form = await context.Request.ReadFormAsync(context.RequestAborted);
-            var claims = form.Select(field => new Claim(field.Key, field.Value.ToString())).ToArray();
+            var claims = form.SelectMany(field => field.Value.Select(value => new Claim(field.Key, value ?? string.Empty))).ToArray();
 
             await signIn.SignInWithReplacedPrincipalAsync(new ClaimsPrincipal(new ClaimsIdentity(claims, "test")), AuthenticationMethods.Password);
         });
