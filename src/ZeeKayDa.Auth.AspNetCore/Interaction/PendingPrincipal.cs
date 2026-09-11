@@ -5,7 +5,7 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// <summary>
 /// A principal an external provider authenticated that the host parked, through
 /// <see cref="ProviderSignInContext.RedirectToAsync"/>, rather than promoted: what the page it
-/// redirected to reads back with <see cref="IProviderSignInInteraction.GetAsync"/>.
+/// redirected to reads back with <see cref="IProviderSignInInteraction.GetPendingPrincipalAsync"/>.
 /// </summary>
 public sealed class PendingPrincipal
 {

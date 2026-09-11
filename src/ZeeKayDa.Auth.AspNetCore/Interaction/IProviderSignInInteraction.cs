@@ -17,10 +17,10 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// </para>
 /// <para>
 /// A page that only collects what the provider did not supply passes the collected claims to
-/// <see cref="SignInAsync(Claim[])"/>, and the framework builds the session principal the way it
-/// does when no page is involved: the provider's claims under the derived subject, never the
-/// upstream one. A page that links the external identity to a local account passes that account's
-/// own principal to <see cref="SignInAsync(ClaimsPrincipal, string[])"/>.
+/// <see cref="SignInAsync"/>, and the framework builds the session principal the way it does when
+/// no page is involved: the provider's claims under the derived subject, never the upstream one.
+/// A page that links the external identity to a local account passes that account's own
+/// principal to <see cref="SignInWithReplacedPrincipalAsync"/>.
 /// </para>
 /// </remarks>
 public interface IProviderSignInInteraction
@@ -49,17 +49,17 @@ public interface IProviderSignInInteraction
     /// <exception cref="OperationCanceledException">
     /// <paramref name="cancellationToken"/> was cancelled.
     /// </exception>
-    Task<PendingPrincipal?> GetAsync(CancellationToken cancellationToken = default);
+    Task<PendingPrincipal?> GetPendingPrincipalAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Establishes the SSO session for the parked principal, with <paramref name="claims"/> added,
-    /// and continues the authorization request that led here.
+    /// Establishes the SSO session for the parked principal, with <paramref name="additionalClaims"/>
+    /// added, and continues the authorization request that led here.
     /// </summary>
-    /// <param name="claims">
-    /// What the page collected, added alongside the provider's claims. The subject is the
-    /// framework's: a <c>sub</c> or <see cref="ClaimTypes.NameIdentifier"/> claim is refused,
-    /// and claims in the reserved <c>zkd:</c> namespace are stripped. Pass none to promote the
-    /// parked principal as it is.
+    /// <param name="additionalClaims">
+    /// What the page collected, added alongside the provider's claims — only the additions, not
+    /// the provider's claims over again. The subject is the framework's: a <c>sub</c> or
+    /// <see cref="ClaimTypes.NameIdentifier"/> claim is refused, and claims in the reserved
+    /// <c>zkd:</c> namespace are stripped. Pass none to promote the parked principal as it is.
     /// </param>
     /// <remarks>
     /// <para>
@@ -74,36 +74,47 @@ public interface IProviderSignInInteraction
     /// since the framework was told nothing about how the user proved who they are at the
     /// provider. The parked principal is consumed.
     /// </para>
+    /// <para>
+    /// Every refusal below is decided before the parked principal is taken, so a refused page
+    /// can try again, or send the user back to the login page, with the principal still parked.
+    /// </para>
     /// </remarks>
     /// <exception cref="ZeeKayDaInteractionException">
     /// There is no external sign-in to finish: the request carries no <c>zkd_i</c>, or names an
     /// interaction this browser is not carrying — it expired, was already completed, or was
     /// started in another browser — or no principal is parked for it, because it expired or was
-    /// already consumed. Or the parked principal carries no subject on an authenticated identity,
-    /// or a subject claim naming no issuer. Or another response completed the interaction while
-    /// this one was being prepared.
+    /// already consumed. Or the parked principal cannot be promoted: its provider is no longer
+    /// registered, it carries no subject on an authenticated identity, or its subject claim names
+    /// no issuer — a provider handler that must be fixed, since it fails every time. Or another
+    /// response completed the interaction while this one was being prepared.
     /// </exception>
     /// <exception cref="ZeeKayDaStoreException">
-    /// The interaction store or the authorization code store could not be reached. Fail-closed:
-    /// nothing was signed in or issued.
+    /// The interaction store or the authorization code store could not be reached. Before the
+    /// session is established, nothing was signed in or issued; after it, no code was issued and
+    /// the session may already be established, in which case the client is told
+    /// <c>server_error</c> instead.
     /// </exception>
+    /// <exception cref="ArgumentNullException"><paramref name="additionalClaims"/> is null.</exception>
     /// <exception cref="ArgumentException">
-    /// An entry in <paramref name="claims"/> is null, or names the subject.
+    /// An entry in <paramref name="additionalClaims"/> is null, or names the subject.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// The request is not a <c>POST</c> — only the form's submission may sign in, and that is
     /// checked before anything is read — or there is no active HTTP request.
     /// </exception>
-    Task SignInAsync(params Claim[] claims);
+    Task SignInAsync(params Claim[] additionalClaims);
 
     /// <summary>
-    /// Establishes the SSO session for <paramref name="principal"/> — a local account the page
-    /// linked the external identity to — and continues the authorization request that led here.
+    /// Establishes the SSO session for <paramref name="principal"/> in place of the parked one —
+    /// a local account the page linked the external identity to — and continues the authorization
+    /// request that led here.
     /// </summary>
     /// <param name="principal">
-    /// The account the session is for. Must carry a <c>sub</c> or
-    /// <see cref="ClaimTypes.NameIdentifier"/> claim; claims in the framework's reserved
-    /// <c>zkd:</c> namespace are stripped.
+    /// The account the session is for, replacing the parked principal entirely: nothing the
+    /// provider returned is carried into the session. Must carry a <c>sub</c> or
+    /// <see cref="ClaimTypes.NameIdentifier"/> claim; that subject must not be the upstream one
+    /// the provider returned, and claims in the framework's reserved <c>zkd:</c> namespace are
+    /// stripped.
     /// </param>
     /// <param name="authenticationMethods">
     /// How the user proved who they are, reported to the client in the <c>amr</c> claim. Use
@@ -120,19 +131,31 @@ public interface IProviderSignInInteraction
     /// Linking can be more involved than adding a claim — matching an existing account, creating
     /// one, asking the user to sign in locally first — so the session holds the principal the
     /// page built, subject included, exactly as the login page's sign-in does. The parked
-    /// principal is consumed, and the provider that parked it is recorded on the request.
+    /// principal is consumed, and the provider that parked it is recorded on the request. What
+    /// it is not for is passing the parked principal back: the session subject of an external
+    /// sign-in is never the upstream subject verbatim, and a replacement carrying it is refused.
+    /// </para>
+    /// <para>
+    /// Every refusal below is decided before the parked principal is taken, so a refused page
+    /// can try again with the principal still parked.
     /// </para>
     /// </remarks>
     /// <exception cref="ZeeKayDaInteractionException">
     /// There is no external sign-in to finish: the request carries no <c>zkd_i</c>, or names an
     /// interaction this browser is not carrying — it expired, was already completed, or was
     /// started in another browser — or no principal is parked for it, because it expired or was
-    /// already consumed. Or <paramref name="principal"/> carries no subject. Or another response
-    /// completed the interaction while this one was being prepared.
+    /// already consumed, or its provider is no longer registered. Or <paramref name="principal"/>
+    /// carries no subject, or its subject is the upstream subject the provider returned. Or
+    /// another response completed the interaction while this one was being prepared.
     /// </exception>
     /// <exception cref="ZeeKayDaStoreException">
-    /// The interaction store or the authorization code store could not be reached. Fail-closed:
-    /// nothing was signed in or issued.
+    /// The interaction store or the authorization code store could not be reached. Before the
+    /// session is established, nothing was signed in or issued; after it, no code was issued and
+    /// the session may already be established, in which case the client is told
+    /// <c>server_error</c> instead.
+    /// </exception>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="principal"/> or <paramref name="authenticationMethods"/> is null.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// An entry in <paramref name="authenticationMethods"/> is null or blank.
@@ -140,7 +163,7 @@ public interface IProviderSignInInteraction
     /// <exception cref="InvalidOperationException">
     /// The request is not a <c>POST</c>, or there is no active HTTP request.
     /// </exception>
-    Task SignInAsync(ClaimsPrincipal principal, params string[] authenticationMethods);
+    Task SignInWithReplacedPrincipalAsync(ClaimsPrincipal principal, params string[] authenticationMethods);
 
     /// <summary>
     /// Ends the authorization request without signing anyone in, answering the client with

@@ -134,9 +134,11 @@ internal sealed class ResumeEndpoint : IZeeKayDaEndpoint
             return Fail(context, registration, ex);
         }
 
+        // A principal parked for this interaction by an earlier return is superseded by this one.
         // The framework states nothing about how the user proved who they are at the provider —
         // it was told nothing — so no amr is reported for an auto-promoted external sign-in.
-        await _outcomes.CompleteSignInAsync(context, requestContext, promoted, authenticationMethods: [], registration.Name)
+        await _flow.ConsumePendingAsync(context, requestContext.Id).ConfigureAwait(false);
+        await _outcomes.CompleteSignInAsync(context, requestContext, new SignIn(promoted, AuthenticationMethods: [], registration.Name))
             .ConfigureAwait(false);
 
         return Results.Empty;

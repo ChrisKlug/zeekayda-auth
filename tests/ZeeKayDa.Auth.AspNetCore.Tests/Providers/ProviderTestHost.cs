@@ -131,7 +131,7 @@ internal static class ProviderTestHost
         // collected and lets the framework build the session principal.
         endpoints.MapGet(CollectMorePath, async (IProviderSignInInteraction signIn) =>
         {
-            var pending = await signIn.GetAsync();
+            var pending = await signIn.GetPendingPrincipalAsync();
 
             return pending is null
                 ? Results.NotFound()
@@ -148,7 +148,7 @@ internal static class ProviderTestHost
         // The same read with a token the caller has already cancelled.
         endpoints.MapGet(CollectMorePath + "/cancelled", async (IProviderSignInInteraction signIn) =>
         {
-            await signIn.GetAsync(new CancellationToken(canceled: true));
+            await signIn.GetPendingPrincipalAsync(new CancellationToken(canceled: true));
             return Results.Ok();
         });
 
@@ -162,13 +162,22 @@ internal static class ProviderTestHost
         // The linking page: maps the parked principal onto a local account and signs that in.
         endpoints.MapPost(CollectMorePath + "/link", async (IProviderSignInInteraction signIn) =>
         {
-            var pending = await signIn.GetAsync()
+            var pending = await signIn.GetPendingPrincipalAsync()
                 ?? throw new InvalidOperationException("Nothing is parked for this page.");
 
-            await signIn.SignInAsync(
+            await signIn.SignInWithReplacedPrincipalAsync(
                 new ClaimsPrincipal(new ClaimsIdentity(
                     [new Claim("sub", "mapped-" + pending.Principal.FindFirstValue("sub"))], "test")),
                 AuthenticationMethods.Password);
+        });
+
+        // The mistake the service exists to refuse: passing the parked principal straight back.
+        endpoints.MapPost(CollectMorePath + "/link-passthrough", async (IProviderSignInInteraction signIn) =>
+        {
+            var pending = await signIn.GetPendingPrincipalAsync()
+                ?? throw new InvalidOperationException("Nothing is parked for this page.");
+
+            await signIn.SignInWithReplacedPrincipalAsync(pending.Principal, AuthenticationMethods.Password);
         });
 
         // Linking straight from the form, without reading first: the service's own refusals.
@@ -177,7 +186,7 @@ internal static class ProviderTestHost
             var form = await context.Request.ReadFormAsync(context.RequestAborted);
             var claims = form.Select(field => new Claim(field.Key, field.Value.ToString())).ToArray();
 
-            await signIn.SignInAsync(new ClaimsPrincipal(new ClaimsIdentity(claims, "test")), AuthenticationMethods.Password);
+            await signIn.SignInWithReplacedPrincipalAsync(new ClaimsPrincipal(new ClaimsIdentity(claims, "test")), AuthenticationMethods.Password);
         });
 
         endpoints.MapPost(CollectMorePath + "/cancel", (IProviderSignInInteraction signIn) => signIn.DenyAsync());
@@ -191,6 +200,17 @@ internal static class ProviderTestHost
         endpoints.MapGet("/test/sign-in-external", (HttpContext context) => context.SignInAsync(
             ZeeKayDaCookies.External,
             new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", "forged")], "host"))));
+
+        // What the interaction context recorded about the sign-in that answered it.
+        endpoints.MapGet("/test/request-context", async (HttpContext context, AuthorizationFlow flow) =>
+        {
+            var interactionId = await AuthorizationFlow.RequireInteractionIdAsync(context);
+            var requestContext = await flow.ReadAsync(context, interactionId);
+
+            return requestContext is null
+                ? Results.NotFound()
+                : Results.Ok(new { providerScheme = requestContext.ProviderScheme, subject = requestContext.Subject });
+        });
 
         endpoints.MapGet("/test/session", async (HttpContext context) =>
         {

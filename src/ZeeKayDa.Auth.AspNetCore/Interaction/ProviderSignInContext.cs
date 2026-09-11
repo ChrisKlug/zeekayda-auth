@@ -48,9 +48,9 @@ public sealed class ProviderSignInContext
     /// <summary>
     /// Parks <see cref="Principal"/> and sends the user to a page of the host's, to link the
     /// external identity to a local account or to collect what the provider did not supply. That
-    /// page reads the principal back with <see cref="IProviderSignInInteraction.GetAsync"/> and
-    /// finishes with one of the <see cref="IProviderSignInInteraction"/> sign-ins: the collected
-    /// claims, or a linked local account's own principal.
+    /// page reads the principal back with <see cref="IProviderSignInInteraction.GetPendingPrincipalAsync"/> and
+    /// finishes through <see cref="IProviderSignInInteraction"/>: with the claims it collected,
+    /// or with a linked local account's own principal in place of the parked one.
     /// </summary>
     /// <param name="path">
     /// A host-relative path: absolute within the application, starting with <c>/</c>, with no

@@ -153,67 +153,26 @@ internal sealed class InteractionOutcomes
     }
 
     /// <summary>
-    /// Terminal. Promotes <paramref name="principal"/> to the SSO session, records the
-    /// authentication on the interaction context, and continues the flow. A principal parked for
-    /// this interaction is consumed, and the provider that parked it is recorded when
-    /// <paramref name="providerScheme"/> names none.
+    /// Terminal. Promotes the principal in <paramref name="signIn"/> to the SSO session, records
+    /// the authentication on the interaction context, and continues the flow. Nothing parked for
+    /// the interaction is touched: the caller has already taken or discarded it, and says which
+    /// provider, if any, to record.
     /// </summary>
     /// <remarks>
     /// The session and the authenticated context are written before the flow continues, so the
     /// consent page reads a request that already knows who answered it.
     /// </remarks>
-    public async Task CompleteSignInAsync(
-        HttpContext context,
-        AuthorizationRequestContext requestContext,
-        ClaimsPrincipal principal,
-        IReadOnlyList<string> authenticationMethods,
-        string? providerScheme)
+    public async Task CompleteSignInAsync(HttpContext context, AuthorizationRequestContext requestContext, SignIn signIn)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(requestContext);
-        ArgumentNullException.ThrowIfNull(principal);
-        ArgumentNullException.ThrowIfNull(authenticationMethods);
+        ArgumentNullException.ThrowIfNull(signIn);
 
-        var pending = await _flow.ConsumePendingAsync(context, requestContext.Id).ConfigureAwait(false);
-
-        await CompleteSignInCoreAsync(context, requestContext, principal, authenticationMethods, providerScheme ?? pending?.Provider)
-            .ConfigureAwait(false);
-    }
-
-    /// <summary>
-    /// Terminal. As <see cref="CompleteSignInAsync"/>, for a caller that has already taken the
-    /// parked principal out of the store: nothing is consumed here, so a principal parked after
-    /// the caller's take is left where it is, and the provider recorded is the one that parked
-    /// what the caller took.
-    /// </summary>
-    public Task CompleteTakenSignInAsync(
-        HttpContext context,
-        AuthorizationRequestContext requestContext,
-        ClaimsPrincipal principal,
-        IReadOnlyList<string> authenticationMethods,
-        PendingTicket taken)
-    {
-        ArgumentNullException.ThrowIfNull(context);
-        ArgumentNullException.ThrowIfNull(requestContext);
-        ArgumentNullException.ThrowIfNull(principal);
-        ArgumentNullException.ThrowIfNull(authenticationMethods);
-        ArgumentNullException.ThrowIfNull(taken);
-
-        return CompleteSignInCoreAsync(context, requestContext, principal, authenticationMethods, taken.Provider);
-    }
-
-    private async Task CompleteSignInCoreAsync(
-        HttpContext context,
-        AuthorizationRequestContext requestContext,
-        ClaimsPrincipal principal,
-        IReadOnlyList<string> authenticationMethods,
-        string? providerScheme)
-    {
         // A sign-in for a client that skips consent ends with the code in this response, and a
         // cached sign-in response is a stolen one.
         context.Response.Headers.CacheControl = "no-store";
 
-        var state = await _flow.PromoteAsync(context, principal, authenticationMethods).ConfigureAwait(false);
+        var state = await _flow.PromoteAsync(context, signIn.Principal, signIn.AuthenticationMethods).ConfigureAwait(false);
 
         var authenticated = requestContext with
         {
@@ -221,7 +180,7 @@ internal sealed class InteractionOutcomes
             Subject = state.Subject,
             AuthTime = state.AuthTime,
             Amr = state.Amr,
-            ProviderScheme = providerScheme,
+            ProviderScheme = signIn.ProviderScheme,
 
             // A decision recorded by whoever signed in earlier on this interaction is theirs, not
             // this sign-in's: the consent page asks again.
@@ -403,3 +362,10 @@ internal sealed class InteractionOutcomes
         await context.Response.StartAsync().ConfigureAwait(false);
     }
 }
+
+/// <summary>
+/// What a completed sign-in promotes: the principal the session holds, how the user proved who
+/// they are, and the external provider that authenticated them, <see langword="null"/> for a
+/// local sign-in.
+/// </summary>
+internal sealed record SignIn(ClaimsPrincipal Principal, IReadOnlyList<string> AuthenticationMethods, string? ProviderScheme);

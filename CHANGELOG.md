@@ -46,15 +46,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   principal the way it loses the request — and the name stays reserved.
 
   The page that redirect leads to gets its own interaction service, `IProviderSignInInteraction`,
-  and `GetPendingPrincipalAsync` leaves `ILoginInteraction`. `GetAsync` reads the parked
-  principal back; `SignInAsync(params Claim[])` has the framework build the session principal
-  the way it does when no page is involved — the subject derived from the provider, the issuer
-  and the upstream subject, the provider's claims, plus what the page collected — and refuses a
-  subject claim, so a page that passes the provider's principal on can no longer put the raw
-  upstream `sub` into the session; `SignInAsync(ClaimsPrincipal, params string[])` links the
-  external identity to a local account with the host's own principal; `DenyAsync` refuses with
-  the same `access_denied` the `OnProviderSignIn` handler's refusal sends. Both sign-ins refuse
-  when nothing is parked for the interaction.
+  and `GetPendingPrincipalAsync` moves there from `ILoginInteraction`. `SignInAsync(params
+  Claim[] additionalClaims)` has the framework build the session principal the way it does when
+  no page is involved — the subject derived from the provider, the issuer and the upstream
+  subject, the provider's claims, plus what the page collected — and refuses a subject claim;
+  `SignInWithReplacedPrincipalAsync(ClaimsPrincipal, params string[])` links the external
+  identity to a local account, with the host's own principal replacing the parked one, and
+  refuses a principal whose subject is the upstream one the provider returned. Between them, a
+  page can no longer put the raw upstream `sub` into the session. `DenyAsync` refuses with the
+  same `access_denied` the `OnProviderSignIn` handler's refusal sends. Both sign-ins refuse when
+  nothing is parked for the interaction or its provider is no longer registered, and every
+  refusal is decided before the parked principal is taken. A local sign-in at the login page now
+  discards a parked principal instead of recording its provider.
 
 - **Authorization code issuance: a completed flow ends with a code at the client** (#87)
 

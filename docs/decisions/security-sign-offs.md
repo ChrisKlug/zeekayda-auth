@@ -1419,7 +1419,7 @@ security lenses, security agent, CodeScene) plus fix-diff verification of two Hi
 - Expiry is the ticket's, exclusive, never past the interaction; a store fault at the page is a fault, not
   absence; reserved claims never enter the store; the two entry kinds are separate purposes. Closed —
   `A_parked_principal_never_outlives_its_interaction`, `Principal_is_not_readable_at_the_expiry_instant`,
-  `GetAsync_surfaces_a_store_fault_rather_than_reporting_nothing_parked`,
+  `GetPendingPrincipalAsync_surfaces_a_store_fault_rather_than_reporting_nothing_parked`,
   `Reserved_claims_are_stripped_before_parking`, `Context_bytes_cannot_be_read_as_a_parked_principal`.
 - A denial completes when the parked principal cannot be read; a store fault at park is logged as an
   outage. Closed — `DenyAsync_still_answers_access_denied_when_the_parked_principal_cannot_be_read`,

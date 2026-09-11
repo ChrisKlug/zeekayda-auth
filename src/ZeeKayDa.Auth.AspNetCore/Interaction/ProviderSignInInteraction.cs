@@ -8,17 +8,10 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// <summary>
 /// Default <see cref="IProviderSignInInteraction"/> implementation: verifies the handoff, finds
 /// the principal parked for the interaction, then promotes it with the framework's own subject,
-/// promotes the host's linked account instead, or refuses the sign-in.
+/// promotes the host's replacement instead, or refuses the sign-in.
 /// </summary>
 internal sealed class ProviderSignInInteraction : IProviderSignInInteraction
 {
-    /// <summary>
-    /// The claim types that name the subject: refused among collected claims, since the
-    /// framework derives the subject itself, and required on a linked principal. Compared
-    /// ignoring case, as <see cref="ClaimsPrincipal"/> reads them back.
-    /// </summary>
-    private static readonly string[] SubjectClaimTypes = ["sub", ClaimTypes.NameIdentifier];
-
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly ProviderRegistry _providers;
     private readonly AuthorizationFlow _flow;
@@ -42,7 +35,7 @@ internal sealed class ProviderSignInInteraction : IProviderSignInInteraction
     }
 
     /// <inheritdoc/>
-    public async Task<PendingPrincipal?> GetAsync(CancellationToken cancellationToken = default)
+    public async Task<PendingPrincipal?> GetPendingPrincipalAsync(CancellationToken cancellationToken = default)
     {
         var context = RequireHttpContext();
         var interactionId = await AuthorizationFlow.RequireInteractionIdAsync(context).ConfigureAwait(false);
@@ -55,42 +48,46 @@ internal sealed class ProviderSignInInteraction : IProviderSignInInteraction
     }
 
     /// <inheritdoc/>
-    public async Task SignInAsync(params Claim[] claims)
+    public async Task SignInAsync(params Claim[] additionalClaims)
     {
-        ArgumentNullException.ThrowIfNull(claims);
+        ArgumentNullException.ThrowIfNull(additionalClaims);
 
         // A snapshot of the caller's array: what is validated is what is promoted, however the
         // caller's copy changes while the store is awaited. The subject is refused rather than
         // dropped: a page passing one expects it to be used, and silently replacing it would
         // hide the mistake this service exists to prevent.
-        var collected = claims.ToArray();
+        var collected = additionalClaims.ToArray();
         if (collected.Any(claim => claim is null))
-            throw new ArgumentException("An entry in the collected claims is null.", nameof(claims));
+            throw new ArgumentException("An entry in the additional claims is null.", nameof(additionalClaims));
 
-        if (collected.Any(claim => IsSubject(claim.Type)))
+        if (collected.Any(claim => ExternalSubject.IsSubjectClaimType(claim.Type)))
         {
             throw new ArgumentException(
-                "A collected claim names the subject. The session subject of an external sign-in is " +
+                "An additional claim names the subject. The session subject of an external sign-in is " +
                 "derived by the framework from the provider, the issuer and the upstream subject; a " +
                 "page that links the external identity to a local account passes that account's " +
-                "principal to the other SignInAsync overload instead.",
-                nameof(claims));
+                "principal to SignInWithReplacedPrincipalAsync instead.",
+                nameof(additionalClaims));
         }
 
         var context = RequireStateChangingRequest();
-        var (requestContext, pending) = await TakeParkedAsync(context).ConfigureAwait(false);
+        var (requestContext, parked) = await ResolveParkedAsync(context).ConfigureAwait(false);
 
-        var promoted = ExternalSubject.ForPromotion(pending.Provider, pending.Principal);
+        // Validated on the parked principal before it is taken, so a principal that cannot be
+        // promoted stays where it is; built again from what was taken, so nothing stale is promoted.
+        Promote(parked);
+        var taken = await TakeParkedAsync(context, requestContext).ConfigureAwait(false);
+        var promoted = Promote(taken);
         ((ClaimsIdentity)promoted.Identity!).AddClaims(collected.Where(claim => !ReservedClaims.IsReserved(claim)));
 
         // Nothing is stated about how the user proved who they are at the provider, as for an
         // external sign-in that involved no page.
-        await _outcomes.CompleteTakenSignInAsync(context, requestContext, promoted, authenticationMethods: [], pending)
+        await _outcomes.CompleteSignInAsync(context, requestContext, new SignIn(promoted, AuthenticationMethods: [], taken.Provider))
             .ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
-    public async Task SignInAsync(ClaimsPrincipal principal, params string[] authenticationMethods)
+    public async Task SignInWithReplacedPrincipalAsync(ClaimsPrincipal principal, params string[] authenticationMethods)
     {
         ArgumentNullException.ThrowIfNull(principal);
         ArgumentNullException.ThrowIfNull(authenticationMethods);
@@ -105,18 +102,29 @@ internal sealed class ProviderSignInInteraction : IProviderSignInInteraction
         // A snapshot, of the identities since Clone shares them: what is validated is what is
         // promoted. Checked before the parked principal is taken: a principal the session would
         // refuse must not cost the page the one thing it needs to try again.
-        var linked = new ClaimsPrincipal(principal.Identities.Select(identity => identity.Clone()));
-        if (!HasSubject(linked))
+        var replacement = new ClaimsPrincipal(principal.Identities.Select(identity => identity.Clone()));
+        if (!HasSubject(replacement))
         {
             throw new ZeeKayDaInteractionException(
-                "The principal passed to SignInAsync carries no subject. Add a 'sub' or " +
+                "The principal passed to SignInWithReplacedPrincipalAsync carries no subject. Add a 'sub' or " +
                 $"'{ClaimTypes.NameIdentifier}' claim identifying the user.");
         }
 
         var context = RequireStateChangingRequest();
-        var (requestContext, pending) = await TakeParkedAsync(context).ConfigureAwait(false);
+        var (requestContext, parked) = await ResolveParkedAsync(context).ConfigureAwait(false);
 
-        await _outcomes.CompleteTakenSignInAsync(context, requestContext, linked, methods, pending)
+        RequireRegistered(parked);
+        if (CarriesUpstreamSubject(replacement, parked.Principal))
+        {
+            throw new ZeeKayDaInteractionException(
+                "The replacement principal's subject is the upstream subject the provider returned. The " +
+                "session subject of an external sign-in is never the upstream one verbatim: pass a local " +
+                "account's own principal, or let SignInAsync derive the subject.");
+        }
+
+        var taken = await TakeParkedAsync(context, requestContext).ConfigureAwait(false);
+
+        await _outcomes.CompleteSignInAsync(context, requestContext, new SignIn(replacement, methods, taken.Provider))
             .ConfigureAwait(false);
     }
 
@@ -130,30 +138,73 @@ internal sealed class ProviderSignInInteraction : IProviderSignInInteraction
     }
 
     /// <summary>
-    /// The interaction the request is addressed to and the principal parked for it, taken out of
-    /// the store: what is promoted is what was consumed, so a principal parked between a read and
-    /// the completion cannot be discarded in favour of a stale one. A sign-in from this page
-    /// finishes an external sign-in, so an interaction with nothing parked is refused before
-    /// anything is promoted — the login page is where a sign-in from nothing belongs. Two posts
-    /// that both take the principal both promote the same person; the completion claim decides
-    /// which one issues.
+    /// The interaction the request is addressed to and the principal parked for it, read but not
+    /// taken. A sign-in from this page finishes an external sign-in, so an interaction with
+    /// nothing parked is refused before anything is promoted — the login page is where a sign-in
+    /// from nothing belongs.
     /// </summary>
-    private async Task<(AuthorizationRequestContext RequestContext, PendingTicket Pending)> TakeParkedAsync(HttpContext context)
+    private async Task<(AuthorizationRequestContext RequestContext, PendingTicket Parked)> ResolveParkedAsync(HttpContext context)
     {
         var requestContext = await _flow.ResolveAddressedAsync(context).ConfigureAwait(false);
 
-        var pending = await _flow.ConsumePendingAsync(context, requestContext.Id).ConfigureAwait(false)
-            ?? throw new ZeeKayDaInteractionException(
-                "No external sign-in is parked for this interaction: it expired, was already used, or the " +
-                "user did not arrive here through RedirectToAsync. Send the user back to the login page.");
+        var parked = await _flow.ReadPendingAsync(context, requestContext.Id, context.RequestAborted).ConfigureAwait(false)
+            ?? throw NothingParked();
 
-        return (requestContext, pending);
+        return (requestContext, parked);
     }
 
-    private static bool IsSubject(string claimType) => SubjectClaimTypes.Contains(claimType, StringComparer.OrdinalIgnoreCase);
+    /// <summary>
+    /// Takes the parked principal out of the store: what is promoted is what was taken, so a
+    /// principal parked between the read and the take is promoted rather than discarded, and one
+    /// taken by another post in the meantime refuses this one. Two posts that both take the same
+    /// principal both promote the same person; the completion claim decides which one issues.
+    /// </summary>
+    private async Task<PendingTicket> TakeParkedAsync(HttpContext context, AuthorizationRequestContext requestContext) =>
+        await _flow.ConsumePendingAsync(context, requestContext.Id).ConfigureAwait(false)
+        ?? throw NothingParked();
+
+    private static ZeeKayDaInteractionException NothingParked() => new(
+        "No external sign-in is parked for this interaction: it expired, was already used, or the " +
+        "user did not arrive here through RedirectToAsync. Send the user back to the login page.");
+
+    /// <summary>The principal to promote for a parked ticket, from a provider still registered.</summary>
+    private ClaimsPrincipal Promote(PendingTicket ticket)
+    {
+        RequireRegistered(ticket);
+        return ExternalSubject.ForPromotion(ticket.Provider, ticket.Principal);
+    }
+
+    /// <summary>
+    /// A parked principal from a provider that has since been removed from the registration is
+    /// refused, as <see cref="GetPendingPrincipalAsync"/> reports none: what the host no longer
+    /// trusts to sign users in does not get to finish a sign-in it started.
+    /// </summary>
+    private void RequireRegistered(PendingTicket ticket)
+    {
+        if (_providers.Find(ticket.Provider) is null)
+        {
+            throw new ZeeKayDaInteractionException(
+                "The provider that authenticated the parked principal is no longer registered, so the " +
+                "sign-in cannot be finished. Send the user back to the login page.");
+        }
+    }
 
     private static bool HasSubject(ClaimsPrincipal principal) =>
-        SubjectClaimTypes.Any(type => !string.IsNullOrEmpty(principal.FindFirstValue(type)));
+        SubjectValues(principal).Any();
+
+    /// <summary>
+    /// Whether the replacement names, as its subject, a subject the provider returned — the
+    /// literal pass-through of the parked principal, or a copy of its subject claim. Compared by
+    /// value: a host keying local accounts by the upstream subject verbatim is the very thing
+    /// the derived subject exists to prevent.
+    /// </summary>
+    private static bool CarriesUpstreamSubject(ClaimsPrincipal replacement, ClaimsPrincipal parked) =>
+        SubjectValues(replacement).Intersect(SubjectValues(parked), StringComparer.Ordinal).Any();
+
+    private static IEnumerable<string> SubjectValues(ClaimsPrincipal principal) =>
+        principal.Claims
+            .Where(claim => ExternalSubject.IsSubjectClaimType(claim.Type) && !string.IsNullOrEmpty(claim.Value))
+            .Select(claim => claim.Value);
 
     private HttpContext RequireHttpContext() =>
         _httpContextAccessor.HttpContext ?? throw new InvalidOperationException(
@@ -174,8 +225,8 @@ internal sealed class ProviderSignInInteraction : IProviderSignInInteraction
         {
             throw new InvalidOperationException(
                 "A sign-in or cancellation must come from a POST — the page's form submission — not " +
-                "from the request that renders the page. Wire SignInAsync and DenyAsync to the form's " +
-                "post handlers.");
+                "from the request that renders the page. Wire SignInAsync, SignInWithReplacedPrincipalAsync " +
+                "and DenyAsync to the form's post handlers.");
         }
 
         return context;

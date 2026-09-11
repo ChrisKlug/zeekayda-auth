@@ -95,6 +95,7 @@ public sealed class ProviderSignInEventTests
         private readonly InMemoryInteractionBackingStore _inner = new(TimeProvider.System);
 
         private int _pendingReads;
+        private int _pendingRemoves;
 
         public bool FailPendingReads { get; set; }
 
@@ -105,6 +106,9 @@ public sealed class ProviderSignInEventTests
 
         /// <summary>How many parked-principal reads the store has answered.</summary>
         public int PendingReads => Volatile.Read(ref _pendingReads);
+
+        /// <summary>How many parked-principal removals the store has performed.</summary>
+        public int PendingRemoves => Volatile.Read(ref _pendingRemoves);
 
         public ValueTask SetAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken) =>
             FailPendingWrites && IsPending(key) ? throw new InvalidOperationException("store is down") : _inner.SetAsync(key, value, expiresAt, cancellationToken);
@@ -123,8 +127,13 @@ public sealed class ProviderSignInEventTests
             return await _inner.GetAsync(key, cancellationToken);
         }
 
-        public ValueTask RemoveAsync(StoreKey key, CancellationToken cancellationToken) =>
-            _inner.RemoveAsync(key, cancellationToken);
+        public ValueTask RemoveAsync(StoreKey key, CancellationToken cancellationToken)
+        {
+            if (IsPending(key))
+                Interlocked.Increment(ref _pendingRemoves);
+
+            return _inner.RemoveAsync(key, cancellationToken);
+        }
 
         private static bool IsPending(StoreKey key) => key.ToString().StartsWith("zkd:interaction:p:", StringComparison.Ordinal);
     }
@@ -381,7 +390,7 @@ public sealed class ProviderSignInEventTests
     }
 
     [Fact]
-    public async Task SignInAsync_with_a_linked_principal_without_a_subject_is_refused_before_the_parked_principal_is_taken()
+    public async Task SignInWithReplacedPrincipalAsync_without_a_subject_is_refused_before_the_parked_principal_is_taken()
     {
         // A principal the session would refuse must not cost the page the parked principal it
         // needs to try again.
@@ -400,24 +409,27 @@ public sealed class ProviderSignInEventTests
     }
 
     [Fact]
-    public async Task SignInAsync_takes_the_parked_principal_from_the_store_exactly_once()
+    public async Task SignInAsync_reads_the_parked_principal_to_validate_it_then_takes_it_once()
     {
-        // One take, then promotion of what was taken: a second consume inside the completion
-        // would remove a principal parked in the meantime while promoting the earlier one.
+        // One read to validate, one take, then promotion of what was taken: a further consume
+        // inside the completion would remove a principal parked in the meantime while promoting
+        // the earlier one.
         var store = new FaultableInteractionStore();
         using var factory = NewFaultableFactory(store);
         using var client = NewClient(factory);
         var (_, resume) = await ResumeAsync(client);
-        var before = store.PendingReads;
+        var reads = store.PendingReads;
+        var removes = store.PendingRemoves;
 
         var signIn = await client.PostAsync(resume.Headers.Location!.OriginalString, Form(("dept", "sales")), Cancellation);
 
         signIn.ShouldHaveReachedConsent();
-        (store.PendingReads - before).Should().Be(1);
+        (store.PendingReads - reads).Should().Be(2);
+        (store.PendingRemoves - removes).Should().Be(1);
     }
 
     [Fact]
-    public async Task SignInAsync_with_a_linked_principal_promotes_the_principal_as_validated_not_as_later_changed()
+    public async Task SignInWithReplacedPrincipalAsync_promotes_the_principal_as_validated_not_as_later_changed()
     {
         // A host that keeps a reference to the principal it passed and changes it while the
         // store is awaited signs in what was validated, not the replacement.
@@ -442,7 +454,7 @@ public sealed class ProviderSignInEventTests
                     var identity = new System.Security.Claims.ClaimsIdentity([new System.Security.Claims.Claim("sub", "local-1")], "test");
                     var principal = new System.Security.Claims.ClaimsPrincipal(identity);
 
-                    var signingIn = signIn.SignInAsync(principal, ZeeKayDa.Auth.Authorization.AuthenticationMethods.Password);
+                    var signingIn = signIn.SignInWithReplacedPrincipalAsync(principal, ZeeKayDa.Auth.Authorization.AuthenticationMethods.Password);
                     await entered.Task;
                     identity.RemoveClaim(identity.FindFirst("sub"));
                     identity.AddClaim(new System.Security.Claims.Claim("sub", "hijacked"));
@@ -462,6 +474,74 @@ public sealed class ProviderSignInEventTests
 
         signIn.ShouldHaveReachedConsent();
         (await ReadJsonAsync(client, "/test/session"))!.Value.GetProperty("sub").GetString().Should().Be("local-1");
+    }
+
+    [Fact]
+    public async Task SignInWithReplacedPrincipalAsync_refuses_the_parked_principal_passed_straight_back()
+    {
+        // The bug this service exists to close, written the obvious way: the replacement is the
+        // provider's principal itself, upstream subject and all. Refused before the take.
+        using var factory = NewFactory(context => context.RedirectToAsync(CollectMorePath));
+        using var client = NewClient(factory);
+        var (interactionId, resume) = await ResumeAsync(client);
+
+        var signIn = async () => await client.PostAsync(WithInteractionId(CollectMorePath + "/link-passthrough", interactionId), Form(), Cancellation);
+
+        await signIn.Should().ThrowAsync<ZeeKayDaInteractionException>().WithMessage("*upstream subject*");
+        (await ReadJsonAsync(client, "/test/session")).Should().BeNull("nothing was promoted");
+        (await ReadJsonAsync(client, resume.Headers.Location!.OriginalString)).Should().NotBeNull("the parked principal is still there to finish with");
+    }
+
+    [Theory]
+    [InlineData("sub")]
+    [InlineData(System.Security.Claims.ClaimTypes.NameIdentifier)]
+    public async Task SignInWithReplacedPrincipalAsync_refuses_a_copy_of_the_upstream_subject(string claimType)
+    {
+        // A local principal built around the upstream subject value is the same bypass with an
+        // extra step, whatever the claim type or issuer.
+        using var factory = NewFactory(context => context.RedirectToAsync(CollectMorePath));
+        using var client = NewClient(factory);
+        var (interactionId, resume) = await ResumeAsync(client);
+
+        var signIn = async () => await client.PostAsync(WithInteractionId(CollectMorePath + "/link-direct", interactionId), Form((claimType, UpstreamSubject)), Cancellation);
+
+        await signIn.Should().ThrowAsync<ZeeKayDaInteractionException>().WithMessage("*upstream subject*");
+        (await ReadJsonAsync(client, resume.Headers.Location!.OriginalString)).Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task Both_sign_ins_from_the_host_page_record_the_provider_that_parked_the_principal()
+    {
+        using var factory = NewFactory(context => context.RedirectToAsync(CollectMorePath));
+        using var client = NewClient(factory);
+        var (collected, collectedResume) = await ResumeAsync(client);
+        var (replaced, _) = await ResumeAsync(client);
+
+        (await client.PostAsync(collectedResume.Headers.Location!.OriginalString, Form(), Cancellation)).ShouldHaveReachedConsent();
+        (await client.PostAsync(WithInteractionId(CollectMorePath + "/link", replaced), Form(), Cancellation)).ShouldHaveReachedConsent();
+
+        (await ReadJsonAsync(client, WithInteractionId("/test/request-context", collected)))!.Value.GetProperty("providerScheme").GetString().Should().Be("acme");
+        (await ReadJsonAsync(client, WithInteractionId("/test/request-context", replaced)))!.Value.GetProperty("providerScheme").GetString().Should().Be("acme");
+    }
+
+    [Fact]
+    public async Task A_local_sign_in_at_the_login_page_discards_a_parked_principal_and_records_no_provider()
+    {
+        // The login page signs in the host's own principal: a principal parked for the
+        // interaction is neither adopted nor left behind, and a password sign-in is not reported
+        // as an external one.
+        using var factory = NewFactory(context => context.RedirectToAsync(CollectMorePath));
+        using var client = NewClient(factory);
+        var (interactionId, resume) = await ResumeAsync(client);
+
+        var signIn = await client.PostAsync(WithInteractionId(LoginPath, interactionId), Form(("sub", "user-1")), Cancellation);
+
+        signIn.ShouldHaveReachedConsent();
+        var recorded = (await ReadJsonAsync(client, WithInteractionId("/test/request-context", interactionId)))!.Value;
+        recorded.GetProperty("providerScheme").ValueKind.Should().Be(System.Text.Json.JsonValueKind.Null);
+        recorded.GetProperty("subject").GetString().Should().Be("user-1");
+        (await ReadJsonAsync(client, resume.Headers.Location!.OriginalString)).Should().BeNull("the parked principal was discarded");
+        StoreEntryCount(factory).Should().Be(1);
     }
 
     [Fact]
@@ -510,7 +590,7 @@ public sealed class ProviderSignInEventTests
     }
 
     [Fact]
-    public async Task SignInAsync_with_a_linked_principal_promotes_it_and_consumes_the_parked_one()
+    public async Task SignInWithReplacedPrincipalAsync_promotes_the_replacement_and_consumes_the_parked_one()
     {
         using var factory = NewFactory(context => context.RedirectToAsync(CollectMorePath));
         using var client = NewClient(factory);
@@ -600,7 +680,7 @@ public sealed class ProviderSignInEventTests
     {
         // The same rule promotion applies with no page involved: the derived subject needs the
         // issuer, and a parked principal without one cannot be finished through the collected
-        // claims. The interaction survives for the login page.
+        // claims. It stays parked, and the interaction survives for the login page.
         using var factory = new TestWebAppFactory(
             configureBuilder: builder => builder.WithProviders(
                 auth => AddHandWritten(auth, options => options.SubjectWithoutIssuer = true),
@@ -615,6 +695,7 @@ public sealed class ProviderSignInEventTests
 
         await signIn.Should().ThrowAsync<ZeeKayDaInteractionException>().WithMessage("*issuer*");
         (await ReadJsonAsync(client, "/test/session")).Should().BeNull();
+        (await ReadJsonAsync(client, resume.Headers.Location!.OriginalString)).Should().NotBeNull("the refusal was decided before the parked principal was taken");
     }
 
     [Fact]
@@ -631,7 +712,7 @@ public sealed class ProviderSignInEventTests
     }
 
     [Fact]
-    public async Task GetAsync_without_an_interaction_id_is_refused()
+    public async Task GetPendingPrincipalAsync_without_an_interaction_id_is_refused()
     {
         using var factory = NewFactory(context => context.RedirectToAsync(CollectMorePath));
         using var client = NewClient(factory);
@@ -643,7 +724,7 @@ public sealed class ProviderSignInEventTests
     }
 
     [Fact]
-    public async Task GetAsync_honours_a_cancelled_token()
+    public async Task GetPendingPrincipalAsync_honours_a_cancelled_token()
     {
         using var factory = NewFactory(context => context.RedirectToAsync(CollectMorePath));
         using var client = NewClient(factory);
@@ -671,7 +752,7 @@ public sealed class ProviderSignInEventTests
             mapEndpoints: MapHostPages);
 
     [Fact]
-    public async Task GetAsync_surfaces_a_store_fault_rather_than_reporting_nothing_parked()
+    public async Task GetPendingPrincipalAsync_surfaces_a_store_fault_rather_than_reporting_nothing_parked()
     {
         // The page must not tell the user there is nothing to link because the store is down.
         var store = new FaultableInteractionStore();

@@ -62,9 +62,10 @@ internal sealed class LoginInteraction : ILoginInteraction
         var context = RequireStateChangingRequest();
         var requestContext = await _flow.ResolveAddressedAsync(context).ConfigureAwait(false);
 
-        // The host's principal is what the session holds; a provider that parked one for this
-        // interaction is recorded on the request by the completion.
-        await _outcomes.CompleteSignInAsync(context, requestContext, principal, authenticationMethods, providerScheme: null)
+        // A principal an external provider parked for this interaction is discarded, not adopted:
+        // the login page signs in the host's own principal, and a local sign-in records no provider.
+        await _flow.ConsumePendingAsync(context, requestContext.Id).ConfigureAwait(false);
+        await _outcomes.CompleteSignInAsync(context, requestContext, new SignIn(principal, authenticationMethods, ProviderScheme: null))
             .ConfigureAwait(false);
     }
 
