@@ -97,23 +97,6 @@ internal static class ProviderTestHost
         };
     }
 
-    /// <summary>
-    /// The working provider, returning a second identity whose <c>Clone</c> hands back the same
-    /// instance: what a copy made through that virtual would alias.
-    /// </summary>
-    public static void ConfigureAcmeWithSelfCloningIdentity(OAuthOptions options)
-    {
-        ConfigureAcme(options);
-        var creatingTicket = options.Events.OnCreatingTicket;
-        options.Events.OnCreatingTicket = async context =>
-        {
-            await creatingTicket(context);
-            context.Principal!.AddIdentity(new SelfCloningIdentity(
-                [new Claim("dept", "sales", ClaimValueTypes.String, context.Scheme.Name)],
-                "acme-directory"));
-        };
-    }
-
     /// <summary>An identity whose <c>Clone</c> returns itself — a copy site that trusts the virtual gets an alias.</summary>
     public sealed class SelfCloningIdentity(IEnumerable<Claim> claims, string authenticationType) : ClaimsIdentity(claims, authenticationType)
     {

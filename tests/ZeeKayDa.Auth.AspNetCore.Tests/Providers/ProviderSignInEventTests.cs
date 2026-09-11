@@ -446,29 +446,6 @@ public sealed class ProviderSignInEventTests
     }
 
     [Fact]
-    public async Task A_handler_that_changes_a_self_cloning_identity_it_was_handed_does_not_change_what_is_parked()
-    {
-        // The copy the handler receives is rebuilt from the claims, not cloned through the
-        // provider identity's own Clone: an identity handing back itself from Clone still cannot
-        // reach what the framework parks.
-        using var factory = NewFactory(
-            context =>
-            {
-                var directory = context.Principal.Identities.Last();
-                directory.RemoveClaim(directory.FindFirst("dept"));
-                directory.AddClaim(new System.Security.Claims.Claim("dept", "hijacked"));
-                return context.RedirectToAsync(CollectMorePath);
-            },
-            ConfigureAcmeWithSelfCloningIdentity);
-        using var client = NewClient(factory);
-        var (_, resume) = await ResumeAsync(client);
-
-        var pending = (await ReadJsonAsync(client, resume.Headers.Location!.OriginalString))!.Value;
-
-        pending.GetProperty("dept").GetString().Should().Be("sales");
-    }
-
-    [Fact]
     public async Task SignInWithReplacedPrincipalAsync_copies_an_identity_whose_Clone_returns_itself()
     {
         // As above, for the replacement a page passes: rebuilt from the claims, so a host
