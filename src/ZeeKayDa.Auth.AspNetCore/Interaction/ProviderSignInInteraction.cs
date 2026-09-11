@@ -40,6 +40,10 @@ internal sealed class ProviderSignInInteraction : IProviderSignInInteraction
         var context = RequireHttpContext();
         var interactionId = await AuthorizationFlow.RequireInteractionIdAsync(context).ConfigureAwait(false);
 
+        // Stamped whatever the read finds: the page renders either way, and the one that shows the
+        // provider's identity and takes a decision is the one an attacker would frame.
+        RenderedPage.Protect(context.Response);
+
         var pending = await _flow.ReadPendingAsync(context, interactionId, cancellationToken).ConfigureAwait(false);
         if (pending is null || _providers.Find(pending.Provider) is not { } registration)
             return null;

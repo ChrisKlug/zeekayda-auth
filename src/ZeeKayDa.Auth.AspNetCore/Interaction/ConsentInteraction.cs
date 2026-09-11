@@ -1,6 +1,5 @@
 using System.Collections.Immutable;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Net.Http.Headers;
 using ZeeKayDa.Auth.Authorization;
 using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Scopes;
@@ -51,7 +50,7 @@ internal sealed class ConsentInteraction : IConsentInteraction
         cancellationToken.ThrowIfCancellationRequested();
         var (requestContext, client) = await ResolveAsync(context, cancellationToken).ConfigureAwait(false);
 
-        ProtectRenderedPage(context.Response);
+        RenderedPage.Protect(context.Response);
 
         // The subject was written by the same promotion that wrote the session identifier
         // ResolveAsync just matched, so it is present whenever that check passed.
@@ -131,20 +130,6 @@ internal sealed class ConsentInteraction : IConsentInteraction
                 "request again.");
 
         return (requestContext, client);
-    }
-
-    /// <summary>
-    /// The consent page takes a one-click decision, so the response that renders it is framed by
-    /// nobody and cached by nothing. No consent page can render without the call that stamps
-    /// this, which is what makes it a guarantee rather than guidance. The frame-ancestors policy
-    /// is appended, so a policy the host set of its own still applies alongside it.
-    /// </summary>
-    private static void ProtectRenderedPage(HttpResponse response)
-    {
-        var headers = response.Headers;
-        headers.CacheControl = "no-store";
-        headers.Append(HeaderNames.ContentSecurityPolicy, "frame-ancestors 'none'");
-        headers.XFrameOptions = "DENY";
     }
 
     private HttpContext RequireHttpContext() =>

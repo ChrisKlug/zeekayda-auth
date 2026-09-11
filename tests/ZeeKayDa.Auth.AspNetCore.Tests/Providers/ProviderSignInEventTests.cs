@@ -297,6 +297,23 @@ public sealed class ProviderSignInEventTests
     }
 
     [Fact]
+    public async Task GetPendingPrincipalAsync_makes_the_rendered_page_unframeable_and_uncacheable()
+    {
+        // The page shows the provider's identity and takes a one-click decision, so an attacker
+        // who can frame it can steer that click — the consent page's rule, and the same stamp.
+        using var factory = NewFactory(context => context.RedirectToAsync(CollectMorePath));
+        using var client = NewClient(factory);
+        var (_, resume) = await ResumeAsync(client);
+
+        var response = await client.GetAsync(resume.Headers.Location!.OriginalString, Cancellation);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.GetValues("Content-Security-Policy").Should().Equal("frame-ancestors 'none'");
+        response.Headers.GetValues("X-Frame-Options").Should().Equal("DENY");
+        response.Headers.CacheControl!.NoStore.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task The_host_page_reads_the_parked_principal_back_without_the_framework_claims()
     {
         using var factory = NewFactory(context => context.RedirectToAsync(CollectMorePath));

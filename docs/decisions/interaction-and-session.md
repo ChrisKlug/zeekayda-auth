@@ -102,9 +102,9 @@ response cannot claim again once the winner's claim lapsed. A loser refuses as a
 
 **ZeeKayDa owns no interaction UI.** Login, consent and provider selection are the host's pages, and
 the host brings its own user model, identity store, branding and MFA. The cost is real: a host writes
-more code than a framework-shipped default page would need. The response a consent page calls
-`GetRequestAsync` from — it cannot render without — is stamped `frame-ancestors 'none'`,
-`X-Frame-Options: DENY` and `no-store`; the login page has no such call and is still frameable.
+more code than a shipped default page would need. The response a consent page calls `GetRequestAsync`
+from, or a provider sign-in page `GetPendingPrincipalAsync` from — neither renders without — is stamped
+`frame-ancestors 'none'`, `X-Frame-Options: DENY` and `no-store`; the login page has no such call and is still frameable.
 
 **Provider schemes exist only in the framework's scheme map, and what would make them visible to
 the host fails at startup.** `WithProviders` replays the scheme-map configurers the host's callback
