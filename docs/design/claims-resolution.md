@@ -68,9 +68,12 @@ is no `object` overload, so `null`, a `DateTimeOffset` or a domain entity does n
 `JsonElement` of kind `Null` or `Undefined` throws at construction, because an unavailable claim is
 expressed by not returning the record (OIDC Core §5.3.2). The element is cloned on receipt, so
 nothing the provider still holds can change a token afterwards, and `TokenPayload` writes it raw by
-its runtime type with nothing left to convert. A claim name appears at most once in a result; a
-multi-valued claim is one record whose value is a JSON array. A duplicate name is a provider bug and
-aborts issuance as an infrastructure failure, exactly as `TokenPayload` refuses a duplicate name.
+its runtime type with nothing left to convert. A struct is still default-constructible, so
+`default(ClaimRecord)` is guarded the way `TokenIssuanceContext` guards it: `Type` and `Value` throw
+on a default instance, and selection treats one in a result as a provider bug. A claim name appears
+at most once in a result; a multi-valued claim is one record whose value is a JSON array. A
+duplicate name, like a default record, aborts issuance as an infrastructure failure, exactly as
+`TokenPayload` refuses a duplicate name.
 
 ## Rejected
 
