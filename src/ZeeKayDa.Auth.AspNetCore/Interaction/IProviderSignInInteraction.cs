@@ -33,6 +33,14 @@ public interface IProviderSignInInteraction
     /// so, not fail.
     /// </summary>
     /// <param name="cancellationToken">Cancels the read; pass the request's own token.</param>
+    /// <remarks>
+    /// The page shows the provider's identity and takes a one-click decision, so the response
+    /// this is called from is marked unframeable (<c>Content-Security-Policy: frame-ancestors
+    /// 'none'</c>, appended alongside any policy of the host's, and <c>X-Frame-Options: DENY</c>)
+    /// and uncacheable (<c>Cache-Control: no-store</c>), as the consent page's is — whatever the
+    /// read finds. A page renders nothing meaningful without this call, so every rendered page
+    /// carries the protection; one that renders without calling it is on its own.
+    /// </remarks>
     /// <exception cref="ZeeKayDaInteractionException">
     /// The request carries no <c>zkd_i</c>, so there is no interaction to read a parked principal
     /// for. The framework adds it to the URL it redirects the page to; a form that regenerates its
