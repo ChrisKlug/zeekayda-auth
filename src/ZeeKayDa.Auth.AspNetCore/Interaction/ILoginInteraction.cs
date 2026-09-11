@@ -60,6 +60,11 @@ public interface ILoginInteraction
     /// browser — it throws, because the response has already started.
     /// </para>
     /// <para>
+    /// A principal an external provider parked for this interaction — one the host's page did
+    /// not finish with — is discarded: the session holds <paramref name="principal"/>, and a
+    /// local sign-in records no provider.
+    /// </para>
+    /// <para>
     /// Passing none omits the <c>amr</c> claim rather than assuming a password. The claim is
     /// optional in OpenID Connect, and a relying party may gate a sensitive operation on what it
     /// says — so the framework states nothing about a sign-in it was told nothing about, instead

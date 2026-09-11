@@ -510,6 +510,53 @@ public sealed class ProviderSignInEventTests
     }
 
     [Fact]
+    public async Task SignInWithReplacedPrincipalAsync_holds_a_principal_parked_between_the_read_and_the_take_to_the_same_rule()
+    {
+        // The replacement passes against the principal read from acme; while the take is in
+        // flight, the user returns through the hand-written provider, whose upstream subject the
+        // replacement happens to carry. What was taken is what the rule is applied to.
+        var atTake = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var proceed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var store = new FaultableInteractionStore();
+        using var factory = new TestWebAppFactory(
+            configureBuilder: builder =>
+            {
+                builder.WithProviders(
+                    auth =>
+                    {
+                        auth.AddOAuth("acme", "Acme", ConfigureAcme);
+                        AddHandWritten(auth);
+                    },
+                    options => options.OnProviderSignIn = context => context.RedirectToAsync(CollectMorePath));
+                builder.AddInMemoryAuthorizationCodeStore(allowOutsideDevelopment: true);
+                builder.AddInMemoryRefreshTokenStore(allowOutsideDevelopment: true);
+                builder.Services.AddSingleton<IInteractionBackingStore>(store);
+            },
+            mapEndpoints: MapHostPages);
+        using var client = NewClient(factory);
+        var (interactionId, _) = await ResumeAsync(client);
+        var reads = 0;
+        store.BeforePendingRead = async () =>
+        {
+            if (Interlocked.Increment(ref reads) != 2)
+                return;
+
+            atTake.SetResult();
+            await proceed.Task;
+        };
+
+        var signIn = client.PostAsync(WithInteractionId(CollectMorePath + "/link-direct", interactionId), Form(("sub", HandWrittenSubject)), Cancellation);
+        await atTake.Task.WaitAsync(Cancellation);
+        store.BeforePendingRead = null;
+        await ResumeThroughHandWrittenAsync(client, interactionId);
+        proceed.SetResult();
+
+        var completion = async () => await signIn;
+        await completion.Should().ThrowAsync<ZeeKayDaInteractionException>().WithMessage("*upstream subject*");
+        (await ReadJsonAsync(client, "/test/session")).Should().BeNull("nothing was promoted");
+    }
+
+    [Fact]
     public async Task Both_sign_ins_from_the_host_page_record_the_provider_that_parked_the_principal()
     {
         using var factory = NewFactory(context => context.RedirectToAsync(CollectMorePath));

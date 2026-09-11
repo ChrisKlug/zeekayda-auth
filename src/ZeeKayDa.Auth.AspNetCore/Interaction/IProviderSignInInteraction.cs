@@ -75,8 +75,9 @@ public interface IProviderSignInInteraction
     /// provider. The parked principal is consumed.
     /// </para>
     /// <para>
-    /// Every refusal below is decided before the parked principal is taken, so a refused page
-    /// can try again, or send the user back to the login page, with the principal still parked.
+    /// Every refusal of the sign-in itself is decided before the parked principal is taken, so
+    /// a refused page can try again, or send the user back to the login page, with the principal
+    /// still parked. Only another response completing the interaction first is found later.
     /// </para>
     /// </remarks>
     /// <exception cref="ZeeKayDaInteractionException">
@@ -89,10 +90,10 @@ public interface IProviderSignInInteraction
     /// response completed the interaction while this one was being prepared.
     /// </exception>
     /// <exception cref="ZeeKayDaStoreException">
-    /// The interaction store or the authorization code store could not be reached. Before the
-    /// session is established, nothing was signed in or issued; after it, no code was issued and
-    /// the session may already be established, in which case the client is told
-    /// <c>server_error</c> instead.
+    /// The interaction store or the authorization code store could not be reached before the
+    /// session was established. Fail-closed: nothing was signed in or issued. A store fault
+    /// after that point is answered to the client as <c>server_error</c> rather than thrown,
+    /// with the session already established.
     /// </exception>
     /// <exception cref="ArgumentNullException"><paramref name="additionalClaims"/> is null.</exception>
     /// <exception cref="ArgumentException">
@@ -136,8 +137,9 @@ public interface IProviderSignInInteraction
     /// sign-in is never the upstream subject verbatim, and a replacement carrying it is refused.
     /// </para>
     /// <para>
-    /// Every refusal below is decided before the parked principal is taken, so a refused page
-    /// can try again with the principal still parked.
+    /// Every refusal of the sign-in itself is decided before the parked principal is taken, so
+    /// a refused page can try again with the principal still parked. Only another response
+    /// completing the interaction first is found later.
     /// </para>
     /// </remarks>
     /// <exception cref="ZeeKayDaInteractionException">
@@ -149,10 +151,10 @@ public interface IProviderSignInInteraction
     /// another response completed the interaction while this one was being prepared.
     /// </exception>
     /// <exception cref="ZeeKayDaStoreException">
-    /// The interaction store or the authorization code store could not be reached. Before the
-    /// session is established, nothing was signed in or issued; after it, no code was issued and
-    /// the session may already be established, in which case the client is told
-    /// <c>server_error</c> instead.
+    /// The interaction store or the authorization code store could not be reached before the
+    /// session was established. Fail-closed: nothing was signed in or issued. A store fault
+    /// after that point is answered to the client as <c>server_error</c> rather than thrown,
+    /// with the session already established.
     /// </exception>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="principal"/> or <paramref name="authenticationMethods"/> is null.

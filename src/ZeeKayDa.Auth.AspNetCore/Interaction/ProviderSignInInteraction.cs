@@ -115,14 +115,15 @@ internal sealed class ProviderSignInInteraction : IProviderSignInInteraction
 
         RequireRegistered(parked);
         if (CarriesUpstreamSubject(replacement, parked.Principal))
-        {
-            throw new ZeeKayDaInteractionException(
-                "The replacement principal's subject is the upstream subject the provider returned. The " +
-                "session subject of an external sign-in is never the upstream one verbatim: pass a local " +
-                "account's own principal, or let SignInAsync derive the subject.");
-        }
+            throw UpstreamSubjectRefused();
 
+        // Checked again on what was taken: a principal parked between the read and the take is
+        // held to the same rule, at the cost of losing it — the concurrent re-park is the one
+        // path on which a refusal costs the page its retry.
         var taken = await TakeParkedAsync(context, requestContext).ConfigureAwait(false);
+        RequireRegistered(taken);
+        if (CarriesUpstreamSubject(replacement, taken.Principal))
+            throw UpstreamSubjectRefused();
 
         await _outcomes.CompleteSignInAsync(context, requestContext, new SignIn(replacement, methods, taken.Provider))
             .ConfigureAwait(false);
@@ -162,6 +163,11 @@ internal sealed class ProviderSignInInteraction : IProviderSignInInteraction
     private async Task<PendingTicket> TakeParkedAsync(HttpContext context, AuthorizationRequestContext requestContext) =>
         await _flow.ConsumePendingAsync(context, requestContext.Id).ConfigureAwait(false)
         ?? throw NothingParked();
+
+    private static ZeeKayDaInteractionException UpstreamSubjectRefused() => new(
+        "The replacement principal's subject is the upstream subject the provider returned. The " +
+        "session subject of an external sign-in is never the upstream one verbatim: pass a local " +
+        "account's own principal, or let SignInAsync derive the subject.");
 
     private static ZeeKayDaInteractionException NothingParked() => new(
         "No external sign-in is parked for this interaction: it expired, was already used, or the " +

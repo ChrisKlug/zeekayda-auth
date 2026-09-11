@@ -129,11 +129,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   The host takes part through the new second argument of `WithProviders`:
   `ProviderOptions.OnProviderSignIn` fires at resume with a `ProviderSignInContext` — the
   principal, the provider, the client (`ClientInformation.ClientId`) and the effective scopes.
-  `RedirectToAsync(path)` parks the principal in the pending cookie, bound to its interaction, and
-  sends the user to a host-relative page carrying `zkd_i`; that page reads it back with
-  `ILoginInteraction.GetPendingPrincipalAsync()` — `null` when absent, expired or bound to another
-  interaction — and finishes with `SignInAsync`, which consumes it. The parked principal keeps
-  every identity the provider returned. `DenyAsync()` answers the
+  `RedirectToAsync(path)` parks the principal, bound to its interaction, and sends the user to a
+  host-relative page carrying `zkd_i`; that page reads it back with
+  `IProviderSignInInteraction.GetPendingPrincipalAsync()` — `null` when absent, expired or bound
+  to another interaction — and finishes through that service, which consumes it. The parked
+  principal keeps every identity the provider returned. `DenyAsync()` answers the
   client with `access_denied` naming the provider stage. Calling neither promotes; calling both,
   or a path outside the host, throws.
 
