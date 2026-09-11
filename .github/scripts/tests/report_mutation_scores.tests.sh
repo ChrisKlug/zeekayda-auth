@@ -144,6 +144,17 @@ assert_contains "a failed leg does not produce a partial roll-up" "${BODY}" '"Ze
 assert_contains "the failed leg reports no score" "${BODY}" '"ZeeKayDa.Auth.Tests-security-authorization":null'
 assert_contains "the comment says a leg failed" "${COMMENT}" "a leg likely failed"
 
+# Case 4b: every core slice reports again, against a previous body whose state block carries the
+# target row's own key. That key is the roll-up row, not a leg, so it must not void the roll-up.
+CASE4B="${WORK_DIR}/case4b"
+write_report "${CASE4B}/artifacts" "ZeeKayDa.Auth.Tests-tokens" 16 4
+write_report "${CASE4B}/artifacts" "ZeeKayDa.Auth.Tests-clients" 9 3
+write_report "${CASE4B}/artifacts" "ZeeKayDa.Auth.Tests-security-authorization" 5 3
+run_report "${CASE4B}/artifacts" "${CASE2}/out/body.md" "${CASE4B}/out" >/dev/null
+assert_contains "the roll-up survives its own row in the previous state block" \
+    "$(cat "${CASE4B}/out/body.md")" '"ZeeKayDa.Auth.Tests":75'
+assert_missing "an unchanged roll-up posts no comment" "$(ls "${CASE4B}/out")" "comment.md"
+
 # Case 5: nothing to report at all is an error, not a silent green run that wipes the issue body.
 CASE5="${WORK_DIR}/case5"
 mkdir -p "${CASE5}/artifacts"
