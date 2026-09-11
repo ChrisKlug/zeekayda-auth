@@ -83,7 +83,9 @@ result.
 
 **Claim values travel in their wire type, never pre-encoded.** `email_verified` is a boolean,
 `updated_at` a number and `address` an object (OIDC Core §5.1.1); a string-only transfer value cannot
-represent them. Repeated records for one name are written as one JSON array.
+represent them. A claim name appears at most once in a provider's result — a multi-valued claim is one
+array value — and a duplicate aborts issuance as an infrastructure failure. Selected values are
+serialised once, at selection; the provider's objects are not referenced afterwards.
 
 **Claim selection is configuration, not a seam.** A scope names the claim types it unlocks in the ID
 token and userinfo, and separately in the access token; a client registration may add types to

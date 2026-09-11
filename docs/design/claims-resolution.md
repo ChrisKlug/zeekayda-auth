@@ -54,7 +54,11 @@ identity-store round trips — and a cache miss on it is structurally "first iss
 `ClaimRecord.Value` is `object?`, serialised by its runtime type under the same rule as
 `TokenPayload`: a provider returns `email_verified` as a `bool`, `updated_at` as a `long`, and
 `address` as an object carrying the OIDC Core §5.1.1 member names — never as pre-encoded strings.
-Repeated records for one type are written as one JSON array under that name, in the order returned.
+A claim name appears at most once in a result; a multi-valued claim is one record whose value is
+an array. A duplicate name is a provider bug and aborts issuance as an infrastructure failure,
+exactly as `TokenPayload` refuses a duplicate claim name. The framework serialises selected values
+once, when it selects them, and holds no reference to the provider's objects afterwards, so a graph
+the host mutates later cannot change a token or make the two tokens of one issuance disagree.
 (Changed 2026-09-11, issue #92: the original `string Value` could not represent the standard
 boolean, number and object claims.)
 
@@ -80,3 +84,6 @@ boolean, number and object claims.)
 - **A string-only claim value.** The original `ClaimRecord` shape. `email_verified`, `updated_at`
   and `address` are boolean, number and object on the wire, so a string value forced either a
   nonconforming token or claim-specific reconstruction inside the writer.
+- **Merging repeated records for one name into a JSON array.** Turns two `email_verified` records
+  into `[true, false]` where OIDC Core §5.1.1 requires a boolean, and `address` into an array where
+  it requires an object. One record per name, with an array as the value where the claim is one.

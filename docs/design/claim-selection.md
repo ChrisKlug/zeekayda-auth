@@ -128,9 +128,9 @@ internal sealed record SelectedClaims(
    `accessTypes` likewise from `AccessTokenClaims` and `AdditionalAccessTokenClaims`.
 2. `Identity` = every record in `pool` whose type is in `identityTypes`; `AccessToken` the same over
    `accessTypes`. Values keep the JSON type the provider returned (`claims-resolution.md`):
-   `email_verified` is a boolean, `address` an object. Multi-valued claims keep every record, in
-   the provider's order, and are written as one JSON array under that name, because
-   `TokenPayload` is keyed by claim name.
+   `email_verified` is a boolean, `address` an object. A claim name appears once in the pool; a
+   multi-valued claim is one record whose value is an array. Selected values are serialised at
+   selection, so nothing the provider mutates afterwards reaches a token.
 3. A type that is selected but absent from the pool is simply absent from the token. Never `null`,
    never an empty string — OIDC Core §5.3.2 says an unavailable claim is omitted.
 4. Protocol claims (`iss`, `sub`, `aud`, `exp`, `iat`, `auth_time`, `nonce`, `scope`, `client_id`,
