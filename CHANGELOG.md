@@ -57,7 +57,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   same `access_denied` the `OnProviderSignIn` handler's refusal sends. Both sign-ins refuse when
   nothing is parked for the interaction or its provider is no longer registered, and every
   refusal is decided before the parked principal is taken. A local sign-in at the login page now
-  discards a parked principal instead of recording its provider.
+  discards a parked principal instead of recording its provider. The response the page renders
+  under after `GetPendingPrincipalAsync` is stamped `no-store`, `frame-ancestors 'none'` and
+  `X-Frame-Options: DENY`, as the consent page's is.
 
 - **Authorization code issuance: a completed flow ends with a code at the client** (#87)
 
