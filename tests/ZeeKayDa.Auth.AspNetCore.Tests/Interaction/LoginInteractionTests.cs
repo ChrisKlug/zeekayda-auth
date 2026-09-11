@@ -10,6 +10,7 @@ using Microsoft.Extensions.Primitives;
 using Microsoft.Extensions.Time.Testing;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
 using ZeeKayDa.Auth.Authorization;
+using ZeeKayDa.Auth.Stores;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests.Interaction;
 
@@ -36,6 +37,7 @@ public sealed class LoginInteractionTests : IDisposable
     private const string SignInByLinkPath = "/account/login/sign-in-by-link";
     private const string CancelByLinkPath = "/account/login/cancel-by-link";
     private const string ChallengeByLinkPath = "/account/login/challenge-by-link";
+    private const string MutatingSignInPath = "/account/login/mutating";
 
     private static readonly DateTimeOffset Now = new(2026, 8, 29, 12, 0, 0, TimeSpan.Zero);
 
@@ -159,9 +161,79 @@ public sealed class LoginInteractionTests : IDisposable
 
     /// <summary>Starts an authorization request and returns the response it answers with.</summary>
     private Task<HttpResponseMessage> AuthorizeAsync(Dictionary<string, string?>? query = null) =>
-        _client.GetAsync(
-            QueryHelpers.AddQueryString("/connect/authorize", query ?? ValidQuery()),
-            TestContext.Current.CancellationToken);
+        _client.GetAsync(AuthorizeUrl(query ?? ValidQuery()), TestContext.Current.CancellationToken);
+
+    private static string AuthorizeUrl(Dictionary<string, string?> query) =>
+        QueryHelpers.AddQueryString("/connect/authorize", query);
+
+    private static string WithInteractionId(string path, string interactionId) =>
+        QueryHelpers.AddQueryString(path, InteractionHandoff.InteractionIdParameter, interactionId);
+
+    private static HttpClient NewClient(TestWebAppFactory factory) => factory.CreateClient(new()
+    {
+        BaseAddress = new Uri("https://test.example.com"),
+        AllowAutoRedirect = false,
+        HandleCookies = true,
+    });
+
+    /// <summary>
+    /// A host whose interaction store holds the parked-principal read until the page releases it:
+    /// <paramref name="entered"/> completes when the sign-in has reached the store, and the read
+    /// continues once <paramref name="proceed"/> is set — so a page's code after the call runs
+    /// while the call is suspended, every time.
+    /// </summary>
+    private static TestWebAppFactory HoldingFactory(
+        TaskCompletionSource entered,
+        TaskCompletionSource proceed,
+        Action<IEndpointRouteBuilder> mapMore)
+    {
+        var store = new HoldingInteractionStore(async () =>
+        {
+            entered.TrySetResult();
+            await proceed.Task;
+        });
+
+        return new TestWebAppFactory(
+            configureBuilder: builder =>
+            {
+                builder.AddInMemoryAuthorizationCodeStore(allowOutsideDevelopment: true);
+                builder.AddInMemoryRefreshTokenStore(allowOutsideDevelopment: true);
+                builder.Services.AddSingleton<IInteractionBackingStore>(store);
+            },
+            mapEndpoints: endpoints =>
+            {
+                MapHostPages(endpoints);
+                mapMore(endpoints);
+            });
+    }
+
+    private static async Task<System.Text.Json.JsonElement> ReadSessionAsync(HttpClient client)
+    {
+        var response = await client.GetAsync("/test/session", TestContext.Current.CancellationToken);
+        var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+
+        return System.Text.Json.JsonDocument.Parse(body).RootElement.Clone();
+    }
+
+    /// <summary>A working in-memory store that runs a hold before every parked-principal read.</summary>
+    private sealed class HoldingInteractionStore(Func<Task> beforePendingRead) : IInteractionBackingStore
+    {
+        private readonly InMemoryInteractionBackingStore _inner = new(TimeProvider.System);
+
+        public ValueTask SetAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken) =>
+            _inner.SetAsync(key, value, expiresAt, cancellationToken);
+
+        public async ValueTask<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken)
+        {
+            if (key.ToString().StartsWith("zkd:interaction:p:", StringComparison.Ordinal))
+                await beforePendingRead();
+
+            return await _inner.GetAsync(key, cancellationToken);
+        }
+
+        public ValueTask RemoveAsync(StoreKey key, CancellationToken cancellationToken) =>
+            _inner.RemoveAsync(key, cancellationToken);
+    }
 
     /// <summary>The interaction identifier the framework put on the login redirect.</summary>
     private static string InteractionIdFrom(HttpResponseMessage response)
@@ -353,6 +425,58 @@ public sealed class LoginInteractionTests : IDisposable
             TestContext.Current.CancellationToken);
 
         await signIn.Should().ThrowAsync<ZeeKayDaInteractionException>();
+    }
+
+    [Fact]
+    public async Task SignInAsync_promotes_the_principal_as_validated_not_as_later_changed()
+    {
+        // A host that keeps a reference to the principal it passed and changes it while the
+        // store is awaited signs in what was validated, not the change.
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var proceed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var factory = HoldingFactory(entered, proceed, endpoints =>
+            endpoints.MapPost(MutatingSignInPath, async (ILoginInteraction login) =>
+            {
+                var identity = new ClaimsIdentity([new Claim("sub", "user-1")], "test");
+                var signingIn = login.SignInAsync(new ClaimsPrincipal(identity), AuthenticationMethods.Password);
+                await entered.Task;
+                identity.RemoveClaim(identity.FindFirst("sub"));
+                identity.AddClaim(new Claim("sub", "hijacked"));
+                proceed.SetResult();
+                await signingIn;
+            }));
+        using var client = NewClient(factory);
+        var handoff = await client.GetAsync(AuthorizeUrl(ValidQuery()), TestContext.Current.CancellationToken);
+
+        var signIn = await client.PostAsync(WithInteractionId(MutatingSignInPath, InteractionIdFrom(handoff)), new FormUrlEncodedContent([]), TestContext.Current.CancellationToken);
+
+        signIn.ShouldHaveReachedConsent();
+        (await ReadSessionAsync(client)).GetProperty("sub").GetString().Should().Be("user-1");
+    }
+
+    [Fact]
+    public async Task SignInAsync_reports_the_authentication_methods_as_validated_not_as_later_changed()
+    {
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var proceed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var factory = HoldingFactory(entered, proceed, endpoints =>
+            endpoints.MapPost(MutatingSignInPath, async (ILoginInteraction login) =>
+            {
+                var methods = new[] { AuthenticationMethods.Password };
+                var signingIn = login.SignInAsync(new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", "user-1")], "test")), methods);
+                await entered.Task;
+                methods[0] = " ";
+                proceed.SetResult();
+                await signingIn;
+            }));
+        using var client = NewClient(factory);
+        var handoff = await client.GetAsync(AuthorizeUrl(ValidQuery()), TestContext.Current.CancellationToken);
+
+        var signIn = await client.PostAsync(WithInteractionId(MutatingSignInPath, InteractionIdFrom(handoff)), new FormUrlEncodedContent([]), TestContext.Current.CancellationToken);
+
+        signIn.ShouldHaveReachedConsent();
+        (await ReadSessionAsync(client)).GetProperty("amr").EnumerateArray().Select(element => element.GetString())
+            .Should().Equal(AuthenticationMethods.Password);
     }
 
     [Fact]

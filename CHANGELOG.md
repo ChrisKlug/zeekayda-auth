@@ -369,6 +369,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- **The login page signs in what it validated** (#636). `ILoginInteraction.SignInAsync` validated the
+  `authenticationMethods` array and passed the caller's `ClaimsPrincipal` through, then awaited the
+  interaction store before the session read both; a host that kept a reference and changed either during
+  the await promoted something other than what was checked. Both are now copied when the call is made,
+  as the provider sign-in service already did.
+
 - **`/connect/authorize` is not served, and not advertised, on a host whose `GrantTypesSupported` lacks
   `authorization_code`** (#629). Such a host had the endpoint mapped anyway: it accepted
   `response_type=code`, wrote an interaction context and answered `server_error` at the login dispatch,
