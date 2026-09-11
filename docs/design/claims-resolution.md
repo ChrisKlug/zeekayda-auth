@@ -9,9 +9,9 @@ into which token, is `claim-selection.md`.
 
 ## The seam
 
-Claims are never stored on `AuthorizationCodeEntry` or `RefreshTokenEntry`. Every issuance path —
-authorization code exchange and every refresh rotation — resolves subject claims fresh through one
-mandatory interface.
+Claims are never stored on `AuthorizationCodeEntry` or `RefreshTokenEntry`, and never read from the
+session. Every issuance path — authorization code exchange and every refresh rotation — resolves
+subject claims fresh through one mandatory interface, and so does userinfo.
 
 ```csharp
 namespace ZeeKayDa.Auth.Claims;
@@ -26,7 +26,7 @@ public sealed record ClaimsProviderContext(
     string Sub,
     IReadOnlyList<string> Scopes,
     IReadOnlyList<string> ClaimTypes,
-    string FamilyId);
+    string? FamilyId);                   // null where there is no grant to key on: userinfo
 
 public abstract class ClaimsResolutionResult
 {
@@ -40,17 +40,39 @@ public abstract class ClaimsResolutionResult
     public sealed class SubjectInvalid : ClaimsResolutionResult { }
 }
 
-public readonly record struct ClaimRecord
-{
-    public ClaimRecord(string type, string value);
-    public ClaimRecord(string type, bool value);
-    public ClaimRecord(string type, long value);
-    public ClaimRecord(string type, double value);
-    public ClaimRecord(string type, JsonElement value);   // cloned on receipt; Null and Undefined throw
+public readonly record struct ClaimRecord(string Type, ClaimValue Value);
 
-    public string Type { get; }
-    public JsonElement Value { get; }                     // detached and immutable
+public readonly record struct ClaimValue
+{
+    public static implicit operator ClaimValue(string value);        // null or empty throws
+    public static implicit operator ClaimValue(bool value);
+    public static implicit operator ClaimValue(int value);
+    public static implicit operator ClaimValue(long value);
+    public static implicit operator ClaimValue(double value);        // NaN and infinity throw
+    public static implicit operator ClaimValue(AddressClaim value);
+    public static ClaimValue From<T>(T value, JsonSerializerOptions? options = null) where T : notnull;
 }
+
+public sealed record AddressClaim                                    // OIDC Core §5.1.1, wire names built in
+{
+    public string? Formatted { get; init; }
+    public string? StreetAddress { get; init; }
+    public string? Locality { get; init; }
+    public string? Region { get; init; }
+    public string? PostalCode { get; init; }
+    public string? Country { get; init; }
+}
+```
+
+What a provider writes:
+
+```csharp
+new ClaimRecord("name", "Chris"),
+new ClaimRecord("email_verified", true),
+new ClaimRecord("updated_at", user.UpdatedAt.ToUnixTimeSeconds()),
+new ClaimRecord("address", new AddressClaim { Formatted = "...", Country = "SE" }),
+new ClaimRecord("role", "admin"), new ClaimRecord("role", "editor"),   // → "role": ["admin", "editor"]
+new ClaimRecord("tenant", ClaimValue.From(tenantInfo)),                // custom shape, deliberate
 ```
 
 `ClaimsProviderContext` carries exactly `Sub`, `Scopes`, `ClaimTypes` and `FamilyId`. `ClaimTypes`
@@ -59,22 +81,26 @@ fetching hint so a provider can load client-level additions it could not infer f
 alone, never a filter: returning more is fine, selection drops it. `ClientId` is deliberately
 absent. `FamilyId` is stable across every rotation of a grant, which makes it the natural cache key
 for an implementor reducing identity-store round trips — and a cache miss on it is structurally
-"first issuance".
+"first issuance". It is `null` at userinfo, which is a read with no grant behind it; a provider
+caching on the family simply does not cache that call.
 
-`ClaimRecord` holds a JSON value, not an object. The constructors are the closed set of things a
-claim can be: a string, a boolean, a number, or any JSON value already built — `address` is
-`new ClaimRecord("address", JsonSerializer.SerializeToElement(new { formatted, country }))`. There
-is no `object` overload, so a `DateTimeOffset` or a domain entity does not compile. A `null`
-literal binds to the string overload, which throws on `null` and on empty, and a `JsonElement` of
-kind `Null` or `Undefined` throws too: an unavailable claim is expressed by not returning the record,
-and OIDC Core §5.3.2 forbids both a null and an empty-string value. The element is cloned on receipt, so
-nothing the provider still holds can change a token afterwards, and `TokenPayload` writes it raw by
-its runtime type with nothing left to convert. A struct is still default-constructible, so
-`default(ClaimRecord)` is guarded the way `TokenIssuanceContext` guards it: `Type` and `Value` throw
-on a default instance, and selection treats one in a result as a provider bug. A claim name appears
-at most once in a result; a multi-valued claim is one record whose value is a JSON array. A
-duplicate name, like a default record, aborts issuance as an infrastructure failure, exactly as
-`TokenPayload` refuses a duplicate name.
+`ClaimValue` is a JSON value, not an object. The implicit conversions cover every type a standard
+claim can be, `AddressClaim` covers the one standard object claim, and a custom object goes through
+`From`, which serialises it right there — with the options given, or the framework's web defaults
+(camelCase) — once. A custom object therefore reaches a token only by a deliberate call, never by
+being handed over. The record holds the resulting JSON detached from anything the provider keeps,
+so nothing mutated afterwards can change a token, and `TokenPayload` writes it raw. `null`, an
+empty string, NaN and infinity throw at conversion, because an unavailable claim is expressed by
+not returning the record (OIDC Core §5.3.2). A struct is still default-constructible, so
+`default(ClaimRecord)` is guarded the way `TokenIssuanceContext` guards it: the members throw, and
+selection treats one in a result as a provider bug.
+
+A provider returns one record per value. Three `role` records become `"role": ["admin", "editor",
+"viewer"]` on the wire, in the order returned and never deduplicated: RFC 7519 §4 requires unique
+claim names, and that array is exactly what the ASP.NET Core JWT handler turns back into three
+`role` claims on the consuming side. The only names that do not merge are the standard claims OIDC
+Core §5.1 defines as single-valued — `email_verified` twice is a provider bug, and aborts issuance
+as an infrastructure failure, exactly as `TokenPayload` refuses a duplicate name.
 
 ## Rejected
 
@@ -95,12 +121,17 @@ duplicate name, like a default record, aborts issuance as an infrastructure fail
   the only client-varying step is selection, downstream, and it can only widen what is selected.
 - **`System.Security.Claims.Claim` as the transfer type.** Not reliably serialisable, carries a
   back-reference to `ClaimsIdentity`, and has mutable properties with no meaning here.
+- **Claims taken from the session principal at issuance.** The same staleness as a snapshot, with
+  the cookie as the snapshot; and the collect-more page would become a second claims path.
 - **A string-only claim value.** `email_verified`, `updated_at` and `address` are boolean, number
   and object on the wire, so a string value forced either a nonconforming token or claim-specific
   reconstruction inside the writer.
 - **`object?` as the claim value.** Serialised by runtime type, it compiles for `null`, for a
   `DateTimeOffset` and for a domain entity, and emits a prohibited null, the wrong JSON type, or the
   entity's whole public graph respectively.
-- **Merging repeated records for one name into a JSON array.** Turns two `email_verified` records
-  into `[true, false]` where OIDC Core §5.1.1 requires a boolean, and `address` into an array where
-  it requires an object. One record per name, with an array as the value where the claim is one.
+- **A serializer call at the provider's call site.** `JsonSerializer.SerializeToElement` for every
+  address is hostile to the person writing the provider; the conversions on `ClaimValue` and a
+  typed `AddressClaim` cover every standard claim without one.
+- **Refusing repeated records for one name.** A provider looping over roles is the normal case, and
+  the array is what the JWT handler on the other side expects. The refusal applies only to standard
+  single-valued claims, where a repeat cannot be anything but a bug.

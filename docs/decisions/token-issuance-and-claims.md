@@ -81,23 +81,23 @@ only widen what is selected, never change a value; per-client claim *values* hav
 carries a back-reference to its identity, and has mutable properties with no meaning in a resolution
 result.
 
-**A claim value is a JSON value built by the provider, never an object the framework serialises.**
-`email_verified` is a boolean, `updated_at` a number and `address` an object (OIDC Core §5.1.1). A
-string-only value cannot represent them; an `object` value compiles for `null`, a `DateTimeOffset` or
-a domain entity and emits a prohibited null, the wrong type, or the entity's whole graph. The value is
-cloned on receipt and `null` is unrepresentable. A name appears at most once per result — a
-multi-valued claim is one array — and a duplicate aborts issuance as an infrastructure failure.
+**A claim value is a JSON value the provider builds, never an object the framework serialises.**
+`email_verified` is a boolean, `updated_at` a number and `address` an object (OIDC Core §5.1.1); a
+custom object reaches a token only through an explicit conversion, and `null`, empty, NaN and
+infinity are unrepresentable. Repeated records for one name are written as one JSON array in the
+order returned, as RFC 7519 §4's unique-name rule requires; a repeat of a standard single-valued
+claim (§5.1) is a provider bug and aborts issuance as an infrastructure failure.
 
-**Claim selection is configuration, not a seam.** A scope names the claim types it unlocks in the ID
-token and userinfo, and separately in the access token; a client registration may add types to
-either list and never remove any. Removal is `AllowedScopes`. Neither list is a source: a type that
-the claims provider did not return is absent from the token, omitted rather than written as `null`
-or empty (OIDC Core §5.3.2). Routing is not third-party-overridable, so a claim the provider never
-returned cannot be introduced downstream of the seam.
+**Claim selection is configuration, not a seam.** A scope names the claim types it unlocks in each
+destination — ID token, userinfo, access token — and a client registration may add types to any of
+them, never remove any; removal is `AllowedScopes`. An addition may not name a claim a registered
+scope already unlocks for that destination, checked at startup, so consent-bearing claims arrive only
+through consent. Neither list is a source: a type the provider did not return is omitted, never
+written as `null` or empty (OIDC Core §5.3.2), and routing is not third-party-overridable.
 
-**Identity claims go to the ID token and to userinfo alike.** OIDC Core §5.4 routes the standard
-scopes' claims to userinfo; §2 lets the ID token carry other claims. One list serves both, and a
-future reading of §5.4 as "not in the ID token" is wrong.
+**The standard scopes ship their claims in both the ID token and userinfo.** OIDC Core §5.4 routes
+them to userinfo; §2 lets the ID token carry other claims. A host wanting the §5.4 default trims the
+ID-token list; a future reading of §5.4 as "not in the ID token" is wrong.
 
 **Reserved protocol claim names are stripped from a provider's result before selection**, from one
 closed constant compared case-insensitively. `iss`, `sub`, `aud`, `exp`, `auth_time`, `amr`, `scope`,
@@ -105,20 +105,22 @@ closed constant compared case-insensitively. `iss`, `sub`, `aud`, `exp`, `auth_t
 subject, an audience or an authentication event.
 
 **The access token's audience is derived from the granted scopes, per RFC 9068 §3.** A scope may name
-the absolute URI of the resource server it is for; the token's `aud` is the one distinct such value.
-Two distinct values in one effective scope is `invalid_scope` at the authorization endpoint, before
-any interaction. Consent and refresh only narrow scope, so nothing later can introduce a second one.
-Every scope string then correlates to exactly one audience, which is what RFC 9068 §2.2.3 and §5 ask.
+the absolute URI of the resource server it is for; the token's `aud` is the one distinct such value,
+compared ordinally. Two distinct values in one effective scope is `invalid_scope` at the
+authorization endpoint before any interaction, and so is an effective scope with no definition, which
+has no audience to correlate to. Consent and refresh only narrow, so nothing later adds a second one;
+every scope string then correlates to exactly one audience, as RFC 9068 §2.2.3 and §5 ask.
 
 **The issuer is always an audience when `openid` is granted, and there is no switch to drop it.**
 Userinfo is a protected resource hosted by the issuer, and RFC 9068 §4 obliges a resource server to
-reject a token whose `aud` does not name it; naming the issuer lets userinfo validate as an ordinary
-resource server instead of exempting itself. `aud` is a single string for one recipient and an array
-for two (RFC 7519 §4.1.3). An access token with no `aud` — IdentityServer's default when no API scope
-is requested — violates RFC 9068 §2.2 and is not issued.
+reject a token whose `aud` does not name it, so naming the issuer lets userinfo validate as an
+ordinary resource server. `aud` is a single string for one recipient, an array for two (RFC 7519
+§4.1.3); a token with no `aud` violates RFC 9068 §2.2 and is not issued. Accepted residual: an API
+holding a token can call userinfo with it for the claims the user granted that client; only
+per-resource tokens via `resource` would close that.
 
-**A scope's audience is an absolute URI, checked at startup.** RFC 8707 requires that of a resource
-indicator, so the `resource` parameter can later be a pure narrowing filter over the same value.
+**A scope's audience is an absolute URI with no fragment, checked at startup.** RFC 8707 §2 requires
+both of a resource indicator, so the `resource` parameter can later be a pure narrowing filter.
 
 **The `claims` request parameter and the `resource` parameter are deferred, not deviated from.** Both
 are OPTIONAL; `claims_parameter_supported` stays `false`, and RFC 8707 has no discovery flag.
