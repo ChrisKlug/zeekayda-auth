@@ -6,9 +6,10 @@ What must be true when a grant becomes tokens. The stores underneath are `token-
 **The token endpoint is not built** — it answers `501`. The token writer now exists as
 `ITokenIssuer` (#521): a shape-agnostic seam taking finalized claims and the client's metadata,
 resolved per `TokenKind` as a keyed DI service, with `JwsTokenIssuer` duties filled by
-`JwtTokenIssuer` over the signing key ring. Claim *selection* still has no seam — `TokenPayload`
-arrives finalized, and the entries below are the constraints that future claims layer inherits. Its
-proposed shape is `docs/design/claims-resolution.md`.
+`JwtTokenIssuer` over the signing key ring. Claim *selection* is unbuilt — `TokenPayload` arrives
+finalized, and the entries below are the constraints that layer inherits. Where claims come from is
+sketched in `docs/design/claims-resolution.md`; which token each lands in, and the access token's
+audience, in `docs/design/claim-selection.md`.
 
 **A JWT's header is built inside the ring's signing callback, never asserted afterwards.**
 `JwtTokenIssuer` reads `kid`/`alg` from the `SigningKey` the ring resolved for that exact call, so a
@@ -66,19 +67,63 @@ confused with "this subject must not receive tokens".
 built from the same result, so there is no split-brain where one reflects a claim change the other
 does not.
 
-**Caching is the implementer's, keyed on the family, and bounded well under the access-token
-lifetime.** That is the sanctioned way to get snapshot-equivalent I/O without giving up the
-call-every-issuance contract. A cache miss on the family id is structurally "first issuance", so no
-separate first-issuance-versus-rotation flag is needed and none will be added. A TTL at
-grant or refresh-token scale defeats the point entirely and must not be used.
+**Caching is the implementer's, keyed on the subject and the family, and bounded well under the
+access-token lifetime.** That is the sanctioned way to get snapshot-equivalent I/O without giving up
+the call-every-issuance contract. A miss on the family id is structurally "first issuance", so no
+first-issuance flag is needed; the family id is absent at userinfo and is never a key on its own. A
+TTL at grant or refresh-token scale defeats the point entirely and must not be used.
 
 **Claims resolution is a subject-level concern.** The client id and request metadata are deliberately
-withheld from it. Client-varying claims belong in a transformation pipeline downstream, not encoded
-into this seam as an implementation assumption.
+withheld from it. The only client-varying step is selection, downstream of the seam, and a client can
+only widen what is selected, never change a value; per-client claim *values* have no home here.
 
 **The transfer type is not `System.Security.Claims.Claim`.** That type is not reliably serialisable,
 carries a back-reference to its identity, and has mutable properties with no meaning in a resolution
 result.
+
+**A claim value is a JSON value the provider builds, never an object the framework serialises.**
+`email_verified` is a boolean, `updated_at` a number and `address` an object (OIDC Core §5.1.1); a
+custom object reaches a token only through an explicit conversion, and `null`, empty, NaN and
+infinity are unrepresentable. Repeated string or number records for one name are written as one JSON
+array in the order returned (RFC 7519 §4 unique names); any other repeat, or one of a standard
+single-valued claim (§5.1), is a provider bug and aborts issuance as an infrastructure failure.
+
+**Claim selection is configuration, not a seam.** A scope names the claim types it unlocks in each
+destination — ID token, userinfo, access token — and a client registration may add types to any of
+them, never remove any; removal is `AllowedScopes`. An addition may not name a claim any registered
+scope unlocks in any destination, checked on every served registration, so consent-bearing claims
+arrive only through consent. Neither list is a source: a type the provider did not return is omitted,
+never written as `null` or empty (OIDC Core §5.3.2), and routing is not third-party-overridable.
+
+**The standard scopes ship their claims in both the ID token and userinfo.** OIDC Core §5.4 routes
+them to userinfo; §2 lets the ID token carry other claims. A host wanting the §5.4 default trims the
+ID-token list; a future reading of §5.4 as "not in the ID token" is wrong.
+
+**Reserved protocol claim names are stripped from a provider's result before selection**, from one
+closed constant compared case-insensitively. `iss`, `sub`, `aud`, `exp`, `auth_time`, `amr`, `scope`,
+`client_id` and the rest are written by the endpoint from the grant, so a provider cannot re-assert a
+subject, an audience or an authentication event.
+
+**The access token's audience is derived from the granted scopes, per RFC 9068 §3.** A scope may name
+the absolute URI of the resource server it is for; the token's `aud` is the one distinct such value,
+compared ordinally. Two distinct values in one effective scope is `invalid_scope` at the
+authorization endpoint before any interaction, and so is an effective scope with no definition, which
+has no audience to correlate to. Consent and refresh only narrow, so nothing later adds a second one;
+every scope string then correlates to exactly one audience, as RFC 9068 §2.2.3 and §5 ask.
+
+**The issuer is always an audience when `openid` is granted, and there is no switch to drop it.**
+Userinfo is a protected resource hosted by the issuer, and RFC 9068 §4 obliges a resource server to
+reject a token whose `aud` does not name it, so naming the issuer lets userinfo validate as an
+ordinary resource server. `aud` is a single string for one recipient, an array for two (RFC 7519
+§4.1.3); a token with no `aud` violates RFC 9068 §2.2 and is not issued. Accepted residual: an API
+holding a token can call userinfo with it for the claims the user granted that client; only
+per-resource tokens via `resource` would close that.
+
+**A scope's audience is an absolute URI with no fragment, checked at startup.** RFC 8707 §2 requires
+both of a resource indicator, so the `resource` parameter can later be a pure narrowing filter.
+
+**The `claims` request parameter and the `resource` parameter are deferred, not deviated from.** Both
+are OPTIONAL; `claims_parameter_supported` stays `false`, and RFC 8707 has no discovery flag.
 
 **Resolved claims may be personal data and never appear in a log entry, an error response, or an
 exception message.** By-key redaction covers the logging path; the endpoint itself must not embed a

@@ -575,8 +575,10 @@ the session; `SignInWithReplacedPrincipalAsync` is for linking to a local accoun
 own principal, subject included, replaces the parked one — and is refused when that subject is the
 upstream one. Both consume the parked principal. One service per host page: the login page's
 `ILoginInteraction` does not read the parked principal.
-`OnSigningIn` — **unbuilt**, the planned claim-shaping hook — will fire for every sign-in just
-before promotion, no interrupt; reserved protocol claims (`iss`, `sub`, `aud`, `exp`, `nonce`,
+`OnSigningIn` — **unbuilt** — will fire for every sign-in just before promotion, no interrupt,
+and shapes the *session* principal only: token claims never come from the session, they are
+resolved through `claims-resolution.md`'s provider on every issuance, and for the same reason the
+claims `IProviderSignInInteraction.SignInAsync` adds live in the session, not in any token; reserved protocol claims (`iss`, `sub`, `aud`, `exp`, `nonce`,
 `acr`, `amr`, `zkd:*`) are stripped regardless. Until it exists, a host that wants the session to
 hold something other than what the provider returned redirects to a page of its own and finishes
 there through `IProviderSignInInteraction`; a change to the principal `OnProviderSignIn` receives
