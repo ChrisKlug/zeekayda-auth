@@ -6,9 +6,10 @@ What must be true when a grant becomes tokens. The stores underneath are `token-
 **The token endpoint is not built** — it answers `501`. The token writer now exists as
 `ITokenIssuer` (#521): a shape-agnostic seam taking finalized claims and the client's metadata,
 resolved per `TokenKind` as a keyed DI service, with `JwsTokenIssuer` duties filled by
-`JwtTokenIssuer` over the signing key ring. Claim *selection* still has no seam — `TokenPayload`
-arrives finalized, and the entries below are the constraints that future claims layer inherits. Its
-proposed shape is `docs/design/claims-resolution.md`.
+`JwtTokenIssuer` over the signing key ring. Claim *selection* is unbuilt — `TokenPayload` arrives
+finalized, and the entries below are the constraints that layer inherits. Where claims come from is
+sketched in `docs/design/claims-resolution.md`; which token each lands in, and the access token's
+audience, in `docs/design/claim-selection.md`.
 
 **A JWT's header is built inside the ring's signing callback, never asserted afterwards.**
 `JwtTokenIssuer` reads `kid`/`alg` from the `SigningKey` the ring resolved for that exact call, so a
@@ -79,6 +80,39 @@ into this seam as an implementation assumption.
 **The transfer type is not `System.Security.Claims.Claim`.** That type is not reliably serialisable,
 carries a back-reference to its identity, and has mutable properties with no meaning in a resolution
 result.
+
+**Claim selection is configuration, not a seam.** A scope names the claim types it unlocks in the ID
+token and userinfo, and separately in the access token; a client registration may add types to
+either list and never remove any. Removal is `AllowedScopes`. Neither list is a source: a type that
+the claims provider did not return is absent from the token, omitted rather than written as `null`
+or empty (OIDC Core §5.3.2). Routing is not third-party-overridable, so a claim the provider never
+returned cannot be introduced downstream of the seam.
+
+**Identity claims go to the ID token and to userinfo alike.** OIDC Core §5.4 routes the standard
+scopes' claims to userinfo; §2 lets the ID token carry other claims. One list serves both, and a
+future reading of §5.4 as "not in the ID token" is wrong.
+
+**Reserved protocol claim names are stripped from a provider's result** exactly as they are from the
+host's principal. `iss`, `sub`, `aud`, `exp`, `scope`, `client_id` and the rest are written by the
+endpoint from the grant, so a provider cannot re-assert a subject or an audience.
+
+**The access token's audience is derived from the granted scopes, per RFC 9068 §3.** A scope may name
+the absolute URI of the resource server it is for; the token's `aud` is the one distinct such value.
+Two distinct values in one effective scope is `invalid_scope` at the authorization endpoint, before
+any interaction. Consent and refresh only narrow scope, so nothing later can introduce a second one.
+
+**The issuer is always an audience when `openid` is granted, and there is no switch to drop it.**
+Userinfo is a protected resource hosted by the issuer, and RFC 9068 §4 obliges a resource server to
+reject a token whose `aud` does not name it; naming the issuer lets userinfo validate as an ordinary
+resource server instead of exempting itself. `aud` is a single string for one recipient and an array
+for two (RFC 7519 §4.1.3). An access token with no `aud` — IdentityServer's default when no API scope
+is requested — violates RFC 9068 §2.2 and is not issued.
+
+**A scope's audience is an absolute URI, checked at startup.** RFC 8707 requires that of a resource
+indicator, so the `resource` parameter can later be a pure narrowing filter over the same value.
+
+**The `claims` request parameter and the `resource` parameter are deferred, not deviated from.** Both
+are OPTIONAL; `claims_parameter_supported` stays `false`, and RFC 8707 has no discovery flag.
 
 **Resolved claims may be personal data and never appear in a log entry, an error response, or an
 exception message.** By-key redaction covers the logging path; the endpoint itself must not embed a

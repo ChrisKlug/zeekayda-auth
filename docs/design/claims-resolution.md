@@ -4,7 +4,8 @@
 ADR 0010 (accepted 2026-06-20, issue #187), which was deleted in the register migration.
 The constraints this design produced survived and are in
 `docs/decisions/token-issuance-and-claims.md` — read those as authoritative. What follows is only
-the shape, plus the alternatives already rejected.
+the shape, plus the alternatives already rejected. What is selected from the result, and
+into which token, is `claim-selection.md`.
 
 ## The seam
 
@@ -21,7 +22,11 @@ public interface IClaimsProvider
         ClaimsProviderContext context, CancellationToken cancellationToken);
 }
 
-public sealed record ClaimsProviderContext(string Sub, IReadOnlyList<string> Scopes, string FamilyId);
+public sealed record ClaimsProviderContext(
+    string Sub,
+    IReadOnlyList<string> Scopes,
+    IReadOnlyList<string> ClaimTypes,
+    string FamilyId);
 
 public abstract class ClaimsResolutionResult
 {
@@ -38,7 +43,11 @@ public abstract class ClaimsResolutionResult
 public readonly record struct ClaimRecord(string Type, string Value);
 ```
 
-`ClaimsProviderContext` carries exactly `Sub`, `Scopes` and `FamilyId`. `FamilyId` is stable across
+`ClaimsProviderContext` carries exactly `Sub`, `Scopes`, `ClaimTypes` and `FamilyId`. `ClaimTypes`
+is the union of what the downstream selection (`claim-selection.md`) will keep for this grant — a
+fetching hint so a provider can load client-level additions it could not infer from `Scopes`
+alone, never a filter: returning more is fine, selection drops it. It was added 2026-09-11
+(issue #92); `ClientId` is still deliberately absent. `FamilyId` is stable across
 every rotation of a grant, which makes it the natural cache key for an implementor reducing
 identity-store round trips — and a cache miss on it is structurally "first issuance".
 
