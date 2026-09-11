@@ -82,10 +82,13 @@ the request silently (RFC 6749 §3.3) before anything here runs. The consent pag
 an addition is operator policy the user never sees; the guard rail is that an addition may not name
 a claim any registered scope unlocks in *any* destination. A per-destination check would let
 `AdditionalAccessTokenClaims = ["email"]` through, since no scope lists `email` for the access
-token, and the API would read a claim the user never consented to. The guard runs in
-`IClientRegistrationValidator`, so `ValidatedClientResolver` applies it to every served
-registration, custom repositories included, not only to the in-memory ones at startup. `email` can
-then only ever arrive through the `email` scope and its consent; `tenant` is the operator's.
+token, and the API would read a claim the user never consented to. The guard runs per lookup,
+outside `ValidatedClientResolver`'s memoised verdict: `IClientRegistrationValidator` is synchronous
+and its verdict is cached by registration fingerprint, which cannot see the scope repository, so a
+scope added later would leave a stale "valid". It is a set-membership test against the scope set
+the authorize validator already fetches per request, so it costs no extra I/O and covers custom
+repositories, not only the in-memory ones at startup. `email` can then only ever arrive through the
+`email` scope and its consent; `tenant` is the operator's.
 
 They live on `IClientMetadata` next to `AllowedScopes`, since selection runs with the token
 issuer's view of the client, as default interface members returning empty — the interface's own
