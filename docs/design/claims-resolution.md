@@ -85,9 +85,10 @@ for an implementor reducing identity-store round trips — and a cache miss on i
 caching on the family simply does not cache that call.
 
 `ClaimValue` is a JSON value, not an object. The implicit conversions cover every type a standard
-claim can be, `AddressClaim` covers the one standard object claim, and a custom object goes through
-`From`, which serialises it right there — with the options given, or the framework's web defaults
-(camelCase) — once. A custom object therefore reaches a token only by a deliberate call, never by
+claim can be. `AddressClaim` covers the one standard object claim, and its conversion writes the
+OIDC Core §5.1.1 member names itself (`street_address`, `postal_code`, …) — it never passes through
+`From` or any naming policy. A custom object goes through `From`, which serialises it right there —
+with the options given, or the framework's web defaults (camelCase) — once. A custom object therefore reaches a token only by a deliberate call, never by
 being handed over. The record holds the resulting JSON detached from anything the provider keeps,
 so nothing mutated afterwards can change a token, and `TokenPayload` writes it raw. `null`, an
 empty string, NaN and infinity throw at conversion, because an unavailable claim is expressed by
