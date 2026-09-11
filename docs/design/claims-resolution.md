@@ -40,27 +40,37 @@ public abstract class ClaimsResolutionResult
     public sealed class SubjectInvalid : ClaimsResolutionResult { }
 }
 
-public readonly record struct ClaimRecord(string Type, object? Value);
+public readonly record struct ClaimRecord
+{
+    public ClaimRecord(string type, string value);
+    public ClaimRecord(string type, bool value);
+    public ClaimRecord(string type, long value);
+    public ClaimRecord(string type, double value);
+    public ClaimRecord(string type, JsonElement value);   // cloned on receipt; Null and Undefined throw
+
+    public string Type { get; }
+    public JsonElement Value { get; }                     // detached and immutable
+}
 ```
 
 `ClaimsProviderContext` carries exactly `Sub`, `Scopes`, `ClaimTypes` and `FamilyId`. `ClaimTypes`
 is the union of what the downstream selection (`claim-selection.md`) will keep for this grant — a
 fetching hint so a provider can load client-level additions it could not infer from `Scopes`
-alone, never a filter: returning more is fine, selection drops it. It was added 2026-09-11
-(issue #92); `ClientId` is still deliberately absent. `FamilyId` is stable across
-every rotation of a grant, which makes it the natural cache key for an implementor reducing
-identity-store round trips — and a cache miss on it is structurally "first issuance".
+alone, never a filter: returning more is fine, selection drops it. `ClientId` is deliberately
+absent. `FamilyId` is stable across every rotation of a grant, which makes it the natural cache key
+for an implementor reducing identity-store round trips — and a cache miss on it is structurally
+"first issuance".
 
-`ClaimRecord.Value` is `object?`, serialised by its runtime type under the same rule as
-`TokenPayload`: a provider returns `email_verified` as a `bool`, `updated_at` as a `long`, and
-`address` as an object carrying the OIDC Core §5.1.1 member names — never as pre-encoded strings.
-A claim name appears at most once in a result; a multi-valued claim is one record whose value is
-an array. A duplicate name is a provider bug and aborts issuance as an infrastructure failure,
-exactly as `TokenPayload` refuses a duplicate claim name. The framework serialises selected values
-once, when it selects them, and holds no reference to the provider's objects afterwards, so a graph
-the host mutates later cannot change a token or make the two tokens of one issuance disagree.
-(Changed 2026-09-11, issue #92: the original `string Value` could not represent the standard
-boolean, number and object claims.)
+`ClaimRecord` holds a JSON value, not an object. The constructors are the closed set of things a
+claim can be: a string, a boolean, a number, or any JSON value already built — `address` is
+`new ClaimRecord("address", JsonSerializer.SerializeToElement(new { formatted, country }))`. There
+is no `object` overload, so `null`, a `DateTimeOffset` or a domain entity does not compile; a
+`JsonElement` of kind `Null` or `Undefined` throws at construction, because an unavailable claim is
+expressed by not returning the record (OIDC Core §5.3.2). The element is cloned on receipt, so
+nothing the provider still holds can change a token afterwards, and `TokenPayload` writes it raw by
+its runtime type with nothing left to convert. A claim name appears at most once in a result; a
+multi-valued claim is one record whose value is a JSON array. A duplicate name is a provider bug and
+aborts issuance as an infrastructure failure, exactly as `TokenPayload` refuses a duplicate name.
 
 ## Rejected
 
@@ -78,12 +88,15 @@ boolean, number and object claims.)
 - **A separate interface or flag for refresh rotation versus first issuance.** `FamilyId` already
   gives that signal without encoding an implementation assumption into the contract.
 - **`ClientId` and request metadata on the context.** Claims resolution is a subject-level concern;
-  client-varying claims belong in a downstream transformation pipeline.
+  the only client-varying step is selection, downstream, and it can only widen what is selected.
 - **`System.Security.Claims.Claim` as the transfer type.** Not reliably serialisable, carries a
   back-reference to `ClaimsIdentity`, and has mutable properties with no meaning here.
-- **A string-only claim value.** The original `ClaimRecord` shape. `email_verified`, `updated_at`
-  and `address` are boolean, number and object on the wire, so a string value forced either a
-  nonconforming token or claim-specific reconstruction inside the writer.
+- **A string-only claim value.** `email_verified`, `updated_at` and `address` are boolean, number
+  and object on the wire, so a string value forced either a nonconforming token or claim-specific
+  reconstruction inside the writer.
+- **`object?` as the claim value.** Serialised by runtime type, it compiles for `null`, for a
+  `DateTimeOffset` and for a domain entity, and emits a prohibited null, the wrong JSON type, or the
+  entity's whole public graph respectively.
 - **Merging repeated records for one name into a JSON array.** Turns two `email_verified` records
   into `[true, false]` where OIDC Core §5.1.1 requires a boolean, and `address` into an array where
   it requires an object. One record per name, with an array as the value where the claim is one.

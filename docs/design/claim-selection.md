@@ -47,23 +47,35 @@ already what `ClaimRecord.Type` carries.
 ## Client registration
 
 ```csharp
-public sealed record ClientRegistration : IClientRegistration
+public interface IClientMetadata
 {
     // ...existing members...
 
     /// Claim types added to the identity selection for every grant to this client.
-    public IReadOnlySet<string> AdditionalIdentityClaims { get; init; } = new HashSet<string>(StringComparer.Ordinal);
+    IReadOnlyCollection<string> AdditionalIdentityClaims => [];
 
     /// Claim types added to the access-token selection for every grant to this client.
-    public IReadOnlySet<string> AdditionalAccessTokenClaims { get; init; } = new HashSet<string>(StringComparer.Ordinal);
+    IReadOnlyCollection<string> AdditionalAccessTokenClaims => [];
+}
+
+public sealed record ClientRegistration : IClientRegistration
+{
+    // ...existing members...
+    public IReadOnlyCollection<string> AdditionalIdentityClaims { get; init; } = [];
+    public IReadOnlyCollection<string> AdditionalAccessTokenClaims { get; init; } = [];
 }
 ```
 
 These are **selectors, not sources**: a name here still has to come back from the claims provider
 to appear anywhere. They are additive only. Subtraction is `AllowedScopes`, which already narrows
-the request silently (RFC 6749 §3.3) before anything here runs. Both land on `IClientMetadata`
-next to `AllowedScopes`, since selection runs with the token issuer's view of the client; that
-interface is third-party-implementable, so the addition is a breaking change and is made pre-1.0.
+the request silently (RFC 6749 §3.3) before anything here runs. Both live on `IClientMetadata`
+next to `AllowedScopes`, since selection runs with the token issuer's view of the client, as default
+interface members returning empty — the interface's own precedent for an optional member with a
+neutral default (`AllowedPromptValues`, `RequireConsent`). Empty withholds rather than grants, so a
+custom repository's entity keeps compiling and the addition is a minor version. The type matches
+the scope lists so a host writes `["tenant"]` in both places; selection compares ordinally
+regardless of the collection, so both join `IClientMetadata`'s ordinal-comparison invariant, and
+both join the registration fingerprint because they change token contents.
 
 ## Host call site
 
@@ -86,16 +98,14 @@ builder.Services
             AccessTokenClaims = ["role"],
         },
     ])
-    .AddInMemoryClients(
-    [
+    .AddInMemoryClients(clients => clients.Add(
         ClientRegistration.CreateConfidential(
             "orders-web", credential, redirectUris, postLogoutRedirectUris,
             allowedScopes: ["openid", "profile", "email", "orders.read", "orders.write"]) with
         {
-            AdditionalIdentityClaims = new HashSet<string>(StringComparer.Ordinal) { "tenant" },
-            AdditionalAccessTokenClaims = new HashSet<string>(StringComparer.Ordinal) { "tenant" },
-        },
-    ]);
+            AdditionalIdentityClaims = ["tenant"],
+            AdditionalAccessTokenClaims = ["tenant"],
+        }));
 ```
 
 A request for `openid profile orders.read` from that client yields an ID token with `sub`, the
@@ -127,16 +137,19 @@ internal sealed record SelectedClaims(
 1. `identityTypes` = union of `IdentityClaims` over `granted`, plus `client.AdditionalIdentityClaims`.
    `accessTypes` likewise from `AccessTokenClaims` and `AdditionalAccessTokenClaims`.
 2. `Identity` = every record in `pool` whose type is in `identityTypes`; `AccessToken` the same over
-   `accessTypes`. Values keep the JSON type the provider returned (`claims-resolution.md`):
-   `email_verified` is a boolean, `address` an object. A claim name appears once in the pool; a
-   multi-valued claim is one record whose value is an array. Selected values are serialised at
-   selection, so nothing the provider mutates afterwards reaches a token.
+   `accessTypes`. Values are the `JsonElement` the provider built (`claims-resolution.md`):
+   `email_verified` is a boolean, `address` an object, and the issuer writes them raw. A claim name
+   appears once in the pool; a multi-valued claim is one record whose value is an array. The element
+   was cloned when the record was built, so nothing the provider still holds can change a token.
 3. A type that is selected but absent from the pool is simply absent from the token. Never `null`,
-   never an empty string — OIDC Core §5.3.2 says an unavailable claim is omitted.
-4. Protocol claims (`iss`, `sub`, `aud`, `exp`, `iat`, `auth_time`, `nonce`, `scope`, `client_id`,
-   `jti`, and the rest of the reserved list) are the endpoint's, written from the grant. They are
-   stripped from the pool before step 2 exactly as they are stripped from the host's principal, so a
-   provider cannot re-assert a subject or an audience. `openid` lists `sub` for readability only.
+   never an empty string — OIDC Core §5.3.2 says an unavailable claim is omitted, and `ClaimRecord`
+   cannot hold a null.
+4. Protocol claims are the endpoint's, written from the grant, and are stripped from the pool before
+   step 2 so a provider cannot re-assert a subject, an audience or an authentication event. The list
+   is one closed constant, compared case-insensitively because a resource server's `FindFirst` is:
+   `iss`, `sub`, `aud`, `exp`, `nbf`, `iat`, `jti`, `auth_time`, `nonce`, `acr`, `amr`, `azp`,
+   `at_hash`, `c_hash`, `sid`, `scope`, `client_id`, `cnf`, `act`, and every name in the `zkd:`
+   namespace. `openid` lists `sub` for readability only.
 
 Both tokens from one issuance are selected from one pool, so they cannot disagree about a claim.
 

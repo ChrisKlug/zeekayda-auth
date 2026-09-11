@@ -74,18 +74,19 @@ separate first-issuance-versus-rotation flag is needed and none will be added. A
 grant or refresh-token scale defeats the point entirely and must not be used.
 
 **Claims resolution is a subject-level concern.** The client id and request metadata are deliberately
-withheld from it. Client-varying claims belong in a transformation pipeline downstream, not encoded
-into this seam as an implementation assumption.
+withheld from it. The only client-varying step is selection, downstream of the seam, and a client can
+only widen what is selected, never change a value; per-client claim *values* have no home here.
 
 **The transfer type is not `System.Security.Claims.Claim`.** That type is not reliably serialisable,
 carries a back-reference to its identity, and has mutable properties with no meaning in a resolution
 result.
 
-**Claim values travel in their wire type, never pre-encoded.** `email_verified` is a boolean,
-`updated_at` a number and `address` an object (OIDC Core §5.1.1); a string-only transfer value cannot
-represent them. A claim name appears at most once in a provider's result — a multi-valued claim is one
-array value — and a duplicate aborts issuance as an infrastructure failure. Selected values are
-serialised once, at selection; the provider's objects are not referenced afterwards.
+**A claim value is a JSON value built by the provider, never an object the framework serialises.**
+`email_verified` is a boolean, `updated_at` a number and `address` an object (OIDC Core §5.1.1). A
+string-only value cannot represent them; an `object` value compiles for `null`, a `DateTimeOffset` or
+a domain entity and emits a prohibited null, the wrong type, or the entity's whole graph. The value is
+cloned on receipt and `null` is unrepresentable. A name appears at most once per result — a
+multi-valued claim is one array — and a duplicate aborts issuance as an infrastructure failure.
 
 **Claim selection is configuration, not a seam.** A scope names the claim types it unlocks in the ID
 token and userinfo, and separately in the access token; a client registration may add types to
@@ -98,9 +99,10 @@ returned cannot be introduced downstream of the seam.
 scopes' claims to userinfo; §2 lets the ID token carry other claims. One list serves both, and a
 future reading of §5.4 as "not in the ID token" is wrong.
 
-**Reserved protocol claim names are stripped from a provider's result** exactly as they are from the
-host's principal. `iss`, `sub`, `aud`, `exp`, `scope`, `client_id` and the rest are written by the
-endpoint from the grant, so a provider cannot re-assert a subject or an audience.
+**Reserved protocol claim names are stripped from a provider's result before selection**, from one
+closed constant compared case-insensitively. `iss`, `sub`, `aud`, `exp`, `auth_time`, `amr`, `scope`,
+`client_id` and the rest are written by the endpoint from the grant, so a provider cannot re-assert a
+subject, an audience or an authentication event.
 
 **The access token's audience is derived from the granted scopes, per RFC 9068 §3.** A scope may name
 the absolute URI of the resource server it is for; the token's `aud` is the one distinct such value.
