@@ -19,7 +19,7 @@ internal static class ExternalSubject
     /// The claim the upstream subject is read from, in order: <c>sub</c> from a provider that
     /// thinks in OpenID Connect, the .NET name identifier from one that maps claims.
     /// </summary>
-    private static readonly string[] SubjectClaimTypes = ["sub", ClaimTypes.NameIdentifier];
+    internal static readonly string[] SubjectClaimTypes = ["sub", ClaimTypes.NameIdentifier];
 
     /// <summary>
     /// Builds the principal to promote: the provider's claims with the upstream subject replaced
@@ -33,15 +33,7 @@ internal static class ExternalSubject
         ArgumentException.ThrowIfNullOrEmpty(providerId);
         ArgumentNullException.ThrowIfNull(principal);
 
-        // Only an authenticated identity may name the subject: a provider can attach an
-        // unauthenticated auxiliary identity, and a subject taken from there would let its value
-        // win over the one the provider actually authenticated.
-        var authenticated = principal.Identities.Where(identity => identity.IsAuthenticated).ToArray();
-        var subject = SubjectClaimTypes
-            .Select(type => authenticated
-                .Select(identity => identity.FindFirst(type))
-                .FirstOrDefault(claim => !string.IsNullOrEmpty(claim?.Value)))
-            .FirstOrDefault(claim => claim is not null)
+        var subject = FindSubject(principal)
             ?? throw new ZeeKayDaInteractionException(
                 $"The principal provider '{providerId}' returned carries no subject on an authenticated " +
                 $"identity. A provider handler must add a 'sub' or '{ClaimTypes.NameIdentifier}' claim " +
@@ -64,6 +56,27 @@ internal static class ExternalSubject
 
         return new ClaimsPrincipal(new ClaimsIdentity(claims, providerId));
     }
+
+    /// <summary>
+    /// The upstream subject claim of a provider's principal, or <see langword="null"/> when it
+    /// carries none. Only an authenticated identity may name the subject: a provider can attach
+    /// an unauthenticated auxiliary identity, and a subject taken from there would let its value
+    /// win over the one the provider actually authenticated.
+    /// </summary>
+    public static Claim? FindSubject(ClaimsPrincipal principal)
+    {
+        ArgumentNullException.ThrowIfNull(principal);
+
+        var authenticated = principal.Identities.Where(identity => identity.IsAuthenticated).ToArray();
+        return SubjectClaimTypes
+            .Select(type => authenticated
+                .Select(identity => identity.FindFirst(type))
+                .FirstOrDefault(claim => !string.IsNullOrEmpty(claim?.Value)))
+            .FirstOrDefault(claim => claim is not null);
+    }
+
+    /// <summary>Whether <paramref name="claimType"/> names the subject, compared as claims are looked up.</summary>
+    public static bool IsSubjectClaimType(string claimType) => SubjectClaimTypes.Contains(claimType, StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// <c>base64url(SHA-256(length-prefixed provider, issuer, subject))</c>. The length prefixes

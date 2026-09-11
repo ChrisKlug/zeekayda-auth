@@ -40,11 +40,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
   The principal an external provider returned, parked by `RedirectToAsync` while the host's page
   collects more, moves into the same store as a second entry per interaction, under the same
-  binding, so a second tab on that page parks its own and reads back its own with
-  `GetPendingPrincipalAsync`. It keeps its fifteen-minute lifetime and now never outlives its
-  interaction. The `zkd.pending` cookie scheme is no longer registered — a host cannot have
-  named it, and a key-ring gap now loses the parked principal the way it loses the request — and
-  the name stays reserved.
+  binding, so a second tab on that page parks its own and reads back its own. It keeps its
+  fifteen-minute lifetime and now never outlives its interaction. The `zkd.pending` cookie scheme
+  is no longer registered — a host cannot have named it, and a key-ring gap now loses the parked
+  principal the way it loses the request — and the name stays reserved.
+
+  The page that redirect leads to gets its own interaction service, `IProviderSignInInteraction`,
+  and `GetPendingPrincipalAsync` moves there from `ILoginInteraction`. `SignInAsync(params
+  Claim[] additionalClaims)` has the framework build the session principal the way it does when
+  no page is involved — the subject derived from the provider, the issuer and the upstream
+  subject, the provider's claims, plus what the page collected — and refuses a subject claim;
+  `SignInWithReplacedPrincipalAsync(ClaimsPrincipal, params string[])` links the external
+  identity to a local account, with the host's own principal replacing the parked one, and
+  refuses a principal whose subject is the upstream one the provider returned. Between them, a
+  page can no longer put the raw upstream `sub` into the session. `DenyAsync` refuses with the
+  same `access_denied` the `OnProviderSignIn` handler's refusal sends. Both sign-ins refuse when
+  nothing is parked for the interaction or its provider is no longer registered, and every
+  refusal is decided before the parked principal is taken. A local sign-in at the login page now
+  discards a parked principal instead of recording its provider.
 
 - **Authorization code issuance: a completed flow ends with a code at the client** (#87)
 
@@ -116,11 +129,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   The host takes part through the new second argument of `WithProviders`:
   `ProviderOptions.OnProviderSignIn` fires at resume with a `ProviderSignInContext` — the
   principal, the provider, the client (`ClientInformation.ClientId`) and the effective scopes.
-  `RedirectToAsync(path)` parks the principal in the pending cookie, bound to its interaction, and
-  sends the user to a host-relative page carrying `zkd_i`; that page reads it back with
-  `ILoginInteraction.GetPendingPrincipalAsync()` — `null` when absent, expired or bound to another
-  interaction — and finishes with `SignInAsync`, which consumes it. The parked principal keeps
-  every identity the provider returned. `DenyAsync()` answers the
+  `RedirectToAsync(path)` parks the principal, bound to its interaction, and sends the user to a
+  host-relative page carrying `zkd_i`; that page reads it back with
+  `IProviderSignInInteraction.GetPendingPrincipalAsync()` — `null` when absent, expired or bound
+  to another interaction — and finishes through that service, which consumes it. The parked
+  principal keeps every identity the provider returned. `DenyAsync()` answers the
   client with `access_denied` naming the provider stage. Calling neither promotes; calling both,
   or a path outside the host, throws.
 

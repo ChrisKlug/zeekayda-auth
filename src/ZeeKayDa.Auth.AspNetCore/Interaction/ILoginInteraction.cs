@@ -60,6 +60,11 @@ public interface ILoginInteraction
     /// browser — it throws, because the response has already started.
     /// </para>
     /// <para>
+    /// A principal an external provider parked for this interaction — one the host's page did
+    /// not finish with — is discarded: the session holds <paramref name="principal"/>, and a
+    /// local sign-in records no provider.
+    /// </para>
+    /// <para>
     /// Passing none omits the <c>amr</c> claim rather than assuming a password. The claim is
     /// optional in OpenID Connect, and a relying party may gate a sensitive operation on what it
     /// says — so the framework states nothing about a sign-in it was told nothing about, instead
@@ -166,36 +171,4 @@ public interface ILoginInteraction
     /// resolved outside one.
     /// </exception>
     Task ChallengeAsync(string provider);
-
-    /// <summary>
-    /// The principal an external provider authenticated that
-    /// <c>ProviderSignInContext.RedirectToAsync</c> parked for this page, or
-    /// <see langword="null"/> when there is none: the redirect did not come from there, the
-    /// parked principal has expired, or it belongs to another interaction. A page that gets
-    /// <see langword="null"/> has nothing to link and should say so, not fail.
-    /// </summary>
-    /// <remarks>
-    /// The parked principal is single-use: the <see cref="SignInAsync"/> that completes its
-    /// interaction consumes it, whatever principal the page passes. A page that links the external
-    /// identity to a local account passes its own principal; one that merely collected more passes
-    /// this one, with what it collected added.
-    /// </remarks>
-    /// <param name="cancellationToken">Cancels the read; pass the request's own token.</param>
-    /// <exception cref="ZeeKayDaInteractionException">
-    /// The request carries no <c>zkd_i</c>, so there is no interaction to read a parked principal
-    /// for. The framework adds it to the URL it redirects the page to; a form that regenerates its
-    /// action from routing drops it.
-    /// </exception>
-    /// <exception cref="InvalidOperationException">
-    /// There is no active HTTP request — the service was resolved outside one.
-    /// </exception>
-    /// <exception cref="ZeeKayDaStoreException">
-    /// The interaction store could not be reached. Fail-closed: a parked principal that cannot
-    /// be read is not reported as absent, since the page would then tell the user there is
-    /// nothing to link.
-    /// </exception>
-    /// <exception cref="OperationCanceledException">
-    /// <paramref name="cancellationToken"/> was cancelled.
-    /// </exception>
-    Task<PendingPrincipal?> GetPendingPrincipalAsync(CancellationToken cancellationToken = default);
 }

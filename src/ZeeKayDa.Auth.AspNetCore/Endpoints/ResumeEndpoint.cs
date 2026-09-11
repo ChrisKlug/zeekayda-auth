@@ -34,14 +34,6 @@ internal sealed class ResumeEndpoint : IZeeKayDaEndpoint
     private const string DidNotComplete =
         "Sign-in through the external identity provider did not complete. Return to the application and try again.";
 
-    /// <summary>
-    /// What a refusal after the provider tells the client. Names the stage, as the sign-in page's
-    /// cancellation does, so a client can tell the two apart; framework-owned, so nothing a host
-    /// or a provider said reaches the client, browser history or proxy logs.
-    /// </summary>
-    private const string DeniedAfterProvider =
-        "The sign-in at the external identity provider was not accepted.";
-
     private readonly IOptions<AuthorizationServerOptions> _options;
     private readonly IOptions<ProviderOptions> _providerOptions;
     private readonly ProviderRegistry _providers;
@@ -119,7 +111,7 @@ internal sealed class ResumeEndpoint : IZeeKayDaEndpoint
             requestContext.Scopes.ToImmutableArray(),
             context.RequestAborted,
             path => _outcomes.ParkAsync(context, requestContext, registration, principal, path),
-            () => _outcomes.DenyAsync(context, requestContext, DeniedAfterProvider));
+            () => _outcomes.DenyAsync(context, requestContext, InteractionOutcomes.DeniedAfterProvider));
 
         ClaimsPrincipal promoted;
         try
@@ -142,9 +134,11 @@ internal sealed class ResumeEndpoint : IZeeKayDaEndpoint
             return Fail(context, registration, ex);
         }
 
+        // A principal parked for this interaction by an earlier return is superseded by this one.
         // The framework states nothing about how the user proved who they are at the provider —
         // it was told nothing — so no amr is reported for an auto-promoted external sign-in.
-        await _outcomes.CompleteSignInAsync(context, requestContext, promoted, authenticationMethods: [], registration.Name)
+        await _flow.ConsumePendingAsync(context, requestContext.Id).ConfigureAwait(false);
+        await _outcomes.CompleteSignInAsync(context, requestContext, new SignIn(promoted, AuthenticationMethods: [], registration.Name))
             .ConfigureAwait(false);
 
         return Results.Empty;

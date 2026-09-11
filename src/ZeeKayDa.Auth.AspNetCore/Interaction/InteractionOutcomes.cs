@@ -38,6 +38,14 @@ internal sealed class InteractionOutcomes
     /// <summary>What the user is told when the request is larger than the interaction store may hold.</summary>
     internal const string TooLarge = "The authorization request is too large to process.";
 
+    /// <summary>
+    /// What a refusal after the provider tells the client, whether the host's handler or its page
+    /// refused. Names the stage, as the sign-in page's cancellation does, so a client can tell the
+    /// two apart; framework-owned, so nothing a host or a provider said reaches the client,
+    /// browser history or proxy logs.
+    /// </summary>
+    internal const string DeniedAfterProvider = "The sign-in at the external identity provider was not accepted.";
+
     private readonly AuthorizationFlow _flow;
     private readonly AuthorizationResponses _responses;
     private readonly ProviderHandlerActivator _activator;
@@ -145,33 +153,26 @@ internal sealed class InteractionOutcomes
     }
 
     /// <summary>
-    /// Terminal. Promotes <paramref name="principal"/> to the SSO session, records the
-    /// authentication on the interaction context, and continues the flow. A principal parked for
-    /// this interaction is consumed, and the provider that parked it is recorded when
-    /// <paramref name="providerScheme"/> names none.
+    /// Terminal. Promotes the principal in <paramref name="signIn"/> to the SSO session, records
+    /// the authentication on the interaction context, and continues the flow. Nothing parked for
+    /// the interaction is touched: the caller has already taken or discarded it, and says which
+    /// provider, if any, to record.
     /// </summary>
     /// <remarks>
     /// The session and the authenticated context are written before the flow continues, so the
     /// consent page reads a request that already knows who answered it.
     /// </remarks>
-    public async Task CompleteSignInAsync(
-        HttpContext context,
-        AuthorizationRequestContext requestContext,
-        ClaimsPrincipal principal,
-        IReadOnlyList<string> authenticationMethods,
-        string? providerScheme)
+    public async Task CompleteSignInAsync(HttpContext context, AuthorizationRequestContext requestContext, SignIn signIn)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(requestContext);
-        ArgumentNullException.ThrowIfNull(principal);
-        ArgumentNullException.ThrowIfNull(authenticationMethods);
+        ArgumentNullException.ThrowIfNull(signIn);
 
         // A sign-in for a client that skips consent ends with the code in this response, and a
         // cached sign-in response is a stolen one.
         context.Response.Headers.CacheControl = "no-store";
 
-        var pending = await _flow.ConsumePendingAsync(context, requestContext.Id).ConfigureAwait(false);
-        var state = await _flow.PromoteAsync(context, principal, authenticationMethods).ConfigureAwait(false);
+        var state = await _flow.PromoteAsync(context, signIn.Principal, signIn.AuthenticationMethods).ConfigureAwait(false);
 
         var authenticated = requestContext with
         {
@@ -179,7 +180,7 @@ internal sealed class InteractionOutcomes
             Subject = state.Subject,
             AuthTime = state.AuthTime,
             Amr = state.Amr,
-            ProviderScheme = providerScheme ?? pending?.Provider,
+            ProviderScheme = signIn.ProviderScheme,
 
             // A decision recorded by whoever signed in earlier on this interaction is theirs, not
             // this sign-in's: the consent page asks again.
@@ -361,3 +362,10 @@ internal sealed class InteractionOutcomes
         await context.Response.StartAsync().ConfigureAwait(false);
     }
 }
+
+/// <summary>
+/// What a completed sign-in promotes: the principal the session holds, how the user proved who
+/// they are, and the external provider that authenticated them, <see langword="null"/> for a
+/// local sign-in.
+/// </summary>
+internal sealed record SignIn(ClaimsPrincipal Principal, IReadOnlyList<string> AuthenticationMethods, string? ProviderScheme);

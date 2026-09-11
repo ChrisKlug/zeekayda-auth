@@ -48,8 +48,9 @@ public sealed class ProviderSignInContext
     /// <summary>
     /// Parks <see cref="Principal"/> and sends the user to a page of the host's, to link the
     /// external identity to a local account or to collect what the provider did not supply. That
-    /// page reads the principal back with <see cref="ILoginInteraction.GetPendingPrincipalAsync"/>
-    /// and finishes with <see cref="ILoginInteraction.SignInAsync"/>.
+    /// page reads the principal back with <see cref="IProviderSignInInteraction.GetPendingPrincipalAsync"/> and
+    /// finishes through <see cref="IProviderSignInInteraction"/>: with the claims it collected,
+    /// or with a linked local account's own principal in place of the parked one.
     /// </summary>
     /// <param name="path">
     /// A host-relative path: absolute within the application, starting with <c>/</c>, with no
@@ -120,7 +121,7 @@ public sealed class ProviderSignInContext
     /// The principal as the provider returned it, with the framework's reserved claims removed.
     /// A copy: what the framework parks or promotes is its own, so a change made here is not
     /// carried into the session. A host that wants the session to hold something else redirects
-    /// to a page of its own and passes that principal to <c>SignInAsync</c>.
+    /// to a page of its own and finishes there through <see cref="IProviderSignInInteraction"/>.
     /// </summary>
     public ClaimsPrincipal Principal { get; }
 

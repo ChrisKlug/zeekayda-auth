@@ -62,9 +62,10 @@ internal sealed class LoginInteraction : ILoginInteraction
         var context = RequireStateChangingRequest();
         var requestContext = await _flow.ResolveAddressedAsync(context).ConfigureAwait(false);
 
-        // The host's principal is what the session holds; a provider that parked one for this
-        // interaction is recorded on the request by the completion.
-        await _outcomes.CompleteSignInAsync(context, requestContext, principal, authenticationMethods, providerScheme: null)
+        // A principal an external provider parked for this interaction is discarded, not adopted:
+        // the login page signs in the host's own principal, and a local sign-in records no provider.
+        await _flow.ConsumePendingAsync(context, requestContext.Id).ConfigureAwait(false);
+        await _outcomes.CompleteSignInAsync(context, requestContext, new SignIn(principal, authenticationMethods, ProviderScheme: null))
             .ConfigureAwait(false);
     }
 
@@ -98,19 +99,6 @@ internal sealed class LoginInteraction : ILoginInteraction
                 "entry in ILoginInteraction.Providers, as the login page received it.");
 
         await _outcomes.ChallengeAsync(context, requestContext, registration).ConfigureAwait(false);
-    }
-
-    /// <inheritdoc/>
-    public async Task<PendingPrincipal?> GetPendingPrincipalAsync(CancellationToken cancellationToken = default)
-    {
-        var context = RequireHttpContext();
-        var interactionId = await AuthorizationFlow.RequireInteractionIdAsync(context).ConfigureAwait(false);
-
-        var pending = await _flow.ReadPendingAsync(context, interactionId, cancellationToken).ConfigureAwait(false);
-        if (pending is null || _providers.Find(pending.Provider) is not { } registration)
-            return null;
-
-        return new PendingPrincipal(pending.Principal, registration.Descriptor);
     }
 
     private HttpContext RequireHttpContext() =>

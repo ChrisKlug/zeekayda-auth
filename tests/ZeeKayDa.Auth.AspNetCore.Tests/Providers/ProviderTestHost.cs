@@ -127,11 +127,11 @@ internal static class ProviderTestHost
 
         endpoints.MapPost("/account/login/cancel", (ILoginInteraction login) => login.DenyAsync());
 
-        // The collect-more page: reports the parked principal, and on post maps it onto a local
-        // account and signs that in.
-        endpoints.MapGet(CollectMorePath, async (ILoginInteraction login) =>
+        // The collect-more page: reports the parked principal; on post, adds what the form
+        // collected and lets the framework build the session principal.
+        endpoints.MapGet(CollectMorePath, async (IProviderSignInInteraction signIn) =>
         {
-            var pending = await login.GetPendingPrincipalAsync();
+            var pending = await signIn.GetPendingPrincipalAsync();
 
             return pending is null
                 ? Results.NotFound()
@@ -146,28 +146,71 @@ internal static class ProviderTestHost
         });
 
         // The same read with a token the caller has already cancelled.
-        endpoints.MapGet(CollectMorePath + "/cancelled", async (ILoginInteraction login) =>
+        endpoints.MapGet(CollectMorePath + "/cancelled", async (IProviderSignInInteraction signIn) =>
         {
-            await login.GetPendingPrincipalAsync(new CancellationToken(canceled: true));
+            await signIn.GetPendingPrincipalAsync(new CancellationToken(canceled: true));
             return Results.Ok();
         });
 
-        endpoints.MapPost(CollectMorePath, async (ILoginInteraction login) =>
+        // Every form field becomes a claim, so a test can pass whatever it wants refused or kept.
+        endpoints.MapPost(CollectMorePath, async (HttpContext context, IProviderSignInInteraction signIn) =>
         {
-            var pending = await login.GetPendingPrincipalAsync()
+            var form = await context.Request.ReadFormAsync(context.RequestAborted);
+            await signIn.SignInAsync(form.SelectMany(field => field.Value.Select(value => new Claim(field.Key, value ?? string.Empty))).ToArray());
+        });
+
+        // The linking page: maps the parked principal onto a local account and signs that in.
+        endpoints.MapPost(CollectMorePath + "/link", async (IProviderSignInInteraction signIn) =>
+        {
+            var pending = await signIn.GetPendingPrincipalAsync()
                 ?? throw new InvalidOperationException("Nothing is parked for this page.");
 
-            await login.SignInAsync(
+            await signIn.SignInWithReplacedPrincipalAsync(
                 new ClaimsPrincipal(new ClaimsIdentity(
                     [new Claim("sub", "mapped-" + pending.Principal.FindFirstValue("sub"))], "test")),
                 AuthenticationMethods.Password);
         });
+
+        // The mistake the service exists to refuse: passing the parked principal straight back.
+        endpoints.MapPost(CollectMorePath + "/link-passthrough", async (IProviderSignInInteraction signIn) =>
+        {
+            var pending = await signIn.GetPendingPrincipalAsync()
+                ?? throw new InvalidOperationException("Nothing is parked for this page.");
+
+            await signIn.SignInWithReplacedPrincipalAsync(pending.Principal, AuthenticationMethods.Password);
+        });
+
+        // Linking straight from the form, without reading first: the service's own refusals.
+        endpoints.MapPost(CollectMorePath + "/link-direct", async (HttpContext context, IProviderSignInInteraction signIn) =>
+        {
+            var form = await context.Request.ReadFormAsync(context.RequestAborted);
+            var claims = form.SelectMany(field => field.Value.Select(value => new Claim(field.Key, value ?? string.Empty))).ToArray();
+
+            await signIn.SignInWithReplacedPrincipalAsync(new ClaimsPrincipal(new ClaimsIdentity(claims, "test")), AuthenticationMethods.Password);
+        });
+
+        endpoints.MapPost(CollectMorePath + "/cancel", (IProviderSignInInteraction signIn) => signIn.DenyAsync());
+
+        // What the service refuses: terminal calls from the request that renders the page.
+        endpoints.MapGet(CollectMorePath + "/sign-in-by-get", (IProviderSignInInteraction signIn) => signIn.SignInAsync());
+        endpoints.MapGet(CollectMorePath + "/cancel-by-get", (IProviderSignInInteraction signIn) => signIn.DenyAsync());
 
         // What the invariant forbids and the framework refuses: a host page signing into the
         // framework's external scheme by name.
         endpoints.MapGet("/test/sign-in-external", (HttpContext context) => context.SignInAsync(
             ZeeKayDaCookies.External,
             new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", "forged")], "host"))));
+
+        // What the interaction context recorded about the sign-in that answered it.
+        endpoints.MapGet("/test/request-context", async (HttpContext context, AuthorizationFlow flow) =>
+        {
+            var interactionId = await AuthorizationFlow.RequireInteractionIdAsync(context);
+            var requestContext = await flow.ReadAsync(context, interactionId);
+
+            return requestContext is null
+                ? Results.NotFound()
+                : Results.Ok(new { providerScheme = requestContext.ProviderScheme, subject = requestContext.Subject });
+        });
 
         endpoints.MapGet("/test/session", async (HttpContext context) =>
         {
@@ -179,6 +222,8 @@ internal static class ProviderTestHost
                     sid = result.Principal!.FindFirstValue(SsoSessionClaimTypes.SessionId),
                     sub = result.Principal.FindFirstValue("sub"),
                     name = result.Principal.FindFirstValue("name"),
+                    dept = result.Principal.FindFirstValue("dept"),
+                    reservedClaims = result.Principal.Claims.Count(claim => claim.Type.StartsWith("zkd:", StringComparison.OrdinalIgnoreCase) && claim.Type != SsoSessionClaimTypes.SessionId && claim.Type != SsoSessionClaimTypes.AuthTime && claim.Type != SsoSessionClaimTypes.Amr),
                     amr = result.Principal.FindAll(SsoSessionClaimTypes.Amr).Select(claim => claim.Value).ToArray(),
                 })
                 : Results.NotFound();
