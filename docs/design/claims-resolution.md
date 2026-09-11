@@ -40,15 +40,23 @@ public abstract class ClaimsResolutionResult
     public sealed class SubjectInvalid : ClaimsResolutionResult { }
 }
 
-public readonly record struct ClaimRecord(string Type, ClaimValue Value);
-
-public readonly record struct ClaimValue
+public readonly record struct ClaimRecord
 {
-    public static implicit operator ClaimValue(string value);        // null or empty throws
+    // The one place that validates: a null or empty string, NaN or infinity, a JSON null from
+    // From, or a default ClaimValue is refused here, and the message names the type, never the value.
+    public ClaimRecord(string type, ClaimValue value);
+
+    public string Type { get; }
+    public ClaimValue Value { get; }
+}
+
+public readonly record struct ClaimValue                             // conversions never throw
+{
+    public static implicit operator ClaimValue(string value);
     public static implicit operator ClaimValue(bool value);
     public static implicit operator ClaimValue(int value);
     public static implicit operator ClaimValue(long value);
-    public static implicit operator ClaimValue(double value);        // NaN and infinity throw
+    public static implicit operator ClaimValue(double value);
     public static implicit operator ClaimValue(AddressClaim value);
     public static ClaimValue From<T>(T value, JsonSerializerOptions? options = null) where T : notnull;
 }
@@ -81,27 +89,34 @@ fetching hint so a provider can load client-level additions it could not infer f
 alone, never a filter: returning more is fine, selection drops it. `ClientId` is deliberately
 absent. `FamilyId` is stable across every rotation of a grant, which makes it the natural cache key
 for an implementor reducing identity-store round trips — and a cache miss on it is structurally
-"first issuance". It is `null` at userinfo, which is a read with no grant behind it; a provider
-caching on the family simply does not cache that call.
+"first issuance". It is `null` at userinfo, which is a read with no grant behind it. A cache key
+therefore always includes `Sub`: the family id is never a key on its own, so a `?? ""` fallback can
+never collapse every userinfo call into one slot that serves one subject's claims to another.
 
 `ClaimValue` is a JSON value, not an object. The implicit conversions cover every type a standard
-claim can be. `AddressClaim` covers the one standard object claim, and its conversion writes the
-OIDC Core §5.1.1 member names itself (`street_address`, `postal_code`, …) — it never passes through
-`From` or any naming policy. A custom object goes through `From`, which serialises it right there —
-with the options given, or the framework's web defaults (camelCase) — once. A custom object therefore reaches a token only by a deliberate call, never by
-being handed over. The record holds the resulting JSON detached from anything the provider keeps,
-so nothing mutated afterwards can change a token, and `TokenPayload` writes it raw. `null`, an
-empty string, NaN and infinity throw at conversion, because an unavailable claim is expressed by
-not returning the record (OIDC Core §5.3.2). A struct is still default-constructible, so
-`default(ClaimRecord)` is guarded the way `TokenIssuanceContext` guards it: the members throw, and
-selection treats one in a result as a provider bug.
+claim can be, and none of them throws — Framework Design Guidelines §5.7 — so the one place that
+validates is `ClaimRecord`'s constructor, which refuses a null or empty string, NaN or infinity, a
+JSON null and a default `ClaimValue`, naming the claim type and never the value. `AddressClaim`
+covers the one standard object claim; its conversion writes the OIDC Core §5.1.1 member names
+itself (`street_address`, `postal_code`, …), omits null members, and never passes through `From`.
+A custom object goes through `From`, which serialises it right there — with the options given, or
+snake_case by default, OIDC's own convention — once, so a custom object reaches a token only by a
+deliberate call, never by being handed over. The record holds the resulting JSON detached from
+anything the provider keeps, so nothing mutated afterwards can change a token, and `TokenPayload`
+writes it raw. An unavailable claim is expressed by not returning the record (OIDC Core §5.3.2).
+A struct is still default-constructible, so `default(ClaimRecord)` is guarded the way
+`TokenIssuanceContext` guards it: the members throw, and selection treats one in a result as a
+provider bug.
 
-A provider returns one record per value. Three `role` records become `"role": ["admin", "editor",
-"viewer"]` on the wire, in the order returned and never deduplicated: RFC 7519 §4 requires unique
-claim names, and that array is exactly what the ASP.NET Core JWT handler turns back into three
-`role` claims on the consuming side. The only names that do not merge are the standard claims OIDC
-Core §5.1 defines as single-valued — `email_verified` twice is a provider bug, and aborts issuance
-as an infrastructure failure, exactly as `TokenPayload` refuses a duplicate name.
+A provider returns one record per value, and one record is written as a scalar. Three `role`
+records become `"role": ["admin", "editor", "viewer"]` on the wire, in the order returned and never
+deduplicated: RFC 7519 §4 requires unique claim names, and that array is exactly what the ASP.NET
+Core JWT handler turns back into three `role` claims on the consuming side. Merging is for strings,
+or for numbers, all of one kind. A repeated boolean, object or array, a mix of kinds, or a repeat
+of a standard single-valued claim (OIDC Core §5.1) is a provider bug and aborts issuance as an
+infrastructure failure, exactly as `TokenPayload` refuses a duplicate name — `is_admin` merged into
+`[true, false]` would fail open on a consumer's `HasClaim`. A provider that wants an array shape
+regardless of count returns `ClaimValue.From(array)` once.
 
 ## Rejected
 
@@ -134,5 +149,9 @@ as an infrastructure failure, exactly as `TokenPayload` refuses a duplicate name
   address is hostile to the person writing the provider; the conversions on `ClaimValue` and a
   typed `AddressClaim` cover every standard claim without one.
 - **Refusing repeated records for one name.** A provider looping over roles is the normal case, and
-  the array is what the JWT handler on the other side expects. The refusal applies only to standard
-  single-valued claims, where a repeat cannot be anything but a bug.
+  the array is what the JWT handler on the other side expects. The refusal applies to repeats of a
+  boolean, object or array, to mixed kinds, and to the standard single-valued claims — where a
+  repeat cannot be anything but a bug, and where merging would fail open.
+- **Validation inside the implicit conversions.** Guidelines say an implicit cast must not throw,
+  and the failure would name `op_Implicit` and no claim. The record's constructor validates instead
+  and names the type.

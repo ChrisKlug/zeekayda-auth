@@ -67,11 +67,11 @@ confused with "this subject must not receive tokens".
 built from the same result, so there is no split-brain where one reflects a claim change the other
 does not.
 
-**Caching is the implementer's, keyed on the family, and bounded well under the access-token
-lifetime.** That is the sanctioned way to get snapshot-equivalent I/O without giving up the
-call-every-issuance contract. A cache miss on the family id is structurally "first issuance", so no
-separate first-issuance-versus-rotation flag is needed and none will be added. A TTL at
-grant or refresh-token scale defeats the point entirely and must not be used.
+**Caching is the implementer's, keyed on the subject and the family, and bounded well under the
+access-token lifetime.** That is the sanctioned way to get snapshot-equivalent I/O without giving up
+the call-every-issuance contract. A miss on the family id is structurally "first issuance", so no
+first-issuance flag is needed; the family id is absent at userinfo and is never a key on its own. A
+TTL at grant or refresh-token scale defeats the point entirely and must not be used.
 
 **Claims resolution is a subject-level concern.** The client id and request metadata are deliberately
 withheld from it. The only client-varying step is selection, downstream of the seam, and a client can
@@ -84,16 +84,16 @@ result.
 **A claim value is a JSON value the provider builds, never an object the framework serialises.**
 `email_verified` is a boolean, `updated_at` a number and `address` an object (OIDC Core §5.1.1); a
 custom object reaches a token only through an explicit conversion, and `null`, empty, NaN and
-infinity are unrepresentable. Repeated records for one name are written as one JSON array in the
-order returned, as RFC 7519 §4's unique-name rule requires; a repeat of a standard single-valued
-claim (§5.1) is a provider bug and aborts issuance as an infrastructure failure.
+infinity are unrepresentable. Repeated string or number records for one name are written as one JSON
+array in the order returned (RFC 7519 §4 unique names); any other repeat, or one of a standard
+single-valued claim (§5.1), is a provider bug and aborts issuance as an infrastructure failure.
 
 **Claim selection is configuration, not a seam.** A scope names the claim types it unlocks in each
 destination — ID token, userinfo, access token — and a client registration may add types to any of
-them, never remove any; removal is `AllowedScopes`. An addition may not name a claim a registered
-scope already unlocks for that destination, checked at startup, so consent-bearing claims arrive only
-through consent. Neither list is a source: a type the provider did not return is omitted, never
-written as `null` or empty (OIDC Core §5.3.2), and routing is not third-party-overridable.
+them, never remove any; removal is `AllowedScopes`. An addition may not name a claim any registered
+scope unlocks in any destination, checked on every served registration, so consent-bearing claims
+arrive only through consent. Neither list is a source: a type the provider did not return is omitted,
+never written as `null` or empty (OIDC Core §5.3.2), and routing is not third-party-overridable.
 
 **The standard scopes ship their claims in both the ID token and userinfo.** OIDC Core §5.4 routes
 them to userinfo; §2 lets the ID token carry other claims. A host wanting the §5.4 default trims the

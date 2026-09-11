@@ -80,7 +80,11 @@ These are **selectors, not sources**: a name here still has to come back from th
 to appear anywhere. They are additive only. Subtraction is `AllowedScopes`, which already narrows
 the request silently (RFC 6749 §3.3) before anything here runs. The consent page lists scopes, so
 an addition is operator policy the user never sees; the guard rail is that an addition may not name
-a claim any registered scope already unlocks for that destination, checked at startup. `email` can
+a claim any registered scope unlocks in *any* destination. A per-destination check would let
+`AdditionalAccessTokenClaims = ["email"]` through, since no scope lists `email` for the access
+token, and the API would read a claim the user never consented to. The guard runs in
+`IClientRegistrationValidator`, so `ValidatedClientResolver` applies it to every served
+registration, custom repositories included, not only to the in-memory ones at startup. `email` can
 then only ever arrive through the `email` scope and its consent; `tenant` is the operator's.
 
 They live on `IClientMetadata` next to `AllowedScopes`, since selection runs with the token
@@ -157,12 +161,15 @@ internal sealed record SelectedClaims(
    plus the client's `Additional…` list for it.
 2. Each destination gets every record in `pool` whose type is wanted there. Values are the JSON the
    provider built (`claims-resolution.md`): `email_verified` is a boolean, `address` an object, and
-   the issuer writes them raw. Repeated records for one name become one JSON array in the order
-   returned, except for the standard single-valued claims of OIDC Core §5.1, where a repeat aborts
-   issuance as a provider bug.
+   the issuer writes them raw. One record is written as a scalar. Repeated records for one name
+   merge into one JSON array in the order returned when every value is a string, or every value is
+   a number; a repeated boolean, object or array, a mix of kinds, or a repeat of a standard
+   single-valued claim of OIDC Core §5.1 aborts issuance as a provider bug — merging `is_admin`
+   into `[true, false]` would fail open. A provider that wants a stable array shape returns
+   `ClaimValue.From(array)` once.
 3. A type that is wanted but absent from the pool is simply absent from the token. Never `null`,
-   never an empty string — OIDC Core §5.3.2 says an unavailable claim is omitted, and `ClaimValue`
-   cannot hold either.
+   never an empty string — OIDC Core §5.3.2 says an unavailable claim is omitted, and `ClaimRecord`
+   refuses either at construction.
 4. Protocol claims are the endpoint's, written from the grant, and are stripped from the pool before
    step 2 so a provider cannot re-assert a subject, an audience or an authentication event. The list
    is one closed constant, compared case-insensitively because a resource server's `FindFirst` is:
