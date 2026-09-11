@@ -181,9 +181,9 @@ ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.Issuer.init -> void
 ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.JwksUri.get -> string!
 ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.JwksUri.init -> void
 ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.OpenIdConfigurationDocument() -> void
-ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.ResponseModesSupported.get -> System.Collections.Generic.IReadOnlyCollection<ZeeKayDa.Auth.Authorization.ResponseMode>!
+ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.ResponseModesSupported.get -> System.Collections.Generic.IReadOnlyCollection<ZeeKayDa.Auth.Authorization.ResponseMode>?
 ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.ResponseModesSupported.init -> void
-ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.ResponseTypesSupported.get -> System.Collections.Generic.IReadOnlyCollection<ZeeKayDa.Auth.Authorization.ResponseType>!
+ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.ResponseTypesSupported.get -> System.Collections.Generic.IReadOnlyCollection<ZeeKayDa.Auth.Authorization.ResponseType>?
 ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.ResponseTypesSupported.init -> void
 ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.ScopesSupported.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
 ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.ScopesSupported.init -> void

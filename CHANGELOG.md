@@ -375,9 +375,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   while discovery listed a grant set that could not use the endpoint it advertised. `GrantTypesSupported`
   is the declaration that the interactive machinery is unused — the startup checks were already gated on
   it — so the endpoint now maps nothing and the discovery document omits `authorization_endpoint`, as
-  RFC 8414 §2 allows when no supported grant uses it, publishes `response_types_supported` and
-  `response_modes_supported` empty, and omits `code_challenge_methods_supported`.
-  `OpenIdConfigurationDocument.AuthorizationEndpoint` is nullable accordingly. Client credentials is
+  RFC 8414 §2 allows when no supported grant uses it, and omits `response_types_supported`,
+  `response_modes_supported` and `code_challenge_methods_supported` with it — OpenID Connect
+  Discovery §4.2 omits a zero-element claim rather than publishing it empty. The three
+  `OpenIdConfigurationDocument` properties are nullable accordingly. Such a host is OAuth-only
+  metadata under the OpenID Connect path until RFC 8414's own path lands. Client credentials is
   unaffected: it never touched the endpoint.
 
 ### Changed

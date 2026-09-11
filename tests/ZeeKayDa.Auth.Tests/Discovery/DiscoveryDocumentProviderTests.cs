@@ -128,8 +128,8 @@ public sealed class DiscoveryDocumentProviderTests
     {
         // A client_credentials-only host does not serve the endpoint, so the metadata does not
         // name it (RFC 8414 §2) — not even when the host configured an explicit URI for it — and
-        // nothing that describes the endpoint is advertised either: response_types_supported is
-        // required and so is honestly empty, the modes go with it, and PKCE methods are omitted.
+        // nothing that describes the endpoint is advertised either: response types, response modes
+        // and PKCE methods are all omitted, since OIDC Discovery §4.2 omits a zero-element claim.
         var doc = await GetDocumentAsync(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
@@ -142,8 +142,8 @@ public sealed class DiscoveryDocumentProviderTests
         });
 
         doc.AuthorizationEndpoint.Should().BeNull();
-        doc.ResponseTypesSupported.Should().BeEmpty();
-        doc.ResponseModesSupported.Should().BeEmpty();
+        doc.ResponseTypesSupported.Should().BeNull();
+        doc.ResponseModesSupported.Should().BeNull();
         doc.CodeChallengeMethodsSupported.Should().BeNull();
         doc.GrantTypesSupported.Should().Equal(GrantType.ClientCredentials);
         doc.TokenEndpoint.Should().Be("https://auth.example.com/connect/token", "the token endpoint is what such a host serves");
