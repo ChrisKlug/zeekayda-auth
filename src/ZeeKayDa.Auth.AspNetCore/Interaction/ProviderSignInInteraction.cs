@@ -85,7 +85,7 @@ internal sealed class ProviderSignInInteraction : IProviderSignInInteraction
 
         // Nothing is stated about how the user proved who they are at the provider, as for an
         // external sign-in that involved no page.
-        await _outcomes.CompleteSignInAsync(context, requestContext, promoted, authenticationMethods: [], pending.Provider)
+        await _outcomes.CompleteTakenSignInAsync(context, requestContext, promoted, authenticationMethods: [], pending)
             .ConfigureAwait(false);
     }
 
@@ -102,9 +102,11 @@ internal sealed class ProviderSignInInteraction : IProviderSignInInteraction
                 + "AuthenticationMethods.Password, or pass none to omit the amr claim.",
                 nameof(authenticationMethods));
 
-        // Checked before the parked principal is taken: a principal the session would refuse
-        // must not cost the page the one thing it needs to try again.
-        if (!HasSubject(principal))
+        // A snapshot, of the identities since Clone shares them: what is validated is what is
+        // promoted. Checked before the parked principal is taken: a principal the session would
+        // refuse must not cost the page the one thing it needs to try again.
+        var linked = new ClaimsPrincipal(principal.Identities.Select(identity => identity.Clone()));
+        if (!HasSubject(linked))
         {
             throw new ZeeKayDaInteractionException(
                 "The principal passed to SignInAsync carries no subject. Add a 'sub' or " +
@@ -114,7 +116,7 @@ internal sealed class ProviderSignInInteraction : IProviderSignInInteraction
         var context = RequireStateChangingRequest();
         var (requestContext, pending) = await TakeParkedAsync(context).ConfigureAwait(false);
 
-        await _outcomes.CompleteSignInAsync(context, requestContext, principal, methods, pending.Provider)
+        await _outcomes.CompleteTakenSignInAsync(context, requestContext, linked, methods, pending)
             .ConfigureAwait(false);
     }
 

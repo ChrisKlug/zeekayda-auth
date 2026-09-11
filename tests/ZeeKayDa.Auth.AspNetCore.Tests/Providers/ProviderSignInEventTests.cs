@@ -1,4 +1,5 @@
 using System.Net;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
@@ -93,15 +94,34 @@ public sealed class ProviderSignInEventTests
     {
         private readonly InMemoryInteractionBackingStore _inner = new(TimeProvider.System);
 
+        private int _pendingReads;
+
         public bool FailPendingReads { get; set; }
 
         public bool FailPendingWrites { get; set; }
 
+        /// <summary>Runs before every parked-principal read: a hold, so a test can act mid-flight.</summary>
+        public Func<Task>? BeforePendingRead { get; set; }
+
+        /// <summary>How many parked-principal reads the store has answered.</summary>
+        public int PendingReads => Volatile.Read(ref _pendingReads);
+
         public ValueTask SetAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken) =>
             FailPendingWrites && IsPending(key) ? throw new InvalidOperationException("store is down") : _inner.SetAsync(key, value, expiresAt, cancellationToken);
 
-        public ValueTask<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken) =>
-            FailPendingReads && IsPending(key) ? throw new InvalidOperationException("store is down") : _inner.GetAsync(key, cancellationToken);
+        public async ValueTask<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken)
+        {
+            if (!IsPending(key))
+                return await _inner.GetAsync(key, cancellationToken);
+
+            if (BeforePendingRead is { } hold)
+                await hold();
+            Interlocked.Increment(ref _pendingReads);
+            if (FailPendingReads)
+                throw new InvalidOperationException("store is down");
+
+            return await _inner.GetAsync(key, cancellationToken);
+        }
 
         public ValueTask RemoveAsync(StoreKey key, CancellationToken cancellationToken) =>
             _inner.RemoveAsync(key, cancellationToken);
@@ -377,6 +397,71 @@ public sealed class ProviderSignInEventTests
         store.FailPendingReads = false;
         (await ReadJsonAsync(client, "/test/session")).Should().BeNull("nothing was promoted");
         (await ReadJsonAsync(client, resume.Headers.Location!.OriginalString)).Should().NotBeNull("the parked principal is still there to finish with");
+    }
+
+    [Fact]
+    public async Task SignInAsync_takes_the_parked_principal_from_the_store_exactly_once()
+    {
+        // One take, then promotion of what was taken: a second consume inside the completion
+        // would remove a principal parked in the meantime while promoting the earlier one.
+        var store = new FaultableInteractionStore();
+        using var factory = NewFaultableFactory(store);
+        using var client = NewClient(factory);
+        var (_, resume) = await ResumeAsync(client);
+        var before = store.PendingReads;
+
+        var signIn = await client.PostAsync(resume.Headers.Location!.OriginalString, Form(("dept", "sales")), Cancellation);
+
+        signIn.ShouldHaveReachedConsent();
+        (store.PendingReads - before).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task SignInAsync_with_a_linked_principal_promotes_the_principal_as_validated_not_as_later_changed()
+    {
+        // A host that keeps a reference to the principal it passed and changes it while the
+        // store is awaited signs in what was validated, not the replacement.
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var proceed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var store = new FaultableInteractionStore();
+        using var factory = new TestWebAppFactory(
+            configureBuilder: builder =>
+            {
+                builder.WithProviders(
+                    auth => auth.AddOAuth("acme", "Acme", ConfigureAcme),
+                    options => options.OnProviderSignIn = context => context.RedirectToAsync(CollectMorePath));
+                builder.AddInMemoryAuthorizationCodeStore(allowOutsideDevelopment: true);
+                builder.AddInMemoryRefreshTokenStore(allowOutsideDevelopment: true);
+                builder.Services.AddSingleton<IInteractionBackingStore>(store);
+            },
+            mapEndpoints: endpoints =>
+            {
+                MapHostPages(endpoints);
+                endpoints.MapPost(CollectMorePath + "/link-mutating", async (IProviderSignInInteraction signIn) =>
+                {
+                    var identity = new System.Security.Claims.ClaimsIdentity([new System.Security.Claims.Claim("sub", "local-1")], "test");
+                    var principal = new System.Security.Claims.ClaimsPrincipal(identity);
+
+                    var signingIn = signIn.SignInAsync(principal, ZeeKayDa.Auth.Authorization.AuthenticationMethods.Password);
+                    await entered.Task;
+                    identity.RemoveClaim(identity.FindFirst("sub"));
+                    identity.AddClaim(new System.Security.Claims.Claim("sub", "hijacked"));
+                    proceed.SetResult();
+                    await signingIn;
+                });
+            });
+        using var client = NewClient(factory);
+        var (interactionId, _) = await ResumeAsync(client);
+        store.BeforePendingRead = async () =>
+        {
+            entered.TrySetResult();
+            await proceed.Task;
+        };
+
+        var signIn = await client.PostAsync(WithInteractionId(CollectMorePath + "/link-mutating", interactionId), Form(), Cancellation);
+
+        signIn.ShouldHaveReachedConsent();
+        (await ReadJsonAsync(client, "/test/session"))!.Value.GetProperty("sub").GetString().Should().Be("local-1");
     }
 
     [Fact]
