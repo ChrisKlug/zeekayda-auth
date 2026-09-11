@@ -171,6 +171,15 @@ internal static class ProviderTestHost
                 AuthenticationMethods.Password);
         });
 
+        // Linking straight from the form, without reading first: the service's own refusals.
+        endpoints.MapPost(CollectMorePath + "/link-direct", async (HttpContext context, IProviderSignInInteraction signIn) =>
+        {
+            var form = await context.Request.ReadFormAsync(context.RequestAborted);
+            var claims = form.Select(field => new Claim(field.Key, field.Value.ToString())).ToArray();
+
+            await signIn.SignInAsync(new ClaimsPrincipal(new ClaimsIdentity(claims, "test")), AuthenticationMethods.Password);
+        });
+
         endpoints.MapPost(CollectMorePath + "/cancel", (IProviderSignInInteraction signIn) => signIn.DenyAsync());
 
         // What the service refuses: terminal calls from the request that renders the page.
