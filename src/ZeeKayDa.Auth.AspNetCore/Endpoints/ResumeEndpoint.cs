@@ -105,7 +105,7 @@ internal sealed class ResumeEndpoint : IZeeKayDaEndpoint
         // them. What is parked or promoted is the framework's own principal, so a reference the
         // host kept cannot change the session after the fact.
         var signIn = new ProviderSignInContext(
-            new ClaimsPrincipal(principal.Identities.Select(identity => identity.Clone())),
+            ReservedClaims.Snapshot(principal),
             registration.Descriptor,
             await _flow.DescribeClientAsync(context, requestContext, context.RequestAborted).ConfigureAwait(false),
             requestContext.Scopes.ToImmutableArray(),

@@ -25,6 +25,13 @@ internal static class ReservedClaims
     }
 
     /// <summary>The same identities with every reserved claim removed.</summary>
+    /// <remarks>
+    /// Also the framework's copy of a caller's principal. The identities are rebuilt on the base
+    /// <see cref="ClaimsIdentity"/> from the claims they carry at this moment, so the result
+    /// shares no object with the caller and depends on none of the caller's virtual members —
+    /// a <c>Clone</c> override that returned the same instance would hand back the original,
+    /// and a change the caller made after the call would then be what the framework signed in.
+    /// </remarks>
     public static ClaimsPrincipal Strip(ClaimsPrincipal principal)
     {
         ArgumentNullException.ThrowIfNull(principal);
@@ -35,4 +42,11 @@ internal static class ReservedClaims
             identity.NameClaimType,
             identity.RoleClaimType)));
     }
+
+    /// <summary>
+    /// A copy of <paramref name="principal"/> that the caller cannot change afterwards: what
+    /// was validated is what is used once the store has been awaited. The same rebuild as
+    /// <see cref="Strip"/>, named for what the caller wants from it.
+    /// </summary>
+    public static ClaimsPrincipal Snapshot(ClaimsPrincipal principal) => Strip(principal);
 }

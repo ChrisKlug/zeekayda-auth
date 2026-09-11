@@ -62,8 +62,9 @@ internal sealed class LoginInteraction : ILoginInteraction
                 + "AuthenticationMethods.Password, or pass none to omit the amr claim.",
                 nameof(authenticationMethods));
 
-        // The identities are cloned, since ClaimsPrincipal.Clone shares them.
-        var user = new ClaimsPrincipal(principal.Identities.Select(identity => identity.Clone()));
+        // Rebuilt on the framework's own identity type, not cloned: a copy that shares nothing
+        // with the caller and calls none of the caller's virtuals.
+        var user = ReservedClaims.Snapshot(principal);
 
         var context = RequireStateChangingRequest();
         var requestContext = await _flow.ResolveAddressedAsync(context).ConfigureAwait(false);

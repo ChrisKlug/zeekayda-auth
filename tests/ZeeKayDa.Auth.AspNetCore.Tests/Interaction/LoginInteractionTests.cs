@@ -177,10 +177,10 @@ public sealed class LoginInteractionTests : IDisposable
     });
 
     /// <summary>
-    /// A host whose interaction store holds the parked-principal read until the page releases it:
-    /// <paramref name="entered"/> completes when the sign-in has reached the store, and the read
-    /// continues once <paramref name="proceed"/> is set — so a page's code after the call runs
-    /// while the call is suspended, every time.
+    /// A host whose interaction store holds the interaction-context read — the sign-in's first
+    /// await — until the page releases it: <paramref name="entered"/> completes when the sign-in
+    /// has reached the store, and the read continues once <paramref name="proceed"/> is set — so a
+    /// page's code after the call runs while the call is suspended at its first await, every time.
     /// </summary>
     private static TestWebAppFactory HoldingFactory(
         TaskCompletionSource entered,
@@ -215,8 +215,8 @@ public sealed class LoginInteractionTests : IDisposable
         return System.Text.Json.JsonDocument.Parse(body).RootElement.Clone();
     }
 
-    /// <summary>A working in-memory store that runs a hold before every parked-principal read.</summary>
-    private sealed class HoldingInteractionStore(Func<Task> beforePendingRead) : IInteractionBackingStore
+    /// <summary>A working in-memory store that runs a hold before every interaction-context read.</summary>
+    private sealed class HoldingInteractionStore(Func<Task> beforeContextRead) : IInteractionBackingStore
     {
         private readonly InMemoryInteractionBackingStore _inner = new(TimeProvider.System);
 
@@ -225,8 +225,8 @@ public sealed class LoginInteractionTests : IDisposable
 
         public async ValueTask<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken)
         {
-            if (key.ToString().StartsWith("zkd:interaction:p:", StringComparison.Ordinal))
-                await beforePendingRead();
+            if (key.ToString().StartsWith("zkd:interaction:c:", StringComparison.Ordinal))
+                await beforeContextRead();
 
             return await _inner.GetAsync(key, cancellationToken);
         }
@@ -452,6 +452,39 @@ public sealed class LoginInteractionTests : IDisposable
 
         signIn.ShouldHaveReachedConsent();
         (await ReadSessionAsync(client)).GetProperty("sub").GetString().Should().Be("user-1");
+    }
+
+    [Fact]
+    public async Task SignInAsync_copies_an_identity_whose_Clone_returns_itself()
+    {
+        // The copy is rebuilt from the claims on the framework's own identity type, so a host
+        // identity that overrides Clone to hand back the same instance still cannot change what
+        // is signed in after the call.
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var proceed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var factory = HoldingFactory(entered, proceed, endpoints =>
+            endpoints.MapPost(MutatingSignInPath, async (ILoginInteraction login) =>
+            {
+                var identity = new SelfCloningIdentity([new Claim("sub", "user-1")]);
+                var signingIn = login.SignInAsync(new ClaimsPrincipal(identity), AuthenticationMethods.Password);
+                await entered.Task;
+                identity.RemoveClaim(identity.FindFirst("sub"));
+                identity.AddClaim(new Claim("sub", "hijacked"));
+                proceed.SetResult();
+                await signingIn;
+            }));
+        using var client = NewClient(factory);
+        var handoff = await client.GetAsync(AuthorizeUrl(ValidQuery()), TestContext.Current.CancellationToken);
+
+        var signIn = await client.PostAsync(WithInteractionId(MutatingSignInPath, InteractionIdFrom(handoff)), new FormUrlEncodedContent([]), TestContext.Current.CancellationToken);
+
+        signIn.ShouldHaveReachedConsent();
+        (await ReadSessionAsync(client)).GetProperty("sub").GetString().Should().Be("user-1");
+    }
+
+    private sealed class SelfCloningIdentity(IEnumerable<Claim> claims) : ClaimsIdentity(claims, "test")
+    {
+        public override ClaimsIdentity Clone() => this;
     }
 
     [Fact]
