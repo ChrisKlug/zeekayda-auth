@@ -20,9 +20,15 @@ public sealed record OpenIdConfigurationDocument
     [JsonPropertyName("issuer")]
     public required string Issuer { get; init; }
 
-    /// <summary>Gets the URL of the authorization endpoint.</summary>
+    /// <summary>
+    /// Gets the URL of the authorization endpoint. Absent from the document when
+    /// <see langword="null"/>: a host whose <c>GrantTypesSupported</c> includes no grant that uses
+    /// the endpoint — no <c>authorization_code</c>, whatever else it lists — does not serve it
+    /// (RFC 8414 §2). Not <c>required</c>, so a document read back without the field binds.
+    /// </summary>
     [JsonPropertyName("authorization_endpoint")]
-    public required string AuthorizationEndpoint { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? AuthorizationEndpoint { get; init; }
 
     /// <summary>Gets the URL of the token endpoint.</summary>
     [JsonPropertyName("token_endpoint")]
@@ -32,17 +38,27 @@ public sealed record OpenIdConfigurationDocument
     [JsonPropertyName("jwks_uri")]
     public required string JwksUri { get; init; }
 
-    /// <summary>Gets the OAuth 2.0 response types supported by this authorization server.</summary>
+    /// <summary>
+    /// Gets the OAuth 2.0 response types supported by this authorization server. Absent from the
+    /// document when <see langword="null"/>: a host that serves no authorization endpoint
+    /// supports none, and OpenID Connect Discovery §4.2 omits a zero-element claim rather than
+    /// publishing an empty array.
+    /// </summary>
     [JsonPropertyName("response_types_supported")]
-    public required IReadOnlyCollection<ResponseType> ResponseTypesSupported { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyCollection<ResponseType>? ResponseTypesSupported { get; init; }
 
     /// <summary>Gets the scopes supported by this authorization server.</summary>
     [JsonPropertyName("scopes_supported")]
     public required IReadOnlyCollection<string> ScopesSupported { get; init; }
 
-    /// <summary>Gets the response modes supported by this authorization server.</summary>
+    /// <summary>
+    /// Gets the response modes supported by this authorization server. Absent from the document
+    /// when <see langword="null"/>, on the same condition as <see cref="ResponseTypesSupported"/>.
+    /// </summary>
     [JsonPropertyName("response_modes_supported")]
-    public required IReadOnlyCollection<ResponseMode> ResponseModesSupported { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyCollection<ResponseMode>? ResponseModesSupported { get; init; }
 
     /// <summary>Gets the grant types supported by this authorization server.</summary>
     [JsonPropertyName("grant_types_supported")]

@@ -260,6 +260,30 @@ public sealed class AuthorizationEndpointTests : IDisposable
         return QueryHelpers.ParseQuery(location[location.IndexOf('?')..])[InteractionHandoff.InteractionIdParameter]!;
     }
 
+    // ── A host without the code grant ─────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Authorize_is_not_served_on_a_host_without_the_code_grant()
+    {
+        // GrantTypesSupported is the declaration that the interactive machinery is unused. Before,
+        // such a host accepted response_type=code, wrote an interaction context and answered
+        // server_error while its metadata said the grant was unsupported.
+        using var factory = new TestWebAppFactory(opts => opts.GrantTypesSupported = [GrantType.ClientCredentials]);
+        using var client = factory.CreateClient(new()
+        {
+            BaseAddress = new Uri("https://test.example.com"),
+            AllowAutoRedirect = false,
+        });
+
+        var response = await client.GetAsync(AuthorizeUrl(ValidQuery()), TestContext.Current.CancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        response.Headers.TryGetValues("Set-Cookie", out var cookies);
+        (cookies ?? []).Should().BeEmpty("no binding was issued");
+        ((InMemoryInteractionBackingStore)factory.Services.GetRequiredService<IInteractionBackingStore>()).Count
+            .Should().Be(0, "nothing was written to the interaction store");
+    }
+
     // ── ErrorPath handoff ─────────────────────────────────────────────────────────────────────
 
     [Fact]

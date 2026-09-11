@@ -44,6 +44,16 @@ in `GrantTypesSupported` requires at least one non-`none` entry in `TokenEndpoin
 check: CORS-origin canonicalisation runs earlier in an `IPostConfigureOptions<T>`, which also freezes
 the collection to read-only so nothing mutates it after validation.
 
+**A host that supports no grant using the authorization endpoint serves neither the endpoint nor the
+metadata describing it.** `GrantTypesSupported` without `authorization_code` leaves `/connect/authorize`
+unmapped, and the discovery document omits `authorization_endpoint` (RFC 8414 §2 permits exactly this),
+`response_modes_supported` and `code_challenge_methods_supported` (optional in both specs), and
+`response_types_supported`. That last omission is a decided deviation: RFC 8414 §2 and OpenID Connect
+Discovery §3 both mark it REQUIRED, and both, in §3.2 and §4.2, say a claim with zero elements MUST be
+omitted — no document for such a host satisfies both sentences, and the MUST is followed. The document is
+still served, because resource servers find `jwks_uri` through it; a non-OP publishing under the OpenID
+Connect path lasts until RFC 8414's own path (#161), which inherits the decision.
+
 **`IValidateOptions<T>` plus `ValidateOnStart()` is the primary validation mechanism.** A check leaves
 it only for one of three reasons: it needs async I/O, it needs a DI scope, or its whole purpose is a
 side effect such as emitting a warning. Those become `IStartupVerifier`s (see

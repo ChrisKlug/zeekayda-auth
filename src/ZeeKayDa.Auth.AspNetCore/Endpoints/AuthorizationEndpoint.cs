@@ -46,8 +46,19 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// Not served on a host whose <c>GrantTypesSupported</c> lacks the authorization code grant.
+    /// That option is the declaration that the interactive machinery is unused — the startup
+    /// checks are gated on it for the same reason — and discovery omits the endpoint on the same
+    /// condition. Serving it anyway accepted <c>response_type=code</c>, wrote an interaction
+    /// context and answered <c>server_error</c> at the dispatch, with the metadata disagreeing
+    /// all along.
+    /// </remarks>
     public void Map(IEndpointRouteBuilder endpoints)
     {
+        if (!_options.Value.GrantTypesSupported.Contains(GrantType.AuthorizationCode))
+            return;
+
         var issuerUri = EndpointRouteHelper.GetIssuerUri(_options);
         var endpointUri = EndpointRouteHelper.GetPublishedEndpointUri(
             issuerUri,

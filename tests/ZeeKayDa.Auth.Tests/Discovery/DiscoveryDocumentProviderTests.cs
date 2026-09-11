@@ -124,6 +124,32 @@ public sealed class DiscoveryDocumentProviderTests
     // ── Explicit URI overrides ────────────────────────────────────────────────────────────────────
 
     [Fact]
+    public async Task GetDocument_omits_AuthorizationEndpoint_when_no_supported_grant_uses_it()
+    {
+        // A client_credentials-only host does not serve the endpoint, so the metadata does not
+        // name it (RFC 8414 §2) — not even when the host configured an explicit URI for it — and
+        // nothing that describes the endpoint is advertised either: response types, response modes
+        // and PKCE methods are all omitted, since OIDC Discovery §4.2 omits a zero-element claim.
+        var doc = await GetDocumentAsync(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            GrantTypesSupported = [GrantType.ClientCredentials],
+            AuthorizationEndpoint =
+            {
+                Uri = "https://auth.example.com/custom/authorize",
+                CodeChallengeMethodsSupported = [CodeChallengeMethod.S256],
+            },
+        });
+
+        doc.AuthorizationEndpoint.Should().BeNull();
+        doc.ResponseTypesSupported.Should().BeNull();
+        doc.ResponseModesSupported.Should().BeNull();
+        doc.CodeChallengeMethodsSupported.Should().BeNull();
+        doc.GrantTypesSupported.Should().Equal(GrantType.ClientCredentials);
+        doc.TokenEndpoint.Should().Be("https://auth.example.com/connect/token", "the token endpoint is what such a host serves");
+    }
+
+    [Fact]
     public async Task GetDocument_uses_override_not_derived_value_when_explicit_AuthorizationEndpoint_is_configured()
     {
         const string explicitUri = "https://other.example.com/custom/authorize";
