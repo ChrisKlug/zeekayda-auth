@@ -205,6 +205,7 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         services.TryAddSingleton<IErrorInteraction, ErrorInteraction>();
         services.TryAddSingleton<ILoginInteraction, LoginInteraction>();
         services.TryAddSingleton<IConsentInteraction, ConsentInteraction>();
+        services.TryAddSingleton<IProviderSignInInteraction, ProviderSignInInteraction>();
 
         AddInteractionCookies(services);
         AddProviderServices(services);

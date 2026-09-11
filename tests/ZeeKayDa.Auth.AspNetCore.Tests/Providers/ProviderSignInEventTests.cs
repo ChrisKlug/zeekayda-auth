@@ -287,20 +287,190 @@ public sealed class ProviderSignInEventTests
         pending.GetProperty("reservedClaims").GetInt32().Should().Be(0);
     }
 
+    // ── Finishing on the host page ────────────────────────────────────────────────────────────
+
     [Fact]
-    public async Task SignInAsync_on_the_host_page_promotes_its_own_principal_and_consumes_the_parked_one()
+    public async Task SignInAsync_with_collected_claims_promotes_the_derived_subject_with_the_providers_claims_and_the_collected_ones()
     {
+        // The page never sees or passes a subject: the session holds what an external sign-in
+        // with no page involved would hold, plus what the page collected.
         using var factory = NewFactory(context => context.RedirectToAsync(CollectMorePath));
         using var client = NewClient(factory);
         var (_, resume) = await ResumeAsync(client);
         var collectMore = resume.Headers.Location!.OriginalString;
 
-        var signIn = await client.PostAsync(collectMore, Form(), Cancellation);
+        var signIn = await client.PostAsync(collectMore, Form(("dept", "sales")), Cancellation);
 
         signIn.ShouldHaveReachedConsent();
-        (await ReadJsonAsync(client, "/test/session"))!.Value.GetProperty("sub").GetString().Should().Be("mapped-" + UpstreamSubject);
+        var session = (await ReadJsonAsync(client, "/test/session"))!.Value;
+        session.GetProperty("sub").GetString().Should().Be(ExternalSubject.Derive("acme", "acme", UpstreamSubject), "the upstream subject never enters the session");
+        session.GetProperty("name").GetString().Should().Be("Upstream User", "the provider's claims come along");
+        session.GetProperty("dept").GetString().Should().Be("sales", "the collected claim is added");
+        session.GetProperty("amr").EnumerateArray().Should().BeEmpty("nothing is stated about how the user authenticated at the provider");
         (await ReadJsonAsync(client, collectMore)).Should().BeNull("the parked principal is single-use");
         StoreEntryCount(factory).Should().Be(1, "the context stays until the flow ends; the parked principal is gone");
+    }
+
+    [Fact]
+    public async Task SignInAsync_with_no_collected_claims_promotes_the_parked_principal_as_it_is()
+    {
+        using var factory = NewFactory(context => context.RedirectToAsync(CollectMorePath));
+        using var client = NewClient(factory);
+        var (_, resume) = await ResumeAsync(client);
+
+        var signIn = await client.PostAsync(resume.Headers.Location!.OriginalString, Form(), Cancellation);
+
+        signIn.ShouldHaveReachedConsent();
+        (await ReadJsonAsync(client, "/test/session"))!.Value.GetProperty("sub").GetString().Should().Be(ExternalSubject.Derive("acme", "acme", UpstreamSubject));
+    }
+
+    [Theory]
+    [InlineData("sub")]
+    [InlineData("SUB")]
+    [InlineData(System.Security.Claims.ClaimTypes.NameIdentifier)]
+    public async Task SignInAsync_with_collected_claims_refuses_a_subject_claim_before_anything_is_read(string claimType)
+    {
+        // The whole point of the page's own service: a page cannot put a subject of its choosing,
+        // the raw upstream one included, into the session through the collected claims.
+        using var factory = NewFactory(context => context.RedirectToAsync(CollectMorePath));
+        using var client = NewClient(factory);
+        var (_, resume) = await ResumeAsync(client);
+        var collectMore = resume.Headers.Location!.OriginalString;
+
+        var signIn = async () => await client.PostAsync(collectMore, Form((claimType, "chosen")), Cancellation);
+
+        await signIn.Should().ThrowAsync<ArgumentException>();
+        (await ReadJsonAsync(client, "/test/session")).Should().BeNull("nothing was promoted");
+        (await ReadJsonAsync(client, collectMore)).Should().NotBeNull("the parked principal is still there to finish with");
+        StoreEntryCount(factory).Should().Be(2);
+    }
+
+    [Fact]
+    public async Task Reserved_claims_among_the_collected_ones_are_stripped()
+    {
+        using var factory = NewFactory(context => context.RedirectToAsync(CollectMorePath));
+        using var client = NewClient(factory);
+        var (_, resume) = await ResumeAsync(client);
+
+        var signIn = await client.PostAsync(resume.Headers.Location!.OriginalString, Form(("zkd:sid", "forged"), ("ZKD:amr", "forged")), Cancellation);
+
+        signIn.ShouldHaveReachedConsent();
+        var session = (await ReadJsonAsync(client, "/test/session"))!.Value;
+        session.GetProperty("sid").GetString().Should().NotBe("forged");
+        session.GetProperty("amr").EnumerateArray().Should().BeEmpty();
+        session.GetProperty("reservedClaims").GetInt32().Should().Be(0);
+    }
+
+    [Fact]
+    public async Task SignInAsync_with_a_linked_principal_promotes_it_and_consumes_the_parked_one()
+    {
+        using var factory = NewFactory(context => context.RedirectToAsync(CollectMorePath));
+        using var client = NewClient(factory);
+        var (interactionId, resume) = await ResumeAsync(client);
+        var collectMore = resume.Headers.Location!.OriginalString;
+
+        var signIn = await client.PostAsync(WithInteractionId(CollectMorePath + "/link", interactionId), Form(), Cancellation);
+
+        signIn.ShouldHaveReachedConsent();
+        var session = (await ReadJsonAsync(client, "/test/session"))!.Value;
+        session.GetProperty("sub").GetString().Should().Be("mapped-" + UpstreamSubject, "linking holds the host's own principal, subject included");
+        session.GetProperty("amr").EnumerateArray().Select(element => element.GetString()).Should().Equal("pwd");
+        (await ReadJsonAsync(client, collectMore)).Should().BeNull("the parked principal is single-use");
+        StoreEntryCount(factory).Should().Be(1, "the context stays until the flow ends; the parked principal is gone");
+    }
+
+    [Fact]
+    public async Task SignInAsync_with_nothing_parked_is_refused_and_the_interaction_survives()
+    {
+        // The page finishes an external sign-in; an interaction that never went through
+        // RedirectToAsync has none to finish, and the sign-in from nothing belongs to the login page.
+        using var factory = NewFactory(context => context.RedirectToAsync(CollectMorePath));
+        using var client = NewClient(factory);
+        var handoff = await client.GetAsync(AuthorizeUrl(), Cancellation);
+        var interactionId = InteractionIdFrom(handoff);
+
+        var collected = async () => await client.PostAsync(WithInteractionId(CollectMorePath, interactionId), Form(("dept", "sales")), Cancellation);
+        var linked = async () => await client.PostAsync(WithInteractionId(CollectMorePath + "/link", interactionId), Form(), Cancellation);
+
+        await collected.Should().ThrowAsync<ZeeKayDaInteractionException>();
+        await linked.Should().ThrowAsync<InvalidOperationException>("the linking page found nothing to read, before the service was asked");
+        (await ReadJsonAsync(client, "/test/session")).Should().BeNull();
+        var signIn = await client.PostAsync(WithInteractionId(LoginPath, interactionId), Form(("sub", "user-1")), Cancellation);
+        signIn.ShouldHaveReachedConsent("the interaction is untouched");
+    }
+
+    [Fact]
+    public async Task A_second_post_after_the_parked_principal_was_consumed_is_refused()
+    {
+        using var factory = NewFactory(context => context.RedirectToAsync(CollectMorePath));
+        using var client = NewClient(factory);
+        var (_, resume) = await ResumeAsync(client);
+        var collectMore = resume.Headers.Location!.OriginalString;
+        (await client.PostAsync(collectMore, Form(), Cancellation)).ShouldHaveReachedConsent();
+
+        var again = async () => await client.PostAsync(collectMore, Form(), Cancellation);
+
+        await again.Should().ThrowAsync<ZeeKayDaInteractionException>();
+    }
+
+    [Fact]
+    public async Task DenyAsync_on_the_host_page_answers_access_denied_naming_the_provider_stage_and_discards_both_entries()
+    {
+        using var factory = NewFactory(context => context.RedirectToAsync(CollectMorePath));
+        using var client = NewClient(factory);
+        var (interactionId, _) = await ResumeAsync(client);
+
+        var cancel = await client.PostAsync(WithInteractionId(CollectMorePath + "/cancel", interactionId), Form(), Cancellation);
+
+        cancel.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        DestinationOf(cancel).Should().Be(RegisteredRedirect);
+        var query = RedirectQueryOf(cancel);
+        query["error"].ToString().Should().Be("access_denied");
+        query["error_description"].ToString().Should().Contain("external identity provider");
+        (await ReadJsonAsync(client, "/test/session")).Should().BeNull();
+        StoreEntryCount(factory).Should().Be(0, "the context and the parked principal both go with the denial");
+    }
+
+    [Fact]
+    public async Task A_terminal_call_from_a_GET_is_refused_before_anything_is_read()
+    {
+        using var factory = NewFactory(context => context.RedirectToAsync(CollectMorePath));
+        using var client = NewClient(factory);
+        var (interactionId, _) = await ResumeAsync(client);
+
+        var signIn = async () => await client.GetAsync(WithInteractionId(CollectMorePath + "/sign-in-by-get", interactionId), Cancellation);
+        var cancel = async () => await client.GetAsync(WithInteractionId(CollectMorePath + "/cancel-by-get", interactionId), Cancellation);
+
+        await signIn.Should().ThrowAsync<InvalidOperationException>();
+        await cancel.Should().ThrowAsync<InvalidOperationException>();
+        (await ReadJsonAsync(client, "/test/session")).Should().BeNull();
+        StoreEntryCount(factory).Should().Be(2, "nothing was consumed or discarded");
+    }
+
+    [Fact]
+    public async Task SignInAsync_with_collected_claims_refuses_a_parked_subject_without_an_issuer()
+    {
+        // The same rule promotion applies with no page involved: the derived subject needs the
+        // issuer, and a parked principal without one cannot be finished through the collected
+        // claims. The interaction survives for the login page.
+        using var factory = new TestWebAppFactory(
+            configureBuilder: builder => builder.WithProviders(
+                auth => AddHandWritten(auth, options => options.SubjectWithoutIssuer = true),
+                options => options.OnProviderSignIn = context => context.RedirectToAsync(CollectMorePath)),
+            mapEndpoints: MapHostPages);
+        using var client = NewClient(factory);
+        var handoff = await client.GetAsync(AuthorizeUrl(), Cancellation);
+        var interactionId = InteractionIdFrom(handoff);
+        var challenge = await client.PostAsync(WithInteractionId(LoginPath, interactionId), Form(("provider", "hand")), Cancellation);
+        var callback = await client.GetAsync(
+            QueryHelpers.AddQueryString("/connect/callback/hand", "state", RedirectQueryOf(challenge)["state"].ToString()),
+            Cancellation);
+        var resume = await client.GetAsync(callback.Headers.Location!.OriginalString, Cancellation);
+
+        var signIn = async () => await client.PostAsync(resume.Headers.Location!.OriginalString, Form(), Cancellation);
+
+        await signIn.Should().ThrowAsync<ZeeKayDaInteractionException>().WithMessage("*issuer*");
+        (await ReadJsonAsync(client, "/test/session")).Should().BeNull();
     }
 
     [Fact]
@@ -317,7 +487,7 @@ public sealed class ProviderSignInEventTests
     }
 
     [Fact]
-    public async Task GetPendingPrincipalAsync_without_an_interaction_id_is_refused()
+    public async Task GetAsync_without_an_interaction_id_is_refused()
     {
         using var factory = NewFactory(context => context.RedirectToAsync(CollectMorePath));
         using var client = NewClient(factory);
@@ -329,7 +499,7 @@ public sealed class ProviderSignInEventTests
     }
 
     [Fact]
-    public async Task GetPendingPrincipalAsync_honours_a_cancelled_token()
+    public async Task GetAsync_honours_a_cancelled_token()
     {
         using var factory = NewFactory(context => context.RedirectToAsync(CollectMorePath));
         using var client = NewClient(factory);
@@ -357,7 +527,7 @@ public sealed class ProviderSignInEventTests
             mapEndpoints: MapHostPages);
 
     [Fact]
-    public async Task GetPendingPrincipalAsync_surfaces_a_store_fault_rather_than_reporting_nothing_parked()
+    public async Task GetAsync_surfaces_a_store_fault_rather_than_reporting_nothing_parked()
     {
         // The page must not tell the user there is nothing to link because the store is down.
         var store = new FaultableInteractionStore();
@@ -517,7 +687,7 @@ public sealed class ProviderSignInEventTests
         (await ReadJsonAsync(client, secondResume.Headers.Location!.OriginalString)).Should().NotBeNull("the first tab's sign-in consumed only its own principal");
         var second = await client.PostAsync(WithInteractionId(CollectMorePath, secondTab), Form(), Cancellation);
         second.ShouldHaveReachedConsent();
-        (await ReadJsonAsync(client, "/test/session"))!.Value.GetProperty("sub").GetString().Should().Be("mapped-" + UpstreamSubject);
+        (await ReadJsonAsync(client, "/test/session"))!.Value.GetProperty("sub").GetString().Should().Be(ExternalSubject.Derive("acme", "acme", UpstreamSubject));
     }
 
     [Fact]

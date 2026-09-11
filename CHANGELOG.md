@@ -40,11 +40,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
   The principal an external provider returned, parked by `RedirectToAsync` while the host's page
   collects more, moves into the same store as a second entry per interaction, under the same
-  binding, so a second tab on that page parks its own and reads back its own with
-  `GetPendingPrincipalAsync`. It keeps its fifteen-minute lifetime and now never outlives its
-  interaction. The `zkd.pending` cookie scheme is no longer registered — a host cannot have
-  named it, and a key-ring gap now loses the parked principal the way it loses the request — and
-  the name stays reserved.
+  binding, so a second tab on that page parks its own and reads back its own. It keeps its
+  fifteen-minute lifetime and now never outlives its interaction. The `zkd.pending` cookie scheme
+  is no longer registered — a host cannot have named it, and a key-ring gap now loses the parked
+  principal the way it loses the request — and the name stays reserved.
+
+  The page that redirect leads to gets its own interaction service, `IProviderSignInInteraction`,
+  and `GetPendingPrincipalAsync` leaves `ILoginInteraction`. `GetAsync` reads the parked
+  principal back; `SignInAsync(params Claim[])` has the framework build the session principal
+  the way it does when no page is involved — the subject derived from the provider, the issuer
+  and the upstream subject, the provider's claims, plus what the page collected — and refuses a
+  subject claim, so a page that passes the provider's principal on can no longer put the raw
+  upstream `sub` into the session; `SignInAsync(ClaimsPrincipal, params string[])` links the
+  external identity to a local account with the host's own principal; `DenyAsync` refuses with
+  the same `access_denied` the `OnProviderSignIn` handler's refusal sends. Both sign-ins refuse
+  when nothing is parked for the interaction.
 
 - **Authorization code issuance: a completed flow ends with a code at the client** (#87)
 

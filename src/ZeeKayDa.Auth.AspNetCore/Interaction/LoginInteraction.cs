@@ -100,19 +100,6 @@ internal sealed class LoginInteraction : ILoginInteraction
         await _outcomes.ChallengeAsync(context, requestContext, registration).ConfigureAwait(false);
     }
 
-    /// <inheritdoc/>
-    public async Task<PendingPrincipal?> GetPendingPrincipalAsync(CancellationToken cancellationToken = default)
-    {
-        var context = RequireHttpContext();
-        var interactionId = await AuthorizationFlow.RequireInteractionIdAsync(context).ConfigureAwait(false);
-
-        var pending = await _flow.ReadPendingAsync(context, interactionId, cancellationToken).ConfigureAwait(false);
-        if (pending is null || _providers.Find(pending.Provider) is not { } registration)
-            return null;
-
-        return new PendingPrincipal(pending.Principal, registration.Descriptor);
-    }
-
     private HttpContext RequireHttpContext() =>
         _httpContextAccessor.HttpContext ?? throw new InvalidOperationException(
             "ILoginInteraction requires an active HTTP request. Resolve it from request services " +

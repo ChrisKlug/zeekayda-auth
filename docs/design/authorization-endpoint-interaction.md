@@ -463,9 +463,25 @@ public interface ILoginInteraction   // scoped, as are all the page services
     // challenge — it selects from a known list, it does not name a target — and an unknown id
     // throws. The endpoint's single-provider auto-redirect runs through this same path.
     Task ChallengeAsync(string provider);
+}
 
-    // Null if the pending cookie is absent, expired or misbound — recoverable.
-    Task<PendingPrincipal?> GetPendingPrincipalAsync();
+public interface IProviderSignInInteraction       // built (#603); the page RedirectToAsync sent the user to
+{
+    // Null when nothing is parked for the interaction — absent, expired or misbound — recoverable.
+    Task<PendingPrincipal?> GetAsync(CancellationToken cancellationToken = default);
+
+    // Terminal. The framework builds the session principal as auto-promotion would — the derived
+    // subject, the provider's claims — plus these. A sub or NameIdentifier claim is refused;
+    // zkd:* is stripped. No amr. Refuses when nothing is parked. zkd_i-bound on SignInAsync's terms.
+    Task SignInAsync(params Claim[] claims);
+
+    // Terminal. Links to a local account: the host's own principal, subject included, exactly as
+    // ILoginInteraction.SignInAsync takes it. Refuses when nothing is parked; consumes it otherwise.
+    Task SignInAsync(ClaimsPrincipal principal, params string[] authenticationMethods);
+
+    // Terminal. error=access_denied naming the provider stage — ProviderSignInContext.DenyAsync's
+    // exact description — discarding the interaction and the parked principal.
+    Task DenyAsync();
 }
 
 public interface IConsentInteraction                     // built (#86); every method is zkd_i-bound on
@@ -506,7 +522,7 @@ public sealed class ProviderSignInContext                // what OnProviderSignI
     public Task DenyAsync();
 }
 
-public sealed class PendingPrincipal                     // GetPendingPrincipalAsync, on the collect-more page
+public sealed class PendingPrincipal                     // IProviderSignInInteraction.GetAsync, on the collect-more page
 {
     public ClaimsPrincipal Principal { get; }
     public ProviderDescriptor Provider { get; }
@@ -543,14 +559,19 @@ provider id is in the hash because the scheme name is the registration's durable
 re-registering the same name keeps every subject, which is what an operator rotating a secret or
 an endpoint wants, and what an operator moving the name to a *different* upstream must not do —
 that is a new provider and needs a new name. A host
-that maps external identities onto its own users does so on the page `RedirectToAsync` leads to and
-calls `ILoginInteraction.SignInAsync` with its own principal, which consumes the pending one.
+that maps external identities onto its own users does so on the page `RedirectToAsync` leads to,
+through that page's own service: `IProviderSignInInteraction.SignInAsync(params Claim[])` has the
+framework build the promoted principal — the derived subject, the provider's claims, plus what the
+page collected — and refuses a subject claim, so the page cannot put the raw upstream `sub` into
+the session; the `ClaimsPrincipal` overload is for linking to a local account, where the host's
+own principal, subject included, is what the session holds. Both consume the parked principal.
+One service per host page: the login page's `ILoginInteraction` does not read the parked principal.
 `OnSigningIn` — **unbuilt**, the planned claim-shaping hook — will fire for every sign-in just
 before promotion, no interrupt; reserved protocol claims (`iss`, `sub`, `aud`, `exp`, `nonce`,
 `acr`, `amr`, `zkd:*`) are stripped regardless. Until it exists, a host that wants the session to
-hold something other than what the provider returned redirects to a page of its own and signs in
-from there; a change to the principal `OnProviderSignIn` receives is not promoted, since the
-framework promotes its own copy.
+hold something other than what the provider returned redirects to a page of its own and finishes
+there through `IProviderSignInInteraction`; a change to the principal `OnProviderSignIn` receives
+is not promoted, since the framework promotes its own copy.
 
 ## Request validation (#83)
 

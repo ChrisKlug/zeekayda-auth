@@ -38,6 +38,14 @@ internal sealed class InteractionOutcomes
     /// <summary>What the user is told when the request is larger than the interaction store may hold.</summary>
     internal const string TooLarge = "The authorization request is too large to process.";
 
+    /// <summary>
+    /// What a refusal after the provider tells the client, whether the host's handler or its page
+    /// refused. Names the stage, as the sign-in page's cancellation does, so a client can tell the
+    /// two apart; framework-owned, so nothing a host or a provider said reaches the client,
+    /// browser history or proxy logs.
+    /// </summary>
+    internal const string DeniedAfterProvider = "The sign-in at the external identity provider was not accepted.";
+
     private readonly AuthorizationFlow _flow;
     private readonly AuthorizationResponses _responses;
     private readonly ProviderHandlerActivator _activator;
