@@ -207,6 +207,12 @@ public sealed class LoginInteractionTests : IDisposable
             });
     }
 
+    private static async Task<HttpResponseMessage> PostEmptyFormAsync(HttpClient client, string url)
+    {
+        using var content = new FormUrlEncodedContent([]);
+        return await client.PostAsync(url, content, TestContext.Current.CancellationToken);
+    }
+
     private static async Task<System.Text.Json.JsonElement> ReadSessionAsync(HttpClient client)
     {
         var response = await client.GetAsync("/test/session", TestContext.Current.CancellationToken);
@@ -448,7 +454,7 @@ public sealed class LoginInteractionTests : IDisposable
         using var client = NewClient(factory);
         var handoff = await client.GetAsync(AuthorizeUrl(ValidQuery()), TestContext.Current.CancellationToken);
 
-        var signIn = await client.PostAsync(WithInteractionId(MutatingSignInPath, InteractionIdFrom(handoff)), new FormUrlEncodedContent([]), TestContext.Current.CancellationToken);
+        var signIn = await PostEmptyFormAsync(client, WithInteractionId(MutatingSignInPath, InteractionIdFrom(handoff)));
 
         signIn.ShouldHaveReachedConsent();
         (await ReadSessionAsync(client)).GetProperty("sub").GetString().Should().Be("user-1");
@@ -476,7 +482,7 @@ public sealed class LoginInteractionTests : IDisposable
         using var client = NewClient(factory);
         var handoff = await client.GetAsync(AuthorizeUrl(ValidQuery()), TestContext.Current.CancellationToken);
 
-        var signIn = await client.PostAsync(WithInteractionId(MutatingSignInPath, InteractionIdFrom(handoff)), new FormUrlEncodedContent([]), TestContext.Current.CancellationToken);
+        var signIn = await PostEmptyFormAsync(client, WithInteractionId(MutatingSignInPath, InteractionIdFrom(handoff)));
 
         signIn.ShouldHaveReachedConsent();
         (await ReadSessionAsync(client)).GetProperty("sub").GetString().Should().Be("user-1");
@@ -505,7 +511,7 @@ public sealed class LoginInteractionTests : IDisposable
         using var client = NewClient(factory);
         var handoff = await client.GetAsync(AuthorizeUrl(ValidQuery()), TestContext.Current.CancellationToken);
 
-        var signIn = await client.PostAsync(WithInteractionId(MutatingSignInPath, InteractionIdFrom(handoff)), new FormUrlEncodedContent([]), TestContext.Current.CancellationToken);
+        var signIn = await PostEmptyFormAsync(client, WithInteractionId(MutatingSignInPath, InteractionIdFrom(handoff)));
 
         signIn.ShouldHaveReachedConsent();
         (await ReadSessionAsync(client)).GetProperty("amr").EnumerateArray().Select(element => element.GetString())
