@@ -32,16 +32,19 @@ every issuance so there is no path where a client asks and it is missing, and a 
 its own freshness rule without a round trip. `at_hash` is OPTIONAL in the code flow (§3.1.3.6) and is
 written because it binds the ID token to the access token issued with it, so the ID token is assembled
 after the access token, which reaches its issuer through the issuance context; the payload stays
-finalized and the issuer adds only what depends on the key it resolves. The hash is the one the ID
+finalized, the issuer adds only what depends on the key it resolves, and the shipped issuer refuses
+an ID-token issuance handed no access token rather than sign one unbound. The hash is the one the ID
 token's `alg` implies (§3.1.3.6), computed against the key that signs, never a key read earlier — like
 the header, it cannot disagree with the signature. `acr` and `amr` are written when the grant carries
 them and omitted otherwise, never `null`.
 
-**`auth_time`, `acr` and `amr` are the grant's original authentication event, on every grant type.**
-On the code grant they come from the authorization code; a refresh grant carries them in its encrypted
-payload from family birth, copied verbatim on every rotation, so a token issued on refresh names the
-sign-in that started the family — never the rotation's time. OIDC Core §12.2 makes that a MUST for
-`auth_time`, and RFC 9068 §2.2.1 fixes all three across every token derived from one authorization.
+**`auth_time`, `acr` and `amr` are the grant's original authentication event, on every grant that
+descends from an end-user authorization.** On the code grant they come from the authorization code; a
+refresh grant carries them in its encrypted payload from family birth, copied verbatim on every
+rotation, so a token issued on refresh names the sign-in that started the family — never the
+rotation's time. OIDC Core §12.2 makes that a MUST for `auth_time`, and RFC 9068 §2.2.1 fixes all
+three across every token derived from one authorization and scopes them to grants involving the
+resource owner, so a client-credentials token carries none.
 
 **The ID token has one audience, the requesting client, and no `azp` or `sid`.** §2 allows further
 audiences, but nothing in the framework can name one: no `resource` parameter, no registration field,
@@ -79,17 +82,18 @@ both of a resource indicator, so the `resource` parameter can later be a pure na
 endpoint options hold the access-token and ID-token lifetimes, one hour and five minutes by default;
 a client registration may override either, and a null override means the server value. Both must
 exceed zero, checked at startup for the server values and by the registration validator for the
-client's; there is no upper bound, and a client value is a default, not a ceiling. Expiry arithmetic
-is overflow-safe, as the family ceiling's is, so no value that passed validation throws at issuance.
-The ID-token default is short because it is consumed once, at the client, on receipt. Nothing else
+client's; there is no upper bound. A lifetime longer than the family's absolute ceiling warns at
+startup, as the family sentinel does, and expiry arithmetic saturates rather than throws, so no value
+that passed validation fails at issuance. The ID-token default is short because it is consumed once, at the client, on receipt. Nothing else
 derives from these values — key retirement is an operator emptying a slot, not a computed window.
 
 **A client whose allowed ID-token algorithms exclude the signing key's algorithm fails closed.** The
 ring signs with one key, so `AllowedSigningAlgorithms` must be enforced twice: the registration validator
 requires the current signing key's algorithm in the set, and the JWT issuer checks the key the ring
-resolved against the client's set, inside the signing callback, before an ID token is built.
-Refusing is `server_error`; the client would have rejected the token anyway, and a log line at our
-end beats a silent failure at theirs. ID tokens only, which is what the setting describes — an access
+resolved against the client's set, inside the signing callback, before an ID token is built. The
+refusal is a throw from the callback, before the signer is touched, and the endpoint answers
+`server_error`; the client would have rejected the token anyway, and a log line at our end beats a
+silent failure at theirs. ID tokens only, which is what the setting describes — an access
 token's algorithm is the resource server's concern. Ordinary rotation never trips this, since a new
 key keeps its algorithm; only an algorithm migration does, and the operator widens or clears the
 affected sets first. Not a per-algorithm key chooser: several signers would make the self-test, the

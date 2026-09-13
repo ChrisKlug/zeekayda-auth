@@ -4,7 +4,8 @@
 conversation 2026-09-11 (issue #92). This sketch sits *downstream* of `claims-resolution.md`: that
 seam produces the pool of subject claims, this one decides which of them land in which destination,
 and what the access token's audience is. The durable constraints are in
-`docs/decisions/token-issuance-and-claims.md`; read those as authoritative.
+`docs/decisions/token-issuance-and-claims.md` and `docs/decisions/token-contents.md`; read those as
+authoritative.
 
 ## The model in one sentence
 
@@ -279,7 +280,8 @@ Both server values must exceed zero, checked by the options validator at startup
 value must too, checked by the registration validator, and both join `ClientRegistration` and its
 fingerprint. There is no upper bound on either; `exp` is computed the way
 `ComputeFamilyAbsoluteExpiry` computes the family ceiling, so an overflowing sum saturates instead of
-throwing.
+throwing, and a lifetime longer than `AbsoluteFamilyLifetime` logs a startup warning the way the
+`TimeSpan.MaxValue` sentinel already does.
 
 **Assembly order.** The access token is issued first, because `at_hash` is the left half of a hash
 over its compact form (OIDC Core §3.1.3.6). The hash function follows the ID token's own `alg`, and
@@ -297,8 +299,12 @@ public readonly record struct TokenIssuanceContext(
     IssuedToken? AccessToken = null);   // set for an ID-token issuance; null otherwise
 ```
 
-A custom ID-token issuer that ignores `AccessToken` issues a spec-valid token without the binding;
-that is the host's choice, and the register's "always carries" describes the shipped issuer.
+The shipped issuer throws when `Kind` is `IdToken` and `AccessToken` is `null` or not an access
+token, and when `Kind` is `AccessToken` and one is supplied, so an endpoint bug cannot drop the
+binding silently. A custom ID-token issuer that ignores `AccessToken` issues a spec-valid token
+without the binding; that is the host's choice, and the register's "always carries" describes the
+shipped issuer. The ID token is issued before the refresh grant is persisted, so a refusal in the
+callback orphans no family row and burns nothing but the code.
 
 **Provenance.** `exp` and `iat` come from one clock read per issuance, shared by both tokens: `exp`
 is that instant plus the effective lifetime for the kind. `auth_time`, `acr` and `amr` are the

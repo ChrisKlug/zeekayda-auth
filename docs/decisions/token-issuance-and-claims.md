@@ -58,12 +58,17 @@ failure and aborts with `server_error`. "Invalid subject" is a distinct, explici
 an empty or null claim list, because "no claims apply to this scope" is legitimate and must not be
 confused with "this subject must not receive tokens".
 
+**A server fault at the token endpoint is HTTP 500 with `error=server_error`, borrowed knowingly.**
+RFC 6749 §5.2's list is closed and every code in it blames the client; `server_error` is defined for
+the authorization endpoint (§4.1.2.1). Borrowing it is the common practice that gives a client library
+something to parse, where a bare 500 gives it nothing. No `error_description` names a key or a claim.
+
 **Both tokens from one issuance come from one resolution.** The access token and the ID token are
 built from the same result, so there is no split-brain where one reflects a claim change the other
 does not.
 
 **Caching is the implementer's, keyed on the subject and the family, and bounded well under the
-access-token lifetime.** That is the sanctioned way to get snapshot-equivalent I/O without giving up
+shortest effective access-token lifetime across clients.** That is the sanctioned way to get snapshot-equivalent I/O without giving up
 the call-every-issuance contract. A miss on the family id is structurally "first issuance", so no
 first-issuance flag is needed; the family id is absent at userinfo and is never a key on its own. A
 TTL at grant or refresh-token scale defeats the point entirely and must not be used.
