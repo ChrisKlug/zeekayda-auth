@@ -42,6 +42,11 @@ signature, a call site, a question. Plain language, no assumed context — they 
 without the issue open in another window. If you catch yourself pasting a table of consumers and
 three code blocks in one message, you have already failed this stage; back up and go smaller.
 
+**A question gets an answer and a stop.** When the maintainer asks something, answer it and end the
+turn. Do not start building on the strength of one agreement mid-conversation; each design point
+gets its own answer and its own go-ahead. When the maintainer says to stop building, nothing
+changes on disk until an explicit go.
+
 While converging:
 
 - For public API, write the main call site as real code and show it — awkward APIs are caught by
@@ -131,7 +136,12 @@ asked a question about. Say in the commit message which round it came from.
 
 ## Stage 4 — Maintainer reads the diff ⛔
 
-In chat, short enough to actually be read:
+**Open in plain language.** Before the findings list, say what the change does the way you would to
+someone who has not seen the code: what it does, why it is shaped that way, what it costs, what the
+alternative was. The maintainer must be able to decide from that paragraph; the list below it is
+the record, not the explanation.
+
+Then, in chat, short enough to actually be read:
 
 - the public API as it ended up — real signatures;
 - what changed, briefly;

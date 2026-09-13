@@ -99,7 +99,9 @@ Work on an issue runs through the loop in the **`/work-on-issue`** skill. The sh
 
 Three stages stop until the maintainer answers: the shape, the diff, and the merge. Design is a
 *conversation* — one signature, one call site, one question at a time, in plain language. Never
-deliver the maintainer a pre-baked design artifact that assumes they have the issue memorised.
+deliver the maintainer a pre-baked design artifact that assumes they have the issue memorised. A
+question from the maintainer gets an answer and a stop, never a build; and the diff is handed over
+with a plain-language explanation before any findings list (both spelled out in the skill).
 
 | Change | Process |
 |---|---|
