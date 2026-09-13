@@ -1088,7 +1088,7 @@ Scoped to `ITokenIssuer`, `JwtTokenIssuer` and their value types. Did **not** co
   `Constructor_throws_ArgumentException_when_the_source_yields_a_duplicate_claim_name`.
 - No bearer token in `ToString()`, no fail-open `default` context. Closed — proven by
   `IssuedToken_ToString_does_not_contain_the_token_value` and
-  `Client_throws_InvalidOperationException_on_a_default_instance`.
+  Client_throws_InvalidOperationException_on_a_default_instance [removed with #647: the context is now a class with a closed constructor, so no default instance exists].
 - Residual: claim values serialize by runtime type, so a domain object passed as a claim lands
   whole inside the token; documented on `TokenPayload`, unenforced until #92/#205/#206 —
   `IssueAsync_serialises_claims_verbatim_into_the_payload_segment` locks the verbatim behaviour.
