@@ -431,6 +431,31 @@ public sealed class TokenEndpointTests : IDisposable
         Claims(body.GetProperty("id_token").GetString()!).GetProperty("exp").GetInt64().Should().Be(Now.AddMinutes(1).ToUnixTimeSeconds());
     }
 
+    [Fact]
+    public async Task The_tokens_are_issued_from_the_registration_that_authenticated_never_from_a_second_lookup()
+    {
+        // A repository whose answer changes between two reads within one request: the first read
+        // is the authentication, and what the credential was checked against is what the grant
+        // must use — a later read could hand the request lifetimes and grants nobody authenticated.
+        var repository = new FirstReadThenOtherRepository(
+            first: PublicRegistration() with { AccessTokenLifetime = TimeSpan.FromMinutes(10) },
+            other: PublicRegistration() with { AccessTokenLifetime = TimeSpan.FromMinutes(20) });
+        using var factory = new TestWebAppFactory(
+            configureBuilder: builder =>
+            {
+                builder.Services.AddSingleton<TimeProvider>(_time);
+                builder.Services.AddSingleton<IClientRepository>(repository);
+            },
+            mapEndpoints: MapHostPages);
+        using var client = NewClient(factory);
+        var code = await ObtainCodeWithAsync(client);
+        repository.ResetToFirst();
+
+        var body = await ReadJsonAsync(await PostTokenWithAsync(client, TokenForm(code)));
+
+        body.GetProperty("expires_in").GetInt64().Should().Be(600, "the lifetime comes from the registration the credential was checked against");
+    }
+
     // ── PKCE ──────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -728,6 +753,20 @@ public sealed class TokenEndpointTests : IDisposable
     }
 
     // ── Fakes ─────────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>A repository answering with one registration on the first read after a reset and another on every read after it.</summary>
+    private sealed class FirstReadThenOtherRepository(IClientRegistration first, IClientRegistration other) : IClientRepository
+    {
+        private int _reads;
+
+        public void ResetToFirst() => Interlocked.Exchange(ref _reads, 0);
+
+        public ValueTask<IClientRegistration?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default)
+        {
+            var registration = Interlocked.Increment(ref _reads) == 1 ? first : other;
+            return new(string.Equals(registration.ClientId, clientId, StringComparison.Ordinal) ? registration : null);
+        }
+    }
 
     /// <summary>An issuer standing in for a signing key ring that cannot sign.</summary>
     private sealed class FailingTokenIssuer : ITokenIssuer

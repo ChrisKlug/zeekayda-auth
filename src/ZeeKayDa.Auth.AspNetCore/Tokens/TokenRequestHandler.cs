@@ -1,7 +1,5 @@
 using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.DependencyInjection;
 using ZeeKayDa.Auth.AspNetCore.ClientAuthentication;
-using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tokens;
@@ -44,14 +42,10 @@ internal sealed class TokenRequestHandler
         if (IdentifyClient(request, context.Request.Headers) is not { } clientId)
             return TokenResponses.InvalidClient(context);
 
+        // The registration the credential was checked against is the one every later decision
+        // reads; a second lookup could return one nobody authenticated.
         var authentication = await _authenticator.AuthenticateAsync(clientId, context, context.RequestAborted).ConfigureAwait(false);
-        if (!authentication.Authenticated)
-            return TokenResponses.InvalidClient(context);
-
-        // Resolved per request, like the stores the grant reads: the repository is a host
-        // registration that startup verification, not route mapping, confirms is present.
-        var clients = context.RequestServices.GetRequiredService<ValidatedClientResolver>();
-        if (await clients.FindByClientIdAsync(clientId, context.RequestAborted).ConfigureAwait(false) is not { } client)
+        if (authentication.Client is not { } client)
             return TokenResponses.InvalidClient(context);
 
         if (!client.AllowedGrantTypes.Contains(GrantType.AuthorizationCode))
