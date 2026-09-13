@@ -4,6 +4,11 @@ What each issued token carries on the wire, how long it lives, and what signs it
 come from, and which token each lands in, is `token-issuance-and-claims.md`; key selection and
 signing are `signing-keys.md`.
 
+**The token endpoint is not built** — it answers `501`, and `JwtTokenIssuer` signs whatever finalized
+`TokenPayload` it is handed. The header and writer entries below describe shipped code; every other
+entry is a constraint the endpoint inherits when it is built, and the option and metadata shapes
+that realise them are sketched in `docs/design/claim-selection.md`, not here.
+
 ## Decisions in force
 
 **A JWT's header is built inside the ring's signing callback, never asserted afterwards.**
@@ -71,7 +76,7 @@ client, on receipt. Nothing else derives from these values — key retirement is
 a slot, not a computed window.
 
 **A client whose allowed ID-token algorithms exclude the signing key's algorithm fails closed.** The
-ring signs with one key, so `AllowedSigningAlgorithms` is enforced twice: the registration validator
+ring signs with one key, so `AllowedSigningAlgorithms` must be enforced twice: the registration validator
 requires the current signing key's algorithm in the set, and the JWT issuer checks the key the ring
 resolved against the client's set, inside the signing callback, before an ID token is built.
 Refusing is `server_error`; the client would have rejected the token anyway, and a log line at our
