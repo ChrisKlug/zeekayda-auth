@@ -8,6 +8,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **The claims provider seam, per-scope claim selection and the scope-derived access-token audience** (#648)
+
+  Tokens now carry subject claims. A host registers an `IClaimsProvider` with
+  `AddClaimsProvider<TProvider>()`; the seam is mandatory, and a host without one fails startup
+  with `claims.provider.missing`. The provider is called fresh on every issuance with a
+  `ClaimsProviderContext` naming the subject, the granted scopes, the claim types selection will
+  keep and the grant's family id, and answers `ClaimsResolutionResult.Resolved` with `ClaimRecord`s
+  or `SubjectInvalid`, which the token endpoint answers `invalid_grant`; an exception is
+  `server_error`. A `ClaimValue` is the JSON the token will carry, converted implicitly from a
+  string, boolean, number or `AddressClaim` and explicitly from any custom shape through
+  `ClaimValue.From`; repeated string or number records merge into one array. Reserved protocol
+  names are stripped from a provider's result, so `sub`, `iss`, `aud` and the rest always come from
+  the grant.
+
+  `ScopeDefinition` gains `UserInfoClaims` and `Audience`, and `IdTokenClaims` and
+  `AccessTokenClaims` lose the `ZKD001` experimental marker; `StandardScopes` lists the OpenID
+  Connect Core §5.4 claims in both the ID-token and the userinfo list. `IClientMetadata` gains
+  `AdditionalIdTokenClaims`, `AdditionalUserInfoClaims` and `AdditionalAccessTokenClaims`, default
+  interface members returning empty, mirrored on `ClientRegistration`; an addition may not name a
+  claim any registered scope unlocks, checked at startup for in-memory clients and on every
+  request otherwise. The access token's `aud` is the one distinct scope `Audience` among the granted
+  scopes plus the issuer, a string for one recipient and an array for two; two distinct audiences,
+  or a scope with no definition, is `invalid_scope` at the authorization endpoint before any
+  interaction. An `Audience` that is not an absolute URI without a fragment, and an in-memory client
+  allowing an undefined scope, fail startup.
+
 - **The ID token is bound to its access token, and a client's signing-algorithm policy fails closed** (#647)
 
   An ID token issued at the token endpoint now carries `at_hash`: the left half of the hash the

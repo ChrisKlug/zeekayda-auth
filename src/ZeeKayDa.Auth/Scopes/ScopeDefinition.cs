@@ -1,10 +1,22 @@
-using System.Diagnostics.CodeAnalysis;
-
 namespace ZeeKayDa.Auth.Scopes;
 
 /// <summary>
-/// Represents a configured scope and the token claim metadata associated with it.
+/// A configured scope: what it unlocks in each destination, and the resource server it is for.
 /// </summary>
+/// <remarks>
+/// <para>
+/// A scope names the claim types it unlocks in the ID token, at the userinfo endpoint, and in the
+/// access token. Claim type names are OpenID Connect wire names (<c>given_name</c>, <c>email</c>),
+/// never <c>ClaimTypes</c> URIs, and every value comes from the host's <c>IClaimsProvider</c>: a
+/// listed type the provider does not return is omitted, never written empty.
+/// </para>
+/// <para>
+/// <see cref="StandardScopes"/> lists the OpenID Connect Core §5.4 claims of each standard scope
+/// in both <see cref="IdTokenClaims"/> and <see cref="UserInfoClaims"/>. A host that wants the
+/// specification's own default, profile claims from userinfo and a slim ID token, trims one
+/// list: <c>StandardScopes.Profile with { IdTokenClaims = ["name"] }</c>.
+/// </para>
+/// </remarks>
 public sealed record ScopeDefinition
 {
     /// <summary>
@@ -23,22 +35,29 @@ public sealed record ScopeDefinition
     public bool IsDiscoverable { get; init; } = true;
 
     /// <summary>
-    /// Gets the claim types that should be emitted in the ID token when this scope is granted.
+    /// Gets the claim types emitted in the ID token when this scope is granted.
     /// </summary>
-    /// <remarks>
-    /// This metadata is internal model data for now. It is not published as part of the standard
-    /// discovery document, regardless of <see cref="IsDiscoverable"/>.
-    /// </remarks>
-    [Experimental("ZKD001")]
     public IReadOnlyCollection<string> IdTokenClaims { get; init; } = [];
 
     /// <summary>
-    /// Gets the claim types that should be emitted in the access token when this scope is granted.
+    /// Gets the claim types returned from the userinfo endpoint when this scope is granted.
+    /// </summary>
+    public IReadOnlyCollection<string> UserInfoClaims { get; init; } = [];
+
+    /// <summary>
+    /// Gets the claim types emitted in the access token when this scope is granted.
+    /// </summary>
+    public IReadOnlyCollection<string> AccessTokenClaims { get; init; } = [];
+
+    /// <summary>
+    /// Gets the resource server this scope is for, as the absolute URI that becomes the access
+    /// token's <c>aud</c> when the scope is granted (RFC 9068 §3), or <see langword="null"/> for
+    /// an identity scope, whose audience is the issuer.
     /// </summary>
     /// <remarks>
-    /// This metadata is internal model data for now. It is not published as part of the standard
-    /// discovery document, regardless of <see cref="IsDiscoverable"/>.
+    /// Must be an absolute URI without a fragment (RFC 8707 §2), checked at startup. Two scopes
+    /// with the same value are the same API. A request whose granted scopes name two distinct
+    /// values is refused with <c>invalid_scope</c>: one grant, one API.
     /// </remarks>
-    [Experimental("ZKD001")]
-    public IReadOnlyCollection<string> AccessTokenClaims { get; init; } = [];
+    public string? Audience { get; init; }
 }

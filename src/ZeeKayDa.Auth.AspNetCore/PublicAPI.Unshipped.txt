@@ -111,3 +111,5 @@ ZeeKayDa.Auth.AspNetCore.Interaction.IConsentInteraction
 ZeeKayDa.Auth.AspNetCore.Interaction.IConsentInteraction.DenyAsync() -> System.Threading.Tasks.Task!
 ZeeKayDa.Auth.AspNetCore.Interaction.IConsentInteraction.GetRequestAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ZeeKayDa.Auth.AspNetCore.Interaction.ConsentRequest!>!
 ZeeKayDa.Auth.AspNetCore.Interaction.IConsentInteraction.GrantAsync(System.Collections.Generic.IEnumerable<string!>! scopes) -> System.Threading.Tasks.Task!
+static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthBuilderClaimsExtensions.AddClaimsProvider<TProvider>(this ZeeKayDa.Auth.ZeeKayDaAuthBuilder! builder) -> ZeeKayDa.Auth.ZeeKayDaAuthBuilder!
+Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthBuilderClaimsExtensions

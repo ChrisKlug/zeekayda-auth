@@ -114,6 +114,7 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IClientAuthenticator, ClientSecretAuthenticator>());
         services.TryAddSingleton<CompositeClientAuthenticator>();
+        services.TryAddSingleton<GrantClaimsResolver>();
         services.TryAddSingleton<AuthorizationCodeGrant>();
         services.TryAddSingleton<TokenRequestHandler>();
         AddAuthorizationRequestServices(services);
@@ -168,6 +169,11 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
 
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IStartupVerifier, TokenStorePresenceValidator>());
+
+        // The claims seam is mandatory with no default: a host that forgot it must not start and
+        // silently issue tokens with no subject claims.
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IStartupVerifier, ClaimsProviderPresenceValidator>());
 
         // The discovery document derives id_token_signing_alg_values_supported from the signing key
         // ring, so a host serving the protocol endpoints must have one. Failing startup here is what

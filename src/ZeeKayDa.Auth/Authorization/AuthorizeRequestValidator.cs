@@ -1,5 +1,8 @@
 using System.Text.RegularExpressions;
+using Microsoft.Extensions.Logging;
 using ZeeKayDa.Auth.Clients;
+using ZeeKayDa.Auth.Logging;
+using ZeeKayDa.Auth.Scopes;
 
 namespace ZeeKayDa.Auth.Authorization;
 
@@ -43,6 +46,9 @@ internal sealed partial class AuthorizeRequestValidator
         ClientMayUseTheQueryResponseMode,
         ScopeIsPresent,
         EffectiveScopeIncludesOpenId,
+        EffectiveScopesAreDefined,
+        EffectiveScopesNameOneResource,
+        ClientAdditionsNameNoScopeClaim,
         NonceIsPresent,
         CodeChallengeIsPresent,
         CodeChallengeIsWellFormed,
@@ -53,11 +59,21 @@ internal sealed partial class AuthorizeRequestValidator
     ];
 
     private readonly ValidatedClientResolver _clientResolver;
+    private readonly IScopeRepository _scopeRepository;
+    private readonly ISanitizingLogger<AuthorizeRequestValidator> _logger;
 
-    public AuthorizeRequestValidator(ValidatedClientResolver clientResolver)
+    public AuthorizeRequestValidator(
+        ValidatedClientResolver clientResolver,
+        IScopeRepository scopeRepository,
+        ISanitizingLogger<AuthorizeRequestValidator> logger)
     {
         ArgumentNullException.ThrowIfNull(clientResolver);
+        ArgumentNullException.ThrowIfNull(scopeRepository);
+        ArgumentNullException.ThrowIfNull(logger);
+
         _clientResolver = clientResolver;
+        _scopeRepository = scopeRepository;
+        _logger = logger;
     }
 
     /// <summary>
@@ -75,7 +91,11 @@ internal sealed partial class AuthorizeRequestValidator
             return LocalError();
 
         // The redirect target is now trusted, so from here failures are delivered to the client.
-        var context = new RequestContext(parameters, target.Client);
+        // The scope definitions are fetched once, here, because the rule table is synchronous:
+        // one repository call per request, shared by every scope rule.
+        var scopes = await _scopeRepository.GetScopesAsync(cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException("The registered IScopeRepository returned null from GetScopesAsync.");
+        var context = new RequestContext(parameters, target.Client, scopes);
 
         // An explicit loop, not LINQ: the rules have side effects (they parse values onto the
         // context), so short-circuiting must not depend on deferred execution.
@@ -86,6 +106,11 @@ internal sealed partial class AuthorizeRequestValidator
             if (problem is not null)
                 break;
         }
+
+        // A server_error is the operator's bug, not the client's, and the client is told nothing
+        // specific; the operator is told exactly what to fix.
+        if (problem?.OperatorDetail is { } detail)
+            _logger.LogError("Client {ClientId} could not be served an authorization request: {Detail}", target.Client.ClientId, detail);
 
         TryGetSingle(parameters, "state", out var state);
 
@@ -225,6 +250,46 @@ internal sealed partial class AuthorizeRequestValidator
         context.EffectiveScopes.Contains("openid", StringComparer.Ordinal)
             ? null
             : new Problem(AuthorizeRequestErrors.InvalidScope, "The openid scope is required.");
+
+    /// <remarks>
+    /// Every effective scope must have a definition: an undefined one has no audience to
+    /// correlate to and no claims to unlock. The in-memory client registration checks this at
+    /// startup; here it also covers a custom repository. The name is not echoed: it came from
+    /// the client's allowed scopes, but the description travels in a redirect.
+    /// </remarks>
+    private static Problem? EffectiveScopesAreDefined(RequestContext context)
+    {
+        if (!ScopeResolution.TryResolve(context.Scopes, context.EffectiveScopes, out var granted, out _))
+            return new Problem(AuthorizeRequestErrors.InvalidScope, "The scope parameter names a scope this server does not define.");
+
+        context.GrantedDefinitions = granted;
+        return null;
+    }
+
+    /// <remarks>
+    /// RFC 9068 §3: scopes whose default resource indicators differ are refused with
+    /// <c>invalid_scope</c>. Checked on the effective scope, before any interaction, so the user
+    /// never sees a page for a request that could not become a token; consent and refresh only
+    /// narrow the scope, so nothing later can introduce a second audience.
+    /// </remarks>
+    private static Problem? EffectiveScopesNameOneResource(RequestContext context) =>
+        ScopeResolution.TryResolveAudience(context.GrantedDefinitions, out _)
+            ? null
+            : new Problem(AuthorizeRequestErrors.InvalidScope, "The scope parameter names scopes for more than one resource server.");
+
+    /// <remarks>
+    /// The registration's claim additions are checked against the whole scope set on every
+    /// request, since the registration validator's cached verdict cannot see the scope
+    /// repository. A collision is the operator's misconfiguration, answered as
+    /// <c>server_error</c> and logged with the detail.
+    /// </remarks>
+    private static Problem? ClientAdditionsNameNoScopeClaim(RequestContext context) =>
+        ClientClaimAdditions.FindCollision(context.Client, context.Scopes) is { } collision
+            ? new Problem(
+                AuthorizeRequestErrors.ServerError,
+                "The client's registration is not consistent with the server's scope configuration.",
+                collision.Describe(context.Client.ClientId))
+            : null;
 
     private static Problem? NonceIsPresent(RequestContext context)
     {
@@ -372,8 +437,11 @@ internal sealed partial class AuthorizeRequestValidator
         return false;
     }
 
-    /// <summary>A phase-2 validation failure: the OAuth error code and its generic description.</summary>
-    private sealed record Problem(string Error, string Description);
+    /// <summary>
+    /// A phase-2 validation failure: the OAuth error code and its generic description, and for a
+    /// server-side fault, the detail the operator is told and the client is not.
+    /// </summary>
+    private sealed record Problem(string Error, string Description, string? OperatorDetail = null);
 
     /// <summary>The authenticated client and the redirect URI that is safe to send it.</summary>
     private sealed record RedirectTarget(IClientRegistration Client, string RedirectUri);
@@ -384,13 +452,20 @@ internal sealed partial class AuthorizeRequestValidator
     /// </summary>
     private sealed class RequestContext(
         IReadOnlyDictionary<string, IReadOnlyList<string?>> parameters,
-        IClientRegistration client)
+        IClientRegistration client,
+        IReadOnlyCollection<ScopeDefinition> scopes)
     {
         public IReadOnlyDictionary<string, IReadOnlyList<string?>> Parameters => parameters;
 
         public IClientRegistration Client => client;
 
+        /// <summary>Every scope the repository defines, fetched once for this request.</summary>
+        public IReadOnlyCollection<ScopeDefinition> Scopes => scopes;
+
         public List<string> EffectiveScopes { get; } = [];
+
+        /// <summary>Set by <c>EffectiveScopesAreDefined</c>: the definition of each effective scope, in order.</summary>
+        public IReadOnlyList<ScopeDefinition> GrantedDefinitions { get; set; } = [];
 
         public HashSet<PromptValue> Prompts { get; } = [];
 

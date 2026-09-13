@@ -1,4 +1,3 @@
-#pragma warning disable ZKD001 // IdTokenClaims and AccessTokenClaims are experimental; InMemoryScopeRepository is infrastructure code that must handle them.
 namespace ZeeKayDa.Auth.Scopes;
 
 /// <summary>
@@ -41,26 +40,18 @@ public sealed class InMemoryScopeRepository : IScopeRepository
                     nameof(scopes));
             }
 
-            if (scope.IdTokenClaims.Any(string.IsNullOrWhiteSpace))
-            {
-                throw new ArgumentException(
-                    $"Scope '{scope.Name}' contains a null, empty, or whitespace ID token claim name.",
-                    nameof(scopes));
-            }
-
-            if (scope.AccessTokenClaims.Any(string.IsNullOrWhiteSpace))
-            {
-                throw new ArgumentException(
-                    $"Scope '{scope.Name}' contains a null, empty, or whitespace access token claim name.",
-                    nameof(scopes));
-            }
+            RequireClaimNames(scope, scope.IdTokenClaims, "ID token");
+            RequireClaimNames(scope, scope.UserInfoClaims, "userinfo");
+            RequireClaimNames(scope, scope.AccessTokenClaims, "access token");
 
             materializedScopes.Add(new ScopeDefinition
             {
                 Name = scope.Name,
                 IsDiscoverable = scope.IsDiscoverable,
                 IdTokenClaims = [.. scope.IdTokenClaims],
+                UserInfoClaims = [.. scope.UserInfoClaims],
                 AccessTokenClaims = [.. scope.AccessTokenClaims],
+                Audience = scope.Audience,
             });
         }
 
@@ -74,5 +65,14 @@ public sealed class InMemoryScopeRepository : IScopeRepository
 
         return ValueTask.FromResult(_scopes);
     }
+
+    private static void RequireClaimNames(ScopeDefinition scope, IReadOnlyCollection<string> claims, string destination)
+    {
+        if (claims is null || claims.Any(string.IsNullOrWhiteSpace))
+        {
+            throw new ArgumentException(
+                $"Scope '{scope.Name}' contains a null, empty, or whitespace {destination} claim name.",
+                "scopes");
+        }
+    }
 }
-#pragma warning restore ZKD001

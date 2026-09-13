@@ -51,6 +51,7 @@ public sealed class DevelopmentSigningKeyIntegrationTests
                         clients.AddPublic("test-client", ["https://test.example.com/callback"], [], ["openid"]))
                     // Integration test hosts run as "Production" by default; allow in-memory stores.
                     .AddInMemoryStores(allowOutsideDevelopment: true)
+                    .AddTestClaimsProvider()
                     .AddInMemoryDevelopmentJwtSigningKeys(o =>
                     {
                         if (allowedEnvironments is not null)

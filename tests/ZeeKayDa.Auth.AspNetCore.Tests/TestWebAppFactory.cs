@@ -13,6 +13,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using ZeeKayDa.Auth.Claims;
 using ZeeKayDa.Auth.Extensions;
 using ZeeKayDa.Auth.Stores;
 using ZeeKayDa.Auth.Tokens;
@@ -36,6 +37,29 @@ internal static class TestSigningKeyRegistration
         builder.Services.AddZeeKayDaSigningKeySource<TestSigningKeySource>();
         return builder;
     }
+}
+
+/// <summary>
+/// Registers the claims provider every test host needs: the seam is mandatory, so a host without
+/// one fails startup. The default provider returns no claims; a test that needs claims registers
+/// its own before this runs, and this leaves it in place.
+/// </summary>
+internal static class TestClaimsProviderRegistration
+{
+    public static ZeeKayDaAuthBuilder AddTestClaimsProvider(this ZeeKayDaAuthBuilder builder)
+    {
+        if (builder.Services.Any(d => d.ServiceType == typeof(IClaimsProvider)))
+            return builder;
+
+        return builder.AddClaimsProvider<NoClaimsProvider>();
+    }
+}
+
+/// <summary>An <see cref="IClaimsProvider"/> that knows every subject and has nothing to say about any of them.</summary>
+internal sealed class NoClaimsProvider : IClaimsProvider
+{
+    public ValueTask<ClaimsResolutionResult> GetClaimsAsync(ClaimsProviderContext context, CancellationToken cancellationToken = default) =>
+        ValueTask.FromResult<ClaimsResolutionResult>(new ClaimsResolutionResult.Resolved { Claims = [] });
 }
 
 /// <summary>
@@ -166,6 +190,7 @@ internal sealed class TestWebAppFactory : WebApplicationFactory<TestWebAppFactor
                 authBuilder.AddInMemoryStores(allowOutsideDevelopment: true);
 
             authBuilder.AddTestSigningKeys();
+            authBuilder.AddTestClaimsProvider();
         });
 
         builder.Configure(app =>
@@ -224,7 +249,8 @@ internal sealed class TestWebAppFactoryWithRemoteIp : WebApplicationFactory<Test
                     ["openid"]))
               // Integration test hosts run as "Production" by default; allow in-memory stores.
               .AddInMemoryStores(allowOutsideDevelopment: true)
-              .AddTestSigningKeys();
+              .AddTestSigningKeys()
+              .AddTestClaimsProvider();
         });
 
         builder.Configure(app =>
@@ -268,7 +294,8 @@ internal sealed class TestWebAppFactoryWithPing : WebApplicationFactory<TestWebA
                     ["openid"]))
               // Integration test hosts run as "Production" by default; allow in-memory stores.
               .AddInMemoryStores(allowOutsideDevelopment: true)
-              .AddTestSigningKeys();
+              .AddTestSigningKeys()
+              .AddTestClaimsProvider();
         });
 
         builder.Configure(app =>
@@ -326,7 +353,8 @@ internal sealed class TestWebAppFactoryWithFallbackAuthorizationPolicy : WebAppl
                     ["openid"]))
               // Integration test hosts run as "Production" by default; allow in-memory stores.
               .AddInMemoryStores(allowOutsideDevelopment: true)
-              .AddTestSigningKeys();
+              .AddTestSigningKeys()
+              .AddTestClaimsProvider();
 
             _configureBuilder?.Invoke(authBuilder);
         });
@@ -396,7 +424,8 @@ internal sealed class TestWebAppFactoryWithVaryMiddleware : WebApplicationFactor
                     ["openid"]))
               // Integration test hosts run as "Production" by default; allow in-memory stores.
               .AddInMemoryStores(allowOutsideDevelopment: true)
-              .AddTestSigningKeys();
+              .AddTestSigningKeys()
+              .AddTestClaimsProvider();
         });
 
         var varyToAdd = _varyToAdd;

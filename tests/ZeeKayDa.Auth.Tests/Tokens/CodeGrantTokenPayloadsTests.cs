@@ -1,4 +1,5 @@
 using ZeeKayDa.Auth.Authorization;
+using ZeeKayDa.Auth.Claims;
 using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Stores;
 using ZeeKayDa.Auth.Tokens;
@@ -41,8 +42,11 @@ public sealed class CodeGrantTokenPayloadsTests
             ExpiresAt = Now.AddSeconds(50),
         };
 
-    private static CodeGrantTokenPayloads Payloads(AuthorizationCodeEntry? entry = null) =>
-        new(Issuer, Client, entry ?? Entry(), Now);
+    private static CodeGrantTokenPayloads Payloads(
+        AuthorizationCodeEntry? entry = null,
+        SelectedClaims? subject = null,
+        string? resourceAudience = null) =>
+        new(Issuer, Client, entry ?? Entry(), Now, subject ?? SelectedClaims.None, resourceAudience);
 
     // ── The access token ──────────────────────────────────────────────────────────────────────
 
@@ -177,5 +181,65 @@ public sealed class CodeGrantTokenPayloadsTests
 
         prepared.ExpiresAt.Should().Be(DateTimeOffset.MaxValue);
         prepared.Payload.Claims["exp"].Should().Be(DateTimeOffset.MaxValue.ToUnixTimeSeconds());
+    }
+
+    // ── The access token's audience ───────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Identity_scopes_alone_make_the_issuer_the_only_audience_as_a_string()
+    {
+        var prepared = Payloads(resourceAudience: null).AccessToken(Lifetime, jti: "token-1");
+
+        prepared.Payload.Claims["aud"].Should().Be(Issuer, "one recipient is a string (RFC 7519 §4.1.3)");
+    }
+
+    [Fact]
+    public void An_API_scope_makes_the_audience_a_two_element_array_with_the_issuer_last()
+    {
+        var prepared = Payloads(resourceAudience: "https://orders.example.com/").AccessToken(Lifetime, jti: "token-1");
+
+        prepared.Payload.Claims["aud"].Should().BeEquivalentTo(new[] { "https://orders.example.com/", Issuer }, options => options.WithStrictOrdering());
+    }
+
+    [Fact]
+    public void The_ID_token_audience_is_the_client_regardless_of_the_resource()
+    {
+        var prepared = Payloads(resourceAudience: "https://orders.example.com/").IdToken(Lifetime);
+
+        prepared.Payload.Claims["aud"].Should().Be("app");
+    }
+
+    // ── Subject claims ────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Each_token_carries_the_subject_claims_selected_for_it_and_no_others()
+    {
+        var subject = new SelectedClaims(
+            IdToken: new Dictionary<string, ClaimValue> { ["name"] = "Chris" },
+            UserInfo: new Dictionary<string, ClaimValue> { ["customer_number"] = "C-1" },
+            AccessToken: new Dictionary<string, ClaimValue> { ["role"] = "admin" });
+
+        var accessToken = Payloads(subject: subject).AccessToken(Lifetime, jti: "token-1");
+        var idToken = Payloads(subject: subject).IdToken(Lifetime);
+
+        accessToken.Payload.Claims["role"].Should().Be((ClaimValue)"admin");
+        accessToken.Payload.Claims.Should().NotContainKey("name").And.NotContainKey("customer_number");
+        idToken.Payload.Claims["name"].Should().Be((ClaimValue)"Chris");
+        idToken.Payload.Claims.Should().NotContainKey("role").And.NotContainKey("customer_number");
+    }
+
+    [Fact]
+    public void A_subject_claim_sharing_a_protocol_claims_name_fails_issuance_rather_than_overriding_the_grant()
+    {
+        // Selection strips reserved names before anything reaches here; if it ever did not, the
+        // payload must refuse rather than let a provider's 'sub' replace the grant's.
+        var subject = new SelectedClaims(
+            IdToken: new Dictionary<string, ClaimValue> { ["sub"] = "attacker" },
+            UserInfo: new Dictionary<string, ClaimValue>(),
+            AccessToken: new Dictionary<string, ClaimValue>());
+
+        var act = () => Payloads(subject: subject).IdToken(Lifetime);
+
+        act.Should().Throw<ArgumentException>();
     }
 }

@@ -994,6 +994,65 @@ public sealed class ClientRegistrationValidatorTests
             .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.allowed_scopes.blank_entry");
     }
 
+    // ── Claim additions ──────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Validate_accepts_claim_additions_naming_claims_no_protocol_name_uses()
+    {
+        var validator = MakeValidator();
+        var client = MakeValidPublicClient() with
+        {
+            AdditionalIdTokenClaims = ["tenant"],
+            AdditionalUserInfoClaims = ["tenant"],
+            AdditionalAccessTokenClaims = ["tenant", "department"],
+        };
+
+        var act = () => validator.Validate(client);
+
+        act.Should().NotThrow();
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("  ")]
+    public void Validate_fails_with_blank_entry_code_if_a_claim_addition_is_blank(string entry)
+    {
+        var validator = MakeValidator();
+        var client = MakeValidPublicClient() with { AdditionalUserInfoClaims = ["tenant", entry] };
+
+        var act = () => validator.Validate(client);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.claim_additions.blank_entry");
+    }
+
+    [Theory]
+    [InlineData("sub")]
+    [InlineData("Aud")]
+    [InlineData("zkd:sid")]
+    public void Validate_fails_with_reserved_code_if_a_claim_addition_names_a_protocol_claim(string entry)
+    {
+        var validator = MakeValidator();
+        var client = MakeValidPublicClient() with { AdditionalAccessTokenClaims = [entry] };
+
+        var act = () => validator.Validate(client);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.claim_additions.reserved");
+    }
+
+    [Fact]
+    public void Validate_fails_with_null_code_if_a_claim_addition_collection_is_null()
+    {
+        var validator = MakeValidator();
+        var client = MakeValidPublicClient() with { AdditionalIdTokenClaims = null! };
+
+        var act = () => validator.Validate(client);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.claim_additions.null");
+    }
+
     // ── AllowedTokenEndpointAuthMethods ──────────────────────────────────────────────────────────
 
     [Fact]

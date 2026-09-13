@@ -164,6 +164,9 @@ internal sealed class InMemoryClientRepository : IClientRepository
         };
     }
 
+    /// <summary>Every registration this repository serves, for the startup checks that read them all.</summary>
+    internal IEnumerable<IClientRegistration> Registrations => _clients.Values;
+
     /// <inheritdoc/>
     public ValueTask<IClientRegistration?> FindByClientIdAsync(
         string clientId,

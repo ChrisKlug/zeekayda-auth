@@ -115,7 +115,7 @@ public sealed class InMemoryClientAuthMethodSubsetIntegrationTests
                 // Integration test hosts run as "Production"; allow in-memory stores so only
                 // the intentional auth-method failure fires, not the environment guard.
                 .AddInMemoryStores(allowOutsideDevelopment: true)
-                .AddTestSigningKeys();
+                .AddTestSigningKeys().AddTestClaimsProvider();
             });
 
             builder.Configure(app =>
@@ -166,7 +166,7 @@ public sealed class InMemoryClientAuthMethodSubsetIntegrationTests
                     ))
                 // Integration test hosts run as "Production" by default; allow in-memory stores.
                 .AddInMemoryStores(allowOutsideDevelopment: true)
-                .AddTestSigningKeys();
+                .AddTestSigningKeys().AddTestClaimsProvider();
             });
 
             builder.Configure(app =>

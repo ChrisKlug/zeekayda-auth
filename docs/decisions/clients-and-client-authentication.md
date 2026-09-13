@@ -31,8 +31,18 @@ instead of failing a startup check. A default interface method is used only wher
 the safe or the forward-compatible answer, never to excuse an omission: the signing-algorithm
 allowlist (`null` inherits the server default), `AllowedPromptValues` (empty permits every value, so
 a new one needs no change), `DisplayName` (`null`: none), `RequireConsent` (`true`: an
-implementation that says nothing requires consent) and the two token lifetimes (`null`: the
-server's validated value).
+implementation that says nothing requires consent), the two token lifetimes (`null`: the
+server's validated value) and the three claim additions (empty: a registration that says nothing
+widens nothing). Every one of them is in the registration fingerprint, because each changes what a
+client is issued; a test fails the build when a member is added to either interface and not to it.
+
+**A client's claim additions are selectors, never sources, and never remove.** `AdditionalIdTokenClaims`,
+`AdditionalUserInfoClaims` and `AdditionalAccessTokenClaims` widen what the granted scopes unlock for
+every grant to the client; a type still has to come back from the claims provider to appear anywhere,
+and removal is `AllowedScopes`. The registration validator refuses a null collection, a blank entry and
+a reserved protocol name; whether an addition names a claim a scope unlocks is checked per grant
+against the scope repository, which the validator's cached verdict cannot see
+(`token-issuance-and-claims.md`).
 
 **Credential type identity is the algorithm; there is no string discriminator and no
 `string? ClientSecret`.** A bare string is ambiguous about plaintext versus hash and pushes fixed-time

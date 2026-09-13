@@ -1,25 +1,27 @@
-#pragma warning disable ZKD001 // IdTokenClaims and AccessTokenClaims are experimental; StandardScopes is the authoritative definition.
 namespace ZeeKayDa.Auth.Scopes;
 
 /// <summary>
-/// Standard OpenID Connect scope definitions.
+/// Standard OpenID Connect scope definitions, each unlocking its OpenID Connect Core §5.4 claims
+/// in both the ID token and at the userinfo endpoint.
 /// </summary>
 public static class StandardScopes
 {
-    private static readonly IReadOnlyCollection<string> OpenIdIdTokenClaims = Array.AsReadOnly(["sub"]);
-    private static readonly IReadOnlyCollection<string> ProfileIdTokenClaims = Array.AsReadOnly(["name", "family_name", "given_name", "middle_name", "nickname", "preferred_username", "profile", "picture", "website", "gender", "birthdate", "zoneinfo", "locale", "updated_at"]);
-    private static readonly IReadOnlyCollection<string> EmailIdTokenClaims = Array.AsReadOnly(["email", "email_verified"]);
-    private static readonly IReadOnlyCollection<string> PhoneIdTokenClaims = Array.AsReadOnly(["phone_number", "phone_number_verified"]);
-    private static readonly IReadOnlyCollection<string> AddressIdTokenClaims = Array.AsReadOnly(["address"]);
+    private static readonly IReadOnlyCollection<string> OpenIdClaims = Array.AsReadOnly(["sub"]);
+    private static readonly IReadOnlyCollection<string> ProfileClaims = Array.AsReadOnly(["name", "family_name", "given_name", "middle_name", "nickname", "preferred_username", "profile", "picture", "website", "gender", "birthdate", "zoneinfo", "locale", "updated_at"]);
+    private static readonly IReadOnlyCollection<string> EmailClaims = Array.AsReadOnly(["email", "email_verified"]);
+    private static readonly IReadOnlyCollection<string> PhoneClaims = Array.AsReadOnly(["phone_number", "phone_number_verified"]);
+    private static readonly IReadOnlyCollection<string> AddressClaims = Array.AsReadOnly(["address"]);
 
     /// <summary>
-    /// Gets the standard <c>openid</c> scope definition.
+    /// Gets the standard <c>openid</c> scope definition. It lists <c>sub</c> for readability;
+    /// the framework writes <c>sub</c> from the grant on every token regardless.
     /// </summary>
     public static ScopeDefinition OpenId { get; } = new()
     {
         Name = "openid",
         IsDiscoverable = true,
-        IdTokenClaims = OpenIdIdTokenClaims,
+        IdTokenClaims = OpenIdClaims,
+        UserInfoClaims = OpenIdClaims,
     };
 
     /// <summary>
@@ -29,7 +31,8 @@ public static class StandardScopes
     {
         Name = "profile",
         IsDiscoverable = true,
-        IdTokenClaims = ProfileIdTokenClaims,
+        IdTokenClaims = ProfileClaims,
+        UserInfoClaims = ProfileClaims,
     };
 
     /// <summary>
@@ -39,7 +42,8 @@ public static class StandardScopes
     {
         Name = "email",
         IsDiscoverable = true,
-        IdTokenClaims = EmailIdTokenClaims,
+        IdTokenClaims = EmailClaims,
+        UserInfoClaims = EmailClaims,
     };
 
     /// <summary>
@@ -49,7 +53,8 @@ public static class StandardScopes
     {
         Name = "phone",
         IsDiscoverable = true,
-        IdTokenClaims = PhoneIdTokenClaims,
+        IdTokenClaims = PhoneClaims,
+        UserInfoClaims = PhoneClaims,
     };
 
     /// <summary>
@@ -59,7 +64,8 @@ public static class StandardScopes
     {
         Name = "address",
         IsDiscoverable = true,
-        IdTokenClaims = AddressIdTokenClaims,
+        IdTokenClaims = AddressClaims,
+        UserInfoClaims = AddressClaims,
     };
 
     /// <summary>
@@ -67,4 +73,3 @@ public static class StandardScopes
     /// </summary>
     public static IReadOnlyCollection<ScopeDefinition> All { get; } = Array.AsReadOnly([OpenId, Profile, Email, Phone, Address]);
 }
-#pragma warning restore ZKD001

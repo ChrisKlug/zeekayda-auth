@@ -2,6 +2,7 @@ using FluentAssertions;
 using ZeeKayDa.Auth.Authorization;
 using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Logging;
+using ZeeKayDa.Auth.Scopes;
 
 namespace ZeeKayDa.Auth.Tests.Authorization;
 
@@ -217,6 +218,106 @@ public class AuthorizeRequestValidatorTests
         result.Should().BeOfType<AuthorizeRequestValidationResult.RedirectError>()
             .Subject.Error.Should().Be("invalid_scope");
     }
+
+    [Fact]
+    public async Task Phase2_an_effective_scope_with_no_definition_is_invalid_scope()
+    {
+        var client = Client() with
+        {
+            AllowedScopes = new HashSet<string>(StringComparer.Ordinal) { "openid", "profile", "undefined" },
+        };
+        var parameters = ValidParameters();
+        parameters["scope"] = ["openid profile undefined"];
+
+        var result = await Validate(parameters, client);
+
+        var error = result.Should().BeOfType<AuthorizeRequestValidationResult.RedirectError>().Subject;
+        error.Error.Should().Be("invalid_scope");
+        error.Description.Should().NotContain("undefined", "the scope name is not echoed into a redirect");
+    }
+
+    [Fact]
+    public async Task Phase2_a_disallowed_undefined_scope_is_narrowed_away_before_the_definition_check()
+    {
+        var parameters = ValidParameters();
+        parameters["scope"] = ["openid profile undefined"];
+
+        var result = await Validate(parameters);
+
+        result.Should().BeOfType<AuthorizeRequestValidationResult.Valid>("narrowing runs first, so a scope the client may not request never reaches the definition check");
+    }
+
+    [Fact]
+    public async Task Phase2_two_granted_scopes_with_different_audiences_are_invalid_scope()
+    {
+        var client = Client() with
+        {
+            AllowedScopes = new HashSet<string>(StringComparer.Ordinal) { "openid", "orders.read", "reports.read" },
+        };
+        var parameters = ValidParameters();
+        parameters["scope"] = ["openid orders.read reports.read"];
+
+        var result = await Validate(parameters, client, [.. StandardScopes.All, OrdersRead, ReportsRead]);
+
+        result.Should().BeOfType<AuthorizeRequestValidationResult.RedirectError>()
+            .Subject.Error.Should().Be("invalid_scope", "RFC 9068 §3");
+    }
+
+    [Fact]
+    public async Task Phase2_one_API_scope_with_openid_is_valid()
+    {
+        var client = Client() with
+        {
+            AllowedScopes = new HashSet<string>(StringComparer.Ordinal) { "openid", "orders.read", "orders.write" },
+        };
+        var parameters = ValidParameters();
+        parameters["scope"] = ["openid orders.read orders.write"];
+
+        var result = await Validate(parameters, client, [.. StandardScopes.All, OrdersRead, OrdersWrite]);
+
+        result.Should().BeOfType<AuthorizeRequestValidationResult.Valid>("two scopes sharing an audience are one API");
+    }
+
+    [Fact]
+    public async Task Phase2_a_second_audience_the_client_may_not_request_is_narrowed_away_not_refused()
+    {
+        var client = Client() with
+        {
+            AllowedScopes = new HashSet<string>(StringComparer.Ordinal) { "openid", "orders.read" },
+        };
+        var parameters = ValidParameters();
+        parameters["scope"] = ["openid orders.read reports.read"];
+
+        var result = await Validate(parameters, client, [.. StandardScopes.All, OrdersRead, ReportsRead]);
+
+        result.Should().BeOfType<AuthorizeRequestValidationResult.Valid>();
+    }
+
+    [Fact]
+    public async Task Phase2_a_client_addition_naming_a_scope_claim_is_server_error_with_a_generic_description()
+    {
+        var client = Client() with { AdditionalAccessTokenClaims = ["email"] };
+
+        var result = await Validate(ValidParameters(), client);
+
+        var error = result.Should().BeOfType<AuthorizeRequestValidationResult.RedirectError>().Subject;
+        error.Error.Should().Be("server_error", "the registration is the operator's mistake, not the client's request");
+        error.Description.Should().NotContain("email");
+    }
+
+    [Fact]
+    public async Task Phase2_a_client_addition_no_scope_unlocks_is_valid()
+    {
+        var client = Client() with { AdditionalIdTokenClaims = ["tenant"] };
+
+        var result = await Validate(ValidParameters(), client);
+
+        result.Should().BeOfType<AuthorizeRequestValidationResult.Valid>();
+    }
+
+    private static readonly ScopeDefinition OrdersRead = new() { Name = "orders.read", Audience = "https://orders.example.com/" };
+    private static readonly ScopeDefinition OrdersWrite = new() { Name = "orders.write", Audience = "https://orders.example.com/" };
+    private static readonly ScopeDefinition ReportsRead = new() { Name = "reports.read", Audience = "https://reports.example.com/" };
 
     [Fact]
     public async Task Phase2_disallowed_scopes_are_silently_narrowed()
@@ -494,13 +595,17 @@ public class AuthorizeRequestValidatorTests
 
     private static async Task<AuthorizeRequestValidationResult> Validate(
         Dictionary<string, IReadOnlyList<string?>> parameters,
-        ClientRegistration? client = null)
+        ClientRegistration? client = null,
+        IEnumerable<ScopeDefinition>? scopes = null)
     {
         var resolver = new ValidatedClientResolver(
             new SingleClientRepository(client ?? Client()),
             new PassingValidator(),
             NullSanitizingLogger<ValidatedClientResolver>.Instance);
-        var validator = new AuthorizeRequestValidator(resolver);
+        var validator = new AuthorizeRequestValidator(
+            resolver,
+            new InMemoryScopeRepository(scopes ?? StandardScopes.All),
+            NullSanitizingLogger<AuthorizeRequestValidator>.Instance);
 
         return await validator.ValidateAsync(parameters, TestContext.Current.CancellationToken);
     }

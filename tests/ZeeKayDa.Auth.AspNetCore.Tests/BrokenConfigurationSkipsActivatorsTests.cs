@@ -82,7 +82,7 @@ public sealed class BrokenConfigurationSkipsActivatorsTests
                 })
                 .AddInMemoryClients(clients =>
                     clients.AddPublic("test-client", ["https://test.example.com/callback"], [], ["openid"]))
-                .AddInMemoryStores(allowOutsideDevelopment: true);
+                .AddInMemoryStores(allowOutsideDevelopment: true).AddTestClaimsProvider();
 
                 // Fails a cheap verifier: no IDistributedCache is registered for the distributed
                 // store check to find. Nothing in the activator phase should run afterwards.

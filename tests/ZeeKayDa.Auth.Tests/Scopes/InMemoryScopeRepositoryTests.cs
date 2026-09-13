@@ -1,4 +1,3 @@
-#pragma warning disable ZKD001 // Tests exercise the experimental IdTokenClaims / AccessTokenClaims API by design.
 using ZeeKayDa.Auth.Scopes;
 
 namespace ZeeKayDa.Auth.Tests.Scopes;
@@ -83,6 +82,37 @@ public sealed class InMemoryScopeRepositoryTests
 
         act.Should().Throw<ArgumentException>()
             .WithMessage("*whitespace access token claim name*");
+    }
+
+    [Fact]
+    public void Constructor_throws_when_UserInfoClaim_name_is_whitespace()
+    {
+        var act = () => new InMemoryScopeRepository(
+        [
+            new ScopeDefinition { Name = StandardScopes.Profile.Name, UserInfoClaims = ["name", " "] },
+        ]);
+
+        act.Should().Throw<ArgumentException>()
+            .WithMessage("*whitespace userinfo claim name*");
+    }
+
+    [Fact]
+    public async Task GetScopes_preserves_UserInfoClaims_and_Audience()
+    {
+        var repository = new InMemoryScopeRepository(
+        [
+            new ScopeDefinition
+            {
+                Name = "orders.read",
+                Audience = "https://orders.example.com/",
+                UserInfoClaims = ["customer_number"],
+            },
+        ]);
+
+        var scope = (await repository.GetScopesAsync(TestContext.Current.CancellationToken)).Single();
+
+        scope.Audience.Should().Be("https://orders.example.com/");
+        scope.UserInfoClaims.Should().Equal("customer_number");
     }
 
     [Fact]

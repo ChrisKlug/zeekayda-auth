@@ -594,10 +594,6 @@ ZeeKayDa.Auth.ZeeKayDaInteractionException.ZeeKayDaInteractionException(string! 
 ZeeKayDa.Auth.ZeeKayDaStoreException
 ZeeKayDa.Auth.ZeeKayDaStoreException.ZeeKayDaStoreException(string! message) -> void
 ZeeKayDa.Auth.ZeeKayDaStoreException.ZeeKayDaStoreException(string! message, System.Exception! innerException) -> void
-[ZKD001]ZeeKayDa.Auth.Scopes.ScopeDefinition.AccessTokenClaims.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
-[ZKD001]ZeeKayDa.Auth.Scopes.ScopeDefinition.AccessTokenClaims.init -> void
-[ZKD001]ZeeKayDa.Auth.Scopes.ScopeDefinition.IdTokenClaims.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
-[ZKD001]ZeeKayDa.Auth.Scopes.ScopeDefinition.IdTokenClaims.init -> void
 abstract ZeeKayDa.Auth.Clients.ClientSecretHasher<TSecret>.CreateCore(string! plaintext) -> TSecret
 abstract ZeeKayDa.Auth.Clients.ClientSecretHasher<TSecret>.VerifyCore(TSecret stored, System.ReadOnlySpan<char> presented) -> bool
 const ZeeKayDa.Auth.Authorization.AuthenticationMethods.FacialRecognition = "face" -> string!
@@ -722,3 +718,94 @@ virtual ZeeKayDa.Auth.Clients.ClientSecretHasher<TSecret>.CreateCore(System.Read
 ~override ZeeKayDa.Auth.Tokens.SigningOutcome.ToString() -> string
 ~override ZeeKayDa.Auth.Tokens.SourceKeyId.Equals(object obj) -> bool
 ~override ZeeKayDa.Auth.Tokens.SourceKeyId.ToString() -> string
+ZeeKayDa.Auth.Claims.AddressClaim
+ZeeKayDa.Auth.Claims.AddressClaim.<Clone>$() -> ZeeKayDa.Auth.Claims.AddressClaim!
+ZeeKayDa.Auth.Claims.AddressClaim.AddressClaim() -> void
+ZeeKayDa.Auth.Claims.AddressClaim.Country.get -> string?
+ZeeKayDa.Auth.Claims.AddressClaim.Country.init -> void
+ZeeKayDa.Auth.Claims.AddressClaim.Equals(ZeeKayDa.Auth.Claims.AddressClaim? other) -> bool
+ZeeKayDa.Auth.Claims.AddressClaim.Formatted.get -> string?
+ZeeKayDa.Auth.Claims.AddressClaim.Formatted.init -> void
+ZeeKayDa.Auth.Claims.AddressClaim.Locality.get -> string?
+ZeeKayDa.Auth.Claims.AddressClaim.Locality.init -> void
+ZeeKayDa.Auth.Claims.AddressClaim.PostalCode.get -> string?
+ZeeKayDa.Auth.Claims.AddressClaim.PostalCode.init -> void
+ZeeKayDa.Auth.Claims.AddressClaim.Region.get -> string?
+ZeeKayDa.Auth.Claims.AddressClaim.Region.init -> void
+ZeeKayDa.Auth.Claims.AddressClaim.StreetAddress.get -> string?
+ZeeKayDa.Auth.Claims.AddressClaim.StreetAddress.init -> void
+ZeeKayDa.Auth.Claims.ClaimRecord
+ZeeKayDa.Auth.Claims.ClaimRecord.ClaimRecord() -> void
+ZeeKayDa.Auth.Claims.ClaimRecord.ClaimRecord(string! type, ZeeKayDa.Auth.Claims.ClaimValue value) -> void
+ZeeKayDa.Auth.Claims.ClaimRecord.Equals(ZeeKayDa.Auth.Claims.ClaimRecord other) -> bool
+ZeeKayDa.Auth.Claims.ClaimRecord.Type.get -> string!
+ZeeKayDa.Auth.Claims.ClaimRecord.Value.get -> ZeeKayDa.Auth.Claims.ClaimValue
+ZeeKayDa.Auth.Claims.ClaimValue
+ZeeKayDa.Auth.Claims.ClaimValue.ClaimValue() -> void
+ZeeKayDa.Auth.Claims.ClaimValue.Equals(ZeeKayDa.Auth.Claims.ClaimValue other) -> bool
+ZeeKayDa.Auth.Claims.ClaimsProviderContext
+ZeeKayDa.Auth.Claims.ClaimsProviderContext.<Clone>$() -> ZeeKayDa.Auth.Claims.ClaimsProviderContext!
+ZeeKayDa.Auth.Claims.ClaimsProviderContext.ClaimTypes.get -> System.Collections.Generic.IReadOnlySet<string!>!
+ZeeKayDa.Auth.Claims.ClaimsProviderContext.ClaimTypes.init -> void
+ZeeKayDa.Auth.Claims.ClaimsProviderContext.ClaimsProviderContext(string! Sub, System.Collections.Generic.IReadOnlyList<string!>! Scopes, System.Collections.Generic.IReadOnlySet<string!>! ClaimTypes, string? FamilyId) -> void
+ZeeKayDa.Auth.Claims.ClaimsProviderContext.Deconstruct(out string! Sub, out System.Collections.Generic.IReadOnlyList<string!>! Scopes, out System.Collections.Generic.IReadOnlySet<string!>! ClaimTypes, out string? FamilyId) -> void
+ZeeKayDa.Auth.Claims.ClaimsProviderContext.Equals(ZeeKayDa.Auth.Claims.ClaimsProviderContext? other) -> bool
+ZeeKayDa.Auth.Claims.ClaimsProviderContext.FamilyId.get -> string?
+ZeeKayDa.Auth.Claims.ClaimsProviderContext.FamilyId.init -> void
+ZeeKayDa.Auth.Claims.ClaimsProviderContext.Scopes.get -> System.Collections.Generic.IReadOnlyList<string!>!
+ZeeKayDa.Auth.Claims.ClaimsProviderContext.Scopes.init -> void
+ZeeKayDa.Auth.Claims.ClaimsProviderContext.Sub.get -> string!
+ZeeKayDa.Auth.Claims.ClaimsProviderContext.Sub.init -> void
+ZeeKayDa.Auth.Claims.ClaimsResolutionResult
+ZeeKayDa.Auth.Claims.ClaimsResolutionResult.Resolved
+ZeeKayDa.Auth.Claims.ClaimsResolutionResult.Resolved.Claims.get -> System.Collections.Generic.IReadOnlyList<ZeeKayDa.Auth.Claims.ClaimRecord>!
+ZeeKayDa.Auth.Claims.ClaimsResolutionResult.Resolved.Claims.init -> void
+ZeeKayDa.Auth.Claims.ClaimsResolutionResult.Resolved.Resolved() -> void
+ZeeKayDa.Auth.Claims.ClaimsResolutionResult.SubjectInvalid
+ZeeKayDa.Auth.Claims.ClaimsResolutionResult.SubjectInvalid.SubjectInvalid() -> void
+ZeeKayDa.Auth.Claims.IClaimsProvider
+ZeeKayDa.Auth.Claims.IClaimsProvider.GetClaimsAsync(ZeeKayDa.Auth.Claims.ClaimsProviderContext! context, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeeKayDa.Auth.Claims.ClaimsResolutionResult!>
+ZeeKayDa.Auth.Clients.ClientRegistration.AdditionalAccessTokenClaims.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
+ZeeKayDa.Auth.Clients.ClientRegistration.AdditionalAccessTokenClaims.init -> void
+ZeeKayDa.Auth.Clients.ClientRegistration.AdditionalIdTokenClaims.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
+ZeeKayDa.Auth.Clients.ClientRegistration.AdditionalIdTokenClaims.init -> void
+ZeeKayDa.Auth.Clients.ClientRegistration.AdditionalUserInfoClaims.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
+ZeeKayDa.Auth.Clients.ClientRegistration.AdditionalUserInfoClaims.init -> void
+ZeeKayDa.Auth.Clients.IClientMetadata.AdditionalAccessTokenClaims.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
+ZeeKayDa.Auth.Clients.IClientMetadata.AdditionalIdTokenClaims.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
+ZeeKayDa.Auth.Clients.IClientMetadata.AdditionalUserInfoClaims.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
+ZeeKayDa.Auth.Scopes.ScopeDefinition.AccessTokenClaims.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
+ZeeKayDa.Auth.Scopes.ScopeDefinition.AccessTokenClaims.init -> void
+ZeeKayDa.Auth.Scopes.ScopeDefinition.Audience.get -> string?
+ZeeKayDa.Auth.Scopes.ScopeDefinition.Audience.init -> void
+ZeeKayDa.Auth.Scopes.ScopeDefinition.IdTokenClaims.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
+ZeeKayDa.Auth.Scopes.ScopeDefinition.IdTokenClaims.init -> void
+ZeeKayDa.Auth.Scopes.ScopeDefinition.UserInfoClaims.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
+ZeeKayDa.Auth.Scopes.ScopeDefinition.UserInfoClaims.init -> void
+override ZeeKayDa.Auth.Claims.AddressClaim.Equals(object? obj) -> bool
+override ZeeKayDa.Auth.Claims.AddressClaim.GetHashCode() -> int
+override ZeeKayDa.Auth.Claims.AddressClaim.ToString() -> string!
+override ZeeKayDa.Auth.Claims.ClaimRecord.GetHashCode() -> int
+override ZeeKayDa.Auth.Claims.ClaimRecord.ToString() -> string!
+override ZeeKayDa.Auth.Claims.ClaimValue.GetHashCode() -> int
+override ZeeKayDa.Auth.Claims.ClaimValue.ToString() -> string!
+override ZeeKayDa.Auth.Claims.ClaimsProviderContext.Equals(object? obj) -> bool
+override ZeeKayDa.Auth.Claims.ClaimsProviderContext.GetHashCode() -> int
+override ZeeKayDa.Auth.Claims.ClaimsProviderContext.ToString() -> string!
+static ZeeKayDa.Auth.Claims.AddressClaim.operator !=(ZeeKayDa.Auth.Claims.AddressClaim? left, ZeeKayDa.Auth.Claims.AddressClaim? right) -> bool
+static ZeeKayDa.Auth.Claims.AddressClaim.operator ==(ZeeKayDa.Auth.Claims.AddressClaim? left, ZeeKayDa.Auth.Claims.AddressClaim? right) -> bool
+static ZeeKayDa.Auth.Claims.ClaimRecord.operator !=(ZeeKayDa.Auth.Claims.ClaimRecord left, ZeeKayDa.Auth.Claims.ClaimRecord right) -> bool
+static ZeeKayDa.Auth.Claims.ClaimRecord.operator ==(ZeeKayDa.Auth.Claims.ClaimRecord left, ZeeKayDa.Auth.Claims.ClaimRecord right) -> bool
+static ZeeKayDa.Auth.Claims.ClaimValue.From<T>(T value, System.Text.Json.JsonSerializerOptions? options = null) -> ZeeKayDa.Auth.Claims.ClaimValue
+static ZeeKayDa.Auth.Claims.ClaimValue.implicit operator ZeeKayDa.Auth.Claims.ClaimValue(ZeeKayDa.Auth.Claims.AddressClaim! value) -> ZeeKayDa.Auth.Claims.ClaimValue
+static ZeeKayDa.Auth.Claims.ClaimValue.implicit operator ZeeKayDa.Auth.Claims.ClaimValue(bool value) -> ZeeKayDa.Auth.Claims.ClaimValue
+static ZeeKayDa.Auth.Claims.ClaimValue.implicit operator ZeeKayDa.Auth.Claims.ClaimValue(double value) -> ZeeKayDa.Auth.Claims.ClaimValue
+static ZeeKayDa.Auth.Claims.ClaimValue.implicit operator ZeeKayDa.Auth.Claims.ClaimValue(int value) -> ZeeKayDa.Auth.Claims.ClaimValue
+static ZeeKayDa.Auth.Claims.ClaimValue.implicit operator ZeeKayDa.Auth.Claims.ClaimValue(long value) -> ZeeKayDa.Auth.Claims.ClaimValue
+static ZeeKayDa.Auth.Claims.ClaimValue.implicit operator ZeeKayDa.Auth.Claims.ClaimValue(string! value) -> ZeeKayDa.Auth.Claims.ClaimValue
+static ZeeKayDa.Auth.Claims.ClaimValue.operator !=(ZeeKayDa.Auth.Claims.ClaimValue left, ZeeKayDa.Auth.Claims.ClaimValue right) -> bool
+static ZeeKayDa.Auth.Claims.ClaimValue.operator ==(ZeeKayDa.Auth.Claims.ClaimValue left, ZeeKayDa.Auth.Claims.ClaimValue right) -> bool
+static ZeeKayDa.Auth.Claims.ClaimsProviderContext.operator !=(ZeeKayDa.Auth.Claims.ClaimsProviderContext? left, ZeeKayDa.Auth.Claims.ClaimsProviderContext? right) -> bool
+static ZeeKayDa.Auth.Claims.ClaimsProviderContext.operator ==(ZeeKayDa.Auth.Claims.ClaimsProviderContext? left, ZeeKayDa.Auth.Claims.ClaimsProviderContext? right) -> bool
+~override ZeeKayDa.Auth.Claims.ClaimRecord.Equals(object obj) -> bool
+~override ZeeKayDa.Auth.Claims.ClaimValue.Equals(object obj) -> bool

@@ -72,6 +72,7 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
         ValidateAllowedSigningAlgorithms(client, failures);
         ValidateTokenLifetimes(client, failures);
         ValidateAllowedScopes(client, failures);
+        ValidateClaimAdditions(client, failures);
         ValidateEnumSets(client, failures);
 
         if (failures.Count > 0)
@@ -512,6 +513,52 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
                 "client.allowed_scopes.blank_entry",
                 $"Client '{client.ClientId}' has a null, empty, or whitespace-only entry in AllowedScopes. " +
                 "Scope entries must be non-empty non-whitespace strings."));
+        }
+    }
+
+    private static void ValidateClaimAdditions(
+        IClientRegistration client,
+        List<ZeeKayDaConfigurationFailure> failures)
+    {
+        ValidateClaimAdditions(client, client.AdditionalIdTokenClaims, nameof(IClientMetadata.AdditionalIdTokenClaims), failures);
+        ValidateClaimAdditions(client, client.AdditionalUserInfoClaims, nameof(IClientMetadata.AdditionalUserInfoClaims), failures);
+        ValidateClaimAdditions(client, client.AdditionalAccessTokenClaims, nameof(IClientMetadata.AdditionalAccessTokenClaims), failures);
+    }
+
+    /// <summary>
+    /// An addition is a claim name selection can act on: present, non-blank, and not one of the
+    /// protocol names the framework writes itself, which selection would drop anyway. Whether it
+    /// collides with a scope is checked per grant, against the scope repository this validator
+    /// cannot see.
+    /// </summary>
+    private static void ValidateClaimAdditions(
+        IClientRegistration client,
+        IReadOnlyCollection<string>? additions,
+        string propertyName,
+        List<ZeeKayDaConfigurationFailure> failures)
+    {
+        if (additions is null)
+        {
+            failures.Add(new ZeeKayDaConfigurationFailure(
+                "client.claim_additions.null",
+                $"Client '{client.ClientId}' has {propertyName} set to null. Use an empty collection for no additions."));
+            return;
+        }
+
+        foreach (var _ in additions.Where(string.IsNullOrWhiteSpace))
+        {
+            failures.Add(new ZeeKayDaConfigurationFailure(
+                "client.claim_additions.blank_entry",
+                $"Client '{client.ClientId}' has a null, empty, or whitespace-only entry in {propertyName}. " +
+                "Entries must be claim type names."));
+        }
+
+        foreach (var claim in additions.Where(claim => !string.IsNullOrWhiteSpace(claim) && Claims.ReservedClaimNames.IsReserved(claim)))
+        {
+            failures.Add(new ZeeKayDaConfigurationFailure(
+                "client.claim_additions.reserved",
+                $"Client '{client.ClientId}' names '{claim}' in {propertyName}, which is a protocol claim the " +
+                "framework writes from the grant. It cannot be supplied by a claims provider and is never selected."));
         }
     }
 

@@ -58,7 +58,7 @@ public sealed class ClientSigningAlgorithmStartupIntegrationTests
                         AllowedSigningAlgorithms = new HashSet<SigningAlgorithm> { SigningAlgorithm.ES512 },
                     }))
                 .AddInMemoryStores(allowOutsideDevelopment: true)
-                .AddTestSigningKeys();
+                .AddTestSigningKeys().AddTestClaimsProvider();
             });
 
             builder.Configure(app =>

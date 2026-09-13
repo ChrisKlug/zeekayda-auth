@@ -4,9 +4,8 @@ What each issued token carries on the wire, how long it lives, and what signs it
 come from, and which token each lands in, is `token-issuance-and-claims.md`; key selection and
 signing are `signing-keys.md`.
 
-**The token endpoint issues the authorization code grant.** The protocol claims, the audiences, the
-lifetimes and the signing entries below describe shipped code. The access token's audience is the
-issuer alone until scope audiences exist, which is the claims-selection slice.
+**The token endpoint issues the authorization code grant.** The protocol claims, the subject claims,
+the audiences, the lifetimes and the signing entries below describe shipped code.
 
 ## Decisions in force
 
@@ -64,8 +63,11 @@ relying party can.
 the absolute URI of the resource server it is for; the token's `aud` is the one distinct such value,
 compared ordinally. Two distinct values across the effective scopes is `invalid_scope` at the
 authorization endpoint before any interaction, and so is an effective scope string with no
-definition, which has no audience to correlate to. Consent and refresh only narrow, so nothing later adds a second one;
-every scope string then correlates to exactly one audience, as RFC 9068 §2.2.3 and §5 ask.
+definition, which has no audience to correlate to. Consent and refresh only narrow, so nothing later
+adds a second one, and the token endpoint re-derives from the stored scope and answers `server_error`
+if a definition changed under a live grant; every scope string then correlates to exactly one
+audience, as RFC 9068 §2.2.3 and §5 ask. Both tokens also carry the subject claims selected for them
+(`token-issuance-and-claims.md`), added to the protocol claims and never assigned over them.
 
 **The issuer is always an audience when `openid` is granted, and there is no switch to drop it.**
 Userinfo is a protected resource hosted by the issuer, and RFC 9068 §4 obliges a resource server to
