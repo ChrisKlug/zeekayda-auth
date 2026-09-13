@@ -1522,4 +1522,33 @@ public sealed class ClientRegistrationValidatorTests
 
         logger.Warnings.Should().NotContain(w => w.Contains("Lifetime"));
     }
+
+    // ── AllowedSigningAlgorithms must include the key that signs ──────────────────────────────────
+
+    [Fact]
+    public void A_client_whose_allowed_algorithms_exclude_the_current_signing_key_fails_registration()
+    {
+        // ES256 is advertised (a published key carries it), so the subset rule passes; but the key
+        // that signs today is RS256, and a client pinned to ES256 could never be issued an ID token.
+        var keySet = TestSigningKeys.KeySet(SigningAlgorithm.RS256, SigningAlgorithm.ES256);
+        var validator = MakeValidator(keySet: keySet);
+        var client = MakeValidPublicClient() with { AllowedSigningAlgorithms = new HashSet<SigningAlgorithm> { SigningAlgorithm.ES256 } };
+
+        var act = () => validator.Validate(client);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "client.signing_algorithms.excludes_signing_key");
+    }
+
+    [Fact]
+    public void A_client_whose_allowed_algorithms_include_the_current_signing_key_passes()
+    {
+        var keySet = TestSigningKeys.KeySet(SigningAlgorithm.RS256, SigningAlgorithm.ES256);
+        var validator = MakeValidator(keySet: keySet);
+        var client = MakeValidPublicClient() with { AllowedSigningAlgorithms = new HashSet<SigningAlgorithm> { SigningAlgorithm.RS256 } };
+
+        var act = () => validator.Validate(client);
+
+        act.Should().NotThrow();
+    }
 }

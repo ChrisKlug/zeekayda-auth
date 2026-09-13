@@ -36,7 +36,7 @@ internal static class SigningAlgorithms
         SigningAlgorithm.RS256 or SigningAlgorithm.PS256 or SigningAlgorithm.ES256 => HashAlgorithmName.SHA256,
         SigningAlgorithm.RS384 or SigningAlgorithm.PS384 or SigningAlgorithm.ES384 => HashAlgorithmName.SHA384,
         SigningAlgorithm.RS512 or SigningAlgorithm.PS512 or SigningAlgorithm.ES512 => HashAlgorithmName.SHA512,
-        _ => throw new ArgumentOutOfRangeException(nameof(algorithm), algorithm, $"Not a defined {nameof(SigningAlgorithm)} member."),
+        _ => ThrowUnsupportedAlgorithm<HashAlgorithmName>(algorithm),
     };
 
     // OID values are stable across all platforms (macOS, Linux, Windows) unlike friendly names.
@@ -255,17 +255,12 @@ internal static class SigningAlgorithms
         byte[] signingInput,
         AsymmetricAlgorithm privateKey)
     {
+        var hash = HashAlgorithm(algorithm);
         return algorithm switch
         {
-            SigningAlgorithm.RS256 => SignRsa((RSA)privateKey, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1, signingInput),
-            SigningAlgorithm.RS384 => SignRsa((RSA)privateKey, HashAlgorithmName.SHA384, RSASignaturePadding.Pkcs1, signingInput),
-            SigningAlgorithm.RS512 => SignRsa((RSA)privateKey, HashAlgorithmName.SHA512, RSASignaturePadding.Pkcs1, signingInput),
-            SigningAlgorithm.PS256 => SignRsa((RSA)privateKey, HashAlgorithmName.SHA256, RSASignaturePadding.Pss, signingInput),
-            SigningAlgorithm.PS384 => SignRsa((RSA)privateKey, HashAlgorithmName.SHA384, RSASignaturePadding.Pss, signingInput),
-            SigningAlgorithm.PS512 => SignRsa((RSA)privateKey, HashAlgorithmName.SHA512, RSASignaturePadding.Pss, signingInput),
-            SigningAlgorithm.ES256 => SignEc((ECDsa)privateKey, HashAlgorithmName.SHA256, signingInput),
-            SigningAlgorithm.ES384 => SignEc((ECDsa)privateKey, HashAlgorithmName.SHA384, signingInput),
-            SigningAlgorithm.ES512 => SignEc((ECDsa)privateKey, HashAlgorithmName.SHA512, signingInput),
+            SigningAlgorithm.RS256 or SigningAlgorithm.RS384 or SigningAlgorithm.RS512 => SignRsa((RSA)privateKey, hash, RSASignaturePadding.Pkcs1, signingInput),
+            SigningAlgorithm.PS256 or SigningAlgorithm.PS384 or SigningAlgorithm.PS512 => SignRsa((RSA)privateKey, hash, RSASignaturePadding.Pss, signingInput),
+            SigningAlgorithm.ES256 or SigningAlgorithm.ES384 or SigningAlgorithm.ES512 => SignEc((ECDsa)privateKey, hash, signingInput),
             _ => ThrowUnsupportedAlgorithm<ReadOnlyMemory<byte>>(algorithm),
         };
     }
@@ -273,14 +268,11 @@ internal static class SigningAlgorithms
     private static bool VerifyRsa(
         SigningAlgorithm algorithm, RSA rsa, ReadOnlySpan<byte> signingInput, ReadOnlySpan<byte> signature)
     {
+        var hash = HashAlgorithm(algorithm);
         return algorithm switch
         {
-            SigningAlgorithm.RS256 => rsa.VerifyData(signingInput, signature, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1),
-            SigningAlgorithm.RS384 => rsa.VerifyData(signingInput, signature, HashAlgorithmName.SHA384, RSASignaturePadding.Pkcs1),
-            SigningAlgorithm.RS512 => rsa.VerifyData(signingInput, signature, HashAlgorithmName.SHA512, RSASignaturePadding.Pkcs1),
-            SigningAlgorithm.PS256 => rsa.VerifyData(signingInput, signature, HashAlgorithmName.SHA256, RSASignaturePadding.Pss),
-            SigningAlgorithm.PS384 => rsa.VerifyData(signingInput, signature, HashAlgorithmName.SHA384, RSASignaturePadding.Pss),
-            SigningAlgorithm.PS512 => rsa.VerifyData(signingInput, signature, HashAlgorithmName.SHA512, RSASignaturePadding.Pss),
+            SigningAlgorithm.RS256 or SigningAlgorithm.RS384 or SigningAlgorithm.RS512 => rsa.VerifyData(signingInput, signature, hash, RSASignaturePadding.Pkcs1),
+            SigningAlgorithm.PS256 or SigningAlgorithm.PS384 or SigningAlgorithm.PS512 => rsa.VerifyData(signingInput, signature, hash, RSASignaturePadding.Pss),
             _ => ThrowUnsupportedAlgorithm<bool>(algorithm),
         };
     }
@@ -290,9 +282,8 @@ internal static class SigningAlgorithms
     {
         return algorithm switch
         {
-            SigningAlgorithm.ES256 => ec.VerifyData(signingInput, signature, HashAlgorithmName.SHA256, DSASignatureFormat.IeeeP1363FixedFieldConcatenation),
-            SigningAlgorithm.ES384 => ec.VerifyData(signingInput, signature, HashAlgorithmName.SHA384, DSASignatureFormat.IeeeP1363FixedFieldConcatenation),
-            SigningAlgorithm.ES512 => ec.VerifyData(signingInput, signature, HashAlgorithmName.SHA512, DSASignatureFormat.IeeeP1363FixedFieldConcatenation),
+            SigningAlgorithm.ES256 or SigningAlgorithm.ES384 or SigningAlgorithm.ES512 =>
+                ec.VerifyData(signingInput, signature, HashAlgorithm(algorithm), DSASignatureFormat.IeeeP1363FixedFieldConcatenation),
             _ => ThrowUnsupportedAlgorithm<bool>(algorithm),
         };
     }

@@ -99,6 +99,16 @@ internal sealed class AuthorizationCodeGrant
             return InvalidGrant();
         }
 
+        // Decided before anything is issued: a client whose ID token the current key cannot sign
+        // must not be handed an access token first — a reference-token issuer would have persisted
+        // it by the time the ID token is refused. The signing callback repeats the check against
+        // the key that actually signs.
+        if (!ClientAcceptsCurrentSigningKey(context, client))
+        {
+            _logger.LogError("Client {ClientId} does not allow ID tokens signed with the current signing key's algorithm; nothing was issued.", client.ClientId);
+            return TokenResponses.ServerError();
+        }
+
         var now = _time.GetUtcNow();
         var lifetimes = _options.Value.TokenEndpoint;
         var payloads = new CodeGrantTokenPayloads(_options.Value.Issuer!, client, entry, now);
@@ -114,12 +124,12 @@ internal sealed class AuthorizationCodeGrant
         {
             // The access token first: the ID token is assembled after it so it can be bound to it.
             accessToken = await Issuer(context, TokenKind.AccessToken).IssueAsync(
-                new TokenIssuanceContext(client, TokenKind.AccessToken),
+                TokenIssuanceContext.ForAccessToken(client),
                 accessTokenPayload.Payload,
                 context.RequestAborted).ConfigureAwait(false);
 
             idToken = await Issuer(context, TokenKind.IdToken).IssueAsync(
-                new TokenIssuanceContext(client, TokenKind.IdToken, accessToken),
+                TokenIssuanceContext.ForIdToken(client, accessToken),
                 idTokenPayload.Payload,
                 context.RequestAborted).ConfigureAwait(false);
         }
@@ -172,6 +182,10 @@ internal sealed class AuthorizationCodeGrant
 
     private static IResult InvalidGrant() =>
         TokenResponses.Error(TokenError.InvalidGrant("The authorization code is invalid, expired, revoked, or was not issued to this client and redirect URI, or the code_verifier does not match."));
+
+    private static bool ClientAcceptsCurrentSigningKey(HttpContext context, IClientMetadata client) =>
+        client.AllowedSigningAlgorithms is not { } allowed ||
+        allowed.Contains(context.RequestServices.GetRequiredService<ISigningKeyRing>().Current.SigningKey.Algorithm);
 
     private static ITokenIssuer Issuer(HttpContext context, TokenKind kind) =>
         context.RequestServices.GetRequiredKeyedService<ITokenIssuer>(kind);

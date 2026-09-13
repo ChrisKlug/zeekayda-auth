@@ -152,7 +152,7 @@ public sealed class JwtTokenIssuerTests
         var (issuer, _) = await CreateIssuerAsync(rsa);
 
         var token = await issuer.IssueAsync(
-            new TokenIssuanceContext(Client, TokenKind.AccessToken),
+            TokenIssuanceContext.ForAccessToken(Client),
             new TokenPayload(new Dictionary<string, object?> { ["sub"] = "alice" }),
             TestContext.Current.CancellationToken);
 
@@ -173,7 +173,7 @@ public sealed class JwtTokenIssuerTests
         var (issuer, ring) = await CreateIssuerAsync(rsa);
 
         var token = await issuer.IssueAsync(
-            new TokenIssuanceContext(Client, TokenKind.AccessToken),
+            TokenIssuanceContext.ForAccessToken(Client),
             new TokenPayload(new Dictionary<string, object?>()),
             TestContext.Current.CancellationToken);
 
@@ -189,7 +189,7 @@ public sealed class JwtTokenIssuerTests
         var (issuer, _) = await CreateIssuerAsync(rsa);
 
         var token = await issuer.IssueAsync(
-            new TokenIssuanceContext(Client, TokenKind.AccessToken),
+            TokenIssuanceContext.ForAccessToken(Client),
             new TokenPayload(new Dictionary<string, object?>
             {
                 ["sub"] = "alice",
@@ -215,7 +215,7 @@ public sealed class JwtTokenIssuerTests
         var (issuer, _) = await CreateIssuerAsync(rsa);
 
         var token = await issuer.IssueAsync(
-            new TokenIssuanceContext(Client, kind, kind == TokenKind.IdToken ? new IssuedToken("access", TokenKind.AccessToken) : null),
+            kind == TokenKind.IdToken ? TokenIssuanceContext.ForIdToken(Client, new IssuedToken("access", TokenKind.AccessToken)) : TokenIssuanceContext.ForAccessToken(Client),
             new TokenPayload(new Dictionary<string, object?>()),
             TestContext.Current.CancellationToken);
 
@@ -232,7 +232,7 @@ public sealed class JwtTokenIssuerTests
         var issuer = new JwtTokenIssuer(ring);
 
         await issuer.IssueAsync(
-            new TokenIssuanceContext(Client, TokenKind.AccessToken),
+            TokenIssuanceContext.ForAccessToken(Client),
             new TokenPayload(new Dictionary<string, object?> { ["sub"] = "alice" }),
             TestContext.Current.CancellationToken);
 
@@ -250,7 +250,7 @@ public sealed class JwtTokenIssuerTests
         ITokenIssuer issuer = new OpaqueTokenIssuer();
 
         var token = await issuer.IssueAsync(
-            new TokenIssuanceContext(Client, TokenKind.AccessToken),
+            TokenIssuanceContext.ForAccessToken(Client),
             new TokenPayload(new Dictionary<string, object?>()),
             TestContext.Current.CancellationToken);
 
@@ -278,7 +278,7 @@ public sealed class JwtTokenIssuerTests
         const string hostileName = "a\",\"admin\":\"true";
 
         var token = await issuer.IssueAsync(
-            new TokenIssuanceContext(Client, TokenKind.AccessToken),
+            TokenIssuanceContext.ForAccessToken(Client),
             new TokenPayload(new Dictionary<string, object?> { [hostileName] = "x" }),
             TestContext.Current.CancellationToken);
 
@@ -306,12 +306,12 @@ public sealed class JwtTokenIssuerTests
     {
         // The context reaches log lines through the sanitizing logger, which redacts by placeholder
         // name only — so the record itself must never print the bearer token it carries.
-        var context = new TokenIssuanceContext(Client, TokenKind.IdToken, new IssuedToken("eyJhbGciOiJSUzI1NiJ9.secret.payload", TokenKind.AccessToken));
+        var context = TokenIssuanceContext.ForIdToken(Client, new IssuedToken("eyJhbGciOiJSUzI1NiJ9.secret.payload", TokenKind.AccessToken));
 
         context.ToString().Should().NotContain("secret")
             .And.NotContain("eyJhbGciOiJSUzI1NiJ9")
             .And.Contain(nameof(TokenKind.IdToken));
-        new TokenIssuanceContext(Client, TokenKind.AccessToken).ToString().Should().Contain("none");
+        TokenIssuanceContext.ForAccessToken(Client).ToString().Should().Contain("none");
     }
 
     // ── Guards ───────────────────────────────────────────────────────────────────────────────────
@@ -330,25 +330,10 @@ public sealed class JwtTokenIssuerTests
         var issuer = new JwtTokenIssuer(new CountingRing());
 
         var act = () => issuer.IssueAsync(
-            new TokenIssuanceContext(Client, TokenKind.AccessToken), null!,
+            TokenIssuanceContext.ForAccessToken(Client), null!,
             TestContext.Current.CancellationToken).AsTask();
 
         await act.Should().ThrowAsync<ArgumentNullException>();
-    }
-
-    [Fact]
-    public async Task IssueAsync_throws_ArgumentOutOfRangeException_for_an_undefined_TokenKind()
-    {
-        var ring = new CountingRing();
-        var issuer = new JwtTokenIssuer(ring);
-
-        var act = () => issuer.IssueAsync(
-            new TokenIssuanceContext(Client, (TokenKind)42),
-            new TokenPayload(new Dictionary<string, object?>()),
-            TestContext.Current.CancellationToken).AsTask();
-
-        await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
-        ring.SignAsyncCallCount.Should().Be(0, "an undefined kind must be rejected before anything signs");
     }
 
     // ── The ID token's binding to its access token ───────────────────────────────────────────────
@@ -361,7 +346,7 @@ public sealed class JwtTokenIssuerTests
         var accessToken = new IssuedToken("header.payload.signature", TokenKind.AccessToken);
 
         var idToken = await issuer.IssueAsync(
-            new TokenIssuanceContext(Client, TokenKind.IdToken, accessToken),
+            TokenIssuanceContext.ForIdToken(Client, accessToken),
             new TokenPayload(new Dictionary<string, object?> { ["sub"] = "alice" }),
             TestContext.Current.CancellationToken);
 
@@ -382,7 +367,7 @@ public sealed class JwtTokenIssuerTests
         var accessToken = new IssuedToken("header.payload.signature", TokenKind.AccessToken);
 
         var idToken = await issuer.IssueAsync(
-            new TokenIssuanceContext(Client, TokenKind.IdToken, accessToken),
+            TokenIssuanceContext.ForIdToken(Client, accessToken),
             new TokenPayload(new Dictionary<string, object?>()),
             TestContext.Current.CancellationToken);
 
@@ -398,7 +383,7 @@ public sealed class JwtTokenIssuerTests
         var (issuer, _) = await CreateIssuerAsync(rsa);
 
         var token = await issuer.IssueAsync(
-            new TokenIssuanceContext(Client, TokenKind.AccessToken),
+            TokenIssuanceContext.ForAccessToken(Client),
             new TokenPayload(new Dictionary<string, object?> { ["sub"] = "alice" }),
             TestContext.Current.CancellationToken);
 
@@ -406,58 +391,21 @@ public sealed class JwtTokenIssuerTests
     }
 
     [Fact]
-    public void An_access_token_context_refuses_a_companion_token()
-    {
-        // The context has exactly two valid states; an access token carrying a companion it would
-        // ignore is a caller mistake, refused where it is made.
-        var act = () => new TokenIssuanceContext(Client, TokenKind.AccessToken, new IssuedToken("other", TokenKind.AccessToken));
-
-        act.Should().Throw<ArgumentException>().WithMessage("*Only an ID token*");
-    }
-
-    [Fact]
     public void An_ID_token_context_refuses_a_companion_that_is_not_an_access_token()
     {
-        var act = () => new TokenIssuanceContext(Client, TokenKind.IdToken, new IssuedToken("another-id-token", TokenKind.IdToken));
+        var act = () => TokenIssuanceContext.ForIdToken(Client, new IssuedToken("another-id-token", TokenKind.IdToken));
 
         act.Should().Throw<ArgumentException>().WithMessage("*not to a token of kind IdToken*");
     }
 
     [Fact]
-    public void A_companion_set_through_with_is_checked_the_same_way()
+    public void An_ID_token_context_cannot_be_built_without_an_access_token()
     {
-        var context = new TokenIssuanceContext(Client, TokenKind.AccessToken);
+        // The only way to an ID-token context is ForIdToken, and it takes the access token it
+        // is bound to as a required argument — an unbound ID token is unrepresentable.
+        var act = () => TokenIssuanceContext.ForIdToken(Client, null!);
 
-        var act = () => context with { AccessToken = new IssuedToken("other", TokenKind.AccessToken) };
-
-        act.Should().Throw<ArgumentException>();
-    }
-
-    [Fact]
-    public void Changing_the_kind_of_a_bound_ID_token_context_is_refused()
-    {
-        // A `with` that turns an ID-token context into an access-token one must not keep the
-        // companion along for the ride.
-        var context = new TokenIssuanceContext(Client, TokenKind.IdToken, new IssuedToken("access", TokenKind.AccessToken));
-
-        var act = () => context with { Kind = TokenKind.AccessToken };
-
-        act.Should().Throw<ArgumentException>();
-    }
-
-    [Fact]
-    public async Task An_ID_token_issuance_without_an_access_token_is_refused_before_anything_signs()
-    {
-        var ring = new CountingRing();
-        var issuer = new JwtTokenIssuer(ring);
-
-        var act = () => issuer.IssueAsync(
-            new TokenIssuanceContext(Client, TokenKind.IdToken),
-            new TokenPayload(new Dictionary<string, object?>()),
-            TestContext.Current.CancellationToken).AsTask();
-
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*AccessToken*");
-        ring.SignAsyncCallCount.Should().Be(0, "an ID token is never issued unbound");
+        act.Should().Throw<ArgumentNullException>();
     }
 
     [Fact]
@@ -467,7 +415,7 @@ public sealed class JwtTokenIssuerTests
         var issuer = new JwtTokenIssuer(ring);
 
         var act = () => issuer.IssueAsync(
-            new TokenIssuanceContext(Client, TokenKind.IdToken, new IssuedToken("access", TokenKind.AccessToken)),
+            TokenIssuanceContext.ForIdToken(Client, new IssuedToken("access", TokenKind.AccessToken)),
             new TokenPayload(new Dictionary<string, object?> { ["at_hash"] = "forged" }),
             TestContext.Current.CancellationToken).AsTask();
 
@@ -484,13 +432,45 @@ public sealed class JwtTokenIssuerTests
         var issuer = new JwtTokenIssuer(ring);
 
         var token = await issuer.IssueAsync(
-            new TokenIssuanceContext(Client, TokenKind.IdToken, new IssuedToken("access", TokenKind.AccessToken)),
+            TokenIssuanceContext.ForIdToken(Client, new IssuedToken("access", TokenKind.AccessToken)),
             new TokenPayload(new Dictionary<string, object?>()),
             TestContext.Current.CancellationToken);
 
         ring.SignAsyncCallCount.Should().Be(1);
         ring.CallbackInvocationCount.Should().Be(1);
         ParseSegment(token.Value.Split('.')[1]).TryGetProperty("at_hash", out _).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task An_access_token_that_is_not_ASCII_is_refused_before_anything_signs()
+    {
+        // The hash is over ASCII octets; a value outside ASCII has no at_hash a relying party could reproduce.
+        var ring = new CountingRing();
+        var issuer = new JwtTokenIssuer(ring);
+
+        var act = () => issuer.IssueAsync(
+            TokenIssuanceContext.ForIdToken(Client, new IssuedToken("héader.payload.sig", TokenKind.AccessToken)),
+            new TokenPayload(new Dictionary<string, object?>()),
+            TestContext.Current.CancellationToken).AsTask();
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*ASCII*");
+        ring.SignAsyncCallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task An_ID_token_escapes_hostile_claim_names_into_exactly_one_claim_beside_at_hash()
+    {
+        using var rsa = RSA.Create(2048);
+        var (issuer, _) = await CreateIssuerAsync(rsa);
+        const string hostileName = "a\",\"admin\":\"true";
+
+        var token = await issuer.IssueAsync(
+            TokenIssuanceContext.ForIdToken(Client, new IssuedToken("access", TokenKind.AccessToken)),
+            new TokenPayload(new Dictionary<string, object?> { [hostileName] = "x" }),
+            TestContext.Current.CancellationToken);
+
+        var payload = ParseSegment(token.Value.Split('.')[1]);
+        payload.EnumerateObject().Select(p => p.Name).Should().Equal(hostileName, "at_hash");
     }
 
     // ── The client's algorithm policy, enforced where the key is known ───────────────────────────
@@ -503,7 +483,7 @@ public sealed class JwtTokenIssuerTests
         var client = new RestrictedClient(new HashSet<SigningAlgorithm> { SigningAlgorithm.ES256 });
 
         var act = () => issuer.IssueAsync(
-            new TokenIssuanceContext(client, TokenKind.IdToken, new IssuedToken("access", TokenKind.AccessToken)),
+            TokenIssuanceContext.ForIdToken(client, new IssuedToken("access", TokenKind.AccessToken)),
             new TokenPayload(new Dictionary<string, object?>()),
             TestContext.Current.CancellationToken).AsTask();
 
@@ -519,7 +499,7 @@ public sealed class JwtTokenIssuerTests
         var client = new RestrictedClient(new HashSet<SigningAlgorithm> { SigningAlgorithm.RS256, SigningAlgorithm.ES256 });
 
         var token = await issuer.IssueAsync(
-            new TokenIssuanceContext(client, TokenKind.IdToken, new IssuedToken("access", TokenKind.AccessToken)),
+            TokenIssuanceContext.ForIdToken(client, new IssuedToken("access", TokenKind.AccessToken)),
             new TokenPayload(new Dictionary<string, object?>()),
             TestContext.Current.CancellationToken);
 
@@ -535,7 +515,7 @@ public sealed class JwtTokenIssuerTests
         var client = new RestrictedClient(new HashSet<SigningAlgorithm> { SigningAlgorithm.ES256 });
 
         var token = await issuer.IssueAsync(
-            new TokenIssuanceContext(client, TokenKind.AccessToken),
+            TokenIssuanceContext.ForAccessToken(client),
             new TokenPayload(new Dictionary<string, object?>()),
             TestContext.Current.CancellationToken);
 

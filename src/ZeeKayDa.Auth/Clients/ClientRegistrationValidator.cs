@@ -420,6 +420,18 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
             return;
         }
 
+        // The key that signs today must be in the set, not only a key that is merely published:
+        // with a ring that reads its source once, a client pinned to a next or previous key's
+        // algorithm would otherwise pass startup and be refused on every exchange.
+        if (_keyRing?.CurrentOrNull is { } keySet && !algorithms.Contains(keySet.SigningKey.Algorithm))
+        {
+            failures.Add(new ZeeKayDaConfigurationFailure(
+                "client.signing_algorithms.excludes_signing_key",
+                $"Client '{client.ClientId}' has AllowedSigningAlgorithms that exclude '{keySet.SigningKey.Algorithm}', " +
+                "the algorithm of the current signing key, so no ID token could be issued to it. Add that " +
+                "algorithm, or sign with a key the client allows."));
+        }
+
         foreach (var algorithm in algorithms.Where(algorithm => !serverAlgorithms.Contains(algorithm)))
         {
             failures.Add(new ZeeKayDaConfigurationFailure(

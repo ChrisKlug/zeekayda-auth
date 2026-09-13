@@ -7,74 +7,86 @@ namespace ZeeKayDa.Auth.Tokens;
 /// token is for, the kind of token being issued, and — for an ID token — the access token issued
 /// alongside it.
 /// </summary>
-/// <param name="Client">
-/// The client the token is issued for. Carried as <see cref="IClientMetadata"/>, not the full
-/// registration, so the issuance path never holds the client's credentials. An issuer can vary
-/// what it issues per client — dispatch by client, or enforce
-/// <see cref="IClientMetadata.AllowedSigningAlgorithms"/> — without a repository lookup.
-/// </param>
-/// <param name="Kind">The kind of token being issued.</param>
-/// <param name="AccessToken">
-/// The access token issued in the same response, when <paramref name="Kind"/> is
-/// <see cref="TokenKind.IdToken"/>; the ID token is bound to it through <c>at_hash</c>
-/// (OpenID Connect Core §3.1.3.6). <see langword="null"/> for an access token, and the
-/// framework's JWT issuer refuses an ID-token issuance without one.
-/// </param>
 /// <remarks>
-/// The framework constructs the context at the call site, so widening it — as
-/// <paramref name="AccessToken"/> did — is an additive change, not a breaking one. That is why it
-/// deliberately carries no tenant field today.
+/// The context has exactly two states and one way to build each: <see cref="ForAccessToken"/>
+/// and <see cref="ForIdToken"/>. An access token carries no companion; an ID token is always
+/// bound to the access token it hashes into <c>at_hash</c> (OpenID Connect Core §3.1.3.6). No
+/// other combination can be constructed. It deliberately carries no tenant field; multi-tenancy
+/// is not decided.
 /// </remarks>
-public readonly record struct TokenIssuanceContext(IClientMetadata Client, TokenKind Kind, IssuedToken? AccessToken = null)
+public readonly record struct TokenIssuanceContext
 {
-    private readonly IClientMetadata? _client =
-        Client ?? throw new ArgumentNullException(nameof(Client));
+    private readonly IClientMetadata? _client;
 
-    private readonly TokenKind _kind = Kind;
-
-    private readonly IssuedToken? _accessToken = Companion(Kind, AccessToken);
-
-    /// <summary>Gets the kind of token being issued.</summary>
-    /// <exception cref="ArgumentException">
-    /// Thrown when the kind set is not <see cref="TokenKind.IdToken"/> while the context carries
-    /// an <see cref="AccessToken"/>: a companion belongs to an ID token only.
-    /// </exception>
-    public TokenKind Kind
+    private TokenIssuanceContext(IClientMetadata client, TokenKind kind, IssuedToken? accessToken)
     {
-        get => _kind;
-        init
-        {
-            Companion(value, _accessToken);
-            _kind = value;
-        }
+        _client = client;
+        Kind = kind;
+        AccessToken = accessToken;
+    }
+
+    /// <summary>The context for issuing an access token to <paramref name="client"/>.</summary>
+    /// <param name="client">
+    /// The client the token is issued for. Carried as <see cref="IClientMetadata"/>, not the full
+    /// registration, so the issuance path never holds the client's credentials.
+    /// </param>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="client"/> is <see langword="null"/>.
+    /// </exception>
+    public static TokenIssuanceContext ForAccessToken(IClientMetadata client)
+    {
+        ArgumentNullException.ThrowIfNull(client);
+        return new TokenIssuanceContext(client, TokenKind.AccessToken, accessToken: null);
     }
 
     /// <summary>
-    /// Gets the access token an ID token is bound to; <see langword="null"/> for an access token.
+    /// The context for issuing an ID token to <paramref name="client"/>, bound to
+    /// <paramref name="accessToken"/>, the access token issued in the same response.
     /// </summary>
-    /// <exception cref="ArgumentException">
-    /// Thrown when a token is set on a context whose <see cref="Kind"/> is not
-    /// <see cref="TokenKind.IdToken"/>, or when the token set is not an access token: the context
-    /// has exactly two valid states, an access token with no companion and an ID token bound to one.
+    /// <param name="client">The client the token is issued for.</param>
+    /// <param name="accessToken">
+    /// The access token the ID token is bound to through <c>at_hash</c>. Must be of kind
+    /// <see cref="TokenKind.AccessToken"/>.
+    /// </param>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="client"/> or <paramref name="accessToken"/> is
+    /// <see langword="null"/>: an ID token is never issued unbound.
     /// </exception>
-    public IssuedToken? AccessToken
+    /// <exception cref="ArgumentException">
+    /// Thrown when <paramref name="accessToken"/> is not an access token.
+    /// </exception>
+    public static TokenIssuanceContext ForIdToken(IClientMetadata client, IssuedToken accessToken)
     {
-        get => _accessToken;
-        init => _accessToken = Companion(Kind, value);
+        ArgumentNullException.ThrowIfNull(client);
+        ArgumentNullException.ThrowIfNull(accessToken);
+
+        if (accessToken.Kind != TokenKind.AccessToken)
+        {
+            throw new ArgumentException(
+                $"An ID token is bound to an access token, not to a token of kind {accessToken.Kind}.",
+                nameof(accessToken));
+        }
+
+        return new TokenIssuanceContext(client, TokenKind.IdToken, accessToken);
     }
 
     /// <summary>Gets the client the token is issued for.</summary>
     /// <exception cref="InvalidOperationException">
     /// Thrown when this instance is <see langword="default"/>(<see cref="TokenIssuanceContext"/>)
-    /// rather than one constructed with a client.
+    /// rather than one obtained from <see cref="ForAccessToken"/> or <see cref="ForIdToken"/>.
     /// </exception>
-    public IClientMetadata Client
-    {
-        get => _client ?? throw new InvalidOperationException(
-            $"{nameof(TokenIssuanceContext)} was default-initialized; a context must be " +
-            $"constructed with the client the token is issued for.");
-        init => _client = value ?? throw new ArgumentNullException(nameof(value));
-    }
+    public IClientMetadata Client => _client ?? throw new InvalidOperationException(
+        $"{nameof(TokenIssuanceContext)} was default-initialized; obtain one from " +
+        $"{nameof(ForAccessToken)} or {nameof(ForIdToken)}.");
+
+    /// <summary>Gets the kind of token being issued.</summary>
+    public TokenKind Kind { get; }
+
+    /// <summary>
+    /// Gets the access token an ID token is bound to; <see langword="null"/> exactly when
+    /// <see cref="Kind"/> is <see cref="TokenKind.AccessToken"/>.
+    /// </summary>
+    public IssuedToken? AccessToken { get; }
 
     // The record's synthesized PrintMembers reads Client, so ToString() on a default instance
     // would throw from the guard above — a debugger watch or a log line is the last place that
@@ -88,27 +100,7 @@ public readonly record struct TokenIssuanceContext(IClientMetadata Client, Token
             return true;
         }
 
-        builder.Append($"{nameof(Client)} = {_client.ClientId}, {nameof(Kind)} = {Kind}, {nameof(AccessToken)} = {(_accessToken is null ? "none" : "<present>")}");
+        builder.Append($"{nameof(Client)} = {_client.ClientId}, {nameof(Kind)} = {Kind}, {nameof(AccessToken)} = {(AccessToken is null ? "none" : "<present>")}");
         return true;
-    }
-
-    private static IssuedToken? Companion(TokenKind kind, IssuedToken? accessToken)
-    {
-        if (accessToken is null)
-            return null;
-
-        if (kind != TokenKind.IdToken)
-        {
-            throw new ArgumentException(
-                $"Only an ID token is bound to an access token; a {kind} issuance carries none.");
-        }
-
-        if (accessToken.Kind != TokenKind.AccessToken)
-        {
-            throw new ArgumentException(
-                $"An ID token is bound to an access token, not to a token of kind {accessToken.Kind}.");
-        }
-
-        return accessToken;
     }
 }

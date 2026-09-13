@@ -112,18 +112,26 @@ public sealed class JwtTokenIssuer : ITokenIssuer
     /// </summary>
     private static string RequireAccessToken(TokenIssuanceContext context, TokenPayload payload)
     {
-        if (context.AccessToken is not { } accessToken)
-        {
-            throw new InvalidOperationException(
-                "An ID token must be bound to the access token issued with it: the issuance " +
-                $"context carries no {nameof(TokenIssuanceContext.AccessToken)}.");
-        }
+        // Unreachable through ForIdToken, which never builds an unbound ID-token context; kept
+        // so a default-initialized context fails here with a reason rather than a null reference.
+        var accessToken = context.AccessToken ?? throw new InvalidOperationException(
+            "An ID token must be bound to the access token issued with it: the issuance context carries none.");
 
         if (payload.Claims.ContainsKey(AccessTokenHashClaim))
         {
             throw new InvalidOperationException(
                 $"The payload already carries '{AccessTokenHashClaim}'. The issuer computes it from the key " +
                 "that signs, and a payload value could not agree with that key.");
+        }
+
+        // The hash is over the token's ASCII octets (OpenID Connect Core §3.1.3.6). A value that
+        // is not ASCII has no octets a relying party could reproduce, so it is refused rather than
+        // hashed with substitutions.
+        if (!Ascii.IsValid(accessToken.Value))
+        {
+            throw new InvalidOperationException(
+                "The access token an ID token is bound to must be ASCII, as every bearer token on the " +
+                "wire is; a value outside ASCII has no at_hash a relying party could verify.");
         }
 
         return accessToken.Value;
@@ -139,10 +147,9 @@ public sealed class JwtTokenIssuer : ITokenIssuer
             RequireAlgorithmAllowed(state.Context, key);
 
         var headerSegment = Base64Url.EncodeToString(Header(key, state.Typ));
-        var payloadSegment = Base64Url.EncodeToString(
-            accessToken is null
-                ? JsonSerializer.SerializeToUtf8Bytes(state.Payload.Claims)
-                : PayloadWithAccessTokenHash(state.Payload, AccessTokenHash(key.Algorithm, accessToken)));
+        var payloadSegment = Base64Url.EncodeToString(Payload(
+            state.Payload,
+            accessToken is null ? null : AccessTokenHash(key.Algorithm, accessToken)));
 
         return Encoding.ASCII.GetBytes($"{headerSegment}.{payloadSegment}");
     }
@@ -179,8 +186,9 @@ public sealed class JwtTokenIssuer : ITokenIssuer
     }
 
     // Claim names and values are serialized verbatim — selection and naming happened before
-    // TokenPayload was constructed, and a naming policy here would silently rewrite them.
-    private static ReadOnlySpan<byte> PayloadWithAccessTokenHash(TokenPayload payload, string accessTokenHash)
+    // TokenPayload was constructed, and a naming policy here would silently rewrite them. One
+    // path for both kinds: the ID token's at_hash is the only addition, written last.
+    private static ReadOnlySpan<byte> Payload(TokenPayload payload, string? accessTokenHash)
     {
         var buffer = new ArrayBufferWriter<byte>();
         using (var writer = new Utf8JsonWriter(buffer))
@@ -192,7 +200,9 @@ public sealed class JwtTokenIssuer : ITokenIssuer
                 JsonSerializer.Serialize(writer, value);
             }
 
-            writer.WriteString(AccessTokenHashClaim, accessTokenHash);
+            if (accessTokenHash is not null)
+                writer.WriteString(AccessTokenHashClaim, accessTokenHash);
+
             writer.WriteEndObject();
         }
 
@@ -201,19 +211,14 @@ public sealed class JwtTokenIssuer : ITokenIssuer
 
     /// <summary>
     /// OpenID Connect Core §3.1.3.6: the left half of the hash of the access token's ASCII wire
-    /// value, base64url-encoded, using the hash algorithm of the ID token's <c>alg</c>.
+    /// value, base64url-encoded, using the hash algorithm of the ID token's <c>alg</c> — the one
+    /// mapping the signer itself uses, with no fallback.
     /// </summary>
     private static string AccessTokenHash(SigningAlgorithm algorithm, string accessToken)
     {
-        var digest = SigningAlgorithms.HashAlgorithm(algorithm) switch
-        {
-            var name when name == HashAlgorithmName.SHA256 => SHA256.HashData(Encoding.ASCII.GetBytes(accessToken)),
-            var name when name == HashAlgorithmName.SHA384 => SHA384.HashData(Encoding.ASCII.GetBytes(accessToken)),
-            _ => SHA512.HashData(Encoding.ASCII.GetBytes(accessToken)),
-        };
-
+        var digest = CryptographicOperations.HashData(SigningAlgorithms.HashAlgorithm(algorithm), Encoding.ASCII.GetBytes(accessToken));
         return Base64Url.EncodeToString(digest.AsSpan(0, digest.Length / 2));
     }
 
-    private sealed record SigningState(TokenIssuanceContext Context, TokenPayload Payload, string Typ, string? AccessTokenToBind);
+    private readonly record struct SigningState(TokenIssuanceContext Context, TokenPayload Payload, string Typ, string? AccessTokenToBind);
 }

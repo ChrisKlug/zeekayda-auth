@@ -557,15 +557,12 @@ ZeeKayDa.Auth.Tokens.TokenEndpointOptions.Uri.get -> string?
 ZeeKayDa.Auth.Tokens.TokenEndpointOptions.Uri.set -> void
 ZeeKayDa.Auth.Tokens.TokenIssuanceContext
 ZeeKayDa.Auth.Tokens.TokenIssuanceContext.Client.get -> ZeeKayDa.Auth.Clients.IClientMetadata!
-ZeeKayDa.Auth.Tokens.TokenIssuanceContext.Client.init -> void
 ZeeKayDa.Auth.Tokens.TokenIssuanceContext.AccessToken.get -> ZeeKayDa.Auth.Tokens.IssuedToken?
-ZeeKayDa.Auth.Tokens.TokenIssuanceContext.AccessToken.init -> void
-ZeeKayDa.Auth.Tokens.TokenIssuanceContext.Deconstruct(out ZeeKayDa.Auth.Clients.IClientMetadata! Client, out ZeeKayDa.Auth.Tokens.TokenKind Kind, out ZeeKayDa.Auth.Tokens.IssuedToken? AccessToken) -> void
 ZeeKayDa.Auth.Tokens.TokenIssuanceContext.Equals(ZeeKayDa.Auth.Tokens.TokenIssuanceContext other) -> bool
 ZeeKayDa.Auth.Tokens.TokenIssuanceContext.Kind.get -> ZeeKayDa.Auth.Tokens.TokenKind
-ZeeKayDa.Auth.Tokens.TokenIssuanceContext.Kind.init -> void
 ZeeKayDa.Auth.Tokens.TokenIssuanceContext.TokenIssuanceContext() -> void
-ZeeKayDa.Auth.Tokens.TokenIssuanceContext.TokenIssuanceContext(ZeeKayDa.Auth.Clients.IClientMetadata! Client, ZeeKayDa.Auth.Tokens.TokenKind Kind, ZeeKayDa.Auth.Tokens.IssuedToken? AccessToken = null) -> void
+static ZeeKayDa.Auth.Tokens.TokenIssuanceContext.ForAccessToken(ZeeKayDa.Auth.Clients.IClientMetadata! client) -> ZeeKayDa.Auth.Tokens.TokenIssuanceContext
+static ZeeKayDa.Auth.Tokens.TokenIssuanceContext.ForIdToken(ZeeKayDa.Auth.Clients.IClientMetadata! client, ZeeKayDa.Auth.Tokens.IssuedToken! accessToken) -> ZeeKayDa.Auth.Tokens.TokenIssuanceContext
 ZeeKayDa.Auth.Tokens.TokenKind
 ZeeKayDa.Auth.Tokens.TokenKind.AccessToken = 0 -> ZeeKayDa.Auth.Tokens.TokenKind
 ZeeKayDa.Auth.Tokens.TokenKind.IdToken = 1 -> ZeeKayDa.Auth.Tokens.TokenKind

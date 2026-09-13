@@ -35,7 +35,7 @@ public sealed class TokenIssuanceContextTests
     [Fact]
     public void Constructor_throws_ArgumentNullException_if_client_is_null()
     {
-        var act = () => new TokenIssuanceContext(null!, TokenKind.AccessToken);
+        var act = () => TokenIssuanceContext.ForAccessToken(null!);
 
         act.Should().Throw<ArgumentNullException>();
     }
@@ -51,9 +51,19 @@ public sealed class TokenIssuanceContextTests
     {
         var client = new TestClient();
 
-        var context = new TokenIssuanceContext(client, TokenKind.IdToken);
+        var context = TokenIssuanceContext.ForIdToken(client, new IssuedToken("access", TokenKind.AccessToken));
 
         context.Client.Should().BeSameAs(client);
         context.Kind.Should().Be(TokenKind.IdToken);
+        context.AccessToken!.Value.Should().Be("access");
+    }
+
+    [Fact]
+    public void An_access_token_context_carries_no_companion()
+    {
+        var context = TokenIssuanceContext.ForAccessToken(new TestClient());
+
+        context.Kind.Should().Be(TokenKind.AccessToken);
+        context.AccessToken.Should().BeNull();
     }
 }

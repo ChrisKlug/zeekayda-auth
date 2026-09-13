@@ -88,12 +88,16 @@ that passed validation fails at issuance. The ID-token default is short because 
 derives from these values — key retirement is an operator emptying a slot, not a computed window.
 
 **A client whose allowed ID-token algorithms exclude the signing key's algorithm fails closed.** The
-ring signs with one key, so `AllowedSigningAlgorithms` must be enforced twice: the registration validator
-requires the current signing key's algorithm in the set, and the JWT issuer checks the key the ring
-resolved against the client's set, inside the signing callback, before an ID token is built. The
+ring signs with one key, so `AllowedSigningAlgorithms` is enforced three times: the registration
+validator requires the current signing key's algorithm in the set once the ring has read its
+source, and that the set is a subset of the advertised algorithms; the token endpoint checks the
+ring's current key against the set before it issues anything, so no access token is ever persisted
+for a client whose ID token would then be refused; and the JWT issuer checks the key the ring
+resolved against the set inside the signing callback, before an ID token is built. That last
 refusal is a throw from the callback, before the signer is touched, and the endpoint answers
 `server_error`; the client would have rejected the token anyway, and a log line at our end beats a
-silent failure at theirs. ID tokens only, which is what the setting describes — an access
+silent failure at theirs. A host that replaces the ID-token issuer takes over both this check and
+`at_hash`; the framework does not verify either after the fact. ID tokens only, which is what the setting describes — an access
 token's algorithm is the resource server's concern. Ordinary rotation never trips this, since a new
 key keeps its algorithm; only an algorithm migration does, and the operator widens or clears the
 affected sets first. Not a per-algorithm key chooser: several signers would make the self-test, the
