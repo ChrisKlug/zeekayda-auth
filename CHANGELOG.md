@@ -8,6 +8,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **The ID token is bound to its access token, and a client's signing-algorithm policy fails closed** (#647)
+
+  An ID token issued at the token endpoint now carries `at_hash`: the left half of the hash the
+  ID token's own `alg` implies, over the access token issued in the same response (OpenID
+  Connect Core §3.1.3.6). The hash is computed inside the signing key ring's callback from the
+  key that signs, as the header already is, so the two cannot disagree. `TokenIssuanceContext`
+  gains an optional third member, `AccessToken`, which the framework sets for every ID token;
+  the framework's `JwtTokenIssuer` refuses an ID-token issuance without one, and refuses a
+  payload that already claims `at_hash`. In the same callback it enforces the client's
+  `AllowedSigningAlgorithms` against the resolved key: a client restricted to an algorithm the
+  current key does not use is answered `server_error` and receives no token at all. Access
+  tokens are unaffected. `ITokenIssuer`'s contract is now that an issuer adds only what depends
+  on the key it resolves.
+
 - **The token endpoint: the authorization code grant with PKCE** (#71)
 
   `POST /connect/token` no longer answers `501`. It exchanges an authorization code for an access

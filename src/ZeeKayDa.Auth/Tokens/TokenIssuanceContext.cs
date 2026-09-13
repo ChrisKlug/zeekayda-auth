@@ -4,7 +4,8 @@ namespace ZeeKayDa.Auth.Tokens;
 
 /// <summary>
 /// What an <see cref="ITokenIssuer"/> is told about the issuance it is performing: the client the
-/// token is for, and the kind of token being issued.
+/// token is for, the kind of token being issued, and — for an ID token — the access token issued
+/// alongside it.
 /// </summary>
 /// <param name="Client">
 /// The client the token is issued for. Carried as <see cref="IClientMetadata"/>, not the full
@@ -13,12 +14,18 @@ namespace ZeeKayDa.Auth.Tokens;
 /// <see cref="IClientMetadata.AllowedSigningAlgorithms"/> — without a repository lookup.
 /// </param>
 /// <param name="Kind">The kind of token being issued.</param>
+/// <param name="AccessToken">
+/// The access token issued in the same response, when <paramref name="Kind"/> is
+/// <see cref="TokenKind.IdToken"/>; the ID token is bound to it through <c>at_hash</c>
+/// (OpenID Connect Core §3.1.3.6). <see langword="null"/> for an access token, and the
+/// framework's JWT issuer refuses an ID-token issuance without one.
+/// </param>
 /// <remarks>
-/// The framework constructs the context at the call site, so widening it later — a tenant, say,
-/// if multi-tenancy is ever decided — is an additive change, not a breaking one. That is why it
+/// The framework constructs the context at the call site, so widening it — as
+/// <paramref name="AccessToken"/> did — is an additive change, not a breaking one. That is why it
 /// deliberately carries no tenant field today.
 /// </remarks>
-public readonly record struct TokenIssuanceContext(IClientMetadata Client, TokenKind Kind)
+public readonly record struct TokenIssuanceContext(IClientMetadata Client, TokenKind Kind, IssuedToken? AccessToken = null)
 {
     private readonly IClientMetadata? _client =
         Client ?? throw new ArgumentNullException(nameof(Client));
@@ -38,7 +45,8 @@ public readonly record struct TokenIssuanceContext(IClientMetadata Client, Token
 
     // The record's synthesized PrintMembers reads Client, so ToString() on a default instance
     // would throw from the guard above — a debugger watch or a log line is the last place that
-    // should fail. Print the default as such instead.
+    // should fail. Print the default as such instead. The access token is a bearer credential
+    // and is never printed.
     private bool PrintMembers(System.Text.StringBuilder builder)
     {
         if (_client is null)
@@ -47,7 +55,7 @@ public readonly record struct TokenIssuanceContext(IClientMetadata Client, Token
             return true;
         }
 
-        builder.Append($"{nameof(Client)} = {_client.ClientId}, {nameof(Kind)} = {Kind}");
+        builder.Append($"{nameof(Client)} = {_client.ClientId}, {nameof(Kind)} = {Kind}, {nameof(AccessToken)} = {(AccessToken is null ? "none" : "<present>")}");
         return true;
     }
 }

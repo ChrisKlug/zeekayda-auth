@@ -22,7 +22,11 @@ public interface ITokenIssuer
     /// Issues a token of the requested kind over <paramref name="payload"/>'s claims.
     /// </summary>
     /// <param name="context">The client the token is for, and the kind being issued.</param>
-    /// <param name="payload">The finalized claims. The issuer does not select or amend them.</param>
+    /// <param name="payload">
+    /// The finalized claims. The issuer does not select among them and adds only what depends on
+    /// the key it resolves — for the framework's JWT issuer, an ID token's <c>at_hash</c> and
+    /// nothing else.
+    /// </param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>The issued token, in the exact form handed to the client.</returns>
     ValueTask<IssuedToken> IssueAsync(

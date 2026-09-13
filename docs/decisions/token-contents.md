@@ -5,11 +5,8 @@ come from, and which token each lands in, is `token-issuance-and-claims.md`; key
 signing are `signing-keys.md`.
 
 **The token endpoint issues the authorization code grant.** The protocol claims, the audiences, the
-lifetimes and the signing entries below describe shipped code. Two do not yet: `at_hash` and the
-fail-closed check of a client's allowed ID-token algorithms inside the signing callback are the next
-slice, and until it lands the ID token carries no `at_hash` and `JwtTokenIssuer` signs whatever
-finalized `TokenPayload` it is handed. The access token's audience is the issuer alone until scope
-audiences exist, which is the claims-selection slice.
+lifetimes and the signing entries below describe shipped code. The access token's audience is the
+issuer alone until scope audiences exist, which is the claims-selection slice.
 
 ## Decisions in force
 

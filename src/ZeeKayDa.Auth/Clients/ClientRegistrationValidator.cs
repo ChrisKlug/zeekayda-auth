@@ -404,9 +404,9 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
         {
             // Nothing to be a subset of: no ring has read its source yet (a repository validating
             // from its own constructor, before startup verification runs) and the operator has
-            // stated no ceiling either. Nothing else enforces this set today — the token endpoint
-            // that will read it does not exist yet — so this is a genuinely unchecked window, and
-            // it says so rather than passing silently.
+            // stated no ceiling either. The JWT issuer enforces the set again at signing time, so
+            // a mismatch still fails closed there; this window is only the earlier, clearer
+            // message, and it says so rather than passing silently.
             if (_keyRing is not null)
             {
                 _logger.LogWarning(

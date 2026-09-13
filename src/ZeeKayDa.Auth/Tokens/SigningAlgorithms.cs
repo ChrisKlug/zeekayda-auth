@@ -30,6 +30,15 @@ internal static class SigningAlgorithms
     /// </summary>
     internal static string WireName(SigningAlgorithm algorithm) => WireNames[algorithm];
 
+    /// <summary>The hash function an algorithm signs over — also the one its ID tokens hash <c>at_hash</c> with.</summary>
+    internal static HashAlgorithmName HashAlgorithm(SigningAlgorithm algorithm) => algorithm switch
+    {
+        SigningAlgorithm.RS256 or SigningAlgorithm.PS256 or SigningAlgorithm.ES256 => HashAlgorithmName.SHA256,
+        SigningAlgorithm.RS384 or SigningAlgorithm.PS384 or SigningAlgorithm.ES384 => HashAlgorithmName.SHA384,
+        SigningAlgorithm.RS512 or SigningAlgorithm.PS512 or SigningAlgorithm.ES512 => HashAlgorithmName.SHA512,
+        _ => throw new ArgumentOutOfRangeException(nameof(algorithm), algorithm, $"Not a defined {nameof(SigningAlgorithm)} member."),
+    };
+
     // OID values are stable across all platforms (macOS, Linux, Windows) unlike friendly names.
     private static readonly HashSet<string> AcceptedEcCurveOids =
         new(StringComparer.OrdinalIgnoreCase)

@@ -18,6 +18,7 @@ using ZeeKayDa.Auth.AspNetCore.Interaction;
 using ZeeKayDa.Auth.AspNetCore.Tests.Interaction;
 using ZeeKayDa.Auth.Authorization;
 using ZeeKayDa.Auth.Clients;
+using ZeeKayDa.Auth.Extensions;
 using ZeeKayDa.Auth.Stores;
 using ZeeKayDa.Auth.Tokens;
 
@@ -386,6 +387,51 @@ public sealed class TokenEndpointTests : IDisposable
         var body = await ReadJsonAsync(response);
         Claims(body.GetProperty("id_token").GetString()!).GetProperty("aud").GetString().Should().Be(ConfidentialClient);
         Claims(body.GetProperty("access_token").GetString()!).GetProperty("client_id").GetString().Should().Be(ConfidentialClient);
+    }
+
+    [Fact]
+    public async Task The_ID_token_is_bound_to_the_access_token_by_at_hash()
+    {
+        var code = await ObtainCodeAsync();
+
+        var body = await ReadJsonAsync(await PostTokenAsync(TokenForm(code)));
+
+        // OIDC Core §3.1.3.6 for an RS256 ID token: SHA-256 over the access token, left half, base64url.
+        var accessToken = body.GetProperty("access_token").GetString()!;
+        var idToken = body.GetProperty("id_token").GetString()!;
+        var digest = SHA256.HashData(Encoding.ASCII.GetBytes(accessToken));
+        Claims(idToken).GetProperty("at_hash").GetString().Should().Be(Base64Url.EncodeToString(digest.AsSpan(0, 16)));
+        Claims(accessToken).TryGetProperty("at_hash", out _).Should().BeFalse();
+        await ShouldVerifyAgainstServedJwksAsync(idToken);
+    }
+
+    [Fact]
+    public async Task A_client_whose_allowed_algorithms_exclude_the_signing_key_gets_server_error_and_no_token()
+    {
+        // The ring publishes an ES256 key as next, so a client restricted to ES256 passes
+        // registration validation; the ring still signs with the RS256 key that is current.
+        using var keys = new RsaCurrentEcNextKeySource();
+        using var factory = new TestWebAppFactory(
+            configureBuilder: builder =>
+            {
+                builder.Services.AddSingleton<TimeProvider>(_time);
+                builder.Services.AddLogging(logging => logging.AddProvider(_logs));
+                builder.AddInMemoryClients(clients => clients.Add(PublicRegistration() with
+                {
+                    AllowedSigningAlgorithms = new HashSet<SigningAlgorithm> { SigningAlgorithm.ES256 },
+                }));
+                builder.Services.AddZeeKayDaSigningKeySource(_ => keys);
+            },
+            mapEndpoints: MapHostPages);
+        using var client = NewClient(factory);
+        var code = await ObtainCodeWithAsync(client);
+
+        var response = await PostTokenWithAsync(client, TokenForm(code));
+
+        await ShouldBeErrorAsync(response, "server_error", HttpStatusCode.InternalServerError);
+        var body = await response.Content.ReadAsStringAsync(Cancellation);
+        body.Should().NotContain("access_token", "the access token was signed first and must not leave alone");
+        _logs.Entries.Should().Contain(entry => entry.Level == LogLevel.Error && entry.Message.Contains(PublicClient, StringComparison.Ordinal));
     }
 
     // ── Lifetimes ─────────────────────────────────────────────────────────────────────────────
@@ -859,6 +905,33 @@ public sealed class TokenEndpointTests : IDisposable
         {
             var registration = Interlocked.Increment(ref _reads) == 1 ? first : other;
             return new(string.Equals(registration.ClientId, clientId, StringComparison.Ordinal) ? registration : null);
+        }
+    }
+
+    /// <summary>A source whose current key is RS256 and whose next key is ES256, so ES256 is advertised while RS256 signs.</summary>
+    private sealed class RsaCurrentEcNextKeySource : ISigningKeySource, IDisposable
+    {
+        private readonly RSA _rsa = RSA.Create(2048);
+        private readonly ECDsa _ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+
+        public ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+        {
+            var current = new SourceKey(new SourceKeyId("rsa-current"), SigningAlgorithm.RS256,
+                PublicKeyParameters.FromRsa(_rsa.ExportParameters(includePrivateParameters: false)), ExpiresAt: null);
+            var next = new SourceKey(new SourceKeyId("ec-next"), SigningAlgorithm.ES256,
+                PublicKeyParameters.FromEc(_ecdsa.ExportParameters(includePrivateParameters: false)), ExpiresAt: null);
+            return new ValueTask<SourceKeySet>(SourceKeySet.Create(previous: null, current, next));
+        }
+
+        public ValueTask<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default) =>
+            new(id.Value == "ec-next"
+                ? new LocalSigner(SigningAlgorithm.ES256, ECDsa.Create(_ecdsa.ExportParameters(includePrivateParameters: true)))
+                : new LocalSigner(SigningAlgorithm.RS256, RSA.Create(_rsa.ExportParameters(includePrivateParameters: true))));
+
+        public void Dispose()
+        {
+            _rsa.Dispose();
+            _ecdsa.Dispose();
         }
     }
 

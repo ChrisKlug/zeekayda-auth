@@ -119,7 +119,7 @@ internal sealed class AuthorizationCodeGrant
                 context.RequestAborted).ConfigureAwait(false);
 
             idToken = await Issuer(context, TokenKind.IdToken).IssueAsync(
-                new TokenIssuanceContext(client, TokenKind.IdToken),
+                new TokenIssuanceContext(client, TokenKind.IdToken, accessToken),
                 idTokenPayload.Payload,
                 context.RequestAborted).ConfigureAwait(false);
         }
