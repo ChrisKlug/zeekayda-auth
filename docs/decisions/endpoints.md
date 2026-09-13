@@ -60,15 +60,25 @@ pattern, and path-based issuers are what RFC 9207 mix-up resistance relies on in
 `IOptionsSnapshot`/`IOptionsMonitor`. Changing an issuer at runtime invalidates every outstanding
 token and relying-party registration — that is standing up a new server, not reconfiguring one.
 
-**Discovery's and JWKS's `Cache-Control` is written in the handler, not by middleware or an
+**Every endpoint's `Cache-Control` is written in the handler, not by middleware or an
 output-caching policy.** A policy would make the header depend on the host having registered output
 caching and subject it to the host's global caching rules, and it would stop being unit-testable in
-isolation.
+isolation. Token responses, success and error alike, carry `no-store` and `Pragma: no-cache` — RFC
+6749 §5.1 asks for both, OAuth 2.1 keeps the first, and writing both satisfies either reading.
 
-**An advertised-but-unbuilt endpoint answers `501`, not `404`.** Routes are mapped and shaped
-before their implementations land so discovery is stable and the route surface does not shift.
-The token route answers `501` today. The authorization endpoint and the JWKS endpoint are
-implemented.
+**The token endpoint is POST-only, mapped unconditionally, and refuses before it reads.** Discovery
+publishes `token_endpoint` unconditionally because RFC 8414 §2 requires it, so the route is mapped
+on the same condition — none — and metadata and route never disagree the way authorize's once did.
+The form is parsed and every shape rule checked, then the client authenticated, then its grant
+allowlist read, before any store is touched: a malformed or unauthenticated request costs no I/O
+and consumes nothing. `invalid_client` is `401` with a matching `WWW-Authenticate` when the client
+used the `Authorization` header (§5.2 MUST) and `400` otherwise; the description never says whether
+the client was unknown or the credential wrong. A server fault is `500` with `server_error`, and a
+`GET` is `405`, not a protocol error.
+
+**All three protocol endpoints are implemented; nothing answers `501` any more.** Routes were
+mapped and shaped before their implementations landed so discovery stayed stable; the last stub,
+the token route, is gone.
 
 **The JWKS response is derived lazily from the ring's current key set, keyed by reference
 equality — not maintained by an observer.** Under the read-once ring the body is fixed for the

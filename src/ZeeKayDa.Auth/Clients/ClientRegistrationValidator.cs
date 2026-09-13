@@ -70,6 +70,7 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
         ValidateCredentialConstraints(client, failures);
         ValidateTwoCredentialCap(client, failures);
         ValidateAllowedSigningAlgorithms(client, failures);
+        ValidateTokenLifetimes(client, failures);
         ValidateAllowedScopes(client, failures);
         ValidateEnumSets(client, failures);
 
@@ -428,6 +429,47 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
                 "advertised set is the configured signing keys' algorithms, narrowed by " +
                 "IdToken.AdvertisedSigningAlgorithms when that filter is set — add a key for " +
                 $"'{algorithm}', or remove it from this client."));
+        }
+    }
+
+    private void ValidateTokenLifetimes(
+        IClientRegistration client,
+        List<ZeeKayDaConfigurationFailure> failures)
+    {
+        ValidateTokenLifetime(client, client.AccessTokenLifetime, nameof(IClientMetadata.AccessTokenLifetime), failures);
+        ValidateTokenLifetime(client, client.IdTokenLifetime, nameof(IClientMetadata.IdTokenLifetime), failures);
+    }
+
+    /// <summary>
+    /// A client override must be positive; one past the family ceiling only warns, because a
+    /// custom repository may validate on resolution rather than at startup, and a warning there
+    /// is still read while a failure would take the request down with it.
+    /// </summary>
+    private void ValidateTokenLifetime(
+        IClientRegistration client,
+        TimeSpan? lifetime,
+        string propertyName,
+        List<ZeeKayDaConfigurationFailure> failures)
+    {
+        if (lifetime is not { } value)
+            return;
+
+        if (value <= TimeSpan.Zero)
+        {
+            failures.Add(new ZeeKayDaConfigurationFailure(
+                "client.token_lifetime.not_positive",
+                $"Client '{client.ClientId}' has {propertyName} set to {value}. " +
+                "When set, a token lifetime must be greater than zero, or null to inherit the server default."));
+            return;
+        }
+
+        if (value > _options.Value.TokenEndpoint.AbsoluteFamilyLifetime)
+        {
+            _logger.LogWarning(
+                "Client '{ClientId}' has {PropertyName} set past TokenEndpoint.AbsoluteFamilyLifetime, " +
+                "so a token issued to it would outlive the grant family that produced it.",
+                client.ClientId,
+                propertyName);
         }
     }
 

@@ -1,6 +1,7 @@
 # Claims resolution
 
-**Status: provisional.** Nothing here is built — the token endpoint answers `501`. Recovered from
+**Status: provisional.** Nothing here is built — the token endpoint issues protocol claims only and
+never calls a claims provider. Recovered from
 ADR 0010 (accepted 2026-06-20, issue #187), which was deleted in the register migration.
 The constraints this design produced survived and are in
 `docs/decisions/token-issuance-and-claims.md` and `docs/decisions/token-contents.md` — read those as

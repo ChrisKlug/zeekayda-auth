@@ -81,7 +81,11 @@ ZeeKayDa.Auth.Clients.ClientRegistration.AllowedResponseTypes.init -> void
 ZeeKayDa.Auth.Clients.ClientRegistration.AllowedScopes.get -> System.Collections.Generic.IReadOnlySet<string!>!
 ZeeKayDa.Auth.Clients.ClientRegistration.AllowedScopes.init -> void
 ZeeKayDa.Auth.Clients.ClientRegistration.AllowedSigningAlgorithms.get -> System.Collections.Generic.IReadOnlySet<ZeeKayDa.Auth.Tokens.SigningAlgorithm>?
+ZeeKayDa.Auth.Clients.ClientRegistration.AccessTokenLifetime.get -> System.TimeSpan?
+ZeeKayDa.Auth.Clients.ClientRegistration.AccessTokenLifetime.init -> void
 ZeeKayDa.Auth.Clients.ClientRegistration.AllowedSigningAlgorithms.init -> void
+ZeeKayDa.Auth.Clients.ClientRegistration.IdTokenLifetime.get -> System.TimeSpan?
+ZeeKayDa.Auth.Clients.ClientRegistration.IdTokenLifetime.init -> void
 ZeeKayDa.Auth.Clients.ClientRegistration.AllowedTokenEndpointAuthMethods.get -> System.Collections.Generic.IReadOnlySet<string!>!
 ZeeKayDa.Auth.Clients.ClientRegistration.AllowedTokenEndpointAuthMethods.init -> void
 ZeeKayDa.Auth.Clients.ClientRegistration.ClientId.get -> string!
@@ -110,7 +114,9 @@ ZeeKayDa.Auth.Clients.IClientMetadata.AllowedPromptValues.get -> System.Collecti
 ZeeKayDa.Auth.Clients.IClientMetadata.AllowedResponseModes.get -> System.Collections.Generic.IReadOnlySet<ZeeKayDa.Auth.Authorization.ResponseMode>!
 ZeeKayDa.Auth.Clients.IClientMetadata.AllowedResponseTypes.get -> System.Collections.Generic.IReadOnlySet<ZeeKayDa.Auth.Authorization.ResponseType>!
 ZeeKayDa.Auth.Clients.IClientMetadata.AllowedScopes.get -> System.Collections.Generic.IReadOnlySet<string!>!
+ZeeKayDa.Auth.Clients.IClientMetadata.AccessTokenLifetime.get -> System.TimeSpan?
 ZeeKayDa.Auth.Clients.IClientMetadata.AllowedSigningAlgorithms.get -> System.Collections.Generic.IReadOnlySet<ZeeKayDa.Auth.Tokens.SigningAlgorithm>?
+ZeeKayDa.Auth.Clients.IClientMetadata.IdTokenLifetime.get -> System.TimeSpan?
 ZeeKayDa.Auth.Clients.IClientMetadata.AllowedTokenEndpointAuthMethods.get -> System.Collections.Generic.IReadOnlySet<string!>!
 ZeeKayDa.Auth.Clients.IClientMetadata.ClientId.get -> string!
 ZeeKayDa.Auth.Clients.IClientMetadata.EnableZkdErrorCodes.get -> bool
@@ -537,9 +543,13 @@ ZeeKayDa.Auth.Tokens.TokenEndpointAuthMethods
 ZeeKayDa.Auth.Tokens.TokenEndpointOptions
 ZeeKayDa.Auth.Tokens.TokenEndpointOptions.AbsoluteFamilyLifetime.get -> System.TimeSpan
 ZeeKayDa.Auth.Tokens.TokenEndpointOptions.AbsoluteFamilyLifetime.set -> void
+ZeeKayDa.Auth.Tokens.TokenEndpointOptions.AccessTokenLifetime.get -> System.TimeSpan
+ZeeKayDa.Auth.Tokens.TokenEndpointOptions.AccessTokenLifetime.set -> void
 ZeeKayDa.Auth.Tokens.TokenEndpointOptions.AuthMethodsSupported.get -> System.Collections.Generic.ICollection<string!>!
 ZeeKayDa.Auth.Tokens.TokenEndpointOptions.AuthMethodsSupported.set -> void
 ZeeKayDa.Auth.Tokens.TokenEndpointOptions.ComputeFamilyAbsoluteExpiry(System.DateTimeOffset now) -> System.DateTimeOffset
+ZeeKayDa.Auth.Tokens.TokenEndpointOptions.IdTokenLifetime.get -> System.TimeSpan
+ZeeKayDa.Auth.Tokens.TokenEndpointOptions.IdTokenLifetime.set -> void
 ZeeKayDa.Auth.Tokens.TokenEndpointOptions.RefreshTokenLifetime.get -> System.TimeSpan
 ZeeKayDa.Auth.Tokens.TokenEndpointOptions.RefreshTokenLifetime.set -> void
 ZeeKayDa.Auth.Tokens.TokenEndpointOptions.TokenEndpointOptions() -> void

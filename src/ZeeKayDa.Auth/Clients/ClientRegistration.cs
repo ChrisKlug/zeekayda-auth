@@ -73,6 +73,12 @@ public sealed record ClientRegistration : IClientRegistration
     /// <inheritdoc/>
     public IReadOnlySet<SigningAlgorithm>? AllowedSigningAlgorithms { get; init; }
 
+    /// <inheritdoc/>
+    public TimeSpan? AccessTokenLifetime { get; init; }
+
+    /// <inheritdoc/>
+    public TimeSpan? IdTokenLifetime { get; init; }
+
     /// <summary>
     /// Creates a confidential client registration with the given pre-built credential.
     /// </summary>

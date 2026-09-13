@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Options;
+using ZeeKayDa.Auth.Authorization;
 using ZeeKayDa.Auth.Security;
 using ZeeKayDa.Auth.Tokens;
 
@@ -216,6 +217,18 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
                 "AuthorizationServerOptions.TokenEndpoint.AbsoluteFamilyLifetime must be greater than zero.");
         }
 
+        if (options.TokenEndpoint.AccessTokenLifetime <= TimeSpan.Zero)
+        {
+            errors.Add(
+                "AuthorizationServerOptions.TokenEndpoint.AccessTokenLifetime must be greater than zero.");
+        }
+
+        if (options.TokenEndpoint.IdTokenLifetime <= TimeSpan.Zero)
+        {
+            errors.Add(
+                "AuthorizationServerOptions.TokenEndpoint.IdTokenLifetime must be greater than zero.");
+        }
+
         // Validate IdToken group. Null is the default and means "advertise the whole published key
         // set"; an empty filter would advertise nothing at all, which is never what an operator
         // means. A filter that excludes the signing key's own algorithm is caught at startup by
@@ -387,6 +400,19 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
                 "See RFC 7636 §4.3 and RFC 8414 §2.");
         }
 
+        // PKCE with S256 is what makes the authorization code grant safe to serve (RFC 9700
+        // §2.1.1), and the token endpoint enforces exactly that method. A host serving the grant
+        // without advertising S256 would be telling clients the control is absent while relying
+        // on it — so the two settings must agree before any traffic is accepted.
+        if (ServesCodeGrantWithoutS256(options))
+        {
+            errors.Add(
+                "AuthorizationServerOptions.AuthorizationEndpoint.CodeChallengeMethodsSupported must " +
+                "contain CodeChallengeMethod.S256 when GrantTypesSupported contains GrantType.AuthorizationCode. " +
+                "PKCE with S256 is mandatory for the authorization code grant (OAuth 2.1 §4.1.1, RFC 9700 §2.1.1) " +
+                "and the token endpoint enforces it for every client.");
+        }
+
         // RFC 9700 §2.1.1 requires authorization codes to be short-lived (max 10 minutes).
         if (options.AuthorizationEndpoint.AuthorizationCodeLifetime > TimeSpan.FromSeconds(600))
         {
@@ -419,6 +445,11 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
     /// is a redirect destination the framework builds itself, so a malformed one would turn the
     /// framework into the open redirect it exists to avoid.
     /// </summary>
+    private static bool ServesCodeGrantWithoutS256(AuthorizationServerOptions options) =>
+        options.GrantTypesSupported is { } grants &&
+        grants.Contains(GrantType.AuthorizationCode) &&
+        options.AuthorizationEndpoint.CodeChallengeMethodsSupported?.Contains(CodeChallengeMethod.S256) != true;
+
     private static void ValidateInteractionPath(string? path, string optionName, List<string> errors)
     {
         if (path is null || InteractionPath.IsSafe(path))

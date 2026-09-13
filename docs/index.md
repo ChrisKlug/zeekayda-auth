@@ -12,9 +12,9 @@ ZeeKayDa.Auth is an open-source **OpenID Connect identity provider framework for
 you the building blocks to run a spec-compliant, production-grade authorization server inside any
 ASP.NET Core application — without tying you to a particular storage engine, UI, or hosting model.
 
-> **Pre-alpha:** the current implementation exposes discovery/configuration building blocks only.
-> Advertised authorization, token, and JWKS endpoints return `501 Not Implemented` until those
-> protocol surfaces are implemented.
+> **Pre-alpha:** the authorization code flow with PKCE runs end to end — discovery, authorization,
+> token and JWKS endpoints are implemented — but issued tokens carry protocol claims only until the
+> claims provider seam lands, and no refresh tokens are issued yet.
 
 ---
 

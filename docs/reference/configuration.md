@@ -153,22 +153,15 @@ Must be greater than zero; rejected at startup otherwise.
 | Attribute | Value |
 |---|---|
 | Type | `ICollection<CodeChallengeMethod>?` |
-| Default | `null` |
-| Required | No |
+| Default | `[CodeChallengeMethod.S256]` |
+| Required | When `GrantTypesSupported` contains `AuthorizationCode` |
 
-The PKCE code challenge methods advertised in the discovery document. When `null` (the default),
-the `code_challenge_methods_supported` field is omitted entirely from the discovery document.
-
-> ⚠️ **Do not set this property until PKCE challenge verification is enforced at the token
-> endpoint.** Advertising methods the server cannot verify gives clients a false assurance —
-> a PKCE-aware client will include a `code_verifier` at the token endpoint, and if the server
-> silently ignores it, an authorization-code interception attack can succeed undetected.
-
-Once PKCE enforcement is implemented, set this property to advertise `S256` support:
-
-```csharp
-options.AuthorizationEndpoint.CodeChallengeMethodsSupported = [CodeChallengeMethod.S256];
-```
+The PKCE code challenge methods advertised in the discovery document, and the one method the token
+endpoint verifies every `code_verifier` with. PKCE is mandatory for the authorization code grant
+(OAuth 2.1 §4.1.1, RFC 9700 §2.1.1) for every client, with no per-client opt-out, so a host that
+serves the grant must keep `S256` in this collection: startup fails otherwise. When `null`, the
+`code_challenge_methods_supported` field is omitted from the discovery document, which is only
+valid on a host whose `GrantTypesSupported` does not contain the code grant.
 
 | Enum value | JSON serialization |
 |---|---|
@@ -179,7 +172,8 @@ explicitly prohibits its use: advertising `plain` would negate PKCE's security b
 challenge is identical to the verifier and provides no protection against interception.
 
 Startup validation rejects a non-null empty collection (e.g. `= []`), which would publish
-`"code_challenge_methods_supported": []` — advertising PKCE support with no usable method.
+`"code_challenge_methods_supported": []` — advertising PKCE support with no usable method — and
+rejects `null` or a collection without `S256` on a host that serves the authorization code grant.
 
 Maps to `code_challenge_methods_supported` as defined in
 [RFC 7636 §4.3](https://www.rfc-editor.org/rfc/rfc7636#section-4.3) and
@@ -205,6 +199,17 @@ The override must use the same authority as `Issuer`.
 
 ```csharp
 options.TokenEndpoint.Uri = "https://id.example.com/tenant-a/custom/token";
+```
+
+`TokenEndpoint.AccessTokenLifetime` (default one hour) and `TokenEndpoint.IdTokenLifetime` (default
+five minutes) are the server-wide lifetimes of the tokens the endpoint issues. Both must be greater
+than zero; there is no upper bound, but a value longer than `TokenEndpoint.AbsoluteFamilyLifetime`
+logs a startup warning. A client registration may override either through its own
+`AccessTokenLifetime` and `IdTokenLifetime`, where `null` (the default) means the server value.
+
+```csharp
+options.TokenEndpoint.AccessTokenLifetime = TimeSpan.FromMinutes(30);
+options.TokenEndpoint.IdTokenLifetime = TimeSpan.FromMinutes(2);
 ```
 
 ---
@@ -588,6 +593,8 @@ only when all relying parties are co-hosted on the same origin or site as the au
 | `IScopeRepository` must include `openid` | the configured scope repository does not include a scope named `openid` |
 | Cache max-age must not be negative | `DiscoveryDocument.CacheMaxAge` or `JwksEndpoint.CacheMaxAge` is negative |
 | `AuthorizationEndpoint.CodeChallengeMethodsSupported` must not be empty | `AuthorizationEndpoint.CodeChallengeMethodsSupported` is a non-null empty collection |
+| The code grant requires `S256` | `GrantTypesSupported` contains `AuthorizationCode` and `AuthorizationEndpoint.CodeChallengeMethodsSupported` is `null` or lacks `CodeChallengeMethod.S256` |
+| Token lifetimes must be positive | `TokenEndpoint.AccessTokenLifetime` or `TokenEndpoint.IdTokenLifetime` is zero or negative |
 | `AuthorizationEndpoint.MaxRequestContextBytes` must be greater than zero | `AuthorizationEndpoint.MaxRequestContextBytes` is zero or negative |
 | CORS origins must use HTTPS by default | a `DiscoveryDocument.CorsOrigins` or `JwksEndpoint.CorsOrigins` entry uses HTTP while `AllowInsecureIssuer` is `false` |
 | HTTP CORS origins must be loopback when allowed | a `DiscoveryDocument.CorsOrigins` or `JwksEndpoint.CorsOrigins` entry uses HTTP with a non-loopback host |

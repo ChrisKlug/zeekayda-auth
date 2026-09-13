@@ -1443,4 +1443,83 @@ public sealed class ClientRegistrationValidatorTests
         public bool Overlaps(IEnumerable<string> other) => throw new NotSupportedException();
         public bool SetEquals(IEnumerable<string> other) => throw new NotSupportedException();
     }
+
+    // ── AccessTokenLifetime / IdTokenLifetime ─────────────────────────────────────────────────────
+
+    [Fact]
+    public void Validate_passes_when_token_lifetime_overrides_are_null()
+    {
+        var client = MakeValidPublicClient() with { AccessTokenLifetime = null, IdTokenLifetime = null };
+
+        var act = () => MakeValidator().Validate(client);
+
+        act.Should().NotThrow("null inherits the server value");
+    }
+
+    [Fact]
+    public void Validate_passes_when_token_lifetime_overrides_are_positive()
+    {
+        var client = MakeValidPublicClient() with
+        {
+            AccessTokenLifetime = TimeSpan.FromMinutes(10),
+            IdTokenLifetime = TimeSpan.FromMinutes(1),
+        };
+
+        var act = () => MakeValidator().Validate(client);
+
+        act.Should().NotThrow();
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Validate_fails_when_AccessTokenLifetime_override_is_not_positive(int seconds)
+    {
+        var client = MakeValidPublicClient() with { AccessTokenLifetime = TimeSpan.FromSeconds(seconds) };
+
+        var act = () => MakeValidator().Validate(client);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "client.token_lifetime.not_positive")
+            .Which.Message.Should().Contain("AccessTokenLifetime");
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Validate_fails_when_IdTokenLifetime_override_is_not_positive(int seconds)
+    {
+        var client = MakeValidPublicClient() with { IdTokenLifetime = TimeSpan.FromSeconds(seconds) };
+
+        var act = () => MakeValidator().Validate(client);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "client.token_lifetime.not_positive")
+            .Which.Message.Should().Contain("IdTokenLifetime");
+    }
+
+    [Fact]
+    public void Validate_warns_but_passes_when_a_token_lifetime_override_exceeds_the_family_ceiling()
+    {
+        var opts = BuildDefaultServerOptions();
+        opts.TokenEndpoint.AbsoluteFamilyLifetime = TimeSpan.FromDays(30);
+        var logger = new CapturingLogger();
+        var client = MakeValidPublicClient() with { AccessTokenLifetime = TimeSpan.FromDays(31) };
+
+        var act = () => MakeValidator(logger: logger, serverOptions: opts).Validate(client);
+
+        act.Should().NotThrow("a custom repository may validate on resolution, where a failure would take the request down");
+        logger.Warnings.Should().ContainSingle(w => w.Contains("AccessTokenLifetime") && w.Contains("AbsoluteFamilyLifetime"));
+    }
+
+    [Fact]
+    public void Validate_does_not_warn_when_a_token_lifetime_override_is_within_the_family_ceiling()
+    {
+        var logger = new CapturingLogger();
+        var client = MakeValidPublicClient() with { AccessTokenLifetime = TimeSpan.FromHours(2), IdTokenLifetime = TimeSpan.FromHours(2) };
+
+        MakeValidator(logger: logger).Validate(client);
+
+        logger.Warnings.Should().NotContain(w => w.Contains("Lifetime"));
+    }
 }

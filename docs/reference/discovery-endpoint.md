@@ -134,7 +134,7 @@ come from `AuthorizationServerOptions`.
 | `token_endpoint_auth_methods_supported` | `TokenEndpoint.AuthMethodsSupported` | Defaults to `["client_secret_basic"]`. |
 | `subject_types_supported` | Fixed value | Always `["public"]`. Pairwise subject identifiers are not currently supported. |
 | `id_token_signing_alg_values_supported` | The configured signing keys | Derived: the distinct algorithms of every published key, ascending by `SigningAlgorithm` value, optionally narrowed by `IdToken.AdvertisedSigningAlgorithms`. Required by OIDC Discovery 1.0 Section 3. |
-| `code_challenge_methods_supported` | `AuthorizationEndpoint.CodeChallengeMethodsSupported` | Omitted when `null` (the default). Set to `[CodeChallengeMethod.S256]` to advertise PKCE support once token-endpoint enforcement is in place. |
+| `code_challenge_methods_supported` | `AuthorizationEndpoint.CodeChallengeMethodsSupported` | `["S256"]` by default, the one method the token endpoint verifies. Omitted when `null`, which startup permits only on a host that does not serve the authorization code grant. |
 
 The recommended metadata fields are described by
 [OpenID Connect Discovery 1.0 Section 3](https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderMetadata)
@@ -177,17 +177,13 @@ Only scopes with `IsDiscoverable = true` are included in `scopes_supported`.
 
 ## Pre-alpha advertised endpoints
 
-ZeeKayDa.Auth is pre-alpha. Discovery currently publishes default `authorization_endpoint` and
-`token_endpoint` values so clients can observe the intended metadata shape, but those protocol
-implementations are not complete yet. The `jwks_uri` endpoint is implemented — see
-[JWKS endpoint](jwks-endpoint.md).
+ZeeKayDa.Auth is pre-alpha. Every advertised endpoint is implemented; the `jwks_uri` endpoint is
+described in [JWKS endpoint](jwks-endpoint.md).
 
-Until the remaining surfaces are implemented:
-
-| Endpoint | Methods | Status |
+| Endpoint | Methods | Serves |
 |---|---|---|
-| `{issuer}/connect/authorize` | `GET`, `POST` | `501 Not Implemented` |
-| `{issuer}/connect/token` | `POST` | `501 Not Implemented` |
+| `{issuer}/connect/authorize` | `GET`, `POST` | The authorization code flow with PKCE, through the host's login and consent pages |
+| `{issuer}/connect/token` | `POST` | The `authorization_code` grant: an access token and an ID token, after client authentication and `code_verifier` verification |
 
 ## Endpoint URI derivation
 

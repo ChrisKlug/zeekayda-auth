@@ -2,19 +2,26 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Options;
+using ZeeKayDa.Auth.AspNetCore.Tokens;
 
 namespace ZeeKayDa.Auth.AspNetCore.Endpoints;
 
 /// <summary>
-/// Registers the pre-alpha token endpoint (<c>connect/token</c>) that returns
-/// <see cref="StatusCodes.Status501NotImplemented"/> until the real implementation lands.
+/// The token endpoint (<c>/connect/token</c>, POST only per RFC 6749 §3.2). Exchanges an
+/// authorization code for an access token and an ID token, with client authentication and
+/// PKCE verification for every client.
 /// </summary>
-internal sealed class PreAlphaTokenEndpoint : IZeeKayDaEndpoint
+/// <remarks>
+/// Mapped unconditionally: discovery publishes <c>token_endpoint</c> unconditionally too, because
+/// RFC 8414 §2 requires it, so the metadata and the route always agree.
+/// </remarks>
+internal sealed class TokenEndpoint : IZeeKayDaEndpoint
 {
     private readonly IOptions<AuthorizationServerOptions> _options;
 
-    public PreAlphaTokenEndpoint(IOptions<AuthorizationServerOptions> options)
+    public TokenEndpoint(IOptions<AuthorizationServerOptions> options)
     {
+        ArgumentNullException.ThrowIfNull(options);
         _options = options;
     }
 
@@ -29,7 +36,7 @@ internal sealed class PreAlphaTokenEndpoint : IZeeKayDaEndpoint
 
         endpoints.MapPost(
                 endpointUri.AbsolutePath,
-                () => PreAlphaNotImplementedResult.Result)
+                (TokenRequestHandler handler, HttpContext context) => handler.HandleAsync(context))
             .RequireIssuerHost(endpointUri);
     }
 }
