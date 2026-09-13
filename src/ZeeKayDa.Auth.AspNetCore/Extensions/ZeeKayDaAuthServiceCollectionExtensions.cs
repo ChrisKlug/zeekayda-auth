@@ -171,9 +171,10 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
             ServiceDescriptor.Singleton<IStartupVerifier, TokenStorePresenceValidator>());
 
         // The claims seam is mandatory with no default: a host that forgot it must not start and
-        // silently issue tokens with no subject claims.
+        // silently issue tokens with no subject claims. An activator, since on a container without
+        // IServiceProviderIsService it resolves the caller's provider to prove it is there.
         services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupVerifier, ClaimsProviderPresenceValidator>());
+            ServiceDescriptor.Singleton<IStartupActivator, ClaimsProviderPresenceValidator>());
 
         // The discovery document derives id_token_signing_alg_values_supported from the signing key
         // ring, so a host serving the protocol endpoints must have one. Failing startup here is what

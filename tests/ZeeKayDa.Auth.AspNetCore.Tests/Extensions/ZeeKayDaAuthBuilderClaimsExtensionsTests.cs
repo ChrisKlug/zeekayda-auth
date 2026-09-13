@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using ZeeKayDa.Auth;
+using ZeeKayDa.Auth.AspNetCore;
 using ZeeKayDa.Auth.Claims;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests.Extensions;
@@ -28,6 +29,19 @@ public sealed class ZeeKayDaAuthBuilderClaimsExtensionsTests
 
         services.Should().ContainSingle(d => d.ServiceType == typeof(IClaimsProvider))
             .Which.ImplementationType.Should().Be(typeof(OtherClaimsProvider));
+    }
+
+    [Fact]
+    public void AddZeeKayDaAuth_registers_the_presence_check_as_an_activator_not_a_verifier()
+    {
+        // The check may resolve the caller's scoped provider on a container without
+        // IServiceProviderIsService, and only the activator phase may touch caller-supplied code.
+        var services = new ServiceCollection();
+
+        services.AddZeeKayDaAuth(options => options.Issuer = "https://test.example.com");
+
+        services.Should().ContainSingle(d => d.ImplementationType == typeof(ClaimsProviderPresenceValidator))
+            .Which.ServiceType.Should().Be(typeof(IStartupActivator));
     }
 
     [Fact]

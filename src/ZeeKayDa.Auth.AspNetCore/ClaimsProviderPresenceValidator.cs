@@ -13,9 +13,10 @@ namespace ZeeKayDa.Auth.AspNetCore;
 /// which is scoped and may need a request to construct, is not resolved. A container that does
 /// not offer it is asked to resolve the provider from the startup scope instead: the check is
 /// what makes the seam mandatory, so it cannot be the one thing a third-party container is
-/// allowed to skip.
+/// allowed to skip. An activator rather than a verifier because that fallback constructs a
+/// caller-supplied service.
 /// </remarks>
-internal sealed class ClaimsProviderPresenceValidator : IStartupVerifier
+internal sealed class ClaimsProviderPresenceValidator : IStartupActivator
 {
     /// <inheritdoc/>
     public string Name => "ClaimsProviderPresence";
