@@ -301,6 +301,19 @@ public sealed class JwtTokenIssuerTests
             .And.Contain(nameof(TokenKind.AccessToken));
     }
 
+    [Fact]
+    public void TokenIssuanceContext_ToString_does_not_contain_the_access_token()
+    {
+        // The context reaches log lines through the sanitizing logger, which redacts by placeholder
+        // name only — so the record itself must never print the bearer token it carries.
+        var context = new TokenIssuanceContext(Client, TokenKind.IdToken, new IssuedToken("eyJhbGciOiJSUzI1NiJ9.secret.payload", TokenKind.AccessToken));
+
+        context.ToString().Should().NotContain("secret")
+            .And.NotContain("eyJhbGciOiJSUzI1NiJ9")
+            .And.Contain(nameof(TokenKind.IdToken));
+        new TokenIssuanceContext(Client, TokenKind.AccessToken).ToString().Should().Contain("none");
+    }
+
     // ── Guards ───────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
