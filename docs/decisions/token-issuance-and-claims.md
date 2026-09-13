@@ -31,8 +31,9 @@ is the only outcome the rest of the design can reason about.
 rotation chain can be reconstructed after an incident, and it is never consulted for an authorization
 decision or used to look up or validate a prior token.
 
-**Two copies of a grant's fields, with different authority.** Scope, session id, issued-at and the
-previous-handle hash live only inside the encrypted payload. Family id, subject, client id, expiry and
+**Two copies of a grant's fields, with different authority.** Scope, session id, issued-at, the
+previous-handle hash and the original authentication event (`auth_time`, `acr`, `amr`) live only
+inside the encrypted payload. Family id, subject, client id, expiry and
 the family's absolute ceiling are duplicated as cleartext queryable columns. The **encrypted copy is
 authoritative for issuance** — what goes into the next token comes from there. The **columns are
 authoritative for query, expiry and reuse decisions**, which is what lets every security decision be

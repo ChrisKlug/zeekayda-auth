@@ -24,16 +24,24 @@ and `alg` can never disagree with the key that signed; the writer's whole job is
 `header "." payload "." signature`. It is named for tokens rather than for JWTs, because the ID token,
 the access token and any future format share the one seam.
 
-**The ID token always carries `iss`, `sub`, `aud`, `exp`, `iat`, `nonce`, `auth_time` and `at_hash`.**
-OIDC Core §2 requires the first five, and `nonce` whenever the request had one, which in v1 is always.
+**The ID token always carries `iss`, `sub`, `aud`, `exp`, `iat`, `auth_time` and `at_hash`, and
+`nonce` on the code grant.** OIDC Core §2 requires the first five, and `nonce` whenever the request had
+one, which in v1 is always; an ID token issued on a refresh carries no `nonce` (§12.2 SHOULD NOT).
 `auth_time` is REQUIRED after `max_age` or a `claims` request and OPTIONAL otherwise; it is written on
-every issuance, from the authorization code, so there is no path where a client asks and it is missing,
-and a relying party can apply its own freshness rule without a round trip. `at_hash` is OPTIONAL in the
-code flow (§3.1.3.6) and is written because it binds the ID token to the access token issued with it,
-so the ID token is assembled after the access token. Its hash is the one the ID token's `alg` implies
-(§3.3.2.11), so it is computed against the key that signs, never against a key read earlier — like the
-header, it cannot disagree with the signature. `acr` and `amr` are written when the code carries them
-and omitted otherwise, never `null`.
+every issuance so there is no path where a client asks and it is missing, and a relying party can apply
+its own freshness rule without a round trip. `at_hash` is OPTIONAL in the code flow (§3.1.3.6) and is
+written because it binds the ID token to the access token issued with it, so the ID token is assembled
+after the access token, which reaches its issuer through the issuance context; the payload stays
+finalized and the issuer adds only what depends on the key it resolves. The hash is the one the ID
+token's `alg` implies (§3.1.3.6), computed against the key that signs, never a key read earlier — like
+the header, it cannot disagree with the signature. `acr` and `amr` are written when the grant carries
+them and omitted otherwise, never `null`.
+
+**`auth_time`, `acr` and `amr` are the grant's original authentication event, on every grant type.**
+On the code grant they come from the authorization code; a refresh grant carries them in its encrypted
+payload from family birth, copied verbatim on every rotation, so a token issued on refresh names the
+sign-in that started the family — never the rotation's time. OIDC Core §12.2 makes that a MUST for
+`auth_time`, and RFC 9068 §2.2.1 fixes all three across every token derived from one authorization.
 
 **The ID token has one audience, the requesting client, and no `azp` or `sid`.** §2 allows further
 audiences, but nothing in the framework can name one: no `resource` parameter, no registration field,
@@ -71,9 +79,10 @@ both of a resource indicator, so the `resource` parameter can later be a pure na
 endpoint options hold the access-token and ID-token lifetimes, one hour and five minutes by default;
 a client registration may override either, and a null override means the server value. Both must
 exceed zero, checked at startup for the server values and by the registration validator for the
-client's; there is no upper bound. The ID-token default is short because it is consumed once, at the
-client, on receipt. Nothing else derives from these values — key retirement is an operator emptying
-a slot, not a computed window.
+client's; there is no upper bound, and a client value is a default, not a ceiling. Expiry arithmetic
+is overflow-safe, as the family ceiling's is, so no value that passed validation throws at issuance.
+The ID-token default is short because it is consumed once, at the client, on receipt. Nothing else
+derives from these values — key retirement is an operator emptying a slot, not a computed window.
 
 **A client whose allowed ID-token algorithms exclude the signing key's algorithm fails closed.** The
 ring signs with one key, so `AllowedSigningAlgorithms` must be enforced twice: the registration validator

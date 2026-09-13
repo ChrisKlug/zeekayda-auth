@@ -95,9 +95,9 @@ but only one already registered; one added afterwards wins under MS DI's last-wi
 source directly (unreachable from the container), owns its lifetime alongside the signer's, and rejects
 `IAsyncDisposable` without `IDisposable`.
 
-**Per-client algorithm selection is a parameter on the signing call, not a ring selector.** It is the
-near-term pressure that looks like an `ISigningKeyRingSelector` and is not one: the ring owns one key set,
-and choosing among the algorithms it publishes is a caller's argument, not a container-resolved strategy.
+**A client's allowed algorithms are an acceptance list, not a selector.** The ring owns one key set and
+signs with one key; a client whose list excludes that key's algorithm fails closed (`token-contents.md`).
+If selection ever comes it is an argument on the signing call, never a container-resolved ring strategy.
 
 **Each production provider platform is its own package; the development provider is not.**
 `ZeeKayDa.Auth.AzureKeyVault` (remote and cached together — same dependency and operational context, so the

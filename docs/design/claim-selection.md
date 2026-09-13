@@ -255,9 +255,9 @@ signature through the ring, `iss`, `exp`, `typ` of `at+jwt`, `aud` containing th
 
 ## Protocol claims and lifetimes
 
-The endpoint writes the protocol claims from the authorization code; `token-contents.md` fixes the
-lists. Two shapes are new. The server-wide defaults sit beside the refresh-token lifetime that
-already exists, and a registration overrides either one with `null` meaning "the server value":
+The endpoint writes the protocol claims from the grant; `token-contents.md` fixes the lists. Two
+shapes are new. The server-wide defaults sit beside the refresh-token lifetime that already exists,
+and a registration overrides either one with `null` meaning "the server value":
 
 ```csharp
 public sealed class TokenEndpointOptions
@@ -276,21 +276,39 @@ public interface IClientMetadata
 ```
 
 Both server values must exceed zero, checked by the options validator at startup; a non-null client
-value must too, checked by the registration validator. There is no upper bound on either.
+value must too, checked by the registration validator, and both join `ClientRegistration` and its
+fingerprint. There is no upper bound on either; `exp` is computed the way
+`ComputeFamilyAbsoluteExpiry` computes the family ceiling, so an overflowing sum saturates instead of
+throwing.
 
 **Assembly order.** The access token is issued first, because `at_hash` is the left half of a hash
-over its compact form (OIDC Core §3.3.2.11). The hash function follows the ID token's own `alg`, and
+over its compact form (OIDC Core §3.1.3.6). The hash function follows the ID token's own `alg`, and
 the client's `AllowedSigningAlgorithms` check is against the key that signs, so both happen inside
 the ring's signing callback where the resolved key is known — the same place the header is built.
-That means the JWT issuer serialises the ID-token payload inside the callback, after adding the
-`at_hash` computed there, rather than receiving it pre-serialised; how `TokenPayload` expresses "an
-`at_hash` over this access token" is the token-endpoint issue's to shape.
+`TokenPayload` stays finalized: the access token reaches the ID-token issuer on the issuance context,
+which was built to be widened, and the issuer's contract becomes "adds only what depends on the key
+it resolves", which for the shipped JWT issuer is `at_hash` and nothing else. The ID-token payload is
+therefore serialised inside the callback, after `at_hash` is added:
 
-**Expiry and `iat`** come from one clock read per issuance, shared by both tokens: `exp` is that
-instant plus the effective lifetime for the kind. `auth_time`, `acr` and `amr` are copied from the
-code's `AuthTime`, `Acr` and `Amr`; `nonce` from its `Nonce`; `client_id` and the ID token's `aud`
-from its `ClientId`; `sub` from its `Sub`; `scope` is the granted scope list joined by spaces.
-`jti` is 128 bits from `RandomNumberGenerator`, base64url.
+```csharp
+public readonly record struct TokenIssuanceContext(
+    IClientMetadata Client,
+    TokenKind Kind,
+    IssuedToken? AccessToken = null);   // set for an ID-token issuance; null otherwise
+```
+
+A custom ID-token issuer that ignores `AccessToken` issues a spec-valid token without the binding;
+that is the host's choice, and the register's "always carries" describes the shipped issuer.
+
+**Provenance.** `exp` and `iat` come from one clock read per issuance, shared by both tokens: `exp`
+is that instant plus the effective lifetime for the kind. `auth_time`, `acr` and `amr` are the
+grant's original authentication event: the code's `AuthTime`, `Acr` and `Amr` on the code grant, and
+on a refresh the same three values from the refresh grant's encrypted payload, where
+`RefreshTokenEntry` gains them at family birth and every rotation copies them verbatim. `nonce` comes
+from the code's `Nonce` and is written on the code grant only; whether an ID token is issued on
+refresh at all is the refresh slice's call, and if one is it carries no `nonce`. `client_id` and the
+ID token's `aud` come from the grant's `ClientId`; `sub` from its `Sub`; `scope` is the granted scope
+list joined by spaces. `jti` is 128 bits from `RandomNumberGenerator`, base64url.
 
 ## Later, deliberately
 
