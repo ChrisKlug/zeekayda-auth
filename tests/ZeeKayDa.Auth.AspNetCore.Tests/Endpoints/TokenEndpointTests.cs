@@ -18,6 +18,7 @@ using ZeeKayDa.Auth.AspNetCore.Interaction;
 using ZeeKayDa.Auth.AspNetCore.Tests.Interaction;
 using ZeeKayDa.Auth.Authorization;
 using ZeeKayDa.Auth.Clients;
+using ZeeKayDa.Auth.Extensions;
 using ZeeKayDa.Auth.Stores;
 using ZeeKayDa.Auth.Tokens;
 
@@ -386,6 +387,75 @@ public sealed class TokenEndpointTests : IDisposable
         var body = await ReadJsonAsync(response);
         Claims(body.GetProperty("id_token").GetString()!).GetProperty("aud").GetString().Should().Be(ConfidentialClient);
         Claims(body.GetProperty("access_token").GetString()!).GetProperty("client_id").GetString().Should().Be(ConfidentialClient);
+    }
+
+    [Fact]
+    public async Task The_ID_token_is_bound_to_the_access_token_by_at_hash()
+    {
+        var code = await ObtainCodeAsync();
+
+        var body = await ReadJsonAsync(await PostTokenAsync(TokenForm(code)));
+
+        // OIDC Core §3.1.3.6 for an RS256 ID token: SHA-256 over the access token, left half, base64url.
+        var accessToken = body.GetProperty("access_token").GetString()!;
+        var idToken = body.GetProperty("id_token").GetString()!;
+        var digest = SHA256.HashData(Encoding.ASCII.GetBytes(accessToken));
+        Claims(idToken).GetProperty("at_hash").GetString().Should().Be(Base64Url.EncodeToString(digest.AsSpan(0, 16)));
+        Claims(accessToken).TryGetProperty("at_hash", out _).Should().BeFalse();
+        await ShouldVerifyAgainstServedJwksAsync(idToken);
+    }
+
+    [Fact]
+    public void A_client_pinned_to_an_algorithm_the_current_key_does_not_use_fails_startup()
+    {
+        // ES256 is published as the next key, so the subset rule passes; the key that signs is
+        // RS256, and a client that will accept only ES256 could never be issued an ID token.
+        using var keys = new RsaCurrentEcNextKeySource();
+        using var factory = new TestWebAppFactory(
+            configureBuilder: builder =>
+            {
+                builder.AddInMemoryClients(clients => clients.Add(PublicRegistration() with
+                {
+                    AllowedSigningAlgorithms = new HashSet<SigningAlgorithm> { SigningAlgorithm.ES256 },
+                }));
+                builder.Services.AddZeeKayDaSigningKeySource(_ => keys);
+            });
+
+        var act = () => factory.CreateClient();
+
+        act.Should().Throw<Exception>().WithMessage("*excludes_signing_key*RS256*", "the validator requires the current signing key's algorithm in the set");
+    }
+
+    [Fact]
+    public async Task A_key_the_client_no_longer_accepts_is_refused_before_any_token_is_issued()
+    {
+        // The client passed registration against an RS256 key; the ring then rotates to ES256.
+        // The endpoint must refuse before the access token is issued, so an issuer that persists
+        // access tokens is never handed one whose ID token will be refused.
+        var ring = new SwitchableRing(_time);
+        var accessTokens = new CountingAccessTokenIssuer();
+        using var factory = new TestWebAppFactory(
+            configureBuilder: builder =>
+            {
+                builder.Services.AddSingleton<TimeProvider>(_time);
+                builder.Services.AddLogging(logging => logging.AddProvider(_logs));
+                builder.AddInMemoryClients(clients => clients.Add(PublicRegistration() with
+                {
+                    AllowedSigningAlgorithms = new HashSet<SigningAlgorithm> { SigningAlgorithm.RS256 },
+                }));
+                builder.Services.AddSingleton<ISigningKeyRing>(ring);
+                builder.Services.AddKeyedSingleton<ITokenIssuer>(TokenKind.AccessToken, accessTokens);
+            },
+            mapEndpoints: MapHostPages);
+        using var client = NewClient(factory);
+        var code = await ObtainCodeWithAsync(client);
+        ring.SwitchToEs256();
+
+        var response = await PostTokenWithAsync(client, TokenForm(code));
+
+        await ShouldBeErrorAsync(response, "server_error", HttpStatusCode.InternalServerError);
+        accessTokens.IssuedCount.Should().Be(0, "the refusal precedes every issuance");
+        _logs.Entries.Should().Contain(entry => entry.Level == LogLevel.Error && entry.Message.Contains(PublicClient, StringComparison.Ordinal));
     }
 
     // ── Lifetimes ─────────────────────────────────────────────────────────────────────────────
@@ -859,6 +929,102 @@ public sealed class TokenEndpointTests : IDisposable
         {
             var registration = Interlocked.Increment(ref _reads) == 1 ? first : other;
             return new(string.Equals(registration.ClientId, clientId, StringComparison.Ordinal) ? registration : null);
+        }
+    }
+
+    /// <summary>
+    /// A ring over two real static rings, RS256 first and ES256 on demand: the one runtime
+    /// rotation the static ring cannot perform, so the endpoint's own pre-issuance check can be
+    /// exercised against a key the client's registration was never validated against.
+    /// </summary>
+    private sealed class SwitchableRing : ISigningKeyRing
+    {
+        private readonly StaticSigningKeyRing _rsa;
+        private readonly StaticSigningKeyRing _ec;
+        private volatile ISigningKeyRing _active;
+
+        public SwitchableRing(TimeProvider time)
+        {
+            _rsa = new StaticSigningKeyRing(new SingleKeySource(SigningAlgorithm.RS256), time);
+            _ec = new StaticSigningKeyRing(new SingleKeySource(SigningAlgorithm.ES256), time);
+            _active = _rsa;
+        }
+
+        public void SwitchToEs256() => _active = _ec;
+
+        public SigningKeySet Current => _active.Current;
+
+        public ValueTask<SigningOutcome> SignAsync<TState>(TState state, Func<SigningContext, TState, ReadOnlyMemory<byte>> buildSigningInput, CancellationToken cancellationToken = default) =>
+            _active.SignAsync(state, buildSigningInput, cancellationToken);
+
+        async ValueTask ISigningKeyRing.EnsureInitializedAsync(CancellationToken cancellationToken)
+        {
+            await ((ISigningKeyRing)_rsa).EnsureInitializedAsync(cancellationToken);
+            await ((ISigningKeyRing)_ec).EnsureInitializedAsync(cancellationToken);
+        }
+
+        SigningKeySet? ISigningKeyRing.CurrentOrNull => _active.CurrentOrNull;
+    }
+
+    /// <summary>A source over one freshly generated key of the given algorithm.</summary>
+    private sealed class SingleKeySource(SigningAlgorithm algorithm) : ISigningKeySource
+    {
+        private readonly RSA? _rsa = algorithm == SigningAlgorithm.RS256 ? RSA.Create(2048) : null;
+        private readonly ECDsa? _ecdsa = algorithm == SigningAlgorithm.ES256 ? ECDsa.Create(ECCurve.NamedCurves.nistP256) : null;
+
+        public ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+        {
+            var publicKey = _rsa is not null
+                ? PublicKeyParameters.FromRsa(_rsa.ExportParameters(includePrivateParameters: false))
+                : PublicKeyParameters.FromEc(_ecdsa!.ExportParameters(includePrivateParameters: false));
+            var current = new SourceKey(new SourceKeyId(algorithm.ToString().ToLowerInvariant()), algorithm, publicKey, ExpiresAt: null);
+            return new(SourceKeySet.Create(previous: null, current, next: null));
+        }
+
+        public ValueTask<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default) =>
+            new(_rsa is not null
+                ? new LocalSigner(algorithm, RSA.Create(_rsa.ExportParameters(includePrivateParameters: true)))
+                : new LocalSigner(algorithm, ECDsa.Create(_ecdsa!.ExportParameters(includePrivateParameters: true))));
+    }
+
+    /// <summary>An access-token issuer that counts how often it was asked to issue, standing in for one that would persist what it issues.</summary>
+    private sealed class CountingAccessTokenIssuer : ITokenIssuer
+    {
+        private int _issued;
+
+        public int IssuedCount => Volatile.Read(ref _issued);
+
+        public ValueTask<IssuedToken> IssueAsync(TokenIssuanceContext context, TokenPayload payload, CancellationToken cancellationToken = default)
+        {
+            Interlocked.Increment(ref _issued);
+            return new(new IssuedToken("opaque-" + StoreKeyGenerator.Generate(), TokenKind.AccessToken));
+        }
+    }
+
+    /// <summary>A source whose current key is RS256 and whose next key is ES256, so ES256 is advertised while RS256 signs.</summary>
+    private sealed class RsaCurrentEcNextKeySource : ISigningKeySource, IDisposable
+    {
+        private readonly RSA _rsa = RSA.Create(2048);
+        private readonly ECDsa _ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+
+        public ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+        {
+            var current = new SourceKey(new SourceKeyId("rsa-current"), SigningAlgorithm.RS256,
+                PublicKeyParameters.FromRsa(_rsa.ExportParameters(includePrivateParameters: false)), ExpiresAt: null);
+            var next = new SourceKey(new SourceKeyId("ec-next"), SigningAlgorithm.ES256,
+                PublicKeyParameters.FromEc(_ecdsa.ExportParameters(includePrivateParameters: false)), ExpiresAt: null);
+            return new ValueTask<SourceKeySet>(SourceKeySet.Create(previous: null, current, next));
+        }
+
+        public ValueTask<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default) =>
+            new(id.Value == "ec-next"
+                ? new LocalSigner(SigningAlgorithm.ES256, ECDsa.Create(_ecdsa.ExportParameters(includePrivateParameters: true)))
+                : new LocalSigner(SigningAlgorithm.RS256, RSA.Create(_rsa.ExportParameters(includePrivateParameters: true))));
+
+        public void Dispose()
+        {
+            _rsa.Dispose();
+            _ecdsa.Dispose();
         }
     }
 

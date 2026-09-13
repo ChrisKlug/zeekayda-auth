@@ -21,29 +21,11 @@ public sealed class TokenIssuanceContextTests
     }
 
     [Fact]
-    public void Client_throws_InvalidOperationException_on_a_default_instance()
-    {
-        // default(TokenIssuanceContext) would otherwise hand a third-party issuer a null Client
-        // from a member the API declares non-null — the SigningContext pattern closes it.
-        var context = default(TokenIssuanceContext);
-
-        var act = () => context.Client;
-
-        act.Should().Throw<InvalidOperationException>();
-    }
-
-    [Fact]
     public void Constructor_throws_ArgumentNullException_if_client_is_null()
     {
-        var act = () => new TokenIssuanceContext(null!, TokenKind.AccessToken);
+        var act = () => new AccessTokenIssuanceContext(null!);
 
         act.Should().Throw<ArgumentNullException>();
-    }
-
-    [Fact]
-    public void ToString_prints_default_instances_without_throwing()
-    {
-        default(TokenIssuanceContext).ToString().Should().Contain("<default>");
     }
 
     [Fact]
@@ -51,9 +33,19 @@ public sealed class TokenIssuanceContextTests
     {
         var client = new TestClient();
 
-        var context = new TokenIssuanceContext(client, TokenKind.IdToken);
+        var context = new IdTokenIssuanceContext(client, new IssuedToken("access", TokenKind.AccessToken));
 
         context.Client.Should().BeSameAs(client);
-        context.Kind.Should().Be(TokenKind.IdToken);
+        context.AccessToken.Value.Should().Be("access");
+    }
+
+    [Fact]
+    public void ToString_names_the_type_and_the_client_only()
+    {
+        var context = new IdTokenIssuanceContext(new TestClient(), new IssuedToken("eyJhbGciOiJSUzI1NiJ9.secret.payload", TokenKind.AccessToken));
+
+        context.ToString().Should().Contain(nameof(IdTokenIssuanceContext))
+            .And.Contain("test-client")
+            .And.NotContain("secret");
     }
 }

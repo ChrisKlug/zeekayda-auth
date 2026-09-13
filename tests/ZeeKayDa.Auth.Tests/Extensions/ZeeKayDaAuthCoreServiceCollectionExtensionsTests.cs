@@ -65,7 +65,7 @@ public sealed class ZeeKayDaAuthCoreServiceCollectionExtensionsTests
     {
         public ValueTask<IssuedToken> IssueAsync(
             TokenIssuanceContext context, TokenPayload payload, CancellationToken cancellationToken = default)
-            => new(new IssuedToken("stub", context.Kind));
+            => new(new IssuedToken("stub", context is IdTokenIssuanceContext ? TokenKind.IdToken : TokenKind.AccessToken));
     }
 
     [Theory]

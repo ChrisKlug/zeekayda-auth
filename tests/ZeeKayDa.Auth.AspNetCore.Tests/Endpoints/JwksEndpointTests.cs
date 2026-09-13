@@ -230,7 +230,7 @@ public sealed class JwksEndpointTests : IDisposable
     {
         var issuer = factory.Services.GetRequiredKeyedService<ITokenIssuer>(TokenKind.IdToken);
         var token = await issuer.IssueAsync(
-            new TokenIssuanceContext(new TestClient(), TokenKind.IdToken),
+            new IdTokenIssuanceContext(new TestClient(), new IssuedToken("access-token", TokenKind.AccessToken)),
             new TokenPayload(new Dictionary<string, object?> { ["sub"] = "user-1" }),
             TestContext.Current.CancellationToken);
 
@@ -354,7 +354,7 @@ public sealed class JwksEndpointTests : IDisposable
 
         var issuer = factory.Services.GetRequiredKeyedService<ITokenIssuer>(TokenKind.IdToken);
         var token = await issuer.IssueAsync(
-            new TokenIssuanceContext(new TestClient(), TokenKind.IdToken),
+            new IdTokenIssuanceContext(new TestClient(), new IssuedToken("access-token", TokenKind.AccessToken)),
             new TokenPayload(new Dictionary<string, object?> { ["sub"] = "user-1" }),
             TestContext.Current.CancellationToken);
 

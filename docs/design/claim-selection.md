@@ -1,8 +1,8 @@
 # Claim selection and token contents
 
 **Status: provisional, partly built.** The lifetimes and the protocol claims under "Protocol claims
-and lifetimes" are shipped; the scope claim lists, `UserInfoClaims`, `Audience`, selection and
-`at_hash` are not. Settled in conversation 2026-09-11 (issue #92). This sketch sits *downstream* of `claims-resolution.md`: that
+and lifetimes" are shipped; the scope claim lists, `UserInfoClaims`, `Audience` and selection are not; the "Assembly
+order" below is built. Settled in conversation 2026-09-11 (issue #92). This sketch sits *downstream* of `claims-resolution.md`: that
 seam produces the pool of subject claims, this one decides which of them land in which destination,
 and what the access token's audience is. The durable constraints are in
 `docs/decisions/token-issuance-and-claims.md` and `docs/decisions/token-contents.md`; read those as
@@ -297,19 +297,10 @@ it resolves", which for the framework's JWT issuer is `at_hash` and nothing else
 change to `ITokenIssuer`'s documented contract ("the issuer does not select or amend them"); the
 implementation slice rewrites that XML doc in the same PR that adds `AccessToken`, so a custom issuer
 reads the new rule and not the old one. The ID-token payload is therefore serialised inside the
-callback, after `at_hash` is added:
-
-```csharp
-public readonly record struct TokenIssuanceContext(
-    IClientMetadata Client,
-    TokenKind Kind,
-    IssuedToken? AccessToken = null);   // set for an ID-token issuance; null otherwise
-```
-
-The hand-written `PrintMembers` and the default-instance guard stay; the new member is never printed,
-and `IssuedToken` prints its length only. The framework's JWT issuer throws when `Kind` is `IdToken`
-and `AccessToken` is `null` or not an access token, and when `Kind` is `AccessToken` and one is
-supplied, so an endpoint bug cannot drop the binding silently. A custom ID-token issuer that ignores
+callback, after `at_hash` is added. Built: the context is `AccessTokenIssuanceContext(client)` or
+`IdTokenIssuanceContext(client, accessToken)`, a closed pair of types with no nullable slot, so an
+unbound ID token cannot be expressed; the shipped shape is in `TokenIssuanceContext.cs` and the
+constraints in `docs/decisions/token-contents.md`. A custom ID-token issuer that ignores
 `AccessToken` issues a spec-valid token without the binding; that is the host's choice, and the
 register's "always carries" describes the framework's issuer. On the code grant the ID token is
 issued before the refresh grant is persisted, so a refusal in the callback orphans no family row and
