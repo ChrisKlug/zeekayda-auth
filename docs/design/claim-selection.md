@@ -4,7 +4,8 @@
 conversation 2026-09-11 (issue #92). This sketch sits *downstream* of `claims-resolution.md`: that
 seam produces the pool of subject claims, this one decides which of them land in which destination,
 and what the access token's audience is. The durable constraints are in
-`docs/decisions/token-issuance-and-claims.md`; read those as authoritative.
+`docs/decisions/token-issuance-and-claims.md` and `docs/decisions/token-contents.md`; read those as
+authoritative.
 
 ## The model in one sentence
 
@@ -252,6 +253,77 @@ signature through the ring, `iss`, `exp`, `typ` of `at+jwt`, `aud` containing th
 `openid` in `scope`. It then resolves the pool fresh through `IClaimsProvider` with a `null`
 `FamilyId` — never from anything stored — selects the userinfo set as above, and returns it with
 `sub` (OIDC Core §5.3.2 MUST).
+
+## Protocol claims and lifetimes
+
+The endpoint writes the protocol claims from the grant; `token-contents.md` fixes the lists. Two
+shapes are new. The server-wide defaults sit beside the refresh-token lifetime that already exists,
+and a registration overrides either one with `null` meaning "the server value":
+
+```csharp
+public sealed class TokenEndpointOptions
+{
+    public TimeSpan AccessTokenLifetime { get; set; } = TimeSpan.FromHours(1);
+    public TimeSpan IdTokenLifetime { get; set; } = TimeSpan.FromMinutes(5);
+    // RefreshTokenLifetime, AbsoluteFamilyLifetime as today
+}
+
+public interface IClientMetadata
+{
+    TimeSpan? AccessTokenLifetime => null;
+    TimeSpan? IdTokenLifetime => null;
+    // AllowedSigningAlgorithms as today, now also required to contain the signing key's algorithm
+}
+```
+
+Both server values must exceed zero, checked by the options validator at startup; a non-null client
+value must too, checked by the registration validator, and both join `ClientRegistration` and its
+fingerprint. There is no upper bound on either. `exp` is `now` plus the effective lifetime, and the
+addition saturates at `DateTimeOffset.MaxValue` instead of throwing — only that saturating step is
+shared with `ComputeFamilyAbsoluteExpiry`, which adds a different option. A server lifetime longer
+than `AbsoluteFamilyLifetime` logs a startup warning the way the `TimeSpan.MaxValue` sentinel does; a
+client override longer than it warns when its registration is validated, since a custom repository
+may validate on resolution rather than at startup.
+
+**Assembly order.** The access token is issued first, because `at_hash` is the left half of a hash
+over the access token's exact wire value — its compact serialization for a JWT, the handle for a
+reference token (OIDC Core §3.1.3.6). The hash function follows the ID token's own `alg`, and
+the client's `AllowedSigningAlgorithms` check is against the key that signs, so both happen inside
+the ring's signing callback where the resolved key is known — the same place the header is built.
+`TokenPayload` stays finalized: the access token reaches the ID-token issuer on the issuance context,
+which was built to be widened, and the issuer's contract becomes "adds only what depends on the key
+it resolves", which for the framework's JWT issuer is `at_hash` and nothing else. That is a deliberate
+change to `ITokenIssuer`'s documented contract ("the issuer does not select or amend them"); the
+implementation slice rewrites that XML doc in the same PR that adds `AccessToken`, so a custom issuer
+reads the new rule and not the old one. The ID-token payload is therefore serialised inside the
+callback, after `at_hash` is added:
+
+```csharp
+public readonly record struct TokenIssuanceContext(
+    IClientMetadata Client,
+    TokenKind Kind,
+    IssuedToken? AccessToken = null);   // set for an ID-token issuance; null otherwise
+```
+
+The hand-written `PrintMembers` and the default-instance guard stay; the new member is never printed,
+and `IssuedToken` prints its length only. The framework's JWT issuer throws when `Kind` is `IdToken`
+and `AccessToken` is `null` or not an access token, and when `Kind` is `AccessToken` and one is
+supplied, so an endpoint bug cannot drop the binding silently. A custom ID-token issuer that ignores
+`AccessToken` issues a spec-valid token without the binding; that is the host's choice, and the
+register's "always carries" describes the framework's issuer. On the code grant the ID token is
+issued before the refresh grant is persisted, so a refusal in the callback orphans no family row and
+burns nothing but the code. On a refresh the presented token is already consumed by then, so a
+refusal there is the half-applied rotation the register already requires to end in a revoked family.
+
+**Provenance.** `exp` and `iat` come from one clock read per issuance, shared by both tokens: `exp`
+is that instant plus the effective lifetime for the kind. `auth_time`, `acr` and `amr` are the
+grant's original authentication event: the code's `AuthTime`, `Acr` and `Amr` on the code grant, and
+on a refresh the same three values from the refresh grant's encrypted payload, where
+`RefreshTokenEntry` gains them at family birth and every rotation copies them verbatim. `nonce` comes
+from the code's `Nonce` and is written on the code grant only; whether an ID token is issued on
+refresh at all is the refresh slice's call, and if one is it carries no `nonce`. `client_id` and the
+ID token's `aud` come from the grant's `ClientId`; `sub` from its `Sub`; `scope` is the granted scope
+list joined by spaces. `jti` is 128 bits from `RandomNumberGenerator`, base64url.
 
 ## Later, deliberately
 

@@ -3,7 +3,8 @@
 **Status: provisional.** Nothing here is built — the token endpoint answers `501`. Recovered from
 ADR 0010 (accepted 2026-06-20, issue #187), which was deleted in the register migration.
 The constraints this design produced survived and are in
-`docs/decisions/token-issuance-and-claims.md` — read those as authoritative. What follows is only
+`docs/decisions/token-issuance-and-claims.md` and `docs/decisions/token-contents.md` — read those as
+authoritative. What follows is only
 the shape, plus the alternatives already rejected. What is selected from the result, and
 into which token, is `claim-selection.md`.
 
