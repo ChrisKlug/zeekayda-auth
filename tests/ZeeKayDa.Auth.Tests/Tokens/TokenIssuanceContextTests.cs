@@ -21,29 +21,11 @@ public sealed class TokenIssuanceContextTests
     }
 
     [Fact]
-    public void Client_throws_InvalidOperationException_on_a_default_instance()
-    {
-        // default(TokenIssuanceContext) would otherwise hand a third-party issuer a null Client
-        // from a member the API declares non-null — the SigningContext pattern closes it.
-        var context = default(TokenIssuanceContext);
-
-        var act = () => context.Client;
-
-        act.Should().Throw<InvalidOperationException>();
-    }
-
-    [Fact]
     public void Constructor_throws_ArgumentNullException_if_client_is_null()
     {
         var act = () => TokenIssuanceContext.ForAccessToken(null!);
 
         act.Should().Throw<ArgumentNullException>();
-    }
-
-    [Fact]
-    public void ToString_prints_default_instances_without_throwing()
-    {
-        default(TokenIssuanceContext).ToString().Should().Contain("<default>");
     }
 
     [Fact]

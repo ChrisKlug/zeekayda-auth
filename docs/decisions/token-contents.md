@@ -96,8 +96,10 @@ for a client whose ID token would then be refused; and the JWT issuer checks the
 resolved against the set inside the signing callback, before an ID token is built. That last
 refusal is a throw from the callback, before the signer is touched, and the endpoint answers
 `server_error`; the client would have rejected the token anyway, and a log line at our end beats a
-silent failure at theirs. A host that replaces the ID-token issuer takes over both this check and
-`at_hash`; the framework does not verify either after the fact. ID tokens only, which is what the setting describes — an access
+silent failure at theirs. A host that replaces the ID-token issuer takes over the in-callback
+check and `at_hash`, which the framework does not verify after the fact; the endpoint's check
+against the ring's current key applies to every issuer, since the policy describes a JWS `alg`
+and the ring is the framework's one signer. ID tokens only, which is what the setting describes — an access
 token's algorithm is the resource server's concern. Ordinary rotation never trips this, since a new
 key keeps its algorithm; only an algorithm migration does, and the operator widens or clears the
 affected sets first. Not a per-algorithm key chooser: several signers would make the self-test, the

@@ -61,9 +61,10 @@ public sealed class JwtTokenIssuer : ITokenIssuer
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Thrown, before anything is signed, when an ID token is requested without the access token
-    /// it must be bound to, when <paramref name="payload"/> already carries <c>at_hash</c>, or
-    /// when the client's <see cref="Clients.IClientMetadata.AllowedSigningAlgorithms"/> excludes
-    /// the algorithm of the key the ring resolved for an ID token.
+    /// it must be bound to, when that access token is not ASCII, when <paramref name="payload"/>
+    /// already carries <c>at_hash</c>, or when the client's
+    /// <see cref="Clients.IClientMetadata.AllowedSigningAlgorithms"/> excludes the algorithm of the
+    /// key the ring resolved for an ID token.
     /// </exception>
     /// <exception cref="System.Text.Json.JsonException">
     /// Thrown when a claim value cannot be serialized — a reference cycle, or a type

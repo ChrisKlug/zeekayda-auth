@@ -11,16 +11,14 @@ namespace ZeeKayDa.Auth.Tokens;
 /// The context has exactly two states and one way to build each: <see cref="ForAccessToken"/>
 /// and <see cref="ForIdToken"/>. An access token carries no companion; an ID token is always
 /// bound to the access token it hashes into <c>at_hash</c> (OpenID Connect Core §3.1.3.6). No
-/// other combination can be constructed. It deliberately carries no tenant field; multi-tenancy
-/// is not decided.
+/// other combination can be constructed, and every instance has a client. It deliberately
+/// carries no tenant field; multi-tenancy is not decided.
 /// </remarks>
-public readonly record struct TokenIssuanceContext
+public sealed class TokenIssuanceContext
 {
-    private readonly IClientMetadata? _client;
-
     private TokenIssuanceContext(IClientMetadata client, TokenKind kind, IssuedToken? accessToken)
     {
-        _client = client;
+        Client = client;
         Kind = kind;
         AccessToken = accessToken;
     }
@@ -70,14 +68,15 @@ public readonly record struct TokenIssuanceContext
         return new TokenIssuanceContext(client, TokenKind.IdToken, accessToken);
     }
 
+    /// <summary>
+    /// The client id, the kind, and whether a companion is present — never the token itself,
+    /// which is a bearer credential.
+    /// </summary>
+    public override string ToString() =>
+        $"{nameof(TokenIssuanceContext)} {{ {nameof(Client)} = {Client.ClientId}, {nameof(Kind)} = {Kind}, {nameof(AccessToken)} = {(AccessToken is null ? "none" : "<present>")} }}";
+
     /// <summary>Gets the client the token is issued for.</summary>
-    /// <exception cref="InvalidOperationException">
-    /// Thrown when this instance is <see langword="default"/>(<see cref="TokenIssuanceContext"/>)
-    /// rather than one obtained from <see cref="ForAccessToken"/> or <see cref="ForIdToken"/>.
-    /// </exception>
-    public IClientMetadata Client => _client ?? throw new InvalidOperationException(
-        $"{nameof(TokenIssuanceContext)} was default-initialized; obtain one from " +
-        $"{nameof(ForAccessToken)} or {nameof(ForIdToken)}.");
+    public IClientMetadata Client { get; }
 
     /// <summary>Gets the kind of token being issued.</summary>
     public TokenKind Kind { get; }
@@ -87,20 +86,4 @@ public readonly record struct TokenIssuanceContext
     /// <see cref="Kind"/> is <see cref="TokenKind.AccessToken"/>.
     /// </summary>
     public IssuedToken? AccessToken { get; }
-
-    // The record's synthesized PrintMembers reads Client, so ToString() on a default instance
-    // would throw from the guard above — a debugger watch or a log line is the last place that
-    // should fail. Print the default as such instead. The access token is a bearer credential
-    // and is never printed.
-    private bool PrintMembers(System.Text.StringBuilder builder)
-    {
-        if (_client is null)
-        {
-            builder.Append("<default>");
-            return true;
-        }
-
-        builder.Append($"{nameof(Client)} = {_client.ClientId}, {nameof(Kind)} = {Kind}, {nameof(AccessToken)} = {(AccessToken is null ? "none" : "<present>")}");
-        return true;
-    }
 }
