@@ -434,6 +434,18 @@ public sealed class JwtTokenIssuerTests
     }
 
     [Fact]
+    public void Changing_the_kind_of_a_bound_ID_token_context_is_refused()
+    {
+        // A `with` that turns an ID-token context into an access-token one must not keep the
+        // companion along for the ride.
+        var context = new TokenIssuanceContext(Client, TokenKind.IdToken, new IssuedToken("access", TokenKind.AccessToken));
+
+        var act = () => context with { Kind = TokenKind.AccessToken };
+
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
     public async Task An_ID_token_issuance_without_an_access_token_is_refused_before_anything_signs()
     {
         var ring = new CountingRing();

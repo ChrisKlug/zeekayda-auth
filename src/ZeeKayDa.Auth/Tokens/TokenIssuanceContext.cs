@@ -30,7 +30,24 @@ public readonly record struct TokenIssuanceContext(IClientMetadata Client, Token
     private readonly IClientMetadata? _client =
         Client ?? throw new ArgumentNullException(nameof(Client));
 
+    private readonly TokenKind _kind = Kind;
+
     private readonly IssuedToken? _accessToken = Companion(Kind, AccessToken);
+
+    /// <summary>Gets the kind of token being issued.</summary>
+    /// <exception cref="ArgumentException">
+    /// Thrown when the kind set is not <see cref="TokenKind.IdToken"/> while the context carries
+    /// an <see cref="AccessToken"/>: a companion belongs to an ID token only.
+    /// </exception>
+    public TokenKind Kind
+    {
+        get => _kind;
+        init
+        {
+            Companion(value, _accessToken);
+            _kind = value;
+        }
+    }
 
     /// <summary>
     /// Gets the access token an ID token is bound to; <see langword="null"/> for an access token.
@@ -83,15 +100,13 @@ public readonly record struct TokenIssuanceContext(IClientMetadata Client, Token
         if (kind != TokenKind.IdToken)
         {
             throw new ArgumentException(
-                $"Only an ID token is bound to an access token; a {kind} issuance carries none.",
-                nameof(accessToken));
+                $"Only an ID token is bound to an access token; a {kind} issuance carries none.");
         }
 
         if (accessToken.Kind != TokenKind.AccessToken)
         {
             throw new ArgumentException(
-                $"An ID token is bound to an access token, not to a token of kind {accessToken.Kind}.",
-                nameof(accessToken));
+                $"An ID token is bound to an access token, not to a token of kind {accessToken.Kind}.");
         }
 
         return accessToken;
