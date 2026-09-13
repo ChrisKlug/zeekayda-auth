@@ -454,6 +454,7 @@ public sealed class TokenEndpointTests : IDisposable
         var body = await ReadJsonAsync(await PostTokenWithAsync(client, TokenForm(code)));
 
         body.GetProperty("expires_in").GetInt64().Should().Be(600, "the lifetime comes from the registration the credential was checked against");
+        repository.ReadsSinceReset.Should().Be(1, "the token request reads the repository once, for authentication, and never again");
     }
 
     // ── PKCE ──────────────────────────────────────────────────────────────────────────────────
@@ -758,6 +759,8 @@ public sealed class TokenEndpointTests : IDisposable
     private sealed class FirstReadThenOtherRepository(IClientRegistration first, IClientRegistration other) : IClientRepository
     {
         private int _reads;
+
+        public int ReadsSinceReset => Volatile.Read(ref _reads);
 
         public void ResetToFirst() => Interlocked.Exchange(ref _reads, 0);
 

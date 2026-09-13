@@ -140,8 +140,9 @@ internal sealed class CompositeClientAuthenticator
             Form = form,
             Headers = headers,
         };
+        // A null from a caller-supplied authenticator is a refusal, not a fault to surface.
         var outcome = await matchedAuthenticator.AuthenticateAsync(context, cancellationToken);
-        return outcome.Authenticated ? AuthenticatedClient.Accepted(client) : AuthenticatedClient.Refused;
+        return outcome is { Authenticated: true } ? AuthenticatedClient.Accepted(client) : AuthenticatedClient.Refused;
     }
 
     private bool TryCanHandle(IClientAuthenticator authenticator, TokenRequestContext context, out string? method)
