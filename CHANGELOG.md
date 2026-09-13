@@ -14,8 +14,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   ID token's own `alg` implies, over the access token issued in the same response (OpenID
   Connect Core §3.1.3.6). The hash is computed inside the signing key ring's callback from the
   key that signs, as the header already is, so the two cannot disagree. `TokenIssuanceContext`
-  is now built through two named paths, `ForAccessToken(client)` and
-  `ForIdToken(client, accessToken)`, so an unbound ID token cannot be expressed; the
+  is now an abstract base with two concrete types, `AccessTokenIssuanceContext(client)` and
+  `IdTokenIssuanceContext(client, accessToken)`, so an unbound ID token cannot be expressed; the
   framework's `JwtTokenIssuer` refuses a payload that already claims `at_hash`, and an access
   token that is not ASCII. In the same callback it enforces the client's
   `AllowedSigningAlgorithms` against the resolved key: a client restricted to an algorithm the

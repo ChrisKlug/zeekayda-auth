@@ -124,12 +124,12 @@ internal sealed class AuthorizationCodeGrant
         {
             // The access token first: the ID token is assembled after it so it can be bound to it.
             accessToken = await Issuer(context, TokenKind.AccessToken).IssueAsync(
-                TokenIssuanceContext.ForAccessToken(client),
+                new AccessTokenIssuanceContext(client),
                 accessTokenPayload.Payload,
                 context.RequestAborted).ConfigureAwait(false);
 
             idToken = await Issuer(context, TokenKind.IdToken).IssueAsync(
-                TokenIssuanceContext.ForIdToken(client, accessToken),
+                new IdTokenIssuanceContext(client, accessToken),
                 idTokenPayload.Payload,
                 context.RequestAborted).ConfigureAwait(false);
         }

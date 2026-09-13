@@ -60,9 +60,8 @@ public sealed class JwtTokenIssuer : ITokenIssuer
     /// Thrown when <paramref name="context"/>.Kind is not a defined <see cref="TokenKind"/> member.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// Thrown, before anything is signed, when an ID token is requested without the access token
-    /// it must be bound to, when that access token is not ASCII, when <paramref name="payload"/>
-    /// already carries <c>at_hash</c>, or when the client's
+    /// Thrown, before anything is signed, when the access token an ID token is bound to is not
+    /// ASCII, when <paramref name="payload"/> already carries <c>at_hash</c>, or when the client's
     /// <see cref="Clients.IClientMetadata.AllowedSigningAlgorithms"/> excludes the algorithm of the
     /// key the ring resolved for an ID token.
     /// </exception>
@@ -86,7 +85,7 @@ public sealed class JwtTokenIssuer : ITokenIssuer
                 nameof(context), context.Kind, $"Not a defined {nameof(TokenKind)} member."),
         };
 
-        var accessTokenToBind = context.Kind == TokenKind.IdToken ? RequireAccessToken(context, payload) : null;
+        var accessTokenToBind = context is IdTokenIssuanceContext idToken ? RequireAccessToken(idToken, payload) : null;
 
         var outcome = await _ring.SignAsync(
             new SigningState(context, payload, typ, accessTokenToBind),
@@ -107,16 +106,13 @@ public sealed class JwtTokenIssuer : ITokenIssuer
     }
 
     /// <summary>
-    /// An ID token is never issued unbound: the access token it hashes must be present, and the
-    /// payload must not already claim to carry the hash, since the value written here is the
-    /// only one that can agree with the key that signs.
+    /// The payload must not already claim to carry the hash, since the value written here is the
+    /// only one that can agree with the key that signs; and the access token it hashes must be
+    /// the ASCII octets a relying party will hash too.
     /// </summary>
-    private static string RequireAccessToken(TokenIssuanceContext context, TokenPayload payload)
+    private static string RequireAccessToken(IdTokenIssuanceContext context, TokenPayload payload)
     {
-        // Unreachable through ForIdToken, which never builds an unbound ID-token context; kept
-        // so a default-initialized context fails here with a reason rather than a null reference.
-        var accessToken = context.AccessToken ?? throw new InvalidOperationException(
-            "An ID token must be bound to the access token issued with it: the issuance context carries none.");
+        var accessToken = context.AccessToken;
 
         if (payload.Claims.ContainsKey(AccessTokenHashClaim))
         {
