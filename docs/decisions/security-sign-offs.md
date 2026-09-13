@@ -1489,3 +1489,35 @@ Medium/Lows verified by both agents.
 - Residuals, accepted: a captured code can fail one login for its owner; a mutable ORM registration
   can change within one request, which is the repository contract, not this endpoint — no tests.
   The at_hash claim and the per-client ID-token algorithm check are the next slice.
+
+## 2026-09-13 — the ID token bound to its access token, and the client algorithm policy (#647, commit `fef4393`)
+
+Scoped to `JwtTokenIssuer`, `TokenIssuanceContext`, the grant's pre-issuance check and the
+registration validator's new rule. One round (Copilot code lens clean; security and architect
+agents, security and architecture lenses, CodeScene), one converged High fixed and lens-verified,
+then the maintainer's rulings verified by both agents, and the two context types, which the maintainer
+chose over factories on a nullable slot, verified by the architecture lens.
+
+- `at_hash`, the header and the signature come from the one key the ring resolved in the callback;
+  the hash follows that key's algorithm. Closed —
+  `An_ID_token_carries_at_hash_over_the_access_token_with_the_hash_the_key_implies`,
+  `An_ID_token_signed_with_ES384_hashes_the_access_token_with_SHA_384`,
+  `An_ID_token_reads_the_key_only_inside_the_callback_and_resolves_it_once`,
+  `The_ID_token_is_bound_to_the_access_token_by_at_hash`.
+- An unbound ID token is unrepresentable; a payload claiming `at_hash`, a non-ASCII access token or
+  a companion of the wrong kind is refused before anything signs. Closed —
+  `An_ID_token_context_cannot_be_built_without_an_access_token`,
+  `An_ID_token_context_refuses_a_companion_that_is_not_an_access_token`,
+  `A_payload_already_carrying_at_hash_is_refused_before_anything_signs`,
+  `An_access_token_that_is_not_ASCII_is_refused_before_anything_signs`.
+- The client's algorithm policy is enforced at registration, before issuance and in the callback,
+  so nothing is issued for a client the signing key cannot serve. Closed —
+  `A_client_whose_allowed_algorithms_exclude_the_current_signing_key_fails_registration`,
+  `A_client_pinned_to_an_algorithm_the_current_key_does_not_use_fails_startup`,
+  `A_key_the_client_no_longer_accepts_is_refused_before_any_token_is_issued`,
+  `A_client_whose_allowed_algorithms_exclude_the_signing_key_is_refused_before_the_signer_is_touched`,
+  `The_algorithm_policy_does_not_apply_to_access_tokens`.
+- The context never prints the token it carries. Closed —
+  `TokenIssuanceContext_ToString_does_not_contain_the_access_token`.
+- Accepted seam, not a residual: a host that replaces the ID-token issuer takes over `at_hash` and
+  the algorithm check, as `token-contents.md` records — no test.
