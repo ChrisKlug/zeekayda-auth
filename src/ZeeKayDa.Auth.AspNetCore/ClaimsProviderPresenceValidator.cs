@@ -9,10 +9,11 @@ namespace ZeeKayDa.Auth.AspNetCore;
 /// tokens carrying <c>sub</c> and nothing else.
 /// </summary>
 /// <remarks>
-/// Uses <see cref="IServiceProviderIsService"/> to inspect the container without resolving the
-/// provider, which is scoped and may need a request to construct. If
-/// <see cref="IServiceProviderIsService"/> is absent (a third-party container), the check is
-/// skipped rather than failing with a confusing resolution error.
+/// Asks <see cref="IServiceProviderIsService"/> where the container offers it, so the provider,
+/// which is scoped and may need a request to construct, is not resolved. A container that does
+/// not offer it is asked to resolve the provider from the startup scope instead: the check is
+/// what makes the seam mandatory, so it cannot be the one thing a third-party container is
+/// allowed to skip.
 /// </remarks>
 internal sealed class ClaimsProviderPresenceValidator : IStartupVerifier
 {
@@ -25,11 +26,7 @@ internal sealed class ClaimsProviderPresenceValidator : IStartupVerifier
         IServiceProvider scopedServices,
         CancellationToken cancellationToken)
     {
-        var isService = scopedServices.GetService<IServiceProviderIsService>();
-        if (isService is null)
-            return ValueTask.CompletedTask;
-
-        if (!isService.IsService(typeof(IClaimsProvider)))
+        if (!IsProviderRegistered(scopedServices))
         {
             context.AddFailure(
                 "claims.provider.missing",
@@ -40,4 +37,9 @@ internal sealed class ClaimsProviderPresenceValidator : IStartupVerifier
 
         return ValueTask.CompletedTask;
     }
+
+    private static bool IsProviderRegistered(IServiceProvider scopedServices) =>
+        scopedServices.GetService<IServiceProviderIsService>() is { } isService
+            ? isService.IsService(typeof(IClaimsProvider))
+            : scopedServices.GetService<IClaimsProvider>() is not null;
 }

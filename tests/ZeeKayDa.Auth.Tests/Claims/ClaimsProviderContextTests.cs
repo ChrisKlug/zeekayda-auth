@@ -15,6 +15,33 @@ public sealed class ClaimsProviderContextTests
     }
 
     [Fact]
+    public void The_scopes_a_provider_is_handed_are_a_read_only_copy_of_the_grants_list()
+    {
+        // The grant's own list is what the token's scope claim is written from. A provider must
+        // not hold it: a mutable backing array could be downcast and rewritten after selection.
+        var grantScopes = new List<string> { "openid", "orders.read" };
+        var context = new ClaimsProviderContext("user-1", grantScopes, new HashSet<string>(), "family");
+
+        grantScopes[1] = "orders.write";
+
+        context.Scopes.Should().Equal("openid", "orders.read");
+        ((IList<string>)context.Scopes).IsReadOnly.Should().BeTrue();
+        context.Scopes.Should().NotBeOfType<string[]>();
+    }
+
+    [Fact]
+    public void The_claim_types_a_provider_is_handed_are_a_read_only_copy()
+    {
+        var wanted = new HashSet<string> { "name" };
+        var context = new ClaimsProviderContext("user-1", ["openid"], wanted, null);
+
+        wanted.Add("email");
+
+        context.ClaimTypes.Should().BeEquivalentTo(["name"]);
+        ((ICollection<string>)context.ClaimTypes).IsReadOnly.Should().BeTrue();
+    }
+
+    [Fact]
     public void ToString_names_the_scopes_and_counts_the_claim_types_but_never_prints_the_subject()
     {
         var context = new ClaimsProviderContext("chris@example.com", ["openid", "profile"], new HashSet<string> { "name" }, "family-1");

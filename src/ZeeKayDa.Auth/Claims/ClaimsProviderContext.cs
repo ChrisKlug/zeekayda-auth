@@ -1,3 +1,5 @@
+using System.Collections.Frozen;
+
 namespace ZeeKayDa.Auth.Claims;
 
 /// <summary>
@@ -24,7 +26,9 @@ namespace ZeeKayDa.Auth.Claims;
 /// <remarks>
 /// The client that asked is deliberately absent. Claims resolution is a subject-level concern;
 /// the only client-dependent step is selection, which runs after the provider returns and can
-/// only widen what is kept.
+/// only widen what is kept. The collections are snapshotted at construction into read-only
+/// copies the context owns, so a provider holds no reference to the grant's own scope list and
+/// nothing it does to what it was handed can reach a token.
 /// </remarks>
 /// <exception cref="ArgumentException">Thrown when <paramref name="Sub"/> is <see langword="null"/> or empty.</exception>
 /// <exception cref="ArgumentNullException">Thrown when <paramref name="Scopes"/> or <paramref name="ClaimTypes"/> is <see langword="null"/>.</exception>
@@ -40,12 +44,20 @@ public sealed record ClaimsProviderContext(
         : throw new ArgumentException("The subject identifier must not be null or empty.", nameof(Sub));
 
     /// <inheritdoc cref="ClaimsProviderContext"/>
-    public IReadOnlyList<string> Scopes { get; init; } = Scopes ?? throw new ArgumentNullException(nameof(Scopes));
+    public IReadOnlyList<string> Scopes { get; init; } = Snapshot(Scopes ?? throw new ArgumentNullException(nameof(Scopes)));
 
     /// <inheritdoc cref="ClaimsProviderContext"/>
-    public IReadOnlySet<string> ClaimTypes { get; init; } = ClaimTypes ?? throw new ArgumentNullException(nameof(ClaimTypes));
+    public IReadOnlySet<string> ClaimTypes { get; init; } = Snapshot(ClaimTypes ?? throw new ArgumentNullException(nameof(ClaimTypes)));
 
     /// <summary>Names the scopes and counts the claim types; never prints the subject.</summary>
     public override string ToString() =>
         $"ClaimsProviderContext {{ Scopes = [{string.Join(' ', Scopes)}], ClaimTypes = {ClaimTypes.Count}, FamilyId = {(FamilyId is null ? "none" : "present")} }}";
+
+    // A copy the context owns: the grant's list stays the endpoint's, and what the provider is
+    // handed cannot be downcast to a writable collection.
+    private static IReadOnlyList<string> Snapshot(IReadOnlyList<string> scopes) =>
+        Array.AsReadOnly(scopes.ToArray());
+
+    private static IReadOnlySet<string> Snapshot(IReadOnlySet<string> claimTypes) =>
+        claimTypes.ToFrozenSet(StringComparer.Ordinal);
 }

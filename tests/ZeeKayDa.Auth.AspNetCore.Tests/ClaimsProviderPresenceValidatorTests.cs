@@ -41,18 +41,33 @@ public sealed class ClaimsProviderPresenceValidatorTests
     }
 
     [Fact]
-    public async Task VerifyAsync_skips_the_check_when_the_container_cannot_answer_IsService()
+    public async Task A_container_that_cannot_answer_IsService_is_asked_to_resolve_the_provider_and_still_fails_without_one()
+    {
+        // A third-party container without IServiceProviderIsService must not be the one place the
+        // mandatory seam can be skipped.
+        var sut = new ClaimsProviderPresenceValidator();
+        var context = new StartupVerificationContext();
+
+        await sut.VerifyAsync(context, new ResolvingOnlyServiceProvider(provider: null), TestContext.Current.CancellationToken);
+
+        context.Failures.Should().ContainSingle().Which.Code.Should().Be("claims.provider.missing");
+    }
+
+    [Fact]
+    public async Task A_container_that_cannot_answer_IsService_passes_when_it_resolves_a_provider()
     {
         var sut = new ClaimsProviderPresenceValidator();
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, new EmptyServiceProvider(), TestContext.Current.CancellationToken);
+        await sut.VerifyAsync(context, new ResolvingOnlyServiceProvider(new NoClaimsProvider()), TestContext.Current.CancellationToken);
 
         context.Failures.Should().BeEmpty();
     }
 
-    private sealed class EmptyServiceProvider : IServiceProvider
+    /// <summary>A container with no <see cref="IServiceProviderIsService"/>, answering only a direct resolution of the provider.</summary>
+    private sealed class ResolvingOnlyServiceProvider(NoClaimsProvider? provider) : IServiceProvider
     {
-        public object? GetService(Type serviceType) => null;
+        public object? GetService(Type serviceType) =>
+            serviceType == typeof(Claims.IClaimsProvider) ? provider : null;
     }
 }
