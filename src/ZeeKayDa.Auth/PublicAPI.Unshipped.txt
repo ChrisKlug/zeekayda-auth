@@ -557,7 +557,6 @@ ZeeKayDa.Auth.Tokens.TokenEndpointOptions.Uri.get -> string?
 ZeeKayDa.Auth.Tokens.TokenEndpointOptions.Uri.set -> void
 ZeeKayDa.Auth.Tokens.TokenIssuanceContext
 ZeeKayDa.Auth.Tokens.TokenIssuanceContext.Client.get -> ZeeKayDa.Auth.Clients.IClientMetadata!
-ZeeKayDa.Auth.Tokens.TokenIssuanceContext.Kind.get -> ZeeKayDa.Auth.Tokens.TokenKind
 ZeeKayDa.Auth.Tokens.TokenKind
 ZeeKayDa.Auth.Tokens.TokenKind.AccessToken = 0 -> ZeeKayDa.Auth.Tokens.TokenKind
 ZeeKayDa.Auth.Tokens.TokenKind.IdToken = 1 -> ZeeKayDa.Auth.Tokens.TokenKind

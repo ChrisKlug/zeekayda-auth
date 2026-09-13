@@ -36,15 +36,16 @@ public sealed class TokenIssuanceContextTests
         var context = new IdTokenIssuanceContext(client, new IssuedToken("access", TokenKind.AccessToken));
 
         context.Client.Should().BeSameAs(client);
-        context.Kind.Should().Be(TokenKind.IdToken);
         context.AccessToken.Value.Should().Be("access");
     }
 
     [Fact]
-    public void An_access_token_context_is_of_the_access_token_kind()
+    public void ToString_names_the_type_and_the_client_only()
     {
-        var context = new AccessTokenIssuanceContext(new TestClient());
+        var context = new IdTokenIssuanceContext(new TestClient(), new IssuedToken("eyJhbGciOiJSUzI1NiJ9.secret.payload", TokenKind.AccessToken));
 
-        context.Kind.Should().Be(TokenKind.AccessToken);
+        context.ToString().Should().Contain(nameof(IdTokenIssuanceContext))
+            .And.Contain("test-client")
+            .And.NotContain("secret");
     }
 }

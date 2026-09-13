@@ -54,10 +54,7 @@ public sealed class JwtTokenIssuer : ITokenIssuer
 
     /// <inheritdoc/>
     /// <exception cref="ArgumentNullException">
-    /// Thrown when <paramref name="payload"/> is <see langword="null"/>.
-    /// </exception>
-    /// <exception cref="ArgumentOutOfRangeException">
-    /// Thrown when <paramref name="context"/>.Kind is not a defined <see cref="TokenKind"/> member.
+    /// Thrown when <paramref name="context"/> or <paramref name="payload"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Thrown, before anything is signed, when the access token an ID token is bound to is not
@@ -75,17 +72,13 @@ public sealed class JwtTokenIssuer : ITokenIssuer
         TokenPayload payload,
         CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(payload);
 
-        var typ = context.Kind switch
-        {
-            TokenKind.AccessToken => AccessTokenType,
-            TokenKind.IdToken => IdTokenType,
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(context), context.Kind, $"Not a defined {nameof(TokenKind)} member."),
-        };
-
-        var accessTokenToBind = context is IdTokenIssuanceContext idToken ? RequireAccessToken(idToken, payload) : null;
+        // The type says which token this is; the hierarchy is closed, so these are the two cases.
+        var (kind, typ, accessTokenToBind) = context is IdTokenIssuanceContext idToken
+            ? (TokenKind.IdToken, IdTokenType, RequireAccessToken(idToken, payload))
+            : (TokenKind.AccessToken, AccessTokenType, null);
 
         var outcome = await _ring.SignAsync(
             new SigningState(context, payload, typ, accessTokenToBind),
@@ -102,7 +95,7 @@ public sealed class JwtTokenIssuer : ITokenIssuer
                 Base64Url.EncodeToChars(outcome.Signature.Span, destination[(written + 1)..]);
             });
 
-        return new IssuedToken(token, context.Kind);
+        return new IssuedToken(token, kind);
     }
 
     /// <summary>

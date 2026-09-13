@@ -104,7 +104,7 @@ public sealed class JwtTokenIssuerTests
     {
         public ValueTask<IssuedToken> IssueAsync(
             TokenIssuanceContext context, TokenPayload payload, CancellationToken cancellationToken = default)
-            => new(new IssuedToken("opaque-handle-42", context.Kind));
+            => new(new IssuedToken("opaque-handle-42", context is IdTokenIssuanceContext ? TokenKind.IdToken : TokenKind.AccessToken));
     }
 
     /// <summary>A client that restricted the algorithms its ID tokens may be signed with.</summary>

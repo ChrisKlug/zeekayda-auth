@@ -3,11 +3,10 @@ using ZeeKayDa.Auth.Clients;
 namespace ZeeKayDa.Auth.Tokens;
 
 /// <summary>
-/// What an <see cref="ITokenIssuer"/> is told about the issuance it is performing: the client the
-/// token is for and the kind of token being issued. The kind decides the concrete type —
-/// <see cref="AccessTokenIssuanceContext"/> or <see cref="IdTokenIssuanceContext"/> — and only
-/// those two exist, so what each kind of issuance carries is a property of its type rather than
-/// a value that may or may not be set.
+/// What an <see cref="ITokenIssuer"/> is told about the issuance it is performing. The concrete
+/// type says which token is being issued — <see cref="AccessTokenIssuanceContext"/> or
+/// <see cref="IdTokenIssuanceContext"/> — and only those two exist, so what each kind of
+/// issuance carries is a property of its type rather than a value that may or may not be set.
 /// </summary>
 /// <remarks>
 /// The hierarchy is closed: the constructor is reachable only from this assembly. The context
@@ -15,28 +14,23 @@ namespace ZeeKayDa.Auth.Tokens;
 /// </remarks>
 public abstract class TokenIssuanceContext
 {
-    private protected TokenIssuanceContext(IClientMetadata client, TokenKind kind)
+    private protected TokenIssuanceContext(IClientMetadata client)
     {
         ArgumentNullException.ThrowIfNull(client);
-
         Client = client;
-        Kind = kind;
     }
 
     /// <summary>
-    /// The client id and the kind — never a token, which is a bearer credential.
+    /// The type and the client id — never a token, which is a bearer credential.
     /// </summary>
     public override string ToString() =>
-        $"{GetType().Name} {{ {nameof(Client)} = {Client.ClientId}, {nameof(Kind)} = {Kind} }}";
+        $"{GetType().Name} {{ {nameof(Client)} = {Client.ClientId} }}";
 
     /// <summary>
     /// Gets the client the token is issued for. Carried as <see cref="IClientMetadata"/>, not
     /// the full registration, so the issuance path never holds the client's credentials.
     /// </summary>
     public IClientMetadata Client { get; }
-
-    /// <summary>Gets the kind of token being issued.</summary>
-    public TokenKind Kind { get; }
 }
 
 /// <summary>The issuance of an access token to a client.</summary>
@@ -48,7 +42,7 @@ public sealed class AccessTokenIssuanceContext : TokenIssuanceContext
     /// Thrown when <paramref name="client"/> is <see langword="null"/>.
     /// </exception>
     public AccessTokenIssuanceContext(IClientMetadata client)
-        : base(client, TokenKind.AccessToken)
+        : base(client)
     {
     }
 }
@@ -77,7 +71,7 @@ public sealed class IdTokenIssuanceContext : TokenIssuanceContext
     /// Thrown when <paramref name="accessToken"/> is not an access token.
     /// </exception>
     public IdTokenIssuanceContext(IClientMetadata client, IssuedToken accessToken)
-        : base(client, TokenKind.IdToken)
+        : base(client)
     {
         ArgumentNullException.ThrowIfNull(accessToken);
 
