@@ -649,6 +649,24 @@ public sealed class TokenEndpointTests : IDisposable
         await ShouldBeErrorAsync(response, "unsupported_grant_type");
     }
 
+    [Fact]
+    public async Task A_host_that_does_not_serve_the_code_grant_refuses_the_exchange_before_naming_a_client()
+    {
+        // A code issued before the grant was switched off, or one shared across hosts through a
+        // common store, must not be redeemable on a host whose configuration no longer serves it.
+        var repository = new FirstReadThenOtherRepository(PublicRegistration(), PublicRegistration());
+        using var factory = new TestWebAppFactory(
+            configureOptions: options => options.GrantTypesSupported = [GrantType.ClientCredentials],
+            configureBuilder: builder => builder.Services.AddSingleton<IClientRepository>(repository));
+        using var client = NewClient(factory);
+        repository.ResetToFirst();
+
+        var response = await PostTokenWithAsync(client, TokenForm(StoreKeyGenerator.Generate()));
+
+        await ShouldBeErrorAsync(response, "unsupported_grant_type");
+        repository.ReadsSinceReset.Should().Be(0, "the refusal precedes client identification and touches nothing");
+    }
+
     [Theory]
     [InlineData("grant_type")]
     [InlineData("code")]

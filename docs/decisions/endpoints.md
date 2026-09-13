@@ -69,9 +69,10 @@ isolation. Token responses, success and error alike, carry `no-store` and `Pragm
 **The token endpoint is POST-only, mapped unconditionally, and refuses before it reads.** Discovery
 publishes `token_endpoint` unconditionally because RFC 8414 §2 requires it, so the route is mapped
 on the same condition — none — and metadata and route never disagree the way authorize's once did.
-The form is parsed and every shape rule checked, then the client authenticated, then its grant
-allowlist read, before any store is touched: a malformed or unauthenticated request costs no I/O
-and consumes nothing. `invalid_client` is `401` with a matching `WWW-Authenticate` when the client
+The form is parsed and every shape rule checked, then the server's own grant list consulted, then
+the client authenticated, then its grant allowlist read, before any store is touched: a malformed
+or unauthenticated request costs no I/O and consumes nothing, and a host that stopped serving the
+code grant redeems no code that outlived the change. `invalid_client` is `401` with a matching `WWW-Authenticate` when the client
 used the `Authorization` header (§5.2 MUST) and `400` otherwise; the description never says whether
 the client was unknown or the credential wrong. A server fault is `500` with `server_error`, and a
 `GET` is `405`, not a protocol error.

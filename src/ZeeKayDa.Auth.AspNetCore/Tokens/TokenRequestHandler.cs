@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.AspNetCore.ClientAuthentication;
 using ZeeKayDa.Auth.Tokens;
 
@@ -11,14 +12,20 @@ namespace ZeeKayDa.Auth.AspNetCore.Tokens;
 /// </summary>
 internal sealed class TokenRequestHandler
 {
+    private readonly IOptions<AuthorizationServerOptions> _options;
     private readonly CompositeClientAuthenticator _authenticator;
     private readonly AuthorizationCodeGrant _grant;
 
-    public TokenRequestHandler(CompositeClientAuthenticator authenticator, AuthorizationCodeGrant grant)
+    public TokenRequestHandler(
+        IOptions<AuthorizationServerOptions> options,
+        CompositeClientAuthenticator authenticator,
+        AuthorizationCodeGrant grant)
     {
+        ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(authenticator);
         ArgumentNullException.ThrowIfNull(grant);
 
+        _options = options;
         _authenticator = authenticator;
         _grant = grant;
     }
@@ -37,6 +44,11 @@ internal sealed class TokenRequestHandler
         if (!TokenRequest.TryParse(form, out var request, out var error))
             return TokenResponses.Error(error);
 
+        // The server's own grant list is the first gate, before any client is named: a host that
+        // no longer serves the code grant must not redeem a code that outlived the change.
+        if (!ServesCodeGrant())
+            return TokenResponses.Error(new TokenError(TokenRequestErrors.UnsupportedGrantType, "The authorization_code grant type is not supported by this server."));
+
         // The client is whoever the request names: the form's client_id, or the Basic header's
         // username when the form carries none. The authenticator refuses the two disagreeing.
         if (IdentifyClient(request, context.Request.Headers) is not { } clientId)
@@ -53,6 +65,9 @@ internal sealed class TokenRequestHandler
 
         return await _grant.ExchangeAsync(context, request, client).ConfigureAwait(false);
     }
+
+    private bool ServesCodeGrant() =>
+        _options.Value.GrantTypesSupported.Contains(GrantType.AuthorizationCode);
 
     private static string? IdentifyClient(TokenRequest request, IHeaderDictionary headers)
     {
