@@ -147,7 +147,8 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
             }
         }
 
-        ValidateTokenEndpoint(options, errors);
+        ValidateTokenEndpointAuthMethods(options, errors);
+        ValidateTokenEndpointLifetimes(options, errors);
 
         // Validate IdToken group. Null is the default and means "advertise the whole published key
         // set"; an empty filter would advertise nothing at all, which is never what an operator
@@ -306,12 +307,11 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
         return errors.Count > 0 ? ValidateOptionsResult.Fail(errors) : ValidateOptionsResult.Success;
     }
 
-    /// <summary>Validates the <c>TokenEndpoint</c> options group.</summary>
-    private static void ValidateTokenEndpoint(
+    /// <summary>Validates the client authentication methods of the <c>TokenEndpoint</c> options group.</summary>
+    private static void ValidateTokenEndpointAuthMethods(
         AuthorizationServerOptions options,
         List<string> errors)
     {
-        // Validate Token group
         if (options.TokenEndpoint.AuthMethodsSupported is null ||
             options.TokenEndpoint.AuthMethodsSupported.Count == 0)
         {
@@ -351,7 +351,13 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
                 errors.Add(ClientCredentialsRequiresNonNoneTokenAuthMethodMessage);
             }
         }
+    }
 
+    /// <summary>Validates the token lifetimes of the <c>TokenEndpoint</c> options group.</summary>
+    private static void ValidateTokenEndpointLifetimes(
+        AuthorizationServerOptions options,
+        List<string> errors)
+    {
         // A zero or negative refresh token lifetime is nonsensical and must be rejected at startup.
         if (options.TokenEndpoint.RefreshTokenLifetime <= TimeSpan.Zero)
         {
