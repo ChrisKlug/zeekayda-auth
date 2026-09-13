@@ -77,9 +77,9 @@ back-reference to its identity, and its value-type tag never survives a JWT anyw
 conversions throws; a custom shape goes through `ClaimValue.From`, serialised on the spot, snake_case
 by default. `ClaimRecord`'s constructor is the one validation point: it refuses a blank type and a
 null, empty, NaN, infinite, JSON-null or default value, naming the type and never the value. Repeated
-string or number records for one name are written as one JSON array in the order returned (RFC 7519
-§4 unique names); any other repeat, or a repeat of a single-valued claim of OpenID Connect Core §5.1,
-is a provider bug and aborts issuance as `server_error`.
+string or number records for one selected name are written as one JSON array in the order returned
+(RFC 7519 §4); any other repeat of a selected name, or of a single-valued claim of OpenID Connect
+Core §5.1, aborts issuance as `server_error`; a record no destination wants is dropped unvalidated.
 
 **Claim selection is configuration, not a seam.** A scope names the claim types it unlocks in each
 destination — `IdTokenClaims`, `UserInfoClaims`, `AccessTokenClaims` — and a client registration may

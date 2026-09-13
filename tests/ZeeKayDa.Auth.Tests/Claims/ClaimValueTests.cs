@@ -171,6 +171,35 @@ public sealed class ClaimValueTests
     }
 
     [Fact]
+    public void A_custom_issuer_reads_the_kind_and_writes_the_JSON_without_a_serializer_round_trip()
+    {
+        ClaimValue value = new AddressClaim { Country = "SE" };
+        var buffer = new System.Buffers.ArrayBufferWriter<byte>();
+
+        using (var writer = new Utf8JsonWriter(buffer))
+        {
+            writer.WriteStartObject();
+            writer.WritePropertyName("address");
+            value.WriteTo(writer);
+            writer.WriteEndObject();
+        }
+
+        value.Kind.Should().Be(JsonValueKind.Object);
+        System.Text.Encoding.UTF8.GetString(buffer.WrittenSpan).Should().Be("{\"address\":{\"country\":\"SE\"}}");
+    }
+
+    [Fact]
+    public void The_default_value_cannot_be_written_to_a_writer()
+    {
+        using var writer = new Utf8JsonWriter(new System.Buffers.ArrayBufferWriter<byte>());
+
+        var act = () => default(ClaimValue).WriteTo(writer);
+
+        act.Should().Throw<InvalidOperationException>();
+        default(ClaimValue).Kind.Should().Be(JsonValueKind.Undefined);
+    }
+
+    [Fact]
     public void The_default_value_cannot_be_serialised()
     {
         var act = () => JsonSerializer.Serialize(default(ClaimValue));

@@ -28,7 +28,8 @@ namespace ZeeKayDa.Auth.Claims;
 /// <para>
 /// The value serialises through <see cref="JsonSerializer"/> as the JSON it holds, so a custom
 /// <c>ITokenIssuer</c> that serialises a <c>TokenPayload</c> writes it correctly without knowing
-/// this type. The default value holds nothing and cannot be serialised.
+/// this type; one that stores claims some other way reads <see cref="Kind"/> and writes the JSON
+/// with <see cref="WriteTo"/>. The default value holds nothing and cannot be written.
 /// </para>
 /// </remarks>
 [JsonConverter(typeof(ClaimValueJsonConverter))]
@@ -123,11 +124,31 @@ public readonly record struct ClaimValue
         return new(json, document.RootElement.ValueKind);
     }
 
+    /// <summary>
+    /// Writes the JSON this value holds to <paramref name="writer"/>, as one value: the route for
+    /// a custom token issuer that assembles its own JSON or stores claims outside a JWT.
+    /// </summary>
+    /// <param name="writer">The writer, positioned where a value is expected.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="writer"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">This is the default <see cref="ClaimValue"/>, which holds no JSON.</exception>
+    public void WriteTo(Utf8JsonWriter writer)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+
+        if (_json is null)
+            throw new InvalidOperationException("This is the default ClaimValue, which holds no JSON and cannot be written.");
+
+        writer.WriteRawValue(_json);
+    }
+
     /// <summary>Names the JSON kind and nothing else, so a printed value carries no personal data.</summary>
     public override string ToString() => $"ClaimValue({_kind})";
 
-    /// <summary>The JSON kind, or <see cref="JsonValueKind.Undefined"/> for the default value.</summary>
-    internal JsonValueKind Kind => _kind;
+    /// <summary>
+    /// The JSON kind of the value: string, number, true, false, object or array, or
+    /// <see cref="JsonValueKind.Undefined"/> for the default value.
+    /// </summary>
+    public JsonValueKind Kind => _kind;
 
     /// <summary>The JSON text, or <see langword="null"/> for the default value.</summary>
     internal string? Json => _json;
@@ -162,7 +183,7 @@ public readonly record struct ClaimValue
             if (value._json is null)
                 throw new JsonException("A default ClaimValue holds no JSON and cannot be written.");
 
-            writer.WriteRawValue(value._json);
+            value.WriteTo(writer);
         }
     }
 }

@@ -809,3 +809,5 @@ static ZeeKayDa.Auth.Claims.ClaimsProviderContext.operator !=(ZeeKayDa.Auth.Clai
 static ZeeKayDa.Auth.Claims.ClaimsProviderContext.operator ==(ZeeKayDa.Auth.Claims.ClaimsProviderContext? left, ZeeKayDa.Auth.Claims.ClaimsProviderContext? right) -> bool
 ~override ZeeKayDa.Auth.Claims.ClaimRecord.Equals(object obj) -> bool
 ~override ZeeKayDa.Auth.Claims.ClaimValue.Equals(object obj) -> bool
+ZeeKayDa.Auth.Claims.ClaimValue.Kind.get -> System.Text.Json.JsonValueKind
+ZeeKayDa.Auth.Claims.ClaimValue.WriteTo(System.Text.Json.Utf8JsonWriter! writer) -> void

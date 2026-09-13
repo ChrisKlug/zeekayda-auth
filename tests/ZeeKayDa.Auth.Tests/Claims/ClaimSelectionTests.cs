@@ -262,11 +262,13 @@ public sealed class ClaimSelectionTests
     }
 
     [Fact]
-    public void An_illegal_repeat_aborts_even_when_no_destination_wants_the_claim()
+    public void An_illegal_repeat_of_a_claim_no_destination_wants_is_ignored()
     {
-        var act = () => Select([new("flag", true), new("flag", false)], [StandardScopes.OpenId]);
+        // The provider is told that returning more than asked is harmless, so a claim that can
+        // reach no token cannot fail issuance either.
+        var selected = Select([new("name", "Chris"), new("flag", true), new("flag", false)], [StandardScopes.Profile]);
 
-        act.Should().Throw<InvalidOperationException>("a provider bug is a bug wherever it sits in the pool");
+        selected.IdToken.Keys.Should().BeEquivalentTo(["name"]);
     }
 
     [Fact]

@@ -9,11 +9,12 @@ namespace ZeeKayDa.Auth.Claims;
 /// <remarks>
 /// <para>
 /// Reserved protocol names are dropped from the pool first, so a provider cannot re-assert a
-/// subject, an audience or an authentication event. Repeated records for one name then merge
-/// into one JSON array in the order returned, when every value is a string or every value is a
-/// number; any other repeat, or a repeat of a single-valued standard claim, is a provider bug
-/// and aborts issuance. Each destination then receives every merged claim its plan wants; a
-/// wanted claim the provider did not return is simply absent.
+/// subject, an audience or an authentication event, and so is every record no destination
+/// wants, since a provider is told that returning more than asked is harmless. Repeated records
+/// for one wanted name then merge into one JSON array in the order returned, when every value
+/// is a string or every value is a number; any other repeat, or a repeat of a single-valued
+/// standard claim, is a provider bug and aborts issuance. Each destination then receives every
+/// merged claim its plan wants; a wanted claim the provider did not return is simply absent.
 /// </para>
 /// <para>
 /// Both tokens of one issuance are selected from one pool by one call, so they cannot disagree
@@ -27,7 +28,7 @@ internal static class ClaimSelection
         ArgumentNullException.ThrowIfNull(pool);
         ArgumentNullException.ThrowIfNull(plan);
 
-        var merged = Merge(pool);
+        var merged = Merge(pool, plan.All);
 
         return new SelectedClaims(
             Pick(merged, plan.IdToken),
@@ -36,13 +37,13 @@ internal static class ClaimSelection
     }
 
     /// <summary>
-    /// One value per claim name, in first-seen order, with reserved names gone. The whole pool
-    /// is merged, not only what is wanted, so an illegal repeat is a bug wherever it sits.
+    /// One value per wanted claim name, in first-seen order, with reserved and unwanted names
+    /// gone before anything is validated, so only what can reach a token can fail issuance.
     /// </summary>
     /// <exception cref="InvalidOperationException">
-    /// The pool holds a default record, or a repeat that cannot be merged.
+    /// The pool holds a default record, or a wanted claim repeated in a way that cannot be merged.
     /// </exception>
-    private static List<KeyValuePair<string, ClaimValue>> Merge(IReadOnlyList<ClaimRecord> pool)
+    private static List<KeyValuePair<string, ClaimValue>> Merge(IReadOnlyList<ClaimRecord> pool, IReadOnlySet<string> wanted)
     {
         var grouped = new Dictionary<string, List<ClaimValue>>(StringComparer.Ordinal);
         var order = new List<string>();
@@ -52,7 +53,7 @@ internal static class ClaimSelection
             if (record.IsDefault)
                 throw new InvalidOperationException("The claims provider returned a default ClaimRecord, which names no claim.");
 
-            if (ReservedClaimNames.IsReserved(record.Type))
+            if (ReservedClaimNames.IsReserved(record.Type) || !wanted.Contains(record.Type))
                 continue;
 
             if (!grouped.TryGetValue(record.Type, out var values))
