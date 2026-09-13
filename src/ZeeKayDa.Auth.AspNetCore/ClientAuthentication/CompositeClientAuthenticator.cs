@@ -51,7 +51,7 @@ internal sealed class CompositeClientAuthenticator
     /// <param name="clientId">The <c>client_id</c> extracted from the token request.</param>
     /// <param name="httpContext">The current HTTP context.</param>
     /// <param name="cancellationToken">Propagates notification that the operation should be cancelled.</param>
-    public async ValueTask<ClientAuthenticationResult> AuthenticateAsync(
+    public async ValueTask<AuthenticatedClient> AuthenticateAsync(
         string clientId,
         HttpContext httpContext,
         CancellationToken cancellationToken)
@@ -69,7 +69,7 @@ internal sealed class CompositeClientAuthenticator
         // RFC 7235 §4.2: a request MUST NOT carry more than one Authorization header field.
         // Reject before CanHandle so no authenticator ever sees an ambiguous header set.
         if (headers.Authorization.Count > 1)
-            return ClientAuthenticationResult.NotValid();
+            return AuthenticatedClient.Refused;
 
         // CanHandle is a shape check; built without the client so the repository isn't consulted
         // for requests rejected early. Authenticators MUST NOT access context.Client here.
@@ -93,7 +93,7 @@ internal sealed class CompositeClientAuthenticator
 
         // Multiple mechanisms → invalid_client (RFC 6749 §2.3).
         if (matches.Count > 1)
-            return ClientAuthenticationResult.NotValid();
+            return AuthenticatedClient.Refused;
 
         // Repository lookup deferred past the early-reject check above so ambiguous or
         // conflicting requests never incur unnecessary I/O.
@@ -109,17 +109,17 @@ internal sealed class CompositeClientAuthenticator
         // Returned method must be in the authenticator's own declared set (defends against a
         // buggy CanHandle that returns an undeclared method, bypassing the coverage check).
         if (!matchedAuthenticator.AuthenticationMethods.ContainsOrdinal(matchedMethod))
-            return ClientAuthenticationResult.NotValid();
+            return AuthenticatedClient.Refused;
 
         // Method must be in the server's global allowlist.
         if (!IsMethodAllowedByServer(matchedMethod))
-            return ClientAuthenticationResult.NotValid();
+            return AuthenticatedClient.Refused;
 
         // Unknown client → invalid_client with timing padding.
         if (client is null)
         {
             _secretHasher.PadToCredentialBudget();
-            return ClientAuthenticationResult.NotValid();
+            return AuthenticatedClient.Refused;
         }
 
         // Method must be in the per-client allowlist (ordinal). Pad timing to match the
@@ -128,7 +128,7 @@ internal sealed class CompositeClientAuthenticator
         if (!client.AllowedTokenEndpointAuthMethods.ContainsOrdinal(matchedMethod))
         {
             _secretHasher.PadToCredentialBudget();
-            return ClientAuthenticationResult.NotValid();
+            return AuthenticatedClient.Refused;
         }
 
         // Delegate to the authenticator. Client is guaranteed non-null here.
@@ -140,7 +140,9 @@ internal sealed class CompositeClientAuthenticator
             Form = form,
             Headers = headers,
         };
-        return await matchedAuthenticator.AuthenticateAsync(context, cancellationToken);
+        // A null from a caller-supplied authenticator is a refusal, not a fault to surface.
+        var outcome = await matchedAuthenticator.AuthenticateAsync(context, cancellationToken);
+        return outcome is { Authenticated: true } ? AuthenticatedClient.Accepted(client) : AuthenticatedClient.Refused;
     }
 
     private bool TryCanHandle(IClientAuthenticator authenticator, TokenRequestContext context, out string? method)
@@ -159,35 +161,35 @@ internal sealed class CompositeClientAuthenticator
         }
     }
 
-    private ClientAuthenticationResult AuthenticateNone(IClientRegistration? client)
+    private AuthenticatedClient AuthenticateNone(IClientRegistration? client)
     {
         // Server must advertise "none". Routed through IsMethodAllowedByServer so there is one
         // server-allowlist code path.
         if (!IsMethodAllowedByServer(TokenEndpointAuthMethods.None))
         {
             PadNoneRejection();
-            return ClientAuthenticationResult.NotValid();
+            return AuthenticatedClient.Refused;
         }
 
         // Client must exist.
         if (client is null)
         {
             PadNoneRejection();
-            return ClientAuthenticationResult.NotValid();
+            return AuthenticatedClient.Refused;
         }
 
         // Client must be public.
         if (!client.IsPublic)
         {
             PadNoneRejection();
-            return ClientAuthenticationResult.NotValid();
+            return AuthenticatedClient.Refused;
         }
 
         // Client must have no credentials (three-way consistency rule).
         if (client.Credentials.Count != 0)
         {
             PadNoneRejection();
-            return ClientAuthenticationResult.NotValid();
+            return AuthenticatedClient.Refused;
         }
 
         // Client's AllowedTokenEndpointAuthMethods must be exactly { "none" } (ordinal).
@@ -195,12 +197,12 @@ internal sealed class CompositeClientAuthenticator
             !client.AllowedTokenEndpointAuthMethods.ContainsOrdinal(TokenEndpointAuthMethods.None))
         {
             PadNoneRejection();
-            return ClientAuthenticationResult.NotValid();
+            return AuthenticatedClient.Refused;
         }
 
         // Success intentionally skips padding: it's already visible in the HTTP response, and
         // client_id is not a secret in OAuth.
-        return ClientAuthenticationResult.Valid();
+        return AuthenticatedClient.Accepted(client);
     }
 
     private void PadNoneRejection() => _secretHasher.PadToCredentialBudget();

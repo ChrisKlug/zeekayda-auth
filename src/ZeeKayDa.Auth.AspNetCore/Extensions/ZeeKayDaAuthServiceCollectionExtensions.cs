@@ -9,6 +9,7 @@ using ZeeKayDa.Auth.AspNetCore.ClientAuthentication;
 using ZeeKayDa.Auth.AspNetCore.Endpoints;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
 using ZeeKayDa.Auth.AspNetCore.Providers;
+using ZeeKayDa.Auth.AspNetCore.Tokens;
 using ZeeKayDa.Auth.Authorization;
 using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Configuration;
@@ -80,7 +81,7 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IZeeKayDaEndpoint, AuthorizationEndpoint>());
         services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IZeeKayDaEndpoint, PreAlphaTokenEndpoint>());
+            ServiceDescriptor.Singleton<IZeeKayDaEndpoint, TokenEndpoint>());
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IZeeKayDaEndpoint, JwksEndpoint>());
 
@@ -113,6 +114,8 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IClientAuthenticator, ClientSecretAuthenticator>());
         services.TryAddSingleton<CompositeClientAuthenticator>();
+        services.TryAddSingleton<AuthorizationCodeGrant>();
+        services.TryAddSingleton<TokenRequestHandler>();
         AddAuthorizationRequestServices(services);
 
         services.TryAddEnumerable(
@@ -154,6 +157,8 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
             ServiceDescriptor.Singleton<IStartupVerifier, ExceptionSanitizingDisabledWarningService>());
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IStartupVerifier, AbsoluteFamilyLifetimeUnboundedWarningService>());
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IStartupVerifier, TokenLifetimeCeilingWarningService>());
 
         // A startup check rather than IValidateOptions so the openid-scope check can be awaited
         // without risking a deadlock on synchronous, blocking async I/O. An activator because it

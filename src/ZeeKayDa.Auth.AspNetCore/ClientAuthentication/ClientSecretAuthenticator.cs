@@ -1,5 +1,3 @@
-using System.Net;
-using System.Text;
 using Microsoft.AspNetCore.Http;
 using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Tokens;
@@ -48,7 +46,7 @@ internal sealed class ClientSecretAuthenticator : IClientAuthenticator
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        var hasBasic = HasBasicAuthHeader(context.Headers);
+        var hasBasic = BasicAuthorizationHeader.IsPresent(context.Headers);
         var hasPost = context.Form.ContainsKey("client_secret");
 
         if (hasBasic)
@@ -74,7 +72,7 @@ internal sealed class ClientSecretAuthenticator : IClientAuthenticator
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        var hasBasic = HasBasicAuthHeader(context.Headers);
+        var hasBasic = BasicAuthorizationHeader.IsPresent(context.Headers);
         var hasPost = context.Form.ContainsKey("client_secret");
 
         // RFC 6749 §2.3: a client MUST NOT use more than one authentication method per request.
@@ -88,7 +86,7 @@ internal sealed class ClientSecretAuthenticator : IClientAuthenticator
         if (hasBasic)
         {
             // RFC 6749 §2.3.1: the Basic-auth username is the authoritative client_id.
-            if (!TryParseBasicCredentials(context.Headers, out var username, out var password) ||
+            if (!BasicAuthorizationHeader.TryParse(context.Headers, out var username, out var password) ||
                 !string.Equals(username, context.ClientId, StringComparison.Ordinal))
             {
                 _hasher.PadFailureToCredentialBudget(0);
@@ -133,44 +131,5 @@ internal sealed class ClientSecretAuthenticator : IClientAuthenticator
         // distinguishable from one with the maximum by timing.
         _hasher.PadFailureToCredentialBudget(attempted);
         return ValueTask.FromResult(ClientAuthenticationResult.NotValid());
-    }
-
-    private static bool HasBasicAuthHeader(IHeaderDictionary headers)
-    {
-        var authHeader = headers.Authorization;
-        return authHeader.Count == 1 &&
-               authHeader[0] is { } value &&
-               value.StartsWith("Basic ", StringComparison.OrdinalIgnoreCase);
-    }
-
-    /// <summary>
-    /// Parses and form-URL-decodes the username and password from an <c>Authorization: Basic</c>
-    /// header per RFC 6749 §2.3.1. Returns <see langword="false"/> on malformed input.
-    /// </summary>
-    private static bool TryParseBasicCredentials(
-        IHeaderDictionary headers,
-        out string username,
-        out string password)
-    {
-        username = string.Empty;
-        password = string.Empty;
-        var authHeader = headers.Authorization[0]!;
-        var base64Part = authHeader["Basic ".Length..].Trim();
-        try
-        {
-            var decoded = Encoding.UTF8.GetString(Convert.FromBase64String(base64Part));
-            var colonIndex = decoded.IndexOf(':');
-            if (colonIndex < 0) return false;
-
-            // RFC 6749 §2.3.1 requires application/x-www-form-urlencoded encoding of both
-            // values before they are base64-encoded into the Basic header.
-            username = WebUtility.UrlDecode(decoded[..colonIndex]);
-            password = WebUtility.UrlDecode(decoded[(colonIndex + 1)..]);
-            return true;
-        }
-        catch (FormatException)
-        {
-            return false;
-        }
     }
 }

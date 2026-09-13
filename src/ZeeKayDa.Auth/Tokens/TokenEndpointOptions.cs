@@ -68,6 +68,30 @@ public sealed class TokenEndpointOptions
     public TimeSpan AbsoluteFamilyLifetime { get; set; } = TimeSpan.FromDays(90);
 
     /// <summary>
+    /// Gets or sets the server-wide lifetime of issued access tokens. Defaults to one hour.
+    /// </summary>
+    /// <remarks>
+    /// A client registration may override it through
+    /// <see cref="Clients.IClientMetadata.AccessTokenLifetime"/>; a <see langword="null"/>
+    /// override means this value. Must be greater than <see cref="TimeSpan.Zero"/>; rejected at
+    /// startup otherwise. No upper bound is enforced — a value past
+    /// <see cref="AbsoluteFamilyLifetime"/> warns at startup, since a token would then outlive
+    /// the grant that produced it.
+    /// </remarks>
+    public TimeSpan AccessTokenLifetime { get; set; } = TimeSpan.FromHours(1);
+
+    /// <summary>
+    /// Gets or sets the server-wide lifetime of issued ID tokens. Defaults to five minutes.
+    /// </summary>
+    /// <remarks>
+    /// Short by design: an ID token is consumed once, by the client, on receipt. A client
+    /// registration may override it through <see cref="Clients.IClientMetadata.IdTokenLifetime"/>;
+    /// a <see langword="null"/> override means this value. Must be greater than
+    /// <see cref="TimeSpan.Zero"/>; rejected at startup otherwise. No upper bound is enforced.
+    /// </remarks>
+    public TimeSpan IdTokenLifetime { get; set; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>
     /// Computes the <c>FamilyAbsoluteExpiry</c> to bake into a refresh token family at birth, from
     /// <paramref name="now"/> and this instance's <see cref="AbsoluteFamilyLifetime"/>.
     /// </summary>
@@ -80,16 +104,6 @@ public sealed class TokenEndpointOptions
     /// </remarks>
     public DateTimeOffset ComputeFamilyAbsoluteExpiry(DateTimeOffset now)
     {
-        if (AbsoluteFamilyLifetime == TimeSpan.MaxValue)
-            return DateTimeOffset.MaxValue;
-
-        try
-        {
-            return now + AbsoluteFamilyLifetime;
-        }
-        catch (ArgumentOutOfRangeException)
-        {
-            return DateTimeOffset.MaxValue;
-        }
+        return TokenLifetimes.ExpiresAt(now, AbsoluteFamilyLifetime);
     }
 }

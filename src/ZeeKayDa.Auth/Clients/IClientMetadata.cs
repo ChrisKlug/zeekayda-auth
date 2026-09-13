@@ -146,4 +146,24 @@ public interface IClientMetadata
     /// for in-memory clients; custom repositories MUST enforce the subset constraint at write time.
     /// </remarks>
     IReadOnlySet<SigningAlgorithm>? AllowedSigningAlgorithms => null;
+
+    /// <summary>
+    /// The lifetime of access tokens issued to this client, or <see langword="null"/> (the
+    /// default) to use the server-wide <c>TokenEndpointOptions.AccessTokenLifetime</c>.
+    /// </summary>
+    /// <remarks>
+    /// When non-null, MUST be greater than <see cref="TimeSpan.Zero"/>; the registration
+    /// validator rejects it otherwise. No upper bound is enforced.
+    /// </remarks>
+    TimeSpan? AccessTokenLifetime => null;
+
+    /// <summary>
+    /// The lifetime of ID tokens issued to this client, or <see langword="null"/> (the default)
+    /// to use the server-wide <c>TokenEndpointOptions.IdTokenLifetime</c>.
+    /// </summary>
+    /// <remarks>
+    /// When non-null, MUST be greater than <see cref="TimeSpan.Zero"/>; the registration
+    /// validator rejects it otherwise. No upper bound is enforced.
+    /// </remarks>
+    TimeSpan? IdTokenLifetime => null;
 }

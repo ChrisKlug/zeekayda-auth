@@ -575,15 +575,38 @@ public sealed class AuthorizationServerOptionsValidatorTests
     // ── AuthorizationEndpoint.CodeChallengeMethodsSupported ───────────────────────────────────────
 
     [Fact]
-    public void Validate_succeeds_when_CodeChallengeMethodsSupported_is_null()
+    public void CodeChallengeMethodsSupported_defaults_to_S256()
+    {
+        new AuthorizationServerOptions().AuthorizationEndpoint.CodeChallengeMethodsSupported
+            .Should().Equal([CodeChallengeMethod.S256], "the token endpoint enforces S256, so advertising it is truthful from the first start");
+    }
+
+    [Fact]
+    public void Validate_succeeds_when_CodeChallengeMethodsSupported_is_null_on_a_host_without_the_code_grant()
     {
         var result = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
+            GrantTypesSupported = [GrantType.ClientCredentials],
             AuthorizationEndpoint = { CodeChallengeMethodsSupported = null },
         });
 
-        result.Succeeded.Should().BeTrue();
+        result.Succeeded.Should().BeTrue("nothing on such a host relies on PKCE");
+    }
+
+    [Fact]
+    public void Validate_fails_when_the_code_grant_is_served_without_S256()
+    {
+        // The audit's gate: the grant may not be advertised with the enforcement path missing.
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            GrantTypesSupported = [GrantType.AuthorizationCode],
+            AuthorizationEndpoint = { CodeChallengeMethodsSupported = null },
+        });
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("CodeChallengeMethodsSupported must contain CodeChallengeMethod.S256");
     }
 
     [Fact]
@@ -596,6 +619,59 @@ public sealed class AuthorizationServerOptionsValidatorTests
         });
 
         result.Succeeded.Should().BeTrue();
+    }
+
+    // ── TokenEndpoint.AccessTokenLifetime / IdTokenLifetime ──────────────────────────────────────
+
+    [Fact]
+    public void Token_lifetimes_default_to_one_hour_and_five_minutes()
+    {
+        var options = new AuthorizationServerOptions().TokenEndpoint;
+
+        options.AccessTokenLifetime.Should().Be(TimeSpan.FromHours(1));
+        options.IdTokenLifetime.Should().Be(TimeSpan.FromMinutes(5));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Validate_fails_when_AccessTokenLifetime_is_not_positive(int seconds)
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            TokenEndpoint = { AccessTokenLifetime = TimeSpan.FromSeconds(seconds) },
+        });
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("TokenEndpoint.AccessTokenLifetime must be greater than zero");
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Validate_fails_when_IdTokenLifetime_is_not_positive(int seconds)
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            TokenEndpoint = { IdTokenLifetime = TimeSpan.FromSeconds(seconds) },
+        });
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("TokenEndpoint.IdTokenLifetime must be greater than zero");
+    }
+
+    [Fact]
+    public void Validate_places_no_upper_bound_on_token_lifetimes()
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            TokenEndpoint = { AccessTokenLifetime = TimeSpan.FromDays(365), IdTokenLifetime = TimeSpan.FromDays(365) },
+        });
+
+        result.Succeeded.Should().BeTrue("a lifetime past the family ceiling warns at startup rather than failing it");
     }
 
     [Fact]

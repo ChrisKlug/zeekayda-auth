@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
@@ -65,6 +66,8 @@ internal static class ClientRegistrationFingerprint
             client.AllowedSigningAlgorithms is null
                 ? [NullSentinel]
                 : client.AllowedSigningAlgorithms.Select(v => v.ToString()));
+        Append(builder, "atlifetime", client.AccessTokenLifetime?.Ticks.ToString(CultureInfo.InvariantCulture) ?? NullSentinel);
+        Append(builder, "idlifetime", client.IdTokenLifetime?.Ticks.ToString(CultureInfo.InvariantCulture) ?? NullSentinel);
         var contentAddressable = AppendCredentials(builder, client.Credentials);
 
         return new Fingerprint(

@@ -484,17 +484,19 @@ public sealed class DiscoveryEndpointTests : IDisposable
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
-    // ── Pre-alpha protocol endpoints ──────────────────────────────────────────────────────────────
+    // ── Protocol endpoints ────────────────────────────────────────────────────────────────────────
 
+    // The token endpoint validates requests too (#71): a bodiless POST is invalid_request (400).
+    // TokenEndpointTests owns its behaviour; this row only pins that the route is mapped.
     [Theory]
     [InlineData("POST", "/connect/token")]
-    public async Task AdvertisedPreAlphaProtocolEndpoints_return_501(string method, string path)
+    public async Task TokenEndpoint_is_mapped_and_validates(string method, string path)
     {
         using var request = new HttpRequestMessage(new HttpMethod(method), path);
 
         var response = await _client.SendAsync(request, TestContext.Current.CancellationToken);
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     // The authorization endpoint now validates requests (#83), so a parameterless request is a
@@ -514,7 +516,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
 
     [Theory]
     [InlineData("GET", "/custom/authorize?prompt=login", HttpStatusCode.BadRequest)]
-    [InlineData("POST", "/custom/token?tenant=1", HttpStatusCode.NotImplemented)]
+    [InlineData("POST", "/custom/token?tenant=1", HttpStatusCode.BadRequest)]
     public async Task AdvertisedProtocolEndpoints_answer_at_published_URIs_when_explicit_overrides_are_configured(string method, string path, HttpStatusCode expectedStatusCode)
     {
         using var factory = new TestWebAppFactory(opts =>
@@ -551,7 +553,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     [InlineData("GET", DiscoveryPath, HttpStatusCode.OK)]
     [InlineData("GET", "/connect/authorize", HttpStatusCode.BadRequest)]
     [InlineData("POST", "/connect/authorize", HttpStatusCode.BadRequest)]
-    [InlineData("POST", "/connect/token", HttpStatusCode.NotImplemented)]
+    [InlineData("POST", "/connect/token", HttpStatusCode.BadRequest)]
     [InlineData("GET", "/connect/jwks", HttpStatusCode.OK)]
     public async Task HttpRequests_are_allowed_for_loopback_with_AllowInsecureIssuer_flag(
         string method,
@@ -613,15 +615,16 @@ public sealed class DiscoveryEndpointTests : IDisposable
     // ── CodeChallengeMethodsSupported ─────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task GetDiscoveryDocument_omits_CodeChallengeMethodsSupported_field_when_null()
+    public async Task GetDiscoveryDocument_publishes_S256_by_default()
     {
-        // Default options have CodeChallengeMethodsSupported = null.
+        // The default is [S256]: the token endpoint enforces it, so it is advertised from the first start.
         var doc = await _client.GetFromJsonAsync<JsonDocument>(
             DiscoveryPath,
             TestContext.Current.CancellationToken);
 
-        doc!.RootElement.TryGetProperty("code_challenge_methods_supported", out _)
-            .Should().BeFalse(because: "the field must be absent when CodeChallengeMethodsSupported is null");
+        doc!.RootElement.GetProperty("code_challenge_methods_supported").EnumerateArray()
+            .Select(e => e.GetString())
+            .Should().Equal("S256");
     }
 
     [Fact]

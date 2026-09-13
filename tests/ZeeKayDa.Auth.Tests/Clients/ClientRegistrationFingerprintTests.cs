@@ -34,6 +34,8 @@ public class ClientRegistrationFingerprintTests
             nameof(IClientMetadata.AllowedResponseModes),
             nameof(IClientMetadata.AllowedPromptValues),
             nameof(IClientMetadata.AllowedSigningAlgorithms),
+            nameof(IClientMetadata.AccessTokenLifetime),
+            nameof(IClientMetadata.IdTokenLifetime),
             nameof(IClientRegistration.Credentials),
         ];
 
@@ -116,6 +118,8 @@ public class ClientRegistrationFingerprintTests
         ["AllowedResponseModes"] = Client() with { AllowedResponseModes = new HashSet<ResponseMode> { ResponseMode.FormPost } },
         ["AllowedPromptValues"] = Client() with { AllowedPromptValues = new HashSet<PromptValue> { PromptValue.Login } },
         ["AllowedSigningAlgorithms"] = Client() with { AllowedSigningAlgorithms = new HashSet<SigningAlgorithm> { SigningAlgorithm.RS256 } },
+        ["AccessTokenLifetime"] = Client() with { AccessTokenLifetime = TimeSpan.FromMinutes(10) },
+        ["IdTokenLifetime"] = Client() with { IdTokenLifetime = TimeSpan.FromMinutes(1) },
     };
 
     public static TheoryData<string, ClientRegistration> MutatedRegistrations()

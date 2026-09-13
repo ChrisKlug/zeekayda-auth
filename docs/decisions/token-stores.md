@@ -63,10 +63,17 @@ stored one returns `ClientMismatch` and leaves the record intact. Consuming on m
 attacker who captured a credential but not the legitimate `client_id` burn it as a denial of service
 — and, on the refresh-token store, trigger a family revocation the legitimate client never asked for.
 
+**A code whose binding fails at the token endpoint is burnt by the attempt.** The endpoint consumes
+the code atomically first and checks `redirect_uri` and the PKCE verifier against what it redeemed,
+so neither check reopens a redeem-then-verify race. A captured code buys an attacker exactly one
+guess, and the legitimate client's own exchange then surfaces the theft as a replay. Accepted
+residual: an attacker holding a captured code can fail one login for its owner. The client-mismatch
+rule above is the deliberate exception, because there the code was never the presenter's to burn.
+
 **One code, one freshly minted family, and `familyId` comes from a CSPRNG.** Nothing in the store
-enforces this — `TryRedeemAsync` accepts whatever string it is handed — so the token-issuing endpoint
-MUST mint a fresh, never-reused value of at least 128 bits from a cryptographic RNG; `Guid.NewGuid()`
-is not one. The cleartext-`FamilyId` sign-off is predicated on one code mapping to one family, so
+enforces this — `TryRedeemAsync` accepts whatever string it is handed — so the token endpoint mints a
+fresh 256-bit value through `StoreKeyGenerator` before every redemption and never reuses one;
+`Guid.NewGuid()` is not a CSPRNG and is not used. The cleartext-`FamilyId` sign-off is predicated on one code mapping to one family, so
 reusing an id across codes extends a per-code correlation surface into a chain nobody assessed.
 
 **No store is auto-registered, and absence fails startup.** A startup validator fails the host when

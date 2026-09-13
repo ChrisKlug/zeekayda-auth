@@ -8,6 +8,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **The token endpoint: the authorization code grant with PKCE** (#71)
+
+  `POST /connect/token` no longer answers `501`. It exchanges an authorization code for an access
+  token and an ID token: the client is authenticated through the registered authenticators (a
+  public client by `client_id` alone, a confidential one by `client_secret_basic` or
+  `client_secret_post`), the code is redeemed atomically for that client, the `redirect_uri` must
+  equal the one the code was issued to byte for byte, and the `code_verifier` must be the S256
+  preimage of the challenge the authorization request carried — for every client, with no opt-out.
+  A code whose binding fails is consumed by the attempt, so a stolen code buys one guess; a code
+  presented twice answers `invalid_grant` and revokes the refresh-token family its first exchange
+  started, a family id the endpoint mints from a CSPRNG before every redemption. Every response,
+  success or error, carries `Cache-Control: no-store` and `Pragma: no-cache`.
+
+  The access token is a JWT of type `at+jwt` carrying `iss`, `sub`, `aud` (the issuer), `client_id`,
+  `iat`, `exp`, `jti`, `scope` and `auth_time`; the ID token carries `iss`, `sub`, `aud` (the client),
+  `iat`, `exp`, `auth_time` and the request's `nonce`; both carry `acr` and `amr` when the sign-in
+  recorded them. Subject claims — `name`, `email` and the rest — wait for the claims provider seam,
+  and `at_hash` for the next slice; no refresh token is issued yet.
+
+  Lifetimes are new options: `TokenEndpoint.AccessTokenLifetime` (one hour) and
+  `TokenEndpoint.IdTokenLifetime` (five minutes), each overridable per client through the new
+  `IClientMetadata.AccessTokenLifetime` and `IdTokenLifetime`, where `null` means the server value.
+  Both must be positive; a value past `AbsoluteFamilyLifetime` warns at startup.
+  `AuthorizationEndpoint.CodeChallengeMethodsSupported` now defaults to `[S256]`, and startup fails
+  when `GrantTypesSupported` contains the authorization code grant and the collection lacks it, so
+  the grant is never served with its enforcement path unadvertised.
+
 - **Concurrent tabs: the interaction context moves into a store, one entry per request** (#603)
 
   An authorization request no longer travels as a payload in a single `zkd.interaction` cookie,

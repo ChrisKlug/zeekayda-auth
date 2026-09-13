@@ -1,7 +1,8 @@
 # Claim selection and token contents
 
-**Status: provisional.** Nothing here is built — the token endpoint answers `501`. Settled in
-conversation 2026-09-11 (issue #92). This sketch sits *downstream* of `claims-resolution.md`: that
+**Status: provisional, partly built.** The lifetimes and the protocol claims under "Protocol claims
+and lifetimes" are shipped; the scope claim lists, `UserInfoClaims`, `Audience`, selection and
+`at_hash` are not. Settled in conversation 2026-09-11 (issue #92). This sketch sits *downstream* of `claims-resolution.md`: that
 seam produces the pool of subject claims, this one decides which of them land in which destination,
 and what the access token's audience is. The durable constraints are in
 `docs/decisions/token-issuance-and-claims.md` and `docs/decisions/token-contents.md`; read those as

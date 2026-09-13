@@ -3,11 +3,12 @@
 What must be true when a grant becomes tokens. The stores underneath are `token-stores.md` and
 `refresh-token-grants.md`; key selection and signing are `signing-keys.md`.
 
-**The token endpoint is not built** — it answers `501`. The token writer now exists as
-`ITokenIssuer` (#521): a shape-agnostic seam taking finalized claims and the client's metadata,
-resolved per `TokenKind` as a keyed DI service, with `JwsTokenIssuer` duties filled by
-`JwtTokenIssuer` over the signing key ring. Claim *selection* is unbuilt — `TokenPayload` arrives
-finalized, and the entries below are the constraints that layer inherits. Where claims come from is
+**The token endpoint issues the authorization code grant; the claims seam and claim selection are
+not built.** The endpoint writes the protocol claims from the grant and hands a finalized
+`TokenPayload` to `ITokenIssuer`, a shape-agnostic seam taking the claims and the client's
+metadata, resolved per `TokenKind` as a keyed DI service and filled by `JwtTokenIssuer` over the
+signing key ring. No subject claim reaches a token yet: apart from the server-fault entry, the entries below are
+constraints the seam inherits when it lands, not descriptions of shipped code. Where claims come from is
 sketched in `docs/design/claims-resolution.md`; which token each lands in, in
 `docs/design/claim-selection.md`. What each token carries on the wire, its audience, its lifetime
 and its signature are `token-contents.md`.

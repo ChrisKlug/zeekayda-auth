@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Options;
+using ZeeKayDa.Auth.Authorization;
 using ZeeKayDa.Auth.Security;
 using ZeeKayDa.Auth.Tokens;
 
@@ -146,75 +147,8 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
             }
         }
 
-        // Validate Token group
-        if (options.TokenEndpoint.AuthMethodsSupported is null ||
-            options.TokenEndpoint.AuthMethodsSupported.Count == 0)
-        {
-            errors.Add(TokenEndpointAuthMethodsRequiredMessage);
-        }
-        else
-        {
-            foreach (var authMethod in options.TokenEndpoint.AuthMethodsSupported)
-            {
-                if (string.IsNullOrWhiteSpace(authMethod))
-                {
-                    errors.Add(
-                        "AuthorizationServerOptions.TokenEndpoint.AuthMethodsSupported contains an invalid entry: " +
-                        "each entry must be a non-empty, non-whitespace string.");
-                    continue;
-                }
-                if (authMethod != authMethod.Trim())
-                {
-                    errors.Add(
-                        "AuthorizationServerOptions.TokenEndpoint.AuthMethodsSupported contains an invalid entry: " +
-                        $"'{authMethod}' has leading or trailing whitespace.");
-                    continue;
-                }
-                if (authMethod.Any(char.IsControl))
-                {
-                    errors.Add(
-                        "AuthorizationServerOptions.TokenEndpoint.AuthMethodsSupported contains an invalid entry: " +
-                        $"'{authMethod}' contains one or more control characters.");
-                }
-            }
-
-            // If client_credentials grant is supported, must have at least one non-None auth method
-            if (options.GrantTypesSupported is not null &&
-                options.GrantTypesSupported.Contains(GrantType.ClientCredentials) &&
-                options.TokenEndpoint.AuthMethodsSupported.All(m => string.Equals(m, TokenEndpointAuthMethods.None, StringComparison.Ordinal)))
-            {
-                errors.Add(ClientCredentialsRequiresNonNoneTokenAuthMethodMessage);
-            }
-        }
-
-        // A zero or negative refresh token lifetime is nonsensical and must be rejected at startup.
-        if (options.TokenEndpoint.RefreshTokenLifetime <= TimeSpan.Zero)
-        {
-            errors.Add(
-                "AuthorizationServerOptions.TokenEndpoint.RefreshTokenLifetime must be greater than zero.");
-        }
-
-        // RefreshTokenLifetime must be >= AuthorizationCodeLifetime so the authorization code
-        // tombstone retention window covers the full code validity window — otherwise a delayed
-        // code replay could escape the RFC 9700 §2.1.1 family-revocation mandate.
-        if (options.TokenEndpoint.RefreshTokenLifetime > TimeSpan.Zero &&
-            options.AuthorizationEndpoint.AuthorizationCodeLifetime > TimeSpan.Zero &&
-            options.TokenEndpoint.RefreshTokenLifetime < options.AuthorizationEndpoint.AuthorizationCodeLifetime)
-        {
-            errors.Add(
-                "AuthorizationServerOptions.TokenEndpoint.RefreshTokenLifetime must be greater than or equal to " +
-                "AuthorizationServerOptions.AuthorizationEndpoint.AuthorizationCodeLifetime to ensure tombstone " +
-                "retention covers the authorization code validity window.");
-        }
-
-        // A zero or negative absolute family lifetime is nonsensical and must be rejected at
-        // startup. TimeSpan.MaxValue is the explicit, warned "unbounded" sentinel and remains
-        // valid here.
-        if (options.TokenEndpoint.AbsoluteFamilyLifetime <= TimeSpan.Zero)
-        {
-            errors.Add(
-                "AuthorizationServerOptions.TokenEndpoint.AbsoluteFamilyLifetime must be greater than zero.");
-        }
+        ValidateTokenEndpointAuthMethods(options, errors);
+        ValidateTokenEndpointLifetimes(options, errors);
 
         // Validate IdToken group. Null is the default and means "advertise the whole published key
         // set"; an empty filter would advertise nothing at all, which is never what an operator
@@ -373,6 +307,99 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
         return errors.Count > 0 ? ValidateOptionsResult.Fail(errors) : ValidateOptionsResult.Success;
     }
 
+    /// <summary>Validates the client authentication methods of the <c>TokenEndpoint</c> options group.</summary>
+    private static void ValidateTokenEndpointAuthMethods(
+        AuthorizationServerOptions options,
+        List<string> errors)
+    {
+        if (options.TokenEndpoint.AuthMethodsSupported is null ||
+            options.TokenEndpoint.AuthMethodsSupported.Count == 0)
+        {
+            errors.Add(TokenEndpointAuthMethodsRequiredMessage);
+        }
+        else
+        {
+            foreach (var authMethod in options.TokenEndpoint.AuthMethodsSupported)
+            {
+                if (string.IsNullOrWhiteSpace(authMethod))
+                {
+                    errors.Add(
+                        "AuthorizationServerOptions.TokenEndpoint.AuthMethodsSupported contains an invalid entry: " +
+                        "each entry must be a non-empty, non-whitespace string.");
+                    continue;
+                }
+                if (authMethod != authMethod.Trim())
+                {
+                    errors.Add(
+                        "AuthorizationServerOptions.TokenEndpoint.AuthMethodsSupported contains an invalid entry: " +
+                        $"'{authMethod}' has leading or trailing whitespace.");
+                    continue;
+                }
+                if (authMethod.Any(char.IsControl))
+                {
+                    errors.Add(
+                        "AuthorizationServerOptions.TokenEndpoint.AuthMethodsSupported contains an invalid entry: " +
+                        $"'{authMethod}' contains one or more control characters.");
+                }
+            }
+
+            // If client_credentials grant is supported, must have at least one non-None auth method
+            if (options.GrantTypesSupported is not null &&
+                options.GrantTypesSupported.Contains(GrantType.ClientCredentials) &&
+                options.TokenEndpoint.AuthMethodsSupported.All(m => string.Equals(m, TokenEndpointAuthMethods.None, StringComparison.Ordinal)))
+            {
+                errors.Add(ClientCredentialsRequiresNonNoneTokenAuthMethodMessage);
+            }
+        }
+    }
+
+    /// <summary>Validates the token lifetimes of the <c>TokenEndpoint</c> options group.</summary>
+    private static void ValidateTokenEndpointLifetimes(
+        AuthorizationServerOptions options,
+        List<string> errors)
+    {
+        // A zero or negative refresh token lifetime is nonsensical and must be rejected at startup.
+        if (options.TokenEndpoint.RefreshTokenLifetime <= TimeSpan.Zero)
+        {
+            errors.Add(
+                "AuthorizationServerOptions.TokenEndpoint.RefreshTokenLifetime must be greater than zero.");
+        }
+
+        // RefreshTokenLifetime must be >= AuthorizationCodeLifetime so the authorization code
+        // tombstone retention window covers the full code validity window — otherwise a delayed
+        // code replay could escape the RFC 9700 §2.1.1 family-revocation mandate.
+        if (options.TokenEndpoint.RefreshTokenLifetime > TimeSpan.Zero &&
+            options.AuthorizationEndpoint.AuthorizationCodeLifetime > TimeSpan.Zero &&
+            options.TokenEndpoint.RefreshTokenLifetime < options.AuthorizationEndpoint.AuthorizationCodeLifetime)
+        {
+            errors.Add(
+                "AuthorizationServerOptions.TokenEndpoint.RefreshTokenLifetime must be greater than or equal to " +
+                "AuthorizationServerOptions.AuthorizationEndpoint.AuthorizationCodeLifetime to ensure tombstone " +
+                "retention covers the authorization code validity window.");
+        }
+
+        // A zero or negative absolute family lifetime is nonsensical and must be rejected at
+        // startup. TimeSpan.MaxValue is the explicit, warned "unbounded" sentinel and remains
+        // valid here.
+        if (options.TokenEndpoint.AbsoluteFamilyLifetime <= TimeSpan.Zero)
+        {
+            errors.Add(
+                "AuthorizationServerOptions.TokenEndpoint.AbsoluteFamilyLifetime must be greater than zero.");
+        }
+
+        if (options.TokenEndpoint.AccessTokenLifetime <= TimeSpan.Zero)
+        {
+            errors.Add(
+                "AuthorizationServerOptions.TokenEndpoint.AccessTokenLifetime must be greater than zero.");
+        }
+
+        if (options.TokenEndpoint.IdTokenLifetime <= TimeSpan.Zero)
+        {
+            errors.Add(
+                "AuthorizationServerOptions.TokenEndpoint.IdTokenLifetime must be greater than zero.");
+        }
+    }
+
     /// <summary>Validates the <c>AuthorizationEndpoint</c> options group.</summary>
     private static void ValidateAuthorizationEndpoint(
         AuthorizationServerOptions options,
@@ -385,6 +412,19 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
                 "must not be an empty collection. Either set it to null to omit the field from the " +
                 "discovery document, or provide at least one value (e.g. CodeChallengeMethod.S256). " +
                 "See RFC 7636 §4.3 and RFC 8414 §2.");
+        }
+
+        // PKCE with S256 is what makes the authorization code grant safe to serve (RFC 9700
+        // §2.1.1), and the token endpoint enforces exactly that method. A host serving the grant
+        // without advertising S256 would be telling clients the control is absent while relying
+        // on it — so the two settings must agree before any traffic is accepted.
+        if (ServesCodeGrantWithoutS256(options))
+        {
+            errors.Add(
+                "AuthorizationServerOptions.AuthorizationEndpoint.CodeChallengeMethodsSupported must " +
+                "contain CodeChallengeMethod.S256 when GrantTypesSupported contains GrantType.AuthorizationCode. " +
+                "PKCE with S256 is mandatory for the authorization code grant (OAuth 2.1 §4.1.1, RFC 9700 §2.1.1) " +
+                "and the token endpoint enforces it for every client.");
         }
 
         // RFC 9700 §2.1.1 requires authorization codes to be short-lived (max 10 minutes).
@@ -419,6 +459,11 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
     /// is a redirect destination the framework builds itself, so a malformed one would turn the
     /// framework into the open redirect it exists to avoid.
     /// </summary>
+    private static bool ServesCodeGrantWithoutS256(AuthorizationServerOptions options) =>
+        options.GrantTypesSupported is { } grants &&
+        grants.Contains(GrantType.AuthorizationCode) &&
+        options.AuthorizationEndpoint.CodeChallengeMethodsSupported?.Contains(CodeChallengeMethod.S256) != true;
+
     private static void ValidateInteractionPath(string? path, string optionName, List<string> errors)
     {
         if (path is null || InteractionPath.IsSafe(path))

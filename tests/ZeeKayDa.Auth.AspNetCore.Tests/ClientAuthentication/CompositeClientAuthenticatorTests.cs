@@ -102,6 +102,23 @@ public sealed class CompositeClientAuthenticatorTests
             => ValueTask.FromResult(ClientAuthenticationResult.Valid());
     }
 
+    /// <summary>A caller-supplied authenticator that returns null despite its non-null contract.</summary>
+    private sealed class NullReturningAuthenticator : IClientAuthenticator
+    {
+        public IReadOnlySet<string> AuthenticationMethods =>
+            new HashSet<string>(StringComparer.Ordinal) { TokenEndpointAuthMethods.ClientSecretBasic };
+
+        public bool CanHandle(TokenRequestContext context, out string? method)
+        {
+            method = TokenEndpointAuthMethods.ClientSecretBasic;
+            return true;
+        }
+
+        public ValueTask<ClientAuthenticationResult> AuthenticateAsync(
+            ClientAuthenticationContext context, CancellationToken ct)
+            => ValueTask.FromResult<ClientAuthenticationResult>(null!);
+    }
+
     private sealed class ThrowingCanHandleAuthenticator : IClientAuthenticator
     {
         public IReadOnlySet<string> AuthenticationMethods =>
@@ -304,6 +321,31 @@ public sealed class CompositeClientAuthenticatorTests
     }
 
     // ── AC 21: multiple mechanisms ────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task An_authenticator_returning_null_is_a_refusal_not_a_fault()
+    {
+        var client = CreateConfidentialClient(secret: new FakeSecret());
+        var compositeHasher = new CompositeClientSecretHasher(
+            [new FakeHasher(true)],
+            Options.Create(new ClientSecretHasherRegistrationOptions()));
+        var composite = new CompositeClientAuthenticator(
+            [new NullReturningAuthenticator()],
+            Resolver(client),
+            CreateServerOptions(TokenEndpointAuthMethods.ClientSecretBasic),
+            compositeHasher,
+            NullSanitizingLogger<CompositeClientAuthenticator>());
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Form = new FormCollection(new Dictionary<string, StringValues>
+        {
+            ["client_id"] = "client-1",
+        });
+
+        var result = await composite.AuthenticateAsync("client-1", httpContext, TestContext.Current.CancellationToken);
+
+        result.Authenticated.Should().BeFalse("an extension point returning null must fail closed, never throw");
+        result.Client.Should().BeNull();
+    }
 
     [Fact]
     public async Task AuthenticateAsync_returns_Authenticated_false_when_multiple_mechanisms_are_presented()

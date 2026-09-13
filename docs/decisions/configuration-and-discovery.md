@@ -74,12 +74,14 @@ a host suppressing warnings could still configure and advertise a control with n
 "migrate off this" is the wrong message for something that never worked here. The type system makes
 the state unrepresentable, so no validator rule compensates for it.
 
-**Never advertise a control that is not yet enforced.** `CodeChallengeMethodsSupported` defaults to
-`null`, meaning the field is omitted from discovery, precisely because advertisement shipped ahead of
-`code_verifier` validation. Defaulting to `[S256]` would tell every relying party that PKCE is
-enforced from the moment `AddZeeKayDaAuth` runs, and a PKCE-aware client trusting that claim would be
-exposed to the exact interception attack PKCE exists to prevent. The secure default for an
-unimplemented control is silence. `null` is the omit state; an empty collection is a validation error.
+**A control is advertised only while it is enforced, and the code grant is not served without
+it.** `CodeChallengeMethodsSupported` defaults to `[S256]` now that the token endpoint verifies
+every `code_verifier` with it; it defaulted to `null`, omitting the field, for as long as
+advertisement shipped ahead of verification, because a PKCE-aware client trusting the claim would
+have been exposed to the interception attack PKCE prevents. Startup now fails when
+`GrantTypesSupported` contains the code grant and the collection lacks `S256`, so the grant cannot
+be served with the enforcement path unadvertised. `null` remains the omit state, valid only on a
+host without the grant; an empty collection is a validation error.
 
 **Configuration is never serialised to the wire.** `IDiscoveryDocumentProvider` maps
 `AuthorizationServerOptions` onto `OpenIdConfigurationDocument`, the OIDC Discovery 1.0 wire model, so
