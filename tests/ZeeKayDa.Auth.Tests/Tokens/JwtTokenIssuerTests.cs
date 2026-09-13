@@ -215,7 +215,7 @@ public sealed class JwtTokenIssuerTests
         var (issuer, _) = await CreateIssuerAsync(rsa);
 
         var token = await issuer.IssueAsync(
-            new TokenIssuanceContext(Client, kind, new IssuedToken("access", TokenKind.AccessToken)),
+            new TokenIssuanceContext(Client, kind, kind == TokenKind.IdToken ? new IssuedToken("access", TokenKind.AccessToken) : null),
             new TokenPayload(new Dictionary<string, object?>()),
             TestContext.Current.CancellationToken);
 
@@ -398,11 +398,39 @@ public sealed class JwtTokenIssuerTests
         var (issuer, _) = await CreateIssuerAsync(rsa);
 
         var token = await issuer.IssueAsync(
-            new TokenIssuanceContext(Client, TokenKind.AccessToken, new IssuedToken("other", TokenKind.AccessToken)),
+            new TokenIssuanceContext(Client, TokenKind.AccessToken),
             new TokenPayload(new Dictionary<string, object?> { ["sub"] = "alice" }),
             TestContext.Current.CancellationToken);
 
         ParseSegment(token.Value.Split('.')[1]).TryGetProperty("at_hash", out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public void An_access_token_context_refuses_a_companion_token()
+    {
+        // The context has exactly two valid states; an access token carrying a companion it would
+        // ignore is a caller mistake, refused where it is made.
+        var act = () => new TokenIssuanceContext(Client, TokenKind.AccessToken, new IssuedToken("other", TokenKind.AccessToken));
+
+        act.Should().Throw<ArgumentException>().WithMessage("*Only an ID token*");
+    }
+
+    [Fact]
+    public void An_ID_token_context_refuses_a_companion_that_is_not_an_access_token()
+    {
+        var act = () => new TokenIssuanceContext(Client, TokenKind.IdToken, new IssuedToken("another-id-token", TokenKind.IdToken));
+
+        act.Should().Throw<ArgumentException>().WithMessage("*not to a token of kind IdToken*");
+    }
+
+    [Fact]
+    public void A_companion_set_through_with_is_checked_the_same_way()
+    {
+        var context = new TokenIssuanceContext(Client, TokenKind.AccessToken);
+
+        var act = () => context with { AccessToken = new IssuedToken("other", TokenKind.AccessToken) };
+
+        act.Should().Throw<ArgumentException>();
     }
 
     [Fact]

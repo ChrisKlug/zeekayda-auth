@@ -30,6 +30,22 @@ public readonly record struct TokenIssuanceContext(IClientMetadata Client, Token
     private readonly IClientMetadata? _client =
         Client ?? throw new ArgumentNullException(nameof(Client));
 
+    private readonly IssuedToken? _accessToken = Companion(Kind, AccessToken);
+
+    /// <summary>
+    /// Gets the access token an ID token is bound to; <see langword="null"/> for an access token.
+    /// </summary>
+    /// <exception cref="ArgumentException">
+    /// Thrown when a token is set on a context whose <see cref="Kind"/> is not
+    /// <see cref="TokenKind.IdToken"/>, or when the token set is not an access token: the context
+    /// has exactly two valid states, an access token with no companion and an ID token bound to one.
+    /// </exception>
+    public IssuedToken? AccessToken
+    {
+        get => _accessToken;
+        init => _accessToken = Companion(Kind, value);
+    }
+
     /// <summary>Gets the client the token is issued for.</summary>
     /// <exception cref="InvalidOperationException">
     /// Thrown when this instance is <see langword="default"/>(<see cref="TokenIssuanceContext"/>)
@@ -55,7 +71,29 @@ public readonly record struct TokenIssuanceContext(IClientMetadata Client, Token
             return true;
         }
 
-        builder.Append($"{nameof(Client)} = {_client.ClientId}, {nameof(Kind)} = {Kind}, {nameof(AccessToken)} = {(AccessToken is null ? "none" : "<present>")}");
+        builder.Append($"{nameof(Client)} = {_client.ClientId}, {nameof(Kind)} = {Kind}, {nameof(AccessToken)} = {(_accessToken is null ? "none" : "<present>")}");
         return true;
+    }
+
+    private static IssuedToken? Companion(TokenKind kind, IssuedToken? accessToken)
+    {
+        if (accessToken is null)
+            return null;
+
+        if (kind != TokenKind.IdToken)
+        {
+            throw new ArgumentException(
+                $"Only an ID token is bound to an access token; a {kind} issuance carries none.",
+                nameof(accessToken));
+        }
+
+        if (accessToken.Kind != TokenKind.AccessToken)
+        {
+            throw new ArgumentException(
+                $"An ID token is bound to an access token, not to a token of kind {accessToken.Kind}.",
+                nameof(accessToken));
+        }
+
+        return accessToken;
     }
 }
