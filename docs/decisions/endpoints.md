@@ -77,8 +77,9 @@ read, and a body the form reader refuses is `invalid_request`, never the host's 
 `invalid_client` is `401` with a `WWW-Authenticate` naming the scheme the client used when it sent
 one `Authorization` header (§5.2 MUST) and `400` otherwise; the description never says whether the
 client was unknown or the credential wrong. A server fault is `500` with `server_error`, and a
-`GET` is `405`, not a protocol error. The route allows anonymous access, as every framework route
-does, so a host's fallback authorization policy cannot pre-empt client authentication.
+`GET` is `405`, not a protocol error. The route allows anonymous access, as the discovery, JWKS,
+resume and provider-callback routes do, so a host's fallback authorization policy cannot pre-empt
+client authentication.
 
 **All three protocol endpoints are implemented; nothing answers `501` any more.** Routes were
 mapped and shaped before their implementations landed so discovery stayed stable; the last stub,

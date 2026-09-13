@@ -880,8 +880,9 @@ existence of shipped code as approval for any of them.
 - **§1.5 — the per-handoff signing self-test is covered by no sign-off** (#487). It was added to the
   signing path after both signing-key reviews completed.
 - **§2.1 — the plaintext `FamilyId` sign-off is predicated on conditions in unbuilt code** (#488).
-  The token endpoint must mint a fresh CSPRNG `familyId` per authorization code; it is still a stub,
-  so the premise the approval rests on is not yet satisfied.
+  Discharged by the token endpoint (the 2026-09-13 entry): a fresh 256-bit `StoreKeyGenerator` value
+  per code, proven by `Every_code_starts_its_own_family` and
+  `A_replayed_code_revokes_the_family_its_first_exchange_started`.
 - **§3.x — a non-blocking overflow note was only half discharged** (#486). One of the two expiry
   arithmetic call sites is guarded; the other is not.
 - **§1.3 — retired private-key memory residency on `KeySetOptions` is bounded only by request
@@ -1455,3 +1456,36 @@ Highs across two fix commits, then the maintainer's rulings verified by both age
   both promote, the completion claim deciding issuance; a parked principal from a provider removed from
   the registration is refused but untested; a best-effort remove that fails leaves a discarded principal
   readable — no tests.
+
+## 2026-09-13 — the token endpoint: the authorization code grant with PKCE (#71, commit `854addf`)
+
+Scoped to the endpoint, the grant, the PKCE verifier and the two lifetime options; the code store and
+the signing ring were signed off earlier. One round (Copilot code lens gating three Highs across two
+fix commits, then security and architect agents, security and architecture lenses, CodeScene), one
+finding four reviewers converged on fixed and lens-verified, then the maintainer's rulings on thirteen
+Medium/Lows verified by both agents.
+
+- PKCE for every client, S256 only, fixed-time; a wrong verifier burns the code; the startup gate.
+  Closed — `The_verifier_a_challenge_was_derived_from_is_accepted`,
+  `A_method_the_verifier_has_no_derivation_for_fails_closed`,
+  `A_request_without_a_code_verifier_is_refused_for_every_client`,
+  `A_code_verifier_that_does_not_match_the_challenge_is_refused_and_burns_the_code`,
+  `Validate_fails_when_the_code_grant_is_served_without_S256`.
+- Single use; a replay revokes a fresh 256-bit CSPRNG family minted per code; exact `redirect_uri`;
+  client binding checked without consuming; expiry. Closed — `A_code_is_single_use`,
+  `A_replayed_code_revokes_the_family_its_first_exchange_started`, `Every_code_starts_its_own_family`,
+  `A_redirect_uri_that_differs_from_the_one_the_code_was_issued_to_is_refused_and_burns_the_code`,
+  `A_code_presented_by_another_client_is_refused_and_left_for_its_owner`, `An_expired_code_is_refused`.
+- The tokens come from the registration that authenticated, read once; the server's grant list gates
+  before any client is named; a null from a custom authenticator refuses. Closed —
+  `The_tokens_are_issued_from_the_registration_that_authenticated_never_from_a_second_lookup`,
+  `A_host_that_does_not_serve_the_code_grant_refuses_the_exchange_before_naming_a_client`,
+  `An_authenticator_returning_null_is_a_refusal_not_a_fault`.
+- Fail closed with nothing half-issued, no material in logs, `no-store` on every response, signatures
+  verifiable against the served JWKS. Closed —
+  `A_store_failure_during_redemption_is_server_error_and_names_no_material`,
+  `A_signing_failure_is_server_error_and_no_token_leaves`, `A_token_response_is_never_cacheable`,
+  `The_access_token_is_a_JWT_carrying_the_grant_and_verifiable_against_the_served_JWKS`.
+- Residuals, accepted: a captured code can fail one login for its owner; a mutable ORM registration
+  can change within one request, which is the repository contract, not this endpoint — no tests.
+  The at_hash claim and the per-client ID-token algorithm check are the next slice.
