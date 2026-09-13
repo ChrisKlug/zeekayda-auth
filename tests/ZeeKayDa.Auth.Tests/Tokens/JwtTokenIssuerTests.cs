@@ -405,8 +405,9 @@ public sealed class JwtTokenIssuerTests
     [Fact]
     public void An_ID_token_context_cannot_be_built_without_an_access_token()
     {
-        // The only way to an ID-token context is ForIdToken, and it takes the access token it
-        // is bound to as a required argument — an unbound ID token is unrepresentable.
+        // The only way to an ID-token context is the IdTokenIssuanceContext constructor, and it
+        // takes the access token it is bound to as a required argument — an unbound ID token is
+        // unrepresentable.
         var act = () => new IdTokenIssuanceContext(Client, null!);
 
         act.Should().Throw<ArgumentNullException>();
