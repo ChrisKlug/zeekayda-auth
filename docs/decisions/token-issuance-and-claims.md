@@ -8,15 +8,9 @@ What must be true when a grant becomes tokens. The stores underneath are `token-
 resolved per `TokenKind` as a keyed DI service, with `JwsTokenIssuer` duties filled by
 `JwtTokenIssuer` over the signing key ring. Claim *selection* is unbuilt — `TokenPayload` arrives
 finalized, and the entries below are the constraints that layer inherits. Where claims come from is
-sketched in `docs/design/claims-resolution.md`; which token each lands in, and the access token's
-audience, in `docs/design/claim-selection.md`.
-
-**A JWT's header is built inside the ring's signing callback, never asserted afterwards.**
-`JwtTokenIssuer` reads `kid`/`alg` from the `SigningKey` the ring resolved for that exact call, so a
-header disagreeing with its signature is unrepresentable rather than detected. The key is resolved
-exactly once per token. A custom JWT issuer keeps this property by signing through
-`ISigningKeyRing.SignAsync` and building its header inside the callback — the atomicity guarantee
-belongs to that path, not to the `ITokenIssuer` contract itself.
+sketched in `docs/design/claims-resolution.md`; which token each lands in, in
+`docs/design/claim-selection.md`. What each token carries on the wire, its audience, its lifetime
+and its signature are `token-contents.md`.
 
 ## Decisions in force
 
@@ -104,24 +98,6 @@ closed constant compared case-insensitively. `iss`, `sub`, `aud`, `exp`, `auth_t
 `client_id` and the rest are written by the endpoint from the grant, so a provider cannot re-assert a
 subject, an audience or an authentication event.
 
-**The access token's audience is derived from the granted scopes, per RFC 9068 §3.** A scope may name
-the absolute URI of the resource server it is for; the token's `aud` is the one distinct such value,
-compared ordinally. Two distinct values in one effective scope is `invalid_scope` at the
-authorization endpoint before any interaction, and so is an effective scope with no definition, which
-has no audience to correlate to. Consent and refresh only narrow, so nothing later adds a second one;
-every scope string then correlates to exactly one audience, as RFC 9068 §2.2.3 and §5 ask.
-
-**The issuer is always an audience when `openid` is granted, and there is no switch to drop it.**
-Userinfo is a protected resource hosted by the issuer, and RFC 9068 §4 obliges a resource server to
-reject a token whose `aud` does not name it, so naming the issuer lets userinfo validate as an
-ordinary resource server. `aud` is a single string for one recipient, an array for two (RFC 7519
-§4.1.3); a token with no `aud` violates RFC 9068 §2.2 and is not issued. Accepted residual: an API
-holding a token can call userinfo with it for the claims the user granted that client; only
-per-resource tokens via `resource` would close that.
-
-**A scope's audience is an absolute URI with no fragment, checked at startup.** RFC 8707 §2 requires
-both of a resource indicator, so the `resource` parameter can later be a pure narrowing filter.
-
 **The `claims` request parameter and the `resource` parameter are deferred, not deviated from.** Both
 are OPTIONAL; `claims_parameter_supported` stays `false`, and RFC 8707 has no discovery flag.
 
@@ -129,20 +105,6 @@ are OPTIONAL; `claims_parameter_supported` stays `false`, and RFC 8707 has no di
 exception message.** By-key redaction covers the logging path; the endpoint itself must not embed a
 claim value in any exception or error response it produces. The family id is likewise not
 raw-loggable — log a truncated hash.
-
-**Exactly one component assembles the compact JWS, and it is the only caller of the signing service.**
-The signing service returns the encoded header and the signature and never a finished token, so `kid`
-and `alg` can never disagree with the key that signed; the writer's whole job is
-`header "." payload "." signature`. It is named for tokens rather than for JWTs, because the ID token,
-the access token and any future format share the one seam.
-
-**No shared signing-plus-encryption abstraction.** Encryption is a sibling seam the writer composes
-with when it lands, not a second method on the signing contract — one interface covering both would
-force every signing provider to carry a concept it has no equivalent for.
-
-**No JWT encryption in v1, not even an off toggle.** Without dynamic client registration no client can
-request an encrypted token, and the encryption discovery fields are OPTIONAL, so their absence is
-spec-correct rather than a gap.
 
 ## Tried, didn't work
 

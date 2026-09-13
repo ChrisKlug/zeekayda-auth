@@ -253,6 +253,45 @@ signature through the ring, `iss`, `exp`, `typ` of `at+jwt`, `aud` containing th
 `FamilyId` — never from anything stored — selects the userinfo set as above, and returns it with
 `sub` (OIDC Core §5.3.2 MUST).
 
+## Protocol claims and lifetimes
+
+The endpoint writes the protocol claims from the authorization code; `token-contents.md` fixes the
+lists. Two shapes are new. The server-wide defaults sit beside the refresh-token lifetime that
+already exists, and a registration overrides either one with `null` meaning "the server value":
+
+```csharp
+public sealed class TokenEndpointOptions
+{
+    public TimeSpan AccessTokenLifetime { get; set; } = TimeSpan.FromHours(1);
+    public TimeSpan IdTokenLifetime { get; set; } = TimeSpan.FromMinutes(5);
+    // RefreshTokenLifetime, AbsoluteFamilyLifetime as today
+}
+
+public interface IClientMetadata
+{
+    TimeSpan? AccessTokenLifetime => null;
+    TimeSpan? IdTokenLifetime => null;
+    // AllowedSigningAlgorithms as today, now also required to contain the signing key's algorithm
+}
+```
+
+Both server values must exceed zero, checked by the options validator at startup; a non-null client
+value must too, checked by the registration validator. There is no upper bound on either.
+
+**Assembly order.** The access token is issued first, because `at_hash` is the left half of a hash
+over its compact form (OIDC Core §3.3.2.11). The hash function follows the ID token's own `alg`, and
+the client's `AllowedSigningAlgorithms` check is against the key that signs, so both happen inside
+the ring's signing callback where the resolved key is known — the same place the header is built.
+That means the JWT issuer serialises the ID-token payload inside the callback, after adding the
+`at_hash` computed there, rather than receiving it pre-serialised; how `TokenPayload` expresses "an
+`at_hash` over this access token" is the token-endpoint issue's to shape.
+
+**Expiry and `iat`** come from one clock read per issuance, shared by both tokens: `exp` is that
+instant plus the effective lifetime for the kind. `auth_time`, `acr` and `amr` are copied from the
+code's `AuthTime`, `Acr` and `Amr`; `nonce` from its `Nonce`; `client_id` and the ID token's `aud`
+from its `ClientId`; `sub` from its `Sub`; `scope` is the granted scope list joined by spaces.
+`jti` is 128 bits from `RandomNumberGenerator`, base64url.
+
 ## Later, deliberately
 
 - **`claims` request parameter (OIDC Core §5.5).** OPTIONAL; `claims_parameter_supported` stays
