@@ -32,10 +32,11 @@ every issuance so there is no path where a client asks and it is missing, and a 
 its own freshness rule without a round trip. `at_hash` is OPTIONAL in the code flow (§3.1.3.6) and is
 written because it binds the ID token to the access token issued with it, so the ID token is assembled
 after the access token, which reaches its issuer through the issuance context; the payload stays
-finalized, the issuer adds only what depends on the key it resolves, and the shipped issuer refuses
-an ID-token issuance handed no access token rather than sign one unbound. The hash is the one the ID
-token's `alg` implies (§3.1.3.6), computed against the key that signs, never a key read earlier — like
-the header, it cannot disagree with the signature. `acr` and `amr` are written when the grant carries
+finalized, the issuer adds only what depends on the key it resolves, and the framework's JWT issuer
+refuses an ID-token issuance handed no access token rather than sign one unbound. The hash function
+is the one the ID token's `alg` implies (§3.1.3.6), over the access token's wire value, chosen inside
+the signing callback from the key that signs — never from a key read earlier — so like the header it
+cannot disagree with the signature. `acr` and `amr` are written when the grant carries
 them and omitted otherwise, never `null`.
 
 **`auth_time`, `acr` and `amr` are the grant's original authentication event, on every grant that
@@ -62,9 +63,9 @@ relying party can.
 
 **The access token's audience is derived from the granted scopes, per RFC 9068 §3.** A scope may name
 the absolute URI of the resource server it is for; the token's `aud` is the one distinct such value,
-compared ordinally. Two distinct values in one effective scope is `invalid_scope` at the
-authorization endpoint before any interaction, and so is an effective scope with no definition, which
-has no audience to correlate to. Consent and refresh only narrow, so nothing later adds a second one;
+compared ordinally. Two distinct values across the effective scopes is `invalid_scope` at the
+authorization endpoint before any interaction, and so is an effective scope string with no
+definition, which has no audience to correlate to. Consent and refresh only narrow, so nothing later adds a second one;
 every scope string then correlates to exactly one audience, as RFC 9068 §2.2.3 and §5 ask.
 
 **The issuer is always an audience when `openid` is granted, and there is no switch to drop it.**

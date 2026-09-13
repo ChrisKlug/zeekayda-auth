@@ -278,19 +278,25 @@ public interface IClientMetadata
 
 Both server values must exceed zero, checked by the options validator at startup; a non-null client
 value must too, checked by the registration validator, and both join `ClientRegistration` and its
-fingerprint. There is no upper bound on either; `exp` is computed the way
-`ComputeFamilyAbsoluteExpiry` computes the family ceiling, so an overflowing sum saturates instead of
-throwing, and a lifetime longer than `AbsoluteFamilyLifetime` logs a startup warning the way the
-`TimeSpan.MaxValue` sentinel already does.
+fingerprint. There is no upper bound on either. `exp` is `now` plus the effective lifetime, and the
+addition saturates at `DateTimeOffset.MaxValue` instead of throwing — only that saturating step is
+shared with `ComputeFamilyAbsoluteExpiry`, which adds a different option. A server lifetime longer
+than `AbsoluteFamilyLifetime` logs a startup warning the way the `TimeSpan.MaxValue` sentinel does; a
+client override longer than it warns when its registration is validated, since a custom repository
+may validate on resolution rather than at startup.
 
 **Assembly order.** The access token is issued first, because `at_hash` is the left half of a hash
-over its compact form (OIDC Core §3.1.3.6). The hash function follows the ID token's own `alg`, and
+over the access token's exact wire value — its compact serialization for a JWT, the handle for a
+reference token (OIDC Core §3.1.3.6). The hash function follows the ID token's own `alg`, and
 the client's `AllowedSigningAlgorithms` check is against the key that signs, so both happen inside
 the ring's signing callback where the resolved key is known — the same place the header is built.
 `TokenPayload` stays finalized: the access token reaches the ID-token issuer on the issuance context,
 which was built to be widened, and the issuer's contract becomes "adds only what depends on the key
-it resolves", which for the shipped JWT issuer is `at_hash` and nothing else. The ID-token payload is
-therefore serialised inside the callback, after `at_hash` is added:
+it resolves", which for the framework's JWT issuer is `at_hash` and nothing else. That is a deliberate
+change to `ITokenIssuer`'s documented contract ("the issuer does not select or amend them"); the
+implementation slice rewrites that XML doc in the same PR that adds `AccessToken`, so a custom issuer
+reads the new rule and not the old one. The ID-token payload is therefore serialised inside the
+callback, after `at_hash` is added:
 
 ```csharp
 public readonly record struct TokenIssuanceContext(
@@ -299,12 +305,15 @@ public readonly record struct TokenIssuanceContext(
     IssuedToken? AccessToken = null);   // set for an ID-token issuance; null otherwise
 ```
 
-The shipped issuer throws when `Kind` is `IdToken` and `AccessToken` is `null` or not an access
-token, and when `Kind` is `AccessToken` and one is supplied, so an endpoint bug cannot drop the
-binding silently. A custom ID-token issuer that ignores `AccessToken` issues a spec-valid token
-without the binding; that is the host's choice, and the register's "always carries" describes the
-shipped issuer. The ID token is issued before the refresh grant is persisted, so a refusal in the
-callback orphans no family row and burns nothing but the code.
+The hand-written `PrintMembers` and the default-instance guard stay; the new member is never printed,
+and `IssuedToken` prints its length only. The framework's JWT issuer throws when `Kind` is `IdToken`
+and `AccessToken` is `null` or not an access token, and when `Kind` is `AccessToken` and one is
+supplied, so an endpoint bug cannot drop the binding silently. A custom ID-token issuer that ignores
+`AccessToken` issues a spec-valid token without the binding; that is the host's choice, and the
+register's "always carries" describes the framework's issuer. On the code grant the ID token is
+issued before the refresh grant is persisted, so a refusal in the callback orphans no family row and
+burns nothing but the code. On a refresh the presented token is already consumed by then, so a
+refusal there is the half-applied rotation the register already requires to end in a revoked family.
 
 **Provenance.** `exp` and `iat` come from one clock read per issuance, shared by both tokens: `exp`
 is that instant plus the effective lifetime for the kind. `auth_time`, `acr` and `amr` are the
