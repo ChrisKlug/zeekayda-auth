@@ -29,18 +29,6 @@ internal sealed class TokenRequest
         ClientId = form["client_id"].ToString() is { Length: > 0 } clientId ? clientId : null;
     }
 
-    /// <summary>The authorization code being exchanged.</summary>
-    public string Code { get; }
-
-    /// <summary>The redirect URI the client says the code was delivered to.</summary>
-    public string RedirectUri { get; }
-
-    /// <summary>The PKCE verifier, well-formed but not yet checked against the stored challenge.</summary>
-    public string CodeVerifier { get; }
-
-    /// <summary>The <c>client_id</c> form parameter, or <see langword="null"/> when absent.</summary>
-    public string? ClientId { get; }
-
     /// <summary>
     /// Parses <paramref name="form"/>, reporting the first rule it breaks. Rules are ordered so
     /// the error a client sees names the earliest thing wrong with its request.
@@ -57,14 +45,12 @@ internal sealed class TokenRequest
         return error is null;
     }
 
-    private static TokenError? NoDuplicatedParameters(IFormCollection form)
-    {
-        var duplicated = form.FirstOrDefault(parameter => parameter.Value.Count > 1);
-
-        return duplicated.Key is null
-            ? null
-            : TokenError.InvalidRequest($"The {duplicated.Key} parameter must not be repeated.");
-    }
+    // The offending key is not echoed: it is attacker-chosen, and RFC 6749 §5.2 restricts what
+    // an error_description may contain.
+    private static TokenError? NoDuplicatedParameters(IFormCollection form) =>
+        form.Any(parameter => parameter.Value.Count > 1)
+            ? TokenError.InvalidRequest("A parameter must not be repeated.")
+            : null;
 
     private static TokenError? GrantTypeIsAuthorizationCode(IFormCollection form)
     {
@@ -99,6 +85,18 @@ internal sealed class TokenRequest
             ? null
             : TokenError.InvalidRequest("The code_verifier parameter is malformed.");
     }
+
+    /// <summary>The authorization code being exchanged.</summary>
+    public string Code { get; }
+
+    /// <summary>The redirect URI the client says the code was delivered to.</summary>
+    public string RedirectUri { get; }
+
+    /// <summary>The PKCE verifier, well-formed but not yet checked against the stored challenge.</summary>
+    public string CodeVerifier { get; }
+
+    /// <summary>The <c>client_id</c> form parameter, or <see langword="null"/> when absent.</summary>
+    public string? ClientId { get; }
 }
 
 /// <summary>An <c>error</c> and <c>error_description</c> pair the token endpoint answers with.</summary>

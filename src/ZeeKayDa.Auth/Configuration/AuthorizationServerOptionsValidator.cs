@@ -147,87 +147,7 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
             }
         }
 
-        // Validate Token group
-        if (options.TokenEndpoint.AuthMethodsSupported is null ||
-            options.TokenEndpoint.AuthMethodsSupported.Count == 0)
-        {
-            errors.Add(TokenEndpointAuthMethodsRequiredMessage);
-        }
-        else
-        {
-            foreach (var authMethod in options.TokenEndpoint.AuthMethodsSupported)
-            {
-                if (string.IsNullOrWhiteSpace(authMethod))
-                {
-                    errors.Add(
-                        "AuthorizationServerOptions.TokenEndpoint.AuthMethodsSupported contains an invalid entry: " +
-                        "each entry must be a non-empty, non-whitespace string.");
-                    continue;
-                }
-                if (authMethod != authMethod.Trim())
-                {
-                    errors.Add(
-                        "AuthorizationServerOptions.TokenEndpoint.AuthMethodsSupported contains an invalid entry: " +
-                        $"'{authMethod}' has leading or trailing whitespace.");
-                    continue;
-                }
-                if (authMethod.Any(char.IsControl))
-                {
-                    errors.Add(
-                        "AuthorizationServerOptions.TokenEndpoint.AuthMethodsSupported contains an invalid entry: " +
-                        $"'{authMethod}' contains one or more control characters.");
-                }
-            }
-
-            // If client_credentials grant is supported, must have at least one non-None auth method
-            if (options.GrantTypesSupported is not null &&
-                options.GrantTypesSupported.Contains(GrantType.ClientCredentials) &&
-                options.TokenEndpoint.AuthMethodsSupported.All(m => string.Equals(m, TokenEndpointAuthMethods.None, StringComparison.Ordinal)))
-            {
-                errors.Add(ClientCredentialsRequiresNonNoneTokenAuthMethodMessage);
-            }
-        }
-
-        // A zero or negative refresh token lifetime is nonsensical and must be rejected at startup.
-        if (options.TokenEndpoint.RefreshTokenLifetime <= TimeSpan.Zero)
-        {
-            errors.Add(
-                "AuthorizationServerOptions.TokenEndpoint.RefreshTokenLifetime must be greater than zero.");
-        }
-
-        // RefreshTokenLifetime must be >= AuthorizationCodeLifetime so the authorization code
-        // tombstone retention window covers the full code validity window — otherwise a delayed
-        // code replay could escape the RFC 9700 §2.1.1 family-revocation mandate.
-        if (options.TokenEndpoint.RefreshTokenLifetime > TimeSpan.Zero &&
-            options.AuthorizationEndpoint.AuthorizationCodeLifetime > TimeSpan.Zero &&
-            options.TokenEndpoint.RefreshTokenLifetime < options.AuthorizationEndpoint.AuthorizationCodeLifetime)
-        {
-            errors.Add(
-                "AuthorizationServerOptions.TokenEndpoint.RefreshTokenLifetime must be greater than or equal to " +
-                "AuthorizationServerOptions.AuthorizationEndpoint.AuthorizationCodeLifetime to ensure tombstone " +
-                "retention covers the authorization code validity window.");
-        }
-
-        // A zero or negative absolute family lifetime is nonsensical and must be rejected at
-        // startup. TimeSpan.MaxValue is the explicit, warned "unbounded" sentinel and remains
-        // valid here.
-        if (options.TokenEndpoint.AbsoluteFamilyLifetime <= TimeSpan.Zero)
-        {
-            errors.Add(
-                "AuthorizationServerOptions.TokenEndpoint.AbsoluteFamilyLifetime must be greater than zero.");
-        }
-
-        if (options.TokenEndpoint.AccessTokenLifetime <= TimeSpan.Zero)
-        {
-            errors.Add(
-                "AuthorizationServerOptions.TokenEndpoint.AccessTokenLifetime must be greater than zero.");
-        }
-
-        if (options.TokenEndpoint.IdTokenLifetime <= TimeSpan.Zero)
-        {
-            errors.Add(
-                "AuthorizationServerOptions.TokenEndpoint.IdTokenLifetime must be greater than zero.");
-        }
+        ValidateTokenEndpoint(options, errors);
 
         // Validate IdToken group. Null is the default and means "advertise the whole published key
         // set"; an empty filter would advertise nothing at all, which is never what an operator
@@ -384,6 +304,94 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
             errors.Add(jwksError.FailureMessage!);
 
         return errors.Count > 0 ? ValidateOptionsResult.Fail(errors) : ValidateOptionsResult.Success;
+    }
+
+    /// <summary>Validates the <c>TokenEndpoint</c> options group.</summary>
+    private static void ValidateTokenEndpoint(
+        AuthorizationServerOptions options,
+        List<string> errors)
+    {
+        // Validate Token group
+        if (options.TokenEndpoint.AuthMethodsSupported is null ||
+            options.TokenEndpoint.AuthMethodsSupported.Count == 0)
+        {
+            errors.Add(TokenEndpointAuthMethodsRequiredMessage);
+        }
+        else
+        {
+            foreach (var authMethod in options.TokenEndpoint.AuthMethodsSupported)
+            {
+                if (string.IsNullOrWhiteSpace(authMethod))
+                {
+                    errors.Add(
+                        "AuthorizationServerOptions.TokenEndpoint.AuthMethodsSupported contains an invalid entry: " +
+                        "each entry must be a non-empty, non-whitespace string.");
+                    continue;
+                }
+                if (authMethod != authMethod.Trim())
+                {
+                    errors.Add(
+                        "AuthorizationServerOptions.TokenEndpoint.AuthMethodsSupported contains an invalid entry: " +
+                        $"'{authMethod}' has leading or trailing whitespace.");
+                    continue;
+                }
+                if (authMethod.Any(char.IsControl))
+                {
+                    errors.Add(
+                        "AuthorizationServerOptions.TokenEndpoint.AuthMethodsSupported contains an invalid entry: " +
+                        $"'{authMethod}' contains one or more control characters.");
+                }
+            }
+
+            // If client_credentials grant is supported, must have at least one non-None auth method
+            if (options.GrantTypesSupported is not null &&
+                options.GrantTypesSupported.Contains(GrantType.ClientCredentials) &&
+                options.TokenEndpoint.AuthMethodsSupported.All(m => string.Equals(m, TokenEndpointAuthMethods.None, StringComparison.Ordinal)))
+            {
+                errors.Add(ClientCredentialsRequiresNonNoneTokenAuthMethodMessage);
+            }
+        }
+
+        // A zero or negative refresh token lifetime is nonsensical and must be rejected at startup.
+        if (options.TokenEndpoint.RefreshTokenLifetime <= TimeSpan.Zero)
+        {
+            errors.Add(
+                "AuthorizationServerOptions.TokenEndpoint.RefreshTokenLifetime must be greater than zero.");
+        }
+
+        // RefreshTokenLifetime must be >= AuthorizationCodeLifetime so the authorization code
+        // tombstone retention window covers the full code validity window — otherwise a delayed
+        // code replay could escape the RFC 9700 §2.1.1 family-revocation mandate.
+        if (options.TokenEndpoint.RefreshTokenLifetime > TimeSpan.Zero &&
+            options.AuthorizationEndpoint.AuthorizationCodeLifetime > TimeSpan.Zero &&
+            options.TokenEndpoint.RefreshTokenLifetime < options.AuthorizationEndpoint.AuthorizationCodeLifetime)
+        {
+            errors.Add(
+                "AuthorizationServerOptions.TokenEndpoint.RefreshTokenLifetime must be greater than or equal to " +
+                "AuthorizationServerOptions.AuthorizationEndpoint.AuthorizationCodeLifetime to ensure tombstone " +
+                "retention covers the authorization code validity window.");
+        }
+
+        // A zero or negative absolute family lifetime is nonsensical and must be rejected at
+        // startup. TimeSpan.MaxValue is the explicit, warned "unbounded" sentinel and remains
+        // valid here.
+        if (options.TokenEndpoint.AbsoluteFamilyLifetime <= TimeSpan.Zero)
+        {
+            errors.Add(
+                "AuthorizationServerOptions.TokenEndpoint.AbsoluteFamilyLifetime must be greater than zero.");
+        }
+
+        if (options.TokenEndpoint.AccessTokenLifetime <= TimeSpan.Zero)
+        {
+            errors.Add(
+                "AuthorizationServerOptions.TokenEndpoint.AccessTokenLifetime must be greater than zero.");
+        }
+
+        if (options.TokenEndpoint.IdTokenLifetime <= TimeSpan.Zero)
+        {
+            errors.Add(
+                "AuthorizationServerOptions.TokenEndpoint.IdTokenLifetime must be greater than zero.");
+        }
     }
 
     /// <summary>Validates the <c>AuthorizationEndpoint</c> options group.</summary>

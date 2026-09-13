@@ -37,6 +37,9 @@ internal sealed class TokenEndpoint : IZeeKayDaEndpoint
         endpoints.MapPost(
                 endpointUri.AbsolutePath,
                 (TokenRequestHandler handler, HttpContext context) => handler.HandleAsync(context))
-            .RequireIssuerHost(endpointUri);
+            .RequireIssuerHost(endpointUri)
+            // AllowAnonymous so a host-wide authorization fallback policy cannot turn the token
+            // endpoint into a host-scheme challenge: OAuth client authentication is its own.
+            .AllowAnonymous();
     }
 }

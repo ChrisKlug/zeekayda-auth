@@ -72,10 +72,13 @@ on the same condition — none — and metadata and route never disagree the way
 The form is parsed and every shape rule checked, then the server's own grant list consulted, then
 the client authenticated, then its grant allowlist read, before any store is touched: a malformed
 or unauthenticated request costs no I/O and consumes nothing, and a host that stopped serving the
-code grant redeems no code that outlived the change. `invalid_client` is `401` with a matching `WWW-Authenticate` when the client
-used the `Authorization` header (§5.2 MUST) and `400` otherwise; the description never says whether
-the client was unknown or the credential wrong. A server fault is `500` with `server_error`, and a
-`GET` is `405`, not a protocol error.
+code grant redeems no code that outlived the change. Only `application/x-www-form-urlencoded` is
+read, and a body the form reader refuses is `invalid_request`, never the host's 500.
+`invalid_client` is `401` with a `WWW-Authenticate` naming the scheme the client used when it sent
+one `Authorization` header (§5.2 MUST) and `400` otherwise; the description never says whether the
+client was unknown or the credential wrong. A server fault is `500` with `server_error`, and a
+`GET` is `405`, not a protocol error. The route allows anonymous access, as every framework route
+does, so a host's fallback authorization policy cannot pre-empt client authentication.
 
 **All three protocol endpoints are implemented; nothing answers `501` any more.** Routes were
 mapped and shaped before their implementations landed so discovery stayed stable; the last stub,

@@ -15,7 +15,7 @@ public sealed class CodeGrantTokenPayloadsTests
 
     private static readonly DateTimeOffset AuthTime = new(2026, 9, 13, 11, 55, 0, TimeSpan.Zero);
     private static readonly DateTimeOffset Now = new(2026, 9, 13, 12, 0, 0, TimeSpan.Zero);
-    private static readonly DateTimeOffset ExpiresAt = Now.AddHours(1);
+    private static readonly TimeSpan Lifetime = TimeSpan.FromHours(1);
 
     private static readonly IClientMetadata Client =
         ClientRegistration.CreatePublic("app", ["https://app.example.com/cb"], [], ["openid"]);
@@ -41,33 +41,37 @@ public sealed class CodeGrantTokenPayloadsTests
             ExpiresAt = Now.AddSeconds(50),
         };
 
+    private static CodeGrantTokenPayloads Payloads(AuthorizationCodeEntry? entry = null) =>
+        new(Issuer, Client, entry ?? Entry(), Now);
+
     // ── The access token ──────────────────────────────────────────────────────────────────────
 
     [Fact]
     public void The_access_token_carries_every_claim_RFC_9068_requires_and_nothing_else()
     {
-        var payload = CodeGrantTokenPayloads.AccessToken(Issuer, Client, Entry(), Now, ExpiresAt, jti: "token-1");
+        var prepared = Payloads().AccessToken(Lifetime, jti: "token-1");
 
-        payload.Claims.Should().BeEquivalentTo(new Dictionary<string, object?>
+        prepared.Payload.Claims.Should().BeEquivalentTo(new Dictionary<string, object?>
         {
             ["iss"] = Issuer,
             ["sub"] = "user-1",
             ["aud"] = Issuer,
             ["client_id"] = "app",
             ["iat"] = Now.ToUnixTimeSeconds(),
-            ["exp"] = ExpiresAt.ToUnixTimeSeconds(),
+            ["exp"] = Now.Add(Lifetime).ToUnixTimeSeconds(),
             ["jti"] = "token-1",
             ["scope"] = "openid profile",
             ["auth_time"] = AuthTime.ToUnixTimeSeconds(),
         });
+        prepared.ExpiresAt.Should().Be(Now.Add(Lifetime));
     }
 
     [Fact]
     public void The_access_token_never_carries_the_nonce()
     {
-        var payload = CodeGrantTokenPayloads.AccessToken(Issuer, Client, Entry(nonce: "n-1"), Now, ExpiresAt, jti: "token-1");
+        var prepared = Payloads(Entry(nonce: "n-1")).AccessToken(Lifetime, jti: "token-1");
 
-        payload.Claims.Should().NotContainKey("nonce", "the nonce binds the ID token to the request, not the access token");
+        prepared.Payload.Claims.Should().NotContainKey("nonce", "the nonce binds the ID token to the request, not the access token");
     }
 
     // ── The ID token ──────────────────────────────────────────────────────────────────────────
@@ -75,34 +79,35 @@ public sealed class CodeGrantTokenPayloadsTests
     [Fact]
     public void The_ID_token_carries_every_claim_OIDC_Core_requires_and_the_nonce()
     {
-        var payload = CodeGrantTokenPayloads.IdToken(Issuer, Client, Entry(), Now, ExpiresAt);
+        var prepared = Payloads().IdToken(Lifetime);
 
-        payload.Claims.Should().BeEquivalentTo(new Dictionary<string, object?>
+        prepared.Payload.Claims.Should().BeEquivalentTo(new Dictionary<string, object?>
         {
             ["iss"] = Issuer,
             ["sub"] = "user-1",
             ["aud"] = "app",
             ["iat"] = Now.ToUnixTimeSeconds(),
-            ["exp"] = ExpiresAt.ToUnixTimeSeconds(),
+            ["exp"] = Now.Add(Lifetime).ToUnixTimeSeconds(),
             ["auth_time"] = AuthTime.ToUnixTimeSeconds(),
             ["nonce"] = "n-0S6_WzA2Mj",
         });
+        prepared.ExpiresAt.Should().Be(Now.Add(Lifetime));
     }
 
     [Fact]
     public void The_ID_token_has_one_audience_which_is_the_client()
     {
-        var payload = CodeGrantTokenPayloads.IdToken(Issuer, Client, Entry(), Now, ExpiresAt);
+        var prepared = Payloads().IdToken(Lifetime);
 
-        payload.Claims["aud"].Should().Be("app", "a single recipient is a string, not an array (RFC 7519 §4.1.3)");
+        prepared.Payload.Claims["aud"].Should().Be("app", "a single recipient is a string, not an array (RFC 7519 §4.1.3)");
     }
 
     [Fact]
     public void An_ID_token_for_a_grant_without_a_nonce_omits_the_claim()
     {
-        var payload = CodeGrantTokenPayloads.IdToken(Issuer, Client, Entry(nonce: null), Now, ExpiresAt);
+        var prepared = Payloads(Entry(nonce: null)).IdToken(Lifetime);
 
-        payload.Claims.Should().NotContainKey("nonce", "a claim is omitted, never written as null");
+        prepared.Payload.Claims.Should().NotContainKey("nonce", "a claim is omitted, never written as null");
     }
 
     // ── The authentication event, on both tokens ──────────────────────────────────────────────
@@ -110,10 +115,10 @@ public sealed class CodeGrantTokenPayloadsTests
     [Fact]
     public void Acr_and_amr_are_written_on_both_tokens_when_the_grant_carries_them()
     {
-        var entry = Entry(acr: "urn:mace:incommon:iap:silver", amr: ["pwd", "otp"]);
+        var payloads = Payloads(Entry(acr: "urn:mace:incommon:iap:silver", amr: ["pwd", "otp"]));
 
-        var accessToken = CodeGrantTokenPayloads.AccessToken(Issuer, Client, entry, Now, ExpiresAt, jti: "token-1");
-        var idToken = CodeGrantTokenPayloads.IdToken(Issuer, Client, entry, Now, ExpiresAt);
+        var accessToken = payloads.AccessToken(Lifetime, jti: "token-1").Payload;
+        var idToken = payloads.IdToken(Lifetime).Payload;
 
         foreach (var payload in new[] { accessToken, idToken })
         {
@@ -125,10 +130,10 @@ public sealed class CodeGrantTokenPayloadsTests
     [Fact]
     public void Acr_and_amr_are_omitted_when_the_grant_carries_none()
     {
-        var entry = Entry(acr: null, amr: null);
+        var payloads = Payloads(Entry(acr: null, amr: null));
 
-        var accessToken = CodeGrantTokenPayloads.AccessToken(Issuer, Client, entry, Now, ExpiresAt, jti: "token-1");
-        var idToken = CodeGrantTokenPayloads.IdToken(Issuer, Client, entry, Now, ExpiresAt);
+        var accessToken = payloads.AccessToken(Lifetime, jti: "token-1").Payload;
+        var idToken = payloads.IdToken(Lifetime).Payload;
 
         foreach (var payload in new[] { accessToken, idToken })
         {
@@ -140,25 +145,37 @@ public sealed class CodeGrantTokenPayloadsTests
     [Fact]
     public void An_empty_amr_list_is_omitted_rather_than_written_empty()
     {
-        var payload = CodeGrantTokenPayloads.IdToken(Issuer, Client, Entry(amr: []), Now, ExpiresAt);
+        var prepared = Payloads(Entry(amr: [])).IdToken(Lifetime);
 
-        payload.Claims.Should().NotContainKey("amr");
+        prepared.Payload.Claims.Should().NotContainKey("amr");
     }
 
     [Fact]
     public void The_authentication_time_is_the_sign_in_the_code_was_issued_from_not_the_issuance()
     {
-        var payload = CodeGrantTokenPayloads.IdToken(Issuer, Client, Entry(), Now, ExpiresAt);
+        var prepared = Payloads().IdToken(Lifetime);
 
-        payload.Claims["auth_time"].Should().Be(AuthTime.ToUnixTimeSeconds());
-        payload.Claims["auth_time"].Should().NotBe(Now.ToUnixTimeSeconds());
+        prepared.Payload.Claims["auth_time"].Should().Be(AuthTime.ToUnixTimeSeconds());
+        prepared.Payload.Claims["auth_time"].Should().NotBe(Now.ToUnixTimeSeconds());
     }
 
     [Fact]
-    public void A_saturated_expiry_serialises_as_the_largest_representable_instant()
+    public void Both_tokens_from_one_issuance_share_the_issued_at_instant()
     {
-        var payload = CodeGrantTokenPayloads.AccessToken(Issuer, Client, Entry(), Now, DateTimeOffset.MaxValue, jti: "token-1");
+        var payloads = Payloads();
 
-        payload.Claims["exp"].Should().Be(DateTimeOffset.MaxValue.ToUnixTimeSeconds());
+        var accessToken = payloads.AccessToken(TimeSpan.FromHours(1), jti: "token-1").Payload;
+        var idToken = payloads.IdToken(TimeSpan.FromMinutes(5)).Payload;
+
+        accessToken.Claims["iat"].Should().Be(idToken.Claims["iat"]);
+    }
+
+    [Fact]
+    public void An_unbounded_lifetime_saturates_the_expiry_at_the_largest_representable_instant()
+    {
+        var prepared = Payloads().AccessToken(TimeSpan.MaxValue, jti: "token-1");
+
+        prepared.ExpiresAt.Should().Be(DateTimeOffset.MaxValue);
+        prepared.Payload.Claims["exp"].Should().Be(DateTimeOffset.MaxValue.ToUnixTimeSeconds());
     }
 }

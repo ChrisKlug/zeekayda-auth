@@ -1,17 +1,20 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
+using Microsoft.Net.Http.Headers;
 using ZeeKayDa.Auth.AspNetCore.ClientAuthentication;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tokens;
 
 /// <summary>
-/// The token endpoint's request pipeline (RFC 6749 §3.2): parse the form, authenticate the
-/// client, check it may use the grant, then hand the grant its request. Every refusal before
-/// the grant costs no store I/O.
+/// The token endpoint's request pipeline (RFC 6749 §3.2): parse the form, check the server
+/// serves the grant, authenticate the client, check it may use the grant, then hand the grant
+/// its request. Every refusal before the grant costs no store I/O.
 /// </summary>
 internal sealed class TokenRequestHandler
 {
+    private const string FormUrlEncoded = "application/x-www-form-urlencoded";
+
     private readonly IOptions<AuthorizationServerOptions> _options;
     private readonly CompositeClientAuthenticator _authenticator;
     private readonly AuthorizationCodeGrant _grant;
@@ -36,10 +39,12 @@ internal sealed class TokenRequestHandler
 
         TokenResponses.MarkUncacheable(context.Response);
 
-        if (!context.Request.HasFormContentType)
+        // Exactly the serialization RFC 6749 §4.1.3 names, not any form the host could parse.
+        if (!IsFormUrlEncoded(context.Request))
             return TokenResponses.Error(TokenError.InvalidRequest("A token request must use application/x-www-form-urlencoded serialization."));
 
-        var form = await context.Request.ReadFormAsync(context.RequestAborted).ConfigureAwait(false);
+        if (await ReadFormAsync(context).ConfigureAwait(false) is not { } form)
+            return TokenResponses.Error(TokenError.InvalidRequest("The request body could not be read as a form."));
 
         if (!TokenRequest.TryParse(form, out var request, out var error))
             return TokenResponses.Error(error);
@@ -64,6 +69,26 @@ internal sealed class TokenRequestHandler
             return TokenResponses.Error(new TokenError(TokenRequestErrors.UnauthorizedClient, "The client is not authorized to use the authorization_code grant type."));
 
         return await _grant.ExchangeAsync(context, request, client).ConfigureAwait(false);
+    }
+
+    private static bool IsFormUrlEncoded(HttpRequest request) =>
+        MediaTypeHeaderValue.TryParse(request.ContentType, out var contentType) &&
+        contentType.MediaType.Equals(FormUrlEncoded, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// A body the form reader refuses, over the host's form limits or malformed, is the client's
+    /// mistake and is answered as one, with the headers already written left intact.
+    /// </summary>
+    private static async ValueTask<IFormCollection?> ReadFormAsync(HttpContext context)
+    {
+        try
+        {
+            return await context.Request.ReadFormAsync(context.RequestAborted).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is InvalidDataException or BadHttpRequestException)
+        {
+            return null;
+        }
     }
 
     private bool ServesCodeGrant() =>

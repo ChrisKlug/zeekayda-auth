@@ -47,9 +47,10 @@ internal sealed class AuthorizationCodeGrant
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(client);
 
-        // Resolved from the request's services rather than the constructor: the endpoint that
-        // owns this grant is built when the routes are mapped, before startup verification has
-        // said whether a store or a signing key ring is registered at all.
+        // Resolved from the request's services rather than the constructor: this is a singleton
+        // whose store and signing-ring dependencies are host registrations, and constructor
+        // injection would surface their absence as a raw DI error instead of the startup
+        // verifiers' own messages.
         var store = context.RequestServices.GetRequiredService<IAuthorizationCodeStore>();
 
         // Minted before the redemption so the tombstone written by it carries the family every
@@ -100,9 +101,12 @@ internal sealed class AuthorizationCodeGrant
 
         var now = _time.GetUtcNow();
         var lifetimes = _options.Value.TokenEndpoint;
-        var accessTokenExpiresAt = TokenLifetimes.ExpiresAt(now, TokenLifetimes.Effective(client.AccessTokenLifetime, lifetimes.AccessTokenLifetime));
-        var idTokenExpiresAt = TokenLifetimes.ExpiresAt(now, TokenLifetimes.Effective(client.IdTokenLifetime, lifetimes.IdTokenLifetime));
-        var issuer = _options.Value.Issuer!;
+        var payloads = new CodeGrantTokenPayloads(_options.Value.Issuer!, client, entry, now);
+        var accessTokenPayload = payloads.AccessToken(
+            TokenLifetimes.Effective(client.AccessTokenLifetime, lifetimes.AccessTokenLifetime),
+            jti: StoreKeyGenerator.Generate());
+        var idTokenPayload = payloads.IdToken(
+            TokenLifetimes.Effective(client.IdTokenLifetime, lifetimes.IdTokenLifetime));
 
         IssuedToken accessToken;
         IssuedToken idToken;
@@ -111,12 +115,12 @@ internal sealed class AuthorizationCodeGrant
             // The access token first: the ID token is assembled after it so it can be bound to it.
             accessToken = await Issuer(context, TokenKind.AccessToken).IssueAsync(
                 new TokenIssuanceContext(client, TokenKind.AccessToken),
-                CodeGrantTokenPayloads.AccessToken(issuer, client, entry, now, accessTokenExpiresAt, jti: StoreKeyGenerator.Generate()),
+                accessTokenPayload.Payload,
                 context.RequestAborted).ConfigureAwait(false);
 
             idToken = await Issuer(context, TokenKind.IdToken).IssueAsync(
                 new TokenIssuanceContext(client, TokenKind.IdToken),
-                CodeGrantTokenPayloads.IdToken(issuer, client, entry, now, idTokenExpiresAt),
+                idTokenPayload.Payload,
                 context.RequestAborted).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -129,15 +133,16 @@ internal sealed class AuthorizationCodeGrant
         return TokenResponses.Tokens(new TokenResponse(
             accessToken.Value,
             TokenType: "Bearer",
-            ExpiresIn: (long)(accessTokenExpiresAt - now).TotalSeconds,
+            ExpiresIn: (long)(accessTokenPayload.ExpiresAt - now).TotalSeconds,
             idToken.Value,
             Scope: string.Join(' ', entry.Scope)));
     }
 
     /// <summary>
     /// A code presented twice is a stolen code or a broken client, and either way the family the
-    /// first exchange started must not stay alive (RFC 9700 §4.5.3). A revocation the store
-    /// cannot perform is logged; the client is refused regardless.
+    /// first exchange started must not stay alive (RFC 9700 §4.5.3). The revocation is the
+    /// server's own action, so a client dropping the connection does not cancel it; one the
+    /// store cannot perform is logged; the client is refused regardless.
     /// </summary>
     private async Task<IResult> RefuseReplayAsync(HttpContext context, IClientMetadata client, string familyId)
     {
@@ -148,7 +153,7 @@ internal sealed class AuthorizationCodeGrant
             try
             {
                 var refreshTokens = context.RequestServices.GetRequiredService<IRefreshTokenStore>();
-                await refreshTokens.RevokeFamilyAsync(familyId, context.RequestAborted).ConfigureAwait(false);
+                await refreshTokens.RevokeFamilyAsync(familyId, CancellationToken.None).ConfigureAwait(false);
             }
             catch (ZeeKayDaStoreException ex)
             {

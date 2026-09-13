@@ -8,6 +8,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
@@ -107,7 +108,7 @@ public sealed class TokenEndpointTests : IDisposable
             with
         { AllowedGrantTypes = new HashSet<GrantType> { GrantType.RefreshToken } };
 
-    private static HttpClient NewClient(TestWebAppFactory factory) => factory.CreateClient(new()
+    private static HttpClient NewClient(WebApplicationFactory<TestWebAppFactory> factory) => factory.CreateClient(new()
     {
         BaseAddress = new Uri(Issuer),
         AllowAutoRedirect = false,
@@ -548,6 +549,7 @@ public sealed class TokenEndpointTests : IDisposable
 
         _refreshTokens.RevokedFamilies.Should().ContainSingle()
             .Which.Should().MatchRegex("^[A-Za-z0-9_-]{43}$", "the family id is a 256-bit CSPRNG value, minted before the redemption");
+        _refreshTokens.RevocationWasCancellable.Should().BeFalse("a client dropping the connection must not cancel the server's own security action");
     }
 
     [Fact]
@@ -605,6 +607,46 @@ public sealed class TokenEndpointTests : IDisposable
 
         await ShouldBeErrorAsync(response, "invalid_client", HttpStatusCode.Unauthorized);
         response.Headers.WwwAuthenticate.Should().ContainSingle().Which.Scheme.Should().Be("Basic");
+    }
+
+    [Fact]
+    public async Task A_failed_attempt_over_another_Authorization_scheme_is_401_with_a_challenge_naming_that_scheme()
+    {
+        var form = TokenForm(StoreKeyGenerator.Generate());
+        form.Remove("client_id");
+        using var request = new HttpRequestMessage(HttpMethod.Post, TokenPath) { Content = new FormUrlEncodedContent(form) };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", "not-a-client-credential");
+
+        var response = await _client.SendAsync(request, Cancellation);
+
+        await ShouldBeErrorAsync(response, "invalid_client", HttpStatusCode.Unauthorized);
+        response.Headers.WwwAuthenticate.Should().ContainSingle().Which.Scheme.Should().Be("Bearer", "RFC 6749 §5.2: the challenge matches the scheme the client used");
+    }
+
+    [Fact]
+    public async Task Two_Authorization_headers_are_refused_as_a_malformed_request_without_a_challenge()
+    {
+        var form = TokenForm(StoreKeyGenerator.Generate(), ConfidentialClient);
+        using var request = new HttpRequestMessage(HttpMethod.Post, TokenPath) { Content = new FormUrlEncodedContent(form) };
+        request.Headers.TryAddWithoutValidation("Authorization", ["Basic YTpi", "Basic Yzpk"]);
+
+        var response = await _client.SendAsync(request, Cancellation);
+
+        await ShouldBeErrorAsync(response, "invalid_client");
+        response.Headers.WwwAuthenticate.Should().BeEmpty("two headers is not an authentication attempt but a malformed one (RFC 7235 §4.2)");
+    }
+
+    [Fact]
+    public async Task The_token_endpoint_is_reachable_under_a_host_fallback_authorization_policy()
+    {
+        using var factory = new TestWebAppFactoryWithFallbackAuthorizationPolicy();
+        using var client = NewClient(factory);
+
+        var canary = await client.GetAsync("/host-route", Cancellation);
+        var response = await PostTokenWithAsync(client, TokenForm(StoreKeyGenerator.Generate(), clientId: "test-client"));
+
+        canary.StatusCode.Should().Be(HttpStatusCode.Unauthorized, "the fallback policy is in force on the host's own routes");
+        await ShouldBeErrorAsync(response, "invalid_grant");
     }
 
     [Fact]
@@ -682,14 +724,45 @@ public sealed class TokenEndpointTests : IDisposable
     }
 
     [Fact]
-    public async Task A_repeated_parameter_is_invalid_request()
+    public async Task A_repeated_parameter_is_invalid_request_and_its_name_is_not_echoed()
     {
+        // The key is attacker-chosen; RFC 6749 §5.2 restricts what an error_description may carry.
         var fields = TokenForm(StoreKeyGenerator.Generate()).ToList();
-        fields.Add(KeyValuePair.Create("code", "another"));
+        fields.Add(KeyValuePair.Create("0001<x>", "one"));
+        fields.Add(KeyValuePair.Create("0001<x>", "two"));
 
         var response = await PostTokenAsync(fields);
 
         await ShouldBeErrorAsync(response, "invalid_request");
+        (await ReadJsonAsync(response)).GetProperty("error_description").GetString()
+            .Should().Be("A parameter must not be repeated.");
+    }
+
+    [Fact]
+    public async Task A_multipart_body_is_invalid_request_and_consumes_nothing()
+    {
+        var code = await ObtainCodeAsync();
+        using var multipart = new MultipartFormDataContent();
+        foreach (var (key, value) in TokenForm(code))
+            multipart.Add(new StringContent(value), key);
+
+        var refused = await _client.PostAsync(TokenPath, multipart, Cancellation);
+        var retried = await PostTokenAsync(TokenForm(code));
+
+        await ShouldBeErrorAsync(refused, "invalid_request");
+        retried.StatusCode.Should().Be(HttpStatusCode.OK, "RFC 6749 §4.1.3 names one serialization, and a body in another is refused unread");
+    }
+
+    [Fact]
+    public async Task A_body_the_form_reader_refuses_is_invalid_request_with_the_no_store_headers_intact()
+    {
+        // One over the host's default form value-count limit.
+        var fields = Enumerable.Range(0, 1025).Select(i => KeyValuePair.Create("p" + i, "v"));
+
+        var response = await PostTokenAsync(fields);
+
+        await ShouldBeErrorAsync(response, "invalid_request");
+        response.Headers.CacheControl!.NoStore.Should().BeTrue();
     }
 
     [Fact]
@@ -803,6 +876,8 @@ public sealed class TokenEndpointTests : IDisposable
 
         public bool FailRevocation { get; set; }
 
+        public bool RevocationWasCancellable { get; private set; }
+
         public IReadOnlyList<string> RevokedFamilies
         {
             get { lock (_revoked) return [.. _revoked]; }
@@ -819,6 +894,8 @@ public sealed class TokenEndpointTests : IDisposable
 
         public Task RevokeFamilyAsync(string familyId, CancellationToken cancellationToken)
         {
+            RevocationWasCancellable = cancellationToken.CanBeCanceled;
+
             if (FailRevocation)
                 throw new ZeeKayDaStoreException("The grant store is unreachable.");
 

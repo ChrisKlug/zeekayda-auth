@@ -1,6 +1,6 @@
+using System.Net.Http.Headers;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Http;
-using ZeeKayDa.Auth.AspNetCore.ClientAuthentication;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tokens;
@@ -31,20 +31,30 @@ internal static class TokenResponses
             StatusCodes.Status500InternalServerError);
 
     /// <summary>
-    /// Client authentication failed. A client that used the <c>Authorization</c> header is
-    /// answered <c>401</c> with a matching <c>WWW-Authenticate</c> (RFC 6749 §5.2 MUST); one
-    /// that did not is answered <c>400</c>. The description never says which of "unknown
-    /// client" and "wrong credential" it was.
+    /// Client authentication failed. A client that used one <c>Authorization</c> header is
+    /// answered <c>401</c> with a <c>WWW-Authenticate</c> naming the scheme it used (RFC 6749 §5.2
+    /// MUST); one that sent none, or two, is answered <c>400</c>. The description never says
+    /// which of "unknown client" and "wrong credential" it was.
     /// </summary>
     public static IResult InvalidClient(HttpContext context)
     {
         var error = new TokenError(TokenRequestErrors.InvalidClient, "Client authentication failed.");
 
-        if (!BasicAuthorizationHeader.IsPresent(context.Request.Headers))
+        if (PresentedScheme(context.Request.Headers) is not { } scheme)
             return Error(error, StatusCodes.Status400BadRequest);
 
-        context.Response.Headers.WWWAuthenticate = "Basic realm=\"token\"";
+        context.Response.Headers.WWWAuthenticate = $"{scheme} realm=\"token\"";
         return Error(error, StatusCodes.Status401Unauthorized);
+    }
+
+    private static string? PresentedScheme(IHeaderDictionary headers)
+    {
+        var authorization = headers.Authorization;
+
+        if (authorization.Count != 1 || !AuthenticationHeaderValue.TryParse(authorization[0], out var header))
+            return null;
+
+        return header.Scheme;
     }
 
     private static IResult Error(TokenError error, int statusCode) =>
