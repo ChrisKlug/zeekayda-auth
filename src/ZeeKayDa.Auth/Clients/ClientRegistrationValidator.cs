@@ -26,6 +26,9 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
     private readonly ISanitizingLogger<ClientRegistrationValidator> _logger;
     private readonly ISigningKeyRing? _keyRing;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="ClientRegistrationValidator"/> class.
+    /// </summary>
     /// <param name="options">The authorization server options.</param>
     /// <param name="hasher">The composite hasher used to validate client secrets.</param>
     /// <param name="logger">The sanitizing logger.</param>
