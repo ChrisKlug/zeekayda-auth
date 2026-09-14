@@ -684,6 +684,19 @@ public sealed class RefreshTokenStoreTests
     }
 
     [Fact]
+    public async Task RevokeFamilyAsync_propagates_a_fault_from_the_gate_read_rather_than_treating_the_insert_as_benign()
+    {
+        // The row is persisted and readable, so the first confirmation passes; the gate itself
+        // then faults. A gate that cannot answer must not be read as a gate that says revoked.
+        var inner = new InMemoryRefreshTokenGrantStore();
+        var store = CreateStore(grantStore: new RowWrittenButGateFaultingGrantStore(inner));
+
+        var act = async () => await store.RevokeFamilyAsync("fam-485-gate-fault", CancellationToken.None);
+
+        await act.Should().ThrowAsync<ZeeKayDaStoreException>();
+    }
+
+    [Fact]
     public async Task RevokeFamilyAsync_propagates_a_fault_from_the_confirming_read_rather_than_treating_the_insert_as_benign()
     {
         var inner = new InMemoryRefreshTokenGrantStore();
@@ -1362,6 +1375,31 @@ public sealed class RefreshTokenStoreTests
 
         public ValueTask<bool> IsFamilyRevokedAsync(string familyId, CancellationToken cancellationToken)
             => ValueTask.FromResult(false);
+    }
+
+    /// <summary>Persists the row, fails the insert, answers the row read, and faults on the gate read.</summary>
+    private sealed class RowWrittenButGateFaultingGrantStore(IRefreshTokenGrantStore inner) : IRefreshTokenGrantStore
+    {
+        public async ValueTask InsertAsync(RefreshTokenGrant grant, CancellationToken cancellationToken)
+        {
+            await inner.InsertAsync(grant, cancellationToken);
+            throw new InvalidOperationException("Simulated index write failure after the row was persisted.");
+        }
+
+        public ValueTask<RefreshTokenGrant?> FindByHandleAsync(StoreKey handleHash, CancellationToken cancellationToken)
+            => inner.FindByHandleAsync(handleHash, cancellationToken);
+
+        public ValueTask<bool> TryMarkConsumedAsync(StoreKey handleHash, CancellationToken cancellationToken)
+            => inner.TryMarkConsumedAsync(handleHash, cancellationToken);
+
+        public ValueTask RevokeFamilyAsync(string familyId, CancellationToken cancellationToken)
+            => inner.RevokeFamilyAsync(familyId, cancellationToken);
+
+        public ValueTask RevokeBySubjectAsync(string subject, CancellationToken cancellationToken)
+            => inner.RevokeBySubjectAsync(subject, cancellationToken);
+
+        public ValueTask<bool> IsFamilyRevokedAsync(string familyId, CancellationToken cancellationToken)
+            => throw new InvalidOperationException("Simulated gate read fault.");
     }
 
     private sealed class InsertAndConfirmFailingGrantStore(IRefreshTokenGrantStore inner) : IRefreshTokenGrantStore
