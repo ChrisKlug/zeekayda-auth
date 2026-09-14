@@ -103,6 +103,20 @@ serving the protocol endpoints must therefore register a signing key source: wit
 nothing to derive from, and startup fails with `signing.key_ring.missing` rather than the first
 discovery request failing.
 
+**A scope definition is three claim lists and an optional audience, and nothing else.**
+`ScopeDefinition` names what the scope unlocks in the ID token, at userinfo and in the access token,
+as OpenID Connect wire names, and may name the absolute URI of the resource server it is for. There
+is no identity-resource, API-resource or API-scope registry: two scopes with the same audience string
+are the same API. `StandardScopes` is a static template the host passes to `AddInMemoryScopes`, with
+the §5.4 claims in both the ID-token and the userinfo list; scopes come from `IScopeRepository`, which
+is what a tenant will resolve when the framework becomes tenant-aware. Startup fails when an audience
+is not an absolute URI without a fragment (RFC 8707 §2, `scopes.audience.invalid`), when a scope
+lists a protocol claim other than `sub` that selection would never deliver (`scopes.claims.reserved`),
+and when an in-memory client allows a scope no definition exists for (`client.allowed_scopes.undefined`);
+the authorization endpoint applies the last rule per request, which covers custom repositories.
+`claims_supported` is not published; when it is, it is derived from the discoverable scopes' lists and
+the protocol claims, never configured as a separate list.
+
 **Collection keys bind by replacement, not merge.** An operator who sets one entry of an
 `IConfiguration` collection key loses the rest of that key's defaults. The validator's
 empty-and-subset checks are what turn the resulting gap into a startup failure rather than a quietly

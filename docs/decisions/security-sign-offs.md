@@ -1521,3 +1521,34 @@ chose over factories on a nullable slot, verified by the architecture lens.
   `TokenIssuanceContext_ToString_does_not_contain_the_access_token`.
 - Accepted seam, not a residual: a host that replaces the ID-token issuer takes over `at_hash` and
   the algorithm check, as `token-contents.md` records — no test.
+
+## 2026-09-14 — the claims provider seam, per-scope selection and the scope-derived audience (#648, commit `148c9e7`)
+
+Scoped to the `Claims` namespace, selection, the client-additions guard, audience derivation, the token
+endpoint's resolution path and the startup checks. Code lens gated two rounds (one Critical, two Highs
+fixed and lens-verified); security and architect agents with both lenses (two architecture Highs fixed
+and verified); the maintainer's rulings on fourteen Medium/Lows verified by both agents; one Low accepted.
+
+- A provider cannot re-assert a protocol claim in any casing or the `zkd:` namespace; the payload adds,
+  never assigns. Closed — `A_reserved_protocol_name_is_stripped_even_when_a_scope_lists_it`,
+  `Reserved_names_are_stripped_ignoring_case`, `A_provider_cannot_override_a_protocol_claim`,
+  `A_subject_claim_sharing_a_protocol_claims_name_fails_issuance_rather_than_overriding_the_grant`.
+- The provider holds only read-only copies; the seam is mandatory on every container. Closed —
+  `The_scopes_a_provider_is_handed_are_a_read_only_copy_of_the_grants_list`,
+  `A_container_that_cannot_answer_IsService_is_asked_to_resolve_the_provider_and_still_fails_without_one`.
+- No claim value reaches a log or error, and nothing is issued, on any failed resolution. Closed —
+  `A_throwing_provider_answers_server_error_and_no_claim_value_reaches_a_log`,
+  `A_result_list_that_throws_while_being_read_answers_server_error_and_leaks_nothing`,
+  `A_provider_whose_construction_fails_answers_server_error_and_leaks_nothing`,
+  `SubjectInvalid_answers_invalid_grant_and_issues_nothing`.
+- Consent-bearing claims arrive only through their scope, ignoring case, at startup, authorize and
+  exchange. Closed — `An_addition_differing_only_in_case_from_a_scope_claim_is_refused`,
+  `The_check_spans_destinations_so_an_access_token_addition_cannot_bypass_the_email_scope`,
+  `A_client_addition_that_collides_with_a_scope_added_after_startup_is_refused_at_the_next_request`.
+- One API per token, the issuer always an audience, a resource indicator or nothing; merges fail closed.
+  Closed — `Two_granted_scopes_with_different_audiences_are_refused_at_authorize_before_any_interaction`,
+  `An_audience_malformed_at_exchange_is_server_error`, `A_repeated_boolean_aborts_issuance`,
+  `Records_differing_only_in_case_are_one_repeat_so_a_single_valued_claim_in_two_casings_aborts`.
+- Residuals, accepted: selection sets compare ordinally while merging groups ignoring case, so one
+  claim configured in two casings for two destinations reaches one of them — no test; a registered
+  client with a colliding addition can drive one error log line per authorize request — no test.

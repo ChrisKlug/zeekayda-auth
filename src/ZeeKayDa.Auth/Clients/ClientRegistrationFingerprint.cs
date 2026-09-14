@@ -66,6 +66,9 @@ internal static class ClientRegistrationFingerprint
             client.AllowedSigningAlgorithms is null
                 ? [NullSentinel]
                 : client.AllowedSigningAlgorithms.Select(v => v.ToString()));
+        AppendSet(builder, "addidtoken", client.AdditionalIdTokenClaims);
+        AppendSet(builder, "adduserinfo", client.AdditionalUserInfoClaims);
+        AppendSet(builder, "addaccesstoken", client.AdditionalAccessTokenClaims);
         Append(builder, "atlifetime", client.AccessTokenLifetime?.Ticks.ToString(CultureInfo.InvariantCulture) ?? NullSentinel);
         Append(builder, "idlifetime", client.IdTokenLifetime?.Ticks.ToString(CultureInfo.InvariantCulture) ?? NullSentinel);
         var contentAddressable = AppendCredentials(builder, client.Credentials);

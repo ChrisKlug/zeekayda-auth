@@ -29,6 +29,10 @@ namespace ZeeKayDa.Auth.Tokens;
 /// Use JSON primitives (<see langword="string"/>, numbers, <see langword="bool"/>), arrays of
 /// them, or purpose-built claim shapes. Never pass a domain object: every property on it — and on
 /// everything it references — lands base64url-encoded inside a token readable by whoever holds it.
+/// The subject claims the framework selects arrive as <see cref="Claims.ClaimValue"/>, which
+/// serializes as the JSON it holds, so a custom issuer that serializes the payload through
+/// <c>System.Text.Json</c> writes them correctly without knowing the type; one that does not
+/// reads <see cref="Claims.ClaimValue.Kind"/> and writes with <see cref="Claims.ClaimValue.WriteTo"/>.
 /// </para>
 /// </remarks>
 public sealed record TokenPayload

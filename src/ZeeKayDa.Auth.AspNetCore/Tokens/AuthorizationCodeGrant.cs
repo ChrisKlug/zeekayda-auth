@@ -12,7 +12,8 @@ namespace ZeeKayDa.Auth.AspNetCore.Tokens;
 
 /// <summary>
 /// The authorization code grant (OAuth 2.1 §4.1.3, RFC 7636 §4.6): redeems the code for the
-/// authenticated client, checks what the code was bound to, and issues the tokens.
+/// authenticated client, checks what the code was bound to, resolves the subject's claims, and
+/// issues the tokens.
 /// </summary>
 /// <remarks>
 /// The code is consumed before anything about it is checked. A code whose binding fails —
@@ -24,19 +25,23 @@ internal sealed class AuthorizationCodeGrant
 {
     private readonly IOptions<AuthorizationServerOptions> _options;
     private readonly TimeProvider _time;
+    private readonly GrantClaimsResolver _claims;
     private readonly ISanitizingLogger<AuthorizationCodeGrant> _logger;
 
     public AuthorizationCodeGrant(
         IOptions<AuthorizationServerOptions> options,
         TimeProvider time,
+        GrantClaimsResolver claims,
         ISanitizingLogger<AuthorizationCodeGrant> logger)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(time);
+        ArgumentNullException.ThrowIfNull(claims);
         ArgumentNullException.ThrowIfNull(logger);
 
         _options = options;
         _time = time;
+        _claims = claims;
         _logger = logger;
     }
 
@@ -71,7 +76,7 @@ internal sealed class AuthorizationCodeGrant
         return redemption switch
         {
             AuthorizationCodeRedemptionResult.Redeemed redeemed =>
-                await IssueAsync(context, request, client, redeemed.Entry).ConfigureAwait(false),
+                await IssueAsync(context, request, client, redeemed.Entry, familyId).ConfigureAwait(false),
 
             AuthorizationCodeRedemptionResult.AlreadyRedeemed replayed =>
                 await RefuseReplayAsync(context, client, replayed.FamilyId).ConfigureAwait(false),
@@ -85,7 +90,7 @@ internal sealed class AuthorizationCodeGrant
     }
 
     /// <summary>The code is consumed; what it was bound to must now match what the request presents.</summary>
-    private async Task<IResult> IssueAsync(HttpContext context, TokenRequest request, IClientMetadata client, AuthorizationCodeEntry entry)
+    private async Task<IResult> IssueAsync(HttpContext context, TokenRequest request, IClientMetadata client, AuthorizationCodeEntry entry, string familyId)
     {
         if (!string.Equals(request.RedirectUri, entry.RedirectUri, StringComparison.Ordinal))
         {
@@ -111,9 +116,23 @@ internal sealed class AuthorizationCodeGrant
             return TokenResponses.ServerError();
         }
 
+        // Resolved fresh for this issuance, keyed on the family the code just started, so a
+        // subject the provider no longer serves gets nothing, and both tokens come from one pool.
+        var claims = await _claims.ResolveAsync(context, client, entry.Sub, entry.Scope, familyId).ConfigureAwait(false);
+
+        return claims switch
+        {
+            GrantClaimsOutcome.Issue issue => await IssueTokensAsync(context, client, entry, issue).ConfigureAwait(false),
+            GrantClaimsOutcome.SubjectInvalid => InvalidGrant(),
+            _ => TokenResponses.ServerError(),
+        };
+    }
+
+    private async Task<IResult> IssueTokensAsync(HttpContext context, IClientMetadata client, AuthorizationCodeEntry entry, GrantClaimsOutcome.Issue issue)
+    {
         var now = _time.GetUtcNow();
         var lifetimes = _options.Value.TokenEndpoint;
-        var payloads = new CodeGrantTokenPayloads(_options.Value.Issuer!, client, entry, now);
+        var payloads = new CodeGrantTokenPayloads(_options.Value.Issuer!, client, entry, now, issue.Claims, issue.ResourceAudience);
         var accessTokenPayload = payloads.AccessToken(
             TokenLifetimes.Effective(client.AccessTokenLifetime, lifetimes.AccessTokenLifetime),
             jti: StoreKeyGenerator.Generate());
@@ -182,8 +201,12 @@ internal sealed class AuthorizationCodeGrant
         return InvalidGrant();
     }
 
+    /// <summary>
+    /// One description for every refusal of the grant, a disabled subject included: which of the
+    /// bound values failed, or that the subject is no longer served, is not the client's to learn.
+    /// </summary>
     private static IResult InvalidGrant() =>
-        TokenResponses.Error(TokenError.InvalidGrant("The authorization code is invalid, expired, revoked, or was not issued to this client and redirect URI, or the code_verifier does not match."));
+        TokenResponses.Error(TokenError.InvalidGrant("The authorization code is invalid, expired, revoked, or was not issued to this client and redirect URI, or the code_verifier does not match, or the subject can no longer be issued tokens."));
 
     private static bool ClientAcceptsCurrentSigningKey(HttpContext context, IClientMetadata client) =>
         client.AllowedSigningAlgorithms is not { } allowed ||

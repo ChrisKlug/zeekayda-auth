@@ -79,6 +79,15 @@ public sealed record ClientRegistration : IClientRegistration
     /// <inheritdoc/>
     public TimeSpan? IdTokenLifetime { get; init; }
 
+    /// <inheritdoc/>
+    public IReadOnlyCollection<string> AdditionalIdTokenClaims { get; init; } = [];
+
+    /// <inheritdoc/>
+    public IReadOnlyCollection<string> AdditionalUserInfoClaims { get; init; } = [];
+
+    /// <inheritdoc/>
+    public IReadOnlyCollection<string> AdditionalAccessTokenClaims { get; init; } = [];
+
     /// <summary>
     /// Creates a confidential client registration with the given pre-built credential.
     /// </summary>

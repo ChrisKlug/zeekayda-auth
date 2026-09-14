@@ -105,10 +105,10 @@ public sealed class StartupActivatorOrderIndependenceTests
                     {
                         AllowedSigningAlgorithms = new HashSet<SigningAlgorithm> { SigningAlgorithm.ES512 },
                     }))
-                .AddInMemoryStores(allowOutsideDevelopment: true);
+                .AddInMemoryStores(allowOutsideDevelopment: true).AddTestClaimsProvider();
 
                 if (!signingFirst)
-                    authBuilder.AddTestSigningKeys();
+                    authBuilder.AddTestSigningKeys().AddTestClaimsProvider();
             });
 
             builder.Configure(app =>

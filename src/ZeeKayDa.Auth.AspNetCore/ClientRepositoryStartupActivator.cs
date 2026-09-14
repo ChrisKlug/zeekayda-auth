@@ -1,11 +1,13 @@
 using Microsoft.Extensions.DependencyInjection;
 using ZeeKayDa.Auth.Clients;
+using ZeeKayDa.Auth.Scopes;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.AspNetCore;
 
 /// <summary>
-/// Forces the registered <see cref="IClientRepository"/> to be resolved during host startup.
+/// Forces the registered <see cref="IClientRepository"/> to be resolved during host startup, and
+/// checks the in-memory registrations against the scope repository.
 /// </summary>
 /// <remarks>
 /// <see cref="InMemoryClientRepository"/> performs duplicate detection, per-client validation, and
@@ -49,6 +51,39 @@ internal sealed class ClientRepositoryStartupActivator : IStartupActivator
                 "are unreachable. Register a custom IClientRepository before calling " +
                 "AddInMemoryClients, or remove AddInMemoryClients entirely.",
                 repository.GetType().FullName);
+        }
+
+        if (repository is InMemoryClientRepository inMemory)
+            await CheckAgainstScopesAsync(context, scopedServices, inMemory, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The rules the authorization endpoint applies per request, applied once at startup to the
+    /// registrations the framework holds itself: every allowed scope is defined, and no claim
+    /// addition names a claim a scope unlocks. A custom repository is covered per request only.
+    /// </summary>
+    private static async ValueTask CheckAgainstScopesAsync(
+        StartupVerificationContext context,
+        IServiceProvider scopedServices,
+        InMemoryClientRepository repository,
+        CancellationToken cancellationToken)
+    {
+        var scopes = await scopedServices.GetRequiredService<IScopeRepository>().GetScopesAsync(cancellationToken).ConfigureAwait(false);
+        var defined = scopes.Select(scope => scope.Name).ToHashSet(StringComparer.Ordinal);
+
+        foreach (var client in repository.Registrations)
+        {
+            foreach (var scope in client.AllowedScopes.Where(scope => !defined.Contains(scope)))
+            {
+                context.AddFailure(
+                    "client.allowed_scopes.undefined",
+                    $"Client '{client.ClientId}' allows the scope '{scope}', which IScopeRepository does not define. " +
+                    "An undefined scope has no audience and unlocks no claims; define it with AddInMemoryScopes, " +
+                    "or remove it from the client.");
+            }
+
+            if (ClientClaimAdditions.FindCollision(client, scopes) is { } collision)
+                context.AddFailure("client.claim_additions.scope_claim", collision.Describe(client.ClientId));
         }
     }
 

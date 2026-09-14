@@ -166,4 +166,33 @@ public interface IClientMetadata
     /// validator rejects it otherwise. No upper bound is enforced.
     /// </remarks>
     TimeSpan? IdTokenLifetime => null;
+
+    /// <summary>
+    /// Claim types added to the ID token of every grant to this client, beyond what the granted
+    /// scopes unlock. Empty by default.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A selector, not a source: a type named here still has to come back from the host's
+    /// <c>IClaimsProvider</c> to appear anywhere. Additions only widen; removal is
+    /// <see cref="AllowedScopes"/>. An addition may not name a claim that any registered scope
+    /// unlocks in any destination, so a consent-bearing claim such as <c>email</c> can only
+    /// arrive through its scope; the framework checks that on every grant it selects claims for,
+    /// and a colliding registration is answered <c>server_error</c>. Compared with
+    /// <see cref="System.StringComparer.Ordinal"/>, whatever the collection's own comparer.
+    /// </para>
+    /// </remarks>
+    IReadOnlyCollection<string> AdditionalIdTokenClaims => [];
+
+    /// <summary>
+    /// Claim types added to the userinfo response of every grant to this client, beyond what the
+    /// granted scopes unlock. Empty by default; the rules of <see cref="AdditionalIdTokenClaims"/> apply.
+    /// </summary>
+    IReadOnlyCollection<string> AdditionalUserInfoClaims => [];
+
+    /// <summary>
+    /// Claim types added to the access token of every grant to this client, beyond what the
+    /// granted scopes unlock. Empty by default; the rules of <see cref="AdditionalIdTokenClaims"/> apply.
+    /// </summary>
+    IReadOnlyCollection<string> AdditionalAccessTokenClaims => [];
 }
