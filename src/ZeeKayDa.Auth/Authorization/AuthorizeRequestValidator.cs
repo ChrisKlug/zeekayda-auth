@@ -48,6 +48,7 @@ internal sealed partial class AuthorizeRequestValidator
         EffectiveScopeIncludesOpenId,
         EffectiveScopesAreDefined,
         EffectiveScopesNameOneResource,
+        EffectiveScopeAudienceIsAResourceIndicator,
         ClientAdditionsNameNoScopeClaim,
         NonceIsPresent,
         CodeChallengeIsPresent,
@@ -276,6 +277,19 @@ internal sealed partial class AuthorizeRequestValidator
         ScopeResolution.TryResolveAudience(context.GrantedDefinitions, out _)
             ? null
             : new Problem(AuthorizeRequestErrors.InvalidScope, "The scope parameter names scopes for more than one resource server.");
+
+    /// <remarks>
+    /// Startup refuses a malformed audience for every repository, so this is reachable only when
+    /// a repository changed under a live server. That is the operator's fault, not a defect in
+    /// the request, so it is <c>server_error</c> with the detail logged, not <c>invalid_scope</c>.
+    /// </remarks>
+    private static Problem? EffectiveScopeAudienceIsAResourceIndicator(RequestContext context) =>
+        ScopeResolution.FirstWithMalformedAudience(context.GrantedDefinitions) is { } scope
+            ? new Problem(
+                AuthorizeRequestErrors.ServerError,
+                "The server's scope configuration is not valid for this request.",
+                $"Scope '{scope.Name}' has an Audience of '{scope.Audience}', which is not an absolute URI without a fragment.")
+            : null;
 
     /// <remarks>
     /// The registration's claim additions are checked against the whole scope set on every

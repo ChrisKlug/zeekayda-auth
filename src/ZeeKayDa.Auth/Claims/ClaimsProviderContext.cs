@@ -39,15 +39,15 @@ public sealed record ClaimsProviderContext(
     IReadOnlySet<string> ClaimTypes,
     string? FamilyId)
 {
-    /// <inheritdoc cref="ClaimsProviderContext" path="/param[@name='Sub']"/>
+    /// <summary><inheritdoc cref="ClaimsProviderContext" path="/param[@name='Sub']/node()"/></summary>
     public string Sub { get; } = !string.IsNullOrEmpty(Sub)
         ? Sub
         : throw new ArgumentException("The subject identifier must not be null or empty.", nameof(Sub));
 
-    /// <inheritdoc cref="ClaimsProviderContext" path="/param[@name='Scopes']"/>
+    /// <summary><inheritdoc cref="ClaimsProviderContext" path="/param[@name='Scopes']/node()"/></summary>
     public IReadOnlyList<string> Scopes { get; } = Snapshot(Scopes ?? throw new ArgumentNullException(nameof(Scopes)));
 
-    /// <inheritdoc cref="ClaimsProviderContext" path="/param[@name='ClaimTypes']"/>
+    /// <summary><inheritdoc cref="ClaimsProviderContext" path="/param[@name='ClaimTypes']/node()"/></summary>
     public IReadOnlySet<string> ClaimTypes { get; } = Snapshot(ClaimTypes ?? throw new ArgumentNullException(nameof(ClaimTypes)));
 
     /// <summary>Names the scopes and counts the claim types; never prints the subject.</summary>

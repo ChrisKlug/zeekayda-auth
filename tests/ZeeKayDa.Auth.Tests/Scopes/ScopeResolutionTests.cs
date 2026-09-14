@@ -78,15 +78,20 @@ public sealed class ScopeResolutionTests
     [InlineData("/orders")]
     [InlineData("C:\\orders")]
     [InlineData("https://orders.example.com/#")]
-    public void An_audience_that_is_not_a_resource_indicator_cannot_be_resolved_even_alone(string audience)
+    public void A_scope_whose_audience_is_not_a_resource_indicator_is_found(string audience)
     {
         // Startup checks the shape, but a repository may have changed under a live server, and
         // the raw string is what the token would carry.
         var scope = new ScopeDefinition { Name = "x", Audience = audience };
 
-        var ok = ScopeResolution.TryResolveAudience([StandardScopes.OpenId, scope], out _);
+        ScopeResolution.FirstWithMalformedAudience([StandardScopes.OpenId, scope]).Should().Be(scope);
+        ScopeResolution.IsResourceIndicator(audience).Should().BeFalse();
+    }
 
-        ok.Should().BeFalse();
+    [Fact]
+    public void Well_formed_audiences_and_identity_scopes_have_no_malformed_audience()
+    {
+        ScopeResolution.FirstWithMalformedAudience([StandardScopes.OpenId, OrdersRead]).Should().BeNull();
     }
 
     [Theory]

@@ -294,6 +294,22 @@ public class AuthorizeRequestValidatorTests
     }
 
     [Fact]
+    public async Task Phase2_a_malformed_audience_from_a_changed_repository_is_server_error_not_invalid_scope()
+    {
+        // Startup refuses the shape; only a repository that changed afterwards reaches this, and
+        // that is the operator's fault, not the client's request.
+        var client = Client() with { AllowedScopes = new HashSet<string>(StringComparer.Ordinal) { "openid", "orders.read" } };
+        var parameters = ValidParameters();
+        parameters["scope"] = ["openid orders.read"];
+
+        var result = await Validate(parameters, client, [.. StandardScopes.All, new ScopeDefinition { Name = "orders.read", Audience = "orders" }]);
+
+        var error = result.Should().BeOfType<AuthorizeRequestValidationResult.RedirectError>().Subject;
+        error.Error.Should().Be("server_error");
+        error.Description.Should().NotContain("orders");
+    }
+
+    [Fact]
     public async Task Phase2_a_client_addition_naming_a_scope_claim_is_server_error_with_a_generic_description()
     {
         var client = Client() with { AdditionalAccessTokenClaims = ["email"] };

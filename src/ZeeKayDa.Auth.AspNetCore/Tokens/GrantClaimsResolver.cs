@@ -71,6 +71,12 @@ internal sealed class GrantClaimsResolver
             return GrantClaimsOutcome.Failed.Instance;
         }
 
+        if (ScopeResolution.FirstWithMalformedAudience(granted) is { } malformed)
+        {
+            _logger.LogError("Client {ClientId} holds a grant for the scope {Scope}, whose Audience is not an absolute URI without a fragment; nothing was issued.", client.ClientId, malformed.Name);
+            return GrantClaimsOutcome.Failed.Instance;
+        }
+
         if (ClientClaimAdditions.FindCollision(client, definitions) is { } collision)
         {
             _logger.LogError("Client {ClientId} could not be issued tokens: {Detail}", client.ClientId, collision.Describe(client.ClientId));
@@ -82,7 +88,7 @@ internal sealed class GrantClaimsResolver
 
         return result switch
         {
-            ClaimsResolutionResult.Resolved resolved => Select(client, resolved, plan, resourceAudience),
+            ClaimsResolutionResult.Resolved resolved => Select(client, resolved, plan, resourceAudience, cancellationToken),
             ClaimsResolutionResult.SubjectInvalid => SubjectInvalid(client),
             _ => GrantClaimsOutcome.Failed.Instance,
         };
@@ -122,16 +128,22 @@ internal sealed class GrantClaimsResolver
     private static bool IsProviderFailure(Exception ex, CancellationToken cancellationToken) =>
         ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested;
 
-    private GrantClaimsOutcome Select(IClientMetadata client, ClaimsResolutionResult.Resolved resolved, ClaimSelectionPlan plan, string? resourceAudience)
+    private GrantClaimsOutcome Select(
+        IClientMetadata client,
+        ClaimsResolutionResult.Resolved resolved,
+        ClaimSelectionPlan plan,
+        string? resourceAudience,
+        CancellationToken cancellationToken)
     {
         // Materialised first, on its own: the list is the provider's, so enumerating it runs its
-        // code, and anything that throws there is logged redacted, never by its message.
+        // code, and anything that throws there, its own cancellation included, is logged
+        // redacted, never by its message.
         ClaimRecord[] pool;
         try
         {
             pool = [.. resolved.Claims];
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (IsProviderFailure(ex, cancellationToken))
         {
             _logger.LogError(ex, "The claims provider's result for a grant to client {ClientId} could not be read; nothing was issued.", client.ClientId);
             return GrantClaimsOutcome.Failed.Instance;

@@ -262,6 +262,31 @@ public sealed class ClaimSelectionTests
     }
 
     [Fact]
+    public void Records_differing_only_in_case_are_one_repeat_so_a_single_valued_claim_in_two_casings_aborts()
+    {
+        // HasClaim("email_verified", "true") on the consumer would match the variant casing, so
+        // {email_verified: false, Email_Verified: true} in one token fails open. Both are wanted
+        // here, one per scope, which is the only way the second casing survives filtering.
+        var canonical = new ScopeDefinition { Name = "a", IdTokenClaims = ["email_verified"] };
+        var variant = new ScopeDefinition { Name = "b", IdTokenClaims = ["Email_Verified"] };
+
+        var act = () => Select([new("email_verified", false), new("Email_Verified", true)], [canonical, variant]);
+
+        act.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void Repeated_string_records_in_two_casings_merge_under_the_first_casing_seen()
+    {
+        var scope = new ScopeDefinition { Name = "s", AccessTokenClaims = ["role", "Role"] };
+
+        var selected = Select([new("role", "admin"), new("Role", "editor")], [scope]);
+
+        selected.AccessToken.Keys.Should().Equal("role");
+        Json(selected.AccessToken["role"]).Should().Be("[\"admin\",\"editor\"]");
+    }
+
+    [Fact]
     public void A_repeat_of_a_single_valued_standard_claim_is_recognised_ignoring_case()
     {
         // A consumer's HasClaim("email_verified", "true") matches the type ignoring case, so an

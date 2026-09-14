@@ -46,8 +46,9 @@ internal static class ScopeResolution
     /// The resource server the granted scopes are for: the one distinct <see cref="ScopeDefinition.Audience"/>
     /// among them, compared ordinally (RFC 7519 §4.1.3), or <see langword="null"/> when none has one.
     /// Fails when two distinct values are present, since without a <c>resource</c> parameter
-    /// there is nothing to choose between them (RFC 9068 §3), and when the one value is not a
-    /// resource indicator, which startup checks but a repository may have changed since.
+    /// there is nothing to choose between them (RFC 9068 §3). Whether the one value is a
+    /// resource indicator is the caller's separate question, since the two answers are refused
+    /// differently: an ambiguous request is the client's, a malformed audience the operator's.
     /// </summary>
     public static bool TryResolveAudience(IEnumerable<ScopeDefinition> granted, out string? audience)
     {
@@ -60,7 +61,19 @@ internal static class ScopeResolution
             .ToList();
 
         audience = audiences.Count == 1 ? audiences[0] : null;
-        return audiences.Count == 0 || (audiences.Count == 1 && IsResourceIndicator(audiences[0]));
+        return audiences.Count <= 1;
+    }
+
+    /// <summary>
+    /// The first granted scope whose audience is not a resource indicator, or <see langword="null"/>.
+    /// Startup checks every definition, but a repository may have changed since, and the raw
+    /// string is what a token would carry.
+    /// </summary>
+    public static ScopeDefinition? FirstWithMalformedAudience(IEnumerable<ScopeDefinition> granted)
+    {
+        ArgumentNullException.ThrowIfNull(granted);
+
+        return granted.FirstOrDefault(scope => scope.Audience is { } audience && !IsResourceIndicator(audience));
     }
 
     /// <summary>

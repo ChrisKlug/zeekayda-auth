@@ -39,13 +39,16 @@ internal static class ClaimSelection
     /// <summary>
     /// One value per wanted claim name, in first-seen order, with reserved and unwanted names
     /// gone before anything is validated, so only what can reach a token can fail issuance.
+    /// Records are grouped ignoring case, under the first casing seen: a consuming
+    /// <c>ClaimsPrincipal</c> reads <c>email_verified</c> and <c>Email_Verified</c> as one claim,
+    /// so two such records are one repeat, and for a single-valued claim a bug.
     /// </summary>
     /// <exception cref="InvalidOperationException">
     /// The pool holds a default record, or a wanted claim repeated in a way that cannot be merged.
     /// </exception>
     private static List<KeyValuePair<string, ClaimValue>> Merge(IReadOnlyList<ClaimRecord> pool, IReadOnlySet<string> wanted)
     {
-        var grouped = new Dictionary<string, List<ClaimValue>>(StringComparer.Ordinal);
+        var grouped = new Dictionary<string, List<ClaimValue>>(StringComparer.OrdinalIgnoreCase);
         var order = new List<string>();
 
         foreach (var record in pool)

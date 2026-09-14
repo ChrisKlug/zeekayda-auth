@@ -275,6 +275,17 @@ public sealed class TokenEndpointClaimsTests : IDisposable
     }
 
     [Fact]
+    public async Task An_audience_malformed_at_exchange_is_server_error()
+    {
+        var code = await ObtainCodeAsync(App, "openid orders.read");
+        _scopes.Scopes = [.. StandardScopes.All, new ScopeDefinition { Name = "orders.read", Audience = "orders" }];
+
+        var response = await PostTokenAsync(code, App);
+
+        await ShouldBeErrorAsync(response, "server_error", HttpStatusCode.InternalServerError);
+    }
+
+    [Fact]
     public void An_audience_that_is_not_an_absolute_URI_fails_startup()
     {
         using var factory = new StartupFactory(scopes: [.. StandardScopes.All, new ScopeDefinition { Name = "orders.read", Audience = "orders" }]);
