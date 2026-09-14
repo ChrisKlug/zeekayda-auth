@@ -124,6 +124,12 @@ with a plain-language explanation before any findings list (both spelled out in 
   conformance suite.
 - **Findings become tests.** Any review finding stating a checkable behaviour is fixed *with a test
   named for it*. Tests are the durable record; prose is not.
+- **Recommend the proper fix; size before calling anything quick.** Before calling an issue or a fix
+  quick, check its milestone, the register and sign-offs for a decision already covering it, and
+  whether the same pattern sits on neighbouring code paths — size by what surrounds the diff, not by
+  the diff. When recommending on a finding, the default is to fix the behaviour. "Document it" or
+  "accept it" is offered only when the proper fix is genuinely large, and stated as that trade-off —
+  never because someone else (the client, the operator, a later audit) will catch it.
 - After a PR merges, run `/post-merge-checks`.
 
 **Process changes go straight to main, on their own.** A change to `.claude/` — a skill, an agent
