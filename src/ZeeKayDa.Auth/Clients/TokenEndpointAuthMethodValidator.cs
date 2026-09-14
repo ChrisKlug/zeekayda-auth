@@ -4,7 +4,9 @@ using ZeeKayDa.Auth.Tokens;
 namespace ZeeKayDa.Auth.Clients;
 
 /// <summary>
-/// Validates a client's <see cref="IClientMetadata.AllowedTokenEndpointAuthMethods"/> and records a
+/// Validates how a client authenticates at the token endpoint — its
+/// <see cref="IClientMetadata.AllowedTokenEndpointAuthMethods"/>, and their consistency with
+/// <see cref="IClientMetadata.IsPublic"/> and its credentials — and records a
 /// <see cref="ZeeKayDaConfigurationFailure"/> for every rule it breaks.
 /// </summary>
 internal static class TokenEndpointAuthMethodValidator
@@ -17,6 +19,8 @@ internal static class TokenEndpointAuthMethodValidator
         IReadOnlySet<string> serverMethods,
         List<ZeeKayDaConfigurationFailure> failures)
     {
+        ValidateIsPublicTrinity(client, failures);
+
         // A confidential client must never advertise 'none' as a valid auth method: doing so would
         // allow it to be called without credentials. The trinity check only rejects a "none-only"
         // confidential client, so a mixed set like {"none","client_secret_basic"} slips past it.
@@ -36,6 +40,35 @@ internal static class TokenEndpointAuthMethodValidator
         {
             if (ValidateEntry(client.ClientId, method, seen, serverMethods) is { } failure)
                 failures.Add(failure);
+        }
+    }
+
+    private static void ValidateIsPublicTrinity(
+        IClientRegistration client,
+        List<ZeeKayDaConfigurationFailure> failures)
+    {
+        var hasNoCredentials = client.Credentials.Count == 0;
+        var authMethodCount = client.AllowedTokenEndpointAuthMethods.Count;
+        var authMethodsIsNoneOnly = authMethodCount == 1 && AllowsNone(client.AllowedTokenEndpointAuthMethods);
+
+        // Check empty AllowedTokenEndpointAuthMethods for confidential clients explicitly
+        if (!client.IsPublic && authMethodCount == 0)
+        {
+            failures.Add(new ZeeKayDaConfigurationFailure(
+                "client.token_endpoint_auth_methods.empty",
+                $"Client '{client.ClientId}' is confidential (IsPublic=false) but AllowedTokenEndpointAuthMethods is empty. " +
+                "Confidential clients must specify at least one token endpoint authentication method."));
+        }
+
+        // Three-way consistency check
+        if (client.IsPublic != hasNoCredentials || client.IsPublic != authMethodsIsNoneOnly)
+        {
+            failures.Add(new ZeeKayDaConfigurationFailure(
+                "client.is_public.trinity_violation",
+                $"Client '{client.ClientId}' has inconsistent public/confidential configuration. " +
+                $"IsPublic={client.IsPublic}, Credentials.Count={client.Credentials.Count}, " +
+                $"AllowedTokenEndpointAuthMethods=[{string.Join(", ", client.AllowedTokenEndpointAuthMethods)}]. " +
+                "The three-way consistency rule requires: IsPublic=true ⟺ Credentials.Count=0 ⟺ AllowedTokenEndpointAuthMethods={\"none\"}."));
         }
     }
 
