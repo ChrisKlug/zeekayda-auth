@@ -26,16 +26,17 @@ internal static class SigningSelfTest
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <exception cref="ZeeKayDaConfigurationException">
     /// Thrown with failure code <c>signing.self_test_failed</c> when the signature does not verify
-    /// against <paramref name="key"/>'s own public key.
+    /// against <paramref name="key"/>'s own public key, or is not a signature at all; and with
+    /// <c>signing.self_test_unavailable</c> when the signer throws, naming the exception type only
+    /// and carrying the original as the inner exception.
     /// </exception>
     internal static async ValueTask RunAsync(ISigner signer, SigningKey key, CancellationToken cancellationToken)
     {
         var payload = BuildPayload();
 
-        var signature = await signer.SignAsync(payload, cancellationToken).ConfigureAwait(false);
-        var verified = SigningAlgorithms.Verify(key.Algorithm, key.PublicKey, payload.Span, signature.Span);
+        var signature = await SignAsync(signer, key, payload, cancellationToken).ConfigureAwait(false);
 
-        if (!verified)
+        if (!Verifies(key, payload.Span, signature.Span))
         {
             throw new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure(
@@ -44,6 +45,51 @@ internal static class SigningSelfTest
                     "against that key's own public key. The private key materialized for signing " +
                     $"does not match the public key published under this kid — refusing to serve " +
                     $"tokens under '{key.Kid}'."));
+        }
+    }
+
+    /// <summary>
+    /// The signer is caller-supplied code, and a self-test it cannot complete aborts the handoff
+    /// exactly as a mismatch does, under its own code. The exception type is named, never its
+    /// message, which for a remote signer may carry a request URL or credential; a source's own
+    /// configuration exception already carries a published code and passes through verbatim.
+    /// </summary>
+    private static async ValueTask<ReadOnlyMemory<byte>> SignAsync(
+        ISigner signer, SigningKey key, ReadOnlyMemory<byte> payload, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await signer.SignAsync(payload, cancellationToken).ConfigureAwait(false);
+        }
+        catch (ZeeKayDaConfigurationException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "signing.self_test_unavailable",
+                    $"The signer for key '{key.Kid}' threw {ex.GetType().FullName} during the signing self-test, " +
+                    $"so the key could not be proven to pair with its published public key — refusing to serve " +
+                    $"tokens under '{key.Kid}'. See the inner exception for the root cause."),
+                ex);
+        }
+    }
+
+    /// <summary>
+    /// Bytes that are not a signature of this key's algorithm at all, wrong length included, do
+    /// not verify; some platforms report that by throwing rather than returning false.
+    /// </summary>
+    private static bool Verifies(SigningKey key, ReadOnlySpan<byte> payload, ReadOnlySpan<byte> signature)
+    {
+        try
+        {
+            return SigningAlgorithms.Verify(key.Algorithm, key.PublicKey, payload, signature);
+        }
+        catch (Exception ex) when (ex is CryptographicException or ArgumentException)
+        {
+            return false;
         }
     }
 

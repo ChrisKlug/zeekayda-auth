@@ -161,6 +161,9 @@ self-test (see 1.5), which proves the same invariant on every handoff for every 
 
 ### 1.5 Explicit negative — the per-handoff signing self-test is **NOT covered by any sign-off** (review tracked by #487)
 
+[Closed by the 2026-09-14 entry for #487 below. The types named here were replaced before that
+review; the shipped control is `SigningSelfTest`, called from `StaticSigningKeyRing`.]
+
 The per-handoff signing self-test (issue #437) — the sign-and-verify-against-the-listed-public-key
 step inside `EnsureActiveSignerAsync`, its `ISigningStartupSelfTest` seam, and the
 `SigningStartupSelfTestVerifier` that forces the first handoff eagerly at startup — was added

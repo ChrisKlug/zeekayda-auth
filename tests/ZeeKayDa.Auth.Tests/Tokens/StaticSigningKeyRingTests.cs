@@ -188,6 +188,18 @@ public sealed class StaticSigningKeyRingTests
     }
 
     [Fact]
+    public async Task SignAsync_throws_InvalidOperationException_before_initialization()
+    {
+        // No token is ever signed by a signer that has not passed the self-test: before
+        // initialization there is no signer at all, and signing refuses rather than opening one.
+        ISigningKeyRing ring = new StaticSigningKeyRing(NeverCalledSource(), new FakeTimeProvider(Epoch));
+
+        var act = async () => await ring.SignAsync(0, static (_, _) => new ReadOnlyMemory<byte>([1, 2, 3]), TestContext.Current.CancellationToken);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [Fact]
     public void CurrentOrNull_is_null_before_initialization()
     {
         ISigningKeyRing ring = new StaticSigningKeyRing(NeverCalledSource(), new FakeTimeProvider(Epoch));
