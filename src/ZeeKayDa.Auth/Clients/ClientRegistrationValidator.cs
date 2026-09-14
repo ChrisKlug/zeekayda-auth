@@ -88,92 +88,14 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
         string propertyName,
         List<ZeeKayDaConfigurationFailure> failures)
     {
-        var count = 0;
-
         foreach (var uriString in uriSet)
         {
-            count++;
-
-            var failuresBefore = failures.Count;
-
-            if (!Uri.TryCreate(uriString, UriKind.Absolute, out var uri))
-            {
-                failures.Add(new ZeeKayDaConfigurationFailure(
-                    "client.redirect_uri.invalid",
-                    $"Client '{clientId}' has an invalid URI in {propertyName}: '{uriString}'. " +
-                    "The value could not be parsed as an absolute URI."));
-                continue;
-            }
-
-            // IPv6 zone-ID check: .NET strips zone IDs from uri.Host at parse time, so we must
-            // inspect the original string. A URI with an IPv6 zone ID (e.g. [::1%25eth0]) binds
-            // to a specific network interface, not the loopback stack, and must not be trusted.
-            // This is scheme-neutral: an https:// URI with a zone ID is just as prohibited as an
-            // http:// one, so it is checked here rather than inside the http branch of
-            // IsSchemeAllowed.
-            if (RedirectUriValidator.HasIpv6ZoneId(uriString))
-            {
-                failures.Add(new ZeeKayDaConfigurationFailure(
-                    "client.redirect_uri.ipv6_zone_id",
-                    $"Client '{clientId}' has a redirect URI in {propertyName} with an IPv6 zone ID: '{uriString}'. " +
-                    "Zone IDs bind to a specific network interface rather than the loopback stack and are prohibited in redirect URIs."));
-                // still continue to check other rules
-            }
-
-            // Fragment check
-            if (uri.Fragment.Length > 0)
-            {
-                failures.Add(new ZeeKayDaConfigurationFailure(
-                    "client.redirect_uri.fragment",
-                    $"Client '{clientId}' has a redirect URI in {propertyName} with a fragment component: '{uriString}'. " +
-                    "Fragment components are prohibited in redirect URIs (RFC 9700 §2.1)."));
-            }
-
-            // UserInfo check
-            if (uri.UserInfo.Length > 0)
-            {
-                failures.Add(new ZeeKayDaConfigurationFailure(
-                    "client.redirect_uri.userinfo",
-                    $"Client '{clientId}' has a redirect URI in {propertyName} with a userinfo component: '{uriString}'. " +
-                    "Userinfo components are prohibited in redirect URIs."));
-            }
-
-            // Path traversal check — must inspect the original string because .NET's Uri parser
-            // normalises '..' and '.' away during construction (AbsolutePath will not contain them).
-            if (RedirectUriValidator.HasPathTraversal(uriString))
-            {
-                failures.Add(new ZeeKayDaConfigurationFailure(
-                    "client.redirect_uri.path_traversal",
-                    $"Client '{clientId}' has a redirect URI in {propertyName} with a path traversal segment: '{uriString}'. " +
-                    "Path traversal segments ('.' or '..') are prohibited in redirect URIs."));
-            }
-
-            // Scheme allowlist check
-            if (!RedirectUriValidator.IsSchemeAllowed(uri))
-            {
-                var httpScheme = string.Equals(uri.Scheme, "http", StringComparison.OrdinalIgnoreCase);
-                if (httpScheme)
-                {
-                    failures.Add(new ZeeKayDaConfigurationFailure(
-                        "client.redirect_uri.scheme_http_non_loopback",
-                        $"Client '{clientId}' has a redirect URI in {propertyName} using HTTP for a non-loopback host: '{uriString}'. " +
-                        "HTTP redirect URIs are only permitted for loopback addresses (RFC 8252 §8.3)."));
-                }
-                else
-                {
-                    failures.Add(new ZeeKayDaConfigurationFailure(
-                        "client.redirect_uri.scheme_not_allowed",
-                        $"Client '{clientId}' has a redirect URI in {propertyName} with a disallowed scheme: '{uriString}'. " +
-                        "Permitted schemes are 'https', 'http' (loopback only), and private-use schemes containing a dot."));
-                }
-            }
-
             // localhost advisory warning (RFC 8252 §8.3): scheme-neutral — fires for any passing
             // URI whose host is 'localhost', including https://localhost, not just http loopback.
-            // Suppressed when the URI already accumulated other failures in this iteration: a URI
-            // that is being rejected anyway should not also generate advisory-warning noise.
-            if (failures.Count == failuresBefore &&
-                string.Equals(uri.Host, "localhost", StringComparison.OrdinalIgnoreCase))
+            // Suppressed when the URI broke a rule: a URI that is being rejected anyway should not
+            // also generate advisory-warning noise.
+            if (RedirectUriValidator.ValidateRedirectUri(clientId, uriString, propertyName, failures) &&
+                RedirectUriRules.IsLocalhost(uriString))
             {
                 _logger.LogWarning(
                     "Client '{ClientId}' uses 'localhost' in {PropertyName}: '{Uri}'. " +
@@ -183,11 +105,11 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
             }
         }
 
-        if (count > 32)
+        if (uriSet.Count > 32)
         {
             failures.Add(new ZeeKayDaConfigurationFailure(
                 "client.redirect_uri.count_exceeded",
-                $"Client '{clientId}' has {count} URIs in {propertyName}, which exceeds the maximum of 32."));
+                $"Client '{clientId}' has {uriSet.Count} URIs in {propertyName}, which exceeds the maximum of 32."));
         }
     }
 
@@ -197,8 +119,7 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
     {
         var clientId = client.ClientId;
 
-        if (clientId is null || clientId.Length == 0 || clientId.Length > 200 ||
-            !ClientIdPattern.IsMatch(clientId))
+        if (!IsValidClientId(clientId))
         {
             failures.Add(new ZeeKayDaConfigurationFailure(
                 "client.client_id.invalid",
@@ -206,6 +127,12 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
                 "ClientId must match [A-Za-z0-9_\\-.]+, be non-empty, and be at most 200 characters."));
         }
     }
+
+    /// <summary>Non-empty, at most 200 characters, and only <c>[A-Za-z0-9_\-.]</c>.</summary>
+    private static bool IsValidClientId(string? clientId) =>
+        !string.IsNullOrEmpty(clientId)
+        && clientId.Length <= 200
+        && ClientIdPattern.IsMatch(clientId);
 
     /// <summary>
     /// A display name is shown to users on the host's pages, so it is either absent or a
@@ -236,19 +163,9 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
     {
         var hasNoCredentials = client.Credentials.Count == 0;
 
-        // Enumerate with explicit ordinal comparison — do NOT trust the set's comparer
-        var authMethodsIsNoneOnly = false;
-        var authMethodCount = 0;
-        var hasNoneMethod = false;
-
-        foreach (var method in client.AllowedTokenEndpointAuthMethods)
-        {
-            authMethodCount++;
-            if (string.Equals(method, TokenEndpointAuthMethods.None, StringComparison.Ordinal))
-                hasNoneMethod = true;
-        }
-
-        authMethodsIsNoneOnly = authMethodCount == 1 && hasNoneMethod;
+        var authMethodCount = client.AllowedTokenEndpointAuthMethods.Count;
+        var authMethodsIsNoneOnly = authMethodCount == 1 &&
+                                    TokenEndpointAuthMethodValidator.AllowsNone(client.AllowedTokenEndpointAuthMethods);
 
         // Check empty AllowedTokenEndpointAuthMethods for confidential clients explicitly
         if (!client.IsPublic && authMethodCount == 0)
@@ -275,58 +192,11 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
         IClientRegistration client,
         List<ZeeKayDaConfigurationFailure> failures)
     {
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-
         var serverMethods = new HashSet<string>(
             _options.Value.TokenEndpoint.AuthMethodsSupported,
             StringComparer.Ordinal);
 
-        // A confidential client must never advertise 'none' as a valid auth method: doing so would
-        // allow it to be called without credentials. The trinity check only rejects a "none-only"
-        // confidential client, so a mixed set like {"none","client_secret_basic"} slips past it.
-        if (!client.IsPublic &&
-            client.AllowedTokenEndpointAuthMethods.Any(
-                m => string.Equals(m, TokenEndpointAuthMethods.None, StringComparison.Ordinal)))
-        {
-            failures.Add(new ZeeKayDaConfigurationFailure(
-                "client.token_endpoint_auth_methods.none_on_confidential",
-                $"Confidential client '{client.ClientId}' has 'none' in AllowedTokenEndpointAuthMethods. " +
-                "The 'none' method is only valid for public clients (RFC 6749 §2.3)."));
-        }
-
-        foreach (var method in client.AllowedTokenEndpointAuthMethods)
-        {
-            // Invalid entry check
-            if (method is null || method.Length == 0 ||
-                method != method.Trim() ||
-                method.Any(char.IsControl))
-            {
-                failures.Add(new ZeeKayDaConfigurationFailure(
-                    "client.token_endpoint_auth_methods.invalid_entry",
-                    $"Client '{client.ClientId}' has an invalid entry in AllowedTokenEndpointAuthMethods: " +
-                    $"'{method}'. Entries must be non-null, non-empty, have no leading/trailing whitespace, " +
-                    "and contain no control characters."));
-                continue;
-            }
-
-            // Duplicate check
-            if (!seen.Add(method))
-            {
-                failures.Add(new ZeeKayDaConfigurationFailure(
-                    "client.token_endpoint_auth_methods.duplicate",
-                    $"Client '{client.ClientId}' has a duplicate entry in AllowedTokenEndpointAuthMethods: '{method}'."));
-                continue;
-            }
-
-            // Subset check against server's supported methods
-            if (!serverMethods.Contains(method))
-            {
-                failures.Add(new ZeeKayDaConfigurationFailure(
-                    "client.token_endpoint_auth_methods.not_subset",
-                    $"Client '{client.ClientId}' has AllowedTokenEndpointAuthMethods entry '{method}' that is not " +
-                    $"in the server's AuthMethodsSupported: [{string.Join(", ", serverMethods)}]."));
-            }
-        }
+        TokenEndpointAuthMethodValidator.Validate(client, serverMethods, failures);
     }
 
     private void ValidateEmptySecretProbe(

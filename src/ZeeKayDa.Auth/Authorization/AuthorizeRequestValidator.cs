@@ -170,7 +170,7 @@ internal sealed partial class AuthorizeRequestValidator
 
         return string.IsNullOrEmpty(parsed.Fragment)
             && string.IsNullOrEmpty(parsed.UserInfo)
-            && !RedirectUriValidator.HasIpv6ZoneId(redirectUri)
+            && !RedirectUriRules.HasIpv6ZoneId(redirectUri)
             && !ContainsControlOrWhitespace(redirectUri);
     }
 

@@ -1,6 +1,6 @@
 namespace ZeeKayDa.Auth.Clients;
 
-public sealed class RedirectUriValidatorTests
+public sealed class RedirectUriRulesTests
 {
     // ── HasIpv6ZoneId ─────────────────────────────────────────────────────────────────────────────
 
@@ -13,7 +13,7 @@ public sealed class RedirectUriValidatorTests
     [InlineData("myapp:/callback", false)]      // no "://"
     [InlineData("https://a]%25b[/cb", false)]   // ']' before '[': malformed, fails closed, never throws
     public void HasIpv6ZoneId_returns_expected_value(string uriString, bool expected)
-        => RedirectUriValidator.HasIpv6ZoneId(uriString).Should().Be(expected);
+        => RedirectUriRules.HasIpv6ZoneId(uriString).Should().Be(expected);
 
     // ── IsLoopbackHost ────────────────────────────────────────────────────────────────────────────
 
@@ -25,7 +25,7 @@ public sealed class RedirectUriValidatorTests
     [InlineData("192.168.1.1", false)]
     [InlineData("example.com", false)]
     public void IsLoopbackHost_returns_expected_value(string host, bool expected)
-        => RedirectUriValidator.IsLoopbackHost(host).Should().Be(expected);
+        => RedirectUriRules.IsLoopbackHost(host).Should().Be(expected);
 
     // ── IsSchemeAllowed ───────────────────────────────────────────────────────────────────────────
 
@@ -39,7 +39,7 @@ public sealed class RedirectUriValidatorTests
     public void IsSchemeAllowed_returns_expected_value(string input, bool expected)
     {
         Uri.TryCreate(input, UriKind.Absolute, out var uri).Should().BeTrue();
-        RedirectUriValidator.IsSchemeAllowed(uri!).Should().Be(expected);
+        RedirectUriRules.IsSchemeAllowed(uri!).Should().Be(expected);
     }
 
     // ── HasPathTraversal ──────────────────────────────────────────────────────────────────────────
@@ -60,5 +60,46 @@ public sealed class RedirectUriValidatorTests
     [InlineData("https:///..", true)]  // empty authority still yields a path to inspect
     [InlineData("urn:example:animal", false)]  // neither "://" nor ":/" — no path form at all
     public void HasPathTraversal_returns_expected_value(string uriString, bool expected)
-        => RedirectUriValidator.HasPathTraversal(uriString).Should().Be(expected);
+        => RedirectUriRules.HasPathTraversal(uriString).Should().Be(expected);
+
+    // ── HasFragment ───────────────────────────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("https://example.com/callback", false)]
+    [InlineData("https://example.com/callback?a=1", false)]
+    [InlineData("https://example.com/callback#frag", true)]
+    [InlineData("com.example.app:/callback#frag", true)]
+    public void HasFragment_returns_expected_value(string input, bool expected)
+        => RedirectUriRules.HasFragment(new Uri(input)).Should().Be(expected);
+
+    // ── HasUserInfo ───────────────────────────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("https://example.com/callback", false)]
+    [InlineData("https://user@example.com/callback", true)]
+    [InlineData("https://user:pass@example.com/callback", true)]
+    public void HasUserInfo_returns_expected_value(string input, bool expected)
+        => RedirectUriRules.HasUserInfo(new Uri(input)).Should().Be(expected);
+
+    // ── IsHttp ────────────────────────────────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("http://example.com/cb", true)]
+    [InlineData("HTTP://example.com/cb", true)]
+    [InlineData("https://example.com/cb", false)]
+    [InlineData("com.example.app:/callback", false)]
+    public void IsHttp_returns_expected_value(string input, bool expected)
+        => RedirectUriRules.IsHttp(new Uri(input)).Should().Be(expected);
+
+    // ── IsLocalhost ───────────────────────────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("http://localhost/cb", true)]
+    [InlineData("https://LOCALHOST:5001/cb", true)]  // scheme-neutral, case-insensitive
+    [InlineData("http://127.0.0.1/cb", false)]       // loopback, but not the name 'localhost'
+    [InlineData("https://localhost.example.com/cb", false)]
+    [InlineData("not a uri", false)]                 // does not parse
+    [InlineData("/relative/path", false)]            // not absolute
+    public void IsLocalhost_returns_expected_value(string uriString, bool expected)
+        => RedirectUriRules.IsLocalhost(uriString).Should().Be(expected);
 }
