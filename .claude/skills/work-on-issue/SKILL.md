@@ -74,6 +74,12 @@ specified** — roughly 300+ lines of implementation logic with no open design q
 nits, and small changes are never delegated; a spawn that must re-derive context costs more than the
 edit.
 
+Spawn `tester` (foreground) for **test-only work that the acceptance criteria already specify** —
+a coverage backfill, a conformance case, a regression test for a known behaviour — at any size, as
+long as it touches no design question. Writing tests against a settled contract needs the contract
+and the test standards, not the design conversation, so this is the one handoff with no context to
+lose. Tests that pin down a shape still being talked through are yours, not the tester's.
+
 **New problems discovered while building get one line, not a workstream.** File a bare issue —
 title, one sentence, milestone or backlog label — and move on. No `/write-issue` ceremony, no
 blocked-by graphs, no design prose. Off-scope fixes are not made, however easy they look.
@@ -96,6 +102,14 @@ parallel, launched in one message; neither sees the other's findings:
 | public API surface, extension point, or structure | `architect` | `/adversarial-review architecture` |
 | both surfaces **and** more than ~150 lines of implementation logic | both | both |
 | mechanical — bug fix, refactor, test, chore | neither | code lens only, already run |
+
+**The reviewer brief carries what is already settled, never what has already been found.** Each
+Claude reviewer is spawned with the issue number, the `### Agreed shape` comment, one sentence on
+why it is shaped that way, the commit range to review, and the surface it is being asked to look at.
+That is what it would otherwise spend its first minutes re-deriving. It never carries the Copilot
+lens's findings, the other reviewer's findings, or your own opinion of where the weak spot is —
+independence is what makes a finding raised twice high-confidence, and a primed reviewer raises
+nothing independently.
 
 Reviewers run **foreground**. Alongside them, run CodeScene `analyze_change_set` yourself (agents
 cannot reach MCP tools) — **production files only. Findings on `tests/` are ignored entirely, not
