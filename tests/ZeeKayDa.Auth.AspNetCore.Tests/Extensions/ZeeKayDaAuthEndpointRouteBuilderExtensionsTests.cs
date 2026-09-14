@@ -47,6 +47,38 @@ public sealed class ZeeKayDaAuthEndpointRouteBuilderExtensionsTests
             because: "a URL path is case-sensitive, so a differently cased path is not this issuer's endpoint");
     }
 
+    [Fact]
+    public async Task Protocol_route_returns_404_not_405_for_a_wrong_case_path_with_an_unmapped_method()
+    {
+        using var factory = new TestWebAppFactory(opts => opts.Issuer = "https://test.example.com/tenant1");
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            BaseAddress = new Uri("https://test.example.com"),
+            AllowAutoRedirect = false,
+        });
+
+        var rightCase = await client.GetAsync("/tenant1/connect/token", TestContext.Current.CancellationToken);
+        var wrongCase = await client.GetAsync("/tenant1/connect/TOKEN", TestContext.Current.CancellationToken);
+
+        rightCase.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed, because: "the token route is POST-only");
+        wrongCase.StatusCode.Should().Be(HttpStatusCode.NotFound,
+            because: "a wrong path is no route at all, so it must not be reported as a wrong method");
+    }
+
+    [Fact]
+    public async Task Protocol_route_returns_404_not_421_for_a_wrong_case_path_over_plain_HTTP()
+    {
+        using var factory = new TestWebAppFactoryWithRemoteIp(IPAddress.Parse("192.0.2.10"));
+        using var client = CreateLoopbackClient(factory, "http://localhost:5000");
+
+        var rightCase = await client.GetAsync(DiscoveryPath, TestContext.Current.CancellationToken);
+        var wrongCase = await client.GetAsync(DiscoveryPath.ToUpperInvariant(), TestContext.Current.CancellationToken);
+
+        rightCase.StatusCode.Should().Be(HttpStatusCode.MisdirectedRequest);
+        wrongCase.StatusCode.Should().Be(HttpStatusCode.NotFound,
+            because: "a wrong path is decided during route matching, before the HTTPS filter runs");
+    }
+
     // AC1: non-loopback TCP connection with Host: localhost → 421
     [Fact]
     public async Task HttpsGuard_rejects_non_loopback_connection_even_when_Host_header_is_localhost()

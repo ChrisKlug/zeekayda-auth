@@ -52,6 +52,11 @@ public static class ZeeKayDaAuthEndpointRouteBuilderExtensions
         // only to protocol endpoints and not to the host application's own routes.
         var group = endpoints.MapGroup("");
 
+        // Route literals match case-insensitively and tolerate a trailing '/', but a URL path is
+        // case-sensitive (RFC 3986 §6.2.2.1). The marker has ExactPathMatcherPolicy take a route out
+        // of matching unless the path is exact, so a wrong path is a 404 before any filter runs.
+        group.WithMetadata(ExactPathMetadata.Instance);
+
         group.AddEndpointFilter(async (context, next) =>
         {
             if (context.HttpContext.Request.IsHttps ||
@@ -65,17 +70,6 @@ public static class ZeeKayDaAuthEndpointRouteBuilderExtensions
                 title: "HTTPS required",
                 detail: "ZeeKayDa.Auth endpoints require HTTPS for non-loopback requests. " +
                         "Configure TLS, or use AllowInsecureIssuer only for loopback development.");
-        });
-
-        // Route literals match case-insensitively, but a URL path is case-sensitive (RFC 3986
-        // §6.2.2.1): /TENANT1/connect/token is not this issuer's endpoint and must not answer as it.
-        group.AddEndpointFilter(async (context, next) =>
-        {
-            var route = (context.HttpContext.GetEndpoint() as RouteEndpoint)?.RoutePattern.RawText;
-            return route is null
-                || string.Equals(context.HttpContext.Request.Path.ToUriComponent(), route, StringComparison.Ordinal)
-                ? await next(context)
-                : Results.NotFound();
         });
 
         group.AddEndpointFilter(async (context, next) =>
