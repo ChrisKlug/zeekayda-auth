@@ -110,6 +110,26 @@ public sealed class ClientRegistrationValidatorTests
         SigningKeySet? ISigningKeyRing.CurrentOrNull => current;
     }
 
+    /// <summary>
+    /// A custom registration's set whose <c>Count</c> reports <paramref name="reportedCount"/>
+    /// whatever it actually yields — the validator must count what it enumerates, not trust this.
+    /// </summary>
+    private sealed class MiscountingSet(IEnumerable<string> items, int reportedCount) : IReadOnlySet<string>
+    {
+        private readonly List<string> _items = [.. items];
+
+        public int Count => reportedCount;
+        public IEnumerator<string> GetEnumerator() => _items.GetEnumerator();
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+        public bool Contains(string item) => _items.Contains(item, StringComparer.Ordinal);
+        public bool IsProperSubsetOf(IEnumerable<string> other) => throw new NotSupportedException();
+        public bool IsProperSupersetOf(IEnumerable<string> other) => throw new NotSupportedException();
+        public bool IsSubsetOf(IEnumerable<string> other) => throw new NotSupportedException();
+        public bool IsSupersetOf(IEnumerable<string> other) => throw new NotSupportedException();
+        public bool Overlaps(IEnumerable<string> other) => throw new NotSupportedException();
+        public bool SetEquals(IEnumerable<string> other) => throw new NotSupportedException();
+    }
+
     private static AuthorizationServerOptions BuildDefaultServerOptions()
     {
         var opts = new AuthorizationServerOptions { Issuer = "https://test.example.com" };
@@ -508,6 +528,22 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
+    public void Validate_fails_with_count_exceeded_code_if_redirect_uri_set_under_reports_its_count()
+    {
+        var validator = MakeValidator();
+        var uris = Enumerable.Range(1, 33).Select(i => $"https://app.example.com/cb{i}");
+        var client = MakeValidPublicClient() with
+        {
+            RedirectUris = new MiscountingSet(uris, reportedCount: 1)
+        };
+
+        var act = () => validator.Validate(client);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.redirect_uri.count_exceeded");
+    }
+
+    [Fact]
     public void Validate_fails_with_count_exceeded_code_if_more_than_32_post_logout_redirect_uris()
     {
         var validator = MakeValidator();
@@ -553,6 +589,23 @@ public sealed class ClientRegistrationValidatorTests
         var act = () => validator.Validate(client);
 
         act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void Validate_fails_with_trinity_violation_code_if_auth_method_set_under_reports_its_count()
+    {
+        var validator = MakeValidator();
+        var client = MakeValidPublicClient() with
+        {
+            AllowedTokenEndpointAuthMethods = new MiscountingSet(
+                [TokenEndpointAuthMethods.None, TokenEndpointAuthMethods.ClientSecretBasic],
+                reportedCount: 1)
+        };
+
+        var act = () => validator.Validate(client);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.is_public.trinity_violation");
     }
 
     [Fact]

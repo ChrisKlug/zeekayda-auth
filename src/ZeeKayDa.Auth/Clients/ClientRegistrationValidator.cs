@@ -14,7 +14,9 @@ namespace ZeeKayDa.Auth.Clients;
 /// </summary>
 /// <remarks>
 /// Aggregates all violations before throwing so operators see every problem in one pass.
-/// Registered as a singleton by <c>AddZeeKayDaAuth()</c>.
+/// Registered as a singleton by <c>AddZeeKayDaAuth()</c>. Areas with more than one rule or a
+/// dependency of their own live in their own validators; this class holds the dependencies,
+/// does all the logging, and keeps only the single-rule checks.
 /// </remarks>
 internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
 {
@@ -67,15 +69,12 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
         ValidateRedirectUriSet(client.ClientId, client.PostLogoutRedirectUris, "PostLogoutRedirectUris", failures);
         ValidateClientId(client, failures);
         ValidateDisplayName(client, failures);
-        ValidateIsPublicTrinity(client, failures);
         ValidateAllowedTokenEndpointAuthMethods(client, failures);
-        ValidateEmptySecretProbe(client, failures);
-        ValidateCredentialConstraints(client, failures);
-        ValidateTwoCredentialCap(client, failures);
+        ClientCredentialValidator.Validate(client, _hasher, failures);
         ValidateAllowedSigningAlgorithms(client, failures);
         ValidateTokenLifetimes(client, failures);
         ValidateAllowedScopes(client, failures);
-        ValidateClaimAdditions(client, failures);
+        ClaimAdditionValidator.Validate(client, failures);
         ValidateEnumSets(client, failures);
 
         if (failures.Count > 0)
@@ -88,92 +87,20 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
         string propertyName,
         List<ZeeKayDaConfigurationFailure> failures)
     {
+        // Count what the set yields, not what its Count property claims: a custom registration's
+        // set may enumerate more entries than it reports, and the cap must see every one of them.
         var count = 0;
 
         foreach (var uriString in uriSet)
         {
             count++;
 
-            var failuresBefore = failures.Count;
-
-            if (!Uri.TryCreate(uriString, UriKind.Absolute, out var uri))
-            {
-                failures.Add(new ZeeKayDaConfigurationFailure(
-                    "client.redirect_uri.invalid",
-                    $"Client '{clientId}' has an invalid URI in {propertyName}: '{uriString}'. " +
-                    "The value could not be parsed as an absolute URI."));
-                continue;
-            }
-
-            // IPv6 zone-ID check: .NET strips zone IDs from uri.Host at parse time, so we must
-            // inspect the original string. A URI with an IPv6 zone ID (e.g. [::1%25eth0]) binds
-            // to a specific network interface, not the loopback stack, and must not be trusted.
-            // This is scheme-neutral: an https:// URI with a zone ID is just as prohibited as an
-            // http:// one, so it is checked here rather than inside the http branch of
-            // IsSchemeAllowed.
-            if (RedirectUriValidator.HasIpv6ZoneId(uriString))
-            {
-                failures.Add(new ZeeKayDaConfigurationFailure(
-                    "client.redirect_uri.ipv6_zone_id",
-                    $"Client '{clientId}' has a redirect URI in {propertyName} with an IPv6 zone ID: '{uriString}'. " +
-                    "Zone IDs bind to a specific network interface rather than the loopback stack and are prohibited in redirect URIs."));
-                // still continue to check other rules
-            }
-
-            // Fragment check
-            if (uri.Fragment.Length > 0)
-            {
-                failures.Add(new ZeeKayDaConfigurationFailure(
-                    "client.redirect_uri.fragment",
-                    $"Client '{clientId}' has a redirect URI in {propertyName} with a fragment component: '{uriString}'. " +
-                    "Fragment components are prohibited in redirect URIs (RFC 9700 §2.1)."));
-            }
-
-            // UserInfo check
-            if (uri.UserInfo.Length > 0)
-            {
-                failures.Add(new ZeeKayDaConfigurationFailure(
-                    "client.redirect_uri.userinfo",
-                    $"Client '{clientId}' has a redirect URI in {propertyName} with a userinfo component: '{uriString}'. " +
-                    "Userinfo components are prohibited in redirect URIs."));
-            }
-
-            // Path traversal check — must inspect the original string because .NET's Uri parser
-            // normalises '..' and '.' away during construction (AbsolutePath will not contain them).
-            if (RedirectUriValidator.HasPathTraversal(uriString))
-            {
-                failures.Add(new ZeeKayDaConfigurationFailure(
-                    "client.redirect_uri.path_traversal",
-                    $"Client '{clientId}' has a redirect URI in {propertyName} with a path traversal segment: '{uriString}'. " +
-                    "Path traversal segments ('.' or '..') are prohibited in redirect URIs."));
-            }
-
-            // Scheme allowlist check
-            if (!RedirectUriValidator.IsSchemeAllowed(uri))
-            {
-                var httpScheme = string.Equals(uri.Scheme, "http", StringComparison.OrdinalIgnoreCase);
-                if (httpScheme)
-                {
-                    failures.Add(new ZeeKayDaConfigurationFailure(
-                        "client.redirect_uri.scheme_http_non_loopback",
-                        $"Client '{clientId}' has a redirect URI in {propertyName} using HTTP for a non-loopback host: '{uriString}'. " +
-                        "HTTP redirect URIs are only permitted for loopback addresses (RFC 8252 §8.3)."));
-                }
-                else
-                {
-                    failures.Add(new ZeeKayDaConfigurationFailure(
-                        "client.redirect_uri.scheme_not_allowed",
-                        $"Client '{clientId}' has a redirect URI in {propertyName} with a disallowed scheme: '{uriString}'. " +
-                        "Permitted schemes are 'https', 'http' (loopback only), and private-use schemes containing a dot."));
-                }
-            }
-
             // localhost advisory warning (RFC 8252 §8.3): scheme-neutral — fires for any passing
             // URI whose host is 'localhost', including https://localhost, not just http loopback.
-            // Suppressed when the URI already accumulated other failures in this iteration: a URI
-            // that is being rejected anyway should not also generate advisory-warning noise.
-            if (failures.Count == failuresBefore &&
-                string.Equals(uri.Host, "localhost", StringComparison.OrdinalIgnoreCase))
+            // Suppressed when the URI broke a rule: a URI that is being rejected anyway should not
+            // also generate advisory-warning noise.
+            if (RedirectUriValidator.ValidateRedirectUri(clientId, uriString, propertyName, failures) &&
+                RedirectUriRules.IsLocalhost(uriString))
             {
                 _logger.LogWarning(
                     "Client '{ClientId}' uses 'localhost' in {PropertyName}: '{Uri}'. " +
@@ -197,8 +124,7 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
     {
         var clientId = client.ClientId;
 
-        if (clientId is null || clientId.Length == 0 || clientId.Length > 200 ||
-            !ClientIdPattern.IsMatch(clientId))
+        if (!IsValidClientId(clientId))
         {
             failures.Add(new ZeeKayDaConfigurationFailure(
                 "client.client_id.invalid",
@@ -206,6 +132,12 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
                 "ClientId must match [A-Za-z0-9_\\-.]+, be non-empty, and be at most 200 characters."));
         }
     }
+
+    /// <summary>Non-empty, at most 200 characters, and only <c>[A-Za-z0-9_\-.]</c>.</summary>
+    private static bool IsValidClientId(string? clientId) =>
+        !string.IsNullOrEmpty(clientId)
+        && clientId.Length <= 200
+        && ClientIdPattern.IsMatch(clientId);
 
     /// <summary>
     /// A display name is shown to users on the host's pages, so it is either absent or a
@@ -230,221 +162,34 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
         && displayName.Length <= 200
         && !displayName.Any(char.IsControl);
 
-    private static void ValidateIsPublicTrinity(
-        IClientRegistration client,
-        List<ZeeKayDaConfigurationFailure> failures)
-    {
-        var hasNoCredentials = client.Credentials.Count == 0;
-
-        // Enumerate with explicit ordinal comparison — do NOT trust the set's comparer
-        var authMethodsIsNoneOnly = false;
-        var authMethodCount = 0;
-        var hasNoneMethod = false;
-
-        foreach (var method in client.AllowedTokenEndpointAuthMethods)
-        {
-            authMethodCount++;
-            if (string.Equals(method, TokenEndpointAuthMethods.None, StringComparison.Ordinal))
-                hasNoneMethod = true;
-        }
-
-        authMethodsIsNoneOnly = authMethodCount == 1 && hasNoneMethod;
-
-        // Check empty AllowedTokenEndpointAuthMethods for confidential clients explicitly
-        if (!client.IsPublic && authMethodCount == 0)
-        {
-            failures.Add(new ZeeKayDaConfigurationFailure(
-                "client.token_endpoint_auth_methods.empty",
-                $"Client '{client.ClientId}' is confidential (IsPublic=false) but AllowedTokenEndpointAuthMethods is empty. " +
-                "Confidential clients must specify at least one token endpoint authentication method."));
-        }
-
-        // Three-way consistency check
-        if (client.IsPublic != hasNoCredentials || client.IsPublic != authMethodsIsNoneOnly)
-        {
-            failures.Add(new ZeeKayDaConfigurationFailure(
-                "client.is_public.trinity_violation",
-                $"Client '{client.ClientId}' has inconsistent public/confidential configuration. " +
-                $"IsPublic={client.IsPublic}, Credentials.Count={client.Credentials.Count}, " +
-                $"AllowedTokenEndpointAuthMethods=[{string.Join(", ", client.AllowedTokenEndpointAuthMethods)}]. " +
-                "The three-way consistency rule requires: IsPublic=true ⟺ Credentials.Count=0 ⟺ AllowedTokenEndpointAuthMethods={\"none\"}."));
-        }
-    }
-
     private void ValidateAllowedTokenEndpointAuthMethods(
         IClientRegistration client,
         List<ZeeKayDaConfigurationFailure> failures)
     {
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-
         var serverMethods = new HashSet<string>(
             _options.Value.TokenEndpoint.AuthMethodsSupported,
             StringComparer.Ordinal);
 
-        // A confidential client must never advertise 'none' as a valid auth method: doing so would
-        // allow it to be called without credentials. The trinity check only rejects a "none-only"
-        // confidential client, so a mixed set like {"none","client_secret_basic"} slips past it.
-        if (!client.IsPublic &&
-            client.AllowedTokenEndpointAuthMethods.Any(
-                m => string.Equals(m, TokenEndpointAuthMethods.None, StringComparison.Ordinal)))
-        {
-            failures.Add(new ZeeKayDaConfigurationFailure(
-                "client.token_endpoint_auth_methods.none_on_confidential",
-                $"Confidential client '{client.ClientId}' has 'none' in AllowedTokenEndpointAuthMethods. " +
-                "The 'none' method is only valid for public clients (RFC 6749 §2.3)."));
-        }
-
-        foreach (var method in client.AllowedTokenEndpointAuthMethods)
-        {
-            // Invalid entry check
-            if (method is null || method.Length == 0 ||
-                method != method.Trim() ||
-                method.Any(char.IsControl))
-            {
-                failures.Add(new ZeeKayDaConfigurationFailure(
-                    "client.token_endpoint_auth_methods.invalid_entry",
-                    $"Client '{client.ClientId}' has an invalid entry in AllowedTokenEndpointAuthMethods: " +
-                    $"'{method}'. Entries must be non-null, non-empty, have no leading/trailing whitespace, " +
-                    "and contain no control characters."));
-                continue;
-            }
-
-            // Duplicate check
-            if (!seen.Add(method))
-            {
-                failures.Add(new ZeeKayDaConfigurationFailure(
-                    "client.token_endpoint_auth_methods.duplicate",
-                    $"Client '{client.ClientId}' has a duplicate entry in AllowedTokenEndpointAuthMethods: '{method}'."));
-                continue;
-            }
-
-            // Subset check against server's supported methods
-            if (!serverMethods.Contains(method))
-            {
-                failures.Add(new ZeeKayDaConfigurationFailure(
-                    "client.token_endpoint_auth_methods.not_subset",
-                    $"Client '{client.ClientId}' has AllowedTokenEndpointAuthMethods entry '{method}' that is not " +
-                    $"in the server's AuthMethodsSupported: [{string.Join(", ", serverMethods)}]."));
-            }
-        }
-    }
-
-    private void ValidateEmptySecretProbe(
-        IClientRegistration client,
-        List<ZeeKayDaConfigurationFailure> failures)
-    {
-        foreach (var _ in client.Credentials
-                     .OfType<IClientSecret>()
-                     .Where(secret => _hasher.Verify(secret, ReadOnlySpan<char>.Empty)))
-        {
-            failures.Add(new ZeeKayDaConfigurationFailure(
-                "client.credentials.empty_secret_accepted",
-                $"A credential for client '{client.ClientId}' accepts an empty presented secret. " +
-                "Credentials must not accept empty secrets — this would allow unauthenticated access " +
-                "to the client. Review the stored credential and the associated hasher."));
-        }
-
-        // The empty-secret probe above only catches hashers that accept empty passwords. A
-        // credential whose type no registered hasher CanHandle would silently pass validation and
-        // only fail at runtime as invalid_client. Reject it here so the misconfiguration is caught
-        // at registration time instead.
-        foreach (var secret in client.Credentials
-                     .OfType<IClientSecret>()
-                     .Where(secret => !_hasher.CanHandleAny(secret)))
-        {
-            failures.Add(new ZeeKayDaConfigurationFailure(
-                "client.credentials.no_hasher",
-                $"Client '{client.ClientId}' has a credential of type '{secret.GetType().Name}' " +
-                "for which no registered IClientSecretHasher.CanHandle returns true. " +
-                "The credential can never be verified."));
-        }
-    }
-
-    private void ValidateCredentialConstraints(
-        IClientRegistration client,
-        List<ZeeKayDaConfigurationFailure> failures)
-    {
-        foreach (var secret in client.Credentials.OfType<IClientSecret>())
-            failures.AddRange(_hasher.GetRegistrationFailures(secret, client.ClientId));
-    }
-
-    private static void ValidateTwoCredentialCap(
-        IClientRegistration client,
-        List<ZeeKayDaConfigurationFailure> failures)
-    {
-        var secretCount = client.Credentials.OfType<IClientSecret>().Count();
-
-        if (secretCount > CompositeClientSecretHasher.MaxActiveSharedSecretsPerClient)
-        {
-            failures.Add(new ZeeKayDaConfigurationFailure(
-                "client.credentials.too_many_secrets",
-                $"Client '{client.ClientId}' has {secretCount} IClientSecret credentials, which exceeds the " +
-                $"maximum of {CompositeClientSecretHasher.MaxActiveSharedSecretsPerClient}. " +
-                "The two-credential cap exists to support credential rotation while preserving timing-oracle defences."));
-        }
+        TokenEndpointAuthMethodValidator.Validate(client, serverMethods, failures);
     }
 
     private void ValidateAllowedSigningAlgorithms(
         IClientRegistration client,
         List<ZeeKayDaConfigurationFailure> failures)
     {
-        var algorithms = client.AllowedSigningAlgorithms;
+        var checkedAgainstServer = SigningAlgorithmValidator.Validate(
+            client, _keyRing, _options.Value.IdToken.AdvertisedSigningAlgorithms, failures);
 
-        if (algorithms is null)
-            return;
-
-        if (algorithms.Count == 0)
+        // Say so rather than passing silently. A host with no ring at all stays quiet: the protocol
+        // endpoints refuse to start without one, so there is nothing a warning here would add.
+        if (!checkedAgainstServer && _keyRing is not null)
         {
-            failures.Add(new ZeeKayDaConfigurationFailure(
-                "client.signing_algorithms.empty_when_set",
-                $"Client '{client.ClientId}' has AllowedSigningAlgorithms set to a non-null empty set. " +
-                "When set, AllowedSigningAlgorithms must contain at least one value, or be null to inherit the server default."));
-            return;
-        }
-
-        var serverAlgorithms = ResolveServerAlgorithms();
-
-        if (serverAlgorithms is null)
-        {
-            // Nothing to be a subset of: no ring has read its source yet (a repository validating
-            // from its own constructor, before startup verification runs) and the operator has
-            // stated no ceiling either. The JWT issuer enforces the set again at signing time, so
-            // a mismatch still fails closed there; this window is only the earlier, clearer
-            // message, and it says so rather than passing silently.
-            if (_keyRing is not null)
-            {
-                _logger.LogWarning(
-                    "Client '{ClientId}' declares AllowedSigningAlgorithms, but the signing key ring " +
-                    "has not yet read its source, so the set could not be checked against the " +
-                    "server's advertised algorithms. This happens when an IClientRepository is " +
-                    "resolved before host startup verification runs.",
-                    client.ClientId);
-            }
-
-            return;
-        }
-
-        // The key that signs today must be in the set, not only a key that is merely published:
-        // with a ring that reads its source once, a client pinned to a next or previous key's
-        // algorithm would otherwise pass startup and be refused on every exchange.
-        if (_keyRing?.CurrentOrNull is { } keySet && !algorithms.Contains(keySet.SigningKey.Algorithm))
-        {
-            failures.Add(new ZeeKayDaConfigurationFailure(
-                "client.signing_algorithms.excludes_signing_key",
-                $"Client '{client.ClientId}' has AllowedSigningAlgorithms that exclude '{keySet.SigningKey.Algorithm}', " +
-                "the algorithm of the current signing key, so no ID token could be issued to it. Add that " +
-                "algorithm, or sign with a key the client allows."));
-        }
-
-        foreach (var algorithm in algorithms.Where(algorithm => !serverAlgorithms.Contains(algorithm)))
-        {
-            failures.Add(new ZeeKayDaConfigurationFailure(
-                "client.signing_algorithms.not_subset",
-                $"Client '{client.ClientId}' has AllowedSigningAlgorithms entry '{algorithm}' that the " +
-                $"server does not advertise. Advertised: [{string.Join(", ", serverAlgorithms)}]. The " +
-                "advertised set is the configured signing keys' algorithms, narrowed by " +
-                "IdToken.AdvertisedSigningAlgorithms when that filter is set — add a key for " +
-                $"'{algorithm}', or remove it from this client."));
+            _logger.LogWarning(
+                "Client '{ClientId}' declares AllowedSigningAlgorithms, but the signing key ring " +
+                "has not yet read its source, so the set could not be checked against the " +
+                "server's advertised algorithms. This happens when an IClientRepository is " +
+                "resolved before host startup verification runs.",
+                client.ClientId);
         }
     }
 
@@ -489,23 +234,6 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
         }
     }
 
-    /// <summary>
-    /// The algorithms a client's <c>AllowedSigningAlgorithms</c> must be a subset of: the advertised
-    /// set once the ring has read its source, the operator's filter alone before that, and
-    /// <see langword="null"/> when neither exists.
-    /// </summary>
-    private IReadOnlyCollection<SigningAlgorithm>? ResolveServerAlgorithms()
-    {
-        var filter = _options.Value.IdToken.AdvertisedSigningAlgorithms;
-
-        // CurrentOrNull rather than Current: this validator runs from repository constructors, which
-        // a custom repository may drive before the ring has been initialized. Throwing there would
-        // turn "the check cannot run yet" into a startup crash.
-        return _keyRing?.CurrentOrNull is { } keySet
-            ? AdvertisedSigningAlgorithms.Resolve(keySet, filter)
-            : filter?.ToArray();
-    }
-
     private static void ValidateAllowedScopes(
         IClientRegistration client,
         List<ZeeKayDaConfigurationFailure> failures)
@@ -516,52 +244,6 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
                 "client.allowed_scopes.blank_entry",
                 $"Client '{client.ClientId}' has a null, empty, or whitespace-only entry in AllowedScopes. " +
                 "Scope entries must be non-empty non-whitespace strings."));
-        }
-    }
-
-    private static void ValidateClaimAdditions(
-        IClientRegistration client,
-        List<ZeeKayDaConfigurationFailure> failures)
-    {
-        ValidateClaimAdditions(client, client.AdditionalIdTokenClaims, nameof(IClientMetadata.AdditionalIdTokenClaims), failures);
-        ValidateClaimAdditions(client, client.AdditionalUserInfoClaims, nameof(IClientMetadata.AdditionalUserInfoClaims), failures);
-        ValidateClaimAdditions(client, client.AdditionalAccessTokenClaims, nameof(IClientMetadata.AdditionalAccessTokenClaims), failures);
-    }
-
-    /// <summary>
-    /// An addition is a claim name selection can act on: present, non-blank, and not one of the
-    /// protocol names the framework writes itself, which selection would drop anyway. Whether it
-    /// collides with a scope is checked per grant, against the scope repository this validator
-    /// cannot see.
-    /// </summary>
-    private static void ValidateClaimAdditions(
-        IClientRegistration client,
-        IReadOnlyCollection<string>? additions,
-        string propertyName,
-        List<ZeeKayDaConfigurationFailure> failures)
-    {
-        if (additions is null)
-        {
-            failures.Add(new ZeeKayDaConfigurationFailure(
-                "client.claim_additions.null",
-                $"Client '{client.ClientId}' has {propertyName} set to null. Use an empty collection for no additions."));
-            return;
-        }
-
-        foreach (var _ in additions.Where(string.IsNullOrWhiteSpace))
-        {
-            failures.Add(new ZeeKayDaConfigurationFailure(
-                "client.claim_additions.blank_entry",
-                $"Client '{client.ClientId}' has a null, empty, or whitespace-only entry in {propertyName}. " +
-                "Entries must be claim type names."));
-        }
-
-        foreach (var claim in additions.Where(claim => !string.IsNullOrWhiteSpace(claim) && Claims.ReservedClaimNames.IsReserved(claim)))
-        {
-            failures.Add(new ZeeKayDaConfigurationFailure(
-                "client.claim_additions.reserved",
-                $"Client '{client.ClientId}' names '{claim}' in {propertyName}, which is a protocol claim the " +
-                "framework writes from the grant. It cannot be supplied by a claims provider and is never selected."));
         }
     }
 

@@ -1,104 +1,83 @@
-using System.Linq;
-
 namespace ZeeKayDa.Auth.Clients;
 
 /// <summary>
-/// Pure URI predicate helpers used by <see cref="ClientRegistrationValidator"/> to evaluate
-/// redirect URI security rules.
+/// Applies <see cref="RedirectUriRules"/> to a single registered redirect URI and records a
+/// <see cref="ZeeKayDaConfigurationFailure"/> for every rule it breaks.
 /// </summary>
 internal static class RedirectUriValidator
 {
-    internal static bool HasPathTraversal(string uriString)
-    {
-        // The .NET Uri parser normalises '..' and '.' away so we must inspect the original string.
-        // Find the path start (after the authority) and check each segment.
-        // We split on '/' to avoid false positives (e.g. "..foo" is not a traversal segment).
-        string pathPart;
-
-        var schemeEnd = uriString.IndexOf("://", StringComparison.Ordinal);
-        if (schemeEnd >= 0)
-        {
-            // Standard form: scheme://authority/path?query
-            var afterScheme = uriString[(schemeEnd + 3)..];
-            var slashAfterAuthority = afterScheme.IndexOf('/');
-            if (slashAfterAuthority < 0)
-                return false; // no path component
-
-            pathPart = afterScheme[(slashAfterAuthority + 1)..]; // skip leading slash
-        }
-        else
-        {
-            // Private-use single-slash form (RFC 8252 §7.1): scheme:/path — no authority to skip.
-            var colonSlash = uriString.IndexOf(":/", StringComparison.Ordinal);
-            if (colonSlash < 0)
-                return false;
-
-            pathPart = uriString[(colonSlash + 2)..]; // skip ":/"
-        }
-
-        // Truncate at the query or fragment before splitting, otherwise a trailing "?..." or "#..."
-        // would be glued onto the final segment (e.g. "..?x=1") and slip past the segment match.
-        var queryOrFragment = pathPart.IndexOfAny(['?', '#']);
-        if (queryOrFragment >= 0)
-            pathPart = pathPart[..queryOrFragment];
-
-        // Percent-decode once (case-insensitively handles both %2E and %2e, and mixed forms
-        // like ".%2e" or "%2e.") so encoded traversal segments are caught.
-        return pathPart
-            .Split('/')
-            .Select(Uri.UnescapeDataString)
-            .Any(decoded => decoded is "." or "..");
-    }
-
-    internal static bool IsSchemeAllowed(Uri uri)
-    {
-        if (string.Equals(uri.Scheme, "https", StringComparison.OrdinalIgnoreCase))
-            return true;
-
-        if (string.Equals(uri.Scheme, "http", StringComparison.OrdinalIgnoreCase))
-        {
-            // HTTP is permitted only for loopback hosts. IPv6 zone IDs are rejected separately
-            // and scheme-neutrally in ValidateRedirectUriSet.
-            return IsLoopbackHost(uri.Host);
-        }
-
-        // Private-use scheme: must contain a dot (RFC 8252 §7.1 reverse-domain convention)
-        if (uri.Scheme.Contains('.'))
-            return true;
-
-        return false;
-    }
-
     /// <summary>
-    /// Detects IPv6 zone IDs in the authority portion of the raw URI string.
-    /// .NET's <see cref="Uri"/> strips zone IDs at parse time, so we check the raw input.
+    /// Validates one URI from a client's redirect URI set, appending a failure per broken rule.
     /// </summary>
-    internal static bool HasIpv6ZoneId(string uriString)
+    /// <returns><see langword="true"/> when the URI broke no rule.</returns>
+    internal static bool ValidateRedirectUri(
+        string clientId,
+        string uriString,
+        string propertyName,
+        List<ZeeKayDaConfigurationFailure> failures)
     {
-        // A zone ID appears as %25 (percent-encoded '%') or literally '%' inside '[...]'.
-        // Find the authority: starts after "://" and ends at the next '/' or end.
-        var schemeEnd = uriString.IndexOf("://", StringComparison.Ordinal);
-        if (schemeEnd < 0) return false;
-
-        var authorityStart = schemeEnd + 3;
-        // The authority ends at the first '/', '?' or '#'. Stopping at '?'/'#' too prevents a
-        // percent-encoded '%' in the query (e.g. "?a=[b%25c]") being mistaken for a zone ID.
-        var authorityEnd = uriString.IndexOfAny(['/', '?', '#'], authorityStart);
-        var authority = authorityEnd < 0
-            ? uriString[authorityStart..]
-            : uriString[authorityStart..authorityEnd];
-
-        // IPv6 literals are wrapped in '[' ... ']'. Check for '%' inside them.
-        var bracketOpen = authority.IndexOf('[');
-        var bracketClose = authority.IndexOf(']');
-
-        if (bracketOpen < 0 || bracketClose <= bracketOpen)
+        if (!Uri.TryCreate(uriString, UriKind.Absolute, out var uri))
+        {
+            failures.Add(new ZeeKayDaConfigurationFailure(
+                "client.redirect_uri.invalid",
+                $"Client '{clientId}' has an invalid URI in {propertyName}: '{uriString}'. " +
+                "The value could not be parsed as an absolute URI."));
             return false;
+        }
 
-        var ipv6Part = authority[(bracketOpen + 1)..bracketClose];
-        return ipv6Part.Contains('%');
+        var failuresBefore = failures.Count;
+
+        // IPv6 zone-ID check: .NET strips zone IDs from uri.Host at parse time, so we must
+        // inspect the original string. A URI with an IPv6 zone ID (e.g. [::1%25eth0]) binds
+        // to a specific network interface, not the loopback stack, and must not be trusted.
+        // This is scheme-neutral: an https:// URI with a zone ID is just as prohibited as an
+        // http:// one, so it is checked here rather than inside the http branch of
+        // IsSchemeAllowed.
+        if (RedirectUriRules.HasIpv6ZoneId(uriString))
+        {
+            Fail("client.redirect_uri.ipv6_zone_id", "with an IPv6 zone ID",
+                "Zone IDs bind to a specific network interface rather than the loopback stack and are prohibited in redirect URIs.");
+        }
+
+        if (RedirectUriRules.HasFragment(uri))
+        {
+            Fail("client.redirect_uri.fragment", "with a fragment component",
+                "Fragment components are prohibited in redirect URIs (RFC 9700 §2.1).");
+        }
+
+        if (RedirectUriRules.HasUserInfo(uri))
+        {
+            Fail("client.redirect_uri.userinfo", "with a userinfo component",
+                "Userinfo components are prohibited in redirect URIs.");
+        }
+
+        // Path traversal check — must inspect the original string because .NET's Uri parser
+        // normalises '..' and '.' away during construction (AbsolutePath will not contain them).
+        if (RedirectUriRules.HasPathTraversal(uriString))
+        {
+            Fail("client.redirect_uri.path_traversal", "with a path traversal segment",
+                "Path traversal segments ('.' or '..') are prohibited in redirect URIs.");
+        }
+
+        if (!RedirectUriRules.IsSchemeAllowed(uri))
+        {
+            if (RedirectUriRules.IsHttp(uri))
+            {
+                Fail("client.redirect_uri.scheme_http_non_loopback", "using HTTP for a non-loopback host",
+                    "HTTP redirect URIs are only permitted for loopback addresses (RFC 8252 §8.3).");
+            }
+            else
+            {
+                Fail("client.redirect_uri.scheme_not_allowed", "with a disallowed scheme",
+                    "Permitted schemes are 'https', 'http' (loopback only), and private-use schemes containing a dot.");
+            }
+        }
+
+        return failures.Count == failuresBefore;
+
+        void Fail(string code, string problem, string reason)
+            => failures.Add(new ZeeKayDaConfigurationFailure(
+                code,
+                $"Client '{clientId}' has a redirect URI in {propertyName} {problem}: '{uriString}'. {reason}"));
     }
-
-    internal static bool IsLoopbackHost(string host)
-        => LoopbackHelper.IsLoopbackHost(host);
 }
