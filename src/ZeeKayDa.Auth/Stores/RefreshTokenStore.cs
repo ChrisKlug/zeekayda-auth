@@ -29,9 +29,9 @@ internal sealed class RefreshTokenStore : IRefreshTokenStore
     private static readonly string DataProtectionPurpose = "ZeeKayDa.Auth:RefreshTokenStore";
 
     /// <summary>
-    /// Reserved sentinel value for a revocation-sentinel row's <see cref="RefreshTokenGrant.Subject"/>
-    /// and <see cref="RefreshTokenGrant.ClientId"/>. Never a real subject or
-    /// client_id — a real grant's own values can never equal this constant.
+    /// Reserved value for a revocation-sentinel row: its <see cref="RefreshTokenGrant.ClientId"/>
+    /// verbatim, and the prefix of its <see cref="RefreshTokenGrant.Subject"/>, which appends the
+    /// family id so a subject index holds one family per key. Never a real subject or client_id.
     /// </summary>
     private const string RevocationSentinelReservedValue = "__zeekayda-revocation-sentinel__";
 

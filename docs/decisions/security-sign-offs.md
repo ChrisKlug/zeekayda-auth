@@ -1569,8 +1569,8 @@ Critical. Five Lows fixed in the same PR, code-lens-verified; the rest recorded 
   `TryConsumeAsync_returns_Revoked_for_grant_inserted_after_zero_row_family_was_revoked`,
   `Code_replay_triggers_family_revocation_spanning_both_stores`,
   `A_replayed_code_revokes_the_family_its_first_exchange_started`.
-- The sentinel outlives any later-born row: family lifetime from revoke time plus the skew tolerance,
-  saturating when unbounded. Closed —
+- The sentinel outlives any row born within the skew tolerance of the revoke: family lifetime from
+  revoke time plus the skew tolerance, saturating when unbounded. Closed —
   `The_sentinel_row_expires_with_the_family_lifetime_padded_by_the_skew_tolerance_not_the_code_lifetime`,
   `The_sentinel_row_never_expires_when_the_family_lifetime_is_unbounded`.
 - One row per family under a deterministic key and a per-family reserved subject; never redeemable.
@@ -1582,6 +1582,7 @@ Critical. Five Lows fixed in the same PR, code-lens-verified; the rest recorded 
   `A_bulk_revoke_fault_still_leaves_the_family_revoked_because_the_sentinel_is_written_first`,
   `RevokeFamilyAsync_rethrows_when_the_sentinel_insert_fails_and_no_row_is_actually_persisted`,
   `A_replay_whose_family_revocation_fails_is_still_refused_and_the_failure_is_logged`.
-- Residuals, accepted: a confirming read that itself faults propagates its own exception and drops the
-  insert's; a refresh token equal to the literal sentinel key resolves to `Revoked`, which is
-  fail-closed, and family ids never leave the process — no tests.
+- Residuals, accepted: a row born later than the skew tolerance on an evicting backend at the end of
+  the family's absolute life outlives the sentinel; a confirming read that itself faults propagates
+  its own exception and drops the insert's; a refresh token equal to the literal sentinel key resolves
+  to `Revoked`, fail-closed; the replay path's empty-family-id guard is unreachable today — no tests.
