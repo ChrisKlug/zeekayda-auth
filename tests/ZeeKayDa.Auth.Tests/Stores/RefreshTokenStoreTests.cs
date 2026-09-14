@@ -670,6 +670,32 @@ public sealed class RefreshTokenStoreTests
     }
 
     [Fact]
+    public async Task RevokeFamilyAsync_rethrows_when_the_sentinel_row_was_written_but_the_gate_does_not_read_the_family_as_revoked()
+    {
+        // A backend that indexes separately can persist the row and then fail the index write the
+        // gate reads. Row presence must not pass that off as a benign collision: the family is not
+        // protected, and the failure has to reach the caller.
+        var inner = new InMemoryRefreshTokenGrantStore();
+        var store = CreateStore(grantStore: new RowWrittenButGateNotArmedGrantStore(inner));
+
+        var act = async () => await store.RevokeFamilyAsync("fam-485-index-lost", CancellationToken.None);
+
+        await act.Should().ThrowAsync<ZeeKayDaStoreException>();
+    }
+
+    [Fact]
+    public async Task RevokeFamilyAsync_propagates_a_fault_from_the_confirming_read_rather_than_treating_the_insert_as_benign()
+    {
+        var inner = new InMemoryRefreshTokenGrantStore();
+        var store = CreateStore(grantStore: new InsertAndConfirmFailingGrantStore(inner));
+
+        var act = async () => await store.RevokeFamilyAsync("fam-485-confirm-fault", CancellationToken.None);
+
+        await act.Should().ThrowAsync<ZeeKayDaStoreException>(
+            because: "a confirming read that cannot answer must not let the insert failure pass as a collision");
+    }
+
+    [Fact]
     public async Task RevokeFamilyAsync_rethrows_when_the_sentinel_insert_fails_and_no_row_is_actually_persisted()
     {
         // A genuine backend fault on the sentinel InsertAsync surfaces as the exact same
@@ -1311,6 +1337,52 @@ public sealed class RefreshTokenStoreTests
 
         public ValueTask<bool> IsFamilyRevokedAsync(string familyId, CancellationToken cancellationToken)
             => _inner.IsFamilyRevokedAsync(familyId, cancellationToken);
+    }
+
+    /// <summary>Persists the row, then fails the insert as a separately-indexed backend does when its index write fails; the gate never learns of the family.</summary>
+    private sealed class RowWrittenButGateNotArmedGrantStore(IRefreshTokenGrantStore inner) : IRefreshTokenGrantStore
+    {
+        public async ValueTask InsertAsync(RefreshTokenGrant grant, CancellationToken cancellationToken)
+        {
+            await inner.InsertAsync(grant, cancellationToken);
+            throw new InvalidOperationException("Simulated index write failure after the row was persisted.");
+        }
+
+        public ValueTask<RefreshTokenGrant?> FindByHandleAsync(StoreKey handleHash, CancellationToken cancellationToken)
+            => inner.FindByHandleAsync(handleHash, cancellationToken);
+
+        public ValueTask<bool> TryMarkConsumedAsync(StoreKey handleHash, CancellationToken cancellationToken)
+            => inner.TryMarkConsumedAsync(handleHash, cancellationToken);
+
+        public ValueTask RevokeFamilyAsync(string familyId, CancellationToken cancellationToken)
+            => inner.RevokeFamilyAsync(familyId, cancellationToken);
+
+        public ValueTask RevokeBySubjectAsync(string subject, CancellationToken cancellationToken)
+            => inner.RevokeBySubjectAsync(subject, cancellationToken);
+
+        public ValueTask<bool> IsFamilyRevokedAsync(string familyId, CancellationToken cancellationToken)
+            => ValueTask.FromResult(false);
+    }
+
+    private sealed class InsertAndConfirmFailingGrantStore(IRefreshTokenGrantStore inner) : IRefreshTokenGrantStore
+    {
+        public ValueTask InsertAsync(RefreshTokenGrant grant, CancellationToken cancellationToken)
+            => throw new InvalidOperationException("Simulated insert fault.");
+
+        public ValueTask<RefreshTokenGrant?> FindByHandleAsync(StoreKey handleHash, CancellationToken cancellationToken)
+            => throw new InvalidOperationException("Simulated confirming-read fault.");
+
+        public ValueTask<bool> TryMarkConsumedAsync(StoreKey handleHash, CancellationToken cancellationToken)
+            => inner.TryMarkConsumedAsync(handleHash, cancellationToken);
+
+        public ValueTask RevokeFamilyAsync(string familyId, CancellationToken cancellationToken)
+            => inner.RevokeFamilyAsync(familyId, cancellationToken);
+
+        public ValueTask RevokeBySubjectAsync(string subject, CancellationToken cancellationToken)
+            => inner.RevokeBySubjectAsync(subject, cancellationToken);
+
+        public ValueTask<bool> IsFamilyRevokedAsync(string familyId, CancellationToken cancellationToken)
+            => inner.IsFamilyRevokedAsync(familyId, cancellationToken);
     }
 
     private sealed class RevokeFamilyFailingGrantStore(IRefreshTokenGrantStore inner) : IRefreshTokenGrantStore

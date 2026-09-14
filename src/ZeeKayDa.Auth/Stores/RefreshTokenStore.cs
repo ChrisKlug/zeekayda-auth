@@ -296,28 +296,38 @@ internal sealed class RefreshTokenStore : IRefreshTokenStore
         }
         catch (ZeeKayDaStoreException)
         {
-            if (!await IsIdempotentSentinelInsertAsync(sentinelKey, cancellationToken).ConfigureAwait(false))
+            if (!await IsIdempotentSentinelInsertAsync(sentinelKey, familyId, cancellationToken).ConfigureAwait(false))
                 throw;
         }
     }
 
     /// <summary>
     /// Confirms whether an <see cref="InsertRevocationSentinelAsync"/> failure was actually a benign
-    /// self-collision: re-reads <paramref name="sentinelKey"/> and checks whether the sentinel row is
-    /// already durably present with <see cref="RefreshGrantStatus.Revoked"/>.
+    /// self-collision: re-reads <paramref name="sentinelKey"/>, checks that the sentinel row is
+    /// durably present with <see cref="RefreshGrantStatus.Revoked"/>, and asks the gate itself,
+    /// <see cref="IRefreshTokenGrantStore.IsFamilyRevokedAsync"/>, whether it now reads the family
+    /// as revoked.
     /// </summary>
     /// <remarks>
     /// Never infers meaning from the insert failure's exception type or message — those look
     /// identical for a genuine self-collision and a genuine transport fault (see
-    /// <see cref="InsertRevocationSentinelAsync"/>'s remarks). Only this confirming read decides.
+    /// <see cref="InsertRevocationSentinelAsync"/>'s remarks). Only these confirming reads decide,
+    /// and the gate is asked because row presence alone is not what protects the family: a backend
+    /// that indexes separately can hold the row while the index write that failed is what the
+    /// gate reads, and that failure must propagate rather than pass as a collision.
     /// </remarks>
-    private async ValueTask<bool> IsIdempotentSentinelInsertAsync(StoreKey sentinelKey, CancellationToken cancellationToken)
+    private async ValueTask<bool> IsIdempotentSentinelInsertAsync(StoreKey sentinelKey, string familyId, CancellationToken cancellationToken)
     {
         var existing = await Guarded(
             () => _grantStore.FindByHandleAsync(sentinelKey, cancellationToken),
             "confirm the refresh token family revocation sentinel after an insert failure").ConfigureAwait(false);
 
-        return existing is not null && existing.Status == RefreshGrantStatus.Revoked;
+        if (existing is null || existing.Status != RefreshGrantStatus.Revoked)
+            return false;
+
+        return await Guarded(
+            () => _grantStore.IsFamilyRevokedAsync(familyId, cancellationToken),
+            "confirm the refresh token family reads as revoked after a sentinel insert failure").ConfigureAwait(false);
     }
 
     private static StoreKey BuildHandleKey(string tokenHandle) => new(HashBase64Url(tokenHandle));

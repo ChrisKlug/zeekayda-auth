@@ -386,7 +386,14 @@ public abstract class RefreshTokenGrantStoreConformanceTests
         await store.InsertAsync(revokedFromBirth, CancellationToken.None);
 
         var stored = await store.FindByHandleAsync(revokedFromBirth.HandleHash, CancellationToken.None);
-        Assert.Equal(RefreshGrantStatus.Revoked, stored!.Status);
+        Assert.NotNull(stored);
+        Assert.Equal(revokedFromBirth.HandleHash, stored.HandleHash);
+        Assert.Equal(revokedFromBirth.FamilyId, stored.FamilyId);
+        Assert.Equal(revokedFromBirth.Subject, stored.Subject);
+        Assert.Equal(revokedFromBirth.ClientId, stored.ClientId);
+        Assert.Equal(revokedFromBirth.FamilyAbsoluteExpiry, stored.FamilyAbsoluteExpiry);
+        Assert.Equal(revokedFromBirth.ExpiresAt, stored.ExpiresAt);
+        Assert.Equal(RefreshGrantStatus.Revoked, stored.Status);
         Assert.Equal(0, stored.ProtectedPayload.Length);
 
         var isRevoked = await store.IsFamilyRevokedAsync(familyId, CancellationToken.None);

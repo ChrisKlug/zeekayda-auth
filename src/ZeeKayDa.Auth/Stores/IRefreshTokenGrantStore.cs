@@ -17,6 +17,9 @@ public interface IRefreshTokenGrantStore
     /// <summary>
     /// Insert a new grant. The handle is 256-bit random, so a primary-key collision is a
     /// genuine duplicate/bug — let the unique-constraint violation propagate (the coordinator wraps it).
+    /// The one exception is the family revocation sentinel, whose key is deterministic in the
+    /// family id: a repeated revoke collides on purpose, and the coordinator confirms that collision
+    /// by reading the row back, so propagate it exactly the same way.
     /// A grant may arrive born <see cref="RefreshGrantStatus.Revoked"/> with an empty
     /// <see cref="RefreshTokenGrant.ProtectedPayload"/>: that is the family revocation sentinel, and
     /// it MUST be stored verbatim. A backend that normalises the status to
