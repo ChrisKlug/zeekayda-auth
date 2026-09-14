@@ -134,6 +134,26 @@ public sealed class SigningSelfTestTests
     }
 
     [Fact]
+    public async Task RunAsync_treats_a_signers_cancellation_for_another_token_as_unavailable_even_while_the_caller_is_cancelling()
+    {
+        // Host shutdown cancels the startup token while the remote signer independently times
+        // out: the exception carries the signer's token, not the caller's, so it is the signer's
+        // failure and is reported as such rather than mistaken for the caller's cancellation.
+        using var rsa = RSA.Create(2048);
+        using var callers = new CancellationTokenSource();
+        using var signers = new CancellationTokenSource();
+        await callers.CancelAsync();
+        await signers.CancelAsync();
+        var signer = new ThrowingSigner(new OperationCanceledException(signers.Token));
+        var key = BuildKey(rsa);
+
+        var act = async () => await SigningSelfTest.RunAsync(signer, key, callers.Token);
+
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.self_test_unavailable");
+    }
+
+    [Fact]
     public async Task RunAsync_treats_a_cancellation_the_signer_raised_itself_as_self_test_unavailable()
     {
         // A remote signer's own timeout surfaces as a cancellation while the caller's token is

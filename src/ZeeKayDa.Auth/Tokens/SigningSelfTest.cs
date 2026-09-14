@@ -67,7 +67,7 @@ internal static class SigningSelfTest
         {
             throw;
         }
-        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        catch (Exception ex) when (!IsCallersCancellation(ex, cancellationToken))
         {
             throw new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure(
@@ -78,6 +78,16 @@ internal static class SigningSelfTest
                 ex);
         }
     }
+
+    /// <summary>
+    /// A cancellation is the caller's only when it carries the caller's token and that token was
+    /// requested. A signer's own timeout cancels with a different token, or none, and is the
+    /// signer failing, whatever the caller's token happens to say at that moment.
+    /// </summary>
+    private static bool IsCallersCancellation(Exception ex, CancellationToken cancellationToken) =>
+        ex is OperationCanceledException cancelled
+        && cancelled.CancellationToken == cancellationToken
+        && cancellationToken.IsCancellationRequested;
 
     /// <summary>
     /// Bytes that are not a signature of this key's algorithm at all, wrong length included, do
