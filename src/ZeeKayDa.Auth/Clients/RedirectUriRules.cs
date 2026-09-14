@@ -26,30 +26,9 @@ internal static class RedirectUriRules
     internal static bool HasPathTraversal(string uriString)
     {
         // The .NET Uri parser normalises '..' and '.' away so we must inspect the original string.
-        // Find the path start (after the authority) and check each segment.
         // We split on '/' to avoid false positives (e.g. "..foo" is not a traversal segment).
-        string pathPart;
-
-        var schemeEnd = uriString.IndexOf("://", StringComparison.Ordinal);
-        if (schemeEnd >= 0)
-        {
-            // Standard form: scheme://authority/path?query
-            var afterScheme = uriString[(schemeEnd + 3)..];
-            var slashAfterAuthority = afterScheme.IndexOf('/');
-            if (slashAfterAuthority < 0)
-                return false; // no path component
-
-            pathPart = afterScheme[(slashAfterAuthority + 1)..]; // skip leading slash
-        }
-        else
-        {
-            // Private-use single-slash form (RFC 8252 §7.1): scheme:/path — no authority to skip.
-            var colonSlash = uriString.IndexOf(":/", StringComparison.Ordinal);
-            if (colonSlash < 0)
-                return false;
-
-            pathPart = uriString[(colonSlash + 2)..]; // skip ":/"
-        }
+        if (GetRawPath(uriString) is not { } pathPart)
+            return false;
 
         // Truncate at the query or fragment before splitting, otherwise a trailing "?..." or "#..."
         // would be glued onto the final segment (e.g. "..?x=1") and slip past the segment match.
@@ -63,6 +42,26 @@ internal static class RedirectUriRules
             .Split('/')
             .Select(Uri.UnescapeDataString)
             .Any(decoded => decoded is "." or "..");
+    }
+
+    /// <summary>
+    /// The raw, undecoded path of the string without its leading slash, or <see langword="null"/>
+    /// when there is no path component to inspect.
+    /// </summary>
+    private static string? GetRawPath(string uriString)
+    {
+        var schemeEnd = uriString.IndexOf("://", StringComparison.Ordinal);
+        if (schemeEnd >= 0)
+        {
+            // Standard form: scheme://authority/path?query — skip the authority and the leading slash.
+            var afterScheme = uriString[(schemeEnd + 3)..];
+            var slashAfterAuthority = afterScheme.IndexOf('/');
+            return slashAfterAuthority < 0 ? null : afterScheme[(slashAfterAuthority + 1)..];
+        }
+
+        // Private-use single-slash form (RFC 8252 §7.1): scheme:/path — no authority to skip.
+        var colonSlash = uriString.IndexOf(":/", StringComparison.Ordinal);
+        return colonSlash < 0 ? null : uriString[(colonSlash + 2)..];
     }
 
     internal static bool IsSchemeAllowed(Uri uri)
