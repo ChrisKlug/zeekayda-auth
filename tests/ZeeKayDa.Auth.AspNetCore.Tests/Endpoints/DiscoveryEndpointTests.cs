@@ -16,6 +16,7 @@ namespace ZeeKayDa.Auth.AspNetCore.Tests.Endpoints;
 public sealed class DiscoveryEndpointTests : IDisposable
 {
     private const string DiscoveryPath = "/.well-known/openid-configuration";
+    private const string OAuthMetadataPath = "/.well-known/oauth-authorization-server";
 
     private readonly TestWebAppFactory _factory;
     private readonly HttpClient _client;
@@ -318,6 +319,88 @@ public sealed class DiscoveryEndpointTests : IDisposable
             TestContext.Current.CancellationToken);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    // ── RFC 8414 Authorization Server Metadata address ────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetOAuthMetadata_serves_the_same_document_as_the_OpenID_Connect_path()
+    {
+        var oidc = await _client.GetStringAsync(DiscoveryPath, TestContext.Current.CancellationToken);
+        var response = await _client.GetAsync(OAuthMetadataPath, TestContext.Current.CancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+        (await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)).Should().Be(oidc,
+            because: "one document is published at both addresses");
+    }
+
+    [Fact]
+    public async Task GetOAuthMetadata_applies_the_same_public_metadata_headers()
+    {
+        var response = await _client.GetAsync(OAuthMetadataPath, TestContext.Current.CancellationToken);
+
+        response.Headers.CacheControl!.Public.Should().BeTrue();
+        response.Headers.CacheControl!.MaxAge.Should().Be(TimeSpan.FromSeconds(3600));
+        response.Headers.GetValues("Access-Control-Allow-Origin").Should().ContainSingle().Which.Should().Be("*");
+    }
+
+    [Fact]
+    public async Task GetOAuthMetadata_inserts_the_well_known_segment_before_the_Issuer_path()
+    {
+        using var factory = new TestWebAppFactory(opts => opts.Issuer = "https://test.example.com/tenant1");
+        using var client = CreateClient(factory);
+
+        var response = await client.GetAsync(
+            "/.well-known/oauth-authorization-server/tenant1", TestContext.Current.CancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var doc = await response.Content.ReadFromJsonAsync<JsonDocument>(TestContext.Current.CancellationToken);
+        doc!.RootElement.GetProperty("issuer").GetString().Should().Be("https://test.example.com/tenant1",
+            because: "RFC 8414 §3.3 requires the issuer to match the one the metadata URL was built from");
+    }
+
+    [Theory]
+    [InlineData("/tenant1/.well-known/oauth-authorization-server")]
+    [InlineData("/.well-known/oauth-authorization-server")]
+    public async Task GetOAuthMetadata_returns_404_at_the_appended_or_root_form_when_Issuer_has_path(string path)
+    {
+        using var factory = new TestWebAppFactory(opts => opts.Issuer = "https://test.example.com/tenant1");
+        using var client = CreateClient(factory);
+
+        var response = await client.GetAsync(path, TestContext.Current.CancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound,
+            because: "RFC 8414 §3.1 inserts the segment; appending it is the OpenID Connect rule");
+    }
+
+    [Fact]
+    public async Task GetOAuthMetadata_returns_200_under_a_host_wide_fallback_authorization_policy()
+    {
+        using var factory = new TestWebAppFactoryWithFallbackAuthorizationPolicy();
+        using var client = CreateClient(factory);
+
+        var response = await client.GetAsync(OAuthMetadataPath, TestContext.Current.CancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task GetOAuthMetadata_is_served_on_a_host_without_the_authorization_code_grant()
+    {
+        using var factory = new TestWebAppFactory(opts =>
+        {
+            opts.GrantTypesSupported = [GrantType.ClientCredentials];
+            opts.AuthorizationEndpoint.CodeChallengeMethodsSupported = null;
+        });
+        using var client = CreateClient(factory);
+
+        var oidc = await client.GetAsync(DiscoveryPath, TestContext.Current.CancellationToken);
+        var oauth = await client.GetAsync(OAuthMetadataPath, TestContext.Current.CancellationToken);
+
+        oidc.StatusCode.Should().Be(HttpStatusCode.OK,
+            because: "resource servers find jwks_uri under the OpenID Connect path even on a non-OP host");
+        oauth.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     // ── Startup validation ────────────────────────────────────────────────────────────────────────

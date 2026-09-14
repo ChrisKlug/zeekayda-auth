@@ -47,8 +47,9 @@ allows one there; it is rejected on the token and JWKS URIs, and a fragment is r
 each can be overridden individually. Every mapped route additionally constrains the request host to
 the issuer's, so a route reachable on a second binding cannot answer as this issuer.
 
-**The discovery route is derived from the issuer's path component, not hardcoded.** A path-based
-issuer publishes at `/tenant1/.well-known/openid-configuration` (OIDC Discovery 1.0 §4.1). Rejecting
+**The discovery routes are derived from the issuer's path component, not hardcoded.** A path-based
+issuer publishes at `/tenant1/.well-known/openid-configuration` (OIDC Discovery 1.0 §4.1, appended)
+and at `/.well-known/oauth-authorization-server/tenant1` (RFC 8414 §3.1, inserted). Rejecting
 path-based issuers would have been simpler but silently breaks a spec-permitted multi-tenant
 pattern, and path-based issuers are what RFC 9207 mix-up resistance relies on in those deployments.
 
