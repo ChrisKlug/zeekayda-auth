@@ -48,13 +48,13 @@ public sealed class TokenEndpointClaimsTests : IDisposable
 
     private static readonly ClaimRecord[] DefaultPool =
     [
-        new("name", "Chris"),
+        new("name", "Chris Example"),
         new("email", "chris@example.com"),
         new("email_verified", true),
-        new("role", "admin"),
-        new("role", "editor"),
-        new("tenant", "acme"),
-        new("customer_number", "C-1"),
+        new("role", "orders-admin-4e1"),
+        new("role", "orders-editor-4e1"),
+        new("tenant", "acme-tenant-9c2"),
+        new("customer_number", "CUST-00042"),
     ];
 
     private readonly ScriptedClaimsProvider _provider = new();
@@ -105,7 +105,7 @@ public sealed class TokenEndpointClaimsTests : IDisposable
     {
         var tokens = await ExchangeAsync(scope: "openid profile");
 
-        tokens.IdToken.GetProperty("name").GetString().Should().Be("Chris");
+        tokens.IdToken.GetProperty("name").GetString().Should().Be("Chris Example");
         tokens.IdToken.TryGetProperty("email", out _).Should().BeFalse();
         tokens.AccessToken.TryGetProperty("name", out _).Should().BeFalse("no scope unlocks name in the access token");
     }
@@ -124,7 +124,7 @@ public sealed class TokenEndpointClaimsTests : IDisposable
     {
         var tokens = await ExchangeAsync(scope: "openid orders.read");
 
-        tokens.AccessToken.GetProperty("role").EnumerateArray().Select(role => role.GetString()).Should().Equal("admin", "editor");
+        tokens.AccessToken.GetProperty("role").EnumerateArray().Select(role => role.GetString()).Should().Equal("orders-admin-4e1", "orders-editor-4e1");
         tokens.IdToken.TryGetProperty("role", out _).Should().BeFalse();
         tokens.IdToken.TryGetProperty("customer_number", out _).Should().BeFalse("a userinfo-only claim reaches no token");
         tokens.AccessToken.TryGetProperty("customer_number", out _).Should().BeFalse();
@@ -186,8 +186,8 @@ public sealed class TokenEndpointClaimsTests : IDisposable
     {
         var tokens = await ExchangeAsync(clientId: TenantApp, scope: "openid profile");
 
-        tokens.IdToken.GetProperty("tenant").GetString().Should().Be("acme");
-        tokens.AccessToken.GetProperty("tenant").GetString().Should().Be("acme");
+        tokens.IdToken.GetProperty("tenant").GetString().Should().Be("acme-tenant-9c2");
+        tokens.AccessToken.GetProperty("tenant").GetString().Should().Be("acme-tenant-9c2");
     }
 
     [Fact]
@@ -410,7 +410,7 @@ public sealed class TokenEndpointClaimsTests : IDisposable
 
         var tokens = await ExchangeAsync(scope: "openid profile");
 
-        tokens.IdToken.GetProperty("name").GetString().Should().Be("Chris", "the provider is called fresh on every issuance");
+        tokens.IdToken.GetProperty("name").GetString().Should().Be("Chris Example", "the provider is called fresh on every issuance");
     }
 
     // ── Merging ───────────────────────────────────────────────────────────────────────────────
@@ -540,7 +540,7 @@ public sealed class TokenEndpointClaimsTests : IDisposable
     /// <summary>Nothing the provider returned, or embedded in its exception, reaches a log sink.</summary>
     private void LogsShouldCarryNoClaimValue()
     {
-        string[] values = ["Chris", "chris@example.com", "acme", "admin", "C-1"];
+        string[] values = ["Chris Example", "chris@example.com", "acme-tenant-9c2", "orders-admin-4e1", "CUST-00042"];
 
         _logs.Entries
             .Where(entry => !entry.Category.StartsWith("Microsoft.AspNetCore.Hosting", StringComparison.Ordinal))

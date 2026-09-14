@@ -310,6 +310,24 @@ public class AuthorizeRequestValidatorTests
     }
 
     [Fact]
+    public async Task Phase2_two_malformed_audiences_are_still_the_operators_server_error_not_the_clients_invalid_scope()
+    {
+        var client = Client() with { AllowedScopes = new HashSet<string>(StringComparer.Ordinal) { "openid", "a", "b" } };
+        var parameters = ValidParameters();
+        parameters["scope"] = ["openid a b"];
+
+        var result = await Validate(parameters, client,
+        [
+            .. StandardScopes.All,
+            new ScopeDefinition { Name = "a", Audience = "orders" },
+            new ScopeDefinition { Name = "b", Audience = "reports" },
+        ]);
+
+        result.Should().BeOfType<AuthorizeRequestValidationResult.RedirectError>()
+            .Subject.Error.Should().Be("server_error");
+    }
+
+    [Fact]
     public async Task Phase2_a_client_addition_naming_a_scope_claim_is_server_error_with_a_generic_description()
     {
         var client = Client() with { AdditionalAccessTokenClaims = ["email"] };

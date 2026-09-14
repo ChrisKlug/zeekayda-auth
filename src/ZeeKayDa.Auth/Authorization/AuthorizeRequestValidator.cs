@@ -47,8 +47,8 @@ internal sealed partial class AuthorizeRequestValidator
         ScopeIsPresent,
         EffectiveScopeIncludesOpenId,
         EffectiveScopesAreDefined,
-        EffectiveScopesNameOneResource,
         EffectiveScopeAudienceIsAResourceIndicator,
+        EffectiveScopesNameOneResource,
         ClientAdditionsNameNoScopeClaim,
         NonceIsPresent,
         CodeChallengeIsPresent,
@@ -282,6 +282,8 @@ internal sealed partial class AuthorizeRequestValidator
     /// Startup refuses a malformed audience for every repository, so this is reachable only when
     /// a repository changed under a live server. That is the operator's fault, not a defect in
     /// the request, so it is <c>server_error</c> with the detail logged, not <c>invalid_scope</c>.
+    /// Ordered before the one-resource rule so that two malformed audiences are still blamed on
+    /// the configuration, not on the client for naming two resources.
     /// </remarks>
     private static Problem? EffectiveScopeAudienceIsAResourceIndicator(RequestContext context) =>
         ScopeResolution.FirstWithMalformedAudience(context.GrantedDefinitions) is { } scope

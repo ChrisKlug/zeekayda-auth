@@ -25,6 +25,7 @@ internal sealed class CodeGrantTokenPayloads
     private readonly SelectedClaims _subject;
     private readonly string? _resourceAudience;
 
+    /// <summary>Binds one issuance's grant, client, instant and selected subject claims, from which both payloads are built.</summary>
     /// <param name="issuer">The issuer, always an audience of the access token.</param>
     /// <param name="client">The client the tokens are for.</param>
     /// <param name="entry">The redeemed grant.</param>

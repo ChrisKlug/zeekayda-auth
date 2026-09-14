@@ -34,6 +34,7 @@ internal sealed class GrantClaimsResolver
         _logger = logger;
     }
 
+    /// <summary>Resolves the subject claims and the resource audience of one grant, or says why it could not.</summary>
     /// <param name="context">The request, whose services supply the provider.</param>
     /// <param name="client">The client the tokens are for.</param>
     /// <param name="sub">The subject the grant was issued to.</param>
