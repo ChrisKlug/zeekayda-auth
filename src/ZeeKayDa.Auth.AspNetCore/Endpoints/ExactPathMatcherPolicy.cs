@@ -42,7 +42,7 @@ internal sealed class ExactPathMatcherPolicy : MatcherPolicy, INodeBuilderPolicy
 
         var edges = endpoints
             .Where(IsExactPathEndpoint)
-            .GroupBy(endpoint => ((RouteEndpoint)endpoint).RoutePattern.RawText!, StringComparer.Ordinal)
+            .GroupBy(endpoint => ExactPathOf((RouteEndpoint)endpoint), StringComparer.Ordinal)
             .Select(group => new PolicyNodeEdge(new ExactPath(group.Key), [.. group, .. unmarked]))
             .ToList();
 
@@ -66,6 +66,24 @@ internal sealed class ExactPathMatcherPolicy : MatcherPolicy, INodeBuilderPolicy
         }
 
         return new ExactPathJumpTable(destinations, anyDestination);
+    }
+
+    /// <summary>
+    /// The literal path a marked endpoint answers. A template with a parameter has no single exact
+    /// path, and one without raw text has nothing to compare against — either would silently
+    /// match nothing or everything, so the matcher refuses to build instead.
+    /// </summary>
+    internal static string ExactPathOf(RouteEndpoint endpoint)
+    {
+        var pattern = endpoint.RoutePattern;
+        if (pattern.RawText is not { } rawText || pattern.Parameters.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"Endpoint '{endpoint.DisplayName}' is marked for exact-path matching but its route " +
+                $"'{pattern.RawText}' is not a literal path. Framework routes must be literal paths.");
+        }
+
+        return rawText;
     }
 
     private static bool IsExactPathEndpoint(Endpoint endpoint)

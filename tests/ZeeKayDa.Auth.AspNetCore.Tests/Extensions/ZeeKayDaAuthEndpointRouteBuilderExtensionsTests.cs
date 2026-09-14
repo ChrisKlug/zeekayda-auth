@@ -1,5 +1,8 @@
 using System.Net;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.Routing;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests.Extensions;
 
@@ -45,6 +48,50 @@ public sealed class ZeeKayDaAuthEndpointRouteBuilderExtensionsTests
         mapped.StatusCode.Should().NotBe(HttpStatusCode.NotFound, because: "the correctly cased route is mapped");
         wrongCase.StatusCode.Should().Be(HttpStatusCode.NotFound,
             because: "a URL path is case-sensitive, so a differently cased path is not this issuer's endpoint");
+    }
+
+    private static HttpClient CreateTenantClient(Action<IEndpointRouteBuilder> mapHostRoutes, out TestWebAppFactory factory)
+    {
+        factory = new TestWebAppFactory(
+            opts => opts.Issuer = "https://test.example.com/tenant1",
+            mapEndpoints: mapHostRoutes);
+        return factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            BaseAddress = new Uri("https://test.example.com"),
+            AllowAutoRedirect = false,
+        });
+    }
+
+    [Fact]
+    public async Task Host_literal_route_differing_only_in_case_is_served_and_the_framework_route_still_answers()
+    {
+        using var client = CreateTenantClient(
+            endpoints => endpoints.MapPost("/TENANT1/connect/token", () => Results.Text("host")), out var factory);
+        using var _ = factory;
+
+        var host = await client.PostAsync("/TENANT1/connect/token", content: null, TestContext.Current.CancellationToken);
+        var framework = await client.PostAsync("/tenant1/connect/token", content: null, TestContext.Current.CancellationToken);
+
+        (await host.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)).Should().Be("host",
+            because: "the exact-path policy only ever removes framework endpoints, never the host's");
+        framework.StatusCode.Should().Be(HttpStatusCode.BadRequest,
+            because: "the exactly written framework route still reaches the token endpoint, which rejects a bodiless request");
+    }
+
+    [Fact]
+    public async Task Host_parameterised_route_answers_a_wrong_case_path_while_the_exact_path_reaches_the_framework()
+    {
+        using var client = CreateTenantClient(
+            endpoints => endpoints.MapGet("/{tenant}/connect/jwks", () => Results.Text("host")), out var factory);
+        using var _ = factory;
+
+        var host = await client.GetAsync("/TENANT1/connect/jwks", TestContext.Current.CancellationToken);
+        var framework = await client.GetAsync("/tenant1/connect/jwks", TestContext.Current.CancellationToken);
+
+        (await host.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)).Should().Be("host",
+            because: "with the framework route excluded, the host's parameterised route is the match");
+        (await framework.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)).Should().Contain("\"keys\"",
+            because: "the exactly written path still prefers the framework's literal JWKS route");
     }
 
     [Fact]
