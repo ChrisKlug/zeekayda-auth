@@ -59,24 +59,14 @@ internal sealed class DiscoveryEndpoint : IZeeKayDaEndpoint
 
         foreach (var routePath in routes.Distinct(StringComparer.Ordinal))
         {
-            endpoints.MapGet(
-                    routePath,
-                    (IDiscoveryDocumentProvider provider, HttpContext context) => Handle(provider, context, routePath))
-                .RequireIssuerHost(issuerUri)
-                .AllowAnonymous();
+            endpoints.MapGet(routePath, Handle).RequireIssuerHost(issuerUri).AllowAnonymous();
         }
     }
 
     private async ValueTask<IResult> Handle(
         IDiscoveryDocumentProvider provider,
-        HttpContext context,
-        string routePath)
+        HttpContext context)
     {
-        // Route literals match case-insensitively, but the issuer path is case-sensitive: a
-        // request for /TENANT1 must not be answered with tenant1's document.
-        if (!string.Equals(context.Request.Path.ToUriComponent(), routePath, StringComparison.Ordinal))
-            return Results.NotFound();
-
         PublicMetadataHeaders.Apply(
             context, _options.Value.DiscoveryDocument.CacheMaxAge, _allowedOrigins);
 

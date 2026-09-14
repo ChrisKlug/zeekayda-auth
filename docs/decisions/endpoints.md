@@ -47,14 +47,17 @@ allows one there; it is rejected on the token and JWKS URIs, and a fragment is r
 
 **Endpoint URIs are derived from the issuer by `Uri` combination, never string concatenation**, and
 each can be overridden individually. Every mapped route additionally constrains the request host to
-the issuer's, so a route reachable on a second binding cannot answer as this issuer.
+the issuer's, so a route reachable on a second binding cannot answer as this issuer. The path must
+match exactly too: routing matches literals case-insensitively and tolerates a trailing `/`, but a
+URL path is case-sensitive (RFC 3986 §6.2.2.1), so a filter on the framework's route group returns
+404 for `/TENANT1/connect/token` or `/tenant1/connect/token/`. One group filter, not a check per
+handler, so a route added later cannot forget it.
 
 **The discovery routes are derived from the issuer's path component, not hardcoded.** A path-based
 issuer publishes at `/tenant1/.well-known/openid-configuration` (OIDC Discovery 1.0 §4.1, appended)
 and at `/.well-known/oauth-authorization-server/tenant1` (RFC 8414 §3.1, inserted). The OAuth document
 is also served at the appended `/tenant1/.well-known/oauth-authorization-server`, so a proxy forwarding
-only the issuer's path prefix reaches both documents alike. Matching is case-sensitive: route literals
-are not, and `/TENANT1` must not answer with `tenant1`'s document. Rejecting
+only the issuer's path prefix reaches both documents alike. Rejecting
 path-based issuers would have been simpler but silently breaks a spec-permitted multi-tenant
 pattern, and path-based issuers are what RFC 9207 mix-up resistance relies on in those deployments.
 

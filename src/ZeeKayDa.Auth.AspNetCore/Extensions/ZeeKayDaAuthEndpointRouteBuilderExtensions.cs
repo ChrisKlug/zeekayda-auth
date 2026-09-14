@@ -67,6 +67,17 @@ public static class ZeeKayDaAuthEndpointRouteBuilderExtensions
                         "Configure TLS, or use AllowInsecureIssuer only for loopback development.");
         });
 
+        // Route literals match case-insensitively, but a URL path is case-sensitive (RFC 3986
+        // §6.2.2.1): /TENANT1/connect/token is not this issuer's endpoint and must not answer as it.
+        group.AddEndpointFilter(async (context, next) =>
+        {
+            var route = (context.HttpContext.GetEndpoint() as RouteEndpoint)?.RoutePattern.RawText;
+            return route is null
+                || string.Equals(context.HttpContext.Request.Path.ToUriComponent(), route, StringComparison.Ordinal)
+                ? await next(context)
+                : Results.NotFound();
+        });
+
         group.AddEndpointFilter(async (context, next) =>
         {
             if (noSniff)

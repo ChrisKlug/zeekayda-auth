@@ -16,6 +16,37 @@ public sealed class ZeeKayDaAuthEndpointRouteBuilderExtensionsTests
             AllowAutoRedirect = false,
         });
 
+    // The case guard sits on the framework's route group, so it covers every protocol route —
+    // including the provider callback and resume routes, which this host does not map.
+    [Theory]
+    [InlineData("GET", "/tenant1/.well-known/openid-configuration", "/TENANT1/.well-known/openid-configuration")]
+    [InlineData("GET", "/.well-known/oauth-authorization-server/tenant1", "/.well-known/oauth-authorization-server/TENANT1")]
+    [InlineData("GET", "/tenant1/.well-known/oauth-authorization-server", "/TENANT1/.well-known/oauth-authorization-server")]
+    [InlineData("GET", "/tenant1/connect/jwks", "/TENANT1/connect/jwks")]
+    [InlineData("GET", "/tenant1/connect/authorize", "/TENANT1/connect/authorize")]
+    [InlineData("POST", "/tenant1/connect/token", "/TENANT1/connect/token")]
+    [InlineData("POST", "/tenant1/connect/token", "/tenant1/CONNECT/token")]
+    [InlineData("POST", "/tenant1/connect/token", "/tenant1/connect/token/")]
+    [InlineData("GET", "/tenant1/connect/jwks", "/tenant1/connect/jwks/")]
+    [InlineData("GET", "/tenant1/.well-known/openid-configuration", "/tenant1/.well-known/openid-configuration/")]
+    public async Task Protocol_route_returns_404_when_the_path_differs_from_the_route_only_in_case_or_a_trailing_slash(
+        string method, string route, string wrongCasePath)
+    {
+        using var factory = new TestWebAppFactory(opts => opts.Issuer = "https://test.example.com/tenant1");
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            BaseAddress = new Uri("https://test.example.com"),
+            AllowAutoRedirect = false,
+        });
+
+        var mapped = await client.SendAsync(new HttpRequestMessage(new HttpMethod(method), route), TestContext.Current.CancellationToken);
+        var wrongCase = await client.SendAsync(new HttpRequestMessage(new HttpMethod(method), wrongCasePath), TestContext.Current.CancellationToken);
+
+        mapped.StatusCode.Should().NotBe(HttpStatusCode.NotFound, because: "the correctly cased route is mapped");
+        wrongCase.StatusCode.Should().Be(HttpStatusCode.NotFound,
+            because: "a URL path is case-sensitive, so a differently cased path is not this issuer's endpoint");
+    }
+
     // AC1: non-loopback TCP connection with Host: localhost → 421
     [Fact]
     public async Task HttpsGuard_rejects_non_loopback_connection_even_when_Host_header_is_localhost()
