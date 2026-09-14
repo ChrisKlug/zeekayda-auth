@@ -53,6 +53,8 @@ internal static class SigningSelfTest
     /// exactly as a mismatch does, under its own code. The exception type is named, never its
     /// message, which for a remote signer may carry a request URL or credential; a source's own
     /// configuration exception already carries a published code and passes through verbatim.
+    /// Only the caller's own cancellation propagates: a cancellation the signer raised itself, an
+    /// internal timeout for instance, is its failure and fails the handoff like any other.
     /// </summary>
     private static async ValueTask<ReadOnlyMemory<byte>> SignAsync(
         ISigner signer, SigningKey key, ReadOnlyMemory<byte> payload, CancellationToken cancellationToken)
@@ -65,7 +67,7 @@ internal static class SigningSelfTest
         {
             throw;
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
             throw new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure(

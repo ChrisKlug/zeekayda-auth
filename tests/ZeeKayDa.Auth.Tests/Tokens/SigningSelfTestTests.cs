@@ -120,15 +120,33 @@ public sealed class SigningSelfTestTests
     }
 
     [Fact]
-    public async Task RunAsync_lets_the_requests_own_cancellation_propagate()
+    public async Task RunAsync_lets_the_callers_own_cancellation_propagate()
     {
         using var rsa = RSA.Create(2048);
-        var signer = new ThrowingSigner(new OperationCanceledException());
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+        var signer = new ThrowingSigner(new OperationCanceledException(cancellation.Token));
+        var key = BuildKey(rsa);
+
+        var act = async () => await SigningSelfTest.RunAsync(signer, key, cancellation.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task RunAsync_treats_a_cancellation_the_signer_raised_itself_as_self_test_unavailable()
+    {
+        // A remote signer's own timeout surfaces as a cancellation while the caller's token is
+        // live; that is the signer failing, and the handoff must fail closed under the named code
+        // rather than end as if the caller had cancelled.
+        using var rsa = RSA.Create(2048);
+        var signer = new ThrowingSigner(new TaskCanceledException("the vault call timed out"));
         var key = BuildKey(rsa);
 
         var act = async () => await SigningSelfTest.RunAsync(signer, key, TestContext.Current.CancellationToken);
 
-        await act.Should().ThrowAsync<OperationCanceledException>();
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.self_test_unavailable");
     }
 
     private static SigningKey BuildKey(RSA rsa) =>
