@@ -1592,3 +1592,29 @@ Critical. Five Lows fixed in the same PR, code-lens-verified; the rest recorded 
   the family's absolute life outlives the sentinel; a confirming read that itself faults drops the
   insert's exception in favour of its own; a refresh token equal to the literal sentinel key resolves
   to `Revoked`, fail-closed; the replay path's empty-family-id guard is unreachable today — no tests.
+## 2026-09-14 — the per-handoff signing self-test, shipped code (#487, closes §1.5; commit `ad644a7`)
+
+Scoped to `SigningSelfTest`, its call from `StaticSigningKeyRing`'s initialisation, and
+`SigningKeyRingStartupVerifier`. Security agent, read-only, no High or Critical; four Lows fixed in
+the same PR and code-lens-verified. The control is stronger than §1.5 recorded: the payload is a
+non-JWS prefix plus a fresh 32-byte nonce, not a fixed constant.
+
+- A cached signature cannot pass, and a signer that does not pair never commits and is disposed.
+  Closed — `RunAsync_signs_a_payload_that_contains_a_space_and_no_dot`,
+  `InitializeAsync_throws_self_test_failed_when_a_shared_signer_returns_a_signature_memoized_from_an_earlier_self_test`,
+  `InitializeAsync_throws_self_test_failed_when_the_signer_does_not_pair_with_the_public_key`,
+  `RunAsync_throws_self_test_failed_when_an_EC_signer_does_not_pair_with_the_key`,
+  `InitializeAsync_disposes_the_signer_when_the_self_test_fails`.
+- A non-signature and a signer that throws, its own cancellation included, fail closed under their
+  own codes, naming the exception type and never its message. Closed —
+  `RunAsync_throws_self_test_failed_when_the_signer_returns_bytes_that_are_not_a_signature`,
+  `RunAsync_throws_self_test_unavailable_naming_only_the_type_when_the_signer_throws`,
+  `RunAsync_treats_a_signers_cancellation_for_another_token_as_unavailable_even_while_the_caller_is_cancelling`.
+- Exactly one signer is opened, nothing signs before it passed, the failure is sticky, and startup
+  propagates it unmodified. Closed — `InitializeAsync_builds_the_key_set_and_opens_the_signer_exactly_once`,
+  `SignAsync_throws_InvalidOperationException_before_initialization`,
+  `EnsureInitializedAsync_reports_the_original_failure_to_a_later_caller_without_retrying`,
+  `VerifyAsync_propagates_a_failure_from_InitializeAsync_unmodified`.
+- Residual, accepted: pairing is proven at the handoff only, so a custom signer re-resolving its key
+  per call drifts undetected; the shipped Key Vault signer pins the version —
+  `ReadAsync_reads_the_vault_exactly_once_and_ignores_versions_rotated_in_afterwards`.
