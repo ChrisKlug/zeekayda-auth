@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.AspNetCore.Routing.Matching;
 using Microsoft.AspNetCore.Routing.Patterns;
 using ZeeKayDa.Auth.AspNetCore.Endpoints;
 
@@ -39,13 +40,23 @@ public sealed class ExactPathMatcherPolicyTests
             .WithMessage("*not a literal path*");
     }
 
-    [Fact]
-    public void GetEdges_keys_a_marked_literal_endpoint_on_its_exact_path()
+    [Theory]
+    [InlineData("/tenant1/connect/token", Destination)]
+    [InlineData("/TENANT1/connect/token", Exit)]
+    [InlineData("/tenant1/connect/token/", Exit)]
+    [InlineData("/connect/token", Exit)]
+    public void Jump_table_selects_a_marked_endpoint_only_for_its_exact_path(string requestPath, int expected)
     {
-        var endpoint = MarkedEndpoint(RoutePatternFactory.Parse("/tenant1/connect/token"));
+        var policy = new ExactPathMatcherPolicy();
+        var edge = policy.GetEdges([MarkedEndpoint(RoutePatternFactory.Parse("/tenant1/connect/token"))]).Should().ContainSingle().Subject;
+        var table = policy.BuildJumpTable(Exit, [new PolicyJumpTableEdge(edge.State, Destination)]);
 
-        var edges = new ExactPathMatcherPolicy().GetEdges([endpoint]);
+        var destination = table.GetDestination(new DefaultHttpContext { Request = { Path = requestPath } });
 
-        edges.Should().ContainSingle().Which.Endpoints.Should().ContainSingle().Which.Should().BeSameAs(endpoint);
+        destination.Should().Be(expected,
+            because: "the edge must be keyed on the route's exact path, and any other path must exit the node");
     }
+
+    private const int Destination = 7;
+    private const int Exit = -1;
 }

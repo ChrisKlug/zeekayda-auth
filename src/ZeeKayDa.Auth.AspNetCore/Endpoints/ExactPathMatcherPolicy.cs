@@ -80,7 +80,7 @@ internal sealed class ExactPathMatcherPolicy : MatcherPolicy, INodeBuilderPolicy
         {
             throw new InvalidOperationException(
                 $"Endpoint '{endpoint.DisplayName}' is marked for exact-path matching but its route " +
-                $"'{pattern.RawText}' is not a literal path. Framework routes must be literal paths.");
+                $"'{pattern.RawText ?? "<no raw text>"}' is not a literal path. Framework routes must be literal paths.");
         }
 
         return rawText;
