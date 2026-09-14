@@ -29,9 +29,9 @@ internal sealed class RefreshTokenStore : IRefreshTokenStore
     private static readonly string DataProtectionPurpose = "ZeeKayDa.Auth:RefreshTokenStore";
 
     /// <summary>
-    /// Reserved sentinel value for a revocation-sentinel row's <see cref="RefreshTokenGrant.Subject"/>
-    /// and <see cref="RefreshTokenGrant.ClientId"/>. Never a real subject or
-    /// client_id — a real grant's own values can never equal this constant.
+    /// Reserved value for a revocation-sentinel row: its <see cref="RefreshTokenGrant.ClientId"/>
+    /// verbatim, and the prefix of its <see cref="RefreshTokenGrant.Subject"/>, which appends the
+    /// family id so a subject index holds one family per key. Never a real subject or client_id.
     /// </summary>
     private const string RevocationSentinelReservedValue = "__zeekayda-revocation-sentinel__";
 
@@ -266,14 +266,21 @@ internal sealed class RefreshTokenStore : IRefreshTokenStore
     /// </remarks>
     private async Task InsertRevocationSentinelAsync(string familyId, CancellationToken cancellationToken)
     {
-        var familyAbsoluteExpiry = _tokenEndpointOptions.ComputeFamilyAbsoluteExpiry(_timeProvider.GetUtcNow());
+        // Clocked at revoke time, so a first row born a moment later, at its own birth plus the same
+        // lifetime, would outlive an unpadded sentinel by that moment on a backend that evicts at
+        // FamilyAbsoluteExpiry. The skew tolerance covers it, saturating like every other expiry.
+        var familyAbsoluteExpiry = TokenLifetimes.ExpiresAt(
+            _tokenEndpointOptions.ComputeFamilyAbsoluteExpiry(_timeProvider.GetUtcNow()),
+            _clockSkewTolerance);
         var sentinelKey = BuildRevocationSentinelKey(familyId);
 
+        // The subject is reserved per family, not one constant for every family: a backend that
+        // indexes by subject would otherwise gather every sentinel it ever wrote under one key.
         var sentinel = new RefreshTokenGrant
         {
             HandleHash = sentinelKey,
             FamilyId = familyId,
-            Subject = RevocationSentinelReservedValue,
+            Subject = $"{RevocationSentinelReservedValue}:{familyId}",
             ClientId = RevocationSentinelReservedValue,
             FamilyAbsoluteExpiry = familyAbsoluteExpiry,
             ExpiresAt = familyAbsoluteExpiry,
@@ -289,28 +296,38 @@ internal sealed class RefreshTokenStore : IRefreshTokenStore
         }
         catch (ZeeKayDaStoreException)
         {
-            if (!await IsIdempotentSentinelInsertAsync(sentinelKey, cancellationToken).ConfigureAwait(false))
+            if (!await IsIdempotentSentinelInsertAsync(sentinelKey, familyId, cancellationToken).ConfigureAwait(false))
                 throw;
         }
     }
 
     /// <summary>
     /// Confirms whether an <see cref="InsertRevocationSentinelAsync"/> failure was actually a benign
-    /// self-collision: re-reads <paramref name="sentinelKey"/> and checks whether the sentinel row is
-    /// already durably present with <see cref="RefreshGrantStatus.Revoked"/>.
+    /// self-collision: re-reads <paramref name="sentinelKey"/>, checks that the sentinel row is
+    /// durably present with <see cref="RefreshGrantStatus.Revoked"/>, and asks the gate itself,
+    /// <see cref="IRefreshTokenGrantStore.IsFamilyRevokedAsync"/>, whether it now reads the family
+    /// as revoked.
     /// </summary>
     /// <remarks>
     /// Never infers meaning from the insert failure's exception type or message — those look
     /// identical for a genuine self-collision and a genuine transport fault (see
-    /// <see cref="InsertRevocationSentinelAsync"/>'s remarks). Only this confirming read decides.
+    /// <see cref="InsertRevocationSentinelAsync"/>'s remarks). Only these confirming reads decide,
+    /// and the gate is asked because row presence alone is not what protects the family: a backend
+    /// that indexes separately can hold the row while the index write that failed is what the
+    /// gate reads, and that failure must propagate rather than pass as a collision.
     /// </remarks>
-    private async ValueTask<bool> IsIdempotentSentinelInsertAsync(StoreKey sentinelKey, CancellationToken cancellationToken)
+    private async ValueTask<bool> IsIdempotentSentinelInsertAsync(StoreKey sentinelKey, string familyId, CancellationToken cancellationToken)
     {
         var existing = await Guarded(
             () => _grantStore.FindByHandleAsync(sentinelKey, cancellationToken),
             "confirm the refresh token family revocation sentinel after an insert failure").ConfigureAwait(false);
 
-        return existing is not null && existing.Status == RefreshGrantStatus.Revoked;
+        if (existing is null || existing.Status != RefreshGrantStatus.Revoked)
+            return false;
+
+        return await Guarded(
+            () => _grantStore.IsFamilyRevokedAsync(familyId, cancellationToken),
+            "confirm the refresh token family reads as revoked after a sentinel insert failure").ConfigureAwait(false);
     }
 
     private static StoreKey BuildHandleKey(string tokenHandle) => new(HashBase64Url(tokenHandle));
@@ -318,7 +335,7 @@ internal sealed class RefreshTokenStore : IRefreshTokenStore
     // The sentinel key is deterministic in familyId alone, reusing the same H(x) construction so
     // repeated RevokeFamilyAsync calls for the same family always target the same row, preserving
     // idempotency without unbounded row growth.
-    private static StoreKey BuildRevocationSentinelKey(string familyId) => new(HashBase64Url($"revocation-sentinel:{familyId}"));
+    internal static StoreKey BuildRevocationSentinelKey(string familyId) => new(HashBase64Url($"revocation-sentinel:{familyId}"));
 
     // H(x) = Base64Url(SHA-256(UTF8(x))).
     private static string HashBase64Url(string handle) => Base64Url.EncodeToString(SHA256.HashData(Encoding.UTF8.GetBytes(handle)));
