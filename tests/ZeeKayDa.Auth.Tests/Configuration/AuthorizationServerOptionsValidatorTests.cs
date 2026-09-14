@@ -182,12 +182,17 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_succeeds_for_HTTPS_root_Issuer_with_trailing_slash()
+    public void Validate_fails_once_for_HTTPS_root_Issuer_with_trailing_slash()
     {
-        // NormalizeRootIssuer strips the trailing "/" on a root issuer before the canonical
-        // comparison, so "https://auth.example.com/" is treated as equivalent to the canonical form.
+        // The document publishes the issuer verbatim, but RFC 8414 §3.1 strips the terminating
+        // "/" when building the metadata URL — so a client configured with "https://auth.example.com"
+        // would reject a document whose issuer is "https://auth.example.com/" (§3.3).
         var result = Validate(new AuthorizationServerOptions { Issuer = "https://auth.example.com/" });
-        result.Succeeded.Should().BeTrue();
+
+        result.Failed.Should().BeTrue();
+        result.Failures.Should().ContainSingle(
+            because: "the trailing-slash rule reports it; the canonical-form rule must not report the same slash again")
+            .Which.Should().Contain("trailing slash");
     }
 
     [Fact]

@@ -16,6 +16,7 @@ namespace ZeeKayDa.Auth.AspNetCore.Tests.Endpoints;
 public sealed class DiscoveryEndpointTests : IDisposable
 {
     private const string DiscoveryPath = "/.well-known/openid-configuration";
+    private const string OAuthMetadataPath = "/.well-known/oauth-authorization-server";
 
     private readonly TestWebAppFactory _factory;
     private readonly HttpClient _client;
@@ -320,6 +321,117 @@ public sealed class DiscoveryEndpointTests : IDisposable
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
+    // ── RFC 8414 Authorization Server Metadata address ────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetOAuthMetadata_serves_the_same_document_as_the_OpenID_Connect_path()
+    {
+        var oidc = await _client.GetStringAsync(DiscoveryPath, TestContext.Current.CancellationToken);
+        var response = await _client.GetAsync(OAuthMetadataPath, TestContext.Current.CancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+        (await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)).Should().Be(oidc,
+            because: "one document is published at both addresses");
+    }
+
+    [Fact]
+    public async Task GetOAuthMetadata_applies_the_same_public_metadata_headers()
+    {
+        var response = await _client.GetAsync(OAuthMetadataPath, TestContext.Current.CancellationToken);
+
+        response.Headers.CacheControl!.Public.Should().BeTrue();
+        response.Headers.CacheControl!.MaxAge.Should().Be(TimeSpan.FromSeconds(3600));
+        response.Headers.GetValues("Access-Control-Allow-Origin").Should().ContainSingle().Which.Should().Be("*");
+    }
+
+    [Fact]
+    public async Task GetOAuthMetadata_inserts_the_well_known_segment_before_the_Issuer_path()
+    {
+        using var factory = new TestWebAppFactory(opts => opts.Issuer = "https://test.example.com/tenant1");
+        using var client = CreateClient(factory);
+
+        var response = await client.GetAsync(
+            "/.well-known/oauth-authorization-server/tenant1", TestContext.Current.CancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var doc = await response.Content.ReadFromJsonAsync<JsonDocument>(TestContext.Current.CancellationToken);
+        doc!.RootElement.GetProperty("issuer").GetString().Should().Be("https://test.example.com/tenant1",
+            because: "RFC 8414 §3.3 requires the issuer to match the one the metadata URL was built from");
+    }
+
+    [Fact]
+    public async Task GetOAuthMetadata_is_also_served_at_the_appended_form_so_a_path_prefix_proxy_reaches_it()
+    {
+        using var factory = new TestWebAppFactory(opts => opts.Issuer = "https://test.example.com/tenant1");
+        using var client = CreateClient(factory);
+
+        var response = await client.GetAsync(
+            "/tenant1/.well-known/oauth-authorization-server", TestContext.Current.CancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK,
+            because: "a proxy forwarding only /tenant1/* must reach the OAuth document as it reaches the OpenID Connect one");
+        var doc = await response.Content.ReadFromJsonAsync<JsonDocument>(TestContext.Current.CancellationToken);
+        doc!.RootElement.GetProperty("issuer").GetString().Should().Be("https://test.example.com/tenant1");
+    }
+
+    [Fact]
+    public async Task GetOAuthMetadata_returns_404_at_the_root_form_when_Issuer_has_path()
+    {
+        using var factory = new TestWebAppFactory(opts => opts.Issuer = "https://test.example.com/tenant1");
+        using var client = CreateClient(factory);
+
+        var response = await client.GetAsync(OAuthMetadataPath, TestContext.Current.CancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound,
+            because: "the root address belongs to a root issuer, not to tenant1");
+    }
+
+    [Theory]
+    [InlineData("/.well-known/oauth-authorization-server/TENANT1")]
+    [InlineData("/TENANT1/.well-known/oauth-authorization-server")]
+    [InlineData("/TENANT1/.well-known/openid-configuration")]
+    [InlineData("/tenant1/.well-known/OPENID-CONFIGURATION")]
+    public async Task GetDiscoveryDocument_returns_404_when_the_path_differs_from_the_route_only_in_case(string path)
+    {
+        using var factory = new TestWebAppFactory(opts => opts.Issuer = "https://test.example.com/tenant1");
+        using var client = CreateClient(factory);
+
+        var response = await client.GetAsync(path, TestContext.Current.CancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound,
+            because: "the issuer path is case-sensitive, so /TENANT1 must not be answered with tenant1's document");
+    }
+
+    [Fact]
+    public async Task GetOAuthMetadata_returns_200_under_a_host_wide_fallback_authorization_policy()
+    {
+        using var factory = new TestWebAppFactoryWithFallbackAuthorizationPolicy();
+        using var client = CreateClient(factory);
+
+        var response = await client.GetAsync(OAuthMetadataPath, TestContext.Current.CancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task GetOAuthMetadata_is_served_on_a_host_without_the_authorization_code_grant()
+    {
+        using var factory = new TestWebAppFactory(opts =>
+        {
+            opts.GrantTypesSupported = [GrantType.ClientCredentials];
+            opts.AuthorizationEndpoint.CodeChallengeMethodsSupported = null;
+        });
+        using var client = CreateClient(factory);
+
+        var oidc = await client.GetAsync(DiscoveryPath, TestContext.Current.CancellationToken);
+        var oauth = await client.GetAsync(OAuthMetadataPath, TestContext.Current.CancellationToken);
+
+        oidc.StatusCode.Should().Be(HttpStatusCode.OK,
+            because: "resource servers find jwks_uri under the OpenID Connect path even on a non-OP host");
+        oauth.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
     // ── Startup validation ────────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -481,6 +593,17 @@ public sealed class DiscoveryEndpointTests : IDisposable
         var response = await client.GetAsync(DiscoveryPath, TestContext.Current.CancellationToken);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task GetOAuthMetadata_returns_404_for_wrong_host()
+    {
+        using var client = CreateClient(_factory, "https://other.example.com");
+
+        var response = await client.GetAsync(OAuthMetadataPath, TestContext.Current.CancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound,
+            because: "the RFC 8414 address is host-bound like every other route, so it cannot answer as this issuer on another binding");
     }
 
     // ── Protocol endpoints ────────────────────────────────────────────────────────────────────────

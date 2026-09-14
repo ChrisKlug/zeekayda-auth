@@ -34,4 +34,16 @@ public sealed class EndpointRouteHelperTests
         act.Should().Throw<ZeeKayDaConfigurationException>()
             .Which.AggregatedFailures[0].Message.Should().Contain("Issuer must be configured");
     }
+
+    [Theory]
+    [InlineData("https://auth.example.com", "/.well-known/oauth-authorization-server")]
+    [InlineData("https://auth.example.com/", "/.well-known/oauth-authorization-server")]
+    [InlineData("https://auth.example.com/tenant1", "/.well-known/oauth-authorization-server/tenant1")]
+    [InlineData("https://auth.example.com/org/tenant1", "/.well-known/oauth-authorization-server/org/tenant1")]
+    public void GetWellKnownInsertedRoute_inserts_the_well_known_segment_before_the_issuer_path(string issuer, string expected)
+    {
+        var route = EndpointRouteHelper.GetWellKnownInsertedRoute(new Uri(issuer), "oauth-authorization-server");
+
+        route.Should().Be(expected, because: "RFC 8414 §3.1 inserts the well-known segment rather than appending it");
+    }
 }

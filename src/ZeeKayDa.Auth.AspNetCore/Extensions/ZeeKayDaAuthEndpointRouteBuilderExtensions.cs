@@ -52,6 +52,11 @@ public static class ZeeKayDaAuthEndpointRouteBuilderExtensions
         // only to protocol endpoints and not to the host application's own routes.
         var group = endpoints.MapGroup("");
 
+        // Route literals match case-insensitively and tolerate a trailing '/', but a URL path is
+        // case-sensitive (RFC 3986 §6.2.2.1). The marker has ExactPathMatcherPolicy take a route out
+        // of matching unless the path is exact, so a wrong path is a 404 before any filter runs.
+        group.WithMetadata(ExactPathMetadata.Instance);
+
         group.AddEndpointFilter(async (context, next) =>
         {
             if (context.HttpContext.Request.IsHttps ||

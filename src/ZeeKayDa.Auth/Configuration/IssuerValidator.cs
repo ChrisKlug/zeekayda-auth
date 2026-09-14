@@ -63,13 +63,15 @@ internal static class IssuerValidator
 
         // OIDC Discovery 1.0 §4.3 and RFC 8414 §3.3 require the published issuer to be
         // byte-identical to the URL used to derive the discovery address. A trailing slash
-        // on a path-bearing issuer creates an asymmetry because the route is registered
-        // without the slash but the document preserves it verbatim.
-        if (HasTrailingSlashOnPath(uri))
+        // creates an asymmetry because the route is registered without the slash but the
+        // document preserves it verbatim — on the root issuer too, where RFC 8414 §3.1 strips
+        // the terminating '/' before building the metadata URL.
+        if (issuer.EndsWith('/'))
         {
             errors.Add(
                 $"AuthorizationServerOptions.Issuer '{issuer}' must not have a trailing slash. " +
-                "Use 'https://auth.example.com/tenant1' rather than 'https://auth.example.com/tenant1/'. " +
+                "Use 'https://auth.example.com' rather than 'https://auth.example.com/', and " +
+                "'https://auth.example.com/tenant1' rather than 'https://auth.example.com/tenant1/'. " +
                 "OIDC Discovery 1.0 §4.3 requires the published issuer to be identical to the URL " +
                 "used to derive the discovery address.");
         }
@@ -105,10 +107,6 @@ internal static class IssuerValidator
                 $"AuthorizationServerOptions.Issuer '{issuer}' is not canonical. Use '{canonicalIssuer}'.");
         }
     }
-
-    /// <summary>A path other than the root that ends in '/'.</summary>
-    private static bool HasTrailingSlashOnPath(Uri uri)
-        => uri.AbsolutePath.EndsWith('/') && uri.AbsolutePath.Length > 1;
 
     private static string BuildCanonicalIssuer(Uri issuerUri)
     {

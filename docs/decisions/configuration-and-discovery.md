@@ -51,8 +51,15 @@ unmapped, and the discovery document omits `authorization_endpoint` (RFC 8414 §
 `response_types_supported`. That last omission is a decided deviation: RFC 8414 §2 and OpenID Connect
 Discovery §3 both mark it REQUIRED, and both, in §3.2 and §4.2, say a claim with zero elements MUST be
 omitted — no document for such a host satisfies both sentences, and the MUST is followed. The document is
-still served, because resource servers find `jwks_uri` through it; a non-OP publishing under the OpenID
-Connect path lasts until RFC 8414's own path (#161), which inherits the decision.
+still served, at both discovery paths, because resource servers find `jwks_uri` through it — most look
+under the OpenID Connect path even when the host is not an OP.
+
+**One discovery document, two addresses.** The same document is served at OpenID Connect Discovery's
+`/.well-known/openid-configuration` and at RFC 8414's `/.well-known/oauth-authorization-server`, on
+every host. RFC 8414 §7.1.2 registers the OpenID Connect fields as OAuth metadata, so the superset is
+valid at the OAuth address. A second, OAuth-only document was rejected: it doubles the public wire
+model and provider surface for no client that needs the smaller shape, and it can still be added
+later without breaking a host or a custom provider.
 
 **`IValidateOptions<T>` plus `ValidateOnStart()` is the primary validation mechanism.** A check leaves
 it only for one of three reasons: it needs async I/O, it needs a DI scope, or its whole purpose is a

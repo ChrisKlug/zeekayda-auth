@@ -27,6 +27,14 @@ internal static class EndpointRouteHelper
     public static string GetIssuerPathPrefixedRoute(Uri issuerUri, string suffix)
         => issuerUri.AbsolutePath.TrimEnd('/') + suffix;
 
+    /// <summary>
+    /// The RFC 8414 §3.1 form: the well-known segment is inserted <em>before</em> the issuer's
+    /// path, so <c>https://host/tenant1</c> publishes at
+    /// <c>/.well-known/{name}/tenant1</c> — the opposite of <see cref="GetIssuerPathPrefixedRoute"/>.
+    /// </summary>
+    public static string GetWellKnownInsertedRoute(Uri issuerUri, string wellKnownName)
+        => "/.well-known/" + wellKnownName + issuerUri.AbsolutePath.TrimEnd('/');
+
     public static Uri GetPublishedEndpointUri(Uri issuerUri, string? endpointOverride, string relativePath)
     {
         if (endpointOverride is not null)

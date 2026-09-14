@@ -40,15 +40,26 @@ rejects a cross-authority `AuthorizationEndpoint.Uri`, `TokenEndpoint.Uri` or `J
 outright rather than gating it behind an opt-in — metadata integrity is the whole point of the
 issuer, and no deployment has yet needed the hole. It also rejects a non-canonical issuer
 (uppercase scheme or host, an explicit default port) and names the canonical replacement in the
-error. A query component is permitted on the authorization endpoint URI, because RFC 6749 §3.1
+error, and it rejects any trailing slash, the root's included: the document publishes the issuer
+verbatim, while RFC 8414 §3.1 strips the slash to build the metadata URL, so a client configured
+without it would reject the document (§3.3). A query component is permitted on the authorization endpoint URI, because RFC 6749 §3.1
 allows one there; it is rejected on the token and JWKS URIs, and a fragment is rejected everywhere.
 
 **Endpoint URIs are derived from the issuer by `Uri` combination, never string concatenation**, and
 each can be overridden individually. Every mapped route additionally constrains the request host to
-the issuer's, so a route reachable on a second binding cannot answer as this issuer.
+the issuer's, so a route reachable on a second binding cannot answer as this issuer. The path must
+match exactly too: routing matches literals case-insensitively and tolerates a trailing `/`, but a
+URL path is case-sensitive (RFC 3986 §6.2.2.1), so `/TENANT1/connect/token` and
+`/tenant1/connect/token/` are 404. A matcher policy decides it during route selection, ahead of the
+HTTP-method policy, for every route on the framework's group: a wrong path is no route at all, never
+a 405 or a 421. An endpoint filter was tried first and rejected — it runs after selection, so routing
+answered 405 for an unmapped method and the HTTPS filter answered 421 before it could run.
 
-**The discovery route is derived from the issuer's path component, not hardcoded.** A path-based
-issuer publishes at `/tenant1/.well-known/openid-configuration` (OIDC Discovery 1.0 §4.1). Rejecting
+**The discovery routes are derived from the issuer's path component, not hardcoded.** A path-based
+issuer publishes at `/tenant1/.well-known/openid-configuration` (OIDC Discovery 1.0 §4.1, appended)
+and at `/.well-known/oauth-authorization-server/tenant1` (RFC 8414 §3.1, inserted). The OAuth document
+is also served at the appended `/tenant1/.well-known/oauth-authorization-server`, so a proxy forwarding
+only the issuer's path prefix reaches both documents alike. Rejecting
 path-based issuers would have been simpler but silently breaks a spec-permitted multi-tenant
 pattern, and path-based issuers are what RFC 9207 mix-up resistance relies on in those deployments.
 

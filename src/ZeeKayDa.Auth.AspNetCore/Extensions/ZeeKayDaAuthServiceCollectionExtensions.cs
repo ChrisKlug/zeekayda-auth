@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth;
@@ -84,6 +85,10 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
             ServiceDescriptor.Singleton<IZeeKayDaEndpoint, TokenEndpoint>());
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IZeeKayDaEndpoint, JwksEndpoint>());
+
+        // Every framework route matches its path exactly; see ExactPathMatcherPolicy.
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<MatcherPolicy, ExactPathMatcherPolicy>());
 
         // Registered unconditionally so using it without any IClientSecretHasher gives a clear
         // error instead of a generic "service not registered" DI failure.

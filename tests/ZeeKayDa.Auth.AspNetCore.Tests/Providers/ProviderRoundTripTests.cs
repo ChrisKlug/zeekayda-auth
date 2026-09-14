@@ -29,6 +29,26 @@ public sealed class ProviderRoundTripTests
             configureBuilder ?? (builder => builder.WithProviders(auth => auth.AddOAuth("acme", "Acme", ConfigureAcme))),
             MapHostPages);
 
+    [Theory]
+    [InlineData("/tenant1/connect/callback/acme", "/TENANT1/connect/callback/acme")]
+    [InlineData("/tenant1/connect/callback/acme", "/tenant1/connect/callback/ACME")]
+    [InlineData("/tenant1/connect/callback/acme", "/tenant1/connect/callback/acme/")]
+    [InlineData("/tenant1/connect/resume", "/TENANT1/connect/resume")]
+    [InlineData("/tenant1/connect/resume", "/tenant1/connect/resume/")]
+    public async Task Provider_route_returns_404_when_the_path_differs_from_the_route_only_in_case_or_a_trailing_slash(
+        string route, string wrongPath)
+    {
+        using var factory = NewFactory(configureOptions: options => options.Issuer = "https://test.example.com/tenant1");
+        using var client = factory.CreateClient(new() { BaseAddress = new Uri("https://test.example.com"), AllowAutoRedirect = false });
+
+        var mapped = await client.GetAsync(route, Cancellation);
+        var wrong = await client.GetAsync(wrongPath, Cancellation);
+
+        mapped.StatusCode.Should().NotBe(HttpStatusCode.NotFound, because: "the exactly written route is mapped");
+        wrong.StatusCode.Should().Be(HttpStatusCode.NotFound,
+            because: "a callback or resume path that is not exactly this issuer's must not reach the provider handshake");
+    }
+
     /// <summary>Authorize, land on the login page, pick a provider: the challenge response.</summary>
     private static async Task<(string InteractionId, HttpResponseMessage Challenge)> ChallengeAsync(
         HttpClient client,
