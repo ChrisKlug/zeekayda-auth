@@ -1,7 +1,6 @@
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Authorization;
 using ZeeKayDa.Auth.Security;
-using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.Configuration;
 
@@ -14,28 +13,12 @@ namespace ZeeKayDa.Auth.Configuration;
 /// <c>ValidateOnStart()</c> so that misconfigured servers fail loudly at startup rather than
 /// silently at the first request. It is a pure read-only check: CORS-origin canonicalization is
 /// handled by <see cref="AuthorizationServerOptionsPostConfigurer"/> (which runs before this
-/// validator), and async checks (e.g. scope presence) are handled by hosted services.
+/// validator), and async checks (e.g. scope presence) are handled by hosted services. The issuer,
+/// the endpoint URI overrides and the token endpoint's auth methods each have their own
+/// validator; this class calls them in order and keeps the single-group checks.
 /// </remarks>
 internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<AuthorizationServerOptions>
 {
-    private const string TokenEndpointAuthMethodsRequiredMessage =
-        "AuthorizationServerOptions.TokenEndpoint.AuthMethodsSupported must not be null or empty. " +
-        "Specify at least one client authentication method (e.g., TokenEndpointAuthMethods.ClientSecretBasic). " +
-        "See OAuth 2.0 Security BCP §2.6 (RFC 9700).";
-
-    /// <summary>
-    /// Startup validation error for the cross-group constraint that forbids
-    /// advertising the <c>client_credentials</c> grant with only <c>none</c> token endpoint auth.
-    /// </summary>
-    /// <remarks>
-    /// RFC 6749 §4.4 requires client authentication for the client credentials grant and RFC 9700
-    /// §2.6 requires strong token endpoint client authentication.
-    /// </remarks>
-    private const string ClientCredentialsRequiresNonNoneTokenAuthMethodMessage =
-        "GrantTypesSupported includes 'client_credentials', which requires confidential clients. " +
-        "TokenEndpoint.AuthMethodsSupported must contain at least one method other than 'none'. " +
-        "See RFC 6749 §4.4 and OAuth 2.0 Security BCP §2.6 (RFC 9700).";
-
     /// <inheritdoc/>
     public ValidateOptionsResult Validate(string? name, AuthorizationServerOptions options)
     {
@@ -43,13 +26,13 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
 
         // Nothing below can be checked against an issuer that does not parse, so those two
         // failures end validation on their own.
-        if (!TryParseIssuer(options, errors, out var issuerUri))
+        if (!IssuerValidator.TryParse(options, errors, out var issuerUri))
             return ValidateOptionsResult.Fail(errors);
 
-        ValidateIssuer(options, issuerUri, errors);
+        IssuerValidator.Validate(options, issuerUri, errors);
         ValidateResponse(options, errors);
         ValidateGrantTypes(options, errors);
-        ValidateTokenEndpointAuthMethods(options, errors);
+        AuthMethodsSupportedValidator.Validate(options, errors);
         ValidateTokenEndpointLifetimes(options, errors);
         ValidateIdToken(options, errors);
         ValidateCaching(options, errors);
@@ -57,99 +40,9 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
         ValidateSecurityHeaders(options, errors);
         ValidateAuthorizationEndpoint(options, errors);
         ValidateClockSkew(options, errors);
-        ValidateEndpointUris(options, issuerUri, errors);
+        EndpointUriValidator.Validate(options, issuerUri, errors);
 
         return errors.Count > 0 ? ValidateOptionsResult.Fail(errors) : ValidateOptionsResult.Success;
-    }
-
-    /// <summary>
-    /// The issuer must be a non-empty absolute URI before anything else is asked of it; either
-    /// failure is reported alone, since every later rule reads the parsed URI.
-    /// </summary>
-    private static bool TryParseIssuer(AuthorizationServerOptions options, List<string> errors, out Uri issuerUri)
-    {
-        if (string.IsNullOrWhiteSpace(options.Issuer))
-        {
-            errors.Add("AuthorizationServerOptions.Issuer must be set to a non-empty value.");
-            issuerUri = null!;
-            return false;
-        }
-
-        if (!Uri.TryCreate(options.Issuer, UriKind.Absolute, out var uri))
-        {
-            errors.Add(
-                $"AuthorizationServerOptions.Issuer '{options.Issuer}' is not a valid absolute URI.");
-            issuerUri = null!;
-            return false;
-        }
-
-        issuerUri = uri;
-        return true;
-    }
-
-    /// <summary>Validates the shape, scheme and canonical form of the root <c>Issuer</c>.</summary>
-    private static void ValidateIssuer(AuthorizationServerOptions options, Uri uri, List<string> errors)
-    {
-        // RFC 8414 §2 and OIDC Discovery 1.0 §4.1 prohibit query strings in the issuer.
-        if (uri.Query.Length > 0)
-        {
-            errors.Add(
-                $"AuthorizationServerOptions.Issuer '{options.Issuer}' must not contain a query component ('?').");
-        }
-
-        // RFC 8414 §2 and OIDC Discovery 1.0 §4.1 prohibit fragment components in the issuer.
-        if (uri.Fragment.Length > 0)
-        {
-            errors.Add(
-                $"AuthorizationServerOptions.Issuer '{options.Issuer}' must not contain a fragment component ('#').");
-        }
-
-        if (uri.UserInfo.Length > 0)
-        {
-            errors.Add(
-                $"AuthorizationServerOptions.Issuer '{options.Issuer}' must not contain user information.");
-        }
-
-        // OIDC Discovery 1.0 §4.3 and RFC 8414 §3.3 require the published issuer to be
-        // byte-identical to the URL used to derive the discovery address. A trailing slash
-        // on a path-bearing issuer creates an asymmetry because the route is registered
-        // without the slash but the document preserves it verbatim.
-        if (uri.AbsolutePath.EndsWith('/') && uri.AbsolutePath.Length > 1)
-        {
-            errors.Add(
-                $"AuthorizationServerOptions.Issuer '{options.Issuer}' must not have a trailing slash. " +
-                "Use 'https://auth.example.com/tenant1' rather than 'https://auth.example.com/tenant1/'. " +
-                "OIDC Discovery 1.0 §4.3 requires the published issuer to be identical to the URL " +
-                "used to derive the discovery address.");
-        }
-
-        // The OIDC specification requires the issuer to be an HTTPS URI in production.
-        // AllowInsecureIssuer permits only HTTP loopback issuers for local development.
-        var isHttps = string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase);
-        var isHttp = string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase);
-
-        if (!isHttps && !(isHttp && options.AllowInsecureIssuer))
-        {
-            errors.Add(
-                $"AuthorizationServerOptions.Issuer '{options.Issuer}' uses an unsupported scheme '{uri.Scheme}'. " +
-                "Only 'https' is permitted in production. " +
-                "Set AllowInsecureIssuer = true to permit 'http' loopback issuers for local development and testing only.");
-        }
-
-        if (isHttp && options.AllowInsecureIssuer && !LoopbackHelper.IsLoopbackHost(uri.Host))
-        {
-            errors.Add(
-                $"AuthorizationServerOptions.Issuer '{options.Issuer}' uses HTTP for a non-loopback host. " +
-                "AllowInsecureIssuer only permits HTTP loopback issuers for local development and testing.");
-        }
-
-        var canonicalIssuer = BuildCanonicalIssuer(uri);
-        var normalizedInputIssuer = NormalizeRootIssuer(options.Issuer!, uri);
-        if (!string.Equals(normalizedInputIssuer, canonicalIssuer, StringComparison.Ordinal))
-        {
-            errors.Add(
-                $"AuthorizationServerOptions.Issuer '{options.Issuer}' is not canonical. Use '{canonicalIssuer}'.");
-        }
     }
 
     /// <summary>Validates the <c>Response</c> options group.</summary>
@@ -272,11 +165,9 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
         // A tolerance >= half the authorization code lifetime effectively extends the acceptance
         // window past the code's intended expiry, undermining the short-lived code guarantee of
         // RFC 9700 §2.1.1.
-        var halfCodeLifetime = options.AuthorizationEndpoint.AuthorizationCodeLifetime / 2;
-        if (options.ClockSkewTolerance >= TimeSpan.Zero &&
-            options.AuthorizationEndpoint.AuthorizationCodeLifetime > TimeSpan.Zero &&
-            options.ClockSkewTolerance >= halfCodeLifetime)
+        if (ClockSkewReachesHalfTheCodeLifetime(options))
         {
+            var halfCodeLifetime = options.AuthorizationEndpoint.AuthorizationCodeLifetime / 2;
             errors.Add(
                 $"AuthorizationServerOptions.ClockSkewTolerance ({options.ClockSkewTolerance}) is greater than or " +
                 $"equal to half of AuthorizationCodeLifetime ({halfCodeLifetime}). A tolerance this large effectively " +
@@ -285,135 +176,13 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
     }
 
     /// <summary>
-    /// Validates the endpoint URI overrides. RFC 8414 §2 requires all metadata URLs to use HTTPS;
-    /// RFC 6749 §3.1 and §3.2 forbid a fragment on the authorization and token endpoints, while
-    /// a query is explicitly permitted on the authorization endpoint (§3.1) and not prohibited on
-    /// the token endpoint.
+    /// A non-negative tolerance of at least half a positive code lifetime. A negative tolerance or
+    /// a non-positive lifetime is reported by its own rule, so it is not also reported here.
     /// </summary>
-    private static void ValidateEndpointUris(AuthorizationServerOptions options, Uri issuerUri, List<string> errors)
-    {
-        if (ValidateEndpointUri(
-                nameof(options.AuthorizationEndpoint.Uri),
-                options.AuthorizationEndpoint.Uri,
-                options.AllowInsecureIssuer,
-                issuerUri,
-                options.Issuer!,
-                rejectFragment: true) is { } aeError)
-            errors.Add(aeError.FailureMessage!);
-
-        if (ValidateEndpointUri(
-                nameof(options.TokenEndpoint.Uri),
-                options.TokenEndpoint.Uri,
-                options.AllowInsecureIssuer,
-                issuerUri,
-                options.Issuer!,
-                rejectFragment: true) is { } teError)
-            errors.Add(teError.FailureMessage!);
-
-        if (ValidateEndpointUri(
-                nameof(options.JwksEndpoint.Uri),
-                options.JwksEndpoint.Uri,
-                options.AllowInsecureIssuer,
-                issuerUri,
-                options.Issuer!,
-                rejectQuery: true,
-                rejectFragment: true) is { } jwksError)
-            errors.Add(jwksError.FailureMessage!);
-    }
-
-    private static ValidateOptionsResult? ValidateEndpointUri(
-        string propertyName,
-        string? value,
-        bool allowInsecure,
-        Uri issuerUri,
-        string issuerValue,
-        bool rejectQuery = false,
-        bool rejectFragment = false)
-    {
-        if (value is null) return null;
-
-        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri))
-            return ValidateOptionsResult.Fail(
-                $"AuthorizationServerOptions.{propertyName} '{value}' is not a valid absolute URI.");
-
-        if (uri.UserInfo.Length > 0)
-            return ValidateOptionsResult.Fail(
-                $"AuthorizationServerOptions.{propertyName} '{value}' must not contain user information.");
-
-        var isHttps = string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase);
-        var isHttp = string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase);
-
-        if (!isHttps && !(isHttp && allowInsecure))
-            return ValidateOptionsResult.Fail(
-                $"AuthorizationServerOptions.{propertyName} '{value}' must use HTTPS. " +
-                "Set AllowInsecureIssuer = true to permit HTTP loopback endpoints for local development only.");
-
-        if (isHttp && allowInsecure && !LoopbackHelper.IsLoopbackHost(uri.Host))
-            return ValidateOptionsResult.Fail(
-                $"AuthorizationServerOptions.{propertyName} '{value}' uses HTTP for a non-loopback host. " +
-                "AllowInsecureIssuer only permits HTTP loopback endpoints for local development and testing.");
-
-        if (!HasSameAuthority(uri, issuerUri))
-            return ValidateOptionsResult.Fail(
-                $"AuthorizationServerOptions.{propertyName} '{value}' must use the same authority as " +
-                $"AuthorizationServerOptions.Issuer '{issuerValue}'.");
-
-        if (rejectQuery && uri.Query.Length > 0)
-            return ValidateOptionsResult.Fail(
-                $"AuthorizationServerOptions.{propertyName} '{value}' must not contain a query component ('?').");
-
-        if (rejectFragment && uri.Fragment.Length > 0)
-            return ValidateOptionsResult.Fail(
-                $"AuthorizationServerOptions.{propertyName} '{value}' must not contain a fragment component ('#').");
-
-        return null;
-    }
-
-    /// <summary>Validates the client authentication methods of the <c>TokenEndpoint</c> options group.</summary>
-    private static void ValidateTokenEndpointAuthMethods(
-        AuthorizationServerOptions options,
-        List<string> errors)
-    {
-        if (options.TokenEndpoint.AuthMethodsSupported is null ||
-            options.TokenEndpoint.AuthMethodsSupported.Count == 0)
-        {
-            errors.Add(TokenEndpointAuthMethodsRequiredMessage);
-        }
-        else
-        {
-            foreach (var authMethod in options.TokenEndpoint.AuthMethodsSupported)
-            {
-                if (string.IsNullOrWhiteSpace(authMethod))
-                {
-                    errors.Add(
-                        "AuthorizationServerOptions.TokenEndpoint.AuthMethodsSupported contains an invalid entry: " +
-                        "each entry must be a non-empty, non-whitespace string.");
-                    continue;
-                }
-                if (authMethod != authMethod.Trim())
-                {
-                    errors.Add(
-                        "AuthorizationServerOptions.TokenEndpoint.AuthMethodsSupported contains an invalid entry: " +
-                        $"'{authMethod}' has leading or trailing whitespace.");
-                    continue;
-                }
-                if (authMethod.Any(char.IsControl))
-                {
-                    errors.Add(
-                        "AuthorizationServerOptions.TokenEndpoint.AuthMethodsSupported contains an invalid entry: " +
-                        $"'{authMethod}' contains one or more control characters.");
-                }
-            }
-
-            // If client_credentials grant is supported, must have at least one non-None auth method
-            if (options.GrantTypesSupported is not null &&
-                options.GrantTypesSupported.Contains(GrantType.ClientCredentials) &&
-                options.TokenEndpoint.AuthMethodsSupported.All(m => string.Equals(m, TokenEndpointAuthMethods.None, StringComparison.Ordinal)))
-            {
-                errors.Add(ClientCredentialsRequiresNonNoneTokenAuthMethodMessage);
-            }
-        }
-    }
+    private static bool ClockSkewReachesHalfTheCodeLifetime(AuthorizationServerOptions options) =>
+        options.ClockSkewTolerance >= TimeSpan.Zero
+        && options.AuthorizationEndpoint.AuthorizationCodeLifetime > TimeSpan.Zero
+        && options.ClockSkewTolerance >= options.AuthorizationEndpoint.AuthorizationCodeLifetime / 2;
 
     /// <summary>Validates the token lifetimes of the <c>TokenEndpoint</c> options group.</summary>
     private static void ValidateTokenEndpointLifetimes(
@@ -430,9 +199,7 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
         // RefreshTokenLifetime must be >= AuthorizationCodeLifetime so the authorization code
         // tombstone retention window covers the full code validity window — otherwise a delayed
         // code replay could escape the RFC 9700 §2.1.1 family-revocation mandate.
-        if (options.TokenEndpoint.RefreshTokenLifetime > TimeSpan.Zero &&
-            options.AuthorizationEndpoint.AuthorizationCodeLifetime > TimeSpan.Zero &&
-            options.TokenEndpoint.RefreshTokenLifetime < options.AuthorizationEndpoint.AuthorizationCodeLifetime)
+        if (RefreshTokensExpireBeforeCodes(options))
         {
             errors.Add(
                 "AuthorizationServerOptions.TokenEndpoint.RefreshTokenLifetime must be greater than or equal to " +
@@ -461,6 +228,15 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
                 "AuthorizationServerOptions.TokenEndpoint.IdTokenLifetime must be greater than zero.");
         }
     }
+
+    /// <summary>
+    /// Both lifetimes positive, and the refresh token's shorter than the code's. A non-positive
+    /// lifetime is reported by its own rule, so it is not also reported here.
+    /// </summary>
+    private static bool RefreshTokensExpireBeforeCodes(AuthorizationServerOptions options) =>
+        options.TokenEndpoint.RefreshTokenLifetime > TimeSpan.Zero
+        && options.AuthorizationEndpoint.AuthorizationCodeLifetime > TimeSpan.Zero
+        && options.TokenEndpoint.RefreshTokenLifetime < options.AuthorizationEndpoint.AuthorizationCodeLifetime;
 
     /// <summary>Validates the <c>AuthorizationEndpoint</c> options group.</summary>
     private static void ValidateAuthorizationEndpoint(
@@ -516,16 +292,17 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
         ValidateInteractionPath(options.AuthorizationEndpoint.Interaction.ConsentPath, "ConsentPath", errors);
     }
 
-    /// <summary>
-    /// Rejects an interaction path a browser could resolve to another origin. Every one of these
-    /// is a redirect destination the framework builds itself, so a malformed one would turn the
-    /// framework into the open redirect it exists to avoid.
-    /// </summary>
+    /// <summary>The authorization code grant is advertised, but PKCE's S256 method is not.</summary>
     private static bool ServesCodeGrantWithoutS256(AuthorizationServerOptions options) =>
         options.GrantTypesSupported is { } grants &&
         grants.Contains(GrantType.AuthorizationCode) &&
         options.AuthorizationEndpoint.CodeChallengeMethodsSupported?.Contains(CodeChallengeMethod.S256) != true;
 
+    /// <summary>
+    /// Rejects an interaction path a browser could resolve to another origin. Every one of these
+    /// is a redirect destination the framework builds itself, so a malformed one would turn the
+    /// framework into the open redirect it exists to avoid.
+    /// </summary>
     private static void ValidateInteractionPath(string? path, string optionName, List<string> errors)
     {
         if (path is null || InteractionPath.IsSafe(path))
@@ -548,38 +325,4 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
             .Where(problem => problem is not null)
             .Select(problem => $"AuthorizationServerOptions.{optionPath}: {problem}"));
     }
-
-    private static bool HasSameAuthority(Uri endpointUri, Uri issuerUri)
-        => Uri.Compare(
-            endpointUri,
-            issuerUri,
-            UriComponents.SchemeAndServer,
-            UriFormat.SafeUnescaped,
-            StringComparison.OrdinalIgnoreCase) == 0;
-
-    private static string BuildCanonicalIssuer(Uri issuerUri)
-    {
-        var scheme = issuerUri.Scheme.ToLowerInvariant();
-        var host = issuerUri.Host.ToLowerInvariant();
-        var isDefaultPort =
-            (string.Equals(scheme, Uri.UriSchemeHttps, StringComparison.Ordinal) && issuerUri.Port == 443) ||
-            (string.Equals(scheme, Uri.UriSchemeHttp, StringComparison.Ordinal) && issuerUri.Port == 80);
-
-        var builder = new UriBuilder(issuerUri)
-        {
-            Scheme = scheme,
-            Host = host,
-            Port = isDefaultPort ? -1 : issuerUri.Port,
-        };
-
-        var canonical = builder.Uri.AbsoluteUri;
-        return issuerUri.AbsolutePath == "/" && canonical.EndsWith("/", StringComparison.Ordinal)
-            ? canonical[..^1]
-            : canonical;
-    }
-
-    private static string NormalizeRootIssuer(string issuer, Uri parsedIssuer)
-        => parsedIssuer.AbsolutePath == "/" && issuer.EndsWith("/", StringComparison.Ordinal)
-            ? issuer[..^1]
-            : issuer;
 }

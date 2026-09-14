@@ -1,4 +1,3 @@
-using System.Diagnostics.CodeAnalysis;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.Clients;
@@ -24,7 +23,7 @@ internal static class TokenEndpointAuthMethodValidator
         // A confidential client must never advertise 'none' as a valid auth method: doing so would
         // allow it to be called without credentials. The trinity check only rejects a "none-only"
         // confidential client, so a mixed set like {"none","client_secret_basic"} slips past it.
-        if (!client.IsPublic && AllowsNone(client.AllowedTokenEndpointAuthMethods))
+        if (!client.IsPublic && TokenEndpointAuthMethodRules.AllowsNone(client.AllowedTokenEndpointAuthMethods))
         {
             failures.Add(new ZeeKayDaConfigurationFailure(
                 "client.token_endpoint_auth_methods.none_on_confidential",
@@ -85,13 +84,6 @@ internal static class TokenEndpointAuthMethodValidator
     }
 
     /// <summary>
-    /// Whether the methods include <c>none</c>. Compares ordinally rather than trusting the set's
-    /// own comparer, which a custom registration may have made case-insensitive.
-    /// </summary>
-    internal static bool AllowsNone(IEnumerable<string> methods)
-        => methods.Any(method => string.Equals(method, TokenEndpointAuthMethods.None, StringComparison.Ordinal));
-
-    /// <summary>
     /// The entry's first broken rule, or <see langword="null"/> when it broke none: a malformed
     /// entry is not also a duplicate, and a duplicate is not also checked against the server's methods.
     /// </summary>
@@ -101,7 +93,7 @@ internal static class TokenEndpointAuthMethodValidator
         HashSet<string> seen,
         IReadOnlySet<string> serverMethods)
     {
-        if (!IsWellFormed(method))
+        if (!TokenEndpointAuthMethodRules.IsWellFormed(method))
         {
             return new ZeeKayDaConfigurationFailure(
                 "client.token_endpoint_auth_methods.invalid_entry",
@@ -127,10 +119,4 @@ internal static class TokenEndpointAuthMethodValidator
 
         return null;
     }
-
-    /// <summary>Non-null, non-empty, no leading or trailing whitespace, and no control characters.</summary>
-    private static bool IsWellFormed([NotNullWhen(true)] string? method)
-        => !string.IsNullOrEmpty(method)
-           && method == method.Trim()
-           && !method.Any(char.IsControl);
 }
