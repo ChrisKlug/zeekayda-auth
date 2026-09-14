@@ -50,13 +50,14 @@ published-only version's key never enters the process.
 MAC against the password, takes the certificate the key bag's `localKeyId` names — PKCS#12 has no bag
 ordering — and imports no key at all.
 
-**Every signer handoff is self-tested before the signer is used.** The ring signs a fixed, non-JWS-shaped
-constant and verifies it against that key's own published public key, in the single choke point every
-handoff passes through. Materialization alone is not enough: a signer can construct successfully over
-material that does not pair with the published key. It is unconditional with no HSM opt-out, and
-`SigningKeyRingStartupVerifier` forces the first handoff eagerly, so a misconfigured key fails the host
-rather than the first request. The ring also rejects a signer whose `Algorithm` disagrees with its key. Any
-failure fails closed. No sign-off covers it.
+**Every signer handoff is self-tested before the signer is used.** `StaticSigningKeyRing` signs a
+non-JWS-shaped constant prefix plus a fresh 32-byte nonce and verifies it against that key's own published
+public key, in the single choke point every handoff passes through; the nonce defeats a memoising signer or
+caching proxy, and materialization alone proves nothing, since a signer can construct over material that
+does not pair. It is unconditional with no HSM opt-out, and `SigningKeyRingStartupVerifier` forces the
+first handoff eagerly, so a misconfigured key fails the host rather than the first request. The ring also
+rejects a signer whose `Algorithm` disagrees with its key. A mismatch, a non-signature and a signer that
+throws each fail closed under their own code, and the signer is disposed. Signed off in `security-sign-offs.md`.
 
 **All load-time validation runs on public data, in one place.** Key/algorithm compatibility, EC curve
 pairing, RSA modulus size (2048-bit minimum), NIST-curve-only EC keys, and rejection of duplicate source ids

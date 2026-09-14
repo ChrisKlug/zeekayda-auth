@@ -26,24 +26,90 @@ internal static class SigningSelfTest
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <exception cref="ZeeKayDaConfigurationException">
     /// Thrown with failure code <c>signing.self_test_failed</c> when the signature does not verify
-    /// against <paramref name="key"/>'s own public key.
+    /// against <paramref name="key"/>'s own public key, or is not a signature at all; and with
+    /// <c>signing.self_test_unavailable</c> when the signer throws, naming the exception type only
+    /// and carrying the original as the inner exception.
     /// </exception>
     internal static async ValueTask RunAsync(ISigner signer, SigningKey key, CancellationToken cancellationToken)
     {
         var payload = BuildPayload();
 
-        var signature = await signer.SignAsync(payload, cancellationToken).ConfigureAwait(false);
-        var verified = SigningAlgorithms.Verify(key.Algorithm, key.PublicKey, payload.Span, signature.Span);
+        var signature = await SignAsync(signer, key, payload, cancellationToken).ConfigureAwait(false);
 
-        if (!verified)
+        if (!TryVerify(key, payload.Span, signature.Span, out var verifierFault))
+        {
+            var failure = new ZeeKayDaConfigurationFailure(
+                "signing.self_test_failed",
+                $"The signer for key '{key.Kid}' produced a signature that does not verify " +
+                "against that key's own public key. The private key materialized for signing " +
+                $"does not match the public key published under this kid — refusing to serve " +
+                $"tokens under '{key.Kid}'.");
+
+            // The verifier's own exception, when there was one, rides along as the inner exception
+            // so a platform failure to verify is not diagnosed as a key that does not pair.
+            throw verifierFault is null
+                ? new ZeeKayDaConfigurationException(failure)
+                : new ZeeKayDaConfigurationException(failure, verifierFault);
+        }
+    }
+
+    /// <summary>
+    /// The signer is caller-supplied code, and a self-test it cannot complete aborts the handoff
+    /// exactly as a mismatch does, under its own code. The exception type is named, never its
+    /// message, which for a remote signer may carry a request URL or credential; a source's own
+    /// configuration exception already carries a published code and passes through verbatim.
+    /// Only the caller's own cancellation propagates: a cancellation the signer raised itself, an
+    /// internal timeout for instance, is its failure and fails the handoff like any other.
+    /// </summary>
+    private static async ValueTask<ReadOnlyMemory<byte>> SignAsync(
+        ISigner signer, SigningKey key, ReadOnlyMemory<byte> payload, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await signer.SignAsync(payload, cancellationToken).ConfigureAwait(false);
+        }
+        catch (ZeeKayDaConfigurationException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (!IsCallersCancellation(ex, cancellationToken))
         {
             throw new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure(
-                    "signing.self_test_failed",
-                    $"The signer for key '{key.Kid}' produced a signature that does not verify " +
-                    "against that key's own public key. The private key materialized for signing " +
-                    $"does not match the public key published under this kid — refusing to serve " +
-                    $"tokens under '{key.Kid}'."));
+                    "signing.self_test_unavailable",
+                    $"The signer for key '{key.Kid}' threw {ex.GetType().FullName} during the signing self-test, " +
+                    $"so the key could not be proven to pair with its published public key — refusing to serve " +
+                    $"tokens under '{key.Kid}'. See the inner exception for the root cause."),
+                ex);
+        }
+    }
+
+    /// <summary>
+    /// A cancellation is the caller's only when it carries the caller's token and that token was
+    /// requested. A signer's own timeout cancels with a different token, or none, and is the
+    /// signer failing, whatever the caller's token happens to say at that moment.
+    /// </summary>
+    private static bool IsCallersCancellation(Exception ex, CancellationToken cancellationToken) =>
+        ex is OperationCanceledException cancelled
+        && cancelled.CancellationToken == cancellationToken
+        && cancellationToken.IsCancellationRequested;
+
+    /// <summary>
+    /// Bytes that are not a signature of this key's algorithm at all, wrong length included, do
+    /// not verify; some platforms report that by throwing rather than returning false. The throw
+    /// is kept for the operator, since it may also be the host's crypto stack failing to verify.
+    /// </summary>
+    private static bool TryVerify(SigningKey key, ReadOnlySpan<byte> payload, ReadOnlySpan<byte> signature, out Exception? verifierFault)
+    {
+        try
+        {
+            verifierFault = null;
+            return SigningAlgorithms.Verify(key.Algorithm, key.PublicKey, payload, signature);
+        }
+        catch (Exception ex) when (ex is CryptographicException or ArgumentException or NotSupportedException)
+        {
+            verifierFault = ex;
+            return false;
         }
     }
 
