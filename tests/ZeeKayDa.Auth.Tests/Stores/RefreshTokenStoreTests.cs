@@ -689,11 +689,15 @@ public sealed class RefreshTokenStoreTests
         // The row is persisted and readable, so the first confirmation passes; the gate itself
         // then faults. A gate that cannot answer must not be read as a gate that says revoked.
         var inner = new InMemoryRefreshTokenGrantStore();
-        var store = CreateStore(grantStore: new RowWrittenButGateFaultingGrantStore(inner));
+        var gateFaulting = new RowWrittenButGateFaultingGrantStore(inner);
+        var store = CreateStore(grantStore: gateFaulting);
 
         var act = async () => await store.RevokeFamilyAsync("fam-485-gate-fault", CancellationToken.None);
 
-        await act.Should().ThrowAsync<ZeeKayDaStoreException>();
+        (await act.Should().ThrowAsync<ZeeKayDaStoreException>())
+            .WithInnerException<InvalidOperationException>().WithMessage("*gate read fault*",
+                because: "the gate's own fault must be what propagates, not the insert failure it was confirming");
+        gateFaulting.GateReads.Should().Be(1);
     }
 
     [Fact]
@@ -1380,6 +1384,8 @@ public sealed class RefreshTokenStoreTests
     /// <summary>Persists the row, fails the insert, answers the row read, and faults on the gate read.</summary>
     private sealed class RowWrittenButGateFaultingGrantStore(IRefreshTokenGrantStore inner) : IRefreshTokenGrantStore
     {
+        public int GateReads { get; private set; }
+
         public async ValueTask InsertAsync(RefreshTokenGrant grant, CancellationToken cancellationToken)
         {
             await inner.InsertAsync(grant, cancellationToken);
@@ -1399,7 +1405,10 @@ public sealed class RefreshTokenStoreTests
             => inner.RevokeBySubjectAsync(subject, cancellationToken);
 
         public ValueTask<bool> IsFamilyRevokedAsync(string familyId, CancellationToken cancellationToken)
-            => throw new InvalidOperationException("Simulated gate read fault.");
+        {
+            GateReads++;
+            throw new InvalidOperationException("Simulated gate read fault.");
+        }
     }
 
     private sealed class InsertAndConfirmFailingGrantStore(IRefreshTokenGrantStore inner) : IRefreshTokenGrantStore
