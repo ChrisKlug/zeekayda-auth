@@ -940,7 +940,7 @@ public sealed class ProviderSignInEventTests
     {
         using var factory = NewFactory(context => context.RedirectToAsync(CollectMorePath));
         using var client = NewClient(factory);
-        var (interactionId, resume) = await ResumeAsync(client);
+        var (interactionId, _) = await ResumeAsync(client);
 
         var cancel = await client.PostAsync(WithInteractionId("/account/login/cancel", interactionId), Form(), Cancellation);
 
