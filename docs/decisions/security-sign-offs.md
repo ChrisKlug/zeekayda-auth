@@ -879,6 +879,7 @@ existence of shipped code as approval for any of them.
 - **§3.6 — the zero-row-family revocation sentinel is PENDING, not signed off** (#485). The design
   was approved; the shipped implementation has never been reviewed. Its review criteria are recorded
   in §3.6 so the pending review can be executed against them.
+  Discharged by the 2026-09-14 entry for #485.
 - **§1.5 — the per-handoff signing self-test is covered by no sign-off** (#487). It was added to the
   signing path after both signing-key reviews completed.
 - **§2.1 — the plaintext `FamilyId` sign-off is predicated on conditions in unbuilt code** (#488).
@@ -1554,3 +1555,33 @@ and verified); the maintainer's rulings on fourteen Medium/Lows verified by both
 - Residuals, accepted: selection sets compare ordinally while merging groups ignoring case, so one
   claim configured in two casings for two destinations reaches one of them — no test; a registered
   client with a colliding addition can drive one error log line per authorize request — no test.
+
+## 2026-09-14 — the zero-row-family revocation sentinel, shipped code (#485, closes §3.6; commit `7d610e8`)
+
+Scoped to `RefreshTokenStore.RevokeFamilyAsync` and its sentinel insert and confirming read, the
+in-memory and distributed-cache backends, and the token endpoint's replay path. Security agent,
+read-only, §3.6's four criteria and both design-critique failure modes re-tested; no High or
+Critical. Five Lows fixed in the same PR, code-lens-verified; the rest recorded below.
+
+- A family with no rows is revoked and its first row is dead on arrival, at consume and at
+  introspection, across both stores. Closed —
+  `RevokeFamilyAsync_on_zero_row_family_inserts_a_sentinel_that_IsFamilyRevokedAsync_reports`,
+  `TryConsumeAsync_returns_Revoked_for_grant_inserted_after_zero_row_family_was_revoked`,
+  `Code_replay_triggers_family_revocation_spanning_both_stores`,
+  `A_replayed_code_revokes_the_family_its_first_exchange_started`.
+- The sentinel outlives any later-born row: family lifetime from revoke time plus the skew tolerance,
+  saturating when unbounded. Closed —
+  `The_sentinel_row_expires_with_the_family_lifetime_padded_by_the_skew_tolerance_not_the_code_lifetime`,
+  `The_sentinel_row_never_expires_when_the_family_lifetime_is_unbounded`.
+- One row per family under a deterministic key and a per-family reserved subject; never redeemable.
+  Closed — `RevokeFamilyAsync_called_twice_on_the_same_family_only_ever_inserts_the_sentinel_once`,
+  `Sentinels_of_two_families_carry_distinct_reserved_subjects`,
+  `TryMarkConsumedAsync_returns_false_for_a_Revoked_grant_and_does_not_change_its_status`.
+- The sentinel is written before the bulk mark, the confirming read is fail-closed, and a fault still
+  refuses the replay with nothing in the logs. Closed —
+  `A_bulk_revoke_fault_still_leaves_the_family_revoked_because_the_sentinel_is_written_first`,
+  `RevokeFamilyAsync_rethrows_when_the_sentinel_insert_fails_and_no_row_is_actually_persisted`,
+  `A_replay_whose_family_revocation_fails_is_still_refused_and_the_failure_is_logged`.
+- Residuals, accepted: a confirming read that itself faults propagates its own exception and drops the
+  insert's; a refresh token equal to the literal sentinel key resolves to `Revoked`, which is
+  fail-closed, and family ids never leave the process — no tests.
