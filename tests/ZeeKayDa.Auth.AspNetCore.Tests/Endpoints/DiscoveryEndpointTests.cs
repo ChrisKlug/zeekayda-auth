@@ -566,6 +566,17 @@ public sealed class DiscoveryEndpointTests : IDisposable
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
+    [Fact]
+    public async Task GetOAuthMetadata_returns_404_for_wrong_host()
+    {
+        using var client = CreateClient(_factory, "https://other.example.com");
+
+        var response = await client.GetAsync(OAuthMetadataPath, TestContext.Current.CancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound,
+            because: "the RFC 8414 address is host-bound like every other route, so it cannot answer as this issuer on another binding");
+    }
+
     // ── Protocol endpoints ────────────────────────────────────────────────────────────────────────
 
     // The token endpoint validates requests too (#71): a bodiless POST is invalid_request (400).
