@@ -103,6 +103,24 @@ public sealed class SigningSelfTestTests
     }
 
     [Fact]
+    public async Task RunAsync_keeps_the_verifiers_own_exception_as_the_inner_exception_of_a_failed_self_test()
+    {
+        // A verifier that cannot weigh the signature at all is a failed self-test, fail-closed, but
+        // the operator must see why: a crypto-stack fault must not read as a key that does not pair.
+        using var rsa = RSA.Create(2048);
+        using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var signer = new CapturingSigner(rsa);
+        var keyThatCannotBeVerifiedUnderItsAlgorithm = new SigningKey(
+            new SourceKeyId("current"), "kid", SigningAlgorithm.RS256, PublicKeyParameters.FromEc(ec.ExportParameters(false)), null);
+
+        var act = async () => await SigningSelfTest.RunAsync(signer, keyThatCannotBeVerifiedUnderItsAlgorithm, TestContext.Current.CancellationToken);
+
+        var exception = (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>()).Which;
+        exception.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.self_test_failed");
+        exception.InnerException.Should().NotBeNull();
+    }
+
+    [Fact]
     public async Task RunAsync_throws_self_test_unavailable_naming_only_the_type_when_the_signer_throws()
     {
         // A remote signer's exception can carry a request URL or a credential; the failure names the

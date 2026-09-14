@@ -885,6 +885,7 @@ existence of shipped code as approval for any of them.
   Discharged by the 2026-09-14 entry for #485.
 - **§1.5 — the per-handoff signing self-test is covered by no sign-off** (#487). It was added to the
   signing path after both signing-key reviews completed.
+  Discharged by the 2026-09-14 entry for #487.
 - **§2.1 — the plaintext `FamilyId` sign-off is predicated on conditions in unbuilt code** (#488).
   Discharged by the token endpoint (the 2026-09-13 entry): a fresh 256-bit `StoreKeyGenerator` value
   per code, proven by `Every_code_starts_its_own_family` and

@@ -36,15 +36,20 @@ internal static class SigningSelfTest
 
         var signature = await SignAsync(signer, key, payload, cancellationToken).ConfigureAwait(false);
 
-        if (!Verifies(key, payload.Span, signature.Span))
+        if (!TryVerify(key, payload.Span, signature.Span, out var verifierFault))
         {
-            throw new ZeeKayDaConfigurationException(
-                new ZeeKayDaConfigurationFailure(
-                    "signing.self_test_failed",
-                    $"The signer for key '{key.Kid}' produced a signature that does not verify " +
-                    "against that key's own public key. The private key materialized for signing " +
-                    $"does not match the public key published under this kid — refusing to serve " +
-                    $"tokens under '{key.Kid}'."));
+            var failure = new ZeeKayDaConfigurationFailure(
+                "signing.self_test_failed",
+                $"The signer for key '{key.Kid}' produced a signature that does not verify " +
+                "against that key's own public key. The private key materialized for signing " +
+                $"does not match the public key published under this kid — refusing to serve " +
+                $"tokens under '{key.Kid}'.");
+
+            // The verifier's own exception, when there was one, rides along as the inner exception
+            // so a platform failure to verify is not diagnosed as a key that does not pair.
+            throw verifierFault is null
+                ? new ZeeKayDaConfigurationException(failure)
+                : new ZeeKayDaConfigurationException(failure, verifierFault);
         }
     }
 
@@ -91,16 +96,19 @@ internal static class SigningSelfTest
 
     /// <summary>
     /// Bytes that are not a signature of this key's algorithm at all, wrong length included, do
-    /// not verify; some platforms report that by throwing rather than returning false.
+    /// not verify; some platforms report that by throwing rather than returning false. The throw
+    /// is kept for the operator, since it may also be the host's crypto stack failing to verify.
     /// </summary>
-    private static bool Verifies(SigningKey key, ReadOnlySpan<byte> payload, ReadOnlySpan<byte> signature)
+    private static bool TryVerify(SigningKey key, ReadOnlySpan<byte> payload, ReadOnlySpan<byte> signature, out Exception? verifierFault)
     {
         try
         {
+            verifierFault = null;
             return SigningAlgorithms.Verify(key.Algorithm, key.PublicKey, payload, signature);
         }
-        catch (Exception ex) when (ex is CryptographicException or ArgumentException)
+        catch (Exception ex) when (ex is CryptographicException or ArgumentException or NotSupportedException)
         {
+            verifierFault = ex;
             return false;
         }
     }

@@ -43,7 +43,11 @@ public interface ISigner : IDisposable
     /// <param name="signingInput">
     /// The exact bytes to sign: <c>base64url(header) + '.' + base64url(payload)</c>.
     /// </param>
-    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <param name="cancellationToken">
+    /// A token to cancel the operation. Cancel with this token, not a linked one: the ring's
+    /// self-test treats an <see cref="OperationCanceledException"/> carrying any other token as the
+    /// signer failing, and reports it as such rather than as the caller's cancellation.
+    /// </param>
     /// <returns>The raw signature bytes in the format required by the key's algorithm.</returns>
     ValueTask<ReadOnlyMemory<byte>> SignAsync(ReadOnlyMemory<byte> signingInput, CancellationToken cancellationToken = default);
 
