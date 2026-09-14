@@ -39,7 +39,6 @@ jobs:
         with:
           languages: csharp
           queries: security-and-quality
-          config-file: ./.github/codeql-config.yml
 
       - name: Setup .NET
         uses: actions/setup-dotnet@9a946fdbd5fb07b82b2f5a4466058b876ab72bb2 # v5.3.0
@@ -55,4 +54,24 @@ jobs:
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         with:
+          category: /language:csharp
+          upload: never
+          output: sarif-results
+
+      # paths-ignore in a config file has no effect on a traced C# build, and the
+      # extractor reports source-generator output under obj/. Drop results located
+      # in obj/ or bin/ before upload instead.
+      - name: Filter generated code from results
+        run: |
+          for f in sarif-results/*.sarif; do
+            jq '.runs[].results |= map(select(
+                  [.locations[]?.physicalLocation.artifactLocation.uri // ""]
+                  | any(test("(^|/)(obj|bin)/")) | not))' "$f" > "$f.tmp"
+            mv "$f.tmp" "$f"
+          done
+
+      - name: Upload results
+        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        with:
+          sarif_file: sarif-results
           category: /language:csharp

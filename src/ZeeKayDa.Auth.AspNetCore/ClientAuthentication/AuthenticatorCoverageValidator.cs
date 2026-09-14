@@ -99,17 +99,15 @@ internal sealed class AuthenticatorCoverageValidator : IValidateOptions<Authoriz
         }
 
         // Every server-advertised method (except none) must have a covering authenticator.
-        var nonNoneMethods = serverMethods.Where(
-            methodString => !string.Equals(methodString, TokenEndpointAuthMethods.None, StringComparison.Ordinal));
+        var uncoveredMethods = serverMethods.Where(
+            methodString => !string.Equals(methodString, TokenEndpointAuthMethods.None, StringComparison.Ordinal)
+                && !declared.ContainsKey(methodString));
 
-        foreach (var methodString in nonNoneMethods)
+        foreach (var methodString in uncoveredMethods)
         {
-            if (!declared.ContainsKey(methodString))
-            {
-                errors.Add(
-                    $"TokenEndpoint.AuthMethodsSupported contains '{methodString}' but no registered " +
-                    "IClientAuthenticator covers it. Register an authenticator or remove the method.");
-            }
+            errors.Add(
+                $"TokenEndpoint.AuthMethodsSupported contains '{methodString}' but no registered " +
+                "IClientAuthenticator covers it. Register an authenticator or remove the method.");
         }
 
         return errors.Count > 0
