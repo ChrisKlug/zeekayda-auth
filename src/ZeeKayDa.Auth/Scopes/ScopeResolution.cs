@@ -46,7 +46,8 @@ internal static class ScopeResolution
     /// The resource server the granted scopes are for: the one distinct <see cref="ScopeDefinition.Audience"/>
     /// among them, compared ordinally (RFC 7519 §4.1.3), or <see langword="null"/> when none has one.
     /// Fails when two distinct values are present, since without a <c>resource</c> parameter
-    /// there is nothing to choose between them (RFC 9068 §3).
+    /// there is nothing to choose between them (RFC 9068 §3), and when the one value is not a
+    /// resource indicator, which startup checks but a repository may have changed since.
     /// </summary>
     public static bool TryResolveAudience(IEnumerable<ScopeDefinition> granted, out string? audience)
     {
@@ -59,6 +60,20 @@ internal static class ScopeResolution
             .ToList();
 
         audience = audiences.Count == 1 ? audiences[0] : null;
-        return audiences.Count <= 1;
+        return audiences.Count == 0 || (audiences.Count == 1 && IsResourceIndicator(audiences[0]));
+    }
+
+    /// <summary>
+    /// RFC 8707 §2: an absolute URI with no fragment, empty or otherwise. The scheme must be
+    /// written, since <see cref="Uri"/> reads a bare path as a file URI on some platforms and the
+    /// raw string is what a token would carry.
+    /// </summary>
+    public static bool IsResourceIndicator(string audience)
+    {
+        ArgumentNullException.ThrowIfNull(audience);
+
+        return Uri.TryCreate(audience, UriKind.Absolute, out var uri)
+            && !audience.Contains('#')
+            && audience.StartsWith(uri.Scheme + ":", StringComparison.OrdinalIgnoreCase);
     }
 }

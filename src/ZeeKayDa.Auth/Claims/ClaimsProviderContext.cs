@@ -27,8 +27,9 @@ namespace ZeeKayDa.Auth.Claims;
 /// The client that asked is deliberately absent. Claims resolution is a subject-level concern;
 /// the only client-dependent step is selection, which runs after the provider returns and can
 /// only widen what is kept. The collections are snapshotted at construction into read-only
-/// copies the context owns, so a provider holds no reference to the grant's own scope list and
-/// nothing it does to what it was handed can reach a token.
+/// copies the context owns, and the three members that carry them are get-only, so a provider
+/// holds no reference to the grant's own scope list and nothing it does to what it was handed
+/// can reach a token.
 /// </remarks>
 /// <exception cref="ArgumentException">Thrown when <paramref name="Sub"/> is <see langword="null"/> or empty.</exception>
 /// <exception cref="ArgumentNullException">Thrown when <paramref name="Scopes"/> or <paramref name="ClaimTypes"/> is <see langword="null"/>.</exception>
@@ -38,16 +39,16 @@ public sealed record ClaimsProviderContext(
     IReadOnlySet<string> ClaimTypes,
     string? FamilyId)
 {
-    /// <inheritdoc cref="ClaimsProviderContext"/>
-    public string Sub { get; init; } = !string.IsNullOrEmpty(Sub)
+    /// <inheritdoc cref="ClaimsProviderContext" path="/param[@name='Sub']"/>
+    public string Sub { get; } = !string.IsNullOrEmpty(Sub)
         ? Sub
         : throw new ArgumentException("The subject identifier must not be null or empty.", nameof(Sub));
 
-    /// <inheritdoc cref="ClaimsProviderContext"/>
-    public IReadOnlyList<string> Scopes { get; init; } = Snapshot(Scopes ?? throw new ArgumentNullException(nameof(Scopes)));
+    /// <inheritdoc cref="ClaimsProviderContext" path="/param[@name='Scopes']"/>
+    public IReadOnlyList<string> Scopes { get; } = Snapshot(Scopes ?? throw new ArgumentNullException(nameof(Scopes)));
 
-    /// <inheritdoc cref="ClaimsProviderContext"/>
-    public IReadOnlySet<string> ClaimTypes { get; init; } = Snapshot(ClaimTypes ?? throw new ArgumentNullException(nameof(ClaimTypes)));
+    /// <inheritdoc cref="ClaimsProviderContext" path="/param[@name='ClaimTypes']"/>
+    public IReadOnlySet<string> ClaimTypes { get; } = Snapshot(ClaimTypes ?? throw new ArgumentNullException(nameof(ClaimTypes)));
 
     /// <summary>Names the scopes and counts the claim types; never prints the subject.</summary>
     public override string ToString() =>

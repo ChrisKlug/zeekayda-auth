@@ -62,11 +62,32 @@ public sealed class ClientClaimAdditionsTests
     }
 
     [Fact]
-    public void Claim_names_are_compared_ordinally()
+    public void An_addition_differing_only_in_case_from_a_scope_claim_is_refused()
     {
+        // A consuming ClaimsPrincipal matches claim types ignoring case, so 'Email' would be read
+        // as the consent-bearing claim by a client that never held the email scope.
         var collision = ClientClaimAdditions.FindCollision(Client(idToken: ["Email"]), StandardScopes.All);
 
-        collision.Should().BeNull("'Email' is not the claim the email scope unlocks");
+        collision.Should().NotBeNull();
+        collision!.Value.Scope.Should().Be("email");
+    }
+
+    [Fact]
+    public void A_scope_with_a_null_claim_list_from_a_custom_repository_is_read_as_empty()
+    {
+        var scope = new ScopeDefinition { Name = "custom", IdTokenClaims = null!, UserInfoClaims = null!, AccessTokenClaims = ["role"] };
+
+        var collision = ClientClaimAdditions.FindCollision(Client(idToken: ["tenant"]), [scope]);
+
+        collision.Should().BeNull();
+    }
+
+    [Fact]
+    public void A_client_with_no_additions_never_collides_whatever_the_scopes_say()
+    {
+        var collision = ClientClaimAdditions.FindCollision(Client(), [new ScopeDefinition { Name = "custom", IdTokenClaims = null! }]);
+
+        collision.Should().BeNull();
     }
 
     [Fact]

@@ -202,6 +202,14 @@ public sealed class CodeGrantTokenPayloadsTests
     }
 
     [Fact]
+    public void A_scope_whose_audience_is_the_issuer_names_one_recipient_not_the_same_one_twice()
+    {
+        var prepared = Payloads(resourceAudience: Issuer).AccessToken(Lifetime, jti: "token-1");
+
+        prepared.Payload.Claims["aud"].Should().Be(Issuer);
+    }
+
+    [Fact]
     public void The_ID_token_audience_is_the_client_regardless_of_the_resource()
     {
         var prepared = Payloads(resourceAudience: "https://orders.example.com/").IdToken(Lifetime);

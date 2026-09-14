@@ -77,8 +77,11 @@ ordinary resource server. `aud` is a single string for one recipient, an array f
 holding a token can call userinfo with it for the claims the user granted that client; only
 per-resource tokens via `resource` would close that.
 
-**A scope's audience is an absolute URI with no fragment, checked at startup.** RFC 8707 §2 requires
-both of a resource indicator, so the `resource` parameter can later be a pure narrowing filter.
+**A scope's audience is an absolute URI with its scheme written and no fragment, checked at startup
+and again whenever an audience is resolved.** RFC 8707 §2 requires both of a resource indicator, so
+the `resource` parameter can later be a pure narrowing filter; the request-time check covers a
+repository that changed under a live server, and a scope whose audience is the issuer itself names
+one recipient, written once.
 
 **Lifetimes are server-wide defaults with per-client overrides that inherit when null.** The token
 endpoint options hold the access-token and ID-token lifetimes, one hour and five minutes by default;

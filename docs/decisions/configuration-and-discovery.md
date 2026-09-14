@@ -110,9 +110,10 @@ is no identity-resource, API-resource or API-scope registry: two scopes with the
 are the same API. `StandardScopes` is a static template the host passes to `AddInMemoryScopes`, with
 the §5.4 claims in both the ID-token and the userinfo list; scopes come from `IScopeRepository`, which
 is what a tenant will resolve when the framework becomes tenant-aware. Startup fails when an audience
-is not an absolute URI without a fragment (RFC 8707 §2, `scopes.audience.invalid`) and when an
-in-memory client allows a scope no definition exists for (`client.allowed_scopes.undefined`); the
-authorization endpoint applies the second rule per request, which covers custom repositories.
+is not an absolute URI without a fragment (RFC 8707 §2, `scopes.audience.invalid`), when a scope
+lists a protocol claim other than `sub` that selection would never deliver (`scopes.claims.reserved`),
+and when an in-memory client allows a scope no definition exists for (`client.allowed_scopes.undefined`);
+the authorization endpoint applies the last rule per request, which covers custom repositories.
 `claims_supported` is not published; when it is, it is derived from the discoverable scopes' lists and
 the protocol claims, never configured as a separate list.
 

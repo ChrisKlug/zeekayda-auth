@@ -107,9 +107,14 @@ internal sealed class CodeGrantTokenPayloads
         return new PreparedPayload(new TokenPayload(claims), expiresAt);
     }
 
-    /// <summary>A single string for one recipient, an array for two (RFC 7519 §4.1.3).</summary>
+    /// <summary>
+    /// A single string for one recipient, an array for two (RFC 7519 §4.1.3). A scope whose
+    /// audience is the issuer itself names one recipient, not the same one twice.
+    /// </summary>
     private object AccessTokenAudience() =>
-        _resourceAudience is null ? _issuer : new[] { _resourceAudience, _issuer };
+        _resourceAudience is null || string.Equals(_resourceAudience, _issuer, StringComparison.Ordinal)
+            ? _issuer
+            : new[] { _resourceAudience, _issuer };
 
     /// <summary>
     /// The original authentication event, on both tokens (RFC 9068 §2.2.1): <c>auth_time</c>

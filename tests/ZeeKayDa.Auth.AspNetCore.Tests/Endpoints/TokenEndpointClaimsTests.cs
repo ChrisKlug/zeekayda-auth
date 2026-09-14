@@ -333,6 +333,53 @@ public sealed class TokenEndpointClaimsTests : IDisposable
     }
 
     [Fact]
+    public async Task A_providers_own_cancellation_is_its_failure_and_answers_server_error()
+    {
+        // An HttpClient timeout inside the provider surfaces as TaskCanceledException while the
+        // request itself is still live; it must not escape as an unhandled exception.
+        _provider.Script = _ => throw new TaskCanceledException("the identity store timed out");
+        var code = await ObtainCodeAsync(App, "openid profile");
+
+        var response = await PostTokenAsync(code, App);
+
+        await ShouldBeErrorAsync(response, "server_error", HttpStatusCode.InternalServerError);
+    }
+
+    [Fact]
+    public async Task A_result_list_that_throws_while_being_read_answers_server_error_and_leaks_nothing()
+    {
+        // The list is the provider's own code; a message it throws with must reach no log line.
+        _provider.Script = _ => new ClaimsResolutionResult.Resolved { Claims = new ThrowingClaimList("row for chris@example.com is corrupt") };
+        var code = await ObtainCodeAsync(App, "openid profile");
+
+        var response = await PostTokenAsync(code, App);
+
+        await ShouldBeErrorAsync(response, "server_error", HttpStatusCode.InternalServerError);
+        LogsShouldCarryNoClaimValue();
+    }
+
+    [Fact]
+    public async Task A_provider_whose_construction_fails_answers_server_error_and_leaks_nothing()
+    {
+        using var factory = new TestWebAppFactory(
+            configureBuilder: builder =>
+            {
+                builder.Services.AddLogging(logging => logging.AddProvider(_logs));
+                builder.AddClaimsProvider<UnconstructibleClaimsProvider>();
+                builder.AddInMemoryClients(clients => clients.Add(
+                    ClientRegistration.CreatePublic(App, [Redirect], [], ["openid", "profile"]) with { RequireConsent = false }));
+            },
+            mapEndpoints: MapLoginPage);
+        using var client = factory.CreateClient(new() { BaseAddress = new Uri(Issuer), AllowAutoRedirect = false, HandleCookies = true });
+        var code = await ObtainCodeWithAsync(client, App, "openid profile");
+
+        var response = await PostTokenWithAsync(client, code, App);
+
+        await ShouldBeErrorAsync(response, "server_error", HttpStatusCode.InternalServerError);
+        _logs.Entries.Should().NotContain(entry => entry.Message.Contains("connection string", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task A_provider_returning_null_answers_server_error()
     {
         _provider.Script = _ => null!;
@@ -426,9 +473,11 @@ public sealed class TokenEndpointClaimsTests : IDisposable
             ["code_challenge_method"] = "S256",
         });
 
-    private async Task<string> ObtainCodeAsync(string clientId, string scope)
+    private Task<string> ObtainCodeAsync(string clientId, string scope) => ObtainCodeWithAsync(_client, clientId, scope);
+
+    private static async Task<string> ObtainCodeWithAsync(HttpClient client, string clientId, string scope)
     {
-        var response = await _client.GetAsync(AuthorizeUrl(clientId, scope), Cancellation);
+        var response = await client.GetAsync(AuthorizeUrl(clientId, scope), Cancellation);
         response.StatusCode.Should().Be(HttpStatusCode.Redirect);
 
         if (response.Headers.Location!.OriginalString.StartsWith(LoginPath, StringComparison.Ordinal))
@@ -436,13 +485,15 @@ public sealed class TokenEndpointClaimsTests : IDisposable
             var location = response.Headers.Location!.OriginalString;
             var interactionId = QueryHelpers.ParseQuery(location[location.IndexOf('?')..])[InteractionHandoff.InteractionIdParameter].ToString();
             using var login = new FormUrlEncodedContent([]);
-            response = await _client.PostAsync(QueryHelpers.AddQueryString(LoginPath, InteractionHandoff.InteractionIdParameter, interactionId), login, Cancellation);
+            response = await client.PostAsync(QueryHelpers.AddQueryString(LoginPath, InteractionHandoff.InteractionIdParameter, interactionId), login, Cancellation);
         }
 
         return response.ShouldHaveIssuedCodeTo(Redirect);
     }
 
-    private async Task<HttpResponseMessage> PostTokenAsync(string code, string clientId)
+    private Task<HttpResponseMessage> PostTokenAsync(string code, string clientId) => PostTokenWithAsync(_client, code, clientId);
+
+    private static async Task<HttpResponseMessage> PostTokenWithAsync(HttpClient client, string code, string clientId)
     {
         using var form = new FormUrlEncodedContent(new Dictionary<string, string>
         {
@@ -453,7 +504,7 @@ public sealed class TokenEndpointClaimsTests : IDisposable
             ["code_verifier"] = Verifier,
         });
 
-        return await _client.PostAsync(TokenPath, form, Cancellation);
+        return await client.PostAsync(TokenPath, form, Cancellation);
     }
 
     private async Task<(JsonElement AccessToken, JsonElement IdToken)> ExchangeAsync(string clientId = App, string scope = "openid profile")
@@ -510,6 +561,27 @@ public sealed class TokenEndpointClaimsTests : IDisposable
 
             return ValueTask.FromResult(Script is { } script ? script(context) : Resolved(DefaultPool));
         }
+    }
+
+    /// <summary>A provider whose construction fails with a message a host would not want logged.</summary>
+    private sealed class UnconstructibleClaimsProvider : IClaimsProvider
+    {
+        public UnconstructibleClaimsProvider() => throw new InvalidOperationException("Could not open connection string Server=db;Password=hunter2");
+
+        public ValueTask<ClaimsResolutionResult> GetClaimsAsync(ClaimsProviderContext context, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+    }
+
+    /// <summary>A result list whose enumeration throws, standing in for a lazy query the provider handed over unread.</summary>
+    private sealed class ThrowingClaimList(string message) : IReadOnlyList<ClaimRecord>
+    {
+        public int Count => 1;
+
+        public ClaimRecord this[int index] => throw new InvalidOperationException(message);
+
+        public IEnumerator<ClaimRecord> GetEnumerator() => throw new InvalidOperationException(message);
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
     }
 
     /// <summary>A scope repository whose definitions a test can change between requests.</summary>

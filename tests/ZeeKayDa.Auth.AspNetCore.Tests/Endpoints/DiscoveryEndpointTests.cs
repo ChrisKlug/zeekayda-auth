@@ -1,4 +1,3 @@
-#pragma warning disable ZKD001 // Tests exercise the experimental IdTokenClaims / AccessTokenClaims API by design.
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -200,7 +199,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
                 {
                     Name = StandardScopes.OpenId.Name,
                     IdTokenClaims = ["sub"],
-                    AccessTokenClaims = ["scope"],
+                    AccessTokenClaims = ["role"],
                 },
                 new ScopeDefinition
                 {
@@ -231,7 +230,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
                 {
                     Name = "internal.admin",
                     IsDiscoverable = false,
-                    AccessTokenClaims = ["scope"],
+                    AccessTokenClaims = ["role"],
                 },
             ]));
         using var client = CreateClient(factory);

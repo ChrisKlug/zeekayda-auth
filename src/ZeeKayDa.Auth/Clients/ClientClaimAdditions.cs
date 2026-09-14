@@ -11,10 +11,12 @@ namespace ZeeKayDa.Auth.Clients;
 /// <remarks>
 /// Checked across every destination on purpose. A per-destination check would let
 /// <c>AdditionalAccessTokenClaims = ["email"]</c> through, since no scope lists <c>email</c> for
-/// the access token, and an API would then read a claim the user never consented to. Runs on
-/// every lookup that selects claims rather than once at registration: the registration
-/// validator's verdict is memoised by fingerprint and cannot see the scope repository, so a
-/// scope added later would leave a stale "valid".
+/// the access token, and an API would then read a claim the user never consented to. Compared
+/// ignoring case, because a consuming <c>ClaimsPrincipal</c> does: an addition of <c>Email</c>
+/// would otherwise deliver what a client's <c>FindFirst("email")</c> reads. Runs on every lookup
+/// that selects claims rather than once at registration: the registration validator's verdict is
+/// memoised by fingerprint and cannot see the scope repository, so a scope added later would
+/// leave a stale "valid".
 /// </remarks>
 internal static class ClientClaimAdditions
 {
@@ -24,6 +26,10 @@ internal static class ClientClaimAdditions
         ArgumentNullException.ThrowIfNull(client);
         ArgumentNullException.ThrowIfNull(scopes);
 
+        // The common client adds nothing, and building the map is the whole cost of the check.
+        if (HasNoAdditions(client))
+            return null;
+
         var unlocked = UnlockedByAnyScope(scopes);
 
         return Collision(unlocked, client.AdditionalIdTokenClaims, nameof(IClientMetadata.AdditionalIdTokenClaims))
@@ -31,13 +37,24 @@ internal static class ClientClaimAdditions
             ?? Collision(unlocked, client.AdditionalAccessTokenClaims, nameof(IClientMetadata.AdditionalAccessTokenClaims));
     }
 
-    /// <summary>Every claim any scope unlocks anywhere, each mapped to the first scope that unlocks it.</summary>
+    private static bool HasNoAdditions(IClientMetadata client) =>
+        IsEmpty(client.AdditionalIdTokenClaims)
+        && IsEmpty(client.AdditionalUserInfoClaims)
+        && IsEmpty(client.AdditionalAccessTokenClaims);
+
+    private static bool IsEmpty(IReadOnlyCollection<string>? additions) => additions is null or { Count: 0 };
+
+    /// <summary>
+    /// Every claim any scope unlocks anywhere, each mapped to the first scope that unlocks it. A
+    /// custom repository's null list is read as empty rather than thrown on.
+    /// </summary>
     private static Dictionary<string, string> UnlockedByAnyScope(IEnumerable<ScopeDefinition> scopes)
     {
-        var unlocked = new Dictionary<string, string>(StringComparer.Ordinal);
+        var unlocked = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var scope in scopes)
         {
-            foreach (var claim in scope.IdTokenClaims.Concat(scope.UserInfoClaims).Concat(scope.AccessTokenClaims))
+            var claims = (scope.IdTokenClaims ?? []).Concat(scope.UserInfoClaims ?? []).Concat(scope.AccessTokenClaims ?? []);
+            foreach (var claim in claims.Where(claim => claim is not null))
                 unlocked.TryAdd(claim, scope.Name);
         }
 

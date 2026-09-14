@@ -91,11 +91,11 @@ returned or move a protocol claim.
 
 **An addition may not name a claim any registered scope unlocks in any destination**, so a
 consent-bearing claim arrives only through the scope the user can decline. Checked across
-destinations, since a per-destination check would let an access-token addition of `email` past the
-`email` scope. Checked at startup for the in-memory registrations, and on every authorization request
-and every token issuance against the scope set fetched for that request, because the registration
-validator's memoised verdict cannot see the scope repository; a collision is the operator's
-misconfiguration, answered `server_error` with a generic description and logged with the detail.
+destinations and ignoring case, since a per-destination check would let an access-token addition of
+`email` past the `email` scope, and a consuming `ClaimsPrincipal` reads `Email` as `email`. Checked
+at startup for the in-memory registrations, and on every authorization request and every token
+issuance against the scope set fetched for that request, because the registration validator's
+memoised verdict cannot see the scope repository; a collision is `server_error`, logged with detail.
 
 **The standard scopes ship their claims in both the ID token and userinfo.** OpenID Connect Core §5.4
 routes them to userinfo; §2 lets the ID token carry other claims. A host wanting the §5.4 default trims

@@ -89,8 +89,11 @@ internal sealed class GrantClaimsResolver
     }
 
     /// <summary>
-    /// The provider's answer, or <see langword="null"/> after logging when it threw or returned
-    /// nothing. A cancellation is the client's, not the provider's, and propagates.
+    /// The provider's answer, or <see langword="null"/> after logging when it could not be
+    /// constructed, threw, or returned nothing. Constructing it is inside the boundary too: a
+    /// provider is caller-supplied code from its constructor onwards. Only the request's own
+    /// cancellation propagates; a cancellation the provider raised itself, a timeout inside it,
+    /// is its failure and is answered as one.
     /// </summary>
     private async Task<ClaimsResolutionResult?> ResolvePoolAsync(
         HttpContext context,
@@ -98,14 +101,13 @@ internal sealed class GrantClaimsResolver
         ClaimsProviderContext providerContext,
         CancellationToken cancellationToken)
     {
-        var provider = context.RequestServices.GetRequiredService<IClaimsProvider>();
-
         ClaimsResolutionResult? result;
         try
         {
+            var provider = context.RequestServices.GetRequiredService<IClaimsProvider>();
             result = await provider.GetClaimsAsync(providerContext, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (IsProviderFailure(ex, cancellationToken))
         {
             _logger.LogError(ex, "The claims provider failed while resolving claims for a grant to client {ClientId}; nothing was issued.", client.ClientId);
             return null;
@@ -117,16 +119,32 @@ internal sealed class GrantClaimsResolver
         return result;
     }
 
+    private static bool IsProviderFailure(Exception ex, CancellationToken cancellationToken) =>
+        ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested;
+
     private GrantClaimsOutcome Select(IClientMetadata client, ClaimsResolutionResult.Resolved resolved, ClaimSelectionPlan plan, string? resourceAudience)
     {
+        // Materialised first, on its own: the list is the provider's, so enumerating it runs its
+        // code, and anything that throws there is logged redacted, never by its message.
+        ClaimRecord[] pool;
         try
         {
-            return new GrantClaimsOutcome.Issue(ClaimSelection.Select(resolved.Claims, plan), resourceAudience);
+            pool = [.. resolved.Claims];
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogError(ex, "The claims provider's result for a grant to client {ClientId} could not be read; nothing was issued.", client.ClientId);
+            return GrantClaimsOutcome.Failed.Instance;
+        }
+
+        try
+        {
+            return new GrantClaimsOutcome.Issue(ClaimSelection.Select(pool, plan), resourceAudience);
         }
         catch (InvalidOperationException ex)
         {
-            // Selection names the claim type in its message and never the value, so the message
-            // is safe to surface to the operator, who owns the provider that produced it.
+            // Selection's own failure over an array it owns: the message names the claim type
+            // and never the value, so it is safe to surface to the operator.
             _logger.LogError("The claims provider's result for a grant to client {ClientId} could not be used: {Reason}", client.ClientId, ex.Message);
             return GrantClaimsOutcome.Failed.Instance;
         }

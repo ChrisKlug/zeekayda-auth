@@ -262,6 +262,18 @@ public sealed class ClaimSelectionTests
     }
 
     [Fact]
+    public void A_repeat_of_a_single_valued_standard_claim_is_recognised_ignoring_case()
+    {
+        // A consumer's HasClaim("email_verified", "true") matches the type ignoring case, so an
+        // 'Email_Verified' array would fail open just as the lower-case one would.
+        var scope = new ScopeDefinition { Name = "s", IdTokenClaims = ["Email_Verified"] };
+
+        var act = () => Select([new("Email_Verified", "a"), new("Email_Verified", "b")], [scope]);
+
+        act.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
     public void An_illegal_repeat_of_a_claim_no_destination_wants_is_ignored()
     {
         // The provider is told that returning more than asked is harmless, so a claim that can

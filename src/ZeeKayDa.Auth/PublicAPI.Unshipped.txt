@@ -746,16 +746,13 @@ ZeeKayDa.Auth.Claims.ClaimValue.Equals(ZeeKayDa.Auth.Claims.ClaimValue other) ->
 ZeeKayDa.Auth.Claims.ClaimsProviderContext
 ZeeKayDa.Auth.Claims.ClaimsProviderContext.<Clone>$() -> ZeeKayDa.Auth.Claims.ClaimsProviderContext!
 ZeeKayDa.Auth.Claims.ClaimsProviderContext.ClaimTypes.get -> System.Collections.Generic.IReadOnlySet<string!>!
-ZeeKayDa.Auth.Claims.ClaimsProviderContext.ClaimTypes.init -> void
 ZeeKayDa.Auth.Claims.ClaimsProviderContext.ClaimsProviderContext(string! Sub, System.Collections.Generic.IReadOnlyList<string!>! Scopes, System.Collections.Generic.IReadOnlySet<string!>! ClaimTypes, string? FamilyId) -> void
 ZeeKayDa.Auth.Claims.ClaimsProviderContext.Deconstruct(out string! Sub, out System.Collections.Generic.IReadOnlyList<string!>! Scopes, out System.Collections.Generic.IReadOnlySet<string!>! ClaimTypes, out string? FamilyId) -> void
 ZeeKayDa.Auth.Claims.ClaimsProviderContext.Equals(ZeeKayDa.Auth.Claims.ClaimsProviderContext? other) -> bool
 ZeeKayDa.Auth.Claims.ClaimsProviderContext.FamilyId.get -> string?
 ZeeKayDa.Auth.Claims.ClaimsProviderContext.FamilyId.init -> void
 ZeeKayDa.Auth.Claims.ClaimsProviderContext.Scopes.get -> System.Collections.Generic.IReadOnlyList<string!>!
-ZeeKayDa.Auth.Claims.ClaimsProviderContext.Scopes.init -> void
 ZeeKayDa.Auth.Claims.ClaimsProviderContext.Sub.get -> string!
-ZeeKayDa.Auth.Claims.ClaimsProviderContext.Sub.init -> void
 ZeeKayDa.Auth.Claims.ClaimsResolutionResult
 ZeeKayDa.Auth.Claims.ClaimsResolutionResult.Resolved
 ZeeKayDa.Auth.Claims.ClaimsResolutionResult.Resolved.Claims.get -> System.Collections.Generic.IReadOnlyList<ZeeKayDa.Auth.Claims.ClaimRecord>!

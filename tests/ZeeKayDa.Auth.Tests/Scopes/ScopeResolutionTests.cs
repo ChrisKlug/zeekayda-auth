@@ -73,6 +73,31 @@ public sealed class ScopeResolutionTests
         audience.Should().BeNull();
     }
 
+    [Theory]
+    [InlineData("orders")]
+    [InlineData("/orders")]
+    [InlineData("C:\\orders")]
+    [InlineData("https://orders.example.com/#")]
+    public void An_audience_that_is_not_a_resource_indicator_cannot_be_resolved_even_alone(string audience)
+    {
+        // Startup checks the shape, but a repository may have changed under a live server, and
+        // the raw string is what the token would carry.
+        var scope = new ScopeDefinition { Name = "x", Audience = audience };
+
+        var ok = ScopeResolution.TryResolveAudience([StandardScopes.OpenId, scope], out _);
+
+        ok.Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("https://orders.example.com/")]
+    [InlineData("urn:example:orders")]
+    [InlineData("https://orders.example.com/api?v=2")]
+    public void A_resource_indicator_is_an_absolute_URI_with_its_scheme_written_and_no_fragment(string audience)
+    {
+        ScopeResolution.IsResourceIndicator(audience).Should().BeTrue();
+    }
+
     [Fact]
     public void Audiences_are_compared_ordinally()
     {

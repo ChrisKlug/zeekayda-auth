@@ -24,11 +24,11 @@ public readonly record struct ClaimRecord
     /// <summary>Initializes a record of <paramref name="type"/> carrying <paramref name="value"/>.</summary>
     /// <param name="type">The claim's wire name.</param>
     /// <param name="value">The claim's value.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="type"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">
-    /// Thrown when <paramref name="type"/> is <see langword="null"/>, empty or white space, or
-    /// when <paramref name="value"/> is one a token cannot carry: the default
-    /// <see cref="ClaimValue"/>, a <see langword="null"/> string, an empty string,
-    /// <see cref="double.NaN"/>, an infinity, or JSON <c>null</c>.
+    /// Thrown when <paramref name="type"/> is empty or white space, or when <paramref name="value"/>
+    /// is one a token cannot carry: the default <see cref="ClaimValue"/>, a <see langword="null"/>
+    /// string, an empty string, <see cref="double.NaN"/>, an infinity, or JSON <c>null</c>.
     /// </exception>
     public ClaimRecord(string type, ClaimValue value)
     {
