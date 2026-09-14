@@ -42,8 +42,11 @@ public sealed class ZeeKayDaAuthEndpointRouteBuilderExtensionsTests
             AllowAutoRedirect = false,
         });
 
-        var mapped = await client.SendAsync(new HttpRequestMessage(new HttpMethod(method), route), TestContext.Current.CancellationToken);
-        var wrongCase = await client.SendAsync(new HttpRequestMessage(new HttpMethod(method), wrongCasePath), TestContext.Current.CancellationToken);
+        using var mappedRequest = new HttpRequestMessage(new HttpMethod(method), route);
+        using var wrongCaseRequest = new HttpRequestMessage(new HttpMethod(method), wrongCasePath);
+
+        var mapped = await client.SendAsync(mappedRequest, TestContext.Current.CancellationToken);
+        var wrongCase = await client.SendAsync(wrongCaseRequest, TestContext.Current.CancellationToken);
 
         mapped.StatusCode.Should().NotBe(HttpStatusCode.NotFound, because: "the correctly cased route is mapped");
         wrongCase.StatusCode.Should().Be(HttpStatusCode.NotFound,
