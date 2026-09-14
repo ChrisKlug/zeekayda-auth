@@ -1610,6 +1610,7 @@ non-JWS prefix plus a fresh 32-byte nonce, not a fixed constant.
   own codes, naming the exception type and never its message. Closed —
   `RunAsync_throws_self_test_failed_when_the_signer_returns_bytes_that_are_not_a_signature`,
   `RunAsync_throws_self_test_unavailable_naming_only_the_type_when_the_signer_throws`,
+  `RunAsync_treats_a_cancellation_the_signer_raised_itself_as_self_test_unavailable`,
   `RunAsync_treats_a_signers_cancellation_for_another_token_as_unavailable_even_while_the_caller_is_cancelling`.
 - Exactly one signer is opened, nothing signs before it passed, the failure is sticky, and startup
   propagates it unmodified. Closed — `InitializeAsync_builds_the_key_set_and_opens_the_signer_exactly_once`,

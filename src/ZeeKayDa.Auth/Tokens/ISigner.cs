@@ -41,7 +41,10 @@ public interface ISigner : IDisposable
     /// Produces the raw signature bytes for <paramref name="signingInput"/>.
     /// </summary>
     /// <param name="signingInput">
-    /// The exact bytes to sign: <c>base64url(header) + '.' + base64url(payload)</c>.
+    /// The exact bytes to sign. For a token that is the JWS signing input,
+    /// <c>base64url(header) + '.' + base64url(payload)</c>; the ring's self-test also hands a signer
+    /// a short non-JWS payload once at startup, so a signer must sign whatever bytes it is given
+    /// rather than validate their shape.
     /// </param>
     /// <param name="cancellationToken">
     /// A token to cancel the operation. Cancel with this token, not a linked one: the ring's
