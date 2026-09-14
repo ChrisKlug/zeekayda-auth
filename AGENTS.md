@@ -81,6 +81,13 @@ docs/
 - **Copying an existing helper does not import its exemptions.** Several review findings and CodeQL
   hits have come from lifting a helper out of a neighbouring file that predates a standard. Bring it
   up to the current standards, or leave it where it is.
+- **Validators never trust a registration's collections to describe themselves.** A client
+  registration can be a custom implementation, so its sets may report a `Count` or use a comparer
+  that doesn't match what they actually enumerate. The client validators count and match by
+  enumerating with explicit ordinal comparison. A refactor that swaps such a loop for `.Count` or
+  `.Contains` changes behaviour, even when it reads as a cleanup: it let 33 redirect URIs past the
+  32-URI cap and a public client with `{"none", "client_secret_basic"}` past the trinity check. The
+  `MiscountingSet` tests in `ClientRegistrationValidatorTests` pin this.
 
 ## Development Workflow
 
