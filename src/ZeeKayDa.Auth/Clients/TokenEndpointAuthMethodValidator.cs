@@ -48,8 +48,20 @@ internal static class TokenEndpointAuthMethodValidator
         List<ZeeKayDaConfigurationFailure> failures)
     {
         var hasNoCredentials = client.Credentials.Count == 0;
-        var authMethodCount = client.AllowedTokenEndpointAuthMethods.Count;
-        var authMethodsIsNoneOnly = authMethodCount == 1 && AllowsNone(client.AllowedTokenEndpointAuthMethods);
+
+        // Enumerate with explicit ordinal comparison — do NOT trust the set's comparer or its
+        // Count: a custom set can report one entry while yielding 'none' and another method.
+        var authMethodCount = 0;
+        var hasNoneMethod = false;
+
+        foreach (var method in client.AllowedTokenEndpointAuthMethods)
+        {
+            authMethodCount++;
+            if (string.Equals(method, TokenEndpointAuthMethods.None, StringComparison.Ordinal))
+                hasNoneMethod = true;
+        }
+
+        var authMethodsIsNoneOnly = authMethodCount == 1 && hasNoneMethod;
 
         // Check empty AllowedTokenEndpointAuthMethods for confidential clients explicitly
         if (!client.IsPublic && authMethodCount == 0)

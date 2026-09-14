@@ -87,8 +87,14 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
         string propertyName,
         List<ZeeKayDaConfigurationFailure> failures)
     {
+        // Count what the set yields, not what its Count property claims: a custom registration's
+        // set may enumerate more entries than it reports, and the cap must see every one of them.
+        var count = 0;
+
         foreach (var uriString in uriSet)
         {
+            count++;
+
             // localhost advisory warning (RFC 8252 §8.3): scheme-neutral — fires for any passing
             // URI whose host is 'localhost', including https://localhost, not just http loopback.
             // Suppressed when the URI broke a rule: a URI that is being rejected anyway should not
@@ -104,11 +110,11 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
             }
         }
 
-        if (uriSet.Count > 32)
+        if (count > 32)
         {
             failures.Add(new ZeeKayDaConfigurationFailure(
                 "client.redirect_uri.count_exceeded",
-                $"Client '{clientId}' has {uriSet.Count} URIs in {propertyName}, which exceeds the maximum of 32."));
+                $"Client '{clientId}' has {count} URIs in {propertyName}, which exceeds the maximum of 32."));
         }
     }
 
