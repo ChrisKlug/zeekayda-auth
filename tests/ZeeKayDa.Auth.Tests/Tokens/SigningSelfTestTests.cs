@@ -117,7 +117,8 @@ public sealed class SigningSelfTestTests
 
         var exception = (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>()).Which;
         exception.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.self_test_failed");
-        exception.InnerException.Should().NotBeNull();
+        exception.InnerException.Should().BeOfType<NotSupportedException>("the verifier's own refusal of RS256 over an EC key is the cause the operator needs")
+            .Which.Message.Should().Contain("RS256");
     }
 
     [Fact]
