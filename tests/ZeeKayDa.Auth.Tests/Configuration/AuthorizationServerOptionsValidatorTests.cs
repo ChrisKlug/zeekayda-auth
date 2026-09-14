@@ -729,6 +729,24 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Theory]
+    [InlineData("AuthorizationEndpoint.Uri", "not-a-uri")]
+    [InlineData("TokenEndpoint.Uri", "not-a-uri")]
+    [InlineData("JwksEndpoint.Uri", "not-a-uri")]
+    [InlineData("AuthorizationEndpoint.Uri", "https://evil.example.com/connect/authorize")]
+    [InlineData("TokenEndpoint.Uri", "https://evil.example.com/connect/token")]
+    [InlineData("JwksEndpoint.Uri", "https://evil.example.com/connect/jwks")]
+    public void Validate_failure_message_names_the_endpoint_override_it_is_about(string propertyPath, string value)
+    {
+        var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
+        SetGroupProperty(options, propertyPath, value);
+
+        var result = Validate(options);
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain($"AuthorizationServerOptions.{propertyPath} '{value}'");
+    }
+
+    [Theory]
     [InlineData("AuthorizationEndpoint.Uri", "http://auth.example.com/connect/authorize")]
     [InlineData("TokenEndpoint.Uri", "http://auth.example.com/connect/token")]
     [InlineData("JwksEndpoint.Uri", "http://auth.example.com/connect/jwks")]

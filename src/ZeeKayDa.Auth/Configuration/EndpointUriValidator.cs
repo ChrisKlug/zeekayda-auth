@@ -15,9 +15,11 @@ internal static class EndpointUriValidator
     {
         EndpointOverride[] endpoints =
         [
-            new(nameof(options.AuthorizationEndpoint.Uri), options.AuthorizationEndpoint.Uri, RejectQuery: false),
-            new(nameof(options.TokenEndpoint.Uri), options.TokenEndpoint.Uri, RejectQuery: false),
-            new(nameof(options.JwksEndpoint.Uri), options.JwksEndpoint.Uri, RejectQuery: true),
+            // Full option paths, not nameof(...Uri): that is just "Uri" for all three, and the
+            // operator could not tell which endpoint the message is about.
+            new("AuthorizationEndpoint.Uri", options.AuthorizationEndpoint.Uri, RejectQuery: false),
+            new("TokenEndpoint.Uri", options.TokenEndpoint.Uri, RejectQuery: false),
+            new("JwksEndpoint.Uri", options.JwksEndpoint.Uri, RejectQuery: true),
         ];
 
         errors.AddRange(endpoints
