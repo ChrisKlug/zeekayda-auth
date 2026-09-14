@@ -1556,7 +1556,7 @@ and verified); the maintainer's rulings on fourteen Medium/Lows verified by both
   claim configured in two casings for two destinations reaches one of them — no test; a registered
   client with a colliding addition can drive one error log line per authorize request — no test.
 
-## 2026-09-14 — the zero-row-family revocation sentinel, shipped code (#485, closes §3.6; commit `7d610e8`)
+## 2026-09-14 — the zero-row-family revocation sentinel, shipped code (#485, closes §3.6; commit `2da133d`)
 
 Scoped to `RefreshTokenStore.RevokeFamilyAsync` and its sentinel insert and confirming read, the
 in-memory and distributed-cache backends, and the token endpoint's replay path. Security agent,
@@ -1581,8 +1581,11 @@ Critical. Five Lows fixed in the same PR, code-lens-verified; the rest recorded 
   refuses the replay with nothing in the logs. Closed —
   `A_bulk_revoke_fault_still_leaves_the_family_revoked_because_the_sentinel_is_written_first`,
   `RevokeFamilyAsync_rethrows_when_the_sentinel_insert_fails_and_no_row_is_actually_persisted`,
+  `RevokeFamilyAsync_rethrows_when_the_sentinel_row_was_written_but_the_gate_does_not_read_the_family_as_revoked`,
+  `RevokeFamilyAsync_propagates_a_fault_from_the_gate_read_rather_than_treating_the_insert_as_benign`,
+  `RevokeFamilyAsync_propagates_a_fault_from_the_confirming_read_rather_than_treating_the_insert_as_benign`,
   `A_replay_whose_family_revocation_fails_is_still_refused_and_the_failure_is_logged`.
 - Residuals, accepted: a row born later than the skew tolerance on an evicting backend at the end of
-  the family's absolute life outlives the sentinel; a confirming read that itself faults propagates
-  its own exception and drops the insert's; a refresh token equal to the literal sentinel key resolves
+  the family's absolute life outlives the sentinel; a confirming read that itself faults drops the
+  insert's exception in favour of its own; a refresh token equal to the literal sentinel key resolves
   to `Revoked`, fail-closed; the replay path's empty-family-id guard is unreachable today — no tests.
