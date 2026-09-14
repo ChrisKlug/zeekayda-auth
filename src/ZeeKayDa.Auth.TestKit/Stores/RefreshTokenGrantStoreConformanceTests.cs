@@ -378,12 +378,16 @@ public abstract class RefreshTokenGrantStoreConformanceTests
     {
         var store = CreateStore();
         var familyId = $"family-{Guid.NewGuid():N}";
-        var revokedFromBirth = NewGrant(familyId, status: RefreshGrantStatus.Revoked);
+        var revokedFromBirth = NewGrant(familyId, status: RefreshGrantStatus.Revoked) with
+        {
+            ProtectedPayload = ReadOnlyMemory<byte>.Empty,
+        };
 
         await store.InsertAsync(revokedFromBirth, CancellationToken.None);
 
         var stored = await store.FindByHandleAsync(revokedFromBirth.HandleHash, CancellationToken.None);
         Assert.Equal(RefreshGrantStatus.Revoked, stored!.Status);
+        Assert.Equal(0, stored.ProtectedPayload.Length);
 
         var isRevoked = await store.IsFamilyRevokedAsync(familyId, CancellationToken.None);
         Assert.True(isRevoked);

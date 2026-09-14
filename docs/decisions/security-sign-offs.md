@@ -670,6 +670,8 @@ it was assessed as false confidence that re-imports the coupling for no coverage
 
 ### 3.6 Issue #388 amendment — zero-row-family revocation sentinel — ⏳ **PENDING; NOT A SIGN-OFF** — tracked by #485
 
+[Closed by the 2026-09-14 entry for #485 below: the shipped code was reviewed and signed off.]
+
 **Status as recorded: ⏳ PENDING SECURITY REVIEW OF THE IMPLEMENTATION.** The design was discussed and
 approved pre-implementation (architect proposal + security critique). **Security has not reviewed the
 shipped code. This entry is explicitly not a sign-off.** See §5 for the open action item.

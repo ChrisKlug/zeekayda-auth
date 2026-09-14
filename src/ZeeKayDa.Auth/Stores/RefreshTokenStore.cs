@@ -266,14 +266,21 @@ internal sealed class RefreshTokenStore : IRefreshTokenStore
     /// </remarks>
     private async Task InsertRevocationSentinelAsync(string familyId, CancellationToken cancellationToken)
     {
-        var familyAbsoluteExpiry = _tokenEndpointOptions.ComputeFamilyAbsoluteExpiry(_timeProvider.GetUtcNow());
+        // Clocked at revoke time, so a first row born a moment later, at its own birth plus the same
+        // lifetime, would outlive an unpadded sentinel by that moment on a backend that evicts at
+        // FamilyAbsoluteExpiry. The skew tolerance covers it, saturating like every other expiry.
+        var familyAbsoluteExpiry = TokenLifetimes.ExpiresAt(
+            _tokenEndpointOptions.ComputeFamilyAbsoluteExpiry(_timeProvider.GetUtcNow()),
+            _clockSkewTolerance);
         var sentinelKey = BuildRevocationSentinelKey(familyId);
 
+        // The subject is reserved per family, not one constant for every family: a backend that
+        // indexes by subject would otherwise gather every sentinel it ever wrote under one key.
         var sentinel = new RefreshTokenGrant
         {
             HandleHash = sentinelKey,
             FamilyId = familyId,
-            Subject = RevocationSentinelReservedValue,
+            Subject = $"{RevocationSentinelReservedValue}:{familyId}",
             ClientId = RevocationSentinelReservedValue,
             FamilyAbsoluteExpiry = familyAbsoluteExpiry,
             ExpiresAt = familyAbsoluteExpiry,
@@ -318,7 +325,7 @@ internal sealed class RefreshTokenStore : IRefreshTokenStore
     // The sentinel key is deterministic in familyId alone, reusing the same H(x) construction so
     // repeated RevokeFamilyAsync calls for the same family always target the same row, preserving
     // idempotency without unbounded row growth.
-    private static StoreKey BuildRevocationSentinelKey(string familyId) => new(HashBase64Url($"revocation-sentinel:{familyId}"));
+    internal static StoreKey BuildRevocationSentinelKey(string familyId) => new(HashBase64Url($"revocation-sentinel:{familyId}"));
 
     // H(x) = Base64Url(SHA-256(UTF8(x))).
     private static string HashBase64Url(string handle) => Base64Url.EncodeToString(SHA256.HashData(Encoding.UTF8.GetBytes(handle)));

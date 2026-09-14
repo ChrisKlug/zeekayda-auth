@@ -883,6 +883,7 @@ public sealed class TokenEndpointTests : IDisposable
 
         await ShouldBeErrorAsync(replay, "invalid_grant");
         _logs.Entries.Should().Contain(entry => entry.Level == LogLevel.Error && entry.Message.Contains("family", StringComparison.Ordinal));
+        LogsShouldCarryNoProtocolMaterial(code, Verifier);
     }
 
     [Fact]

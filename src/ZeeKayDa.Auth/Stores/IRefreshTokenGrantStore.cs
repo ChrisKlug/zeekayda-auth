@@ -17,6 +17,11 @@ public interface IRefreshTokenGrantStore
     /// <summary>
     /// Insert a new grant. The handle is 256-bit random, so a primary-key collision is a
     /// genuine duplicate/bug — let the unique-constraint violation propagate (the coordinator wraps it).
+    /// A grant may arrive born <see cref="RefreshGrantStatus.Revoked"/> with an empty
+    /// <see cref="RefreshTokenGrant.ProtectedPayload"/>: that is the family revocation sentinel, and
+    /// it MUST be stored verbatim. A backend that normalises the status to
+    /// <see cref="RefreshGrantStatus.Active"/> or requires a non-empty payload breaks revocation of a
+    /// family that has no rows yet.
     /// </summary>
     /// <param name="grant">The grant to insert.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>

@@ -599,6 +599,77 @@ public sealed class RefreshTokenStoreTests
     }
 
     [Fact]
+    public async Task The_sentinel_row_expires_with_the_family_lifetime_padded_by_the_skew_tolerance_not_the_code_lifetime()
+    {
+        // The sentinel must outlive any row later born into the family. Its expiry is the family's
+        // absolute lifetime from revoke time, plus the skew tolerance, so a first row born a moment
+        // after the revoke does not outlast it on a backend that evicts at FamilyAbsoluteExpiry.
+        var now = new DateTimeOffset(2026, 9, 14, 12, 0, 0, TimeSpan.Zero);
+        var options = new AuthorizationServerOptions { ClockSkewTolerance = TimeSpan.FromMinutes(5) };
+        options.TokenEndpoint.AbsoluteFamilyLifetime = TimeSpan.FromDays(90);
+        options.AuthorizationEndpoint.AuthorizationCodeLifetime = TimeSpan.FromSeconds(60);
+        var grantStore = new InMemoryRefreshTokenGrantStore();
+        var store = CreateStore(grantStore: grantStore, serverOptions: options, timeProvider: new FakeTimeProvider(now));
+        const string familyId = "fam-485-expiry";
+
+        await store.RevokeFamilyAsync(familyId, CancellationToken.None);
+
+        var sentinel = await grantStore.FindByHandleAsync(RefreshTokenStore.BuildRevocationSentinelKey(familyId), CancellationToken.None);
+        sentinel!.FamilyAbsoluteExpiry.Should().Be(now.AddDays(90).AddMinutes(5));
+        sentinel.ExpiresAt.Should().Be(sentinel.FamilyAbsoluteExpiry);
+    }
+
+    [Fact]
+    public async Task The_sentinel_row_never_expires_when_the_family_lifetime_is_unbounded()
+    {
+        var options = new AuthorizationServerOptions();
+        options.TokenEndpoint.AbsoluteFamilyLifetime = TimeSpan.MaxValue;
+        var grantStore = new InMemoryRefreshTokenGrantStore();
+        var store = CreateStore(grantStore: grantStore, serverOptions: options);
+        const string familyId = "fam-485-unbounded";
+
+        await store.RevokeFamilyAsync(familyId, CancellationToken.None);
+
+        var sentinel = await grantStore.FindByHandleAsync(RefreshTokenStore.BuildRevocationSentinelKey(familyId), CancellationToken.None);
+        sentinel!.FamilyAbsoluteExpiry.Should().Be(DateTimeOffset.MaxValue);
+    }
+
+    [Fact]
+    public async Task Sentinels_of_two_families_carry_distinct_reserved_subjects()
+    {
+        // A backend indexing by subject must not gather every family's sentinel under one key.
+        var grantStore = new InMemoryRefreshTokenGrantStore();
+        var store = CreateStore(grantStore: grantStore);
+
+        await store.RevokeFamilyAsync("fam-485-a", CancellationToken.None);
+        await store.RevokeFamilyAsync("fam-485-b", CancellationToken.None);
+
+        var first = await grantStore.FindByHandleAsync(RefreshTokenStore.BuildRevocationSentinelKey("fam-485-a"), CancellationToken.None);
+        var second = await grantStore.FindByHandleAsync(RefreshTokenStore.BuildRevocationSentinelKey("fam-485-b"), CancellationToken.None);
+        first!.Subject.Should().NotBe(second!.Subject);
+        first.Subject.Should().Contain("fam-485-a");
+    }
+
+    [Fact]
+    public async Task A_bulk_revoke_fault_still_leaves_the_family_revoked_because_the_sentinel_is_written_first()
+    {
+        // The sentinel arms the consume-time gate before the bulk mark runs, so a backend that
+        // fails the bulk mark leaves pre-existing rows dead on their next presentation anyway.
+        var inner = new InMemoryRefreshTokenGrantStore();
+        var seedStore = CreateStore(grantStore: inner);
+        const string familyId = "fam-485-bulk-fault";
+        const string handle = "issue-485-pre-existing-handle";
+        await seedStore.StoreAsync(handle, BuildEntry(familyId: familyId), CancellationToken.None);
+        var store = CreateStore(grantStore: new RevokeFamilyFailingGrantStore(inner));
+
+        var revoke = async () => await store.RevokeFamilyAsync(familyId, CancellationToken.None);
+        await revoke.Should().ThrowAsync<ZeeKayDaStoreException>();
+
+        var outcome = await seedStore.TryConsumeAsync(handle, "client-a", CancellationToken.None);
+        outcome.Should().BeOfType<RefreshTokenConsumptionResult.Revoked>();
+    }
+
+    [Fact]
     public async Task RevokeFamilyAsync_rethrows_when_the_sentinel_insert_fails_and_no_row_is_actually_persisted()
     {
         // A genuine backend fault on the sentinel InsertAsync surfaces as the exact same
@@ -1240,6 +1311,27 @@ public sealed class RefreshTokenStoreTests
 
         public ValueTask<bool> IsFamilyRevokedAsync(string familyId, CancellationToken cancellationToken)
             => _inner.IsFamilyRevokedAsync(familyId, cancellationToken);
+    }
+
+    private sealed class RevokeFamilyFailingGrantStore(IRefreshTokenGrantStore inner) : IRefreshTokenGrantStore
+    {
+        public ValueTask InsertAsync(RefreshTokenGrant grant, CancellationToken cancellationToken)
+            => inner.InsertAsync(grant, cancellationToken);
+
+        public ValueTask<RefreshTokenGrant?> FindByHandleAsync(StoreKey handleHash, CancellationToken cancellationToken)
+            => inner.FindByHandleAsync(handleHash, cancellationToken);
+
+        public ValueTask<bool> TryMarkConsumedAsync(StoreKey handleHash, CancellationToken cancellationToken)
+            => inner.TryMarkConsumedAsync(handleHash, cancellationToken);
+
+        public ValueTask RevokeFamilyAsync(string familyId, CancellationToken cancellationToken)
+            => throw new InvalidOperationException("Simulated bulk-revoke fault after the sentinel was written.");
+
+        public ValueTask RevokeBySubjectAsync(string subject, CancellationToken cancellationToken)
+            => inner.RevokeBySubjectAsync(subject, cancellationToken);
+
+        public ValueTask<bool> IsFamilyRevokedAsync(string familyId, CancellationToken cancellationToken)
+            => inner.IsFamilyRevokedAsync(familyId, cancellationToken);
     }
 
     private sealed class ProtectFailingDataProtectionProvider : IDataProtectionProvider

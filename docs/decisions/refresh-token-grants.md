@@ -61,11 +61,13 @@ rotation.
 it is revoked — an authorization code replayed before its first refresh token has committed — and a
 bulk update then matches nothing and leaves no trace for the gate to find. So the coordinator
 unconditionally inserts one durable revoked row for the family, keyed deterministically on the family
-id, with reserved non-colliding subject and client values and an empty payload, so it can never be
-redeemed. The key is deterministic so repeated revokes converge on one row instead of growing
-unboundedly. Its expiry is computed the same way a real family's is and **must not** be bounded by
-the much shorter authorization-code lifetime, or the sentinel is cleaned up while a genuine successor
-is still live and the family silently un-revokes. The insert is insert-if-absent for that one
+id, with a reserved per-family subject, a reserved client value and an empty payload, so it can never
+be redeemed and a subject index never gathers every family's sentinel under one key. The key is
+deterministic so repeated revokes converge on one row instead of growing unboundedly. Its expiry is
+the family's absolute lifetime from revoke time plus the clock-skew tolerance, so a first row born a
+moment after the revoke never outlives it, and it **must not** be bounded by the much shorter
+authorization-code lifetime, or the sentinel is cleaned up while a genuine successor is still live
+and the family silently un-revokes. The insert is insert-if-absent for that one
 reserved key: because every native fault is flattened into one exception type, exception shape alone
 cannot distinguish a benign self-collision from a transport failure, so on any failure the
 coordinator re-reads the sentinel and propagates the original exception unless the row is confirmed
