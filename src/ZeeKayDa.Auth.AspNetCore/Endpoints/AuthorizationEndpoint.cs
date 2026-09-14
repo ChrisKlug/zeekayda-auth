@@ -69,7 +69,11 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
                 endpointUri.AbsolutePath,
                 [HttpMethods.Get, HttpMethods.Post],
                 Handle)
-            .RequireIssuerHost(endpointUri);
+            .RequireIssuerHost(endpointUri)
+            // AllowAnonymous so a host-wide authorization fallback policy cannot challenge the
+            // authorize request with the host's scheme before the framework's own login handoff
+            // runs: the user is, by definition, not signed in yet when they arrive here.
+            .AllowAnonymous();
     }
 
     private async Task<IResult> Handle(AuthorizeRequestValidator validator, HttpContext context)

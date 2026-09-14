@@ -76,6 +76,22 @@ public sealed class AuthorizationEndpointTests : IDisposable
     }
 
     [Fact]
+    public async Task The_authorize_endpoint_is_reachable_under_a_host_fallback_authorization_policy()
+    {
+        // The user arriving here is not signed in yet, so a host-wide RequireAuthenticatedUser
+        // fallback must not challenge the request before the framework's own handoff runs. The
+        // request is deliberately invalid, so the framework's local error proves who answered.
+        using var factory = new TestWebAppFactoryWithFallbackAuthorizationPolicy();
+        using var client = factory.CreateClient(new() { BaseAddress = new Uri("https://test.example.com"), AllowAutoRedirect = false });
+
+        var canary = await client.GetAsync("/host-route", TestContext.Current.CancellationToken);
+        var response = await client.GetAsync(AuthorizeUrl(ValidQuery(clientId: "no-such-client")), TestContext.Current.CancellationToken);
+
+        canary.StatusCode.Should().Be(HttpStatusCode.Unauthorized, "the fallback policy is in force on the host's own routes");
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, "the framework answered, not the host's authentication challenge");
+    }
+
+    [Fact]
     public async Task POST_without_form_content_type_is_a_local_error()
     {
         using var content = new StringContent("""{"client_id":"test-client"}""", System.Text.Encoding.UTF8, "application/json");
