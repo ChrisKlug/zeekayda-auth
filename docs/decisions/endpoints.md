@@ -40,7 +40,9 @@ rejects a cross-authority `AuthorizationEndpoint.Uri`, `TokenEndpoint.Uri` or `J
 outright rather than gating it behind an opt-in — metadata integrity is the whole point of the
 issuer, and no deployment has yet needed the hole. It also rejects a non-canonical issuer
 (uppercase scheme or host, an explicit default port) and names the canonical replacement in the
-error. A query component is permitted on the authorization endpoint URI, because RFC 6749 §3.1
+error, and it rejects any trailing slash, the root's included: the document publishes the issuer
+verbatim, while RFC 8414 §3.1 strips the slash to build the metadata URL, so a client configured
+without it would reject the document (§3.3). A query component is permitted on the authorization endpoint URI, because RFC 6749 §3.1
 allows one there; it is rejected on the token and JWKS URIs, and a fragment is rejected everywhere.
 
 **Endpoint URIs are derived from the issuer by `Uri` combination, never string concatenation**, and
@@ -49,7 +51,10 @@ the issuer's, so a route reachable on a second binding cannot answer as this iss
 
 **The discovery routes are derived from the issuer's path component, not hardcoded.** A path-based
 issuer publishes at `/tenant1/.well-known/openid-configuration` (OIDC Discovery 1.0 §4.1, appended)
-and at `/.well-known/oauth-authorization-server/tenant1` (RFC 8414 §3.1, inserted). Rejecting
+and at `/.well-known/oauth-authorization-server/tenant1` (RFC 8414 §3.1, inserted). The OAuth document
+is also served at the appended `/tenant1/.well-known/oauth-authorization-server`, so a proxy forwarding
+only the issuer's path prefix reaches both documents alike. Matching is case-sensitive: route literals
+are not, and `/TENANT1` must not answer with `tenant1`'s document. Rejecting
 path-based issuers would have been simpler but silently breaks a spec-permitted multi-tenant
 pattern, and path-based issuers are what RFC 9207 mix-up resistance relies on in those deployments.
 

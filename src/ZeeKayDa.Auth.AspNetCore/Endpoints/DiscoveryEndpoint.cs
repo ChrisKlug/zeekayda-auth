@@ -47,17 +47,36 @@ internal sealed class DiscoveryEndpoint : IZeeKayDaEndpoint
 
         // AllowAnonymous so a host-wide authorization fallback policy cannot turn discovery into a
         // 401 — the document must stay publicly readable per OIDC Discovery 1.0 and RFC 8414 §3.
-        MapDocument(endpoints, EndpointRouteHelper.GetIssuerPathPrefixedRoute(issuerUri, WellKnownSuffix), issuerUri);
-        MapDocument(endpoints, EndpointRouteHelper.GetWellKnownInsertedRoute(issuerUri, OAuthWellKnownName), issuerUri);
-    }
+        // The RFC 8414 document is also served at the appended form, so a proxy forwarding only
+        // the issuer's path prefix reaches it exactly as it reaches the OpenID Connect one. On a
+        // root issuer the two forms coincide, hence Distinct.
+        string[] routes =
+        [
+            EndpointRouteHelper.GetIssuerPathPrefixedRoute(issuerUri, WellKnownSuffix),
+            EndpointRouteHelper.GetWellKnownInsertedRoute(issuerUri, OAuthWellKnownName),
+            EndpointRouteHelper.GetIssuerPathPrefixedRoute(issuerUri, "/.well-known/" + OAuthWellKnownName),
+        ];
 
-    private void MapDocument(IEndpointRouteBuilder endpoints, string routePath, Uri issuerUri)
-        => endpoints.MapGet(routePath, Handle).RequireIssuerHost(issuerUri).AllowAnonymous();
+        foreach (var routePath in routes.Distinct(StringComparer.Ordinal))
+        {
+            endpoints.MapGet(
+                    routePath,
+                    (IDiscoveryDocumentProvider provider, HttpContext context) => Handle(provider, context, routePath))
+                .RequireIssuerHost(issuerUri)
+                .AllowAnonymous();
+        }
+    }
 
     private async ValueTask<IResult> Handle(
         IDiscoveryDocumentProvider provider,
-        HttpContext context)
+        HttpContext context,
+        string routePath)
     {
+        // Route literals match case-insensitively, but the issuer path is case-sensitive: a
+        // request for /TENANT1 must not be answered with tenant1's document.
+        if (!string.Equals(context.Request.Path.ToUriComponent(), routePath, StringComparison.Ordinal))
+            return Results.NotFound();
+
         PublicMetadataHeaders.Apply(
             context, _options.Value.DiscoveryDocument.CacheMaxAge, _allowedOrigins);
 

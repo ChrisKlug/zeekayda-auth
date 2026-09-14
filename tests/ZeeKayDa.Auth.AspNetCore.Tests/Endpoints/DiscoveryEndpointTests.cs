@@ -360,10 +360,39 @@ public sealed class DiscoveryEndpointTests : IDisposable
             because: "RFC 8414 §3.3 requires the issuer to match the one the metadata URL was built from");
     }
 
+    [Fact]
+    public async Task GetOAuthMetadata_is_also_served_at_the_appended_form_so_a_path_prefix_proxy_reaches_it()
+    {
+        using var factory = new TestWebAppFactory(opts => opts.Issuer = "https://test.example.com/tenant1");
+        using var client = CreateClient(factory);
+
+        var response = await client.GetAsync(
+            "/tenant1/.well-known/oauth-authorization-server", TestContext.Current.CancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK,
+            because: "a proxy forwarding only /tenant1/* must reach the OAuth document as it reaches the OpenID Connect one");
+        var doc = await response.Content.ReadFromJsonAsync<JsonDocument>(TestContext.Current.CancellationToken);
+        doc!.RootElement.GetProperty("issuer").GetString().Should().Be("https://test.example.com/tenant1");
+    }
+
+    [Fact]
+    public async Task GetOAuthMetadata_returns_404_at_the_root_form_when_Issuer_has_path()
+    {
+        using var factory = new TestWebAppFactory(opts => opts.Issuer = "https://test.example.com/tenant1");
+        using var client = CreateClient(factory);
+
+        var response = await client.GetAsync(OAuthMetadataPath, TestContext.Current.CancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound,
+            because: "the root address belongs to a root issuer, not to tenant1");
+    }
+
     [Theory]
-    [InlineData("/tenant1/.well-known/oauth-authorization-server")]
-    [InlineData("/.well-known/oauth-authorization-server")]
-    public async Task GetOAuthMetadata_returns_404_at_the_appended_or_root_form_when_Issuer_has_path(string path)
+    [InlineData("/.well-known/oauth-authorization-server/TENANT1")]
+    [InlineData("/TENANT1/.well-known/oauth-authorization-server")]
+    [InlineData("/TENANT1/.well-known/openid-configuration")]
+    [InlineData("/tenant1/.well-known/OPENID-CONFIGURATION")]
+    public async Task GetDiscoveryDocument_returns_404_when_the_path_differs_from_the_route_only_in_case(string path)
     {
         using var factory = new TestWebAppFactory(opts => opts.Issuer = "https://test.example.com/tenant1");
         using var client = CreateClient(factory);
@@ -371,7 +400,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
         var response = await client.GetAsync(path, TestContext.Current.CancellationToken);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound,
-            because: "RFC 8414 §3.1 inserts the segment; appending it is the OpenID Connect rule");
+            because: "the issuer path is case-sensitive, so /TENANT1 must not be answered with tenant1's document");
     }
 
     [Fact]
