@@ -1593,6 +1593,7 @@ Critical. Five Lows fixed in the same PR, code-lens-verified; the rest recorded 
   the family's absolute life outlives the sentinel; a confirming read that itself faults drops the
   insert's exception in favour of its own; a refresh token equal to the literal sentinel key resolves
   to `Revoked`, fail-closed; the replay path's empty-family-id guard is unreachable today — no tests.
+
 ## 2026-09-14 — the per-handoff signing self-test, shipped code (#487, closes §1.5; commit `ad644a7`)
 
 Scoped to `SigningSelfTest`, its call from `StaticSigningKeyRing`'s initialisation, and
