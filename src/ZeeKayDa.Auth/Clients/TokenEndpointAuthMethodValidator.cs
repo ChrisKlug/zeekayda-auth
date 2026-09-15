@@ -124,8 +124,8 @@ internal static class TokenEndpointAuthMethodValidator
         string method,
         IReadOnlySet<string> serverMethods)
     {
-        var fix = client.IsPublic && string.Equals(method, TokenEndpointAuthMethods.None, StringComparison.Ordinal)
-            ? " Public clients present no credentials at the token endpoint, so the server accepts them " +
+        var fix = NeedsNoneOptIn(client, method)
+            ?" Public clients present no credentials at the token endpoint, so the server accepts them " +
               "only when it advertises 'none': add " +
               "options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None); to the " +
               "AddZeeKayDaAuth configuration, or 'none' to TokenEndpoint:AuthMethodsSupported in bound configuration."
@@ -136,4 +136,7 @@ internal static class TokenEndpointAuthMethodValidator
             $"Client '{client.ClientId}' has AllowedTokenEndpointAuthMethods entry '{method}' that is not " +
             $"in the server's AuthMethodsSupported: [{string.Join(", ", serverMethods)}]." + fix);
     }
+
+    private static bool NeedsNoneOptIn(IClientRegistration client, string method)
+        => client.IsPublic && string.Equals(method, TokenEndpointAuthMethods.None, StringComparison.Ordinal);
 }
