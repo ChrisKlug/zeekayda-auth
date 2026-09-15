@@ -66,6 +66,26 @@ public sealed class CompositeClientAuthenticatorTests
             => ValueTask.FromResult(_client);
     }
 
+    /// <summary>
+    /// A set whose <see cref="Count"/> disagrees with what it enumerates, as a custom registration's
+    /// collection type is free to do.
+    /// </summary>
+    private sealed class MiscountingSet(IEnumerable<string> items, int reportedCount) : IReadOnlySet<string>
+    {
+        private readonly List<string> _items = [.. items];
+
+        public int Count => reportedCount;
+        public IEnumerator<string> GetEnumerator() => _items.GetEnumerator();
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+        public bool Contains(string item) => _items.Contains(item, StringComparer.Ordinal);
+        public bool IsProperSubsetOf(IEnumerable<string> other) => throw new NotSupportedException();
+        public bool IsProperSupersetOf(IEnumerable<string> other) => throw new NotSupportedException();
+        public bool IsSubsetOf(IEnumerable<string> other) => throw new NotSupportedException();
+        public bool IsSupersetOf(IEnumerable<string> other) => throw new NotSupportedException();
+        public bool Overlaps(IEnumerable<string> other) => throw new NotSupportedException();
+        public bool SetEquals(IEnumerable<string> other) => throw new NotSupportedException();
+    }
+
     private sealed class MinimalClient : IClientRegistration
     {
         public required string ClientId { get; init; }
@@ -399,6 +419,36 @@ public sealed class CompositeClientAuthenticatorTests
         var result = await composite.AuthenticateAsync("public-client", httpContext, TestContext.Current.CancellationToken);
 
         result.Authenticated.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task AuthenticateAsync_refuses_none_fallback_when_client_auth_methods_set_reports_one_entry_but_yields_more()
+    {
+        var hasher = new FakeHasher();
+        var miscountingClient = new MinimalClient
+        {
+            ClientId = "public-client",
+            Credentials = [],
+            IsPublic = true,
+            AllowedTokenEndpointAuthMethods = new MiscountingSet(
+                [TokenEndpointAuthMethods.None, TokenEndpointAuthMethods.ClientSecretBasic],
+                reportedCount: 1),
+        };
+        var (composite, _) = CreateCompositeWithHasher(
+            miscountingClient,
+            hasher,
+            allowedMethods: [TokenEndpointAuthMethods.ClientSecretBasic, TokenEndpointAuthMethods.None]);
+
+        var httpContext = new DefaultHttpContext(); // no auth material
+        httpContext.Request.Form = new FormCollection(new Dictionary<string, StringValues>
+        {
+            ["client_id"] = "public-client",
+        });
+
+        var result = await composite.AuthenticateAsync("public-client", httpContext, TestContext.Current.CancellationToken);
+
+        result.Authenticated.Should().BeFalse();
+        hasher.CallCount.Should().Be(CompositeClientSecretHasher.MaxActiveSharedSecretsPerClient);
     }
 
     [Fact]
