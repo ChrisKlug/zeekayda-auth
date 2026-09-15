@@ -125,7 +125,7 @@ internal static class TokenEndpointAuthMethodValidator
         IReadOnlySet<string> serverMethods)
     {
         var fix = NeedsNoneOptIn(client, method)
-            ?" Public clients present no credentials at the token endpoint, so the server accepts them " +
+            ? " Public clients present no credentials at the token endpoint, so the server accepts them " +
               "only when it advertises 'none': add " +
               "options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None); to the " +
               "AddZeeKayDaAuth configuration, or 'none' to TokenEndpoint:AuthMethodsSupported in bound configuration."
