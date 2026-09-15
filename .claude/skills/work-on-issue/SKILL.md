@@ -22,6 +22,10 @@ run for free forever.
 work is deferred, not started — say so and stop. (Exception: a genuine security hole in
 already-written code.)
 
+**Size by what surrounds the diff, not by the diff.** Before calling an issue or a fix quick, check
+its milestone, the register and the sign-offs for a decision already covering it, and whether the
+same pattern sits on neighbouring code paths.
+
 **And re-check it whenever scope grows.** The slice check above runs before work starts; scope that
 accretes mid-build escapes it. Folding in a neighbouring issue, half of another, or an addition that
 "may as well" ride along is a *recommendation with a size consequence* — state that consequence in
@@ -160,7 +164,10 @@ Then, in chat, short enough to actually be read:
 - the public API as it ended up — real signatures;
 - what changed, briefly;
 - High/Critical findings and how they were fixed;
-- the Medium/Low list, one line each with your recommendation (fix / defer / accept);
+- the Medium/Low list, one line each with your recommendation (fix / defer / accept). **The
+  default recommendation is to fix the behaviour.** "Document it" or "accept it" is offered only
+  when the proper fix is genuinely large, and stated as that trade-off — never because someone
+  else (the client, the operator, a later audit) will catch it;
 - who read each commit.
 
 The branch is local; the maintainer diffs it in their own editor and rules on the Medium/Lows.

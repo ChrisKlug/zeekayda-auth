@@ -1,5 +1,11 @@
 # ZeeKayDa.Auth — Agent Instructions
 
+This file holds what is true for **every task, in every tool that reads it**, and is capped at 200
+lines by CI. Anything narrower lives where it is seen: a rule about a code area in a comment on that
+code (and the decision register if it is durable behaviour); a coding standard in
+`.claude/agents/developer.md`; a rule about one activity in the skill that runs it; a machine or
+shell gotcha in the user's own `~/.claude/CLAUDE.md`.
+
 ## Project Overview
 
 ZeeKayDa.Auth is an open-source OpenID Connect identity provider framework for .NET. It is designed to be easy to use while being production-grade, spec-compliant, and security-first.
@@ -64,34 +70,19 @@ docs/
 
 ## Project Conventions
 
-- Every change starts with a GitHub issue; no direct commits to `main`
-- **Exception — agent configuration.** `.claude/**` and `AGENTS.md` go straight to `main`: commit and
-  push, no issue, no PR, no review. These files steer how agents work rather than shipping in any
-  package, and routing them through the full loop costs more than it protects. This bypasses the
-  branch-protection ruleset by design; the push output will say so. Everything else — `src/`,
-  `tests/`, `docs/`, `samples/`, build and CI files — follows the normal loop.
-- Semantic versioning (SemVer) strictly enforced
-- Security issues go through the private security advisory process — **never** a public issue
+- Every change starts with a GitHub issue; no direct commits to `main`.
+- **Exception — agent configuration.** `.claude/**` and this file go straight to `main`: commit and
+  push, no issue, no PR, no review, and never carried inside a feature branch's PR — a reviewer
+  reading the PR should see only the issue's work. These files steer how agents work rather than
+  shipping in any package, and routing them through the full loop costs more than it protects. The
+  push reports that it bypassed branch protection; that is expected for this class of change.
+  Everything else — `src/`, `tests/`, `docs/`, `samples/`, build and CI files — follows the loop.
+- Semantic versioning (SemVer) strictly enforced.
+- Security issues go through the private security advisory process — **never** a public issue.
 - **The coding standards in `.claude/agents/developer.md` bind everyone who writes C# in this
   repository** — the main session, `tester`, and any agent making a fix — not only the `developer`
-  agent whose file they live in. That agent is rarely spawned now that the main session builds
-  directly, so read them there and apply them wherever the code is written. Test code is not
-  exempt: the standards that keep CodeQL quiet (LINQ over a `foreach` containing a filtering `if`,
-  most often) apply to a test helper exactly as they do to `src/`.
-- **Copying an existing helper does not import its exemptions.** Several review findings and CodeQL
-  hits have come from lifting a helper out of a neighbouring file that predates a standard. Bring it
-  up to the current standards, or leave it where it is.
-- **Validators never trust a registration's collections to describe themselves.** A client
-  registration can be a custom implementation, so its sets may report a `Count` or use a comparer
-  that doesn't match what they actually enumerate. The client validators count and match by
-  enumerating with explicit ordinal comparison. A refactor that swaps such a loop for `.Count` or
-  `.Contains` changes behaviour, even when it reads as a cleanup: it let 33 redirect URIs past the
-  32-URI cap and a public client with `{"none", "client_secret_basic"}` past the trinity check. The
-  `MiscountingSet` tests in `ClientRegistrationValidatorTests` pin this.
-- **Shell snippets run under zsh here: never name a variable `path`.** zsh ties `path` to `PATH`,
-  so assigning it — including as a `read` target in a loop — replaces the command search path and
-  every later command fails with `command not found`. The same holds for `cdpath`, `fpath` and
-  `manpath`. Use `file` or `filepath`.
+  agent whose file they live in. Test code is not exempt: the standards that keep CodeQL quiet
+  apply to a test helper exactly as they do to `src/`.
 
 ## Development Workflow
 
@@ -102,17 +93,16 @@ Problems discovered mid-work become **one-line issues** — title, one sentence,
 workstream. The framework's biggest historical failure mode is moving sideways: polishing internals
 to gem quality while the endpoints that make it *an OIDC provider* stay unbuilt.
 
-Work on an issue runs through the loop in the **`/work-on-issue`** skill. The short version:
+Work on an issue runs through the loop in the **`/work-on-issue`** skill, which is the full rule
+set for building, reviewing, and handing over. The short version:
 
 > **Talk the shape through with the maintainer in chat → build in the main session → one
 > severity-gated review round → maintainer reads the diff → PR (verdicts posted, not re-reviewed) →
 > merge.**
 
 Three stages stop until the maintainer answers: the shape, the diff, and the merge. Design is a
-*conversation* — one signature, one call site, one question at a time, in plain language. Never
-deliver the maintainer a pre-baked design artifact that assumes they have the issue memorised. A
-question from the maintainer gets an answer and a stop, never a build; and the diff is handed over
-with a plain-language explanation before any findings list (both spelled out in the skill).
+*conversation* — one signature, one call site, one question at a time, in plain language. A
+question from the maintainer gets an answer and a stop, never a build.
 
 | Change | Process |
 |---|---|
@@ -122,45 +112,21 @@ with a plain-language explanation before any findings list (both spelled out in 
 | Changes **structure or an extension point** | `architect` reviews, same single-round rule. |
 | Both surfaces *and* >~150 lines of implementation logic | Both reviewers, in parallel, one message. |
 
-- **Reviews do not loop.** One round, High/Critical fixed and verified against the fix diff only,
-  Medium/Low listed for the maintainer. A fresh reviewer always finds something — that is sampling,
-  not convergence. The backstops are tests, the per-milestone security audit, and the OpenID
-  conformance suite.
-- **Findings become tests.** Any review finding stating a checkable behaviour is fixed *with a test
-  named for it*. Tests are the durable record; prose is not.
-- **Recommend the proper fix; size before calling anything quick.** Before calling an issue or a fix
-  quick, check its milestone, the register and sign-offs for a decision already covering it, and
-  whether the same pattern sits on neighbouring code paths — size by what surrounds the diff, not by
-  the diff. When recommending on a finding, the default is to fix the behaviour. "Document it" or
-  "accept it" is offered only when the proper fix is genuinely large, and stated as that trade-off —
-  never because someone else (the client, the operator, a later audit) will catch it.
-- After a PR merges, run `/post-merge-checks`.
-
-**Process changes go straight to main, on their own.** A change to `.claude/` — a skill, an agent
-definition — or to this file is committed to `main` and pushed directly, never carried along in a
-feature branch's PR and never routed through one of its own. The push reports that it bypassed
-branch protection; that is expected and approved for this class of change. Keep them out of feature
-PRs so a reviewer reading the PR sees only the issue's work.
+Reviews do not loop, and a finding that states a checkable behaviour is fixed *with a test named for
+it* — tests are the durable record, prose is not.
 
 ## Decision register
 
-`docs/decisions/` records **what is true now** — not how we got here. One file per topic area, two sections: `Decisions in force` and `Tried, didn't work`.
-
-- No numbers, no `Status`, no `Date`, no issue references, no changelog, no amendment log.
-- A decision changed? **Rewrite it in place.** Git is the history.
-- A decision was abandoned? Move it to `Tried, didn't work` with one line on why — so nobody re-proposes it.
-- Written in the **same PR as the change it describes**. There is no separate design PR, and no design-issue-then-implementation-issue lifecycle.
-- Most issues touch the register not at all. It holds durable framework behaviour, not per-issue choices.
-- Files are capped at 150 lines, enforced by CI. At the cap, cut words or split the topic — never raise the cap.
-
-The format is in `docs/decisions/README.md`. It is deliberately minimal: the previous ADR format grew to 4,270 lines and was being amended roughly five times for every one that was written.
+`docs/decisions/` records **what is true now** — not how we got here. One file per topic area, two
+sections: `Decisions in force` and `Tried, didn't work`. Format and rules are in
+`docs/decisions/README.md`; the essentials: rewrite in place, no dates or issue numbers, written in
+the **same PR as the change it describes**, files capped at 150 lines by CI. Most issues touch it
+not at all — it holds durable framework behaviour, not per-issue choices.
 
 **Security sign-off entries** (`docs/decisions/security-sign-offs.md`) are the one dated, append-only
 record — and they are written **last, once, against frozen code**, after review concludes, never in a
-commit still under review. Maximum ~15 lines per entry; every claim cites a test name as its proof
-rather than prose a future reviewer must re-probe. An entry written before the code settled has been
-falsified by later fixes three separate times, at a full review round each — the ordering rule exists
-because of that.
+commit still under review. An entry written before the code settled has been falsified by later
+fixes three separate times, at a full review round each.
 
 ## Routing — MAIN ORCHESTRATOR ONLY
 
@@ -182,8 +148,7 @@ Every agent hop is tokens and latency, and each spawn starts from zero.
 | Designing an API shape | main session, in conversation with the maintainer |
 | Writing or changing C# (features, fixes, refactors, review fixes) | main session, directly |
 | Large, mechanical, fully-specified implementation | `developer` agent (foreground) |
-| Security review of a token/crypto/endpoint/storage change | `security` agent — one round |
-| Structural / extension-point review | `architect` agent — one round |
+| Reviewing a change | the table in Development Workflow — `security` and/or `architect`, one round |
 | Writing or verifying tests on demand | `tester` agent, or main session |
 | User-facing documentation | **dormant until the walking skeleton ships** — `docs` agent only on the maintainer's explicit request |
 | Starting work on an issue | `/work-on-issue` skill |
@@ -206,13 +171,13 @@ do not report the underlying check as done.
 
 ## Code navigation
 
-Prefer the LSP tool over text search for symbol-level navigation (definitions, references, symbols, call hierarchy); use text search only for strings, comments, and config values. If LSP gives stale results, run `/restart-lsp`. If LSP is unavailable and restarting doesn't fix it, say so explicitly and wait for guidance rather than silently falling back.
+Prefer the LSP tool over text search for symbol-level navigation; text search is for strings, comments, and config values. Stale results: run `/restart-lsp`. Still unavailable: say so and wait for guidance rather than silently falling back.
 
 ## User Interaction
 
 - **Be terse.** Short, precise answers; no progress narration; the user will ask if they need more.
 - **Ask before deciding.** Never resolve ambiguity by guessing. In the main session, ask the user. In a specialist agent, return the open question as your result — the orchestrator will route it.
 - **Never fabricate** facts, spec content, or API details. If uncertain, say so and ask.
-- **The maintainer sees the code before GitHub does.** Commit locally on the feature branch and keep it there — the first review round happens between agents and never reaches the PR. The maintainer reviews the working branch in their own editor and approves *before* a PR is opened. Never commit directly to `main`, and never open a PR, merge one, or create a release tag without explicit approval.
-- **Bring every review finding to the maintainer.** Once the PR is open, reviewers post all findings on it with severity — not pre-filtered to what you judged worth fixing. Summarise all of them and let the maintainer decide what gets fixed, rather than silently applying the ones you picked. Fixes land as new commits on the same PR, visible in its history.
+- **The maintainer sees the code before GitHub does.** Commit locally on the feature branch and keep it there; the maintainer reads the branch in their own editor and approves *before* a PR is opened. Never open a PR, merge one, or create a release tag without explicit approval.
+- **Bring every review finding to the maintainer**, with severity, not pre-filtered to what you judged worth fixing. The maintainer decides what gets fixed; fixes land as new commits, visible in the history.
 - **Approval gates are harness-enforced.** The permission policy in `.claude/settings.json` makes `gh pr create`, `git tag`, force-pushes, `gh pr merge`, and `gh release` always prompt the user — even when a broader allow rule exists. A permission prompt at one of these points is the review gate working as intended; never look for an alternative command to avoid it.

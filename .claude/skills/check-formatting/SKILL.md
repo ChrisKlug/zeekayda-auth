@@ -19,7 +19,7 @@ to that job in `.github/workflows/ci.yml`, add it here in the same change.
 
 ## Steps
 
-1. From the repo root (`git rev-parse --show-toplevel`), check the decision register line cap:
+1. From the repo root (`git rev-parse --show-toplevel`), check the line caps on the decision register and `AGENTS.md`:
 
    ```sh
    for f in docs/decisions/*.md; do
@@ -30,10 +30,13 @@ to that job in `.github/workflows/ci.yml`, add it here in the same change.
      lines=$(wc -l < "$f")
      [ "$lines" -gt 150 ] && echo "$f: $lines lines, over the 150-line cap"
    done
+   lines=$(wc -l < AGENTS.md)
+   [ "$lines" -gt 200 ] && echo "AGENTS.md: $lines lines, over the 200-line cap"
    ```
 
-   Over the cap: cut words or split the topic. **Do not raise the cap** — it exists because a written
-   "half a page" target didn't hold the old ADRs, which reached 4,270 lines across 14 documents.
+   Over the cap: cut words, or move the rule to where it is seen (`AGENTS.md` says where). **Do not
+   raise a cap** — they exist because a written "half a page" target didn't hold the old ADRs, which
+   reached 4,270 lines across 14 documents.
 
    Then check that every test the sign-off register cites still exists:
 
