@@ -33,14 +33,14 @@ they never started. The lingering variant dies here; the immediate one is consen
 industry-wide.
 
 **Terminal means the response is committed, not merely written.** Executing a redirect result sets
-the status and `Location` without flushing, so a page that calls a terminal method and then returns
-a result of its own replaces both — silently, and for a deny that is the open redirect the
-interaction identifier exists to prevent, relocated into host code where nothing validates it. Every
-terminal exit therefore starts the response, which turns that page into an exception the first time
-it runs. `CompleteAsync` does not do this and `HasStarted` stays false; only `StartAsync` does. The
-protection must be explicit rather than inherited from whatever the result happens to write: a
-response with a body commits itself, so a terminal path that ends in one is safe by accident and
-stops being safe the moment it becomes a redirect.
+the status and `Location` without flushing, so a page returning a result of its own after a terminal
+call would replace both — for a deny, the open redirect the interaction identifier exists to prevent,
+relocated into host code. Every terminal exit therefore starts the response (`StartAsync`, not
+`CompleteAsync`, which leaves `HasStarted` false), so such a page throws the first time it runs; a
+body commits itself, so leaving it to the result is safe only by accident. Under MVC a result filter
+skips whatever result follows, so a Razor Pages handler ends with a plain `await` and a returned
+result is dropped, not thrown. It keys on a marker the terminal exit sets, not on `HasStarted`, so
+an action that started its own response keeps MVC's ordinary behaviour.
 
 **A denial carries a fixed `error_description` naming the stage; the machine-readable
 discriminator is the opt-in `zkd_error` sub-code, not the prose.** `access_denied` is the only code

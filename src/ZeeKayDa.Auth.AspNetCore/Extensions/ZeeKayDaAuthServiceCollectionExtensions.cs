@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
@@ -223,6 +224,11 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         services.TryAddSingleton<ILoginInteraction, LoginInteraction>();
         services.TryAddSingleton<IConsentInteraction, ConsentInteraction>();
         services.TryAddSingleton<IProviderSignInInteraction, ProviderSignInInteraction>();
+
+        // Lets a Razor Pages handler or controller action end with a plain await after a terminal
+        // call. Inert on a host without MVC, which never reads MvcOptions.
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IConfigureOptions<MvcOptions>, TerminalInteractionMvcOptionsSetup>());
 
         AddInteractionCookies(services);
         AddProviderServices(services);

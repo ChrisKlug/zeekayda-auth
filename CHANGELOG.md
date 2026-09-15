@@ -8,6 +8,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **A Razor Pages handler or controller action can end after a terminal interaction call with a plain `await`** (#675)
+
+  The terminal calls on `ILoginInteraction`, `IConsentInteraction` and `IProviderSignInInteraction`
+  commit the response themselves, so a Razor Pages handler returning `Task` — which means "render
+  this page" — threw, and every one had to return `EmptyResult`. `AddZeeKayDaAuth` now registers an
+  MVC result filter that skips the result of any request a terminal call answered, including a
+  result the handler returns itself. It keys on a marker the terminal call sets, not on
+  `HasStarted`, and is inert on a host without MVC. Minimal API handlers are unchanged: a result
+  returned after a terminal call still throws there.
+
 - **The claims provider seam, per-scope claim selection and the scope-derived access-token audience** (#648)
 
   Tokens now carry subject claims. A host registers an `IClaimsProvider` with

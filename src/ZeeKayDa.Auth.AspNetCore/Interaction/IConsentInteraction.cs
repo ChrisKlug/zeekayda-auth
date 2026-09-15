@@ -61,8 +61,10 @@ public interface IConsentInteraction
     /// <remarks>
     /// <para>
     /// <strong>Terminal.</strong> This writes and commits the response, so it must be the last
-    /// thing the page does. Returning a result of your own after calling it does not reach the
-    /// browser — it throws, because the response has already started.
+    /// thing the page does. A Razor Pages handler or controller action can simply end after it:
+    /// the framework skips MVC's result, including one the handler returns. Anywhere else,
+    /// returning a result of your own after calling it throws, because the response has already
+    /// started.
     /// </para>
     /// <para>
     /// A grant that leaves out <c>openid</c> is a refusal to be identified to the client, and is
@@ -106,8 +108,10 @@ public interface IConsentInteraction
     /// <remarks>
     /// <para>
     /// <strong>Terminal.</strong> This writes and commits the response, so it must be the last
-    /// thing the page does. Returning a result of your own after calling it does not reach the
-    /// browser — it throws, because the response has already started.
+    /// thing the page does. A Razor Pages handler or controller action can simply end after it:
+    /// the framework skips MVC's result, including one the handler returns. Anywhere else,
+    /// returning a result of your own after calling it throws, because the response has already
+    /// started.
     /// </para>
     /// <para>
     /// The SSO session is left alone — declining one client does not sign the user out of
