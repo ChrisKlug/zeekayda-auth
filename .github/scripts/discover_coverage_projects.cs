@@ -27,6 +27,7 @@ static int Run(string[] args)
     // which ships and is tested independently of it) is never a coverage-regression candidate.
     var packages = ReadTestProjectPaths(solutionPath)
         .Select(DerivePackageName)
+        .Where(name => !IsSample(repoRoot, name))
         .Where(name => !IsOsRestricted(repoRoot, name))
         .OrderBy(static name => name, StringComparer.Ordinal)
         .ToArray();
@@ -82,6 +83,19 @@ static string DerivePackageName(string testProjectPath)
     }
 
     return projectFileName[..^".Tests".Length];
+}
+
+// A test project paired with a sample under samples/ rather than a package under src/ tests code
+// that never ships, so it is not a coverage-regression candidate. Only an explicit samples/ match
+// excludes it: a test project paired with nothing still fails loudly in IsOsRestricted.
+static bool IsSample(string repoRoot, string packageName)
+{
+    if (File.Exists(Path.Join(repoRoot, "src", packageName, $"{packageName}.csproj")))
+        return false;
+
+    var samplesRoot = Path.Join(repoRoot, "samples");
+    return Directory.Exists(samplesRoot)
+        && Directory.EnumerateFiles(samplesRoot, $"{packageName}.csproj", SearchOption.AllDirectories).Any();
 }
 
 static bool IsOsRestricted(string repoRoot, string packageName)

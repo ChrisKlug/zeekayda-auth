@@ -156,6 +156,29 @@ write_slnx "${CASE5}" "Orphan"
 write_project "${CASE5}" "Orphan" "" "tests"
 assert_exit "test project with no paired src project fails" 1 run_discover "${CASE5}"
 
+# Case 6: a test project paired with a sample under samples/ (in any subfolder, as samples are
+# named for what they show rather than for their package) is excluded, not a failure — samples do
+# not ship, so they are never coverage-regression candidates. Real packages still get listed.
+CASE6="${WORK_DIR}/case6"
+write_slnx "${CASE6}" "PkgA" "Product.Samples.Demo"
+write_project "${CASE6}" "PkgA" "net10.0" "src"
+write_project "${CASE6}" "PkgA" "" "tests"
+write_project "${CASE6}" "Product.Samples.Demo" "" "tests"
+mkdir -p "${CASE6}/samples/Demo"
+cat > "${CASE6}/samples/Demo/Product.Samples.Demo.csproj" <<XML
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+</Project>
+XML
+OUTPUT="$(run_discover "${CASE6}")"
+if [[ "${OUTPUT}" == "PkgA" ]]; then
+    record_pass "test project paired with a sample is excluded, packages still listed"
+else
+    record_fail "test project paired with a sample is excluded, packages still listed (got: ${OUTPUT})"
+fi
+
 echo
 echo "Smoke test summary: ${PASS} passed, ${FAIL} failed"
 [[ "${FAIL}" -eq 0 ]]
