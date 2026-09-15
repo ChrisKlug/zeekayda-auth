@@ -21,6 +21,7 @@ public abstract class ClientOptions
     {
         DisplayName = defaults.DisplayName;
         RequireConsent = defaults.RequireConsent;
+        SkipLogoutConfirmation = defaults.SkipLogoutConfirmation;
         EnableZkdErrorCodes = defaults.EnableZkdErrorCodes;
         AllowedGrantTypes = new HashSet<GrantType>(defaults.AllowedGrantTypes);
         AllowedResponseTypes = new HashSet<ResponseType>(defaults.AllowedResponseTypes);
@@ -41,6 +42,7 @@ public abstract class ClientOptions
     {
         DisplayName = DisplayName,
         RequireConsent = RequireConsent,
+        SkipLogoutConfirmation = SkipLogoutConfirmation,
         EnableZkdErrorCodes = EnableZkdErrorCodes,
         AllowedGrantTypes = new HashSet<GrantType>(AllowedGrantTypes),
         AllowedResponseTypes = new HashSet<ResponseType>(AllowedResponseTypes),
@@ -69,6 +71,9 @@ public abstract class ClientOptions
     /// first-party applications.
     /// </remarks>
     public bool RequireConsent { get; set; }
+
+    /// <inheritdoc cref="IClientMetadata.SkipLogoutConfirmation"/>
+    public bool SkipLogoutConfirmation { get; set; }
 
     /// <inheritdoc cref="IClientMetadata.EnableZkdErrorCodes"/>
     public bool EnableZkdErrorCodes { get; set; }

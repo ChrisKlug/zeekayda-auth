@@ -74,6 +74,14 @@ public sealed class ClientRegistrationTests
     }
 
     [Fact]
+    public void SkipLogoutConfirmation_defaults_to_false()
+    {
+        var client = ClientRegistration.CreatePublic("app", ["https://app.example.com/cb"], [], ["openid"]);
+
+        client.SkipLogoutConfirmation.Should().BeFalse();
+    }
+
+    [Fact]
     public void AllowedSigningAlgorithms_defaults_to_null()
     {
         var client = new ClientRegistration

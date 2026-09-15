@@ -109,23 +109,4 @@ internal sealed class AuthorizationResponses
 
         return new UnloggedRedirect(QueryHelpers.AddQueryString(redirectUri, query));
     }
-
-    /// <summary>
-    /// A redirect written without going through <see cref="Results.Redirect(string, bool, bool)"/>,
-    /// whose executor logs the full <c>Location</c> at <c>Information</c>. A response to the
-    /// client carries the authorization code and the client's <c>state</c>, neither of which may
-    /// reach a log sink, so the framework writes the two headers itself.
-    /// </summary>
-    private sealed class UnloggedRedirect(string location) : IResult
-    {
-        public Task ExecuteAsync(HttpContext httpContext)
-        {
-            ArgumentNullException.ThrowIfNull(httpContext);
-
-            httpContext.Response.StatusCode = StatusCodes.Status302Found;
-            httpContext.Response.Headers.Location = location;
-
-            return Task.CompletedTask;
-        }
-    }
 }

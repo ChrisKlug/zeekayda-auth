@@ -112,6 +112,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     [InlineData("authorization_endpoint")]
     [InlineData("token_endpoint")]
     [InlineData("jwks_uri")]
+    [InlineData("end_session_endpoint")]
     [InlineData("response_types_supported")]
     [InlineData("scopes_supported")]
     [InlineData("response_modes_supported")]
@@ -143,7 +144,28 @@ public sealed class DiscoveryEndpointTests : IDisposable
         doc.RootElement.TryGetProperty("response_types_supported", out _).Should().BeFalse("a zero-element claim is omitted, not published empty");
         doc.RootElement.TryGetProperty("response_modes_supported", out _).Should().BeFalse();
         doc.RootElement.TryGetProperty("code_challenge_methods_supported", out _).Should().BeFalse();
+        doc.RootElement.TryGetProperty("end_session_endpoint", out _).Should().BeFalse("without the code grant nobody signs in, so there is no session to end");
         doc.RootElement.TryGetProperty("token_endpoint", out _).Should().BeTrue("the token endpoint is what such a host serves");
+    }
+
+    [Fact]
+    public async Task GetDiscoveryDocument_derives_end_session_endpoint_from_the_issuer()
+    {
+        var doc = await _client.GetFromJsonAsync<JsonDocument>(DiscoveryPath, TestContext.Current.CancellationToken);
+
+        doc!.RootElement.GetProperty("end_session_endpoint").GetString()
+            .Should().Be("https://test.example.com/connect/endsession");
+    }
+
+    [Fact]
+    public async Task GetDiscoveryDocument_publishes_the_end_session_endpoint_override()
+    {
+        using var factory = new TestWebAppFactory(opts => opts.EndSessionEndpoint.Uri = "https://test.example.com/signout");
+        using var client = CreateClient(factory);
+
+        var doc = await client.GetFromJsonAsync<JsonDocument>(DiscoveryPath, TestContext.Current.CancellationToken);
+
+        doc!.RootElement.GetProperty("end_session_endpoint").GetString().Should().Be("https://test.example.com/signout");
     }
 
     [Fact]

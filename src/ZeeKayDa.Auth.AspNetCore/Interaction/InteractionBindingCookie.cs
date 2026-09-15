@@ -102,6 +102,18 @@ internal sealed class InteractionBindingCookie
         context.Response.Cookies.Delete(NamePrefix + interactionId, BuildCookieOptions(null));
     }
 
+    /// <summary>
+    /// Removes every binding cookie the request carries. Signing out ends whatever this browser
+    /// still has in flight, so no interaction outlives the session it may have been started on.
+    /// </summary>
+    public static void DeleteAll(HttpContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        foreach (var name in context.Request.Cookies.Keys.Where(IsBindingCookie))
+            context.Response.Cookies.Delete(name, BuildCookieOptions(null));
+    }
+
     private static string ItemKey(string interactionId) => "ZeeKayDa.Auth:Binding:" + interactionId;
 
     /// <summary>

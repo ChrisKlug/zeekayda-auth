@@ -12,12 +12,13 @@ namespace ZeeKayDa.Auth.Discovery;
 /// <see cref="OpenIdConfigurationDocument"/>.
 /// </summary>
 /// <remarks>
-/// Endpoint URIs for <c>authorization_endpoint</c>, <c>token_endpoint</c>, and <c>jwks_uri</c>
-/// are derived from <see cref="AuthorizationServerOptions.Issuer"/> using
+/// Endpoint URIs for <c>authorization_endpoint</c>, <c>token_endpoint</c>, <c>jwks_uri</c> and
+/// <c>end_session_endpoint</c> are derived from <see cref="AuthorizationServerOptions.Issuer"/> using
 /// <see cref="Uri"/> combination semantics — never string concatenation — so that path-bearing
 /// issuers (e.g. <c>https://auth.example.com/tenant1</c>) are handled correctly. Any individual
 /// URI can be overridden by setting the corresponding property on the respective option group
-/// (<see cref="AuthorizationEndpointOptions.Uri"/>, <see cref="TokenEndpointOptions.Uri"/>, <see cref="JwksEndpointOptions.Uri"/>).
+/// (<see cref="AuthorizationEndpointOptions.Uri"/>, <see cref="TokenEndpointOptions.Uri"/>, <see cref="JwksEndpointOptions.Uri"/>,
+/// <see cref="EndSessionEndpointOptions.Uri"/>).
 /// Scope names published in <c>scopes_supported</c> are sourced from the configured
 /// <see cref="Scopes.IScopeRepository"/>. <c>id_token_signing_alg_values_supported</c> is derived
 /// from the <see cref="ISigningKeyRing"/>'s current key set on every read — never from operator
@@ -31,6 +32,7 @@ internal sealed class DiscoveryDocumentProvider : IDiscoveryDocumentProvider
     private const string ConnectAuthorize = "connect/authorize";
     private const string ConnectToken = "connect/token";
     private const string ConnectJwks = "connect/jwks";
+    private const string ConnectEndSession = "connect/endsession";
 
     private readonly IOptions<AuthorizationServerOptions> _options;
     private readonly IScopeRepository _scopeRepository;
@@ -73,6 +75,9 @@ internal sealed class DiscoveryDocumentProvider : IDiscoveryDocumentProvider
                 ?? IssuerUriHelper.Combine(issuerUri, ConnectToken).AbsoluteUri,
             JwksUri = options.JwksEndpoint.Uri
                 ?? IssuerUriHelper.Combine(issuerUri, ConnectJwks).AbsoluteUri,
+            EndSessionEndpoint = servesAuthorization
+                ? options.EndSessionEndpoint.Uri ?? IssuerUriHelper.Combine(issuerUri, ConnectEndSession).AbsoluteUri
+                : null,
             ResponseTypesSupported = servesAuthorization ? [.. options.Response.TypesSupported] : null,
             ScopesSupported = [.. scopes
                 .Where(scope => scope.IsDiscoverable)

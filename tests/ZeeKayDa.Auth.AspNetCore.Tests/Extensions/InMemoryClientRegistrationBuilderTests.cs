@@ -108,6 +108,7 @@ public sealed class InMemoryClientRegistrationBuilderTests
         _builder.AddConfidential("web", "very-secret", RedirectUris, [], Scopes, options => seen = options);
 
         seen!.RequireConsent.Should().BeTrue();
+        seen.SkipLogoutConfirmation.Should().BeFalse();
         seen.AllowNonceInsteadOfPkce.Should().BeFalse();
         seen.AllowedGrantTypes.Should().Equal(GrantType.AuthorizationCode);
         seen.AllowedTokenEndpointAuthMethods.Should().Equal(TokenEndpointAuthMethods.ClientSecretBasic);
@@ -192,6 +193,7 @@ public sealed class InMemoryClientRegistrationBuilderTests
     {
         options.DisplayName = "Our app";
         options.RequireConsent = false;
+        options.SkipLogoutConfirmation = true;
         options.EnableZkdErrorCodes = true;
         options.AllowedGrantTypes.Add(GrantType.RefreshToken);
         options.AllowedResponseTypes.Clear();

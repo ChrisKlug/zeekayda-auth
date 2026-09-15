@@ -74,6 +74,11 @@ public sealed class AuthorizationServerOptions
     public AuthorizationEndpointOptions AuthorizationEndpoint { get; } = new();
 
     /// <summary>
+    /// Gets the end-session endpoint configuration options.
+    /// </summary>
+    public EndSessionEndpointOptions EndSessionEndpoint { get; } = new();
+
+    /// <summary>
     /// Gets the token endpoint configuration options.
     /// </summary>
     public TokenEndpointOptions TokenEndpoint { get; } = new();

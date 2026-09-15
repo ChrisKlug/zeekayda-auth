@@ -1651,5 +1651,53 @@ public sealed class AuthorizationServerOptionsValidatorTests
 
         result.Succeeded.Should().BeTrue();
     }
+
+    [Theory]
+    [InlineData("account/logout")]
+    [InlineData("//evil.example.com/logout")]
+    [InlineData("/\\evil.example.com/logout")]
+    [InlineData("/account/logout?x=1")]
+    [InlineData("/account/logout#frag")]
+    public void Validate_rejects_malformed_EndSessionEndpoint_LogoutPath(string logoutPath)
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            EndSessionEndpoint = { LogoutPath = logoutPath },
+        });
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("EndSessionEndpoint.LogoutPath");
+    }
+
+    [Theory]
+    [InlineData("account/signed-out")]
+    [InlineData("//evil.example.com/signed-out")]
+    [InlineData("/\\evil.example.com/signed-out")]
+    [InlineData("/account/signed-out?x=1")]
+    [InlineData("/account/signed-out#frag")]
+    public void Validate_rejects_malformed_EndSessionEndpoint_SignedOutPath(string signedOutPath)
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            EndSessionEndpoint = { SignedOutPath = signedOutPath },
+        });
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("EndSessionEndpoint.SignedOutPath");
+    }
+
+    [Fact]
+    public void Validate_accepts_absolute_path_end_session_pages()
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            EndSessionEndpoint = { LogoutPath = "/account/logout", SignedOutPath = "/account/signed-out" },
+        });
+
+        result.Succeeded.Should().BeTrue();
+    }
 }
 
