@@ -78,10 +78,10 @@ internal sealed class IdTokenHintValidator
 
             return ReadClaims(segments[1], clientId);
         }
-        catch (Exception ex) when (ex is FormatException or JsonException or CryptographicException)
+        catch (Exception ex) when (ex is FormatException or JsonException)
         {
-            // Malformed Base64Url, malformed JSON, or a signature the platform could not evaluate:
-            // each means the same as a signature that did not verify.
+            // Malformed Base64Url or malformed JSON: either means the same as a signature that did
+            // not verify.
             _ = ex;
             return null;
         }
@@ -116,11 +116,24 @@ internal sealed class IdTokenHintValidator
             : null;
     }
 
+    /// <summary>
+    /// Bytes that are not a signature of the key's algorithm at all, wrong length included, do not
+    /// verify; some platforms report that by throwing rather than returning false.
+    /// </summary>
     private static bool HasValidSignature(SigningKey key, string idTokenHint, string signatureSegment)
     {
         var signingInput = Encoding.ASCII.GetBytes(idTokenHint, 0, idTokenHint.LastIndexOf('.'));
+        var signature = Base64Url.DecodeFromChars(signatureSegment);
 
-        return SigningAlgorithms.Verify(key.Algorithm, key.PublicKey, signingInput, Base64Url.DecodeFromChars(signatureSegment));
+        try
+        {
+            return SigningAlgorithms.Verify(key.Algorithm, key.PublicKey, signingInput, signature);
+        }
+        catch (Exception ex) when (ex is CryptographicException or ArgumentException or NotSupportedException)
+        {
+            _ = ex;
+            return false;
+        }
     }
 
     private IdTokenHint? ReadClaims(string payloadSegment, string? clientId)

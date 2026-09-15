@@ -343,6 +343,17 @@ public sealed class IdTokenHintValidatorTests
     }
 
     [Fact]
+    public void Validate_refuses_without_throwing_an_RSA_hint_whose_signature_is_longer_than_the_key()
+    {
+        var signature = Base64Url.EncodeToString(new byte[1024]);
+        var token = $"{Segment(Header())}.{Segment(Claims())}.{signature}";
+
+        var hint = CreateValidator().Validate(token, ClientId);
+
+        hint.Should().BeNull("a platform that throws on an oversized signature must still read as no hint");
+    }
+
+    [Fact]
     public void Validate_refuses_without_throwing_an_EC_hint_whose_signature_is_one_byte()
     {
         using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
