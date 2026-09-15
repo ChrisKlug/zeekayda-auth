@@ -5,8 +5,8 @@ using ZeeKayDa.Auth.Claims;
 
 namespace ZeeKayDa.Auth.Samples.IdentityServer.Users;
 
-/// <summary>A user the sample knows: a subject, a login name, a password hash and their claims.</summary>
-public sealed record SampleUser(string Subject, string Username, byte[] Salt, byte[] PasswordHash, IReadOnlyList<ClaimRecord> Claims);
+/// <summary>A user the sample knows: a subject, a login name and their claims. No password material.</summary>
+public sealed record SampleUser(string Subject, string Username, IReadOnlyList<ClaimRecord> Claims);
 
 /// <summary>
 /// The sample's user store: in memory, seeded at startup, so every run begins from the same state.
@@ -17,7 +17,10 @@ public sealed class UserStore
 {
     private const int Iterations = 100_000;
 
-    private readonly ConcurrentDictionary<string, SampleUser> _byUsername = new(StringComparer.OrdinalIgnoreCase);
+    // The password material never leaves the store; callers only ever see the SampleUser.
+    private sealed record Account(SampleUser User, byte[] Salt, byte[] PasswordHash);
+
+    private readonly ConcurrentDictionary<string, Account> _byUsername = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, SampleUser> _bySubject = new(StringComparer.Ordinal);
 
     public UserStore()
@@ -49,21 +52,22 @@ public sealed class UserStore
 
     private bool Add(string username, string password, string subject, IReadOnlyList<ClaimRecord> claims)
     {
+        // A copy the store owns, so a caller changing its list afterwards changes nothing here.
+        var user = new SampleUser(subject, username, Array.AsReadOnly(claims.ToArray()));
         var salt = RandomNumberGenerator.GetBytes(16);
-        var user = new SampleUser(subject, username, salt, Hash(password, salt), claims);
 
-        if (!_byUsername.TryAdd(username, user))
+        if (!_byUsername.TryAdd(username, new Account(user, salt, Hash(password, salt))))
             return false;
 
-        _bySubject[user.Subject] = user;
+        _bySubject[subject] = user;
         return true;
     }
 
     /// <summary>The user whose password matches, or <see langword="null"/>.</summary>
     public SampleUser? Validate(string username, string password) =>
-        _byUsername.TryGetValue(username, out var user)
-        && CryptographicOperations.FixedTimeEquals(Hash(password, user.Salt), user.PasswordHash)
-            ? user
+        _byUsername.TryGetValue(username, out var account)
+        && CryptographicOperations.FixedTimeEquals(Hash(password, account.Salt), account.PasswordHash)
+            ? account.User
             : null;
 
     public SampleUser? FindBySubject(string subject) =>

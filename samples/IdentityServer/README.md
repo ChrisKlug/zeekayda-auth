@@ -4,8 +4,9 @@ A complete identity server built on ZeeKayDa.Auth, written the way a host develo
 one. It is also the target the OpenID Foundation conformance suite runs against.
 
 > **This is a sample, not a production template.** Users, clients and grants live in memory and
-> vanish on restart; the signing key is generated on first run. The **Conformance** profile in
-> particular is a test target: its client secrets are published in this file.
+> vanish on restart; the signing key is generated on first run. The framework's in-memory stores
+> refuse to start outside Development, and the sample lets only the **Conformance** profile past
+> that guard. That profile is a test target: its client secrets are published in this file.
 
 ## Run it
 

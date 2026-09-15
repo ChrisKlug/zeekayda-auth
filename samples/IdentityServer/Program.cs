@@ -40,8 +40,10 @@ auth.AddInMemoryClients(clients =>
 });
 
 // In-memory stores are deliberate: every restart starts from the same state, so there is nothing
-// to reset between conformance runs. They refuse to run outside Development unless told otherwise.
-auth.AddInMemoryStores(allowOutsideDevelopment: true);
+// to reset between conformance runs. They refuse to start outside Development — a production
+// deployment needs stores that survive restarts and span instances — so only the Conformance test
+// profile is let through, and a copy of this sample keeps the guard everywhere else.
+auth.AddInMemoryStores(allowOutsideDevelopment: builder.Environment.IsEnvironment("Conformance"));
 
 auth.AddPemFileSigning(SigningKeyFile.Ensure(settings.SigningKeyPath), SigningAlgorithm.RS256);
 
