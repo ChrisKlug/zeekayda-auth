@@ -113,14 +113,9 @@ public sealed record ClientRegistration : IClientRegistration
         IEnumerable<string> redirectUris,
         IEnumerable<string> postLogoutRedirectUris,
         IEnumerable<string> allowedScopes) =>
-        new()
+        CreateConfidentialWithoutCredential(clientId, redirectUris, postLogoutRedirectUris, allowedScopes) with
         {
-            ClientId = clientId,
             Credentials = [credential],
-            IsPublic = false,
-            RedirectUris = new HashSet<string>(redirectUris, StringComparer.Ordinal),
-            PostLogoutRedirectUris = new HashSet<string>(postLogoutRedirectUris, StringComparer.Ordinal),
-            AllowedScopes = new HashSet<string>(allowedScopes, StringComparer.Ordinal),
         };
 
     /// <summary>
@@ -158,5 +153,23 @@ public sealed record ClientRegistration : IClientRegistration
             AllowedScopes = new HashSet<string>(allowedScopes, StringComparer.Ordinal),
             AllowedTokenEndpointAuthMethods = new HashSet<string>(StringComparer.Ordinal)
                 { TokenEndpointAuthMethods.None },
+        };
+
+    // A confidential registration whose credential is added later — by the in-memory builder,
+    // whose secret is hashed only when the repository is built. Sharing it with CreateConfidential
+    // keeps both paths on the same defaults.
+    internal static ClientRegistration CreateConfidentialWithoutCredential(
+        string clientId,
+        IEnumerable<string> redirectUris,
+        IEnumerable<string> postLogoutRedirectUris,
+        IEnumerable<string> allowedScopes) =>
+        new()
+        {
+            ClientId = clientId,
+            Credentials = [],
+            IsPublic = false,
+            RedirectUris = new HashSet<string>(redirectUris, StringComparer.Ordinal),
+            PostLogoutRedirectUris = new HashSet<string>(postLogoutRedirectUris, StringComparer.Ordinal),
+            AllowedScopes = new HashSet<string>(allowedScopes, StringComparer.Ordinal),
         };
 }

@@ -95,11 +95,34 @@ The `clientSecret` value is hashed using the configured `IClientSecretHasher` (b
 PBKDF2-HMAC-SHA256 at 600,000 iterations) when the repository is first resolved from DI. The
 plaintext is not retained after hashing.
 
+## Changing a client's other settings
+
+`AddPublic` and `AddConfidential` take an optional last argument: a callback that receives the
+client's settings, already filled with their defaults. Change only what you need:
+
+```csharp
+builder.AddInMemoryClients(clients =>
+    clients.AddConfidential("first-party-web", secretValue,
+        ["https://app.example.com/callback"], [], ["openid", "profile"],
+        options =>
+        {
+            options.RequireConsent = false;
+            options.DisplayName = "Example Web";
+            options.AccessTokenLifetime = TimeSpan.FromMinutes(10);
+        }));
+```
+
+A public client's callback receives `PublicClientOptions`. A confidential client's receives
+`ConfidentialClientOptions`, which adds `AllowNonceInsteadOfPkce` and
+`AllowedTokenEndpointAuthMethods` — settings a public client cannot have.
+
+> Turn `RequireConsent` off only for your own first-party applications. The consent page is what
+> lets a user notice an authorization request they never started.
+
 ## Registering a pre-built client
 
-If you need to set properties beyond what the builder methods expose (for example, custom
-`AllowedGrantTypes` or a per-client signing algorithm allowlist), construct a
-`ClientRegistration` directly and use `Add`:
+If you already have a registration built elsewhere, construct a `ClientRegistration` directly and
+use `Add`:
 
 ```csharp
 using ZeeKayDa.Auth.Clients;
@@ -111,7 +134,6 @@ var customClient = ClientRegistration.CreatePublic(
     allowedScopes: ["openid"])
     with
     {
-        AllowedGrantTypes = new HashSet<GrantType> { GrantType.AuthorizationCode },
         AllowedSigningAlgorithms = new HashSet<SigningAlgorithm> { SigningAlgorithm.ES256 },
     };
 

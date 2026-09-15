@@ -28,10 +28,34 @@ ZeeKayDa.Auth.AspNetCore.ClientAuthentication.TokenRequestContext.Headers.init -
 ZeeKayDa.Auth.AspNetCore.ClientAuthentication.TokenRequestContext.HttpContext.get -> Microsoft.AspNetCore.Http.HttpContext!
 ZeeKayDa.Auth.AspNetCore.ClientAuthentication.TokenRequestContext.HttpContext.init -> void
 ZeeKayDa.Auth.AspNetCore.ClientAuthentication.TokenRequestContext.TokenRequestContext() -> void
+ZeeKayDa.Auth.AspNetCore.Clients.ClientOptions
+ZeeKayDa.Auth.AspNetCore.Clients.ClientOptions.AccessTokenLifetime.get -> System.TimeSpan?
+ZeeKayDa.Auth.AspNetCore.Clients.ClientOptions.AccessTokenLifetime.set -> void
+ZeeKayDa.Auth.AspNetCore.Clients.ClientOptions.AdditionalAccessTokenClaims.get -> System.Collections.Generic.ISet<string!>!
+ZeeKayDa.Auth.AspNetCore.Clients.ClientOptions.AdditionalIdTokenClaims.get -> System.Collections.Generic.ISet<string!>!
+ZeeKayDa.Auth.AspNetCore.Clients.ClientOptions.AdditionalUserInfoClaims.get -> System.Collections.Generic.ISet<string!>!
+ZeeKayDa.Auth.AspNetCore.Clients.ClientOptions.AllowedGrantTypes.get -> System.Collections.Generic.ISet<ZeeKayDa.Auth.GrantType>!
+ZeeKayDa.Auth.AspNetCore.Clients.ClientOptions.AllowedPromptValues.get -> System.Collections.Generic.ISet<ZeeKayDa.Auth.Authorization.PromptValue>!
+ZeeKayDa.Auth.AspNetCore.Clients.ClientOptions.AllowedResponseModes.get -> System.Collections.Generic.ISet<ZeeKayDa.Auth.Authorization.ResponseMode>!
+ZeeKayDa.Auth.AspNetCore.Clients.ClientOptions.AllowedResponseTypes.get -> System.Collections.Generic.ISet<ZeeKayDa.Auth.Authorization.ResponseType>!
+ZeeKayDa.Auth.AspNetCore.Clients.ClientOptions.AllowedSigningAlgorithms.get -> System.Collections.Generic.ISet<ZeeKayDa.Auth.Tokens.SigningAlgorithm>!
+ZeeKayDa.Auth.AspNetCore.Clients.ClientOptions.DisplayName.get -> string?
+ZeeKayDa.Auth.AspNetCore.Clients.ClientOptions.DisplayName.set -> void
+ZeeKayDa.Auth.AspNetCore.Clients.ClientOptions.EnableZkdErrorCodes.get -> bool
+ZeeKayDa.Auth.AspNetCore.Clients.ClientOptions.EnableZkdErrorCodes.set -> void
+ZeeKayDa.Auth.AspNetCore.Clients.ClientOptions.IdTokenLifetime.get -> System.TimeSpan?
+ZeeKayDa.Auth.AspNetCore.Clients.ClientOptions.IdTokenLifetime.set -> void
+ZeeKayDa.Auth.AspNetCore.Clients.ClientOptions.RequireConsent.get -> bool
+ZeeKayDa.Auth.AspNetCore.Clients.ClientOptions.RequireConsent.set -> void
+ZeeKayDa.Auth.AspNetCore.Clients.ConfidentialClientOptions
+ZeeKayDa.Auth.AspNetCore.Clients.ConfidentialClientOptions.AllowedTokenEndpointAuthMethods.get -> System.Collections.Generic.ISet<string!>!
+ZeeKayDa.Auth.AspNetCore.Clients.ConfidentialClientOptions.AllowNonceInsteadOfPkce.get -> bool
+ZeeKayDa.Auth.AspNetCore.Clients.ConfidentialClientOptions.AllowNonceInsteadOfPkce.set -> void
 ZeeKayDa.Auth.AspNetCore.Clients.IInMemoryClientRegistrationBuilder
 ZeeKayDa.Auth.AspNetCore.Clients.IInMemoryClientRegistrationBuilder.Add(ZeeKayDa.Auth.Clients.IClientRegistration! registration) -> ZeeKayDa.Auth.AspNetCore.Clients.IInMemoryClientRegistrationBuilder!
-ZeeKayDa.Auth.AspNetCore.Clients.IInMemoryClientRegistrationBuilder.AddConfidential(string! clientId, string! clientSecret, System.Collections.Generic.IEnumerable<string!>! redirectUris, System.Collections.Generic.IEnumerable<string!>! postLogoutRedirectUris, System.Collections.Generic.IEnumerable<string!>! allowedScopes) -> ZeeKayDa.Auth.AspNetCore.Clients.IInMemoryClientRegistrationBuilder!
-ZeeKayDa.Auth.AspNetCore.Clients.IInMemoryClientRegistrationBuilder.AddPublic(string! clientId, System.Collections.Generic.IEnumerable<string!>! redirectUris, System.Collections.Generic.IEnumerable<string!>! postLogoutRedirectUris, System.Collections.Generic.IEnumerable<string!>! allowedScopes) -> ZeeKayDa.Auth.AspNetCore.Clients.IInMemoryClientRegistrationBuilder!
+ZeeKayDa.Auth.AspNetCore.Clients.IInMemoryClientRegistrationBuilder.AddConfidential(string! clientId, string! clientSecret, System.Collections.Generic.IEnumerable<string!>! redirectUris, System.Collections.Generic.IEnumerable<string!>! postLogoutRedirectUris, System.Collections.Generic.IEnumerable<string!>! allowedScopes, System.Action<ZeeKayDa.Auth.AspNetCore.Clients.ConfidentialClientOptions!>? configure = null) -> ZeeKayDa.Auth.AspNetCore.Clients.IInMemoryClientRegistrationBuilder!
+ZeeKayDa.Auth.AspNetCore.Clients.IInMemoryClientRegistrationBuilder.AddPublic(string! clientId, System.Collections.Generic.IEnumerable<string!>! redirectUris, System.Collections.Generic.IEnumerable<string!>! postLogoutRedirectUris, System.Collections.Generic.IEnumerable<string!>! allowedScopes, System.Action<ZeeKayDa.Auth.AspNetCore.Clients.PublicClientOptions!>? configure = null) -> ZeeKayDa.Auth.AspNetCore.Clients.IInMemoryClientRegistrationBuilder!
+ZeeKayDa.Auth.AspNetCore.Clients.PublicClientOptions
 ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails
 ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails.<Clone>$() -> ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails!
 ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails.AuthorizationErrorDetails() -> void
