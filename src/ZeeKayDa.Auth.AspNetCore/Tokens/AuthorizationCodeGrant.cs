@@ -52,6 +52,12 @@ internal sealed class AuthorizationCodeGrant
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(client);
 
+        // Refused before the code is touched, as the form parser once did for every client: a
+        // client held to PKCE that forgot its verifier keeps its code. Only a client permitted
+        // to omit PKCE reaches the store without one, and there the code decides.
+        if (request.CodeVerifier is null && !client.AllowNonceInsteadOfPkce)
+            return TokenResponses.Error(TokenError.InvalidRequest("The code_verifier parameter is required."));
+
         // Resolved from the request's services rather than the constructor: this is a singleton
         // whose store and signing-ring dependencies are host registrations, and constructor
         // injection would surface their absence as a raw DI error instead of the startup
@@ -98,9 +104,9 @@ internal sealed class AuthorizationCodeGrant
             return InvalidGrant();
         }
 
-        if (!PkceVerifier.Verify(request.CodeVerifier, entry.CodeChallenge, entry.CodeChallengeMethod))
+        if (!VerifierMatchesWhatTheCodeWasIssuedWith(request, entry))
         {
-            _logger.LogWarning("Client {ClientId} presented a code_verifier that does not match its authorization code's challenge.", client.ClientId);
+            _logger.LogWarning("Client {ClientId} presented a code_verifier that does not match how its authorization code was issued.", client.ClientId);
             return InvalidGrant();
         }
 
@@ -207,6 +213,16 @@ internal sealed class AuthorizationCodeGrant
     /// </summary>
     private static IResult InvalidGrant() =>
         TokenResponses.Error(TokenError.InvalidGrant("The authorization code is invalid, expired, revoked, or was not issued to this client and redirect URI, or the code_verifier does not match, or the subject can no longer be issued tokens."));
+
+    /// <summary>
+    /// A code issued with a challenge needs the verifier it was derived from; a code issued without
+    /// one must not be redeemed with a verifier at all, so a request cannot be walked down from the
+    /// binding the authorization request chose. The code is already burnt either way.
+    /// </summary>
+    private static bool VerifierMatchesWhatTheCodeWasIssuedWith(TokenRequest request, AuthorizationCodeEntry entry) =>
+        entry is { CodeChallenge: { } challenge, CodeChallengeMethod: { } method }
+            ? request.CodeVerifier is { } verifier && PkceVerifier.Verify(verifier, challenge, method)
+            : entry is { CodeChallenge: null, CodeChallengeMethod: null } && request.CodeVerifier is null;
 
     private static bool ClientAcceptsCurrentSigningKey(HttpContext context, IClientMetadata client) =>
         client.AllowedSigningAlgorithms is not { } allowed ||

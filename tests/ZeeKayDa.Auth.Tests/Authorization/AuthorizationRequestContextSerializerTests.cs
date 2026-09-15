@@ -50,6 +50,31 @@ public class AuthorizationRequestContextSerializerTests
     }
 
     [Fact]
+    public void Context_without_a_code_challenge_round_trips_with_neither_challenge_nor_method()
+    {
+        var context = MinimalContext() with { CodeChallenge = null, CodeChallengeMethod = null };
+
+        AuthorizationRequestContextSerializer.TryDecode(
+            AuthorizationRequestContextSerializer.Encode(context), out var decoded).Should().BeTrue();
+
+        decoded!.CodeChallenge.Should().BeNull();
+        decoded.CodeChallengeMethod.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM", null)]
+    [InlineData(null, CodeChallengeMethod.S256)]
+    [InlineData("", CodeChallengeMethod.S256)]
+    public void Context_with_a_challenge_and_method_that_do_not_pair_is_refused(string? challenge, CodeChallengeMethod? method)
+    {
+        var payload = AuthorizationRequestContextSerializer.Encode(
+            MinimalContext() with { CodeChallenge = challenge, CodeChallengeMethod = method });
+
+        AuthorizationRequestContextSerializer.TryDecode(payload, out _).Should().BeFalse(
+            "the token endpoint can act on a challenge with its method or on neither, never on half a pair");
+    }
+
+    [Fact]
     public void Null_and_empty_collections_stay_distinguishable()
     {
         // "no consent decision yet" and "consented to nothing" are different states, and a

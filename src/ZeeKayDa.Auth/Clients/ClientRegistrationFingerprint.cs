@@ -51,6 +51,7 @@ internal static class ClientRegistrationFingerprint
         Append(builder, "public", client.IsPublic ? "1" : "0");
         Append(builder, "zkderr", client.EnableZkdErrorCodes ? "1" : "0");
         Append(builder, "consent", client.RequireConsent ? "1" : "0");
+        Append(builder, "noncepkce", client.AllowNonceInsteadOfPkce ? "1" : "0");
         Append(builder, "displayname", client.DisplayName ?? NullSentinel);
         AppendSet(builder, "redirect", client.RedirectUris);
         AppendSet(builder, "postlogout", client.PostLogoutRedirectUris);

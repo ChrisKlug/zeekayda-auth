@@ -37,6 +37,18 @@ public sealed class AuthorizationCodeEntryJsonRoundTripTests
     }
 
     [Fact]
+    public void AuthorizationCodeEntry_without_a_code_challenge_round_trips_through_StoreJsonSerializerContext()
+    {
+        var entry = BuildBase() with { CodeChallenge = null, CodeChallengeMethod = null };
+
+        var json = JsonSerializer.Serialize(entry, StoreJsonSerializerContext.Default.AuthorizationCodeEntry);
+        var deserialized = JsonSerializer.Deserialize(json, StoreJsonSerializerContext.Default.AuthorizationCodeEntry)!;
+
+        deserialized.CodeChallenge.Should().BeNull();
+        deserialized.CodeChallengeMethod.Should().BeNull();
+    }
+
+    [Fact]
     public void AuthorizationCodeEntry_with_empty_Amr_round_trips_through_StoreJsonSerializerContext()
     {
         var entry = BuildBase() with { Amr = [] };

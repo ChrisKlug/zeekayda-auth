@@ -415,6 +415,76 @@ public class AuthorizeRequestValidatorTests
             .Subject.Error.Should().Be("invalid_request");
     }
 
+    // ── PKCE omitted by a client permitted to rely on the nonce ───────────────────────────────
+
+    [Fact]
+    public async Task A_confidential_client_permitted_to_omit_pkce_is_valid_without_a_challenge_and_carries_none()
+    {
+        var parameters = ValidParameters();
+        parameters.Remove("code_challenge");
+        parameters.Remove("code_challenge_method");
+
+        var result = await Validate(parameters, ConfidentialClientPermittedToOmitPkce());
+
+        var valid = result.Should().BeOfType<AuthorizeRequestValidationResult.Valid>().Subject;
+        valid.Request.CodeChallenge.Should().BeNull();
+        valid.Request.CodeChallengeMethod.Should().BeNull();
+        valid.Request.Nonce.Should().Be("n-0S6_WzA2Mj");
+    }
+
+    [Fact]
+    public async Task A_client_permitted_to_omit_pkce_that_sends_a_challenge_is_held_to_it()
+    {
+        var result = await Validate(ValidParameters(), ConfidentialClientPermittedToOmitPkce());
+
+        var valid = result.Should().BeOfType<AuthorizeRequestValidationResult.Valid>().Subject;
+        valid.Request.CodeChallenge.Should().Be(Challenge);
+        valid.Request.CodeChallengeMethod.Should().Be(CodeChallengeMethod.S256);
+    }
+
+    [Theory]
+    [InlineData("code_challenge", "short")]
+    [InlineData("code_challenge_method", "plain")]
+    public async Task A_client_permitted_to_omit_pkce_that_sends_a_bad_challenge_is_refused(string parameter, string value)
+    {
+        var parameters = ValidParameters();
+        parameters[parameter] = [value];
+
+        var result = await Validate(parameters, ConfidentialClientPermittedToOmitPkce());
+
+        result.Should().BeOfType<AuthorizeRequestValidationResult.RedirectError>()
+            .Subject.Error.Should().Be("invalid_request");
+    }
+
+    [Fact]
+    public async Task A_client_permitted_to_omit_pkce_still_needs_the_nonce_it_relies_on_instead()
+    {
+        var parameters = ValidParameters();
+        parameters.Remove("code_challenge");
+        parameters.Remove("code_challenge_method");
+        parameters.Remove("nonce");
+
+        var result = await Validate(parameters, ConfidentialClientPermittedToOmitPkce());
+
+        result.Should().BeOfType<AuthorizeRequestValidationResult.RedirectError>()
+            .Subject.Error.Should().Be("invalid_request");
+    }
+
+    [Fact]
+    public async Task A_public_client_never_omits_pkce_whatever_its_registration_says()
+    {
+        // Registration validation refuses the opt-in on a public client, but a custom repository
+        // may not run it; the endpoint must not trust the flag on its own.
+        var parameters = ValidParameters();
+        parameters.Remove("code_challenge");
+        parameters.Remove("code_challenge_method");
+
+        var result = await Validate(parameters, Client() with { AllowNonceInsteadOfPkce = true });
+
+        result.Should().BeOfType<AuthorizeRequestValidationResult.RedirectError>()
+            .Subject.Error.Should().Be("invalid_request");
+    }
+
     [Fact]
     public async Task Phase2_prompt_none_combined_with_other_values_is_invalid_request()
     {
@@ -612,6 +682,16 @@ public class AuthorizeRequestValidatorTests
             redirectUris: [RedirectUri],
             postLogoutRedirectUris: [],
             allowedScopes: ["openid", "profile"]);
+
+    private static ClientRegistration ConfidentialClientPermittedToOmitPkce() =>
+        ClientRegistration.CreateConfidential(
+            ClientId,
+            new Pbkdf2ClientSecret(Iterations: 600_000, Salt: new byte[16], Hash: new byte[32]),
+            redirectUris: [RedirectUri],
+            postLogoutRedirectUris: [],
+            allowedScopes: ["openid", "profile"])
+            with
+        { AllowNonceInsteadOfPkce = true };
 
     private static Dictionary<string, IReadOnlyList<string?>> ValidParameters(
         string clientId = ClientId,

@@ -8,6 +8,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **A confidential client may rely on the OpenID Connect nonce instead of PKCE** (#662)
+
+  `AllowNonceInsteadOfPkce` on a client registration, off by default, lets a confidential client
+  omit `code_challenge` from an authorization request; the `openid` scope and `nonce` the request
+  must carry anyway then protect the code (OAuth 2.1 §7.5.1.1, RFC 9700 §2.1.1). Startup rejects
+  the opt-in on a public client, and the authorize endpoint ignores it on one. A challenge the
+  client does send is validated and enforced exactly as before, and a code issued without one
+  refuses any `code_verifier` at the token endpoint. A client held to PKCE that leaves the verifier
+  out is still refused before its code is touched. `AuthorizationCodeEntry.CodeChallenge` and
+  `CodeChallengeMethod` are now nullable, absent together. The interaction context's wire format
+  is versioned up, so a context minted before an upgrade is refused rather than misread.
+
 - **A Razor Pages handler or controller action can end after a terminal interaction call with a plain `await`** (#675)
 
   The terminal calls on `ILoginInteraction`, `IConsentInteraction` and `IProviderSignInInteraction`

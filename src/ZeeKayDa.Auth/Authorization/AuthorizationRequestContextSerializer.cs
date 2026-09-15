@@ -29,7 +29,7 @@ internal static class AuthorizationRequestContextSerializer
     /// The format version. A payload carrying any other value is refused rather than misread —
     /// positional formats have no way to detect a field that moved.
     /// </summary>
-    private const byte Version = 1;
+    private const byte Version = 2;
 
     public static byte[] Encode(AuthorizationRequestContext context)
     {
@@ -46,8 +46,8 @@ internal static class AuthorizationRequestContextSerializer
         WriteStrings(writer, context.Scopes);
         WriteNullableString(writer, context.State);
         writer.Write(context.Nonce);
-        writer.Write(context.CodeChallenge);
-        writer.Write((byte)context.CodeChallengeMethod);
+        WriteNullableString(writer, context.CodeChallenge);
+        WriteNullableByte(writer, (byte?)context.CodeChallengeMethod);
 
         writer.Write7BitEncodedInt(context.Prompts.Count);
         foreach (var prompt in context.Prompts)
@@ -120,10 +120,10 @@ internal static class AuthorizationRequestContextSerializer
         var scopes = ReadStrings(reader);
         var state = ReadNullableString(reader);
         var nonce = reader.ReadString();
-        var codeChallenge = reader.ReadString();
+        var codeChallenge = ReadNullableString(reader);
 
-        var challengeMethod = (CodeChallengeMethod)reader.ReadByte();
-        if (!Enum.IsDefined(challengeMethod))
+        var challengeMethod = (CodeChallengeMethod?)ReadNullableByte(reader);
+        if (challengeMethod is { } method && !Enum.IsDefined(method))
             return null;
 
         var prompts = ReadPrompts(reader);
@@ -189,8 +189,14 @@ internal static class AuthorizationRequestContextSerializer
         !string.IsNullOrEmpty(context.ClientId) &&
         !string.IsNullOrEmpty(context.RedirectUri) &&
         !string.IsNullOrEmpty(context.Nonce) &&
-        !string.IsNullOrEmpty(context.CodeChallenge) &&
+        ChallengeAndMethodArePaired(context) &&
         context.Scopes.Count > 0;
+
+    /// <summary>A challenge without its method, or a method without a challenge, is a context the token endpoint could not act on.</summary>
+    private static bool ChallengeAndMethodArePaired(AuthorizationRequestContext context) =>
+        context.CodeChallenge is null
+            ? context.CodeChallengeMethod is null
+            : context.CodeChallenge.Length > 0 && context.CodeChallengeMethod is not null;
 
     private static void WriteStrings(BinaryWriter writer, IReadOnlyList<string> values)
     {
@@ -230,6 +236,16 @@ internal static class AuthorizationRequestContextSerializer
 
     private static string? ReadNullableString(BinaryReader reader) =>
         reader.ReadBoolean() ? reader.ReadString() : null;
+
+    private static void WriteNullableByte(BinaryWriter writer, byte? value)
+    {
+        writer.Write(value.HasValue);
+        if (value.HasValue)
+            writer.Write(value.Value);
+    }
+
+    private static byte? ReadNullableByte(BinaryReader reader) =>
+        reader.ReadBoolean() ? reader.ReadByte() : null;
 
     private static void WriteNullableTimeSpan(BinaryWriter writer, TimeSpan? value)
     {

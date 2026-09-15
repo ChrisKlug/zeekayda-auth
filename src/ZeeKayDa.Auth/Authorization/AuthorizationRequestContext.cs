@@ -38,12 +38,11 @@ internal sealed record AuthorizationRequestContext
     /// <summary>The OpenID Connect <c>nonce</c>.</summary>
     public required string Nonce { get; init; }
 
-    /// <summary>The PKCE code challenge (RFC 7636 §4.3).</summary>
-    public required string CodeChallenge { get; init; }
+    /// <summary>The PKCE code challenge (RFC 7636 §4.3), or <see langword="null"/> when the request carried none.</summary>
+    public required string? CodeChallenge { get; init; }
 
-    /// <summary>The PKCE challenge method.</summary>
-    public required CodeChallengeMethod CodeChallengeMethod { get; init; }
-
+    /// <summary>The PKCE challenge method, or <see langword="null"/> when <see cref="CodeChallenge"/> is.</summary>
+    public required CodeChallengeMethod? CodeChallengeMethod { get; init; }
     /// <summary>The recognised <c>prompt</c> values.</summary>
     public required IReadOnlySet<PromptValue> Prompts { get; init; }
 

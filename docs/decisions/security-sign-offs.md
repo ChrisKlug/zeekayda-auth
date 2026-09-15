@@ -1475,7 +1475,8 @@ Medium/Lows verified by both agents.
 - PKCE for every client, S256 only, fixed-time; a wrong verifier burns the code; the startup gate.
   Closed — `The_verifier_a_challenge_was_derived_from_is_accepted`,
   `A_method_the_verifier_has_no_derivation_for_fails_closed`,
-  `A_request_without_a_code_verifier_is_refused_for_every_client`,
+  `A_request_without_a_code_verifier_is_refused_before_the_code_is_touched_for_a_client_held_to_pkce`
+  [renamed by #662, which lets a confidential client opt in to the nonce instead],
   `A_code_verifier_that_does_not_match_the_challenge_is_refused_and_burns_the_code`,
   `Validate_fails_when_the_code_grant_is_served_without_S256`.
 - Single use; a replay revokes a fresh 256-bit CSPRNG family minted per code; exact `redirect_uri`;
