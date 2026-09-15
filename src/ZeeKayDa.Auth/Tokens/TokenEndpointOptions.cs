@@ -24,6 +24,12 @@ public sealed class TokenEndpointOptions
     /// <see cref="GrantType.ClientCredentials"/>.
     /// </para>
     /// <para>
+    /// Public clients (single-page and native apps) authenticate with nothing, so registering one
+    /// requires adding <see cref="TokenEndpointAuthMethods.None"/>. It is not in the default because
+    /// advertising it declares that the server accepts clients presenting no credentials; a server
+    /// with only confidential clients should not make that statement.
+    /// </para>
+    /// <para>
     /// Well-known values are available as constants on <see cref="TokenEndpointAuthMethods"/>.
     /// Custom authentication methods (e.g. <c>tls_client_auth</c>) can be expressed as plain
     /// strings alongside those constants.

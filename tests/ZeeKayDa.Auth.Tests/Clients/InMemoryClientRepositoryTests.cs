@@ -236,6 +236,23 @@ public sealed class InMemoryClientRepositoryTests
             .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.redirect_uri.fragment");
     }
 
+    [Fact]
+    public void Constructor_failure_for_a_public_client_on_a_server_not_advertising_none_names_the_line_that_adds_it()
+    {
+        var opts = new InMemoryClientRegistrationOptions();
+        opts.PreBuilt.Add(ValidPublicClient("spa"));
+        // The default AuthMethodsSupported, which does not advertise "none".
+        var serverOptions = new AuthorizationServerOptions { Issuer = "https://test.example.com" };
+
+        var act = () => MakeRepository(opts, serverOptions);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should()
+            .ContainSingle(f => f.Code == "client.token_endpoint_auth_methods.not_subset")
+            .Which.Message.Should().Contain(
+                "options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None)");
+    }
+
     // ── Multiple clients ──────────────────────────────────────────────────────────────────────────
 
     [Fact]

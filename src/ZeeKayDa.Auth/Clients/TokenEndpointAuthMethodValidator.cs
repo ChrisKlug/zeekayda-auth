@@ -110,13 +110,28 @@ internal static class TokenEndpointAuthMethodValidator
         }
 
         if (!serverMethods.Contains(method))
-        {
-            return new ZeeKayDaConfigurationFailure(
-                "client.token_endpoint_auth_methods.not_subset",
-                $"Client '{clientId}' has AllowedTokenEndpointAuthMethods entry '{method}' that is not " +
-                $"in the server's AuthMethodsSupported: [{string.Join(", ", serverMethods)}].");
-        }
+            return NotSupportedByServer(clientId, method, serverMethods);
 
         return null;
+    }
+
+    // 'none' outside the server's methods is a host that registered a public client without opting
+    // in to accepting them — the common first-run mistake — so its failure names the opt-in.
+    private static ZeeKayDaConfigurationFailure NotSupportedByServer(
+        string clientId,
+        string method,
+        IReadOnlySet<string> serverMethods)
+    {
+        var fix = string.Equals(method, TokenEndpointAuthMethods.None, StringComparison.Ordinal)
+            ? " Public clients present no credentials at the token endpoint, so the server accepts them " +
+              "only when it advertises 'none': add " +
+              "options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None) to the " +
+              "AddZeeKayDaAuth configuration, or 'none' to TokenEndpoint:AuthMethodsSupported in bound configuration."
+            : "";
+
+        return new ZeeKayDaConfigurationFailure(
+            "client.token_endpoint_auth_methods.not_subset",
+            $"Client '{clientId}' has AllowedTokenEndpointAuthMethods entry '{method}' that is not " +
+            $"in the server's AuthMethodsSupported: [{string.Join(", ", serverMethods)}]." + fix);
     }
 }

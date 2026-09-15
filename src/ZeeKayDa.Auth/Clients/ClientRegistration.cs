@@ -131,10 +131,17 @@ public sealed record ClientRegistration : IClientRegistration
     /// <param name="postLogoutRedirectUris">Permitted post-logout redirect URIs.</param>
     /// <param name="allowedScopes">Scopes this client is permitted to request.</param>
     /// <remarks>
+    /// <para>
     /// Sets <see cref="IsPublic"/> to <see langword="true"/>, <see cref="Credentials"/> to an
     /// empty list, and <see cref="AllowedTokenEndpointAuthMethods"/> to <c>{ "none" }</c>.
     /// All other properties use their default values and can be overridden using <c>with</c>
     /// expressions.
+    /// </para>
+    /// <para>
+    /// The server accepts public clients only when it advertises <c>none</c>, which it does not by
+    /// default: add <see cref="TokenEndpointAuthMethods.None"/> to
+    /// <c>TokenEndpoint.AuthMethodsSupported</c>, or startup rejects the registration.
+    /// </para>
     /// </remarks>
     public static ClientRegistration CreatePublic(
         string clientId,
