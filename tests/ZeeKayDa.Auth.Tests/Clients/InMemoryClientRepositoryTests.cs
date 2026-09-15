@@ -236,6 +236,49 @@ public sealed class InMemoryClientRepositoryTests
             .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.redirect_uri.fragment");
     }
 
+    [Fact]
+    public void Constructor_failure_for_a_public_client_on_a_server_not_advertising_none_names_the_line_that_adds_it()
+    {
+        var opts = new InMemoryClientRegistrationOptions();
+        opts.PreBuilt.Add(ValidPublicClient("spa"));
+        // The default AuthMethodsSupported, which does not advertise "none".
+        var serverOptions = new AuthorizationServerOptions { Issuer = "https://test.example.com" };
+
+        var act = () => MakeRepository(opts, serverOptions);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should()
+            .ContainSingle(f => f.Code == "client.token_endpoint_auth_methods.not_subset")
+            .Which.Message.Should().Contain(
+                "options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);");
+    }
+
+    [Fact]
+    public void Constructor_failure_for_a_confidential_client_listing_none_does_not_suggest_advertising_none()
+    {
+        var opts = new InMemoryClientRegistrationOptions();
+        opts.PreBuilt.Add(
+            ClientRegistration.CreateConfidential("web", new FakeSecret(), ["https://app.example.com/cb"], [], ["openid"])
+            with
+            {
+                AllowedTokenEndpointAuthMethods = new HashSet<string>(
+                    [TokenEndpointAuthMethods.None, TokenEndpointAuthMethods.ClientSecretBasic],
+                    StringComparer.Ordinal),
+            });
+        // The default AuthMethodsSupported, which does not advertise "none".
+        var serverOptions = new AuthorizationServerOptions { Issuer = "https://test.example.com" };
+
+        var act = () => MakeRepository(opts, serverOptions);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should()
+            .ContainSingle(f => f.Code == "client.token_endpoint_auth_methods.not_subset")
+            .Which.Message.Should().NotContain(
+                "Public clients",
+                because: "a confidential client listing 'none' is fixed by removing it from the client, " +
+                         "and advertising 'none' on the server would not make its registration valid");
+    }
+
     // ── Multiple clients ──────────────────────────────────────────────────────────────────────────
 
     [Fact]
