@@ -106,9 +106,18 @@ public sealed class IdTokenHintValidatorTests
         ["exp"] = 1767225900L,
     };
 
-    /// <summary>Signs exactly the header and claims given, RS256 with the current key unless told otherwise.</summary>
+    private static SigningKeySet EcKeySet(ECDsa ec) => SigningKeySetBuilder.Build(SourceKeySet.Create(
+        previous: null,
+        new SourceKey(
+            new SourceKeyId("current"),
+            SigningAlgorithm.ES256,
+            PublicKeyParameters.FromEc(ec.ExportParameters(includePrivateParameters: false)),
+            ExpiresAt: null),
+        next: null));
+
+    /// <summary>Signs exactly the header and payload given, RS256 with the current key unless told otherwise.</summary>
     private static string Sign(
-        IDictionary<string, object?> header, IDictionary<string, object?> claims, Func<byte[], byte[]>? signer = null)
+        IDictionary<string, object?> header, object claims, Func<byte[], byte[]>? signer = null)
     {
         var signingInput = $"{Segment(header)}.{Segment(claims)}";
         var signature = (signer ?? SignWithCurrentKey)(Encoding.ASCII.GetBytes(signingInput));
@@ -176,14 +185,7 @@ public sealed class IdTokenHintValidatorTests
     public void Validate_accepts_a_hint_signed_with_an_EC_key()
     {
         using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-        var keySet = SigningKeySetBuilder.Build(SourceKeySet.Create(
-            previous: null,
-            new SourceKey(
-                new SourceKeyId("current"),
-                SigningAlgorithm.ES256,
-                PublicKeyParameters.FromEc(ec.ExportParameters(includePrivateParameters: false)),
-                ExpiresAt: null),
-            next: null));
+        var keySet = EcKeySet(ec);
         var header = Header(keySet.SigningKey.Kid);
         header["alg"] = "ES256";
         var token = Sign(header, Claims(), input =>
@@ -214,9 +216,18 @@ public sealed class IdTokenHintValidatorTests
     [InlineData("a.b")]
     [InlineData("a.b.c.d")]
     [InlineData("!!!.!!!.!!!")]
-    [InlineData("W10.e30.AA")]
     public void Validate_refuses_a_hint_that_is_not_a_compact_JWS(string? token)
     {
+        var hint = CreateValidator().Validate(token, ClientId);
+
+        hint.Should().BeNull();
+    }
+
+    [Fact]
+    public void Validate_refuses_a_hint_whose_header_is_not_a_JSON_object()
+    {
+        var token = $"{Segment(new[] { "JWT" })}.{Segment(Claims())}.AA";
+
         var hint = CreateValidator().Validate(token, ClientId);
 
         hint.Should().BeNull();
@@ -318,6 +329,33 @@ public sealed class IdTokenHintValidatorTests
         hint.Should().BeNull();
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("!!!")]
+    [InlineData("AA")]
+    public void Validate_refuses_without_throwing_a_hint_naming_a_published_kid_with_a_malformed_signature(string signature)
+    {
+        var token = $"{Segment(Header())}.{Segment(Claims())}.{signature}";
+
+        var hint = CreateValidator().Validate(token, ClientId);
+
+        hint.Should().BeNull();
+    }
+
+    [Fact]
+    public void Validate_refuses_without_throwing_an_EC_hint_whose_signature_is_one_byte()
+    {
+        using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var keySet = EcKeySet(ec);
+        var header = Header(keySet.SigningKey.Kid);
+        header["alg"] = "ES256";
+        var token = $"{Segment(header)}.{Segment(Claims())}.AA";
+
+        var hint = CreateValidator(keySet).Validate(token, ClientId);
+
+        hint.Should().BeNull("a platform that throws on a short signature must still read as no hint");
+    }
+
     [Fact]
     public void Validate_refuses_a_hint_whose_payload_was_changed_after_signing()
     {
@@ -364,6 +402,28 @@ public sealed class IdTokenHintValidatorTests
         var token = Sign(Header(), claims);
 
         var hint = CreateValidator().Validate(token, ClientId);
+
+        hint.Should().BeNull();
+    }
+
+    [Fact]
+    public void Validate_refuses_a_correctly_signed_hint_whose_payload_is_not_a_JSON_object()
+    {
+        var token = Sign(Header(), new[] { Issuer, Subject, ClientId });
+
+        var hint = CreateValidator().Validate(token, clientId: null);
+
+        hint.Should().BeNull();
+    }
+
+    [Fact]
+    public void Validate_refuses_a_correctly_signed_hint_whose_aud_is_empty()
+    {
+        var claims = Claims();
+        claims["aud"] = "";
+        var token = Sign(Header(), claims);
+
+        var hint = CreateValidator().Validate(token, clientId: null);
 
         hint.Should().BeNull();
     }

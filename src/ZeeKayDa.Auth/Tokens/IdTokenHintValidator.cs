@@ -1,4 +1,5 @@
 using System.Buffers.Text;
+using System.Diagnostics.CodeAnalysis;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -60,7 +61,7 @@ internal sealed class IdTokenHintValidator
     /// </exception>
     public IdTokenHint? Validate(string? idTokenHint, string? clientId)
     {
-        if (string.IsNullOrEmpty(idTokenHint) || idTokenHint.Length > MaxLength || !Ascii.IsValid(idTokenHint))
+        if (!IsReadable(idTokenHint))
             return null;
 
         var segments = idTokenHint.Split('.');
@@ -126,24 +127,34 @@ internal sealed class IdTokenHintValidator
     {
         using var payload = JsonDocument.Parse(Base64Url.DecodeFromChars(payloadSegment));
         var root = payload.RootElement;
-        if (root.ValueKind != JsonValueKind.Object)
+        if (root.ValueKind != JsonValueKind.Object || !IsThisServer(ReadString(root, "iss")))
             return null;
 
-        var issuer = ReadString(root, "iss");
         var subject = ReadString(root, "sub");
         var audience = ReadString(root, "aud");
-
-        if (string.IsNullOrEmpty(issuer)
-            || !string.Equals(issuer, _options.Value.Issuer, StringComparison.Ordinal)
-            || string.IsNullOrEmpty(subject)
-            || string.IsNullOrEmpty(audience))
-            return null;
-
-        if (clientId is not null && !string.Equals(audience, clientId, StringComparison.Ordinal))
+        if (string.IsNullOrEmpty(subject) || !IsIssuedTo(audience, clientId))
             return null;
 
         return new IdTokenHint(audience, subject);
     }
+
+    /// <summary>
+    /// Whether the hint is worth reading at all. Only ASCII is accepted because every segment of a
+    /// compact JWS is Base64Url, and the signing input is taken as the hint's ASCII bytes.
+    /// </summary>
+    private static bool IsReadable([NotNullWhen(true)] string? idTokenHint) =>
+        !string.IsNullOrEmpty(idTokenHint) && idTokenHint.Length <= MaxLength && Ascii.IsValid(idTokenHint);
+
+    private bool IsThisServer(string? issuer) =>
+        !string.IsNullOrEmpty(issuer) && string.Equals(issuer, _options.Value.Issuer, StringComparison.Ordinal);
+
+    /// <summary>
+    /// Whether <paramref name="audience"/> names a client, and, when the request named one too,
+    /// the same client.
+    /// </summary>
+    private static bool IsIssuedTo([NotNullWhen(true)] string? audience, string? clientId) =>
+        !string.IsNullOrEmpty(audience)
+        && (clientId is null || string.Equals(audience, clientId, StringComparison.Ordinal));
 
     private static string? ReadString(JsonElement element, string name) =>
         element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
