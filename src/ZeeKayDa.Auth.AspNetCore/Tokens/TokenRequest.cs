@@ -27,7 +27,7 @@ internal sealed class TokenRequest
     {
         Code = form["code"].ToString();
         RedirectUri = form["redirect_uri"].ToString();
-        CodeVerifier = form["code_verifier"].ToString() is { Length: > 0 } verifier ? verifier : null;
+        CodeVerifier = form.ContainsKey("code_verifier") ? form["code_verifier"].ToString() : null;
         ClientId = form["client_id"].ToString() is { Length: > 0 } clientId ? clientId : null;
     }
 
@@ -76,11 +76,13 @@ internal sealed class TokenRequest
             ? null
             : TokenError.InvalidRequest("The redirect_uri parameter is required.");
 
+    /// <summary>A parameter that is sent is held to its shape; an empty one is malformed, not absent.</summary>
     private static TokenError? CodeVerifierIsWellFormedWhenPresent(IFormCollection form)
     {
-        var verifier = form["code_verifier"].ToString();
+        if (!form.ContainsKey("code_verifier"))
+            return null;
 
-        return verifier.Length == 0 || PkceVerifier.IsWellFormed(verifier)
+        return PkceVerifier.IsWellFormed(form["code_verifier"].ToString())
             ? null
             : TokenError.InvalidRequest("The code_verifier parameter is malformed.");
     }

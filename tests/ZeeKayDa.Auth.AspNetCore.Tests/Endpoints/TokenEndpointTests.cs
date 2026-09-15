@@ -596,6 +596,18 @@ public sealed class TokenEndpointTests : IDisposable
     }
 
     [Fact]
+    public async Task An_empty_code_verifier_is_malformed_not_absent_even_for_a_client_permitted_to_omit_pkce()
+    {
+        var code = await ObtainCodeAsync(NoncePkceClient, pkce: false);
+
+        var refused = await PostTokenAsNoncePkceClientAsync(code, verifier: "");
+        var retried = await PostTokenAsNoncePkceClientAsync(code, verifier: null);
+
+        await ShouldBeErrorAsync(refused, "invalid_request");
+        retried.StatusCode.Should().Be(HttpStatusCode.OK, "a request refused at the shape check consumed nothing");
+    }
+
+    [Fact]
     public async Task A_verifier_presented_for_a_code_issued_without_a_challenge_is_refused_and_burns_the_code()
     {
         var code = await ObtainCodeAsync(NoncePkceClient, pkce: false);
@@ -629,7 +641,25 @@ public sealed class TokenEndpointTests : IDisposable
         right.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
+    [Fact]
+    public async Task A_confidential_client_held_to_pkce_is_refused_without_a_code_verifier_before_the_code_is_touched()
+    {
+        var code = await ObtainCodeAsync(ConfidentialClient);
+        var form = TokenForm(code, ConfidentialClient);
+        form.Remove("client_id");
+        form.Remove("code_verifier");
+        var retryForm = TokenForm(code, ConfidentialClient);
+        retryForm.Remove("client_id");
+
+        var refused = await PostTokenAsync(form, basic: (ConfidentialClient, ConfidentialSecret));
+        var retried = await PostTokenAsync(retryForm, basic: (ConfidentialClient, ConfidentialSecret));
+
+        await ShouldBeErrorAsync(refused, "invalid_request");
+        retried.StatusCode.Should().Be(HttpStatusCode.OK, "only a client permitted to omit PKCE reaches the store without a verifier");
+    }
+
     [Theory]
+    [InlineData("")]
     [InlineData("tooshort")]
     [InlineData("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk=")]
     public async Task A_malformed_code_verifier_is_refused_before_the_code_is_touched(string verifier)
