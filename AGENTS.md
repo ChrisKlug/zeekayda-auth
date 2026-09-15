@@ -88,6 +88,10 @@ docs/
   `.Contains` changes behaviour, even when it reads as a cleanup: it let 33 redirect URIs past the
   32-URI cap and a public client with `{"none", "client_secret_basic"}` past the trinity check. The
   `MiscountingSet` tests in `ClientRegistrationValidatorTests` pin this.
+- **Shell snippets run under zsh here: never name a variable `path`.** zsh ties `path` to `PATH`,
+  so assigning it — including as a `read` target in a loop — replaces the command search path and
+  every later command fails with `command not found`. The same holds for `cdpath`, `fpath` and
+  `manpath`. Use `file` or `filepath`.
 
 ## Development Workflow
 
