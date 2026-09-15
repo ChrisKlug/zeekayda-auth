@@ -332,13 +332,10 @@ internal sealed partial class AuthorizeRequestValidator
             return null;
         }
 
-        return MayOmitPkce(context.Client)
+        return PkceRules.MayOmitChallenge(context.Client)
             ? null
             : InvalidRequest("The code_challenge parameter is required.");
     }
-
-    private static bool MayOmitPkce(IClientRegistration client) =>
-        client.AllowNonceInsteadOfPkce && !client.IsPublic;
 
     private static Problem? CodeChallengeIsWellFormed(RequestContext context) =>
         context.CodeChallenge is null || CodeChallengePattern().IsMatch(context.CodeChallenge)

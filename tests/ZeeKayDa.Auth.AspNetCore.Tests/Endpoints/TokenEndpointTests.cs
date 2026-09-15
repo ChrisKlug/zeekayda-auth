@@ -615,8 +615,8 @@ public sealed class TokenEndpointTests : IDisposable
         var refused = await PostTokenAsNoncePkceClientAsync(code, verifier: Verifier);
         var retried = await PostTokenAsNoncePkceClientAsync(code, verifier: null);
 
-        await ShouldBeErrorAsync(refused, "invalid_grant");
-        await ShouldBeErrorAsync(retried, "invalid_grant");
+        await ShouldBeErrorAsync(refused, "invalid_request");
+        await ShouldBeErrorAsync(retried, "invalid_grant"); // consumed by the refused exchange
     }
 
     [Fact]
