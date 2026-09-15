@@ -17,7 +17,15 @@ public static class SigningKeyFile
         if (File.Exists(path))
             return path;
 
-        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
+        // The folder is owner-only too: anyone who could write to it could swap the key before a restart.
+        var directory = Path.GetDirectoryName(Path.GetFullPath(path))!;
+        if (!Directory.Exists(directory))
+        {
+            if (OperatingSystem.IsWindows())
+                CreateOwnerOnlyDirectoryWindows(directory);
+            else
+                CreateOwnerOnlyDirectoryUnix(directory);
+        }
 
         using var rsa = RSA.Create(2048);
         var request = new CertificateRequest(
@@ -33,6 +41,25 @@ public static class SigningKeyFile
         writer.Write(pem);
 
         return path;
+    }
+
+    [UnsupportedOSPlatform("windows")]
+    private static void CreateOwnerOnlyDirectoryUnix(string directory) =>
+        Directory.CreateDirectory(directory, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+
+    [SupportedOSPlatform("windows")]
+    private static void CreateOwnerOnlyDirectoryWindows(string directory)
+    {
+        var security = new DirectorySecurity();
+        security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+        security.AddAccessRule(new FileSystemAccessRule(
+            WindowsIdentity.GetCurrent().User!,
+            FileSystemRights.FullControl,
+            InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
+            PropagationFlags.None,
+            AccessControlType.Allow));
+
+        new DirectoryInfo(directory).Create(security);
     }
 
     [UnsupportedOSPlatform("windows")]

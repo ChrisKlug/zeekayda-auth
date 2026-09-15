@@ -66,6 +66,38 @@ public sealed partial class SampleIdentityServerTests : IClassFixture<WebApplica
         claims.GetProperty("sub").GetString().Should().Be("a1ice000000000000000000000000001");
         claims.GetProperty("name").GetString().Should().Be("Alice Example");
         claims.GetProperty("nonce").GetString().Should().Be("sample-nonce");
+        claims.GetProperty("amr").EnumerateArray().Select(method => method.GetString()).Should().Equal("pwd");
+        claims.GetProperty("at_hash").GetString().Should().Be(AtHashOf(tokens.GetProperty("access_token").GetString()!));
+    }
+
+    [Fact]
+    public async Task A_user_who_registers_during_a_sign_in_can_complete_it_as_themselves()
+    {
+        using var browser = NewBrowser();
+        var (verifier, challenge) = NewPkcePair();
+        var loginPage = await FollowAuthorizeAsync(browser, challenge);
+
+        // The login page's "Create an account" link carries its query string, so the sign-in continues.
+        // Taken from the string: the Location is relative, and Uri would read it as a file path.
+        var backToLogin = await PostFormAsync(browser, "/register" + loginPage[loginPage.IndexOf('?', StringComparison.Ordinal)..], new()
+        {
+            ["username"] = "bob",
+            ["password"] = "bob-password",
+            ["name"] = "Bob Registered",
+            ["email"] = "bob@example.com",
+        });
+        var consentPage = await PostFormAsync(browser, backToLogin, new()
+        {
+            ["username"] = "bob",
+            ["password"] = "bob-password",
+            ["action"] = "login",
+        });
+        var callback = await PostFormAsync(browser, consentPage, new() { ["action"] = "allow" });
+        var tokens = await RedeemAsync(browser, CodeFrom(callback), verifier);
+
+        var claims = PayloadOf(tokens.GetProperty("id_token").GetString()!);
+        claims.GetProperty("name").GetString().Should().Be("Bob Registered");
+        claims.GetProperty("preferred_username").GetString().Should().Be("bob");
     }
 
     [Fact]
@@ -135,7 +167,15 @@ public sealed partial class SampleIdentityServerTests : IClassFixture<WebApplica
     private static async Task<string> PostFormAsync(HttpClient browser, string pageUrl, Dictionary<string, string> fields)
     {
         using var response = await SubmitFormAsync(browser, pageUrl, fields);
-        response.StatusCode.Should().Be(HttpStatusCode.Redirect);
+
+        // The host runs in Development, so a failure's body is the developer exception page — put it
+        // in the assertion message, where it says why instead of only that the status was wrong.
+        if (response.StatusCode != HttpStatusCode.Redirect)
+        {
+            var body = await response.Content.ReadAsStringAsync(Cancellation);
+            response.StatusCode.Should().Be(HttpStatusCode.Redirect, because: body[..Math.Min(body.Length, 3000)]);
+        }
+
         return response.Headers.Location!.ToString();
     }
 
@@ -183,6 +223,10 @@ public sealed partial class SampleIdentityServerTests : IClassFixture<WebApplica
         return JsonDocument.Parse(Convert.FromBase64String(
             payload.Replace('-', '+').Replace('_', '/').PadRight(payload.Length + ((4 - (payload.Length % 4)) % 4), '='))).RootElement;
     }
+
+    // OIDC Core §3.1.3.6: the left half of the SHA-256 hash of the access token, for an RS256 ID token.
+    private static string AtHashOf(string accessToken) =>
+        Base64UrlEncode(SHA256.HashData(Encoding.ASCII.GetBytes(accessToken))[..16]);
 
     private static string Base64UrlEncode(byte[] bytes) =>
         Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
