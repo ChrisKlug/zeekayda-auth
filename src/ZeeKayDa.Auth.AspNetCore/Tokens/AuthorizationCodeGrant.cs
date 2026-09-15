@@ -220,9 +220,9 @@ internal sealed class AuthorizationCodeGrant
     /// binding the authorization request chose. The code is already burnt either way.
     /// </summary>
     private static bool VerifierMatchesWhatTheCodeWasIssuedWith(TokenRequest request, AuthorizationCodeEntry entry) =>
-        entry is { CodeChallenge: { } challenge, CodeChallengeMethod: { } method }
-            ? request.CodeVerifier is { } verifier && PkceVerifier.Verify(verifier, challenge, method)
-            : entry is { CodeChallenge: null, CodeChallengeMethod: null } && request.CodeVerifier is null;
+        entry.Pkce is { } pkce
+            ? request.CodeVerifier is { } verifier && PkceVerifier.Verify(verifier, pkce)
+            : request.CodeVerifier is null;
 
     private static bool ClientAcceptsCurrentSigningKey(HttpContext context, IClientMetadata client) =>
         client.AllowedSigningAlgorithms is not { } allowed ||

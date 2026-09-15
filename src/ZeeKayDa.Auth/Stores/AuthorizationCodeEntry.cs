@@ -46,24 +46,16 @@ public sealed record AuthorizationCodeEntry
     public required string RedirectUri { get; init; }
 
     /// <summary>
-    /// The PKCE code challenge value as submitted by the client in the authorization request
-    /// (RFC 7636 §4.3), or <see langword="null"/> for a code issued to a client that was
-    /// permitted to omit PKCE and did.
+    /// The PKCE binding the authorization request carried (RFC 7636 §4.3), or
+    /// <see langword="null"/> for a code issued to a client that was permitted to omit PKCE
+    /// and did.
     /// </summary>
     /// <remarks>
-    /// Stored as-is (Base64url-encoded SHA-256 digest of the verifier). The token endpoint
-    /// recomputes SHA-256(verifier) and compares it against this value. When
-    /// <see langword="null"/>, the token endpoint refuses a request that presents a
-    /// <c>code_verifier</c>; <see cref="CodeChallengeMethod"/> is <see langword="null"/> too.
+    /// The token endpoint requires and verifies a <c>code_verifier</c> against a non-null
+    /// binding, and refuses a request that presents one for a code whose binding is
+    /// <see langword="null"/>.
     /// </remarks>
-    public required string? CodeChallenge { get; init; }
-
-    /// <summary>
-    /// The PKCE code challenge method, or <see langword="null"/> when <see cref="CodeChallenge"/>
-    /// is. Always <see cref="CodeChallengeMethod.S256"/> when present in the current
-    /// implementation; stored to allow future method negotiation without schema changes.
-    /// </summary>
-    public required CodeChallengeMethod? CodeChallengeMethod { get; init; }
+    public required PkceChallenge? Pkce { get; init; }
 
 
     /// <summary>

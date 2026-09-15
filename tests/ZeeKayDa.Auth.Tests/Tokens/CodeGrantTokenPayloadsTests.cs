@@ -28,8 +28,7 @@ public sealed class CodeGrantTokenPayloadsTests
         {
             ClientId = "app",
             RedirectUri = "https://app.example.com/cb",
-            CodeChallenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
-            CodeChallengeMethod = CodeChallengeMethod.S256,
+            Pkce = new PkceChallenge("E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM", CodeChallengeMethod.S256),
             Sub = "user-1",
             Scope = ["openid", "profile"],
             Nonce = nonce,

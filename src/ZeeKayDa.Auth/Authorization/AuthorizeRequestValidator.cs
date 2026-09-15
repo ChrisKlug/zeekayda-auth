@@ -420,8 +420,7 @@ internal sealed partial class AuthorizeRequestValidator
             Scopes = context.EffectiveScopes,
             State = state,
             Nonce = context.Nonce,
-            CodeChallenge = context.CodeChallenge,
-            CodeChallengeMethod = context.CodeChallenge is null ? null : CodeChallengeMethod.S256,
+            Pkce = context.CodeChallenge is { } challenge ? new PkceChallenge(challenge, CodeChallengeMethod.S256) : null,
             Prompts = context.Prompts,
             MaxAge = context.MaxAge,
         };

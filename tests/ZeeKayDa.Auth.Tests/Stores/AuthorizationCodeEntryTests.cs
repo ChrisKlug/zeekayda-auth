@@ -9,22 +9,21 @@ public sealed class AuthorizationCodeEntryTests
     // ── Type shape ────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void AuthorizationCodeEntry_has_exactly_14_public_instance_properties()
+    public void AuthorizationCodeEntry_has_exactly_13_public_instance_properties()
     {
         // Guards against an accidental addition or removal of properties that would break
-        // the contract of exactly 11 required + 3 nullable = 14 total properties.
+        // the contract of exactly 10 required + 3 nullable = 13 total properties.
         var properties = typeof(AuthorizationCodeEntry)
             .GetProperties(BindingFlags.Public | BindingFlags.Instance);
 
-        properties.Should().HaveCount(14,
-            because: "the contract defines exactly 11 required and 3 nullable properties");
+        properties.Should().HaveCount(13,
+            because: "the contract defines exactly 10 required and 3 nullable properties");
     }
 
     [Theory]
     [InlineData(nameof(AuthorizationCodeEntry.ClientId))]
     [InlineData(nameof(AuthorizationCodeEntry.RedirectUri))]
-    [InlineData(nameof(AuthorizationCodeEntry.CodeChallenge))]
-    [InlineData(nameof(AuthorizationCodeEntry.CodeChallengeMethod))]
+    [InlineData(nameof(AuthorizationCodeEntry.Pkce))]
     [InlineData(nameof(AuthorizationCodeEntry.Sub))]
     [InlineData(nameof(AuthorizationCodeEntry.Scope))]
     [InlineData(nameof(AuthorizationCodeEntry.AuthTime))]
@@ -70,12 +69,10 @@ public sealed class AuthorizationCodeEntryTests
 
         var suspiciousNames = properties
             .Select(p => p.Name)
-            .Where(n => n.Contains("Code", StringComparison.OrdinalIgnoreCase)
-                        && !n.Equals("CodeChallenge", StringComparison.Ordinal)
-                        && !n.Equals("CodeChallengeMethod", StringComparison.Ordinal))
+            .Where(n => n.Contains("Code", StringComparison.OrdinalIgnoreCase))
             .ToList();
 
         suspiciousNames.Should().BeEmpty(
-            because: "raw code handles must never be stored on the entry — only the challenge hash");
+            because: "raw code handles must never be stored on the entry — only the PKCE binding");
     }
 }

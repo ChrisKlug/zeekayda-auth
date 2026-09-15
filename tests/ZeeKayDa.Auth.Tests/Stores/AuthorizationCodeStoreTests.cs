@@ -34,8 +34,7 @@ public sealed class AuthorizationCodeStoreTests
         {
             ClientId = clientId,
             RedirectUri = "https://app/callback",
-            CodeChallenge = "challenge-abc",
-            CodeChallengeMethod = CodeChallengeMethod.S256,
+            Pkce = new PkceChallenge("challenge-abc", CodeChallengeMethod.S256),
             Sub = "user-1",
             Scope = ["openid", "profile"],
             SsoSessionId = "session-1",

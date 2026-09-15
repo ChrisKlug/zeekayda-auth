@@ -526,8 +526,7 @@ public sealed class AuthorizationCodeIssuanceTests : IDisposable
         entry.Sub.Should().Be("user-1");
         entry.Scope.Should().Equal("openid", "profile", "email");
         entry.Nonce.Should().Be(Nonce);
-        entry.CodeChallenge.Should().Be(Challenge);
-        entry.CodeChallengeMethod.Should().Be(CodeChallengeMethod.S256);
+        entry.Pkce.Should().Be(new PkceChallenge(Challenge, CodeChallengeMethod.S256));
         entry.AuthTime.Should().Be(Now);
         entry.Amr.Should().Equal(AuthenticationMethods.Password);
         entry.Acr.Should().BeNull();
@@ -853,8 +852,7 @@ public sealed class AuthorizationCodeIssuanceTests : IDisposable
         Scopes = ["openid", "profile"],
         State = null,
         Nonce = Nonce,
-        CodeChallenge = Challenge,
-        CodeChallengeMethod = CodeChallengeMethod.S256,
+        Pkce = new PkceChallenge(Challenge, CodeChallengeMethod.S256),
         Prompts = new HashSet<PromptValue>(),
         MaxAge = null,
         IssuedAt = Now,

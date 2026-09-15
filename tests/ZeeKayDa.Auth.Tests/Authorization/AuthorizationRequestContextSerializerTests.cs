@@ -50,28 +50,34 @@ public class AuthorizationRequestContextSerializerTests
     }
 
     [Fact]
-    public void Context_without_a_code_challenge_round_trips_with_neither_challenge_nor_method()
+    public void Context_without_a_PKCE_binding_round_trips_without_one()
     {
-        var context = MinimalContext() with { CodeChallenge = null, CodeChallengeMethod = null };
+        var context = MinimalContext() with { Pkce = null };
 
         AuthorizationRequestContextSerializer.TryDecode(
             AuthorizationRequestContextSerializer.Encode(context), out var decoded).Should().BeTrue();
 
-        decoded!.CodeChallenge.Should().BeNull();
-        decoded.CodeChallengeMethod.Should().BeNull();
+        decoded!.Pkce.Should().BeNull();
     }
 
-    [Theory]
-    [InlineData("E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM", null)]
-    [InlineData(null, CodeChallengeMethod.S256)]
-    [InlineData("", CodeChallengeMethod.S256)]
-    public void Context_with_a_challenge_and_method_that_do_not_pair_is_refused(string? challenge, CodeChallengeMethod? method)
+    [Fact]
+    public void Payload_carrying_an_undefined_code_challenge_method_is_refused()
     {
-        var payload = AuthorizationRequestContextSerializer.Encode(
-            MinimalContext() with { CodeChallenge = challenge, CodeChallengeMethod = method });
+        var payload = AuthorizationRequestContextSerializer.Encode(MinimalContext());
+        var methodByte = IndexOfChallengeMethod(payload);
+        payload[methodByte] = 42;
 
         AuthorizationRequestContextSerializer.TryDecode(payload, out _).Should().BeFalse(
-            "the token endpoint can act on a challenge with its method or on neither, never on half a pair");
+            "a method this version cannot verify must not be read as one it can");
+    }
+
+    /// <summary>The byte after the challenge string: the format writes the challenge, then its method.</summary>
+    private static int IndexOfChallengeMethod(byte[] payload)
+    {
+        var challenge = System.Text.Encoding.UTF8.GetBytes(MinimalContext().Pkce!.Challenge);
+        var at = payload.AsSpan().IndexOf(challenge);
+        at.Should().BeGreaterThan(0);
+        return at + challenge.Length;
     }
 
     [Fact]
@@ -195,8 +201,7 @@ public class AuthorizationRequestContextSerializerTests
         Scopes = ["openid"],
         State = null,
         Nonce = "n-0S6_WzA2Mj",
-        CodeChallenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
-        CodeChallengeMethod = CodeChallengeMethod.S256,
+        Pkce = new PkceChallenge("E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM", CodeChallengeMethod.S256),
         Prompts = new HashSet<PromptValue>(),
         MaxAge = null,
         IssuedAt = Now,

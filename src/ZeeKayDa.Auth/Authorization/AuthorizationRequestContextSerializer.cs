@@ -46,8 +46,7 @@ internal static class AuthorizationRequestContextSerializer
         WriteStrings(writer, context.Scopes);
         WriteNullableString(writer, context.State);
         writer.Write(context.Nonce);
-        WriteNullableString(writer, context.CodeChallenge);
-        WriteNullableByte(writer, (byte?)context.CodeChallengeMethod);
+        WritePkce(writer, context.Pkce);
 
         writer.Write7BitEncodedInt(context.Prompts.Count);
         foreach (var prompt in context.Prompts)
@@ -120,10 +119,7 @@ internal static class AuthorizationRequestContextSerializer
         var scopes = ReadStrings(reader);
         var state = ReadNullableString(reader);
         var nonce = reader.ReadString();
-        var codeChallenge = ReadNullableString(reader);
-
-        var challengeMethod = (CodeChallengeMethod?)ReadNullableByte(reader);
-        if (challengeMethod is { } method && !Enum.IsDefined(method))
+        if (!TryReadPkce(reader, out var pkce))
             return null;
 
         var prompts = ReadPrompts(reader);
@@ -138,8 +134,7 @@ internal static class AuthorizationRequestContextSerializer
             Scopes = scopes,
             State = state,
             Nonce = nonce,
-            CodeChallenge = codeChallenge,
-            CodeChallengeMethod = challengeMethod,
+            Pkce = pkce,
             Prompts = prompts,
             MaxAge = ReadNullableTimeSpan(reader),
             IssuedAt = DateTimeOffset.FromUnixTimeSeconds(reader.ReadInt64()),
@@ -189,14 +184,33 @@ internal static class AuthorizationRequestContextSerializer
         !string.IsNullOrEmpty(context.ClientId) &&
         !string.IsNullOrEmpty(context.RedirectUri) &&
         !string.IsNullOrEmpty(context.Nonce) &&
-        ChallengeAndMethodArePaired(context) &&
         context.Scopes.Count > 0;
 
-    /// <summary>A challenge without its method, or a method without a challenge, is a context the token endpoint could not act on.</summary>
-    private static bool ChallengeAndMethodArePaired(AuthorizationRequestContext context) =>
-        context.CodeChallenge is null
-            ? context.CodeChallengeMethod is null
-            : context.CodeChallenge.Length > 0 && context.CodeChallengeMethod is not null;
+    private static void WritePkce(BinaryWriter writer, PkceChallenge? pkce)
+    {
+        writer.Write(pkce is not null);
+        if (pkce is null)
+            return;
+
+        writer.Write(pkce.Challenge);
+        writer.Write((byte)pkce.Method);
+    }
+
+    /// <summary>False for a method this version does not define or an empty challenge: a payload this version did not write.</summary>
+    private static bool TryReadPkce(BinaryReader reader, out PkceChallenge? pkce)
+    {
+        pkce = null;
+        if (!reader.ReadBoolean())
+            return true;
+
+        var challenge = reader.ReadString();
+        var method = (CodeChallengeMethod)reader.ReadByte();
+        if (challenge.Length == 0 || !Enum.IsDefined(method))
+            return false;
+
+        pkce = new PkceChallenge(challenge, method);
+        return true;
+    }
 
     private static void WriteStrings(BinaryWriter writer, IReadOnlyList<string> values)
     {
@@ -236,16 +250,6 @@ internal static class AuthorizationRequestContextSerializer
 
     private static string? ReadNullableString(BinaryReader reader) =>
         reader.ReadBoolean() ? reader.ReadString() : null;
-
-    private static void WriteNullableByte(BinaryWriter writer, byte? value)
-    {
-        writer.Write(value.HasValue);
-        if (value.HasValue)
-            writer.Write(value.Value);
-    }
-
-    private static byte? ReadNullableByte(BinaryReader reader) =>
-        reader.ReadBoolean() ? reader.ReadByte() : null;
 
     private static void WriteNullableTimeSpan(BinaryWriter writer, TimeSpan? value)
     {

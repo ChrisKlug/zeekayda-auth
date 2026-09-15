@@ -427,8 +427,7 @@ public class AuthorizeRequestValidatorTests
         var result = await Validate(parameters, ConfidentialClientPermittedToOmitPkce());
 
         var valid = result.Should().BeOfType<AuthorizeRequestValidationResult.Valid>().Subject;
-        valid.Request.CodeChallenge.Should().BeNull();
-        valid.Request.CodeChallengeMethod.Should().BeNull();
+        valid.Request.Pkce.Should().BeNull();
         valid.Request.Nonce.Should().Be("n-0S6_WzA2Mj");
     }
 
@@ -438,8 +437,7 @@ public class AuthorizeRequestValidatorTests
         var result = await Validate(ValidParameters(), ConfidentialClientPermittedToOmitPkce());
 
         var valid = result.Should().BeOfType<AuthorizeRequestValidationResult.Valid>().Subject;
-        valid.Request.CodeChallenge.Should().Be(Challenge);
-        valid.Request.CodeChallengeMethod.Should().Be(CodeChallengeMethod.S256);
+        valid.Request.Pkce.Should().Be(new PkceChallenge(Challenge, CodeChallengeMethod.S256));
     }
 
     [Theory]
@@ -661,8 +659,7 @@ public class AuthorizeRequestValidatorTests
         valid.Request.Scopes.Should().Equal("openid", "profile");
         valid.Request.State.Should().Be("opaque-client-state");
         valid.Request.Nonce.Should().Be("n-0S6_WzA2Mj");
-        valid.Request.CodeChallenge.Should().Be(Challenge);
-        valid.Request.CodeChallengeMethod.Should().Be(CodeChallengeMethod.S256);
+        valid.Request.Pkce.Should().Be(new PkceChallenge(Challenge, CodeChallengeMethod.S256));
         valid.Request.MaxAge.Should().Be(TimeSpan.FromSeconds(300));
     }
 

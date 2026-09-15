@@ -11,8 +11,7 @@ public sealed class AuthorizationCodeEntryJsonRoundTripTests
         {
             ClientId = "client-a",
             RedirectUri = "https://app/callback",
-            CodeChallenge = "abc123_challenge",
-            CodeChallengeMethod = CodeChallengeMethod.S256,
+            Pkce = new PkceChallenge("abc123_challenge", CodeChallengeMethod.S256),
             Sub = "user-42",
             Scope = ["openid", "profile"],
             SsoSessionId = "session-1",
@@ -37,15 +36,40 @@ public sealed class AuthorizationCodeEntryJsonRoundTripTests
     }
 
     [Fact]
-    public void AuthorizationCodeEntry_without_a_code_challenge_round_trips_through_StoreJsonSerializerContext()
+    public void AuthorizationCodeEntry_with_a_PKCE_binding_round_trips_through_StoreJsonSerializerContext()
     {
-        var entry = BuildBase() with { CodeChallenge = null, CodeChallengeMethod = null };
+        var entry = BuildBase();
 
         var json = JsonSerializer.Serialize(entry, StoreJsonSerializerContext.Default.AuthorizationCodeEntry);
         var deserialized = JsonSerializer.Deserialize(json, StoreJsonSerializerContext.Default.AuthorizationCodeEntry)!;
 
-        deserialized.CodeChallenge.Should().BeNull();
-        deserialized.CodeChallengeMethod.Should().BeNull();
+        deserialized.Pkce.Should().Be(new PkceChallenge("abc123_challenge", CodeChallengeMethod.S256));
+    }
+
+    [Fact]
+    public void AuthorizationCodeEntry_without_a_PKCE_binding_round_trips_through_StoreJsonSerializerContext()
+    {
+        var entry = BuildBase() with { Pkce = null };
+
+        var json = JsonSerializer.Serialize(entry, StoreJsonSerializerContext.Default.AuthorizationCodeEntry);
+        var deserialized = JsonSerializer.Deserialize(json, StoreJsonSerializerContext.Default.AuthorizationCodeEntry)!;
+
+        deserialized.Pkce.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("""{"challenge":"","method":"S256"}""")]
+    [InlineData("""{"challenge":"abc123_challenge","method":"plain"}""")]
+    public void AuthorizationCodeEntry_with_an_incomplete_PKCE_binding_does_not_deserialize(string pkce)
+    {
+        var json = JsonSerializer.Serialize(BuildBase(), StoreJsonSerializerContext.Default.AuthorizationCodeEntry)
+            .Replace("""{"challenge":"abc123_challenge","method":"S256"}""", pkce, StringComparison.Ordinal);
+        json.Should().Contain(pkce, "the substitution must have hit the binding");
+
+        var act = () => JsonSerializer.Deserialize(json, StoreJsonSerializerContext.Default.AuthorizationCodeEntry);
+
+        act.Should().Throw<Exception>("a binding a store hands back is complete or it is not a binding")
+            .Which.Should().Match(e => e is JsonException || e is ArgumentException);
     }
 
     [Fact]

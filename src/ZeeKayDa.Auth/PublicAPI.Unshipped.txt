@@ -23,6 +23,12 @@ ZeeKayDa.Auth.Authorization.InteractionOptions.LoginPath.get -> string?
 ZeeKayDa.Auth.Authorization.InteractionOptions.LoginPath.set -> void
 ZeeKayDa.Auth.Authorization.InteractionOptions.SupportsLocalSignIn.get -> bool
 ZeeKayDa.Auth.Authorization.InteractionOptions.SupportsLocalSignIn.set -> void
+ZeeKayDa.Auth.Authorization.PkceChallenge
+ZeeKayDa.Auth.Authorization.PkceChallenge.<Clone>$() -> ZeeKayDa.Auth.Authorization.PkceChallenge!
+ZeeKayDa.Auth.Authorization.PkceChallenge.Challenge.get -> string!
+ZeeKayDa.Auth.Authorization.PkceChallenge.Equals(ZeeKayDa.Auth.Authorization.PkceChallenge? other) -> bool
+ZeeKayDa.Auth.Authorization.PkceChallenge.Method.get -> ZeeKayDa.Auth.Authorization.CodeChallengeMethod
+ZeeKayDa.Auth.Authorization.PkceChallenge.PkceChallenge(string! challenge, ZeeKayDa.Auth.Authorization.CodeChallengeMethod method) -> void
 ZeeKayDa.Auth.Authorization.PromptValue
 ZeeKayDa.Auth.Authorization.PromptValue.Consent = 2 -> ZeeKayDa.Auth.Authorization.PromptValue
 ZeeKayDa.Auth.Authorization.PromptValue.Login = 1 -> ZeeKayDa.Auth.Authorization.PromptValue
@@ -279,11 +285,6 @@ ZeeKayDa.Auth.Stores.AuthorizationCodeEntry.AuthTime.init -> void
 ZeeKayDa.Auth.Stores.AuthorizationCodeEntry.AuthorizationCodeEntry() -> void
 ZeeKayDa.Auth.Stores.AuthorizationCodeEntry.ClientId.get -> string!
 ZeeKayDa.Auth.Stores.AuthorizationCodeEntry.ClientId.init -> void
-ZeeKayDa.Auth.Stores.AuthorizationCodeEntry.CodeChallenge.get -> string?
-ZeeKayDa.Auth.Stores.AuthorizationCodeEntry.CodeChallenge.init -> void
-ZeeKayDa.Auth.Stores.AuthorizationCodeEntry.CodeChallengeMethod.get -> ZeeKayDa.Auth.Authorization.CodeChallengeMethod?
-
-ZeeKayDa.Auth.Stores.AuthorizationCodeEntry.CodeChallengeMethod.init -> void
 ZeeKayDa.Auth.Stores.AuthorizationCodeEntry.Equals(ZeeKayDa.Auth.Stores.AuthorizationCodeEntry? other) -> bool
 ZeeKayDa.Auth.Stores.AuthorizationCodeEntry.ExpiresAt.get -> System.DateTimeOffset
 ZeeKayDa.Auth.Stores.AuthorizationCodeEntry.ExpiresAt.init -> void
@@ -293,6 +294,8 @@ ZeeKayDa.Auth.Stores.AuthorizationCodeEntry.IssuedAt.get -> System.DateTimeOffse
 ZeeKayDa.Auth.Stores.AuthorizationCodeEntry.IssuedAt.init -> void
 ZeeKayDa.Auth.Stores.AuthorizationCodeEntry.Nonce.get -> string?
 ZeeKayDa.Auth.Stores.AuthorizationCodeEntry.Nonce.init -> void
+ZeeKayDa.Auth.Stores.AuthorizationCodeEntry.Pkce.get -> ZeeKayDa.Auth.Authorization.PkceChallenge?
+ZeeKayDa.Auth.Stores.AuthorizationCodeEntry.Pkce.init -> void
 ZeeKayDa.Auth.Stores.AuthorizationCodeEntry.RedirectUri.get -> string!
 ZeeKayDa.Auth.Stores.AuthorizationCodeEntry.RedirectUri.init -> void
 ZeeKayDa.Auth.Stores.AuthorizationCodeEntry.Scope.get -> System.Collections.Generic.IReadOnlyList<string!>!
@@ -616,6 +619,9 @@ const ZeeKayDa.Auth.Clients.Pbkdf2ClientSecretHasherOptions.DefaultIterations = 
 const ZeeKayDa.Auth.Tokens.TokenEndpointAuthMethods.ClientSecretBasic = "client_secret_basic" -> string!
 const ZeeKayDa.Auth.Tokens.TokenEndpointAuthMethods.ClientSecretPost = "client_secret_post" -> string!
 const ZeeKayDa.Auth.Tokens.TokenEndpointAuthMethods.None = "none" -> string!
+override ZeeKayDa.Auth.Authorization.PkceChallenge.Equals(object? obj) -> bool
+override ZeeKayDa.Auth.Authorization.PkceChallenge.GetHashCode() -> int
+override ZeeKayDa.Auth.Authorization.PkceChallenge.ToString() -> string!
 override ZeeKayDa.Auth.Clients.ClientRegistration.Equals(object? obj) -> bool
 override ZeeKayDa.Auth.Clients.ClientRegistration.GetHashCode() -> int
 override ZeeKayDa.Auth.Clients.ClientRegistration.ToString() -> string!
@@ -665,6 +671,8 @@ override ZeeKayDa.Auth.ZeeKayDaConfigurationFailure.Equals(object? obj) -> bool
 override ZeeKayDa.Auth.ZeeKayDaConfigurationFailure.GetHashCode() -> int
 override ZeeKayDa.Auth.ZeeKayDaConfigurationFailure.ToString() -> string!
 static ZeeKayDa.Auth.Authorization.AuthenticationMethods.Mfa(string! first, string! second, params string![]! rest) -> string![]!
+static ZeeKayDa.Auth.Authorization.PkceChallenge.operator !=(ZeeKayDa.Auth.Authorization.PkceChallenge? left, ZeeKayDa.Auth.Authorization.PkceChallenge? right) -> bool
+static ZeeKayDa.Auth.Authorization.PkceChallenge.operator ==(ZeeKayDa.Auth.Authorization.PkceChallenge? left, ZeeKayDa.Auth.Authorization.PkceChallenge? right) -> bool
 static ZeeKayDa.Auth.Clients.ClientRegistration.CreateConfidential(string! clientId, ZeeKayDa.Auth.Clients.IClientCredential! credential, System.Collections.Generic.IEnumerable<string!>! redirectUris, System.Collections.Generic.IEnumerable<string!>! postLogoutRedirectUris, System.Collections.Generic.IEnumerable<string!>! allowedScopes) -> ZeeKayDa.Auth.Clients.ClientRegistration!
 static ZeeKayDa.Auth.Clients.ClientRegistration.CreatePublic(string! clientId, System.Collections.Generic.IEnumerable<string!>! redirectUris, System.Collections.Generic.IEnumerable<string!>! postLogoutRedirectUris, System.Collections.Generic.IEnumerable<string!>! allowedScopes) -> ZeeKayDa.Auth.Clients.ClientRegistration!
 static ZeeKayDa.Auth.Clients.ClientRegistration.operator !=(ZeeKayDa.Auth.Clients.ClientRegistration? left, ZeeKayDa.Auth.Clients.ClientRegistration? right) -> bool
