@@ -35,7 +35,7 @@ Parse `$ARGUMENTS`. Supported flags:
 Run:
 
 ```sh
-ps aux | grep -E 'Microsoft\.CodeAnalysis\.LanguageServer|OmniSharp' | grep -v grep
+ps aux | grep -E 'Microsoft\.CodeAnalysis\.LanguageServer|OmniSharp|csharp-ls' | grep -v grep
 ```
 
 Report what you find (process name + PID). If nothing is found, tell the user
@@ -50,6 +50,8 @@ Wipe the following locations **only if they exist** (check first, never error on
 - `~/.omnisharp/` — OmniSharp cache
 - Any `.roslyn/` directory under the current project root
 
+`csharp-ls` keeps no disk cache; it reloads the solution on restart, so killing it is enough.
+
 Report each path removed.
 
 ### 3. Kill the language server
@@ -57,6 +59,7 @@ Report each path removed.
 ```sh
 pkill -f 'Microsoft\.CodeAnalysis\.LanguageServer'
 pkill -f 'OmniSharp'
+pkill -f 'csharp-ls'
 ```
 
 Report how many processes were killed.

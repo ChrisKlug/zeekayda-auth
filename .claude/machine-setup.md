@@ -56,8 +56,8 @@ on `PATH` (add it to the `env.PATH` above if the SDK is user-local).
 Verify: `csharp-ls --version`; in a session, `ToolSearch("select:LSP")` then a `goToDefinition`
 on any `.cs` file returns a location.
 
-Note: `.claude/skills/restart-lsp` looks for `Microsoft.CodeAnalysis.LanguageServer` or `OmniSharp`
-processes. If `csharp-ls` is the server in use, add it to that skill's `ps` pattern.
+`.claude/skills/restart-lsp` handles `csharp-ls` as well as `Microsoft.CodeAnalysis.LanguageServer`
+and `OmniSharp`.
 
 ## 3. GitHub CLI and Copilot CLI — required for review and PRs
 
