@@ -73,12 +73,16 @@ public sealed class MvcTerminalInteractionTests : IDisposable
         RedirectQueryOf(response)["error"].ToString().Should().Be("access_denied");
     }
 
-    [Fact]
-    public async Task A_result_a_page_returns_after_a_terminal_call_is_skipped_rather_than_sent()
+    [Theory]
+    [InlineData("/TerminalCall?handler=SignInThenRedirect", ConsentPath)]
+    [InlineData("/TerminalCall?handler=CancelThenRedirect", RegisteredRedirect)]
+    public async Task A_result_a_page_returns_after_a_terminal_call_is_skipped_rather_than_sent(string path, string destination)
     {
-        var response = await PostToInteractionAsync("/TerminalCall?handler=SignInThenRedirect");
+        var response = await PostToInteractionAsync(path);
 
-        response.Headers.Location!.OriginalString.Should().StartWith(ConsentPath + "?");
+        response.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        response.Headers.Location!.OriginalString.Should().StartWith(destination + "?")
+            .And.NotContain(TerminalCallModel.HijackTarget);
     }
 
     [Fact]

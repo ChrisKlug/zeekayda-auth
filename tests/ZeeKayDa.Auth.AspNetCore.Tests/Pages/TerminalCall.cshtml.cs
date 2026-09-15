@@ -27,6 +27,13 @@ public sealed class TerminalCallModel(ILoginInteraction login) : PageModel
         return Redirect(HijackTarget);
     }
 
+    /// <summary>The same after a deny, where a replaced redirect would be an open redirect.</summary>
+    public async Task<IActionResult> OnPostCancelThenRedirectAsync()
+    {
+        await login.DenyAsync();
+        return Redirect(HijackTarget);
+    }
+
     /// <summary>Makes no terminal call, so the page renders as it would in any host.</summary>
     public IActionResult OnPostRender() => Page();
 
