@@ -192,9 +192,9 @@ internal sealed class CompositeClientAuthenticator
             return AuthenticatedClient.Refused;
         }
 
-        // Client's AllowedTokenEndpointAuthMethods must be exactly { "none" } (ordinal).
-        if (client.AllowedTokenEndpointAuthMethods.Count != 1 ||
-            !client.AllowedTokenEndpointAuthMethods.ContainsOrdinal(TokenEndpointAuthMethods.None))
+        // Client's AllowedTokenEndpointAuthMethods must be exactly { "none" } (ordinal), counted by
+        // enumeration: a custom registration's set may report a Count it does not yield.
+        if (!TokenEndpointAuthMethodRules.IsExactlyNone(client.AllowedTokenEndpointAuthMethods))
         {
             PadNoneRejection();
             return AuthenticatedClient.Refused;

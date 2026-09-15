@@ -377,22 +377,27 @@ jobs:
 
       # The decision register replaced numbered ADRs, which had grown to 4,270 lines across 14
       # documents despite a written "half a page" target. A written target didn't hold it, so the
-      # build enforces it. Over the cap: cut words or split the topic — don't raise the cap.
-      - name: Check decision register file length
+      # build enforces it. AGENTS.md gets the same treatment: it is loaded into every context, and
+      # it grew by two thirds in three weeks before its cap. Over a cap: cut words, split the
+      # topic, or move the rule to where it is seen (AGENTS.md says where) — don't raise the cap.
+      - name: Check decision register and AGENTS.md file length
         run: |
-          limit=150
           status=0
+          check() {
+            lines=$(wc -l < "$1")
+            if [ "$lines" -gt "$2" ]; then
+              echo "::error file=$1::$1 is $lines lines, over the $2-line cap. Cut words or move the rule to where it is seen."
+              status=1
+            fi
+          }
           for f in docs/decisions/*.md; do
             case "$(basename "$f")" in
               README.md|security-sign-offs.md) continue ;;
               [0-9][0-9][0-9][0-9]-*) continue ;;  # legacy numbered ADR, pending migration
             esac
-            lines=$(wc -l < "$f")
-            if [ "$lines" -gt "$limit" ]; then
-              echo "::error file=$f::$f is $lines lines, over the $limit-line cap. Cut words or split the topic."
-              status=1
-            fi
+            check "$f" 150
           done
+          check AGENTS.md 200
           exit $status
 
       # Sign-off entries prove their claims by citing test names; nothing else stops a cited
