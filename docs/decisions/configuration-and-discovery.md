@@ -45,9 +45,9 @@ check: CORS-origin canonicalisation runs earlier in an `IPostConfigureOptions<T>
 the collection to read-only so nothing mutates it after validation.
 
 **A host that supports no grant using the authorization endpoint serves neither the endpoint nor the
-metadata describing it.** `GrantTypesSupported` without `authorization_code` leaves `/connect/authorize`
-unmapped, and the discovery document omits `authorization_endpoint` (RFC 8414 §2 permits exactly this),
-`response_modes_supported` and `code_challenge_methods_supported` (optional in both specs), and
+metadata describing it.** Without `authorization_code` nobody signs in, so `/connect/authorize` and
+`/connect/endsession` are unmapped and the document omits `authorization_endpoint` (RFC 8414 §2),
+`end_session_endpoint`, `response_modes_supported` and `code_challenge_methods_supported` (optional), and
 `response_types_supported`. That last omission is a decided deviation: RFC 8414 §2 and OpenID Connect
 Discovery §3 both mark it REQUIRED, and both, in §3.2 and §4.2, say a claim with zero elements MUST be
 omitted — no document for such a host satisfies both sentences, and the MUST is followed. The document is

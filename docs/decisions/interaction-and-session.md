@@ -100,11 +100,11 @@ Issuance and denial both claim the interaction first, through the code store's a
 expiring with the interaction plus skew, with expiry re-checked before and after the claim so a stalled
 response cannot claim again once the winner's claim lapsed. A loser refuses as a replayed form is refused.
 
-**ZeeKayDa owns no interaction UI.** Login, consent and provider selection are the host's pages, and
-the host brings its own user model, identity store, branding and MFA. The cost is real: a host writes
-more code than a shipped default page would need. The response a consent page calls `GetRequestAsync`
-from, or a provider sign-in page `GetPendingPrincipalAsync` from — neither renders without — is stamped
-`frame-ancestors 'none'`, `X-Frame-Options: DENY` and `no-store`; the login page has no such call and is still frameable.
+**ZeeKayDa owns no interaction UI that needs a user model.** Login, consent and provider selection are the
+host's pages, with its own user store, branding and MFA — more host code than a shipped page, a cost accepted.
+Only the error, logout-confirmation and signed-out pages have unbranded framework fallbacks for a host that sets no
+path. The response a consent or logout page calls `GetRequestAsync` from, or a provider sign-in page
+`GetPendingPrincipalAsync`, is stamped `frame-ancestors 'none'`, `X-Frame-Options: DENY` and `no-store`; the login page is not.
 
 **Provider schemes exist only in the framework's scheme map, and what would make them visible to
 the host fails at startup.** `WithProviders` replays the scheme-map configurers the host's callback
