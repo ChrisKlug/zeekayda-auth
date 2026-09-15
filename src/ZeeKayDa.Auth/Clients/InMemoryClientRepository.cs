@@ -133,17 +133,12 @@ internal sealed class InMemoryClientRepository : IClientRepository
                 // validated and reported.
                 failures.Add(new ZeeKayDaConfigurationFailure(
                     "client.credentials.empty_plaintext_secret",
-                    $"Client '{spec.ClientId}' was registered with a null, empty, or whitespace plaintext secret. " +
+                    $"Client '{spec.Registration.ClientId}' was registered with a null, empty, or whitespace plaintext secret. " +
                     "Use a strong random secret loaded from a secrets manager or environment variable."));
                 continue;
             }
 
-            registrations.Add(ClientRegistration.CreateConfidential(
-                spec.ClientId,
-                hashedSecret,
-                spec.RedirectUris,
-                spec.PostLogoutRedirectUris,
-                spec.AllowedScopes));
+            registrations.Add(spec.Registration with { Credentials = [hashedSecret] });
         }
     }
 

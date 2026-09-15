@@ -6,9 +6,8 @@ internal sealed class InMemoryClientRegistrationOptions
     public List<PendingConfidentialClientSpec> Pending { get; } = new();
 }
 
+// A confidential client whose secret has not been hashed yet. Registration is complete except for
+// its credentials, which the hashed secret fills in when the repository is built.
 internal sealed record PendingConfidentialClientSpec(
-    string ClientId,
-    string PlaintextSecret,
-    IEnumerable<string> RedirectUris,
-    IEnumerable<string> PostLogoutRedirectUris,
-    IEnumerable<string> AllowedScopes);
+    ClientRegistration Registration,
+    string PlaintextSecret);

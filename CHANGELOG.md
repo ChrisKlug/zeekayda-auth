@@ -8,6 +8,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **`AddPublic` and `AddConfidential` can set a client's other settings** (#670)
+
+  Both in-memory builder methods take an optional last `configure` callback. `AddPublic` hands it
+  a `PublicClientOptions` and `AddConfidential` a `ConfidentialClientOptions`, both pre-filled with
+  a registration's defaults, so a host can turn off `RequireConsent` for its own first-party app,
+  set a `DisplayName`, allow the refresh-token grant or shorten a token lifetime without building
+  a `ClientRegistration` by hand. Settings that only make sense on a confidential client —
+  `AllowNonceInsteadOfPkce` and the token endpoint auth methods — exist only on
+  `ConfidentialClientOptions`. A confidential client registered this way still has its plaintext
+  secret hashed at startup, as before.
+
 - **A confidential client may rely on the OpenID Connect nonce instead of PKCE** (#662)
 
   `AllowNonceInsteadOfPkce` on a client registration, off by default, lets a confidential client

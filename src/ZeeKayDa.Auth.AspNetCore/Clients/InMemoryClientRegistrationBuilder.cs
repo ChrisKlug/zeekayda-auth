@@ -14,10 +14,11 @@ internal sealed class InMemoryClientRegistrationBuilder : IInMemoryClientRegistr
         string clientId,
         IEnumerable<string> redirectUris,
         IEnumerable<string> postLogoutRedirectUris,
-        IEnumerable<string> allowedScopes)
+        IEnumerable<string> allowedScopes,
+        Action<PublicClientOptions>? configure = null)
     {
-        var reg = ClientRegistration.CreatePublic(clientId, redirectUris, postLogoutRedirectUris, allowedScopes);
-        _options.PreBuilt.Add(reg);
+        var registration = ClientRegistration.CreatePublic(clientId, redirectUris, postLogoutRedirectUris, allowedScopes);
+        _options.PreBuilt.Add(Configure(registration, configure, defaults => new PublicClientOptions(defaults)));
         return this;
     }
 
@@ -27,15 +28,22 @@ internal sealed class InMemoryClientRegistrationBuilder : IInMemoryClientRegistr
         string clientSecret,
         IEnumerable<string> redirectUris,
         IEnumerable<string> postLogoutRedirectUris,
-        IEnumerable<string> allowedScopes)
+        IEnumerable<string> allowedScopes,
+        Action<ConfidentialClientOptions>? configure = null)
     {
-        var spec = new PendingConfidentialClientSpec(
-            clientId,
-            clientSecret,
-            redirectUris.ToList(),
-            postLogoutRedirectUris.ToList(),
-            allowedScopes.ToList());
-        _options.Pending.Add(spec);
+        // The credentials stay empty until the repository hashes the secret at startup.
+        var registration = new ClientRegistration
+        {
+            ClientId = clientId,
+            Credentials = [],
+            IsPublic = false,
+            RedirectUris = new HashSet<string>(redirectUris, StringComparer.Ordinal),
+            PostLogoutRedirectUris = new HashSet<string>(postLogoutRedirectUris, StringComparer.Ordinal),
+            AllowedScopes = new HashSet<string>(allowedScopes, StringComparer.Ordinal),
+        };
+        _options.Pending.Add(new PendingConfidentialClientSpec(
+            Configure(registration, configure, defaults => new ConfidentialClientOptions(defaults)),
+            clientSecret));
         return this;
     }
 
@@ -44,5 +52,19 @@ internal sealed class InMemoryClientRegistrationBuilder : IInMemoryClientRegistr
     {
         _options.PreBuilt.Add(registration);
         return this;
+    }
+
+    private static ClientRegistration Configure<TOptions>(
+        ClientRegistration registration,
+        Action<TOptions>? configure,
+        Func<ClientRegistration, TOptions> createOptions)
+        where TOptions : ClientOptions
+    {
+        if (configure is null)
+            return registration;
+
+        var options = createOptions(registration);
+        configure(options);
+        return options.ApplyTo(registration);
     }
 }

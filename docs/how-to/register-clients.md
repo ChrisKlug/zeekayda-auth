@@ -97,9 +97,9 @@ plaintext is not retained after hashing.
 
 ## Registering a pre-built client
 
-If you need to set properties beyond what the builder methods expose (for example, custom
-`AllowedGrantTypes` or a per-client signing algorithm allowlist), construct a
-`ClientRegistration` directly and use `Add`:
+`AddPublic` and `AddConfidential` take an optional last argument that sets a client's other
+settings, such as `RequireConsent`, `DisplayName` or `AllowedGrantTypes`. If you already have a
+registration built elsewhere, construct a `ClientRegistration` directly and use `Add`:
 
 ```csharp
 using ZeeKayDa.Auth.Clients;

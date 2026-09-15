@@ -116,6 +116,21 @@ public sealed class InMemoryClientRepositoryTests
             [],
             ["openid"]);
 
+    private static PendingConfidentialClientSpec PendingSpec(
+        string clientId, string plaintextSecret, bool requireConsent = true) =>
+        new(
+            new ClientRegistration
+            {
+                ClientId = clientId,
+                Credentials = [],
+                IsPublic = false,
+                RedirectUris = new HashSet<string>(["https://app.example.com/cb"], StringComparer.Ordinal),
+                PostLogoutRedirectUris = new HashSet<string>(StringComparer.Ordinal),
+                AllowedScopes = new HashSet<string>(["openid"], StringComparer.Ordinal),
+                RequireConsent = requireConsent,
+            },
+            plaintextSecret);
+
     // ── FindByClientIdAsync ───────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -259,12 +274,7 @@ public sealed class InMemoryClientRepositoryTests
     public async Task Constructor_hashes_and_makes_accessible_pending_confidential_client()
     {
         var opts = new InMemoryClientRegistrationOptions();
-        opts.Pending.Add(new PendingConfidentialClientSpec(
-            "confidential-client",
-            "super-secret",
-            ["https://app.example.com/cb"],
-            [],
-            ["openid"]));
+        opts.Pending.Add(PendingSpec("confidential-client", "super-secret"));
 
         var repo = MakeRepository(opts);
 
@@ -272,6 +282,20 @@ public sealed class InMemoryClientRepositoryTests
         found.Should().NotBeNull();
         found!.IsPublic.Should().BeFalse();
         found.Credentials.Should().ContainSingle(c => c is IClientSecret);
+    }
+
+    [Fact]
+    public async Task Constructor_keeps_the_pending_registration_settings_when_it_adds_the_hashed_secret()
+    {
+        var opts = new InMemoryClientRegistrationOptions();
+        opts.Pending.Add(PendingSpec("confidential-client", "super-secret", requireConsent: false));
+
+        var repo = MakeRepository(opts);
+
+        var found = await repo.FindByClientIdAsync("confidential-client", TestContext.Current.CancellationToken);
+        found.Should().NotBeNull();
+        found!.RequireConsent.Should().BeFalse();
+        found.Credentials.Should().ContainSingle().Which.Should().BeOfType<FakeSecret>();
     }
 
     [Fact]
@@ -283,12 +307,7 @@ public sealed class InMemoryClientRepositoryTests
         var ct = TestContext.Current.CancellationToken;
         const string plaintext = "super-secret";
         var opts = new InMemoryClientRegistrationOptions();
-        opts.Pending.Add(new PendingConfidentialClientSpec(
-            "confidential-client",
-            plaintext,
-            ["https://app.example.com/cb"],
-            [],
-            ["openid"]));
+        opts.Pending.Add(PendingSpec("confidential-client", plaintext));
 
         var repo = MakeRepository(opts);
 
@@ -394,12 +413,7 @@ public sealed class InMemoryClientRepositoryTests
         // hasher.Create throws ArgumentException on a blank secret. The repository must convert that
         // into a structured failure rather than letting the bare ArgumentException abort construction.
         var opts = new InMemoryClientRegistrationOptions();
-        opts.Pending.Add(new PendingConfidentialClientSpec(
-            "empty-secret-client",
-            string.Empty,
-            ["https://app.example.com/cb"],
-            [],
-            ["openid"]));
+        opts.Pending.Add(PendingSpec("empty-secret-client", string.Empty));
 
         var act = () => MakeRepository(opts);
 
@@ -416,12 +430,7 @@ public sealed class InMemoryClientRepositoryTests
         // The empty-secret spec must not short-circuit construction: a second, separately invalid
         // client's problems must still be reported in the same exception.
         var opts = new InMemoryClientRegistrationOptions();
-        opts.Pending.Add(new PendingConfidentialClientSpec(
-            "empty-secret-client",
-            "   ",
-            ["https://app.example.com/cb"],
-            [],
-            ["openid"]));
+        opts.Pending.Add(PendingSpec("empty-secret-client", "   "));
         opts.PreBuilt.Add(new ClientRegistration
         {
             ClientId = "fragment-client",
@@ -449,12 +458,7 @@ public sealed class InMemoryClientRepositoryTests
         // Server advertises "none" but only confidential clients are registered → warning
         var logger = new CapturingLogger();
         var opts = new InMemoryClientRegistrationOptions();
-        opts.Pending.Add(new PendingConfidentialClientSpec(
-            "confidential-only",
-            "super-secret",
-            ["https://app.example.com/cb"],
-            [],
-            ["openid"]));
+        opts.Pending.Add(PendingSpec("confidential-only", "super-secret"));
 
         MakeRepository(opts, logger: logger);
 
