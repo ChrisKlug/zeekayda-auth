@@ -131,6 +131,42 @@ public sealed class InMemoryClientRegistrationBuilderTests
         registration.AdditionalAccessTokenClaims.Should().BeEmpty();
     }
 
+    // ── Every registration setting has an option ──────────────────────────────────────────────────
+
+    // The builder methods set the client's identity themselves; everything else is an option.
+    private static readonly string[] SetByTheBuilderMethods =
+    [
+        nameof(IClientRegistration.ClientId),
+        nameof(IClientRegistration.IsPublic),
+        nameof(IClientRegistration.Credentials),
+        nameof(IClientRegistration.RedirectUris),
+        nameof(IClientRegistration.PostLogoutRedirectUris),
+        nameof(IClientRegistration.AllowedScopes),
+    ];
+
+    private static readonly string[] ConfidentialOnly =
+    [
+        nameof(ConfidentialClientOptions.AllowNonceInsteadOfPkce),
+        nameof(ConfidentialClientOptions.AllowedTokenEndpointAuthMethods),
+    ];
+
+    [Fact]
+    public void ConfidentialClientOptions_has_a_setting_for_every_registration_member_but_the_identity()
+    {
+        var options = typeof(ConfidentialClientOptions).GetProperties().Select(p => p.Name);
+
+        options.Should().BeEquivalentTo(RegistrationMembers().Except(SetByTheBuilderMethods, StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public void PublicClientOptions_has_a_setting_for_every_registration_member_but_the_identity_and_the_confidential_only_ones()
+    {
+        var options = typeof(PublicClientOptions).GetProperties().Select(p => p.Name);
+
+        options.Should().BeEquivalentTo(RegistrationMembers()
+            .Except(SetByTheBuilderMethods.Concat(ConfidentialOnly), StringComparer.Ordinal));
+    }
+
     // ── AllowedSigningAlgorithms ──────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -168,6 +204,15 @@ public sealed class InMemoryClientRegistrationBuilderTests
         options.AdditionalUserInfoClaims.Add("cost_center");
         options.AdditionalAccessTokenClaims.Add("tenant");
     }
+
+    // Type.GetProperties() on an interface does not return inherited members, so the whole
+    // implemented-interface set is walked; a member on a new base interface is then caught too.
+    private static IEnumerable<string> RegistrationMembers()
+        => typeof(IClientRegistration).GetInterfaces()
+            .Append(typeof(IClientRegistration))
+            .SelectMany(t => t.GetProperties())
+            .Select(p => p.Name)
+            .Distinct(StringComparer.Ordinal);
 
     private IClientRegistration SinglePublic()
         => _options.PreBuilt.Should().ContainSingle().Which;

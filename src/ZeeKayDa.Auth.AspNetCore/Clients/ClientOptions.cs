@@ -59,7 +59,15 @@ public abstract class ClientOptions
     /// <inheritdoc cref="IClientMetadata.DisplayName"/>
     public string? DisplayName { get; set; }
 
-    /// <inheritdoc cref="IClientMetadata.RequireConsent"/>
+    /// <summary>
+    /// Whether the user must consent on the host's consent page before an authorization code is
+    /// issued to this client. <see langword="true"/> by default.
+    /// </summary>
+    /// <remarks>
+    /// Consent is what lets a user notice an authorization request they never started, so turning
+    /// it off removes that protection for this client. Do so only for an operator's own
+    /// first-party applications.
+    /// </remarks>
     public bool RequireConsent { get; set; }
 
     /// <inheritdoc cref="IClientMetadata.EnableZkdErrorCodes"/>
@@ -83,7 +91,7 @@ public abstract class ClientOptions
     /// </summary>
     public ISet<ResponseMode> AllowedResponseModes { get; }
 
-    /// <inheritdoc cref="IClientMetadata.AllowedPromptValues"/>
+    /// <inheritdoc cref="IClientMetadata.AllowedPromptValues" path="/summary"/>
     public ISet<PromptValue> AllowedPromptValues { get; }
 
     /// <summary>

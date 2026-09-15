@@ -32,15 +32,8 @@ internal sealed class InMemoryClientRegistrationBuilder : IInMemoryClientRegistr
         Action<ConfidentialClientOptions>? configure = null)
     {
         // The credentials stay empty until the repository hashes the secret at startup.
-        var registration = new ClientRegistration
-        {
-            ClientId = clientId,
-            Credentials = [],
-            IsPublic = false,
-            RedirectUris = new HashSet<string>(redirectUris, StringComparer.Ordinal),
-            PostLogoutRedirectUris = new HashSet<string>(postLogoutRedirectUris, StringComparer.Ordinal),
-            AllowedScopes = new HashSet<string>(allowedScopes, StringComparer.Ordinal),
-        };
+        var registration = ClientRegistration.CreateConfidentialWithoutCredential(
+            clientId, redirectUris, postLogoutRedirectUris, allowedScopes);
         _options.Pending.Add(new PendingConfidentialClientSpec(
             Configure(registration, configure, defaults => new ConfidentialClientOptions(defaults)),
             clientSecret));
