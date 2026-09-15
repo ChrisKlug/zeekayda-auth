@@ -95,12 +95,13 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
         {
             count++;
 
-            // localhost advisory warning (RFC 8252 §8.3): scheme-neutral — fires for any passing
-            // URI whose host is 'localhost', including https://localhost, not just http loopback.
+            // localhost advisory warning (RFC 8252 §8.3): http only. A native app's loopback
+            // redirect is http (§7.3); https://localhost is a web client on a dev certificate,
+            // where TLS already rules out the name-resolution risk the advice is about.
             // Suppressed when the URI broke a rule: a URI that is being rejected anyway should not
             // also generate advisory-warning noise.
             if (RedirectUriValidator.ValidateRedirectUri(clientId, uriString, propertyName, failures) &&
-                RedirectUriRules.IsLocalhost(uriString))
+                RedirectUriRules.IsHttpLocalhost(uriString))
             {
                 _logger.LogWarning(
                     "Client '{ClientId}' uses 'localhost' in {PropertyName}: '{Uri}'. " +
