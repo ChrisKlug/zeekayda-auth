@@ -69,6 +69,12 @@ both directions in this repository:
   parameter name is worthless if the call downstream raises the same type with the same name — the
   test passes with the guard deleted, and the report calls the mutant killed.
 
+**Mutate every producer, not only the shared consumer.** When one component acts on a marker or
+flag that several call sites set, disabling the consumer proves only that the tests reach it — not
+that every site sets what it reads. #675's result filter was checked by switching off its cancel;
+the provider-challenge path, which set the marker through its own call, was left untested until a
+PR review found it. Mutate each setter by hand and confirm a test fails for each.
+
 **An equivalent mutant is not a coverage gap.** A mutation that cannot change observable behaviour
 has no test that can close it: a `First()` after a non-empty guard, a `>` where both branches return
 the same value on a tie, a `TryAdd` the caller already performed. Say so in the PR and move on.
