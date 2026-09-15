@@ -98,8 +98,8 @@ parameter that fails to validate is ignored, as RP-Initiated Logout §4 requires
 error. The user is asked unless there is no session to end, or a valid hint names the signed-in
 user and its client set `SkipLogoutConfirmation` (§2: asking is a SHOULD with a hint, a MUST
 without). `post_logout_redirect_uri` is honoured only on an exact match against the registration of
-the client the request resolves to — the hint's, else `client_id`'s — with `state` echoed, capped
-at 2048 characters. A pending confirmation is an interaction like any other, `zkd_i` plus a binding
+the client the request resolves to — the hint's, else `client_id`'s — echoing `state`, and a
+`state` over 2048 characters drops the redirect rather than truncating what the client must match. A pending confirmation is an interaction like any other, `zkd_i` plus a binding
 cookie, which is its CSRF protection. There is no cancel call: a sign-out has no error response.
 
 **Every protocol endpoint is implemented; nothing answers `501` any more.** Routes were
