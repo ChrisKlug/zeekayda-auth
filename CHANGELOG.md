@@ -14,7 +14,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   commit the response themselves, so a Razor Pages handler returning `Task` — which means "render
   this page" — threw, and every one had to return `EmptyResult`. `AddZeeKayDaAuth` now registers an
   MVC result filter that skips the result of any request a terminal call answered, including a
-  result the handler returns itself. It keys on a marker the terminal call sets, not on
+  result the handler returns itself; no other result filter, a host's included, runs on such a
+  request. It keys on a marker the terminal call sets, not on
   `HasStarted`, and is inert on a host without MVC. Minimal API handlers are unchanged: a result
   returned after a terminal call still throws there.
 

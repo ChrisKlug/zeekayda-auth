@@ -15,7 +15,9 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// Always-run, so it also sees a result another filter substituted, and ordered first, so no other
 /// result filter touches a response that is already complete. Keyed on
 /// <see cref="TerminalResponse"/> rather than <see cref="HttpResponse.HasStarted"/>: an action
-/// that started its own response for another reason keeps MVC's ordinary behaviour.
+/// that started its own response for another reason keeps MVC's ordinary behaviour. Cancelling
+/// from the front means no other result filter runs on such a request, a host's included — and a
+/// result an exception filter substituted is skipped too, since it could not reach the browser.
 /// </remarks>
 internal sealed class TerminalInteractionResultFilter : IAlwaysRunResultFilter, IOrderedFilter
 {
