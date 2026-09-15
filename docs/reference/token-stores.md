@@ -40,7 +40,7 @@ All store registration goes through the `ZeeKayDaAuthBuilder` returned by `AddZe
 
 ### `.AddInMemoryStores(bool allowOutsideDevelopment = false)`
 
-Registers all three in-memory stores — `InMemoryAuthorizationCodeBackingStore` and `InMemoryRefreshTokenGrantStore` wired underneath the framework's sealed `AuthorizationCodeStore` and `RefreshTokenStore` coordinators, and the per-process interaction store. Emits a `LogLevel.Warning` per store at startup. Outside a `Development` environment, startup fails with `ZeeKayDaConfigurationException` unless `allowOutsideDevelopment` is `true`. The value is passed through to `.AddInMemoryAuthorizationCodeStore()`, `.AddInMemoryRefreshTokenStore()` and `.AddInMemoryInteractionStore()`, each of which gates on it independently.
+Registers all three in-memory stores — `InMemoryAuthorizationCodeBackingStore` and `InMemoryRefreshTokenGrantStore` wired underneath the framework's sealed `AuthorizationCodeStore` and `RefreshTokenStore` coordinators, and the per-process interaction store. In a `Development` environment, logs one `LogLevel.Information` message per store at startup. Outside a `Development` environment, startup fails with `ZeeKayDaConfigurationException` unless `allowOutsideDevelopment` is `true`. The value is passed through to `.AddInMemoryAuthorizationCodeStore()`, `.AddInMemoryRefreshTokenStore()` and `.AddInMemoryInteractionStore()`, each of which gates on it independently.
 
 ```csharp
 builder.Services
@@ -50,7 +50,7 @@ builder.Services
 
 ### `.AddInMemoryAuthorizationCodeStore(bool allowOutsideDevelopment = false)`
 
-Registers `InMemoryAuthorizationCodeBackingStore` as the backing store, wired underneath the framework's sealed `AuthorizationCodeStore` coordinator, which is registered as `IAuthorizationCodeStore`. Emits the same startup warning as `.AddInMemoryStores()`. The environment check applies, gated on this method's own `allowOutsideDevelopment` value — independent of any other in-memory store registration on the same builder.
+Registers `InMemoryAuthorizationCodeBackingStore` as the backing store, wired underneath the framework's sealed `AuthorizationCodeStore` coordinator, which is registered as `IAuthorizationCodeStore`. Logs the same startup message as `.AddInMemoryStores()`. The environment check applies, gated on this method's own `allowOutsideDevelopment` value — independent of any other in-memory store registration on the same builder.
 
 ```csharp
 builder.Services
@@ -61,7 +61,7 @@ builder.Services
 
 ### `.AddInMemoryRefreshTokenStore(bool allowOutsideDevelopment = false)`
 
-Registers `InMemoryRefreshTokenGrantStore` as the backing store, wired underneath the framework's sealed `RefreshTokenStore` coordinator, which is registered as `IRefreshTokenStore`. Emits the same startup warning as `.AddInMemoryStores()`. The environment check applies, gated on this method's own `allowOutsideDevelopment` value — independent of any other in-memory store registration on the same builder.
+Registers `InMemoryRefreshTokenGrantStore` as the backing store, wired underneath the framework's sealed `RefreshTokenStore` coordinator, which is registered as `IRefreshTokenStore`. Logs the same startup message as `.AddInMemoryStores()`. The environment check applies, gated on this method's own `allowOutsideDevelopment` value — independent of any other in-memory store registration on the same builder.
 
 ### `.AddInMemoryInteractionStore(bool allowOutsideDevelopment = false)`
 
@@ -184,7 +184,7 @@ The default is intentionally small. Values approaching half of `AuthorizationCod
 - **Entries are never evicted while the process runs.** Neither backing store removes expired data on a timer or on read. An authorization code's entry is removed only when it is successfully redeemed; a redemption tombstone, once written, is never removed at all. Refresh token grants (including consumed, revoked, and family-revocation sentinel rows) are likewise never removed. On a long-running process this means the in-memory dictionaries grow monotonically with the number of codes and tokens ever issued — acceptable for development and short-lived test hosts, but a memory-growth characteristic to be aware of before using these stores for anything longer-running.
 - **Development and testing only.** In-memory stores are never an acceptable production choice. Outside a `Development` host environment the framework refuses to start unless the registration call's `allowOutsideDevelopment` parameter is set to `true` (intended only for integration test hosts that intentionally run under a non-`Development` environment name). Each of `.AddInMemoryStores()`, `.AddInMemoryAuthorizationCodeStore()`, and `.AddInMemoryRefreshTokenStore()` gates on its own `allowOutsideDevelopment` value independently.
 
-**Startup warning text (emitted at `LogLevel.Warning`, once per store, naming it):**
+**Startup message text (logged at `LogLevel.Information` in `Development`, once per store, naming it):**
 
 ```text
 ZeeKayDa.Auth: the in-memory authorization code store is active. Its contents are lost

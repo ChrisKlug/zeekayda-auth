@@ -60,12 +60,15 @@ public sealed class DistributedCacheInteractionStoreStartupValidatorTests
     }
 
     [Fact]
-    public async Task The_per_process_cache_in_Development_passes_quietly()
+    public async Task The_per_process_cache_in_Development_logs_at_Information_on_every_start()
     {
         var context = await VerifyAsync(Environments.Development, services => services.AddDistributedMemoryCache());
 
         context.Failures.Should().BeEmpty();
-        context.Warnings.Should().BeEmpty();
+        var warning = context.Warnings.Should().ContainSingle().Which;
+        warning.Code.Should().Be("stores.interaction.per_process_cache_active");
+        warning.Level.Should().Be(LogLevel.Information);
+        warning.MessageTemplate.Should().Be(DistributedCacheInteractionStoreStartupValidator.PerProcessCacheActiveMessage);
     }
 
     [Theory]

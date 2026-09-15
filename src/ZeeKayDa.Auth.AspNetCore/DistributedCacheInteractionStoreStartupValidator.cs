@@ -16,10 +16,17 @@ namespace ZeeKayDa.Auth.AspNetCore;
 /// balancer an authorization request started on one instance cannot be completed by another, and
 /// the failure looks like an intermittent bug in the host's login page. Startup is the only place
 /// to catch it; the host opts out for an intentional non-Development test host, and is reminded
-/// on every start.
+/// on every start. In Development, where the per-process cache is the expected choice, it is
+/// logged at <see cref="LogLevel.Information"/>, as the in-memory interaction store is.
 /// </remarks>
 internal sealed class DistributedCacheInteractionStoreStartupValidator : IStartupActivator
 {
+    internal const string PerProcessCacheActiveMessage =
+        "ZeeKayDa.Auth: the distributed-cache interaction store is running on the per-process " +
+        "MemoryDistributedCache. Despite its name, that cache is shared with nothing: an " +
+        "authorization request started on one instance cannot be completed by another. Register a " +
+        "shared IDistributedCache before deploying to more than one instance.";
+
     internal const string PerProcessCacheOverrideWarningMessage =
         "ZeeKayDa.Auth: the distributed-cache interaction store is running on the per-process " +
         "MemoryDistributedCache outside a Development environment. allowMemoryCacheOutsideDevelopment " +
@@ -54,8 +61,17 @@ internal sealed class DistributedCacheInteractionStoreStartupValidator : IStartu
             return ValueTask.CompletedTask;
         }
 
-        if (!IsPerProcessCacheOutsideDevelopment(cache))
+        if (cache is not MemoryDistributedCache)
             return ValueTask.CompletedTask;
+
+        if (_environment.IsDevelopment())
+        {
+            context.AddWarning(
+                "stores.interaction.per_process_cache_active",
+                PerProcessCacheActiveMessage,
+                LogLevel.Information);
+            return ValueTask.CompletedTask;
+        }
 
         if (_allowMemoryCacheOutsideDevelopment)
         {
@@ -76,7 +92,4 @@ internal sealed class DistributedCacheInteractionStoreStartupValidator : IStartu
 
         return ValueTask.CompletedTask;
     }
-
-    private bool IsPerProcessCacheOutsideDevelopment(IDistributedCache cache) =>
-        cache is MemoryDistributedCache && !_environment.IsDevelopment();
 }

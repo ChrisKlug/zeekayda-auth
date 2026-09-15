@@ -79,14 +79,15 @@ reusing an id across codes extends a per-code correlation surface into a chain n
 **No store is auto-registered, and absence fails startup.** A startup validator fails the host when
 either coordinator interface or the interaction store is unregistered, and every registration
 method throws `InvalidOperationException` on a second registration for the same interface rather
-than letting an earlier call silently win. In-memory registrations warn in `Development`; outside it
+than letting an earlier call silently win. In-memory registrations log at `Information` in `Development`; outside it
 they fail startup unless the call passed `allowOutsideDevelopment: true`, which downgrades the
 failure to a `Critical` warning on every startup. That flag is a parameter on the one registration
 method that needs it, never a bindable option — it is meaningless without the call it qualifies.
 `AddInMemoryStores` covers all three stores; the distributed-cache interaction store is its own
 call, because its production story differs from the token stores' (below): a shared cache is a
-complete answer, while the per-process `MemoryDistributedCache` fails startup outside `Development`
-unless the call opts out, which downgrades to a `Critical` warning on every start.
+complete answer, while the per-process `MemoryDistributedCache` is logged at `Information` in
+`Development` and fails startup outside it unless the call opts out, which downgrades to a
+`Critical` warning on every start.
 
 **One terminal outcome per interaction is the code store's invariant, keyed `zkd:code:i:{hex(sha256(id))}`.**
 `IAuthorizationCodeStore.TryClaimInteractionAsync` writes the claim — taken by issuance and by
