@@ -1,4 +1,7 @@
 <Solution>
+  <Folder Name="/samples/">
+    <Project Path="samples/IdentityServer/ZeeKayDa.Auth.Samples.IdentityServer.csproj" />
+  </Folder>
   <Folder Name="/src/">
     <Project Path="src/ZeeKayDa.Auth.Analyzers/ZeeKayDa.Auth.Analyzers.csproj" />
     <Project Path="src/ZeeKayDa.Auth.AspNetCore/ZeeKayDa.Auth.AspNetCore.csproj" />
