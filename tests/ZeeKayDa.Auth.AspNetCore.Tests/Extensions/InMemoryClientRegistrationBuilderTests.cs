@@ -1,5 +1,6 @@
 using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.AspNetCore.Clients;
+using ZeeKayDa.Auth.Authorization;
 using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Tokens;
 
@@ -19,23 +20,18 @@ public sealed class InMemoryClientRegistrationBuilderTests
     // ── AddPublic ─────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void AddPublic_applies_the_configured_settings()
+    public void AddPublic_registers_every_setting_the_callback_changes()
     {
+        PublicClientOptions? configured = null;
+
         _builder.AddPublic("spa", RedirectUris, [], Scopes, options =>
         {
-            options.RequireConsent = false;
-            options.DisplayName = "Our SPA";
-            options.AllowedGrantTypes.Add(GrantType.RefreshToken);
-            options.AccessTokenLifetime = TimeSpan.FromMinutes(5);
-            options.AdditionalIdTokenClaims.Add("department");
+            ChangeEverySharedSetting(options);
+            configured = options;
         });
 
-        var registration = SinglePublic();
-        registration.RequireConsent.Should().BeFalse();
-        registration.DisplayName.Should().Be("Our SPA");
-        registration.AllowedGrantTypes.Should().BeEquivalentTo([GrantType.AuthorizationCode, GrantType.RefreshToken]);
-        registration.AccessTokenLifetime.Should().Be(TimeSpan.FromMinutes(5));
-        registration.AdditionalIdTokenClaims.Should().Equal("department");
+        // Driven by the options' members, so a setting added to the options and not copied fails here.
+        SinglePublic().Should().BeEquivalentTo(configured);
     }
 
     [Fact]
@@ -64,20 +60,21 @@ public sealed class InMemoryClientRegistrationBuilderTests
     // ── AddConfidential ───────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void AddConfidential_applies_the_configured_settings()
+    public void AddConfidential_registers_every_setting_the_callback_changes()
     {
+        ConfidentialClientOptions? configured = null;
+
         _builder.AddConfidential("web", "very-secret", RedirectUris, [], Scopes, options =>
         {
-            options.RequireConsent = false;
+            ChangeEverySharedSetting(options);
             options.AllowNonceInsteadOfPkce = true;
             options.AllowedTokenEndpointAuthMethods.Clear();
             options.AllowedTokenEndpointAuthMethods.Add(TokenEndpointAuthMethods.ClientSecretPost);
+            configured = options;
         });
 
-        var registration = SinglePending().Registration;
-        registration.RequireConsent.Should().BeFalse();
-        registration.AllowNonceInsteadOfPkce.Should().BeTrue();
-        registration.AllowedTokenEndpointAuthMethods.Should().Equal(TokenEndpointAuthMethods.ClientSecretPost);
+        // Covers the shared settings as well as the confidential-only ones.
+        SinglePending().Registration.Should().BeEquivalentTo(configured);
     }
 
     [Fact]
@@ -151,6 +148,25 @@ public sealed class InMemoryClientRegistrationBuilderTests
             options => options.AllowedSigningAlgorithms.Add(SigningAlgorithm.ES256));
 
         SinglePublic().AllowedSigningAlgorithms.Should().Equal(SigningAlgorithm.ES256);
+    }
+
+    // Moves every shared setting off its default, so a setting the builder fails to copy cannot
+    // match the registration by coincidence.
+    private static void ChangeEverySharedSetting(ClientOptions options)
+    {
+        options.DisplayName = "Our app";
+        options.RequireConsent = false;
+        options.EnableZkdErrorCodes = true;
+        options.AllowedGrantTypes.Add(GrantType.RefreshToken);
+        options.AllowedResponseTypes.Clear();
+        options.AllowedResponseModes.Remove(ResponseMode.Query);
+        options.AllowedPromptValues.Add(PromptValue.Login);
+        options.AllowedSigningAlgorithms.Add(SigningAlgorithm.ES256);
+        options.AccessTokenLifetime = TimeSpan.FromMinutes(5);
+        options.IdTokenLifetime = TimeSpan.FromMinutes(2);
+        options.AdditionalIdTokenClaims.Add("department");
+        options.AdditionalUserInfoClaims.Add("cost_center");
+        options.AdditionalAccessTokenClaims.Add("tenant");
     }
 
     private IClientRegistration SinglePublic()
